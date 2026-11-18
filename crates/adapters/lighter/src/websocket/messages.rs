@@ -937,6 +937,10 @@ mod tests {
     use serde_json::Value;
 
     use super::*;
+    use crate::common::enums::{
+        LighterOrderKind, LighterOrderStatus, LighterOrderTimeInForce, LighterTradeType,
+        LighterTriggerStatus,
+    };
 
     const WS_ORDER_BOOK_UPDATE: &str = include_str!("../../test_data/ws_order_book_update.json");
     const WS_ORDER_BOOK_SUBSCRIBED: &str =
@@ -2004,5 +2008,84 @@ mod tests {
     #[case(serde_json::json!({"type":"shutdown", "close_in_ms":"7350"}))]
     fn shutdown_notification_rejects_invalid_deadline(#[case] frame: serde_json::Value) {
         assert!(serde_json::from_value::<LighterWsFrame>(frame).is_err());
+    }
+
+    #[rstest]
+    fn test_account_orders_frame_keeps_siblings_of_unfamiliar_classifications() {
+        let mut payload: serde_json::Value =
+            serde_json::from_str(WS_ACCOUNT_ORDERS_UPDATE).unwrap();
+        let mut unfamiliar = payload["orders"]["0"][0].clone();
+        unfamiliar["order_id"] = serde_json::json!("900");
+        unfamiliar["order_index"] = serde_json::json!(900);
+        unfamiliar["type"] = serde_json::json!("future-type");
+        unfamiliar["time_in_force"] = serde_json::json!("future-tif");
+        unfamiliar["status"] = serde_json::json!("future-status");
+        unfamiliar["trigger_status"] = serde_json::json!("future-trigger");
+        payload["orders"]["0"]
+            .as_array_mut()
+            .unwrap()
+            .insert(0, unfamiliar);
+        let healthy: LighterWsFrame = serde_json::from_str(WS_ACCOUNT_ORDERS_UPDATE).unwrap();
+
+        let LighterWsFrame::AccountOrders {
+            orders: healthy, ..
+        } = healthy
+        else {
+            panic!("expected account orders frame");
+        };
+
+        let frame: LighterWsFrame = serde_json::from_value(payload).unwrap();
+
+        let LighterWsFrame::AccountOrders { orders, .. } = frame else {
+            panic!("expected account orders frame");
+        };
+
+        let orders = &orders[&Ustr::from("0")];
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders[0].order_id, "900");
+        assert_eq!(orders[0].order_type, LighterOrderKind::Other);
+        assert_eq!(orders[0].time_in_force, LighterOrderTimeInForce::Unknown);
+        assert_eq!(orders[0].status, LighterOrderStatus::Unknown);
+        assert_eq!(orders[0].trigger_status, LighterTriggerStatus::Unknown);
+        assert_eq!(orders[1], healthy[&Ustr::from("0")][0]);
+    }
+
+    #[rstest]
+    fn test_account_all_trades_frame_keeps_fill_data_of_unfamiliar_trade_type() {
+        let mut payload: serde_json::Value =
+            serde_json::from_str(WS_ACCOUNT_ALL_TRADES_UPDATE).unwrap();
+        let mut unfamiliar = payload["trades"]["0"][0].clone();
+        unfamiliar["trade_id"] = serde_json::json!(900);
+        unfamiliar["trade_id_str"] = serde_json::json!("900");
+        unfamiliar["type"] = serde_json::json!("future-trade");
+        payload["trades"]["0"]
+            .as_array_mut()
+            .unwrap()
+            .insert(0, unfamiliar);
+        let healthy: LighterWsFrame = serde_json::from_str(WS_ACCOUNT_ALL_TRADES_UPDATE).unwrap();
+
+        let LighterWsFrame::AccountAllTrades {
+            trades: healthy, ..
+        } = healthy
+        else {
+            panic!("expected account all trades frame");
+        };
+
+        let healthy = &healthy[&Ustr::from("0")][0];
+        let mut expected = healthy.clone();
+        expected.trade_id = 900;
+        expected.trade_id_str = Some("900".to_string());
+        expected.trade_type = LighterTradeType::Other;
+
+        let frame: LighterWsFrame = serde_json::from_value(payload).unwrap();
+
+        let LighterWsFrame::AccountAllTrades { trades, .. } = frame else {
+            panic!("expected account all trades frame");
+        };
+
+        let trades = &trades[&Ustr::from("0")];
+        assert_eq!(trades.len(), 2);
+        assert_eq!(trades[0], expected);
+        assert_eq!(&trades[1], healthy);
     }
 }

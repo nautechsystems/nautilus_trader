@@ -581,6 +581,7 @@ fn stream_chunks<I: Iterator<Item = anyhow::Result<Data>>>(
     loop {
         let chunk = take_aligned_chunk(&mut iter, chunk_size)
             .map_err(|e| end_after_load_failure(engine, started, e))?;
+
         if chunk.is_empty() {
             break;
         }

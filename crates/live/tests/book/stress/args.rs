@@ -57,7 +57,6 @@ impl StressArgs {
         };
 
         let mut args = args.into_iter();
-
         while let Some(arg) = args.next() {
             let Some(name) = arg.strip_prefix("--") else {
                 return Err(format!("unexpected argument {arg}"));

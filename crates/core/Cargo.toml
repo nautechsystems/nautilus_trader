@@ -54,7 +54,6 @@ ustr = { workspace = true }
 uuid = { workspace = true }
 zeroize = { workspace = true }
 
-madsim = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 strum = { workspace = true, optional = true }
@@ -70,6 +69,9 @@ rust_decimal_macros = { workspace = true }
 
 [build-dependencies]
 toml = { workspace = true }
+
+[target.'cfg(madsim)'.dependencies]
+madsim = { workspace = true, optional = true }
 
 [[bench]]
 name = "correctness"

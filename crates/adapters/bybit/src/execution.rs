@@ -800,6 +800,7 @@ impl BybitExecutionClient {
         manual_override: Option<BybitPositionIdx>,
     ) -> Option<BybitPositionIdx> {
         let product_type = self.get_product_type_for_instrument(instrument_id);
+
         if !matches!(
             product_type,
             BybitProductType::Linear | BybitProductType::Inverse

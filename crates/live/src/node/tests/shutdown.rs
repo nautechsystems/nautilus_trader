@@ -121,7 +121,6 @@ async fn test_report_shutdown_timeout_preserves_observed_worker_failure(
     }
     drop(pending_collection);
     node.exec_clients = vec![failed, pending];
-
     if pending_first {
         node.exec_clients.reverse();
     }
@@ -533,6 +532,7 @@ impl ExecutionClient for ShutdownClient {
         if let Some(event) = self.disconnect_event.borrow_mut().take() {
             get_exec_event_sender().send(ExecutionEvent::Order(event))?;
         }
+
         Ok(())
     }
 
@@ -591,6 +591,7 @@ fn shutdown_node(
         timeout_shutdown: Duration::ZERO,
         ..Default::default()
     };
+
     let mut node = LiveNode::build("SubmissionShutdown".to_string(), Some(config)).unwrap();
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
     let account_id = client.account_id();
@@ -656,6 +657,7 @@ fn shutdown_node(
         ..Default::default()
     }))
     .unwrap();
+
     let order = OrderTestBuilder::new(OrderType::Limit)
         .trader_id(node.trader_id())
         .strategy_id(strategy_id)
@@ -701,6 +703,7 @@ async fn test_submission_shutdown_boundary(
 ) {
     let queries = Rc::new(Cell::new(0));
     let disconnect_event = Rc::default();
+
     let (mut node, order) = shutdown_node(
         policy,
         ShutdownClient {
@@ -737,15 +740,19 @@ async fn test_submission_shutdown_boundary(
             1
         );
     }
+
     let start = tokio::time::Instant::now();
+
     let result = if hosted {
         let handle = node.handle();
         let stop = tokio::spawn(async move {
             while !handle.is_running() {
                 tokio::task::yield_now().await;
             }
+
             handle.stop();
         });
+
         let result = node.run_with_mode(NodeRunMode::Hosted).await;
         stop.await.unwrap();
         result
@@ -764,6 +771,7 @@ async fn test_submission_shutdown_boundary(
     } else {
         result.unwrap();
     }
+
     assert!(start.elapsed() < Duration::from_millis(200));
     assert_eq!(node.state(), NodeState::Stopped);
     assert!(node.kernel.check_engines_disconnected());
@@ -790,6 +798,7 @@ async fn test_submission_shutdown_late_fill_completes_managed_exit(
     #[values(false, true)] hosted: bool,
 ) {
     let submitted = Rc::new(RefCell::new(Vec::new()));
+
     let (mut node, order) = shutdown_node(
         SubmissionRecoveryPolicy::RetainUnresolved,
         ShutdownClient {
@@ -805,6 +814,7 @@ async fn test_submission_shutdown_late_fill_completes_managed_exit(
         },
         true,
     );
+
     tokio::time::sleep(Duration::from_millis(1)).await;
     let exhausted = node.exec_manager.check_inflight_orders();
     assert!(exhausted.events.is_empty());
@@ -825,10 +835,10 @@ async fn test_submission_shutdown_late_fill_completes_managed_exit(
     .commission(Money::zero(Currency::USDT()))
     .build();
     let handle = node.handle();
-
     if !hosted {
         node.start().await.unwrap();
     }
+
     let sender = get_exec_event_sender();
 
     let late_fill = tokio::spawn(async move {
@@ -836,12 +846,14 @@ async fn test_submission_shutdown_late_fill_completes_managed_exit(
             while !handle.is_running() {
                 tokio::task::yield_now().await;
             }
+
             handle.stop();
         }
 
         while handle.state() != NodeState::ShuttingDown {
             tokio::time::sleep(Duration::from_millis(1)).await;
         }
+
         tokio::time::sleep(Duration::from_millis(2)).await;
         assert_eq!(handle.state(), NodeState::ShuttingDown);
         sender.send(ExecutionEvent::Order(fill)).unwrap();
@@ -852,6 +864,7 @@ async fn test_submission_shutdown_late_fill_completes_managed_exit(
     } else {
         node.stop().await.unwrap();
     }
+
     late_fill.await.unwrap();
     let commands = submitted.borrow();
     assert_eq!(commands.len(), 1);
@@ -897,6 +910,7 @@ impl DataActor for FailingStopActor {
         let callback = TimeEventCallback::RustLocal(Rc::new(move |_| {
             crate::dispatch::tests::latch_callback_failure();
         }));
+
         nautilus_common::runner::get_time_event_sender().send(TimeEventMessage::new(
             TimeEvent::new(
                 "shutdown-callback-failure".into(),
@@ -918,6 +932,7 @@ fn test_submission_shutdown_python_result(
     #[values(false, true)] callback_failure: bool,
 ) {
     Python::initialize();
+
     let (mut node, order) = shutdown_node(
         if retain {
             SubmissionRecoveryPolicy::RetainUnresolved
@@ -947,6 +962,7 @@ fn test_submission_shutdown_python_result(
         })
         .unwrap();
     }
+
     let handle = node.handle();
     let cache = node.kernel.cache.clone();
 

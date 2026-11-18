@@ -42,8 +42,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use anyhow::Context;
 use nautilus_core::string::secret::SecretString;
-use rand::RngExt;
+use rand::{TryRng, rngs::SysRng};
 use thiserror::Error;
 
 use crate::{
@@ -52,7 +53,7 @@ use crate::{
         curve::{SCALAR_BYTES, Scalar},
         field::Fp,
         hash::hash_to_quintic_extension,
-        schnorr::{PrivateKey, SIG_BYTES},
+        schnorr::{InvalidSigningNonce, PrivateKey, SIG_BYTES},
     },
 };
 
@@ -92,6 +93,9 @@ pub enum AuthTokenError {
         /// Byte offset of the offending 8-byte chunk in the input.
         offset: usize,
     },
+    /// The supplied Schnorr signing nonce is zero or non-canonical.
+    #[error(transparent)]
+    InvalidSigningNonce(#[from] InvalidSigningNonce),
 }
 
 /// Default deadline applied by [`build_auth_token_for`] when the caller does
@@ -109,9 +113,8 @@ pub const DEFAULT_AUTH_TOKEN_TTL_SECS: i64 = 7 * 60 * 60;
 ///
 /// # Errors
 ///
-/// Returns an error if the secret cannot be decoded by
-/// [`crate::common::credential::Credential::private_key`], or if [`build_auth_token`] fails
-/// (clock-before-epoch or, hypothetically, a breach caused by its own deadline validation).
+/// Returns an error if the private key cannot be decoded, the system clock predates the UNIX epoch,
+/// deadline computation or validation fails, or the operating system's random number source fails.
 pub fn build_auth_token_for(
     credential: &crate::common::credential::Credential,
 ) -> anyhow::Result<SecretString> {
@@ -130,34 +133,47 @@ pub fn build_auth_token_for(
         credential.account_index(),
         credential.api_key_index(),
         &sk,
-        fresh_k(),
+        fresh_k()?,
     )
     .map_err(|e| anyhow::anyhow!("failed to mint Lighter auth token: {e}"))
 }
 
-/// Draws a fresh canonical [`Scalar`] from the thread-local CSPRNG suitable
-/// for the per-signature `k` nonce.
+/// Draws a fresh nonzero canonical [`Scalar`] from the operating system's
+/// cryptographic random number source for the per-signature `k` nonce.
 ///
-/// The Schnorr binding requires `k` to be drawn from a cryptographic RNG and
-/// used at most once per signature; see [`PrivateKey::sign`] for the full
-/// contract. The 40-byte draw is reduced modulo the curve order, so the
-/// returned scalar is always canonical.
-#[must_use]
-pub fn fresh_k() -> Scalar {
+/// See [`PrivateKey::sign`] for the nonce requirements. Rejection sampling
+/// gives a uniform scalar in `[1, n)`, where `n` is the curve order. Direct OS
+/// randomness avoids duplicating a userspace RNG's state across a process fork.
+///
+/// # Errors
+///
+/// Returns an error if the operating system's random number source fails.
+pub fn fresh_k() -> anyhow::Result<Scalar> {
     let mut bytes = [0u8; SCALAR_BYTES];
-    rand::rng().fill(&mut bytes[..]);
-    Scalar::from_le_bytes_reduce(bytes)
+
+    loop {
+        SysRng
+            .try_fill_bytes(&mut bytes)
+            .context("failed to draw Lighter signing nonce")?;
+        let k = Scalar::from_le_bytes_reduce(bytes);
+        if !k.is_zero() && k.to_le_bytes() == bytes {
+            return Ok(k);
+        }
+    }
 }
 
 /// Build a Lighter auth token using the system clock as the `now` reference.
 ///
 /// Validates the deadline against [`LIGHTER_AUTH_TOKEN_MAX_TTL`]. See
 /// [`build_auth_token_at`] for an injectable-`now` variant suitable for tests.
+/// See [`PrivateKey::sign`] for the nonce requirements.
 ///
 /// # Errors
 ///
-/// Returns an error if `deadline_unix_secs <= now`, if it exceeds the venue cap, or if the system
-/// clock predates the UNIX epoch.
+/// Returns an error if:
+/// - The deadline is at or before the current time or exceeds the venue cap.
+/// - The system clock predates the UNIX epoch.
+/// - The signing nonce is zero or non-canonical.
 pub fn build_auth_token(
     deadline_unix_secs: i64,
     account_index: i64,
@@ -222,13 +238,15 @@ pub fn build_auth_token_at(
 ///
 /// Public so tests and oracle round-trips can produce tokens whose deadline
 /// would otherwise trip the venue cap. Production callers should use
-/// [`build_auth_token`] or [`build_auth_token_at`].
+/// [`build_auth_token`] or [`build_auth_token_at`]. See [`PrivateKey::sign`]
+/// for the nonce requirements.
 ///
 /// # Errors
 ///
-/// Returns an error if the rendered message contains an 8-byte chunk that does not decode as a
-/// canonical Goldilocks element. The auth-token format keeps every byte ASCII, so this case is
-/// unreachable for the production callers.
+/// Returns an error if:
+/// - The rendered message contains a non-canonical Goldilocks limb. The ASCII token format rules
+///   out this case.
+/// - The signing nonce is zero or non-canonical.
 pub fn build_auth_token_unchecked(
     deadline_unix_secs: i64,
     account_index: i64,
@@ -280,7 +298,7 @@ fn sign_message(
 ) -> Result<[u8; SIG_BYTES], AuthTokenError> {
     let elems = ascii_to_fp_limbs(message.as_bytes())?;
     let digest = hash_to_quintic_extension(&elems);
-    Ok(sk.sign(digest, k).to_le_bytes())
+    Ok(sk.sign(digest, k)?.to_le_bytes())
 }
 
 fn ascii_to_fp_limbs(bytes: &[u8]) -> Result<Vec<Fp>, AuthTokenError> {
@@ -319,7 +337,10 @@ mod tests {
 
     use super::*;
     use crate::signing::{
-        curve::SCALAR_BYTES, field::Fp5, fixtures::hex_to_array, schnorr::Signature,
+        curve::{ORDER, SCALAR_BYTES},
+        field::Fp5,
+        fixtures::hex_to_array,
+        schnorr::Signature,
     };
 
     fn fixed_sk() -> PrivateKey {
@@ -427,8 +448,34 @@ mod tests {
     }
 
     #[rstest]
-    fn deadline_in_past_errors() {
-        let err = build_auth_token_at(1_000, 999, 1, 0, &fixed_sk(), nonzero_k())
+    #[case::zero(Scalar::ZERO)]
+    #[case::order(ORDER)]
+    fn auth_token_builders_reject_invalid_signing_nonce(#[case] k: Scalar) {
+        let sk = fixed_sk();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+        let now = i64::try_from(now.as_secs()).unwrap();
+        let deadline = now + 600;
+        let expected = AuthTokenError::InvalidSigningNonce(InvalidSigningNonce);
+
+        assert_eq!(
+            build_auth_token(deadline, 12345, 5, &sk, k).unwrap_err(),
+            expected,
+        );
+        assert_eq!(
+            build_auth_token_at(now, deadline, 12345, 5, &sk, k).unwrap_err(),
+            expected,
+        );
+        assert_eq!(
+            build_auth_token_unchecked(deadline, 12345, 5, &sk, k).unwrap_err(),
+            expected,
+        );
+    }
+
+    #[rstest]
+    #[case::valid_nonce(nonzero_k())]
+    #[case::invalid_nonce(Scalar::ZERO)]
+    fn deadline_in_past_errors(#[case] k: Scalar) {
+        let err = build_auth_token_at(1_000, 999, 1, 0, &fixed_sk(), k)
             .expect_err("must reject past deadline");
         assert_eq!(
             err,
@@ -639,30 +686,27 @@ mod tests {
     }
 
     #[rstest]
-    fn fresh_k_returns_canonical_scalar() {
-        // The CSPRNG draw is reduced modulo the curve order, so every call
-        // returns a canonical scalar regardless of the raw byte values.
+    fn fresh_k_returns_canonical_nonzero_scalar() {
         for _ in 0..16 {
-            let k = fresh_k();
+            let k = fresh_k().unwrap();
             assert!(
                 k.is_canonical(),
                 "fresh_k must return a canonical scalar, was {k:?}",
             );
+            assert!(!k.is_zero(), "fresh_k must return a nonzero scalar");
         }
     }
 
     #[rstest]
     fn fresh_k_yields_distinct_scalars() {
-        // With 320 bits of entropy a collision in three draws is unreachable
-        // in any realistic execution; this guards against a hard-coded
-        // constant or a misconfigured RNG.
-        let a = fresh_k();
-        let b = fresh_k();
-        let c = fresh_k();
-        assert!(
-            !(a == b && b == c),
-            "fresh_k must vary across calls (a={a:?}, b={b:?}, c={c:?})",
-        );
+        // A collision in three draws from the 319-bit scalar field is negligible
+        let a = fresh_k().unwrap();
+        let b = fresh_k().unwrap();
+        let c = fresh_k().unwrap();
+
+        assert_ne!(a, b);
+        assert_ne!(a, c);
+        assert_ne!(b, c);
     }
 
     #[rstest]

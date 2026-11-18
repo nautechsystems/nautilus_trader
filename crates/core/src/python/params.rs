@@ -116,6 +116,7 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
                 let py_item = value_to_pyobject(py, item)?;
                 py_list.append(py_item)?;
             }
+
             py_list.into_py_any(py)
         }
         Value::Object(_) => {
@@ -140,6 +141,7 @@ pub fn params_to_pydict(py: Python<'_>, params: &Params) -> PyResult<Py<PyDict>>
         let py_value = value_to_pyobject(py, value)?;
         dict.set_item(key, py_value)?;
     }
+
     Ok(dict.into())
 }
 

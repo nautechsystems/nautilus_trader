@@ -17,6 +17,7 @@ Parquet catalog regression tests.
 """
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,49 @@ class StreamSignal:
     """
 
     value: float = 0.0
+
+
+@pytest.mark.parametrize(
+    "directory",
+    [
+        "C# work",
+        "a%20b",
+        pytest.param(
+            "a?b",
+            marks=pytest.mark.skipif(os.name == "nt", reason="Invalid Windows name"),
+        ),
+    ],
+)
+@pytest.mark.parametrize("file_uri", [False, True])
+def test_streaming_manifest_with_url_syntax_in_root(
+    tmp_path: Path,
+    directory: str,
+    file_uri: bool,
+) -> None:
+    """
+    Write run manifests under literal local roots.
+    """
+    root = tmp_path / directory
+    path = root / "backtest" / "run%20id"
+    path.mkdir(parents=True)
+    writer_path = f"file:///{path.as_posix().lstrip('/')}" if file_uri else str(path)
+    writer = StreamingFeatherWriter(path=writer_path, cache=Cache(), clock=Clock.new_test())
+    manifest_path = path / "_nautilus_run_manifest.json"
+    running = json.loads(manifest_path.read_text(encoding="utf-8"))
+    writer.close()
+    completed = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    for manifest, status in [(running, "in_progress"), (completed, "completed")]:
+        assert {
+            key: manifest[key]
+            for key in ["schema_version", "kind", "instance_id", "status", "empty"]
+        } == {
+            "schema_version": 1,
+            "kind": "backtest",
+            "instance_id": "run%20id",
+            "status": status,
+            "empty": True,
+        }
 
 
 def test_streaming_feather_writer_option_greeks_marks_run_non_empty(tmp_path: Path) -> None:

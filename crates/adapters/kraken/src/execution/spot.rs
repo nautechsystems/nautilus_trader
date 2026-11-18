@@ -50,7 +50,6 @@ use nautilus_model::{
         AccountType, OmsType, OrderSide, OrderType, PositionSide, TimeInForce, TrailingOffsetType,
         TriggerType,
     },
-    events::OrderEventAny,
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
@@ -119,7 +118,6 @@ pub struct KrakenSpotExecutionClient {
     truncated_id_map: Arc<AtomicMap<String, ClientOrderId>>,
     ws_dispatch_state: Arc<WsDispatchState>,
     order_request_state: Arc<OrderRequestState>,
-    order_event_rx: Option<tokio::sync::mpsc::UnboundedReceiver<OrderEventAny>>,
 }
 
 impl KrakenSpotExecutionClient {
@@ -204,7 +202,9 @@ impl KrakenSpotExecutionClient {
         // Connect() swaps in a live cmd_tx; capture the shared handle so the
         // dispatcher reads the current sender, not the dropped placeholder.
         let cmd_tx_handle = ws.handler_command_handle();
-        let (order_event_tx, order_event_rx) = tokio::sync::mpsc::unbounded_channel();
+        // Placeholder: each connect installs the sender for that session's channel
+        let (order_event_tx, _) = tokio::sync::mpsc::unbounded_channel();
+
         let order_request_state = Arc::new(OrderRequestState::new(
             cmd_tx_handle,
             order_event_tx,
@@ -233,7 +233,6 @@ impl KrakenSpotExecutionClient {
             truncated_id_map: Arc::new(AtomicMap::new()),
             ws_dispatch_state,
             order_request_state,
-            order_event_rx: Some(order_event_rx),
         })
     }
 
@@ -605,6 +604,9 @@ impl KrakenSpotExecutionClient {
         let clock = self.clock;
         let cancellation_token = self.cancellation_token.clone();
 
+        let (order_event_tx, mut order_event_rx) = tokio::sync::mpsc::unbounded_channel();
+        self.order_request_state.reset_event_sender(order_event_tx);
+
         let future = async move {
             tokio::pin!(stream);
 
@@ -643,35 +645,32 @@ impl KrakenSpotExecutionClient {
             .spawn(future)
             .context("failed to register Kraken Spot execution stream task")?;
 
-        let event_rx = self.order_event_rx.take();
+        let emitter = self.emitter.clone();
+        let cancellation_token = self.cancellation_token.clone();
 
-        if let Some(mut event_rx) = event_rx {
-            let emitter = self.emitter.clone();
-            let cancellation_token = self.cancellation_token.clone();
-
-            let future = async move {
-                loop {
-                    tokio::select! {
-                        () = cancellation_token.cancelled() => {
-                            log::debug!("Spot execution order-event forwarder cancelled");
-                            break;
-                        }
-                        event = event_rx.recv() => {
-                            match event {
-                                Some(event) => emitter.send_order_event(event),
-                                None => {
-                                    log::debug!("Spot execution order-event channel closed");
-                                    break;
-                                }
+        let future = async move {
+            loop {
+                tokio::select! {
+                    () = cancellation_token.cancelled() => {
+                        log::debug!("Spot execution order-event forwarder cancelled");
+                        break;
+                    }
+                    event = order_event_rx.recv() => {
+                        match event {
+                            Some(event) => emitter.send_order_event(event),
+                            None => {
+                                log::debug!("Spot execution order-event channel closed");
+                                break;
                             }
                         }
                     }
                 }
-            };
-            self.session_tasks
-                .spawn(future)
-                .context("failed to register Kraken Spot order event task")?;
-        }
+            }
+        };
+
+        self.session_tasks
+            .spawn(future)
+            .context("failed to register Kraken Spot order event task")?;
 
         Ok(())
     }

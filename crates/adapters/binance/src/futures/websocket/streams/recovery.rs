@@ -240,6 +240,7 @@ where
 
     // Drain queued events from the old stream while the replacement buffers new events.
     let mut task_slot = ctx.ws_task.lock().await;
+
     if let Some(outcome) = finish_task(
         &mut task_slot,
         Duration::from_secs(2),

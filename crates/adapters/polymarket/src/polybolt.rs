@@ -511,16 +511,6 @@ impl PolymarketPolyBoltFeed {
         !self.inner.subscriptions.is_empty()
     }
 
-    #[cfg(test)]
-    pub(crate) fn proxy_url(&self) -> Option<&ProxyUrl> {
-        self.inner.proxy_url.as_ref()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn is_authenticated(&self) -> bool {
-        self.inner.auth.is_authenticated()
-    }
-
     pub(crate) fn track_subscribe(&self, data_type: DataType) -> anyhow::Result<bool> {
         let parsed = ParsedSubscription::from_data_type(&data_type)?;
 
@@ -943,19 +933,6 @@ impl PolymarketPolyBoltFeed {
             None => true,
             Some(ws) => ws.is_disconnected(),
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn tracked_subscription_count(&self) -> usize {
-        self.inner.subscriptions.len()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn tracked_data_type_count(&self, key: &str) -> usize {
-        self.inner
-            .subscriptions
-            .get(key)
-            .map_or(0, |entry| entry.data_types.len())
     }
 
     fn current_ws(&self) -> Option<Arc<WebSocketClient>> {
@@ -2276,6 +2253,25 @@ pub(crate) mod testing {
     }
 
     impl PolymarketPolyBoltFeed {
+        pub(crate) fn proxy_url(&self) -> Option<&ProxyUrl> {
+            self.inner.proxy_url.as_ref()
+        }
+
+        pub(super) fn is_authenticated(&self) -> bool {
+            self.inner.auth.is_authenticated()
+        }
+
+        pub(crate) fn tracked_subscription_count(&self) -> usize {
+            self.inner.subscriptions.len()
+        }
+
+        pub(crate) fn tracked_data_type_count(&self, key: &str) -> usize {
+            self.inner
+                .subscriptions
+                .get(key)
+                .map_or(0, |entry| entry.data_types.len())
+        }
+
         pub(crate) fn new(
             url: String,
             transport_backend: TransportBackend,
@@ -5056,8 +5052,45 @@ mod tests {
         )
         .await;
 
-        let received = std::time::Instant::now();
+        // Fence subscription writes at the server before comparing the final snapshot ledger
+        let wire_guard = feed.inner.wire_mutex.lock().await;
         let elapsed = started.elapsed();
+        let mut received = std::time::Instant::now();
+        feed.current_ws()
+            .unwrap()
+            .send_text(json!({"op": "test_barrier"}).to_string(), None)
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                while !rx.is_empty() {
+                    observations.push(price_observation(&next_custom(&mut rx)));
+                    received = std::time::Instant::now();
+                }
+
+                if state
+                    .payloads()
+                    .await
+                    .iter()
+                    .any(|p| p["op"] == "test_barrier")
+                {
+                    frames = state.sent_frames.lock().clone();
+                    let mut expected = frame_observations(&frames);
+                    expected.sort();
+                    observations.sort();
+                    if observations == expected {
+                        break;
+                    }
+                }
+
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .unwrap();
+
+        drop(wire_guard);
+
         feed.disconnect().await.unwrap();
         assert!(rx.try_recv().is_err());
         let payloads = state.payloads().await;

@@ -29,6 +29,7 @@ async fn test_bulk_report_acceptance_applies_after_finalization_crosses_deadline
         BlockingReportClientState::default(),
         BlockingReportClientState::default(),
     ];
+
     states[0]
         .order_report_finish_ns
         .store(200_000_000, Ordering::Relaxed);
@@ -95,6 +96,7 @@ async fn test_bulk_report_acceptance_discards_ready_client_with_pending_batch(
         BlockingReportClientState::default(),
         BlockingReportClientState::default(),
     ];
+
     let releases = [
         Arc::new(tokio::sync::Notify::new()),
         Arc::new(tokio::sync::Notify::new()),
@@ -401,6 +403,7 @@ async fn test_position_report_acceptance_delivers_fill_after_deadline() {
         None,
         None,
     );
+
     let replay = replay_client.fill_report_task(&command);
     replay.collection.await;
     assert_eq!((replay.finish)().unwrap(), Vec::<FillReport>::new());
@@ -584,6 +587,7 @@ async fn test_targeted_report_acceptance_delivers_fill_after_deadline() {
         None,
         None,
     );
+
     let replay = replay_client.fill_report_task(&command);
     replay.collection.await;
     assert_eq!((replay.finish)().unwrap(), Vec::<FillReport>::new());
@@ -629,6 +633,7 @@ async fn test_targeted_report_acceptance_carries_status_across_fill_failure(
         BlockingReportClientState::default(),
         BlockingReportClientState::default(),
     ];
+
     let release = Arc::new(tokio::sync::Notify::new());
     states[1].fill_report_error.store(error, Ordering::Relaxed);
     let mut config = reconciliation_node_config(2);

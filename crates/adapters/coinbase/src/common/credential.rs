@@ -151,8 +151,7 @@ impl CoinbaseCredential {
         // instead of real newlines. Normalize before parsing.
         let pem_str = Zeroizing::new(self.api_secret.trim().replace("\\n", "\n"));
 
-        let pem_obj = pem::parse(&pem_str)
-            .map_err(|e| Error::auth(format!("Failed to parse PEM key: {e}")))?;
+        let pem_obj = pem::parse(&pem_str).map_err(|_| Error::auth("Failed to parse PEM key"))?;
 
         // Coinbase issues SEC1 (EC PRIVATE KEY) PEMs; from_private_key_der
         // handles both SEC1 and PKCS#8 formats
@@ -291,6 +290,34 @@ mod tests {
         let result = cred.build_rest_jwt("GET api.coinbase.com/test");
         assert!(result.is_err());
         assert!(result.unwrap_err().is_auth_error());
+    }
+
+    #[rstest]
+    #[case::invalid_header(false)]
+    #[case::mismatched_tags(true)]
+    fn test_build_jwt_pem_error_redacts_secret(
+        #[case] mismatched_tags: bool,
+        #[values(false, true)] websocket: bool,
+    ) {
+        let pem_key = test_sec1_pem_key().replace("\r\n", "\n");
+        let key_line = pem_key.lines().nth(1).unwrap();
+        let malformed_pem = if mismatched_tags {
+            pem_key.replace("END EC PRIVATE KEY", &format!("END {key_line}"))
+        } else {
+            pem_key.replacen(key_line, &format!("{key_line}\n"), 1)
+        };
+
+        let cred = CoinbaseCredential::new(TEST_API_KEY.to_string(), malformed_pem);
+        let error = if websocket {
+            cred.build_ws_jwt()
+        } else {
+            cred.build_rest_jwt("GET api.coinbase.com/api/v3/brokerage/accounts")
+        }
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), "auth error: Failed to parse PEM key");
+        assert_eq!(format!("{error:?}"), "Auth(\"Failed to parse PEM key\")");
+        assert!(std::error::Error::source(&error).is_none());
     }
 
     #[rstest]

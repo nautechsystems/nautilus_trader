@@ -734,7 +734,7 @@ impl DataClient for AxDataClient {
                                         log::warn!(
                                             "No funding rates returned for {symbol}"
                                         );
-                                    } else if let Some(update) = funding_rates.last() {
+                                    } else if let Some(update) = funding_rates.first() {
                                         // Only emit if rate changed
                                         let should_emit = cache.lock()
                                             .get(&instrument_id) != Some(update);

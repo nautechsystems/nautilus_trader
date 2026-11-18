@@ -1139,6 +1139,7 @@ impl DataClientAdapter {
 
         unsubscribe(client)?;
         set.remove(key);
+
         if data_type.is_empty() {
             log_info!("Unsubscribed {key}", color = LogColor::Blue);
         } else {

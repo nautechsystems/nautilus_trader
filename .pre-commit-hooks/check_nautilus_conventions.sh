@@ -373,7 +373,6 @@ coinapi nautilus_coinapi::python::coinapi
 coinbase nautilus_coinbase::python::coinbase
 common nautilus_common::python::common
 core nautilus_core::python::core
-cryptography nautilus_cryptography::python::cryptography
 data nautilus_data::python::data
 databento nautilus_databento::python::databento
 deribit nautilus_deribit::python::deribit

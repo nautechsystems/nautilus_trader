@@ -16,7 +16,7 @@ cannot check.
 | Formatting and imports.    | `rustfmt.toml`.                                    |
 | Workspace lints.           | `Cargo.toml` and `clippy.toml`.                    |
 | Cargo layout.              | `.pre-commit-hooks/check_cargo_conventions.sh`.    |
-| Rust layout.               | `.pre-commit-hooks/check_formatting_rs.sh`.        |
+| Rust layout.               | `scripts/check-rust-formatting.bash`.              |
 | Nautilus type conventions. | `.pre-commit-hooks/check_nautilus_conventions.sh`. |
 | Async boundaries.          | `.pre-commit-hooks/check_tokio_usage.sh`.          |
 | DST boundaries.            | `.pre-commit-hooks/check_dst_conventions.sh`.      |
@@ -250,24 +250,19 @@ Keep comments and attributes attached to their statement when inserting a separa
 `rustfmt::skip` regions. Apply the multiline statement rules around changed code. Leave unrelated code alone.
 Add only blank lines that `rustfmt` preserves.
 
-The formatting hook:
+The formatting hook checks control-flow spacing, spacing above `spawn`, `spawn_local`, and
+`spawn_blocking` calls, and module order throughout each Rust file it receives. It skips macro bodies
+and files under `generated` directories. The hook reports violations by path and line number without
+modifying files.
 
-- Checks existing control-flow, spawn, and module-ordering rules at changed boundaries.
-- Compares staged and unstaged changes against `HEAD`, or against the merge base with `CHANGED_BASE_SHA` when set.
-- Checks all tracked Rust files under `crates`, `examples`, and `docs` when the configured base cannot be resolved.
-- Reads complete changed files for context and includes lines used by exemption checks when selecting diagnostics.
-- Does not modify files.
-
-`make pre-commit` checks committed, staged, and unstaged Rust changes against the merge base with the
-local `origin/develop` ref, then runs prek if formatting passes. Set `CHANGED_BASE_SHA` to select
-another base. The default applies only to this formatting check. Commit-time hooks and direct
-`prek run --all-files` compare against `HEAD` unless `CHANGED_BASE_SHA` is set.
+At commit time, the hook checks staged Rust files. Run `prek run check-rust-formatting --all-files`
+to check all Rust files in the hook's scope. `make pre-commit` runs this check as part of the full
+pre-commit suite.
 
 These remain review conventions:
 
 - Multiline statement spacing.
 - Construction spacing.
-- `spawn_local` and `spawn_blocking` spacing.
 
 Keep changed code readable for a human reader. If those separators still leave a dense block hard to follow,
 add more blank lines.

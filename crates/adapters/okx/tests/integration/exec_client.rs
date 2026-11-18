@@ -3089,6 +3089,8 @@ struct ReportRouteState {
     include_regular_orders: bool,
     regular_child_response: Option<serde_json::Value>,
     regular_pending_response: Option<serde_json::Value>,
+    balance_response: Option<serde_json::Value>,
+    position_response: Option<serde_json::Value>,
     regular_order_detail_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
     regular_order_pending_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
     regular_order_history_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
@@ -3163,7 +3165,9 @@ fn create_exec_report_test_router(state: Arc<ReportRouteState>) -> Router {
     let spread_history_state = Arc::clone(&state);
     let regular_fill_state = Arc::clone(&state);
     let regular_fill_history_state = Arc::clone(&state);
-    let spread_trade_state = state;
+    let spread_trade_state = Arc::clone(&state);
+    let position_state = Arc::clone(&state);
+    let balance_state = state;
 
     Router::new()
         .route("/health", get(|| async { Json(json!({"ok": true})) }))
@@ -3357,11 +3361,33 @@ fn create_exec_report_test_router(state: Arc<ReportRouteState>) -> Router {
         )
         .route(
             "/api/v5/account/positions",
-            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+            get(move || {
+                let state = Arc::clone(&position_state);
+                async move {
+                    Json(
+                        state
+                            .position_response
+                            .clone()
+                            .unwrap_or_else(|| json!({"code": "0", "msg": "", "data": []})),
+                    )
+                    .into_response()
+                }
+            }),
         )
         .route(
             "/api/v5/account/balance",
-            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+            get(move || {
+                let state = Arc::clone(&balance_state);
+                async move {
+                    Json(
+                        state
+                            .balance_response
+                            .clone()
+                            .unwrap_or_else(|| load_test_data("http_get_account_balance.json")),
+                    )
+                    .into_response()
+                }
+            }),
         )
 }
 
@@ -3389,17 +3415,6 @@ fn create_test_execution_client_configured(
 
     let cache = Rc::new(RefCell::new(Cache::default()));
 
-    let core = ExecutionClientCore::new(
-        trader_id,
-        client_id,
-        *OKX_VENUE,
-        OmsType::Hedging,
-        account_id,
-        AccountType::Margin,
-        None,
-        cache.clone(),
-    );
-
     let mut config = OKXExecutionClientConfig {
         account_id,
         base_url_http: Some(base_url.to_string()),
@@ -3411,6 +3426,17 @@ fn create_test_execution_client_configured(
         ..Default::default()
     };
     configure(&mut config);
+
+    let core = ExecutionClientCore::new(
+        trader_id,
+        client_id,
+        *OKX_VENUE,
+        config.oms_type.unwrap_or(OmsType::Hedging),
+        account_id,
+        AccountType::Margin,
+        None,
+        cache.clone(),
+    );
 
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     set_exec_event_sender(tx);
@@ -3469,6 +3495,32 @@ async fn test_position_check_preserves_spot_position_without_reports(
             config.instrument_types = instrument_types;
         });
 
+    let position = add_open_spot_position(&mut client, &cache);
+    let position_id = position.id;
+    let mut manager = position_check_manager(cache.clone());
+
+    let mut events = Vec::new();
+    for _ in 0..2 {
+        events.extend(manager.check_positions_consistency(&[&client]).await);
+    }
+
+    assert!(
+        events.is_empty(),
+        "Unexpected reconciliation events: {events:?}"
+    );
+    let cache = cache.borrow();
+    assert!(cache.orders_refs(None, None, None, None, None).is_empty());
+    assert_eq!(cache.positions_open(None, None, None, None, None).len(), 1);
+    let retained = cache.position(&position_id).unwrap();
+    assert_eq!(retained.quantity, position.quantity);
+    assert_eq!(retained.signed_decimal_qty(), position.signed_decimal_qty());
+    assert_eq!(retained.side, position.side);
+    assert_eq!(retained.avg_px_open, position.avg_px_open);
+    assert_eq!(retained.event_count(), position.event_count());
+}
+
+/// Adds a margin account and an open LONG `ETH-USDT` position of 1 ETH at 50,000 to `cache`.
+fn add_open_spot_position(client: &mut OKXExecutionClient, cache: &Rc<RefCell<Cache>>) -> Position {
     let instrument = make_margin_spot_report_instrument();
     client.on_instrument(instrument.clone());
 
@@ -3496,12 +3548,11 @@ async fn test_position_check_preserves_spot_position_without_reports(
         .side(OrderSide::Buy)
         .quantity(Quantity::from("1.000000"))
         .build();
-    let position_id = PositionId::from("P-SPOT-RETAINED");
     let fill = TestOrderEventStubs::filled(
         &order,
         &instrument,
         Some(TradeId::from("T-SPOT-OPEN")),
-        Some(position_id),
+        Some(PositionId::from("P-SPOT-RETAINED")),
         Some(Price::from("50000.00")),
         None,
         None,
@@ -3515,36 +3566,297 @@ async fn test_position_check_preserves_spot_position_without_reports(
         .borrow_mut()
         .add_position(&position, OmsType::Hedging)
         .unwrap();
-    let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
-    let mut manager = ExecutionManager::new(
-        clock,
-        cache.clone(),
+    position
+}
+
+fn position_check_manager(cache: Rc<RefCell<Cache>>) -> ExecutionManager {
+    ExecutionManager::new(
+        Rc::new(RefCell::new(VirtualClock::new())),
+        cache,
         ExecutionManagerConfig {
             position_check_threshold_ns: DurationNanos::ZERO,
             ..Default::default()
         },
     )
-    .unwrap();
+    .unwrap()
+}
 
-    let mut events = Vec::new();
-    for _ in 0..2 {
-        events.extend(manager.check_positions_consistency(&[&client]).await);
-    }
+#[rstest]
+#[case::matching(&[("ETH", "1", "")], "USDT", vec![])]
+#[case::reduced(&[("ETH", "0.4", "")], "USDT", vec!["0.600000"])]
+#[case::zero_balance(&[("ETH", "0", "")], "USDT", vec![])]
+#[case::no_balance_row(&[("USDT", "100", "")], "USDT", vec![])]
+#[case::borrowed_long(&[("ETH", "0.4", "0.1")], "USDT", vec!["0.600000"])]
+#[case::borrowed_short_closes_long_without_entry_price(&[("ETH", "-1", "1")], "USDT", vec!["1.000000"])]
+#[case::unreadable(&[("ETH", "0.4", "x")], "USDT", vec![])]
+#[case::other_quote(&[("ETH", "0.4", "")], "USDC", vec![])]
+#[tokio::test]
+async fn test_position_check_reconciles_spot_position_reports(
+    #[case] details: &[(&str, &str, &str)],
+    #[case] quote_currency: &str,
+    #[case] expected_sells: Vec<&str>,
+) {
+    let state = Arc::new(ReportRouteState {
+        balance_response: Some(crate::common::balance_response(details)),
+        ..Default::default()
+    });
 
-    assert!(
-        events.is_empty(),
-        "Unexpected reconciliation events: {events:?}"
+    let addr = start_exec_report_test_server(state).await;
+
+    let (mut client, _rx, cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.oms_type = Some(OmsType::Netting);
+            config.use_spot_position_reports = true;
+            config.spot_positions_quote_currency = quote_currency.to_string();
+        });
+
+    add_open_spot_position(&mut client, &cache);
+    let mut manager = position_check_manager(cache);
+
+    let events = manager.check_positions_consistency(&[&client]).await;
+
+    let sells: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((fill.order_side, fill.last_qty, fill.last_px)),
+            _ => None,
+        })
+        .collect();
+
+    let expected_sells: Vec<_> = expected_sells
+        .into_iter()
+        .map(|quantity| {
+            (
+                OrderSide::Sell,
+                Quantity::from(quantity),
+                Price::from("50000.00"),
+            )
+        })
+        .collect();
+
+    assert_eq!(sells, expected_sells, "{events:?}");
+}
+
+#[rstest]
+#[case::hedging(true, OmsType::Hedging, false)]
+#[case::unspecified(true, OmsType::Unspecified, false)]
+#[case::netting(true, OmsType::Netting, true)]
+#[case::disabled_hedging(false, OmsType::Hedging, true)]
+fn test_spot_position_reports_require_netting_oms(
+    #[case] use_spot_position_reports: bool,
+    #[case] oms_type: OmsType,
+    #[case] expected: bool,
+) {
+    let account_id = AccountId::from("OKX-001");
+
+    let core = ExecutionClientCore::new(
+        TraderId::from("TESTER-001"),
+        *OKX_CLIENT_ID,
+        *OKX_VENUE,
+        oms_type,
+        account_id,
+        AccountType::Cash,
+        None,
+        Rc::new(RefCell::new(Cache::default())),
     );
-    let cache = cache.borrow();
-    assert!(cache.orders_refs(None, None, None, None, None).is_empty());
-    assert_eq!(cache.positions_open(None, None, None, None, None).len(), 1);
-    let retained = cache.position(&position_id).unwrap();
-    assert_eq!(retained.quantity, position.quantity);
-    assert_eq!(retained.signed_decimal_qty(), position.signed_decimal_qty());
-    assert_eq!(retained.side, position.side);
-    assert_eq!(retained.avg_px_open, position.avg_px_open);
-    assert_eq!(retained.event_count(), position.event_count());
+
+    let config = OKXExecutionClientConfig {
+        account_id,
+        api_key: Some("test_key".into()),
+        api_secret: Some("test_secret".into()),
+        api_passphrase: Some("test_passphrase".into()),
+        use_spot_position_reports,
+        ..Default::default()
+    };
+
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    set_exec_event_sender(tx);
+
+    let error = OKXExecutionClient::new(core, config)
+        .err()
+        .map(|e| e.to_string());
+
+    let expected = (!expected).then(|| {
+        format!(
+            "`use_spot_position_reports` requires a NETTING OMS, was {oms_type}; set `oms_type` to NETTING"
+        )
+    });
+
+    assert_eq!(error, expected);
+}
+
+#[rstest]
+#[case::spot(vec![OKXInstrumentType::Spot], "ETH-USDT.OKX", false)]
+#[case::mixed_spot(vec![OKXInstrumentType::Spot, OKXInstrumentType::Swap], "ETH-USDT.OKX", false)]
+#[case::mixed_swap(vec![OKXInstrumentType::Spot, OKXInstrumentType::Swap], "BTC-USDT-SWAP.OKX", true)]
+fn test_bulk_position_coverage_with_spot_position_reports(
+    #[case] instrument_types: Vec<OKXInstrumentType>,
+    #[case] instrument_id: &str,
+    #[case] expected: bool,
+) {
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_configured("http://127.0.0.1:1", |config| {
+            config.oms_type = Some(OmsType::Netting);
+            config.instrument_types = instrument_types;
+            config.use_spot_position_reports = true;
+        });
+
+    client.on_instrument(make_margin_spot_report_instrument());
+
+    assert_eq!(
+        client.provides_bulk_position_coverage(InstrumentId::from(instrument_id)),
+        expected
+    );
+}
+
+#[rstest]
+#[case::enabled(true, None, vec![("ETH-USDT.OKX", PositionSide::Long, "1.500000")])]
+#[case::enabled_scoped(true, Some("ETH-USDT.OKX"), vec![("ETH-USDT.OKX", PositionSide::Long, "1.500000")])]
+#[case::enabled_scoped_derivative(true, Some("ETH-USDT-SWAP.OKX"), vec![])]
+#[case::disabled(false, None, vec![])]
+#[case::disabled_scoped(false, Some("ETH-USDT.OKX"), vec![])]
+#[tokio::test]
+async fn test_generate_position_status_reports_with_spot_position_reports(
+    #[case] use_spot_position_reports: bool,
+    #[case] instrument_id: Option<&str>,
+    #[case] expected: Vec<(&str, PositionSide, &str)>,
+) {
+    let state = Arc::new(ReportRouteState {
+        balance_response: Some(crate::common::balance_response(&[("ETH", "1.5", "")])),
+        ..Default::default()
+    });
+
+    let addr = start_exec_report_test_server(state).await;
+
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.oms_type = Some(OmsType::Netting);
+            config.instrument_types = vec![OKXInstrumentType::Spot, OKXInstrumentType::Swap];
+            config.use_spot_position_reports = use_spot_position_reports;
+        });
+
+    client.on_instrument(make_margin_spot_report_instrument());
+    client.on_instrument(swap_instrument("ETH-USDT-SWAP"));
+
+    let command = GeneratePositionStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        instrument_id.map(InstrumentId::from),
+        None,
+        None,
+        None,
+        None,
+    );
+    let reports = client
+        .generate_position_status_reports(&command)
+        .await
+        .unwrap();
+
+    let actual: Vec<_> = reports
+        .iter()
+        .map(|report| {
+            (
+                report.instrument_id,
+                report.position_side,
+                report.quantity,
+                report.avg_px_open,
+            )
+        })
+        .collect();
+
+    let expected: Vec<_> = expected
+        .into_iter()
+        .map(|(instrument_id, position_side, quantity)| {
+            (
+                InstrumentId::from(instrument_id),
+                position_side,
+                Quantity::from(quantity),
+                None,
+            )
+        })
+        .collect();
+
+    assert_eq!(actual, expected);
+}
+
+#[rstest]
+#[case::spot(false, OKXInstrumentType::Spot)]
+#[case::spot_margin(true, OKXInstrumentType::Spot)]
+#[case::margin_type(false, OKXInstrumentType::Margin)]
+#[tokio::test]
+async fn test_generate_spot_position_reports_with_borrowing(
+    #[case] use_spot_margin: bool,
+    #[case] instrument_type: OKXInstrumentType,
+    #[values(None, Some("ETH-USDT.OKX"))] instrument_id: Option<&str>,
+) {
+    let state = Arc::new(ReportRouteState {
+        balance_response: Some(crate::common::balance_response(&[("ETH", "-1.5", "1.5")])),
+        ..Default::default()
+    });
+
+    let addr = start_exec_report_test_server(state).await;
+
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.oms_type = Some(OmsType::Netting);
+            config.instrument_types = vec![instrument_type];
+            config.use_spot_position_reports = true;
+            config.use_spot_margin = use_spot_margin;
+        });
+
+    client.on_instrument(make_margin_spot_report_instrument());
+
+    let command = GeneratePositionStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        instrument_id.map(InstrumentId::from),
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let reports = client
+        .generate_position_status_reports(&command)
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1);
+    let report = &reports[0];
+    assert_eq!(report.account_id, AccountId::from("OKX-001"));
+    assert_eq!(report.instrument_id, InstrumentId::from("ETH-USDT.OKX"));
+    assert_eq!(report.position_side, PositionSide::Short);
+    assert_eq!(report.quantity, Quantity::from("1.500000"));
+    assert_eq!(report.avg_px_open, None);
+    assert_eq!(report.venue_position_id, None);
+    assert_eq!(report.ts_last, report.ts_init);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_fails_on_spot_position_report_error() {
+    let state = Arc::new(ReportRouteState {
+        balance_response: Some(crate::common::balance_response(&[("ETH", "1", "x")])),
+        position_response: Some(load_test_data("http_get_positions.json")),
+        ..Default::default()
+    });
+
+    let addr = start_exec_report_test_server(state).await;
+
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.oms_type = Some(OmsType::Netting);
+            config.instrument_types = vec![OKXInstrumentType::Spot, OKXInstrumentType::Swap];
+            config.use_spot_position_reports = true;
+        });
+
+    client.on_instrument(make_margin_spot_report_instrument());
+    client.on_instrument(swap_instrument("BTC-USDT-SWAP"));
+
+    let error = client.generate_mass_status(None).await.unwrap_err();
+
+    assert_eq!(error.to_string(), "invalid liab 'x' for ETH");
 }
 
 fn make_margin_spot_report_instrument() -> InstrumentAny {

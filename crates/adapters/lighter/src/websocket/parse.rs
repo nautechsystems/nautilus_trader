@@ -476,7 +476,8 @@ fn book_flags(is_snapshot: bool, processed: usize, total_levels: usize) -> u8 {
 /// # Errors
 ///
 /// Returns an error if any quantity, price, or timestamp field cannot be
-/// converted, or if the venue order kind has no Nautilus equivalent.
+/// converted, or if the venue order kind, time-in-force, or status has no
+/// Nautilus equivalent.
 pub fn parse_ws_order_status_report(
     order: &LighterOrder,
     instrument: &InstrumentAny,
@@ -497,12 +498,12 @@ pub fn parse_ws_order_status_report(
     }
 
     let (time_in_force, expire_time) =
-        nautilus_time_in_force(order.time_in_force, order.order_expiry);
+        nautilus_time_in_force(order.time_in_force, order.order_expiry)?;
     let post_only = order.time_in_force == LighterOrderTimeInForce::PostOnly;
 
     let quantity = lighter_order_quantity(order, instrument.size_precision())?;
     let filled_qty = quantity_from_decimal(order.filled_base_amount, instrument.size_precision())?;
-    let mut order_status = nautilus_order_status(order.status, &filled_qty);
+    let mut order_status = nautilus_order_status(order.status, &filled_qty)?;
     if order_status == OrderStatus::Accepted
         && is_order_triggered(order)
         && TRIGGERABLE_ORDER_TYPES.contains(&order_type)
@@ -804,7 +805,7 @@ fn lighter_order_quantity(order: &LighterOrder, precision: u8) -> anyhow::Result
 /// # Errors
 ///
 /// Returns an error if any price, quantity, or timestamp field cannot be
-/// converted.
+/// converted, or if the venue order status is unknown.
 #[expect(
     clippy::too_many_arguments,
     reason = "identity and the precomputed open-frame context are independent inputs threaded by the caller"
@@ -958,6 +959,7 @@ pub(crate) fn parse_lighter_order_event(
             );
             Ok(Some(ParsedOrderEvent::Canceled(canceled)))
         }
+        LighterOrderStatus::Unknown => Err(unmapped_order_status()),
     }
 }
 
@@ -1279,36 +1281,44 @@ fn nautilus_order_type(kind: LighterOrderKind) -> anyhow::Result<OrderType> {
         LighterOrderKind::StopLossLimit => Ok(OrderType::StopLimit),
         LighterOrderKind::TakeProfit => Ok(OrderType::MarketIfTouched),
         LighterOrderKind::TakeProfitLimit => Ok(OrderType::LimitIfTouched),
-        LighterOrderKind::Twap | LighterOrderKind::TwapSub | LighterOrderKind::Liquidation => Err(
-            anyhow::anyhow!("Lighter `{kind:?}` has no Nautilus order-type equivalent",),
-        ),
+        LighterOrderKind::Twap
+        | LighterOrderKind::TwapSub
+        | LighterOrderKind::Liquidation
+        | LighterOrderKind::Other => Err(anyhow::anyhow!(
+            "Lighter `{kind:?}` has no Nautilus order-type equivalent",
+        )),
     }
 }
 
 fn nautilus_time_in_force(
     tif: LighterOrderTimeInForce,
     order_expiry: i64,
-) -> (TimeInForce, Option<UnixNanos>) {
+) -> anyhow::Result<(TimeInForce, Option<UnixNanos>)> {
     match tif {
-        LighterOrderTimeInForce::ImmediateOrCancel => (TimeInForce::Ioc, None),
+        LighterOrderTimeInForce::ImmediateOrCancel => Ok((TimeInForce::Ioc, None)),
         LighterOrderTimeInForce::PostOnly | LighterOrderTimeInForce::GoodTillTime => {
             // Lighter uses positive expiry for GTD and nonpositive expiry for GTC;
             // PostOnly uses the same expiry field plus an independent report flag.
             if order_expiry > 0 {
                 match parse_millis_to_nanos(order_expiry as u64) {
-                    Ok(expiry) => (TimeInForce::Gtd, Some(expiry)),
-                    Err(_) => (TimeInForce::Gtc, None),
+                    Ok(expiry) => Ok((TimeInForce::Gtd, Some(expiry))),
+                    Err(_) => Ok((TimeInForce::Gtc, None)),
                 }
             } else {
-                (TimeInForce::Gtc, None)
+                Ok((TimeInForce::Gtc, None))
             }
         }
-        LighterOrderTimeInForce::Unknown => (TimeInForce::Gtc, None),
+        LighterOrderTimeInForce::Unknown => Err(anyhow::anyhow!(
+            "Lighter unknown time-in-force has no Nautilus equivalent",
+        )),
     }
 }
 
-fn nautilus_order_status(status: LighterOrderStatus, filled_qty: &Quantity) -> OrderStatus {
-    match status {
+fn nautilus_order_status(
+    status: LighterOrderStatus,
+    filled_qty: &Quantity,
+) -> anyhow::Result<OrderStatus> {
+    Ok(match status {
         LighterOrderStatus::InProgress => OrderStatus::Submitted,
         LighterOrderStatus::Pending | LighterOrderStatus::Open => {
             if filled_qty.is_zero() {
@@ -1332,7 +1342,12 @@ fn nautilus_order_status(status: LighterOrderStatus, filled_qty: &Quantity) -> O
         | LighterOrderStatus::CanceledChild
         | LighterOrderStatus::CanceledLiquidation
         | LighterOrderStatus::CanceledInvalidBalance => OrderStatus::Canceled,
-    }
+        LighterOrderStatus::Unknown => return Err(unmapped_order_status()),
+    })
+}
+
+fn unmapped_order_status() -> anyhow::Error {
+    anyhow::anyhow!("Lighter unknown order status has no Nautilus equivalent")
 }
 
 /// Resolve a venue order id from the venue-provided string field, falling
@@ -2224,7 +2239,6 @@ mod tests {
         Some(UnixNanos::from(1_780_000_000_000_000_000_u64)),
         false
     )]
-    #[case::unknown(LighterOrderTimeInForce::Unknown, 0, TimeInForce::Gtc, None, false)]
     fn test_parse_ws_order_status_report_time_in_force_matrix(
         #[case] tif: LighterOrderTimeInForce,
         #[case] order_expiry: i64,
@@ -2270,6 +2284,74 @@ mod tests {
             Some(UnixNanos::from(1_780_000_000_000_000_000_u64))
         );
         assert!(report.post_only);
+    }
+
+    #[rstest]
+    #[case::negative_expiry(-1)]
+    #[case::zero_expiry(0)]
+    #[case::positive_expiry(1_780_000_000_000)]
+    fn test_parse_ws_order_status_report_rejects_unknown_time_in_force(#[case] order_expiry: i64) {
+        let instrument = create_test_instrument();
+        let mut order = stub_order(LighterOrderStatus::Open);
+        order.time_in_force = LighterOrderTimeInForce::Unknown;
+        order.order_expiry = order_expiry;
+
+        let err =
+            parse_ws_order_status_report(&order, &instrument, account_id(), UnixNanos::from(1))
+                .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "Lighter unknown time-in-force has no Nautilus equivalent",
+        );
+    }
+
+    #[rstest]
+    fn test_parse_ws_order_status_report_rejects_unknown_status() {
+        let instrument = create_test_instrument();
+        let order = stub_order(LighterOrderStatus::Unknown);
+
+        let err =
+            parse_ws_order_status_report(&order, &instrument, account_id(), UnixNanos::from(1))
+                .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "Lighter unknown order status has no Nautilus equivalent",
+        );
+    }
+
+    #[rstest]
+    fn test_parse_ws_order_status_report_rejects_other_order_kind() {
+        let instrument = create_test_instrument();
+        let mut order = stub_order(LighterOrderStatus::Open);
+        order.order_type = LighterOrderKind::Other;
+
+        let err =
+            parse_ws_order_status_report(&order, &instrument, account_id(), UnixNanos::from(1))
+                .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "Lighter `Other` has no Nautilus order-type equivalent",
+        );
+    }
+
+    #[rstest]
+    fn test_parse_ws_order_status_report_unknown_trigger_status_is_not_triggered() {
+        let instrument = create_test_instrument();
+        let mut order = stub_order(LighterOrderStatus::Open);
+        order.order_type = LighterOrderKind::StopLossLimit;
+        order.trigger_status = LighterTriggerStatus::Unknown;
+        order.trigger_price = Decimal::from_str("2300.00").unwrap();
+        order.filled_base_amount = Decimal::ZERO;
+
+        let report =
+            parse_ws_order_status_report(&order, &instrument, account_id(), UnixNanos::from(1))
+                .unwrap();
+
+        assert_eq!(report.order_type, OrderType::StopLimit);
+        assert_eq!(report.order_status, OrderStatus::Accepted);
     }
 
     #[rstest]
@@ -2941,6 +3023,35 @@ mod tests {
     }
 
     #[rstest]
+    #[case::not_accepted(false)]
+    #[case::accepted(true)]
+    fn parse_lighter_order_event_rejects_unknown_status(#[case] accepted_already_emitted: bool) {
+        let instrument = create_test_instrument();
+        let order = stub_order(LighterOrderStatus::Unknown);
+
+        let err = parse_lighter_order_event(
+            &order,
+            &instrument,
+            &test_identity(),
+            test_cloid(),
+            account_id(),
+            test_trader_id(),
+            OpenFrameContext {
+                accepted_already_emitted,
+                triggered_already_emitted: false,
+                shape_changed: true,
+            },
+            UnixNanos::from(7),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "Lighter unknown order status has no Nautilus equivalent",
+        );
+    }
+
+    #[rstest]
     fn parse_lighter_order_event_emits_accepted_on_pending() {
         let instrument = create_test_instrument();
         let order = stub_order(LighterOrderStatus::Pending);
@@ -3592,5 +3703,31 @@ mod tests {
         let error = lighter_order_quantity(&order, 4).unwrap_err();
 
         assert_eq!(error.to_string(), "Lighter order quantity overflow");
+    }
+
+    #[rstest]
+    fn test_parse_ws_fill_report_keeps_unfamiliar_trade_type() {
+        let instrument = create_test_instrument();
+        let mut trade = stub_account_trade(1234, true, true);
+        let expected =
+            parse_ws_fill_report(&trade, 1234, &instrument, account_id(), UnixNanos::from(1))
+                .unwrap()
+                .unwrap();
+        trade.trade_type = LighterTradeType::Other;
+
+        let report =
+            parse_ws_fill_report(&trade, 1234, &instrument, account_id(), UnixNanos::from(1))
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(report.venue_order_id, expected.venue_order_id);
+        assert_eq!(report.trade_id, expected.trade_id);
+        assert_eq!(report.order_side, expected.order_side);
+        assert_eq!(report.last_qty, expected.last_qty);
+        assert_eq!(report.last_px, expected.last_px);
+        assert_eq!(report.commission, expected.commission);
+        assert_eq!(report.liquidity_side, expected.liquidity_side);
+        assert_eq!(report.client_order_id, expected.client_order_id);
+        assert_eq!(report.ts_event, expected.ts_event);
     }
 }

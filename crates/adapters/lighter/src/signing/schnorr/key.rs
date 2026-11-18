@@ -28,11 +28,12 @@
 use std::fmt::Debug;
 
 use nautilus_core::string::secret::REDACTED;
+use thiserror::Error;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use super::sig::Signature;
 use crate::signing::{
-    curve::{Point, SCALAR_BYTES, Scalar},
+    curve::{ORDER, Point, SCALAR_BYTES, Scalar},
     field::Fp5,
 };
 
@@ -112,19 +113,31 @@ impl PrivateKey {
     /// `hashed_msg` is the `Fp5` digest produced by the caller (typically via
     /// [`crate::signing::hash::hash_to_quintic_extension`] over the message
     /// field elements, or via [`crate::signing::tx::sign_tx`] which folds
-    /// the body and attribute hashes). `k` MUST be drawn uniformly at random
-    /// from a cryptographic RNG, MUST NOT be zero (a zero nonce trivially
-    /// reveals `sk` from the resulting signature), and MUST NOT repeat across
-    /// distinct signatures under the same key (a repeated nonce reveals `sk`
-    /// from any two signatures sharing it). Matching the Go reference
-    /// `SchnorrSignHashedMessage2`, the caller-contract is enforced by the
-    /// caller - no runtime `k != 0` check is performed inside `sign`.
+    /// the body and attribute hashes).
+    ///
+    /// Draw a fresh uniform `k` in `[1, n)` from a cryptographic RNG for each
+    /// signature, where `n` is the curve order. A predictable or reused nonce
+    /// can expose the private key. Use [`crate::signing::auth_token::fresh_k`]
+    /// to draw a nonce from the operating system.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `k` is zero or at least the curve order.
     #[inline]
-    #[must_use]
-    pub fn sign(&self, hashed_msg: Fp5, k: Scalar) -> Signature {
-        super::sig::sign(self.0, hashed_msg, k)
+    pub fn sign(&self, hashed_msg: Fp5, k: Scalar) -> Result<Signature, InvalidSigningNonce> {
+        let (_, borrow) = k.sub_inner(ORDER);
+        if k.is_zero() | (borrow == 0) {
+            return Err(InvalidSigningNonce);
+        }
+
+        Ok(super::sig::sign(self.0, hashed_msg, k))
     }
 }
+
+/// A zero or non-canonical Schnorr signing nonce.
+#[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
+#[error("Schnorr signing nonce must be nonzero and canonical")]
+pub struct InvalidSigningNonce;
 
 /// A Schnorr public key over the ECgFp5 curve, stored as the canonical
 /// `Fp5` encoding `w = (sk * G).encode()`.
@@ -188,7 +201,28 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::signing::field::MODULUS;
+    use crate::signing::{curve::LIMBS, field::MODULUS};
+
+    #[rstest]
+    #[case::zero(Scalar::ZERO)]
+    #[case::order(ORDER)]
+    #[case::above_order(ORDER.add_inner(Scalar::ONE))]
+    #[case::max(Scalar::from_limbs([u64::MAX; LIMBS]))]
+    fn sign_rejects_invalid_nonce(#[case] k: Scalar) {
+        let sk = PrivateKey::from_le_bytes_reduce([0x42; SCALAR_BYTES]);
+
+        assert_eq!(sk.sign(Fp5::ZERO, k), Err(InvalidSigningNonce));
+    }
+
+    #[rstest]
+    #[case::min(Scalar::ONE)]
+    #[case::max(ORDER.sub_inner(Scalar::ONE).0)]
+    fn sign_accepts_canonical_nonce_boundaries(#[case] k: Scalar) {
+        let sk = PrivateKey::from_le_bytes_reduce([0x42; SCALAR_BYTES]);
+        let sig = sk.sign(Fp5::ZERO, k).unwrap();
+
+        assert!(sk.public_key().verify(Fp5::ZERO, &sig));
+    }
 
     #[rstest]
     fn private_key_debug_redacts_secret_limbs() {

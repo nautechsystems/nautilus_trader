@@ -24,6 +24,8 @@ use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos, datetime::NANOSECON
 use nautilus_model::identifiers::ClientId;
 use serde_json::Value;
 
+#[cfg(feature = "streaming")]
+use super::streaming::PARAM_FROM_DAY_START;
 use super::{
     DataEngine, datetime_to_unix_nanos,
     requests::{remove_request_bar_aggregation_params, request_params, response_params},
@@ -166,7 +168,13 @@ impl DataEngine {
             };
 
             state.generator.next_window(data_received).map(|window| {
-                time_range_child_request(&state.parent, window.start_ns, window.end_ns, ts_init)
+                time_range_child_request(
+                    &state.parent,
+                    window.start_ns,
+                    window.end_ns,
+                    ts_init,
+                    data_received.is_none(),
+                )
             })
         };
         let Some(child) = child else {
@@ -190,6 +198,14 @@ impl DataEngine {
         self.time_range_pipeline_requests.remove(&parent_id);
         self.time_range_pipeline_parent_request_id
             .retain(|_, p_id| *p_id != parent_id);
+    }
+
+    pub(super) fn is_later_time_range_join_window(&self, dated_join_id: &UUID4) -> bool {
+        self.parent_join_request_id
+            .get(dated_join_id)
+            .and_then(|join_id| self.time_range_pipeline_parent_request_id.get(join_id))
+            .and_then(|parent_id| self.time_range_pipeline_requests.get(parent_id))
+            .is_some_and(|state| state.generator.iteration_index > 0)
     }
 
     pub(super) fn handle_time_range_pipeline_child_response(
@@ -284,10 +300,13 @@ impl DataEngine {
         self.handle_response_payload(resp);
         self.process_time_range_pipeline_aggregation_response(parent_id, resp);
 
-        if envelope.failure_reason().is_none() {
-            let intermediate =
-                DataResponseEnvelope::new(resp.clone(), false, Some(*envelope.correlation_id()))
-                    .with_correlation_id(parent_id);
+        let mut intermediate =
+            DataResponseEnvelope::new(resp.clone(), false, Some(*envelope.correlation_id()))
+                .with_correlation_id(parent_id);
+
+        if self.handle_book_deltas_envelope(&mut intermediate)
+            && envelope.failure_reason().is_none()
+        {
             nautilus_common::msgbus::send_response_envelope(&intermediate);
         }
     }
@@ -514,6 +533,7 @@ fn time_range_child_request(
     start_ns: UnixNanos,
     end_ns: UnixNanos,
     ts_init: UnixNanos,
+    first_window: bool,
 ) -> RequestCommand {
     let start = Some(start_ns.to_datetime_utc());
     let end = Some(end_ns.to_datetime_utc());
@@ -558,7 +578,7 @@ fn time_range_child_request(
             client_id: cmd.client_id,
             request_id,
             ts_init,
-            params: time_range_child_params(cmd.params.as_ref()),
+            params: time_range_book_deltas_child_params(cmd.params.as_ref(), first_window),
         }),
         RequestCommand::BookDepth(cmd) => RequestCommand::BookDepth(RequestBookDepth {
             instrument_ids: cmd.instrument_ids.clone(),
@@ -599,6 +619,30 @@ fn time_range_child_params(params: Option<&Params>) -> Option<Params> {
     params.shift_remove(TIME_RANGE_GENERATOR);
     remove_request_bar_aggregation_params(&mut params);
     Some(Params::new(params))
+}
+
+// Only the first window replays the day-start snapshot, so later windows continue its deltas
+#[cfg_attr(
+    not(feature = "streaming"),
+    expect(
+        unused_variables,
+        reason = "only a catalog replays a day-start snapshot"
+    )
+)]
+fn time_range_book_deltas_child_params(
+    params: Option<&Params>,
+    first_window: bool,
+) -> Option<Params> {
+    let params = time_range_child_params(params)?;
+
+    #[cfg(feature = "streaming")]
+    if !first_window {
+        let mut params = IndexMap::clone(&params);
+        params.insert(PARAM_FROM_DAY_START.to_string(), Value::Bool(false));
+        return Some(Params::new(params));
+    }
+
+    Some(params)
 }
 
 fn empty_time_range_parent_response(

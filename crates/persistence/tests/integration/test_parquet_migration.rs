@@ -654,6 +654,35 @@ fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
 }
 
 #[rstest]
+#[case::hash("C# work")]
+#[case::percent_escape("a%20b")]
+#[cfg_attr(not(windows), case::question_mark("a?b"))]
+fn migration_into_target_with_url_syntax_in_path(#[case] directory: &str) {
+    ensure_custom_data_registered::<RustTestCustomData>();
+    let temporary = TempDir::new().unwrap();
+    let source = fixture_path();
+    let target = temporary.path().join(directory).join("migrated");
+    let expected: Value =
+        serde_json::from_slice(&fs::read(source.join("expected.json")).unwrap()).unwrap();
+    let bar: Bar = serde_json::from_value(expected["bar"].clone()).unwrap();
+
+    let report = migrate_parquet_catalog(config(&source, &target, false)).unwrap();
+    let mut catalog = ParquetDataCatalog::new(&target, None, None, None, None);
+    let bars = catalog
+        .query::<Bar>(None, None, None, None, None, true)
+        .unwrap();
+    let mut destinations = fs::read_dir(temporary.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect::<Vec<_>>();
+    destinations.sort();
+
+    assert_eq!(report.migrated_files, 7);
+    assert_eq!(bars, vec![bar]);
+    assert_eq!(destinations, vec![std::ffi::OsString::from(directory)]);
+}
+
+#[rstest]
 fn migrated_catalog_consolidates_with_fresh_writes() {
     ensure_custom_data_registered::<RustTestCustomData>();
     let temporary = TempDir::new().unwrap();

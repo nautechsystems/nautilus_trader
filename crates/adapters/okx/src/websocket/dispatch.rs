@@ -347,6 +347,7 @@ impl WsDispatchState {
         failure: &CommandFailure,
     ) {
         let bindings = self.lifecycle_bindings.lock();
+
         if matches!(failure, CommandFailure::Ambiguous(_))
             && bindings.venue_by_client.contains_key(&client_order_id)
         {
@@ -692,6 +693,7 @@ pub fn dispatch_ws_message(
 
                 if s_code == OKX_SUCCESS_CODE {
                     log::debug!("Order response ok: op={op:?} cl_ord_id={cl_ord_id}");
+
                     match op {
                         OKXWsOperation::Order
                         | OKXWsOperation::BatchOrders

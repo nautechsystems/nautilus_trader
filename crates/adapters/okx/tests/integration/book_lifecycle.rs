@@ -395,6 +395,7 @@ impl BookClient {
                 .deltas
                 .first()
                 .is_some_and(|delta| RecordFlag::F_SNAPSHOT.matches(delta.flags));
+
             if snapshot {
                 *self.snapshots.entry(deltas.instrument_id).or_default() += 1;
             }

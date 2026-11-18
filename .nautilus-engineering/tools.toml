@@ -124,7 +124,7 @@ releases = "crates:cargo-machete"
 
 [cargo-nextest]
 kind = "tool"
-version = "0.9.151"
+version = "0.9.152"
 releases = "crates:cargo-nextest"
 
 [cargo-vet]

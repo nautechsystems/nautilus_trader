@@ -317,7 +317,6 @@ pub(crate) async fn request_targeted_order_reports(
 
         for client_id in &query.responsible_clients {
             let client_id = *client_id;
-
             let Some(client) = clients
                 .iter()
                 .find(|client| client.client_id() == client_id)
@@ -351,7 +350,6 @@ pub(crate) async fn request_targeted_order_reports(
                     client.requires_authoritative_fills(),
                 ) {
                     let command = targeted_fill_command(&query, &candidate);
-
                     match client.generate_fill_reports(command).await {
                         Ok(reports) => {
                             fills = reports
@@ -430,6 +428,7 @@ pub(crate) async fn collect_targeted_order_reports(
                 )
             })
             .map(|report| (targeted_fill_command(&query, report), report.clone()));
+
         let client_id = result.client_id;
         let result_index = results.borrow().len();
         results.borrow_mut().push(result);
@@ -591,6 +590,7 @@ fn targeted_fill_command(
         None,
         Some(query.command.command_id),
     );
+
     command.log_receipt_level = LogLevel::Debug;
     command
 }
@@ -812,7 +812,6 @@ pub(super) fn sort_reconciliation_events(events: &mut Vec<OrderEventAny>) {
     for (index, event) in events.iter().enumerate().rev() {
         let venue_order = (event.client_order_id(), event.venue_order_id());
         let ts_event = event.ts_event();
-
         keys[index] = if matches!(event, OrderEventAny::Filled(_)) {
             let earliest = earliest_later_fill.entry(venue_order).or_insert(ts_event);
             *earliest = (*earliest).min(ts_event);
@@ -869,7 +868,6 @@ pub(crate) fn resolve_position_report_client_coverage(
     clients: &[&dyn ExecutionClient],
 ) -> ReportClientCoverage {
     let client_ids = responsible_client_ids(Some(key.1), key.0.venue, clients);
-
     if client_ids.is_empty() {
         ReportClientCoverage::Unresolved
     } else if clients.iter().any(|client| {
@@ -952,7 +950,6 @@ pub(super) fn distinct_position_reports(
     reports: Vec<PositionStatusReport>,
 ) -> Vec<PositionStatusReport> {
     let mut distinct_reports: Vec<PositionStatusReport> = Vec::with_capacity(reports.len());
-
     for report in reports {
         let is_duplicate = distinct_reports.iter().any(|distinct| {
             let mut normalized = distinct.clone();
@@ -1318,6 +1315,7 @@ pub(super) mod tests {
                 UnixNanos::from(33),
                 None,
             );
+
             report.report_id = UUID4::from("00000000-0000-4000-8000-000000000011");
             report
         }
@@ -1339,6 +1337,7 @@ pub(super) mod tests {
                 UnixNanos::from(31),
                 None,
             );
+
             report.report_id = UUID4::from("00000000-0000-4000-8000-000000000022");
             report
         }
@@ -1584,7 +1583,6 @@ pub(super) mod tests {
         let client = CommissionStubClient::new(CommissionOutcome::NoOverride);
         let missing_id = ClientId::from("MISSING");
         let mut responsible_clients = vec![client.client_id(), missing_id];
-
         if missing_first {
             responsible_clients.reverse();
         }
@@ -1795,7 +1793,6 @@ pub(super) mod tests {
         #[case] expected: &str,
     ) {
         let (instrument, mut fills) = orphan_fill_fixtures();
-
         match invalid_field {
             "empty" => fills.clear(),
             "missing_position" => fills[0].venue_position_id = None,
@@ -1829,7 +1826,6 @@ pub(super) mod tests {
     fn test_create_orphan_fill_order_report_rejects_aggregate_quantity_overflow() {
         let (instrument, mut fills) = orphan_fill_fixtures();
         let max_qty = Quantity::new(QUANTITY_MAX, 0);
-
         for fill in &mut fills {
             fill.last_qty = max_qty;
             fill.last_px = Price::from("1.00");
@@ -1956,6 +1952,7 @@ pub(super) mod tests {
             UnixNanos::from(1),
             None,
         );
+
         let client =
             CommissionStubClient::new(CommissionOutcome::Value(Money::new(1.0, Currency::USDT())));
         let instrument = InstrumentAny::CryptoPerpetual(instrument);
@@ -2054,7 +2051,6 @@ pub(super) mod tests {
         #[case] expected: &str,
     ) {
         let key = (InstrumentId::from("ETH.TEST"), AccountId::from("TEST-001"));
-
         let client = CoverageStubClient {
             id: ClientId::from("COVERAGE"),
             account_id: if account_matches {
@@ -2112,7 +2108,6 @@ pub(super) mod tests {
         };
 
         let expected_clients = IndexSet::from([account_client.id]);
-
         let expected = if account_available {
             ReportClientCoverage::Resolved(expected_clients)
         } else {
@@ -2211,7 +2206,6 @@ pub(super) mod tests {
             None,
         );
         let position = Position::new(&instrument, fill.into());
-
         let positions = entries
             .into_iter()
             .map(|(qty, px)| {
@@ -2482,6 +2476,7 @@ pub(super) mod tests {
                     OrderEventAny::Canceled(_) => "canceled",
                     _ => "other",
                 };
+
                 let venue_order_id = event
                     .venue_order_id()
                     .expect("test events carry a venue order ID");

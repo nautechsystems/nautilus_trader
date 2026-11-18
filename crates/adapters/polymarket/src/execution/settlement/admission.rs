@@ -178,9 +178,8 @@ impl AdmittedTrade {
 /// Admits trade evidence through the one shared validation boundary.
 ///
 /// Every owned leg must validate before any effect is attempted; a payload whose owned legs do
-/// not all validate is rejected whole. The adapter treats each payload as the complete trade
-/// entity (taker plus full maker set), the assumption RFC #4876 requires venue evidence to
-/// confirm before merge.
+/// not all validate is rejected whole. Non-failed maker evidence must account for the full
+/// trade quantity across distinct maker orders before any owned leg can apply.
 pub(crate) fn admit_trade_evidence(
     evidence: TradeEvidence<'_>,
     ctx: &AdmissionContext<'_>,
@@ -252,6 +251,10 @@ fn admit_owned_legs(
 
     if legs.is_empty() {
         return Err(AdmissionError::Unowned);
+    }
+
+    if !failed && venue_order_ids.is_none() && trade.trader_side == PolymarketLiquiditySide::Maker {
+        validate_maker_qty(&trade).map_err(AdmissionError::Invalid)?;
     }
 
     if !failed && trade.ts_event.is_none() {
@@ -471,8 +474,11 @@ fn validate_taker_matches(
     instrument: &InstrumentAny,
     ctx: &AdmissionContext<'_>,
 ) -> Result<Vec<(Decimal, Decimal)>, AdmissionError> {
+    if !trade.maker_orders.is_empty() {
+        validate_maker_qty(trade).map_err(AdmissionError::Invalid)?;
+    }
+
     let mut matches = Vec::with_capacity(trade.maker_orders.len());
-    let mut order_ids = Vec::with_capacity(trade.maker_orders.len());
     let mut complementary_binding = None;
 
     for maker in trade.maker_orders {
@@ -489,12 +495,6 @@ fn validate_taker_matches(
                 "taker counterparty outcome must not be empty",
             );
             checked_venue_order_id(&maker.order_id, "taker counterparty")?;
-            anyhow::ensure!(
-                !order_ids.contains(&maker.order_id.as_str()),
-                "maker order {} appears more than once in trade {}",
-                maker.order_id,
-                trade.id,
-            );
             let same_asset = maker.asset_id == trade.asset_id;
             anyhow::ensure!(
                 same_asset == (maker.outcome == trade.outcome),
@@ -553,28 +553,41 @@ fn validate_taker_matches(
         if maker.asset_id != trade.asset_id {
             complementary_binding = Some((maker.asset_id, maker.outcome));
         }
-        order_ids.push(maker.order_id.as_str());
-    }
-
-    if !matches.is_empty() {
-        let size = matches
-            .iter()
-            .try_fold(Decimal::ZERO, |total, (size, _)| {
-                total
-                    .checked_add(*size)
-                    .context("taker matched quantity overflow")
-            })
-            .map_err(AdmissionError::Invalid)?;
-        if size != trade.taker_size {
-            return Err(AdmissionError::Invalid(anyhow::anyhow!(
-                "maker matched quantity {size} does not equal taker size {} in trade {}",
-                trade.taker_size,
-                trade.id,
-            )));
-        }
     }
 
     Ok(matches)
+}
+
+fn validate_maker_qty(trade: &NormalizedTrade<'_>) -> anyhow::Result<()> {
+    let mut order_ids = Vec::with_capacity(trade.maker_orders.len());
+    let mut size = Decimal::ZERO;
+
+    for maker in trade.maker_orders {
+        anyhow::ensure!(
+            !order_ids.contains(&maker.order_id.as_str()),
+            "maker order {} appears more than once in trade {}",
+            maker.order_id,
+            trade.id,
+        );
+        anyhow::ensure!(
+            maker.matched_amount > Decimal::ZERO,
+            "maker order {} matched amount must be positive in trade {}",
+            maker.order_id,
+            trade.id,
+        );
+        order_ids.push(maker.order_id.as_str());
+        size = size
+            .checked_add(maker.matched_amount)
+            .context("maker matched quantity overflow")?;
+    }
+
+    anyhow::ensure!(
+        size == trade.taker_size,
+        "maker matched quantity {size} does not equal taker size {} in trade {}",
+        trade.taker_size,
+        trade.id,
+    );
+    Ok(())
 }
 
 fn aggregate_taker_matches(
@@ -804,7 +817,10 @@ mod tests {
     use serde_json::{from_value, json};
 
     use super::*;
-    use crate::filters::{InstrumentFilter, PredicateFilter};
+    use crate::{
+        execution::settlement::{SettlementAction, SettlementRegistry},
+        filters::{InstrumentFilter, PredicateFilter},
+    };
 
     fn instruments() -> AtomicMap<Ustr, InstrumentAny> {
         instruments_with_protocol("v1")
@@ -1415,5 +1431,254 @@ mod tests {
             (leg.last_px.as_decimal() * leg.last_qty.as_decimal()).round_dp(6),
             dec!(0.420001),
         );
+    }
+
+    #[rstest]
+    fn maker_captures_admit_complete_owned_legs(
+        #[values(false, true)] sell: bool,
+        #[values(false, true)] rest: bool,
+    ) {
+        let instruments = instruments();
+        let trade = maker_trade(sell);
+        let admitted = if rest {
+            let source = if sell {
+                include_str!("../../../test_data/settlement_maker_sell_rest.json")
+            } else {
+                include_str!("../../../test_data/settlement_maker_buy_rest.json")
+            };
+
+            let report: PolymarketTradeReport = serde_json::from_str(source).unwrap();
+            admit_trade_evidence(TradeEvidence::Rest(&report), &context(&instruments)).unwrap()
+        } else {
+            admit_maker_capture(&trade, &context(&instruments), false).unwrap()
+        };
+
+        let order_ids = if sell {
+            [("A_ORDER_5", "_ORDER_5"), ("A_ORDER_6", "_ORDER_6")]
+        } else {
+            [("A_ORDER_1", "_ORDER_1"), ("A_ORDER_2", "_ORDER_2")]
+        };
+
+        let expected: Vec<_> = order_ids
+            .into_iter()
+            .map(|(order_id, suffix)| AdmittedLeg {
+                venue_order_id: VenueOrderId::from(order_id),
+                trade_id: TradeId::from(format!("{}-{suffix}", trade.id).as_str()),
+                instrument_id: InstrumentId::from("1001.POLYMARKET"),
+                order_side: if sell {
+                    OrderSide::Sell
+                } else {
+                    OrderSide::Buy
+                },
+                liquidity_side: LiquiditySide::Maker,
+                last_qty: Quantity::from("5.000000"),
+                last_px: Price::from("0.3700"),
+                commission: Money::zero(Currency::pUSD()),
+                taker_fee_basis: None,
+                ts_event: UnixNanos::from(1_735_689_600_000_000_000u64),
+            })
+            .collect();
+
+        assert_eq!(admitted.venue_trade_id, trade.id);
+        assert_eq!(
+            admitted.status,
+            if rest {
+                PolymarketTradeStatus::Confirmed
+            } else {
+                PolymarketTradeStatus::Matched
+            }
+        );
+        assert_eq!(admitted.legs, expected);
+
+        for leg in &admitted.legs {
+            assert_eq!(leg.last_px.precision, if rest { 2 } else { 4 });
+        }
+    }
+
+    #[rstest]
+    #[case::missing_owned("owned")]
+    #[case::missing_counterparty("counterparty")]
+    #[case::duplicate_counterparty("duplicate")]
+    #[case::counterparty_overflow("overflow")]
+    #[case::zero_counterparty("zero")]
+    #[case::negative_counterparty("negative")]
+    fn maker_rejects_incomplete_participant_evidence(
+        #[case] corruption: &str,
+        #[values(false, true)] rest: bool,
+    ) {
+        let instruments = instruments();
+        let mut trade = maker_trade(false);
+
+        match corruption {
+            "owned" => {
+                trade.maker_orders.remove(0);
+            }
+            "counterparty" => {
+                trade.maker_orders.remove(2);
+            }
+            "duplicate" => {
+                trade.maker_orders.push(trade.maker_orders[2].clone());
+                trade.size = "59.2".to_string();
+            }
+            "overflow" => {
+                trade.maker_orders[2].matched_amount = Decimal::MAX;
+                trade.size = Decimal::MAX.to_string();
+            }
+            "zero" | "negative" => {
+                trade.maker_orders[2].matched_amount = if corruption == "zero" {
+                    Decimal::ZERO
+                } else {
+                    -Decimal::ONE
+                };
+
+                trade.size = (dec!(10) + trade.maker_orders[2].matched_amount).to_string();
+            }
+            _ => unreachable!(),
+        }
+
+        let result = admit_maker_capture(&trade, &context(&instruments), rest);
+
+        assert!(
+            matches!(result, Err(AdmissionError::Invalid(_))),
+            "{result:?}"
+        );
+    }
+
+    #[rstest]
+    fn maker_scoped_reports_do_not_validate_other_participants(#[values(false, true)] rest: bool) {
+        let instruments = instruments();
+        let mut trade = maker_trade(false);
+        trade.maker_orders.remove(1);
+        trade.maker_orders[1].matched_amount = -Decimal::ONE;
+        let report: PolymarketTradeReport =
+            from_value(serde_json::to_value(&trade).unwrap()).unwrap();
+
+        let evidence = if rest {
+            TradeEvidence::Rest(&report)
+        } else {
+            TradeEvidence::Stream(&trade)
+        };
+
+        let admitted = admit_trade_legs(evidence, &context(&instruments), &["A_ORDER_1"]).unwrap();
+
+        assert_eq!(admitted.legs.len(), 1);
+        assert_eq!(
+            admitted.legs[0].venue_order_id,
+            VenueOrderId::from("A_ORDER_1")
+        );
+        assert_eq!(admitted.legs[0].last_qty.as_decimal(), dec!(5));
+    }
+
+    #[rstest]
+    fn maker_failed_evidence_requires_identity_without_participant_economics(
+        #[values(false, true)] rest: bool,
+    ) {
+        let instruments = instruments();
+        let mut trade = maker_trade(false);
+        trade.status = PolymarketTradeStatus::Failed;
+        trade.match_time.clear();
+        trade.timestamp.clear();
+        trade.maker_orders.remove(2);
+        let admitted = admit_maker_capture(&trade, &context(&instruments), rest).unwrap();
+
+        assert_eq!(admitted.status, PolymarketTradeStatus::Failed);
+        assert_eq!(admitted.legs.len(), 2);
+
+        for (leg, order_id) in admitted.legs.iter().zip(["A_ORDER_1", "A_ORDER_2"]) {
+            assert_eq!(leg.venue_order_id, VenueOrderId::from(order_id));
+            assert_eq!(leg.last_qty.as_decimal(), Decimal::ZERO);
+            assert_eq!(leg.last_px.as_decimal(), Decimal::ZERO);
+            assert_eq!(leg.commission, Money::zero(Currency::pUSD()));
+            assert_eq!(leg.ts_event, UnixNanos::default());
+        }
+    }
+
+    #[rstest]
+    fn unowned_maker_payload_does_not_require_participant_completeness(
+        #[values(false, true)] rest: bool,
+    ) {
+        let instruments = instruments();
+        let mut trade = maker_trade(false);
+        trade.maker_orders.drain(..2);
+
+        let result = admit_maker_capture(&trade, &context(&instruments), rest);
+
+        assert!(matches!(result, Err(AdmissionError::Unowned)), "{result:?}");
+    }
+
+    #[rstest]
+    fn partial_maker_payload_waits_for_complete_terminal_rest(#[values(false, true)] sell: bool) {
+        let instruments = instruments();
+        let trade = maker_trade(sell);
+        let ctx = context(&instruments);
+        let registry = SettlementRegistry::new(AccountId::from("POLYMARKET-001"));
+        registry.begin_session();
+        for maker in &trade.maker_orders[..2] {
+            registry.note_order_submitted(VenueOrderId::from(maker.order_id.as_str()));
+        }
+
+        let mut partial = trade.clone();
+        partial.maker_orders.remove(1);
+        let result = admit_maker_capture(&partial, &ctx, false);
+        assert!(
+            matches!(result, Err(AdmissionError::Invalid(_))),
+            "{result:?}"
+        );
+        registry.quarantine_invalid_trade(&trade.id);
+        let pending = registry.pending_resolutions();
+        let complete = admit_maker_capture(&trade, &ctx, false).unwrap();
+        let stream_actions = registry.admit_stream_trade(&complete);
+        let mut terminal = trade.clone();
+        terminal.status = PolymarketTradeStatus::Confirmed;
+        let admitted = admit_maker_capture(&terminal, &ctx, true).unwrap();
+        let actions = registry.admit_rest_result(&admitted);
+        let repeated = registry.admit_rest_result(&admitted);
+
+        let applied: Vec<_> = actions
+            .into_iter()
+            .map(|action| match action {
+                SettlementAction::ApplyLeg {
+                    venue_trade_id,
+                    leg,
+                } => (venue_trade_id, leg),
+                _ => panic!("expected a fill application"),
+            })
+            .collect();
+
+        let expected: Vec<_> = admitted
+            .legs
+            .into_iter()
+            .map(|leg| (trade.id.clone(), leg))
+            .collect();
+
+        assert_eq!(pending, vec![trade.id]);
+        assert!(stream_actions.is_empty());
+        assert_eq!(applied, expected);
+        assert!(repeated.is_empty());
+        assert!(registry.pending_resolutions().is_empty());
+    }
+
+    fn maker_trade(sell: bool) -> PolymarketUserTrade {
+        let source = if sell {
+            include_str!("../../../test_data/settlement_maker_sell.json")
+        } else {
+            include_str!("../../../test_data/settlement_maker_buy.json")
+        };
+
+        serde_json::from_str(source).unwrap()
+    }
+
+    fn admit_maker_capture(
+        trade: &PolymarketUserTrade,
+        ctx: &AdmissionContext<'_>,
+        rest: bool,
+    ) -> Result<AdmittedTrade, AdmissionError> {
+        if rest {
+            let report: PolymarketTradeReport =
+                from_value(serde_json::to_value(trade).unwrap()).unwrap();
+            admit_trade_evidence(TradeEvidence::Rest(&report), ctx)
+        } else {
+            admit_trade_evidence(TradeEvidence::Stream(trade), ctx)
+        }
     }
 }

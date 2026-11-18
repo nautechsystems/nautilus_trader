@@ -18,10 +18,10 @@
 //! - [`PrivateKey`] wraps a curve scalar; [`PublicKey`] wraps the canonical
 //!   `Fp5` encoding `w = (sk * G).encode()`.
 //! - [`Signature`] is the `(s, e)` pair encoded as `s_le || e_le` over 80 bytes.
-//! - [`PrivateKey::sign`] produces a signature for a pre-hashed message under a
-//!   caller-supplied per-signature nonce `k`. Production callers must draw `k`
-//!   from a cryptographic RNG; the explicit-nonce form mirrors the Go
-//!   reference's `SchnorrSignHashedMessage2`, which fixture tests pin against.
+//! - [`PrivateKey::sign`] signs a pre-hashed message under a caller-supplied
+//!   nonce `k`. It rejects zero and non-canonical nonces. Callers must draw a
+//!   fresh nonce from a cryptographic RNG for each signature. With valid inputs,
+//!   signatures match the Go reference's `SchnorrSignHashedMessage2`.
 //! - [`PublicKey::verify`] decodes the public-key encoding, recomputes
 //!   `s*G + e*pk`, and checks the recovered challenge against the signature.
 //!
@@ -32,5 +32,5 @@
 mod key;
 mod sig;
 
-pub use key::{PrivateKey, PublicKey};
+pub use key::{InvalidSigningNonce, PrivateKey, PublicKey};
 pub use sig::{SIG_BYTES, Signature};

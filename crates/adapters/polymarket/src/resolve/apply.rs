@@ -287,6 +287,7 @@ pub(crate) async fn fetch_and_apply_resolutions_by_condition_ids(
                 .read()
                 .get(&condition_id)
                 .and_then(|entry| entry.clob_retry);
+
             if !allow_ctf_fallback(ctx, &condition_id)
                 || (backoff_clob
                     && retry.is_some_and(|(_, retry_at)| ctx.clock.get_time_ns() < retry_at))

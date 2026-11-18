@@ -891,6 +891,61 @@ instrument-based IDs. See [Cache purging](../concepts/cache.md#bulk-purges) and
 [Reconciliation](#reconciliation).
 :::
 
+#### Spot position reports
+
+With `SPOT` or `MARGIN` in the execution client's `instrument_types` (`SPOT` is the default), set
+`use_spot_position_reports=True` to report net spot wallet balances as positions.
+
+- **Pairs**: Each loaded spot pair quoted in `spot_positions_quote_currency` (default `USDT`) reports
+  its base currency net balance. Pairs with another quote currency get no report, so one balance
+  never appears on two pairs.
+- **Quantity**: The signed base currency `cashBal` comes from
+  [`GET /api/v5/account/balance`](https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-balance),
+  including borrowing reflected in that balance. The adapter does not subtract `liab` again.
+  It sums rows for the same currency before rounding.
+- **Side and rounding**: Positive balances report `LONG`, and negative balances report `SHORT`.
+  The absolute balance is rounded down to the instrument's size precision. A balance that rounds
+  to zero gets no report in a request for all positions and a `FLAT` report in a targeted request.
+- **Entry price**: Reports carry no average entry price.
+- **Zero balances**: The client declares no bulk position coverage for spot. A cached position stays
+  open when its pair gets no report, including when the balance falls to zero.
+- **Failures**: The position report request fails when `cashBal` or `liab` cannot be parsed exactly,
+  the balance sum overflows or loses precision, the quantity cannot be represented, or the response
+  contains no account. No position reconciles from a failed request, including derivative positions
+  in the same request.
+- **Scope**: Reports cover wallet balances, including cross borrowing in Multi-currency margin mode.
+  For borrowing-backed reports, set `margin_mode=OKXMarginMode.CROSS`. An unset `margin_mode` routes
+  spot-margin orders as isolated, which these reports do not cover.
+  Assets and liabilities held in separate margin positions, such as isolated margin and Futures-mode
+  cross margin, are excluded. Borrowing in other account modes has not been validated against the
+  venue. The adapter does not check the account mode.
+- **OMS**: The option requires a `NETTING` OMS, because a balance is one net quantity per pair. The
+  client fails to build under `HEDGING`, where a quantity correction opens a new position and leaves
+  the cached position unchanged. A spot-only client defaults to `HEDGING`: set
+  `oms_type=OmsType.NETTING`, and use a netting OMS in the strategies that trade these pairs.
+- **Correction target**: A quantity correction goes to the strategy that lists the pair in
+  `external_order_instrument_ids`, or to `EXTERNAL` when no strategy claims it. See
+  [External order creation](../concepts/execution/reconciliation.md#external-order-creation). The
+  correction reduces a cached position only when the target strategy holds it under a netting OMS. It
+  opens an offsetting position, and leaves the cached position open, when another strategy holds the
+  position, when the target strategy overrides the OMS to `HEDGING`, or when the position opened
+  under `HEDGING` before the client changed to `NETTING`.
+
+:::warning
+The report covers the whole wallet cash balance of the base currency. This includes collateral and
+balances unrelated to any strategy. A strategy that closes reported positions can sell wallet assets
+or buy assets to cover wallet liabilities. Wallet changes without spot fills can trigger position
+corrections.
+
+Startup stops on an unresolved position when a reported balance has no cached position and the startup
+reports contain no fills that explain it, because the report has no entry price. If no fills explain a
+balance reversal, the correction closes the cached position, then startup stops because the opposite
+side has no entry price.
+To exclude balances you do not trade, set `LiveExecutionEngineConfig.reconciliation_instrument_ids`
+to the instruments you trade. See
+[Startup position validation](../concepts/execution/reconciliation.md#startup-position-validation).
+:::
+
 ### Trade modes and margin configuration
 
 Spot orders funded by cash use these trade modes (`tdMode`):
@@ -1178,6 +1233,9 @@ from other derivatives. OKX options are inverse contracts settled in the underly
 cryptocurrency.
 For full API details see the
 [OKX Options Trading documentation](https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-place-order).
+
+Option instruments carry `exercise_style` `EUROPEAN` and `settlement_type` `CASH`. OKX definitions have
+neither field; the values follow the [OKX options specification](https://www.okx.com/help/i-okx-options-introduction).
 
 ### Supported order types
 
@@ -1632,14 +1690,15 @@ See the [OKX rate limit documentation](https://www.okx.com/docs-v5/en/#rest-api-
 The OKX adapter applies separate reconciliation policies to current venue state and terminal
 history:
 
-| Data                      | Unset lookback        | Explicit lookback     | OKX source                    |
-| ------------------------- | --------------------- | --------------------- | ----------------------------- |
-| Pending regular orders    | All current orders    | All current orders    | Regular pending orders        |
-| Live algo orders          | All current orders    | All current orders    | Algo pending orders           |
-| Current positions         | All current positions | All current positions | Account positions             |
-| Terminal orders and fills | 3 days                | Up to 7 days          | Order and trade history       |
-| Fill lookback <= 3 days   | Recent fills          | Recent fills          | `/api/v5/trade/fills`         |
-| Fill lookback > 3 days    | Not requested         | Extended fills        | `/api/v5/trade/fills-history` |
+| Data                          | Unset lookback        | Explicit lookback     | OKX source                    |
+| ----------------------------- | --------------------- | --------------------- | ----------------------------- |
+| Pending regular orders        | All current orders    | All current orders    | Regular pending orders        |
+| Live algo orders              | All current orders    | All current orders    | Algo pending orders           |
+| Current positions             | All current positions | All current positions | Account positions             |
+| Spot wallet balances (opt-in) | Nonzero balances      | Nonzero balances      | Account balance (`cashBal`)   |
+| Terminal orders and fills     | 3 days                | Up to 7 days          | Order and trade history       |
+| Fill lookback <= 3 days       | Recent fills          | Recent fills          | `/api/v5/trade/fills`         |
+| Fill lookback > 3 days        | Not requested         | Extended fills        | `/api/v5/trade/fills-history` |
 
 Values above 7 days are clamped to the longest complete window across the regular order history
 and spread trade history endpoints used for reconciliation. This is not a limit on all archived data
@@ -1661,7 +1720,8 @@ See [Fill reconciliation](../concepts/execution/reconciliation.md#fill-reconcili
 
 Periodic position checks treat an absent report as flat only for configured derivative instrument types.
 Spot, margin, and spread instruments do not have complete bulk position coverage, so an absent report
-does not close their cached positions. Spot-margin positions that OKX reports still reconcile normally.
+does not close their cached positions. This includes pairs with [spot position reports](#spot-position-reports).
+The adapter requests no native `MARGIN` positions.
 
 OKX reports no size for a live algo order placed with `close_fraction`, because the order closes
 the whole position when it triggers. REST order status reports use the size of the position that
@@ -1850,6 +1910,8 @@ The OKX execution client provides the following Python configuration options.
 | `use_spot_margin`                  | `False`                    | Applies `margin_mode` to spot; also enabled by `MARGIN`.                                 |
 | `margin_mode`                      | `None`                     | Margin mode (`ISOLATED` or `CROSS`).                                                     |
 | `spot_trade_quote_ccy`             | `None`                     | SPOT `tradeQuoteCcy` override. Set `"USD"` to keep USD after migrating to `Crypto-USDC`. |
+| `use_spot_position_reports`        | `False`                    | Reports net spot balances; see [Spot position reports](#spot-position-reports).          |
+| `spot_positions_quote_currency`    | `USDT`                     | Quote currency of the pairs that carry spot position reports.                            |
 | `http_timeout_secs`                | `60`                       | Timeout per REST attempt; see [HTTP retries](#http-retries).                             |
 | `max_retries`                      | `3`                        | Recoverable REST retries; see [HTTP retries](#http-retries).                             |
 | `retry_delay_initial_ms`           | `1,000`                    | Initial delay before retrying.                                                           |

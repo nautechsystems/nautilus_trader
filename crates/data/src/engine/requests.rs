@@ -520,6 +520,7 @@ fn parse_optional_chain_bound(
 
     let instrument_id = InstrumentId::from_str(raw)
         .with_context(|| format!("Invalid continuous future {key} for {target_instrument_id}"))?;
+
     if instrument_id.venue != target_instrument_id.venue {
         anyhow::bail!(
             "Continuous future {key} venue mismatch for {target_instrument_id}: target venue {}, {key} venue {}",
@@ -568,6 +569,7 @@ fn parse_transitions(
             parse_transition_instrument_id(row.get("pre_instrument_id"), target_bar_type)?;
         let post_instrument_id =
             parse_transition_instrument_id(row.get("post_instrument_id"), target_bar_type)?;
+
         if pre_instrument_id.venue != target_venue || post_instrument_id.venue != target_venue {
             anyhow::bail!(
                 "Continuous future segment venue mismatch for {target_bar_type}: target venue {target_venue}, segment venues pre={}, post={}",

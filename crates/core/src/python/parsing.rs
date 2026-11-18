@@ -217,6 +217,7 @@ mod tests {
                 value.parse::<u64>().map_err(|e| e.to_string())
             })
             .unwrap();
+
             let levels = get_required_list(&dict, "levels")
                 .unwrap()
                 .extract::<Vec<u64>>()
@@ -249,16 +250,19 @@ mod tests {
         Python::attach(|py| {
             let dict = PyDict::new(py);
             dict.set_item("value", "42").unwrap();
+
             let parsed = get_optional_parsed(&dict, "value", |value| {
                 value.parse::<u64>().map_err(|e| e.to_string())
             })
             .unwrap();
+
             let missing = get_optional_parsed(&dict, "missing", |value| {
                 value.parse::<u64>().map_err(|e| e.to_string())
             })
             .unwrap();
 
             dict.set_item("value", py.None()).unwrap();
+
             let none = get_optional_parsed(&dict, "value", |value| {
                 value.parse::<u64>().map_err(|e| e.to_string())
             })

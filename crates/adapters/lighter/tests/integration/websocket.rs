@@ -293,6 +293,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
                             .map_or_default(|s| s.replace('/', ":"));
 
                         let ack = json!({"type":"unsubscribed", "channel": channel});
+
                         if sink
                             .send(Message::Text(ack.to_string().into()))
                             .await
@@ -2161,13 +2162,19 @@ async fn test_subscribe_account_includes_auth_field() {
     harness.client.disconnect().await.expect("disconnect");
 }
 
+#[rstest]
+#[case::snapshot("subscribed/height")]
+#[case::update("update/height")]
 #[tokio::test]
-async fn test_height_subscription_routes_through_raw() {
+async fn test_height_subscription_routes_original_frame_through_raw(#[case] frame_type: &str) {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let mut harness = ClientHarness::build(addr).await;
+    let mut frame = load_json("ws_height_update.json");
+    frame["type"] = json!(frame_type);
+    frame["unmodeled_sentinel"] = json!({"kept": [1, "two"]});
 
-    state.enqueue_push(load_json("ws_height_update.json")).await;
+    state.enqueue_push(frame.clone()).await;
     harness
         .client
         .subscribe_height()
@@ -2180,11 +2187,8 @@ async fn test_height_subscription_routes_through_raw() {
     let NautilusWsMessage::Raw(value) = event else {
         panic!("expected Raw, was {event:?}");
     };
-    // Pin the payload contents so a regression that ships the wrong frame
-    // through the Raw arm or corrupts fields gets caught.
-    assert_eq!(value["type"].as_str(), Some("update/height"));
-    assert_eq!(value["channel"].as_str(), Some("height"));
-    assert_eq!(value["height"].as_i64(), Some(227_535_532));
+
+    assert_eq!(value, frame);
 
     harness.client.disconnect().await.expect("disconnect");
 }

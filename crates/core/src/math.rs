@@ -179,7 +179,6 @@ pub fn quadratic_interpolation(x: f64, xs: &[f64], ys: &[f64]) -> f64 {
     }
 
     let pos = pos_search(x, xs);
-
     if (xs[pos] - x).abs() < epsilon {
         return ys[pos];
     }

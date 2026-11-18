@@ -2633,6 +2633,11 @@ mod tests {
             CacheMutationRecoveryClass::SnapshotOwned,
             &[],
         ),
+        cache_mutation(
+            "clear_own_order_books",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
         cache_mutation("reset", CacheMutationRecoveryClass::SnapshotOwned, &[]),
         cache_mutation("dispose", CacheMutationRecoveryClass::SnapshotOwned, &[]),
         cache_mutation("flush_db", CacheMutationRecoveryClass::SnapshotOwned, &[]),

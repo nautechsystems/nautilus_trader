@@ -767,7 +767,14 @@ async fn bar_poll_limit_leaves_a_slot_for_the_closed_period(#[case] limit: u32) 
         limit + 1,
         limit == 1
     );
-    assert!(messages[first_message..].contains(&(log::Level::Debug, diagnostic)));
+
+    let level = if limit == 1 {
+        log::Level::Warn
+    } else {
+        log::Level::Debug
+    };
+
+    assert!(messages[first_message..].contains(&(level, diagnostic)));
 }
 
 #[cfg(all(feature = "simulation", madsim))]

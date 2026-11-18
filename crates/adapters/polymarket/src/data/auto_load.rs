@@ -677,6 +677,7 @@ fn record_auto_load_outcomes(
         is_market_closed(market) && validate_data_market_version(market.version.as_deref()).is_ok()
     }) {
         let incoming = build_strict_resolved_market(market);
+
         match outcomes
             .entry(market.condition_id.clone())
             .or_insert(AutoLoadOutcome::Unknown)

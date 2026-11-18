@@ -2450,6 +2450,7 @@ impl AccountRisk<'_> {
         trailing_offset: Decimal,
     ) -> Result<Option<Price>, String> {
         let cache = self.engine.cache.borrow();
+
         if trigger_type != TriggerType::BidAsk
             && let Some(trade) = cache.trade(&self.instrument.id())
         {

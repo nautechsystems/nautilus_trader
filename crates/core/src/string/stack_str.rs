@@ -542,6 +542,7 @@ mod tests {
             a.hash(&mut h);
             h.finish()
         };
+
         let hash_b = {
             let mut h = DefaultHasher::new();
             b.hash(&mut h);
@@ -787,6 +788,7 @@ mod tests {
             a.hash(&mut h);
             h.finish()
         };
+
         let hash_b = {
             let mut h = DefaultHasher::new();
             b.hash(&mut h);
@@ -806,6 +808,7 @@ mod tests {
             a.hash(&mut h);
             h.finish()
         };
+
         let hash_b = {
             let mut h = DefaultHasher::new();
             b.hash(&mut h);

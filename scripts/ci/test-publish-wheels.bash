@@ -184,41 +184,45 @@ MOCK
   }
 
   local override
-  for override in \
-    "" \
-    disabled \
-    malformed \
-    2999-01-01T00:00:00Z \
-    '1970-01-01T00:00:50Z@1111111111111111111111111111111111111111' \
-    '1970-01-01T00:01:40Z@1111111111111111111111111111111111111111' \
-    '1970-01-01T02:01:41Z@1111111111111111111111111111111111111111' \
-    '1970-01-01T03:00:00Z@1111111111111111111111111111111111111111' \
-    '1970-01-01T00:03:20Z@2222222222222222222222222222222222222222' \
-    '1970-02-30T00:00:00Z@1111111111111111111111111111111111111111'; do
-    run_expect_success "$output" run_override_check "$override"
-    assert_line "${case_dir}/gate-output" "override_active=false"
+  local ref
+  for ref in refs/heads/develop refs/heads/nightly refs/heads/master; do
+    for override in \
+      "" \
+      disabled \
+      malformed \
+      2999-01-01T00:00:00Z \
+      '1970-01-01T00:00:50Z@1111111111111111111111111111111111111111' \
+      '1970-01-01T00:01:40Z@1111111111111111111111111111111111111111' \
+      '1970-01-01T02:01:41Z@1111111111111111111111111111111111111111' \
+      '1970-01-01T03:00:00Z@1111111111111111111111111111111111111111' \
+      '1970-01-01T00:03:20Z@2222222222222222222222222222222222222222' \
+      '1970-02-30T00:00:00Z@1111111111111111111111111111111111111111'; do
+      run_expect_success "$output" run_override_check "$override" push "$ref"
+      assert_line "${case_dir}/gate-output" "override_active=false"
 
-    EVENT_NAME=push \
-      FORCE_SECURITY_AUDIT=true \
-      SKIP_SECURITY_AUDIT="$(sed -n 's/^override_active=//p' "${case_dir}/gate-output")" \
-      GITHUB_OUTPUT="$output" \
-      bash "${repo_root}/scripts/ci/security-audit-gate.sh"
-    assert_line "$output" "audit_needed=true"
+      EVENT_NAME=push \
+        FORCE_SECURITY_AUDIT=true \
+        SKIP_SECURITY_AUDIT="$(sed -n 's/^override_active=//p' "${case_dir}/gate-output")" \
+        GITHUB_OUTPUT="$output" \
+        bash "${repo_root}/scripts/ci/security-audit-gate.sh"
+      assert_line "$output" "audit_needed=true"
+    done
   done
 
   local event
   for event in pull_request schedule workflow_dispatch; do
-    run_expect_success "$output" run_override_check "$accepted_override" "$event"
-    assert_line "${case_dir}/gate-output" "override_active=false"
+    for ref in refs/heads/develop refs/heads/nightly refs/heads/master; do
+      run_expect_success "$output" run_override_check "$accepted_override" "$event" "$ref"
+      assert_line "${case_dir}/gate-output" "override_active=false"
+    done
   done
 
-  local ref
-  for ref in refs/heads/master refs/heads/test-ci refs/heads/test-pre-commit refs/heads/test-security; do
+  for ref in refs/heads/test-ci refs/heads/test-pre-commit refs/heads/test-security; do
     run_expect_success "$output" run_override_check "$accepted_override" push "$ref"
     assert_line "${case_dir}/gate-output" "override_active=false"
   done
 
-  for ref in refs/heads/develop refs/heads/nightly; do
+  for ref in refs/heads/develop refs/heads/nightly refs/heads/master; do
     run_expect_success "$output" run_override_check "$accepted_override" push "$ref"
     assert_line "${case_dir}/gate-output" "override_active=true"
     assert_line "$output" "$accepted_override_warning"
@@ -336,6 +340,64 @@ test_nightly_security_gate() {
     read -r cargo osv severity <<< "$outcomes"
     run_expect_failure "$output" run_nightly_check false "$cargo" "$osv" "$severity"
     assert_line "$output" "::error::Nightly security gate failed"
+  done
+}
+
+test_release_security_gate() {
+  local case_dir="${work_dir}/release-security"
+  local output="${case_dir}/output"
+  local mock_bin="${case_dir}/bin"
+  mkdir -p "$mock_bin"
+
+  awk '
+    /^  cargo-deny:$/ { job = 1; next }
+    job && /^      - name: Run cargo-deny / { step = 1; next }
+    step && /^        run: \|$/ { body = 1; next }
+    body && /^          / { sub(/^          /, ""); print; next }
+    body { exit }
+  ' "${repo_root}/.github/workflows/build.yml" > "${case_dir}/gate.bash"
+  [[ -s "${case_dir}/gate.bash" ]] || fail "Release cargo-deny step is missing"
+
+  cat > "${mock_bin}/cargo" << 'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+echo "$*" >> "$CARGO_LOG"
+if [[ "$*" == "${MOCK_CARGO_FAILURE:-}" ]]; then
+  exit 1
+fi
+MOCK
+  chmod +x "${mock_bin}/cargo"
+
+  run_release_check() {
+    : > "${case_dir}/cargo.log"
+    PATH="${mock_bin}:$PATH" \
+      CARGO_LOG="${case_dir}/cargo.log" \
+      OVERRIDE_ACTIVE="$1" \
+      MOCK_CARGO_FAILURE="${2:-}" \
+      bash -e "${case_dir}/gate.bash"
+  }
+
+  local root_command='deny --all-features check'
+  local fuzz_command='deny --manifest-path crates/adapters/lighter/fuzz/pornin/Cargo.toml'
+  fuzz_command+=' --config .cargo/deny-fuzz.toml --locked --all-features check'
+  local override
+  local checks
+  for override in true false ''; do
+    checks='licenses sources bans'
+    if [[ "$override" != true ]]; then
+      checks="advisories ${checks}"
+    fi
+    printf '%s\n' "${root_command} ${checks}" "${fuzz_command} ${checks}" > "${case_dir}/expected"
+    run_expect_success "$output" run_release_check "$override"
+    cmp "${case_dir}/expected" "${case_dir}/cargo.log" || fail "Unexpected cargo-deny checks"
+
+    run_expect_failure "$output" run_release_check "$override" "${root_command} ${checks}"
+    printf '%s\n' "${root_command} ${checks}" > "${case_dir}/expected"
+    cmp "${case_dir}/expected" "${case_dir}/cargo.log" || fail "Root cargo-deny failure did not stop"
+
+    run_expect_failure "$output" run_release_check "$override" "${fuzz_command} ${checks}"
+    printf '%s\n' "${root_command} ${checks}" "${fuzz_command} ${checks}" > "${case_dir}/expected"
+    cmp "${case_dir}/expected" "${case_dir}/cargo.log" || fail "Unexpected cargo-deny checks"
   done
 }
 
@@ -1046,6 +1108,7 @@ create_r2_mocks "${work_dir}/r2-bin"
 test_policy_and_version
 test_security_gate
 test_nightly_security_gate
+test_release_security_gate
 test_sha256_portability
 test_artifact_matrix
 test_stable_retention_plan

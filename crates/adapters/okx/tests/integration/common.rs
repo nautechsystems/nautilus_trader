@@ -22,3 +22,21 @@ pub(crate) fn load_test_json(filename: &str) -> serde_json::Value {
     let content = fs::read_to_string(path).unwrap();
     serde_json::from_str(&content).unwrap()
 }
+
+/// Returns an account balance response with one detail per `(ccy, cashBal, liab)`.
+pub(crate) fn balance_response(details: &[(&str, &str, &str)]) -> serde_json::Value {
+    let mut response = load_test_json("http_get_account_balance.json");
+    let template = response["data"][0]["details"][0].clone();
+    response["data"][0]["details"] = details
+        .iter()
+        .map(|(ccy, cash_bal, liab)| {
+            let mut detail = template.clone();
+            detail["ccy"] = (*ccy).into();
+            detail["cashBal"] = (*cash_bal).into();
+            detail["liab"] = (*liab).into();
+            detail
+        })
+        .collect();
+
+    response
+}

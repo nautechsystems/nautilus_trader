@@ -110,6 +110,7 @@ pub fn wall_clock_now() -> SystemTime {
     {
         SystemTime::now()
     }
+
     #[cfg(all(feature = "simulation", madsim))]
     {
         // `try_current` returns `None` when no madsim runtime is active.
@@ -606,13 +607,10 @@ mod tests {
         let num_threads = 4;
         let iterations = 100_000;
         let mut handles = Vec::with_capacity(num_threads);
-
         for thread_id in 0..num_threads {
             let time_clone = Arc::clone(&time);
-
             let handle = std::thread::spawn(move || {
                 let mut previous = time_clone.time_since_epoch().as_u64();
-
                 for i in 0..iterations {
                     let current = time_clone.time_since_epoch().as_u64();
                     assert!(
@@ -749,6 +747,7 @@ mod tests {
                 // Yield to encourage interleaving
                 std::thread::yield_now();
             }
+
             writer_done.store(true, Ordering::Release);
         });
 
@@ -764,7 +763,6 @@ mod tests {
             // Poll until writer is done, with no iteration limit
             while !reader_done.load(Ordering::Acquire) {
                 let current_time = reader_clock.get_time_ns().as_u64();
-
                 if current_time > last_time {
                     // The Acquire in get_time_ns synchronizes with the Release in set_time,
                     // making aux_data visible
@@ -828,6 +826,7 @@ mod tests {
                     .unwrap();
                 std::thread::yield_now();
             }
+
             writer_done.store(true, Ordering::Release);
         });
 
@@ -842,7 +841,6 @@ mod tests {
             // Poll until writer is done, with no iteration limit
             while !reader_done.load(Ordering::Acquire) {
                 let current_time = reader_clock.get_time_ns().as_u64();
-
                 if current_time > last_time {
                     let aux_value = reader_aux.load(Ordering::Relaxed);
 

@@ -18,8 +18,6 @@
 use ahash::AHashMap;
 use indexmap::IndexMap;
 use nautilus_common::cache::fifo::FifoCacheMap;
-#[cfg(test)]
-use nautilus_model::identifiers::InstrumentId;
 use nautilus_model::{
     enums::OrderSide,
     events::OrderFilled,
@@ -444,96 +442,6 @@ fn push_buffered<V>(
     }
 }
 
-#[cfg(test)]
-impl OrderFillTrackerMap {
-    /// Registers an order directly, for tests that set up an already-accepted order.
-    pub(crate) fn register(
-        &self,
-        venue_order_id: VenueOrderId,
-        submitted_qty: Quantity,
-        order_side: OrderSide,
-        _instrument_id: InstrumentId,
-        _size_precision: u8,
-        _price_precision: u8,
-    ) {
-        let zero = Quantity::zero(submitted_qty.precision);
-        self.inner.lock().orders.insert(
-            venue_order_id,
-            new_order_state(submitted_qty, zero, zero, order_side),
-        );
-    }
-
-    /// Returns the registered submitted quantity for an order, if tracked.
-    pub(crate) fn submitted_qty(&self, venue_order_id: &VenueOrderId) -> Option<Quantity> {
-        self.inner
-            .lock()
-            .orders
-            .get(venue_order_id)
-            .map(|s| s.submitted_qty)
-    }
-
-    /// Returns the quantity earlier venue orders filled, if tracked.
-    pub(crate) fn prior_filled(&self, venue_order_id: &VenueOrderId) -> Option<Quantity> {
-        self.inner
-            .lock()
-            .orders
-            .get(venue_order_id)
-            .map(|s| s.prior_filled)
-    }
-
-    /// Records a fill against a registered order, for tests that drive fill accumulation directly.
-    pub(crate) fn record_fill(&self, venue_order_id: &VenueOrderId, qty: Quantity) {
-        record_fill_in(&mut self.inner.lock().orders, venue_order_id, qty);
-    }
-
-    /// Buffers a fill as if it arrived on the WS channel before the order was registered.
-    pub(crate) fn buffer_fill_for_test(&self, venue_order_id: VenueOrderId, report: FillReport) {
-        push_buffered(
-            &mut self.inner.lock().pending_fills,
-            venue_order_id,
-            BufferedFill {
-                report,
-                correction: None,
-            },
-        );
-    }
-
-    /// Buffers an order report as if it arrived on the WS channel before the order was registered.
-    pub(crate) fn buffer_report_for_test(
-        &self,
-        venue_order_id: VenueOrderId,
-        report: OrderStatusReport,
-    ) {
-        push_buffered(
-            &mut self.inner.lock().pending_reports,
-            venue_order_id,
-            report,
-        );
-    }
-
-    /// Returns true if a fill is currently buffered for the order.
-    pub(crate) fn has_pending_fill(&self, venue_order_id: &VenueOrderId) -> bool {
-        self.inner.lock().pending_fills.contains_key(venue_order_id)
-    }
-
-    /// Returns the fills currently buffered for the order.
-    pub(crate) fn pending_fills_for(&self, venue_order_id: &VenueOrderId) -> Vec<FillReport> {
-        self.inner
-            .lock()
-            .pending_fills
-            .get(venue_order_id)
-            .map_or_default(|fills| fills.iter().map(|fill| fill.report.clone()).collect())
-    }
-
-    /// Returns true if an order report is currently buffered for the order.
-    pub(crate) fn has_pending_report(&self, venue_order_id: &VenueOrderId) -> bool {
-        self.inner
-            .lock()
-            .pending_reports
-            .contains_key(venue_order_id)
-    }
-}
-
 fn record_fill_in(
     orders: &mut AHashMap<VenueOrderId, OrderFillState>,
     venue_order_id: &VenueOrderId,
@@ -563,12 +471,105 @@ mod tests {
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         enums::LiquiditySide,
-        identifiers::{AccountId, TradeId},
+        identifiers::{AccountId, InstrumentId, TradeId},
         types::{Currency, Money, Price},
     };
     use rstest::rstest;
 
     use super::*;
+
+    impl OrderFillTrackerMap {
+        /// Registers an order directly, for tests that set up an already-accepted order.
+        pub(crate) fn register(
+            &self,
+            venue_order_id: VenueOrderId,
+            submitted_qty: Quantity,
+            order_side: OrderSide,
+            _instrument_id: InstrumentId,
+            _size_precision: u8,
+            _price_precision: u8,
+        ) {
+            let zero = Quantity::zero(submitted_qty.precision);
+            self.inner.lock().orders.insert(
+                venue_order_id,
+                new_order_state(submitted_qty, zero, zero, order_side),
+            );
+        }
+
+        /// Returns the registered submitted quantity for an order, if tracked.
+        pub(crate) fn submitted_qty(&self, venue_order_id: &VenueOrderId) -> Option<Quantity> {
+            self.inner
+                .lock()
+                .orders
+                .get(venue_order_id)
+                .map(|s| s.submitted_qty)
+        }
+
+        /// Returns the quantity earlier venue orders filled, if tracked.
+        pub(crate) fn prior_filled(&self, venue_order_id: &VenueOrderId) -> Option<Quantity> {
+            self.inner
+                .lock()
+                .orders
+                .get(venue_order_id)
+                .map(|s| s.prior_filled)
+        }
+
+        /// Records a fill against a registered order, for tests that drive fill accumulation directly.
+        pub(crate) fn record_fill(&self, venue_order_id: &VenueOrderId, qty: Quantity) {
+            record_fill_in(&mut self.inner.lock().orders, venue_order_id, qty);
+        }
+
+        /// Buffers a fill as if it arrived on the WS channel before the order was registered.
+        pub(crate) fn buffer_fill_for_test(
+            &self,
+            venue_order_id: VenueOrderId,
+            report: FillReport,
+        ) {
+            push_buffered(
+                &mut self.inner.lock().pending_fills,
+                venue_order_id,
+                BufferedFill {
+                    report,
+                    correction: None,
+                },
+            );
+        }
+
+        /// Buffers an order report as if it arrived on the WS channel before the order was registered.
+        pub(crate) fn buffer_report_for_test(
+            &self,
+            venue_order_id: VenueOrderId,
+            report: OrderStatusReport,
+        ) {
+            push_buffered(
+                &mut self.inner.lock().pending_reports,
+                venue_order_id,
+                report,
+            );
+        }
+
+        /// Returns true if a fill is currently buffered for the order.
+        pub(crate) fn has_pending_fill(&self, venue_order_id: &VenueOrderId) -> bool {
+            self.inner.lock().pending_fills.contains_key(venue_order_id)
+        }
+
+        /// Returns the fills currently buffered for the order.
+        pub(crate) fn pending_fills_for(&self, venue_order_id: &VenueOrderId) -> Vec<FillReport> {
+            self.inner
+                .lock()
+                .pending_fills
+                .get(venue_order_id)
+                .map_or_default(|fills| fills.iter().map(|fill| fill.report.clone()).collect())
+        }
+
+        /// Returns true if an order report is currently buffered for the order.
+        pub(crate) fn has_pending_report(&self, venue_order_id: &VenueOrderId) -> bool {
+            self.inner
+                .lock()
+                .pending_reports
+                .contains_key(venue_order_id)
+        }
+    }
 
     fn pusd() -> Currency {
         Currency::pUSD()

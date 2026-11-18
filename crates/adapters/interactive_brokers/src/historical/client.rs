@@ -44,9 +44,9 @@ use crate::{
     data::{
         convert::{
             IbPriceConverter, bar_request_range, bar_type_to_ib_bar_size,
-            extend_historical_tick_batch, ib_bar_to_nautilus_bar, ib_timestamp_to_unix_nanos,
-            jiff_to_ib_datetime, price_type_to_ib_what_to_show_for_security,
-            retain_historical_ticks_in_range,
+            extend_historical_tick_batch, historical_tick_request_end, ib_bar_to_nautilus_bar,
+            ib_timestamp_to_unix_nanos, jiff_to_ib_datetime,
+            price_type_to_ib_what_to_show_for_security, retain_historical_ticks_in_range,
         },
         parse::parse_trade_tick,
     },
@@ -547,7 +547,7 @@ impl HistoricalInteractiveBrokersClient {
             let mut contract_ticks = Vec::new();
 
             // Pagination loop for ticks (similar to Python _handle_timestamp_iteration)
-            let mut current_end_date = Some(end_date_time);
+            let mut current_end_date = Some(historical_tick_request_end(end_date_time));
             let current_start_date = Some(start_date_time);
             let start_date_time_ns = UnixNanos::from(
                 u64::try_from(start_date_time.as_nanosecond())

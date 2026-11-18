@@ -476,7 +476,7 @@ mod tests {
         active_quote_subs.insert(instrument_id);
         active_delta_subs.insert(instrument_id);
         active_trade_subs.insert(instrument_id);
-        book_sync.request_recovery(instrument_id, Instant::now());
+        book_sync.request_recovery_if_subscribed(active_delta_subs, instrument_id, Instant::now());
         pending_auto_loads.lock().insert(instrument_id);
         ws_open_tokens.insert(Ustr::from(instrument.raw_symbol().as_str()));
         order_books.insert(

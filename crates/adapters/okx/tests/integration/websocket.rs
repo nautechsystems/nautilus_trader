@@ -16,7 +16,6 @@
 //! Integration tests for the OKX WebSocket client using a mock Axum server.
 
 use std::{
-    collections::HashSet,
     net::SocketAddr,
     sync::{
         Arc,
@@ -106,6 +105,7 @@ struct TestServerState {
     control_ping_count: Arc<tokio::sync::Mutex<usize>>,
     fail_next_login: Arc<AtomicBool>,
     reject_upgrades: Arc<AtomicBool>,
+    rejected_upgrades: Arc<AtomicUsize>,
     upgrade_delay: Duration,
 }
 
@@ -321,6 +321,7 @@ async fn handle_ws_upgrade(
     State(state): State<Arc<TestServerState>>,
 ) -> Response {
     if state.reject_upgrades.load(Ordering::Relaxed) {
+        state.rejected_upgrades.fetch_add(1, Ordering::Relaxed);
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     }
 
@@ -1175,7 +1176,11 @@ async fn test_order_operations_during_reconnect_are_replayed(
 
     let stream = client.stream();
     pin_mut!(stream);
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    wait_until_async(
+        || async { state.rejected_upgrades.load(Ordering::Relaxed) > 0 },
+        Duration::from_secs(10),
+    )
+    .await;
     state.reject_upgrades.store(false, Ordering::Relaxed);
 
     tokio::time::timeout(Duration::from_secs(10), async {
@@ -2511,76 +2516,41 @@ async fn test_reconnection_retries_failed_subscriptions() {
         .await
         .expect("subscribe trades failed");
 
-    if tokio::time::timeout(Duration::from_secs(3), async {
-        loop {
-            if state
+    wait_until_async(
+        || async {
+            state
                 .subscription_events()
                 .await
                 .iter()
                 .any(|(key, _, ok)| key.starts_with("trades") && !ok)
-            {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-    })
-    .await
-    .is_err()
-    {
-        let events = state.subscription_events().await;
-        panic!("missing initial subscription failure: events={events:?}");
-    }
+        },
+        Duration::from_secs(10),
+    )
+    .await;
 
-    if tokio::time::timeout(Duration::from_secs(10), async {
-        loop {
-            if *state.login_count.lock().await >= 2 {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-    })
-    .await
-    .is_err()
-    {
-        let count = *state.login_count.lock().await;
-        let events = state.subscription_events().await;
-        panic!("login did not retry: count={count}, events={events:?}");
-    }
+    wait_until_async(
+        || async { *state.login_count.lock().await >= 2 },
+        Duration::from_secs(10),
+    )
+    .await;
 
     client
         .subscribe_trades(InstrumentId::from("BTC-USD.OKX"), false)
         .await
         .expect("retry subscribe trades failed");
 
-    if tokio::time::timeout(Duration::from_secs(10), async {
-        loop {
+    wait_until_async(
+        || async {
             let events = state.subscription_events().await;
-            let mut trade_count = 0;
-            let mut has_success = false;
-
-            for (_, _, ok) in events
+            let trades: Vec<_> = events
                 .iter()
                 .filter(|(key, _, _)| key.starts_with("trades"))
-            {
-                trade_count += 1;
-
-                if *ok {
-                    has_success = true;
-                }
-            }
-
-            if trade_count >= 2 && has_success {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-    })
-    .await
-    .is_err()
-    {
-        let events = state.subscription_events().await;
-        panic!("subscription did not recover: events={events:?}");
-    }
+                .collect();
+            trades.len() >= 2 && trades.iter().any(|(_, _, ok)| *ok)
+        },
+        Duration::from_secs(10),
+    )
+    .await;
 
     let events = state.subscription_events().await;
     assert!(
@@ -2728,6 +2698,7 @@ async fn test_reconnect_during_authentication_does_not_repeat_login() {
         reconnect.request_reconnect(),
         SocketReconnectRequestOutcome::Accepted
     );
+    // Outlast the one second authentication timeout of the interrupted attempt
     tokio::time::sleep(Duration::from_secs(3)).await;
     state.reject_upgrades.store(false, Ordering::Relaxed);
     wait_until_async(
@@ -2941,32 +2912,20 @@ async fn test_subscription_restoration_tracking() {
         .await
         .expect("resubscribe orders failed");
 
-    if tokio::time::timeout(Duration::from_secs(5), async {
-        loop {
+    wait_until_async(
+        || async {
             let events = state.subscription_events().await;
-            let mut restored = HashSet::new();
-
-            for (key, _, ok) in &events {
-                if *ok {
-                    restored.insert(key.clone());
-                }
-            }
-
-            if restored.contains("trades:BTC-USD")
-                && restored.contains("trades:ETH-USD")
-                && restored.contains("orders:SPOT")
-            {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-    })
-    .await
-    .is_err()
-    {
-        let events = state.subscription_events().await;
-        panic!("subscriptions not restored: events={events:?}");
-    }
+            ["trades:BTC-USD", "trades:ETH-USD", "orders:SPOT"]
+                .iter()
+                .all(|topic| {
+                    events
+                        .iter()
+                        .any(|(key, _, ok)| *ok && key.as_str() == *topic)
+                })
+        },
+        Duration::from_secs(10),
+    )
+    .await;
 
     client.close().await.expect("close failed");
 }

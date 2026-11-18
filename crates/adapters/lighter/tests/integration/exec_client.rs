@@ -2837,6 +2837,7 @@ async fn test_order_list_batch_precedes_later_single_sendtx() {
     let submitted_single = next_order_event(&mut rx, Duration::from_secs(2))
         .await
         .expect("OrderSubmitted single");
+
     match submitted_single {
         OrderEventAny::Submitted(e) => assert_eq!(e.client_order_id, single.client_order_id()),
         other => panic!("expected Submitted, was {other:?}"),
@@ -3408,6 +3409,7 @@ async fn test_acknowledged_create_allows_delayed_active_order() {
     })
     .await
     .expect("delayed order status report");
+
     match report {
         ExecutionEvent::Report(ExecutionReport::Order(report)) => {
             assert_eq!(report.client_order_id, Some(order.client_order_id()));
@@ -6392,6 +6394,67 @@ async fn test_generate_mass_status_fans_out_active_inactive_position_and_trades(
     let positions = mass.position_reports();
     assert_eq!(positions.len(), 1);
     assert!(positions.contains_key(&eth_perp_id()));
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[case::active_time_in_force(true, "time_in_force", "Unknown")]
+#[case::active_unfamiliar_time_in_force(true, "time_in_force", "future-tif")]
+#[case::active_order_type(true, "type", "future-type")]
+#[case::active_status(true, "status", "future-status")]
+#[case::inactive_time_in_force(false, "time_in_force", "Unknown")]
+#[case::inactive_unfamiliar_time_in_force(false, "time_in_force", "future-tif")]
+#[case::inactive_order_type(false, "type", "future-type")]
+#[case::inactive_status(false, "status", "future-status")]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_mass_status_keeps_siblings_of_unmapped_classification(
+    #[case] unmapped_is_active: bool,
+    #[case] field: &str,
+    #[case] value: &str,
+) {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+    client.connect().await.expect("connect");
+    await_subscribe_count(&state, 4).await;
+    let healthy_active = http_order_fixture("281476929510200", "1001", "open", "0.0000");
+    let healthy_inactive = http_order_fixture("281476929510202", "1003", "canceled", "0.0000");
+
+    let mut unmapped = if unmapped_is_active {
+        http_order_fixture("281476929510201", "1002", "open", "0.0000")
+    } else {
+        http_order_fixture("281476929510201", "1002", "canceled", "0.0000")
+    };
+
+    unmapped[field] = json!(value);
+
+    let (active, inactive) = if unmapped_is_active {
+        (vec![unmapped, healthy_active], vec![healthy_inactive])
+    } else {
+        (vec![healthy_active], vec![unmapped, healthy_inactive])
+    };
+
+    *state.active_orders_response.lock().await = Some(http_orders_payload(&active, None));
+    *state.inactive_orders_response.lock().await = Some(http_orders_payload(&inactive, None));
+    *state.trades_response.lock().await = Some(json!({"code":200,"trades":[]}));
+
+    let mass = client
+        .generate_mass_status(None)
+        .await
+        .expect("mass status")
+        .expect("Some(mass_status)");
+
+    let order_reports = mass.order_reports();
+    let active_report = &order_reports[&VenueOrderId::from("281476929510200")];
+    assert_eq!(active_report.order_status, OrderStatus::Accepted);
+    assert_eq!(active_report.time_in_force, TimeInForce::Gtd);
+    assert!(!order_reports.contains_key(&VenueOrderId::from("281476929510201")));
+    assert_eq!(
+        order_reports
+            .get(&VenueOrderId::from("281476929510202"))
+            .map(|report| report.order_status),
+        (!unmapped_is_active).then_some(OrderStatus::Canceled),
+    );
 
     client.disconnect().await.expect("disconnect");
 }
@@ -10640,6 +10703,7 @@ fn assert_order_batches(
 async fn test_account_tx_confirms_modify_without_rest(
     #[case] order_first: bool,
     #[values(false, true)] missing_ack: bool,
+    #[values("returned-signature", "")] signature: &str,
 ) {
     let (addr, state) = start_server().await;
     let (mut client, mut rx, cache) = build_client(addr);
@@ -10664,11 +10728,14 @@ async fn test_account_tx_confirms_modify_without_rest(
         .modify_order(modify_command(id, venue, "2400.00"))
         .unwrap();
     await_send_tx_count(&state, 2).await;
-    let info = send_tx_info(&state.send_txs().await[1]);
+    let mut info = send_tx_info(&state.send_txs().await[1]);
     let hash = order_tx_hash(17, &info, state.chain_id.load(Ordering::Relaxed));
+    info["Sig"] = json!(signature);
+    info["L1Sig"] = json!(signature);
     let mut transaction = load_json("ws_account_tx_update.json");
     transaction["channel"] = json!(format!("account_tx:{TEST_ACCOUNT_INDEX}"));
     transaction["txs"][0]["hash"] = json!(format!("0X{}", hash.to_uppercase()));
+    transaction["txs"][0]["info"] = json!(info.to_string());
     let mut entry =
         account_all_orders_open_entry(index, venue.as_str(), &index.to_string(), TEST_ORDER_NONCE);
     state.push_frame(&json!({
@@ -10736,7 +10803,11 @@ async fn test_account_tx_confirms_modify_without_rest(
 #[case::application_error(2, "{\"ae\":\"invalid order price\"}")]
 #[case::malformed_failure(0, "invalid json")]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_account_tx_rejects_modify_without_rest(#[case] status: u8, #[case] event_info: &str) {
+async fn test_account_tx_rejects_modify_without_rest(
+    #[case] status: u8,
+    #[case] event_info: &str,
+    #[values("returned-signature", "")] signature: &str,
+) {
     let (addr, state) = start_server().await;
     let (mut client, mut rx, cache) = build_client(addr);
     client.connect().await.unwrap();
@@ -10754,11 +10825,18 @@ async fn test_account_tx_rejects_modify_without_rest(#[case] status: u8, #[case]
     let command = modify_command(id, venue, "2400.00");
     client.modify_order(command.clone()).unwrap();
     await_send_tx_count(&state, 2).await;
-    let info = send_tx_info(&state.send_txs().await[1]);
+    let mut info = send_tx_info(&state.send_txs().await[1]);
     let hash = order_tx_hash(17, &info, state.chain_id.load(Ordering::Relaxed));
+    info["Sig"] = json!(signature);
+    info["L1Sig"] = json!(signature);
     let mut transaction = load_json("ws_account_tx_update.json");
     transaction["channel"] = json!(format!("account_tx:{TEST_ACCOUNT_INDEX}"));
-    transaction["txs"][0] = json!({"hash":hash, "status":status, "event_info":event_info});
+    transaction["txs"][0] = json!({
+        "hash": hash,
+        "status": status,
+        "event_info": event_info,
+        "info": info.to_string(),
+    });
     state.push_frame(&transaction);
     let event = next_order_event(&mut rx, Duration::from_secs(1))
         .await

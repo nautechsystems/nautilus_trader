@@ -739,6 +739,7 @@ impl ExecTester {
             {
                 if self.config.modify_orders_to_maintain_tob_offset {
                     let order_clone = order.clone();
+
                     if let Err(e) = self.modify_order(
                         order_clone.client_order_id(),
                         None,
@@ -828,6 +829,7 @@ impl ExecTester {
             {
                 if self.config.modify_orders_to_maintain_tob_offset {
                     let order_clone = order.clone();
+
                     if let Err(e) = self.modify_order(
                         order_clone.client_order_id(),
                         None,
@@ -868,6 +870,7 @@ impl ExecTester {
                 let accepted_at_expected_price = self
                     .tracked_limit_order(side)
                     .is_some_and(|order| order.price() == Some(price) && order.is_open());
+
                 if !accepted_at_expected_price {
                     log::error!(
                         "Replacement {side} order {client_order_id} was accepted with unexpected state"
@@ -933,6 +936,7 @@ impl ExecTester {
         replacement_price: Price,
     ) {
         let state = self.limit_order_maintenance_state(side);
+
         if !matches!(
             state,
             LimitOrderMaintenanceState::AwaitingAcceptance {
@@ -977,6 +981,7 @@ impl ExecTester {
             && self
                 .tracked_limit_order(side)
                 .is_some_and(|order| order.price() == Some(price) && order.is_open());
+
         if !updated_at_expected_price {
             log::error!(
                 "Updated {side} limit order {client_order_id} has unexpected price or state"

@@ -110,6 +110,7 @@ mod tests {
     #[rstest]
     fn test_get_python_version_handles_malformed_version_info() {
         Python::initialize();
+
         let version = Python::attach(|py| -> PyResult<String> {
             let sys = py.import("sys")?;
             let original = sys.getattr("version_info")?;
@@ -132,6 +133,7 @@ mod tests {
     #[rstest]
     fn test_get_python_package_version_opt_present_returns_some() {
         Python::initialize();
+
         let version = Python::attach(|py| {
             let types = py.import("types").expect("import types");
             let module = types

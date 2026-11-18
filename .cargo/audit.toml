@@ -6,9 +6,9 @@
 #   - RUSTSEC-2024-0388 (derivative, unmaintained via alloy-primitives -> ruint -> ark-ff)
 #
 # Chrono and chrono-tz remain transitive via Arrow/DataFusion; object_store also
-# depends on chrono. Core time zones use jiff with bundled data. Future
-# unmaintained advisories for chrono or chrono-tz require documented ignores here
-# and in deny.toml pending upstream migration.
+# depends on chrono. Core time zones use jiff with bundled data. Their
+# unmaintained advisories are ignored below and in deny.toml and osv-scanner.toml
+# pending upstream migration.
 
 [advisories]
 ignore = [
@@ -48,4 +48,10 @@ ignore = [
   # Alloy and cosmrs require k256 0.13 -> elliptic-curve 0.13 -> crypto-bigint 0.5.
   # Accept this risk until upstream permits crypto-bigint >=0.7.6 or backports the fix.
   "RUSTSEC-2026-0387",
+
+  # Arrow/DataFusion and object_store retain these unmaintained dependencies,
+  # no fixed releases exist; remove the ignores when upstream migrates.
+  "RUSTSEC-2026-0543", # chrono via Arrow/DataFusion and object_store
+  "RUSTSEC-2026-0555", # chrono-tz via Arrow/DataFusion
+  "RUSTSEC-2026-0542", # humantime via object_store
 ]

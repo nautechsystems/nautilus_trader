@@ -114,6 +114,8 @@ from lower layers are unchanged; TLS certificate errors and dependency logs can 
 Buffered requests advertise gzip unless default or per-request headers set `Accept-Encoding`. The client
 decodes gzip and removes `Content-Encoding` and `Content-Length` from selected headers. Unsupported or corrupt
 encodings fail regardless of status; responses whose method or status forbids content are not decoded.
+With `Content-Encoding: gzip` and zero wire bytes, the client returns the response without decoding and
+preserves its status and selected headers.
 
 Received and decoded bodies have separate 100 MiB default limits. Oversized declared lengths fail before
 reading; chunked or unbounded bodies stop at the limit on received bytes. The request deadline includes

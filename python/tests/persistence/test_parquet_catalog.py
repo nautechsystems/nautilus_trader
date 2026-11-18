@@ -16,6 +16,9 @@
 Parquet catalog regression tests.
 """
 
+import os
+from pathlib import Path
+
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
@@ -30,6 +33,40 @@ from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.persistence import StreamingFeatherWriter
 from nautilus_trader.persistence.catalog_to_df import CatalogOutput
 from nautilus_trader.persistence.catalog_to_df import query_catalog
+
+
+@pytest.mark.parametrize(
+    "directory",
+    [
+        "C# work",
+        "a%20b",
+        pytest.param(
+            "a?b",
+            marks=pytest.mark.skipif(os.name == "nt", reason="Invalid Windows name"),
+        ),
+    ],
+)
+def test_parquet_bars_round_trip_with_url_syntax_in_root(tmp_path: Path, directory: str) -> None:
+    """
+    Preserve literal URL characters in local catalog roots.
+    """
+    root = tmp_path / directory / "catalog"
+    root.mkdir(parents=True)
+    catalog = ParquetDataCatalog(str(root))
+    bars = [TestDataProviderPyo3.bar_5decimal()]
+    catalog.write_bars(bars)
+    for identifiers in [None, [str(bars[0].bar_type)]]:
+        assert catalog.query_bars(identifiers=identifiers) == bars
+
+        for optimize in [True, False]:
+            assert (
+                catalog.query(
+                    NautilusDataType.Bar,
+                    identifiers=identifiers,
+                    optimize_file_loading=optimize,
+                )
+                == bars
+            )
 
 
 def test_parquet_roundtrip_and_dataframe_preserve_nanoseconds(tmp_path) -> None:

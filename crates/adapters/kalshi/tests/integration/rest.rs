@@ -773,6 +773,7 @@ async fn typed_errors_preserve_status_body_and_redaction(#[case] status: u16, #[
 
         let server=task::spawn(async move {
             quota_discovery(&listener).await;
+
             for _ in 0..if matches!(status,500 | 502..=504) { 3 } else { 1 } {
             let (mut stream,_)=listener.accept().await.unwrap();peer::read_headers(&mut stream).await;
             let response=format!("HTTP/1.1 {status} Response\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len());

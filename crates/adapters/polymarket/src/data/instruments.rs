@@ -211,11 +211,6 @@ impl InstrumentUpdateState {
         );
     }
 
-    #[cfg(test)]
-    pub(super) fn contains_live_tick(&self, token_id: &Ustr) -> bool {
-        self.live_ticks.contains_key(token_id)
-    }
-
     pub(super) fn compose_instrument(
         &self,
         instrument: &InstrumentAny,
@@ -247,6 +242,7 @@ impl InstrumentUpdateState {
             let previous_info = previous_info.to_shared_map();
             let raw_event = Arc::clone(previous_info.get("gamma_event").unwrap());
             let event_key = Arc::as_ptr(&raw_event) as usize;
+
             if let std::collections::hash_map::Entry::Vacant(entry) =
                 event_metadata.entry(event_key)
             {
@@ -1218,6 +1214,12 @@ mod tests {
                     .await;
         }
         total
+    }
+
+    impl InstrumentUpdateState {
+        pub(in crate::data) fn contains_live_tick(&self, token_id: &Ustr) -> bool {
+            self.live_ticks.contains_key(token_id)
+        }
     }
 
     fn make_client(config: PolymarketDataClientConfig) -> PolymarketDataClient {

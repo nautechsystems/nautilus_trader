@@ -606,6 +606,7 @@ impl LighterWebSocketClient {
                 // Replay first; the execution client replaces account tokens after reconnect
                 for entry in subscription_args.iter() {
                     let args = entry.value().clone();
+
                     if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Subscribe {
                         channel: args.channel,
                         auth: args.auth,

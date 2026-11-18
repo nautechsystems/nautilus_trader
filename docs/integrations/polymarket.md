@@ -1462,31 +1462,45 @@ owners. Before logging or exporting fills, select only needed fields or redact t
 including those inside nested JSON.
 :::
 
-#### Remaining settlement limits
+#### Settlement admission and evidence
 
-[RFC #4876](https://github.com/nautechsystems/nautilus_trader/issues/4876) remains open for:
+Valid maker fills for orders submitted in the current uninterrupted user-stream session can apply
+before terminal REST confirmation. [RFC #4876](https://github.com/nautechsystems/nautilus_trader/issues/4876)
+defines the settlement contract:
 
-- **Account scope**: The [trades API](https://docs.polymarket.com/api-reference/trade/get-trades)
-  documents authenticated-user scope, supported by participating-account reads. A same-trade check under
-  non-participating credentials remains blocked by the lack of a second account.
-- **Maker completeness**: Sampled REST legs agree with on-chain events, but no paired original REST and
-  user-stream capture covers several maker orders owned by the configured account. Admission assumes
-  complete payloads; the proposed multi-owned maker gate is unimplemented. Counting returned legs cannot
-  detect an omitted leg, and targeted REST also needs completeness evidence.
-- **Historical fees**: Retaining the first-admission local fee basis does not prove the venue's actual
-  charge. Cache-rebuilt and report-applied fills lack that basis and can conflict after a fee refresh.
-- **Unbound declined events**: Declined fills or voids without a settlement record only log an error.
-  Their fault policy remains undecided, separately from [retaining applied unbound fills](#unbound-fills).
+- **Complete maker trades**: Admission on both transports requires positive quantities on distinct
+  maker orders whose sum equals the trade size. Invalid stream payloads apply no legs and quarantine
+  the trade until targeted terminal REST evidence passes the same check.
+- **Scoped and failed evidence**: For maker-side trades, order-scoped reports validate only the selected
+  owned legs and retain the provider-completeness assumption. `FAILED` evidence validates identity
+  without fill economics. Existing [settlement faults](#settlement-faults) still apply to omitted local fills.
+- **Unbound declines**: A declined fill or void without a bound settlement leg logs an error without
+  faulting the client. Core reconciliation and duplicate [applied unbound fills](#unbound-fills) can
+  produce these declines. This preserves cancellations and unrelated settlement corrections;
+  bound declined effects retain their trade fault policy.
 
-The provider checks also remain unverified for Protocol V2. Dedicated settlement signals and metrics
-are deferred pending a concrete consumer.
+**Provider evidence**: In the [16 November CTF captures](https://github.com/nautechsystems/nautilus_trader/issues/4876#issuecomment-6916171699),
+two trades each include two owned maker orders and other participants. REST and user-stream messages
+contain the same maker sets, and matched quantities sum to the trade size. Earlier sampled REST legs
+also agree with on-chain events. For three sampled trades, participating credentials return the trade,
+while authenticated non-participating credentials return an empty success; an account filter does not
+widen access. This supports the [trades API's authenticated-user scope](https://docs.polymarket.com/api-reference/trade/get-trades).
 
-If you can verify either provider check, could you share sanitized results in the RFC? Useful evidence
-is a same-trade read under both accounts with HTTP statuses and response shapes, paired original REST
-and user-stream payloads containing several owned maker legs, or explicit provider confirmation of the
-required guarantees. Identify the market protocol and trade status. Remove credentials and preserve
-ownership relationships with consistent aliases. Existing captures and read-only queries suffice;
-no new trades are requested.
+**Remaining limits**:
+
+- **Completeness**: The quantity check assumes the provider reports the trade-wide size and each
+  participant's matched amount accurately. Protocol V2, negative-risk markets, owned legs on both
+  outcomes, partially filled owned legs, and multi-bucket trades remain unverified by these captures.
+  REST alone does not prove completeness. Invalid REST evidence leaves the trade
+  [quarantined](#failed-trades-and-rest-resolution).
+- **Fee authority**: Historical fees need a match-time schedule or actual charged amount, supported by
+  fee-bearing executions and attributable balance changes. The sampled maker trades establish neither
+  historical nor first-admission taker fee authority. See [Fee basis across instrument updates](#fee-basis-across-instrument-updates).
+
+Dedicated settlement signals and metrics remain deferred pending a concrete consumer. Share sanitized
+evidence for unsampled cases or historical fees in the RFC. Identify the market protocol and trade
+status, remove credentials, and preserve ownership relationships with consistent aliases. Existing
+captures and read-only queries suffice; no new trades are requested.
 
 #### Failed trades and REST resolution
 
@@ -1695,6 +1709,7 @@ During provider or historical loading, a fee-enabled market with a missing or ze
 The adapter logs a warning unless `feeType` is `zero_fees`.
 Runtime automatic instrument loading also uses zero for a missing or zero rate, but does not log this warning.
 The CLOB `/fee-rate` response's `base_fee` is a legacy base fee and does not supply the effective taker rate.
+A zero estimate can therefore mean the effective rate was unavailable.
 
 The adapter reads each instrument's `fee_schedule` and applies its `rate` and `exponent` as:
 
@@ -1702,9 +1717,22 @@ The adapter reads each instrument's `fee_schedule` and applies its `rate` and `e
 platform fee = shares * rate * (price * (1 - price)) ^ exponent
 ```
 
-The current public schedule uses exponent `1`, which is Polymarket's published
+The public schedule uses exponent `1`, which is Polymarket's published
 `C * feeRate * p * (1 - p)` formula. Platform fees peak at `p = 0.50`, decrease
 symmetrically toward the extremes, and apply only to taker fills.
+
+Polymarket schedules changes to DeFi taker fee coefficients and taker rebate tiers for
+November 20, 2026 at 23:59 UTC. Maker rebate tiers replace daily market-wide pools at the same
+time. The taker fee formula stays the same.
+See the [November fee and rebate changes](https://docs.polymarket.com/programs/fee-and-rebate-changes-november-2026).
+
+Quote-quantity market buys and newly admitted taker fills can use the prior coefficient while
+the adapter holds stale instrument metadata. When enabled, periodic refresh covers the
+instrument configuration and registered filters. Markets tracked by subscriptions or existing
+position watches also refresh after leaving discovery. For retained fills, see
+[Fee basis across instrument updates](#fee-basis-across-instrument-updates).
+
+The table shows the published schedule before that change.
 
 | Category        | Taker `feeRate` | Maker `feeRate` | Maker rebate |
 | --------------- | --------------- | --------------- | ------------ |
@@ -1788,11 +1816,16 @@ recreate its quantity without the Polymarket commission.
 
 ### Backtest fee model
 
-Use `PolymarketFeeModel` for backtests that include taker fees and maker rebates. The model reads `rate`,
-`rebateRate`, `exponent`, and `takerOnly` from each binary option instrument's `fee_schedule`. It requires a
-maker or taker liquidity side, a fill price in `[0, 1]`, and a taker-only schedule with exponent `1`.
-Unsupported instruments and invalid inputs return an error. An instrument without a fee schedule produces zero
-commission.
+Use `PolymarketFeeModel` to estimate taker fees before rebates and maker rebates under the daily pool
+program. The model reads `rate`, `rebateRate`, `exponent`, and `takerOnly` from each binary option
+instrument's `fee_schedule`. It requires a maker or taker liquidity side, a fill price in `[0, 1]`, and
+a taker-only schedule with exponent `1`. Unsupported instruments and invalid inputs return an error.
+An instrument without a fee schedule produces zero commission.
+
+`PolymarketDataLoader` reads the Gamma fee schedule at instrument load time. The date range passed to
+`load_trades` filters trades independently of that schedule. The fee model uses the attached rate
+for both taker fees and maker rebate estimates. Use the instrument schedule in effect for each simulated
+period, including replays that fall entirely before or after the cutover.
 
 ```rust tab="Rust"
 use nautilus_execution::models::fee::FeeModelHandle;
@@ -1818,9 +1851,13 @@ For maker fills, `fee_equivalent` is the platform fee formula above using the sc
 Polymarket's daily pool allocation because a backtest does not know the total fee equivalent from
 other makers in that market.
 
-Live maker fills have zero commission. Polymarket pays the actual pUSD rebate separately each day. The model
-does not represent that payment as a separate event, and it does not model competition between makers, daily
-aggregation, or the minimum payout threshold. See Polymarket's
+The provider and historical loader supply the category-based maker rebate rates shown above.
+The announced maker and taker rebate tiers use separate 30-day weighted volumes for each account. Both
+account-level rebate programs require separate modeling.
+
+Live maker fills have zero commission. Under the pool program, Polymarket pays the pUSD rebate
+separately each day. The model does not represent that payment as a separate event, and it does not
+model competition between makers, daily aggregation, or the minimum payout threshold. See Polymarket's
 [Maker Rebates Program](https://docs.polymarket.com/programs/maker-rebates) for the venue formula.
 
 ## Reconciliation
@@ -2797,8 +2834,8 @@ explicit slug or series scope, and `load_ids` loads additively on top. Only the 
 full-universe fetch is suppressed once an explicit scope is present.
 
 The same composition applies to periodic refreshes driven by `update_instruments_interval_mins`.
-Scopes configured at startup keep refreshing for the client's lifetime, so bootstrap and refresh
-universes match.
+Scopes configured at startup keep refreshing for the client's lifetime, so bootstrap and discovery
+refresh universes match.
 
 When `update_instruments_interval_mins` is positive, a separate refresh loop also looks up markets
 tracked by subscriptions or existing position watches, even after they leave discovery filters.

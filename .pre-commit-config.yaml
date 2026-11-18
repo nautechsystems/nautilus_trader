@@ -305,14 +305,6 @@ repos:
         files: "\\.rs$"
         pass_filenames: false
 
-      - id: check-formatting-rs
-        name: check formatting (Rust)
-        description: Enforces formatting conventions in Rust code
-        entry: bash .pre-commit-hooks/check_formatting_rs.sh
-        language: system
-        files: "\\.rs$"
-        pass_filenames: false
-
       - id: check-docs-conventions
         name: check docs conventions
         description: Enforces documentation conventions
@@ -358,6 +350,12 @@ repos:
           )$
         types: [file]
         pass_filenames: false
+
+      - id: check-rust-formatting
+        name: Check Rust formatting conventions
+        entry: bash scripts/check-rust-formatting.bash
+        language: system
+        types: [rust]
 
       - id: cargo-clippy
         name: cargo clippy

@@ -44,14 +44,13 @@ fn to_snake_case_ascii(bytes: &[u8]) -> String {
     let mut mode: u8 = BOUNDARY;
     let mut word_start = 0;
     let mut i = 0;
-
     while i < len {
         let b = bytes[i];
-
         if !b.is_ascii_alphanumeric() {
             if word_start < i {
                 push_lower_ascii(&mut result, &bytes[word_start..i], &mut first_word);
             }
+
             word_start = i + 1;
             mode = BOUNDARY;
             i += 1;
@@ -68,7 +67,6 @@ fn to_snake_case_ascii(bytes: &[u8]) -> String {
 
         if i + 1 < len && bytes[i + 1].is_ascii_alphanumeric() {
             let next = bytes[i + 1];
-
             if next_mode == LOWER && next.is_ascii_uppercase() {
                 push_lower_ascii(&mut result, &bytes[word_start..=i], &mut first_word);
                 word_start = i + 1;
@@ -77,6 +75,7 @@ fn to_snake_case_ascii(bytes: &[u8]) -> String {
                 if word_start < i {
                     push_lower_ascii(&mut result, &bytes[word_start..i], &mut first_word);
                 }
+
                 word_start = i;
                 mode = BOUNDARY;
             } else {
@@ -98,6 +97,7 @@ fn push_lower_ascii(result: &mut String, word: &[u8], first_word: &mut bool) {
     if !*first_word {
         result.push('_');
     }
+
     *first_word = false;
 
     for &b in word {
@@ -156,6 +156,7 @@ fn push_lower_unicode(result: &mut String, word: &str, first_word: &mut bool) {
     if !*first_word {
         result.push('_');
     }
+
     *first_word = false;
 
     for c in word.chars() {

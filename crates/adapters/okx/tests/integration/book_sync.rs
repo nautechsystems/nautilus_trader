@@ -185,6 +185,7 @@ async fn book_socket(mut socket: WebSocket, venue: Arc<Venue>) {
         let request: Value = serde_json::from_str(&text).unwrap();
         if request["op"] == "unsubscribe" {
             let ack = serde_json::json!({"event": "unsubscribe", "connId": "mock", "arg": request["args"][0]});
+
             if socket
                 .send(Message::Text(ack.to_string().into()))
                 .await
@@ -216,6 +217,7 @@ async fn book_socket(mut socket: WebSocket, venue: Arc<Venue>) {
 
         if snapshot["event"] != "error" || venue.ack_before_rejection.load(Ordering::SeqCst) {
             let ack = serde_json::json!({"event": "subscribe", "connId": "mock", "arg": request["args"][0]});
+
             if socket
                 .send(Message::Text(ack.to_string().into()))
                 .await

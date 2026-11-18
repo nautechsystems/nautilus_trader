@@ -16,8 +16,9 @@
 //! Benchmarks for applying fills and reading the last order event.
 //!
 //! Measures complete fill batches applied through `Order::apply`.
-//! Average-price arithmetic extends a cached `Decimal` fold, while duplicate detection scans
-//! prior events. The fill counts expose both small-order overhead and history-dependent cost.
+//! Average-price arithmetic extends a cached `Decimal` fold. Duplicate detection scans short
+//! histories and switches to a trade ID index once the order holds enough events.
+//! The fill counts expose both small-order overhead and history-dependent cost.
 //!
 //! Run with `cargo bench -p nautilus-model --bench order_fills_criterion`.
 

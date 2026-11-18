@@ -997,6 +997,9 @@ impl ExecutionEngine {
     #[expect(clippy::await_holding_refcell_ref)]
     /// Loads persistent state into cache and rebuilds indices.
     ///
+    /// When `manage_own_order_books` is enabled, clears and rebuilds own order books from
+    /// eligible non-closed restored orders.
+    ///
     /// # Errors
     ///
     /// Returns an error if any cache operation fails.
@@ -1016,8 +1019,8 @@ impl ExecutionEngine {
             let mut cache = self.cache.borrow_mut();
             cache.build_index();
             let _ = cache.check_integrity();
-
             if self.config.manage_own_order_books {
+                cache.clear_own_order_books();
                 cache
                     .orders(None, None, None, None, None)
                     .into_iter()
@@ -4005,6 +4008,7 @@ impl ExecutionEngine {
     ) -> PositionId {
         let position_id = PositionId::new(format!("{}-{}", fill.instrument_id, fill.strategy_id));
         let cache = self.cache.borrow();
+
         if order.is_none_or(|order| !order.is_reduce_only())
             || cache
                 .position_ref(&position_id)

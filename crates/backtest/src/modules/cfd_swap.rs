@@ -388,6 +388,7 @@ impl SimulationModule for CfdSwapModule {
             let day = day
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("CFD swap rollover day is not initialized"))?;
+
             if let Some(adjustments) = &day.pending_adjustments {
                 return Ok(SimulationModuleResult::Completed(
                     adjustments
@@ -510,6 +511,7 @@ impl SimulationModule for CfdSwapModule {
         let day = day
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("CFD swap rollover day is not initialized"))?;
+
         if failed.is_empty() {
             day.date = batch_end_date;
             day.pending_end_date = None;

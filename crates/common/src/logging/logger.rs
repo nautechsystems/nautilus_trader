@@ -985,6 +985,7 @@ impl Logger {
             #[cfg(not(all(feature = "simulation", madsim)))]
             {
                 let _ = tx.send(LogEvent::Close);
+
                 if handle.thread().id() != std::thread::current().id() {
                     let _ = handle.join();
                 }
@@ -1004,6 +1005,7 @@ impl Logger {
             #[cfg(not(all(feature = "simulation", madsim)))]
             {
                 let _ = tx.send(LogEvent::Close);
+
                 if handle.thread().id() != std::thread::current().id() {
                     let _ = handle.join();
                 }

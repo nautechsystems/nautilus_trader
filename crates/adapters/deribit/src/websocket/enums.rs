@@ -164,6 +164,7 @@ impl DeribitWsChannel {
         interval: Option<DeribitUpdateInterval>,
     ) -> String {
         let interval_str = interval.unwrap_or_default().as_str();
+
         match self {
             Self::Trades => format!("trades.{instrument_or_currency}.{interval_str}"),
             Self::Book => format!("book.{instrument_or_currency}.{interval_str}"),

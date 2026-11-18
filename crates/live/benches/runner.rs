@@ -164,7 +164,6 @@ fn bench_event_creation(c: &mut Criterion) {
 
 fn bench_concurrent_channels(c: &mut Criterion) {
     let mut group = c.benchmark_group("Concurrent Channel Operations");
-
     for sender_count in [2, 4, 8] {
         group.bench_with_input(
             BenchmarkId::new("concurrent_sends", sender_count),
@@ -185,7 +184,6 @@ fn bench_concurrent_channels(c: &mut Criterion) {
 
                         handles.push(std::thread::spawn(move || {
                             let quote = create_test_quote();
-
                             for _ in 0..events_per_sender {
                                 tx_clone.send(DataEvent::Data(Data::Quote(quote))).unwrap();
                             }
@@ -199,7 +197,6 @@ fn bench_concurrent_channels(c: &mut Criterion) {
 
                     // Drain receiver
                     let mut count = 0;
-
                     while rx.try_recv().is_ok() {
                         count += 1;
                     }
@@ -215,7 +212,6 @@ fn bench_concurrent_channels(c: &mut Criterion) {
 
 fn bench_batch_processing(c: &mut Criterion) {
     let mut group = c.benchmark_group("Batch Event Processing");
-
     for batch_size in [10, 100, 1000] {
         group.throughput(Throughput::Elements(batch_size as u64));
 
@@ -235,7 +231,6 @@ fn bench_batch_processing(c: &mut Criterion) {
 
                     // Receive batch
                     let mut received = 0;
-
                     while rx.try_recv().is_ok() {
                         received += 1;
                     }
@@ -316,7 +311,6 @@ fn bench_runner_dispatch(c: &mut Criterion) {
 
                 for _ in 0..iters {
                     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-
                     for _ in 0..size {
                         tx.send(DataEvent::Data(Data::Trade(trade))).unwrap();
                     }
@@ -383,6 +377,7 @@ fn bench_command_channels(c: &mut Criterion) {
             None,
         )),
     );
+
     bench_channel_transport(
         c,
         "live_data_commands",

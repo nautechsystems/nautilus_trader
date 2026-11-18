@@ -50,6 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .request_instruments(DeribitCurrency::BTC, None)
         .await?;
     println!("First 2 instruments from BTC:");
+
     for (i, inst) in instruments.iter().take(2).enumerate() {
         let num = i + 1;
         println!("{num}. {inst:?}");

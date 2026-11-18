@@ -28,11 +28,11 @@ const POLYMARKET: &str = "0x0f76f4dc6eaf3332f4100f2e8a0b4a927351dd64646b7bb12f37
 
 fn bench_creation(c: &mut Criterion) {
     let mut group = c.benchmark_group("creation");
-
     for (name, s) in [("short", SHORT), ("medium", MEDIUM), ("long", LONG)] {
         group.bench_with_input(BenchmarkId::new("StackStr", name), s, |b, s| {
             b.iter(|| StackStr::new(black_box(s)));
         });
+
         group.bench_with_input(BenchmarkId::new("Ustr", name), s, |b, s| {
             b.iter(|| Ustr::from(black_box(s)));
         });

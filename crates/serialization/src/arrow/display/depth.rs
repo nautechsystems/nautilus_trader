@@ -60,6 +60,7 @@ pub fn encode_depths(data: &[OrderBookDepth]) -> Result<RecordBatch, ArrowError>
 
     for depth in data {
         instruments.append_value(depth.instrument_id.to_string());
+
         for (side, orders, counts) in [
             (&mut bids, &depth.bids, &depth.bid_counts),
             (&mut asks, &depth.asks, &depth.ask_counts),

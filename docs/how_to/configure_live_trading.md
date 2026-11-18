@@ -345,11 +345,12 @@ across trading nodes.
 :::note[Order tagging behavior]
 Reconciliation tags orders by origin:
 
-- **`VENUE` tag**: external orders discovered at the venue (placed outside this system).
+- **`VENUE` tag**: unclaimed external orders discovered at the venue.
 - **`RECONCILIATION` tag**: synthetic orders generated to align position discrepancies.
 
-When `filter_unclaimed_external_orders` is enabled, only `VENUE`-tagged orders are filtered.
-`RECONCILIATION`-tagged orders are never filtered, so position alignment always succeeds.
+When `filter_unclaimed_external_orders` is enabled, the engine drops unclaimed venue orders and can
+still generate synthetic reconciliation orders. With startup reconciliation enabled, an unresolved
+in-scope position report blocks startup.
 :::
 
 ### Continuous reconciliation

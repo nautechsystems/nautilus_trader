@@ -279,6 +279,7 @@ mod tests {
             let cell = SharedCell::new(10);
             cell.downgrade()
         };
+
         assert!(weak.is_dropped());
         assert!(weak.upgrade().is_none());
     }
@@ -375,6 +376,7 @@ mod tests {
     #[rstest]
     fn test_with_mut_drops_borrow_before_returning() {
         let cell = SharedCell::new(0);
+
         let returned = cell.with_mut(|v| {
             *v = 7;
             *v

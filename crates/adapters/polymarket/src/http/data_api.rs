@@ -144,6 +144,7 @@ impl PageReducer<DataApiTrade, anyhow::Error> for TradeTickReducer {
 
         let capped =
             self.start.is_none() && self.limit.is_some_and(|target| self.rows.len() >= target);
+
         if capped {
             return Ok(Some(TradeTickStop::CallerCapped));
         }

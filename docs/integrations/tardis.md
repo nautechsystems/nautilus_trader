@@ -804,6 +804,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+### Option exercise style and settlement type
+
+Tardis metadata carries neither field. The adapter sets `exercise_style` and `settlement_type` on each
+`CryptoOption` from the Tardis exchange, with the same values as the Deribit, OKX, and Bybit adapters:
+
+| Tardis exchange                 | `exercise_style` | `settlement_type` |
+| ------------------------------- | ---------------- | ----------------- |
+| `deribit`                       | `EUROPEAN`       | `None`            |
+| `bybit-options`, `okex-options` | `EUROPEAN`       | `CASH`            |
+| Any other exchange              | `None`           | `None`            |
+
+[Option-chain CSV catalog conversion](#option-chain-csv-catalog-conversion) applies the `deribit` row.
+See [Options](../concepts/options.md#exercise-style-and-settlement-type) for the values.
+
 ## Nautilus data client
 
 `TardisDataClientConfig` and `TardisDataClientFactory` integrate a configured Tardis Machine stream

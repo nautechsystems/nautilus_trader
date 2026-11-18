@@ -1260,6 +1260,7 @@ impl LighterHttpClient {
 
         let limit_satisfied =
             !start_was_unspecified && requested_limit.is_some_and(|limit| bars.len() >= limit);
+
         if pages >= MAX_BAR_REQUEST_PAGES && cursor_ms < end_ms && !limit_satisfied {
             return Err(LighterHttpError::HistoryIncomplete {
                 data_type: "bar",
@@ -1412,6 +1413,7 @@ impl LighterHttpClient {
 
         let limit_satisfied = !start_was_unspecified
             && requested_limit.is_some_and(|limit| funding_rates.len() >= limit);
+
         if pages >= MAX_FUNDING_REQUEST_PAGES && cursor_ms < end_ms && !limit_satisfied {
             return Err(LighterHttpError::HistoryIncomplete {
                 data_type: "funding rate",
@@ -1432,7 +1434,7 @@ impl LighterHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or nonempty metadata contains no valid instruments.
+    /// Returns an error if the request fails or supported markets contain no valid instruments.
     pub async fn request_instruments(&self) -> LighterHttpResult<Vec<InstrumentAny>> {
         self.request_instruments_for_query(&LighterOrderBookDetailsQuery::default())
             .await
@@ -1442,7 +1444,7 @@ impl LighterHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or nonempty metadata contains no valid instruments.
+    /// Returns an error if the request fails or supported markets contain no valid instruments.
     pub async fn request_instruments_with_status(
         &self,
     ) -> LighterHttpResult<Vec<(InstrumentAny, LighterMarketStatus)>> {

@@ -2292,6 +2292,10 @@ Shared repository test policy uses `#[rstest]` for Rust test functions, permits
 [testing conventions hook](../../.pre-commit-hooks/check_testing_conventions.sh) enforces these
 repository-wide rules.
 
+Exercise adapter behavior through the same entry points production uses. Keep fixtures and private
+state probes in test-only modules. Use a child test module when a test needs private access, and keep
+production visibility as narrow as its callers require.
+
 #### Fixtures and parser assertions
 
 Use exact fixture values and assert every stable output field. Distinct inputs should expose field

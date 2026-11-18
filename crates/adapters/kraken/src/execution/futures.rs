@@ -1500,6 +1500,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
 
         self.spawn_task("submit_order_list", async move {
             let results = http.send_order_batches(order_tuples).await;
+
             for (result, (strategy_id, instrument_id, client_order_id)) in
                 results.into_iter().zip(&order_meta)
             {
@@ -2477,6 +2478,7 @@ fn attribute_orders_status_reports(
         let echoed = report
             .client_order_id
             .ok_or("it carries no client order ID")?;
+
         if unindexed
             .get(&echoed)
             .is_none_or(|venue_order_ids| venue_order_ids.len() != 1)

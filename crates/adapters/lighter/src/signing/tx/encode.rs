@@ -97,12 +97,14 @@ fn hash_attributes(pairs: &[(u8, u64); NB_ATTRIBUTES_PER_TX]) -> Fp5 {
 /// alongside the 40-byte tx hash.
 ///
 /// `k` MUST be drawn from a cryptographic RNG and used at most once per key;
-/// see [`PrivateKey::sign`] for the full nonce contract. The wire signature is
+/// see [`PrivateKey::sign`] for the nonce requirements. The wire signature is
 /// laid out as `s_le || e_le`.
 ///
 /// # Errors
 ///
-/// Returns an error if the transaction attributes violate venue restrictions.
+/// Returns an error if:
+/// - The transaction attributes violate venue restrictions.
+/// - The signing nonce is zero or non-canonical.
 pub fn sign_tx<T: LighterTx>(
     tx: &T,
     chain_id: u32,
@@ -110,7 +112,7 @@ pub fn sign_tx<T: LighterTx>(
     k: crate::signing::curve::Scalar,
 ) -> anyhow::Result<SignedTx> {
     let hashed_msg = compute_tx_hash_fp5(tx, chain_id)?;
-    let sig = sk.sign(hashed_msg, k);
+    let sig = sk.sign(hashed_msg, k)?;
     Ok(SignedTx {
         tx_hash: hashed_msg.to_le_bytes(),
         sig,
@@ -451,9 +453,10 @@ mod tests {
 
     use super::*;
     use crate::signing::{
-        curve::{SCALAR_BYTES, Scalar},
+        curve::{ORDER, SCALAR_BYTES, Scalar},
         field::Fp,
         fixtures::{arb_scalar_nonzero, bytes_to_hex, decode_scalar_bytes, hex_to_bytes},
+        schnorr::InvalidSigningNonce,
         tx::types::{NB_ATTRIBUTES_PER_TX, OrderInfo, TxContext},
     };
 
@@ -617,7 +620,9 @@ mod tests {
     }
 
     #[rstest]
-    fn signing_rejects_invalid_self_trade_attributes() {
+    #[case::valid_nonce(Scalar::ONE)]
+    #[case::invalid_nonce(Scalar::ZERO)]
+    fn signing_rejects_invalid_self_trade_attributes(#[case] k: Scalar) {
         let suite: OracleFile = serde_json::from_str(ORACLE_JSON).unwrap();
         let vector = &suite.vectors[0];
         let mut tx = expect_create_order(vector);
@@ -626,7 +631,6 @@ mod tests {
         tx.attributes.self_trade_equality_mode =
             Some(crate::common::enums::LighterSelfTradeEqualityMode::MasterAccountIndex);
         let sk = PrivateKey::from_le_bytes_reduce(decode_scalar_bytes(&vector.sk));
-        let k = Scalar::from_le_bytes_reduce(decode_scalar_bytes(&vector.sk));
         let expected =
             "Lighter reduce self-trade behavior cannot combine with master-account equality";
 
@@ -641,6 +645,22 @@ mod tests {
                 .unwrap_err()
                 .to_string(),
             expected
+        );
+    }
+
+    #[rstest]
+    #[case::zero(Scalar::ZERO)]
+    #[case::order(ORDER)]
+    fn signing_rejects_invalid_nonce(#[case] k: Scalar) {
+        let suite: OracleFile = serde_json::from_str(ORACLE_JSON).unwrap();
+        let vector = &suite.vectors[0];
+        let tx = expect_create_order(vector);
+        let sk = PrivateKey::from_le_bytes_reduce(decode_scalar_bytes(&vector.sk));
+        let e = sign_tx(&tx, vector.chain_id, &sk, k).unwrap_err();
+
+        assert_eq!(
+            e.downcast_ref::<InvalidSigningNonce>(),
+            Some(&InvalidSigningNonce)
         );
     }
 
@@ -753,10 +773,7 @@ mod tests {
 
     fn assert_round_trip_sign<T: LighterTx>(tx: &T, v: &OracleVector) {
         let sk = PrivateKey::from_le_bytes_reduce(decode_scalar_bytes(&v.sk));
-        // Pick a nonzero, fixture-derived `k` - any non-zero canonical scalar
-        // is valid. Guarding against `k == 0` and non-canonical limbs makes
-        // the assertion fail loudly on the test scaffold rather than producing
-        // an undefined signature if the XOR happens to land on a bad value.
+        // Derive a nonce from the fixture and check it before signing so a bad fixture is explicit
         let mut k_bytes = decode_scalar_bytes(&v.sk);
         k_bytes[0] ^= 0x01;
         let k = Scalar::from_le_bytes_reduce(k_bytes);

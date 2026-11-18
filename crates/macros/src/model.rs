@@ -258,6 +258,7 @@ fn push_required_derive_path(paths: &mut Vec<syn::Path>, path: syn::Path) {
         .segments
         .last()
         .map(|segment| segment.ident.to_string());
+
     if !paths.iter().any(|existing| {
         existing
             .segments

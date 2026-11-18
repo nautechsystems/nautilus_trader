@@ -25,7 +25,9 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, TradeTick},
-    enums::{AccountType, AggressorSide, BookType, InstrumentClass, OptionKind, OrderSide},
+    enums::{
+        AccountType, AggressorSide, BookType, ExerciseStyle, InstrumentClass, OptionKind, OrderSide,
+    },
     events::AccountState,
     identifiers::{AccountId, InstrumentId, Symbol, TradeId},
     instruments::{
@@ -402,6 +404,7 @@ fn parse_option_instrument(
         .multiplier(multiplier)
         .lot_size(min_trade_amount)
         .min_quantity(min_trade_amount)
+        .exercise_style(ExerciseStyle::European)
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()?;
@@ -1281,6 +1284,7 @@ mod tests {
         assert_eq!(option.raw_symbol(), Symbol::from("BTC-27DEC24-100000-C"));
         assert_eq!(option.underlying.code, "BTC");
         assert_eq!(option.underlying_instrument_id, None);
+        assert_eq!(option.exercise_style, Some(ExerciseStyle::European));
         assert_eq!(option.settlement_type, None);
         assert_eq!(option.quote_currency.code, "BTC");
         assert_eq!(option.settlement_currency.code, "BTC");

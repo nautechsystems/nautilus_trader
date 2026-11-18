@@ -682,6 +682,7 @@ impl KrakenSpotWebSocketClient {
         }
         let mut symbols_to_subscribe = Vec::new();
         let channel_str = channel.as_ref();
+
         for symbol in &symbols {
             let key = format!("{channel_str}:{symbol}");
             if self.subscriptions.add_reference(&key) {
@@ -749,6 +750,7 @@ impl KrakenSpotWebSocketClient {
     ) -> Result<(), KrakenWsError> {
         let mut symbols_to_subscribe = Vec::new();
         let channel_str = channel.as_ref();
+
         for symbol in &symbols {
             let key = format!("{channel_str}:{symbol}:{interval}");
             if self.subscriptions.add_reference(&key) {
@@ -801,6 +803,7 @@ impl KrakenSpotWebSocketClient {
     ) -> Result<(), KrakenWsError> {
         let mut symbols_to_unsubscribe = Vec::new();
         let channel_str = channel.as_ref();
+
         for symbol in &symbols {
             let key = format!("{channel_str}:{symbol}:{interval}");
             if self.subscriptions.remove_reference(&key) {
@@ -854,6 +857,7 @@ impl KrakenSpotWebSocketClient {
         }
         let mut symbols_to_unsubscribe = Vec::new();
         let channel_str = channel.as_ref();
+
         for symbol in &symbols {
             let key = format!("{channel_str}:{symbol}");
             if self.subscriptions.remove_reference(&key) {
@@ -2538,6 +2542,7 @@ mod tests {
             .subscribe_book(instrument_id, Some(10))
             .await
             .unwrap();
+
         while cmd_rx.try_recv().is_ok() {}
         let issued = client.l2_depths.subscription("BTC/USD").unwrap();
 
@@ -2583,6 +2588,7 @@ mod tests {
             .subscribe_book(instrument_id, Some(10))
             .await
             .unwrap();
+
         while cmd_rx.try_recv().is_ok() {}
         let issued = client.l2_depths.subscription("BTC/USD").unwrap();
 
@@ -2755,6 +2761,7 @@ mod tests {
             .subscribe_book(instrument_id, Some(25))
             .await
             .unwrap();
+
         while cmd_rx.try_recv().is_ok() {}
         let live = client.l2_depths.subscription("BTC/USD").unwrap();
 
@@ -2838,6 +2845,7 @@ mod tests {
             .subscribe_book(instrument_id, Some(10))
             .await
             .unwrap();
+
         while cmd_rx.try_recv().is_ok() {}
         let live = client.l2_depths.subscription("BTC/USD").unwrap();
 

@@ -1174,10 +1174,12 @@ and `order.slippage` columns move from `double precision` to `NUMERIC`, and the 
 while the old column types remain.
 
 The initialization also adds nullable `instrument.underlying_instrument_id`, `instrument.exercise_style`,
-and `instrument.settlement_type` columns:
+`instrument.settlement_type`, and `instrument.tick_scheme` columns:
 
 - Existing rows keep `NULL`, which loads as `None`.
 - Cache startup rejects schemas missing any of these columns.
+
+Register custom tick schemes before loading cached option spreads.
 
 Existing databases whose `AGGRESSOR_SIDE` enum still contains `BUYER` and `SELLER` also need this one-time
 migration before ingesting v2 data:

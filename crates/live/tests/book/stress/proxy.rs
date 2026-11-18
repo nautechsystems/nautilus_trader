@@ -120,7 +120,6 @@ impl FaultProxy {
 
             for (index, route) in state.routes.iter().enumerate() {
                 let state = Arc::clone(&state);
-
                 let handler = move |ws: WebSocketUpgrade, headers: HeaderMap| {
                     let state = Arc::clone(&state);
                     async move { ws.on_upgrade(move |socket| relay(socket, state, index, headers)) }
@@ -449,7 +448,6 @@ async fn relay(mut socket: WebSocket, state: Arc<ProxyState>, index: usize, head
     let mut wire = state.codec.open(route, number);
     let mut held = VecDeque::<(String, Message)>::new();
     let mut release = state.release.subscribe();
-
     'relay: loop {
         state.thaw().await;
 
@@ -515,7 +513,6 @@ async fn relay(mut socket: WebSocket, state: Arc<ProxyState>, index: usize, head
 async fn relay_lines(adapter: TcpStream, state: Arc<ProxyState>, index: usize) {
     let route_state = &state.routes[index];
     let route = &route_state.route;
-
     let upstream = match state.codec.connect(route).await {
         Ok(upstream) => upstream,
         Err(e) => {
@@ -753,11 +750,9 @@ impl ProxyState {
 
     async fn thaw(&self) {
         let until = *self.freeze_until.lock();
-
         if let Some(until) = until {
             dst::time::sleep_until(until).await;
             let mut freeze_until = self.freeze_until.lock();
-
             if *freeze_until == Some(until) {
                 *freeze_until = None;
             }
@@ -822,7 +817,6 @@ mod tests {
     impl WireConnection for TestConnection {
         fn upstream(&mut self, message: &Message) -> Upstream {
             let frame = parse(message);
-
             if let Some(key) = frame["unsubscribed"].as_str() {
                 return Upstream::Unsubscribed(key.to_string());
             }
@@ -879,7 +873,6 @@ mod tests {
         let (frames, _) = tokio::sync::broadcast::channel::<String>(64);
         let (command_tx, commands) = tokio::sync::mpsc::unbounded_channel();
         let venue_frames = frames.clone();
-
         let handler = move |ws: WebSocketUpgrade, headers: HeaderMap| {
             let mut frames = venue_frames.subscribe();
             let commands = command_tx.clone();
@@ -914,7 +907,6 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let app = Router::new().route("/venue", get(handler));
-
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
 
         TestVenue {
@@ -965,7 +957,6 @@ mod tests {
 
     async fn receive_all(client: &mut Client) -> Vec<String> {
         let mut received = Vec::new();
-
         while let Some(text) = receive(client).await {
             received.push(text);
         }
@@ -990,6 +981,7 @@ mod tests {
         let venue = start_venue().await;
         let proxy = start_proxy(&venue.url).await;
         let mut client = connect(&proxy).await;
+
         let frames = [
             frame("A", "snapshot", 1),
             frame("A", "update", 2),
@@ -1013,6 +1005,7 @@ mod tests {
         let venue = start_venue().await;
         let proxy = start_proxy(&venue.url).await;
         let mut client = connect(&proxy).await;
+
         {
             let mut fault = proxy.fault("A");
             fault.drop_snapshots = 1;
@@ -1540,6 +1533,7 @@ mod tests {
         let venue = start_venue().await;
         let proxy = start_proxy(&venue.url).await;
         let mut client = connect(&proxy).await;
+
         {
             let mut fault = proxy.fault("A");
             fault.drop_updates = 1;
@@ -1642,7 +1636,6 @@ mod tests {
 
     async fn receive_lines(reader: &mut LineReader) -> Vec<String> {
         let mut received = Vec::new();
-
         while let Ok(Ok(Some(line))) =
             tokio::time::timeout(std::time::Duration::from_millis(500), reader.next_line()).await
         {
@@ -1657,6 +1650,7 @@ mod tests {
         let mut venue = start_line_venue().await;
         let proxy = start_line_proxy(&venue.url).await;
         let (mut reader, mut write) = connect_lines(&proxy).await;
+
         {
             let mut fault = proxy.fault("A");
             fault.drop_updates = 1;

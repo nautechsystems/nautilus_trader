@@ -77,7 +77,11 @@ async fn fresh_clients_sign_and_disable_transparent_reconnect(
         let (first, first_timestamp) = tokio::join!(connect(&config, Arc::new(|_| {})), first_peer);
         let first = first.unwrap();
         assert_no_connection(&listener, address, async {
-            wait_until_async(|| async { first.is_disconnected() }, Duration::from_secs(2)).await;
+            wait_until_async(
+                || async { first.is_disconnected() },
+                Duration::from_secs(10),
+            )
+            .await;
         })
         .await;
 

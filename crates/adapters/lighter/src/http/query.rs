@@ -303,13 +303,18 @@ pub enum LighterTradeQueryType {
     MarketSettlement,
 }
 
-impl From<LighterTradeType> for LighterTradeQueryType {
-    fn from(value: LighterTradeType) -> Self {
+impl TryFrom<LighterTradeType> for LighterTradeQueryType {
+    type Error = anyhow::Error;
+
+    fn try_from(value: LighterTradeType) -> Result<Self, Self::Error> {
         match value {
-            LighterTradeType::Trade => Self::Trade,
-            LighterTradeType::Liquidation => Self::Liquidation,
-            LighterTradeType::Deleverage => Self::Deleverage,
-            LighterTradeType::MarketSettlement => Self::MarketSettlement,
+            LighterTradeType::Trade => Ok(Self::Trade),
+            LighterTradeType::Liquidation => Ok(Self::Liquidation),
+            LighterTradeType::Deleverage => Ok(Self::Deleverage),
+            LighterTradeType::MarketSettlement => Ok(Self::MarketSettlement),
+            LighterTradeType::Other => Err(anyhow::anyhow!(
+                "Lighter trade type `{value}` has no trade query filter",
+            )),
         }
     }
 }
@@ -377,6 +382,7 @@ pub(crate) fn validate_client_order_indexes(values: &[i64]) -> Result<(), String
 
 #[cfg(test)]
 mod tests {
+
     use rstest::rstest;
 
     use super::*;
@@ -525,7 +531,9 @@ mod tests {
             from_timestamp: Some(1_700_000_000_000),
             ask_filter: Some(1),
             role: Some(LighterTradeRole::Maker),
-            trade_type: Some(LighterTradeQueryType::from(LighterTradeType::Liquidation)),
+            trade_type: Some(
+                LighterTradeQueryType::try_from(LighterTradeType::Liquidation).unwrap(),
+            ),
             limit: 75,
             aggregate: Some(true),
         };
@@ -662,5 +670,24 @@ mod tests {
         assert_eq!(value["cursor"], "cursor-1");
         assert_eq!(value["limit"], 50);
         assert!(value.get("auth").is_none());
+    }
+
+    #[rstest]
+    #[case::trade(LighterTradeType::Trade, Some(LighterTradeQueryType::Trade))]
+    #[case::liquidation(
+        LighterTradeType::Liquidation,
+        Some(LighterTradeQueryType::Liquidation)
+    )]
+    #[case::deleverage(LighterTradeType::Deleverage, Some(LighterTradeQueryType::Deleverage))]
+    #[case::market_settlement(
+        LighterTradeType::MarketSettlement,
+        Some(LighterTradeQueryType::MarketSettlement)
+    )]
+    #[case::other(LighterTradeType::Other, None)]
+    fn test_trade_query_type_try_from_trade_type(
+        #[case] trade_type: LighterTradeType,
+        #[case] expected: Option<LighterTradeQueryType>,
+    ) {
+        assert_eq!(LighterTradeQueryType::try_from(trade_type).ok(), expected);
     }
 }

@@ -3043,6 +3043,7 @@ fn is_partial_book_depth(depth: u32) -> bool {
 
 fn book_stream(instrument_id: &InstrumentId, depth: u32) -> String {
     let symbol = format_binance_stream_symbol(instrument_id);
+
     if is_partial_book_depth(depth) {
         format!("{symbol}@depth{depth}@100ms")
     } else {

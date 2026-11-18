@@ -325,4 +325,144 @@ strip_color "$missing_derive_case/output.txt" > "$missing_derive_case/plain.txt"
 rg -Fq "Error (coverage): crates/adapters/derive/src/signing/modules/trade.rs:0" "$missing_derive_case/plain.txt"
 rg -Fq "Found 1 DST convention violation(s)" "$missing_derive_case/plain.txt"
 
+for shape in \
+  use commented_use fn commented_fn module commented_module indented_module \
+  hash_use all_first all_last multiline_use native_all native_not; do
+  gated_case="$CASE_ROOT/gated-$shape"
+  create_case "$gated_case"
+  gated_file="$gated_case/crates/live/src/execution/manager.rs"
+  case "$shape" in
+    use | commented_use)
+      printf '%s\n' '#[cfg(test)]' 'use tokio::time;' > "$gated_file"
+      if [ "$shape" = commented_use ]; then
+        printf '%s\n' '#[cfg(test)]' 'use tokio::time; // Test-only import' > "$gated_file"
+      fi
+      ;;
+    fn | commented_fn)
+      printf '%s\n' \
+        '#[cfg(test)]' \
+        'fn test_clock(' \
+        ') {' \
+        '    let _ = std::time::Instant::now();' \
+        '    tokio::time::sleep(delay);' \
+        '}' > "$gated_file"
+      if [ "$shape" = commented_fn ]; then
+        sed -e 's/{$/{ \/\/ Test-only body/' -e 's/^}/} \/\/ End of test function/' "$gated_file" > "$gated_case/commented.rs"
+        cat "$gated_case/commented.rs" > "$gated_file"
+      fi
+      ;;
+    module | commented_module | indented_module | all_first | all_last)
+      case "$shape" in
+        all_first) gate='#[cfg(all(test, feature = "python"))]' ;;
+        all_last) gate='#[cfg(all(feature = "python", test))]' ;;
+        *) gate='#[cfg(test)]' ;;
+      esac
+      printf '%s\n' \
+        "$gate" \
+        '#[expect(' \
+        '    clippy::unused_async,' \
+        '    reason = "Exercises attribute continuation"' \
+        ')]' \
+        'mod tests {' \
+        '    fn test_clock() {' \
+        '        let _ = std::time::Instant::now();' \
+        '        tokio::time::sleep(delay);' \
+        '        let _ = AHashMap::<u64, u64>::new();' \
+        '    }' \
+        '}' > "$gated_file"
+      if [ "$shape" = commented_module ]; then
+        sed -e 's/{$/{ \/\/ Test-only module/' -e 's/^}/} \/\/ End of test module/' "$gated_file" > "$gated_case/commented.rs"
+        cat "$gated_case/commented.rs" > "$gated_file"
+      fi
+      if [ "$shape" = indented_module ]; then
+        sed 's/^/    /' "$gated_file" > "$gated_case/indented.rs"
+        {
+          printf '%s\n' 'mod outer {'
+          cat "$gated_case/indented.rs"
+          printf '%s\n' '}'
+        } > "$gated_file"
+      fi
+      ;;
+    hash_use)
+      printf '%s\n' '#[cfg(test)]' 'use ahash::AHashMap;' > "$gated_file"
+      ;;
+    native_all | native_not)
+      case "$shape" in
+        native_all) gate='#[cfg(not(all(feature = "simulation", madsim)))]' ;;
+        native_not) gate='#[cfg(not(madsim))]' ;;
+      esac
+      printf '%s\n' \
+        '#[cfg(test)]' \
+        'use tokio::time;' \
+        "$gate" \
+        'fn native() {' \
+        '    let _ = rand::rng();' \
+        '    std::thread::spawn(run);' \
+        '    tokio::time::sleep(delay);' \
+        '}' > "$gated_file"
+      printf '\n%.0s' 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 >> "$gated_file"
+      ;;
+    multiline_use)
+      printf '%s\n' \
+        '#[cfg(test)]' \
+        'use tokio::{' \
+        '    time,' \
+        '};' > "$gated_file"
+      ;;
+  esac
+  production_start=$(awk 'END { print NR }' "$gated_file")
+  printf '%s\n' \
+    'use tokio::time;' \
+    'pub async fn production() {' \
+    '    let _ = std::time::Instant::now();' \
+    '    let _ = rand::rng();' \
+    '    tokio::select! {' \
+    '        _ = ready() => {}' \
+    '    }' \
+    '    std::thread::spawn(run);' \
+    '    let _ = AHashMap::<u64, u64>::new();' \
+    '    let _ = tokio::net::TcpStream::connect("localhost:1").await;' \
+    '    tokio::time::sleep(delay).await;' \
+    '}' >> "$gated_file"
+  run_hook "$gated_case"
+  if [ "$RUN_STATUS" -ne 1 ]; then
+    echo "Expected production violations after a test-gated $shape"
+    cat "$gated_case/output.txt"
+    exit 1
+  fi
+  strip_color "$gated_case/output.txt" > "$gated_case/plain.txt"
+  for rule_offset in 1:3 2:4 3:5 4:8 5:9 6:10 7:11 7:1; do
+    rule=${rule_offset%:*}
+    line=$((production_start + ${rule_offset#*:}))
+    expected="Error (rule$rule): crates/live/src/execution/manager.rs:$line"
+    if ! rg -Fxq "$expected" "$gated_case/plain.txt"; then
+      echo "Expected a violation after test-gated $shape: $expected"
+      cat "$gated_case/output.txt"
+      exit 1
+    fi
+  done
+  if ! rg -Fxq 'Found 8 DST convention violation(s)' "$gated_case/plain.txt"; then
+    echo "Expected only the eight production violations after test-gated $shape"
+    cat "$gated_case/output.txt"
+    exit 1
+  fi
+done
+
+for gate in \
+  '#[cfg(all(unix, any(feature = "python", test)))]' \
+  '#[cfg(all(any(feature = "python", test), unix))]'; do
+  optional_case="$CASE_ROOT/optional-test"
+  create_case "$optional_case"
+  printf '%s\n' "$gate" 'use tokio::time;' > "$optional_case/crates/common/src/lib.rs"
+  run_hook "$optional_case"
+  if [ "$RUN_STATUS" -ne 1 ]; then
+    echo "Expected production import with optional test gate to be checked: $gate"
+    cat "$optional_case/output.txt"
+    exit 1
+  fi
+  strip_color "$optional_case/output.txt" > "$optional_case/plain.txt"
+  rg -Fxq 'Error (rule7): crates/common/src/lib.rs:2' "$optional_case/plain.txt"
+  rg -Fxq 'Found 1 DST convention violation(s)' "$optional_case/plain.txt"
+done
+
 echo "DST convention hook tests passed"

@@ -25,3 +25,6 @@ mod defi_currency;
 
 #[cfg(all(target_os = "linux", any(feature = "redis", feature = "postgres")))]
 mod position_flip;
+
+#[cfg(all(target_os = "linux", any(feature = "redis", feature = "postgres")))]
+mod position_reopen;

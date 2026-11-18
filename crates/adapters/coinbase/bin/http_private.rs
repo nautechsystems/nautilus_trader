@@ -127,6 +127,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     log::info!("Requesting account state");
+
     match client.request_account_state(account_id).await {
         Ok(state) => {
             log::info!("Account has {} balance(s)", state.balances.len());
@@ -160,6 +161,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     log::info!("Requesting recent BTC-USD order history");
     let btc_usd = InstrumentId::from("BTC-USD.COINBASE");
+
     match client
         .request_order_status_reports(account_id, Some(btc_usd), false, None, None, Some(25))
         .await

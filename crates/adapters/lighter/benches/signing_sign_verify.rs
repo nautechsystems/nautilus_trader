@@ -17,7 +17,8 @@
 //!
 //! Measures the user-visible critical path: `PrivateKey::sign`,
 //! `PublicKey::verify`, `compute_tx_hash` for the two trading-hot tx kinds,
-//! `sign_tx` (hash + sign), public-key derivation, and `build_auth_token_at`.
+//! `sign_tx` (hash + sign, with fixed and fresh nonces), public-key derivation,
+//! nonce generation, and `build_auth_token_at`.
 //!
 //! Quote these IDs in `BENCHMARKS.md`. `micros.rs` repeats a few of the same
 //! calls next to decode and JSON render so a pipeline regression can be
@@ -27,7 +28,7 @@ use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_lighter::signing::{
-    auth_token::build_auth_token_at,
+    auth_token::{build_auth_token_at, fresh_k},
     tx::{compute_tx_hash, sign_tx},
 };
 
@@ -44,7 +45,12 @@ fn bench_sign(c: &mut Criterion) {
     let mut group = c.benchmark_group("signing");
     group.throughput(Throughput::Elements(1));
     group.bench_function("PrivateKey::sign", |b| {
-        b.iter(|| black_box(sk.sign(black_box(msg), black_box(k))));
+        b.iter(|| {
+            let sig = sk
+                .sign(black_box(msg), black_box(k))
+                .expect("the fixture signing nonce is valid");
+            black_box(sig)
+        });
     });
     group.finish();
 }
@@ -145,6 +151,28 @@ fn bench_sign_tx_cancel_order(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_fresh_nonce(c: &mut Criterion) {
+    let tx = create_order_tx();
+    let sk = fixed_sk();
+    let mut group = c.benchmark_group("signing");
+    group.throughput(Throughput::Elements(1));
+    group.bench_function("fresh_k", |b| {
+        b.iter(|| black_box(fresh_k().expect("OS randomness is available")));
+    });
+
+    group.bench_function("sign_tx (CreateOrder, fresh nonce)", |b| {
+        b.iter(|| {
+            let k = fresh_k().expect("OS randomness is available");
+            black_box(
+                sign_tx(black_box(&tx), black_box(CHAIN_ID), black_box(&sk), k)
+                    .expect("benchmark transaction attributes are valid"),
+            )
+        });
+    });
+
+    group.finish();
+}
+
 fn bench_build_auth_token(c: &mut Criterion) {
     let sk = fixed_sk();
     let k = fixed_k();
@@ -179,6 +207,7 @@ criterion_group!(
     bench_compute_tx_hash_cancel_order,
     bench_sign_tx_create_order,
     bench_sign_tx_cancel_order,
+    bench_fresh_nonce,
     bench_build_auth_token,
 );
 criterion_main!(benches);

@@ -725,6 +725,7 @@ impl AccountsManager {
 
             if let Some(base_currency) = account.base_currency {
                 currency = base_currency;
+
                 if let Some(xrate) = self.calculate_xrate_to_base(
                     account.base_currency,
                     instrument,

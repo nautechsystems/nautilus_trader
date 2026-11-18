@@ -217,6 +217,7 @@ pub(crate) fn check_duplicate_outcome(
         .info
         .as_ref()
         .and_then(|info| info.get(TOKEN_ID_KEY));
+
     if instruments.values().any(|existing| {
         existing.id != instrument.id
             && token.is_some()

@@ -302,6 +302,7 @@ impl TardisDataClient {
         let heartbeat = async move {
             let mut interval =
                 tokio::time::interval(Duration::from_secs(WS_HEARTBEAT_INTERVAL_SECS));
+
             loop {
                 tokio::select! {
                     _ = interval.tick() => {
@@ -640,6 +641,7 @@ impl DataClient for TardisDataClient {
         ) {
             self.is_connected.store(false, Ordering::Release);
             self.tasks.begin_shutdown();
+
             if let Err(teardown_error) = self
                 .tasks
                 .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))

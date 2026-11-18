@@ -665,6 +665,7 @@ impl Portfolio {
                 .positions(Some(venue), None, None, None, None)
                 .iter()
                 .any(|position| cache.account(&position.account_id).is_some());
+
             if !has_position_account {
                 log::error!("Cannot calculate net exposures: no account registered for {venue}");
                 return None;

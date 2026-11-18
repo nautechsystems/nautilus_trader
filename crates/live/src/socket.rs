@@ -231,7 +231,6 @@ impl SocketReconnectOwner {
         let request = Arc::new(Mutex::new(Some(handle)));
         let guarded_request = Arc::clone(&request);
         let registry_ref = Arc::downgrade(&registry);
-
         let guarded_handle = SocketReconnectHandle::new(move || {
             let Some(_registry) = registry_ref.upgrade() else {
                 return ReconnectRequestOutcome::Closed;
@@ -564,7 +563,6 @@ impl SocketControl {
         drop(registration);
 
         let publisher = self.publisher.clone();
-
         SocketStateSink::new(move |state| {
             publisher.publish_if_current(generation, state, &on_state);
         })
@@ -617,7 +615,6 @@ impl Drop for SocketControl {
 
 fn advance_generation(counter: &AtomicU64) -> u64 {
     let mut current = counter.load(Ordering::Relaxed);
-
     loop {
         let next = current.wrapping_add(1).max(1);
         match counter.compare_exchange_weak(current, next, Ordering::Release, Ordering::Relaxed) {
@@ -782,7 +779,6 @@ mod tests {
 
         let stale_handle = handle(&registry);
         let request_handle = stale_handle.clone();
-
         let request = thread::spawn(move || request_handle.request_reconnect());
         entered.wait();
 
@@ -852,7 +848,6 @@ mod tests {
             .map(|entry| entry.generation)
             .unwrap();
         let request_handle = stale_handle.clone();
-
         let request = thread::spawn(move || request_handle.request_reconnect());
         entered.wait();
 

@@ -1034,7 +1034,7 @@ mod tests {
     #[case::auth_rejection(
         load_test_json("ws_auth_failure.json"),
         AuthState::Failed,
-        Ok(Err("Invalid apikey".to_string()))
+        Ok(Err("API key is invalid.".to_string()))
     )]
     #[case::reconnected(
         nautilus_network::RECONNECTED.to_string(),
@@ -1387,27 +1387,74 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_frame_auth_success() {
-        let value = load_value("ws_auth_success.json");
-        let frame = parse_bybit_ws_frame(value);
+    #[case::private_stream(
+        load_test_json("ws_auth_success.json"),
+        Some("cejreaspqfm9se7usbrg-2xh"),
+        None,
+        Some(""),
+        Some(true)
+    )]
+    #[case::trade_stream(
+        r#"{"retCode":0,"retMsg":"OK","op":"auth","connId":"cnt5leec0hvan15eukcg-2t"}"#.to_string(),
+        Some("cnt5leec0hvan15eukcg-2t"),
+        Some(0),
+        Some("OK"),
+        None
+    )]
+    fn test_parse_frame_auth_success(
+        #[case] frame: String,
+        #[case] conn_id: Option<&str>,
+        #[case] ret_code: Option<i64>,
+        #[case] ret_msg: Option<&str>,
+        #[case] success: Option<bool>,
+    ) {
+        let frame = parse_bybit_ws_frame(serde_json::from_str(&frame).unwrap());
+
         match frame {
             BybitWsFrame::Auth(auth) => {
-                assert_eq!(auth.conn_id.as_deref(), Some("cejreaspqfm9se7usbrg-2xh"));
-                assert_eq!(auth.ret_code, Some(0));
-                assert_eq!(auth.success, Some(true));
+                assert_eq!(auth.op, BybitWsOperation::Auth);
+                assert_eq!(auth.conn_id.as_deref(), conn_id);
+                assert_eq!(auth.ret_code, ret_code);
+                assert_eq!(auth.ret_msg.as_deref(), ret_msg);
+                assert_eq!(auth.success, success);
             }
             other => panic!("Expected Auth, was {other:?}"),
         }
     }
 
     #[rstest]
-    fn test_parse_frame_auth_failure() {
-        let value = load_value("ws_auth_failure.json");
-        let frame = parse_bybit_ws_frame(value);
+    #[case::private_stream(
+        load_test_json("ws_auth_failure.json"),
+        Some("cejreaspqfm9se7usbrg-3ab"),
+        None,
+        Some("API key is invalid."),
+        Some(false)
+    )]
+    #[case::trade_stream(
+        r#"{"retCode":10004,"retMsg":"invalid sign","op":"auth","connId":"cnt5leec0hvan15eukcg-3c"}"#.to_string(),
+        Some("cnt5leec0hvan15eukcg-3c"),
+        Some(10004),
+        Some("invalid sign"),
+        None
+    )]
+    fn test_parse_frame_auth_failure(
+        #[case] frame: String,
+        #[case] conn_id: Option<&str>,
+        #[case] ret_code: Option<i64>,
+        #[case] ret_msg: Option<&str>,
+        #[case] success: Option<bool>,
+    ) {
+        let frame = parse_bybit_ws_frame(serde_json::from_str(&frame).unwrap());
+
         match frame {
             BybitWsFrame::ErrorResponse(resp) => {
-                assert_eq!(resp.ret_code, Some(10003));
-                assert_eq!(resp.ret_msg.as_deref(), Some("Invalid apikey"));
+                assert_eq!(resp.op, Some(BybitWsOperation::Auth));
+                assert_eq!(resp.topic, None);
+                assert_eq!(resp.conn_id.as_deref(), conn_id);
+                assert_eq!(resp.req_id, None);
+                assert_eq!(resp.ret_code, ret_code);
+                assert_eq!(resp.ret_msg.as_deref(), ret_msg);
+                assert_eq!(resp.success, success);
             }
             other => panic!("Expected ErrorResponse, was {other:?}"),
         }
