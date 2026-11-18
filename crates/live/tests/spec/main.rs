@@ -21,6 +21,7 @@
 
 use std::{
     cell::{Cell, RefCell},
+    ops::{Deref, DerefMut},
     panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
     sync::atomic::Ordering,
@@ -76,12 +77,20 @@ use startup::{
 const AAPL_ACCOUNT_ID: &str = "XNAS-001";
 const AAPL_STRATEGY_ID: &str = "AAPL-001";
 
+// Cucumber moves the world by value through nested futures
 #[derive(Debug, World)]
 #[world(init = Self::new)]
-struct StartupWorld {
+struct StartupWorld(Box<StartupState>);
+
+const _: () = assert!(
+    size_of::<StartupWorld>() == size_of::<usize>(),
+    "Cucumber world must remain pointer-sized"
+);
+
+#[derive(Debug)]
+struct StartupState {
     config: LiveNodeConfig,
-    // Cucumber moves the world through nested futures on the test thread's stack
-    instrument: Option<Box<InstrumentAny>>,
+    instrument: Option<InstrumentAny>,
     behavior: StartupMassStatusBehavior,
     oms_type: OmsType,
     order_report: Option<OrderStatusReport>,
@@ -101,7 +110,7 @@ struct StartupWorld {
 
 impl StartupWorld {
     fn new() -> Self {
-        Self {
+        Self(Box::new(StartupState {
             config: LiveNodeConfig {
                 logging: LoggerConfig {
                     stdout_level: log::LevelFilter::Off,
@@ -127,7 +136,21 @@ impl StartupWorld {
             observation: Rc::new(RefCell::new(None)),
             result: None,
             position_count: None,
-        }
+        }))
+    }
+}
+
+impl Deref for StartupWorld {
+    type Target = StartupState;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for StartupWorld {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 
@@ -178,14 +201,12 @@ fn generation_disabled(world: &mut StartupWorld) {
 
 #[given("the cache has a trading instrument and account but no orders or positions")]
 fn cache_initialized(world: &mut StartupWorld) {
-    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
-    world.instrument = Some(Box::new(instrument));
+    world.instrument = Some(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()));
 }
 
 #[given("the cache has AAPL equity on NASDAQ and a USD cash account")]
 fn aapl_instrument(world: &mut StartupWorld) {
-    let instrument = InstrumentAny::Equity(equity_aapl());
-    world.instrument = Some(Box::new(instrument));
+    world.instrument = Some(InstrumentAny::Equity(equity_aapl()));
 }
 
 #[given("unclaimed external orders are filtered")]
@@ -340,8 +361,7 @@ fn mass_status_pending(world: &mut StartupWorld) {
 async fn start_node(world: &mut StartupWorld, entrypoint: String) {
     let instrument = world
         .instrument
-        .as_deref()
-        .cloned()
+        .clone()
         .expect("scenario requires an instrument");
     let instrument_id = instrument.id();
     let equity = matches!(instrument, InstrumentAny::Equity(_));
@@ -1192,7 +1212,7 @@ impl Drop for StartupNodeGuard {
 
 #[tokio::test(flavor = "current_thread")]
 async fn node_disposes_after_panicking_step() {
-    let config = StartupWorld::new().config;
+    let config = StartupWorld::new().0.config;
     let node = LiveNodeBuilder::from_config(config)
         .unwrap()
         .build()
