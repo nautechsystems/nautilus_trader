@@ -44,8 +44,8 @@ use nautilus_common::{
     messages::{
         DataEvent, DataResponse, SystemEvent,
         data::{
-            RequestInstrument, SubscribeBars, SubscribeBookDeltas, SubscribeInstrumentStatus,
-            SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
+            RequestInstrument, SubscribeBars, SubscribeBookDeltas, SubscribeFundingRates,
+            SubscribeInstrumentStatus, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
         },
         system::SocketState,
     },
@@ -993,6 +993,45 @@ async fn test_data_client_request_instrument_emits_response() {
     assert_eq!(response.data.id(), instrument_id);
 
     client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_publishes_latest_settled_funding_rate() {
+    let mut rx = setup_data_channel();
+    let (addr, _) = start_test_server().await.unwrap();
+    let client_id = ClientId::from("AX-TEST");
+    let mut client = create_data_client(addr, client_id, test_data_config());
+    client.connect().await.unwrap();
+
+    let instrument_id = InstrumentId::from("JPYUSD-PERP.AX");
+    client
+        .subscribe_funding_rates(SubscribeFundingRates::new(
+            instrument_id,
+            Some(client_id),
+            None,
+            UUID4::new(),
+            0.into(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    let update = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let DataEvent::Data(Data::FundingRate(update)) = rx.recv().await.unwrap() {
+                break update;
+            }
+        }
+    })
+    .await
+    .expect("Funding rate subscription did not emit");
+
+    client.disconnect().await.unwrap();
+
+    assert_eq!(update.instrument_id, instrument_id);
+    assert_eq!(update.ts_event.as_u64(), 1_770_393_600_000_000_000);
+    assert_eq!(update.rate, dec!(0.003558290026));
 }
 
 #[rstest]

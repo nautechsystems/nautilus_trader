@@ -2412,10 +2412,6 @@ impl AxHttpClient {
                         "AX orders returned an empty next_cursor"
                     );
                     anyhow::ensure!(
-                        page_len > 0,
-                        "AX orders returned an empty page with a next_cursor"
-                    );
-                    anyhow::ensure!(
                         seen_cursors.insert(next_cursor.clone()),
                         "AX orders pagination repeated cursor {next_cursor:?}"
                     );

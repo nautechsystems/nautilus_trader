@@ -96,6 +96,8 @@ Released on TBD (UTC).
 - Fixed `Cache.orders_for_position` omitting linked open orders after a reload (#5690), thanks for reporting @qOeOp
 - Fixed own order books retaining stale orders after cache reload
 - Fixed historical book delta events splitting across response envelopes and time-range windows, thanks @faysou
+- Fixed Architect AX funding subscriptions publishing the oldest rate in the lookback window
+- Fixed Architect AX order history requests failing on an empty page with a continuation cursor
 - Fixed Bybit account margins and minimum notionals losing precision or mishandling invalid values
 - Fixed Bybit TP/SL limit and trigger prices passing validation after floating-point underflow
 - Fixed Bybit reconciliation silently skipping uncached instruments and unparsable order reports
