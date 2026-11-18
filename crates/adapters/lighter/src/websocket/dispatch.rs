@@ -2692,6 +2692,9 @@ pub(crate) struct OrderReportLookup {
     instrument_id: InstrumentId,
     target_venue_index: Option<i64>,
     target_client_index: Option<i64>,
+    // Nonce of an executed create transaction: binds a terminal order to it, which a client
+    // index alone cannot do once the venue reuses that index
+    submission_nonce: Option<i64>,
     supplied_cloid: Option<ClientOrderId>,
 }
 
@@ -2731,8 +2734,27 @@ impl OrderReportLookup {
             instrument_id,
             target_venue_index,
             target_client_index,
+            submission_nonce: None,
             supplied_cloid: client_order_id.copied(),
         })
+    }
+
+    /// Restricts a client-index lookup to the order placed by the executed create transaction
+    /// signed with `nonce`, terminal orders included.
+    pub(crate) fn with_submission_nonce(mut self, nonce: i64) -> Self {
+        self.submission_nonce = Some(nonce);
+        self
+    }
+
+    fn matches(&self, order: &LighterOrder) -> bool {
+        order_matches_lookup(
+            order.order_index,
+            order.client_order_index,
+            self.target_venue_index,
+            self.target_client_index,
+        ) && self
+            .submission_nonce
+            .is_none_or(|nonce| order.nonce == nonce)
     }
 
     pub(crate) fn parse(
@@ -2814,14 +2836,7 @@ pub(crate) async fn collect_order_while_pending(
             )
         })?;
 
-    let matches_order = |o: &LighterOrder| {
-        order_matches_lookup(
-            o.order_index,
-            o.client_order_index,
-            lookup.target_venue_index,
-            lookup.target_client_index,
-        )
-    };
+    let matches_order = |o: &LighterOrder| lookup.matches(o);
 
     let auth = mint_auth_token(credential)?;
 
@@ -2973,16 +2988,16 @@ async fn collect_account_order(
             return false;
         }
 
-        if lookup.target_venue_index.is_none() && order.status.is_terminal() {
+        // A reused client index can name an earlier terminal order unless a venue order ID or the
+        // submission nonce binds the lookup
+        if lookup.target_venue_index.is_none()
+            && lookup.submission_nonce.is_none()
+            && order.status.is_terminal()
+        {
             return false;
         }
 
-        order_matches_lookup(
-            order.order_index,
-            order.client_order_index,
-            lookup.target_venue_index,
-            lookup.target_client_index,
-        )
+        lookup.matches(order)
     });
 
     let account_match = matches.next();

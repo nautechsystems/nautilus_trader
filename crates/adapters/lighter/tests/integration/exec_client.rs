@@ -110,7 +110,7 @@ use ustr::Ustr;
 use crate::{
     common::{
         consts::{
-            LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
+            LIGHTER_CREATE_NOT_RECEIVED, LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
             LIGHTER_ROBINHOOD_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_TESTNET_CHAIN_ID,
             LIGHTER_VENUE, SCHEDULED_CANCEL_REQUEST_TIMEOUT,
         },
@@ -868,7 +868,9 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
                                 })
                             });
 
-                        if sink
+                        // A null override withholds the answer, as a dropped connection does
+                        if !ack.is_null()
+                            && sink
                             .send(Message::Text(ack.to_string().into()))
                             .await
                             .is_err()
@@ -3581,6 +3583,110 @@ async fn test_reconnect_during_create_probe_preserves_identity() {
         next_order_event(&mut rx, Duration::from_secs(2)).await,
         Some(OrderEventAny::Accepted(_)),
     ));
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[case::not_received(false)]
+#[case::executed_without_liquidity(true)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_reconnect_proves_unanswered_create_outcome(#[case] executed: bool) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.expect("connect");
+
+    // The venue resets the connection before it answers the create
+    *state.next_send_tx_ack.lock().await = Some(Value::Null);
+    state.close_after_next_frame.store(true, Ordering::Release);
+    state
+        .account_orders_response_blocked
+        .store(true, Ordering::Release);
+
+    if executed {
+        // The IOC found no liquidity: its transaction executed and consumed its nonce
+        state
+            .next_nonce
+            .store(TEST_NEXT_NONCE + 1, Ordering::Release);
+        state.tx_responses.lock().await.push_back(json!({
+            "status": 2,
+            "event_info": json!({"ae": ""}).to_string(),
+        }));
+    }
+
+    let order = make_limit_order(
+        "O-UNANSWERED-CREATE",
+        OrderSide::Buy,
+        Quantity::from("0.0050"),
+        Price::from("2361.31"),
+        TimeInForce::Ioc,
+        false,
+        false,
+    );
+    cache_order(&cache, order.clone());
+    client.submit_order(submit_command(&order)).expect("submit");
+    assert!(matches!(
+        next_order_event(&mut rx, Duration::from_secs(2)).await,
+        Some(OrderEventAny::Submitted(_)),
+    ));
+    await_send_tx_count(&state, 1).await;
+    let info = send_tx_info(&state.send_txs().await[0]);
+    let nonce = info["Nonce"].as_i64().unwrap();
+    let client_order_index = info["ClientOrderIndex"].as_i64().unwrap();
+    assert_eq!(nonce, TEST_NEXT_NONCE);
+
+    let mut venue_order = http_order_fixture(
+        "281476929510555",
+        &client_order_index.to_string(),
+        "canceled-not-enough-liquidity",
+        "0.0000",
+    );
+    venue_order["nonce"] = json!(nonce);
+    venue_order["remaining_base_amount"] = json!("0.0000");
+    *state.account_orders_response.lock().await =
+        Some(json!({"code": 200, "orders": [venue_order]}));
+    state
+        .account_orders_response_blocked
+        .store(false, Ordering::Release);
+    state.account_orders_response_release.notify_one();
+
+    let mut events = Vec::new();
+
+    while let Some(event) = next_order_event(&mut rx, Duration::from_secs(6)).await {
+        let terminal = matches!(
+            event,
+            OrderEventAny::Rejected(_) | OrderEventAny::Canceled(_)
+        );
+        events.push(event);
+
+        if terminal {
+            break;
+        }
+    }
+
+    if executed {
+        assert!(
+            matches!(
+                &events[..],
+                [OrderEventAny::Accepted(_), OrderEventAny::Canceled(_)]
+            ),
+            "executed create must publish its venue outcome, was {events:?}",
+        );
+        assert_eq!(state.tx_calls.load(Ordering::Relaxed), 1);
+        assert_eq!(state.account_orders_calls.load(Ordering::Relaxed), 1);
+    } else {
+        assert!(
+            matches!(
+                &events[..],
+                [OrderEventAny::Rejected(rejected)]
+                    if rejected.reason.starts_with(LIGHTER_CREATE_NOT_RECEIVED)
+                        && rejected.reason.contains(&format!("nonce {nonce} unconsumed"))
+            ),
+            "unreceived create must be rejected with its proof, was {events:?}",
+        );
+        assert_eq!(state.tx_calls.load(Ordering::Relaxed), 2);
+        assert_eq!(state.account_orders_calls.load(Ordering::Relaxed), 0);
+    }
 
     client.disconnect().await.expect("disconnect");
 }

@@ -94,6 +94,10 @@ pub const LIGHTER_ERROR_CODE_WS_SUBSCRIBE_FAILED: u64 = 30_012;
 /// requests only when the code falls in this range.
 pub const LIGHTER_ERROR_CODE_TX_RANGE: std::ops::Range<u64> = 21_000..22_000;
 
+/// `OrderRejected` reason prefix for a create proven not received after its connection dropped:
+/// the venue does not know its transaction hash and `nextNonce` has not consumed its nonce.
+pub const LIGHTER_CREATE_NOT_RECEIVED: &str = "Lighter create not received";
+
 /// Public docs anchor for integrator approval.
 pub const LIGHTER_INTEGRATOR_APPROVAL_DOCS_URL: &str =
     "https://nautilustrader.io/docs/nightly/integrations/lighter/#integrator-attribution";

@@ -100,8 +100,8 @@ use zeroize::Zeroizing;
 use crate::{
     common::{
         consts::{
-            DISCONNECT_TIMEOUT, LIGHTER_ERROR_CODE_INVALID_NONCE, LIGHTER_MAX_BATCH_TX,
-            SCHEDULED_CANCEL_MAX_DELAY_SECS, SCHEDULED_CANCEL_MIN_DELAY_SECS,
+            DISCONNECT_TIMEOUT, LIGHTER_CREATE_NOT_RECEIVED, LIGHTER_ERROR_CODE_INVALID_NONCE,
+            LIGHTER_MAX_BATCH_TX, SCHEDULED_CANCEL_MAX_DELAY_SECS, SCHEDULED_CANCEL_MIN_DELAY_SECS,
             SCHEDULED_CANCEL_REQUEST_TIMEOUT,
         },
         credential::{Credential, scrub_auth},
@@ -174,6 +174,13 @@ const DEFAULT_TX_EXPIRY_MS: i64 = 5 * 60 * 1_000;
 /// Delay between venue lookups for an acknowledged order.
 const ACKED_ORDER_LOOKUP_DELAY: Duration = Duration::from_secs(2);
 const ACKED_ORDER_PROBE_ATTEMPTS: usize = 3;
+
+/// Delay between transaction lookups for a create drained from a dropped connection.
+const DRAINED_CREATE_RECHECK_DELAY: Duration = Duration::from_millis(500);
+
+/// Time after its send by which a transaction the venue accepted has executed or failed: several
+/// times the longest documented speed bump (300 ms for Standard and Plus taker orders).
+const DRAINED_CREATE_SETTLE: Duration = Duration::from_secs(2);
 const TERMINAL_FILL_DELAY: Duration = Duration::from_secs(2);
 const TERMINAL_RECOVERY_TIMEOUT: Duration = Duration::from_secs(2);
 const TERMINAL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(7);
@@ -1492,16 +1499,17 @@ impl LighterExecutionClient {
                                 // `generate_position_status_reports` may
                                 // return stale data.
 
-                                // Drained creates have unknown outcomes;
-                                // reconciliation resolves them, so warn
-                                // rather than emit rejections.
+                                // Drained creates have unknown outcomes. Their
+                                // probes prove them from the transaction hash
+                                // and this nonce read, taken before the new
+                                // connection signs anything.
                                 let refresh_guard = nonce_submission_gate.write().await;
                                 let disconnected_epoch = connection_epoch.saturating_sub(1);
                                 let stale = dispatch.drain_pending_sendtx(disconnected_epoch);
                                 warn_pending_sendtx_unknown(&stale, "reconnect");
 
                                 if let Some(credential) = &credential_for_loop {
-                                    match http_client_for_loop
+                                    let next_nonce = match http_client_for_loop
                                         .get_next_nonce(
                                             credential.account_index(),
                                             credential.api_key_index(),
@@ -1524,6 +1532,7 @@ impl LighterExecutionClient {
                                                 credential.account_index(),
                                                 response.nonce,
                                             );
+                                            Some(response.nonce)
                                         }
                                         Err(e) => {
                                             log::warn!(
@@ -1532,8 +1541,26 @@ impl LighterExecutionClient {
                                             nonce_refresh_retry
                                                 .clone()
                                                 .spawn(connection_epoch);
+                                            None
                                         }
-                                    }
+                                    };
+
+                                    spawn_drained_create_probes(
+                                        &stale,
+                                        next_nonce,
+                                        &AckedOrderProbeContext {
+                                            http_client: http_client_for_loop.clone(),
+                                            registry: Arc::clone(&registry_for_loop),
+                                            credential: credential.clone(),
+                                            dispatch: dispatch.clone(),
+                                            account_id: account_id_for_loop,
+                                            clock: clock_for_loop,
+                                            emitter: emitter.clone(),
+                                            connection_epoch: ws_client.connection_epoch_atomic(),
+                                            cancellation_token: cancellation_token.clone(),
+                                            pending_tasks: pending_tasks_for_loop.clone(),
+                                        },
+                                    );
                                 }
                             }
                             Some(message @ (NautilusWsMessage::SendTxAck { .. } | NautilusWsMessage::SendTxBatchResult { .. })) => {
@@ -5367,27 +5394,68 @@ async fn probe_acked_create_tx(
     context: &AckedOrderProbeContext,
     attempt: usize,
 ) -> anyhow::Result<ControlFlow<(), bool>> {
+    match lookup_create_tx(probe, context, attempt, "acknowledged").await? {
+        CreateTxLookup::Failed(detail) => {
+            let reason = format!(
+                "Lighter sequencer rejected acknowledged create transaction {}: {detail}",
+                probe.tx_hash,
+            );
+            reject_create_order(
+                &context.dispatch,
+                &context.emitter,
+                &probe.order,
+                probe.client_order_index,
+                probe.nonce,
+                &reason,
+                context.clock.get_time_ns(),
+                lighter_reason_indicates_post_only_rejection(&detail),
+                Some((&context.connection_epoch, probe.connection_epoch)),
+            );
+            Ok(ControlFlow::Break(()))
+        }
+        lookup => Ok(ControlFlow::Continue(lookup == CreateTxLookup::Executed)),
+    }
+}
+
+/// What a lookup of a create transaction by hash shows.
+#[derive(Debug, PartialEq, Eq)]
+enum CreateTxLookup {
+    /// Lighter does not know the hash (code 21500).
+    NotFound,
+    /// The lookup failed, so nothing is known.
+    Unavailable,
+    /// Lighter knows the transaction, which has neither executed nor failed.
+    Pending,
+    Executed,
+    /// The transaction failed or was included with this application error.
+    Failed(String),
+}
+
+async fn lookup_create_tx(
+    probe: &AckedOrderProbe,
+    context: &AckedOrderProbeContext,
+    attempt: usize,
+    submission: &str,
+) -> anyhow::Result<CreateTxLookup> {
     let AckedOrderProbe {
         order,
         client_order_index,
-        connection_epoch,
         nonce,
         api_key_index,
         tx_hash,
+        ..
     } = probe;
 
     let client_order_id = order.client_order_id();
 
     let tx = match context.http_client.get_tx(tx_hash.clone()).await {
         Ok(tx) => tx,
-        Err(LighterHttpError::Venue { code: 21500, .. }) => {
-            return Ok(ControlFlow::Continue(false));
-        }
+        Err(LighterHttpError::Venue { code: 21500, .. }) => return Ok(CreateTxLookup::NotFound),
         Err(e) => {
             log::warn!(
-                "Lighter acknowledged create transaction lookup failed for {client_order_id} on attempt {attempt}: {e}",
+                "Lighter {submission} create transaction lookup failed for {client_order_id} on attempt {attempt}: {e}",
             );
-            return Ok(ControlFlow::Continue(false));
+            return Ok(CreateTxLookup::Unavailable);
         }
     };
 
@@ -5409,26 +5477,302 @@ async fn probe_acked_create_tx(
 
     if tx.status == LighterTxStatus::Failed || !event.app_error.is_empty() {
         let detail = acked_tx_error_detail(&event.app_error);
-        let reason = format!(
-            "Lighter sequencer rejected acknowledged create transaction {tx_hash}: {detail}",
+        return Ok(CreateTxLookup::Failed(detail.to_owned()));
+    }
+
+    Ok(if tx.status == LighterTxStatus::Executed {
+        CreateTxLookup::Executed
+    } else {
+        CreateTxLookup::Pending
+    })
+}
+
+/// Resolves the creates drained from a dropped connection before the venue answered them.
+///
+/// Lighter documents the recovery for an accepted transaction whose outcome is unknown: look it up
+/// by hash and compare `nextNonce` with its nonce. `next_nonce` is the reconnect's own read, taken
+/// before any transaction is signed for the new connection, so no later send can have consumed a
+/// drained nonce by then.
+fn spawn_drained_create_probes(
+    drained: &[PendingSendTx],
+    next_nonce: Option<i64>,
+    context: &AckedOrderProbeContext,
+) {
+    for pending in drained {
+        let legs = AckedOrderProbe::legs(pending);
+        if legs.is_empty() {
+            continue;
+        }
+
+        let context = context.clone();
+        let tasks = context.pending_tasks.clone();
+        let submitted_at = pending.submitted_at;
+
+        let future = async move {
+            tokio::select! {
+                () = context.cancellation_token.cancelled() => {}
+                () = probe_drained_create(legs, submitted_at, next_nonce, &context) => {}
+            }
+        };
+
+        if let Err(e) = tasks.spawn(future) {
+            log::debug!("Skipping Lighter drained-create probe during shutdown: {e}");
+        }
+    }
+}
+
+/// One order of a drained create transaction and, once found, the venue order it placed.
+#[derive(Debug)]
+struct DrainedCreateLeg {
+    probe: AckedOrderProbe,
+    placed: Option<LighterOrder>,
+}
+
+/// Proves the outcome of one drained create or grouped create transaction:
+///
+/// - Not received: two lookups, the later at least [`DRAINED_CREATE_SETTLE`] after the send, do
+///   not know its hash, and the reconnect's `nextNonce` had not consumed its nonce. A key's
+///   transactions execute in nonce order, and an accepted one executes or fails within the settle
+///   time, so it never executes. Its orders are rejected with [`LIGHTER_CREATE_NOT_RECEIVED`].
+/// - Failed: its orders are rejected with the venue's error.
+/// - Executed: each order it placed, found by client index and this nonce, is published as its
+///   stream frames would have been.
+///
+/// Anything else after [`ACKED_ORDER_PROBE_ATTEMPTS`] lookups retains the order identities for
+/// reconciliation.
+async fn probe_drained_create(
+    legs: Vec<AckedOrderProbe>,
+    submitted_at: UnixNanos,
+    next_nonce: Option<i64>,
+    context: &AckedOrderProbeContext,
+) {
+    let mut legs: Vec<_> = legs
+        .into_iter()
+        .map(|probe| DrainedCreateLeg {
+            probe,
+            placed: None,
+        })
+        .collect();
+    let first = legs[0].probe.clone();
+    let unconsumed_next_nonce = next_nonce.filter(|next| {
+        first.api_key_index == context.credential.api_key_index() && *next <= first.nonce
+    });
+    let mut unknown_lookups = 0;
+    let mut known = false;
+    let mut executed = false;
+
+    for attempt in 1..=ACKED_ORDER_PROBE_ATTEMPTS {
+        if attempt > 1 {
+            let settle = DRAINED_CREATE_SETTLE.saturating_sub(elapsed_since(submitted_at, context));
+            tokio::time::sleep(DRAINED_CREATE_RECHECK_DELAY.max(settle)).await;
+        }
+
+        legs.retain(|leg| leg.placed.is_some() || drained_leg_is_pending(&leg.probe, context));
+        if legs.is_empty() {
+            return;
+        }
+
+        if !executed {
+            match lookup_create_tx(&legs[0].probe, context, attempt, "unanswered").await {
+                Ok(CreateTxLookup::NotFound) => unknown_lookups += 1,
+                Ok(CreateTxLookup::Unavailable) => {}
+                Ok(CreateTxLookup::Pending) => known = true,
+                Ok(CreateTxLookup::Executed) => {
+                    known = true;
+                    executed = true;
+                }
+                Ok(CreateTxLookup::Failed(detail)) => {
+                    let reason = format!(
+                        "Lighter sequencer rejected unanswered create transaction {}: {detail}",
+                        first.tx_hash,
+                    );
+                    reject_drained_create(
+                        &legs,
+                        &reason,
+                        lighter_reason_indicates_post_only_rejection(&detail),
+                        context,
+                    );
+                    return;
+                }
+                Err(e) => {
+                    log::warn!(
+                        "Lighter unanswered create probe failed for nonce={}: {e:?}; retaining identity for reconciliation",
+                        first.nonce,
+                    );
+                    return;
+                }
+            }
+
+            if let Some(next_nonce) = unconsumed_next_nonce
+                && !known
+                && unknown_lookups >= 2
+                && elapsed_since(submitted_at, context) >= DRAINED_CREATE_SETTLE
+            {
+                let reason = format!(
+                    "{LIGHTER_CREATE_NOT_RECEIVED}: transaction {} not found and nonce {} unconsumed (nextNonce {next_nonce})",
+                    first.tx_hash, first.nonce,
+                );
+                reject_drained_create(&legs, &reason, false, context);
+                return;
+            }
+        }
+
+        if executed {
+            for mut leg in std::mem::take(&mut legs) {
+                match publish_drained_create(&mut leg, context).await {
+                    Ok(true) => {}
+                    Ok(false) => legs.push(leg),
+                    Err(e) => {
+                        log::warn!(
+                            "Lighter executed create publication failed for {} on attempt {attempt}: {}",
+                            leg.probe.order.client_order_id(),
+                            scrub_auth(&format!("{e:#}")),
+                        );
+                        legs.push(leg);
+                    }
+                }
+            }
+
+            if legs.is_empty() {
+                return;
+            }
+        }
+    }
+
+    for leg in &legs {
+        let cloid = leg.probe.order.client_order_id();
+
+        if executed && leg.placed.is_none() {
+            let _ = context.dispatch.confirm_create_submission(
+                &cloid,
+                leg.probe.client_order_index,
+                leg.probe.nonce,
+            );
+        }
+
+        log::warn!(
+            "Lighter unanswered create outcome unresolved after {ACKED_ORDER_PROBE_ATTEMPTS} transaction lookups for {cloid} (executed={executed}); retaining identity for reconciliation",
         );
+    }
+}
+
+fn elapsed_since(submitted_at: UnixNanos, context: &AckedOrderProbeContext) -> Duration {
+    Duration::from_nanos(
+        context
+            .clock
+            .get_time_ns()
+            .as_u64()
+            .saturating_sub(submitted_at.as_u64()),
+    )
+}
+
+fn drained_leg_is_pending(probe: &AckedOrderProbe, context: &AckedOrderProbeContext) -> bool {
+    context.dispatch.create_submission_is_pending(
+        &probe.order.client_order_id(),
+        probe.client_order_index,
+        probe.nonce,
+    )
+}
+
+fn reject_drained_create(
+    legs: &[DrainedCreateLeg],
+    reason: &str,
+    due_post_only: bool,
+    context: &AckedOrderProbeContext,
+) {
+    for leg in legs {
+        log::warn!("{reason} for {}", leg.probe.order.client_order_id());
+        // The connection that sent it is gone, so no epoch guard applies
         reject_create_order(
             &context.dispatch,
             &context.emitter,
-            order,
-            *client_order_index,
-            *nonce,
-            &reason,
+            &leg.probe.order,
+            leg.probe.client_order_index,
+            leg.probe.nonce,
+            reason,
             context.clock.get_time_ns(),
-            lighter_reason_indicates_post_only_rejection(detail),
-            Some((&context.connection_epoch, *connection_epoch)),
+            due_post_only,
+            None,
         );
-        return Ok(ControlFlow::Break(()));
+    }
+}
+
+/// Publishes the venue order an executed drained create placed: its order frame binds and settles
+/// the identity, then a terminal order's missing fills follow. Returns whether the leg is settled.
+async fn publish_drained_create(
+    leg: &mut DrainedCreateLeg,
+    context: &AckedOrderProbeContext,
+) -> anyhow::Result<bool> {
+    let probe = &leg.probe;
+    let cloid = probe.order.client_order_id();
+
+    if leg.placed.is_none() {
+        let lookup = OrderReportLookup::new(
+            &context.registry,
+            &context.dispatch,
+            Some(probe.order.instrument_id()),
+            Some(&cloid),
+            None,
+        )?
+        .with_submission_nonce(probe.nonce);
+
+        let Some(order) = collect_order_while_pending(
+            &context.http_client,
+            &context.registry,
+            &context.credential,
+            &lookup,
+            || drained_leg_is_pending(probe, context),
+        )
+        .await?
+        else {
+            // Settled once another path resolved the submission
+            return Ok(!drained_leg_is_pending(probe, context));
+        };
+
+        anyhow::ensure!(
+            order.status != LighterOrderStatus::Unknown,
+            "Lighter executed create order has an unknown status"
+        );
+
+        if !context.dispatch.observe_create_submission(
+            &cloid,
+            probe.client_order_index,
+            probe.nonce,
+            VenueOrderId::new(&order.order_id),
+        ) {
+            log::debug!(
+                "Lighter executed create {cloid} was resolved before order {} could bind",
+                order.order_id,
+            );
+            return Ok(true);
+        }
+
+        dispatch_lighter_order(
+            &order,
+            &context.dispatch,
+            &context.emitter,
+            &context.registry,
+            context.account_id,
+            context.emitter.trader_id(),
+            context.clock.get_time_ns(),
+        );
+        leg.placed = Some(order);
     }
 
-    Ok(ControlFlow::Continue(
-        tx.status == LighterTxStatus::Executed,
-    ))
+    let order = leg.placed.as_ref().expect("venue order placed above");
+    recover_report_fills(order, context).await?;
+
+    // A terminal deferred behind its fills recovers them now rather than after TERMINAL_FILL_DELAY
+    if context
+        .dispatch
+        .terminals_pending
+        .lock()
+        .contains_key(&cloid)
+    {
+        context.dispatch.terminals_recover.notify_one();
+    }
+
+    Ok(true)
 }
 
 #[derive(Deserialize)]
@@ -5534,6 +5878,21 @@ struct AckedOrderProbe {
 }
 
 impl AckedOrderProbe {
+    fn legs(pending: &PendingSendTx) -> Vec<Self> {
+        pending
+            .kind
+            .creates()
+            .map(|(order, client_order_index)| Self {
+                order: Box::new(order.clone()),
+                client_order_index,
+                connection_epoch: pending.connection_epoch,
+                nonce: pending.nonce,
+                api_key_index: pending.api_key_index,
+                tx_hash: pending.tx_hash.clone(),
+            })
+            .collect()
+    }
+
     fn from_pending(pending: &PendingSendTx) -> Option<Self> {
         let PendingSendTxKind::Create {
             order,
@@ -22169,6 +22528,537 @@ mod tests {
                 "Lighter transaction lookup did not include acknowledged client_order_index 44"
             );
         }
+    }
+
+    enum DrainedTxAnswer {
+        NotFound,
+        Found(LighterTx),
+    }
+
+    /// Serves a drained-create probe: the transaction lookup, the account's orders by client
+    /// index, and the order's trades. Returns the transaction and trade lookup counters.
+    async fn spawn_drained_create_server(
+        answer: DrainedTxAnswer,
+        orders: Vec<LighterOrder>,
+        trades: Vec<LighterTrade>,
+    ) -> (
+        LighterHttpClient,
+        Arc<AtomicUsize>,
+        Arc<AtomicUsize>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let tx_calls = Arc::new(AtomicUsize::new(0));
+        let trade_calls = Arc::new(AtomicUsize::new(0));
+        let tx_body = match answer {
+            DrainedTxAnswer::NotFound => None,
+            DrainedTxAnswer::Found(tx) => Some(serde_json::to_string(&tx).unwrap()),
+        };
+        let orders_body = serde_json::json!({"code": 200, "orders": orders}).to_string();
+        let trades_body = serde_json::json!({"code": 200, "trades": trades}).to_string();
+
+        let app = Router::new()
+            .route(
+                "/api/v1/tx",
+                get({
+                    let calls = Arc::clone(&tx_calls);
+                    move || {
+                        calls.fetch_add(1, Ordering::Relaxed);
+                        let body = tx_body.clone();
+                        async move {
+                            match body {
+                                Some(body) => (axum::http::StatusCode::OK, body).into_response(),
+                                None => (
+                                    axum::http::StatusCode::BAD_REQUEST,
+                                    r#"{"code":21500,"message":"transaction not found"}"#,
+                                )
+                                    .into_response(),
+                            }
+                        }
+                    }
+                }),
+            )
+            .route(
+                "/api/v1/accountOrders",
+                get(move || {
+                    let body = orders_body.clone();
+                    async move { body }
+                }),
+            )
+            .route(
+                "/api/v1/accountActiveOrders",
+                get(|| async { r#"{"code":200,"orders":[]}"# }),
+            )
+            .route(
+                "/api/v1/trades",
+                get({
+                    let calls = Arc::clone(&trade_calls);
+                    move || {
+                        calls.fetch_add(1, Ordering::Relaxed);
+                        let body = trades_body.clone();
+                        async move { body }
+                    }
+                }),
+            );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let client = LighterHttpClient::new(
+            LighterEnvironment::Testnet,
+            Some(format!("http://{addr}")),
+            1,
+            None,
+        )
+        .unwrap();
+        (client, tx_calls, trade_calls, server)
+    }
+
+    /// Registers `cloid` as a create sent with `nonce` and returns its drained-create leg.
+    fn drained_create_leg(
+        rig: &DispatcherRig,
+        cloid: ClientOrderId,
+        nonce: i64,
+    ) -> AckedOrderProbe {
+        let derived = rig.dispatch.derive_client_order_index(&cloid);
+        let client_order_index = rig.dispatch.register_cloid(derived, cloid).unwrap();
+        rig.dispatch.register_order_identity(
+            cloid,
+            OrderIdentity::new(
+                rig.instrument_id,
+                strategy_id(),
+                OrderSide::Buy,
+                OrderType::Limit,
+                client_order_index,
+            ),
+        );
+        rig.dispatch.mark_order_submission(&cloid, nonce);
+
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(trader_id())
+            .strategy_id(strategy_id())
+            .instrument_id(rig.instrument_id)
+            .client_order_id(cloid)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("0.0050"))
+            .price(Price::from("2352.74"))
+            .build();
+
+        AckedOrderProbe {
+            order: Box::new(order),
+            client_order_index,
+            connection_epoch: 0,
+            nonce,
+            api_key_index: TEST_API_KEY_INDEX,
+            tx_hash: format!("hash{nonce:x}"),
+        }
+    }
+
+    fn drained_probe_context(
+        client: &LighterExecutionClient,
+        rig: &DispatcherRig,
+        http_client: LighterHttpClient,
+    ) -> AckedOrderProbeContext {
+        let mut context = acked_probe_context(client);
+        context.http_client = http_client;
+        context.dispatch = rig.dispatch.clone();
+        context.registry = rig.registry.clone();
+        context.emitter = rig.emitter.clone();
+        context
+    }
+
+    fn drained_create_tx(
+        leg: &AckedOrderProbe,
+        status: LighterTxStatus,
+        app_error: &str,
+    ) -> LighterTx {
+        LighterTx {
+            code: 200,
+            message: None,
+            hash: leg.tx_hash.clone(),
+            tx_type: LighterTxType::CreateOrder as u8,
+            info: serde_json::json!({"ClientOrderIndex": leg.client_order_index}).to_string(),
+            event_info: serde_json::json!({"ae": app_error}).to_string(),
+            status,
+            account_index: TEST_ACCOUNT_INDEX_I64,
+            nonce: leg.nonce,
+            api_key_index: leg.api_key_index,
+        }
+    }
+
+    #[rstest]
+    #[case::not_received(Some(TEST_SUBMISSION_NONCE), true)]
+    #[case::earlier_nonce_unconsumed(Some(TEST_SUBMISSION_NONCE - 1), true)]
+    #[case::nonce_consumed(Some(TEST_SUBMISSION_NONCE + 1), false)]
+    #[case::nonce_unread(None, false)]
+    #[tokio::test]
+    async fn drained_create_probe_rejects_only_proven_absence(
+        #[case] next_nonce: Option<i64>,
+        #[case] proven: bool,
+    ) {
+        let mut rig = dispatcher_rig("DRAINED-ABSENT");
+        let leg = drained_create_leg(&rig, rig.cloid, TEST_SUBMISSION_NONCE);
+        let (http_client, tx_calls, _, server) =
+            spawn_drained_create_server(DrainedTxAnswer::NotFound, Vec::new(), Vec::new()).await;
+        let (client, _, _) = create_execution_client();
+        let context = drained_probe_context(&client, &rig, http_client);
+
+        probe_drained_create(
+            vec![leg.clone()],
+            UnixNanos::default(),
+            next_nonce,
+            &context,
+        )
+        .await;
+        server.abort();
+        let _ = server.await;
+
+        let events = drain_events(&mut rig.rx);
+        assert_eq!(
+            tx_calls.load(Ordering::Relaxed),
+            if proven {
+                2
+            } else {
+                ACKED_ORDER_PROBE_ATTEMPTS
+            }
+        );
+
+        if proven {
+            assert_eq!(events.len(), 1, "expected one rejection, was {events:?}");
+            let ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) = &events[0] else {
+                panic!("expected OrderRejected, was {:?}", events[0]);
+            };
+            assert_eq!(rejected.client_order_id, rig.cloid);
+            assert_eq!(
+                rejected.reason.as_str(),
+                format!(
+                    "{LIGHTER_CREATE_NOT_RECEIVED}: transaction {} not found and nonce {} unconsumed (nextNonce {})",
+                    leg.tx_hash,
+                    leg.nonce,
+                    next_nonce.unwrap(),
+                ),
+            );
+            assert!(!rejected.due_post_only);
+            assert!(rig.dispatch.order_identity(&rig.cloid).is_none());
+            assert!(
+                rig.dispatch
+                    .cloid_map
+                    .get(&leg.client_order_index)
+                    .is_none()
+            );
+        } else {
+            assert!(events.is_empty(), "unproven absence emitted {events:?}");
+            assert!(
+                rig.dispatch.create_submission_is_pending(
+                    &rig.cloid,
+                    leg.client_order_index,
+                    leg.nonce
+                ),
+                "an unproven drained create must retain identity for reconciliation",
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn drained_create_absence_waits_for_settle_after_send() {
+        let mut rig = dispatcher_rig("DRAINED-SETTLE");
+        let leg = drained_create_leg(&rig, rig.cloid, TEST_SUBMISSION_NONCE);
+        let (http_client, tx_calls, _, server) =
+            spawn_drained_create_server(DrainedTxAnswer::NotFound, Vec::new(), Vec::new()).await;
+        let (client, _, _) = create_execution_client();
+        let context = drained_probe_context(&client, &rig, http_client);
+        let started = std::time::Instant::now();
+
+        probe_drained_create(
+            vec![leg.clone()],
+            context.clock.get_time_ns(),
+            Some(leg.nonce),
+            &context,
+        )
+        .await;
+        server.abort();
+        let _ = server.await;
+
+        assert!(started.elapsed() >= DRAINED_CREATE_SETTLE);
+        assert_eq!(tx_calls.load(Ordering::Relaxed), 2);
+        let events = drain_events(&mut rig.rx);
+        assert!(
+            matches!(&events[..], [ExecutionEvent::Order(OrderEventAny::Rejected(rejected))]
+            if rejected.reason.starts_with(LIGHTER_CREATE_NOT_RECEIVED)),
+            "expected one not-received rejection, was {events:?}",
+        );
+    }
+
+    #[tokio::test]
+    async fn drained_create_group_absence_rejects_every_leg() {
+        let mut rig = dispatcher_rig("DRAINED-GROUP");
+        let first = drained_create_leg(&rig, rig.cloid, TEST_SUBMISSION_NONCE);
+        let second = drained_create_leg(
+            &rig,
+            ClientOrderId::from("CLOID-DRAINED-GROUP-2"),
+            TEST_SUBMISSION_NONCE,
+        );
+        let pending = PendingSendTx {
+            batch_id: None,
+            connection_epoch: 0,
+            kind: PendingSendTxKind::CreateGroup {
+                orders: vec![
+                    (first.order.as_ref().clone(), first.client_order_index),
+                    (second.order.as_ref().clone(), second.client_order_index),
+                ],
+            },
+            submitted_at: UnixNanos::default(),
+            nonce: TEST_SUBMISSION_NONCE,
+            api_key_index: TEST_API_KEY_INDEX,
+            tx_hash: first.tx_hash.clone(),
+        };
+        let (http_client, tx_calls, _, server) =
+            spawn_drained_create_server(DrainedTxAnswer::NotFound, Vec::new(), Vec::new()).await;
+        let (client, _, _) = create_execution_client();
+        let context = drained_probe_context(&client, &rig, http_client);
+
+        probe_drained_create(
+            AckedOrderProbe::legs(&pending),
+            pending.submitted_at,
+            Some(TEST_SUBMISSION_NONCE),
+            &context,
+        )
+        .await;
+        server.abort();
+        let _ = server.await;
+
+        assert_eq!(
+            tx_calls.load(Ordering::Relaxed),
+            2,
+            "one lookup per attempt"
+        );
+        let rejected: Vec<_> = drain_events(&mut rig.rx)
+            .into_iter()
+            .map(|event| match event {
+                ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) => {
+                    rejected.client_order_id
+                }
+                event => panic!("expected OrderRejected, was {event:?}"),
+            })
+            .collect();
+        assert_eq!(
+            rejected,
+            vec![
+                first.order.client_order_id(),
+                second.order.client_order_id()
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn drained_create_probe_rejects_failed_transaction_with_venue_error() {
+        let mut rig = dispatcher_rig("DRAINED-FAILED");
+        let leg = drained_create_leg(&rig, rig.cloid, TEST_SUBMISSION_NONCE);
+        let tx = drained_create_tx(
+            &leg,
+            LighterTxStatus::Executed,
+            "invalid order base or quote amount",
+        );
+        let (http_client, tx_calls, _, server) =
+            spawn_drained_create_server(DrainedTxAnswer::Found(tx), Vec::new(), Vec::new()).await;
+        let (client, _, _) = create_execution_client();
+        let context = drained_probe_context(&client, &rig, http_client);
+
+        probe_drained_create(
+            vec![leg.clone()],
+            UnixNanos::default(),
+            Some(leg.nonce + 1),
+            &context,
+        )
+        .await;
+        server.abort();
+        let _ = server.await;
+
+        assert_eq!(tx_calls.load(Ordering::Relaxed), 1);
+        let events = drain_events(&mut rig.rx);
+        assert!(
+            matches!(&events[..], [ExecutionEvent::Order(OrderEventAny::Rejected(rejected))]
+            if rejected.reason.as_str() == format!(
+                "Lighter sequencer rejected unanswered create transaction {}: invalid order base or quote amount",
+                leg.tx_hash,
+            )),
+            "expected the venue's rejection, was {events:?}",
+        );
+        assert!(rig.dispatch.order_identity(&rig.cloid).is_none());
+    }
+
+    #[rstest]
+    #[case::filled(LighterOrderStatus::Filled, "0.0050", &["accepted", "filled 0.0050"])]
+    #[case::ioc_unfilled(
+        LighterOrderStatus::CanceledNotEnoughLiquidity,
+        "0",
+        &["accepted", "canceled"]
+    )]
+    #[case::ioc_partial(
+        LighterOrderStatus::CanceledNotEnoughLiquidity,
+        "0.0025",
+        &["accepted", "filled 0.0025", "canceled"]
+    )]
+    #[case::resting(LighterOrderStatus::Open, "0", &["accepted"])]
+    #[tokio::test]
+    async fn drained_create_probe_publishes_executed_order(
+        #[case] status: LighterOrderStatus,
+        #[case] filled: &str,
+        #[case] expected: &[&str],
+    ) {
+        let mut rig = dispatcher_rig("DRAINED-EXECUTED");
+        let leg = drained_create_leg(&rig, rig.cloid, TEST_SUBMISSION_NONCE);
+        let filled = Decimal::from_str(filled).unwrap();
+
+        let mut order = dispatcher_test_order(&rig, status);
+        order.nonce = leg.nonce;
+        order.filled_base_amount = filled;
+        if status.is_terminal() {
+            order.remaining_base_amount = Decimal::ZERO;
+        }
+
+        let mut trade = dispatcher_test_trade(&rig, true);
+        trade.bid_id = order.order_index;
+        trade.bid_id_str = Some(order.order_id.clone());
+        trade.size = filled;
+        let trades = if filled.is_zero() {
+            Vec::new()
+        } else {
+            vec![trade]
+        };
+
+        let tx = drained_create_tx(&leg, LighterTxStatus::Executed, "");
+        let (http_client, tx_calls, trade_calls, server) =
+            spawn_drained_create_server(DrainedTxAnswer::Found(tx), vec![order.clone()], trades)
+                .await;
+        let (client, _, _) = create_execution_client();
+        let context = drained_probe_context(&client, &rig, http_client);
+
+        probe_drained_create(
+            vec![leg.clone()],
+            UnixNanos::default(),
+            Some(leg.nonce + 1),
+            &context,
+        )
+        .await;
+
+        // The terminal worker owns a deferred terminal; the probe only wakes it
+        if !rig.dispatch.terminals_pending.lock().is_empty() {
+            recover_terminals(&context, true).await;
+        }
+        server.abort();
+        let _ = server.await;
+
+        assert_eq!(tx_calls.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            trade_calls.load(Ordering::Relaxed),
+            usize::from(!filled.is_zero())
+        );
+        assert!(!rig.dispatch.create_submission_is_pending(
+            &rig.cloid,
+            leg.client_order_index,
+            leg.nonce
+        ));
+
+        let events: Vec<_> = drain_events(&mut rig.rx)
+            .into_iter()
+            .map(|event| match event {
+                ExecutionEvent::Order(event) => event,
+                event => panic!("expected an order event, was {event:?}"),
+            })
+            .collect();
+        assert!(
+            events
+                .iter()
+                .all(|event| event.client_order_id() == rig.cloid),
+            "events were {events:?}",
+        );
+        let published: Vec<_> = events
+            .iter()
+            .map(|event| match event {
+                OrderEventAny::Accepted(_) => "accepted".to_string(),
+                OrderEventAny::Filled(fill) => format!("filled {}", fill.last_qty),
+                OrderEventAny::Canceled(_) => "canceled".to_string(),
+                event => panic!("unexpected event {event:?}"),
+            })
+            .collect();
+        assert_eq!(published, expected);
+    }
+
+    #[tokio::test]
+    async fn drained_create_probe_waits_for_a_known_order_status() {
+        let mut rig = dispatcher_rig("DRAINED-UNKNOWN");
+        let leg = drained_create_leg(&rig, rig.cloid, TEST_SUBMISSION_NONCE);
+        let mut order = dispatcher_test_order(&rig, LighterOrderStatus::Unknown);
+        order.nonce = leg.nonce;
+        let tx = drained_create_tx(&leg, LighterTxStatus::Executed, "");
+        let (http_client, tx_calls, _, server) =
+            spawn_drained_create_server(DrainedTxAnswer::Found(tx), vec![order], Vec::new()).await;
+        let (client, _, _) = create_execution_client();
+        let context = drained_probe_context(&client, &rig, http_client);
+
+        probe_drained_create(
+            vec![leg.clone()],
+            UnixNanos::default(),
+            Some(leg.nonce + 1),
+            &context,
+        )
+        .await;
+        server.abort();
+        let _ = server.await;
+
+        assert_eq!(tx_calls.load(Ordering::Relaxed), 1);
+        assert!(drain_events(&mut rig.rx).is_empty());
+        let identity = rig.dispatch.order_identity(&rig.cloid).unwrap();
+        assert_eq!(identity.venue_order_id(), None);
+        assert!(
+            !rig.dispatch.create_submission_is_pending(
+                &rig.cloid,
+                leg.client_order_index,
+                leg.nonce
+            ),
+            "an executed create without a publishable order is confirmed, not rejected",
+        );
+    }
+
+    #[rstest]
+    #[case::bound_to_its_nonce(Some(TEST_SUBMISSION_NONCE), true)]
+    #[case::reused_client_index(Some(TEST_SUBMISSION_NONCE + 1), false)]
+    #[case::unbound(None, false)]
+    #[tokio::test]
+    async fn client_index_lookup_returns_terminal_order_only_for_its_submission(
+        #[case] submission_nonce: Option<i64>,
+        #[case] expect_present: bool,
+    ) {
+        let rig = dispatcher_rig("SUBMISSION-LOOKUP");
+        register_identity(&rig);
+        let mut order = dispatcher_test_order(&rig, LighterOrderStatus::Filled);
+        order.nonce = TEST_SUBMISSION_NONCE;
+        let (http_client, _, _, server) =
+            spawn_drained_create_server(DrainedTxAnswer::NotFound, vec![order], Vec::new()).await;
+
+        let mut lookup = OrderReportLookup::new(
+            &rig.registry,
+            &rig.dispatch,
+            Some(rig.instrument_id),
+            Some(&rig.cloid),
+            None,
+        )
+        .unwrap();
+
+        if let Some(nonce) = submission_nonce {
+            lookup = lookup.with_submission_nonce(nonce);
+        }
+
+        let found = collect_order(&http_client, &rig.registry, &test_credential(), &lookup)
+            .await
+            .unwrap();
+        server.abort();
+        let _ = server.await;
+
+        assert_eq!(found.is_some(), expect_present);
     }
 
     #[tokio::test]
