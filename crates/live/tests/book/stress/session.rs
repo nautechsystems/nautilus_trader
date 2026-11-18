@@ -323,7 +323,6 @@ impl<V: StressVenue> Session<V> {
     /// Requires every open book to emit a new snapshot.
     pub(crate) fn expect_all(&mut self) {
         let open = self.open_books().collect::<Vec<_>>();
-
         for instrument_id in open {
             self.expect_snapshot(instrument_id);
         }
@@ -582,7 +581,6 @@ impl<V: StressVenue> Session<V> {
         };
 
         let instrument_id = deltas.instrument_id;
-
         if !self.requested.contains(&instrument_id) {
             return;
         }
@@ -596,7 +594,6 @@ impl<V: StressVenue> Session<V> {
 
         let book = self.books.entry(instrument_id).or_default();
         book.batches += 1;
-
         if deltas
             .deltas
             .first()

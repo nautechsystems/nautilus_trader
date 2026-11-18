@@ -219,7 +219,6 @@ fn opening_price_unavailable(world: &mut StartupWorld) {
 )]
 fn delayed_execution(world: &mut StartupWorld) {
     let position = world.position_report.as_ref().unwrap();
-
     let side = if position.position_side == PositionSide::Long {
         OrderSide::Buy
     } else {
@@ -294,6 +293,7 @@ async fn start_node(world: &mut StartupWorld, entrypoint: String) {
         UnixNanos::default(),
         None,
     );
+
     mass_status.add_position_reports(world.position_report.iter().cloned().collect());
     if let Some(closing) = &world.closing {
         closing.add_reports(&mut mass_status);

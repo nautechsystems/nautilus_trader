@@ -1332,7 +1332,6 @@ where
     F::Output: Send + 'static,
 {
     let (start, wait) = tokio::sync::oneshot::channel();
-
     let handle = spawn(async move {
         wait.await.expect("task start gate sender dropped");
         future.await
@@ -1425,7 +1424,6 @@ mod tests {
         let observed = Arc::new(AtomicUsize::new(0));
         let observed_task = Arc::clone(&observed);
         let generation = group.inner.current();
-
         group
             .spawn(async move {
                 observed_task.store(generation.tasks.len(), Ordering::Release);
@@ -1571,7 +1569,6 @@ mod tests {
     async fn named_task_observes_normal_completion() {
         let group = TaskGroup::new();
         let (release_tx, release_rx) = tokio::sync::oneshot::channel();
-
         let task = group
             .spawn_named("finite", async move {
                 let _ = release_rx.await;
@@ -1732,7 +1729,6 @@ mod tests {
         let polled_task = Arc::clone(&polled);
 
         group.begin_shutdown();
-
         let result = group.spawn(async move {
             polled_task.store(true, Ordering::Release);
         });
@@ -1754,7 +1750,6 @@ mod tests {
         let dropped = Arc::new(AtomicBool::new(false));
         let polled = Arc::new(AtomicBool::new(false));
         group.begin_shutdown();
-
         let result = group.spawn(ReentrantDropFuture {
             group: Arc::clone(&group),
             dropped: Arc::clone(&dropped),
@@ -1838,6 +1833,7 @@ mod tests {
             .cancellation_token();
         let cleaned = Arc::new(AtomicBool::new(false));
         let cleaned_task = Arc::clone(&cleaned);
+
         group
             .spawn(async move {
                 cancellation.cancelled().await;
@@ -1861,7 +1857,6 @@ mod tests {
     async fn shutdown_forces_abort_and_observes_canceled_join() {
         let group = TaskGroup::new();
         let (future, started_rx, dropped) = pending_with_drop_signal();
-
         group.spawn(future).expect("spawn");
         started_rx.await.expect("task should start");
 
@@ -1906,7 +1901,6 @@ mod tests {
     async fn dropping_task_group_aborts_owned_tasks() {
         let group = TaskGroup::new();
         let (future, started_rx, dropped) = pending_with_drop_signal();
-
         group.spawn(future).expect("spawn");
         started_rx.await.expect("task should start");
 
@@ -1986,6 +1980,7 @@ mod tests {
         let spawner = group.spawner().expect("spawner");
         let cancellation = spawner.cancellation_token();
         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+
         group
             .spawn(async move {
                 cancellation.cancelled().await;
@@ -2094,7 +2089,6 @@ mod tests {
         group.spawn(std::future::pending()).expect("spawn");
         group.begin_shutdown();
         let finishing_group = Arc::clone(&group);
-
         let finish = task::spawn(async move {
             finishing_group
                 .finish_shutdown(TEST_TIMEOUT, TEST_TIMEOUT)
@@ -2135,11 +2129,11 @@ mod tests {
             .expect("spawn panicking task");
 
         panicking_rx.await.expect("panicking task should start");
+
         group
             .spawn(std::future::pending())
             .expect("spawn pending task");
         group.begin_shutdown();
-
         loop {
             let finish = group.finish_shutdown(TEST_TIMEOUT, TEST_TIMEOUT);
             tokio::pin!(finish);
@@ -2175,6 +2169,7 @@ mod tests {
         let generation = group.inner.current();
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         let (release_tx, release_rx) = std::sync::mpsc::channel();
+
         group
             .spawn(async move {
                 let _ = started_tx.send(());
@@ -2220,6 +2215,7 @@ mod tests {
         let group = Arc::new(TaskGroup::new());
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         let (release_tx, release_rx) = std::sync::mpsc::channel();
+
         group
             .spawn(async move {
                 let _ = started_tx.send(());
@@ -2230,7 +2226,6 @@ mod tests {
         started_rx.await.expect("blocking task should start");
         group.begin_shutdown();
         let finishing_group = Arc::clone(&group);
-
         let finish = task::spawn(async move {
             finishing_group
                 .finish_shutdown(TEST_TIMEOUT, TEST_TIMEOUT)
@@ -2302,6 +2297,7 @@ mod tests {
             TaskRegistration::new(Arc::clone(&generation), generation.tasks.token(), None);
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         let (release_tx, release_rx) = std::sync::mpsc::channel();
+
         group
             .spawn(async move {
                 let _ = started_tx.send(());
@@ -2313,7 +2309,6 @@ mod tests {
         group.begin_shutdown();
 
         let finishing_group = Arc::clone(&group);
-
         let finish = task::spawn(async move {
             finishing_group
                 .finish_shutdown(Duration::ZERO, TEST_TIMEOUT)
@@ -2357,6 +2352,7 @@ mod tests {
         let generation = group.inner.current();
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         let (release_tx, release_rx) = std::sync::mpsc::channel();
+
         group
             .spawn(async move {
                 let _ = started_tx.send(());
@@ -2365,6 +2361,7 @@ mod tests {
             .expect("spawn blocking task");
 
         started_rx.await.expect("blocking task should start");
+
         group
             .spawn(async {
                 panic!("later task panic");
@@ -2521,9 +2518,9 @@ mod tests {
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn shared_task_abort_interrupts_active_finish() {
         let slot = Arc::new(SharedTaskSlot::new());
+
         slot.insert(task::spawn(std::future::pending::<u32>()));
         let finishing_slot = Arc::clone(&slot);
-
         let finish =
             task::spawn(async move { finishing_slot.finish(TEST_TIMEOUT, TEST_TIMEOUT).await });
 
@@ -2547,9 +2544,9 @@ mod tests {
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn concurrent_shared_finish_respects_its_own_bound() {
         let slot = Arc::new(SharedTaskSlot::new());
+
         slot.insert(task::spawn(std::future::pending::<u32>()));
         let finishing_slot = Arc::clone(&slot);
-
         let finish = task::spawn(async move {
             finishing_slot
                 .finish(Duration::from_secs(10), TEST_TIMEOUT)
@@ -2590,6 +2587,7 @@ mod tests {
         #[case] abort_timeout: Duration,
     ) {
         let slot = SharedTaskSlot::new();
+
         slot.insert(task::spawn(std::future::pending::<()>()));
 
         let outcome = slot
@@ -2614,6 +2612,7 @@ mod tests {
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn shared_task_abort_does_not_leak_into_next_generation() {
         let slot = SharedTaskSlot::new();
+
         slot.insert(task::spawn(std::future::pending::<u32>()));
         slot.abort();
         let first = slot
@@ -2641,9 +2640,9 @@ mod tests {
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn canceled_shared_finish_restores_owned_task() {
         let slot = Arc::new(SharedTaskSlot::new());
+
         slot.insert(task::spawn(std::future::pending::<()>()));
         let finishing_slot = Arc::clone(&slot);
-
         let finish =
             task::spawn(async move { finishing_slot.finish(TEST_TIMEOUT, TEST_TIMEOUT).await });
 
@@ -2670,6 +2669,7 @@ mod tests {
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         let (release_tx, release_rx) = std::sync::mpsc::channel();
         let slot = SharedTaskSlot::new();
+
         slot.insert(tokio::task::spawn_blocking(move || {
             let _ = started_tx.send(());
             let _ = release_rx.recv();
@@ -2735,7 +2735,9 @@ mod tests {
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn shared_task_try_insert_returns_task_when_occupied() {
         let slot = SharedTaskSlot::new();
+
         slot.insert(task::spawn(std::future::pending::<()>()));
+
         let candidate = TaskSlot::from_handle(task::spawn(async {}));
 
         let mut rejected = slot
@@ -2763,9 +2765,9 @@ mod tests {
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn shared_task_insert_aborts_rejected_task_before_panicking() {
         let slot = SharedTaskSlot::new();
+
         slot.insert(task::spawn(std::future::pending::<()>()));
         let (future, started_rx, dropped) = pending_with_drop_signal();
-
         let candidate = task::spawn(future);
         started_rx.await.expect("candidate task should start");
 
@@ -2793,7 +2795,6 @@ mod tests {
     async fn dropping_shared_task_slot_aborts_owned_task() {
         let slot = SharedTaskSlot::new();
         let (future, started_rx, dropped) = pending_with_drop_signal();
-
         slot.insert(task::spawn(future));
         started_rx.await.expect("task should start");
 
@@ -2825,7 +2826,6 @@ mod tests {
     async fn task_slot_insert_aborts_rejected_task_before_panicking() {
         let mut slot = TaskSlot::from_handle(task::spawn(std::future::pending::<()>()));
         let (future, started_rx, dropped) = pending_with_drop_signal();
-
         let candidate = task::spawn(future);
         started_rx.await.expect("candidate task should start");
 
@@ -2893,7 +2893,6 @@ mod tests {
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn dropping_task_slot_aborts_owned_task() {
         let (future, started_rx, dropped) = pending_with_drop_signal();
-
         let slot = TaskSlot::from_handle(task::spawn(future));
         started_rx.await.expect("task should start");
 
@@ -2907,7 +2906,6 @@ mod tests {
     async fn singular_task_is_joined_after_forced_abort() {
         let dropped = Arc::new(AtomicBool::new(false));
         let signal = DropSignal(Arc::clone(&dropped));
-
         let mut slot = TaskSlot::from_handle(task::spawn(async move {
             let _signal = signal;
             std::future::pending::<()>().await;

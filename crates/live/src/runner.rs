@@ -413,7 +413,6 @@ impl AsyncRunner {
     #[cfg(feature = "node")]
     pub(crate) fn drain_pending_system_events(&mut self) -> Vec<DispatchMessage<SystemEvent>> {
         let mut events = Vec::new();
-
         while let Ok(event) = self.channels.system_evt_rx.try_recv() {
             events.push(event);
         }
@@ -424,7 +423,6 @@ impl AsyncRunner {
     #[cfg(feature = "node")]
     pub(crate) fn drain_pending_system_commands(&mut self) -> Vec<DispatchMessage<SystemCommand>> {
         let mut commands = Vec::new();
-
         while let Ok(command) = self.channels.system_cmd_rx.try_recv() {
             commands.push(command);
         }
@@ -664,6 +662,7 @@ impl AsyncRunner {
             pending.0 + pending.1 + pending.2 + pending.3 + pending.4 + pending.5 + pending.6;
         log::debug!("Draining shutdown queues ({total} events initially pending)");
         let mut progress = 0usize;
+
         let mut process = |event| {
             process(event);
             progress += 1;
@@ -1077,6 +1076,7 @@ mod tests {
             UnixNanos::from(1),
             UnixNanos::from(2),
         );
+
         time_evt_tx
             .send(
                 (TimeEventMessage::new(time_event, TimeEventCallback::from(|_: TimeEvent| {})))
@@ -1239,19 +1239,23 @@ mod tests {
     ) {
         let mut runner = AsyncRunner::new();
         let stop = runner.signal_tx.clone();
+
         let callback = TimeEventCallback::RustLocal(Rc::new(move |event| {
             if event.ts_init == UnixNanos::from(8) {
                 stop.send(()).unwrap();
             }
         }));
+
         let received = Rc::new(std::cell::Cell::new(0_u64));
         let observed = received.clone();
         let stop = runner.signal_tx.clone();
+
         let exec_event = || {
             ExecutionEvent::Order(OrderEventAny::Submitted(
                 OrderSubmittedSpec::builder().build(),
             ))
         };
+
         let exec_tx = runner.exec_evt_tx.clone();
         msgbus::register_data_endpoint(
             MessagingSwitchboard::data_engine_process_data(),
@@ -1259,6 +1263,7 @@ mod tests {
                 let Data::Quote(quote) = event else {
                     panic!("Expected quote")
                 };
+
                 observed.set(observed.get() + 1);
                 assert_eq!(quote.ts_init.as_u64(), observed.get());
                 // Execution between data events must not restart the data rotation
@@ -1269,6 +1274,7 @@ mod tests {
                 }
             }),
         );
+
         let command = DataCommand::Subscribe(SubscribeCommand::Data(SubscribeCustomData {
             client_id: Some(ClientId::from("TEST")),
             venue: None,
@@ -1301,6 +1307,7 @@ mod tests {
             if execution {
                 runner.exec_evt_tx.send(exec_event().into()).unwrap();
             }
+
             runner.data_cmd_tx.send(command.clone().into()).unwrap();
         }
 
@@ -1771,7 +1778,6 @@ mod tests {
         let owner = thread::current().id();
         let observed = Rc::new(RefCell::new(Vec::new()));
         let received = observed.clone();
-
         let callback = TimeEventCallback::RustLocal(Rc::new(move |event| {
             received
                 .borrow_mut()
@@ -1796,6 +1802,7 @@ mod tests {
                     true,
                     Some(get_time_event_sender()),
                 );
+
                 timer.start();
                 *started.borrow_mut() = Some(timer);
             }),
@@ -1840,6 +1847,7 @@ mod tests {
             UnixNanos::from(1),
             UnixNanos::from(2),
         );
+
         let callback = TimeEventCallback::from(|_: TimeEvent| {});
         let message = TimeEventMessage::new(event, callback);
 
@@ -2110,6 +2118,7 @@ mod tests {
         let scoped_handler = TypedHandler::from(move |event: &AccountState| {
             scoped_received.borrow_mut().push(event.event_id);
         });
+
         msgbus::subscribe_account_state(
             "events.account.SIM-001".into(),
             scoped_handler.clone(),
@@ -2117,6 +2126,7 @@ mod tests {
         );
         let mut expected = Vec::new();
         let mut expected_scoped = Vec::new();
+
         for (index, (account_id, total, locked, free, history_len)) in [
             ("SIM-001", "100 USD", "20 USD", "80 USD", 1),
             ("SIM-002", "200 USD", "50 USD", "150 USD", 1),
@@ -2141,10 +2151,12 @@ mod tests {
                 UnixNanos::from(index as u64 + 1),
                 Some(Currency::USD()),
             );
+
             expected.push((event.event_id, history_len));
             if account_id == "SIM-001" {
                 expected_scoped.push(event.event_id);
             }
+
             let expected_log = format!("Updated {event}");
             AsyncRunner::handle_exec_event(ExecutionEvent::Account(event));
             assert_eq!(
@@ -2157,6 +2169,7 @@ mod tests {
                 1
             );
         }
+
         assert_eq!(*observed.borrow(), expected);
         assert_eq!(*scoped.borrow(), expected_scoped);
         let cache = cache.borrow();
@@ -2195,11 +2208,13 @@ mod tests {
 
         msgbus::set_message_bus(Rc::new(RefCell::new(MessageBus::default())));
         let cache = Rc::new(RefCell::new(Cache::default()));
+
         let mut portfolio = Portfolio::new(
             Rc::new(RefCell::new(VirtualClock::new())),
             cache.clone(),
             None,
         );
+
         let state = |amount: &str| {
             AccountState::new(
                 AccountId::from("SIM-001"),
@@ -2217,16 +2232,19 @@ mod tests {
                 (account_type != AccountType::Wallet).then_some(Currency::USD()),
             )
         };
-        let initial = state("100.00 USD");
 
+        let initial = state("100.00 USD");
         if existing_account {
             portfolio.update_account(&initial);
         }
+
         let received = Rc::new(RefCell::new(Vec::new()));
+
         let handler = TypedHandler::from({
             let received = received.clone();
             move |event: &AccountState| received.borrow_mut().push(event.clone())
         });
+
         msgbus::subscribe_account_state("events.account.*".into(), handler.clone(), None);
         AsyncRunner::handle_exec_event(ExecutionEvent::Account(state("-1.00 USD")));
         assert!(received.borrow().is_empty());
@@ -2240,6 +2258,7 @@ mod tests {
         } else {
             assert!(cache.account(&initial.account_id).is_none());
         }
+
         msgbus::unsubscribe_account_state("events.account.*".into(), &handler);
     }
 
@@ -2454,6 +2473,7 @@ mod tests {
                 UnixNanos::from(1),
                 UnixNanos::from(2),
             );
+
             let callback = TimeEventCallback::from(|_: TimeEvent| {});
             get_time_event_sender().send(TimeEventMessage::new(event, callback));
             assert!(runner.channels.time_evt_rx.try_recv().is_ok());
@@ -2498,6 +2518,7 @@ mod tests {
                 UnixNanos::from(2),
                 None,
             );
+
             get_exec_event_sender()
                 .send(ExecutionEvent::Account(account))
                 .unwrap();

@@ -240,7 +240,6 @@ async fn reconciliation_latency(
         let metrics = callback_handle.metrics_snapshot();
         let maintenance = metrics.maintenance_busy_ns;
         let mut boundaries = callback_snapshots.get();
-
         if index == WARMUP - 1 {
             boundaries[0] = Some(metrics);
             assert!(
@@ -468,6 +467,7 @@ async fn reconciliation_latency(
 
     let poll_values = polls.into_inner();
     let poll_busy_ns: u64 = poll_values.iter().sum();
+
     let distributions = [
         (
             "delivery",
@@ -480,7 +480,6 @@ async fn reconciliation_latency(
 
     for (metric, mut values) in distributions {
         values.sort_unstable();
-
         let percentile = |numerator: usize, denominator: usize| {
             values[(values.len() * numerator).div_ceil(denominator) - 1] as f64 / 1_000.0
         };

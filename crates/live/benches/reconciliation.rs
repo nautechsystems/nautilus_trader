@@ -235,6 +235,7 @@ fn position_history_fixture(count: usize) -> (ExecutionManager, Rc<RefCell<Cache
         fill.ts_init,
         None,
     );
+
     cache
         .borrow_mut()
         .add_order(order, Some(position_id), None, false)
@@ -282,6 +283,7 @@ fn mass_fixture(count: usize, amends: usize, fill: bool) -> MassFixture {
         UnixNanos::from(2),
         None,
     );
+
     let mut reports = Vec::with_capacity(count);
     let mut fills = Vec::with_capacity(if fill { count } else { 0 });
     for index in 0..count {

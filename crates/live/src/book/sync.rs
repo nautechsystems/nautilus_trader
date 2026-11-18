@@ -256,7 +256,6 @@ impl<E: Clone, P> BookSync<E, P> {
         }
 
         let elapsed = now.checked_duration_since(self.last_update)?;
-
         if elapsed <= threshold {
             return None;
         }

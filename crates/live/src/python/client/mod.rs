@@ -165,6 +165,7 @@ impl PyClientCache {
             .quote_at_index(&instrument_id, index)
             .copied())
     }
+
     #[pyo3(name = "get")]
     fn py_get(&self, key: &str) -> PyResult<Option<Vec<u8>>> {
         self.read(|cache| {
@@ -546,7 +547,6 @@ impl ClientOutput {
 
         let report = if report.is_instance_of::<OrderStatusReport>() {
             let order = Box::new(report.extract()?);
-
             match fills {
                 Some(fills) => ExecutionReport::OrderWithFills(order, fills),
                 None => ExecutionReport::Order(order),
@@ -1084,7 +1084,6 @@ impl PythonClients {
         for owner in owners {
             owner.output.invalidate();
             CLIENT_CACHES.with_borrow_mut(|caches| caches.remove(&owner.cache_id));
-
             let result = (|| {
                 owner.runtime.call_method0(py, "dispose")?;
                 if owner.runtime.getattr(py, "complete")?.extract::<bool>(py)? {
@@ -1148,6 +1147,7 @@ impl DataClientFactory for PythonDataFactory {
     fn name(&self) -> &'static str {
         "Python"
     }
+
     fn config_type(&self) -> &'static str {
         "DataClientConfig"
     }
@@ -1180,9 +1180,11 @@ impl ExecutionClientFactory for PythonExecutionFactory {
     fn name(&self) -> &'static str {
         "Python"
     }
+
     fn config_type(&self) -> &'static str {
         "ExecutionClientConfig"
     }
+
     fn create(
         &self,
         trader_id: TraderId,
@@ -1235,7 +1237,6 @@ impl PythonClients {
                 kwargs.set_item("config", &config.0)?;
                 kwargs.set_item("cache", PyClientCache { id: cache_id })?;
                 kwargs.set_item("clock", PyClock::from_rc(clock.clone()))?;
-
                 if let Some(trader_id) = trader_id {
                     kwargs.set_item("trader_id", trader_id)?;
                 }
@@ -1287,7 +1288,6 @@ impl PythonClients {
                 }
 
                 let runtime = client.getattr(py, "_runtime")?;
-
                 let execution = trader_id
                     .map(|trader_id| -> PyResult<ExecutionIdentity> {
                         if client.getattr(py, "trader_id")?.extract::<TraderId>(py)? != trader_id {
@@ -1394,21 +1394,27 @@ impl DataClient for PythonClient {
     fn client_id(&self) -> ClientId {
         self.client_id
     }
+
     fn venue(&self) -> Option<Venue> {
         self.venue
     }
+
     fn start(&mut self) -> anyhow::Result<()> {
         self.output.bind().map_err(Into::into)
     }
+
     fn stop(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
+
     fn reset(&mut self) -> anyhow::Result<()> {
         anyhow::bail!("Python clients are single-use")
     }
+
     fn dispose(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
+
     fn is_connected(&self) -> bool {
         Python::attach(|py| {
             self.runtime
@@ -1417,15 +1423,19 @@ impl DataClient for PythonClient {
                 .unwrap_or(false)
         })
     }
+
     fn is_disconnected(&self) -> bool {
         !self.is_connected()
     }
+
     async fn connect(&mut self) -> anyhow::Result<()> {
         self.lifecycle("connect").await
     }
+
     async fn disconnect(&mut self) -> anyhow::Result<()> {
         self.lifecycle("disconnect").await
     }
+
     fn subscribe(&mut self, command: SubscribeCustomData) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.runtime
@@ -1434,6 +1444,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn subscribe_instruments(&mut self, command: SubscribeInstruments) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.runtime
@@ -1442,6 +1453,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn subscribe_instrument(&mut self, command: SubscribeInstrument) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.runtime
@@ -1450,6 +1462,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn subscribe_book_deltas(&mut self, command: SubscribeBookDeltas) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.runtime
@@ -1458,6 +1471,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn subscribe_book_depth(&mut self, command: SubscribeBookDepth) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.runtime
@@ -1466,6 +1480,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn subscribe_quotes(&mut self, command: SubscribeQuotes) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.runtime
@@ -1474,6 +1489,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn subscribe_trades(&mut self, command: SubscribeTrades) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.runtime
@@ -1482,6 +1498,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn subscribe_mark_prices(&mut self, command: SubscribeMarkPrices) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.runtime
@@ -1490,6 +1507,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn subscribe_index_prices(&mut self, command: SubscribeIndexPrices) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.runtime
@@ -1498,6 +1516,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn subscribe_funding_rates(&mut self, command: SubscribeFundingRates) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.runtime
@@ -1506,6 +1525,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn subscribe_bars(&mut self, command: SubscribeBars) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.runtime
@@ -1514,6 +1534,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn subscribe_instrument_status(
         &mut self,
         command: SubscribeInstrumentStatus,
@@ -1525,6 +1546,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn subscribe_instrument_close(
         &mut self,
         command: SubscribeInstrumentClose,
@@ -1536,6 +1558,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn subscribe_option_greeks(&mut self, command: SubscribeOptionGreeks) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.runtime
@@ -1544,6 +1567,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn unsubscribe(&mut self, command: &UnsubscribeCustomData) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.runtime
@@ -1552,6 +1576,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn unsubscribe_instruments(&mut self, command: &UnsubscribeInstruments) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.runtime.call_method1(
@@ -1563,6 +1588,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn unsubscribe_instrument(&mut self, command: &UnsubscribeInstrument) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.runtime
@@ -1571,6 +1597,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn unsubscribe_book_deltas(&mut self, command: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.runtime.call_method1(
@@ -1582,6 +1609,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn unsubscribe_book_depth(&mut self, command: &UnsubscribeBookDepth) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.runtime
@@ -1590,6 +1618,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn unsubscribe_quotes(&mut self, command: &UnsubscribeQuotes) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.runtime
@@ -1598,6 +1627,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn unsubscribe_trades(&mut self, command: &UnsubscribeTrades) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.runtime
@@ -1606,6 +1636,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn unsubscribe_mark_prices(&mut self, command: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.runtime.call_method1(
@@ -1617,6 +1648,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn unsubscribe_index_prices(&mut self, command: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.runtime.call_method1(
@@ -1628,6 +1660,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn unsubscribe_funding_rates(
         &mut self,
         command: &UnsubscribeFundingRates,
@@ -1642,6 +1675,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn unsubscribe_bars(&mut self, command: &UnsubscribeBars) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.runtime
@@ -1650,6 +1684,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn unsubscribe_instrument_status(
         &mut self,
         command: &UnsubscribeInstrumentStatus,
@@ -1664,6 +1699,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn unsubscribe_instrument_close(
         &mut self,
         command: &UnsubscribeInstrumentClose,
@@ -1678,6 +1714,7 @@ impl DataClient for PythonClient {
 
         Ok(())
     }
+
     fn unsubscribe_option_greeks(
         &mut self,
         command: &UnsubscribeOptionGreeks,
@@ -1881,7 +1918,6 @@ impl PythonClient {
             None,
             move |args: &Bound<'_, PyTuple>, _kwargs: Option<&Bound<'_, PyDict>>| {
                 let task = args.get_item(0)?;
-
                 let reason = if task.call_method0("cancelled")?.extract::<bool>()? {
                     Some("Python data request canceled".to_owned())
                 } else {
@@ -1921,18 +1957,23 @@ impl ExecutionClient for PythonExecutionClient {
     fn client_id(&self) -> ClientId {
         self.client.client_id
     }
+
     fn account_id(&self) -> AccountId {
         self.identity.account_id
     }
+
     fn venue(&self) -> Venue {
         self.identity.venue
     }
+
     fn oms_type(&self) -> OmsType {
         self.identity.oms_type
     }
+
     fn position_reconciliation_tolerance(&self) -> Decimal {
         self.identity.tolerance
     }
+
     fn handles_order_venue(&self, venue: Venue) -> bool {
         Python::attach(|py| {
             self.client
@@ -1948,6 +1989,7 @@ impl ExecutionClient for PythonExecutionClient {
             false
         })
     }
+
     fn provides_bulk_position_coverage(&self, instrument_id: InstrumentId) -> bool {
         Python::attach(|py| {
             self.client
@@ -1963,6 +2005,7 @@ impl ExecutionClient for PythonExecutionClient {
             false
         })
     }
+
     fn calculate_commission(
         &self,
         instrument: &InstrumentAny,
@@ -1984,6 +2027,7 @@ impl ExecutionClient for PythonExecutionClient {
         })
         .map_err(Into::into)
     }
+
     fn register_external_order(
         &self,
         client_order_id: ClientOrderId,
@@ -2014,6 +2058,7 @@ impl ExecutionClient for PythonExecutionClient {
             );
         }
     }
+
     fn on_instrument(&mut self, instrument: InstrumentAny) {
         if let Err(e) = Python::attach(|py| -> PyResult<()> {
             let instrument = instrument_any_to_pyobject(py, instrument)?;
@@ -2028,6 +2073,7 @@ impl ExecutionClient for PythonExecutionClient {
             );
         }
     }
+
     fn get_account(&self) -> Option<AccountAny> {
         match self.cache.try_borrow() {
             Ok(cache) => cache.account_owned(&self.identity.account_id),
@@ -2037,6 +2083,7 @@ impl ExecutionClient for PythonExecutionClient {
             }
         }
     }
+
     fn generate_account_state(
         &self,
         balances: Vec<AccountBalance>,
@@ -2054,27 +2101,35 @@ impl ExecutionClient for PythonExecutionClient {
             .send_exec(ExecutionEvent::Account(event))
             .map_err(Into::into)
     }
+
     fn start(&mut self) -> anyhow::Result<()> {
         self.client.output.bind().map_err(Into::into)
     }
+
     fn stop(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
+
     fn reset(&mut self) -> anyhow::Result<()> {
         anyhow::bail!("Python clients are single-use")
     }
+
     fn dispose(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
+
     fn is_connected(&self) -> bool {
         DataClient::is_connected(&self.client)
     }
+
     async fn connect(&mut self) -> anyhow::Result<()> {
         self.client.lifecycle("connect").await
     }
+
     async fn disconnect(&mut self) -> anyhow::Result<()> {
         self.client.lifecycle("disconnect").await
     }
+
     fn submit_order(&self, command: SubmitOrder) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.client
@@ -2084,6 +2139,7 @@ impl ExecutionClient for PythonExecutionClient {
 
         Ok(())
     }
+
     fn submit_order_list(&self, command: SubmitOrderList) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.client
@@ -2093,6 +2149,7 @@ impl ExecutionClient for PythonExecutionClient {
 
         Ok(())
     }
+
     fn modify_order(&self, command: ModifyOrder) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.client
@@ -2102,6 +2159,7 @@ impl ExecutionClient for PythonExecutionClient {
 
         Ok(())
     }
+
     fn batch_modify_orders(&self, command: BatchModifyOrders) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.client
@@ -2111,6 +2169,7 @@ impl ExecutionClient for PythonExecutionClient {
 
         Ok(())
     }
+
     fn cancel_order(&self, command: CancelOrder) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.client
@@ -2120,6 +2179,7 @@ impl ExecutionClient for PythonExecutionClient {
 
         Ok(())
     }
+
     fn cancel_all_orders(&self, command: CancelAllOrders) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.client
@@ -2129,6 +2189,7 @@ impl ExecutionClient for PythonExecutionClient {
 
         Ok(())
     }
+
     fn batch_cancel_orders(&self, command: BatchCancelOrders) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.client
@@ -2138,6 +2199,7 @@ impl ExecutionClient for PythonExecutionClient {
 
         Ok(())
     }
+
     fn query_account(&self, command: QueryAccount) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.client
@@ -2147,6 +2209,7 @@ impl ExecutionClient for PythonExecutionClient {
 
         Ok(())
     }
+
     fn query_order(&self, command: QueryOrder) -> anyhow::Result<()> {
         Python::attach(|py| {
             self.client
@@ -2156,6 +2219,7 @@ impl ExecutionClient for PythonExecutionClient {
 
         Ok(())
     }
+
     async fn generate_mass_status(
         &self,
         lookback_mins: Option<u64>,
@@ -2194,6 +2258,7 @@ impl ExecutionClient for PythonExecutionClient {
             Ok(report)
         }
     }
+
     async fn generate_order_status_report(
         &self,
         command: &GenerateOrderStatusReport,
@@ -2209,7 +2274,6 @@ impl ExecutionClient for PythonExecutionClient {
         })?;
 
         let result = operation.await?;
-
         let report = Python::attach(|py| -> PyResult<Option<OrderStatusReport>> {
             Ok(result.extract(py)?)
         })?;
@@ -2223,6 +2287,7 @@ impl ExecutionClient for PythonExecutionClient {
 
         Ok(report)
     }
+
     async fn generate_order_status_reports(
         &self,
         command: &GenerateOrderStatusReports,
@@ -2248,6 +2313,7 @@ impl ExecutionClient for PythonExecutionClient {
 
         Ok(reports)
     }
+
     async fn generate_fill_reports(
         &self,
         command: GenerateFillReports,
@@ -2273,6 +2339,7 @@ impl ExecutionClient for PythonExecutionClient {
 
         Ok(reports)
     }
+
     async fn generate_position_status_reports(
         &self,
         command: &GeneratePositionStatusReports,
@@ -2345,6 +2412,7 @@ mod tests {
         Python::initialize();
         let output = ClientOutput::py_new();
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+
         {
             let mut state = output.state.lock();
             state.exec_sender = Some(sender.into());
@@ -2452,7 +2520,6 @@ class Runtime:
     ) {
         let client = native_execution_client;
         let mut expected = order_report();
-
         if result_kind == "foreign" {
             expected.account_id = AccountId::from("OTHER-001");
         }
@@ -2466,9 +2533,9 @@ class Runtime:
             None,
             Some(nautilus_core::UUID4::new()),
         );
+
         Python::attach(|py| {
             let runtime = client.client.runtime.bind(py);
-
             match result_kind {
                 "valid" | "foreign" => runtime
                     .setattr("result", Py::new(py, expected.clone()).unwrap())
@@ -2560,6 +2627,7 @@ class Runtime:
                 UnixNanos::from(179),
                 None,
             );
+
             client.request_quotes(request).unwrap();
             if disposed {
                 client.output.invalidate();
@@ -2599,7 +2667,6 @@ class Runtime:
     fn test_output_rebinding_is_rejected(#[case] disposed: bool) {
         Python::initialize();
         let output = ClientOutput::py_new();
-
         if disposed {
             output.invalidate();
         } else {
@@ -2917,6 +2984,7 @@ class Runtime:
             "RuntimeError: Client cache is disposed or accessed from a foreign thread"
         );
     }
+
     #[rstest]
     #[case(None)]
     #[case(Some(Price::from("123.456")))]
@@ -2942,6 +3010,7 @@ class Runtime:
             199.into(),
             None,
         );
+
         client
             .request_option_chain_reference_price(request.clone())
             .unwrap();
@@ -2978,6 +3047,7 @@ class Runtime:
 
             let output = ClientOutput::py_new();
             let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+
             {
                 let mut state = output.state.lock();
                 state.sender = Some(sender.into());
@@ -3066,6 +3136,7 @@ class Runtime:
             UnixNanos::from(19),
             UnixNanos::from(23),
         );
+
         {
             let mut state = output.state.lock();
             state.sender = Some(sender.into());
@@ -3088,7 +3159,6 @@ class Runtime:
         });
 
         let event = receiver.try_recv().unwrap();
-
         let response = match event {
             DataEvent::ResponseEnvelope(envelope) => {
                 assert_eq!(envelope.correlation_id(), &root);
@@ -3132,6 +3202,7 @@ class Runtime:
         let output = ClientOutput::py_new();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         let root = nautilus_core::UUID4::new();
+
         {
             let mut state = output.state.lock();
             state.sender = Some(sender.into());
@@ -3140,7 +3211,6 @@ class Runtime:
 
         Python::attach(|py| {
             let client_id = ClientId::from(if foreign_client { "OTHER" } else { "HISTORY" });
-
             let correlation_id = if foreign_client {
                 root
             } else {
@@ -3277,7 +3347,6 @@ class Runtime:
         let client = native_execution_client;
         Python::attach(|py| {
             let runtime = client.client.runtime.bind(py);
-
             match mode {
                 "true" => runtime.setattr("result", true).unwrap(),
                 "false" => runtime.setattr("result", false).unwrap(),
@@ -3336,7 +3405,6 @@ class Runtime:
         let commission = Money::from("0.17 USD");
         Python::attach(|py| {
             let runtime = client.client.runtime.bind(py);
-
             if mode == "money" {
                 runtime.setattr("result", commission).unwrap();
             } else if mode == "exception" {
@@ -3494,6 +3562,7 @@ class Runtime:
             Some(InstrumentId::from("AUD/USD.SIM")), Some(229.into()), Some(239.into()), None, None),
         position_report()
     );
+
     #[rstest]
     #[case("order")]
     #[case("fill")]
@@ -3511,6 +3580,7 @@ class Runtime:
         #[case] kind: &str,
     ) {
         let (output, mut receiver) = execution_output;
+
         {
             let mut state = output.state.lock();
             state.client_id = Some(ClientId::from("SIM"));
@@ -3524,6 +3594,7 @@ class Runtime:
             257.into(),
             None,
         );
+
         mass.add_order_reports(vec![order_report.clone()]);
         mass.add_fill_reports(vec![fill_report.clone()]);
         mass.add_position_reports(vec![position_report.clone()]);
@@ -3621,6 +3692,7 @@ class Runtime:
             Some(Decimal::new(71231, 5)),
         )
     }
+
     #[rstest]
     #[case("none")]
     #[case("valid")]
@@ -3641,7 +3713,6 @@ class Runtime:
     ) {
         let client = native_execution_client;
         let account = AccountId::from("OTHER-001");
-
         if kind == "order" {
             order_report.account_id = account;
         }
@@ -3713,6 +3784,7 @@ class Runtime:
             );
         });
     }
+
     #[rstest]
     fn test_cache_bytes_and_order_lists_are_owned_snapshots() {
         Python::initialize();
@@ -3733,6 +3805,7 @@ class Runtime:
             ],
             UnixNanos::from(173),
         );
+
         cache
             .borrow_mut()
             .add("probe", vec![0, 17, 255].into())
@@ -3756,6 +3829,7 @@ class Runtime:
         );
         CLIENT_CACHES.with_borrow_mut(|caches| caches.remove(&id));
     }
+
     #[rstest]
     fn test_factory_metadata() {
         Python::initialize();
@@ -3796,6 +3870,7 @@ class Runtime:
                 correlation_id,
                 None,
             );
+
             let command_py = Py::new(py, command).unwrap();
             assert_eq!(
                 command_py

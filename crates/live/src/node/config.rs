@@ -263,13 +263,11 @@ pub(crate) fn parse_rate_limit(field: impl Into<String>, input: &str) -> ConfigR
     let (limit, interval) = input
         .split_once('/')
         .ok_or_else(|| ConfigError::invalid_format(field.clone(), RATE_LIMIT_FORMAT))?;
-
     let limit = limit
         .parse::<usize>()
         .map_err(|e| ConfigError::invalid_format(field.clone(), format!("limit: {e}")))?;
 
     let mut parts = interval.split(':');
-
     let mut next = |label: &str| -> ConfigResult<u64> {
         parts
             .next()
@@ -295,10 +293,8 @@ pub(crate) fn parse_rate_limit(field: impl Into<String>, input: &str) -> ConfigR
         })
         .and_then(|total| total.checked_add(seconds))
         .ok_or_else(|| ConfigError::range(field.clone(), "interval exceeds the supported range"))?;
-
     let interval_ns = DurationNanos::try_from_secs(interval_secs)
         .map_err(|e| ConfigError::range(field.clone(), e.to_string()))?;
-
     RateLimit::new_checked(limit, interval_ns).map_err(|e| ConfigError::range(field, e.to_string()))
 }
 
@@ -879,7 +875,6 @@ impl LiveNodeConfig {
         collector.collect(self.data_engine.validate_runtime_support());
         collector.collect(self.risk_engine.validate_runtime_support());
         collector.collect(self.exec_engine.validate_runtime_support());
-
         if let Some(queue_monitor) = &self.queue_monitor {
             collector.collect(queue_monitor.validate());
         }
@@ -891,7 +886,6 @@ impl LiveNodeConfig {
 
     fn validate_plugin_configs(&self) -> ConfigResult<()> {
         let mut collector = ConfigErrorCollector::new();
-
         for (index, plugin) in self.plugins.iter().enumerate() {
             collector.collect(plugin.validate_runtime_support(index));
         }
@@ -1382,7 +1376,6 @@ mean_dispatch_ns_clear = 700
         };
 
         let error = config.validate_runtime_support().unwrap_err();
-
         match error {
             ConfigError::Multiple { errors } => {
                 assert_eq!(errors.len(), 2);
@@ -1942,7 +1935,6 @@ mean_dispatch_ns_clear = 700
     #[case(86_400.1)]
     fn test_duration_from_secs_f64_rejects_invalid_values(#[case] value: f64) {
         let error = duration_from_secs_f64("LiveNodeConfig.timeout_connection", value).unwrap_err();
-
         match error {
             ConfigError::Range { field, reason } => {
                 assert_eq!(field, "LiveNodeConfig.timeout_connection");

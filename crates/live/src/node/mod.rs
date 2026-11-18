@@ -284,7 +284,6 @@ impl LiveNode {
         validate_live_environment(config.environment())?;
 
         config.validate_runtime_support()?;
-
         if config.event_store.is_some() {
             anyhow::bail!(
                 "LiveNodeConfig.event_store is set but LiveNode::build cannot install a factory; \
@@ -493,6 +492,7 @@ impl LiveNode {
         let (startup_system_events, startup_system_commands) =
             if let Some(runner) = self.runner.as_mut() {
                 runner.flush_pending_data();
+
                 (
                     runner.drain_pending_system_events(),
                     runner.drain_pending_system_commands(),
@@ -874,7 +874,6 @@ impl LiveNode {
         let exec_status = self.kernel.exec_client_connection_status();
 
         let mut rows: Vec<ClientStatus> = Vec::new();
-
         for (client_id, connected) in data_status {
             rows.push(ClientStatus {
                 client: client_id.to_string(),
@@ -935,7 +934,6 @@ impl LiveNode {
         let timeout = self.config.timeout_reconciliation;
         let start = dst::time::Instant::now();
         let client_ids = self.kernel.exec_engine.borrow().client_ids();
-
         for client_id in client_ids {
             let elapsed = start.elapsed();
             if elapsed >= timeout {
@@ -1460,7 +1458,6 @@ impl LiveNode {
 
         let recon_min_interval = if recon_enabled {
             let mut intervals = Vec::new();
-
             if !inflight_interval.is_zero() {
                 intervals.push(inflight_interval);
             }
@@ -1500,7 +1497,6 @@ impl LiveNode {
         // Per-task `(interval, next_fire)` schedules dispatched by the
         // shared `maintenance_timer` below. See module docs for rationale.
         let far_future = Duration::from_hours(24 * 365 * 100);
-
         let make_schedule = |opt_dur: Option<Duration>| -> (Duration, dst::time::Instant) {
             let dur = opt_dur.unwrap_or(far_future);
             (dur, recon_start + dur)
@@ -1562,7 +1558,6 @@ impl LiveNode {
         // A hosted node never installs signal handlers, so these futures stay pending and their
         // listeners are never registered. Both arms resolve to the same type as the real listeners.
         let owns_signals = mode.owns_signals();
-
         let ctrl_c = async move {
             if owns_signals {
                 dst::signal::ctrl_c().await
@@ -1585,7 +1580,6 @@ impl LiveNode {
         let metrics = self.handle.metrics.clone();
         let metrics_start = dst::time::Instant::now();
         metrics.reset();
-
         let mut queue_monitor = self
             .config
             .queue_monitor
@@ -1996,7 +1990,6 @@ impl LiveNode {
         let _ = self.kernel.cache().borrow().check_residuals();
 
         let stop_result = self.finalize_stop().await;
-
         if let Err(e) = dispatch_result {
             if let Err(stop_err) = stop_result {
                 log::error!("Failed to finalize node after callback failure: {stop_err}");
@@ -2231,12 +2224,14 @@ impl LiveNode {
             &event,
             ExecutionEvent::Order(_) | ExecutionEvent::OrderCanceledBatch(_)
         );
+
         let closed_report_id = match &event {
             ExecutionEvent::Report(
                 ExecutionReport::Order(report) | ExecutionReport::OrderWithFills(report, _),
             ) if report.order_status.is_closed() => report.client_order_id,
             _ => None,
         };
+
         let Some(order_ids) = self.observe_exec_event_before_dispatch(&event) else {
             return;
         };
@@ -2444,7 +2439,6 @@ impl LiveNode {
         }
 
         let mut errors = Vec::new();
-
         if let Err(e) = controller_stop_result {
             errors.push(format!("Failed to stop plug-in controllers: {e}"));
         }
@@ -2519,7 +2513,6 @@ impl LiveNode {
         self.handle.set_shutting_down();
         let stop_result = self.kernel.stop_trader_after_start_failure();
         let finalize_result = self.finalize_stop().await;
-
         match (stop_result, finalize_result) {
             (Ok(()), Ok(())) => Err(start_err),
             (Err(stop_err), Ok(())) => anyhow::bail!(
@@ -2635,6 +2628,7 @@ impl LiveNode {
         log::debug!("Draining shutdown queues ({pending} events initially pending)");
 
         let mut drained = 0;
+
         let log_progress = |processed: usize| {
             if processed.is_multiple_of(10_000) {
                 log::debug!("Processed {processed} events during shutdown drain");
@@ -2731,7 +2725,6 @@ impl LiveNode {
                 }
 
                 self.exec_manager.observe_execution_report(report);
-
                 if let Some(client_order_id) = self.order_report_client_order_id(report) {
                     order_ids.push(client_order_id);
                 }
@@ -3001,7 +2994,6 @@ impl LiveNode {
             .prepare_strategy_for_registration(&mut strategy)?;
         let oms_type = StrategyNative::strategy_core(&strategy).config.oms_type;
         let instrument_ids = strategy.external_order_instrument_ids().unwrap_or_default();
-
         if !instrument_ids.is_empty() {
             self.register_external_order_claims(strategy_id, &instrument_ids)?;
         }
@@ -3074,7 +3066,6 @@ impl LiveNode {
             .try_borrow_mut()
             .map_err(|e| anyhow::anyhow!("Cannot register external order claims: {e}"))?
             .register_external_order_claims(strategy_id, instrument_ids)?;
-
         if !instrument_ids.is_empty() {
             log::info!("Registered external order claims for {strategy_id}: {instrument_ids:?}");
         }
@@ -3420,7 +3411,6 @@ impl PendingEvents {
     /// Returns `true` if any events or commands were drained.
     fn drain_data(&mut self) -> bool {
         let total = self.data_evts.len() + self.data_cmds.len();
-
         if total > 0 {
             log::debug!(
                 "Draining {total} data events/commands into cache \
@@ -3545,7 +3535,6 @@ struct ClientStatus {
 fn render_client_statuses(rows: Vec<ClientStatus>) -> String {
     let mut builder = Builder::with_capacity(rows.len() + 1, 3);
     builder.push_record(["Client", "Type", "Connected"]);
-
     for row in rows {
         builder.push_record([
             row.client,
@@ -3912,10 +3901,8 @@ mod tests {
         fn on_start(&mut self) -> anyhow::Result<()> {
             for timestamp in [17, 23] {
                 let received = self.received.clone();
-
                 let callback = TimeEventCallback::RustLocal(Rc::new(move |_| {
                     received.borrow_mut().push(timestamp);
-
                     if timestamp == 17 {
                         crate::dispatch::tests::latch_callback_failure();
                     }
@@ -3969,6 +3956,7 @@ mod tests {
             node.exec_manager
                 .register_submission(order.init_event(), None);
         }
+
         let received = Rc::new(RefCell::new(Vec::new()));
         node.add_actor(FailingTimerActor {
             core: DataActorCore::new(DataActorConfig {
@@ -3983,9 +3971,11 @@ mod tests {
 
         let error = result.unwrap_err();
         assert!(error.to_string().contains("Callback delivery unwound"));
+
         if incomplete_submission {
             assert!(error.to_string().contains("O-CALLBACK-UNRESOLVED"));
         }
+
         let state = node.state();
         let trader_stopped = node.kernel.trader.borrow().is_stopped();
         let failure = actor::callback_failure();
@@ -4598,6 +4588,7 @@ mod tests {
             Ustr::from("binance-futures-market-streams"),
             SocketState::Connected,
         );
+
         get_system_event_sender()
             .send(SystemEvent::SocketState(change))
             .unwrap();
@@ -4709,9 +4700,11 @@ mod tests {
             delay_post_stop: Duration::ZERO,
             ..Default::default()
         };
+
         let mut node = LiveNode::build("FairDispatchNode".to_string(), Some(config)).unwrap();
         let handle = node.handle();
         let stop = handle.clone();
+
         let callback = TimeEventCallback::RustLocal(Rc::new(move |event| {
             if slow {
                 // Make housekeeping ready after each timer callback
@@ -4730,6 +4723,7 @@ mod tests {
                     assert!(snapshot.data_events.dispatched > 0);
                     assert_eq!(snapshot.data_commands.dispatched, 1);
                 }
+
                 stop.stop();
             }
         }));
@@ -4748,14 +4742,17 @@ mod tests {
                     get_exec_event_sender().send(stub_exec_event()).unwrap();
                 }
             }
+
             nautilus_common::runner::get_data_cmd_sender().execute(stub_data_command());
         };
+
         tokio::time::timeout(Duration::from_secs(5), async {
             let (result, ()) = tokio::join!(node.run(), drive);
             result.unwrap();
         })
         .await
         .unwrap();
+
         assert!(handle.should_stop());
     }
 
@@ -5194,6 +5191,7 @@ mod tests {
             fill.ts_init,
             None,
         );
+
         let (exec_evt_tx, mut exec_evt_rx) =
             tokio::sync::mpsc::unbounded_channel::<DispatchMessage<ExecutionEvent>>();
         exec_evt_tx
@@ -5320,6 +5318,7 @@ mod tests {
             UnixNanos::from(2_000),
             None,
         );
+
         let mut report_a = report_b.clone();
         report_a.trade_id = TradeId::from("T-POSITION-FILLS-A");
         let commands = Rc::new(RefCell::new(Vec::new()));
@@ -5342,6 +5341,7 @@ mod tests {
             None,
             None,
         );
+
         let key = (instrument_id, account_id);
 
         let result = request_position_fill_reports(
@@ -5410,6 +5410,7 @@ mod tests {
             None,
             None,
         );
+
         let key = (instrument_id, account_id);
 
         let result = request_position_fill_reports(
@@ -5473,6 +5474,7 @@ mod tests {
             None,
             None,
         );
+
         let key = (instrument_id, account_id);
 
         let result = request_position_fill_reports(
@@ -5560,7 +5562,6 @@ mod tests {
         };
 
         let mut queries = vec![query, failed_query];
-
         if failure_first {
             queries.reverse();
         }
@@ -5760,6 +5761,7 @@ mod tests {
             node.exec_manager.position_recon_retry_count(&deferred_key),
             1
         );
+
         {
             let cache = node.kernel.cache.borrow();
             let positions =
@@ -5986,6 +5988,7 @@ mod tests {
             None,
             venue_report.avg_px_open,
         );
+
         let mut later_fill_report = fill_report.clone();
         later_fill_report.trade_id = TradeId::from("T-POSITION-AUTHORITATIVE-LATER");
         later_fill_report.ts_event = UnixNanos::from(1_001);
@@ -6087,6 +6090,7 @@ mod tests {
             UnixNanos::from(1_000),
             None,
         );
+
         node.kernel
             .exec_engine
             .borrow_mut()
@@ -6103,6 +6107,7 @@ mod tests {
             None,
             Some(dec!(100.00)),
         );
+
         let position_result = position_report_result(&node, venue_report);
 
         node.handle_position_fill_report_result(PositionFillReportResult {
@@ -6162,7 +6167,6 @@ mod tests {
         );
         fill_report.client_order_id = Some(ClientOrderId::from(client_order_id));
         let reports = [fill_report.clone()];
-
         let quantities = (0..2)
             .map(|_| position_quantity_after_check(&mut node, &venue_report, &reports))
             .collect::<Vec<_>>();
@@ -6186,7 +6190,6 @@ mod tests {
         later_fill_report.trade_id = TradeId::from("T-POSITION-AUTHORITATIVE-LATER");
         later_fill_report.ts_event = UnixNanos::from(1_001);
         let reports = [fill_report.clone(), later_fill_report.clone()];
-
         let quantities = (0..3)
             .map(|_| position_quantity_after_check(&mut node, &venue_report, &reports))
             .collect::<Vec<_>>();
@@ -6295,9 +6298,9 @@ mod tests {
             None,
             venue_report.avg_px_open,
         );
+
         let key = (venue_report.instrument_id, venue_report.account_id);
         let client_order_id = fill_report.client_order_id.unwrap();
-
         let reports = (0..count)
             .map(|index| {
                 let mut report = fill_report.clone();
@@ -6372,7 +6375,6 @@ mod tests {
         let position_result = position_report_result(&node, venue_report);
         let mut conflicting_report = valid_report.clone();
         conflicting_report.trade_id = TradeId::from("T-CONFLICTING-FILL");
-
         match conflict {
             0 => conflicting_report.client_order_id = Some(ClientOrderId::from("O-CONFLICT")),
             1 => conflicting_report.venue_order_id = VenueOrderId::from("V-CONFLICT"),
@@ -6495,6 +6497,7 @@ mod tests {
             UnixNanos::from(2_000),
             None,
         );
+
         let event = ExecutionEvent::Report(ExecutionReport::OrderWithFills(
             Box::new(order_report),
             vec![fill_report.clone()],
@@ -6658,10 +6661,12 @@ mod tests {
             .borrow_mut()
             .set_default_client(ClientId::from("STUB"))
             .unwrap();
+
         let child_ids = [
             ClientOrderId::from("O-BATCH-CANCEL-1"),
             ClientOrderId::from("O-BATCH-CANCEL-2"),
         ];
+
         node.kernel
             .cache
             .borrow_mut()
@@ -6806,6 +6811,7 @@ mod tests {
             UnixNanos::default(),
             None,
         );
+
         node.process_exec_command(
             TradingCommandMessage::new(
                 MessagingSwitchboard::risk_engine_execute(),
@@ -6884,6 +6890,7 @@ mod tests {
             None,
             None,
         ));
+
         {
             let mut cache = node.kernel.cache.borrow_mut();
             cache.add_instrument(instrument.into()).unwrap();
@@ -6977,6 +6984,7 @@ mod tests {
 
         let expected_status = order.status();
         let events_before = order.event_count();
+
         {
             let mut cache = node.kernel.cache.borrow_mut();
             cache.add_instrument(instrument.into()).unwrap();
@@ -7051,6 +7059,7 @@ mod tests {
         node.process_exec_command(
             TradingCommandMessage::new(MessagingSwitchboard::exec_engine_execute(), command).into(),
         );
+
         {
             let cache = node.kernel.cache.borrow();
             let cached = cache.order(&id).unwrap();
@@ -7152,6 +7161,7 @@ mod tests {
             UnixNanos::default(),
             None,
         );
+
         node.process_exec_command(
             TradingCommandMessage::new(
                 MessagingSwitchboard::risk_engine_execute(),
@@ -7379,10 +7389,12 @@ mod tests {
             .build()
             .unwrap();
         let existing_instrument = InstrumentId::from("AUDUSD.SIM");
+
         let new_instruments = [
             InstrumentId::from("EURUSD.SIM"),
             InstrumentId::from("GBPUSD.SIM"),
         ];
+
         let existing_strategy_id = StrategyId::from("CLAIMS-001");
         let new_strategy_id = StrategyId::from("CLAIMS-002");
         node.register_external_order_claims(existing_strategy_id, &[existing_instrument])
@@ -7422,10 +7434,12 @@ mod tests {
             .with_reconciliation(false)
             .build()
             .unwrap();
+
         let instruments = [
             InstrumentId::from("AUDUSD.SIM"),
             InstrumentId::from("EURUSD.SIM"),
         ];
+
         let first_strategy_id = StrategyId::from("CLAIMS-001");
         let successor_strategy_id = StrategyId::from("CLAIMS-002");
         node.register_external_order_claims(first_strategy_id, &instruments)
@@ -7796,6 +7810,7 @@ mod tests {
             },
             ..Default::default()
         };
+
         let mut node = LiveNode::build("SubmissionRegistryNode".to_string(), Some(config)).unwrap();
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let client_id = ClientId::from("TEST-SUBMISSION");
@@ -7825,6 +7840,7 @@ mod tests {
             .borrow_mut()
             .add_instrument(instrument.clone())
             .unwrap();
+
         let orders: Vec<_> = (0..if order_list { 2 } else { 1 })
             .map(|index| {
                 OrderTestBuilder::new(OrderType::Limit)
@@ -7839,6 +7855,7 @@ mod tests {
                     .build()
             })
             .collect();
+
         let command = if order_list {
             TradingCommand::SubmitOrderList(SubmitOrderList::new(
                 node.trader_id(),
@@ -7872,6 +7889,7 @@ mod tests {
                 UnixNanos::default(),
             ))
         };
+
         node.observe_exec_command_before_dispatch(&command);
 
         for order in &orders {
@@ -7890,7 +7908,9 @@ mod tests {
             None if policy == SubmissionRecoveryPolicy::RetainUnresolved => OrderStatus::Submitted,
             None => OrderStatus::Rejected,
         };
+
         let diagnostics = Rc::new(RefCell::new(Vec::new()));
+
         let handler = ShareableMessageHandler::from_typed({
             let diagnostics = diagnostics.clone();
             let cache = node.kernel.cache.clone();
@@ -7902,6 +7922,7 @@ mod tests {
                 diagnostics.borrow_mut().push(diagnostic.clone());
             }
         });
+
         let topic = MessagingSwitchboard::submission_recovery_exhausted_topic();
         msgbus::subscribe_any(topic.into(), handler.clone(), None);
         let queries = Rc::new(RefCell::new(Vec::new()));
@@ -7944,6 +7965,7 @@ mod tests {
 
                 if let Some(pending_status) = pending_status {
                     let order = &orders[0];
+
                     let pending = if pending_status == OrderStatus::PendingCancel {
                         OrderEventAny::PendingCancel(
                             OrderPendingCancelSpec::builder()
@@ -7965,6 +7987,7 @@ mod tests {
                                 .build(),
                         )
                     };
+
                     node.process_exec_event(ExecutionEvent::Order(pending));
                     node.exec_manager
                         .register_inflight(order.client_order_id(), UUID4::new());
@@ -7977,6 +8000,7 @@ mod tests {
                             .order(&order.client_order_id())
                             .unwrap()
                             .clone();
+
                         let OrderEventAny::Filled(mut fill) =
                             OrderFilledTestBuilder::new(&cached, &instrument)
                                 .last_qty(Quantity::from("0.400"))
@@ -7987,6 +8011,7 @@ mod tests {
                         else {
                             unreachable!()
                         };
+
                         fill.venue_order_id = VenueOrderId::from("V-SUBMISSION");
                         node.process_exec_event(ExecutionEvent::Order(OrderEventAny::Filled(fill)));
                     } else {
@@ -8011,6 +8036,7 @@ mod tests {
                             Box::new(report),
                         )));
                     }
+
                     let cache = node.kernel.cache.borrow();
                     let cached = cache.order(&order.client_order_id()).unwrap();
                     assert_eq!(cached.status(), pending_status);
@@ -8056,6 +8082,7 @@ mod tests {
                 }
             );
         }
+
         let diagnostics = diagnostics.borrow();
         assert_eq!(
             diagnostics.len(),
@@ -8075,6 +8102,7 @@ mod tests {
             assert_eq!(diagnostic.source, SubmissionRecoverySource::Inflight);
             assert_eq!(diagnostic.retry_count, 2);
         }
+
         msgbus::unsubscribe_any(topic.into(), &handler);
         ExecutionEngine::register_msgbus_handlers(&node.kernel.exec_engine);
     }
@@ -8166,6 +8194,7 @@ mod tests {
             },
             ..Default::default()
         };
+
         let mut node = LiveNode::build("SubmissionCallbackNode".to_string(), Some(config)).unwrap();
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let account_id = AccountId::from("TEST-001");
@@ -8217,6 +8246,7 @@ mod tests {
             client_id,
         })
         .unwrap();
+
         node.kernel.trader.borrow_mut().initialize().unwrap();
         node.kernel.start_trader().unwrap();
         let runner = node.runner.take().unwrap();
@@ -8299,6 +8329,7 @@ mod tests {
         } else {
             OrderStatus::PendingUpdate
         };
+
         assert_eq!(channels.exec_cmd_rx.len(), 1);
         assert_eq!(
             node.kernel
@@ -8888,6 +8919,7 @@ mod tests {
         assert_eq!(order.filled_qty(), Quantity::from("11.0"));
         assert_eq!(order.trade_ids().len(), 3);
         assert_eq!(node.exec_manager.position_activity_revision(&key), 3);
+
         {
             let cache = node.kernel.cache.borrow();
             let positions = cache.positions_open(None, Some(&key.0), None, Some(&key.1), None);
@@ -8944,6 +8976,7 @@ mod tests {
                 .iter()
                 .all(|trade_id| trade_id.as_str() != "T-POSITION-LATER")
         );
+
         {
             let cache = node.kernel.cache.borrow();
             let positions = cache.positions_open(None, Some(&key.0), None, Some(&key.1), None);
@@ -9013,6 +9046,7 @@ mod tests {
             UnixNanos::from(1_000),
             None,
         );
+
         node.kernel
             .exec_engine
             .borrow_mut()
@@ -9848,7 +9882,6 @@ mod tests {
             .collect();
 
         let mut expected = Vec::new();
-
         if fatal {
             expected.push(
                 "Callback dispatch failed before disposal cleanup: Callback delivery unwound",
@@ -10266,6 +10299,7 @@ mod tests {
             .expect("node builds with external message bus factory");
 
         msgbus::publish_quote("data.quotes.TEST".into(), &quote);
+
         {
             let publications = publications.lock();
             assert_eq!(publications.len(), 1);
@@ -10371,6 +10405,7 @@ mod tests {
         let handle = node.handle();
 
         msgbus::publish_quote("data.quotes.TEST".into(), &quote);
+
         {
             let publications = publications.lock();
             assert_eq!(publications.len(), 1);
@@ -10414,6 +10449,7 @@ mod tests {
             Arc::new(AtomicBool::new(false)),
             None,
         );
+
         let egress_error = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox)
             .unwrap()
             .with_external_msgbus_factory(Box::new(egress_factory))
@@ -10434,6 +10470,7 @@ mod tests {
             Arc::new(AtomicBool::new(false)),
             None,
         );
+
         let ingress = CapturingExternalIngress::new(rx, Rc::new(Cell::new(false)));
         let ingress_error = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox)
             .unwrap()
@@ -10561,7 +10598,6 @@ mod tests {
             .build()
             .expect("node builds with external message bus ingress");
         let handle = node.handle();
-
         tokio::time::timeout(Duration::from_secs(30), async {
             let run = node.run();
             tokio::pin!(run);
@@ -11068,6 +11104,7 @@ mod tests {
             Ustr::from("binance-futures-market-streams"),
             SocketState::Connected,
         );
+
         system_evt_tx
             .send((SystemEvent::SocketState(change)).into())
             .unwrap();
@@ -11311,7 +11348,6 @@ mod tests {
     #[rstest]
     fn test_pending_is_empty_false_with_exec_report() {
         let mut pending = PendingEvents::default();
-
         if let ExecutionEvent::Report(report) = stub_exec_event() {
             pending.exec_reports.push((report).into());
         }
@@ -11322,7 +11358,6 @@ mod tests {
     #[rstest]
     fn test_pending_is_empty_false_with_order_evt() {
         let mut pending = PendingEvents::default();
-
         if let ExecutionEvent::Order(order_evt) = stub_order_event() {
             pending.order_evts.push((order_evt).into());
         }
@@ -11456,7 +11491,6 @@ mod tests {
             .unwrap();
 
         let mut pending = PendingEvents::default();
-
         while let Ok(evt) = exec_evt_rx.try_recv() {
             pending.push_exec_event(evt);
         }
@@ -11555,6 +11589,7 @@ mod tests {
         if !report_confirmation {
             update.venue_order_id = Some(venue_order_id);
         }
+
         node.process_exec_event(ExecutionEvent::Order(OrderEventAny::Updated(update)));
         assert_eq!(
             node.kernel
@@ -11650,6 +11685,7 @@ mod tests {
                 .price(order.price().unwrap())
                 .build(),
         )));
+
         let pending = if cancel {
             OrderEventAny::PendingCancel(
                 OrderPendingCancelSpec::builder()
@@ -11671,6 +11707,7 @@ mod tests {
                     .build(),
             )
         };
+
         node.process_exec_event(ExecutionEvent::Order(pending));
         node.exec_manager
             .register_inflight(client_order_id, UUID4::new());
@@ -11678,6 +11715,7 @@ mod tests {
         if repeated_report {
             node.process_exec_event(ExecutionEvent::Report(report));
         }
+
         advance_clock(Duration::from_millis(50)).await;
 
         if later_fill {
@@ -11687,6 +11725,7 @@ mod tests {
                 .borrow()
                 .order_owned(&client_order_id)
                 .unwrap();
+
             let OrderEventAny::Filled(mut fill) = OrderFilledTestBuilder::new(&cached, &instrument)
                 .last_qty(Quantity::from("0.400"))
                 .last_px(order.price().unwrap())
@@ -11696,9 +11735,11 @@ mod tests {
             else {
                 unreachable!()
             };
+
             fill.venue_order_id = venue_order_id;
             node.process_exec_event(ExecutionEvent::Order(OrderEventAny::Filled(fill)));
         }
+
         let early = node.exec_manager.check_inflight_orders();
         assert!(early.events.is_empty());
         assert!(early.queries.is_empty());
@@ -11709,11 +11750,13 @@ mod tests {
         advance_clock(Duration::from_millis(101)).await;
         let second = node.exec_manager.check_inflight_orders();
         assert!(second.queries.is_empty());
+
         if repeated_report {
             assert!(second.events.is_empty());
         } else {
             assert_command_timeout_event(&second.events, client_order_id, policy, cancel);
         }
+
         assert!(
             node.exec_manager
                 .take_submission_recovery_exhaustions()
@@ -11755,6 +11798,7 @@ mod tests {
             OrderType::Limit,
             true,
         );
+
         let client_order_id = order.client_order_id();
         let client_id = ClientId::from("TEST-EVIDENCE");
         let account_id = AccountId::from("TEST-001");
@@ -11819,6 +11863,7 @@ mod tests {
         if !report_confirmation {
             update.venue_order_id = Some(venue_order_id);
         }
+
         node.process_exec_event(ExecutionEvent::Order(OrderEventAny::Updated(update)));
         assert_eq!(
             node.kernel
@@ -11855,11 +11900,13 @@ mod tests {
                     .build(),
             )
         };
+
         let command = venue_evidence_command(&order, cancel, batch);
 
         if pending_before_dispatch {
             node.process_exec_event(ExecutionEvent::Order(pending.clone()));
         }
+
         node.process_exec_command(DispatchMessage::from(TradingCommandMessage::new(
             MessagingSwitchboard::exec_engine_execute(),
             command,
@@ -11887,6 +11934,7 @@ mod tests {
                 1
             );
         }
+
         let early = node.exec_manager.check_inflight_orders();
         assert!(early.queries.is_empty());
         assert!(early.events.is_empty());
@@ -11910,6 +11958,7 @@ mod tests {
             node.exec_manager
                 .register_submission(order.init_event(), Some(client_id));
         }
+
         advance_clock(Duration::from_millis(51)).await;
         let first = node.exec_manager.check_inflight_orders();
         assert_eq!(first.queries.len(), 1);
@@ -12068,12 +12117,12 @@ mod tests {
         use nautilus_model::events::order::spec::OrderTriggeredSpec;
 
         let triggered = evidence == "triggered";
-
         let order_type = if triggered {
             OrderType::StopLimit
         } else {
             OrderType::Limit
         };
+
         let (mut node, order, instrument) = venue_evidence_node_with_order_type(policy, order_type);
         let client_order_id = order.client_order_id();
         let account_id = AccountId::from("TEST-001");
@@ -12115,8 +12164,10 @@ mod tests {
                         .build(),
                 )
             };
+
             node.process_exec_event(ExecutionEvent::Order(previous_pending));
         }
+
         advance_clock(Duration::from_millis(10)).await;
         node.process_exec_command(DispatchMessage::from(TradingCommandMessage::new(
             MessagingSwitchboard::exec_engine_execute(),
@@ -12154,7 +12205,9 @@ mod tests {
                     .is_none()
             );
         }
+
         advance_clock(Duration::from_millis(40)).await;
+
         let acknowledgement = if triggered {
             OrderEventAny::Triggered(
                 OrderTriggeredSpec::builder()
@@ -12187,12 +12240,14 @@ mod tests {
             let OrderEventAny::Accepted(accepted) = acknowledgement else {
                 unreachable!()
             };
+
             node.process_exec_event(ExecutionEvent::OrderAcceptedBatch(OrderAcceptedBatch::new(
                 vec![accepted],
             )));
         } else {
             node.process_exec_event(ExecutionEvent::Order(acknowledgement));
         }
+
         assert_eq!(
             node.kernel
                 .cache
@@ -12207,6 +12262,7 @@ mod tests {
             }
         );
         advance_clock(Duration::from_millis(20)).await;
+
         let pending = if cancel {
             OrderEventAny::PendingCancel(
                 OrderPendingCancelSpec::builder()
@@ -12228,6 +12284,7 @@ mod tests {
                     .build(),
             )
         };
+
         node.process_exec_event(ExecutionEvent::Order(pending));
         let early = node.exec_manager.check_inflight_orders();
         assert!(early.queries.is_empty());
@@ -12295,6 +12352,7 @@ mod tests {
             OrderType::Limit,
             false,
         );
+
         let client_order_id = order.client_order_id();
         let client_id = ClientId::from("TEST-EVIDENCE");
         let account_id = AccountId::from("TEST-001");
@@ -12310,6 +12368,7 @@ mod tests {
             )))
             .unwrap();
         let queries = Rc::new(RefCell::new(Vec::new()));
+
         let client = OrderReportClient {
             client_id,
             report: OrderStatusReport::new(
@@ -12332,6 +12391,7 @@ mod tests {
             targeted: false,
             queries: queries.clone(),
         };
+
         advance_clock(Duration::from_millis(2)).await;
         let events = node.exec_manager.check_open_orders(&[&client]).await;
         assert!(events.is_empty());
@@ -12368,6 +12428,7 @@ mod tests {
                 1
             );
         }
+
         node.exec_manager
             .register_submission(order.init_event(), Some(client_id));
         advance_clock(Duration::from_millis(101)).await;
@@ -12383,6 +12444,7 @@ mod tests {
                 MessagingSwitchboard::exec_engine_execute(),
                 venue_evidence_command(&order, cancel, batch),
             )));
+
             let pending = if cancel {
                 OrderEventAny::PendingCancel(
                     OrderPendingCancelSpec::builder()
@@ -12404,8 +12466,10 @@ mod tests {
                         .build(),
                 )
             };
+
             node.process_exec_event(ExecutionEvent::Order(pending));
         }
+
         advance_clock(Duration::from_millis(101)).await;
         let first = node.exec_manager.check_inflight_orders();
         assert_eq!(first.queries.len(), usize::from(cancel.is_some()));
@@ -12416,6 +12480,7 @@ mod tests {
         } else {
             assert!(first.events.is_empty());
         }
+
         node.process_reconciliation_events(&first.events);
         advance_clock(Duration::from_millis(101)).await;
         let exhausted = node.exec_manager.check_inflight_orders();
@@ -12426,6 +12491,7 @@ mod tests {
         } else {
             assert!(exhausted.events.is_empty());
         }
+
         assert!(
             node.exec_manager
                 .take_submission_recovery_exhaustions()
@@ -12496,6 +12562,7 @@ mod tests {
             OrderType::Limit,
             true,
         );
+
         let client_order_id = order.client_order_id();
         let client_id = ClientId::from("TEST-EVIDENCE");
         let account_id = AccountId::from("TEST-001");
@@ -12519,6 +12586,7 @@ mod tests {
                 MessagingSwitchboard::exec_engine_execute(),
                 venue_evidence_command(&order, cancel, batch),
             )));
+
             let pending = if cancel {
                 OrderEventAny::PendingCancel(
                     OrderPendingCancelSpec::builder()
@@ -12540,9 +12608,12 @@ mod tests {
                         .build(),
                 )
             };
+
             node.process_exec_event(ExecutionEvent::Order(pending));
         }
+
         let queries = Rc::new(RefCell::new(Vec::new()));
+
         let client = OrderReportClient {
             client_id,
             report: OrderStatusReport::new(
@@ -12565,6 +12636,7 @@ mod tests {
             targeted,
             queries: queries.clone(),
         };
+
         advance_clock(Duration::from_millis(40)).await;
         let events = node.exec_manager.check_open_orders(&[&client]).await;
         assert!(events.is_empty());
@@ -12589,6 +12661,7 @@ mod tests {
         } else {
             assert!(first.events.is_empty());
         }
+
         node.process_reconciliation_events(&first.events);
         advance_clock(Duration::from_millis(101)).await;
         let exhausted = node.exec_manager.check_inflight_orders();
@@ -12602,6 +12675,7 @@ mod tests {
         } else {
             assert!(exhausted.events.is_empty());
         }
+
         assert!(
             node.exec_manager
                 .take_submission_recovery_exhaustions()
@@ -12676,6 +12750,7 @@ mod tests {
                         .build(),
                 )
             };
+
             node.process_exec_event(ExecutionEvent::Order(pending));
         }
 
@@ -12691,7 +12766,9 @@ mod tests {
                     .build(),
             )));
         }
+
         advance_clock(Duration::from_millis(10)).await;
+
         let completed = match completion {
             "updated" => OrderEventAny::Updated(
                 OrderUpdatedSpec::builder()
@@ -12726,6 +12803,7 @@ mod tests {
             ),
             _ => unreachable!(),
         };
+
         node.process_exec_event(ExecutionEvent::Order(completed));
         assert_eq!(
             node.kernel
@@ -12755,6 +12833,7 @@ mod tests {
                     .build(),
             )));
         }
+
         advance_clock(Duration::from_millis(10)).await;
         let cached = node
             .kernel
@@ -12762,6 +12841,7 @@ mod tests {
             .borrow()
             .order_owned(&client_order_id)
             .unwrap();
+
         let OrderEventAny::Filled(mut fill) = OrderFilledTestBuilder::new(&cached, &instrument)
             .last_qty(Quantity::from("0.400"))
             .last_px(order.price().unwrap())
@@ -12771,6 +12851,7 @@ mod tests {
         else {
             unreachable!()
         };
+
         fill.venue_order_id = VenueOrderId::from("V-VENUE-EVIDENCE");
         node.process_exec_event(ExecutionEvent::Order(OrderEventAny::Filled(fill)));
 
@@ -12785,6 +12866,7 @@ mod tests {
                     .is_empty()
             );
         }
+
         assert_eq!(
             node.kernel
                 .cache
@@ -12827,6 +12909,7 @@ mod tests {
                 venue_order_id,
             );
         }
+
         node.process_exec_event(ExecutionEvent::Order(OrderEventAny::PendingCancel(
             OrderPendingCancelSpec::builder()
                 .trader_id(order.trader_id())
@@ -12853,6 +12936,7 @@ mod tests {
             if invalid == "update_venue" {
                 updated.venue_order_id = Some(venue_order_id);
             }
+
             node.process_exec_event(ExecutionEvent::Order(OrderEventAny::Updated(updated)));
         } else {
             let report = OrderStatusReport::new(
@@ -12880,10 +12964,12 @@ mod tests {
                 None,
             )
             .with_price(order.price().unwrap());
+
             node.process_exec_event(ExecutionEvent::Report(ExecutionReport::Order(Box::new(
                 report,
             ))));
         }
+
         assert!(
             node.kernel
                 .cache
@@ -13016,6 +13102,7 @@ mod tests {
             exec_engine,
             ..Default::default()
         };
+
         let mut node = LiveNode::build("VenueEvidenceNode".to_string(), Some(config)).unwrap();
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let account_id = AccountId::from("TEST-001");
@@ -13055,6 +13142,7 @@ mod tests {
         if order_type == OrderType::StopLimit {
             builder.trigger_price(Price::from("110.00"));
         }
+
         let order = builder.build();
         let command = TradingCommand::SubmitOrder(SubmitOrder::from_order(
             &order,
@@ -13068,6 +13156,7 @@ mod tests {
         if register_submission {
             node.observe_exec_command_before_dispatch(&command);
         }
+
         node.kernel
             .cache
             .borrow_mut()
@@ -13158,6 +13247,7 @@ mod tests {
         let client_order_id = order.client_order_id();
         let account_id = AccountId::from("TEST-001");
         let venue_order_id = VenueOrderId::from("V-VENUE-EVIDENCE");
+
         let pending = match status {
             OrderStatus::PendingCancel => Some(OrderEventAny::PendingCancel(
                 OrderPendingCancelSpec::builder()
@@ -13183,6 +13273,7 @@ mod tests {
         if let Some(pending) = pending {
             node.process_exec_event(ExecutionEvent::Order(pending));
         }
+
         advance_clock(Duration::from_millis(101)).await;
         let first = node.exec_manager.check_inflight_orders();
         assert_eq!(first.queries.len(), 1);
@@ -13226,6 +13317,7 @@ mod tests {
                 ExecutionReport::OrderWithFills(Box::new(report), Vec::new())
             })
         };
+
         node.process_exec_event(event);
 
         let expected_status = if evidence == "updated" && status != OrderStatus::PendingCancel {
@@ -13235,6 +13327,7 @@ mod tests {
         } else {
             status
         };
+
         assert_eq!(
             node.kernel
                 .cache
@@ -13251,6 +13344,7 @@ mod tests {
             assert!(result.queries.is_empty());
             assert!(result.events.is_empty());
         }
+
         assert_eq!(
             node.exec_manager.recon_check_retry_count(&client_order_id),
             0
@@ -13297,6 +13391,7 @@ mod tests {
             .borrow()
             .order_owned(&client_order_id)
             .unwrap();
+
         let OrderEventAny::Filled(fill) = OrderFilledTestBuilder::new(&accepted, &instrument)
             .last_qty(accepted.quantity())
             .last_px(Price::from("100.00"))
@@ -13306,6 +13401,7 @@ mod tests {
         else {
             unreachable!()
         };
+
         let mut fill_report = FillReport::new(
             account_id,
             instrument.id(),
@@ -13326,6 +13422,7 @@ mod tests {
         if !explicit_client_id {
             fill_report.client_order_id = None;
         }
+
         let event = if report_kind == "fill" {
             ExecutionReport::Fill(Box::new(fill_report))
         } else {
@@ -13336,6 +13433,7 @@ mod tests {
                     .update_order(&OrderEventAny::Filled(fill))
                     .unwrap();
             }
+
             let report = OrderStatusReport::new(
                 account_id,
                 instrument.id(),
@@ -13365,6 +13463,7 @@ mod tests {
                 ExecutionReport::OrderWithFills(Box::new(report), vec![fill_report])
             }
         };
+
         node.process_exec_event(ExecutionEvent::Report(event));
         assert_eq!(
             node.kernel
@@ -13475,7 +13574,6 @@ mod tests {
 
         let results = std::thread::spawn(move || {
             let mut results = Vec::new();
-
             for event in pending.data_evts {
                 results.push(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
                     || event.dispatch(drop),
@@ -13601,6 +13699,7 @@ mod tests {
         fn new() -> (Self, CapturedEgressMessages, SharedClosed) {
             let publications = Rc::new(RefCell::new(Vec::new()));
             let closed = Rc::new(Cell::new(false));
+
             (
                 Self {
                     publications: publications.clone(),

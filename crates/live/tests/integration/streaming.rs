@@ -188,6 +188,7 @@ async fn test_livenode_streaming_records_typed_routes_to_feather() {
         UnixNanos::from(6_000),
         UnixNanos::from(6_000),
     );
+
     let deltas = OrderBookDeltas::new(instrument_id, vec![delta]);
     let bar_type = BarType::from_str("ETHUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL").unwrap();
     let bar = Bar::new_checked(
@@ -205,13 +206,11 @@ async fn test_livenode_streaming_records_typed_routes_to_feather() {
     // Typed routes only: the typed publish fns deliver exclusively to typed handlers, so every
     // captured row proves typed-route delivery with no drops or duplicates.
     let quotes_topic = switchboard::get_quotes_topic(instrument_id);
-
     for tick in &quotes {
         msgbus::publish_quote(quotes_topic, tick);
     }
 
     let trades_topic = switchboard::get_trades_topic(instrument_id);
-
     for tick in &trades {
         msgbus::publish_trade(trades_topic, tick);
     }
@@ -403,7 +402,6 @@ async fn test_livenode_streaming_auto_flush_persists_before_stop() {
         quote(instrument_id, "3000.05", "3000.15", 2_000),
     ];
     let quotes_topic = switchboard::get_quotes_topic(instrument_id);
-
     for tick in &quotes {
         msgbus::publish_quote(quotes_topic, tick);
         std::thread::sleep(Duration::from_millis(2));
@@ -548,6 +546,7 @@ async fn test_livenode_streaming_stop_returns_recorded_write_error() {
         UnixNanos::from(1_000),
         UnixNanos::from(1_000),
     );
+
     msgbus::publish_quote(switchboard::get_quotes_topic(instrument_id), &invalid);
 
     let error = node.stop().await.unwrap_err();

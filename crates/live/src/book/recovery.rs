@@ -541,7 +541,6 @@ mod tests {
     async fn non_retryable_error_moves_to_ceiling() {
         let recovery = BookRecovery::<SendError>::default();
         let attempts = AtomicUsize::new(0);
-
         let result = time::timeout(
             Duration::from_secs(59),
             recovery.run(
@@ -664,7 +663,6 @@ mod tests {
         let mut state = BookRecoveryState::<SendError>::default();
         let recovery = state.claim().unwrap();
         let attempts = AtomicUsize::new(0);
-
         let run = recovery.run(
             "BOOK",
             Duration::from_secs(1),
@@ -698,7 +696,6 @@ mod tests {
     async fn cancellation_at_ceiling_ends_run() {
         let recovery = BookRecovery::<SendError>::default();
         let attempts = AtomicUsize::new(0);
-
         let run = recovery.run(
             "BOOK",
             Duration::from_secs(1),
@@ -727,7 +724,6 @@ mod tests {
     async fn snapshot_during_send_completes_without_retry() {
         let recovery = BookRecovery::<SendError>::default();
         let attempts = AtomicUsize::new(0);
-
         recovery
             .run(
                 "BOOK",
@@ -754,7 +750,6 @@ mod tests {
         let mut state = BookRecoveryState::<SendError>::default();
         let recovery = state.claim().unwrap();
         let child = parking_lot::Mutex::new(None);
-
         let operation = recovery.run(
             "BOOK",
             Duration::ZERO,

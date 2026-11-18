@@ -313,7 +313,6 @@ impl LiveNode {
             reports,
         } = result;
         let mut venue_reports = IndexMap::new();
-
         for report in &position_result.reports {
             venue_reports
                 .entry((report.instrument_id, report.account_id))
@@ -1262,14 +1261,17 @@ mod tests {
         #[case] failed: usize,
     ) {
         let mut node = LiveNode::build("PositionFinishError".to_string(), None).unwrap();
+
         let states = [
             PositionCollectionState::default(),
             PositionCollectionState::default(),
         ];
+
         let ids = [
             ClientId::from("POSITION-DEADLINE"),
             ClientId::from("POSITION-DEADLINE-2"),
         ];
+
         states[failed].finish_error.set(true);
         for (state, client_id) in states.iter().zip(ids) {
             node.exec_clients.push(LiveExecutionClient::new(Box::new(
@@ -1404,6 +1406,7 @@ mod tests {
             let started = self.state.started.clone();
             let gate_at = self.gate_at;
             let release = self.release.clone();
+
             async move {
                 let count = started.fetch_add(1, Ordering::SeqCst) + 1;
                 if count == gate_at {

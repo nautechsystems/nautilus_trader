@@ -65,7 +65,6 @@ fn main() {
             }
 
             let message: BusMessage = serde_json::from_value(fixture["message"].clone()).unwrap();
-
             if !message.payload_type.is_typed_message()
                 || format.as_ref().is_some_and(|format| {
                     serde_json::to_value(message.encoding).unwrap().as_str()

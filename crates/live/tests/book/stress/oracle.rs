@@ -94,7 +94,6 @@ impl WireViews {
         let mut views = self.views.lock();
         let views = views.entry(key.to_string()).or_default();
         views.push_back(view);
-
         if views.len() > VIEWS_MAX {
             views.pop_front();
         }
@@ -198,7 +197,6 @@ mod tests {
     #[rstest]
     fn record_keeps_the_latest_views_per_key() {
         let views = WireViews::default();
-
         for sequence in 0..=VIEWS_MAX as u64 {
             views.record("A", view(1, sequence, sequence, dec!(10)));
         }
