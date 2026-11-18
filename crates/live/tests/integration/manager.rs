@@ -7458,6 +7458,7 @@ fn withheld_scenario_reports(
     let venue_order_id = VenueOrderId::new(format!("V-{tag}"));
     let mut order_report = closing_scenario_closing_order_report(client_order_id);
     order_report.venue_order_id = venue_order_id;
+
     let fill_reports = closing_scenario_closing_fill_reports(client_order_id)
         .into_iter()
         .enumerate()

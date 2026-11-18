@@ -480,6 +480,7 @@ async fn reconciliation_latency(
 
     for (metric, mut values) in distributions {
         values.sort_unstable();
+
         let percentile = |numerator: usize, denominator: usize| {
             values[(values.len() * numerator).div_ceil(denominator) - 1] as f64 / 1_000.0
         };

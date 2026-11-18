@@ -6301,6 +6301,7 @@ mod tests {
 
         let key = (venue_report.instrument_id, venue_report.account_id);
         let client_order_id = fill_report.client_order_id.unwrap();
+
         let reports = (0..count)
             .map(|index| {
                 let mut report = fill_report.clone();

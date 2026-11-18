@@ -1084,6 +1084,7 @@ impl PythonClients {
         for owner in owners {
             owner.output.invalidate();
             CLIENT_CACHES.with_borrow_mut(|caches| caches.remove(&owner.cache_id));
+
             let result = (|| {
                 owner.runtime.call_method0(py, "dispose")?;
                 if owner.runtime.getattr(py, "complete")?.extract::<bool>(py)? {
@@ -1288,6 +1289,7 @@ impl PythonClients {
                 }
 
                 let runtime = client.getattr(py, "_runtime")?;
+
                 let execution = trader_id
                     .map(|trader_id| -> PyResult<ExecutionIdentity> {
                         if client.getattr(py, "trader_id")?.extract::<TraderId>(py)? != trader_id {

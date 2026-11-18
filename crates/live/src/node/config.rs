@@ -293,6 +293,7 @@ pub(crate) fn parse_rate_limit(field: impl Into<String>, input: &str) -> ConfigR
         })
         .and_then(|total| total.checked_add(seconds))
         .ok_or_else(|| ConfigError::range(field.clone(), "interval exceeds the supported range"))?;
+
     let interval_ns = DurationNanos::try_from_secs(interval_secs)
         .map_err(|e| ConfigError::range(field.clone(), e.to_string()))?;
     RateLimit::new_checked(limit, interval_ns).map_err(|e| ConfigError::range(field, e.to_string()))
