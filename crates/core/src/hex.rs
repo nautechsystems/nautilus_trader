@@ -25,6 +25,7 @@ pub(crate) const ENCODE_PAIR: [[u8; 2]; 256] = {
         table[i as usize] = [NIBBLE[(i >> 4) as usize], NIBBLE[(i & 0x0f) as usize]];
         i += 1;
     }
+
     table
 };
 
@@ -36,12 +37,14 @@ pub(crate) const DECODE_NIBBLE: [u8; 256] = {
         table[(b'0' + i) as usize] = i;
         i += 1;
     }
+
     i = 0;
     while i < 6 {
         table[(b'a' + i) as usize] = 10 + i;
         table[(b'A' + i) as usize] = 10 + i;
         i += 1;
     }
+
     table
 };
 
@@ -98,6 +101,7 @@ pub fn decode(data: impl AsRef<[u8]>) -> Result<Vec<u8>, DecodeError> {
         decode_pairs_into(hex, &mut out)?;
         return Ok(out);
     }
+
     decode_packed(hex)
 }
 
@@ -125,8 +129,10 @@ fn decode_pairs_into(hex: &[u8], out: &mut Vec<u8>) -> Result<(), DecodeError> {
                 DecodeError::InvalidChar(pair[1])
             });
         }
+
         out.push((hi << 4) | lo);
     }
+
     Ok(())
 }
 
@@ -143,6 +149,7 @@ pub fn decode_array<const N: usize>(data: impl AsRef<[u8]>) -> Result<[u8; N], D
             actual: hex.len(),
         });
     }
+
     let mut out = [0u8; N];
     decode_into(hex, &mut out)?;
     Ok(out)
@@ -172,8 +179,10 @@ fn decode_into(hex: &[u8], out: &mut [u8]) -> Result<(), DecodeError> {
                 DecodeError::InvalidChar(pair[1])
             });
         }
+
         *decoded = (hi << 4) | lo;
     }
+
     Ok(())
 }
 
@@ -321,6 +330,7 @@ mod tests {
         if !input.len().is_multiple_of(2) {
             return Err(DecodeError::OddLength);
         }
+
         input
             .as_chunks::<2>()
             .0
@@ -371,6 +381,7 @@ mod tests {
             if position + 1 < input.len() {
                 input[position + 1] = b'z';
             }
+
             assert_eq!(hex::decode(input), Err(DecodeError::InvalidChar(0xff)));
             assert_eq!(
                 hex::decode_array::<25>(input),
@@ -387,6 +398,7 @@ mod tests {
             if position + 1 < input.len() {
                 input[position + 1] = b'z';
             }
+
             assert_eq!(hex::decode(input), Err(DecodeError::InvalidChar(0xff)));
             assert_eq!(
                 hex::decode_array::<12>(input),
@@ -461,10 +473,10 @@ mod tests {
 
     fn format_hex_reference(bytes: &[u8]) -> String {
         let mut text = String::with_capacity(bytes.len() * 2);
-
         for byte in bytes {
             write!(text, "{byte:02x}").unwrap();
         }
+
         text
     }
 }

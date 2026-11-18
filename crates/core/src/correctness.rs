@@ -245,6 +245,7 @@ pub fn check_predicate_true(predicate: bool, fail_msg: &str) -> Result<()> {
             message: fail_msg.to_string(),
         });
     }
+
     Ok(())
 }
 
@@ -273,6 +274,7 @@ pub fn check_nonempty_string<T: AsRef<str>>(s: T, param: &str) -> Result<()> {
             param: param.to_string(),
         });
     }
+
     Ok(())
 }
 
@@ -287,7 +289,6 @@ pub fn check_nonempty_string<T: AsRef<str>>(s: T, param: &str) -> Result<()> {
 #[inline(always)]
 pub fn check_valid_string_ascii<T: AsRef<str>>(s: T, param: &str) -> Result<()> {
     let s = s.as_ref();
-
     if s.is_empty() {
         return Err(CorrectnessError::EmptyString {
             param: param.to_string(),
@@ -332,7 +333,6 @@ pub fn check_valid_string_ascii<T: AsRef<str>>(s: T, param: &str) -> Result<()> 
 #[inline(always)]
 pub fn check_valid_string_utf8<T: AsRef<str>>(s: T, param: &str) -> Result<()> {
     let s = s.as_ref();
-
     if s.is_empty() {
         return Err(CorrectnessError::EmptyString {
             param: param.to_string(),
@@ -340,7 +340,6 @@ pub fn check_valid_string_utf8<T: AsRef<str>>(s: T, param: &str) -> Result<()> {
     }
 
     let has_non_whitespace = s.chars().any(|c| !c.is_whitespace());
-
     if !has_non_whitespace {
         return Err(CorrectnessError::WhitespaceString {
             param: param.to_string(),
@@ -363,6 +362,7 @@ pub fn check_valid_string_ascii_optional<T: AsRef<str>>(s: Option<T>, param: &st
     if let Some(s) = s {
         check_valid_string_ascii(s, param)?;
     }
+
     Ok(())
 }
 
@@ -381,6 +381,7 @@ pub fn check_string_contains<T: AsRef<str>>(s: T, pat: &str, param: &str) -> Res
             value: s.to_string(),
         });
     }
+
     Ok(())
 }
 
@@ -405,6 +406,7 @@ pub fn check_equal<T: PartialEq + Debug + Display>(
             type_name: "value",
         });
     }
+
     Ok(())
 }
 
@@ -424,6 +426,7 @@ pub fn check_equal_u8(lhs: u8, rhs: u8, lhs_param: &str, rhs_param: &str) -> Res
             type_name: "u8",
         });
     }
+
     Ok(())
 }
 
@@ -443,6 +446,7 @@ pub fn check_equal_usize(lhs: usize, rhs: usize, lhs_param: &str, rhs_param: &st
             type_name: "usize",
         });
     }
+
     Ok(())
 }
 
@@ -460,6 +464,7 @@ pub fn check_positive_usize(value: usize, param: &str) -> Result<()> {
             type_name: "usize",
         });
     }
+
     Ok(())
 }
 
@@ -477,6 +482,7 @@ pub fn check_positive_u64(value: u64, param: &str) -> Result<()> {
             type_name: "u64",
         });
     }
+
     Ok(())
 }
 
@@ -494,6 +500,7 @@ pub fn check_positive_u128(value: u128, param: &str) -> Result<()> {
             type_name: "u128",
         });
     }
+
     Ok(())
 }
 
@@ -511,6 +518,7 @@ pub fn check_positive_i64(value: i64, param: &str) -> Result<()> {
             type_name: "i64",
         });
     }
+
     Ok(())
 }
 
@@ -528,6 +536,7 @@ pub fn check_positive_i128(value: i128, param: &str) -> Result<()> {
             type_name: "i128",
         });
     }
+
     Ok(())
 }
 
@@ -553,6 +562,7 @@ pub fn check_non_negative_f64(value: f64, param: &str) -> Result<()> {
             type_name: "f64",
         });
     }
+
     Ok(())
 }
 
@@ -572,6 +582,7 @@ pub fn check_in_range_inclusive_u8(value: u8, l: u8, r: u8, param: &str) -> Resu
             type_name: "u8",
         });
     }
+
     Ok(())
 }
 
@@ -591,6 +602,7 @@ pub fn check_in_range_inclusive_u64(value: u64, l: u64, r: u64, param: &str) -> 
             type_name: "u64",
         });
     }
+
     Ok(())
 }
 
@@ -610,6 +622,7 @@ pub fn check_in_range_inclusive_i64(value: i64, l: i64, r: i64, param: &str) -> 
             type_name: "i64",
         });
     }
+
     Ok(())
 }
 
@@ -644,6 +657,7 @@ pub fn check_in_range_inclusive_f64(value: f64, l: f64, r: f64, param: &str) -> 
             type_name: "f64",
         });
     }
+
     Ok(())
 }
 
@@ -663,6 +677,7 @@ pub fn check_in_range_inclusive_usize(value: usize, l: usize, r: usize, param: &
             type_name: "usize",
         });
     }
+
     Ok(())
 }
 
@@ -680,6 +695,7 @@ pub fn check_slice_empty<T>(slice: &[T], param: &str) -> Result<()> {
             type_repr: slice_type_repr::<T>(),
         });
     }
+
     Ok(())
 }
 
@@ -697,6 +713,7 @@ pub fn check_slice_not_empty<T>(slice: &[T], param: &str) -> Result<()> {
             type_repr: slice_type_repr::<T>(),
         });
     }
+
     Ok(())
 }
 
@@ -717,6 +734,7 @@ where
             type_repr: map_type_repr::<M>(),
         });
     }
+
     Ok(())
 }
 
@@ -737,6 +755,7 @@ where
             type_repr: map_type_repr::<M>(),
         });
     }
+
     Ok(())
 }
 
@@ -758,6 +777,7 @@ where
             map_type_repr: map_type_repr::<M>(),
         });
     }
+
     Ok(())
 }
 
@@ -779,6 +799,7 @@ where
             map_type_repr: map_type_repr::<M>(),
         });
     }
+
     Ok(())
 }
 
@@ -804,6 +825,7 @@ where
             set_type_repr: set_type_repr::<S>(),
         });
     }
+
     Ok(())
 }
 
@@ -829,6 +851,7 @@ where
             set_type_repr: set_type_repr::<S>(),
         });
     }
+
     Ok(())
 }
 
@@ -846,6 +869,7 @@ pub fn check_positive_decimal(value: Decimal, param: &str) -> Result<()> {
             type_name: "Decimal",
         });
     }
+
     Ok(())
 }
 
@@ -909,6 +933,7 @@ mod tests {
         let result: CorrectnessResult<()> = Err(CorrectnessError::EmptyString {
             param: "value".to_string(),
         });
+
         result.expect_display(FAILED);
     }
 
@@ -918,6 +943,7 @@ mod tests {
         let result: CorrectnessResult<()> = Err(CorrectnessError::PredicateViolation {
             message: "the predicate was false".to_string(),
         });
+
         result.expect_display("custom prefix");
     }
 

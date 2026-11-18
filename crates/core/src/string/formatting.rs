@@ -28,7 +28,6 @@ fn separate_with(s: &str, sep: char) -> String {
     };
 
     let mut result = String::with_capacity(s.len() + int_part.len() / 3);
-
     if neg {
         result.push('-');
     }
@@ -38,6 +37,7 @@ fn separate_with(s: &str, sep: char) -> String {
         if i > 0 && (char_count - i).is_multiple_of(3) {
             result.push(sep);
         }
+
         result.push(c);
     }
 

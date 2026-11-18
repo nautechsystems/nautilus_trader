@@ -50,7 +50,6 @@ impl UUID4 {
     fn __setstate__(&mut self, py: Python<'_>, state: Py<PyAny>) -> PyResult<()> {
         let bytes: &Bound<'_, PyBytes> = state.cast_bound::<PyBytes>(py)?;
         let slice = bytes.as_bytes();
-
         if slice.len() != UUID4_LEN {
             return Err(to_pyvalue_err(
                 "Invalid state for deserializing, incorrect bytes length",

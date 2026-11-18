@@ -31,8 +31,8 @@ pub(super) fn bench_corpus(c: &mut Criterion) {
             uuid
         })
         .collect();
-    let texts: Vec<_> = inputs.iter().map(UUID4::to_string).collect();
 
+    let texts: Vec<_> = inputs.iter().map(UUID4::to_string).collect();
     for (text, expected) in texts.iter().zip(&inputs) {
         assert_eq!(text.parse::<UUID4>().unwrap(), *expected);
     }
@@ -45,6 +45,7 @@ pub(super) fn bench_corpus(c: &mut Criterion) {
             black_box(result)
         });
     });
+
     c.bench_function("uuid_corpus/from_str", |b| {
         let mut cursor = 0;
         b.iter(|| {

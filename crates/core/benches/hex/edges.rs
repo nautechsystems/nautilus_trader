@@ -33,13 +33,16 @@ fn bench_small(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("encode", len), &bytes, |b, input| {
             b.iter(|| black_box(hex::encode(black_box(input))));
         });
+
         group.bench_with_input(BenchmarkId::new("prefixed", len), &bytes, |b, input| {
             b.iter(|| black_box(hex::encode_prefixed(black_box(input))));
         });
+
         group.bench_with_input(BenchmarkId::new("decode", len), &text, |b, input| {
             b.iter(|| black_box(hex::decode(black_box(input))));
         });
     }
+
     group.finish();
 }
 
@@ -71,20 +74,22 @@ fn bench_errors(c: &mut Criterion) {
     for (name, position) in [("high_first", 0), ("high_last", 63), ("multiple", 32)] {
         let mut input = vec![b'a'; 64];
         input[position] = 0xff;
-
         if name == "multiple" {
             input[position + 1] = b'z';
         }
+
         assert_eq!(hex::decode(&input), Err(DecodeError::InvalidChar(0xff)));
         group.bench_with_input(BenchmarkId::new("invalid", name), &input, |b, input| {
             b.iter(|| black_box(hex::decode(black_box(input))));
         });
     }
+
     let odd = vec![b'z'; 65];
     assert_eq!(hex::decode(&odd), Err(DecodeError::OddLength));
     group.bench_with_input("odd_length", &odd, |b, input| {
         b.iter(|| black_box(hex::decode(black_box(input))));
     });
+
     let mixed = "0123456789abcdefABCDEF0123456789ab";
     let expected: Vec<u8> = mixed
         .as_bytes()
@@ -97,6 +102,7 @@ fn bench_errors(c: &mut Criterion) {
     group.bench_with_input("mixed_case", &mixed, |b, input| {
         b.iter(|| black_box(hex::decode(black_box(input))));
     });
+
     group.finish();
 }
 

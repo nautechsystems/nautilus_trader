@@ -72,10 +72,12 @@ fn bench_decimal_types(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("old", name), &json, |b, j| {
             b.iter(|| serde_json::from_str::<Old>(j).unwrap());
         });
+
         group.bench_with_input(BenchmarkId::new("new", name), &json, |b, j| {
             b.iter(|| serde_json::from_str::<New>(j).unwrap());
         });
     }
+
     group.finish();
 }
 
@@ -118,9 +120,11 @@ fn bench_realistic_batch(c: &mut Criterion) {
     group.bench_function("old", |b| {
         b.iter(|| serde_json::from_str::<Vec<TickOld>>(&json).unwrap());
     });
+
     group.bench_function("new", |b| {
         b.iter(|| serde_json::from_str::<Vec<TickNew>>(&json).unwrap());
     });
+
     group.finish();
 }
 
@@ -144,6 +148,7 @@ fn bench_exact_decimal(c: &mut Criterion) {
         ("1e-28", dec!(0.0000000000000000000000000001)),
         ("10e-29", dec!(0.0000000000000000000000000001)),
     ];
+
     let mut group = c.benchmark_group("decimal_exact");
 
     for (token, expected) in cases {
@@ -169,6 +174,7 @@ struct Tick {
 
 fn bench_decimal_tokens(c: &mut Criterion) {
     let mut group = c.benchmark_group("core_decimal_tokens");
+
     let cases = [
         ("quoted", r#"{"p":"50000.12340000","q":"0.00001000"}"#),
         ("unquoted", r#"{"p":50000.12340000,"q":0.00001000}"#),
@@ -199,6 +205,7 @@ fn bench_decimal_tokens(c: &mut Criterion) {
     group.bench_function("batch_100", |b| {
         b.iter(|| black_box(serde_json::from_str::<Vec<Tick>>(black_box(&json)).unwrap()));
     });
+
     group.finish();
 }
 

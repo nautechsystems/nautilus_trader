@@ -53,13 +53,14 @@ fn bench_collection_traits(c: &mut Criterion) {
         .map(|key| (key, key))
         .collect::<IndexMap<_, _>>();
     let key = 31_u64;
-
     c.bench_function("collections/AHashSet.contains", |b| {
         b.iter(|| black_box(SetLike::contains(black_box(&set), black_box(&key))));
     });
+
     c.bench_function("collections/AHashSet.is_empty", |b| {
         b.iter(|| black_box(SetLike::is_empty(black_box(&set))));
     });
+
     c.bench_function("collections/AHashMap.contains_key", |b| {
         b.iter(|| {
             black_box(MapLike::contains_key(
@@ -68,9 +69,11 @@ fn bench_collection_traits(c: &mut Criterion) {
             ))
         });
     });
+
     c.bench_function("collections/AHashMap.is_empty", |b| {
         b.iter(|| black_box(MapLike::is_empty(black_box(&ahash_map))));
     });
+
     c.bench_function("collections/IndexMap.contains_key", |b| {
         b.iter(|| {
             black_box(MapLike::contains_key(

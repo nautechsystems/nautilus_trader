@@ -256,6 +256,7 @@ pub trait SetLike {
 
     /// Returns `true` if the set contains the specified item.
     fn contains(&self, item: &Self::Item) -> bool;
+
     /// Returns `true` if the set is empty.
     fn is_empty(&self) -> bool;
 }
@@ -323,6 +324,7 @@ pub trait MapLike {
 
     /// Returns `true` if the map contains the specified key.
     fn contains_key(&self, key: &Self::Key) -> bool;
+
     /// Returns `true` if the map is empty.
     fn is_empty(&self) -> bool;
 }
@@ -605,6 +607,7 @@ mod tests {
         }
 
         let barrier = Arc::new(Barrier::new(8));
+
         let handles: Vec<_> = (0..8)
             .map(|_| {
                 let set = Arc::clone(&set);
@@ -648,6 +651,7 @@ mod tests {
         }
 
         assert_eq!(set.len(), 100);
+
         for i in 0..100 {
             assert!(set.contains(&i), "missing {i}");
         }
@@ -698,6 +702,7 @@ mod tests {
             .collect();
 
         writer.join().unwrap();
+
         for r in readers {
             r.join().unwrap();
         }
@@ -737,6 +742,7 @@ mod tests {
                         if items.is_empty() {
                             continue;
                         }
+
                         assert_eq!(
                             items.len(),
                             10,
@@ -756,6 +762,7 @@ mod tests {
             .collect();
 
         writer.join().unwrap();
+
         for r in readers {
             r.join().unwrap();
         }
@@ -852,7 +859,6 @@ mod tests {
     fn test_atomic_map_rcu_batch_insert() {
         let map = AtomicMap::new();
         let entries: Vec<(String, i32)> = (0..5).map(|i| (format!("k{i}"), i)).collect();
-
         map.rcu(|m| {
             for (k, v) in &entries {
                 m.insert(k.clone(), *v);
@@ -860,6 +866,7 @@ mod tests {
         });
 
         assert_eq!(map.len(), 5);
+
         for i in 0..5 {
             assert_eq!(map.get_cloned(&format!("k{i}")), Some(i));
         }
@@ -956,6 +963,7 @@ mod tests {
         }
 
         let barrier = Arc::new(Barrier::new(8));
+
         let handles: Vec<_> = (0..8)
             .map(|_| {
                 let map = Arc::clone(&map);
@@ -1000,6 +1008,7 @@ mod tests {
         }
 
         assert_eq!(map.len(), 100);
+
         for i in 0u32..100 {
             assert_eq!(map.get_cloned(&i), Some(i * 10), "wrong value for {i}");
         }
@@ -1054,6 +1063,7 @@ mod tests {
             .collect();
 
         writer.join().unwrap();
+
         for r in readers {
             r.join().unwrap();
         }
@@ -1093,6 +1103,7 @@ mod tests {
                         if snapshot.is_empty() {
                             continue;
                         }
+
                         let values: AHashSet<u32> = snapshot.values().copied().collect();
                         assert_eq!(
                             values.len(),
@@ -1106,6 +1117,7 @@ mod tests {
             .collect();
 
         writer.join().unwrap();
+
         for r in readers {
             r.join().unwrap();
         }
@@ -1592,7 +1604,6 @@ mod tests {
         indexset.insert("test".to_string());
 
         let sets: Vec<&dyn SetLike<Item = String>> = vec![&hashset, &indexset];
-
         for set in sets {
             assert!(set.contains(&"test".to_string()));
             assert!(!set.is_empty());
@@ -1608,7 +1619,6 @@ mod tests {
         indexmap.insert("key".to_string(), 42);
 
         let maps: Vec<&dyn MapLike<Key = String, Value = i32>> = vec![&hashmap, &indexmap];
-
         for map in maps {
             assert!(map.contains_key(&"key".to_string()));
             assert!(!map.is_empty());

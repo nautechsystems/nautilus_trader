@@ -34,6 +34,7 @@ fn clamp_precision_with_log(len: usize, context: &str, input: &str) -> u8 {
             input
         );
     }
+
     len.min(u8::MAX as usize) as u8
 }
 

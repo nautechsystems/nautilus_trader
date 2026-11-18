@@ -41,6 +41,7 @@ fn populated_ahash(n: usize) -> AHashMap<u64, u64> {
     for k in 0..n as u64 {
         map.insert(k, k);
     }
+
     map
 }
 
@@ -49,12 +50,12 @@ fn populated_index(n: usize) -> IndexMap<u64, u64> {
     for k in 0..n as u64 {
         map.insert(k, k);
     }
+
     map
 }
 
 fn bench_insert(c: &mut Criterion) {
     let mut group = c.benchmark_group("insert");
-
     for &size in &SIZES {
         group.bench_with_input(BenchmarkId::new("AHashMap", size), &size, |b, &n| {
             b.iter(|| {
@@ -62,6 +63,7 @@ fn bench_insert(c: &mut Criterion) {
                 for k in 0..n as u64 {
                     map.insert(k, k);
                 }
+
                 black_box(map);
             });
         });
@@ -72,6 +74,7 @@ fn bench_insert(c: &mut Criterion) {
                 for k in 0..n as u64 {
                     map.insert(k, k);
                 }
+
                 black_box(map);
             });
         });
@@ -239,6 +242,7 @@ fn bench_entry_accumulate(c: &mut Criterion) {
                         map.entry(k).and_modify(|v| *v += 1).or_insert(1);
                     }
                 }
+
                 black_box(map);
             });
         });
@@ -252,6 +256,7 @@ fn bench_entry_accumulate(c: &mut Criterion) {
                         map.entry(k).and_modify(|v| *v += 1).or_insert(1);
                     }
                 }
+
                 black_box(map);
             });
         });

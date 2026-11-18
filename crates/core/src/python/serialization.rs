@@ -146,6 +146,7 @@ where
             extract_typed_or_json_pyo3(py, &value)?,
         );
     }
+
     Ok(map)
 }
 
@@ -177,6 +178,7 @@ where
             extract_typed_or_json_pyo3(py, &value)?,
         );
     }
+
     Ok(map)
 }
 
@@ -194,6 +196,7 @@ where
     for (key, value) in value {
         dict.set_item(key.clone(), value.clone())?;
     }
+
     Ok(dict.into_any().unbind())
 }
 
@@ -215,6 +218,7 @@ where
     for (key, value) in value {
         dict.set_item(key.clone(), value.clone())?;
     }
+
     Ok(dict.into_any().unbind())
 }
 

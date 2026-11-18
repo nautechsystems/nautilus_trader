@@ -76,6 +76,7 @@ fn populated_dashmap(keys: &[String]) -> Arc<DashMap<String, u64>> {
     for (i, key) in keys.iter().enumerate() {
         map.insert(key.clone(), i as u64);
     }
+
     Arc::new(map)
 }
 
@@ -84,6 +85,7 @@ fn populated_rwlock(keys: &[String]) -> Arc<RwLock<AHashMap<String, u64>>> {
     for (i, key) in keys.iter().enumerate() {
         map.insert(key.clone(), i as u64);
     }
+
     Arc::new(RwLock::new(map))
 }
 
@@ -92,6 +94,7 @@ fn populated_atomic_map(keys: &[String]) -> Arc<AtomicMap<String, u64>> {
     for (i, key) in keys.iter().enumerate() {
         map.insert(key.clone(), i as u64);
     }
+
     Arc::new(AtomicMap::from(map))
 }
 
@@ -136,6 +139,7 @@ fn bench_single_thread_read(c: &mut Criterion) {
             });
         });
     }
+
     group.finish();
 }
 
@@ -226,6 +230,7 @@ fn bench_concurrent_reads(c: &mut Criterion) {
             });
         }
     }
+
     group.finish();
 }
 
@@ -243,6 +248,7 @@ fn bench_read_heavy_mixed(c: &mut Criterion) {
             if threads < 2 {
                 continue;
             }
+
             let readers = threads - 1;
             let param = format!("{size}_entries/{readers}r_1w");
 
@@ -351,6 +357,7 @@ fn bench_read_heavy_mixed(c: &mut Criterion) {
                                     m.insert(key.clone(), (size + i) as u64);
                                 }
                             });
+
                             map.rcu(|m| {
                                 for key in wk.iter() {
                                     m.remove(key);
@@ -377,6 +384,7 @@ fn bench_read_heavy_mixed(c: &mut Criterion) {
             });
         }
     }
+
     group.finish();
 }
 
@@ -467,6 +475,7 @@ fn bench_write_once_read_many(c: &mut Criterion) {
             });
         }
     }
+
     group.finish();
 }
 
@@ -487,6 +496,7 @@ fn bench_atomic_map_read_patterns(c: &mut Criterion) {
                 sum = sum.wrapping_add(atomic.get_cloned(key).unwrap_or_default());
                 idx = idx.wrapping_add(1);
             }
+
             black_box(sum)
         });
     });
@@ -502,6 +512,7 @@ fn bench_atomic_map_read_patterns(c: &mut Criterion) {
                 sum = sum.wrapping_add(guard.get(key).copied().unwrap_or_default());
                 idx = idx.wrapping_add(1);
             }
+
             black_box(sum)
         });
     });
@@ -517,6 +528,7 @@ fn bench_atomic_map_read_patterns(c: &mut Criterion) {
                 sum = sum.wrapping_add(guard.get(key).copied().unwrap_or_default());
                 idx = idx.wrapping_add(1);
             }
+
             black_box(sum)
         });
     });
