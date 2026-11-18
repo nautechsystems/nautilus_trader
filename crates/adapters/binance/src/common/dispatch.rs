@@ -526,15 +526,34 @@ impl WsDispatchState {
         self.orders_terminal.lock().contains_key(cid)
     }
 
+    /// Registers `cid` as having an unresolved cancellation in flight.
+    ///
+    /// Returns `false` when the order already reached a terminal state: a cancel
+    /// processed after terminal cleanup must not re-register the order, or the
+    /// stale entry survives in `cancels_unresolved` until shutdown and is
+    /// reported as an unresolved cancellation. The terminal-state lock is held
+    /// across the check and the insert so a concurrent [`Self::cleanup_terminal`]
+    /// cannot interleave and strand the registration.
+    pub(crate) fn register_unresolved_cancel(&self, cid: ClientOrderId) -> bool {
+        let terminal = self.orders_terminal.lock();
+        if terminal.contains_key(&cid) {
+            return false;
+        }
+        self.cancels_unresolved.insert(cid);
+        true
+    }
+
     /// Removes active order context, retaining bounded replay evidence for tracked orders.
     pub fn cleanup_terminal(&self, cid: ClientOrderId) {
-        if self.cancels_unresolved.contains(&cid) {
-            self.cancels_unresolved.remove(&cid);
-        }
-
+        // Mark terminal before dropping any unresolved-cancel registration:
+        // the terminal flag is what stops a late cancel from re-registering.
         if let Entry::Occupied(entry) = self.order_identities.entry(cid) {
             self.mark_terminal(cid);
             entry.remove();
+        }
+
+        if self.cancels_unresolved.contains(&cid) {
+            self.cancels_unresolved.remove(&cid);
         }
 
         self.order_lists.remove(&cid);
@@ -772,6 +791,50 @@ mod tests {
         assert!(!state.orders_restored.contains_key(&cid));
         assert!(!state.has_emitted_accepted(&cid));
         assert!(!state.has_filled(&cid));
+    }
+
+    #[rstest]
+    fn test_late_cancel_after_terminal_cleanup_is_not_registered() {
+        let state = WsDispatchState::default();
+        let cid = ClientOrderId::from("filled-then-cancel");
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .client_order_id(cid)
+            .strategy_id(StrategyId::from("LATE-001"))
+            .instrument_id(InstrumentId::from("ETHUSDT.BINANCE"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .price(Price::from("3000.00"))
+            .build();
+        state.restore_order(&order, None, 2);
+
+        // A full fill runs terminal cleanup before the queued cancel is processed
+        state.cleanup_terminal(cid);
+        assert!(state.is_terminal(&cid));
+
+        // The late cancel must not re-register the order as unresolved
+        assert!(!state.register_unresolved_cancel(cid));
+        assert!(!state.cancels_unresolved.contains(&cid));
+    }
+
+    #[rstest]
+    fn test_register_unresolved_cancel_tracks_active_order_until_cleanup() {
+        let state = WsDispatchState::default();
+        let cid = ClientOrderId::from("active-then-cancel");
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .client_order_id(cid)
+            .strategy_id(StrategyId::from("ACTIVE-001"))
+            .instrument_id(InstrumentId::from("ETHUSDT.BINANCE"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .price(Price::from("3000.00"))
+            .build();
+        state.restore_order(&order, None, 2);
+
+        assert!(state.register_unresolved_cancel(cid));
+        assert!(state.cancels_unresolved.contains(&cid));
+
+        state.cleanup_terminal(cid);
+        assert!(!state.cancels_unresolved.contains(&cid));
     }
 
     #[rstest]

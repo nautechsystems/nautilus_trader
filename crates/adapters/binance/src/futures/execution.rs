@@ -820,8 +820,7 @@ impl BinanceFuturesExecutionClient {
     fn cancel_order_internal(&self, cmd: &CancelOrder) {
         let command = cmd.clone();
         self.dispatch_state
-            .cancels_unresolved
-            .insert(command.client_order_id);
+            .register_unresolved_cancel(command.client_order_id);
 
         // Non-triggered algo orders use algo cancel endpoint, triggered use regular
         let is_algo = self
@@ -5134,6 +5133,7 @@ mod tests {
     struct MockVenueHits {
         batch: Arc<AtomicUsize>,
         algo_cancel: Arc<AtomicUsize>,
+        cancel: Arc<AtomicUsize>,
         cancel_all: Arc<AtomicUsize>,
     }
 
@@ -5142,6 +5142,8 @@ mod tests {
         let batch_hits_clone = batch_hits.clone();
         let algo_hits = Arc::new(AtomicUsize::new(0));
         let algo_hits_clone = algo_hits.clone();
+        let cancel_hits = Arc::new(AtomicUsize::new(0));
+        let cancel_hits_clone = cancel_hits.clone();
         let cancel_all_hits = Arc::new(AtomicUsize::new(0));
         let cancel_all_hits_clone = cancel_all_hits.clone();
         let app = axum::Router::new()
@@ -5192,13 +5194,18 @@ mod tests {
             )
             .route(
                 "/fapi/v1/order",
-                axum::routing::delete(|| async {
-                    (
-                        axum::http::StatusCode::BAD_REQUEST,
-                        axum::Json(
-                            serde_json::json!({"code": -2011, "msg": "Unknown order sent"}),
-                        ),
-                    )
+                axum::routing::delete(move || {
+                    let hits = cancel_hits_clone.clone();
+                    async move {
+                        hits.fetch_add(1, Ordering::Relaxed);
+
+                        (
+                            axum::http::StatusCode::BAD_REQUEST,
+                            axum::Json(
+                                serde_json::json!({"code": -2011, "msg": "Unknown order sent"}),
+                            ),
+                        )
+                    }
                 }),
             )
             .route(
@@ -5226,6 +5233,7 @@ mod tests {
             MockVenueHits {
                 batch: batch_hits,
                 algo_cancel: algo_hits,
+                cancel: cancel_hits,
                 cancel_all: cancel_all_hits,
             },
         )
@@ -5270,6 +5278,72 @@ mod tests {
         }
 
         order
+    }
+
+    #[rstest]
+    #[case::already_filled(true)]
+    #[case::still_open(false)]
+    #[tokio::test]
+    async fn test_cancel_order_registers_unresolved_only_while_order_is_open(
+        #[case] terminal: bool,
+    ) {
+        let (base_url, hits) = start_batch_reject_server().await;
+        let (mut client, cache) = test_execution_client(base_url);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let account_id = client.core.account_id;
+        let order = add_open_order(
+            &cache,
+            account_id,
+            0,
+            instrument_id,
+            "S-001",
+            OrderSide::Buy,
+            OrderType::Limit,
+            true,
+        );
+        let client_order_id = order.client_order_id();
+
+        if terminal {
+            // A full fill is processed before the queued cancel reaches the adapter
+            client.dispatch_state.mark_terminal(client_order_id);
+        }
+
+        client.cancel_order_internal(&CancelOrder::new(
+            TraderId::from("TESTER-001"),
+            Some(*BINANCE_CLIENT_ID),
+            StrategyId::from("S-001"),
+            instrument_id,
+            client_order_id,
+            order.venue_order_id(),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ));
+        wait_for_spawned_tasks(&client).await;
+
+        // The cancel request reaches the venue regardless
+        assert_eq!(hits.cancel.load(Ordering::Relaxed), 1);
+
+        // Only an order that is still open stays tracked as an unresolved cancel
+        assert_eq!(
+            client
+                .dispatch_state
+                .cancels_unresolved
+                .contains(&client_order_id),
+            !terminal,
+        );
+
+        let event = rx.try_recv().expect("expected OrderCancelRejected event");
+        match event {
+            ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) => {
+                assert_eq!(rejected.client_order_id, client_order_id);
+            }
+            event => panic!("expected OrderCancelRejected, was {event:?}"),
+        }
     }
 
     #[rstest]
