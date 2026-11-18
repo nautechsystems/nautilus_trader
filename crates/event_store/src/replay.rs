@@ -30,7 +30,7 @@ use nautilus_common::{
             BarsResponse, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
             QuotesResponse, TradesResponse,
         },
-        execution::SubmitOrderList,
+        execution::{ReconciliationInstrument, SubmitOrderList},
     },
 };
 use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos};
@@ -43,6 +43,7 @@ use nautilus_model::{
         PositionAdjusted, PositionChanged, PositionClosed, PositionOpened,
     },
     identifiers::{ClientId, InstrumentId, PositionId},
+    instruments::Instrument,
     orders::{Order, OrderAny},
     position::{Position, PositionReplayEvent},
     types::{
@@ -85,7 +86,8 @@ use crate::{
         PAYLOAD_TYPE_ORDER_REJECTED, PAYLOAD_TYPE_ORDER_RELEASED, PAYLOAD_TYPE_ORDER_SUBMITTED,
         PAYLOAD_TYPE_ORDER_TRIGGERED, PAYLOAD_TYPE_ORDER_UPDATED, PAYLOAD_TYPE_POSITION_ADJUSTED,
         PAYLOAD_TYPE_POSITION_CHANGED, PAYLOAD_TYPE_POSITION_CLOSED, PAYLOAD_TYPE_POSITION_OPENED,
-        PAYLOAD_TYPE_QUOTES_RESPONSE, PAYLOAD_TYPE_SUBMIT_ORDER_LIST, PAYLOAD_TYPE_TRADES_RESPONSE,
+        PAYLOAD_TYPE_QUOTES_RESPONSE, PAYLOAD_TYPE_RECONCILIATION_INSTRUMENT,
+        PAYLOAD_TYPE_SUBMIT_ORDER_LIST, PAYLOAD_TYPE_TRADES_RESPONSE,
     },
     entry::EventStoreEntry,
     error::EventStoreError,
@@ -128,6 +130,7 @@ pub(crate) const CACHE_REPLAY_CAPTURE_PAYLOAD_TYPES: &[&str] = &[
     PAYLOAD_TYPE_INSTRUMENT_CLOSE,
     PAYLOAD_TYPE_INSTRUMENT_RESPONSE,
     PAYLOAD_TYPE_INSTRUMENTS_RESPONSE,
+    PAYLOAD_TYPE_RECONCILIATION_INSTRUMENT,
     PAYLOAD_TYPE_QUOTES_RESPONSE,
     PAYLOAD_TYPE_TRADES_RESPONSE,
     PAYLOAD_TYPE_FUNDING_RATES_RESPONSE,
@@ -1270,6 +1273,12 @@ fn apply_cache_replay_entry_with_context(
         PAYLOAD_TYPE_ACCOUNT_STATE => {
             let state = decode_payload::<AccountState>(entry)?;
             apply_result(entry, cache.update_account_state(&state))?;
+        }
+        PAYLOAD_TYPE_RECONCILIATION_INSTRUMENT => {
+            let ReconciliationInstrument(instrument) = decode_payload(entry)?;
+            if cache.instrument(&instrument.id()).is_none() {
+                apply_result(entry, cache.add_instrument(instrument))?;
+            }
         }
         PAYLOAD_TYPE_INSTRUMENT_CLOSE => {
             let close = decode_payload::<InstrumentClose>(entry)?;
@@ -2749,6 +2758,7 @@ mod tests {
             &[
                 PAYLOAD_TYPE_INSTRUMENT_RESPONSE,
                 PAYLOAD_TYPE_INSTRUMENTS_RESPONSE,
+                PAYLOAD_TYPE_RECONCILIATION_INSTRUMENT,
             ],
         ),
         cache_mutation(

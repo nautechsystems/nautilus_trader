@@ -54,6 +54,7 @@ A run starts when the kernel starts and ends when the process stops cleanly or c
 - Data subscription commands that define the actor or strategy observation window.
 - Fired time events and generated order, position, and account events.
 - Raw venue execution reports before reconciliation synthesizes derived events.
+- Instrument definitions the execution engine caches for reconciliation.
 - Reconciliation outputs produced from those raw reports.
 - Request and response messages, or their audit-relevant metadata, that cross the bus and affect
   state.
@@ -82,8 +83,8 @@ The event store is intentionally narrow:
 
 ## Capture flow
 
-Capture happens at the message bus dispatch boundary, so the tap sees each state-affecting message before
-downstream handlers observe it.
+The bus tap sees dispatched messages before downstream handlers observe them. The execution engine sends
+reconciliation instrument definitions directly to the tap before applying the reports.
 
 ```mermaid
 flowchart LR
@@ -380,6 +381,7 @@ tail in `seq` order, decodes supported cache-affecting payloads, and applies the
 - Synthesized account, order, and position events
 - Captured order lists
 - Complete data responses for instruments, quotes, trades, funding rates, and bars
+- Instrument definitions cached during execution reconciliation, applied only when missing from the cache
 - Instrument closes, which settle binary-option positions as live execution does. A replayed fill
   or fill void after that settlement updates its order but not the settled position
 

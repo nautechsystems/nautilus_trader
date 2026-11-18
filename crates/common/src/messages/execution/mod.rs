@@ -26,6 +26,7 @@ use std::fmt::Display;
 use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
     identifiers::{ClientId, InstrumentId, StrategyId},
+    instruments::InstrumentAny,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
 };
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
@@ -46,6 +47,11 @@ pub use self::{
 
 /// Parameter indicating that a conditional order should close the whole position at trigger time.
 pub const PARAMS_CLOSE_POSITION: &str = "close_position";
+
+/// An instrument definition added to the cache during execution reconciliation.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ReconciliationInstrument(pub InstrumentAny);
 
 /// Execution report variants for reconciliation.
 #[derive(Clone, Debug)]

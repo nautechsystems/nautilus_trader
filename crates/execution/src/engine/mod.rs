@@ -50,7 +50,8 @@ use nautilus_common::{
         ExecutionReport,
         execution::{
             BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
-            QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
+            QueryAccount, QueryOrder, ReconciliationInstrument, SubmitOrder, SubmitOrderList,
+            TradingCommand,
         },
     },
     msgbus::{
@@ -514,7 +515,9 @@ impl ExecutionEngine {
         Ok(mass_status)
     }
 
-    /// Caches instrument definitions collected by a client without publishing market-data events.
+    /// Caches missing instrument definitions collected by a client for reconciliation.
+    ///
+    /// Captures each insertion for replay without publishing market-data instrument events.
     ///
     /// # Errors
     ///
@@ -523,13 +526,18 @@ impl ExecutionEngine {
         let client = self
             .get_client(client_id)
             .ok_or_else(|| anyhow::anyhow!("Client {client_id} not found"))?;
-        let instruments = client.reconciliation_instruments();
-        let mut cache = self.cache.borrow_mut();
 
-        for instrument in instruments {
-            if cache.instrument(&instrument.id()).is_none() {
-                cache.add_instrument(instrument)?;
+        for instrument in client.reconciliation_instruments() {
+            {
+                let mut cache = self.cache.borrow_mut();
+                if cache.instrument(&instrument.id()).is_some() {
+                    continue;
+                }
+
+                cache.add_instrument(instrument.clone())?;
             }
+
+            msgbus::capture_reconciliation_instrument(&ReconciliationInstrument(instrument));
         }
 
         Ok(())

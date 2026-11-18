@@ -45,7 +45,8 @@ use nautilus_common::{
         },
         execution::{
             BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ExecutionReport,
-            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
+            ModifyOrder, QueryAccount, QueryOrder, ReconciliationInstrument, SubmitOrder,
+            SubmitOrderList, TradingCommand,
         },
     },
     timer::TimeEvent,
@@ -158,6 +159,8 @@ pub const PAYLOAD_TYPE_POSITION_ADJUSTED: &str = "PositionAdjusted";
 pub const PAYLOAD_TYPE_ACCOUNT_STATE: &str = "AccountState";
 /// The canonical `payload_type` tag for [`InstrumentClose`].
 pub const PAYLOAD_TYPE_INSTRUMENT_CLOSE: &str = "InstrumentClose";
+/// The canonical `payload_type` tag for [`ReconciliationInstrument`].
+pub const PAYLOAD_TYPE_RECONCILIATION_INSTRUMENT: &str = "ReconciliationInstrument";
 /// The canonical `payload_type` tag for [`TimeEvent`].
 pub const PAYLOAD_TYPE_TIME_EVENT: &str = "TimeEvent";
 
@@ -260,6 +263,7 @@ pub(crate) const DEFAULT_CAPTURE_PAYLOAD_TYPES: &[&str] = &[
     PAYLOAD_TYPE_POSITION_ADJUSTED,
     PAYLOAD_TYPE_ACCOUNT_STATE,
     PAYLOAD_TYPE_INSTRUMENT_CLOSE,
+    PAYLOAD_TYPE_RECONCILIATION_INSTRUMENT,
     PAYLOAD_TYPE_TIME_EVENT,
     PAYLOAD_TYPE_REQUEST_COMMAND,
     PAYLOAD_TYPE_SUBSCRIBE_COMMAND,
@@ -352,6 +356,10 @@ pub fn register_default(registry: &mut EncoderRegistry) {
     registry.register::<InstrumentClose, _>(
         payload_type(PAYLOAD_TYPE_INSTRUMENT_CLOSE),
         encode_instrument_close,
+    );
+    registry.register::<ReconciliationInstrument, _>(
+        payload_type(PAYLOAD_TYPE_RECONCILIATION_INSTRUMENT),
+        |instrument| Ok(EncodedPayload::new(encode_serde(instrument)?, Vec::new())),
     );
     registry.register::<TimeEvent, _>(payload_type(PAYLOAD_TYPE_TIME_EVENT), encode_time_event);
     registry
@@ -1769,6 +1777,10 @@ mod tests {
             (
                 "reconciliation.raw.position / PositionStatusReport",
                 registry.contains::<PositionStatusReport>(),
+            ),
+            (
+                "capture_reconciliation_instrument / ReconciliationInstrument",
+                registry.contains::<ReconciliationInstrument>(),
             ),
             (
                 "send_trading_command / TradingCommand",

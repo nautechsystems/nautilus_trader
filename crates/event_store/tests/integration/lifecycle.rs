@@ -22,6 +22,7 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc, time::Duration};
 
 use ahash::AHashMap;
+use async_trait::async_trait;
 use bytes::Bytes;
 use indexmap::IndexMap;
 use nautilus_common::{
@@ -29,15 +30,17 @@ use nautilus_common::{
         Cache,
         database::{CacheDatabaseAdapter, CacheMap},
     },
+    clients::ExecutionClient,
     clock::{Clock, VirtualClock},
     signal::Signal,
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_event_store::{
     AppendEntry, EventStore, EventStoreConfig, EventStoreEntry, EventStoreLifecycle, Headers,
     PAYLOAD_TYPE_ACCOUNT_STATE, RedbBackend, RegisteredComponents, RetentionMode, RunIdentity,
     RunManifest, RunStatus, SnapshotAnchor, Topic, compute_entry_hash,
     compute_snapshot_content_hash, encode_account_state, recover_predecessors,
+    restore_cache_from_sealed_run,
 };
 use nautilus_execution::engine::{
     ExecutionEngine, config::ExecutionEngineConfig, stubs::StubExecutionClient,
@@ -48,7 +51,7 @@ use nautilus_model::{
         Bar, CustomData, DataType, FundingRateUpdate, InstrumentClose, QuoteTick, TradeTick,
         greeks::{GreeksData, YieldCurve},
     },
-    enums::{OmsType, OrderSide, OrderType},
+    enums::{LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
     events::{
         AccountState, OrderEventAny, OrderSnapshot, account::stubs::cash_account_state_million_usd,
         position::snapshot::PositionSnapshot,
@@ -57,12 +60,16 @@ use nautilus_model::{
         AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
         TraderId, Venue, VenueOrderId,
     },
-    instruments::{CurrencyPair, InstrumentAny, SyntheticInstrument, stubs::audusd_sim},
+    instruments::{
+        CurrencyPair, InstrumentAny, SyntheticInstrument,
+        stubs::{audusd_sim, binary_option},
+    },
     orderbook::OrderBook,
     orders::{Order, OrderAny, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
+    reports::{ExecutionMassStatus, FillReport, OrderStatusReport},
     stubs::TestDefault,
-    types::{Currency, Money, Quantity},
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_system::{KernelEventStore, NautilusKernelBuilder};
 use parking_lot::{Mutex, MutexGuard};
@@ -241,6 +248,210 @@ fn process_filled_order(
         None,
         Some(AccountId::test_default()),
     ));
+}
+
+#[rstest]
+#[case::empty_cache(false)]
+#[case::preloaded_definition(true)]
+fn kernel_replay_restores_reconciliation_instrument_and_position(
+    #[case] preloaded_definition: bool,
+) {
+    let _guard = lock_kernel_test();
+    let tmp = TempDir::new().expect("tempdir");
+    let instance_id = UUID4::new();
+    let config = config_with(tmp.path().to_path_buf());
+    let mut instrument = binary_option();
+    instrument.currency = Currency::pUSD();
+    instrument.info = Some(Params::new(IndexMap::from([
+        ("market_version".to_string(), "v2".into()),
+        ("neg_risk".to_string(), true.into()),
+    ])));
+    let instrument_id = instrument.id;
+    let client = WalletExecutionClient(InstrumentAny::BinaryOption(instrument.clone()));
+    let client_id = client.client_id();
+    let account_id = client.account_id();
+    let venue_order_id = VenueOrderId::new("WALLET-ORDER");
+    let trade_id = TradeId::new("WALLET-FILL");
+    let quantity = Quantity::from("7.25");
+    let price = Price::from("0.321");
+    let commission = Money::from("0.010000 pUSD");
+    let ts_event = UnixNanos::from(10);
+    let ts_init = UnixNanos::from(11);
+    let mut kernel = NautilusKernelBuilder::default()
+        .with_instance_id(instance_id)
+        .with_event_store(event_store_factory(config.clone()))
+        .build()
+        .expect("kernel");
+
+    kernel
+        .exec_engine
+        .borrow_mut()
+        .register_client(Box::new(client))
+        .expect("register wallet execution client");
+    kernel.start();
+
+    {
+        let mut cache = kernel.cache.borrow_mut();
+        assert!(cache.instrument(&instrument_id).is_none());
+        let mut account_state = cash_account_state_million_usd("100 pUSD", "0 pUSD", "100 pUSD");
+        account_state.account_id = account_id;
+        account_state.base_currency = Some(Currency::pUSD());
+        cache
+            .add_account(CashAccount::new(account_state, true, false).into())
+            .expect("cache wallet account");
+    }
+
+    let mut mass_status =
+        ExecutionMassStatus::new(client_id, account_id, instrument_id.venue, ts_init, None);
+    mass_status.add_order_reports(vec![OrderStatusReport::new(
+        account_id,
+        instrument_id,
+        None,
+        venue_order_id,
+        OrderSide::Buy.into(),
+        OrderType::Market,
+        TimeInForce::Gtc,
+        OrderStatus::Filled,
+        quantity,
+        quantity,
+        ts_event,
+        ts_event,
+        ts_init,
+        None,
+    )]);
+    mass_status.add_fill_reports(vec![FillReport::new(
+        account_id,
+        instrument_id,
+        venue_order_id,
+        trade_id,
+        OrderSide::Buy,
+        quantity,
+        price,
+        commission,
+        LiquiditySide::Taker,
+        None,
+        None,
+        ts_event,
+        ts_init,
+        None,
+    )]);
+
+    {
+        let mut engine = kernel.exec_engine.borrow_mut();
+        engine
+            .cache_reconciliation_instruments(&client_id)
+            .expect("cache wallet instrument");
+        engine.reconcile_execution_mass_status(&mass_status);
+    }
+
+    let position_id = {
+        let cache = kernel.cache.borrow();
+        let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
+        assert_eq!(
+            positions.len(),
+            1,
+            "live reconciliation must open a position"
+        );
+        positions[0].id
+    };
+
+    let run_id = kernel
+        .event_store()
+        .expect("event store")
+        .run_id()
+        .expect("run ID")
+        .to_string();
+    kernel.dispose();
+
+    let mut replayed = Cache::default();
+
+    if preloaded_definition {
+        instrument.ts_init = UnixNanos::from(29);
+        replayed
+            .add_instrument(InstrumentAny::BinaryOption(instrument.clone()))
+            .expect("cache preloaded definition");
+    }
+
+    restore_cache_from_sealed_run(
+        &mut replayed,
+        &config.base_dir,
+        &instance_id.to_string(),
+        &run_id,
+    )
+    .expect("replay sealed run");
+
+    let Some(InstrumentAny::BinaryOption(replayed_instrument)) =
+        replayed.instrument(&instrument_id)
+    else {
+        panic!("replay did not restore the wallet instrument");
+    };
+
+    assert_eq!(
+        rmp_serde::to_vec_named(replayed_instrument).expect("serialize replayed instrument"),
+        rmp_serde::to_vec_named(&instrument).expect("serialize expected instrument"),
+    );
+    let position = replayed
+        .position(&position_id)
+        .expect("replayed wallet position");
+    assert_eq!(position.instrument_id, instrument_id);
+    assert_eq!(position.account_id, account_id);
+    assert_eq!(position.side, PositionSide::Long);
+    assert_eq!(position.quantity, quantity);
+    assert_eq!(position.avg_px_open, price.as_decimal());
+    assert_eq!(position.trade_ids, [trade_id].into_iter().collect());
+    assert_eq!(position.commissions(), vec![commission]);
+}
+
+struct WalletExecutionClient(InstrumentAny);
+
+#[async_trait(?Send)]
+impl ExecutionClient for WalletExecutionClient {
+    fn is_connected(&self) -> bool {
+        true
+    }
+
+    fn client_id(&self) -> ClientId {
+        ClientId::from("POLYMARKET")
+    }
+
+    fn account_id(&self) -> AccountId {
+        AccountId::from("POLYMARKET-001")
+    }
+
+    fn venue(&self) -> Venue {
+        Venue::from("POLYMARKET")
+    }
+
+    fn oms_type(&self) -> OmsType {
+        OmsType::Netting
+    }
+
+    fn get_account(&self) -> Option<AccountAny> {
+        None
+    }
+
+    fn generate_account_state(
+        &self,
+        _balances: Vec<AccountBalance>,
+        _margins: Vec<MarginBalance>,
+        _reported: bool,
+        _ts_event: UnixNanos,
+        _info: Option<Params>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn start(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn stop(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn reconciliation_instruments(&self) -> Vec<InstrumentAny> {
+        vec![self.0.clone()]
+    }
 }
 
 #[rstest]

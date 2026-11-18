@@ -292,6 +292,13 @@ pub(super) fn dispatch_tap_response(correlation_id: &UUID4, message: &dyn Any) {
     }
 }
 
+/// Sends a reconciliation instrument to the bus tap without dispatching to subscribers.
+pub fn capture_reconciliation_instrument(
+    instrument: &crate::messages::execution::ReconciliationInstrument,
+) {
+    dispatch_tap_publish("reconciliation.Instrument".into(), instrument);
+}
+
 #[inline]
 pub(crate) fn dispatch_tap_time_event(event: &TimeEvent) {
     dispatch_tap_publish(MessagingSwitchboard::time_event_topic(), event);
