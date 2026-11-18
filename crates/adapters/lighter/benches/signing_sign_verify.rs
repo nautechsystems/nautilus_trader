@@ -45,7 +45,12 @@ fn bench_sign(c: &mut Criterion) {
     let mut group = c.benchmark_group("signing");
     group.throughput(Throughput::Elements(1));
     group.bench_function("PrivateKey::sign", |b| {
-        b.iter(|| black_box(sk.sign(black_box(msg), black_box(k))));
+        b.iter(|| {
+            let sig = sk
+                .sign(black_box(msg), black_box(k))
+                .expect("the fixture signing nonce is valid");
+            black_box(sig)
+        });
     });
     group.finish();
 }

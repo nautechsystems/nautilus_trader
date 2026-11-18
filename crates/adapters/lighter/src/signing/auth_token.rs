@@ -53,7 +53,7 @@ use crate::{
         curve::{SCALAR_BYTES, Scalar},
         field::Fp,
         hash::hash_to_quintic_extension,
-        schnorr::{PrivateKey, SIG_BYTES},
+        schnorr::{InvalidSigningNonce, PrivateKey, SIG_BYTES},
     },
 };
 
@@ -93,6 +93,9 @@ pub enum AuthTokenError {
         /// Byte offset of the offending 8-byte chunk in the input.
         offset: usize,
     },
+    /// The supplied Schnorr signing nonce is zero or non-canonical.
+    #[error(transparent)]
+    InvalidSigningNonce(#[from] InvalidSigningNonce),
 }
 
 /// Default deadline applied by [`build_auth_token_for`] when the caller does
@@ -138,11 +141,9 @@ pub fn build_auth_token_for(
 /// Draws a fresh nonzero canonical [`Scalar`] from the operating system's
 /// cryptographic random number source for the per-signature `k` nonce.
 ///
-/// The Schnorr binding requires `k` to be drawn from a cryptographic RNG and
-/// used at most once per signature; see [`PrivateKey::sign`] for the full
-/// contract. Rejection sampling gives a uniform scalar in `[1, n)`, where
-/// `n` is the curve order. Direct OS randomness avoids duplicating a userspace RNG's state
-/// across a process fork.
+/// See [`PrivateKey::sign`] for the nonce requirements. Rejection sampling
+/// gives a uniform scalar in `[1, n)`, where `n` is the curve order. Direct OS
+/// randomness avoids duplicating a userspace RNG's state across a process fork.
 ///
 /// # Errors
 ///
@@ -165,11 +166,14 @@ pub fn fresh_k() -> anyhow::Result<Scalar> {
 ///
 /// Validates the deadline against [`LIGHTER_AUTH_TOKEN_MAX_TTL`]. See
 /// [`build_auth_token_at`] for an injectable-`now` variant suitable for tests.
+/// See [`PrivateKey::sign`] for the nonce requirements.
 ///
 /// # Errors
 ///
-/// Returns an error if `deadline_unix_secs <= now`, if it exceeds the venue cap, or if the system
-/// clock predates the UNIX epoch.
+/// Returns an error if:
+/// - The deadline is at or before the current time or exceeds the venue cap.
+/// - The system clock predates the UNIX epoch.
+/// - The signing nonce is zero or non-canonical.
 pub fn build_auth_token(
     deadline_unix_secs: i64,
     account_index: i64,
@@ -234,13 +238,15 @@ pub fn build_auth_token_at(
 ///
 /// Public so tests and oracle round-trips can produce tokens whose deadline
 /// would otherwise trip the venue cap. Production callers should use
-/// [`build_auth_token`] or [`build_auth_token_at`].
+/// [`build_auth_token`] or [`build_auth_token_at`]. See [`PrivateKey::sign`]
+/// for the nonce requirements.
 ///
 /// # Errors
 ///
-/// Returns an error if the rendered message contains an 8-byte chunk that does not decode as a
-/// canonical Goldilocks element. The auth-token format keeps every byte ASCII, so this case is
-/// unreachable for the production callers.
+/// Returns an error if:
+/// - The rendered message contains a non-canonical Goldilocks limb. The ASCII token format rules
+///   out this case.
+/// - The signing nonce is zero or non-canonical.
 pub fn build_auth_token_unchecked(
     deadline_unix_secs: i64,
     account_index: i64,
@@ -292,7 +298,7 @@ fn sign_message(
 ) -> Result<[u8; SIG_BYTES], AuthTokenError> {
     let elems = ascii_to_fp_limbs(message.as_bytes())?;
     let digest = hash_to_quintic_extension(&elems);
-    Ok(sk.sign(digest, k).to_le_bytes())
+    Ok(sk.sign(digest, k)?.to_le_bytes())
 }
 
 fn ascii_to_fp_limbs(bytes: &[u8]) -> Result<Vec<Fp>, AuthTokenError> {
@@ -331,7 +337,10 @@ mod tests {
 
     use super::*;
     use crate::signing::{
-        curve::SCALAR_BYTES, field::Fp5, fixtures::hex_to_array, schnorr::Signature,
+        curve::{ORDER, SCALAR_BYTES},
+        field::Fp5,
+        fixtures::hex_to_array,
+        schnorr::Signature,
     };
 
     fn fixed_sk() -> PrivateKey {
@@ -439,8 +448,34 @@ mod tests {
     }
 
     #[rstest]
-    fn deadline_in_past_errors() {
-        let err = build_auth_token_at(1_000, 999, 1, 0, &fixed_sk(), nonzero_k())
+    #[case::zero(Scalar::ZERO)]
+    #[case::order(ORDER)]
+    fn auth_token_builders_reject_invalid_signing_nonce(#[case] k: Scalar) {
+        let sk = fixed_sk();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+        let now = i64::try_from(now.as_secs()).unwrap();
+        let deadline = now + 600;
+        let expected = AuthTokenError::InvalidSigningNonce(InvalidSigningNonce);
+
+        assert_eq!(
+            build_auth_token(deadline, 12345, 5, &sk, k).unwrap_err(),
+            expected,
+        );
+        assert_eq!(
+            build_auth_token_at(now, deadline, 12345, 5, &sk, k).unwrap_err(),
+            expected,
+        );
+        assert_eq!(
+            build_auth_token_unchecked(deadline, 12345, 5, &sk, k).unwrap_err(),
+            expected,
+        );
+    }
+
+    #[rstest]
+    #[case::valid_nonce(nonzero_k())]
+    #[case::invalid_nonce(Scalar::ZERO)]
+    fn deadline_in_past_errors(#[case] k: Scalar) {
+        let err = build_auth_token_at(1_000, 999, 1, 0, &fixed_sk(), k)
             .expect_err("must reject past deadline");
         assert_eq!(
             err,

@@ -57,6 +57,8 @@ Released on TBD (UTC).
 - Changed Lighter venue enums with fallback and settlement variants; update exhaustive matches
 - Changed `LighterMarketConfig` literals; wrap `funding_fee_discounts_enabled` in `Some` and add `rfq_enabled`
 - Changed Lighter `fresh_k` to return `anyhow::Result<Scalar>`; propagate signing nonce errors
+- Changed Lighter `PrivateKey::sign` to return `Result<Signature, InvalidSigningNonce>` for callers to handle
+- Changed Lighter `AuthTokenError` to include `InvalidSigningNonce`, which exhaustive matches must handle
 - Removed OKX spot margin position reports derived from `spotInUseAmt`, a Portfolio margin hedging amount
 - Removed `OKXHttpClient::request_spot_margin_position_reports` and `parse_spot_margin_position_from_balance`
 - Changed `OKXExecutionClientConfig` literals; add `use_spot_position_reports` and `spot_positions_quote_currency`
@@ -67,6 +69,7 @@ Released on TBD (UTC).
 - Fixed cross-origin HTTP redirects leaking venue API keys and other custom credential headers
 - Fixed Coinbase authentication errors exposing private key data from malformed PEM credentials
 - Hardened Lighter signing with uniform nonzero OS nonces; no specific NautilusTrader vulnerability was fixed
+- Hardened the Lighter signing API to reject zero and non-canonical caller-supplied Schnorr nonces
 
 ### Fixes
 
