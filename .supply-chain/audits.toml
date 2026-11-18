@@ -3045,6 +3045,13 @@ criteria = "safe-to-deploy"
 delta = "1.0.0 -> 1.1.0"
 notes = "Checks format-range slicing and reports unmatched-brace compatibility warnings while retaining the existing parser acceptance rule. No unsafe code or ambient capabilities were added."
 
+[[audits.der]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.7.10 -> 0.8.3"
+importable = false
+notes = "Reviewed the published delta for the enabled no_std, no_alloc, oid feature graph. Changes centralize bounded nested decoding, update length and tag handling, and introduce borrowed unsized wrappers. The four unsafe casts preserve slice/string metadata and lifetimes through repr(transparent) wrappers; constructors retain length and UTF-8 validation. No build script or enabled filesystem, network, or process behavior. Optional alloc, BER, PEM, derive, and other disabled features are outside this review."
+
 [[audits.deranged]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -4129,6 +4136,13 @@ criteria = "safe-to-deploy"
 delta = "0.1.0 -> 0.1.1"
 notes = "Reviewed the published crate delta. Deprecates existing projection macros and narrows their hidden core re-export to Pin. Existing unsafe projection and stack-pinning operations and caller obligations remain unchanged; no new unsafe operation or ambient capability."
 
+[[audits.pkcs8]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.10.2 -> 0.11.0"
+importable = false
+notes = "Reviewed the published delta for the enabled no_std, no_alloc feature graph. PrivateKeyInfo becomes generic over borrowed storage, retaining version/public-key consistency and context-specific extension decoding; DER nesting bounds are enforced by der 0.8. No unsafe code, build script, or enabled filesystem, network, or process behavior. Optional encryption, allocation, PEM, and constant-time comparison features are outside this review."
+
 [[audits.pkg-config]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -4979,6 +4993,13 @@ criteria = "safe-to-deploy"
 delta = "3.1.0 -> 3.1.1"
 importable = false
 notes = "Reviewed the published delta. Adds a locally configured receive-buffer size, clamped to at least 1024 bytes, and shares receive-window allocation/reclamation across stream readers. Spare capacity remains positive before transport reads; existing ReadBuf and initialized-length updates retain their contracts. Reclamation replaces only an empty buffer and respects retained Bytes ownership. Defaults remain 64 KiB; frame and message bounds, TLS, destinations, and handshake behavior are unchanged. No new dependencies, unsafe operations, or build scripts."
+
+[[audits.spki]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.7.3 -> 0.8.1"
+importable = false
+notes = "Reviewed the published delta for the enabled no_std, no_alloc feature graph. Changes adopt der 0.8 bounded decoding, add borrowed algorithm-identifier conversions and Hash, and correct unknown-OID errors. No unsafe code, build script, or enabled filesystem, network, or process behavior. Optional allocation, PEM, fingerprinting, digest, and arbitrary-data features are outside this review."
 
 [[audits.stacker]]
 who = "Nautech Systems <info@nautechsystems.io>"

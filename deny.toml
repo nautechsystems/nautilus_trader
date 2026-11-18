@@ -204,6 +204,10 @@ skip = [
   { crate = "ed25519:<3" },
   { crate = "signature:<3" },
 
+  # ECDSA retains DER/SPKI 0.7 while Ed25519 PKCS8 requires 0.8
+  { crate = "der:=0.7.10" },
+  { crate = "spki:=0.7.3" },
+
   # Perfect hash function crates - transitive
   { crate = "phf:<0.14" },
   { crate = "phf_shared:<0.14" },
