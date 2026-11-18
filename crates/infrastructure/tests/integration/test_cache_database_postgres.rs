@@ -80,6 +80,8 @@ mod serial_tests {
     use sqlx::{AssertSqlSafe, FromRow, PgPool, postgres::PgConnectOptions};
     use ustr::Ustr;
 
+    use crate::position_reopen::{ReplayMode, check_netting_position_reopen};
+
     pub(crate) fn assert_entirely_equal<T: Serialize>(a: T, b: T) {
         let a_serialized = serde_json::to_string(&a).unwrap();
         let b_serialized = serde_json::to_string(&b).unwrap();
@@ -3719,6 +3721,27 @@ mod serial_tests {
         );
         cache.flush_db().unwrap();
         cache.dispose();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_netting_position_reopen_survives_cache_restart(
+        #[values(ReplayMode::Fresh, ReplayMode::Carry, ReplayMode::Corrected)] mode: ReplayMode,
+    ) {
+        let trader_id = TraderId::from(format!("reopen-{}", UUID4::new()));
+        let adapter = get_test_pg_cache_database_for_trader(trader_id)
+            .await
+            .unwrap();
+        let mut restarted = check_netting_position_reopen(
+            Box::new(adapter),
+            &PostgresCacheConfig::default(),
+            CacheConfig::default(),
+            trader_id,
+            mode,
+        )
+        .await;
+        restarted.flush().unwrap();
+        restarted.close().unwrap();
     }
 
     async fn get_test_pg_cache_database_for_trader(
