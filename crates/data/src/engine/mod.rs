@@ -92,9 +92,9 @@ use nautilus_common::{
         RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth, SubscribeCommand,
         SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
         UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeBookSnapshots,
-        UnsubscribeCommand, UnsubscribeInstrumentStatus, UnsubscribeOptionChain,
-        UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades, ensure_routable_bar_types,
-        ensure_routable_instrument_ids, is_parent_subscription, quote_routing,
+        UnsubscribeCommand, UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes,
+        UnsubscribeTrades, ensure_routable_bar_types, ensure_routable_instrument_ids,
+        is_parent_subscription, quote_routing,
     },
     msgbus::{
         self, BusPayloadType, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
@@ -214,12 +214,14 @@ pub struct DataEngine {
     continuous_future_subscriptions: AHashMap<BarType, ContinuousFutureSubscriptionState>,
     continuous_future_roller: Option<Rc<ContinuousFutureRoller>>,
     spread_quote_states: AHashMap<InstrumentId, SpreadQuoteState>,
-    option_chain_managers: AHashMap<OptionSeriesId, Rc<RefCell<OptionChainManager>>>,
+    option_chain_managers:
+        AHashMap<OptionSeriesId, IndexMap<UUID4, Rc<RefCell<OptionChainManager>>>>,
     option_chain_instrument_index: AHashMap<InstrumentId, OptionSeriesId>,
+    option_chain_instruments_expired: AHashSet<InstrumentId>,
     deferred_cmd_queue: DeferredCommandQueue,
     option_chain_bootstrapper: Option<Rc<OptionChainBootstrapper>>,
-    pending_option_chain_requests: AHashMap<UUID4, PendingOptionChainRequest>,
-    option_chain_greeks_bootstraps: AHashMap<OptionSeriesId, OptionChainGreeksBootstrap>,
+    pending_option_chain_requests: IndexMap<UUID4, PendingOptionChainRequest>,
+    option_chain_greeks_bootstraps: AHashMap<(OptionSeriesId, UUID4), OptionChainGreeksBootstrap>,
     synthetic_quote_feeds: AHashMap<InstrumentId, Vec<SyntheticInstrument>>,
     synthetic_trade_feeds: AHashMap<InstrumentId, Vec<SyntheticInstrument>>,
     subscribed_synthetic_quotes: AHashMap<InstrumentId, usize>,
@@ -298,9 +300,10 @@ impl DataEngine {
             spread_quote_states: AHashMap::new(),
             option_chain_managers: AHashMap::new(),
             option_chain_instrument_index: AHashMap::new(),
+            option_chain_instruments_expired: AHashSet::new(),
             deferred_cmd_queue: Rc::new(RefCell::new(VecDeque::new())),
             option_chain_bootstrapper: None,
-            pending_option_chain_requests: AHashMap::new(),
+            pending_option_chain_requests: IndexMap::new(),
             option_chain_greeks_bootstraps: AHashMap::new(),
             synthetic_quote_feeds: AHashMap::new(),
             synthetic_trade_feeds: AHashMap::new(),
@@ -529,6 +532,7 @@ impl DataEngine {
 
     /// Resets all registered data clients and clears engine state.
     pub fn reset(&mut self) {
+        self.unsubscribe_all_option_chains();
         self.is_stopped = false;
 
         for client in self.get_clients_mut() {
@@ -595,13 +599,15 @@ impl DataEngine {
 
     /// Disposes the engine, stopping all clients and canceling any timers.
     pub fn dispose(&mut self) {
+        self.unsubscribe_all_option_chains();
+
         for client in self.get_clients_mut() {
             if client.dispose().is_err() {
                 log::error!("Failed to dispose data client {}", client.client_id());
             }
         }
 
-        self.clear_option_chain_greeks_bootstraps();
+        self.clear_option_chain_managers();
 
         // Continuous-future source handlers live outside bar_aggregator_handlers,
         // so release them before dropping the aggregators
@@ -675,12 +681,14 @@ impl DataEngine {
         }
     }
 
-    /// Disconnects all registered data clients concurrently.
+    /// Releases all option chains, then disconnects registered data clients concurrently.
     ///
     /// # Errors
     ///
     /// Returns an error if any client fails to disconnect.
     pub async fn disconnect(&mut self) -> anyhow::Result<()> {
+        self.unsubscribe_all_option_chains();
+
         let futures: Vec<_> = self
             .get_clients_mut()
             .into_iter()
@@ -1318,8 +1326,8 @@ impl DataEngine {
     ) -> anyhow::Result<()> {
         let (dispatch, result) = match cmd {
             SubscribeCommand::OptionChain(command) => {
-                self.retain_external_option_chain(client_id, command, cmd);
-                (Some(cmd.clone()), Ok(()))
+                let acquired = self.retain_external_option_chain(client_id, command, cmd);
+                (acquired.then(|| cmd.clone()), Ok(()))
             }
             _ => self.prepare_external_subscribe(client_id, cmd),
         };
@@ -1441,6 +1449,11 @@ impl DataEngine {
     }
 
     fn unsubscribe_external(&mut self, client_id: ClientId, cmd: &UnsubscribeCommand) {
+        if let UnsubscribeCommand::OptionChain(command) = cmd {
+            self.unsubscribe_external_option_chain(client_id, command);
+            return;
+        }
+
         let mut releases = IndexMap::new();
 
         for member in split_unsubscribe(cmd) {

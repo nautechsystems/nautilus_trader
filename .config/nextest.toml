@@ -14,8 +14,9 @@ test-threads = 2
 slow-timeout = { period = "120s", terminate-after = 5 }
 
 [[profile.default.overrides]]
+# DeFi currency tests share Redis with tests that flush the whole database
 # Blockchain execution client tests use per-test PostgreSQL pools that can exhaust connections.
-filter = 'test(serial_tests) | (package(nautilus-blockchain) & test(execution::client::tests))'
+filter = 'test(serial_tests) | test(redis_tests) | (package(nautilus-blockchain) & test(execution::client::tests))'
 test-group = 'serial-tests'
 
 [[profile.default.overrides]]

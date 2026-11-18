@@ -233,9 +233,10 @@ self.unsubscribe_option_greeks(instrument_id, client_id=client_id)
 ### Option chain subscriptions
 
 An option chain subscription aggregates quotes and Greeks across all strikes in an option series into
-`OptionChainSlice` snapshots. The `DataEngine` creates one Rust `OptionChainManager` per series and owns its
-lifecycle. It creates the manager, routes incoming data, runs snapshot timers, and drains wire subscription
-changes.
+`OptionChainSlice` snapshots. The `DataEngine` creates an `OptionChainManager` for each actor's subscription.
+Actors subscribing to the same series keep independent strike ranges and snapshot intervals.
+The engine routes incoming data, runs snapshot timers, and manages quote, Greeks, and instrument status
+subscriptions to data clients.
 
 ```python
 from nautilus_trader.model import OptionSeriesId
@@ -262,6 +263,22 @@ def on_option_chain(self, chain) -> None:
         if call and call.greeks:
             self.log.info(f"Call {strike}: delta={call.greeks.delta:.4f}")
 ```
+
+- **Repeated subscribe**: Calls from the same actor for the same series retain the first configuration.
+  Unsubscribe before changing the range, interval, client, or `params`.
+- **Shared feeds**: Quote, Greeks, and instrument status feeds share ownership with other chains and direct
+  subscriptions. The first physical subscription determines `params` until the last owner releases it.
+- **Routing**: Wire subscription commands retain the selected client and `params`. Incoming data uses
+  instrument-based topics and is not isolated by client.
+- **Retirement**: Streamed `Close` and `NotAvailableForTrading` statuses, including backtest events, retire
+  contracts. Statuses from historical requests do not change chain membership. Retirements persist across
+  client replacement and disconnect; engine reset or disposal clears them. A streamed `Trading` status
+  restores eligibility for later definitions or subscriptions.
+- **Actor cleanup**: Actor unsubscribe, reset, fault, and disposal release only that actor's chain.
+- **Engine cleanup**: Client removal releases that client's chains and pending reference-price requests before
+  removing the adapter. Engine reset, disposal, and explicit disconnect remove all chain managers, handlers,
+  timers, pending requests, and wire subscription ownership. After engine-side cleanup, unsubscribe, then
+  subscribe again to resume the actor's chain.
 
 ### Strike range filtering
 
@@ -407,10 +424,16 @@ example in `crates/backtest/examples/`.
 
 ## Option chain architecture
 
-The option chain system is event-driven and built around per-series isolation. The
-`DataEngine` creates one Rust `OptionChainManager` per subscribed option series. The
-manager wraps `OptionChainAggregator` and `AtmTracker`, registers message bus handlers,
-publishes snapshots, and queues wire subscription changes for the engine to drain.
+The option chain system is event-driven. Its managers wrap `OptionChainAggregator` and `AtmTracker`, register
+message bus handlers, publish snapshots, and queue wire subscription changes for the `DataEngine` to drain.
+
+- **Rust owner identity**: A `SubscribeOptionChain` command's owner ID is its `correlation_id` when set,
+  otherwise its `command_id`.
+- **Rust delivery**: Register `register_option_chain_owner(command.owner_id(), handler)` to receive that
+  owner's slices. Call `unregister_option_chain_owner` when the owner retires.
+- **Rust release**: Set `UnsubscribeOptionChain.correlation_id` to the owner ID. Without it, an unsubscribe
+  releases the chain only when exactly one owner exists. Low-level external commands can move an existing
+  owner to another external client.
 
 ```mermaid
 flowchart TD
@@ -418,7 +441,7 @@ flowchart TD
         DE[DataEngine]
     end
 
-    subgraph "OptionChainManager (per series)"
+    subgraph "OptionChainManager (per subscription)"
         MGR[OptionChainManager]
         AGG[OptionChainAggregator]
         ATM[AtmTracker]
@@ -442,21 +465,21 @@ flowchart TD
 
 #### DataEngine
 
-Holds one `OptionChainManager` per active `OptionSeriesId`:
+Tracks subscription owners within each `OptionSeriesId`:
 
 - **Subscription**: on `SubscribeOptionChain`, it resolves instruments from the cache and requests a series
   reference price for dynamic strike ranges. It creates the manager, subscribes active instruments to the data
   client, and sets up the snapshot timer.
 - **Timer tick**: the manager checks for rebalances, publishes a snapshot, and queues any wire subscription
   changes for the engine to drain.
-- **Teardown**: on `UnsubscribeOptionChain` or when all instruments expire, it tears down the manager, cancels
-  the timer, and unsubscribes wire-level feeds.
+- **Teardown**: owner unsubscribe, series expiry, or expiry of the last contract removes the manager,
+  handlers, timer, and wire subscription ownership. Client and engine cleanup use the same ownership-release
+  rules.
 
 #### OptionChainManager
 
-A per-series Rust manager around `OptionChainAggregator` and `AtmTracker`. The `DataEngine` feeds it market
-data through `handle_quote()` and `handle_greeks()`. The manager bootstraps the active instrument set
-internally on the first ATM price.
+The `DataEngine` feeds the manager market data through `handle_quote()` and `handle_greeks()`. The manager
+bootstraps the active instrument set internally on the first ATM price.
 
 - **Snapshot mode**: timer callbacks call `publish_slice()`.
 - **Raw mode**: each active quote or Greeks update calls `publish_slice()` immediately.
@@ -482,8 +505,8 @@ determined until the ATM price is known. Two bootstrap paths are available:
 
 **Instant bootstrap (reference price available)**:
 
-1. `DataEngine` receives `SubscribeOptionChain`, resolves all instruments for the
-   series from the cache, and requests a reference price from the data client.
+1. `DataEngine` receives `SubscribeOptionChain`, resolves eligible instruments for the series from the cache,
+   excluding retirements, and requests a reference price from the data client.
 2. When the reference price response arrives, the engine creates the manager with
    the ATM price pre-seeded. The manager computes the active strike set during
    construction.

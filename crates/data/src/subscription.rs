@@ -44,7 +44,7 @@ pub(crate) enum SubscriptionKey {
     InstrumentStatus(InstrumentId),
     InstrumentClose(InstrumentId),
     OptionGreeks(InstrumentId),
-    OptionChain(OptionSeriesId),
+    OptionChain(OptionSeriesId, UUID4),
 }
 
 impl SubscriptionKey {
@@ -57,7 +57,7 @@ impl SubscriptionKey {
             SubscribeCommand::BookDeltas(command) => Self::BookDeltas(command.single_instrument_id().expect("ownership is keyed by one instrument")),
             SubscribeCommand::BookDepth(command) => Self::BookDepth(command.single_instrument_id().expect("ownership is keyed by one instrument")),
             SubscribeCommand::BookSnapshots(command) => Self::BookSnapshots(command.single_instrument_id().expect("ownership is keyed by one instrument"), command.interval_ms),
-            SubscribeCommand::OptionChain(command) => Self::OptionChain(command.series_id),
+            SubscribeCommand::OptionChain(command) => Self::OptionChain(command.series_id, command.owner_id()),
             SubscribeCommand::Quotes(command) => Self::Quotes(command.single_instrument_id().expect("quote ownership is keyed by one instrument")),
             SubscribeCommand::Trades(command) => Self::Trades(command.single_instrument_id().expect("trade ownership is keyed by one instrument")),
             SubscribeCommand::Bars(command) => Self::Bars(command.single_bar_type().expect("bar ownership is keyed by one type")),
@@ -79,7 +79,7 @@ impl SubscriptionKey {
             UnsubscribeCommand::BookDeltas(command) => Self::BookDeltas(command.single_instrument_id().expect("ownership is keyed by one instrument")),
             UnsubscribeCommand::BookDepth(command) => Self::BookDepth(command.single_instrument_id().expect("ownership is keyed by one instrument")),
             UnsubscribeCommand::BookSnapshots(command) => Self::BookSnapshots(command.single_instrument_id().expect("ownership is keyed by one instrument"), command.interval_ms),
-            UnsubscribeCommand::OptionChain(command) => Self::OptionChain(command.series_id),
+            UnsubscribeCommand::OptionChain(command) => Self::OptionChain(command.series_id, command.correlation_id.unwrap_or(command.command_id)),
             UnsubscribeCommand::Quotes(command) => Self::Quotes(command.single_instrument_id().expect("quote ownership is keyed by one instrument")),
             UnsubscribeCommand::Trades(command) => Self::Trades(command.single_instrument_id().expect("trade ownership is keyed by one instrument")),
             UnsubscribeCommand::Bars(command) => Self::Bars(command.single_bar_type().expect("bar ownership is keyed by one type")),

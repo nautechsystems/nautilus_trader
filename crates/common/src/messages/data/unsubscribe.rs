@@ -1231,6 +1231,8 @@ pub struct UnsubscribeOptionChain {
     pub venue: Option<Venue>,
     #[serde(default)]
     pub params: Option<Params>,
+    #[serde(default)]
+    pub correlation_id: Option<UUID4>,
 }
 
 impl UnsubscribeOptionChain {
@@ -1250,6 +1252,7 @@ impl UnsubscribeOptionChain {
             client_id,
             venue,
             params: None,
+            correlation_id: None,
         }
     }
 }

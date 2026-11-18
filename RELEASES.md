@@ -31,6 +31,8 @@ Released on TBD (UTC).
 - Removed `nautilus_cryptography::signing` and Python `nautilus_trader.cryptography`; use crypto libraries directly
 - Removed `nautilus-cryptography` features `python` and `extension-module`; drop them from dependent manifests
 - Renamed `CacheConfig.tick_capacity` to `data_capacity`; serialized configs must use the new key
+- Changed repeat option-chain subscribes from one actor to no-ops; unsubscribe before changing configuration
+- Changed `UnsubscribeOptionChain` literals; use `correlation_id: Some(owner_id)` (`None` requires a sole owner)
 - Changed `OptionContract` and `CryptoOption` literals and `build_checked` calls; pass `None` for the new fields
 - Changed PostgreSQL option underlying, exercise, settlement, and spread tick columns; run `nautilus database init`
 - Changed `BinaryOption` Parquet writes to require registered tick schemes; register custom schemes before saving
@@ -77,6 +79,9 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed option-chain subscribers replacing each other's managers and releasing shared feeds early
+- Fixed data client removal leaving option-chain managers, timers, and pending requests active
+- Fixed retired option contracts rejoining chains on later definitions or subscriptions
 - Fixed PostgreSQL `OptionSpread` reloads panicking and dropping `tick_scheme`
 - Fixed local catalog paths with `#`, `%`, or `?` in queries, migration, and run manifests
 - Fixed open-only order checks leaving closed venue orders unresolved after lost updates

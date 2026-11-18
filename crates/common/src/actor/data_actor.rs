@@ -2210,6 +2210,9 @@ pub trait DataActor {
 
     /// Subscribe to streaming [`OptionChainSlice`] snapshots for the option `series_id`.
     ///
+    /// Repeated subscriptions to the same series retain the first configuration.
+    /// Unsubscribe before changing the range, interval, client, or parameters.
+    ///
     /// The ATM price is always derived from the exchange-provided forward price
     /// embedded in each option greeks/ticker update.
     ///
@@ -2231,13 +2234,16 @@ pub trait DataActor {
         let actor_id = self.core().actor_id().inner();
         let topic = get_option_chain_topic(series_id);
 
-        let handler = TypedHandler::from(move |slice: &OptionChainSlice| {
-            if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
-                actor.handle_option_chain(slice);
-            } else {
-                log::error!("Actor {actor_id} not found for option chain handling");
-            }
-        });
+        let handler = TypedHandler::from_with_id(
+            format!("OptionChainActor({actor_id},{series_id})"),
+            move |slice: &OptionChainSlice| {
+                if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
+                    actor.handle_option_chain(slice);
+                } else {
+                    log::error!("Actor {actor_id} not found for option chain handling");
+                }
+            },
+        );
 
         DataActorCore::subscribe_option_chain(
             self.core_mut(),
@@ -3902,25 +3908,33 @@ impl DataActorCore {
         subscription.command
     }
 
-    pub(crate) fn set_option_chain_subscription(
+    pub(crate) fn add_option_chain_subscription(
         &mut self,
         topic: MStr<Topic>,
         handler: TypedHandler<OptionChainSlice>,
-        command: DataCommand,
-    ) {
-        if let Some(subscription) = self.option_chain_handlers.get_mut(&topic) {
-            subscription.command = Some(command);
-            return;
+        command: SubscribeOptionChain,
+    ) -> bool {
+        if self.option_chain_handlers.contains_key(&topic) {
+            log::warn!(
+                "Actor {} attempted duplicate option chain subscription to '{topic}'",
+                self.actor_id,
+            );
+            return false;
         }
 
+        let owner_id = command.owner_id();
         self.option_chain_handlers.insert(
             topic,
             Subscription {
                 handler: handler.clone(),
-                command: Some(command),
+                command: Some(DataCommand::Subscribe(SubscribeCommand::OptionChain(
+                    command,
+                ))),
             },
         );
-        msgbus::subscribe_option_chain(topic.into(), handler, None);
+
+        msgbus::register_option_chain_owner(owner_id, handler);
+        true
     }
 
     pub(crate) fn remove_option_chain_subscription(
@@ -3928,7 +3942,13 @@ impl DataActorCore {
         topic: MStr<Topic>,
     ) -> Option<DataCommand> {
         let subscription = self.option_chain_handlers.remove(&topic)?;
-        msgbus::unsubscribe_option_chain(topic.into(), &subscription.handler);
+
+        if let Some(DataCommand::Subscribe(SubscribeCommand::OptionChain(command))) =
+            &subscription.command
+        {
+            msgbus::unregister_option_chain_owner(command.owner_id());
+        }
+
         subscription.command
     }
 
@@ -4209,11 +4229,13 @@ impl DataActorCore {
             &mut commands,
             |topic, handler| msgbus::unsubscribe_option_greeks(topic.into(), handler),
         );
-        Self::drain_subscriptions(
-            std::mem::take(&mut self.option_chain_handlers),
-            &mut commands,
-            |topic, handler| msgbus::unsubscribe_option_chain(topic.into(), handler),
-        );
+        let mut topics: Vec<_> = self.option_chain_handlers.keys().copied().collect();
+        topics.sort_unstable_by(|left, right| left.as_ref().cmp(right.as_ref()));
+        for topic in topics {
+            if let Some(command) = self.remove_option_chain_subscription(topic) {
+                commands.push(command);
+            }
+        }
 
         #[cfg(feature = "defi")]
         self.unsubscribe_all_defi(&mut commands);
@@ -5645,6 +5667,8 @@ impl DataActorCore {
 
     /// Subscribes the actor to option chain snapshots.
     ///
+    /// Repeated subscriptions to the same series retain the first configuration.
+    ///
     /// # Errors
     ///
     /// Returns an error if the snapshot interval is zero.
@@ -5664,17 +5688,7 @@ impl DataActorCore {
     ) -> anyhow::Result<()> {
         self.check_registered();
 
-        let correlation_id = self
-            .option_chain_handlers
-            .get(&topic)
-            .and_then(|subscription| match subscription.command.as_ref() {
-                Some(DataCommand::Subscribe(SubscribeCommand::OptionChain(command))) => {
-                    Some(command.correlation_id.unwrap_or(command.command_id))
-                }
-                _ => None,
-            });
-
-        let mut subscribe = SubscribeOptionChain::new(
+        let subscribe = SubscribeOptionChain::new(
             series_id,
             strike_range,
             snapshot_interval_ms,
@@ -5685,11 +5699,12 @@ impl DataActorCore {
             params,
         )?;
 
-        subscribe.correlation_id = correlation_id;
-        let command = DataCommand::Subscribe(SubscribeCommand::OptionChain(subscribe));
+        if self.add_option_chain_subscription(topic, handler, subscribe.clone()) {
+            self.send_data_cmd(DataCommand::Subscribe(SubscribeCommand::OptionChain(
+                subscribe,
+            )));
+        }
 
-        self.set_option_chain_subscription(topic, handler, command.clone());
-        self.send_data_cmd(command);
         Ok(())
     }
 

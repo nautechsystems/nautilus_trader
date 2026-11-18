@@ -50,14 +50,14 @@ impl DataEngine {
         log::debug!("Registered client {client_id}");
     }
 
-    /// Deregisters the client for the `client_id`.
+    /// Deregisters the client for the `client_id`, releasing its option-chain ownership first.
     ///
     /// # Panics
     ///
     /// Panics if the client ID has not been registered.
     pub fn deregister_client(&mut self, client_id: &ClientId) {
         check_key_in_map(client_id, &self.clients, "client_id", "clients").expect(FAILED);
-
+        self.unsubscribe_option_chains_for_client(*client_id);
         if self.default_client_id.as_ref() == Some(client_id) {
             self.default_client_id = None;
         }
@@ -86,6 +86,10 @@ impl DataEngine {
         .expect(FAILED);
 
         let client_id = client.client_id();
+        if self.clients.contains_key(&client_id) {
+            self.unsubscribe_option_chains_for_client(client_id);
+        }
+
         self.clients.insert(client_id, client);
         self.default_client_id = Some(client_id);
         log::debug!("Registered default client {client_id}");
