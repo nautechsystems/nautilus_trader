@@ -275,19 +275,13 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                     continue;
                 };
 
-                if payload.get("event").and_then(|v| v.as_str()) == Some("challenge") {
-                    let response = json!({
-                        "event": "challenge",
-                        "message": "server-challenge",
-                    });
-
-                    if socket
-                        .send(Message::Text(response.to_string().into()))
+                if let Some(reply) = ws_reply(&payload)
+                    && socket
+                        .send(Message::Text(reply.to_string().into()))
                         .await
                         .is_err()
-                    {
-                        break;
-                    }
+                {
+                    break;
                 }
             }
             Message::Ping(data) => {
@@ -300,6 +294,33 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
             _ => {}
         }
     }
+}
+
+const SPOT_WS_VENUE_ORDER_ID: &str = "OWSADD-12345-ACCEPT";
+
+fn ws_reply(payload: &Value) -> Option<Value> {
+    if payload.get("event").and_then(Value::as_str) == Some("challenge") {
+        return Some(json!({
+            "event": "challenge",
+            "message": "server-challenge",
+        }));
+    }
+
+    if payload.get("method").and_then(Value::as_str) == Some("add_order") {
+        return Some(json!({
+            "method": "add_order",
+            "req_id": payload["req_id"],
+            "success": true,
+            "result": {
+                "order_id": SPOT_WS_VENUE_ORDER_ID,
+                "cl_ord_id": payload["params"]["cl_ord_id"],
+            },
+            "time_in": "2026-05-05T10:00:00.123Z",
+            "time_out": "2026-05-05T10:00:00.125Z",
+        }));
+    }
+
+    None
 }
 
 async fn handle_http_request(State(state): State<TestServerState>, req: Request) -> Response {
@@ -924,6 +945,18 @@ fn create_test_spot_execution_client(
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     Rc<RefCell<Cache>>,
 ) {
+    create_test_spot_execution_client_with(addr, |_| {})
+}
+
+/// As [`create_test_spot_execution_client`], with `configure` applied to the config.
+fn create_test_spot_execution_client_with(
+    addr: SocketAddr,
+    configure: impl FnOnce(&mut KrakenExecutionClientConfig),
+) -> (
+    KrakenSpotExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let core = ExecutionClientCore::new(
         test_trader_id(),
@@ -935,7 +968,9 @@ fn create_test_spot_execution_client(
         None,
         cache.clone(),
     );
-    let config = create_test_spot_exec_config(addr);
+
+    let mut config = create_test_spot_exec_config(addr);
+    configure(&mut config);
 
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     set_exec_event_sender(tx);
@@ -7054,6 +7089,41 @@ async fn test_spot_structured_submit_rejection_emits_rejected() {
         other => panic!("Expected OrderRejected event, was {other:?}"),
     }
     assert_eq!(state.submit_request_count.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[case::first_connect(0)]
+#[case::after_reconnect(1)]
+#[tokio::test]
+async fn test_spot_ws_order_response_reaches_engine(#[case] reconnects: usize) {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) =
+        create_test_spot_execution_client_with(addr, |config| config.use_ws_trade = true);
+    add_test_spot_account_to_cache(&cache);
+    client.connect().await.unwrap();
+    for _ in 0..reconnects {
+        client.disconnect().await.unwrap();
+        client.connect().await.unwrap();
+    }
+
+    let client_order_id = ClientOrderId::new("spot-ws-submit-001");
+    let order = add_spot_limit_order_to_cache(&cache, client_order_id);
+    client.submit_order(submit_order_command(&order)).unwrap();
+
+    let event = recv_until(&mut rx, |event| {
+        matches!(event, ExecutionEvent::Order(OrderEventAny::Accepted(_)))
+    })
+    .await;
+
+    let ExecutionEvent::Order(OrderEventAny::Accepted(accepted)) = event else {
+        panic!("Expected OrderAccepted event, was {event:?}");
+    };
+
+    assert_eq!(accepted.client_order_id, client_order_id);
+    assert_eq!(
+        accepted.venue_order_id,
+        VenueOrderId::from(SPOT_WS_VENUE_ORDER_ID)
+    );
 }
 
 #[rstest]

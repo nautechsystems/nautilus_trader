@@ -98,7 +98,7 @@ pub struct OrderRequestState {
     /// construction: `connect()` swaps the inner sender, and the
     /// post-`new()` placeholder's receiver is already dropped.
     cmd_tx_handle: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<SpotHandlerCommand>>>,
-    event_tx: tokio::sync::mpsc::UnboundedSender<OrderEventAny>,
+    event_tx: RwLock<tokio::sync::mpsc::UnboundedSender<OrderEventAny>>,
     dispatch_state: Arc<WsDispatchState>,
     trader_id: TraderId,
     account_id: AccountId,
@@ -132,7 +132,7 @@ impl OrderRequestState {
             pending: DashMap::new(),
             timeout,
             cmd_tx_handle,
-            event_tx,
+            event_tx: RwLock::new(event_tx),
             dispatch_state,
             trader_id,
             account_id,
@@ -399,6 +399,13 @@ impl OrderRequestState {
 
     pub(crate) fn reset_task_spawner(&self, task_spawner: TaskSpawner) {
         *self.task_spawner.write() = task_spawner;
+    }
+
+    pub(crate) fn reset_event_sender(
+        &self,
+        event_tx: tokio::sync::mpsc::UnboundedSender<OrderEventAny>,
+    ) {
+        *self.event_tx.write() = event_tx;
     }
 
     /// Sends a best-effort `cancel_order` over the WebSocket after a Submit or
@@ -791,14 +798,12 @@ impl OrderRequestState {
 
     /// Forwards an order event to the execution-engine channel.
     ///
-    /// A send failure means the receiver has been dropped, which only happens
-    /// during shutdown after the forwarder task has exited. Events lost in
-    /// that window are recovered on the next start by the reconciliation
-    /// engine (`open_check_interval_secs`), which queries the venue for any
-    /// orders or fills the local cache is missing. The error log preserves
-    /// operator visibility for the (rare) shutdown-race case.
+    /// Each connect installs a new channel, so a send fails only after a
+    /// session's forwarder task has exited and before the next connect. A
+    /// lost event is not replayed: the engine learns the order's state from
+    /// venue reports when reconciliation or open-order checks are enabled.
     fn send_event(&self, event: OrderEventAny) {
-        if let Err(e) = self.event_tx.send(event) {
+        if let Err(e) = self.event_tx.read().send(event) {
             log::error!("Kraken WS order-event channel send failed: {e}");
         }
     }

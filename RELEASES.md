@@ -104,6 +104,7 @@ Released on TBD (UTC).
 - Fixed Hyperliquid order queries missing orders closed before acceptance (#5650), thanks for reporting @AlphaTraderK
 - Fixed Kalshi trading with subaccount-restricted API keys (#5654), thanks for reporting @wangschien
 - Fixed Kraken Futures order reports missing post-only and IOC flags (#5628), thanks @zhaow-de
+- Fixed Kraken Spot WebSocket order events lost after the execution client disconnects and reconnects
 - Fixed Lighter trade and account order queries sending authorization tokens in URLs instead of headers
 - Fixed Lighter decoding rejecting whole responses and frames on unfamiliar venue enum values
 - Fixed Lighter metadata decoding rejecting binary-options markets and settlement statuses
