@@ -77,7 +77,10 @@ use tokio_util::sync::CancellationToken;
 use super::{
     NEW_MARKET_EMPTY_RECHECK_DELAY, NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS,
     effective_deltas::apply_snapshot_and_diff,
-    instruments::{InstrumentUpdateState, TokenMeta, apply_live_instrument},
+    instruments::{
+        InstrumentUpdateState, TokenMeta, accepted_current_instrument, apply_live_instrument,
+        reconcile_refreshed_watches,
+    },
     spawn_task,
 };
 use crate::{
@@ -849,7 +852,11 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 return;
             }
 
-            let gamma_client = ctx.gamma_client.clone();
+            let epoch_state = ctx.instrument_update_state.clone();
+            let gamma_client = ctx
+                .gamma_client
+                .with_epoch_capture(Arc::new(move || epoch_state.lock().metadata_epoch()));
+            let subscriptions = ctx.subscriptions.clone();
             let filters = ctx.filters.clone();
             let token_meta = ctx.subscriptions.token_meta.clone();
             let watchlist = ctx.subscriptions.watchlist.clone();
@@ -884,7 +891,6 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     }
                 };
 
-                let request_epoch = instrument_update_state.lock().metadata_epoch();
                 let result = if let Some(condition_id) = fetch_condition_id {
                     let mut attempt = 0usize;
 
@@ -957,21 +963,42 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
 
                 match result {
                     Ok(new_instruments) => {
+                        let conditions = new_instruments
+                            .iter()
+                            .filter_map(|instrument| extract_condition_id(&instrument.id()).ok())
+                            .collect();
+
                         for inst in new_instruments {
                             if cancellation.is_cancelled() {
                                 log::debug!("New market processing cancelled during shutdown");
                                 return;
                             }
 
-                            if !filters.iter().all(|f| f.accept(&inst)) {
+                            let request_epoch =
+                                gamma_client.instrument_epoch(&inst).unwrap_or_default();
+                            let selected = accepted_current_instrument(
+                                &instrument_update_state,
+                                &instruments,
+                                &inst,
+                                request_epoch,
+                                &filters,
+                                &cancellation,
+                            );
+
+                            if cancellation.is_cancelled() {
+                                return;
+                            }
+                            let Some((mut update_state, inst)) = selected else {
                                 log::debug!("New market instrument {} filtered out", inst.id());
                                 continue;
-                            }
+                            };
 
-                            if crate::data::runtime::is_instrument_expired_and_not_reported_open(
-                                &inst,
-                                clock.get_time_ns(),
-                            ) {
+                            if crate::filters::market_closed(&inst) == Some(true)
+                                || crate::data::runtime::is_instrument_expired_and_not_reported_open(
+                                    &inst,
+                                    clock.get_time_ns(),
+                                )
+                            {
                                 log::debug!(
                                     "Skipping expired new market instrument {} during cache update",
                                     inst.id()
@@ -979,13 +1006,6 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                                 continue;
                             }
 
-                            let mut update_state = instrument_update_state.lock();
-                            if update_state
-                                .newer_cached(&inst, &instruments, Some(request_epoch))
-                                .is_some()
-                            {
-                                continue;
-                            }
                             let instrument_id = inst.id();
                             apply_live_instrument(
                                 &closed_condition_ids,
@@ -1032,6 +1052,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                                 },
                             );
                         }
+                        reconcile_refreshed_watches(&subscriptions, &conditions).await;
                     }
                     Err(e) => {
                         log::warn!("Failed to fetch instruments for new market slug '{slug}': {e}");
@@ -2592,28 +2613,124 @@ mod tests {
     }
 
     #[rstest]
+    #[case::terminal(true, false, false, false, false)]
+    #[case::overlapping_definition(false, false, false, false, false)]
+    #[case::newer_definition(false, true, false, false, false)]
+    #[case::expired_closed_definition(false, true, true, false, false)]
+    #[case::future_closed_definition(false, false, true, false, false)]
+    #[case::expired_open_filtered_definition(false, true, false, true, false)]
+    #[case::retried_definition(false, false, false, false, true)]
     #[tokio::test]
-    async fn new_market_does_not_restore_terminal_condition_live_state() {
-        let market = gamma_market_recheck_fixture_value();
-        let state = ScriptedAutoLoadServerState::new(
-            vec![ScriptedAutoLoadReply::ok(serde_json::json!([market]))],
-            vec![],
-        );
+    async fn new_market_preserves_current_definition_and_status(
+        #[case] terminal: bool,
+        #[case] newer: bool,
+        #[case] closed: bool,
+        #[case] apply_filter: bool,
+        #[case] retry: bool,
+        #[values(false, true)] active: bool,
+    ) {
+        let mut market = gamma_market_recheck_fixture_value();
+        market["updatedAt"] = "2026-01-01T00:00:00Z".into();
+        market["endDate"] = "2098-01-01T00:00:00Z".into();
+        let end_date = match (newer || retry, closed || apply_filter) {
+            (true, true) => "2020-01-01T00:00:00Z",
+            (true, false) => "2099-01-01T00:00:00Z",
+            _ => "2098-01-01T00:00:00Z",
+        };
+        let release = Arc::new(tokio::sync::Semaphore::new(0));
+        let mut replies = vec![ScriptedAutoLoadReply::gated(
+            if retry {
+                serde_json::json!([])
+            } else {
+                serde_json::json!([market.clone()])
+            },
+            release.clone(),
+        )];
+
+        if retry {
+            let mut later = market.clone();
+            later["endDate"] = end_date.into();
+            replies.push(ScriptedAutoLoadReply::ok(serde_json::json!([later])));
+        }
+        let state = ScriptedAutoLoadServerState::new(replies, vec![]);
         let addr = start_scripted_auto_load_test_server(state.clone()).await;
         let (client, mut data_rx) = create_test_client(addr);
         let mut ctx = make_client_ws_ctx(&client);
         ctx.subscriptions.subscribe_new_markets = true;
-        client
-            .subscriptions
-            .closed_condition_ids
-            .lock()
-            .insert(TEST_CONDITION_ID.to_string());
+        let (ws_tx, _ws_rx) = tokio::sync::mpsc::unbounded_channel();
+        ctx.subscriptions.ws_client =
+            crate::websocket::pool::PolymarketMarketPoolHandle::test_single_shard(ws_tx, &[]);
+
+        if apply_filter {
+            ctx.filters = vec![Arc::new(PredicateFilter::not_expired(
+                ctx.clock.get_time_ns(),
+            ))];
+        }
+
+        if terminal {
+            client
+                .subscriptions
+                .closed_condition_ids
+                .lock()
+                .insert(TEST_CONDITION_ID.to_string());
+        }
 
         handle_market_message(
-            make_new_market_with_condition("terminal-condition", TEST_CONDITION_ID, true),
+            make_new_market_with_condition("current-condition", TEST_CONDITION_ID, active),
             &ctx,
         );
+        wait_until_async(
+            || async { !state.queries.lock().is_empty() },
+            StdDuration::from_secs(3),
+        )
+        .await;
 
+        if !terminal {
+            if !closed {
+                for mut instrument in instruments_from_gamma_fixture(market.clone()) {
+                    if let InstrumentAny::BinaryOption(binary) = &mut instrument {
+                        binary.expiration_ns = UnixNanos::from(1);
+                    }
+                    ctx.instruments.insert(instrument.id(), instrument.clone());
+                    assert!(ctx.subscriptions.add_resolution_subscription_intent(
+                        instrument.id(),
+                        super::super::subscriptions::SubscriptionKind::Status
+                    ));
+                }
+
+                for entry in ctx.subscriptions.watchlist.write().values_mut() {
+                    entry.paused = true;
+                }
+            }
+
+            if newer {
+                market["updatedAt"] = "2026-01-02T00:00:00Z".into();
+            }
+            market["endDate"] = if retry {
+                "2098-01-01T00:00:00Z"
+            } else {
+                end_date
+            }
+            .into();
+            market["closed"] = closed.into();
+            let (instruments, _) = crate::http::gamma::parse_markets_with_transient(
+                &[serde_json::from_value(market).unwrap()],
+                UnixNanos::default(),
+            );
+
+            for instrument in instruments {
+                assert!(apply_live_instrument(
+                    &ctx.subscriptions.closed_condition_ids,
+                    &mut ctx.instrument_update_state.lock(),
+                    &ctx.instruments,
+                    &ctx.subscriptions.token_meta,
+                    &ctx.subscriptions.watchlist,
+                    &instrument,
+                    |_| {}
+                ));
+            }
+        }
+        release.add_permits(1);
         wait_until_async(
             || {
                 let state = state.clone();
@@ -2626,9 +2743,53 @@ mod tests {
         )
         .await;
 
-        assert!(ctx.instruments.load().is_empty());
-        assert!(ctx.subscriptions.token_meta.is_empty());
-        assert!(data_rx.try_recv().is_err());
+        let events = std::iter::from_fn(|| data_rx.try_recv().ok()).collect::<Vec<_>>();
+
+        if terminal {
+            assert!(ctx.instruments.load().is_empty());
+            assert!(ctx.subscriptions.token_meta.is_empty());
+            assert!(events.is_empty());
+        } else {
+            let expected = end_date.parse::<UnixNanos>().unwrap();
+            assert_eq!(ctx.instruments.len(), 2);
+            assert_eq!(
+                ctx.subscriptions.ws_open_tokens.len(),
+                if closed { 0 } else { 2 }
+            );
+            assert!(
+                ctx.instruments
+                    .load()
+                    .values()
+                    .all(|instrument| instrument.expiration_ns() == Some(expected))
+            );
+            let published = events
+                .iter()
+                .filter_map(|event| match event {
+                    DataEvent::Data(NautilusData::Instrument(instrument)) => Some(instrument),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(published.len(), if closed || apply_filter { 0 } else { 2 });
+            assert!(
+                published
+                    .iter()
+                    .all(|instrument| instrument.expiration_ns() == Some(expected))
+            );
+            let statuses = events
+                .iter()
+                .filter_map(|event| match event {
+                    DataEvent::Data(NautilusData::InstrumentStatus(status)) => Some(status),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(statuses.len(), if closed || apply_filter { 0 } else { 2 });
+            assert!(statuses.iter().all(|status| status.action
+                == if active {
+                    MarketStatusAction::Trading
+                } else {
+                    MarketStatusAction::PreOpen
+                }));
+        }
     }
 
     #[rstest]
@@ -3140,11 +3301,6 @@ mod tests {
         })
         .await
         .expect("timed out waiting for instruments response");
-
-        if apply_filter && !explicit_scope {
-            assert!(response.data.is_empty());
-            return;
-        }
 
         let response_instrument = response
             .data

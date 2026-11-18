@@ -50,7 +50,7 @@ const RATE_LIMIT_HEADERS: [&str; 5] = [
 static SIGNER_LIMITERS: LazyLock<BlockingMutex<HashMap<String, Arc<PolymarketRateLimiter>>>> =
     LazyLock::new(|| BlockingMutex::new(HashMap::new()));
 
-/// Global REST quota for Polymarket Gamma API requests.
+/// Quota for additional retained-market Gamma lookups.
 pub static POLYMARKET_GAMMA_REST_QUOTA: LazyLock<Quota> =
     LazyLock::new(|| Quota::per_minute(NonZeroU32::new(HTTP_RATE_LIMIT).unwrap()));
 

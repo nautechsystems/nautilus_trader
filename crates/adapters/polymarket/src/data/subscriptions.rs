@@ -166,6 +166,7 @@ impl DataSubscriptions {
                 self.remove_resolution_subscription_intent(instrument_id, kind)
             }
             _ => {
+                let _guard = self.owner_lock.lock();
                 self.intent(kind).remove(&instrument_id);
                 resolve_token_id_from(&self.instruments, instrument_id).ok()
             }

@@ -27,7 +27,9 @@
 //!   lookups stop at one market per distinct ID, since a redundant cursor request
 //!   can exceed Gamma's URI limit (HTTP 414).
 
-use std::{collections::HashMap, future::Future, result::Result as StdResult, sync::Arc};
+use std::{
+    collections::HashMap, fmt::Debug, future::Future, result::Result as StdResult, sync::Arc,
+};
 
 use ahash::{AHashMap, AHashSet};
 use jiff::Timestamp;
@@ -36,7 +38,7 @@ use nautilus_core::{
     UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_model::instruments::InstrumentAny;
+use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_network::{
     http::{
         HttpClient, HttpClientError, HttpResponse, Method, create_standard_nautilus_headers,
@@ -74,6 +76,19 @@ enum GammaStop {
     CallerCapped,
 }
 
+struct RequestEpochs {
+    capture: Arc<dyn Fn() -> u64 + Send + Sync>,
+    // Raw buffers move unchanged through pagination, parsed copies are registered before return
+    by_payload: Mutex<AHashMap<usize, u64>>,
+}
+
+impl Debug for RequestEpochs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(RequestEpochs))
+            .finish_non_exhaustive()
+    }
+}
+
 /// Provides a raw HTTP client for the Polymarket Gamma API.
 ///
 /// Handles HTTP transport for fetching market data from the public Gamma API.
@@ -85,6 +100,8 @@ pub struct PolymarketGammaRawHttpClient {
     client: HttpClient,
     base_url: String,
     retry_manager: Arc<RetryManager<Error>>,
+    retained_refresh: bool,
+    epoch_capture: Option<Arc<RequestEpochs>>,
 }
 
 impl PolymarketGammaRawHttpClient {
@@ -125,6 +142,8 @@ impl PolymarketGammaRawHttpClient {
                 max_elapsed_ms: Some(180_000),
                 ..RetryConfig::default()
             })),
+            retained_refresh: false,
+            epoch_capture: None,
         })
     }
 
@@ -143,12 +162,11 @@ impl PolymarketGammaRawHttpClient {
         &self,
         path: &str,
         params: Option<&P>,
-    ) -> Result<T> {
+    ) -> Result<(T, Option<u64>)> {
         self.send_request(path, || {
             let url = self.url(path);
-            let keys = Some(vec!["gamma".to_string()]);
             self.client
-                .request_with_params(Method::GET, url, params, None, None, None, keys)
+                .request_with_params(Method::GET, url, params, None, None, None, None)
         })
         .await
     }
@@ -157,17 +175,16 @@ impl PolymarketGammaRawHttpClient {
         &self,
         path: &str,
         params: Option<&HashMap<String, Vec<String>>>,
-    ) -> Result<T> {
+    ) -> Result<(T, Option<u64>)> {
         self.send_request(path, || {
             let url = self.url(path);
-            let keys = Some(vec!["gamma".to_string()]);
             self.client
-                .request(Method::GET, url, params, None, None, None, keys)
+                .request(Method::GET, url, params, None, None, None, None)
         })
         .await
     }
 
-    async fn send_request<T, F, Fut>(&self, path: &str, mut request: F) -> Result<T>
+    async fn send_request<T, F, Fut>(&self, path: &str, mut request: F) -> Result<(T, Option<u64>)>
     where
         T: DeserializeOwned,
         F: FnMut() -> Fut,
@@ -181,9 +198,17 @@ impl PolymarketGammaRawHttpClient {
                 .invocation(
                     path,
                     || {
+                        let retry_after = &retry_after;
                         let response = request();
-                        async {
+                        async move {
                             *retry_after.lock() = None;
+
+                            // Waiting for quota must precede the freshness snapshot
+                            if self.retained_refresh {
+                                self.client.await_rate_limits(Some(&["gamma".into()])).await;
+                            }
+                            let epoch =
+                                self.epoch_capture.as_ref().map(|epochs| (epochs.capture)());
                             let response = response.await.map_err(Error::from_http_client)?;
                             *retry_after.lock() = response
                                 .headers
@@ -192,7 +217,7 @@ impl PolymarketGammaRawHttpClient {
                                 .filter(|delay| {
                                     dst::time::Instant::now().checked_add(*delay).is_some()
                                 });
-                            decode_response(&response)
+                            Ok((decode_response(&response)?, epoch))
                         }
                     },
                     Error::is_retryable,
@@ -208,6 +233,21 @@ impl PolymarketGammaRawHttpClient {
         .await
     }
 
+    fn record_market_epochs<'a>(
+        &self,
+        markets: impl IntoIterator<Item = &'a GammaMarket>,
+        epoch: Option<u64>,
+    ) {
+        if let (Some(epochs), Some(epoch)) = (&self.epoch_capture, epoch) {
+            epochs.by_payload.lock().extend(
+                markets
+                    .into_iter()
+                    .filter(|market| !market.raw.is_empty())
+                    .map(|market| (market.raw.as_ptr() as usize, epoch)),
+            );
+        }
+    }
+
     /// Fetches markets from the Gamma API.
     ///
     /// Handles both bare array and `{"data": [...]}` response schemas.
@@ -216,10 +256,12 @@ impl PolymarketGammaRawHttpClient {
         params: GetGammaMarketsParams,
     ) -> Result<Vec<GammaMarket>> {
         let query_params = gamma_markets_query_params(params)?;
-        let raw: Box<RawValue> = self
+        let (raw, epoch): (Box<RawValue>, _) = self
             .send_get_query_map("/markets", Some(&query_params))
             .await?;
-        parse_gamma_markets_response(&raw)
+        let markets = parse_gamma_markets_response(&raw)?;
+        self.record_market_epochs(&markets, epoch);
+        Ok(markets)
     }
 
     async fn get_gamma_markets_keyset(
@@ -233,20 +275,23 @@ impl PolymarketGammaRawHttpClient {
         if let Some(after_cursor) = after_cursor {
             query_params.insert("after_cursor".to_string(), vec![after_cursor.to_string()]);
         }
-        self.send_get_query_map("/markets/keyset", Some(&query_params))
-            .await
+        let (response, epoch): (GammaMarketsKeysetResponse, _) = self
+            .send_get_query_map("/markets/keyset", Some(&query_params))
+            .await?;
+        self.record_market_epochs(&response.markets, epoch);
+        Ok(response)
     }
 
     /// Fetches a single market by ID from the Gamma API.
     pub async fn get_gamma_market(&self, market_id: &str) -> Result<GammaMarket> {
         let path = format!("/markets/{market_id}");
-        self.send_get::<(), _>(&path, None::<&()>).await
+        Ok(self.send_get::<(), _>(&path, None::<&()>).await?.0)
     }
 
     /// Fetches a market from the Gamma API `GET /markets/slug/{slug}`.
     pub async fn get_gamma_market_by_slug(&self, slug: &str) -> Result<GammaMarket> {
         let path = format!("/markets/slug/{slug}");
-        self.send_get::<(), _>(&path, None::<&()>).await
+        Ok(self.send_get::<(), _>(&path, None::<&()>).await?.0)
     }
 
     /// Fetches events from the Gamma API `GET /events?slug=`.
@@ -256,14 +301,19 @@ impl PolymarketGammaRawHttpClient {
             slug: &'a str,
         }
         let params = EventSlugParams { slug };
-        self.send_get("/events", Some(&params)).await
+        let (events, epoch): (Vec<GammaEvent>, _) = self.send_get("/events", Some(&params)).await?;
+        self.record_market_epochs(events.iter().flat_map(|event| &event.markets), epoch);
+        Ok(events)
     }
 
     /// Fetches events from the Gamma API `GET /events` with full query params.
     pub async fn get_gamma_events(&self, params: GetGammaEventsParams) -> Result<Vec<GammaEvent>> {
         let query_params = gamma_events_query_params(params)?;
-        self.send_get_query_map("/events", Some(&query_params))
-            .await
+        let (events, epoch): (Vec<GammaEvent>, _) = self
+            .send_get_query_map("/events", Some(&query_params))
+            .await?;
+        self.record_market_epochs(events.iter().flat_map(|event| &event.markets), epoch);
+        Ok(events)
     }
 
     async fn get_gamma_events_keyset(
@@ -277,18 +327,36 @@ impl PolymarketGammaRawHttpClient {
         if let Some(after_cursor) = after_cursor {
             query_params.insert("after_cursor".to_string(), vec![after_cursor.to_string()]);
         }
-        self.send_get_query_map("/events/keyset", Some(&query_params))
-            .await
+        let (response, epoch): (GammaEventsKeysetResponse, _) = self
+            .send_get_query_map("/events/keyset", Some(&query_params))
+            .await?;
+        self.record_market_epochs(
+            response.events.iter().flat_map(|event| &event.markets),
+            epoch,
+        );
+        Ok(response)
     }
 
     /// Fetches available tags from the Gamma API `GET /tags`.
     pub async fn get_gamma_tags(&self) -> Result<Vec<GammaTag>> {
-        self.send_get::<(), _>("/tags", None::<&()>).await
+        Ok(self.send_get::<(), _>("/tags", None::<&()>).await?.0)
     }
 
     /// Searches the Gamma API via `GET /public-search`.
     pub async fn get_public_search(&self, params: GetSearchParams) -> Result<SearchResponse> {
-        self.send_get("/public-search", Some(&params)).await
+        let (response, epoch): (SearchResponse, _) =
+            self.send_get("/public-search", Some(&params)).await?;
+        self.record_market_epochs(
+            response.markets.iter().flatten().chain(
+                response
+                    .events
+                    .iter()
+                    .flatten()
+                    .flat_map(|event| &event.markets),
+            ),
+            epoch,
+        );
+        Ok(response)
     }
 }
 
@@ -419,6 +487,14 @@ pub(crate) fn parse_markets_with_transient(
     markets: &[GammaMarket],
     ts_init: UnixNanos,
 ) -> (Vec<InstrumentAny>, Vec<String>) {
+    parse_markets_with_observer(markets, ts_init, |_, _| {})
+}
+
+fn parse_markets_with_observer(
+    markets: &[GammaMarket],
+    ts_init: UnixNanos,
+    mut observe: impl FnMut(&GammaMarket, &InstrumentAny),
+) -> (Vec<InstrumentAny>, Vec<String>) {
     let mut instruments = Vec::new();
     let mut transient = Vec::new();
 
@@ -440,11 +516,13 @@ pub(crate) fn parse_markets_with_transient(
             Ok(defs) => {
                 for def in defs {
                     match create_instrument_from_def(&def, ts_init) {
-                        Ok(InstrumentAny::BinaryOption(mut binary)) => {
-                            set_market_closed(&mut binary, def.closed);
-                            instruments.push(InstrumentAny::BinaryOption(binary));
+                        Ok(mut instrument) => {
+                            if let InstrumentAny::BinaryOption(binary) = &mut instrument {
+                                set_market_closed(binary, def.closed);
+                            }
+                            observe(market, &instrument);
+                            instruments.push(instrument);
                         }
-                        Ok(other) => instruments.push(other),
                         Err(e) => log::warn!("Failed to create instrument: {e}"),
                     }
                 }
@@ -567,6 +645,59 @@ impl PolymarketGammaHttpClient {
         &self.retry_manager
     }
 
+    // Bound added lookups without throttling bootstrap, discovery, or explicit requests
+    pub(crate) fn for_retained_refresh(&self) -> Self {
+        let mut client = self.clone();
+        Arc::make_mut(&mut client.inner).retained_refresh = true;
+        client
+    }
+
+    pub(crate) fn with_epoch_capture(&self, capture: Arc<dyn Fn() -> u64 + Send + Sync>) -> Self {
+        let mut client = self.clone();
+        Arc::make_mut(&mut client.inner).epoch_capture = Some(Arc::new(RequestEpochs {
+            capture,
+            by_payload: Mutex::default(),
+        }));
+        client
+    }
+
+    fn payload_epoch(&self, payload: &str) -> Option<u64> {
+        self.inner
+            .epoch_capture
+            .as_ref()?
+            .by_payload
+            .lock()
+            .get(&(payload.as_ptr() as usize))
+            .copied()
+    }
+
+    pub(crate) fn market_epoch(&self, market: &GammaMarket) -> Option<u64> {
+        self.payload_epoch(&market.raw)
+    }
+
+    pub(crate) fn instrument_epoch(&self, instrument: &InstrumentAny) -> Option<u64> {
+        self.payload_epoch(instrument.info()?.get_str("gamma_market")?)
+    }
+
+    fn parse_markets(
+        &self,
+        markets: &[GammaMarket],
+        ts_init: UnixNanos,
+    ) -> (Vec<InstrumentAny>, Vec<String>) {
+        parse_markets_with_observer(markets, ts_init, |market, instrument| {
+            if let Some(epochs) = &self.inner.epoch_capture
+                && let Some(raw) = instrument
+                    .info()
+                    .and_then(|info| info.get_str("gamma_market"))
+            {
+                let mut values = epochs.by_payload.lock();
+                if let Some(epoch) = values.get(&(market.raw.as_ptr() as usize)).copied() {
+                    values.insert(raw.as_ptr() as usize, epoch);
+                }
+            }
+        })
+    }
+
     /// Fetches markets from the Gamma API with the given base params, paginating automatically.
     async fn fetch_gamma_markets_paginated(
         &self,
@@ -634,7 +765,7 @@ impl PolymarketGammaHttpClient {
         let mut markets = self.fetch_all_gamma_markets().await?;
         enrich_markets(&mut markets);
         let ts_init = self.clock.get_time_ns();
-        let instruments = parse_markets_to_instruments(&markets, ts_init);
+        let instruments = self.parse_markets(&markets, ts_init).0;
         log::debug!("Parsed {} instruments from Gamma API", instruments.len());
         Ok(instruments)
     }
@@ -686,7 +817,7 @@ impl PolymarketGammaHttpClient {
             }
 
             enrich_markets(&mut markets);
-            instruments.extend(parse_markets_to_instruments(&markets, ts_init));
+            instruments.extend(self.parse_markets(&markets, ts_init).0);
         }
 
         if succeeded == 0 && total_slugs > 0 {
@@ -762,7 +893,7 @@ impl PolymarketGammaHttpClient {
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         enrich_markets(&mut markets);
-        Ok(parse_markets_to_instruments(&markets, ts_init))
+        Ok(self.parse_markets(&markets, ts_init).0)
     }
 
     /// Fetches instruments from event slugs concurrently.
@@ -803,7 +934,7 @@ impl PolymarketGammaHttpClient {
             }
 
             enrich_markets(&mut markets);
-            instruments.extend(parse_markets_to_instruments(&markets, ts_init));
+            instruments.extend(self.parse_markets(&markets, ts_init).0);
         }
 
         if succeeded == 0 && total > 0 {
@@ -822,12 +953,19 @@ impl PolymarketGammaHttpClient {
         &self,
         base_params: GetGammaMarketsParams,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
-        let mut markets = self.fetch_gamma_markets_paginated(base_params).await?;
+        let markets = self.fetch_gamma_markets_paginated(base_params).await?;
+        Ok(self.instruments_from_markets(markets))
+    }
+
+    pub(crate) fn instruments_from_markets(
+        &self,
+        mut markets: Vec<GammaMarket>,
+    ) -> Vec<InstrumentAny> {
         enrich_markets(&mut markets);
         let ts_init = self.clock.get_time_ns();
-        let instruments = parse_markets_to_instruments(&markets, ts_init);
+        let instruments = self.parse_markets(&markets, ts_init).0;
         log::debug!("Parsed {} instruments from params query", instruments.len());
-        Ok(instruments)
+        instruments
     }
 
     /// Fetches supported instruments and condition IDs awaiting outcome IDs.
@@ -854,7 +992,7 @@ impl PolymarketGammaHttpClient {
 
         enrich_markets(&mut markets);
         let ts_init = self.clock.get_time_ns();
-        let (instruments, transient) = parse_markets_with_transient(&markets, ts_init);
+        let (instruments, transient) = self.parse_markets(&markets, ts_init);
         log::debug!(
             "Parsed {} instruments and {} transient condition_id(s) from params query",
             instruments.len(),
@@ -978,7 +1116,7 @@ impl PolymarketGammaHttpClient {
 
         enrich_markets(&mut markets);
         let ts_init = self.clock.get_time_ns();
-        let instruments = parse_markets_to_instruments(&markets, ts_init);
+        let instruments = self.parse_markets(&markets, ts_init).0;
         log::debug!(
             "Parsed {} instruments from event query '{event_slug}'",
             instruments.len()
@@ -1045,7 +1183,7 @@ impl PolymarketGammaHttpClient {
         let mut markets = flatten_event_markets(events);
         let total_markets = markets.len();
         enrich_markets(&mut markets);
-        let instruments = parse_markets_to_instruments(&markets, ts_init);
+        let instruments = self.parse_markets(&markets, ts_init).0;
         log::debug!(
             "Parsed {} instruments from {total_events} events ({total_markets} markets)",
             instruments.len(),
@@ -1074,13 +1212,13 @@ impl PolymarketGammaHttpClient {
         if let Some(markets) = response.markets {
             let mut markets = markets;
             enrich_markets(&mut markets);
-            instruments.extend(parse_markets_to_instruments(&markets, ts_init));
+            instruments.extend(self.parse_markets(&markets, ts_init).0);
         }
 
-        if let Some(events) = &response.events {
-            let mut event_markets = flatten_event_markets(events.clone());
+        if let Some(events) = response.events {
+            let mut event_markets = flatten_event_markets(events);
             enrich_markets(&mut event_markets);
-            instruments.extend(parse_markets_to_instruments(&event_markets, ts_init));
+            instruments.extend(self.parse_markets(&event_markets, ts_init).0);
         }
 
         log::debug!("Parsed {} instruments from search query", instruments.len());
@@ -1140,12 +1278,14 @@ fn parse_gamma_markets_response(raw: &RawValue) -> Result<Vec<GammaMarket>> {
 #[cfg(test)]
 mod tests {
     use std::{
+        num::NonZeroU32,
         sync::atomic::{AtomicUsize, Ordering},
         time::Duration,
     };
 
     use nautilus_common::cache::Cache;
     use nautilus_model::instruments::Instrument;
+    use nautilus_network::ratelimiter::quota::Quota;
     use rstest::rstest;
     use rust_decimal_macros::dec;
     use serde_json::from_str;
@@ -1160,8 +1300,73 @@ mod tests {
     };
 
     #[rstest]
+    #[tokio::test]
+    async fn retained_quota_preserves_foreground_capacity() {
+        let app = axum::Router::new().route(
+            "/markets/keyset",
+            axum::routing::get(|| async {
+                let market: Value = serde_json::from_str(include_str!(
+                    "../../test_data/gamma_market_metadata.json"
+                ))
+                .unwrap();
+                axum::Json(serde_json::json!({"markets": [market], "next_cursor": null}))
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let epoch = Arc::new(AtomicUsize::new(0));
+        let mut client = PolymarketGammaHttpClient::new(
+            Some(format!("http://{addr}")),
+            1,
+            RetryConfig::default(),
+        )
+        .unwrap()
+        .with_epoch_capture(Arc::new({
+            let epoch = epoch.clone();
+            move || epoch.load(Ordering::SeqCst) as u64
+        }));
+        Arc::make_mut(&mut client.inner).client = HttpClient::builder()
+            .default_quota(Quota::per_second(NonZeroU32::new(1).unwrap()).unwrap())
+            .build()
+            .unwrap();
+        client
+            .inner
+            .client
+            .await_rate_limits(Some(&[ustr::Ustr::from("gamma")]))
+            .await;
+        let retained = client.for_retained_refresh();
+        let background = retained.request_markets_by_params(GetGammaMarketsParams::default());
+        tokio::pin!(background);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), &mut background)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            tokio::time::timeout(
+                Duration::from_millis(250),
+                client.request_markets_by_params(GetGammaMarketsParams::default())
+            )
+            .await
+            .unwrap()
+            .unwrap()
+            .len(),
+            1
+        );
+        epoch.store(7, Ordering::SeqCst);
+        let markets = tokio::time::timeout(Duration::from_secs(3), &mut background)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(retained.market_epoch(&markets[0]), Some(7));
+        server.abort();
+    }
+
+    #[rstest]
     #[tokio::test(start_paused = true)]
     async fn test_http_policy_is_independent_of_indexing_policy() {
+        let attempts = Arc::new(AtomicUsize::new(0));
         let client = PolymarketGammaHttpClient::new(
             None,
             90,
@@ -1173,14 +1378,18 @@ mod tests {
                 ..RetryConfig::default()
             },
         )
-        .unwrap();
-        let attempts = AtomicUsize::new(0);
+        .unwrap()
+        .with_epoch_capture(Arc::new({
+            let attempts = attempts.clone();
+            move || attempts.load(Ordering::Relaxed) as u64
+        }));
         let started = tokio::time::Instant::now();
-        let tags: Vec<GammaTag> = client
+        let (tags, epoch): (Vec<GammaTag>, _) = client
             .inner
             .send_request("/tags", || {
-                let attempt = attempts.fetch_add(1, Ordering::Relaxed);
+                let attempts = attempts.clone();
                 async move {
+                    let attempt = attempts.fetch_add(1, Ordering::Relaxed);
                     if attempt == 0 {
                         return Err(HttpClientError::TransportError("reset".to_string()));
                     }
@@ -1197,6 +1406,7 @@ mod tests {
             .unwrap();
 
         assert!(tags.is_empty());
+        assert_eq!(epoch, Some(1));
         assert_eq!(attempts.load(Ordering::Relaxed), 2);
         assert!(started.elapsed() >= Duration::from_secs(66));
     }
@@ -1410,6 +1620,9 @@ mod tests {
     fn test_event_metadata_shares_storage_across_instruments_and_clones(
         #[case] market_count: usize,
     ) {
+        let client = PolymarketGammaHttpClient::new(None, 20, RetryConfig::default())
+            .unwrap()
+            .with_epoch_capture(Arc::new(|| 7));
         let mut events: Vec<GammaEvent> =
             serde_json::from_str(include_str!("../../test_data/gamma_event.json")).unwrap();
         let mut event = events.remove(0);
@@ -1429,8 +1642,9 @@ mod tests {
             .collect();
 
         let expected = event.raw.clone();
+        client.inner.record_market_epochs(&event.markets, Some(7));
         let markets = flatten_event_markets(vec![event]);
-        let (instruments, transient) = parse_markets_with_transient(&markets, 1.into());
+        let (instruments, transient) = client.parse_markets(&markets, 1.into());
         let event = instruments[0].info().unwrap().get("gamma_event").unwrap();
         let mut pointers = std::collections::HashSet::new();
         let mut cache = Cache::default();
@@ -1443,6 +1657,7 @@ mod tests {
             cache.add_instrument(instrument.clone()).unwrap();
             let cloned = cache.instrument(&instrument.id()).unwrap().clone();
             for instrument in [instrument, &cloned] {
+                assert_eq!(client.instrument_epoch(instrument), Some(7));
                 let info = instrument.info().unwrap();
                 let value = info.get("gamma_event").unwrap();
                 pointers.insert(value.as_str().unwrap().as_ptr());

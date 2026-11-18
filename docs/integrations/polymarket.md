@@ -2800,6 +2800,20 @@ The same composition applies to periodic refreshes driven by `update_instruments
 Scopes configured at startup keep refreshing for the client's lifetime, so bootstrap and refresh
 universes match.
 
+When `update_instruments_interval_mins` is positive, a separate refresh loop also looks up markets
+tracked by subscriptions or existing position watches, even after they leave discovery filters.
+Cached instruments alone do not trigger these extra lookups. Setting the interval to `None` or `0`
+disables both refresh loops.
+
+Tracked lookups batch up to 100 condition IDs and retry omitted conditions with `closed=true`.
+They share a 100-request-per-minute quota across clones of the Gamma client, including HTTP retries.
+Bootstrap, discovery, and explicit requests do not consume this additional-traffic quota. Each batch
+is applied before the next request, and instruments whose last owner disappeared are discarded.
+
+Closure updates both cached outcomes. Unresolved watches continue receiving deadline corrections
+after closure, and extending a deadline resumes paused resolution polling at the corrected expiry
+plus its configured grace period. Refreshes preserve live WebSocket tick sizes and terminal states.
+
 #### Markets awaiting CLOB metadata
 
 Gamma can report a newly listed market before usable outcome IDs are available, or omit it from a

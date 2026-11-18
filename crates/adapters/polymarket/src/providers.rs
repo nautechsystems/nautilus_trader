@@ -446,21 +446,16 @@ pub async fn fetch_configured_instruments(
         .0)
 }
 
-/// Also returns closing outcomes and IDs exempt from discovery predicates.
+/// Also returns closing outcomes rejected by discovery predicates.
 pub(crate) async fn fetch_configured_with_closed(
     http_client: &PolymarketGammaHttpClient,
     config: &PolymarketInstrumentProviderConfig,
     filters: &[Arc<dyn InstrumentFilter>],
-) -> anyhow::Result<(
-    Vec<InstrumentAny>,
-    Vec<InstrumentAny>,
-    AHashSet<InstrumentId>,
-)> {
+) -> anyhow::Result<(Vec<InstrumentAny>, Vec<InstrumentAny>)> {
     config.validate()?;
 
     let mut instruments = Vec::new();
     let mut closed = Vec::new();
-    let mut filtered_len = 0;
 
     if has_bootstrap_scope(config, filters) {
         let has_explicit_scope = config.has_explicit_scope();
@@ -485,7 +480,6 @@ pub(crate) async fn fetch_configured_with_closed(
             let (filtered, closing) = fetch_instruments_with_closed(http_client, filters).await?;
             instruments.extend(filtered);
             closed = closing;
-            filtered_len = instruments.len();
         } else if let Some(map) = config.filters.as_ref().filter(|map| !map.is_empty()) {
             let params = build_gamma_params_from_hashmap(map)?;
             instruments.extend(http_client.request_instruments_by_params(params).await?);
@@ -542,15 +536,6 @@ pub(crate) async fn fetch_configured_with_closed(
         }
     }
 
-    let unfiltered_ids = if filters.is_empty() {
-        AHashSet::new()
-    } else {
-        instruments[filtered_len..]
-            .iter()
-            .map(|instrument| instrument.id())
-            .collect()
-    };
-
     // Deduplicated but NOT filtered by `accept` here. `fetch_instruments` already
     // applies acceptance to the results of filter-driven queries, which is the only
     // place it belongs: applying it again across the whole collection would let a
@@ -559,7 +544,8 @@ pub(crate) async fn fetch_configured_with_closed(
     // instruments the bootstrap had loaded.
     let mut seen = AHashSet::new();
     instruments.retain(|inst| seen.insert(inst.id()));
-    Ok((instruments, closed, unfiltered_ids))
+    closed.retain(|instrument| !seen.contains(&instrument.id()));
+    Ok((instruments, closed))
 }
 
 // Registered filters live on the provider, not the config, so the config predicate alone cannot

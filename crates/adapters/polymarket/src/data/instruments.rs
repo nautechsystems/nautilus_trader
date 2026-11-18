@@ -28,6 +28,8 @@ use nautilus_model::{
 };
 use parking_lot::{Mutex, MutexGuard};
 use rust_decimal::Decimal;
+use serde::Deserialize;
+use serde_json::value::RawValue;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -35,7 +37,7 @@ use super::{
     DataSubscriptions, PolymarketDataClient, runtime::is_instrument_expired_and_not_reported_open,
 };
 use crate::{
-    common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE,
+    common::{consts::GAMMA_CONDITION_IDS_BATCH_SIZE, parse::validate_data_market_version},
     filters::{
         InstrumentFilter, binary_market_closed, is_expired, market_closed, set_market_closed,
     },
@@ -64,6 +66,14 @@ struct LiveTick {
     ts_event: UnixNanos,
 }
 
+#[derive(Debug)]
+pub(super) struct EventMetadata {
+    // Keep the source alive so its address cannot be reused within a batch
+    _source: Arc<serde_json::Value>,
+    event: Arc<GammaEvent>,
+    markets: AHashMap<String, Option<Params>>,
+}
+
 #[derive(Debug, Default)]
 pub(super) struct InstrumentUpdateState {
     live_ticks: AHashMap<Ustr, LiveTick>,
@@ -81,15 +91,49 @@ impl InstrumentUpdateState {
         &mut self,
         pending: &[InstrumentAny],
         instruments: &AtomicMap<InstrumentId, InstrumentAny>,
-    ) {
+    ) -> bool {
         let cached = instruments.load();
-        self.metadata_epochs.retain(|id, _| cached.contains_key(id));
+        let mut compared_events = AHashMap::new();
+        let mut recorded = false;
+
         for instrument in pending {
             if cached.get(&instrument.id()).is_some_and(|current| {
-                current.info() == instrument.info()
-                    && current.expiration_ns() == instrument.expiration_ns()
+                current.expiration_ns() == instrument.expiration_ns()
+                    && match (current.info(), instrument.info()) {
+                        (Some(current), Some(incoming)) => {
+                            current.len() == incoming.len()
+                                && incoming.borrowed_entries().all(|(key, value)| {
+                                    let Some(previous) = current.get(key) else {
+                                        return false;
+                                    };
+
+                                    if std::ptr::eq(previous, value) {
+                                        return true;
+                                    }
+
+                                    if key == "gamma_event" {
+                                        let pair = (
+                                            std::ptr::from_ref(previous),
+                                            std::ptr::from_ref(value),
+                                        );
+                                        *compared_events
+                                            .entry(pair)
+                                            .or_insert_with(|| previous == value)
+                                    } else {
+                                        previous == value
+                                    }
+                                })
+                        }
+                        (None, None) => true,
+                        _ => false,
+                    }
             }) {
                 continue;
+            }
+
+            if !recorded {
+                self.metadata_epochs.retain(|id, _| cached.contains_key(id));
+                recorded = true;
             }
             self.metadata_epoch = self
                 .metadata_epoch
@@ -98,6 +142,7 @@ impl InstrumentUpdateState {
             self.metadata_epochs
                 .insert(instrument.id(), self.metadata_epoch);
         }
+        recorded
     }
 
     pub(super) fn newer_cached(
@@ -107,17 +152,29 @@ impl InstrumentUpdateState {
         request_epoch: Option<u64>,
     ) -> Option<InstrumentAny> {
         fn revision(instrument: &InstrumentAny) -> Option<Timestamp> {
-            serde_json::from_str::<serde_json::Value>(instrument.info()?.get_str("gamma_market")?)
+            #[derive(Deserialize)]
+            struct Revision {
+                #[serde(rename = "updatedAt")]
+                updated_at: Option<String>,
+            }
+            serde_json::from_str::<Revision>(instrument.info()?.get_str("gamma_market")?)
                 .ok()?
-                .get("updatedAt")?
-                .as_str()?
+                .updated_at?
                 .parse()
                 .ok()
         }
 
         let cached = instruments.load();
         let cached = cached.get(&incoming.id())?;
-        let newer = match revision(incoming).zip(revision(cached)) {
+        let same_market = incoming
+            .info()
+            .and_then(|info| info.get("gamma_market"))
+            .zip(cached.info().and_then(|info| info.get("gamma_market")))
+            .is_some_and(|(incoming, cached)| std::ptr::eq(incoming, cached));
+        let revisions = (!same_market)
+            .then(|| revision(incoming).zip(revision(cached)))
+            .flatten();
+        let newer = match revisions {
             Some((incoming, cached)) if incoming != cached => incoming < cached,
             // Equal or absent venue revisions cannot order overlapping HTTP responses
             _ => request_epoch.is_some_and(|epoch| {
@@ -163,7 +220,7 @@ impl InstrumentUpdateState {
         &self,
         instrument: &InstrumentAny,
         instruments: &AtomicMap<InstrumentId, InstrumentAny>,
-        event_metadata: &mut AHashMap<usize, (Arc<serde_json::Value>, Arc<GammaEvent>)>,
+        event_metadata: &mut AHashMap<usize, EventMetadata>,
     ) -> anyhow::Result<InstrumentAny> {
         let token_id = Ustr::from(instrument.raw_symbol().as_str());
         let mut instrument = match self.live_ticks.get(&token_id) {
@@ -187,47 +244,60 @@ impl InstrumentUpdateState {
             && previous_info.get_str("gamma_event").is_some()
             && let Some(raw_market) = info.get_str("gamma_market")
         {
-            let mut market: GammaMarket = serde_json::from_str(raw_market)?;
-            if market.events.as_ref().is_some_and(|events| {
-                events
-                    .iter()
-                    .any(|event| Some(Ustr::from(event.id.as_str())) != previous.event_id)
-            }) {
-                return Ok(instrument);
-            }
-
-            let mut info = info.to_shared_map();
             let previous_info = previous_info.to_shared_map();
             let raw_event = Arc::clone(previous_info.get("gamma_event").unwrap());
             let event_key = Arc::as_ptr(&raw_event) as usize;
-            let event = if let Some((_, event)) = event_metadata.get(&event_key) {
-                Arc::clone(event)
-            } else {
-                let mut event: GammaEvent = serde_json::from_str(raw_event.as_str().unwrap())?;
-                event.markets = Vec::new();
-                event.raw = String::new();
-                let event = Arc::new(event);
-                // Retain the source so its address cannot be reused within this batch
-                event_metadata.insert(event_key, (raw_event, Arc::clone(&event)));
-                event
+            if let std::collections::hash_map::Entry::Vacant(entry) =
+                event_metadata.entry(event_key)
+            {
+                // Only parent context is needed; do not deserialize its embedded market catalog
+                let mut fields: AHashMap<String, &RawValue> =
+                    serde_json::from_str(raw_event.as_str().unwrap())?;
+                fields.remove("markets");
+                let mut event: GammaEvent = serde_json::from_str(&serde_json::to_string(&fields)?)?;
+                event.raw.clear();
+                entry.insert(EventMetadata {
+                    _source: raw_event,
+                    event: Arc::new(event),
+                    markets: AHashMap::new(),
+                });
+            }
+            let metadata = event_metadata.get_mut(&event_key).unwrap();
+            if !metadata.markets.contains_key(raw_market) {
+                let mut market: GammaMarket = serde_json::from_str(raw_market)?;
+                let compatible = market.events.as_ref().is_none_or(|events| {
+                    events
+                        .iter()
+                        .all(|event| Some(Ustr::from(event.id.as_str())) == previous.event_id)
+                });
+                let extra = if compatible {
+                    let mut extra = previous_info;
+                    extra.retain(|key, _| matches!(key.as_str(), "gamma_event" | "event_id"));
+                    market.game_id = market.game_id.or_else(|| metadata.event.game_id.clone());
+                    if let Some(game_id) = &market.game_id {
+                        extra.insert("game_id".into(), Arc::new(serde_json::json!(game_id)));
+                    }
+                    market.parent_event = Some(Arc::clone(&metadata.event));
+                    crate::http::parse::enrich_market_fee_schedule(&mut market);
+                    if let Some(schedule) = market.fee_schedule {
+                        extra.insert("fee_schedule".into(), Arc::new(schedule.to_info()));
+                    }
+                    Some(Params::from_shared(extra))
+                } else {
+                    None
+                };
+                metadata.markets.insert(raw_market.to_string(), extra);
+            }
+            let Some(extra) = &metadata.markets[raw_market] else {
+                return Ok(instrument);
             };
-
-            for key in ["gamma_event", "event_id"] {
-                if let Some(value) = previous_info.get(key) {
-                    info.entry(key.to_string())
-                        .or_insert_with(|| Arc::clone(value));
+            let mut info = info.to_shared_map();
+            for (key, value) in extra.to_shared_map() {
+                if key == "fee_schedule" {
+                    info.insert(key, value);
+                } else {
+                    info.entry(key).or_insert(value);
                 }
-            }
-
-            market.game_id = market.game_id.or_else(|| event.game_id.clone());
-            if let Some(game_id) = &market.game_id {
-                info.entry("game_id".into())
-                    .or_insert_with(|| Arc::new(serde_json::json!(game_id)));
-            }
-            market.parent_event = Some(event);
-            crate::http::parse::enrich_market_fee_schedule(&mut market);
-            if let Some(schedule) = market.fee_schedule {
-                info.insert("fee_schedule".into(), Arc::new(schedule.to_info()));
             }
             binary.event_id = binary.event_id.or(previous.event_id);
             binary.info = Some(Params::from_shared(info));
@@ -257,6 +327,16 @@ pub(super) fn cache_instruments_unchecked(
     watchlist: &Arc<ResolveWatchlist>,
     pending: &[InstrumentAny],
 ) {
+    sync_cached_instruments(instruments, token_meta, watchlist, pending, true);
+}
+
+fn sync_cached_instruments(
+    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
+    watchlist: &Arc<ResolveWatchlist>,
+    pending: &[InstrumentAny],
+    replace_cache: bool,
+) {
     if pending.is_empty() {
         return;
     }
@@ -271,11 +351,13 @@ pub(super) fn cache_instruments_unchecked(
         );
     }
 
-    instruments.rcu(|map| {
-        for instrument in pending {
-            map.insert(instrument.id(), instrument.clone());
-        }
-    });
+    if replace_cache {
+        instruments.rcu(|map| {
+            for instrument in pending {
+                map.insert(instrument.id(), instrument.clone());
+            }
+        });
+    }
 
     let instruments = instruments.load();
     let conditions = pending
@@ -295,8 +377,47 @@ pub(super) fn cache_instruments_unchecked(
             .filter(|expiration| expiration.as_u64() != 0)
             .max()
         {
+            if expiration > entry.expiration_ns && entry.paused {
+                entry.paused = false;
+                entry.clob_retry = None;
+            }
             entry.expiration_ns = expiration;
         }
+    }
+}
+
+// Retries predicate decisions after metadata changes without locking predicate callbacks
+pub(super) fn accepted_current_instrument<'a>(
+    instrument_update_state: &'a Mutex<InstrumentUpdateState>,
+    instruments: &AtomicMap<InstrumentId, InstrumentAny>,
+    incoming: &InstrumentAny,
+    request_epoch: u64,
+    filters: &[Arc<dyn InstrumentFilter>],
+    cancellation: &CancellationToken,
+) -> Option<(MutexGuard<'a, InstrumentUpdateState>, InstrumentAny)> {
+    loop {
+        let (instrument, filter_epoch) = {
+            let update_state = instrument_update_state.lock();
+            let instrument = update_state
+                .newer_cached(incoming, instruments, Some(request_epoch))
+                .unwrap_or_else(|| incoming.clone());
+            (instrument, update_state.metadata_epoch())
+        };
+        let accepted = filters.iter().all(|filter| filter.accept(&instrument));
+
+        if cancellation.is_cancelled() {
+            return None;
+        }
+
+        let update_state = instrument_update_state.lock();
+        if update_state
+            .newer_cached(&instrument, instruments, Some(filter_epoch))
+            .is_some()
+        {
+            continue;
+        }
+
+        return accepted.then_some((update_state, instrument));
     }
 }
 
@@ -412,6 +533,26 @@ pub(super) fn cache_and_publish_instruments(
     request_epoch: Option<u64>,
     instruments: Vec<InstrumentAny>,
 ) -> usize {
+    cache_and_publish_fetched_instruments(
+        subscriptions,
+        instrument_update_state,
+        data_sender,
+        now_ns,
+        AHashSet::new(),
+        instruments
+            .into_iter()
+            .map(|instrument| (instrument, request_epoch)),
+    )
+}
+
+fn cache_and_publish_fetched_instruments(
+    subscriptions: &DataSubscriptions,
+    instrument_update_state: &Arc<Mutex<InstrumentUpdateState>>,
+    data_sender: &EventSender<DataEvent>,
+    now_ns: UnixNanos,
+    mut closing: AHashSet<String>,
+    instruments: impl ExactSizeIterator<Item = (InstrumentAny, Option<u64>)>,
+) -> usize {
     let instruments_cache = &subscriptions.instruments;
     let mut update_state = instrument_update_state.lock();
     if update_state.retired {
@@ -420,8 +561,17 @@ pub(super) fn cache_and_publish_instruments(
 
     let mut pending = Vec::with_capacity(instruments.len());
     let mut event_metadata = AHashMap::new();
+    let mut refreshing = !closing.is_empty();
 
-    for instrument in instruments {
+    for (instrument, request_epoch) in instruments {
+        refreshing |= request_epoch.is_some();
+
+        if market_closed(&instrument) == Some(true)
+            && let Ok(condition_id) = extract_condition_id(&instrument.id())
+        {
+            closing.insert(condition_id);
+        }
+
         if update_state
             .newer_cached(&instrument, instruments_cache, request_epoch)
             .is_some()
@@ -452,35 +602,80 @@ pub(super) fn cache_and_publish_instruments(
     }
 
     let mut terminal_conditions = subscriptions.closed_condition_ids.lock();
-    pending.retain(|instrument| {
-        !extract_condition_id(&instrument.id())
-            .is_ok_and(|condition_id| terminal_conditions.contains(&condition_id))
+    pending.retain_mut(|instrument| {
+        if let Ok(condition_id) = extract_condition_id(&instrument.id())
+            && terminal_conditions.contains(&condition_id)
+        {
+            if !subscriptions.watchlist.read().contains_key(&condition_id)
+                || !instruments_cache.contains_key(&instrument.id())
+            {
+                return false;
+            }
+            // An unresolved closed market can change its deadline without reopening
+            if let InstrumentAny::BinaryOption(binary) = instrument {
+                set_market_closed(binary, true);
+            }
+        }
+        true
     });
+
+    closing.retain(|id| !terminal_conditions.contains(id));
+    if !closing.is_empty() {
+        let included = pending.iter().map(Instrument::id).collect::<AHashSet<_>>();
+        for (id, current) in instruments_cache.load().iter() {
+            if !included.contains(id)
+                && market_closed(current) != Some(true)
+                && extract_condition_id(id).is_ok_and(|id| closing.contains(&id))
+            {
+                pending.push(current.clone());
+            }
+        }
+        // Condition closure also applies to siblings whose newer metadata won the race
+        for instrument in &mut pending {
+            if extract_condition_id(&instrument.id()).is_ok_and(|id| closing.contains(&id))
+                && let InstrumentAny::BinaryOption(binary) = instrument
+                && binary_market_closed(binary) != Some(true)
+            {
+                set_market_closed(binary, true);
+                binary.ts_event = now_ns;
+                binary.ts_init = now_ns;
+            }
+        }
+    }
+
+    // Bootstrap leaves resolution ownership available for later admission
+    if refreshing {
+        terminal_conditions.extend(
+            subscriptions
+                .retained_instrument_ids()
+                .into_iter()
+                .filter_map(|id| extract_condition_id(&id).ok())
+                .filter(|id| closing.contains(id)),
+        );
+    }
 
     if pending.is_empty() {
         return 0;
     }
 
-    // Bootstrap leaves resolution ownership available for later admission
-    let retained = request_epoch.map(|_| subscriptions.retained_instrument_ids());
-    update_state.record_metadata(&pending, instruments_cache);
-    cache_instruments_unchecked(
+    let cached = instruments_cache.load();
+    let changed = update_state.record_metadata(&pending, instruments_cache)
+        || pending.iter().any(|instrument| {
+            cached.get(&instrument.id()).is_some_and(|current| {
+                current.price_increment() != instrument.price_increment()
+                    || current.price_precision() != instrument.price_precision()
+                    || current.size_increment() != instrument.size_increment()
+                    || current.size_precision() != instrument.size_precision()
+            })
+        });
+    sync_cached_instruments(
         instruments_cache,
         &subscriptions.token_meta,
         &subscriptions.watchlist,
         &pending,
+        changed,
     );
 
-    for instrument in &pending {
-        if market_closed(instrument) == Some(true)
-            && retained
-                .as_ref()
-                .is_some_and(|ids| ids.contains(&instrument.id()))
-            && let Ok(condition_id) = extract_condition_id(&instrument.id())
-        {
-            terminal_conditions.insert(condition_id);
-        }
-    }
     let total = pending.len();
 
     // Keep the update guard through publication so live tick updates cannot overtake this batch
@@ -511,20 +706,27 @@ async fn refresh_instruments(
     data_sender: &EventSender<DataEvent>,
     clock: &'static AtomicTime,
 ) -> usize {
-    let request_epoch = instrument_update_state.lock().metadata_epoch();
-    let publish = |instruments| {
-        cache_and_publish_instruments(
+    let epoch_state = instrument_update_state.clone();
+    let http_client =
+        http_client.with_epoch_capture(Arc::new(move || epoch_state.lock().metadata_epoch()));
+    let publish = |instruments: Vec<InstrumentAny>, closing| {
+        cache_and_publish_fetched_instruments(
             subscriptions,
             instrument_update_state,
             data_sender,
             clock.get_time_ns(),
-            Some(request_epoch),
-            instruments,
+            closing,
+            instruments.into_iter().map(|instrument| {
+                let epoch = http_client
+                    .instrument_epoch(&instrument)
+                    .unwrap_or_default();
+                (instrument, Some(epoch))
+            }),
         )
     };
 
     if let InstrumentRefreshScope::Discovery(instrument_config, filters) = scope {
-        let (mut refreshed, closing, _) = match crate::providers::fetch_configured_with_closed(
+        let (mut refreshed, closing) = match crate::providers::fetch_configured_with_closed(
             &http_client,
             instrument_config,
             filters,
@@ -537,29 +739,46 @@ async fn refresh_instruments(
                 return 0;
             }
         };
-        let _owner_guard = subscriptions.owner_lock.lock();
-        let mut retained = subscriptions.retained_instrument_ids();
-        for instrument in &refreshed {
-            retained.remove(&instrument.id());
-        }
-        // Preserve closing definitions for tracked siblings before the condition becomes terminal
-        refreshed.extend(
-            closing
-                .into_iter()
-                .filter(|instrument| retained.remove(&instrument.id())),
-        );
-        return publish(refreshed);
+        let (total, conditions) = {
+            let _owner_guard = subscriptions.owner_lock.lock();
+            let retained = subscriptions.retained_instrument_ids();
+            let closing_conditions = refreshed
+                .iter()
+                .chain(&closing)
+                .filter(|instrument| {
+                    market_closed(instrument) == Some(true) && retained.contains(&instrument.id())
+                })
+                .filter_map(|instrument| extract_condition_id(&instrument.id()).ok())
+                .collect::<AHashSet<_>>();
+            // A condition closes both cached outcomes even when only one has an owner
+            refreshed.extend(closing.into_iter().filter(|instrument| {
+                retained.contains(&instrument.id())
+                    || (subscriptions.instruments.contains_key(&instrument.id())
+                        && extract_condition_id(&instrument.id())
+                            .is_ok_and(|id| closing_conditions.contains(&id)))
+            }));
+            let conditions = refreshed
+                .iter()
+                .filter_map(|instrument| extract_condition_id(&instrument.id()).ok())
+                .collect();
+            (publish(refreshed, AHashSet::new()), conditions)
+        };
+        reconcile_refreshed_watches(subscriptions, &conditions).await;
+        return total;
     }
 
+    let http_client = http_client.for_retained_refresh();
     let condition_ids = subscriptions
         .retained_instrument_ids()
         .iter()
         .filter_map(|id| validated_condition_id(id).ok())
-        .filter(|id| !subscriptions.is_condition_closed(id))
+        .filter(|id| {
+            !subscriptions.is_condition_closed(id)
+                || subscriptions.watchlist.read().contains_key(id)
+        })
         .collect::<AHashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let mut refreshed = Vec::new();
     let mut total = 0;
 
     for chunk in condition_ids.chunks(GAMMA_CONDITION_IDS_BATCH_SIZE) {
@@ -569,62 +788,84 @@ async fn refresh_instruments(
                 break;
             }
 
-            match http_client
-                .request_instruments_by_params(GetGammaMarketsParams {
+            let updated = match http_client
+                .request_markets_by_params(GetGammaMarketsParams {
                     condition_ids: Some(missing.clone()),
                     closed,
                     ..Default::default()
                 })
                 .await
             {
-                Ok(mut batch) => {
+                Ok(markets) => {
+                    let mut closing = markets
+                        .iter()
+                        .filter(|market| {
+                            is_market_closed(market)
+                                && validate_data_market_version(market.version.as_deref()).is_ok()
+                        })
+                        .map(|market| market.condition_id.clone())
+                        .collect::<AHashSet<_>>();
+                    let mut batch = http_client.instruments_from_markets(markets);
                     let _owner_guard = subscriptions.owner_lock.lock();
                     let owned = subscriptions.retained_instrument_ids();
+                    let owned_conditions = owned
+                        .iter()
+                        .filter_map(|id| extract_condition_id(id).ok())
+                        .collect::<AHashSet<_>>();
+                    closing.retain(|id| missing.contains(id) && owned_conditions.contains(id));
                     batch.retain(|instrument| {
-                        owned.contains(&instrument.id())
+                        (owned.contains(&instrument.id())
+                            || (market_closed(instrument) == Some(true)
+                                && subscriptions.instruments.contains_key(&instrument.id())
+                                && extract_condition_id(&instrument.id())
+                                    .is_ok_and(|id| owned_conditions.contains(&id))))
                             && (closed.is_none() || market_closed(instrument) == Some(true))
                     });
-                    let returned = batch
+                    let mut returned = batch
                         .iter()
                         .filter_map(|instrument| extract_condition_id(&instrument.id()).ok())
                         .collect::<AHashSet<_>>();
-                    missing.retain(|id| !returned.contains(id));
-                    let publish_now = {
-                        let watchlist = subscriptions.watchlist.read();
-                        let cached = subscriptions.instruments.load();
-                        batch.iter().any(|instrument| {
-                            market_closed(instrument) == Some(true)
-                                || instrument.expiration_ns().is_some_and(|expiration| {
-                                    expiration.as_u64() != 0
-                                        && (cached
-                                            .get(&instrument.id())
-                                            .and_then(Instrument::expiration_ns)
-                                            != Some(expiration)
-                                            || extract_condition_id(&instrument.id())
-                                                .ok()
-                                                .and_then(|id| watchlist.get(&id))
-                                                .is_some_and(|entry| {
-                                                    expiration != entry.expiration_ns
-                                                }))
-                                })
-                        })
-                    };
-                    refreshed.extend(batch);
-
-                    // Commit changed deadlines before another request can let polling time out
-                    if publish_now {
-                        total += publish(std::mem::take(&mut refreshed));
-                    }
+                    returned.extend(closing.iter().cloned());
+                    missing.retain(|id| !returned.contains(id) && owned_conditions.contains(id));
+                    total += publish(batch, closing);
+                    returned
                 }
                 Err(e) => {
                     log::warn!("Failed to refresh retained Polymarket instruments: {e}");
                     break;
                 }
-            }
+            };
+            reconcile_refreshed_watches(subscriptions, &updated).await;
         }
     }
 
-    total + publish(refreshed)
+    total
+}
+
+pub(super) async fn reconcile_refreshed_watches(
+    subscriptions: &DataSubscriptions,
+    conditions: &AHashSet<String>,
+) {
+    if !subscriptions.subscribe_new_markets {
+        return;
+    }
+    let targets = {
+        let entries = subscriptions.watchlist.read();
+        conditions
+            .iter()
+            .filter_map(|id| entries.get(id))
+            .filter(|entry| !entry.paused)
+            .flat_map(|entry| entry.tracked.values())
+            .filter(|tracked| {
+                tracked.has_data_subscription && !subscriptions.is_token_open(&tracked.token_id)
+            })
+            .map(|tracked| (tracked.instrument_id, tracked.token_id.clone()))
+            .collect::<Vec<_>>()
+    };
+
+    for (instrument_id, token_id) in targets {
+        subscriptions.reconcile(instrument_id, token_id).await;
+    }
 }
 
 // Queries Gamma's positive `closed=true` path and returns only conditions it confirms closed.
@@ -931,6 +1172,7 @@ mod tests {
             DataResponse,
             data::{RequestInstrument, RequestInstruments},
         },
+        testing::wait_until_async,
     };
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
@@ -1393,7 +1635,12 @@ mod tests {
             let total = refresh_scoped_instruments(
                 http,
                 Some(config),
-                vec![],
+                vec![
+                    Arc::new(TagFilter::from_tag_id(84)),
+                    Arc::new(PredicateFilter::new("open-only", |instrument| {
+                        market_closed(instrument) != Some(true)
+                    })),
+                ],
                 &client.subscriptions,
                 &client.instrument_update_state,
                 &client.data_sender,
@@ -1657,12 +1904,12 @@ mod tests {
             )
         };
         let closes_later = closed && !discovery_closed && !discovery_fails;
-        let expected_total = 204 + usize::from(!discovery_fails && (!closed || !discovery_closed));
+        let expected_total =
+            204 + usize::from(!discovery_fails) * (1 + usize::from(closed && discovery_closed));
         assert_eq!(refresh().await, expected_total);
         let queries = std::mem::take(&mut *requests.lock());
         let batch_sizes = if closed {
-            let last_batch = 1 + usize::from(discovery_fails || !discovery_closed);
-            vec![0, 100, 100, last_batch, last_batch]
+            vec![0, 100, 100, 2, 2]
         } else {
             vec![0, 100, 2]
         };
@@ -1673,8 +1920,7 @@ mod tests {
         assert_eq!(
             queries.into_iter().flatten().collect::<AHashSet<_>>(),
             (0..103)
-                .filter(|index| *index != 1
-                    && (!closed || !discovery_closed || discovery_fails || *index != 0))
+                .filter(|index| *index != 1)
                 .map(|index| format!("0x{index:064x}"))
                 .collect(),
         );
@@ -1710,7 +1956,8 @@ mod tests {
             watchlist
                 .read()
                 .values()
-                .all(|entry| entry.expiration_ns == expected && entry.paused)
+                .all(|entry| entry.expiration_ns == expected
+                    && entry.paused == (initial_expiration >= expected.as_u64()))
         );
         assert!(
             published
@@ -1737,8 +1984,35 @@ mod tests {
                 &sibling,
                 PositionId::from("P-1"),
             );
-            assert_eq!(refresh().await, 0);
+            refresh().await;
+            assert!(!client.instruments.contains_key(&published[0].id()));
             assert_eq!(watchlist.read()[&condition_id].expiration_ns, expected);
+            requests.lock().clear();
+
+            while rx.try_recv().is_ok() {}
+        }
+
+        if closed {
+            let corrected = "2099-12-15T00:00:00Z";
+            *closing_date.lock() = Some(corrected);
+            assert!(refresh().await > 0);
+            assert!(watchlist.read().values().all(|entry| entry.expiration_ns
+                == corrected.parse::<UnixNanos>().unwrap()
+                && !entry.paused));
+            *closing_date.lock() = None;
+            assert!(refresh().await > 0);
+            let watched = watchlist.read();
+            assert!(
+                client
+                    .instruments
+                    .load()
+                    .values()
+                    .filter(|instrument| extract_condition_id(&instrument.id())
+                        .is_ok_and(|id| watched.contains_key(&id)))
+                    .all(|instrument| market_closed(instrument) == Some(true))
+            );
+
+            while rx.try_recv().is_ok() {}
             requests.lock().clear();
         }
 
@@ -1760,11 +2034,295 @@ mod tests {
     }
 
     #[rstest]
+    #[case::absent_revision("absent")]
+    #[case::equal_revision("equal")]
+    #[case::subscription_released("subscription")]
+    #[case::position_released("position")]
+    #[case::auto_load_absent("auto_load_absent")]
+    #[case::auto_load_equal("auto_load_equal")]
+    #[case::auto_probe_absent("auto_probe_absent")]
+    #[case::auto_probe_equal("auto_probe_equal")]
+    #[case::discovery_absent("discovery_absent")]
+    #[case::discovery_equal("discovery_equal")]
+    #[case::bulk_absent("bulk_absent")]
+    #[case::bulk_equal("bulk_equal")]
+    #[case::discovery_pages_absent("discovery_pages_absent")]
+    #[case::discovery_pages_equal("discovery_pages_equal")]
+    #[case::bulk_pages_absent("bulk_pages_absent")]
+    #[case::bulk_pages_equal("bulk_pages_equal")]
+    #[case::discovery_event_pages_absent("discovery_event_pages_absent")]
+    #[case::discovery_event_pages_equal("discovery_event_pages_equal")]
+    #[case::bulk_event_pages_absent("bulk_event_pages_absent")]
+    #[case::bulk_event_pages_equal("bulk_event_pages_equal")]
+    #[tokio::test]
+    async fn metadata_batches_observe_current_metadata_and_owners(#[case] change: &str) {
+        let release_owners = matches!(change, "subscription" | "position");
+        let auto_load = change.starts_with("auto_");
+        let discovery = change.starts_with("discovery_");
+        let bulk = change.starts_with("bulk_");
+        let pages = change.contains("_pages");
+        let event_pages = change.contains("_event_pages");
+        let probe = change.starts_with("auto_probe");
+        let equal_revision = change.ends_with("equal");
+        let market = move |index, end_date: &str| {
+            let mut value = serde_json::to_value(retained_market(index)).unwrap();
+            value["endDate"] = end_date.into();
+            if equal_revision {
+                value["updatedAt"] = "2026-01-01T00:00:00Z".into();
+            }
+            value
+        };
+        let (started, mut started_rx) = tokio::sync::mpsc::unbounded_channel();
+        let release = Arc::new(tokio::sync::Semaphore::new(0));
+        let requests = Arc::new(AtomicUsize::new(0));
+        let app = Router::new().route(
+            if event_pages {
+                "/events/keyset"
+            } else {
+                "/markets/keyset"
+            },
+            get({
+                let started = started.clone();
+                let release = release.clone();
+                let requests = requests.clone();
+                move |RawQuery(query): RawQuery| {
+                    let index = requests.fetch_add(1, Ordering::SeqCst);
+                    let ids = if pages {
+                        (if index == 0 { 0..100 } else { 100..101 })
+                            .map(|id| format!("0x{id:064x}"))
+                            .collect()
+                    } else {
+                        requested_condition_ids(query.as_deref())
+                    };
+                    let markets = ids
+                        .iter()
+                        .filter(|_| !probe || index != 0)
+                        .map(|id| {
+                            let mut market = market(
+                                usize::from_str_radix(&id[2..], 16).unwrap(),
+                                "2099-12-01T00:00:00Z",
+                            );
+
+                            if probe
+                                && query
+                                    .as_deref()
+                                    .is_some_and(|query| query.contains("closed=true"))
+                            {
+                                market["closed"] = true.into();
+                            }
+                            market
+                        })
+                        .collect::<Vec<_>>();
+                    let started = started.clone();
+                    let release = release.clone();
+                    async move {
+                        if index == usize::from(release_owners) {
+                            started.send(ids).unwrap();
+                            release.acquire().await.unwrap().forget();
+                        }
+                        let next_cursor = (pages && index == 0).then_some("next");
+                        Json(if event_pages {
+                            let events = markets
+                                .iter()
+                                .map(|market| {
+                                    serde_json::json!({"id": market["conditionId"], "markets": [market]})
+                                })
+                                .collect::<Vec<_>>();
+                            serde_json::json!({"events": events, "next_cursor": next_cursor})
+                        } else {
+                            serde_json::json!({"markets": markets, "next_cursor": next_cursor})
+                        })
+                    }
+                }
+            }),
+        );
+        let http = gamma_server(app, 10).await;
+        let mut client = make_client(PolymarketDataClientConfig::default());
+        client.provider =
+            crate::providers::PolymarketInstrumentProvider::new(http.clone(), None).unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.data_sender = tx.into();
+        let initial_expiry = if release_owners {
+            "2099-12-01T00:00:00Z"
+        } else {
+            "2098-01-01T00:00:00Z"
+        };
+
+        for index in 0..101 {
+            let (instruments, _) = crate::http::gamma::parse_markets_with_transient(
+                &[serde_json::from_value(market(index, initial_expiry)).unwrap()],
+                UnixNanos::default(),
+            );
+
+            for instrument in instruments {
+                client
+                    .instruments
+                    .insert(instrument.id(), instrument.clone());
+
+                if change == "position" {
+                    crate::resolve::upsert_resolve_watch_entry_from_instrument(
+                        &client.subscriptions.watchlist,
+                        &instrument,
+                        PositionId::from("P-1"),
+                    );
+                } else if auto_load {
+                    client
+                        .subscriptions
+                        .active_instrument_status_subs
+                        .insert(instrument.id());
+                    client
+                        .subscriptions
+                        .pending_auto_loads
+                        .lock()
+                        .insert(instrument.id());
+                } else {
+                    client.subscriptions.instrument_subs.insert(instrument.id());
+                }
+            }
+        }
+        let config = crate::config::PolymarketInstrumentProviderConfig {
+            load_all: pages && !event_pages,
+            load_ids: (!pages).then(|| client.instruments.load().keys().copied().collect()),
+            series_ids: event_pages.then_some(vec![1]),
+            ..Default::default()
+        };
+
+        if bulk {
+            client.provider = crate::providers::PolymarketInstrumentProvider::new(
+                http.clone(),
+                Some(config.clone()),
+            )
+            .unwrap();
+        }
+
+        let refresh = async {
+            if auto_load || bulk {
+                if bulk {
+                    client
+                        .request_instruments(RequestInstruments::new(
+                            None,
+                            None,
+                            Some(client.client_id),
+                            None,
+                            UUID4::new(),
+                            UnixNanos::default(),
+                            None,
+                        ))
+                        .unwrap();
+                } else {
+                    let id = *client.instruments.load().keys().next().unwrap();
+                    client.queue_pending_load(id);
+                }
+                wait_until_async(
+                    || async { client.tasks.all_finished() },
+                    Duration::from_secs(3),
+                )
+                .await;
+                202
+            } else {
+                refresh_instruments(
+                    http,
+                    if discovery {
+                        InstrumentRefreshScope::Discovery(&config, &[])
+                    } else {
+                        InstrumentRefreshScope::Retained
+                    },
+                    &client.subscriptions,
+                    &client.instrument_update_state,
+                    &client.data_sender,
+                    client.clock,
+                )
+                .await
+            }
+        };
+        tokio::pin!(refresh);
+        let requested = tokio::select! {
+            _ = &mut refresh => panic!("Refresh completed before response release"),
+            ids = started_rx.recv() => ids.unwrap(),
+        };
+
+        if release_owners {
+            assert_eq!(rx.len(), 200);
+            client.subscriptions.instrument_subs.clear();
+            client.subscriptions.watchlist.write().clear();
+        } else {
+            let target = (0..101)
+                .find(|index| requested.contains(&format!("0x{index:064x}")) == probe)
+                .unwrap();
+            let (intermediate, _) = crate::http::gamma::parse_markets_with_transient(
+                &[serde_json::from_value(market(target, "2099-11-01T00:00:00Z")).unwrap()],
+                UnixNanos::default(),
+            );
+
+            for instrument in &intermediate {
+                crate::resolve::upsert_resolve_watch_entry_from_instrument(
+                    &client.subscriptions.watchlist,
+                    instrument,
+                    PositionId::from("P-1"),
+                );
+            }
+            assert_eq!(
+                cache_and_publish_instruments(
+                    &client.subscriptions,
+                    &client.instrument_update_state,
+                    &client.data_sender,
+                    client.clock.get_time_ns(),
+                    None,
+                    intermediate
+                ),
+                2
+            );
+        }
+
+        while rx.try_recv().is_ok() {}
+        release.add_permits(1);
+        assert_eq!(refresh.await, if release_owners { 200 } else { 202 });
+        assert_eq!(requests.load(Ordering::SeqCst), if probe { 3 } else { 2 });
+
+        if release_owners {
+            assert!(rx.is_empty());
+        } else {
+            assert_eq!(rx.len(), if bulk { 1 } else { 202 });
+            let expected = "2099-12-01T00:00:00Z".parse::<UnixNanos>().unwrap();
+
+            if bulk {
+                let DataEvent::Response(DataResponse::Instruments(response)) =
+                    rx.try_recv().unwrap()
+                else {
+                    panic!("Expected instruments response");
+                };
+                assert_eq!(response.data.len(), 202);
+                assert!(
+                    response
+                        .data
+                        .iter()
+                        .all(|instrument| instrument.expiration_ns() == Some(expected))
+                );
+            }
+            assert!(
+                client
+                    .subscriptions
+                    .watchlist
+                    .read()
+                    .values()
+                    .all(|entry| entry.expiration_ns == expected)
+            );
+            assert!(
+                client
+                    .instruments
+                    .load()
+                    .values()
+                    .all(|instrument| instrument.expiration_ns() == Some(expected))
+            );
+        }
+    }
+
+    #[rstest]
     #[case::discovery(0, 0, true, 0, 0)]
     #[case::slow_discovery(0, 2, true, 8, 2)]
     #[case::retained(1, 2, true, 2, 0)]
     #[case::later_batch(2, 102, true, 202, 100)]
-    #[case::unchanged_deadlines(2, 102, false, 2, 102)]
+    #[case::unchanged_deadlines(2, 102, false, 202, 102)]
     #[tokio::test]
     async fn refresh_publishes_before_cancelling_pending_requests(
         #[case] gate_at: usize,
@@ -2327,29 +2885,57 @@ mod tests {
     #[tokio::test]
     async fn refresh_includes_sibling_owners_added_during_request(
         #[values(false, true)] closed: bool,
-        #[values(false, true)] position: bool,
+        #[values("position", "subscription", "none", "released")] owner: &str,
+        #[values("none", "sibling", "both")] overlap: &str,
+        #[values("valid", "malformed", "malformed_probe", "already_closed")] response: &str,
     ) {
+        let malformed = response != "valid";
+        let probe = response == "malformed_probe";
+        let already_closed = closed && response == "already_closed";
         let market: GammaMarket = serde_json::from_value(past_end_open_market()).unwrap();
-        let addr = market_closure_server(closed, false).await;
-        let http = PolymarketGammaHttpClient::new(
-            Some(format!("http://{addr}")),
+        let http = gamma_server(
+            Router::new().route(
+                "/markets/keyset",
+                get(move |RawQuery(query): RawQuery| async move {
+                    let mut market = past_end_open_market();
+                    market["closed"] = closed.into();
+                    if malformed {
+                        market["clobTokenIds"] = "[]".into();
+                        market["positionIds"] = serde_json::json!([]);
+                    }
+                    let markets = (!probe
+                        || query.is_some_and(|query| query.contains("closed=true")))
+                    .then_some(market)
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                    Json(serde_json::json!({"markets": markets, "next_cursor": null}))
+                }),
+            ),
             1,
-            RetryConfig::default(),
         )
-        .unwrap();
+        .await;
         let mut client = make_client(PolymarketDataClientConfig::default());
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         client.data_sender = tx.into();
         let (mut cached, _) =
             crate::http::gamma::parse_markets_with_transient(&[market], UnixNanos::default());
-        let expected_expiration = cached[0].expiration_ns().unwrap();
+        let mut expected_expiration = cached[0].expiration_ns().unwrap();
         let condition_id = extract_condition_id(&cached[0].id()).unwrap();
+
+        if malformed {
+            expected_expiration = "2098-01-01T00:00:00Z".parse().unwrap();
+        }
 
         for instrument in &mut cached {
             let InstrumentAny::BinaryOption(binary) = instrument else {
                 unreachable!()
             };
-            binary.expiration_ns = UnixNanos::from(1);
+            binary.expiration_ns = if malformed {
+                expected_expiration
+            } else {
+                UnixNanos::from(1)
+            };
+            set_market_closed(binary, already_closed);
             client.instruments.insert(binary.id, instrument.clone());
         }
         client.subscriptions.instrument_subs.insert(cached[0].id());
@@ -2364,27 +2950,271 @@ mod tests {
         tokio::pin!(refresh);
         assert!(futures_util::poll!(&mut refresh).is_pending());
 
-        if position {
+        if owner == "position" {
             crate::resolve::upsert_resolve_watch_entry_from_instrument(
                 &client.subscriptions.watchlist,
                 &cached[1],
                 PositionId::from("P-1"),
             );
-        } else {
+        } else if owner == "subscription" {
             assert!(client.subscriptions.add_resolution_subscription_intent(
                 cached[1].id(),
                 super::super::subscriptions::SubscriptionKind::Status,
             ));
+        } else if owner == "released" {
+            client.subscriptions.instrument_subs.remove(&cached[0].id());
         }
-        assert_eq!(refresh.await, 2);
-        assert_eq!(rx.len(), 2);
-        assert_eq!(
-            client.subscriptions.watchlist.read()[&condition_id].expiration_ns,
-            expected_expiration
-        );
+
+        if overlap != "none" {
+            expected_expiration = "2099-01-01T00:00:00Z".parse().unwrap();
+
+            for mut current in cached.iter().skip(usize::from(overlap != "both")).cloned() {
+                if let InstrumentAny::BinaryOption(binary) = &mut current {
+                    binary.expiration_ns = expected_expiration;
+                }
+                assert!(apply_live_instrument(
+                    &client.subscriptions.closed_condition_ids,
+                    &mut client.instrument_update_state.lock(),
+                    &client.instruments,
+                    &client.subscriptions.token_meta,
+                    &client.subscriptions.watchlist,
+                    &current,
+                    |_| {}
+                ));
+            }
+        }
+        let expected_closed = closed && owner != "released";
+        let expected_count = if owner == "released" || already_closed {
+            0
+        } else if closed || (!malformed && owner != "none" && overlap == "none") {
+            2
+        } else {
+            usize::from(!malformed && overlap != "both")
+        };
+        assert_eq!(refresh.await, expected_count);
+        assert_eq!(rx.len(), expected_count);
+        if matches!(owner, "position" | "subscription") {
+            assert_eq!(
+                client.subscriptions.watchlist.read()[&condition_id].expiration_ns,
+                expected_expiration
+            );
+        }
+
+        for (index, instrument) in cached.iter().enumerate() {
+            let current = client.instruments.get_cloned(&instrument.id()).unwrap();
+            assert_eq!(
+                market_closed(&current),
+                Some(expected_closed || already_closed)
+            );
+
+            if overlap != "none" && (overlap == "both" || index > 0) {
+                assert_eq!(current.expiration_ns(), Some(expected_expiration));
+            }
+        }
         assert_eq!(
             client.subscriptions.is_condition_closed(&condition_id),
-            closed
+            expected_closed
+        );
+    }
+
+    #[rstest]
+    fn unchanged_refresh_keeps_cache_snapshot(
+        #[values("unchanged", "deadline", "tick")] change: &str,
+    ) {
+        let client = make_client(PolymarketDataClientConfig::default());
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let sender = tx.into();
+        let publish = |instruments| {
+            cache_and_publish_instruments(
+                &client.subscriptions,
+                &client.instrument_update_state,
+                &sender,
+                client.clock.get_time_ns(),
+                None,
+                instruments,
+            )
+        };
+        assert_eq!(publish(vec![past_end_open_instrument().into()]), 1);
+        let before = client.instruments.load();
+        let mut incoming = past_end_open_instrument();
+        let instrument_id = incoming.id;
+        if change == "deadline" {
+            incoming.expiration_ns = UnixNanos::from(u64::MAX);
+        } else if change == "tick" {
+            client.instrument_update_state.lock().record_live_tick(
+                incoming.raw_symbol.inner(),
+                "0.005".parse().unwrap(),
+                UnixNanos::from(1),
+            );
+        }
+        assert_eq!(publish(vec![incoming.into()]), 1);
+        assert_eq!(
+            Arc::ptr_eq(&before, &client.instruments.load()),
+            change == "unchanged"
+        );
+        let current = client.instruments.get_cloned(&instrument_id).unwrap();
+        if change == "deadline" {
+            assert_eq!(current.expiration_ns(), Some(UnixNanos::from(u64::MAX)));
+        }
+
+        if change == "tick" {
+            assert_eq!(current.price_increment(), Price::from("0.005"));
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn metadata_refresh_resumes_resolution_wire_and_preserves_active_backoff(
+        #[values(false, true)] paused: bool,
+        #[values("discovery", "retained", "single", "bulk", "auto_load")] origin: &str,
+    ) {
+        let http = gamma_server(
+            Router::new().route(
+                "/markets/keyset",
+                get(|| async {
+                    Json(serde_json::json!({"markets": [retained_market(0)], "next_cursor": null}))
+                }),
+            ),
+            3,
+        )
+        .await;
+        let mut client = make_client(PolymarketDataClientConfig {
+            subscribe_new_markets: true,
+            update_instruments_interval_mins: None,
+            resolve_poll_enabled: false,
+            ..Default::default()
+        });
+        client.provider =
+            crate::providers::PolymarketInstrumentProvider::new(http.clone(), None).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        client.data_sender = tx.into();
+        let (ws_tx, mut ws_rx) = tokio::sync::mpsc::unbounded_channel();
+        client.subscriptions.ws_client =
+            crate::websocket::pool::PolymarketMarketPoolHandle::test_single_shard(ws_tx, &[]);
+        let subscriptions = &client.subscriptions;
+        let (mut instruments, _) = crate::http::gamma::parse_markets_with_transient(
+            &[retained_market(0)],
+            UnixNanos::default(),
+        );
+        let now = client.clock.get_time_ns().as_u64();
+        let elapsed = if paused {
+            3_600_000_000_000
+        } else {
+            30_000_000_000
+        };
+
+        for (index, instrument) in instruments.iter_mut().enumerate() {
+            if let InstrumentAny::BinaryOption(binary) = instrument {
+                binary.expiration_ns = UnixNanos::from(now.saturating_sub(elapsed));
+            }
+            client
+                .instruments
+                .insert(instrument.id(), instrument.clone());
+            let kind = if index == 0 {
+                super::super::subscriptions::SubscriptionKind::Status
+            } else {
+                super::super::subscriptions::SubscriptionKind::Close
+            };
+            assert!(subscriptions.add_resolution_subscription_intent(instrument.id(), kind));
+            subscriptions
+                .reconcile(
+                    instrument.id(),
+                    instrument.raw_symbol().as_str().to_string(),
+                )
+                .await;
+            assert!(subscriptions.is_token_open(instrument.raw_symbol().as_str()));
+            assert!(ws_rx.try_recv().is_ok());
+        }
+        let instrument = &instruments[0];
+        let condition = extract_condition_id(&instrument.id()).unwrap();
+        let retry = Some((
+            nautilus_core::DurationNanos::try_from_secs(60).unwrap(),
+            UnixNanos::from(now + 60_000_000_000),
+        ));
+        {
+            let mut entries = subscriptions.watchlist.write();
+            let entry = entries.get_mut(&condition).unwrap();
+            entry.paused = paused;
+            entry.clob_retry = retry;
+        }
+
+        for instrument in &instruments {
+            subscriptions
+                .reconcile(
+                    instrument.id(),
+                    instrument.raw_symbol().as_str().to_string(),
+                )
+                .await;
+            assert_eq!(
+                subscriptions.is_token_open(instrument.raw_symbol().as_str()),
+                !paused
+            );
+        }
+
+        while ws_rx.try_recv().is_ok() {}
+        let config = crate::config::PolymarketInstrumentProviderConfig {
+            load_ids: Some(vec![instrument.id()]),
+            ..Default::default()
+        };
+
+        match origin {
+            "single" => client
+                .request_instrument(RequestInstrument::new(
+                    instrument.id(),
+                    None,
+                    None,
+                    Some(client.client_id),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                ))
+                .unwrap(),
+            "bulk" => client
+                .request_instruments(RequestInstruments::new(
+                    None,
+                    None,
+                    Some(client.client_id),
+                    None,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                ))
+                .unwrap(),
+            "auto_load" => client.queue_pending_load(instrument.id()),
+            _ => {
+                let scope = if origin == "discovery" {
+                    InstrumentRefreshScope::Discovery(&config, &[])
+                } else {
+                    InstrumentRefreshScope::Retained
+                };
+                refresh_instruments(
+                    http,
+                    scope,
+                    subscriptions,
+                    &client.instrument_update_state,
+                    &client.data_sender,
+                    client.clock,
+                )
+                .await;
+            }
+        }
+        wait_until_async(
+            || async {
+                subscriptions.ws_open_tokens.len() == 2
+                    && subscriptions.watchlist.read()[&condition]
+                        .expiration_ns
+                        .as_u64()
+                        > now
+            },
+            Duration::from_secs(3),
+        )
+        .await;
+        let entry = subscriptions.watchlist.read()[&condition].clone();
+        assert!(!entry.paused);
+        assert_eq!(entry.clob_retry, if paused { None } else { retry });
+        assert_eq!(
+            std::iter::from_fn(|| ws_rx.try_recv().ok()).count(),
+            if paused { 2 } else { 0 }
         );
     }
 

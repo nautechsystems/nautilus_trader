@@ -593,6 +593,7 @@ impl DataClient for PolymarketDataClient {
     }
 
     fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
+        let _guard = self.subscriptions.owner_lock.lock();
         execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
             self.subscriptions.instrument_subs.remove(&instrument_id);
             log::debug!(

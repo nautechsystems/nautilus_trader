@@ -31,7 +31,8 @@ use nautilus_model::{
 use super::{
     PolymarketDataClient,
     instruments::{
-        apply_live_instrument, publish_cached_condition_closed, query_positive_closed_markets,
+        accepted_current_instrument, apply_live_instrument, publish_cached_condition_closed,
+        query_positive_closed_markets, reconcile_refreshed_watches,
     },
     spawn_task,
     subscriptions::resolve_token_id_from,
@@ -192,7 +193,11 @@ impl PolymarketDataClient {
         let max_retries = self.config.auto_load_max_retries;
         let base_secs = self.config.auto_load_retry_delay_initial_secs;
         let max_secs = self.config.auto_load_retry_delay_max_secs;
-        let http = self.provider.http_client().clone();
+        let epoch_state = self.instrument_update_state.clone();
+        let http = self
+            .provider
+            .http_client()
+            .with_epoch_capture(Arc::new(move || epoch_state.lock().metadata_epoch()));
         let resolve_ctx = self.resolution_context();
         let filters = self.provider.filters();
         let instruments = self.instruments.clone();
@@ -266,7 +271,6 @@ impl PolymarketDataClient {
                     return;
                 }
 
-                let request_epoch = instrument_update_state.lock().metadata_epoch();
                 // Gamma caps `condition_ids=` filters at ~100; classify every
                 // condition independently before mutating runtime state.
                 let mut outcomes: AHashMap<String, AutoLoadOutcome> = condition_ids
@@ -274,6 +278,7 @@ impl PolymarketDataClient {
                     .cloned()
                     .map(|condition_id| (condition_id, AutoLoadOutcome::Unknown))
                     .collect();
+                let mut request_epochs = AHashMap::new();
                 let mut transient: AHashSet<String> = AHashSet::new();
                 let mut failed_condition_ids: AHashSet<String> = AHashSet::new();
                 let mut batch_returned_any = false;
@@ -296,6 +301,12 @@ impl PolymarketDataClient {
                     match normal_result {
                         Ok(mut markets) => {
                             markets.retain(|market| chunk.contains(&market.condition_id));
+                            request_epochs.extend(markets.iter().map(|market| {
+                                (
+                                    market.condition_id.clone(),
+                                    http.market_epoch(market).unwrap_or_default(),
+                                )
+                            }));
                             batch_returned_any |= !markets.is_empty();
                             let (insts, trans) = parse_markets_with_transient(
                                 &markets,
@@ -340,6 +351,12 @@ impl PolymarketDataClient {
 
                             match closed_result {
                                 Ok(markets) => {
+                                    request_epochs.extend(markets.iter().map(|market| {
+                                        (
+                                            market.condition_id.clone(),
+                                            http.market_epoch(market).unwrap_or_default(),
+                                        )
+                                    }));
                                     batch_returned_any |= !markets.is_empty();
                                     let (closed_instruments, closed_transient) =
                                         parse_markets_with_transient(
@@ -419,6 +436,8 @@ impl PolymarketDataClient {
                         AutoLoadOutcome::Unsupported | AutoLoadOutcome::Unknown => continue,
                     };
 
+                    let request_epoch = request_epochs[condition_id];
+
                     for instrument in loaded {
                         let instrument_id = instrument.id();
 
@@ -429,56 +448,53 @@ impl PolymarketDataClient {
                             continue;
                         }
 
-                        let (instrument, accepted) = loop {
-                            let (instrument, filter_epoch) = {
-                                let update_state = instrument_update_state.lock();
-                                let instrument = update_state
-                                    .newer_cached(instrument, &instruments, Some(request_epoch))
-                                    .unwrap_or_else(|| instrument.clone());
-                                (instrument, update_state.metadata_epoch())
-                            };
-                            let accepted = filters.iter().all(|f| f.accept(&instrument));
+                        let instrument = {
+                            let selected = accepted_current_instrument(
+                                &instrument_update_state,
+                                &instruments,
+                                instrument,
+                                request_epoch,
+                                &filters,
+                                &cancellation,
+                            );
 
                             if cancellation.is_cancelled() {
                                 return;
                             }
-                            let mut update_state = instrument_update_state.lock();
 
-                            if update_state
-                                .newer_cached(&instrument, &instruments, Some(filter_epoch))
-                                .is_some()
-                            {
+                            let Some((mut update_state, instrument)) = selected else {
+                                log::debug!("Auto-loaded instrument {instrument_id} filtered out");
+                                subscriptions.discard_filtered_instrument(instrument_id, &batch);
                                 continue;
-                            }
-
-                            if accepted {
-                                apply_live_instrument(
-                                    &closed_condition_ids,
-                                    &mut update_state,
-                                    &instruments,
-                                    &token_meta,
-                                    &resolve_ctx.watchlist,
-                                    &instrument,
-                                    |instrument| {
-                                        if let Err(e) = data_sender
-                                            .send(DataEvent::Data(instrument.clone().into()))
-                                        {
-                                            log::error!(
-                                                "Failed to emit auto-loaded instrument {instrument_id}: {e}"
-                                            );
-                                        }
-                                    },
-                                );
-                            }
-                            break (instrument, accepted);
+                            };
+                            apply_live_instrument(
+                                &closed_condition_ids,
+                                &mut update_state,
+                                &instruments,
+                                &token_meta,
+                                &resolve_ctx.watchlist,
+                                &instrument,
+                                |instrument| {
+                                    if let Err(e) =
+                                        data_sender.send(DataEvent::Data(instrument.clone().into()))
+                                    {
+                                        log::error!(
+                                            "Failed to emit auto-loaded instrument {instrument_id}: {e}"
+                                        );
+                                    }
+                                },
+                            );
+                            instrument
                         };
-
-                        if !accepted {
-                            log::debug!("Auto-loaded instrument {} filtered out", instrument.id());
-                            subscriptions.discard_filtered_instrument(instrument_id, &batch);
-                            continue;
-                        }
                         admit_data_resolution_instrument(&resolve_ctx, &instrument).await;
+                    }
+
+                    if matches!(outcome, AutoLoadOutcome::Open(_)) {
+                        reconcile_refreshed_watches(
+                            &subscriptions,
+                            &[condition_id.clone()].into_iter().collect(),
+                        )
+                        .await;
                     }
 
                     if let AutoLoadOutcome::Closed { resolution, .. } = outcome {

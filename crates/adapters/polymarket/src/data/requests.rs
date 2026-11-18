@@ -29,7 +29,9 @@ use nautilus_model::{data::CustomData, instruments::Instrument};
 
 use super::{
     PolymarketDataClient,
-    instruments::{apply_live_instrument, cache_instruments_unchecked},
+    instruments::{
+        apply_live_instrument, cache_instruments_unchecked, reconcile_refreshed_watches,
+    },
 };
 use crate::{
     common::consts::POLYMARKET_VENUE,
@@ -184,8 +186,13 @@ pub(super) fn request_data(client: &PolymarketDataClient, request: RequestCustom
 }
 
 pub(super) fn request_instruments(client: &PolymarketDataClient, request: RequestInstruments) {
+    let subscriptions = client.subscriptions.clone();
     let sender = client.data_sender.clone();
-    let http = client.provider.http_client().clone();
+    let epoch_state = client.instrument_update_state.clone();
+    let http = client
+        .provider
+        .http_client()
+        .with_epoch_capture(Arc::new(move || epoch_state.lock().metadata_epoch()));
     let filters = client.provider.filters();
     let instrument_config = client.provider.config().clone();
     let instruments_cache = client.instruments.clone();
@@ -200,24 +207,20 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
     let end_nanos = datetime_to_unix_nanos(request.end);
     let params = request.params;
     let clock = client.clock;
-    let future = async move {
-        let request_epoch = instrument_update_state.lock().metadata_epoch();
+    let request_future = async move {
         let instruments = if instrument_config.should_load_all() || instrument_config.has_load_ids()
         {
-            crate::providers::fetch_configured_with_closed(&http, &instrument_config, &filters)
+            crate::providers::fetch_configured_instruments(&http, &instrument_config, &filters)
                 .await
-                .map(|(instruments, _, unfiltered_ids)| (instruments, unfiltered_ids))
         } else {
-            crate::providers::fetch_instruments(&http, &filters)
-                .await
-                .map(|instruments| (instruments, Default::default()))
+            crate::providers::fetch_instruments(&http, &filters).await
         };
 
-        let (instruments, unfiltered_ids) = match instruments {
+        let instruments = match instruments {
             Ok(instruments) => instruments,
             Err(e) => {
                 log::error!("Failed to fetch Polymarket instruments: {e}");
-                return;
+                return Default::default();
             }
         };
 
@@ -227,8 +230,9 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
         let now_ns = clock.get_time_ns();
 
         for instrument in instruments {
+            let request_epoch = http.instrument_epoch(&instrument);
             let instrument = update_state
-                .newer_cached(&instrument, &instruments_cache, Some(request_epoch))
+                .newer_cached(&instrument, &instruments_cache, request_epoch)
                 .unwrap_or(instrument);
             let instrument = match update_state.compose_instrument(
                 &instrument,
@@ -244,12 +248,6 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
                     continue;
                 }
             };
-
-            if !unfiltered_ids.contains(&instrument.id())
-                && !filters.iter().all(|filter| filter.accept(&instrument))
-            {
-                continue;
-            }
 
             effective_instruments.push(instrument);
         }
@@ -282,6 +280,10 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
             );
         }
 
+        let conditions = effective_instruments
+            .iter()
+            .filter_map(|instrument| extract_condition_id(&instrument.id()).ok())
+            .collect();
         let response = DataResponse::Instruments(InstrumentsResponse::new(
             request_id,
             client_id,
@@ -296,6 +298,13 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
         if let Err(e) = sender.send(DataEvent::Response(response)) {
             log::error!("Failed to send instruments response: {e}");
         }
+
+        conditions
+    };
+
+    let future = async move {
+        let conditions = request_future.await;
+        reconcile_refreshed_watches(&subscriptions, &conditions).await;
     };
 
     if let Err(e) = client.tasks.spawn(future) {
@@ -307,8 +316,13 @@ pub(super) fn request_instrument(
     client: &PolymarketDataClient,
     request: RequestInstrument,
 ) -> anyhow::Result<()> {
+    let subscriptions = client.subscriptions.clone();
     let instrument_id = request.single_instrument_id()?;
-    let http = client.provider.http_client().clone();
+    let epoch_state = client.instrument_update_state.clone();
+    let http = client
+        .provider
+        .http_client()
+        .with_epoch_capture(Arc::new(move || epoch_state.lock().metadata_epoch()));
     let sender = client.data_sender.clone();
     let instruments_cache = client.instruments.clone();
     let instrument_update_state = client.instrument_update_state.clone();
@@ -321,18 +335,17 @@ pub(super) fn request_instrument(
     let end = request.end;
     let params = request.params;
     let clock = client.clock;
-    let future = async move {
-        let request_epoch = instrument_update_state.lock().metadata_epoch();
+    let request_future = async move {
         let condition_id = match extract_condition_id(&instrument_id) {
             Ok(cid) => cid,
             Err(e) => {
                 log::error!("Failed to extract condition_id for {instrument_id}: {e}");
-                return;
+                return None;
             }
         };
 
         let query_params = crate::http::query::GetGammaMarketsParams {
-            condition_ids: Some(vec![condition_id]),
+            condition_ids: Some(vec![condition_id.clone()]),
             ..Default::default()
         };
 
@@ -340,11 +353,12 @@ pub(super) fn request_instrument(
             Ok(instruments) => instruments.into_iter().find(|i| i.id() == instrument_id),
             Err(e) => {
                 log::error!("Failed to fetch instrument {instrument_id} from Gamma API: {e}");
-                return;
+                return None;
             }
         };
 
         if let Some(inst) = instrument {
+            let request_epoch = http.instrument_epoch(&inst).unwrap_or_default();
             let mut update_state = instrument_update_state.lock();
             let inst = update_state
                 .newer_cached(&inst, &instruments_cache, Some(request_epoch))
@@ -357,7 +371,7 @@ pub(super) fn request_instrument(
                 Ok(instrument) => instrument,
                 Err(e) => {
                     log::error!("Failed to apply live tick to instrument {instrument_id}: {e}");
-                    return;
+                    return None;
                 }
             };
 
@@ -400,8 +414,18 @@ pub(super) fn request_instrument(
             if let Err(e) = sender.send(DataEvent::Response(response)) {
                 log::error!("Failed to send instrument response: {e}");
             }
+
+            Some(condition_id)
         } else {
             log::error!("Instrument {instrument_id} not found on Polymarket");
+            None
+        }
+    };
+
+    let future = async move {
+        if let Some(condition_id) = request_future.await {
+            reconcile_refreshed_watches(&subscriptions, &[condition_id].into_iter().collect())
+                .await;
         }
     };
 
