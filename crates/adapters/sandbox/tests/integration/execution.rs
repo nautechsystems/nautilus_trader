@@ -2847,15 +2847,18 @@ fn restored_margin_account_state(
         account_id,
         AccountType::Margin,
         vec![AccountBalance::new(
-            Money::new(99_960.5, usd),
-            Money::new(7_899.4, usd),
-            Money::new(92_061.1, usd),
+            Money::from("99960.50 USD"),
+            Money::from("8019.40 USD"),
+            Money::from("91941.10 USD"),
         )],
-        vec![MarginBalance::new(
-            Money::new(7_899.4, usd),
-            Money::new(3_949.7, usd),
-            Some(instrument_id),
-        )],
+        vec![
+            MarginBalance::new(
+                Money::from("7899.40 USD"),
+                Money::from("3949.70 USD"),
+                Some(instrument_id),
+            ),
+            MarginBalance::new(Money::from("120 USD"), Money::from("60 USD"), None),
+        ],
         false,
         UUID4::new(),
         0.into(),
@@ -2908,18 +2911,21 @@ async fn test_client_connect_resumes_cached_account_state(
 
     let account = context.cache.borrow().account(&account_id).unwrap().clone();
     let usd = Currency::USD();
-    assert_eq!(
-        account.events().len(),
-        2,
-        "connect should emit one account state"
-    );
+    let events = account.events();
+    assert_eq!(events.len(), 2, "connect should emit one account state");
+    assert_eq!(events[1].balances, restored.balances);
+    assert_eq!(events[1].margins, restored.margins);
     assert_eq!(account.balances()[&usd], restored.balances[0]);
     let AccountAny::Margin(margin) = account else {
         panic!("expected margin account");
     };
     assert_eq!(
         margin.margins.values().copied().collect::<Vec<_>>(),
-        restored.margins
+        restored.margins[..1]
+    );
+    assert_eq!(
+        margin.account_margins.values().copied().collect::<Vec<_>>(),
+        restored.margins[1..]
     );
 }
 
@@ -2955,17 +2961,21 @@ async fn test_client_query_account_keeps_cached_margins(
         .unwrap();
 
     let account = context.cache.borrow().account(&account_id).unwrap().clone();
-    assert_eq!(
-        account.events().len(),
-        2,
-        "query should emit one account state"
-    );
+    let events = account.events();
+    assert_eq!(events.len(), 2, "query should emit one account state");
+    assert_eq!(events[1].balances, restored.balances);
+    assert_eq!(events[1].margins, restored.margins);
+
     let AccountAny::Margin(margin) = account else {
         panic!("expected margin account");
     };
     assert_eq!(
         margin.margins.values().copied().collect::<Vec<_>>(),
-        restored.margins
+        restored.margins[..1]
+    );
+    assert_eq!(
+        margin.account_margins.values().copied().collect::<Vec<_>>(),
+        restored.margins[1..]
     );
 }
 
