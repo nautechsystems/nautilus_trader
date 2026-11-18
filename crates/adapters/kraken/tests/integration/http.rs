@@ -4472,6 +4472,29 @@ async fn test_spot_scoped_closed_order_reports_match_the_resolved_instrument() {
     assert!(absent.is_empty(), "not held must match nothing: {absent:?}");
 }
 
+#[rstest]
+#[tokio::test]
+async fn test_spot_fill_reports_include_stop_limit_trades() {
+    let (addr, state) = start_test_server().await;
+    let client = legacy_pair_spot_client(addr).await;
+    let mut page: Value =
+        serde_json::from_str(&spot_trades_history_json(&["XBTUSDT", "XBTUSDT"])).unwrap();
+    page["result"]["trades"]["TTRADE-0"]["ordertype"] = "stop limit".into();
+    *state.trades_history_json.lock().await = Some(page.to_string());
+
+    let reports = client
+        .request_fill_reports(AccountId::new("KRAKEN-001"), None, None, None)
+        .await
+        .unwrap();
+
+    let mut ids: Vec<_> = reports
+        .iter()
+        .map(|report| report.trade_id.as_str())
+        .collect();
+    ids.sort_unstable();
+    assert_eq!(ids, ["TTRADE-0", "TTRADE-1"]);
+}
+
 /// The same rule for the fill read.
 #[rstest]
 #[tokio::test]

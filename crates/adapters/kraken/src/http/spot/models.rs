@@ -416,7 +416,8 @@ pub struct SpotTrade {
     pub time: f64,
     #[serde(rename = "type")]
     pub trade_type: KrakenOrderSide,
-    pub ordertype: KrakenOrderType,
+    /// Trade history can use execution labels such as "stop limit".
+    pub ordertype: String,
     pub price: String,
     pub cost: String,
     pub fee: String,
