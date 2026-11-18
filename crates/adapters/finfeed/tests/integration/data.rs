@@ -1008,6 +1008,7 @@ fn invalid_configuration_is_rejected() {
 
 #[rstest]
 #[case("quote-rounding")]
+#[case("quote-crossed-after-limit")]
 #[case("trade-id")]
 #[case("trade-identity")]
 #[case("trade-zero")]
@@ -1045,6 +1046,7 @@ async fn failed_requests_emit_no_partial_response(#[case] scenario: &str) {
         "history-action" => body[7]["update_type"] = json!(99),
         "history-empty" => body = serde_json::Value::Array(Vec::new()),
         "quote-rounding" => body[0]["bid"] = json!("0.12345"),
+        "quote-crossed-after-limit" => body[5]["bid"] = json!("0.7"),
         "trade-id" => body[0]["id"] = serde_json::Value::Null,
         "trade-identity" => body[0]["market_id"] = json!("wrong-market"),
         "trade-zero" => body[0]["quantity"] = json!("0"),

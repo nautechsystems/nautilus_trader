@@ -55,12 +55,21 @@ const MARKET_ID: &str = "TEST-OUTCOME_NO";
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
 async fn shared_latest_poll_preserves_every_field_ties_duplicates_and_older_events() {
+    let mut activity: Value = serde_json::from_str(ACTIVITY).unwrap();
+    let mut crossed = activity["quotes"][0].clone();
+    crossed["bid"] = Value::String("0.5".into());
+    activity["quotes"]
+        .as_array_mut()
+        .unwrap()
+        .insert(0, crossed);
+
+    let activity = activity.to_string();
     let (peer, http) = start_peer(vec![
-        (200, "", EXCHANGES),
-        (200, "", MARKET),
-        (200, "", ACTIVITY),
-        (200, "", ACTIVITY),
-        (200, "", OLDER),
+        (200, "", EXCHANGES.to_owned()),
+        (200, "", MARKET.to_owned()),
+        (200, "", activity.clone()),
+        (200, "", activity),
+        (200, "", OLDER.to_owned()),
     ])
     .await;
     let (mut client, mut receiver) = connected(http.clone()).await;
