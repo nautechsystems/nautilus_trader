@@ -80,7 +80,8 @@ const AAPL_STRATEGY_ID: &str = "AAPL-001";
 #[world(init = Self::new)]
 struct StartupWorld {
     config: LiveNodeConfig,
-    instrument: Option<InstrumentAny>,
+    // Cucumber moves the world through nested futures on the test thread's stack
+    instrument: Option<Box<InstrumentAny>>,
     behavior: StartupMassStatusBehavior,
     oms_type: OmsType,
     order_report: Option<OrderStatusReport>,
@@ -177,12 +178,14 @@ fn generation_disabled(world: &mut StartupWorld) {
 
 #[given("the cache has a trading instrument and account but no orders or positions")]
 fn cache_initialized(world: &mut StartupWorld) {
-    world.instrument = Some(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()));
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    world.instrument = Some(Box::new(instrument));
 }
 
 #[given("the cache has AAPL equity on NASDAQ and a USD cash account")]
 fn aapl_instrument(world: &mut StartupWorld) {
-    world.instrument = Some(InstrumentAny::Equity(equity_aapl()));
+    let instrument = InstrumentAny::Equity(equity_aapl());
+    world.instrument = Some(Box::new(instrument));
 }
 
 #[given("unclaimed external orders are filtered")]
@@ -337,7 +340,8 @@ fn mass_status_pending(world: &mut StartupWorld) {
 async fn start_node(world: &mut StartupWorld, entrypoint: String) {
     let instrument = world
         .instrument
-        .clone()
+        .as_deref()
+        .cloned()
         .expect("scenario requires an instrument");
     let instrument_id = instrument.id();
     let equity = matches!(instrument, InstrumentAny::Equity(_));
