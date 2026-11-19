@@ -126,12 +126,19 @@ identical source whose promotion is already recorded.
 
 Use explicit close and handle its error. Dropping a writer only provides best-effort cleanup and is
 not evidence of successful promotion. If a promotion fails, preserve its staged files and investigate
-the error before retrying. Promotion sets aside a staged file whose rows overlap intervals already
-in the catalog by renaming it to `.feather.refused`, so later promotions skip it. After resolving the
-overlap, rename it back to `.feather` to convert it again. With `promote_on_close=False`, closing can
-intentionally leave a completed run staged for later conversion through
-`ParquetDataCatalog.convert_stream_to_data()`. Pass the run's `environment`, such as
-`Environment.LIVE`, to convert a run outside the default backtest folder.
+the error before retrying. With `promote_on_close=False`, closing can intentionally leave a completed
+run staged for later conversion through `ParquetDataCatalog.convert_stream_to_data()`. Pass the
+run's `environment`, such as `Environment.LIVE`, to convert a run outside the default backtest
+folder.
+
+Promotion sets aside a staged file whose rows overlap intervals already in the catalog: it renames
+the file to `.feather.refused`, numbering the name when an earlier refused file holds it, and later
+promotions skip it. The promotion that refuses a file fails and names it, and each later promotion
+records the run as `failed` in its manifest while a refused file remains. `read_live_run()` and
+`read_backtest()` still return the refused rows. When only the catalog's own files overlap, the
+staged file stays queued, so it promotes after the catalog is repaired. After resolving the overlap,
+rename the refused file back to `.feather`. A running writer does not pick it up: it converts when
+a writer restarts on the run or through `ParquetDataCatalog.convert_stream_to_data()`.
 
 A writer holds an exclusive lock on each `.feather.partial` file until it seals the file, so a
 crashed process leaves its open files unlocked. Recovery seals each unlocked regular partial file: it keeps

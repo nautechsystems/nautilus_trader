@@ -43,10 +43,12 @@ pub enum PersistenceError {
     /// The operation is not supported by this concrete backend.
     #[error("Operation not supported by this backend: {0}")]
     Unsupported(String),
-    /// The write would create non-disjoint intervals in the catalog.
-    #[error("{0}")]
-    NonDisjointIntervals(String),
 }
+
+/// A write whose intervals overlap intervals already in the catalog.
+#[derive(Debug, Error)]
+#[error("{0}")]
+pub(crate) struct CatalogOverlapError(pub(crate) String);
 
 impl PersistenceError {
     /// Convenience constructor for [`PersistenceError::Unsupported`].
