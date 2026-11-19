@@ -133,8 +133,9 @@ folder.
 
 Promotion sets aside a staged file whose rows overlap intervals already in the catalog: it renames
 the file to `.feather.refused`, numbering the name when an earlier refused file holds it, and later
-promotions skip it. The promotion that refuses a file fails and names it, and each later promotion
-records the run as `failed` in its manifest while a refused file remains. `read_live_run()` and
+promotions skip it. The promotion that refuses a file fails and names it, a writer starting on the
+run warns with every refused file, and each later promotion records the run as `failed` in its
+manifest while a refused file remains. `read_live_run()` and
 `read_backtest()` still return the refused rows. When only the catalog's own files overlap, the
 staged file stays queued, so it promotes after the catalog is repaired. After resolving the overlap,
 rename the refused file back to `.feather`. A running writer does not pick it up: it converts when

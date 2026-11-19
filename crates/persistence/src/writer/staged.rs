@@ -27,8 +27,9 @@ use object_store::path::PathPart;
 
 use super::{
     feather::{
-        FEATHER_EXTENSION, FEATHER_PARTIAL_EXTENSION, FeatherWriteCommand, FeatherWriter,
-        RotationConfig, WriterClock, feather_error, recover_partial_feather_files,
+        FEATHER_EXTENSION, FEATHER_PARTIAL_EXTENSION, FEATHER_REFUSED_EXTENSION,
+        FeatherWriteCommand, FeatherWriter, RotationConfig, WriterClock, feather_error,
+        recover_partial_feather_files,
     },
     filter::WriterRecordFilter,
     promotion::{
@@ -547,6 +548,20 @@ where
                     log::warn!(
                         "{writer_name} found {sealed} orphan Feather file(s) and {partial} \
                          unsealed Feather file(s) under run session '{}'",
+                        self.storage.original_uri
+                    );
+                }
+
+                // Promotion skips refused files, so each new session names them until resolved
+                let refused = files
+                    .iter()
+                    .filter(|file| file.ends_with(&format!(".{FEATHER_REFUSED_EXTENSION}")))
+                    .collect::<Vec<_>>();
+
+                if !refused.is_empty() {
+                    log::warn!(
+                        "{writer_name} found refused Feather file(s) under run session '{}', \
+                         which promotion skips until restored: {refused:?}",
                         self.storage.original_uri
                     );
                 }
