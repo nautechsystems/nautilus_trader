@@ -64,7 +64,7 @@ impl PyCoinApiDataLoader {
     /// Missing credentials fall back to `COINAPI_API_KEY` on the first network request.
     /// Local files require no key. Construction sends no requests.
     #[new]
-    #[pyo3(signature = (api_key=None, base_url=None, proxy_url=None, timeout_secs=None, max_concurrent_requests=None, credit_budget=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, retry_max_elapsed_ms=None))]
+    #[pyo3(signature = (api_key=None, base_url=None, proxy_url=None, timeout_secs=None, max_concurrent_requests=None, credit_budget=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, retry_max_elapsed_ms=None, min_request_interval_ms=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         api_key: Option<String>,
@@ -77,6 +77,7 @@ impl PyCoinApiDataLoader {
         retry_delay_initial_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         retry_max_elapsed_ms: Option<u64>,
+        min_request_interval_ms: Option<u64>,
     ) -> Self {
         let defaults = CoinApiHttpConfig::default();
 
@@ -85,6 +86,7 @@ impl PyCoinApiDataLoader {
             proxy_url: proxy_url.map(SecretString::from),
             max_concurrent_requests: max_concurrent_requests
                 .unwrap_or(defaults.max_concurrent_requests),
+            min_request_interval_ms,
             credit_budget: credit_budget.unwrap_or(defaults.credit_budget),
             retry: RetryConfig {
                 operation_timeout_ms: timeout_secs

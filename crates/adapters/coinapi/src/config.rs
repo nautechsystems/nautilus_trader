@@ -92,6 +92,8 @@ pub struct CoinApiDataClientConfig {
     /// Maximum simultaneous REST requests for this client instance.
     #[builder(default = CoinApiHttpConfig::default().max_concurrent_requests)]
     pub max_concurrent_requests: usize,
+    /// Minimum spacing in milliseconds between REST attempts on this client. `None` disables pacing.
+    pub min_request_interval_ms: Option<u64>,
     /// Initial REST retry delay in milliseconds.
     #[builder(default = CoinApiHttpConfig::default().retry.initial_delay_ms)]
     pub retry_delay_initial_ms: u64,
@@ -123,6 +125,7 @@ nautilus_core::impl_pyo3_config_getters!(CoinApiDataClientConfig {
     max_retries: u32,
     http_timeout_secs: u64,
     max_concurrent_requests: usize,
+    min_request_interval_ms: Option<u64>,
     retry_delay_initial_ms: u64,
     retry_delay_max_ms: u64,
     retry_max_elapsed_ms: u64,
@@ -161,6 +164,7 @@ impl CoinApiDataClientConfig {
             credit_budget: self.credit_budget,
             proxy_url: self.proxy_url.clone(),
             max_concurrent_requests: self.max_concurrent_requests,
+            min_request_interval_ms: self.min_request_interval_ms,
             retry: RetryConfig {
                 max_retries: self.max_retries,
                 operation_timeout_ms: Some(self.http_timeout_secs.saturating_mul(1_000)),
@@ -250,6 +254,7 @@ mod tests {
             http_default.max_concurrent_requests
         );
         assert_eq!(http.credit_budget, http_default.credit_budget);
+        assert_eq!(http.min_request_interval_ms, None);
         // RetryConfig has no PartialEq, so compare its complete Debug form
         assert_eq!(
             format!("{:?}", http.retry),
@@ -277,6 +282,7 @@ mod tests {
             .proxy_url("http://user:proxy-secret@127.0.0.1:3".into())
             .http_timeout_secs(timeout_secs)
             .max_concurrent_requests(4)
+            .min_request_interval_ms(7_000)
             .retry_delay_initial_ms(29)
             .retry_delay_max_ms(53)
             .retry_max_elapsed_ms(71_000)
@@ -290,6 +296,7 @@ mod tests {
 
         assert_eq!(http.base_url, "http://127.0.0.1:1/v1/");
         assert_eq!(http.credit_budget, 7);
+        assert_eq!(http.min_request_interval_ms, Some(7_000));
         assert_eq!(
             format!("{:?}", http.retry),
             format!(

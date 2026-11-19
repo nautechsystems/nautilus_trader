@@ -27,13 +27,17 @@ use std::{
 };
 
 use jiff::Timestamp;
-use nautilus_core::{UUID4, UnixNanos, string::secret::SecretString};
+use nautilus_core::{UUID4, UnixNanos, string::secret::SecretString, time::wall_clock_now};
 use nautilus_model::identifiers::InstrumentId;
 use nautilus_network::{
     backoff::ExponentialBackoff,
-    http::{HttpClient, HttpRedirectPolicy, HttpResponse, Method},
-    retry::{RetryConfig, RetryManager},
+    dst::time,
+    http::{
+        HttpClient, HttpRedirectPolicy, HttpResponse, RETRY_AFTER, StatusCode, parse_retry_after,
+    },
+    retry::{RetryConfig, RetryError, RetryManager},
 };
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
@@ -82,6 +86,8 @@ pub struct CoinApiHttpConfig {
     pub proxy_url: Option<SecretString>,
     /// Maximum simultaneous requests for this client instance.
     pub max_concurrent_requests: usize,
+    /// Minimum spacing in milliseconds between REST attempts on this client. `None` disables pacing.
+    pub min_request_interval_ms: Option<u64>,
     /// Lifetime credit allowance for this instance; see the struct docs for accounting.
     pub credit_budget: u64,
     /// Retry policy; the elapsed budget and any configured attempt timeout must be positive.
@@ -94,6 +100,7 @@ impl Default for CoinApiHttpConfig {
             base_url: REST_URL.into(),
             proxy_url: None,
             max_concurrent_requests: 1,
+            min_request_interval_ms: None,
             credit_budget: 100,
             retry: RetryConfig {
                 jitter_ms: 0,
@@ -128,8 +135,12 @@ pub struct CoinApiHttpClient {
     client: HttpClient,
     flat_files_client: HttpClient,
     concurrency: tokio::sync::Semaphore,
+    rest_not_before: Mutex<Option<time::Instant>>,
+    min_request_interval: Option<Duration>,
     ranges: tokio::sync::Mutex<()>,
-    retry: RetryManager<Error>,
+    flat_files_retry: RetryManager<Error>,
+    rest_retry: RetryManager<Error>,
+    rest_timeout_ms: Option<u64>,
     cancellation: CancellationToken,
     credits_remaining: AtomicU64,
 }
@@ -179,6 +190,15 @@ impl CoinApiHttpClient {
             ));
         }
 
+        let min_request_interval = config.min_request_interval_ms.map(Duration::from_millis);
+        if min_request_interval.is_some_and(|interval| {
+            interval.is_zero() || time::Instant::now().checked_add(interval).is_none()
+        }) {
+            return Err(Error::Validation(
+                "min_request_interval_ms must be positive and fit the monotonic clock".into(),
+            ));
+        }
+
         ExponentialBackoff::new(
             Duration::from_millis(config.retry.initial_delay_ms),
             Duration::from_millis(config.retry.max_delay_ms),
@@ -190,14 +210,20 @@ impl CoinApiHttpClient {
 
         let client = build_client(&api_key, &config, "application/json")?;
         let flat_files_client = build_client(&api_key, &config, "application/xml")?;
+        let mut rest_retry = config.retry.clone();
+        let rest_timeout_ms = rest_retry.operation_timeout_ms.take();
         Ok(Self {
             api_key,
             base_url,
             client,
             flat_files_client,
             concurrency: tokio::sync::Semaphore::new(config.max_concurrent_requests),
+            rest_not_before: Mutex::default(),
+            min_request_interval,
             ranges: tokio::sync::Mutex::new(()),
-            retry: RetryManager::new(config.retry),
+            flat_files_retry: RetryManager::new(config.retry),
+            rest_retry: RetryManager::new(rest_retry),
+            rest_timeout_ms,
             cancellation: CancellationToken::new(),
             credits_remaining: AtomicU64::new(config.credit_budget),
         })
@@ -205,6 +231,8 @@ impl CoinApiHttpClient {
 
     /// Cancels pending and future requests on this instance.
     pub fn cancel(&self) {
+        // Serialize cancellation with REST credit reservation
+        let _not_before = self.rest_not_before.lock();
         self.cancellation.cancel();
     }
 
@@ -575,50 +603,218 @@ impl CoinApiHttpClient {
         billed: fn(&T) -> u64,
     ) -> Result<T, Error> {
         let url = request_url(&self.base_url, path)?;
+        let attempt_retry_after = Mutex::new(None);
 
-        self.retry
+        self.rest_retry
             .invocation(
                 "CoinAPI GET",
                 || async {
-                    let _permit = self
-                        .concurrency
-                        .acquire()
-                        .await
-                        .map_err(|_| Error::Validation("request admission closed".into()))?;
-                    self.credits_remaining
-                        .try_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
-                            remaining.checked_sub(cost)
-                        })
-                        .map_err(|_| Error::CreditBudget)?;
+                    *attempt_retry_after.lock() = None;
+                    let queued = log::log_enabled!(log::Level::Debug).then(time::Instant::now);
+                    let (_permit, remaining) = self.admit_rest(cost).await?;
+                    let started = queued.map(|_| time::Instant::now());
+                    let mut status = None;
+                    let mut retry_after = None;
 
+                    let request = self.client.get_with_params_on_headers(url.as_str(), query, |code, headers| {
+                        status = Some(code.as_u16());
+                        retry_after = headers
+                            .get(RETRY_AFTER)
+                            .and_then(|value| value.to_str().ok())
+                            .and_then(parse_rest_retry_after);
+                        *attempt_retry_after.lock() = self.observe_rest_retry_after(code, retry_after);
+                    });
+
+                    // Box the transport future once to keep simulated REST futures small
                     let response = self
-                        .client
-                        .request_with_params(
-                            Method::GET,
-                            url.to_string(),
-                            Some(query),
-                            None,
-                            None,
-                            None,
-                            None,
-                        )
-                        .await?;
-                    let value = self.decode(&response)?;
-                    self.credits_remaining
-                        .fetch_add(cost.saturating_sub(billed(&value)), Ordering::Relaxed);
-                    Ok(value)
+                        .within_rest_timeout(remaining, Box::pin(request))
+                        .await
+                        .and_then(|result| result.map_err(Error::from));
+
+                    let elapsed = started.map(|started| started.elapsed());
+
+                    let result = response.and_then(|response| {
+                        let value = self.decode(&response, retry_after)?;
+                        self.credits_remaining
+                            .fetch_add(cost.saturating_sub(billed(&value)), Ordering::Relaxed);
+                        Ok(value)
+                    });
+
+                    if let (Some(queued), Some(started), Some(elapsed)) = (queued, started, elapsed) {
+                        log::debug!(
+                            "CoinAPI REST GET endpoint={} admission_wait_ms={} http_elapsed_ms={} status={status:?} credits_remaining={}",
+                            path.first().copied().unwrap_or("unknown"),
+                            started.duration_since(queued).as_millis(),
+                            elapsed.as_millis(),
+                            self.credits_remaining(),
+                        );
+                    }
+
+                    result
                 },
                 Error::is_retryable,
                 Error::Retry,
             )
-            .retry_delay(&Error::retry_delay)
+            .retry_delay(&|_| {
+                attempt_retry_after
+                    .lock()
+                    .map(|(observed, delay)| delay.saturating_sub(observed.elapsed()))
+            })
             .cancellation_token(&self.cancellation)
             .execute()
             .await
     }
 
+    fn observe_rest_retry_after(
+        &self,
+        status: StatusCode,
+        retry_after: Option<Duration>,
+    ) -> Option<(time::Instant, Duration)> {
+        if !Error::is_retryable_status(status.as_u16()) {
+            return None;
+        }
+
+        let observed = time::Instant::now();
+
+        if let Some(deadline) = retry_after.and_then(|delay| observed.checked_add(delay)) {
+            self.record_rest_cooldown(deadline);
+        }
+
+        if status == StatusCode::TOO_MANY_REQUESTS || retry_after.is_some() {
+            let retry_after_secs = retry_after.map(retry_after_seconds);
+            log::warn!(
+                "CoinAPI REST received HTTP {}, retry_after_secs={retry_after_secs:?}",
+                status.as_u16()
+            );
+        }
+
+        retry_after.map(|delay| (observed, delay))
+    }
+
+    async fn admit_rest(
+        &self,
+        cost: u64,
+    ) -> Result<(tokio::sync::SemaphorePermit<'_>, Option<Duration>), Error> {
+        let mut remaining = self.rest_timeout_ms.map(Duration::from_millis);
+
+        loop {
+            let deadline = *self.rest_not_before.lock();
+
+            let (wait, permit) = if let Some(deadline) =
+                deadline.filter(|deadline| *deadline > time::Instant::now())
+            {
+                (deadline, None)
+            } else {
+                let started = remaining.map(|_| time::Instant::now());
+                let permit = self
+                    .within_rest_timeout(remaining, self.concurrency.acquire())
+                    .await?
+                    .map_err(|_| Error::Validation("request admission closed".into()))?;
+                remaining = remaining
+                    .zip(started)
+                    .map(|(budget, started)| budget.saturating_sub(started.elapsed()));
+
+                if remaining.is_some_and(|duration| duration.is_zero()) {
+                    return Err(self.rest_operation_timeout());
+                }
+
+                let mut not_before = self.rest_not_before.lock();
+                let now = time::Instant::now();
+
+                if let Some(deadline) = not_before.filter(|deadline| *deadline > now) {
+                    (deadline, Some(permit))
+                } else {
+                    *not_before = self.reserve_rest_attempt(cost)?;
+                    return Ok((permit, remaining));
+                }
+            };
+
+            self.wait_rest_admission(wait, permit, cost).await?;
+        }
+    }
+
+    fn reserve_rest_attempt(&self, cost: u64) -> Result<Option<time::Instant>, Error> {
+        if self.cancellation.is_cancelled() {
+            return Err(Error::Retry(RetryError::Canceled));
+        }
+
+        self.credits_remaining
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
+                remaining.checked_sub(cost)
+            })
+            .map_err(|_| Error::CreditBudget)?;
+
+        let Some(interval) = self.min_request_interval else {
+            return Ok(None);
+        };
+
+        let Some(next) = time::Instant::now().checked_add(interval) else {
+            self.credits_remaining.fetch_add(cost, Ordering::Relaxed);
+            return Err(Error::Validation(
+                "REST pacing deadline exceeds the clock range".into(),
+            ));
+        };
+
+        Ok(Some(next))
+    }
+
+    async fn wait_rest_admission(
+        &self,
+        deadline: time::Instant,
+        permit: Option<tokio::sync::SemaphorePermit<'_>>,
+        cost: u64,
+    ) -> Result<(), Error> {
+        // Keep long provider deadlines out of the timer's registration arithmetic
+        let now = time::Instant::now();
+        let wake = deadline.min(now + Duration::from_secs(60));
+
+        let permit = if permit.is_none() && self.credits_remaining() < cost {
+            match time::timeout(
+                wake.saturating_duration_since(now),
+                self.concurrency.acquire(),
+            )
+            .await
+            {
+                Ok(result) => {
+                    Some(result.map_err(|_| Error::Validation("request admission closed".into()))?)
+                }
+                Err(_) => return Ok(()),
+            }
+        } else {
+            permit
+        };
+
+        if permit.is_some() && self.credits_remaining() < cost {
+            return Err(Error::CreditBudget);
+        }
+
+        drop(permit);
+
+        time::sleep_until(wake).await;
+        Ok(())
+    }
+
+    async fn within_rest_timeout<F: Future>(
+        &self,
+        remaining: Option<Duration>,
+        future: F,
+    ) -> Result<F::Output, Error> {
+        match remaining {
+            Some(duration) => time::timeout(duration, future)
+                .await
+                .map_err(|_| self.rest_operation_timeout()),
+            None => Ok(future.await),
+        }
+    }
+
+    fn rest_operation_timeout(&self) -> Error {
+        Error::Retry(RetryError::OperationTimeout {
+            timeout_ms: self.rest_timeout_ms.unwrap_or_default(),
+        })
+    }
+
     async fn download_file(&self, url: Url, filepath: &Path) -> Result<(), Error> {
-        self.retry
+        self.flat_files_retry
             .invocation(
                 "CoinAPI Flat Files GET",
                 || async {
@@ -659,7 +855,11 @@ impl CoinApiHttpClient {
             .await
     }
 
-    fn decode<T: DeserializeOwned>(&self, response: &HttpResponse) -> Result<T, Error> {
+    fn decode<T: DeserializeOwned>(
+        &self,
+        response: &HttpResponse,
+        retry_after: Option<Duration>,
+    ) -> Result<T, Error> {
         for (key, value) in &response.headers {
             if key.starts_with("x-credits-") || key == "x-ratelimit-request-cost" {
                 log::debug!("CoinAPI usage {key}={value}");
@@ -668,10 +868,8 @@ impl CoinApiHttpClient {
 
         if !response.status.is_success() {
             let status = response.status.as_u16();
-            let retry_after_secs = response
-                .headers
-                .get("retry-after")
-                .and_then(|value| value.parse().ok());
+            let retry_after_secs = retry_after.map(retry_after_seconds);
+
             return Err(match serde_json::from_slice::<VenueError>(&response.body) {
                 Ok(error) => Error::Venue {
                     status,
@@ -689,6 +887,22 @@ impl CoinApiHttpClient {
 
         serde_json::from_slice(&response.body).map_err(Error::Parse)
     }
+
+    fn record_rest_cooldown(&self, deadline: time::Instant) {
+        let mut not_before = self.rest_not_before.lock();
+        *not_before = (*not_before).max(Some(deadline));
+    }
+}
+
+fn parse_rest_retry_after(value: &str) -> Option<Duration> {
+    let now = Timestamp::try_from(wall_clock_now()).ok()?;
+    parse_retry_after(value, now)
+}
+
+fn retry_after_seconds(delay: Duration) -> u64 {
+    delay
+        .as_secs()
+        .saturating_add(u64::from(delay.subsec_nanos() != 0))
 }
 
 #[derive(Debug)]
@@ -794,9 +1008,13 @@ fn billed<T>(records: &Vec<T>) -> u64 {
 #[cfg(test)]
 #[cfg(not(all(feature = "simulation", madsim)))]
 mod tests {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
+    use std::{
+        future::poll_fn,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        task::Poll,
     };
 
     use axum::{
@@ -806,7 +1024,6 @@ mod tests {
         serve,
     };
     use nautilus_common::testing::wait_until_async;
-    use nautilus_network::retry::RetryError;
     use parking_lot::Mutex;
     use rstest::rstest;
     use tempfile::TempDir;
@@ -1149,6 +1366,418 @@ mod tests {
         assert!(!filepath.exists());
         assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
         assert_eq!(client.credits_remaining(), 7);
+    }
+
+    #[tokio::test]
+    async fn rest_cooldown_leaves_the_transport_free_for_flat_files() {
+        let directory = TempDir::new().unwrap();
+        let filepath = directory.path().join("export.csv");
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let url = Url::parse(&format!("http://{address}/archive")).unwrap();
+
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request = read_request(&mut socket).await;
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\ndata")
+                .await
+                .unwrap();
+            request
+        });
+
+        let client = CoinApiHttpClient::new(
+            "test-api-key".into(),
+            CoinApiHttpConfig {
+                base_url: format!("http://{address}/v1/"),
+                ..config()
+            },
+        )
+        .unwrap();
+
+        client.record_rest_cooldown(time::Instant::now() + Duration::from_secs(60));
+        let query = ExchangesQuery::default();
+        let request = client.get_exchanges(&query);
+        tokio::pin!(request);
+        poll_fn(|cx| {
+            assert!(request.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+
+        time::timeout(Duration::from_secs(3), client.download_file(url, &filepath))
+            .await
+            .unwrap()
+            .unwrap();
+        let request = server.await.unwrap();
+        assert_eq!(request.lines().next(), Some("GET /archive HTTP/1.1"));
+        assert_eq!(std::fs::read(&filepath).unwrap(), b"data");
+        assert_eq!(client.credits_remaining(), 7);
+    }
+
+    #[rstest]
+    #[case::pacing_longer(3_000, 1)]
+    #[case::cooldown_longer(1_000, 3)]
+    #[tokio::test(start_paused = true)]
+    async fn rest_admission_honors_pacing_and_cooldown(
+        #[case] interval_ms: u64,
+        #[case] retry_after_secs: u64,
+    ) {
+        let client = CoinApiHttpClient::new(
+            "test-api-key".into(),
+            CoinApiHttpConfig {
+                min_request_interval_ms: Some(interval_ms),
+                ..config()
+            },
+        )
+        .unwrap();
+
+        let started = time::Instant::now();
+        let (permit, _) = client.admit_rest(1).await.unwrap();
+        client.record_rest_cooldown(time::Instant::now() + Duration::from_secs(retry_after_secs));
+        drop(permit);
+
+        let request = client.admit_rest(1);
+        tokio::pin!(request);
+        assert!(
+            time::timeout(Duration::from_secs(2), request.as_mut())
+                .await
+                .is_err()
+        );
+        assert_eq!(client.credits_remaining(), 6);
+        let _permit = time::timeout(Duration::from_millis(1_100), request)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(started.elapsed() >= Duration::from_secs(3));
+        assert_eq!(client.credits_remaining(), 5);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn rest_pacing_rechecks_queued_attempts_before_reserving_credits() {
+        let client = CoinApiHttpClient::new(
+            "test-api-key".into(),
+            CoinApiHttpConfig {
+                max_concurrent_requests: 2,
+                min_request_interval_ms: Some(1_000),
+                ..config()
+            },
+        )
+        .unwrap();
+
+        let occupied = client.concurrency.acquire_many(2).await.unwrap();
+        let first = client.admit_rest(1);
+        let second = client.admit_rest(1);
+        tokio::pin!(first, second);
+
+        poll_fn(|cx| {
+            assert!(first.as_mut().poll(cx).is_pending());
+            assert!(second.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+
+        drop(occupied);
+        let (_first_permit, _) = first.await.unwrap();
+        let started = time::Instant::now();
+        assert!(
+            time::timeout(Duration::from_millis(250), second.as_mut())
+                .await
+                .is_err()
+        );
+        assert_eq!(client.credits_remaining(), 6);
+        assert_eq!(client.concurrency.available_permits(), 1);
+
+        let _second = second.await.unwrap();
+        assert!(started.elapsed() >= Duration::from_secs(1));
+        assert_eq!(client.credits_remaining(), 5);
+    }
+
+    #[rstest]
+    #[case::rate_limited(429, false)]
+    #[case::unavailable(503, false)]
+    #[case::gateway_timeout_with_date(504, true)]
+    #[tokio::test]
+    async fn retry_after_closes_rest_admission_before_body_completes(
+        #[case] status: u16,
+        #[case] date_header: bool,
+    ) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let mut config = config();
+        config.base_url = format!("http://{address}/v1/");
+        config.max_concurrent_requests = 2;
+        config.retry.max_retries = 0;
+        let client = Arc::new(CoinApiHttpClient::new("test-api-key".into(), config).unwrap());
+
+        let first = tokio::spawn({
+            let client = Arc::clone(&client);
+            async move { client.get_exchanges(&ExchangesQuery::default()).await }
+        });
+
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let request = read_request(&mut stream).await;
+
+        let (retry_after, expected_delay) = if date_header {
+            let now = Timestamp::try_from(wall_clock_now()).unwrap();
+            let date = now + jiff::SignedDuration::from_secs(30);
+            let mut value = String::new();
+            jiff::fmt::rfc2822::DateTimePrinter::new()
+                .print_timestamp_rfc9110(&date, &mut value)
+                .unwrap();
+            (value, 25..=30)
+        } else {
+            ("2".into(), 2..=2)
+        };
+
+        stream
+            .write_all(
+                format!("HTTP/1.1 {status} Busy\r\nRetry-After: {retry_after}\r\nContent-Length: 4\r\n\r\n")
+                    .as_bytes(),
+            )
+            .await
+            .unwrap();
+        wait_until_async(
+            || std::future::ready(client.rest_not_before.lock().is_some()),
+            Duration::from_secs(1),
+        )
+        .await;
+
+        let query = SymbolsQuery::default();
+        let second = client.get_symbols("COINBASE", &query);
+        assert!(
+            time::timeout(Duration::from_millis(50), second)
+                .await
+                .is_err()
+        );
+        assert!(
+            time::timeout(Duration::from_millis(50), listener.accept())
+                .await
+                .is_err()
+        );
+        assert!(!first.is_finished());
+        assert_eq!(client.credits_remaining(), 6);
+        assert_eq!(client.concurrency.available_permits(), 1);
+
+        stream.write_all(b"busy").await.unwrap();
+        assert_eq!(request.lines().next(), Some("GET /v1/exchanges HTTP/1.1"));
+        assert!(matches!(
+            first.await.unwrap(),
+            Err(Error::Http { status: received, retry_after_secs: Some(delay) })
+                if received == status && expected_delay.contains(&delay)
+        ));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn canceled_pacing_wait_does_not_reserve_credits_on_wake() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+
+        let client = CoinApiHttpClient::new(
+            "test-api-key".into(),
+            CoinApiHttpConfig {
+                base_url: format!("http://{address}/v1/"),
+                min_request_interval_ms: Some(1_000),
+                ..config()
+            },
+        )
+        .unwrap();
+
+        let (permit, _) = client.admit_rest(1).await.unwrap();
+        drop(permit);
+
+        let query = ExchangesQuery::default();
+        let request = client.get_exchanges(&query);
+        tokio::pin!(request);
+        poll_fn(|cx| {
+            assert!(request.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+
+        client.cancel();
+        tokio::time::advance(Duration::from_secs(2)).await;
+        assert!(matches!(
+            request.await,
+            Err(Error::Retry(RetryError::Canceled))
+        ));
+        assert_eq!(client.credits_remaining(), 6);
+    }
+
+    #[rstest]
+    #[case::extends_waiting_request(1, 3, 2)]
+    #[case::preserves_later_deadline_across_timer_chunks(70, 1, 65)]
+    #[tokio::test(start_paused = true)]
+    async fn rest_cooldown_keeps_the_latest_deadline(
+        #[case] first: u64,
+        #[case] second: u64,
+        #[case] blocked_secs: u64,
+    ) {
+        let client = CoinApiHttpClient::new("test-api-key".into(), config()).unwrap();
+        let first_deadline = time::Instant::now() + Duration::from_secs(first);
+        client.record_rest_cooldown(first_deadline);
+        let request = client.admit_rest(1);
+        tokio::pin!(request);
+
+        if first < second {
+            poll_fn(|cx| {
+                assert!(request.as_mut().poll(cx).is_pending());
+                Poll::Ready(())
+            })
+            .await;
+        }
+
+        let second_deadline = time::Instant::now() + Duration::from_secs(second);
+        client.record_rest_cooldown(second_deadline);
+        assert!(
+            time::timeout(Duration::from_secs(blocked_secs), request.as_mut())
+                .await
+                .is_err()
+        );
+        assert_eq!(client.credits_remaining(), 7);
+        let _permit = request.await.unwrap();
+        assert!(time::Instant::now() >= first_deadline.max(second_deadline));
+        assert_eq!(client.credits_remaining(), 6);
+    }
+
+    #[rstest]
+    #[case::admission_times_out(false, 7)]
+    #[case::transport_uses_remaining_time(true, 6)]
+    #[tokio::test(start_paused = true)]
+    async fn rest_attempt_timeout_includes_admission(
+        #[case] release_permit: bool,
+        #[case] credits_remaining: u64,
+    ) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let mut config = config();
+        config.base_url = format!("http://{address}/v1/");
+        config.retry.max_retries = 0;
+        config.retry.operation_timeout_ms = Some(500);
+
+        let client = CoinApiHttpClient::new("test-api-key".into(), config).unwrap();
+        let permit = client.concurrency.acquire().await.unwrap();
+        let query = ExchangesQuery::default();
+        let request = client.get_exchanges(&query);
+        tokio::pin!(request);
+        assert!(
+            time::timeout(Duration::from_millis(250), request.as_mut())
+                .await
+                .is_err()
+        );
+        assert_eq!(client.credits_remaining(), 7);
+
+        if release_permit {
+            drop(permit);
+        }
+
+        let error = time::timeout(Duration::from_millis(300), request)
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            Error::Retry(RetryError::OperationTimeout { timeout_ms: 500 })
+        ));
+        assert_eq!(client.credits_remaining(), credits_remaining);
+    }
+
+    #[rstest]
+    #[case::already_active(true)]
+    #[case::published_while_queued(false)]
+    #[tokio::test(start_paused = true)]
+    async fn rest_attempt_budget_during_cooldown_with_busy_permit(#[case] already_active: bool) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let mut config = config();
+        config.base_url = format!("http://{address}/v1/");
+        config.retry.max_retries = 0;
+        config.retry.operation_timeout_ms = Some(500);
+
+        let client = CoinApiHttpClient::new("test-api-key".into(), config).unwrap();
+        let permit = client.concurrency.acquire().await.unwrap();
+        if already_active {
+            client.record_rest_cooldown(time::Instant::now() + Duration::from_secs(1));
+        }
+
+        let query = ExchangesQuery::default();
+        let request = client.get_exchanges(&query);
+        tokio::pin!(request);
+        assert!(
+            time::timeout(Duration::from_millis(300), request.as_mut())
+                .await
+                .is_err()
+        );
+        assert_eq!(client.credits_remaining(), 7);
+
+        if !already_active {
+            client.record_rest_cooldown(time::Instant::now() + Duration::from_secs(1));
+        }
+
+        drop(permit);
+
+        assert!(
+            time::timeout(Duration::from_secs(1), request.as_mut())
+                .await
+                .is_err()
+        );
+        assert_eq!(client.credits_remaining(), 6);
+        let error = time::timeout(Duration::from_millis(250), request)
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            Error::Retry(RetryError::OperationTimeout { timeout_ms: 500 })
+        ));
+    }
+
+    #[rstest]
+    #[case::refunded(6)]
+    #[case::spent(0)]
+    #[tokio::test(start_paused = true)]
+    async fn rest_cooldown_waits_for_credit_settlement(#[case] refund: u64) {
+        let client = CoinApiHttpClient::new(
+            "test-api-key".into(),
+            CoinApiHttpConfig {
+                max_concurrent_requests: 2,
+                ..config()
+            },
+        )
+        .unwrap();
+
+        let (reservation, _) = client.admit_rest(7).await.unwrap();
+        let _download = client.concurrency.acquire().await.unwrap();
+        let deadline = time::Instant::now() + Duration::from_secs(1);
+        client.record_rest_cooldown(deadline);
+        let request = client.admit_rest(1);
+        tokio::pin!(request);
+        poll_fn(|cx| {
+            assert!(request.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+
+        assert_eq!(client.credits_remaining(), 0);
+
+        client
+            .credits_remaining
+            .fetch_add(refund, Ordering::Relaxed);
+        drop(reservation);
+
+        let result = time::timeout(Duration::from_secs(2), request)
+            .await
+            .unwrap();
+
+        if refund == 0 {
+            assert!(matches!(result, Err(Error::CreditBudget)));
+            assert!(time::Instant::now() < deadline);
+            assert_eq!(client.credits_remaining(), 0);
+        } else {
+            let _permit = result.unwrap();
+            assert!(time::Instant::now() >= deadline);
+            assert_eq!(client.credits_remaining(), 5);
+        }
     }
 
     fn config() -> CoinApiHttpConfig {

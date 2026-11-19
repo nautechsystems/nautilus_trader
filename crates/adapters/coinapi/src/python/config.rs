@@ -99,6 +99,7 @@ impl CoinApiDataClientConfig {
         retry_delay_initial_ms = None,
         retry_delay_max_ms = None,
         retry_max_elapsed_ms = None,
+        min_request_interval_ms = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -117,6 +118,7 @@ impl CoinApiDataClientConfig {
         retry_delay_initial_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         retry_max_elapsed_ms: Option<u64>,
+        min_request_interval_ms: Option<u64>,
     ) -> PyResult<Self> {
         let defaults = Self::default();
 
@@ -135,6 +137,7 @@ impl CoinApiDataClientConfig {
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             max_concurrent_requests: max_concurrent_requests
                 .unwrap_or(defaults.max_concurrent_requests),
+            min_request_interval_ms,
             retry_delay_initial_ms: retry_delay_initial_ms
                 .unwrap_or(defaults.retry_delay_initial_ms),
             retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
@@ -196,6 +199,7 @@ mod tests {
             Some(29),
             Some(53),
             Some(71_000),
+            Some(7_000),
         )
         .unwrap();
 
@@ -225,6 +229,7 @@ mod tests {
         );
         assert_eq!(config.http_timeout_secs, 13);
         assert_eq!(config.max_concurrent_requests, 4);
+        assert_eq!(config.min_request_interval_ms, Some(7_000));
         assert_eq!(config.retry_delay_initial_ms, 29);
         assert_eq!(config.retry_delay_max_ms, 53);
         assert_eq!(config.retry_max_elapsed_ms, 71_000);

@@ -460,8 +460,27 @@ throughout the client's lifetime and is separate from CoinAPI billing. Each REST
 
 CoinAPI bills historical requests per 100 returned records. Thus, a successful historical page refunds the
 unused reservation above `ceil(records / 100)`. The local minimum charge is one credit. Failed, retried, and
-canceled attempts are not refunded. The client backs off on HTTP 429 and fails promptly on HTTP 403. See the
-[API limits reference](https://www.coinapi.io/products/market-data-api/docs/api-limits-and-billing-metrics?ref=nautilus).
+canceled attempts are not refunded.
+See the [API limits reference](https://www.coinapi.io/products/market-data-api/docs/api-limits-and-billing-metrics?ref=nautilus).
+
+### REST request pacing
+
+Set a positive `min_request_interval_ms` to space REST attempts across endpoints, retries, and
+history pages on one client. Pacing is off by default. With a 10-request-per-minute organization
+limit, `7_000` ms allows at most nine starts per rolling minute per client. Divide that limit among
+clients and jobs.
+
+The client backs off on HTTP 429 and fails promptly on HTTP 403. For HTTP 429, 500, 502, 503, or 504,
+`Retry-After` in seconds or HTTP-date format starts a REST cooldown if the deadline fits the local
+clock. The cooldown starts at header arrival and gates later attempts on the same client, even with
+retries disabled or a failed body read or decode.
+
+Attempts wait until both pacing and cooldown allow them. These waits use the total call budget. The
+client sleeps without a concurrency slot and reserves credits on admission. Flat Files use separate
+retry delays, and WebSocket uses its own controls.
+
+After the HTTP wait returns, `DEBUG` logs the admission wait (concurrency, pacing, and cooldown), HTTP
+time, status if available, and remaining local credits.
 
 ### Backfills
 
@@ -576,6 +595,7 @@ The loader accepts these optional HTTP keywords:
 | `proxy_url`               | Explicit HTTP(S) proxy for REST and Flat Files.               |
 | `timeout_secs`            | Per-attempt deadline, including admission and body streaming. |
 | `max_concurrent_requests` | Shared limit for REST requests and file downloads.            |
+| `min_request_interval_ms` | Optional minimum spacing between REST attempt starts.         |
 | `credit_budget`           | Lifetime local REST credit allowance.                         |
 | `max_retries`             | Maximum retries for each HTTP request or download.            |
 | `retry_delay_initial_ms`  | Initial retry delay.                                          |
@@ -789,6 +809,7 @@ is `COINAPI`. A custom client name becomes its client ID.
 | `max_retries`                | `3`       | Maximum retries for a failed REST request.                  |
 | `http_timeout_secs`          | `30`      | Per-attempt REST timeout, including concurrency admission.  |
 | `max_concurrent_requests`    | `1`       | Maximum simultaneous REST requests.                         |
+| `min_request_interval_ms`    | `None`    | Minimum spacing between REST attempt starts.                |
 | `retry_delay_initial_ms`     | 1,000     | Initial REST retry delay.                                   |
 | `retry_delay_max_ms`         | 10,000    | Maximum REST backoff; provider retry delays can exceed it.  |
 | `retry_max_elapsed_ms`       | 120,000   | Total budget per REST GET, including admission and retries. |
@@ -807,9 +828,9 @@ reports whether an explicit proxy is configured.
 
 `credit_budget`, `max_concurrent_requests`, `retry_max_elapsed_ms`, and `http_timeout_secs` must be positive.
 Each historical page has its own REST retry budget. The initial retry delay must be positive, and the maximum
-must be at least the initial delay. Invalid backoff settings fail at client construction. The per-attempt
-timeout includes waiting for concurrency admission and does not include retry delays. The total elapsed budget
-includes both.
+must be at least the initial delay. Invalid backoff or pacing settings fail at client construction. The
+per-attempt timeout covers concurrency admission and HTTP. Pacing, cooldown, and retry waits count toward
+the total elapsed budget.
 
 ### Python configuration
 

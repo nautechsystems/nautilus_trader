@@ -1597,6 +1597,50 @@ async fn corrupt_gzip_body_is_an_error(
     );
 }
 
+#[tokio::test]
+async fn header_observer_runs_before_a_body_decode_error() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (observed, body_ready) = tokio::sync::oneshot::channel();
+
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        read_headers(&mut stream).await;
+        stream
+            .write_all(b"HTTP/1.1 429 Too Many Requests\r\nRetry-After: 2\r\nContent-Encoding: gzip\r\nContent-Length: 4\r\n\r\n")
+            .await
+            .unwrap();
+        body_ready.await.unwrap();
+        stream.write_all(b"nope").await.unwrap();
+    });
+
+    let client = HttpClient::builder()
+        .use_system_proxy(false)
+        .timeout_secs(3)
+        .build()
+        .unwrap();
+
+    let error = client
+        .get_with_params_on_headers(
+            &format!("http://{addr}/corrupt"),
+            &[("limit", 1)],
+            |status, headers| {
+                assert_eq!(status.as_u16(), 429);
+                assert_eq!(headers["retry-after"], "2");
+                observed.send(()).unwrap();
+            },
+        )
+        .await
+        .unwrap_err();
+
+    peer.await.unwrap();
+
+    assert!(
+        matches!(error, HttpClientError::Error(ref message) if message.contains("failed to decode gzip response body")),
+        "{error:?}"
+    );
+}
+
 #[rstest]
 #[case::nonempty(b"decoded-payload".as_slice())]
 #[case::empty(b"".as_slice())]

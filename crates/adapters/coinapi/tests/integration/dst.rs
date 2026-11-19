@@ -76,11 +76,15 @@ fn range(limit: u32) -> HistoryQuery {
 }
 
 async fn peer(
-    responses: Vec<(u16, &'static str, impl Into<String> + Send + 'static)>,
+    responses: Vec<(
+        u16,
+        impl Into<String> + Send + 'static,
+        impl Into<String> + Send + 'static,
+    )>,
 ) -> (task::JoinHandle<Vec<String>>, CoinApiHttpConfig) {
     let responses: Vec<_> = responses
         .into_iter()
-        .map(|(status, headers, body)| (status, headers, body.into()))
+        .map(|(status, headers, body)| (status, headers.into(), body.into()))
         .collect();
     let (listener, address) = listener().await;
 
@@ -333,6 +337,307 @@ async fn retry_after_then_success() {
     assert!(start.elapsed() >= Duration::from_secs(1));
     assert_eq!(peer.await.unwrap().len(), 2);
     assert_eq!(client.credits_remaining(), 98);
+}
+
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn rest_request_interval_paces_retries_and_other_endpoints() {
+    let (peer, mut config) = peer(vec![
+        (503, "", ""),
+        (200, "", include_str!("../../test_data/empty.json")),
+        (200, "", include_str!("../../test_data/empty.json")),
+    ])
+    .await;
+    config.min_request_interval_ms = Some(1_000);
+    config.retry.operation_timeout_ms = Some(500);
+    let client = client(config.clone());
+    let started = time::Instant::now();
+
+    let query = ExchangesQuery::default();
+    let exchanges = client.get_exchanges(&query);
+    tokio::pin!(exchanges);
+    assert!(
+        time::timeout(Duration::from_millis(250), exchanges.as_mut())
+            .await
+            .is_err()
+    );
+    assert_eq!(client.credits_remaining(), 99);
+    assert_eq!(exchanges.await.unwrap(), vec![]);
+    assert!(started.elapsed() >= Duration::from_secs(1));
+
+    let query = SymbolsQuery::default();
+    let symbols = client.get_symbols("COINBASE", &query);
+    tokio::pin!(symbols);
+    assert!(
+        time::timeout(Duration::from_millis(250), symbols.as_mut())
+            .await
+            .is_err()
+    );
+    assert_eq!(client.credits_remaining(), 98);
+    assert_eq!(symbols.await.unwrap(), vec![]);
+    assert!(started.elapsed() >= Duration::from_secs(2));
+    assert_eq!(client.credits_remaining(), 97);
+
+    let requests = peer.await.unwrap();
+    assert_eq!(requests.len(), 3);
+    assert_request(&requests[0], "/v1/exchanges", &config);
+    assert_request(&requests[1], "/v1/exchanges", &config);
+    assert_request(&requests[2], "/v1/symbols/COINBASE/active", &config);
+}
+
+#[cfg(all(feature = "simulation", madsim))]
+#[madsim::test]
+async fn rest_http_date_retry_preserves_the_subsecond_delay() {
+    use jiff::fmt::rfc2822::DateTimePrinter;
+    use nautilus_core::time::wall_clock_now;
+
+    let now = Timestamp::try_from(wall_clock_now()).unwrap();
+    let retry_at = Timestamp::from_second(now.as_second() + 2).unwrap();
+    let mut date = String::new();
+    DateTimePrinter::new()
+        .print_timestamp_rfc9110(&retry_at, &mut date)
+        .unwrap();
+    let (peer, mut config) = peer(vec![
+        (504, format!("Retry-After: {date}\r\n"), ""),
+        (200, String::new(), "[]"),
+    ])
+    .await;
+    config.retry.max_retries = 1;
+    config.retry.max_elapsed_ms = Some(650);
+    let client = client(config.clone());
+    let delay = retry_at
+        .duration_since(now)
+        .unsigned_abs()
+        .checked_sub(Duration::from_millis(350))
+        .expect("retry date is at least one second ahead");
+    time::sleep(delay).await;
+    let started = time::Instant::now();
+
+    assert_eq!(
+        client
+            .get_exchanges(&ExchangesQuery::default())
+            .await
+            .unwrap(),
+        vec![]
+    );
+    assert!(started.elapsed() >= Duration::from_millis(300));
+    assert_eq!(client.credits_remaining(), 98);
+    let requests = peer.await.unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_request(&requests[0], "/v1/exchanges", &config);
+    assert_request(&requests[1], "/v1/exchanges", &config);
+}
+
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn rest_retry_after_delays_other_endpoints_without_retries() {
+    let (peer, mut config) = peer(vec![
+        (429, "Retry-After: 1\r\n", ""),
+        (200, "", include_str!("../../test_data/empty.json")),
+    ])
+    .await;
+    config.retry.max_retries = 0;
+    config.retry.operation_timeout_ms = Some(500);
+    let client = client(config.clone());
+    let started = time::Instant::now();
+    assert!(matches!(
+        client.get_exchanges(&ExchangesQuery::default()).await,
+        Err(Error::Http {
+            status: 429,
+            retry_after_secs: Some(1),
+        })
+    ));
+
+    let query = SymbolsQuery::default();
+    let symbols = client.get_symbols("COINBASE", &query);
+    tokio::pin!(symbols);
+    assert!(
+        time::timeout(Duration::from_millis(250), symbols.as_mut())
+            .await
+            .is_err()
+    );
+    assert_eq!(client.credits_remaining(), 99);
+
+    assert_eq!(symbols.await.unwrap(), vec![]);
+    assert!(started.elapsed() >= Duration::from_secs(1));
+    assert_eq!(client.credits_remaining(), 98);
+    let requests = peer.await.unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_request(&requests[0], "/v1/exchanges", &config);
+    assert_request(&requests[1], "/v1/symbols/COINBASE/active", &config);
+}
+
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn rest_retry_after_uses_time_since_headers() {
+    let (listener, address) = listener().await;
+    let mut config = config();
+    config.base_url = format!("http://{address}/v1/");
+    config.retry.max_retries = 1;
+    config.retry.max_elapsed_ms = Some(3_000);
+    let client = client(config.clone());
+
+    let peer = task::spawn(async move {
+        let mut requests = Vec::new();
+        let mut headers_sent = None;
+
+        for attempt in 0..2 {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                request.push(stream.read_u8().await.unwrap());
+            }
+
+            requests.push(String::from_utf8(request).unwrap());
+
+            if attempt == 0 {
+                headers_sent = Some(time::Instant::now());
+                stream
+                    .write_all(b"HTTP/1.1 503 Busy\r\nRetry-After: 2\r\nContent-Length: 4\r\nConnection: close\r\n\r\n")
+                    .await
+                    .unwrap();
+                stream.flush().await.unwrap();
+                time::sleep(Duration::from_millis(1_500)).await;
+                stream.write_all(b"busy").await.unwrap();
+            } else {
+                assert!(headers_sent.unwrap().elapsed() >= Duration::from_secs(2));
+                stream
+                    .write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n[]",
+                    )
+                    .await
+                    .unwrap();
+            }
+
+            stream.flush().await.unwrap();
+        }
+
+        requests
+    });
+
+    assert_eq!(
+        client
+            .get_exchanges(&ExchangesQuery::default())
+            .await
+            .unwrap(),
+        vec![]
+    );
+    assert_eq!(client.credits_remaining(), 98);
+    let requests = peer.await.unwrap();
+    assert_eq!(requests.len(), 2);
+
+    for request in requests {
+        assert_request(&request, "/v1/exchanges", &config);
+    }
+}
+
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn rest_retry_after_survives_a_stalled_response_body() {
+    let (listener, address) = listener().await;
+    let mut config = config();
+    config.base_url = format!("http://{address}/v1/");
+    config.retry.max_retries = 0;
+    config.retry.operation_timeout_ms = Some(500);
+    let client = client(config.clone());
+
+    let peer = task::spawn(async move {
+        let (mut stalled, _) = listener.accept().await.unwrap();
+        let mut request = Vec::new();
+        while !request.ends_with(b"\r\n\r\n") {
+            request.push(stalled.read_u8().await.unwrap());
+        }
+
+        stalled
+            .write_all(
+                b"HTTP/1.1 429 Too Many Requests\r\nRetry-After: 2\r\nContent-Length: 4\r\n\r\n",
+            )
+            .await
+            .unwrap();
+        stalled.flush().await.unwrap();
+
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut next_request = Vec::new();
+        while !next_request.ends_with(b"\r\n\r\n") {
+            next_request.push(stream.read_u8().await.unwrap());
+        }
+
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n[]")
+            .await
+            .unwrap();
+        stream.flush().await.unwrap();
+
+        [request, next_request].map(|request| String::from_utf8(request).unwrap())
+    });
+
+    let started = time::Instant::now();
+    assert!(matches!(
+        client.get_exchanges(&ExchangesQuery::default()).await,
+        Err(Error::Retry(RetryError::OperationTimeout {
+            timeout_ms: 500
+        }))
+    ));
+
+    let query = SymbolsQuery::default();
+    let symbols = client.get_symbols("COINBASE", &query);
+    tokio::pin!(symbols);
+    assert!(
+        time::timeout(Duration::from_millis(200), symbols.as_mut())
+            .await
+            .is_err()
+    );
+    assert_eq!(client.credits_remaining(), 99);
+    assert_eq!(symbols.await.unwrap(), vec![]);
+    assert!(started.elapsed() >= Duration::from_secs(2));
+    assert_eq!(client.credits_remaining(), 98);
+    let requests = peer.await.unwrap();
+    assert_request(&requests[0], "/v1/exchanges", &config);
+    assert_request(&requests[1], "/v1/symbols/COINBASE/active", &config);
+}
+
+#[rstest]
+#[case::exhausted_credits(1)]
+#[case::elapsed_budget(2)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn rest_cooldown_respects_local_budgets(#[case] credit_budget: u64) {
+    let (peer, mut config) = peer(vec![(429, "Retry-After: 60\r\n", "")]).await;
+    config.credit_budget = credit_budget;
+    config.retry.max_retries = 0;
+    config.retry.operation_timeout_ms = Some(500);
+    config.retry.max_elapsed_ms = Some(1_000);
+    let client = client(config.clone());
+
+    assert!(matches!(
+        client.get_exchanges(&ExchangesQuery::default()).await,
+        Err(Error::Http {
+            status: 429,
+            retry_after_secs: Some(60),
+        })
+    ));
+    let error = client
+        .get_symbols("COINBASE", &SymbolsQuery::default())
+        .await
+        .unwrap_err();
+
+    if credit_budget == 1 {
+        assert!(matches!(error, Error::CreditBudget));
+    } else {
+        assert!(matches!(
+            error,
+            Error::Retry(RetryError::ElapsedBudgetExceeded {
+                attempt: 1,
+                max_attempts: 1,
+                last_error: None,
+            })
+        ));
+    }
+
+    assert_eq!(client.credits_remaining(), credit_budget - 1);
+    let requests = peer.await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_request(&requests[0], "/v1/exchanges", &config);
 }
 
 #[rstest]
@@ -1396,19 +1701,22 @@ async fn redirects_do_not_forward_credentials() {
 }
 
 #[rstest]
-#[case(0, 1, Some(1))]
-#[case(1, 0, Some(1))]
-#[case(1, 1, None)]
-#[case(1, 1, Some(0))]
+#[case(0, 1, Some(1), None)]
+#[case(1, 0, Some(1), None)]
+#[case(1, 1, None, None)]
+#[case(1, 1, Some(0), None)]
+#[case(1, 1, Some(1), Some(0))]
 fn admission_configuration_requires_positive_bounds(
     #[case] concurrency: usize,
     #[case] budget: u64,
     #[case] elapsed: Option<u64>,
+    #[case] interval_ms: Option<u64>,
 ) {
     let mut config = config();
     config.max_concurrent_requests = concurrency;
     config.credit_budget = budget;
     config.retry.max_elapsed_ms = elapsed;
+    config.min_request_interval_ms = interval_ms;
     assert!(matches!(
         CoinApiHttpClient::new(SecretString::from("test-api-key"), config),
         Err(Error::Validation(_))

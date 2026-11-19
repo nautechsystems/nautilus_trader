@@ -38,6 +38,8 @@ class CoinApiDataClientConfig:
     @property
     def max_concurrent_requests(self) -> int: ...
     @property
+    def min_request_interval_ms(self) -> int | None: ...
+    @property
     def retry_delay_initial_ms(self) -> int: ...
     @property
     def retry_delay_max_ms(self) -> int: ...
@@ -66,6 +68,7 @@ class CoinApiDataClientConfig:
         retry_delay_initial_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
         retry_max_elapsed_ms: int | None = None,
+        min_request_interval_ms: int | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...
@@ -122,6 +125,7 @@ class CoinApiDataLoader:
         retry_delay_initial_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
         retry_max_elapsed_ms: int | None = None,
+        min_request_interval_ms: int | None = None,
     ) -> None: ...
     def add_instrument(
         self, instrument: typing.Any, symbol_id: str | None = None, symbol_id_int: int | None = None
