@@ -209,11 +209,13 @@ STANDARD_PRECISION_ARGS := --workspace --exclude nautilus-blockchain --no-defaul
 SIM_PACKAGES := -p nautilus-common -p nautilus-core -p nautilus-event-store \
 	-p nautilus-network -p nautilus-execution -p nautilus-live
 SIM_ADAPTER_PACKAGES := -p nautilus-okx -p nautilus-coinapi -p nautilus-derive -p nautilus-finfeed -p nautilus-kalshi
-SIM_ADAPTER_FILTERSET := test(dst::) + package(nautilus-finfeed) + package(nautilus-kalshi)
+SIM_MODULE_FILTER := test(dst::)
+SIM_ADAPTER_FILTERSET := $(SIM_MODULE_FILTER) + package(nautilus-finfeed) + package(nautilus-kalshi)
 SIM_FILTERSET := package(nautilus-common) + package(nautilus-event-store) + \
 	package(nautilus-network) + \
 	package(nautilus-execution) + \
 	(package(nautilus-live) & test(test_startup_reconciliation_times_out_waiting_for_mass_status)) + \
+	(package(nautilus-live) & $(SIM_MODULE_FILTER)) + \
 	(package(nautilus-live) & test(~task::tests)) + \
 	(package(nautilus-live) & test(test_bulk_report_acceptance)) + \
 	(package(nautilus-live) & test(test_position_report_acceptance)) + \

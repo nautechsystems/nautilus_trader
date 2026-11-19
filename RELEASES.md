@@ -87,6 +87,8 @@ Released on TBD (UTC).
 - Fixed open-only order checks leaving closed venue orders unresolved after lost updates
 - Fixed trailing stops updating while markets are not open or from stale reopen prices
 - Fixed consecutive simulated maker fills leaking synthetic last prices into later matching
+- Fixed live startup connecting execution clients after a stop request during data connection
+- Fixed live node panics on excessive `timeout_connection`, `timeout_disconnection`, or `delay_post_stop` values
 - Fixed custom tick-scheme persistence for `BinaryOption` Parquet catalogs
 - Fixed stale order status reports overwriting newer amendments for clients requiring authoritative fills
 - Fixed reconciliation applying `Accepted` reports to orders with fills or a closed status

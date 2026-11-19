@@ -1138,6 +1138,9 @@ impl QueueMonitorConfig {
 #[pymethods]
 impl LiveNodeConfig {
     /// Configuration for live Nautilus system nodes.
+    ///
+    /// Connection, disconnection, and post-stop durations must fit in an unsigned 64-bit nanosecond
+    /// count and in the platform's monotonic timer range.
     #[new]
     #[expect(clippy::too_many_arguments)]
     #[pyo3(signature = (environment=None, trader_id=None, load_state=None, save_state=None, shutdown_on_error=None, logging=None, instance_id=None, timeout_connection_secs=None, timeout_reconciliation_secs=None, timeout_portfolio_secs=None, timeout_disconnection_secs=None, delay_post_stop_secs=None, timeout_shutdown_secs=None, cache=None, msgbus=None, portfolio=None, queue_monitor=None, loop_debug=None, data_engine=None, risk_engine=None, exec_engine=None, controller=None, plugins=None, streaming=None, catalogs=None, *, data_clients=None, exec_clients=None))]

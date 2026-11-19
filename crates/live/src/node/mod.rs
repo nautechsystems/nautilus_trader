@@ -154,7 +154,7 @@ pub mod plugin;
 
 use builder::ExternalMessageBusIngress;
 pub use builder::LiveNodeBuilder;
-use config::{LiveNodeConfig, PluginConfig, validate_live_environment};
+use config::{LiveNodeConfig, PluginConfig, live_deadline, validate_live_environment};
 pub use metrics::{RunnerChannelMetricsSnapshot, RunnerMetricsDelta, RunnerMetricsSnapshot};
 use metrics::{RunnerChannelQueueDepths, RunnerMetrics};
 use queue::{QueueMonitor, QueueStateTransition};
@@ -480,14 +480,15 @@ impl LiveNode {
             return Ok(());
         }
 
-        let connection_deadline = dst::time::Instant::now() + self.config.timeout_connection;
-
         // Connect data clients first and flush instrument events into cache
-        if let Err(e) = self.connect_data_phase(connection_deadline).await {
-            return self
-                .abort_startup_with_error("Data client connection failed", e)
-                .await;
-        }
+        let connection_deadline = match self.connect_data_phase().await {
+            Ok(deadline) => deadline,
+            Err(e) => {
+                return self
+                    .abort_startup_with_error("Data client connection failed", e)
+                    .await;
+            }
+        };
 
         let (startup_system_events, startup_system_commands) =
             if let Some(runner) = self.runner.as_mut() {
@@ -501,20 +502,14 @@ impl LiveNode {
                 (Vec::new(), Vec::new())
             };
 
-        if let Err(e) = self.connect_exec_clients(connection_deadline).await {
-            return self
-                .abort_startup_with_error("Execution client connection failed", e)
-                .await;
-        }
-
-        if let Some(reason) = self.startup_abort_reason() {
-            self.abort_startup(reason).await?;
-            return Ok(());
-        }
-
-        match self.await_engines_connected(connection_deadline).await {
-            EngineConnectionStatus::Connected => {}
-            EngineConnectionStatus::TimedOut => {
+        match self.connect_exec_phase(connection_deadline).await {
+            Err(e) => {
+                return self
+                    .abort_startup_with_error("Execution client connection failed", e)
+                    .await;
+            }
+            Ok(EngineConnectionStatus::Connected) => {}
+            Ok(EngineConnectionStatus::TimedOut) => {
                 return self
                     .abort_startup_with_error(
                         "Engine readiness timed out",
@@ -522,12 +517,12 @@ impl LiveNode {
                     )
                     .await;
             }
-            EngineConnectionStatus::StopRequested => {
+            Ok(EngineConnectionStatus::StopRequested) => {
                 self.abort_startup("Stop signal received during startup")
                     .await?;
                 return Ok(());
             }
-            EngineConnectionStatus::ShutdownRequested => {
+            Ok(EngineConnectionStatus::ShutdownRequested) => {
                 self.abort_startup("Shutdown signal received during startup")
                     .await?;
                 return Ok(());
@@ -590,10 +585,8 @@ impl LiveNode {
         let controller_stop_result: anyhow::Result<()> = Ok(());
 
         self.kernel.stop_trader();
-        let delay = self.kernel.delay_post_stop();
-        log::info!("Awaiting residual events ({delay:?})...");
-
-        let residual_events = self.process_runner_for(delay).await;
+        let deadline = self.post_stop_deadline();
+        let residual_events = self.process_runner_until(deadline).await;
         if residual_events > 0 {
             log::debug!("Processed {residual_events} residual events during shutdown");
         }
@@ -631,14 +624,13 @@ impl LiveNode {
         }
     }
 
-    async fn process_runner_for(&mut self, duration: Duration) -> usize {
+    async fn process_runner_until(&mut self, deadline: dst::time::Instant) -> usize {
         let Some(mut runner) = self.runner.take() else {
-            dst::time::sleep(duration).await;
+            dst::time::sleep_until(deadline).await;
             return 0;
         };
 
         runner.bind_senders_for_node(self.handle.clone());
-        let deadline = dst::time::Instant::now() + duration;
         let mut processed = 0;
 
         loop {
@@ -1179,14 +1171,13 @@ impl LiveNode {
         let mut pending = PendingEvents::default();
         let mut startup_system_events = Vec::new();
         let mut startup_system_commands = Vec::new();
-        let connection_deadline = dst::time::Instant::now() + self.config.timeout_connection;
 
         // Startup phase 1: Connect data clients and drain instrument events into cache.
         // This ensures the cache is populated before execution clients connect.
         let mut pending_external = VecDeque::new();
         let data_connect_result = drive_with_event_buffering(
             drive_with_external_ingress(
-                self.connect_data_phase(connection_deadline),
+                self.connect_data_phase(),
                 &mut external_msgbus_rx,
                 &mut pending_external,
             ),
@@ -1203,32 +1194,35 @@ impl LiveNode {
 
         self.finish_external_ingress_connection(external_msgbus_rx.as_ref());
 
-        if let Err(e) = data_connect_result {
-            flush_all_pending(
-                &mut pending,
-                &mut time_evt_rx,
-                &mut system_evt_rx,
-                &mut system_cmd_rx,
-                &mut exec_evt_rx,
-                &mut exec_cmd_rx,
-                &mut data_evt_rx,
-                &mut data_cmd_rx,
-            );
-            let result = self
-                .abort_startup_with_error("Data client connection failed", e)
-                .await;
-            Self::drain_channels(
-                &mut time_evt_rx,
-                &mut system_evt_rx,
-                &mut system_cmd_rx,
-                &mut exec_evt_rx,
-                &mut exec_cmd_rx,
-                &mut data_evt_rx,
-                &mut data_cmd_rx,
-            );
-            log::info!("Event loop stopped");
-            return result;
-        }
+        let connection_deadline = match data_connect_result {
+            Ok(deadline) => deadline,
+            Err(e) => {
+                flush_all_pending(
+                    &mut pending,
+                    &mut time_evt_rx,
+                    &mut system_evt_rx,
+                    &mut system_cmd_rx,
+                    &mut exec_evt_rx,
+                    &mut exec_cmd_rx,
+                    &mut data_evt_rx,
+                    &mut data_cmd_rx,
+                );
+                let result = self
+                    .abort_startup_with_error("Data client connection failed", e)
+                    .await;
+                Self::drain_channels(
+                    &mut time_evt_rx,
+                    &mut system_evt_rx,
+                    &mut system_cmd_rx,
+                    &mut exec_evt_rx,
+                    &mut exec_cmd_rx,
+                    &mut data_evt_rx,
+                    &mut data_cmd_rx,
+                );
+                log::info!("Event loop stopped");
+                return result;
+            }
+        };
 
         // Flush any data events still queued in the channel receivers that the
         // select loop did not capture before the connect future resolved, then
@@ -2284,21 +2278,22 @@ impl LiveNode {
         }
     }
 
-    async fn connect_data_phase(&mut self, deadline: dst::time::Instant) -> anyhow::Result<()> {
-        // A zero remaining budget still admits an immediately-ready connect (an
-        // empty/ready client set completes on the first poll); a pending connect
-        // fails closed on that same poll. This keeps a zero `timeout_connection`
-        // - a supported "do not wait, but allow ready work" configuration -
-        // working, while still bounding a hung connect.
-        let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
-        dst::time::timeout(remaining, self.kernel.connect_data_clients())
+    async fn connect_data_phase(&mut self) -> anyhow::Result<dst::time::Instant> {
+        let deadline = live_deadline(
+            dst::time::Instant::now(),
+            self.config.timeout_connection,
+            "timeout_connection",
+        )?;
+
+        // A zero budget still admits immediately-ready clients
+        live_timeout_at(deadline, self.kernel.connect_data_clients())
             .await
-            .map_err(|_| anyhow::anyhow!("data-connect timeout"))?
+            .map_err(|_| anyhow::anyhow!("data-connect timeout"))??;
+        Ok(deadline)
     }
 
     async fn connect_exec_clients(&mut self, deadline: dst::time::Instant) -> anyhow::Result<()> {
-        let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
-        dst::time::timeout(remaining, self.kernel.connect_exec_clients())
+        live_timeout_at(deadline, self.kernel.connect_exec_clients())
             .await
             .map_err(|_| anyhow::anyhow!("exec-connect timeout"))?
     }
@@ -2311,15 +2306,24 @@ impl LiveNode {
         &mut self,
         deadline: dst::time::Instant,
     ) -> anyhow::Result<EngineConnectionStatus> {
+        if let Some(status) = self.startup_abort_status() {
+            return Ok(status);
+        }
+
         self.connect_exec_clients(deadline).await?;
         Ok(self.await_engines_connected(deadline).await)
     }
 
     fn startup_abort_reason(&self) -> Option<&'static str> {
+        self.startup_abort_status()
+            .and_then(EngineConnectionStatus::abort_reason)
+    }
+
+    fn startup_abort_status(&self) -> Option<EngineConnectionStatus> {
         if self.handle.should_stop() {
-            Some("Stop signal received during startup")
+            Some(EngineConnectionStatus::StopRequested)
         } else if self.kernel.is_shutdown_requested() {
-            Some("Shutdown signal received during startup")
+            Some(EngineConnectionStatus::ShutdownRequested)
         } else {
             None
         }
@@ -2410,12 +2414,10 @@ impl LiveNode {
         let controller_stop_result: anyhow::Result<()> = Ok(());
 
         let trader_stop_result = self.kernel.stop_trader_after_start_failure();
-        let delay = self.kernel.delay_post_stop();
-        log::info!("Awaiting residual events ({delay:?})...");
-
+        let deadline = self.post_stop_deadline();
         let residual_events = match receivers.as_mut() {
-            Some(receivers) => self.process_receivers_for(delay, receivers).await,
-            None => self.process_runner_for(delay).await,
+            Some(receivers) => self.process_receivers_until(deadline, receivers).await,
+            None => self.process_runner_until(deadline).await,
         };
 
         if residual_events > 0 {
@@ -2458,12 +2460,11 @@ impl LiveNode {
         }
     }
 
-    async fn process_receivers_for(
+    async fn process_receivers_until(
         &mut self,
-        duration: Duration,
+        deadline: dst::time::Instant,
         receivers: &mut RunnerReceivers<'_>,
     ) -> usize {
-        let deadline = dst::time::Instant::now() + duration;
         let mut processed = 0;
 
         loop {
@@ -2537,11 +2538,23 @@ impl LiveNode {
         }
 
         self.kernel.stop_trader();
-        let delay = self.kernel.delay_post_stop();
-        log::info!("Awaiting residual events ({delay:?})...");
-
-        self.shutdown_deadline = Some(dst::time::Instant::now() + delay);
+        self.shutdown_deadline = Some(self.post_stop_deadline());
         self.handle.set_shutting_down();
+    }
+
+    fn post_stop_deadline(&self) -> dst::time::Instant {
+        let delay = self.kernel.delay_post_stop();
+        let now = dst::time::Instant::now();
+        match live_deadline(now, delay, "delay_post_stop") {
+            Ok(deadline) => {
+                log::info!("Awaiting residual events ({delay:?})...");
+                deadline
+            }
+            Err(e) => {
+                log::error!("Skipping residual event wait: {e}");
+                now
+            }
+        }
     }
 
     async fn finalize_stop(&mut self) -> anyhow::Result<()> {
@@ -2550,16 +2563,27 @@ impl LiveNode {
         let unresolved_submissions = self.exec_manager.unresolved_submission_ids();
         self.close_external_ingress();
 
-        let timeout = self.config.timeout_disconnection;
-        let deadline = dst::time::Instant::now() + timeout;
-
         let mut errors = Vec::new();
+        let now = dst::time::Instant::now();
+
+        let deadline = match live_deadline(
+            now,
+            self.config.timeout_disconnection,
+            "timeout_disconnection",
+        ) {
+            Ok(deadline) => deadline,
+            Err(e) => {
+                errors.push(e.to_string());
+                now
+            }
+        };
+
         let (report_result, disconnect_result) = futures_util::join!(
-            dst::time::timeout(
-                timeout,
+            live_timeout_at(
+                deadline,
                 Self::finish_report_tasks(&self.exec_clients, &mut errors)
             ),
-            dst::time::timeout(timeout, self.kernel.disconnect_clients()),
+            live_timeout_at(deadline, self.kernel.disconnect_clients()),
         );
 
         if report_result.is_err() {
@@ -3190,6 +3214,26 @@ fn record_runner_external_msgbus(
         work_end.duration_since(work_start),
         work_end.duration_since(metrics_start),
     );
+}
+
+async fn live_timeout_at<F: std::future::Future>(
+    deadline: dst::time::Instant,
+    future: F,
+) -> Result<F::Output, dst::time::error::Elapsed> {
+    #[cfg(all(feature = "simulation", madsim))]
+    {
+        tokio::select! {
+            biased;
+
+            result = future => Ok(result),
+            () = dst::time::sleep_until(deadline) => Err(dst::time::error::Elapsed),
+        }
+    }
+
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    {
+        tokio::time::timeout_at(deadline, future).await
+    }
 }
 
 async fn drive_with_external_ingress<F, T>(
