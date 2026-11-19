@@ -43,8 +43,9 @@ use crate::{
         },
         storage::StorageBackend,
     },
-    errors::PersistenceError,
+    errors::CatalogOverlapError,
     writer::{
+        feather::{FEATHER_EXTENSION, FEATHER_REFUSED_EXTENSION},
         run::{FeatherSessionSource, RunStatus},
         traits::StreamingSink,
     },
@@ -55,9 +56,18 @@ pub(crate) fn list_session_feather_files(
     environment: Environment,
     instance_id: &str,
 ) -> anyhow::Result<Vec<String>> {
+    list_session_files(storage, environment, instance_id, FEATHER_EXTENSION)
+}
+
+fn list_session_files(
+    storage: &StorageBackend,
+    environment: Environment,
+    instance_id: &str,
+    extension: &str,
+) -> anyhow::Result<Vec<String>> {
     let run_directory = format!("{}/{instance_id}", environment_directory(environment));
-    let mut files =
-        block_on_nautilus_with(|| storage.list_files(&run_directory, Some(".feather")))?;
+    let suffix = format!(".{extension}");
+    let mut files = block_on_nautilus_with(|| storage.list_files(&run_directory, Some(&suffix)))?;
     files.sort();
     Ok(files)
 }
@@ -212,9 +222,11 @@ where
 
         let pending_result = self.take_pending_error();
 
-        background_result?;
-        promotion_result?;
-        pending_result
+        join_results([
+            background_result.map(drop),
+            promotion_result,
+            pending_result,
+        ])
     }
 
     fn close(&mut self) -> anyhow::Result<()> {
@@ -232,10 +244,24 @@ where
             Ok(())
         };
 
-        background_result?;
-        promotion_result?;
-        pending_result
+        join_results([
+            background_result.map(drop),
+            promotion_result,
+            pending_result,
+        ])
     }
+}
+
+// Each result can name different staged files, so every error reaches the caller, and a lone
+// error keeps its type.
+pub(crate) fn join_results(
+    results: impl IntoIterator<Item = anyhow::Result<()>>,
+) -> anyhow::Result<()> {
+    results
+        .into_iter()
+        .filter_map(Result::err)
+        .reduce(|joined, e| anyhow::anyhow!("{joined:#}; {e:#}"))
+        .map_or(Ok(()), Err)
 }
 
 pub(crate) trait PromotionBackend: Send + 'static {
@@ -362,7 +388,7 @@ where
                 deleted_paths: Vec::new(),
                 refused_paths: Vec::new(),
                 partial_converted: Vec::new(),
-                run_state_recorded: false,
+                recorded_status: None,
                 converted: Err(anyhow::anyhow!(
                     "{} promotion worker panicked: {}",
                     B::NAME,
@@ -476,35 +502,26 @@ where
                 }
                 Ok(None) => {}
                 Err(e) => {
+                    let mut context =
+                        format!("{} promotion failed for Feather file '{file}'", B::NAME);
+
                     // Retrying a file that overlaps the catalog cannot succeed until the catalog
                     // changes, so it leaves the listing for the user to resolve.
-                    let set_aside = matches!(
-                        e.downcast_ref::<PersistenceError>(),
-                        Some(PersistenceError::NonDisjointIntervals(_))
-                    )
-                    .then(|| self.backend.set_aside_file(&self.source, file));
-
-                    let context = match set_aside {
-                        Some(Ok(refused)) => {
-                            refused_paths.push(file.clone());
-                            format!(
-                                "{} promotion failed for Feather file '{file}', set aside as \
-                                 '{refused}'",
-                                B::NAME,
-                            )
-                        }
-                        Some(Err(e)) => {
-                            errors.push(format!(
+                    if e.downcast_ref::<CatalogOverlapError>().is_some() {
+                        match self.backend.set_aside_file(&self.source, file) {
+                            Ok(refused) => {
+                                refused_paths.push(file.clone());
+                                context = format!("{context}, set aside as '{refused}'");
+                            }
+                            Err(e) => errors.push(format!(
                                 "{:#}",
                                 e.context(format!(
                                     "{} failed to set aside Feather file '{file}'",
                                     B::NAME,
                                 )),
-                            ));
-                            format!("{} promotion failed for Feather file '{file}'", B::NAME)
+                            )),
                         }
-                        None => format!("{} promotion failed for Feather file '{file}'", B::NAME),
-                    };
+                    }
 
                     errors.push(format!("{:#}", e.context(context)));
                 }
@@ -518,7 +535,7 @@ where
                 deleted_paths,
                 refused_paths,
                 partial_converted: converted,
-                run_state_recorded: false,
+                recorded_status: None,
                 converted: Err(
                     e.context(format!("{} failed to record promoted run state", B::NAME))
                 ),
@@ -551,20 +568,43 @@ where
                 deleted_paths,
                 refused_paths,
                 partial_converted: converted,
-                run_state_recorded,
+                recorded_status: run_state_recorded.then_some(RunStatus::Failed),
                 converted: Err(anyhow::anyhow!(errors.join("; "))),
             };
         }
 
-        if !converted.is_empty()
-            && !B::RECORDS_PROMOTED_ATOMICALLY
-            && let Err(e) = self.backend.record_run_state(
-                &self.source,
-                &self.staging_uri,
-                RunStatus::Promoted,
-                false,
-                None,
-            )
+        // A refused file holds run data the catalog lacks, so the run stays failed while one
+        // remains.
+        let status = match list_session_files(
+            &self.source.storage,
+            self.source.environment,
+            &self.source.instance_id,
+            FEATHER_REFUSED_EXTENSION,
+        ) {
+            Ok(refused) if refused.is_empty() => RunStatus::Promoted,
+            Ok(_) => RunStatus::Failed,
+            Err(e) => {
+                return PromotionResult {
+                    files: self.files,
+                    committed_paths,
+                    deleted_paths,
+                    refused_paths,
+                    partial_converted: converted,
+                    recorded_status: None,
+                    converted: Err(
+                        e.context(format!("{} failed to list refused Feather files", B::NAME))
+                    ),
+                };
+            }
+        };
+
+        let record_status = status == RunStatus::Failed
+            || (!converted.is_empty() && !B::RECORDS_PROMOTED_ATOMICALLY);
+
+        if record_status
+            && let Err(e) =
+                self.backend
+                    .record_run_state(&self.source, &self.staging_uri, status, false, None)
         {
             return PromotionResult {
                 files: self.files,
@@ -572,17 +612,19 @@ where
                 deleted_paths,
                 refused_paths,
                 partial_converted: converted,
-                run_state_recorded: false,
-                converted: Err(
-                    e.context(format!("{} failed to record promoted run state", B::NAME))
-                ),
+                recorded_status: None,
+                converted: Err(e.context(format!(
+                    "{} failed to record {} run state",
+                    B::NAME,
+                    status.as_str(),
+                ))),
             };
         }
 
-        let run_state_recorded = if B::RECORDS_PROMOTED_ATOMICALLY {
-            promoted_recorded
+        let recorded_status = if record_status {
+            Some(status)
         } else {
-            !converted.is_empty()
+            promoted_recorded.then_some(RunStatus::Promoted)
         };
 
         PromotionResult {
@@ -591,7 +633,7 @@ where
             deleted_paths,
             refused_paths,
             partial_converted: Vec::new(),
-            run_state_recorded,
+            recorded_status,
             converted: Ok(converted),
         }
     }
@@ -607,7 +649,7 @@ pub struct PromotionResult {
     pub(crate) deleted_paths: Vec<String>,
     pub(crate) refused_paths: Vec<String>,
     pub(crate) partial_converted: Vec<FeatherConversionSummary>,
-    pub(crate) run_state_recorded: bool,
+    pub(crate) recorded_status: Option<RunStatus>,
     pub(crate) converted: anyhow::Result<Vec<FeatherConversionSummary>>,
 }
 
@@ -1153,7 +1195,7 @@ pub(crate) mod tests {
             ],
         );
         assert_eq!(state.recorded_states, vec![RunStatus::Promoted]);
-        assert!(result.run_state_recorded);
+        assert_eq!(result.recorded_status, Some(RunStatus::Promoted));
     }
 
     #[derive(Debug)]
@@ -1161,6 +1203,7 @@ pub(crate) mod tests {
         calls: Vec<&'static str>,
         promote_on_flush: bool,
         promote_on_close: bool,
+        promote_fails: bool,
     }
 
     impl FailingBackgroundSink {
@@ -1169,6 +1212,7 @@ pub(crate) mod tests {
                 calls: Vec::new(),
                 promote_on_flush,
                 promote_on_close,
+                promote_fails: false,
             }
         }
     }
@@ -1230,6 +1274,7 @@ pub(crate) mod tests {
 
         fn promote(&mut self) -> anyhow::Result<Vec<FeatherConversionSummary>> {
             self.calls.push("promote");
+            anyhow::ensure!(!self.promote_fails, "close promotion failed");
             Ok(Vec::new())
         }
 
@@ -1316,6 +1361,21 @@ pub(crate) mod tests {
                 "take_pending_error",
                 "promote",
             ]
+        );
+    }
+
+    #[rstest]
+    fn close_returns_background_and_promotion_errors() {
+        let mut sink = FailingBackgroundSink {
+            promote_fails: true,
+            ..FailingBackgroundSink::new(false, true)
+        };
+
+        let e = StreamingSink::close(&mut sink).unwrap_err();
+
+        assert_eq!(
+            e.to_string(),
+            "background promotion failed; close promotion failed"
         );
     }
 
