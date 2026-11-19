@@ -23,7 +23,7 @@ crate-type = ["rlib"]
 default = []
 examples = ["nautilus-trading/examples"]
 high-precision = ["nautilus-model/high-precision"]
-mimalloc = ["dep:mimalloc"]
+mimalloc = []
 defi = [
   "nautilus-common/defi",
   "nautilus-data/defi",
@@ -90,7 +90,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 ustr = { workspace = true }
 
-mimalloc = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
@@ -105,6 +104,7 @@ nautilus-testkit = { workspace = true, default-features = false, features = [
 nautilus-trading = { workspace = true, features = ["examples"] }
 
 criterion = { workspace = true }
+mimalloc = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
 tempfile = { workspace = true }

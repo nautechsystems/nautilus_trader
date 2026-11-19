@@ -204,7 +204,7 @@ pub(crate) async fn measure<F>(
     };
 
     let (result, samples) = tokio::time::timeout(Duration::from_secs(120), async {
-        tokio::join!(node.run_with_mode(NodeRunMode::Hosted), collect)
+        tokio::join!(Box::pin(node.run_with_mode(NodeRunMode::Hosted)), collect)
     })
     .await
     .expect("tick-to-trade workload timed out");
