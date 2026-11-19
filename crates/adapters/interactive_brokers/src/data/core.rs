@@ -1775,6 +1775,8 @@ impl DataClient for InteractiveBrokersDataClient {
         let trading_hours = request_trading_hours(use_regular_trading_hours);
 
         self.spawn_command(async move {
+            // Taken before the first fetch, which serves the end of the window
+            let requested_at = clock.get_time_ns();
             let mut all_quotes = Vec::new();
             let mut failures = Vec::new();
             let mut outcome = None;
@@ -1897,7 +1899,7 @@ impl DataClient for InteractiveBrokersDataClient {
             let final_window = window_is_final(
                 use_regular_trading_hours,
                 end_nanos_clone,
-                ts_init,
+                requested_at,
                 HISTORY_SETTLE_DELAY_NS,
             );
             let response = DataResponse::Quotes(QuotesResponse::new(
@@ -1987,6 +1989,8 @@ impl DataClient for InteractiveBrokersDataClient {
         let trading_hours = request_trading_hours(use_regular_trading_hours);
 
         self.spawn_command(async move {
+            // Taken before the first fetch, which serves the end of the window
+            let requested_at = clock.get_time_ns();
             let mut all_trades = Vec::new();
             let mut failures = Vec::new();
             let mut outcome = None;
@@ -2128,7 +2132,7 @@ impl DataClient for InteractiveBrokersDataClient {
             let final_window = window_is_final(
                 use_regular_trading_hours,
                 end_nanos_clone,
-                ts_init,
+                requested_at,
                 HISTORY_SETTLE_DELAY_NS,
             );
             let response = DataResponse::Trades(TradesResponse::new(
@@ -2222,6 +2226,8 @@ impl DataClient for InteractiveBrokersDataClient {
         let trading_hours = request_trading_hours(use_regular_trading_hours);
 
         self.spawn_command(async move {
+            // Taken before the first fetch, which serves the end of the window
+            let requested_at = clock.get_time_ns();
             let mut all_bars = Vec::new();
             let mut failures = Vec::new();
 
@@ -2286,7 +2292,7 @@ impl DataClient for InteractiveBrokersDataClient {
             let final_window = window_is_final(
                 use_regular_trading_hours,
                 end_nanos,
-                ts_init,
+                requested_at,
                 bar_settle_delay(&bar_type),
             );
 
@@ -2679,18 +2685,20 @@ fn request_failure(request_id: UUID4, reason: String) -> DataEvent {
 const HISTORY_SETTLE_DELAY_NS: u64 = 60_000_000_000;
 
 /// Returns whether a catalog can hold a window ending at `end`, `None` being the current time,
-/// as IB returned it at `now`.
+/// as IB returned it to a request started at `requested_at`.
 ///
 /// IB must not have filtered it to regular trading hours, which a catalog does not record, and
-/// the window must have ended at least `settle_delay` nanoseconds before `now`.
+/// the window must have ended at least `settle_delay` nanoseconds before the request started:
+/// paging fetches the window's end first, so a request that runs longer than the delay would
+/// otherwise certify an end IB served while it could still change.
 fn window_is_final(
     use_regular_trading_hours: bool,
     end: Option<UnixNanos>,
-    now: UnixNanos,
+    requested_at: UnixNanos,
     settle_delay: u64,
 ) -> bool {
     !use_regular_trading_hours
-        && end.is_some_and(|end| end.as_u64().saturating_add(settle_delay) <= now.as_u64())
+        && end.is_some_and(|end| end.as_u64().saturating_add(settle_delay) <= requested_at.as_u64())
 }
 
 /// Returns how long after a window's end the bars of `bar_type` count as final: the history
@@ -3106,16 +3114,16 @@ mod tests {
     }
 
     #[rstest]
-    #[case::between(between_range(), None, true, &[], HistoryCoverage::Complete)]
-    #[case::window_not_final(between_range(), None, false, &[], HistoryCoverage::Unverified)]
+    #[case::between(Some(between_range()), None, true, &[], HistoryCoverage::Complete)]
+    #[case::window_not_final(Some(between_range()), None, false, &[], HistoryCoverage::Unverified)]
     #[case::between_failed(
-        between_range(),
+        Some(between_range()),
         None,
         true,
         &["request failed"],
         HistoryCoverage::Failed("request failed".to_string())
     )]
-    #[case::limit(between_range(), Some(10), true, &[], HistoryCoverage::Unverified)]
+    #[case::limit(Some(between_range()), Some(10), true, &[], HistoryCoverage::Unverified)]
     #[case::duration(
         Some(BarRequestRange::Ending(None, IBDuration::days(1))),
         None,
@@ -3139,11 +3147,11 @@ mod tests {
         );
     }
 
-    fn between_range() -> Option<BarRequestRange> {
-        Some(BarRequestRange::Between(
+    fn between_range() -> BarRequestRange {
+        BarRequestRange::Between(
             jiff::Timestamp::from_second(60).unwrap(),
             Some(jiff::Timestamp::from_second(120).unwrap()),
-        ))
+        )
     }
 
     const MINUTE_NS: u64 = 60_000_000_000;
@@ -3155,10 +3163,11 @@ mod tests {
     #[case::ends_in_future(false, Some(3 * MINUTE_NS), 2 * MINUTE_NS, MINUTE_NS, false)]
     #[case::open_end(false, None, 2 * MINUTE_NS, MINUTE_NS, false)]
     #[case::regular_trading_hours(true, Some(MINUTE_NS), 10 * MINUTE_NS, MINUTE_NS, false)]
+    #[case::end_at_the_last_nanosecond(false, Some(u64::MAX), 2 * MINUTE_NS, MINUTE_NS, false)]
     fn test_window_is_final(
         #[case] use_regular_trading_hours: bool,
         #[case] end: Option<u64>,
-        #[case] now: u64,
+        #[case] requested_at: u64,
         #[case] settle_delay: u64,
         #[case] expected: bool,
     ) {
@@ -3166,7 +3175,7 @@ mod tests {
             window_is_final(
                 use_regular_trading_hours,
                 end.map(UnixNanos::from),
-                UnixNanos::from(now),
+                UnixNanos::from(requested_at),
                 settle_delay,
             ),
             expected

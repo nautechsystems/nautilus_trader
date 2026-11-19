@@ -422,9 +422,10 @@ futures. A window is also unverified unless it is final:
 
 - **Regular trading hours**: with `use_regular_trading_hours=True`, the default, IB returns only regular-hours data,
   and a catalog does not record that filter. Set it to `False` on clients that write back to a catalog.
-- **Recent data**: the window must end at least one minute before the response, and for bars at least one bar
-  before it. IB still adds ticks to the current second and builds the current bar, and its historical data can lag
-  the market. A request without `end` ends at the current time, so set `end` to write back.
+- **Recent data**: the window must end at least one minute before the request starts, and for bars longer than a
+  minute at least one bar before it. IB still adds ticks to the current second and builds the current bar, and its
+  historical data can lag the market. The data engine sets a missing `end` to the current time, so set `end` at
+  least that far in the past to write back.
 
 Ticks dropped by design do not fail a request: trades without a size or with a zero size, and ticks whose size the
 instrument's size precision cannot hold. Any IB error on a bar request fails it, including error 162 when IB has no
@@ -434,10 +435,10 @@ Only a complete window is written back to a catalog when the request sets `param
 engine rejects a request that sets both `update_catalog` and `limit`. See
 [catalog write-back](../concepts/data/catalog.md#reading-data).
 
-Instrument requests answer with a completed `DataResponseEnvelope`. A failed contract details fetch fails
-`request_instrument` without an instrument. An `ib_contracts` value or contract specification that fails to parse,
-fails to load, or loads no instrument fails `request_instruments` with the reason and the instruments it loaded,
-which skips write-back.
+Instrument requests answer with a completed `DataResponseEnvelope`. A failed contract details fetch, or an instrument
+the provider does not hold after loading its contract, fails `request_instrument` without an instrument. An
+`ib_contracts` value or contract specification that fails to parse, fails to load, or loads no instrument fails
+`request_instruments` with the reason and the instruments it loaded, which skips write-back.
 
 ## Execution capabilities
 
