@@ -16,15 +16,20 @@
 use std::any::Any;
 
 use ahash::AHashMap;
-use nautilus_common::signal::Signal;
+use anyhow::Context;
 #[cfg(feature = "defi")]
-use nautilus_common::{cache::CacheSnapshotRef, defi::cache::InstrumentMigration};
+use nautilus_common::defi::cache::InstrumentMigration;
+use nautilus_common::{
+    cache::{CacheSnapshotRef, database::POSITION_OMS_KEY_PREFIX},
+    signal::Signal,
+};
 use nautilus_model::{
     accounts::AccountAny,
     data::{
         Bar, CustomData, DataType, HasTsInit, InstrumentClose, QuoteTick, TradeTick,
         greeks::{GreeksData, YieldCurve},
     },
+    enums::OmsType,
     events::{
         AccountState, OrderEvent, OrderEventAny, OrderFilled, OrderInitialized, OrderSnapshot,
         position::snapshot::PositionSnapshot,
@@ -44,7 +49,7 @@ use nautilus_model::{
     enums::OrderStatus,
     orders::Order,
 };
-use sqlx::{FromRow, PgPool, Postgres, Row, Transaction};
+use sqlx::{FromRow, PgConnection, PgExecutor, PgPool, Postgres, Row, Transaction};
 #[cfg(feature = "defi")]
 use ustr::Ustr;
 
@@ -65,6 +70,8 @@ use crate::sql::models::{
 };
 
 pub(super) const CACHE_DATABASE_KEY_PREFIX: &str = "cache-database:";
+const TRADER_KEY_PREFIX: &str = "trader:";
+const GENERAL_KEY_PREFIX: &str = "general:";
 
 #[derive(Debug)]
 pub struct DatabaseQueries;
@@ -85,9 +92,9 @@ impl DatabaseQueries {
 
     /// Deletes the order, position and account rows of `trader_id` via the provided `pool`.
     ///
-    /// Shared reference data (currencies, instruments, instrument closes), market data, the
-    /// user general entries, signals, custom data, and blockchain tables are left untouched.
-    /// This trader's saved component state and heartbeat are removed; shared synthetics remain.
+    /// Also removes the trader's general entries, position OMS metadata, component state,
+    /// and heartbeat. Preserves position archive blobs, shared reference data, market data,
+    /// signals, custom data, blockchain tables, and unscoped legacy entries.
     ///
     /// # Errors
     ///
@@ -112,8 +119,14 @@ impl DatabaseQueries {
                 .map_err(|e| anyhow::anyhow!("Failed to delete rows for {trader_id}: {e}"))?;
         }
 
-        sqlx::query("DELETE FROM general WHERE starts_with(id, $1)")
+        let archive_prefix = format!(
+            "{}{}",
+            trader_general_key_prefix(*trader_id),
+            CacheSnapshotRef::POSITION_PREFIX
+        );
+        sqlx::query("DELETE FROM general WHERE starts_with(id, $1) AND NOT starts_with(id, $2)")
             .bind(trader_key_prefix(*trader_id))
+            .bind(archive_prefix)
             .execute(&mut *transaction)
             .await?;
 
@@ -129,13 +142,21 @@ impl DatabaseQueries {
     ///
     /// Returns an error if the INSERT or UPDATE operation fails.
     pub async fn add(pool: &PgPool, key: String, value: Vec<u8>) -> anyhow::Result<()> {
+        Self::upsert_general(pool, &key, &value).await
+    }
+
+    async fn upsert_general<'e>(
+        executor: impl PgExecutor<'e>,
+        key: &str,
+        value: &[u8],
+    ) -> anyhow::Result<()> {
         sqlx::query(
             "INSERT INTO general (id, value) VALUES ($1, $2) \
              ON CONFLICT (id) DO UPDATE SET value = EXCLUDED.value",
         )
         .bind(key)
         .bind(value)
-        .execute(pool)
+        .execute(executor)
         .await
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("Failed to insert into general table: {e}"))
@@ -147,9 +168,13 @@ impl DatabaseQueries {
     ///
     /// Returns an error if the database operation fails.
     pub async fn delete(pool: &PgPool, key: &str) -> anyhow::Result<()> {
+        Self::delete_general(pool, key).await
+    }
+
+    async fn delete_general<'e>(executor: impl PgExecutor<'e>, key: &str) -> anyhow::Result<()> {
         sqlx::query("DELETE FROM general WHERE id = $1")
             .bind(key)
-            .execute(pool)
+            .execute(executor)
             .await?;
         Ok(())
     }
@@ -183,7 +208,7 @@ impl DatabaseQueries {
         Ok(())
     }
 
-    /// Deletes a position's fill history, snapshot, and order-position mappings for one trader.
+    /// Deletes a trader's position history, snapshot, OMS metadata, and order-position mappings.
     /// Order event histories remain available independently of the position.
     ///
     /// # Errors
@@ -208,6 +233,7 @@ impl DatabaseQueries {
                 .await?;
         }
 
+        Self::delete_general(&mut *transaction, &position_oms_key(trader_id, position_id)).await?;
         transaction.commit().await?;
         Ok(())
     }
@@ -249,6 +275,41 @@ impl DatabaseQueries {
                 cache
             })
             .map_err(|e| anyhow::anyhow!("Failed to load general table: {e}"))
+    }
+
+    pub(super) async fn load_cache_general<'e>(
+        executor: impl PgExecutor<'e>,
+        trader_id: TraderId,
+    ) -> anyhow::Result<Vec<GeneralRow>> {
+        let general_prefix = trader_general_key_prefix(trader_id);
+        let oms_prefix = position_oms_key_prefix(trader_id);
+        let unspecified = serde_json::to_vec(&OmsType::Unspecified)?;
+
+        Ok(sqlx::query_as(
+            "SELECT id, value
+             FROM general
+             WHERE starts_with(id, $1) OR starts_with(id, $2)
+             UNION ALL
+             SELECT legacy.id, $5
+             FROM general AS legacy
+             WHERE starts_with(legacy.id, $3)
+               AND EXISTS (
+                   SELECT 1 FROM position_event AS p
+                   WHERE p.trader_id = $4
+                     AND p.position_id = substr(legacy.id, length($3) + 1)
+               )
+               AND NOT EXISTS (
+                   SELECT 1 FROM general AS scoped
+                   WHERE scoped.id = $2 || substr(legacy.id, length($3) + 1)
+               )",
+        )
+        .bind(general_prefix)
+        .bind(oms_prefix)
+        .bind(POSITION_OMS_KEY_PREFIX)
+        .bind(trader_id.as_str())
+        .bind(unspecified)
+        .fetch_all(executor)
+        .await?)
     }
 
     /// Inserts or ignores a `Currency` row via the provided `pool`.
@@ -322,7 +383,7 @@ impl DatabaseQueries {
             .await
             .map_err(|e| anyhow::anyhow!("Failed to load currencies: {e}"))?;
         #[cfg(feature = "defi")]
-        let mut metadata = Self::load_token_metadata(pool, None).await?;
+        let mut metadata = Self::load_token_metadata(&mut *pool.acquire().await?, None).await?;
         currencies
             .into_iter()
             .map(|row| {
@@ -340,15 +401,23 @@ impl DatabaseQueries {
     ///
     /// Returns an error if the SELECT operation fails.
     pub async fn load_currency(pool: &PgPool, code: &str) -> anyhow::Result<Option<Currency>> {
+        let mut connection = pool.acquire().await?;
+        Self::load_currency_on(&mut connection, code).await
+    }
+
+    async fn load_currency_on(
+        connection: &mut PgConnection,
+        code: &str,
+    ) -> anyhow::Result<Option<Currency>> {
         let currency = sqlx::query_as::<_, CurrencyRow>("SELECT * FROM currency WHERE id = $1")
             .bind(code)
-            .fetch_optional(pool)
+            .fetch_optional(&mut *connection)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to load currency: {e}"))?;
 
         #[cfg(feature = "defi")]
         if let Some(row) = currency {
-            let metadata = Self::load_token_metadata(pool, Some(code))
+            let metadata = Self::load_token_metadata(connection, Some(code))
                 .await?
                 .remove(&row.0.code);
             Self::restore_token_currency(row.0, metadata).map(Some)
@@ -469,11 +538,11 @@ impl DatabaseQueries {
 
     #[cfg(feature = "defi")]
     async fn load_token_metadata(
-        pool: &PgPool,
+        connection: &mut PgConnection,
         code: Option<&str>,
     ) -> anyhow::Result<AHashMap<Ustr, TokenCurrency>> {
         let exists: bool = sqlx::query_scalar("SELECT to_regclass('defi_currency') IS NOT NULL")
-            .fetch_one(pool)
+            .fetch_one(&mut *connection)
             .await
             .map_err(integrity_error)?;
 
@@ -484,7 +553,7 @@ impl DatabaseQueries {
         let rows =
             sqlx::query("SELECT * FROM defi_currency WHERE ($1::TEXT IS NULL OR currency_id = $1)")
                 .bind(code)
-                .fetch_all(pool)
+                .fetch_all(connection)
                 .await
                 .map_err(integrity_error)?;
         rows.iter()
@@ -540,7 +609,7 @@ impl DatabaseQueries {
 
     #[cfg(feature = "defi")]
     async fn restore_instrument_dependencies(
-        pool: &PgPool,
+        connection: &mut PgConnection,
         row: &sqlx::postgres::PgRow,
         metadata: &AHashMap<Ustr, TokenCurrency>,
     ) -> anyhow::Result<()> {
@@ -572,7 +641,7 @@ impl DatabaseQueries {
         }
 
         for code in &codes {
-            let currency = Self::load_currency(pool, code)
+            let currency = Self::load_currency_on(connection, code)
                 .await
                 .map_err(integrity_error)?
                 .ok_or_else(|| integrity_error(format!("Missing token currency {code}")))?;
@@ -748,14 +817,27 @@ impl DatabaseQueries {
         let history: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM position WHERE instrument_id = $1 UNION ALL SELECT 1 FROM position_event WHERE instrument_id = $1)")
             .bind(id).fetch_one(&mut **transaction).await?;
 
-        let archives: Vec<Vec<u8>> =
-            sqlx::query_scalar("SELECT value FROM general WHERE id LIKE $1")
-                .bind(format!("{}%", CacheSnapshotRef::POSITION_PREFIX))
-                .fetch_all(&mut **transaction)
-                .await?;
+        let prefix = CacheSnapshotRef::POSITION_PREFIX;
+        let archives: Vec<GeneralRow> = sqlx::query_as(
+            "SELECT id, value FROM general
+             WHERE starts_with(id, $1) OR (starts_with(id, $2) AND strpos(id, $3) > 0)",
+        )
+        .bind(prefix)
+        .bind(format!("{CACHE_DATABASE_KEY_PREFIX}{TRADER_KEY_PREFIX}"))
+        .bind(format!(":{GENERAL_KEY_PREFIX}{prefix}"))
+        .fetch_all(&mut **transaction)
+        .await?;
+
         let mut history = history;
-        for blob in archives {
-            history |= CacheSnapshotRef::position_instrument_id(&blob)
+
+        for archive in archives {
+            if !archive.id.starts_with(prefix)
+                && !scoped_general_key(&archive.id).is_some_and(|key| key.starts_with(prefix))
+            {
+                continue;
+            }
+
+            history |= CacheSnapshotRef::position_instrument_id(&archive.value)
                 .map_err(integrity_error)?
                 .to_string()
                 == id;
@@ -918,9 +1000,17 @@ impl DatabaseQueries {
         pool: &PgPool,
         instrument_id: &InstrumentId,
     ) -> anyhow::Result<Option<InstrumentAny>> {
+        let mut connection = pool.acquire().await?;
+        Self::load_instrument_on(&mut connection, instrument_id).await
+    }
+
+    async fn load_instrument_on(
+        connection: &mut PgConnection,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<InstrumentAny>> {
         let row = sqlx::query("SELECT * FROM instrument WHERE id = $1")
             .bind(instrument_id.to_string())
-            .fetch_optional(pool)
+            .fetch_optional(&mut *connection)
             .await?;
 
         let Some(row) = row else {
@@ -929,8 +1019,8 @@ impl DatabaseQueries {
 
         #[cfg(feature = "defi")]
         {
-            let metadata = Self::load_token_metadata(pool, None).await?;
-            Self::restore_instrument_dependencies(pool, &row, &metadata).await?;
+            let metadata = Self::load_token_metadata(connection, None).await?;
+            Self::restore_instrument_dependencies(connection, &row, &metadata).await?;
         }
 
         let instrument = InstrumentAnyRow::from_row(&row)?.0;
@@ -950,11 +1040,13 @@ impl DatabaseQueries {
             .await?;
         let mut instruments = Vec::with_capacity(rows.len());
         #[cfg(feature = "defi")]
-        let metadata = Self::load_token_metadata(pool, None).await?;
+        let mut connection = pool.acquire().await?;
+        #[cfg(feature = "defi")]
+        let metadata = Self::load_token_metadata(&mut connection, None).await?;
 
         for row in rows {
             #[cfg(feature = "defi")]
-            Self::restore_instrument_dependencies(pool, &row, &metadata).await?;
+            Self::restore_instrument_dependencies(&mut connection, &row, &metadata).await?;
             let instrument = InstrumentAnyRow::from_row(&row)?.0;
             #[cfg(feature = "defi")]
             validate_marker(&instrument, &Self::instrument_marker(&row)?)?;
@@ -1691,7 +1783,7 @@ impl DatabaseQueries {
         position_id: PositionId,
         event: &OrderFilled,
     ) -> anyhow::Result<()> {
-        Self::replace_position(pool, position_id, event, None).await
+        Self::replace_position(pool, position_id, event, None, None).await
     }
 
     pub(super) async fn replace_position(
@@ -1699,6 +1791,7 @@ impl DatabaseQueries {
         position_id: PositionId,
         event: &OrderFilled,
         snapshot: Option<PositionSnapshot>,
+        oms_type: Option<OmsType>,
     ) -> anyhow::Result<()> {
         let event_position_id = Self::event_position_id(event)?;
         if event_position_id != position_id {
@@ -1735,6 +1828,12 @@ impl DatabaseQueries {
             .execute(&mut *transaction)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to clear position replay state: {e}"))?;
+        }
+
+        if let Some(oms_type) = oms_type {
+            let key = position_oms_key(event.trader_id, position_id);
+            let value = serde_json::to_vec(&oms_type)?;
+            Self::upsert_general(&mut *transaction, &key, &value).await?;
         }
 
         transaction
@@ -1809,6 +1908,15 @@ impl DatabaseQueries {
         position_id: &PositionId,
         trader_id: &TraderId,
     ) -> anyhow::Result<Option<Position>> {
+        let mut connection = pool.acquire().await?;
+        Self::load_position_on(&mut connection, position_id, trader_id).await
+    }
+
+    async fn load_position_on(
+        connection: &mut PgConnection,
+        position_id: &PositionId,
+        trader_id: &TraderId,
+    ) -> anyhow::Result<Option<Position>> {
         let rows = sqlx::query(
             r#"
             SELECT snapshot.replay_state, fill.*
@@ -1824,7 +1932,7 @@ impl DatabaseQueries {
         )
         .bind(position_id.to_string())
         .bind(trader_id.to_string())
-        .fetch_all(pool)
+        .fetch_all(&mut *connection)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to load position replay state or events: {e}"))?;
 
@@ -1842,7 +1950,9 @@ impl DatabaseQueries {
 
         let first_fill = OrderFilledRow::from_row(first)?.0;
 
-        let Some(instrument) = Self::load_instrument(pool, &first_fill.instrument_id).await? else {
+        let Some(instrument) =
+            Self::load_instrument_on(connection, &first_fill.instrument_id).await?
+        else {
             log::error!(
                 "Instrument not found for position {position_id}: {}",
                 first_fill.instrument_id
@@ -1869,16 +1979,47 @@ impl DatabaseQueries {
 
     /// Loads and replays all `Position` entries via the provided `pool`.
     ///
-    /// Only positions written by `trader_id` are loaded.
+    /// Loads positions written by `trader_id` and logs unreadable positions before skipping them.
     ///
     /// # Errors
     ///
-    /// Returns an error if loading position IDs or replaying any position fails.
+    /// Returns an error if loading or validating position IDs fails.
     pub async fn load_positions(
         pool: &PgPool,
         trader_id: &TraderId,
     ) -> anyhow::Result<Vec<Position>> {
-        let position_ids: Vec<PositionId> = sqlx::query(
+        let mut connection = pool.acquire().await?;
+        Self::load_positions_on(&mut connection, trader_id, false).await
+    }
+
+    pub(super) async fn load_positions_and_general(
+        pool: &PgPool,
+        trader_id: TraderId,
+    ) -> anyhow::Result<(Vec<GeneralRow>, Vec<Position>)> {
+        let mut transaction = pool
+            .begin_with("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            .await?;
+        let general = Self::load_cache_general(&mut *transaction, trader_id).await?;
+        let oms_prefix = position_oms_key_prefix(trader_id);
+        for row in &general {
+            if let Some(position_id) = row.id.strip_prefix(&oms_prefix) {
+                serde_json::from_slice::<OmsType>(&row.value).with_context(|| {
+                    format!("invalid OMS metadata for trader {trader_id}, position {position_id}")
+                })?;
+            }
+        }
+
+        let positions = Self::load_positions_on(&mut transaction, &trader_id, true).await?;
+        transaction.commit().await?;
+        Ok((general, positions))
+    }
+
+    async fn load_positions_on(
+        connection: &mut PgConnection,
+        trader_id: &TraderId,
+        require_complete: bool,
+    ) -> anyhow::Result<Vec<Position>> {
+        let position_ids: Vec<String> = sqlx::query_scalar(
             r#"
             SELECT DISTINCT position_id
             FROM "position_event"
@@ -1887,22 +2028,25 @@ impl DatabaseQueries {
         "#,
         )
         .bind(trader_id.to_string())
-        .fetch_all(pool)
+        .fetch_all(&mut *connection)
         .await
-        .map(|rows| {
-            rows.into_iter()
-                .map(|row| PositionId::from(row.get::<&str, _>(0)))
-                .collect()
-        })
-        .map_err(|e| anyhow::anyhow!("Failed to load position ids: {e}"))?;
+        .context("failed to load position IDs")?;
 
-        let mut positions = Vec::new();
-
+        let mut positions = Vec::with_capacity(position_ids.len());
         for id in position_ids {
-            match Self::load_position(pool, &id, trader_id).await {
-                Ok(Some(position)) => positions.push(position),
-                Ok(None) => log::error!("Position not found: {id}"),
-                Err(e) => log::error!("Failed to load position {id}: {e}"),
+            let id = PositionId::new_checked(&id).context("invalid persisted position ID")?;
+
+            let position = Self::load_position_on(connection, &id, trader_id)
+                .await
+                .with_context(|| format!("failed to load position {id}"))
+                .and_then(|position| {
+                    position.with_context(|| format!("missing replay data for position {id}"))
+                });
+
+            match position {
+                Ok(position) => positions.push(position),
+                Err(e) if require_complete => return Err(e),
+                Err(e) => log::error!("Skipping unreadable position: {e:#}"),
             }
         }
 
@@ -2461,7 +2605,7 @@ impl DatabaseQueries {
         .bind(trader_id.to_string())
         .fetch_all(pool)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to load account ids: {e}"))?;
+        .context("failed to load order client index")?;
 
         for id in result {
             map.insert(id.client_order_id, id.client_id);
@@ -2808,9 +2952,33 @@ impl DatabaseQueries {
 
 pub(super) fn trader_key_prefix(trader_id: TraderId) -> String {
     format!(
-        "{CACHE_DATABASE_KEY_PREFIX}trader:{}:{trader_id}:",
+        "{CACHE_DATABASE_KEY_PREFIX}{TRADER_KEY_PREFIX}{}:{trader_id}:",
         trader_id.as_str().len()
     )
+}
+
+pub(super) fn trader_general_key_prefix(trader_id: TraderId) -> String {
+    format!("{}{GENERAL_KEY_PREFIX}", trader_key_prefix(trader_id))
+}
+
+#[cfg(feature = "defi")]
+fn scoped_general_key(key: &str) -> Option<&str> {
+    let (trader_len, suffix) = key
+        .strip_prefix(CACHE_DATABASE_KEY_PREFIX)?
+        .strip_prefix(TRADER_KEY_PREFIX)?
+        .split_once(':')?;
+    let key = suffix
+        .get(trader_len.parse::<usize>().ok()?..)?
+        .strip_prefix(':')?;
+    key.strip_prefix(GENERAL_KEY_PREFIX)
+}
+
+fn position_oms_key(trader_id: TraderId, position_id: PositionId) -> String {
+    format!("{}{position_id}", position_oms_key_prefix(trader_id))
+}
+
+fn position_oms_key_prefix(trader_id: TraderId) -> String {
+    format!("{}{POSITION_OMS_KEY_PREFIX}", trader_key_prefix(trader_id))
 }
 
 #[cfg(all(test, feature = "defi"))]

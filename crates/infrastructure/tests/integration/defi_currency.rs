@@ -254,7 +254,7 @@ fn purged_instrument_retains_order_guard() {
 
 fn replacement_failure(mode: &str) -> &'static str {
     match mode {
-        "history" | "archive" | "unrelated_archive" => "position history",
+        "history" | "archive" | "scoped_archive" | "unrelated_archive" => "position history",
         "orders" | "order_snapshot" => "nonterminal order",
         "intents" => "active swap intents",
         _ => "No authoritative execution-store check",
@@ -1544,10 +1544,23 @@ mod postgres_tests {
         if let Ok(schema) = std::env::var(READER_CASE) {
             let mode = std::env::var(MODE).unwrap();
             let pool = pool(&schema, false).await;
-            let adapter =
-                PostgresCacheDatabase::connect(Default::default(), TraderId::from("DEFI-001"))
-                    .await
-                    .unwrap();
+            let trader_id = TraderId::from("DEFI-001");
+
+            if mode == "scoped_archive" {
+                let position = closed_position(&legacy_instrument());
+                assert_ne!(position.trader_id, trader_id);
+                let archive =
+                    PostgresCacheDatabase::connect(Default::default(), position.trader_id)
+                        .await
+                        .unwrap();
+                let mut cache = Cache::new(None, Some(Box::new(archive)));
+                cache.snapshot_position_encoded(&position).unwrap();
+                cache.dispose();
+            }
+
+            let adapter = PostgresCacheDatabase::connect(Default::default(), trader_id)
+                .await
+                .unwrap();
             let mut cache = Cache::new(None, Some(Box::new(adapter)));
 
             if mode != "unavailable" {
@@ -1592,6 +1605,7 @@ mod postgres_tests {
             "clear",
             "history",
             "archive",
+            "scoped_archive",
             "unrelated_archive",
             "orders",
             "intents",

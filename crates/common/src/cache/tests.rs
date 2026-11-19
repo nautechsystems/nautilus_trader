@@ -2675,6 +2675,16 @@ fn test_cache_positions_loads_persisted_position_oms() {
 }
 
 #[rstest]
+fn test_cache_all_reads_oms_after_positions() {
+    let (database, calls) = SnapshotBlobTestDatabase::database_recorder();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+
+    futures::executor::block_on(cache.cache_all()).unwrap();
+
+    assert_eq!(calls.lock().recovery_reads, ["load_all", "load"]);
+}
+
+#[rstest]
 fn test_cache_positions_without_persisted_oms_remains_unspecified() {
     let position = snapshot_test_position();
     let position_id = position.id;
@@ -13558,6 +13568,7 @@ type CacheDatabaseCalls = Arc<Mutex<CacheDatabaseCallLog>>;
 
 #[derive(Default)]
 struct CacheDatabaseCallLog {
+    recovery_reads: Vec<&'static str>,
     metadata_writes: Vec<&'static str>,
     market_data_writes: Vec<&'static str>,
     instrument_loads: Vec<InstrumentId>,
@@ -13737,6 +13748,7 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     async fn load_all(&self) -> anyhow::Result<CacheMap> {
+        self.database_calls.lock().recovery_reads.push("load_all");
         Ok(CacheMap {
             currencies: self.currencies.clone(),
             instrument_closes: self.instrument_closes.lock().clone(),
@@ -13750,6 +13762,7 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     fn load(&self) -> anyhow::Result<AHashMap<String, Bytes>> {
+        self.database_calls.lock().recovery_reads.push("load");
         Ok(self.general.clone())
     }
 

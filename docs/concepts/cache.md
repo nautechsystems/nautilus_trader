@@ -169,6 +169,7 @@ the best-effort persistence policy, so their persistence failures are logged wit
 
 - Startup restores supported, successfully persisted general data, currencies, instruments,
   instrument closes, synthetics, accounts, orders, and positions. Postgres also restores Greeks and yield curves.
+- `Cache::add` rejects keys starting with `position_oms:`. The prefix is reserved for position OMS metadata.
 - Loading replaces Greeks and yield curves already in memory; Redis loads empty maps.
 - Instrument closes persist whenever a backing is configured, regardless of `save_market_data`:
   they are recovery snapshots rather than bounded history.
@@ -205,16 +206,32 @@ Deletions and heartbeats follow the [persistence failure policy](#persistence-fa
   [persistence failure policy](#persistence-failure-policy); the adapter logs later database write failures.
 - Order-book and funding-rate persistence are unsupported. With `save_market_data = true`, order-book
   and bulk funding-rate additions log an `ERROR` and update memory only.
-- Orders, positions, their snapshots, and accounts belong to a trader. Two traders can reuse client order
-  or position IDs.
-- Flushes, including `flush_on_start`, delete only the trader's rows. Currencies, instruments,
-  instrument closes, synthetics, market data (including Greeks and yield curves), and user general data stay shared.
-  The trader's saved actor and strategy state and heartbeat are also deleted.
+- Orders, positions, their database snapshots, position OMS metadata, and accounts belong to a
+  trader. Two traders can reuse client order IDs and hold the same position ID with different OMS types.
+- User entries added with `Cache::add` belong to the trader. Old shared user entries remain in
+  PostgreSQL. Save the values again under the intended trader to restore them on later starts.
+- Position deletes and flushes remove the trader's position OMS metadata. Legacy OMS rows remain.
+- Flushes, including `flush_on_start`, process existing queued writes on the backing before deleting
+  the trader's rows, including general entries, saved actor and strategy state, and heartbeat.
+  Currencies, instruments, instrument closes, synthetics, and market data stay shared.
+- Trader flushes preserve cache-owned position archive blobs. Event-store recovery reads these blobs
+  from the trader's general entries and verifies the content hash against the original bytes.
 - Actor and strategy state persistence supports `load_state` and `save_state`.
 - The `cache-database:` key prefix is reserved for backing data. User entries with this prefix do not restore.
 
 Run `nautilus database init` to create the `greeks` and `yield_curve` tables before connecting,
 even with `save_market_data = false`.
+
+:::warning Legacy position OMS metadata
+Legacy keys omit the trader ID. Postgres skips unscoped `position_oms:` keys when loading application
+data. A position with only a matching legacy key restores as
+`UNSPECIFIED`, even in a single-trader database or when the ID would normally imply `NETTING`.
+Postgres logs the count for the trader. Reconciliation, realized PnL, and
+[`HEDGING` virtual flip routing](positions.md#hedging) use the restored type when selecting OMS-specific behavior.
+Adding or replacing a position with a known OMS type persists it for future recovery.
+
+Upgrade nodes sharing the database together. Older and upgraded nodes use different OMS keys.
+:::
 
 :::warning
 Account events saved before trader scoping have no trader, and ownership cannot be inferred.

@@ -2543,6 +2543,7 @@ mod tests {
             &[],
         ),
         cache_mutation("cache_all", CacheMutationRecoveryClass::SnapshotOwned, &[]),
+        cache_mutation("reload", CacheMutationRecoveryClass::SnapshotOwned, &[]),
         cache_mutation(
             "cache_currencies",
             CacheMutationRecoveryClass::SnapshotOwned,

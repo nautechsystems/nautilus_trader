@@ -66,7 +66,9 @@ pub use api::CacheApi; // Re-export
 use bounded::BoundedVecDeque;
 use bytes::Bytes;
 pub use config::CacheConfig; // Re-export
-use database::{CacheDatabaseAdapter, CacheMap, register_loaded_currencies};
+use database::{
+    CacheDatabaseAdapter, CacheMap, POSITION_OMS_KEY_PREFIX, register_loaded_currencies,
+};
 pub use error::{
     ACCOUNT_NOT_FOUND, AccountLookupError, CURRENCY_NOT_FOUND, CurrencyLookupError,
     INSTRUMENT_NOT_FOUND, InstrumentLookupError, ORDER_BOOK_NOT_FOUND, ORDER_LIST_NOT_FOUND,
@@ -522,9 +524,33 @@ impl Cache {
     /// Returns an error if loading cache data fails or a loaded yield curve fails
     /// [`YieldCurve::validate`].
     pub async fn cache_all(&mut self) -> anyhow::Result<()> {
-        let mut cache_map = match &self.database {
-            Some(db) => db.load_all().await?,
-            None => CacheMap::default(),
+        self.cache_all_inner(false).await
+    }
+
+    /// Reloads general and core cache data, clearing existing indexes after the reads succeed.
+    ///
+    /// Call [`Self::build_index`] to rebuild the entity indexes after a successful reload.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any read or cache data validation fails.
+    pub async fn reload(&mut self) -> anyhow::Result<()> {
+        self.cache_all_inner(true).await
+    }
+
+    async fn cache_all_inner(&mut self, reload_general: bool) -> anyhow::Result<()> {
+        let (general, mut cache_map, order_indexes) = match &self.database {
+            Some(db) => {
+                let (general, cache_map) = db.load_for_recovery(false).await?;
+
+                let order_indexes = (
+                    db.load_index_order_position()?,
+                    db.load_index_order_client()?,
+                );
+
+                (general, cache_map, Some(order_indexes))
+            }
+            None => (AHashMap::new(), CacheMap::default(), None),
         };
 
         for curve in cache_map.yield_curves.values() {
@@ -534,6 +560,14 @@ impl Cache {
         // An adapter registers the loaded currencies before decoding their dependents; repeating
         // it here keeps the cached map consistent with the registry whatever the adapter did.
         register_loaded_currencies(&mut cache_map.currencies)?;
+
+        if reload_general {
+            self.clear_index();
+            self.general = general;
+        } else if self.database.is_some() {
+            self.replace_position_oms(general);
+        }
+
         #[cfg(feature = "defi")]
         self.defi.restore_currencies(&cache_map.currencies);
 
@@ -553,19 +587,14 @@ impl Cache {
             .into_iter()
             .map(|(id, order)| (id, SharedCell::new(order)))
             .collect();
-        self.positions = cache_map
-            .positions
-            .into_iter()
-            .map(|(id, position)| (id, SharedCell::new(position)))
-            .collect();
 
-        if let Some(db) = &self.database {
-            let order_position = db.load_index_order_position()?;
+        self.restore_positions(cache_map.positions);
+
+        if let Some((order_position, order_client)) = order_indexes {
             self.index.order_position = self.sanitize_order_position_index(order_position);
-            self.index.order_client = db.load_index_order_client()?;
+            self.index.order_client = order_client;
         }
 
-        self.cache_position_oms()?;
         self.assign_position_ids_to_contingencies();
         Ok(())
     }
@@ -692,45 +721,43 @@ impl Cache {
         order_position
     }
 
-    /// Clears and reloads the position cache from the database.
+    /// Clears and reloads positions and their OMS metadata from the database.
     ///
     /// # Errors
     ///
-    /// Returns an error if loading positions cache fails.
+    /// Returns an error if loading positions or their OMS metadata fails.
     pub async fn cache_positions(&mut self) -> anyhow::Result<()> {
-        self.positions = match &mut self.database {
-            Some(db) => db
-                .load_positions()
-                .await?
-                .into_iter()
-                .map(|(id, position)| (id, SharedCell::new(position)))
-                .collect(),
+        let positions = match &self.database {
+            Some(db) => {
+                let (general, cache_map) = db.load_for_recovery(true).await?;
+                self.replace_position_oms(general);
+                cache_map.positions
+            }
             None => AHashMap::new(),
         };
 
-        self.cache_position_oms()?;
+        self.restore_positions(positions);
         log::info!("Cached {} positions from database", self.general.len());
         Ok(())
     }
 
-    fn cache_position_oms(&mut self) -> anyhow::Result<()> {
-        let persisted = match &self.database {
-            Some(database) => database.load()?,
-            None => self.general.clone(),
-        };
+    fn restore_positions(&mut self, positions: AHashMap<PositionId, Position>) {
+        self.positions = positions
+            .into_iter()
+            .map(|(id, position)| (id, SharedCell::new(position)))
+            .collect();
+        self.index_position_oms();
+    }
 
+    fn replace_position_oms(&mut self, persisted: AHashMap<String, Bytes>) {
         self.general
             .retain(|key, _| !key.starts_with(POSITION_OMS_KEY_PREFIX));
 
-        for (key, value) in persisted {
-            if !key.starts_with(POSITION_OMS_KEY_PREFIX) {
-                continue;
-            }
-            self.general.insert(key, value);
-        }
-
-        self.index_position_oms();
-        Ok(())
+        self.general.extend(
+            persisted
+                .into_iter()
+                .filter(|(key, _)| key.starts_with(POSITION_OMS_KEY_PREFIX)),
+        );
     }
 
     /// Rebuilds entity-derived indexes from cached accounts, orders, and positions.
@@ -976,7 +1003,11 @@ impl Cache {
             let Some(position_id) = key.strip_prefix(POSITION_OMS_KEY_PREFIX) else {
                 continue;
             };
-            let position_id = PositionId::new(position_id);
+
+            let Ok(position_id) = PositionId::new_checked(position_id) else {
+                continue;
+            };
+
             if !self.positions.contains_key(&position_id) {
                 continue;
             }
@@ -2165,6 +2196,7 @@ impl Cache {
         // Always clean up position indices (even if position not in cache)
         self.index.position_strategy.remove(&position_id);
         self.index.position_oms.remove(&position_id);
+        self.general.remove(&position_oms_key(position_id));
         self.index.position_orders.remove(&position_id);
         self.index.positions.remove(&position_id);
         self.index.positions_open.remove(&position_id);
@@ -2476,17 +2508,22 @@ impl Cache {
     /// Adds a raw bytes `value` to the cache under the `key`.
     ///
     /// The cache stores only raw bytes; interpretation is the caller's responsibility.
+    /// The `position_oms:` key prefix is reserved for position OMS metadata.
     ///
     /// Persistence failures are logged without failing the operation.
     ///
     /// # Errors
     ///
-    /// Returns an error if the key is invalid, the value is empty, or the backing reports a DeFi
-    /// currency integrity conflict.
+    /// Returns an error if the key is invalid or reserved, the value is empty, or the backing
+    /// reports a DeFi currency integrity conflict.
     pub fn add(&mut self, key: &str, value: Bytes) -> anyhow::Result<()> {
         // Keys are opaque and may embed exchange symbols, which need not be ASCII
         check_valid_string_utf8(key, stringify!(key))?;
         check_predicate_false(value.is_empty(), stringify!(value))?;
+        anyhow::ensure!(
+            !key.starts_with(POSITION_OMS_KEY_PREFIX),
+            "Cache key prefix {POSITION_OMS_KEY_PREFIX} is reserved for position OMS metadata"
+        );
 
         log::debug!("Adding general {key}");
         self.general.insert(key.to_string(), value.clone());
@@ -4029,7 +4066,7 @@ impl Cache {
             .insert(position_id);
 
         log::debug!("Adding general {key}");
-        self.general.insert(key.clone(), value.clone());
+        self.general.insert(key, value);
 
         if index_order {
             self.persist_position_id(&position_id, &opening_order_id)?;
@@ -4038,7 +4075,7 @@ impl Cache {
         if let Some(database) = &mut self.database {
             handle_persistence_result(
                 format_args!("persist position {position_id}"),
-                database.add_position(&position_cell.borrow()),
+                database.add_position_with_oms(&position_cell.borrow(), oms_type),
             )?;
             // TODO: Implement position snapshots
             // if self.snapshot_positions {
@@ -4048,10 +4085,6 @@ impl Cache {
             //         self.calculate_unrealized_pnl(&position),
             //     )?;
             // }
-            handle_persistence_result(
-                format_args!("persist OMS metadata for position {position_id}"),
-                database.add(key, value),
-            )?;
         }
 
         Ok(())
@@ -8014,7 +8047,6 @@ type QuoteTable = (
     Vec<(Ustr, Decimal, Decimal)>,
 );
 
-const POSITION_OMS_KEY_PREFIX: &str = "position_oms:";
 const INTEGRITY_FAILURE: &str = "Integrity failure";
 
 #[cfg_attr(

@@ -1006,13 +1006,7 @@ impl ExecutionEngine {
     pub async fn load_cache(&mut self) -> anyhow::Result<()> {
         let ts = SystemTime::now(); // dst-ok: init-time log timing, not on DST state path
 
-        {
-            let mut cache = self.cache.borrow_mut();
-            cache.clear_index();
-            cache.cache_general()?;
-        }
-
-        self.cache.borrow_mut().cache_all().await?;
+        self.cache.borrow_mut().reload().await?;
 
         // Snapshot before iterating: `get_or_init_own_order_book` re-enters `self.cache.borrow_mut()`.
         let own_book_entries: Vec<(InstrumentId, OwnBookOrder)> = {

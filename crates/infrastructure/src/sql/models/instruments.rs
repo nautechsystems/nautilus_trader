@@ -123,7 +123,7 @@ impl<'r> FromRow<'r, PgRow> for InstrumentAnyRow {
             )))
         } else if kind == "CRYPTO_PERPETUAL" {
             Ok(Self(InstrumentAny::CryptoPerpetual(
-                CryptoPerpetualRow::from_row(row).unwrap().0,
+                CryptoPerpetualRow::from_row(row)?.0,
             )))
         } else if kind == "CURRENCY_PAIR" {
             Ok(Self(InstrumentAny::CurrencyPair(
@@ -655,12 +655,8 @@ impl<'r> FromRow<'r, PgRow> for CryptoPerpetualRow {
         let is_inverse = row.try_get::<bool, _>("is_inverse")?;
         let price_precision = read_u8(row, "price_precision")?;
         let size_precision = read_u8(row, "size_precision")?;
-        let price_increment = row
-            .try_get::<String, _>("price_increment")
-            .map(|res| Price::from_str(res.as_str()).unwrap())?;
-        let size_increment = row
-            .try_get::<String, _>("size_increment")
-            .map(|res| Quantity::from_str(res.as_str()).unwrap())?;
+        let price_increment = read_parsed(row, "price_increment")?;
+        let size_increment: Quantity = read_parsed(row, "size_increment")?;
         let multiplier = row
             .try_get::<String, _>("multiplier")
             .map(|res| Quantity::from(res.as_str()))?;

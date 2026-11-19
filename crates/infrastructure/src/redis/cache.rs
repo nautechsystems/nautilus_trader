@@ -52,7 +52,8 @@ use nautilus_common::{
     cache::{
         CacheConfig,
         database::{
-            CacheDatabaseAdapter, CacheDatabaseFactory, CacheMap, register_loaded_currencies,
+            CacheDatabaseAdapter, CacheDatabaseFactory, CacheMap, POSITION_OMS_KEY_PREFIX,
+            register_loaded_currencies,
         },
     },
     enums::SerializationEncoding,
@@ -695,7 +696,7 @@ impl RedisCacheDatabase {
 
         self.delete_key(format!("{POSITION_SNAPSHOTS_PREFIX}{position_id}"))?;
         self.delete_key(format!(
-            "{GENERAL}{REDIS_DELIMITER}position_oms:{position_id}"
+            "{GENERAL}{REDIS_DELIMITER}{POSITION_OMS_KEY_PREFIX}{position_id}"
         ))?;
 
         // Delete from all position indexes

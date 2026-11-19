@@ -19,6 +19,7 @@ use std::fmt::Debug;
 
 use ahash::AHashMap;
 use bytes::Bytes;
+use futures::future::LocalBoxFuture;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
@@ -26,6 +27,7 @@ use nautilus_model::{
         Bar, CustomData, DataType, FundingRateUpdate, InstrumentClose, QuoteTick, TradeTick,
         greeks::{GreeksData, YieldCurve},
     },
+    enums::OmsType,
     events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
     identifiers::{
         AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId,
@@ -39,8 +41,11 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-use super::config::CacheConfig;
+use super::{config::CacheConfig, position_oms_key};
 use crate::signal::Signal;
+
+/// Logical general-cache key prefix reserved for position OMS metadata.
+pub const POSITION_OMS_KEY_PREFIX: &str = "position_oms:";
 
 /// Registers currencies loaded from a cache database, keeping the registry's definition.
 ///
@@ -159,6 +164,30 @@ pub trait CacheDatabaseAdapter {
     ///
     /// Returns an error if loading data from the database fails.
     async fn load_all(&self) -> anyhow::Result<CacheMap>;
+
+    /// Loads general data and core entities for recovery.
+    ///
+    /// With `positions_only`, only the positions map in [`CacheMap`] is populated.
+    /// # Errors
+    ///
+    /// Returns an error if a backing read fails.
+    fn load_for_recovery(
+        &self,
+        positions_only: bool,
+    ) -> LocalBoxFuture<'_, anyhow::Result<(AHashMap<String, Bytes>, CacheMap)>> {
+        Box::pin(async move {
+            let cache = if positions_only {
+                CacheMap {
+                    positions: self.load_positions().await?,
+                    ..CacheMap::default()
+                }
+            } else {
+                self.load_all().await?
+            };
+
+            Ok((self.load()?, cache))
+        })
+    }
 
     /// Loads raw key-value data from the database.
     ///
@@ -480,6 +509,17 @@ pub trait CacheDatabaseAdapter {
     ///
     /// Returns an error if adding a position fails.
     fn add_position(&self, position: &Position) -> anyhow::Result<()>;
+
+    /// Adds a position and its OMS type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the position or its OMS type fails.
+    fn add_position_with_oms(&self, position: &Position, oms_type: OmsType) -> anyhow::Result<()> {
+        let value = Bytes::from(serde_json::to_vec(&oms_type)?);
+        self.add_position(position)?;
+        self.add(position_oms_key(position.id), value)
+    }
 
     /// Adds a position snapshot to the cache.
     ///

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
+use std::{fmt::Display, str::FromStr};
 
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
@@ -610,39 +610,32 @@ impl<'r> FromRow<'r, PgRow> for OrderExpiredRow {
 
 impl<'r> FromRow<'r, PgRow> for OrderFilledRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        let event_id = row.try_get::<&str, _>("id").map(UUID4::from)?;
-        let trader_id = row.try_get::<&str, _>("trader_id").map(TraderId::from)?;
-        let strategy_id = row
-            .try_get::<&str, _>("strategy_id")
-            .map(StrategyId::from)?;
-        let instrument_id = row
-            .try_get::<&str, _>("instrument_id")
-            .map(InstrumentId::from)?;
-        let client_order_id = row
-            .try_get::<&str, _>("client_order_id")
-            .map(ClientOrderId::from)?;
-        let venue_order_id = row
-            .try_get::<&str, _>("venue_order_id")
-            .map(VenueOrderId::from)?;
-        let account_id = row.try_get::<&str, _>("account_id").map(AccountId::from)?;
-        let trade_id = row.try_get::<&str, _>("trade_id").map(TradeId::from)?;
-        let order_side = row
-            .try_get::<&str, _>("order_side")
-            .map(|x| OrderSide::from_str(x).unwrap())?;
-        let order_type = row
-            .try_get::<&str, _>("order_type")
-            .map(|x| OrderType::from_str(x).unwrap())?;
-        let last_px = row.try_get::<&str, _>("last_px").map(Price::from)?;
-        let last_qty = row.try_get::<&str, _>("last_qty").map(Quantity::from)?;
-        let currency = row.try_get::<&str, _>("currency").map(Currency::from)?;
-        let liquidity_side = row
-            .try_get::<&str, _>("liquidity_side")
-            .map(|x| LiquiditySide::from_str(x).unwrap())?;
-        let ts_event = row.try_get::<&str, _>("ts_event").map(UnixNanos::from)?;
-        let ts_init = row.try_get::<&str, _>("ts_init").map(UnixNanos::from)?;
+        let event_id = read_fill_column(row, "id", UUID4::from_str)?;
+        let trader_id = read_fill_column(row, "trader_id", TraderId::new_checked)?;
+        let strategy_id = read_fill_column(row, "strategy_id", StrategyId::new_checked)?;
+        let instrument_id = read_fill_column(row, "instrument_id", InstrumentId::from_str)?;
+        let client_order_id = read_fill_column(row, "client_order_id", ClientOrderId::new_checked)?;
+        let venue_order_id = read_fill_column(row, "venue_order_id", VenueOrderId::new_checked)?;
+        let account_id = read_fill_column(row, "account_id", AccountId::new_checked)?;
+        let trade_id = read_fill_column(row, "trade_id", TradeId::new_checked)?;
+        let order_side = read_fill_column(row, "order_side", OrderSide::from_str)?;
+        let order_type = read_fill_column(row, "order_type", OrderType::from_str)?;
+        let last_px = read_fill_column(row, "last_px", Price::from_str)?;
+        let last_qty = read_fill_column(row, "last_qty", Quantity::from_str)?;
+        let currency = read_fill_column(row, "currency", Currency::from_str)?;
+        let liquidity_side = read_fill_column(row, "liquidity_side", LiquiditySide::from_str)?;
+        let ts_event = read_fill_column(row, "ts_event", UnixNanos::from_str)?;
+        let ts_init = read_fill_column(row, "ts_init", UnixNanos::from_str)?;
+
         let position_id = row
-            .try_get::<Option<&str>, _>("position_id")
-            .map(|x| x.map(PositionId::from))?;
+            .try_get::<Option<&str>, _>("position_id")?
+            .map(PositionId::new_checked)
+            .transpose()
+            .map_err(|e| sqlx::Error::ColumnDecode {
+                index: "position_id".to_string(),
+                source: e.to_string().into(),
+            })?;
+
         let commission = row
             .try_get::<Option<&str>, _>("commission")?
             .map(|value| decode_money(value, "commission"))
@@ -675,6 +668,17 @@ impl<'r> FromRow<'r, PgRow> for OrderFilledRow {
         order_event.causation_id = causation_id;
         Ok(Self(order_event))
     }
+}
+
+fn read_fill_column<'r, T, E: Display>(
+    row: &'r PgRow,
+    column: &str,
+    decode: impl FnOnce(&'r str) -> Result<T, E>,
+) -> Result<T, sqlx::Error> {
+    decode(row.try_get(column)?).map_err(|e| sqlx::Error::ColumnDecode {
+        index: column.to_string(),
+        source: e.to_string().into(),
+    })
 }
 
 impl<'r> FromRow<'r, PgRow> for OrderFillVoidedRow {

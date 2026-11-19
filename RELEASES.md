@@ -35,6 +35,9 @@ Released on TBD (UTC).
 - Changed `UnsubscribeOptionChain` literals; use `correlation_id: Some(owner_id)` (`None` requires a sole owner)
 - Changed `OptionContract` and `CryptoOption` literals and `build_checked` calls; pass `None` for the new fields
 - Changed PostgreSQL option underlying, exercise, settlement, and spread tick columns; run `nautilus database init`
+- Changed PostgreSQL OMS recovery to restore `UNSPECIFIED` for legacy positions whose OMS metadata has no trader ID
+- Changed PostgreSQL `Cache::add` to persist per trader and skip legacy shared user entries on restore
+- Changed `Cache::add` to reject the reserved `position_oms:` key prefix
 - Changed `BinaryOption` Parquet writes to require registered tick schemes; register custom schemes before saving
 - Changed `TickSchemeError` with `TicksNotIncreasing`; update exhaustive matches
 - Changed float time conversions and `UnixNanos` float-second parsing to round to nearest instead of truncating
@@ -83,6 +86,7 @@ Released on TBD (UTC).
 - Fixed data client removal leaving option-chain managers, timers, and pending requests active
 - Fixed retired option contracts rejoining chains on later definitions or subscriptions
 - Fixed `OptionChainSlice` ignoring Greeks in `ts_event` and using trigger timestamps for `ts_init`
+- Fixed PostgreSQL cache restoring another trader's OMS type when position IDs overlap
 - Fixed PostgreSQL `OptionSpread` reloads panicking and dropping `tick_scheme`
 - Fixed local catalog paths with `#`, `%`, or `?` in queries, migration, and run manifests
 - Fixed open-only order checks leaving closed venue orders unresolved after lost updates
