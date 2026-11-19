@@ -55,7 +55,6 @@ cargo-fuzz = true
 
 [package.metadata.cargo-machete]
 ignored = [
-  "nautilus-system", # Optional dep activated only via the python feature
   "rust_decimal_macros", # Used by the shared book stress tests the harness includes by path
 ]
 

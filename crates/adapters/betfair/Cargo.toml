@@ -45,12 +45,6 @@ python = [
   "pyo3-stub-gen",
 ]
 
-[package.metadata.cargo-machete]
-ignored = [
-  "arrow", # Used by `custom_data` macro expansion
-  "rust_decimal_macros", # Used by the shared book stress tests the harness includes by path
-]
-
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
 features = ["arrow", "high-precision"]
@@ -90,7 +84,7 @@ tokio-util = { workspace = true }
 ustr = { workspace = true }
 zeroize = { workspace = true }
 
-arrow = { workspace = true, optional = true } # Used by `custom_data` macro expansion (cargo-machete false positive)
+arrow = { workspace = true, optional = true } # Used by `custom_data` macro expansion
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 

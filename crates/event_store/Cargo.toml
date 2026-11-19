@@ -62,7 +62,6 @@ nautilus-model = { workspace = true, features = ["test-support"] }
 async-trait = { workspace = true }
 criterion = { workspace = true }
 proptest = { workspace = true }
-redb = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }
 

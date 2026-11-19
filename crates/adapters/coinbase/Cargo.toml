@@ -48,11 +48,6 @@ examples = [
   "nautilus-trading/examples",
 ]
 
-[package.metadata.cargo-machete]
-ignored = [
-  "nautilus-system",
-] # Optional dep activated only via the python feature
-
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
 features = ["examples", "high-precision"]
@@ -103,7 +98,6 @@ nautilus-trading = { workspace = true }
 
 axum = { workspace = true }
 dotenvy = { workspace = true }
-futures-util = { workspace = true }
 rstest = { workspace = true }
 toml = { workspace = true }
 

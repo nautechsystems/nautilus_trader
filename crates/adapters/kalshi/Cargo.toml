@@ -55,7 +55,6 @@ cargo-fuzz = true
 [package.metadata.cargo-machete]
 ignored = [
   "ahash", # Used by the shared book stress tests the harness includes by path
-  "axum", # Used by the shared book stress tests the harness includes by path
   "parking_lot", # Used by the shared book stress tests the harness includes by path
   "rust_decimal_macros", # Used by the shared book stress tests the harness includes by path
 ]

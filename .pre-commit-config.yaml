@@ -441,7 +441,7 @@ repos:
 
       - id: dependency-feature-policy
         name: dependency feature policy
-        description: Prevent audited dependency features from expanding or moving
+        description: Enforce audited dependency features and detect duplicate dev dependencies
         entry: python3 -B .pre-commit-hooks/check_dependency_features.py
         language: system
         files: >-

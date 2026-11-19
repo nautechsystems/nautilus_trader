@@ -52,7 +52,6 @@ gateway = ["bollard"]
 
 [package.metadata.cargo-machete]
 ignored = [
-  "nautilus-execution", # Activated by the `execution` feature for downstream feature chaining
   "nautilus-network", # Activated by the `execution` feature for downstream feature chaining
 ]
 
