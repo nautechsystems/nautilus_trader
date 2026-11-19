@@ -140,6 +140,7 @@ Released on TBD (UTC).
 - Fixed Polymarket balances not refreshing after auto-redemption events
 - Fixed Polymarket inferred reconciliation fills keeping free balance reduced after restart
 - Fixed Polymarket maker fills applying when maker quantities do not sum to the trade size
+- Fixed Polymarket stale metadata and resolution deadlines for tracked markets (#5671, #5655), thanks @imbolc
 
 ### Internal Improvements
 

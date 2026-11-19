@@ -34,7 +34,10 @@ use super::{
     parsing::{
         StrictResolvedMarket, build_resolved_market_from_clob_market, build_strict_resolved_market,
     },
-    watchlist::{ResolveWatchlist, TrackedInstrument},
+    watchlist::{
+        ResolveWatchlist, TrackedInstrument, pause_resolve_watch_entries,
+        upsert_data_resolve_watch_entry_from_instrument,
+    },
 };
 use crate::{
     common::consts::{
@@ -177,10 +180,17 @@ impl ResolveContext {
 pub(crate) async fn pause_and_reconcile_resolve_watch_entries(
     ctx: &ResolveContext,
     condition_ids: &[String],
+    max_wait_secs: u64,
 ) {
     let mut targets = {
         let _guard = ctx.apply_mutex.lock();
-        super::watchlist::pause_resolve_watch_entries(&ctx.watchlist, condition_ids);
+        let max_wait = DurationNanos::try_from_secs(max_wait_secs).unwrap_or(DurationNanos::MAX);
+        pause_resolve_watch_entries(
+            &ctx.watchlist,
+            condition_ids,
+            ctx.clock.get_time_ns(),
+            max_wait,
+        );
 
         // Include already paused entries so interrupted cleanup converges after reconnect
         ctx.watchlist
@@ -561,12 +571,11 @@ enum ResolveOwnerSelection<'a> {
     AdmittedInstrument(&'a InstrumentAny),
 }
 
-// Called only after auto-load has parsed and filtered this instrument. A known
-// outcome is replayed without recreating live routing or a terminal position watch.
-pub(crate) async fn admit_data_resolution_instrument(
+// Admit the watch before auto-load releases the instrument update guard, then replay any deferred outcome
+pub(crate) fn admit_data_resolution_instrument(
     ctx: &ResolveContext,
-    instrument: &InstrumentAny,
-) {
+    instrument: InstrumentAny,
+) -> impl Future<Output = ()> + use<'_> {
     let resolution = {
         let _guard = ctx.apply_mutex.lock();
         if ctx.cancellation_token.is_cancelled()
@@ -579,29 +588,34 @@ pub(crate) async fn admit_data_resolution_instrument(
                     .close_subscriptions()
                     .contains(&instrument.id()))
         {
-            return;
+            None
+        } else {
+            let resolution = ctx.deferred_resolutions.get_cloned(&instrument.id());
+            if resolution.is_none() {
+                let cached = ctx.instruments.load();
+                upsert_data_resolve_watch_entry_from_instrument(
+                    &ctx.watchlist,
+                    cached.get(&instrument.id()).unwrap_or(&instrument),
+                );
+            }
+
+            resolution
         }
-        let resolution = ctx.deferred_resolutions.get_cloned(&instrument.id());
-        if resolution.is_none() {
-            super::watchlist::upsert_data_resolve_watch_entry_from_instrument(
-                &ctx.watchlist,
-                instrument,
-            );
-        }
-        resolution
     };
 
-    if let Some(resolution) = resolution {
-        apply_condition_resolution_with_owners(
-            ctx,
-            &resolution.condition_id,
-            &resolution.winning_asset_id,
-            &resolution.winning_outcome,
-            ResolveOwnerSelection::AdmittedInstrument(instrument),
-            &resolution.market_version,
-            Some(&resolution),
-        )
-        .await;
+    async move {
+        if let Some(resolution) = resolution {
+            apply_condition_resolution_with_owners(
+                ctx,
+                &resolution.condition_id,
+                &resolution.winning_asset_id,
+                &resolution.winning_outcome,
+                ResolveOwnerSelection::AdmittedInstrument(&instrument),
+                &resolution.market_version,
+                Some(&resolution),
+            )
+            .await;
+        }
     }
 }
 
@@ -1268,7 +1282,7 @@ mod tests {
             .insert(instrument_id, InstrumentAny::BinaryOption(cached));
         let admitted = InstrumentAny::BinaryOption(binary);
 
-        admit_data_resolution_instrument(&ctx, &admitted).await;
+        admit_data_resolution_instrument(&ctx, admitted.clone()).await;
 
         if conflict == "none" {
             let DataEvent::Data(NautilusData::Instrument(updated)) = data_rx.try_recv().unwrap()
@@ -1309,6 +1323,32 @@ mod tests {
         }
 
         assert!(data_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn admission_uses_current_watch_expiry() {
+        let (ctx, _rx) = make_resolve_context();
+        let mut admitted = binary_option();
+        admitted.id = InstrumentId::from("0xCOND-101.POLYMARKET");
+        admitted.raw_symbol = Symbol::new("101");
+        admitted.expiration_ns = UnixNanos::from(200);
+        admitted.info = Some(Params::new(IndexMap::from([(
+            "market_version".into(),
+            serde_json::json!("v1"),
+        )])));
+        let mut current = admitted.clone();
+        let expiry = UnixNanos::from(100);
+        current.expiration_ns = expiry;
+        ctx.subscriptions.close_subscriptions().insert(admitted.id);
+        ctx.instruments
+            .insert(current.id, InstrumentAny::BinaryOption(current));
+
+        admit_data_resolution_instrument(&ctx, InstrumentAny::BinaryOption(admitted)).await;
+
+        let watches = ctx.watchlist.read();
+        assert_eq!(watches["0xCOND"].expiration_ns, expiry);
+        assert!(watches["0xCOND"].tracked["101"].has_data_subscription);
     }
 
     #[rstest]

@@ -15,6 +15,7 @@
 
 use std::sync::Arc;
 
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use nautilus_common::messages::{
     DataEvent, DataResponse,
@@ -25,15 +26,24 @@ use nautilus_common::messages::{
     },
 };
 use nautilus_core::datetime::datetime_to_unix_nanos;
-use nautilus_model::{data::CustomData, instruments::Instrument};
+use nautilus_model::{
+    data::CustomData,
+    identifiers::InstrumentId,
+    instruments::{Instrument, InstrumentAny},
+};
 
 use super::{
     PolymarketDataClient,
-    instruments::{apply_live_instrument_locked, cache_instruments_unchecked},
+    instruments::{
+        apply_live_instrument_locked, cache_instruments_unchecked, definition_superseded,
+        preserve_expiry,
+    },
+    runtime::is_instrument_expired_and_not_reported_open,
 };
 use crate::{
     common::consts::POLYMARKET_VENUE,
-    providers::extract_condition_id,
+    filters::{market_closed, set_market_closed},
+    providers::{extract_condition_id, fetch_configured_instruments, fetch_instruments},
     resolve::{
         PolymarketResolveRequestSummaryData, RESOLVE_REQUEST_TYPE_NAME, ResolveBatchErrorMode,
         ResolveRequestSummary, ResolveWatchSelectionMode, collect_resolve_watch_selection,
@@ -112,6 +122,7 @@ pub(super) fn request_data(client: &PolymarketDataClient, request: RequestCustom
                 pause_and_reconcile_resolve_watch_entries(
                     &resolve_ctx,
                     &selection.pause_condition_ids,
+                    max_wait_secs,
                 )
                 .await;
                 summary.timed_out_watchlist = selection.timed_out_watchlist;
@@ -198,13 +209,15 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
     let end_nanos = datetime_to_unix_nanos(request.end);
     let params = request.params;
     let clock = client.clock;
+
     let future = async move {
+        let snapshot = Arc::clone(&instruments_cache.load());
+
         let instruments = if instrument_config.should_load_all() || instrument_config.has_load_ids()
         {
-            crate::providers::fetch_configured_instruments(&http, &instrument_config, &filters)
-                .await
+            fetch_configured_instruments(&http, &instrument_config, &filters).await
         } else {
-            crate::providers::fetch_instruments(&http, &filters).await
+            fetch_instruments(&http, &filters).await
         };
 
         let instruments = match instruments {
@@ -216,10 +229,14 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
         };
 
         let update_state = instrument_update_state.lock();
+        let terminal = closed_condition_ids.lock();
+        let cached = instruments_cache.load();
         let mut effective_instruments = Vec::with_capacity(instruments.len());
         let now_ns = clock.get_time_ns();
 
         for instrument in instruments {
+            let instrument =
+                instrument_response_definition(instrument, &snapshot, &cached, &terminal);
             let instrument = match update_state.compose_instrument(&instrument) {
                 Ok(instrument) => instrument,
                 Err(e) => {
@@ -237,15 +254,12 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
         let cached_count = if update_state.retired {
             0
         } else {
-            let terminal_conditions = closed_condition_ids.lock();
-
             let live: Vec<_> = effective_instruments
                 .iter()
                 .filter(|instrument| {
-                    !crate::data::runtime::is_instrument_expired_and_not_reported_open(
-                        instrument, now_ns,
-                    ) && !extract_condition_id(&instrument.id())
-                        .is_ok_and(|condition_id| terminal_conditions.contains(&condition_id))
+                    !is_instrument_expired_and_not_reported_open(instrument, now_ns)
+                        && !extract_condition_id(&instrument.id())
+                            .is_ok_and(|condition_id| terminal.contains(&condition_id))
                 })
                 .cloned()
                 .collect();
@@ -313,6 +327,8 @@ pub(super) fn request_instrument(
             ..Default::default()
         };
 
+        let snapshot = Arc::clone(&instruments_cache.load());
+
         let instrument = match http.request_instruments_by_params(query_params).await {
             Ok(instruments) => instruments.into_iter().find(|i| i.id() == instrument_id),
             Err(e) => {
@@ -323,6 +339,13 @@ pub(super) fn request_instrument(
 
         if let Some(inst) = instrument {
             let update_state = instrument_update_state.lock();
+            let inst = instrument_response_definition(
+                inst,
+                &snapshot,
+                &instruments_cache.load(),
+                &closed_condition_ids.lock(),
+            );
+
             let inst = match update_state.compose_instrument(&inst) {
                 Ok(instrument) => instrument,
                 Err(e) => {
@@ -331,10 +354,7 @@ pub(super) fn request_instrument(
                 }
             };
 
-            if crate::data::runtime::is_instrument_expired_and_not_reported_open(
-                &inst,
-                clock.get_time_ns(),
-            ) {
+            if is_instrument_expired_and_not_reported_open(&inst, clock.get_time_ns()) {
                 log::debug!(
                     "Skipping expired instrument {instrument_id} during request_instrument cache update"
                 );
@@ -355,6 +375,13 @@ pub(super) fn request_instrument(
                 );
             }
 
+            let terminal = closed_condition_ids.lock();
+            let inst = instrument_response_definition(
+                inst,
+                &snapshot,
+                &instruments_cache.load(),
+                &terminal,
+            );
             let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
                 request_id,
                 client_id,
@@ -492,4 +519,96 @@ pub(super) fn request_trades(
     }
 
     Ok(())
+}
+
+fn instrument_response_definition(
+    mut incoming: InstrumentAny,
+    snapshot: &AHashMap<InstrumentId, InstrumentAny>,
+    cached: &AHashMap<InstrumentId, InstrumentAny>,
+    terminal: &AHashSet<String>,
+) -> InstrumentAny {
+    let id = incoming.id();
+    let known_closed = extract_condition_id(&id).is_ok_and(|id| terminal.contains(&id))
+        || cached.get(&id).and_then(market_closed) == Some(true);
+
+    if ((known_closed && market_closed(&incoming) != Some(true))
+        || definition_superseded(snapshot, cached, id))
+        && let Some(current) = cached.get(&id)
+    {
+        incoming = current.clone();
+    }
+
+    if known_closed && let InstrumentAny::BinaryOption(binary) = &mut incoming {
+        set_market_closed(binary, true);
+        if binary.expiration_ns.as_u64() == 0
+            && let Some(current) = cached.get(&id)
+        {
+            preserve_expiry(binary, current);
+        }
+    }
+
+    incoming
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_core::{Params, UnixNanos};
+    use nautilus_model::instruments::stubs::binary_option;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::stale_open(false, 200, 100)]
+    #[case::confirmed_closed(true, 200, 200)]
+    #[case::closed_without_expiry(true, 0, 100)]
+    fn instrument_request_uses_fresh_confirmed_closed_metadata(
+        #[case] closed: bool,
+        #[case] incoming_expiry: u64,
+        #[case] expected_expiry: u64,
+    ) {
+        let mut definition = binary_option();
+        definition.id = InstrumentId::from("0xCOND-101.POLYMARKET");
+        definition.expiration_ns = UnixNanos::from(100);
+        definition.info = Some(Params::new(
+            [(
+                "end_date".into(),
+                definition.expiration_ns.to_rfc3339().into(),
+            )]
+            .into(),
+        ));
+        set_market_closed(&mut definition, true);
+        let cached = AHashMap::from([(
+            definition.id,
+            InstrumentAny::BinaryOption(definition.clone()),
+        )]);
+        let terminal = AHashSet::from([extract_condition_id(&definition.id).unwrap()]);
+        definition.expiration_ns = UnixNanos::from(incoming_expiry);
+        definition.info = (incoming_expiry != 0).then(|| {
+            Params::new(
+                [(
+                    "end_date".into(),
+                    definition.expiration_ns.to_rfc3339().into(),
+                )]
+                .into(),
+            )
+        });
+
+        set_market_closed(&mut definition, closed);
+
+        let response = instrument_response_definition(
+            InstrumentAny::BinaryOption(definition),
+            &cached,
+            &cached,
+            &terminal,
+        );
+
+        let expected_expiry = UnixNanos::from(expected_expiry);
+        assert_eq!(response.expiration_ns(), Some(expected_expiry));
+        assert_eq!(
+            response.info().unwrap().get_str("end_date"),
+            Some(expected_expiry.to_rfc3339().as_str())
+        );
+        assert_eq!(market_closed(&response), Some(true));
+    }
 }

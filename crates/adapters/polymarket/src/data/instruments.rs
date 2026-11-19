@@ -20,27 +20,35 @@ use dashmap::DashMap;
 use nautilus_common::{
     live::sender::EventSender, messages::DataEvent, providers::InstrumentProvider,
 };
-use nautilus_core::{AtomicMap, UnixNanos, time::AtomicTime};
+use nautilus_core::{AtomicMap, DurationNanos, Params, UnixNanos, time::AtomicTime};
 use nautilus_model::{
     identifiers::InstrumentId,
-    instruments::{Instrument, InstrumentAny},
+    instruments::{BinaryOption, Instrument, InstrumentAny},
 };
 use parking_lot::{Mutex, MutexGuard};
 use rust_decimal::Decimal;
+use serde_json::{Value, from_str, to_string, value::RawValue};
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{PolymarketDataClient, runtime::is_instrument_expired_and_not_reported_open};
 use crate::{
     common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE,
+    config::PolymarketInstrumentProviderConfig,
     filters::{
         InstrumentFilter, binary_market_closed, is_expired, market_closed, set_market_closed,
     },
     http::{
-        gamma::PolymarketGammaHttpClient, models::GammaMarket, parse::is_market_closed,
+        gamma::{
+            PolymarketGammaHttpClient, parse_markets_with_event_metadata,
+            parse_markets_with_transient,
+        },
+        models::{GammaEvent, GammaMarket},
+        parse::{enrich_market_fee_schedule, is_market_closed},
         query::GetGammaMarketsParams,
     },
-    providers::extract_condition_id,
+    providers::{extract_condition_id, fetch_configured_instruments, validated_condition_id},
+    resolve::{ResolveContext, ResolveWatchEntry},
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -121,11 +129,23 @@ pub(super) fn cache_instruments_unchecked(
     token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
     pending: &[InstrumentAny],
 ) {
+    cache_instruments(instruments, token_meta, pending, |_| true);
+}
+
+fn cache_instruments(
+    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
+    pending: &[InstrumentAny],
+    update_token_meta: impl Fn(&InstrumentAny) -> bool,
+) {
     if pending.is_empty() {
         return;
     }
 
-    for instrument in pending {
+    for instrument in pending
+        .iter()
+        .filter(|instrument| update_token_meta(instrument))
+    {
         token_meta.insert(
             instrument.raw_symbol().inner(),
             TokenMeta::from_instrument(instrument),
@@ -139,26 +159,99 @@ pub(super) fn cache_instruments_unchecked(
     });
 }
 
-// Applies one instrument while serializing live tick composition, cache mutation,
-// and queued publication with terminal resolution.
+pub(super) struct SelectedInstrument<'a> {
+    pub(super) update_state: MutexGuard<'a, InstrumentUpdateState>,
+    pub(super) instrument: InstrumentAny,
+    pub(super) replace: bool,
+}
+
+pub(super) enum InstrumentSelectionError {
+    Filtered,
+    Unavailable,
+}
+
+pub(super) fn select_current_instrument<'a>(
+    update_state: &'a Mutex<InstrumentUpdateState>,
+    instruments: &AtomicMap<InstrumentId, InstrumentAny>,
+    snapshot: &AHashMap<InstrumentId, InstrumentAny>,
+    fetched: &InstrumentAny,
+    accept: impl Fn(&InstrumentAny) -> bool,
+    cancellation: &CancellationToken,
+) -> Result<SelectedInstrument<'a>, InstrumentSelectionError> {
+    let id = fetched.id();
+
+    loop {
+        if cancellation.is_cancelled() {
+            return Err(InstrumentSelectionError::Unavailable);
+        }
+
+        let cached = Arc::clone(&instruments.load());
+        let replace = !definition_superseded(snapshot, &cached, id);
+        let instrument = if replace {
+            Some(fetched)
+        } else {
+            cached.get(&id)
+        };
+
+        let Some(instrument) = instrument else {
+            return Err(InstrumentSelectionError::Unavailable);
+        };
+
+        // Predicates can inspect the cache, so evaluate outside the publication guard
+        let accepted = accept(instrument);
+        let update_state = update_state.lock();
+        if update_state.retired || cancellation.is_cancelled() {
+            return Err(InstrumentSelectionError::Unavailable);
+        }
+
+        if !Arc::ptr_eq(&cached, &instruments.load()) {
+            continue;
+        }
+
+        return if accepted {
+            Ok(SelectedInstrument {
+                update_state,
+                instrument: instrument.clone(),
+                replace,
+            })
+        } else {
+            Err(InstrumentSelectionError::Filtered)
+        };
+    }
+}
+
+// The callback receives None when a newer open definition wins the race
 pub(super) fn apply_live_instrument(
     closed_condition_ids: &Arc<Mutex<AHashSet<String>>>,
-    instrument_update_state: &Arc<Mutex<InstrumentUpdateState>>,
+    update_state: &MutexGuard<'_, InstrumentUpdateState>,
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
+    replace: bool,
     instrument: &InstrumentAny,
-    apply: impl FnOnce(&InstrumentAny),
+    apply: impl FnOnce(Option<&InstrumentAny>),
 ) -> bool {
-    let update_state = instrument_update_state.lock();
+    if !replace {
+        let terminal = closed_condition_ids.lock();
+
+        if !update_state.retired
+            && !extract_condition_id(&instrument.id())
+                .is_ok_and(|condition| terminal.contains(&condition))
+            && market_closed(instrument) == Some(false)
+        {
+            apply(None);
+        }
+
+        return false;
+    }
 
     // Keep the guard through the callback so cache writes and queued publication stay ordered
     apply_live_instrument_locked(
         closed_condition_ids,
-        &update_state,
+        update_state,
         instruments,
         token_meta,
         instrument,
-        apply,
+        |instrument| apply(Some(instrument)),
     )
 }
 
@@ -211,14 +304,24 @@ pub(super) fn publish_cached_condition_closed(
         return 0;
     }
 
+    publish_cached_conditions_closed(instruments, data_sender, clock, |candidate| {
+        candidate == condition_id
+    })
+}
+
+fn publish_cached_conditions_closed(
+    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    data_sender: &EventSender<DataEvent>,
+    clock: &AtomicTime,
+    includes: impl Fn(&str) -> bool,
+) -> usize {
     let ts_init = clock.get_time_ns();
     let mut updated_ids = Vec::new();
     instruments.rcu(|map| {
         updated_ids.clear();
 
         for (instrument_id, instrument) in map.iter_mut() {
-            if !extract_condition_id(instrument_id).is_ok_and(|candidate| candidate == condition_id)
-            {
+            if !extract_condition_id(instrument_id).is_ok_and(|candidate| includes(&candidate)) {
                 continue;
             }
 
@@ -257,14 +360,19 @@ impl TokenMeta {
     }
 }
 
-pub(super) fn cache_and_publish_instruments(
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Bootstrap serializes cache and publication"
+)]
+fn cache_and_publish_instruments(
     closed_condition_ids: &Arc<Mutex<AHashSet<String>>>,
     instrument_update_state: &Arc<Mutex<InstrumentUpdateState>>,
     instruments_cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
     data_sender: &EventSender<DataEvent>,
     now_ns: UnixNanos,
-    instruments: Vec<InstrumentAny>,
+    instruments: Vec<&InstrumentAny>,
+    snapshot: Option<&AHashMap<InstrumentId, InstrumentAny>>,
 ) -> usize {
     let update_state = instrument_update_state.lock();
     if update_state.retired {
@@ -272,9 +380,18 @@ pub(super) fn cache_and_publish_instruments(
     }
 
     let mut pending = Vec::with_capacity(instruments.len());
+    let cached = instruments_cache.load();
 
-    for instrument in instruments {
-        if is_instrument_expired_and_not_reported_open(&instrument, now_ns) {
+    for definition in instruments {
+        let id = definition.id();
+        let instrument =
+            if snapshot.is_none_or(|snapshot| definition_superseded(snapshot, &cached, id)) {
+                cached.get(&id).unwrap_or(definition)
+            } else {
+                definition
+            };
+
+        if is_instrument_expired_and_not_reported_open(instrument, now_ns) {
             log::debug!(
                 "Skipping expired instrument {} during live cache publish",
                 instrument.id()
@@ -282,7 +399,7 @@ pub(super) fn cache_and_publish_instruments(
             continue;
         }
 
-        match update_state.compose_instrument(&instrument) {
+        match update_state.compose_instrument(instrument) {
             Ok(instrument) => pending.push(instrument),
             Err(e) => log::error!(
                 "Failed to apply live tick to instrument {}: {e}",
@@ -305,47 +422,649 @@ pub(super) fn cache_and_publish_instruments(
     let total = pending.len();
 
     // Keep the update guard through publication so live tick updates cannot overtake this batch
-    for instrument in pending {
-        let instrument_id = instrument.id();
-        if let Err(e) = data_sender.send(DataEvent::Data(instrument.into())) {
-            log::warn!("Failed to publish instrument {instrument_id}: {e}");
+    publish_instrument_definitions(pending, data_sender);
+
+    total
+}
+
+async fn refresh_instruments(
+    http: &PolymarketGammaHttpClient,
+    config: Option<&PolymarketInstrumentProviderConfig>,
+    filters: &[Arc<dyn InstrumentFilter>],
+    ctx: &ResolveContext,
+    update_state: &Mutex<InstrumentUpdateState>,
+    max_wait: DurationNanos,
+) -> usize {
+    let mut discovery_events = AHashMap::new();
+
+    let discovery = if config.is_some() || !filters.is_empty() {
+        let snapshot = Arc::clone(&ctx.instruments.load());
+        let config = config.cloned().unwrap_or_default();
+        match fetch_configured_instruments(http, &config, filters).await {
+            Ok(instruments) => {
+                apply_instrument_refresh(
+                    ctx,
+                    update_state,
+                    &snapshot,
+                    instruments,
+                    false,
+                    max_wait,
+                    &mut discovery_events,
+                )
+                .await
+            }
+            Err(e) => {
+                log::warn!("Failed to refresh Polymarket discovery instruments: {e}");
+                AHashSet::new()
+            }
         }
+    } else {
+        AHashSet::new()
+    };
+
+    let tracked = tracked_conditions(ctx);
+    if tracked.is_empty() {
+        return discovery.len();
+    }
+
+    let (mut missing, cached_closed) = tracked_refresh_candidates(ctx, &tracked, &discovery);
+    missing.sort_unstable();
+
+    let mut total = discovery.len();
+    let http = http.for_tracked_refresh();
+
+    for chunk in missing.chunks(GAMMA_CONDITION_IDS_BATCH_SIZE) {
+        let snapshot = Arc::clone(&ctx.instruments.load());
+
+        let known_closed = {
+            let terminal = ctx.subscriptions.lock_closed_conditions();
+            chunk
+                .iter()
+                .filter(|id| terminal.contains(*id) || cached_closed.contains(*id))
+                .cloned()
+                .collect()
+        };
+
+        let instruments =
+            match fetch_tracked_instruments(&http, chunk, &known_closed, ctx.clock.get_time_ns())
+                .await
+            {
+                Ok(instruments) => instruments,
+                Err(e) => {
+                    log::warn!("Failed to refresh tracked Polymarket instruments: {e}");
+                    continue;
+                }
+            };
+
+        total += apply_instrument_refresh(
+            ctx,
+            update_state,
+            &snapshot,
+            instruments,
+            true,
+            max_wait,
+            &mut discovery_events,
+        )
+        .await
+        .len();
     }
 
     total
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "shared adapter state is held in Arcs"
-)]
-pub(super) async fn refresh_scoped_instruments(
-    http_client: PolymarketGammaHttpClient,
-    instrument_config: Option<crate::config::PolymarketInstrumentProviderConfig>,
-    filters: Vec<Arc<dyn InstrumentFilter>>,
-    closed_condition_ids: &Arc<Mutex<AHashSet<String>>>,
-    instrument_update_state: &Arc<Mutex<InstrumentUpdateState>>,
-    instruments_cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-    token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
-    data_sender: &EventSender<DataEvent>,
-    clock: &'static AtomicTime,
-) -> anyhow::Result<usize> {
-    // Defaulted rather than returning early: a client can carry registered filters with
-    // no instrument_config, and those filters bound the refresh universe on their own.
-    let instrument_config = instrument_config.unwrap_or_default();
-    let refreshed =
-        crate::providers::fetch_configured_instruments(&http_client, &instrument_config, &filters)
-            .await?;
+fn tracked_refresh_candidates(
+    ctx: &ResolveContext,
+    tracked: &AHashSet<String>,
+    discovery: &AHashSet<InstrumentId>,
+) -> (Vec<String>, AHashSet<String>) {
+    let mut missing = AHashSet::new();
+    let mut closed = AHashSet::new();
 
-    Ok(cache_and_publish_instruments(
-        closed_condition_ids,
-        instrument_update_state,
-        instruments_cache,
-        token_meta,
-        data_sender,
-        clock.get_time_ns(),
-        refreshed,
-    ))
+    for (id, instrument) in ctx.instruments.load().iter() {
+        let Ok(condition) = extract_condition_id(id) else {
+            continue;
+        };
+
+        if !tracked.contains(&condition) {
+            continue;
+        }
+
+        if market_closed(instrument) == Some(true) {
+            closed.insert(condition);
+        }
+
+        if !discovery.contains(id)
+            && let Ok(condition) = validated_condition_id(id)
+        {
+            missing.insert(condition);
+        }
+    }
+
+    (missing.into_iter().collect(), closed)
+}
+
+fn tracked_conditions(ctx: &ResolveContext) -> AHashSet<String> {
+    let mut conditions = ctx
+        .watchlist
+        .read()
+        .keys()
+        .cloned()
+        .collect::<AHashSet<_>>();
+    let cached = ctx.instruments.load();
+    for intents in ctx.subscriptions.intents() {
+        conditions.extend(
+            intents
+                .iter()
+                .filter(|id| cached.contains_key(id.key()))
+                .filter_map(|id| extract_condition_id(id.key()).ok()),
+        );
+    }
+
+    conditions
+}
+
+async fn fetch_tracked_instruments(
+    http: &PolymarketGammaHttpClient,
+    condition_ids: &[String],
+    known_closed: &AHashSet<String>,
+    now: UnixNanos,
+) -> anyhow::Result<Vec<InstrumentAny>> {
+    let mut markets = http
+        .request_markets_by_params(GetGammaMarketsParams {
+            condition_ids: Some(condition_ids.to_vec()),
+            ..Default::default()
+        })
+        .await?;
+
+    markets.retain(|market| {
+        condition_ids.contains(&market.condition_id)
+            && (!known_closed.contains(&market.condition_id) || is_market_closed(market))
+    });
+
+    let returned = markets
+        .iter()
+        .map(|market| &market.condition_id)
+        .collect::<AHashSet<_>>();
+    let missing = condition_ids
+        .iter()
+        .filter(|id| !returned.contains(id))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    if !missing.is_empty() {
+        match query_positive_closed_markets(http, &missing).await {
+            Ok(closed) => markets.extend(closed),
+            Err(e) => log::warn!("Failed to refresh closed Polymarket instruments: {e}"),
+        }
+    }
+
+    for market in &mut markets {
+        enrich_market_fee_schedule(market);
+    }
+
+    Ok(parse_markets_with_transient(&markets, now).0)
+}
+
+async fn apply_instrument_refresh(
+    ctx: &ResolveContext,
+    update_state: &Mutex<InstrumentUpdateState>,
+    snapshot: &AHashMap<InstrumentId, InstrumentAny>,
+    instruments: Vec<InstrumentAny>,
+    tracked_only: bool,
+    max_wait: DurationNanos,
+    discovery_events: &mut AHashMap<InstrumentId, DeferredDiscoveryEvent>,
+) -> AHashSet<InstrumentId> {
+    let conditions = prepare_refresh_batches(
+        snapshot,
+        instruments,
+        discovery_events,
+        ctx.clock.get_time_ns(),
+    );
+    let (published, resumed) = commit_instrument_refresh(
+        ctx,
+        update_state,
+        snapshot,
+        conditions,
+        tracked_only,
+        max_wait,
+        discovery_events,
+    );
+
+    for (id, token) in resumed {
+        ctx.sync_ws_subscription(id, token).await;
+    }
+
+    published
+}
+
+struct DeferredDiscoveryEvent {
+    previous: InstrumentAny,
+    info: Params,
+}
+
+fn prepare_refresh_batches(
+    snapshot: &AHashMap<InstrumentId, InstrumentAny>,
+    instruments: Vec<InstrumentAny>,
+    discovery_events: &AHashMap<InstrumentId, DeferredDiscoveryEvent>,
+    now: UnixNanos,
+) -> AHashMap<String, Vec<InstrumentAny>> {
+    let mut conditions = AHashMap::<String, Vec<InstrumentAny>>::new();
+    let mut events = AHashMap::new();
+
+    for mut instrument in instruments {
+        let id = instrument.id();
+
+        let Ok(condition) = extract_condition_id(&id) else {
+            continue;
+        };
+
+        if let Some(current) = snapshot.get(&id)
+            && let Some(info) = discovery_events
+                .get(&id)
+                .filter(|event| !definition_changed(&event.previous, current))
+                .map(|event| &event.info)
+                .or_else(|| current.info())
+        {
+            restore_refresh_event(&mut instrument, info, &mut events, now);
+        }
+
+        conditions.entry(condition).or_default().push(instrument);
+    }
+
+    conditions
+}
+
+fn commit_instrument_refresh(
+    ctx: &ResolveContext,
+    update_state: &Mutex<InstrumentUpdateState>,
+    snapshot: &AHashMap<InstrumentId, InstrumentAny>,
+    conditions: AHashMap<String, Vec<InstrumentAny>>,
+    tracked_only: bool,
+    max_wait: DurationNanos,
+    discovery_events: &mut AHashMap<InstrumentId, DeferredDiscoveryEvent>,
+) -> (AHashSet<InstrumentId>, Vec<(InstrumentId, String)>) {
+    let update_state = update_state.lock();
+    let _owners = ctx.apply_mutex.lock();
+    if update_state.retired || ctx.cancellation_token.is_cancelled() {
+        return (AHashSet::new(), Vec::new());
+    }
+
+    let terminal = ctx.subscriptions.lock_closed_conditions();
+    let mut watches = ctx.watchlist.write();
+    let cached = ctx.instruments.load();
+
+    let omitted = if tracked_only {
+        AHashMap::new()
+    } else {
+        omitted_discovery_outcomes(&conditions, &cached)
+    };
+
+    let now = ctx.clock.get_time_ns();
+    let mut pending = Vec::new();
+    let mut resumed = Vec::new();
+
+    for (condition, instruments) in conditions {
+        let watch = watches.get_mut(&condition);
+        let siblings = omitted.get(&condition);
+
+        let tracked = watch.is_some()
+            || instruments
+                .iter()
+                .map(Instrument::id)
+                .chain(siblings.into_iter().flatten().copied())
+                .any(|id| cached.contains_key(&id) && ctx.subscriptions.has_intent(id));
+
+        let defer = tracked && siblings.is_some();
+        // Admit new discovery rows now and refresh cached outcomes together in the fallback
+        if defer && defer_discovery_update(&instruments, snapshot, &cached, discovery_events) {
+            continue;
+        }
+
+        let updates = prepare_condition_refresh(
+            &update_state,
+            snapshot,
+            &cached,
+            instruments,
+            tracked,
+            tracked_only,
+            terminal.contains(&condition),
+            siblings.map_or(&[], Vec::as_slice),
+            now,
+        );
+
+        if let Some(watch) = watch.filter(|_| !defer) {
+            refresh_watch_deadline(watch, &updates, now, max_wait, &mut resumed);
+        }
+
+        pending.extend(updates);
+    }
+
+    // A closed watch keeps its definition after retirement has removed its live token routing
+    cache_instruments(
+        &ctx.instruments,
+        &ctx.subscriptions.token_meta,
+        &pending,
+        |instrument| {
+            !extract_condition_id(&instrument.id())
+                .is_ok_and(|condition| terminal.contains(&condition))
+        },
+    );
+
+    let published = pending.iter().map(Instrument::id).collect();
+    publish_instrument_definitions(pending, &ctx.data_sender);
+    (published, resumed)
+}
+
+fn defer_discovery_update(
+    instruments: &[InstrumentAny],
+    snapshot: &AHashMap<InstrumentId, InstrumentAny>,
+    cached: &AHashMap<InstrumentId, InstrumentAny>,
+    discovery_events: &mut AHashMap<InstrumentId, DeferredDiscoveryEvent>,
+) -> bool {
+    let [instrument] = instruments else {
+        return false;
+    };
+
+    let id = instrument.id();
+
+    let Some(previous) = cached.get(&id) else {
+        return false;
+    };
+
+    if let Some(info) = instrument
+        .info()
+        .filter(|info| info.contains_key("gamma_event"))
+        && !definition_superseded(snapshot, cached, id)
+    {
+        discovery_events.insert(
+            id,
+            DeferredDiscoveryEvent {
+                previous: previous.clone(),
+                info: info.clone(),
+            },
+        );
+    }
+
+    true
+}
+
+fn omitted_discovery_outcomes(
+    conditions: &AHashMap<String, Vec<InstrumentAny>>,
+    cached: &AHashMap<InstrumentId, InstrumentAny>,
+) -> AHashMap<String, Vec<InstrumentId>> {
+    let mut omitted = AHashMap::<String, Vec<InstrumentId>>::new();
+    if !conditions.values().any(|outcomes| outcomes.len() == 1) {
+        return omitted;
+    }
+
+    for id in cached.keys() {
+        if let Ok(condition) = extract_condition_id(id)
+            && let Some([outcome]) = conditions.get(&condition).map(Vec::as_slice)
+            && outcome.id() != *id
+        {
+            omitted.entry(condition).or_default().push(*id);
+        }
+    }
+
+    omitted
+}
+
+fn publish_instrument_definitions(
+    instruments: Vec<InstrumentAny>,
+    sender: &EventSender<DataEvent>,
+) {
+    for instrument in instruments {
+        let id = instrument.id();
+        if let Err(e) = sender.send(DataEvent::Data(instrument.into())) {
+            log::warn!("Failed to publish instrument {id}: {e}");
+        }
+    }
+}
+
+fn refresh_watch_deadline(
+    watch: &mut ResolveWatchEntry,
+    updates: &[InstrumentAny],
+    now: UnixNanos,
+    max_wait: DurationNanos,
+    resumed: &mut Vec<(InstrumentId, String)>,
+) {
+    let Some(expiry) = updates
+        .iter()
+        .filter_map(Instrument::expiration_ns)
+        .filter(|expiry| expiry.as_u64() != 0)
+        .max()
+    else {
+        return;
+    };
+
+    if watch.paused && now < expiry.saturating_add(max_wait) {
+        watch.paused = false;
+        watch.clob_retry = None;
+        resumed.extend(
+            watch
+                .tracked
+                .values()
+                .filter(|tracked| tracked.has_data_subscription)
+                .map(|tracked| (tracked.instrument_id, tracked.token_id.clone())),
+        );
+    }
+
+    watch.expiration_ns = expiry;
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Condition refresh uses the current cache and request snapshot"
+)]
+fn prepare_condition_refresh(
+    state: &InstrumentUpdateState,
+    snapshot: &AHashMap<InstrumentId, InstrumentAny>,
+    cached: &AHashMap<InstrumentId, InstrumentAny>,
+    instruments: Vec<InstrumentAny>,
+    tracked: bool,
+    tracked_only: bool,
+    terminal: bool,
+    omitted: &[InstrumentId],
+    now: UnixNanos,
+) -> Vec<InstrumentAny> {
+    if (tracked_only || terminal) && !tracked {
+        return Vec::new();
+    }
+
+    if instruments
+        .iter()
+        .any(|instrument| definition_superseded(snapshot, cached, instrument.id()))
+    {
+        return Vec::new();
+    }
+
+    let known_closed = terminal
+        || instruments
+            .iter()
+            .map(Instrument::id)
+            .chain(omitted.iter().copied())
+            .any(|id| cached.get(&id).and_then(market_closed) == Some(true));
+
+    if known_closed
+        && instruments
+            .iter()
+            .any(|instrument| market_closed(instrument) != Some(true))
+    {
+        return Vec::new();
+    }
+
+    instruments
+        .into_iter()
+        .filter_map(|instrument| {
+            let current = cached.get(&instrument.id());
+            if (tracked_only || terminal) && current.is_none() {
+                return None;
+            }
+
+            let close_recorded = terminal || current.and_then(market_closed) == Some(true);
+            prepare_instrument_refresh(state, instrument, current, tracked, close_recorded, now)
+        })
+        .collect()
+}
+
+fn prepare_instrument_refresh(
+    state: &InstrumentUpdateState,
+    mut instrument: InstrumentAny,
+    current: Option<&InstrumentAny>,
+    tracked: bool,
+    was_closed: bool,
+    now: UnixNanos,
+) -> Option<InstrumentAny> {
+    if tracked && let InstrumentAny::BinaryOption(binary) = &mut instrument {
+        update_tracked_lifecycle(binary, current, was_closed, now);
+    }
+
+    if (!was_closed || !tracked) && is_instrument_expired_and_not_reported_open(&instrument, now) {
+        return None;
+    }
+
+    state
+        .compose_instrument(&instrument)
+        .inspect_err(|e| {
+            log::warn!(
+                "Failed to apply live tick to instrument {}: {e}",
+                instrument.id()
+            );
+        })
+        .ok()
+}
+
+fn update_tracked_lifecycle(
+    binary: &mut BinaryOption,
+    current: Option<&InstrumentAny>,
+    was_closed: bool,
+    now: UnixNanos,
+) {
+    let defer_closure = !was_closed && binary_market_closed(binary) == Some(true);
+    if defer_closure {
+        // The expiry probe or resolution handler owns the trading state transition
+        set_market_closed(binary, false);
+    }
+
+    if let Some(current) = current
+        && (binary.expiration_ns.as_u64() == 0
+            || (defer_closure && binary.expiration_ns > now && is_expired(current, now)))
+    {
+        preserve_expiry(binary, current);
+    }
+}
+
+pub(super) fn preserve_expiry(binary: &mut BinaryOption, current: &InstrumentAny) {
+    if let Some(expiry) = current.expiration_ns() {
+        binary.expiration_ns = expiry;
+    }
+
+    let mut info = binary.info.as_ref().map_or_default(Params::to_shared_map);
+    if let Some(date) = current.info().and_then(|info| info.get("end_date")) {
+        info.insert("end_date".into(), Arc::new(date.clone()));
+    } else {
+        info.shift_remove("end_date");
+    }
+
+    binary.info = Some(Params::from_shared(info));
+}
+
+struct RefreshEvent {
+    parsed: Arc<GammaEvent>,
+    raw: Arc<Value>,
+}
+
+fn restore_refresh_event<'a>(
+    instrument: &mut InstrumentAny,
+    source: &'a Params,
+    events: &mut AHashMap<&'a str, Option<RefreshEvent>>,
+    now: UnixNanos,
+) {
+    let Some(info) = instrument.info() else {
+        return;
+    };
+
+    if info.get("gamma_event").is_some() {
+        return;
+    }
+
+    let Some(event) = source.get_str("gamma_event") else {
+        return;
+    };
+
+    let Some(raw_market) = info.get_str("gamma_market") else {
+        return;
+    };
+
+    let event = events.entry(event).or_insert_with(|| {
+        let mut fields: AHashMap<String, &RawValue> = from_str(event).ok()?;
+        // The complete JSON stays shared while only the parent metadata is decoded
+        fields.remove("markets");
+        let parsed = from_str::<GammaEvent>(&to_string(&fields).ok()?).ok()?;
+        let raw = source.to_shared_map().swap_remove("gamma_event")?;
+        Some(RefreshEvent {
+            parsed: Arc::new(parsed),
+            raw,
+        })
+    });
+
+    let (
+        Ok(mut market),
+        Some(RefreshEvent {
+            parsed: event,
+            raw: raw_event,
+        }),
+    ) = (from_str::<GammaMarket>(raw_market), event)
+    else {
+        return;
+    };
+
+    if market
+        .events
+        .as_ref()
+        .is_some_and(|events| events.iter().any(|item| item.id != event.id))
+    {
+        return;
+    }
+
+    market.game_id = market.game_id.or_else(|| event.game_id.clone());
+    market.parent_event = Some(event.clone());
+    enrich_market_fee_schedule(&mut market);
+    let mut metadata = AHashMap::from([(Arc::as_ptr(event), Arc::clone(raw_event))]);
+    if let Some(updated) = parse_markets_with_event_metadata(&[market], now, &mut metadata)
+        .0
+        .into_iter()
+        .find(|candidate| candidate.id() == instrument.id())
+    {
+        *instrument = updated;
+    }
+}
+
+pub(super) fn definition_superseded(
+    snapshot: &AHashMap<InstrumentId, InstrumentAny>,
+    cached: &AHashMap<InstrumentId, InstrumentAny>,
+    id: InstrumentId,
+) -> bool {
+    let Some(current) = cached.get(&id) else {
+        return snapshot.contains_key(&id);
+    };
+
+    let Some(previous) = snapshot.get(&id) else {
+        return true;
+    };
+
+    definition_changed(previous, current)
+}
+
+fn definition_changed(previous: &InstrumentAny, current: &InstrumentAny) -> bool {
+    current.expiration_ns() != previous.expiration_ns()
+        || market_closed(current) != market_closed(previous)
+        || ["gamma_market", "gamma_event", "fee_schedule"]
+            .into_iter()
+            .any(|key| {
+                current.info().and_then(|info| info.get(key))
+                    != previous.info().and_then(|info| info.get(key))
+            })
 }
 
 // Queries Gamma's positive `closed=true` path and returns only conditions it confirms closed.
@@ -433,18 +1152,18 @@ pub(super) async fn refresh_expired_market_closure(
     cancellation: Option<&CancellationToken>,
     clock: &AtomicTime,
 ) -> anyhow::Result<usize> {
-    let mut carried: AHashMap<String, Vec<InstrumentId>> = AHashMap::new();
+    let mut condition_ids = AHashSet::new();
 
     for (id, instrument) in cache.load().iter() {
         if is_expired(instrument, now_ns)
             && market_closed(instrument) == Some(false)
             && let Ok(condition_id) = extract_condition_id(id)
         {
-            carried.entry(condition_id).or_default().push(*id);
+            condition_ids.insert(condition_id);
         }
     }
 
-    let condition_ids = carried.keys().cloned().collect::<Vec<_>>();
+    let condition_ids = condition_ids.into_iter().collect::<Vec<_>>();
     let chunks = condition_ids.chunks(GAMMA_CONDITION_IDS_BATCH_SIZE);
     let total_chunks = chunks.len();
     let mut closed_ids = AHashSet::new();
@@ -464,13 +1183,6 @@ pub(super) async fn refresh_expired_market_closure(
         }
     }
 
-    let closing_ids = closed_ids
-        .iter()
-        .filter_map(|condition_id| carried.get(condition_id))
-        .flatten()
-        .copied()
-        .collect::<Vec<_>>();
-
     // Serialize terminal application with reset. If reset wins the boundary, this old generation
     // must not mutate or publish from the cache it captured before the request.
     for condition_id in &closed_ids {
@@ -479,33 +1191,17 @@ pub(super) async fn refresh_expired_market_closure(
         }
     }
 
+    let _terminal = subscriptions.lock_closed_conditions();
+
     if cancellation.is_some_and(CancellationToken::is_cancelled) {
         return Ok(0);
     }
 
-    let mut updated_ids = Vec::new();
-
-    // Compose against the latest cached value, so a concurrent tick size change is not discarded.
-    // Guarded because `rcu` clones the whole cache, and most ticks have nothing to close.
-    if !closing_ids.is_empty() {
-        let ts_init = clock.get_time_ns();
-        cache.rcu(|map| {
-            updated_ids.clear();
-
-            for instrument_id in &closing_ids {
-                if let Some(InstrumentAny::BinaryOption(binary)) = map.get_mut(instrument_id)
-                    && binary_market_closed(binary) != Some(true)
-                {
-                    set_market_closed(binary, true);
-                    binary.ts_init = ts_init;
-                    binary.ts_event = ts_init;
-                    updated_ids.push(binary.id);
-                }
-            }
-        });
-    }
-
-    publish_market_closure_updates(cache, sender, &updated_ids);
+    let updated = if closed_ids.is_empty() {
+        0
+    } else {
+        publish_cached_conditions_closed(cache, sender, clock, |id| closed_ids.contains(id))
+    };
 
     if failed_chunks > 0 {
         anyhow::bail!(
@@ -513,7 +1209,7 @@ pub(super) async fn refresh_expired_market_closure(
         );
     }
 
-    Ok(updated_ids.len())
+    Ok(updated)
 }
 
 fn publish_market_closure_updates(
@@ -533,6 +1229,8 @@ fn publish_market_closure_updates(
 
 impl PolymarketDataClient {
     pub(super) async fn bootstrap_instruments(&mut self) -> anyhow::Result<()> {
+        let snapshot =
+            (!self.provider.store().is_initialized()).then(|| Arc::clone(&self.instruments.load()));
         self.provider.initialize(false).await?;
 
         let total = cache_and_publish_instruments(
@@ -542,12 +1240,8 @@ impl PolymarketDataClient {
             &self.subscriptions.token_meta,
             &self.data_sender,
             self.clock.get_time_ns(),
-            self.provider
-                .store()
-                .list_all()
-                .into_iter()
-                .cloned()
-                .collect::<Vec<_>>(),
+            self.provider.store().list_all(),
+            snapshot.as_deref(),
         );
 
         log::debug!("Published {total} Polymarket instruments to data engine");
@@ -559,26 +1253,22 @@ impl PolymarketDataClient {
             return Ok(());
         };
 
-        let filters = self.provider.filters();
-
-        // A registered filter is a bootstrap scope in its own right, so a client carrying only
-        // filters keeps refreshing instead of freezing at the universe it loaded on connect.
-        // Filter source methods are deliberately not evaluated here: they are documented as
-        // re-evaluated each load cycle, so probing them would consume a batch the refresh misses.
-        if interval_mins == 0 || (self.config.instrument_config.is_none() && filters.is_empty()) {
+        if interval_mins == 0 {
             return Ok(());
         }
 
         let interval = Duration::from_secs(interval_mins.saturating_mul(60));
         let cancellation = self.cancellation_token.clone();
-        let http_client = self.provider.http_client().clone();
-        let instrument_config = self.config.instrument_config.clone();
-        let instruments_cache = self.instruments.clone();
-        let instrument_update_state = self.instrument_update_state.clone();
-        let token_meta = self.subscriptions.token_meta.clone();
-        let closed_condition_ids = self.subscriptions.closed_condition_ids.clone();
-        let data_sender = self.data_sender.clone();
-        let clock = self.clock;
+        let http = self.provider.http_client().clone();
+        let filters = self.provider.filters();
+        let config = self.config.instrument_config.clone();
+        let ctx = self.resolution_context();
+        let update_state = self.instrument_update_state.clone();
+        let max_wait = self
+            .config
+            .resolve_poll_max_wait_secs
+            .max(self.config.resolve_poll_grace_secs);
+        let max_wait = DurationNanos::try_from_secs(max_wait).unwrap_or(DurationNanos::MAX);
 
         let future = async move {
             log::debug!("Polymarket instrument refresh task started");
@@ -586,35 +1276,17 @@ impl PolymarketDataClient {
             loop {
                 tokio::select! {
                     () = tokio::time::sleep(interval) => {}
-                    () = cancellation.cancelled() => {
-                        log::debug!("Polymarket instrument refresh task cancelled");
-                        break;
-                    }
+                    () = cancellation.cancelled() => break,
                 }
 
-                match refresh_scoped_instruments(
-                    http_client.clone(),
-                    instrument_config.clone(),
-                    filters.clone(),
-                    &closed_condition_ids,
-                    &instrument_update_state,
-                    &instruments_cache,
-                    &token_meta,
-                    &data_sender,
-                    clock,
-                )
-                .await
-                {
-                    Ok(total) => {
-                        if total > 0 {
-                            log::debug!(
-                                "Refreshed {total} Polymarket instruments into the live cache"
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to refresh Polymarket instruments: {e}");
-                    }
+                let total = tokio::select! {
+                    biased;
+                    () = cancellation.cancelled() => break,
+                    total = refresh_instruments(&http, config.as_ref(), &filters, &ctx, &update_state, max_wait) => total,
+                };
+
+                if total > 0 {
+                    log::debug!("Refreshed {total} Polymarket instruments into the live cache");
                 }
             }
 
@@ -631,7 +1303,11 @@ impl PolymarketDataClient {
 #[cfg(test)]
 mod tests {
     use std::{
+        cell::RefCell,
+        iter::from_fn,
         net::SocketAddr,
+        ptr::eq as ptr_eq,
+        slice::from_ref,
         sync::atomic::{AtomicUsize, Ordering},
     };
 
@@ -641,28 +1317,36 @@ mod tests {
         http::StatusCode,
         response::{IntoResponse, Response},
         routing::get,
+        serve,
     };
     use nautilus_common::live::runner::replace_data_event_sender;
     use nautilus_core::UnixNanos;
     use nautilus_model::{
         data::Data,
         enums::AssetClass,
-        identifiers::{ClientId, Symbol},
+        identifiers::{ClientId, PositionId, Symbol},
         instruments::BinaryOption,
         types::{Currency, Price, Quantity},
     };
     use nautilus_network::{retry::RetryConfig, websocket::config::TransportBackend};
     use parking_lot::Mutex;
     use rstest::rstest;
+    use serde_json::{Number, from_value, to_value};
+    use tokio::net::TcpListener;
 
     use super::*;
     use crate::{
         common::consts::WS_DEFAULT_SUBSCRIPTIONS,
         config::PolymarketDataClientConfig,
+        data::subscriptions::SubscriptionKind,
         filters::{PredicateFilter, TagFilter},
         http::{
             clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient,
             gamma::PolymarketGammaHttpClient,
+        },
+        resolve::{
+            pause_resolve_watch_entries, upsert_data_resolve_watch_entry_from_instrument,
+            upsert_resolve_watch_entry_from_instrument,
         },
         websocket::pool::PolymarketMarketConnectionPool,
     };
@@ -722,7 +1406,7 @@ mod tests {
     }
 
     #[rstest]
-    fn refresh_task_does_not_spawn_without_config_or_filters() {
+    fn refresh_task_spawns_for_future_owners_without_discovery_scope() {
         let client = make_client(PolymarketDataClientConfig {
             update_instruments_interval_mins: Some(1),
             instrument_config: None,
@@ -731,7 +1415,7 @@ mod tests {
 
         client.register_instrument_refresh_task().unwrap();
 
-        assert_eq!(client.tasks.len(), 0);
+        assert_eq!(client.tasks.len(), 1);
     }
 
     #[rstest]
@@ -860,20 +1544,26 @@ mod tests {
     }
 
     #[rstest]
-    fn cache_and_publish_merges_batch_and_preserves_live_ticks() {
+    #[case::replay(true, "0.001", 3)]
+    #[case::fresh(false, "0.1", 1)]
+    fn bootstrap_composes_definitions_and_preserves_live_ticks(
+        #[case] replay: bool,
+        #[case] size_increment: &str,
+        #[case] size_precision: u8,
+    ) {
         let instruments = Arc::new(AtomicMap::new());
         let instrument_update_state = Arc::new(Mutex::new(InstrumentUpdateState::default()));
         let token_meta = Arc::new(DashMap::new());
         let existing =
             stub_instrument("existing-token", Price::from("0.01"), Quantity::from("0.1"));
-        let stale = stub_instrument("updated-token", Price::from("0.01"), Quantity::from("0.1"));
-        cache_instrument_unchecked(&instruments, &token_meta, &existing);
-        cache_instrument_unchecked(&instruments, &token_meta, &stale);
+        let provider = stub_instrument("updated-token", Price::from("0.01"), Quantity::from("0.1"));
         let refreshed = stub_instrument(
             "updated-token",
             Price::from("0.01"),
             Quantity::from("0.001"),
         );
+        cache_instrument_unchecked(&instruments, &token_meta, &existing);
+        cache_instrument_unchecked(&instruments, &token_meta, &refreshed);
         let added = stub_instrument("added-token", Price::from("0.01"), Quantity::from("0.1"));
         let invalid = stub_instrument("invalid-token", Price::from("0.01"), Quantity::from("0.1"));
         instrument_update_state.lock().record_live_tick(
@@ -887,6 +1577,7 @@ mod tests {
             UnixNanos::from(43),
         );
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let snapshot = Arc::clone(&instruments.load());
 
         let total = cache_and_publish_instruments(
             &Arc::new(Mutex::new(AHashSet::new())),
@@ -895,7 +1586,8 @@ mod tests {
             &token_meta,
             &tx.into(),
             UnixNanos::default(),
-            vec![refreshed.clone(), added.clone(), invalid.clone()],
+            vec![&provider, &added, &invalid],
+            (!replay).then_some(snapshot.as_ref()),
         );
         let events = std::iter::from_fn(|| rx.try_recv().ok())
             .map(|event| match event {
@@ -914,11 +1606,11 @@ mod tests {
         assert!(!instruments.contains_key(&invalid.id()));
         assert!(!token_meta.contains_key(&Ustr::from("invalid-token")));
         assert_eq!(updated.price_increment(), Price::from("0.001"));
-        assert_eq!(updated.size_increment(), Quantity::from("0.001"));
+        assert_eq!(updated.size_increment(), Quantity::from(size_increment));
         assert_eq!(updated.ts_event(), UnixNanos::from(42));
         assert_eq!(meta.instrument_id, refreshed.id());
         assert_eq!(meta.price_precision, 4);
-        assert_eq!(meta.size_precision, 3);
+        assert_eq!(meta.size_precision, size_precision);
         assert_eq!(events, vec![updated, added]);
     }
 
@@ -948,7 +1640,8 @@ mod tests {
             &token_meta,
             &tx.into(),
             UnixNanos::default(),
-            vec![instrument],
+            vec![&instrument],
+            None,
         );
 
         assert_eq!(total, 0);
@@ -979,7 +1672,8 @@ mod tests {
             &token_meta,
             &tx.into(),
             now_ns,
-            vec![instrument.clone()],
+            vec![&instrument],
+            None,
         );
         let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
 
@@ -1031,19 +1725,15 @@ mod tests {
         client.data_sender = tx.into();
 
         if refresh {
-            let total = refresh_scoped_instruments(
-                http,
-                Some(config),
-                vec![],
-                &client.subscriptions.closed_condition_ids,
+            let total = refresh_instruments(
+                &http,
+                Some(&config),
+                &[],
+                &client.resolution_context(),
                 &client.instrument_update_state,
-                &client.instruments,
-                &client.subscriptions.token_meta,
-                &client.data_sender,
-                client.clock,
+                DurationNanos::MAX,
             )
-            .await
-            .unwrap();
+            .await;
             assert_eq!(total, 2);
         } else {
             client.bootstrap_instruments().await.unwrap();
@@ -1070,6 +1760,644 @@ mod tests {
     }
 
     #[rstest]
+    #[case::open(false, false, false, true)]
+    #[case::closure_due(true, false, false, true)]
+    #[case::awaiting_settlement(true, true, false, true)]
+    #[case::failed_discovery(false, false, true, true)]
+    #[case::missing_expiry(false, false, false, false)]
+    #[tokio::test]
+    async fn tracked_markets_refresh_metadata_outside_discovery(
+        #[case] gamma_closed: bool,
+        #[case] already_closed: bool,
+        #[case] discovery_fails: bool,
+        #[case] has_expiry: bool,
+    ) {
+        let mut client = make_client(PolymarketDataClientConfig::default());
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.data_sender = tx.into();
+        let ctx = client.resolution_context();
+        let original_date = "2025-01-01T00:00:00Z";
+        let mut previous = tracked_market(original_date, "0.03", already_closed);
+        let parent =
+            from_str::<GammaEvent>(r#"{"id":"123","gameId":"456","category":"Sports"}"#).unwrap();
+        previous.parent_event = Some(Arc::new(parent));
+        let initial = parse_markets_with_transient(&[previous], UnixNanos::default()).0;
+        cache_instruments_unchecked(&ctx.instruments, &ctx.subscriptions.token_meta, &initial);
+        let snapshot = Arc::clone(&ctx.instruments.load());
+        let condition = extract_condition_id(&initial[0].id()).unwrap();
+
+        if already_closed {
+            ctx.subscriptions
+                .lock_closed_conditions()
+                .insert(condition.clone());
+            ctx.subscriptions.token_meta.clear();
+        }
+
+        let position_id = PositionId::from("P-1");
+        upsert_resolve_watch_entry_from_instrument(&ctx.watchlist, &initial[0], position_id);
+        let max_wait = DurationNanos::try_from_secs(3_600).unwrap();
+        pause_resolve_watch_entries(
+            &ctx.watchlist,
+            from_ref(&condition),
+            client.clock.get_time_ns(),
+            max_wait,
+        );
+        assert!(ctx.watchlist.read()[&condition].paused);
+
+        client.instrument_update_state.lock().record_live_tick(
+            initial[0].raw_symbol().inner(),
+            "0.005".parse().unwrap(),
+            UnixNanos::from(25),
+        );
+        let changed_date = "2099-12-01T00:00:00Z";
+        let market = tracked_market(changed_date, "0.07", gamma_closed);
+        let mut market = from_str::<Value>(&market.raw).unwrap();
+        if !has_expiry {
+            market.as_object_mut().unwrap().remove("endDate");
+        }
+
+        let lookups = Arc::new(AtomicUsize::new(0));
+
+        let app = Router::new().route(
+            "/markets/keyset",
+            get({
+                let lookups = lookups.clone();
+                move |RawQuery(query): RawQuery| {
+                    let market = market.clone();
+                    let lookups = lookups.clone();
+
+                    async move {
+                        let query = query.unwrap_or_default();
+                        if !query.contains("condition_ids=") {
+                            if discovery_fails {
+                                return StatusCode::BAD_REQUEST.into_response();
+                            }
+
+                            assert!(query.contains("end_date_max="));
+                            return Json(serde_json::json!({"markets": []})).into_response();
+                        }
+
+                        lookups.fetch_add(1, Ordering::SeqCst);
+
+                        let markets =
+                            match (query.contains("closed=true"), gamma_closed, already_closed) {
+                                (false, true, true) => {
+                                    let mut stale = market;
+                                    stale["closed"] = serde_json::json!(false);
+                                    stale["endDate"] = serde_json::json!(original_date);
+                                    vec![stale]
+                                }
+                                (closed, expected, _) if closed == expected => vec![market],
+                                _ => Vec::new(),
+                            };
+
+                        Json(serde_json::json!({"markets": markets})).into_response()
+                    }
+                }
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { serve(listener, app).await.unwrap() });
+        let http = PolymarketGammaHttpClient::new(
+            Some(format!("http://{addr}")),
+            1,
+            RetryConfig::default(),
+        )
+        .unwrap();
+
+        let config = PolymarketInstrumentProviderConfig {
+            filters: Some([("end_date_max".into(), "2099-06-01T00:00:00Z".into())].into()),
+            ..Default::default()
+        };
+
+        let refresh = || {
+            refresh_instruments(
+                &http,
+                Some(&config),
+                &[],
+                &ctx,
+                &client.instrument_update_state,
+                max_wait,
+            )
+        };
+
+        assert_eq!(refresh().await, 2);
+        assert_eq!(
+            lookups.load(Ordering::SeqCst),
+            1 + usize::from(gamma_closed)
+        );
+        assert_eq!(
+            ctx.subscriptions.is_condition_closed(&condition),
+            already_closed
+        );
+        assert_eq!(
+            ctx.subscriptions.token_meta.len(),
+            if already_closed { 0 } else { 2 }
+        );
+        let preserve_expiry = !has_expiry || (gamma_closed && !already_closed);
+        let expected_date = if preserve_expiry {
+            original_date
+        } else {
+            changed_date
+        };
+
+        let expiration = expected_date.parse::<UnixNanos>().unwrap();
+
+        let published = from_fn(|| rx.try_recv().ok())
+            .map(|event| {
+                let DataEvent::Data(Data::Instrument(instrument)) = event else {
+                    panic!("Expected instrument event, was {event:?}");
+                };
+
+                (instrument.id(), instrument)
+            })
+            .collect::<AHashMap<_, _>>();
+
+        assert_eq!(published.len(), 2);
+
+        for (index, previous) in initial.iter().enumerate() {
+            let instrument = &published[&previous.id()];
+            let info = instrument.info().unwrap();
+            assert_eq!(instrument.expiration_ns(), Some(expiration));
+            assert_eq!(info.get_str("end_date"), Some(expected_date));
+            assert_eq!(info["fee_schedule"]["rate"], "0.07");
+            assert_eq!(info.get_str("event_id"), Some("123"));
+            assert_eq!(info.get_str("game_id"), Some("456"));
+            assert_eq!(
+                info.get_str("gamma_event"),
+                previous.info().unwrap().get_str("gamma_event")
+            );
+            assert_eq!(market_closed(instrument), Some(already_closed));
+            let tick = ["0.005", "0.01"][index];
+            assert_eq!(instrument.price_increment(), Price::from(tick));
+            let cached = ctx.instruments.get_cloned(&instrument.id()).unwrap();
+            assert_eq!(
+                to_value(cached).unwrap(),
+                to_value(instrument.as_ref()).unwrap()
+            );
+        }
+
+        {
+            let watches = ctx.watchlist.read();
+            let watch = &watches[&condition];
+            assert_eq!(watch.expiration_ns, expiration);
+            assert_eq!(watch.paused, preserve_expiry);
+            assert_eq!(
+                watch.tracked[initial[0].raw_symbol().as_str()].open_position_ids,
+                AHashSet::from([position_id])
+            );
+        }
+
+        assert!(
+            apply_instrument_refresh(
+                &ctx,
+                &client.instrument_update_state,
+                &snapshot,
+                initial,
+                true,
+                max_wait,
+                &mut AHashMap::new(),
+            )
+            .await
+            .is_empty()
+        );
+        assert!(rx.try_recv().is_err());
+        assert_eq!(ctx.watchlist.read()[&condition].expiration_ns, expiration);
+
+        ctx.watchlist.write().clear();
+        assert_eq!(refresh().await, 0);
+        assert_eq!(
+            lookups.load(Ordering::SeqCst),
+            1 + usize::from(gamma_closed)
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn closed_refresh_applies_corrected_expiry_that_is_still_due(
+        #[values(false, true)] deadline_already_admitted: bool,
+    ) {
+        let client = make_client(PolymarketDataClientConfig::default());
+        let ctx = client.resolution_context();
+        let now = ctx.clock.get_time_ns();
+        let max_wait = DurationNanos::try_from_secs(3_600).unwrap();
+        let due = now.saturating_sub(DurationNanos::try_from_secs(60).unwrap());
+        let original = tracked_market("2025-01-01T00:00:00Z", "0.03", false);
+        let correction = tracked_market(&due.to_rfc3339(), "0.07", true);
+        let initial = parse_markets_with_transient(&[original], now).0;
+        let updated = parse_markets_with_transient(&[correction], now).0;
+        cache_instruments_unchecked(&ctx.instruments, &ctx.subscriptions.token_meta, &initial);
+        upsert_resolve_watch_entry_from_instrument(
+            &ctx.watchlist,
+            &initial[0],
+            PositionId::from("P-1"),
+        );
+        let condition = extract_condition_id(&initial[0].id()).unwrap();
+        pause_resolve_watch_entries(&ctx.watchlist, from_ref(&condition), now, max_wait);
+
+        if deadline_already_admitted {
+            assert!(upsert_data_resolve_watch_entry_from_instrument(
+                &ctx.watchlist,
+                &updated[0],
+            ));
+            assert_eq!(ctx.watchlist.read()[&condition].expiration_ns, due);
+        }
+
+        assert!(ctx.watchlist.read()[&condition].paused);
+
+        let snapshot = Arc::clone(&ctx.instruments.load());
+        let published = apply_instrument_refresh(
+            &ctx,
+            &client.instrument_update_state,
+            &snapshot,
+            updated,
+            true,
+            max_wait,
+            &mut AHashMap::new(),
+        )
+        .await;
+
+        assert_eq!(published, initial.iter().map(Instrument::id).collect());
+
+        for instrument in ctx.instruments.load().values() {
+            assert_eq!(instrument.expiration_ns(), Some(due));
+            assert_eq!(market_closed(instrument), Some(false));
+        }
+
+        let watches = ctx.watchlist.read();
+        assert_eq!(watches[&condition].expiration_ns, due);
+        assert!(!watches[&condition].paused);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn tracked_refresh_keeps_the_overdue_sibling_eligible_for_closure() {
+        let client = make_client(PolymarketDataClientConfig::default());
+        let ctx = client.resolution_context();
+        let now = ctx.clock.get_time_ns();
+        let original = tracked_market("2025-01-01T00:00:00Z", "0.03", false);
+        let closed = tracked_market("2099-12-01T00:00:00Z", "0.07", true);
+        let initial = parse_markets_with_transient(&[original], now).0;
+        let refreshed = parse_markets_with_transient(&[closed], now).0;
+        let condition = extract_condition_id(&initial[0].id()).unwrap();
+
+        cache_instruments_unchecked(
+            &ctx.instruments,
+            &ctx.subscriptions.token_meta,
+            &[refreshed[0].clone(), initial[1].clone()],
+        );
+        assert!(
+            ctx.subscriptions
+                .add_live_subscription_intent(initial[1].id(), SubscriptionKind::Quotes,)
+        );
+        let snapshot = Arc::clone(&ctx.instruments.load());
+        let updates = apply_instrument_refresh(
+            &ctx,
+            &client.instrument_update_state,
+            &snapshot,
+            refreshed.clone(),
+            true,
+            DurationNanos::MAX,
+            &mut AHashMap::new(),
+        )
+        .await;
+
+        assert_eq!(updates, initial.iter().map(Instrument::id).collect());
+        let cached = ctx.instruments.load();
+        assert_eq!(market_closed(&cached[&initial[0].id()]), Some(true));
+        assert_eq!(market_closed(&cached[&initial[1].id()]), Some(false));
+        assert_eq!(
+            cached[&initial[0].id()].expiration_ns(),
+            refreshed[0].expiration_ns()
+        );
+        assert_eq!(
+            cached[&initial[1].id()].expiration_ns(),
+            initial[1].expiration_ns()
+        );
+        assert!(!ctx.subscriptions.is_condition_closed(&condition));
+
+        let addr = market_closure_server(true, false).await;
+        let http = PolymarketGammaHttpClient::new(
+            Some(format!("http://{addr}")),
+            1,
+            RetryConfig::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            refresh_expired_market_closure(
+                &http,
+                &ctx.instruments,
+                &ctx.data_sender,
+                now,
+                &ctx.subscriptions,
+                None,
+                ctx.clock,
+            )
+            .await
+            .unwrap(),
+            1
+        );
+        assert!(ctx.subscriptions.is_condition_closed(&condition));
+        assert_eq!(
+            market_closed(&ctx.instruments.load()[&initial[1].id()]),
+            Some(true)
+        );
+    }
+
+    #[rstest]
+    #[case::already_cached(2)]
+    #[case::new_outcome(1)]
+    #[case::owner_arrives_during_discovery(0)]
+    #[tokio::test]
+    async fn discovery_defers_partial_condition_owned_by_omitted_outcome(#[case] cached: usize) {
+        let mut client = make_client(PolymarketDataClientConfig::default());
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.data_sender = tx.into();
+        let ctx = client.resolution_context();
+        let mut previous = tracked_market("2099-01-01T00:00:00Z", "0.03", false);
+        previous.parent_event = Some(Arc::new(
+            from_str(r#"{"id":"123","gameId":"456","category":"Sports"}"#).unwrap(),
+        ));
+        let initial = parse_markets_with_transient(&[previous], UnixNanos::default()).0;
+        cache_instruments_unchecked(
+            &ctx.instruments,
+            &ctx.subscriptions.token_meta,
+            &initial[..cached],
+        );
+        let snapshot = Arc::clone(&ctx.instruments.load());
+
+        if cached == 0 {
+            cache_instrument_unchecked(
+                &ctx.instruments,
+                &ctx.subscriptions.token_meta,
+                &initial[0],
+            );
+        }
+
+        assert!(
+            ctx.subscriptions
+                .add_live_subscription_intent(initial[0].id(), SubscriptionKind::Quotes,)
+        );
+
+        let updated = tracked_market("2099-12-01T00:00:00Z", "0.07", true);
+        let mut discovered = updated.clone();
+        discovered.game_id = Some("789".into());
+        discovered.parent_event = Some(Arc::new(
+            from_str(r#"{"id":"123","gameId":"789","category":"Sports"}"#).unwrap(),
+        ));
+        let discovered = parse_markets_with_transient(&[discovered], UnixNanos::from(1)).0;
+        let mut discovery_events = AHashMap::new();
+        let discovery = apply_instrument_refresh(
+            &ctx,
+            &client.instrument_update_state,
+            &snapshot,
+            vec![discovered[1].clone()],
+            false,
+            DurationNanos::MAX,
+            &mut discovery_events,
+        )
+        .await;
+
+        if cached == 2 {
+            assert!(discovery.is_empty());
+            assert!(rx.try_recv().is_err());
+        } else {
+            assert_eq!(discovery, AHashSet::from([initial[1].id()]));
+
+            let DataEvent::Data(Data::Instrument(instrument)) = rx.try_recv().unwrap() else {
+                panic!("expected new discovery outcome");
+            };
+
+            assert_eq!(instrument.id(), initial[1].id());
+            assert_eq!(market_closed(&instrument), Some(false));
+            assert_eq!(instrument.info().unwrap()["fee_schedule"]["rate"], "0.07");
+        }
+
+        let fallback_snapshot = Arc::clone(&ctx.instruments.load());
+        let updates = parse_markets_with_transient(&[updated], UnixNanos::from(2)).0;
+        let tracked = apply_instrument_refresh(
+            &ctx,
+            &client.instrument_update_state,
+            &fallback_snapshot,
+            updates,
+            true,
+            DurationNanos::MAX,
+            &mut discovery_events,
+        )
+        .await;
+        assert_eq!(
+            tracked,
+            initial.iter().map(Instrument::id).collect::<AHashSet<_>>()
+        );
+
+        let cached = ctx.instruments.load();
+        for (source, game_id) in [(&initial[0], "456"), (&discovered[1], "789")] {
+            let instrument = &cached[&source.id()];
+            let info = instrument.info().unwrap();
+            assert_eq!(market_closed(instrument), Some(false));
+            assert_eq!(info["fee_schedule"]["rate"], "0.07");
+            assert_eq!(info.get_str("game_id"), Some(game_id));
+            assert!(ptr_eq(
+                info.get("gamma_event").unwrap(),
+                source.info().unwrap().get("gamma_event").unwrap()
+            ));
+        }
+    }
+
+    #[rstest]
+    fn discovery_preserves_context_when_owner_arrives_before_commit() {
+        let client = make_client(PolymarketDataClientConfig::default());
+        let ctx = client.resolution_context();
+        let now = ctx.clock.get_time_ns();
+        let mut event_market = tracked_market("2099-01-01T00:00:00Z", "0.03", false);
+        event_market.parent_event = Some(Arc::new(
+            from_str(r#"{"id":"123","gameId":"456","category":"Sports"}"#).unwrap(),
+        ));
+        enrich_market_fee_schedule(&mut event_market);
+        let initial = parse_markets_with_transient(&[event_market], now).0;
+        cache_instruments_unchecked(&ctx.instruments, &ctx.subscriptions.token_meta, &initial);
+
+        let snapshot = Arc::clone(&ctx.instruments.load());
+        let refreshed = tracked_market("2099-12-01T00:00:00Z", "0.07", false);
+        let refreshed = parse_markets_with_transient(&[refreshed], now).0;
+        let expiry = refreshed[0].expiration_ns();
+        let mut discovery_events = AHashMap::new();
+        let conditions = prepare_refresh_batches(&snapshot, refreshed, &discovery_events, now);
+
+        assert!(
+            ctx.subscriptions
+                .add_live_subscription_intent(initial[0].id(), SubscriptionKind::Quotes,)
+        );
+        let (published, _) = commit_instrument_refresh(
+            &ctx,
+            &client.instrument_update_state,
+            &snapshot,
+            conditions,
+            false,
+            DurationNanos::MAX,
+            &mut discovery_events,
+        );
+
+        assert_eq!(published, initial.iter().map(Instrument::id).collect());
+        let cached = ctx.instruments.load();
+        for source in &initial {
+            let instrument = &cached[&source.id()];
+            let info = instrument.info().unwrap();
+            assert_eq!(instrument.expiration_ns(), expiry);
+            assert_eq!(info.get_str("game_id"), Some("456"));
+            assert_eq!(info["fee_schedule"]["rate"], "0.07");
+            assert_eq!(info["fee_schedule"]["rebateRate"], "0.15");
+            assert!(ptr_eq(
+                info.get("gamma_event").unwrap(),
+                source.info().unwrap().get("gamma_event").unwrap(),
+            ));
+        }
+    }
+
+    #[rstest]
+    fn discovery_retains_distinct_outcome_enrichment() {
+        let client = make_client(PolymarketDataClientConfig::default());
+        let ctx = client.resolution_context();
+        let mut previous = tracked_market("2099-01-01T00:00:00Z", "0.03", false);
+        previous.parent_event = Some(Arc::new(
+            from_str(r#"{"id":"123","gameId":"456","category":"Sports"}"#).unwrap(),
+        ));
+        let initial = parse_markets_with_transient(&[previous], UnixNanos::default()).0;
+        cache_instruments_unchecked(&ctx.instruments, &ctx.subscriptions.token_meta, &initial);
+        assert!(
+            ctx.subscriptions
+                .add_live_subscription_intent(initial[0].id(), SubscriptionKind::Quotes,)
+        );
+
+        let first = tracked_market("2099-12-01T00:00:00Z", "0.07", false);
+        let mut second = tracked_market("2099-12-01T00:00:00Z", "0.08", false);
+        second.parent_event = Some(Arc::new(
+            from_str(r#"{"id":"123","gameId":"789","category":"Sports"}"#).unwrap(),
+        ));
+        second.game_id = Some("789".into());
+        let mut first = parse_markets_with_transient(&[first], UnixNanos::from(1)).0;
+        let mut second = parse_markets_with_transient(&[second], UnixNanos::from(2)).0;
+        let updates = vec![first.swap_remove(0), second.pop().unwrap()];
+
+        let conditions = prepare_refresh_batches(
+            &ctx.instruments.load(),
+            updates,
+            &AHashMap::new(),
+            ctx.clock.get_time_ns(),
+        );
+        let refreshed = &conditions[&extract_condition_id(&initial[0].id()).unwrap()];
+        let first = refreshed[0].info().unwrap();
+        let second = refreshed[1].info().unwrap();
+        assert_eq!(first.get_str("game_id"), Some("456"));
+        assert_eq!(first["fee_schedule"]["rate"], "0.07");
+        assert_eq!(second.get_str("game_id"), Some("789"));
+        assert_eq!(second["fee_schedule"]["rate"], "0.08");
+        assert_eq!(
+            second.get_str("gamma_event"),
+            Some(r#"{"id":"123","gameId":"789","category":"Sports"}"#)
+        );
+    }
+
+    fn tracked_market(end_date: &str, rate: &str, closed: bool) -> GammaMarket {
+        let mut raw = past_end_open_market();
+        raw["endDate"] = serde_json::json!(end_date);
+        raw["orderPriceMinTickSize"] = serde_json::json!(0.01);
+        raw["closed"] = serde_json::json!(closed);
+        raw["events"] = serde_json::json!([{"id":"123"}]);
+        raw["feeSchedule"] = serde_json::json!({
+            "rate": rate.parse::<Number>().unwrap(),
+            "exponent": 1,
+            "rebateRate": 0,
+            "takerOnly": true,
+        });
+        from_value(raw).unwrap()
+    }
+
+    #[rstest]
+    fn instrument_selection_uses_corrected_effective_fees() {
+        let update_state = Mutex::new(InstrumentUpdateState::default());
+        let instruments = AtomicMap::new();
+        let mut market = tracked_market("2099-12-01T00:00:00Z", "0.07", false);
+        market.parent_event = Some(Arc::new(
+            from_str(r#"{"id":"123","category":"Sports"}"#).unwrap(),
+        ));
+        let original = parse_markets_with_transient(from_ref(&market), UnixNanos::from(1))
+            .0
+            .pop()
+            .unwrap();
+        instruments.insert(original.id(), original.clone());
+        let snapshot = Arc::clone(&instruments.load());
+        enrich_market_fee_schedule(&mut market);
+        let corrected = parse_markets_with_transient(&[market], UnixNanos::from(2))
+            .0
+            .pop()
+            .unwrap();
+        instruments.insert(corrected.id(), corrected.clone());
+        assert_eq!(
+            original.info().unwrap()["gamma_market"],
+            corrected.info().unwrap()["gamma_market"]
+        );
+        assert_eq!(original.info().unwrap()["fee_schedule"]["rebateRate"], "0");
+
+        let Ok(selected) = select_current_instrument(
+            &update_state,
+            &instruments,
+            &snapshot,
+            &original,
+            |instrument| instrument.info().unwrap()["fee_schedule"]["rebateRate"] == "0.15",
+            &CancellationToken::new(),
+        ) else {
+            panic!("expected the corrected rebate to pass the filter");
+        };
+
+        assert!(!selected.replace);
+        assert_eq!(
+            selected.instrument.info().unwrap()["fee_schedule"]["rebateRate"],
+            "0.15"
+        );
+    }
+
+    #[rstest]
+    fn instrument_selection_rechecks_a_definition_changed_during_filtering() {
+        let update_state = Mutex::new(InstrumentUpdateState::default());
+        let instruments = AtomicMap::new();
+        let mut revised = past_end_open_instrument();
+        let original_expiry = revised.expiration_ns;
+        let id = revised.id;
+        let original = InstrumentAny::BinaryOption(revised.clone());
+        instruments.insert(id, original.clone());
+        let snapshot = Arc::clone(&instruments.load());
+        revised.expiration_ns = original_expiry.saturating_add(DurationNanos::new(1));
+        let revised_expiry = revised.expiration_ns;
+        let seen = RefCell::new(Vec::new());
+
+        let selected = select_current_instrument(
+            &update_state,
+            &instruments,
+            &snapshot,
+            &original,
+            |instrument| {
+                let _update = update_state
+                    .try_lock()
+                    .expect("filter must run outside the guard");
+                let mut seen = seen.borrow_mut();
+                if seen.is_empty() {
+                    instruments.insert(id, InstrumentAny::BinaryOption(revised.clone()));
+                }
+
+                seen.push(instrument.expiration_ns().unwrap());
+                instrument.expiration_ns() == Some(original_expiry)
+            },
+            &CancellationToken::new(),
+        );
+
+        assert!(matches!(selected, Err(InstrumentSelectionError::Filtered)));
+        assert_eq!(seen.into_inner(), [original_expiry, revised_expiry]);
+    }
+
+    #[rstest]
     fn apply_live_instrument_orders_cache_and_publication() {
         let instruments = Arc::new(AtomicMap::new());
         let instrument_update_state = Arc::new(Mutex::new(InstrumentUpdateState::default()));
@@ -1088,9 +2416,10 @@ mod tests {
         let apply_thread = std::thread::spawn(move || {
             apply_live_instrument(
                 &closed_condition_ids,
-                &thread_state,
+                &thread_state.lock(),
                 &instruments,
                 &token_meta,
+                true,
                 &instrument,
                 |_| {
                     callback_tx.send(()).expect("callback started");
@@ -1267,6 +2596,19 @@ mod tests {
         let instrument = InstrumentAny::BinaryOption(binary);
         let instruments = Arc::new(AtomicMap::new());
         instruments.insert(instrument.id(), instrument.clone());
+        let (mut siblings, _) = parse_markets_with_transient(
+            &[from_value(past_end_open_market()).unwrap()],
+            probe_time,
+        );
+        let mut sibling = siblings.pop().unwrap();
+
+        let InstrumentAny::BinaryOption(binary) = &mut sibling else {
+            panic!("Expected sibling binary option");
+        };
+
+        binary.expiration_ns = probe_time.saturating_add(DurationNanos::new(10));
+        assert_ne!(instrument.id(), sibling.id());
+        instruments.insert(sibling.id(), sibling.clone());
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let addr = market_closure_server(closed, fail).await;
         let client = PolymarketGammaHttpClient::new(
@@ -1316,25 +2658,34 @@ mod tests {
             return;
         }
 
-        assert_eq!(result.unwrap(), usize::from(closed));
+        assert_eq!(result.unwrap(), 2 * usize::from(closed));
         let cached = instruments.get_cloned(&instrument.id()).unwrap();
+        let cached_sibling = instruments.get_cloned(&sibling.id()).unwrap();
         assert_eq!(market_closed(&cached), Some(closed));
+        assert_eq!(market_closed(&cached_sibling), Some(closed));
+        assert_eq!(cached_sibling.expiration_ns(), sibling.expiration_ns());
+
         // Gamma reports 0.01; preserve the tick size updated while the probe was pending
         assert_eq!(cached.price_increment(), Price::from("0.005"));
 
         if closed {
-            assert_eq!(cached.ts_init(), observed_at);
-            assert_eq!(cached.ts_event(), observed_at);
-            let event = rx.try_recv().expect("closure instrument event");
+            let mut events = AHashMap::new();
 
-            let DataEvent::Data(Data::Instrument(published)) = event else {
-                panic!("Expected instrument event, was {event:?}");
-            };
-            assert_eq!(published.id(), instrument.id());
-            assert_eq!(market_closed(&published), Some(true));
-            assert_eq!(published.ts_init(), observed_at);
-            assert_eq!(published.ts_event(), observed_at);
-            assert_eq!(published.price_increment(), Price::from("0.005"));
+            for _ in 0..2 {
+                let event = rx.try_recv().expect("closure instrument event");
+
+                let DataEvent::Data(Data::Instrument(published)) = event else {
+                    panic!("Expected instrument event, was {event:?}");
+                };
+
+                assert_eq!(market_closed(&published), Some(true));
+                assert_eq!(published.ts_init(), observed_at);
+                assert_eq!(published.ts_event(), observed_at);
+                events.insert(published.id(), *published);
+            }
+
+            assert_eq!(events.remove(&cached.id()), Some(cached));
+            assert_eq!(events.remove(&cached_sibling.id()), Some(cached_sibling));
             assert_eq!(
                 refresh_expired_market_closure(
                     &client,

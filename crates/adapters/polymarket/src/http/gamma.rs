@@ -85,6 +85,7 @@ pub struct PolymarketGammaRawHttpClient {
     client: HttpClient,
     base_url: String,
     retry_manager: Arc<RetryManager<Error>>,
+    limit_tracked_refresh: bool,
 }
 
 impl PolymarketGammaRawHttpClient {
@@ -125,6 +126,7 @@ impl PolymarketGammaRawHttpClient {
                 max_elapsed_ms: Some(180_000),
                 ..RetryConfig::default()
             })),
+            limit_tracked_refresh: false,
         })
     }
 
@@ -182,6 +184,11 @@ impl PolymarketGammaRawHttpClient {
                         let response = request();
                         async {
                             *retry_after.lock() = None;
+
+                            if self.limit_tracked_refresh {
+                                self.client.await_rate_limits(Some(&["gamma".into()])).await;
+                            }
+
                             let response = response.await.map_err(Error::from_http_client)?;
                             *retry_after.lock() = response
                                 .headers
@@ -417,11 +424,17 @@ pub(crate) fn parse_markets_with_transient(
     markets: &[GammaMarket],
     ts_init: UnixNanos,
 ) -> (Vec<InstrumentAny>, Vec<String>) {
+    // Parents outlive this batch; pointer keys keep distinct discovery snapshots separate
+    parse_markets_with_event_metadata(markets, ts_init, &mut AHashMap::new())
+}
+
+pub(crate) fn parse_markets_with_event_metadata(
+    markets: &[GammaMarket],
+    ts_init: UnixNanos,
+    event_metadata: &mut AHashMap<*const GammaEvent, Arc<Value>>,
+) -> (Vec<InstrumentAny>, Vec<String>) {
     let mut instruments = Vec::new();
     let mut transient = Vec::new();
-
-    // Parents outlive this batch; pointer keys keep distinct discovery snapshots separate
-    let mut event_metadata = AHashMap::new();
 
     for market in markets {
         if let Err(e) = validate_data_market_version(market.version.as_deref()) {
@@ -434,7 +447,7 @@ pub(crate) fn parse_markets_with_transient(
             continue;
         }
 
-        match parse_gamma_market_with_event_cache(market, &mut event_metadata) {
+        match parse_gamma_market_with_event_cache(market, event_metadata) {
             Ok(defs) => {
                 for def in defs {
                     match create_instrument_from_def(&def, ts_init) {
@@ -563,6 +576,12 @@ impl PolymarketGammaHttpClient {
 
     pub(crate) fn retry_manager(&self) -> &RetryManager<Error> {
         &self.retry_manager
+    }
+
+    pub(crate) fn for_tracked_refresh(&self) -> Self {
+        let mut client = self.clone();
+        Arc::make_mut(&mut client.inner).limit_tracked_refresh = true;
+        client
     }
 
     /// Fetches markets from the Gamma API with the given base params, paginating automatically.

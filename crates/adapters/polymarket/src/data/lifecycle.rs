@@ -277,7 +277,7 @@ impl PolymarketDataClient {
 
                         tokio::select! {
                             () = pause_and_reconcile_resolve_watch_entries(
-                                &resolve_ctx, &selection.pause_condition_ids,
+                                &resolve_ctx, &selection.pause_condition_ids, max_wait_secs,
                             ) => {}
                             () = cancellation.cancelled() => break,
                         }
@@ -1947,9 +1947,10 @@ mod tests {
         // The live boundary refuses re-application, so no production path recreates this
         let republished = apply_live_instrument(
             &client.subscriptions.closed_condition_ids,
-            &client.instrument_update_state,
+            &client.instrument_update_state.lock(),
             &client.instruments,
             &client.subscriptions.token_meta,
+            true,
             &inst,
             |_| {},
         );

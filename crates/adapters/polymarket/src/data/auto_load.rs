@@ -23,6 +23,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_common::messages::DataEvent;
+use nautilus_core::AtomicMap;
 use nautilus_model::{
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
@@ -31,7 +32,8 @@ use nautilus_model::{
 use super::{
     PolymarketDataClient,
     instruments::{
-        apply_live_instrument, publish_cached_condition_closed, query_positive_closed_markets,
+        InstrumentSelectionError, SelectedInstrument, apply_live_instrument,
+        publish_cached_condition_closed, query_positive_closed_markets, select_current_instrument,
     },
     spawn_task,
     subscriptions::resolve_token_id_from,
@@ -276,6 +278,7 @@ impl PolymarketDataClient {
                 let mut transient: AHashSet<String> = AHashSet::new();
                 let mut failed_condition_ids: AHashSet<String> = AHashSet::new();
                 let mut batch_returned_any = false;
+                let snapshot = Arc::clone(&instruments.load());
 
                 for chunk in condition_ids.chunks(GAMMA_CONDITION_IDS_BATCH_SIZE) {
                     let params = GetGammaMarketsParams {
@@ -418,7 +421,9 @@ impl PolymarketDataClient {
                         AutoLoadOutcome::Unsupported | AutoLoadOutcome::Unknown => continue,
                     };
 
-                    for instrument in loaded {
+                    for instrument in loaded.iter().filter(|instrument| {
+                        should_apply_auto_load(&instruments, &batch, instrument.id())
+                    }) {
                         let instrument_id = instrument.id();
 
                         if matches!(outcome, AutoLoadOutcome::Closed { .. })
@@ -428,36 +433,56 @@ impl PolymarketDataClient {
                             continue;
                         }
 
-                        let accepted = filters.iter().all(|f| f.accept(instrument));
-
-                        if cancellation.is_cancelled() {
-                            return;
-                        }
-
-                        if !accepted {
-                            log::debug!("Auto-loaded instrument {} filtered out", instrument.id());
-                            subscriptions.discard_filtered_instrument(instrument_id, &batch);
-                            continue;
-                        }
-
-                        apply_live_instrument(
-                            &closed_condition_ids,
-                            &instrument_update_state,
-                            &instruments,
-                            &token_meta,
-                            instrument,
-                            |instrument| {
-                                if let Err(e) =
-                                    data_sender.send(DataEvent::Data(instrument.clone().into()))
-                                {
-                                    log::error!(
-                                        "Failed to emit auto-loaded instrument {instrument_id}: {e}"
+                        let admission = {
+                            let SelectedInstrument {
+                                update_state,
+                                instrument,
+                                replace,
+                            } = match select_current_instrument(
+                                &instrument_update_state,
+                                &instruments,
+                                &snapshot,
+                                instrument,
+                                |instrument| filters.iter().all(|f| f.accept(instrument)),
+                                &cancellation,
+                            ) {
+                                Ok(selected) => selected,
+                                Err(InstrumentSelectionError::Filtered) => {
+                                    log::debug!(
+                                        "Auto-loaded instrument {instrument_id} filtered out"
                                     );
+                                    subscriptions
+                                        .discard_filtered_instrument(instrument_id, &batch);
+                                    continue;
                                 }
-                            },
-                        );
+                                Err(InstrumentSelectionError::Unavailable) => continue,
+                            };
 
-                        admit_data_resolution_instrument(&resolve_ctx, instrument).await;
+                            apply_live_instrument(
+                                &closed_condition_ids,
+                                &update_state,
+                                &instruments,
+                                &token_meta,
+                                replace,
+                                &instrument,
+                                |instrument| {
+                                    if let Some(instrument) = instrument
+                                        && let Err(e) = data_sender
+                                            .send(DataEvent::Data(instrument.clone().into()))
+                                    {
+                                        log::error!(
+                                            "Failed to emit auto-loaded instrument {instrument_id}: {e}"
+                                        );
+                                    }
+                                },
+                            );
+
+                            let admitted =
+                                instruments.get_cloned(&instrument_id).unwrap_or(instrument);
+                            admit_data_resolution_instrument(&resolve_ctx, admitted)
+                        };
+
+                        admission.await;
                     }
 
                     if let AutoLoadOutcome::Closed { resolution, .. } = outcome {
@@ -621,6 +646,14 @@ impl PolymarketDataClient {
 
         spawn_task(&spawner, future);
     }
+}
+
+fn should_apply_auto_load(
+    instruments: &AtomicMap<InstrumentId, InstrumentAny>,
+    batch: &AHashSet<InstrumentId>,
+    id: InstrumentId,
+) -> bool {
+    batch.contains(&id) || !instruments.contains_key(&id)
 }
 
 // Closure and winner evidence do not depend on construction of a tradable instrument

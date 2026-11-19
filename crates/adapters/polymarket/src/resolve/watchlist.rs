@@ -374,6 +374,8 @@ pub(crate) fn collect_resolve_watch_selection(
 pub(crate) fn pause_resolve_watch_entries(
     watchlist: &Arc<ResolveWatchlist>,
     condition_ids: &[String],
+    now: UnixNanos,
+    max_wait: DurationNanos,
 ) {
     if condition_ids.is_empty() {
         return;
@@ -382,7 +384,9 @@ pub(crate) fn pause_resolve_watch_entries(
     {
         let mut entries = watchlist.write();
         for condition_id in condition_ids {
-            if let Some(entry) = entries.get_mut(condition_id) {
+            if let Some(entry) = entries.get_mut(condition_id)
+                && now >= entry.expiration_ns.saturating_add(max_wait)
+            {
                 entry.paused = true;
             }
         }
