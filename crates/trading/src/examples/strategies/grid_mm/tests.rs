@@ -13,19 +13,34 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_common::actor::DataActor;
+use std::{cell::RefCell, rc::Rc};
+
+use nautilus_common::{
+    actor::DataActor,
+    cache::Cache,
+    clock::{Clock, VirtualClock},
+};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::QuoteTick,
-    enums::OrderSide,
+    enums::{OrderSide, OrderStatus, OrderType},
     events::{
-        OrderCanceled, OrderExpired, OrderRejected,
-        order::spec::{OrderCanceledSpec, OrderExpiredSpec, OrderRejectedSpec},
+        OrderCanceled, OrderEventAny, OrderExpired, OrderRejected,
+        order::spec::{
+            OrderCanceledSpec, OrderExpiredSpec, OrderFillVoidedSpec, OrderRejectedSpec,
+        },
     },
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
+    },
     instruments::{InstrumentAny, stubs::crypto_perpetual_ethusdt},
+    orders::{
+        Order, OrderTestBuilder,
+        stubs::{OrderFilledTestBuilder, TestOrderEventStubs},
+    },
     types::{Price, Quantity},
 };
+use nautilus_portfolio::portfolio::Portfolio;
 use rstest::rstest;
 use rust_decimal_macros::dec;
 use ustr::Ustr;
@@ -351,6 +366,176 @@ fn test_on_order_canceled_filled_order_does_not_block_protocol_cancel() {
     strategy.on_order_canceled(&event);
 
     assert_eq!(strategy.last_quoted_mid, None);
+}
+
+#[rstest]
+#[case::partial_fill_then_self_cancel("0.050", true)]
+#[case::full_fill("0.100", false)]
+fn test_on_order_filled_keeps_self_cancel_marker_until_full_fill(
+    #[case] fill_qty: &str,
+    #[case] canceled: bool,
+) {
+    let mut strategy = create_cancel_resubmit_strategy();
+    let cache = register_with_cache(&mut strategy);
+    strategy.last_quoted_mid = Some(mid("1000.00"));
+    let order_id = ClientOrderId::from("O-001");
+    strategy.pending_self_cancels.insert(order_id);
+
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let account_id = AccountId::from("ACC-001");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(InstrumentId::from("ETHUSDT-PERP.BINANCE"))
+        .client_order_id(order_id)
+        .side(OrderSide::Buy)
+        .price(mid("999.00"))
+        .quantity(Quantity::from("0.100"))
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    cache
+        .borrow_mut()
+        .update_order(&TestOrderEventStubs::submitted(&order, account_id))
+        .unwrap();
+    let order = cache
+        .borrow_mut()
+        .update_order(&TestOrderEventStubs::accepted(
+            &order,
+            account_id,
+            VenueOrderId::from("V-001"),
+        ))
+        .unwrap();
+    let filled = OrderFilledTestBuilder::new(&order, &instrument)
+        .last_qty(Quantity::from(fill_qty))
+        .build();
+    let order = cache.borrow_mut().update_order(&filled).unwrap();
+
+    let OrderEventAny::Filled(fill) = filled else {
+        panic!("Expected OrderFilled");
+    };
+
+    // Handle the fill only after the cache holds every event, as queued delivery allows
+    if canceled {
+        let event = TestOrderEventStubs::canceled(&order, account_id, None);
+        cache.borrow_mut().update_order(&event).unwrap();
+
+        let OrderEventAny::Canceled(cancel) = event else {
+            panic!("Expected OrderCanceled");
+        };
+
+        strategy.on_order_filled(&fill);
+        strategy.on_order_canceled(&cancel);
+    } else {
+        strategy.on_order_filled(&fill);
+    }
+
+    assert!(strategy.pending_self_cancels.is_empty());
+    assert_eq!(strategy.last_quoted_mid, Some(mid("1000.00")));
+}
+
+#[rstest]
+fn test_on_order_filled_clears_self_cancel_marker_when_fill_closes_order_voided() {
+    let mut strategy = create_cancel_resubmit_strategy();
+    let cache = register_with_cache(&mut strategy);
+    strategy.last_quoted_mid = Some(mid("1000.00"));
+    let order_id = ClientOrderId::from("O-001");
+    strategy.pending_self_cancels.insert(order_id);
+
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let account_id = AccountId::from("ACC-001");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(InstrumentId::from("ETHUSDT-PERP.BINANCE"))
+        .client_order_id(order_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("999.00"))
+        .quantity(Quantity::from("0.100"))
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    cache
+        .borrow_mut()
+        .update_order(&TestOrderEventStubs::submitted(&order, account_id))
+        .unwrap();
+    let order = cache
+        .borrow_mut()
+        .update_order(&TestOrderEventStubs::accepted(
+            &order,
+            account_id,
+            VenueOrderId::from("V-001"),
+        ))
+        .unwrap();
+    let first = OrderFilledTestBuilder::new(&order, &instrument)
+        .trade_id(TradeId::from("T-001"))
+        .last_qty(Quantity::from("0.050"))
+        .build();
+    cache.borrow_mut().update_order(&first).unwrap();
+
+    let OrderEventAny::Filled(first) = first else {
+        panic!("Expected OrderFilled");
+    };
+
+    let void = OrderFillVoidedSpec::builder()
+        .trader_id(first.trader_id)
+        .strategy_id(first.strategy_id)
+        .instrument_id(first.instrument_id)
+        .client_order_id(order_id)
+        .venue_order_id(first.venue_order_id)
+        .account_id(first.account_id)
+        .trade_id(first.trade_id)
+        .voided_qty(first.last_qty)
+        .order_side(first.order_side)
+        .order_type(first.order_type)
+        .last_px(first.last_px)
+        .currency(first.currency)
+        .liquidity_side(first.liquidity_side)
+        .maybe_position_id(first.position_id)
+        .build();
+    let order = cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::FillVoided(void))
+        .unwrap();
+
+    // A fill that exhausts the leaves after a non-reopened void closes the order as Voided
+    let remainder = OrderFilledTestBuilder::new(&order, &instrument)
+        .trade_id(TradeId::from("T-002"))
+        .last_qty(Quantity::from("0.050"))
+        .build();
+    let order = cache.borrow_mut().update_order(&remainder).unwrap();
+
+    let OrderEventAny::Filled(remainder) = remainder else {
+        panic!("Expected OrderFilled");
+    };
+
+    strategy.on_order_filled(&remainder);
+
+    assert_eq!(order.status(), OrderStatus::Voided);
+    assert!(strategy.pending_self_cancels.is_empty());
+    assert_eq!(strategy.last_quoted_mid, Some(mid("1000.00")));
+}
+
+fn register_with_cache(strategy: &mut GridMarketMaker) -> Rc<RefCell<Cache>> {
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+
+    let portfolio = Rc::new(RefCell::new(Portfolio::new(
+        clock.clone(),
+        cache.clone(),
+        None,
+    )));
+
+    strategy
+        .core
+        .register(
+            TraderId::from("TESTER-001"),
+            clock,
+            cache.clone(),
+            portfolio,
+        )
+        .unwrap();
+    cache
 }
 
 #[rstest]

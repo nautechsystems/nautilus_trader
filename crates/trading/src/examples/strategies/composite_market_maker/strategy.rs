@@ -22,7 +22,7 @@ use nautilus_common::actor::DataActor;
 use nautilus_core::DurationNanos;
 use nautilus_model::{
     data::QuoteTick,
-    enums::{OrderSide, TimeInForce},
+    enums::{OrderSide, OrderStatus, TimeInForce},
     events::{OrderCanceled, OrderExpired, OrderFilled, OrderRejected},
     identifiers::{ClientOrderId, StrategyId},
     instruments::{Instrument, InstrumentAny},
@@ -210,14 +210,14 @@ nautilus_strategy!(CompositeMarketMaker, {
     }
 
     fn on_order_filled(&mut self, event: &OrderFilled) {
-        let closed = {
+        let filled = {
             let cache = self.cache();
             cache
                 .order(&event.client_order_id)
-                .is_some_and(|o| o.is_closed())
+                .is_some_and(|o| matches!(o.status(), OrderStatus::Filled | OrderStatus::Voided))
         };
 
-        if closed {
+        if filled {
             self.pending_self_cancels.remove(&event.client_order_id);
         }
     }
