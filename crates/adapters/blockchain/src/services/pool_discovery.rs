@@ -163,11 +163,6 @@ impl<'a> PoolDiscoveryService<'a> {
             self.chain.name
         );
 
-        // Enable performance settings for sync operations
-        if let Err(e) = self.cache.toggle_performance_settings(true).await {
-            log::warn!("Failed to enable performance settings: {e}");
-        }
-
         let mut metrics = BlockchainSyncReporter::new(
             BlockchainSyncReportItems::PoolCreatedEvents,
             effective_from_block,
@@ -350,11 +345,6 @@ impl<'a> PoolDiscoveryService<'a> {
         };
 
         sync_result?;
-
-        // Restore default safe settings after sync completion
-        if let Err(e) = self.cache.toggle_performance_settings(false).await {
-            log::warn!("Failed to restore default settings: {e}");
-        }
 
         Ok(())
     }

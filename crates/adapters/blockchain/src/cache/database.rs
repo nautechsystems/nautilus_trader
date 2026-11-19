@@ -1386,55 +1386,6 @@ impl BlockchainCacheDatabase {
         .map_err(|e| anyhow::anyhow!("Failed to load pool {pool_identifier}: {e}"))
     }
 
-    /// Toggles performance optimization settings for sync operations.
-    ///
-    /// When enabled (true), applies settings for maximum write performance:
-    /// - `synchronous_commit` = OFF
-    /// - `work_mem` increased for bulk operations
-    ///
-    /// When disabled (false), restores default safe settings:
-    /// - `synchronous_commit` = ON (data safety)
-    /// - `work_mem` back to default
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database operations fail.
-    pub async fn toggle_perf_sync_settings(&self, enable: bool) -> anyhow::Result<()> {
-        if enable {
-            log::debug!("Enabling performance sync settings for bulk operations");
-
-            // Set synchronous_commit to OFF for maximum write performance
-            sqlx::query("SET synchronous_commit = OFF")
-                .execute(&self.pool)
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to set synchronous_commit OFF: {e}"))?;
-
-            // Increase work_mem for bulk operations
-            sqlx::query("SET work_mem = '256MB'")
-                .execute(&self.pool)
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to set work_mem: {e}"))?;
-
-            log::debug!("Performance settings enabled: synchronous_commit=OFF, work_mem=256MB");
-        } else {
-            log::debug!("Restoring default safe database performance settings");
-
-            // Restore synchronous_commit to ON for data safety
-            sqlx::query("SET synchronous_commit = ON")
-                .execute(&self.pool)
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to set synchronous_commit ON: {e}"))?;
-
-            // Reset work_mem to default
-            sqlx::query("RESET work_mem")
-                .execute(&self.pool)
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to reset work_mem: {e}"))?;
-        }
-
-        Ok(())
-    }
-
     /// Saves the checkpoint block number indicating the last completed pool synchronization for a specific DEX.
     ///
     /// # Errors

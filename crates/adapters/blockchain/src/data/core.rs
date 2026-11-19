@@ -406,11 +406,6 @@ impl BlockchainDataClientCore {
             total_blocks.separate_with_commas()
         );
 
-        // Enable performance settings for sync operations
-        if let Err(e) = self.cache.toggle_performance_settings(true).await {
-            log::warn!("Failed to enable performance settings: {e}");
-        }
-
         let blocks_stream = self
             .hypersync_client
             .request_blocks_stream(from_block, Some(to_block))
@@ -471,11 +466,6 @@ impl BlockchainDataClientCore {
         };
 
         sync_result?;
-
-        // Restore default safe settings after sync completion
-        if let Err(e) = self.cache.toggle_performance_settings(false).await {
-            log::warn!("Failed to restore default settings: {e}");
-        }
 
         Ok(())
     }

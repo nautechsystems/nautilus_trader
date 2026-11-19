@@ -259,20 +259,6 @@ impl BlockchainCache {
             .await
     }
 
-    /// Toggles performance optimization settings in the database.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database is not initialized or the operation fails.
-    pub async fn toggle_performance_settings(&self, enable: bool) -> anyhow::Result<()> {
-        if let Some(database) = &self.database {
-            database.toggle_perf_sync_settings(enable).await
-        } else {
-            log::debug!("Database not initialized, skipping performance settings toggle");
-            Ok(())
-        }
-    }
-
     /// Initializes the chain by seeding it in the database and creating necessary partitions.
     ///
     /// This method sets up the blockchain chain in the database, creates block and token
