@@ -53,6 +53,7 @@ async fn main() {
 
     for inst in resp.unwrap() {
         println!("{inst:?}");
+
         if let Some(changes) = inst.changes {
             for change in changes {
                 println!("Change:");

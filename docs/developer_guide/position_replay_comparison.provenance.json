@@ -1,31 +1,121 @@
 {
-  "base": "c69e0c0ceba8c57080a6f1da69ce3a68ea5c70c7",
-  "head_parents": [
-    "15ad6f7a73392c11da897b9537762cd969648adf",
-    "c69e0c0ceba8c57080a6f1da69ce3a68ea5c70c7"
+  "baseline": "72e6527c73464b55b3bc84cba39be4bf9618a82b",
+  "candidate_parents": [
+    "ad076509d5f0e58e16b5cfb19ba7c85db9c9759a",
+    "72e6527c73464b55b3bc84cba39be4bf9618a82b"
   ],
-  "lock_sha256": "4bfd7fd3d34f6098d85f0c73f8dae67841cd6c6081f6e78e4f4b4701e95bfa37",
+  "candidate_note": "Uncommitted candidate includes the reviewed reopen duplicate-check fix; source hashes identify measured code, not a published commit.",
   "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)\nbinary: rustc\ncommit-hash: 0ef1bc386059596dada8fb65b50425aab2ea637a\ncommit-date: 2026-11-09\nhost: aarch64-apple-darwin\nrelease: 1.100.0\nLLVM version: 23.1.5\n",
-  "source_sha256": {
-    "replay_latest_comparison.rs": "095fc6b78439da6eb7e98fcd9634ff66fb04e92b007f336662fc7d621a35b42d",
-    "replay_latest_memory.rs": "b1610461c98040c8ae585e2fb868cbae0aa4bcc341077483fb3fb667798964f9"
-  },
-  "runner_sha256": "1508125d838d04338856dcc0a7f176e216fd860f6af5cfd51b83ed07d8ee7588",
-  "jobs": 2,
-  "nice": 15,
-  "profile": "bench-lto, native unmodified",
-  "binaries": {
-    "head-engine": "df706a614c899cbe68c001fa9a16699875b469a5bd5e26f5da2d98306d7a8256",
-    "head-memory": "da528ab635add45eedead29c6b3eb27d0591f5252fb679ff528da1038dbe2fda",
-    "baseline-engine": "cc76d4c5e6a5bab7fe65a95e34ad8ba89d2447d8290c5f1bd9743dcc6fea79f4",
-    "baseline-memory": "ac9ac333f253496deac8f60ba33494c754a2fb26a366b22901ee79fd99158805"
-  },
-  "indexed_source": "Merge of head_parents; production and harness sources unchanged after measurement. See the commit containing this report.",
   "environment": {
-    "cpu": "Apple M4 Pro",
-    "os": "macOS 27.0.1",
+    "platform": "macOS 27.0.1 arm64",
     "redis": "8.6.2",
-    "worker_threads": 1,
-    "measurement": "serial synchronous ExecutionEngine::process; Redis acknowledgment/durability excluded"
+    "precision": "high-precision",
+    "profile": "bench-lto unmodified",
+    "jobs": 2,
+    "nice": 15,
+    "targets": "Separate initially empty target directories, never shared across variants"
+  },
+  "runner_sha256": "0e995e5a0be3a5f1e96ecf047dd7797fa1bb371e681355af9912f4dbc0ccd15a",
+  "variants": {
+    "head": {
+      "revision": "ad076509d5f0e58e16b5cfb19ba7c85db9c9759a",
+      "source_diff_sha256": "398c8ed45db228254012438c7e7c1783522b0a02492529f4bc80700ad816f3be",
+      "production_source_sha256": {
+        "Cargo.lock": "e3f5e9ea79558f10a5636afd009b9442a16c6ef2d5b2f0fa3b7c8b59bc14b15e",
+        "Cargo.toml": "6b2d6e711bdcbbc9339c12af962aaff73de1f2cb8dd71a1b8c71775588264d6e",
+        "crates/model/src/position.rs": "5010b257c1e38946ab988b98f1e9cbf90d3ec762321571e018ee1c8c19aa0f8d",
+        "crates/model/src/position/replay.rs": "93914cccbc99169ebde10b932db08acaef1f3fa0c2744c8bb31b3704058ea513",
+        "crates/execution/src/engine/mod.rs": "2b306c6dfabd847670d86932dcba6d458e47b1cc55ddf2a3f87c5ebc4d23689f",
+        "crates/common/src/cache/mod.rs": "37e06576bbf96bbfcf39f1db447fcdc12897ad17c5545e632ccef9278fdfeb3e",
+        "crates/infrastructure/src/redis/cache.rs": "ea80f79b8a2f67df8c7c20b5dc286fcda762b14b24bf2fe33952f4925fe7ba68",
+        "crates/infrastructure/src/redis/queries.rs": "62b8f11743a66ccf2f1b3d6ff1600c3e90775f0f2fa671dddbe2bb40a7a2e30f"
+      },
+      "harness_source_sha256": {
+        "replay_latest_comparison.rs": "90b6cc8fb8ab047caef6ad855151f15d3127b64be887733dd8ae91d03e4c990a",
+        "replay_latest_memory.rs": "417877497f73979b53c711b80a4f1dbf963f99a137bc0f6383927af3d51035c2",
+        "replay_latest_allocations.rs": "259b0dc030c3176e541d8f62f2c1472dc4f6a1b6f329a1cb9e9b545194f6d5db",
+        "common/replay_comparison.rs": "59dd7865e2d7fedddcec8c774111f49f0d2af0c6a367f8cac201b802f1fe670b"
+      },
+      "position_inline_bytes": 848,
+      "canary": "passed",
+      "binaries": {
+        "replay_latest_memory": {
+          "sha256": "60ddd08230867fdb85a710bed1259039c2c088790d4c1709351049a1aeaf273d",
+          "name": "head-memory",
+          "cargo_artifact_verified": true
+        },
+        "replay_latest_allocations": {
+          "sha256": "4db228dd61976dd0fbb77fdef64633ab95f0440ae3d7a1ec60b722e30b2a6870",
+          "name": "head-allocations",
+          "cargo_artifact_verified": true
+        },
+        "replay_latest_comparison": {
+          "sha256": "77eae22317ccd31b6caf8f4a64d23958bb07a27c2b38f65c532b21f04772e210",
+          "name": "head-engine",
+          "cargo_artifact_verified": true
+        }
+      }
+    },
+    "baseline": {
+      "revision": "72e6527c73464b55b3bc84cba39be4bf9618a82b",
+      "source_diff_sha256": "60dddec94a012c3b87dbcdfa855f597fddb4a43092a0246b983e72fbde0d91fc",
+      "production_source_sha256": {
+        "Cargo.lock": "e3f5e9ea79558f10a5636afd009b9442a16c6ef2d5b2f0fa3b7c8b59bc14b15e",
+        "Cargo.toml": "6b2d6e711bdcbbc9339c12af962aaff73de1f2cb8dd71a1b8c71775588264d6e",
+        "crates/model/src/position.rs": "c011e86316278265609b9afc622ec0af94709c1558f4e5626c18c3034438332d",
+        "crates/execution/src/engine/mod.rs": "66033bbd9de08d14641522e3ca332705ef82be28b1bae59a75e1147f21cfcd30",
+        "crates/common/src/cache/mod.rs": "37e06576bbf96bbfcf39f1db447fcdc12897ad17c5545e632ccef9278fdfeb3e",
+        "crates/infrastructure/src/redis/cache.rs": "ea80f79b8a2f67df8c7c20b5dc286fcda762b14b24bf2fe33952f4925fe7ba68",
+        "crates/infrastructure/src/redis/queries.rs": "62b8f11743a66ccf2f1b3d6ff1600c3e90775f0f2fa671dddbe2bb40a7a2e30f"
+      },
+      "harness_source_sha256": {
+        "replay_latest_comparison.rs": "90b6cc8fb8ab047caef6ad855151f15d3127b64be887733dd8ae91d03e4c990a",
+        "replay_latest_memory.rs": "417877497f73979b53c711b80a4f1dbf963f99a137bc0f6383927af3d51035c2",
+        "replay_latest_allocations.rs": "259b0dc030c3176e541d8f62f2c1472dc4f6a1b6f329a1cb9e9b545194f6d5db",
+        "common/replay_comparison.rs": "59dd7865e2d7fedddcec8c774111f49f0d2af0c6a367f8cac201b802f1fe670b"
+      },
+      "position_inline_bytes": 832,
+      "canary": "passed",
+      "binaries": {
+        "replay_latest_memory": {
+          "sha256": "0b6ae84780c796441dda9cf364ebf29d37508343d1ea6392e896baa8203ab408",
+          "name": "baseline-memory",
+          "cargo_artifact_verified": true
+        },
+        "replay_latest_allocations": {
+          "sha256": "c870ac3b909ab0fa6706e499604201447f18847d334d1a656263a5bde867423d",
+          "name": "baseline-allocations",
+          "cargo_artifact_verified": true
+        },
+        "replay_latest_comparison": {
+          "sha256": "2f676b25c8740d40a040c419a0b6571229930912d416cbf7843d35f7957121d8",
+          "name": "baseline-engine",
+          "cargo_artifact_verified": true
+        }
+      }
+    }
+  },
+  "runs": {
+    "total": 482,
+    "passed": 442,
+    "original_duplicate_reload_failures": 8,
+    "plain_fill_carry_recovery_failures": 32,
+    "failed_timing_fixtures_excluded": 24,
+    "performance_groups": 148,
+    "redis_instances": 304
+  },
+  "superseded": "Earlier shared-Redis results and the later identical-binary comparison are not combined with this run.",
+  "post_measurement_runner_formatting": {
+    "measured_sha256": "0e995e5a0be3a5f1e96ecf047dd7797fa1bb371e681355af9912f4dbc0ccd15a",
+    "formatted_sha256": "279c0e703fe939e2150caedb7f7b38151842a0c0aeedff53c82859722776d2ae",
+    "ast_identical": true,
+    "change": "Post-measurement repository formatting only; original measured text recovered and verified by SHA-256."
+  },
+  "post_measurement_harness_formatting": {
+    "file": "crates/infrastructure/examples/common/replay_comparison.rs",
+    "measured_sha256": "59dd7865e2d7fedddcec8c774111f49f0d2af0c6a367f8cac201b802f1fe670b",
+    "formatted_sha256": "6898b54fc3d6b5ebaf3fe74e7805fe558e7df44b9982cf73c777213d7b97b2f3",
+    "nonblank_lines_identical": true,
+    "change": "Only blank lines added for the repository whole-file Rust formatting check; measured sources and binary identities remain unchanged."
   }
 }

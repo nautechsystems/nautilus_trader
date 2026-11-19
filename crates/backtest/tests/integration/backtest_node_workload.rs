@@ -208,6 +208,7 @@ fn write_result(path: &Path, result: &CanonicalBacktestResult) -> anyhow::Result
         .create_new(true)
         .open(path)
         .with_context(|| format!("failed to create result file {}", path.display()))?;
+
     if let Err(e) = file
         .write_all(bytes.as_slice())
         .and_then(|()| file.sync_all())

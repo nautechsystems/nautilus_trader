@@ -286,7 +286,6 @@ impl LiveExecutionClient {
 
         let count = pending.len();
         let mut client = self.client.borrow_mut();
-
         while let Some(instrument) = pending.pop_front() {
             client.on_instrument(instrument);
         }
@@ -340,7 +339,6 @@ impl ReportCollector {
         cmd: GenerateFillReports,
     ) -> anyhow::Result<CollectedReport<Vec<FillReport>>> {
         let task = self.client.client.borrow().generate_fill_reports_task(&cmd);
-
         let finish = if let Some(task) = task {
             self.client
                 .report_task
@@ -717,24 +715,31 @@ mod tests {
         fn is_connected(&self) -> bool {
             true
         }
+
         fn client_id(&self) -> ClientId {
             ClientId::from("REPORT")
         }
+
         fn account_id(&self) -> AccountId {
             AccountId::from("REPORT-001")
         }
+
         fn venue(&self) -> Venue {
             Venue::from("REPORT")
         }
+
         fn oms_type(&self) -> OmsType {
             OmsType::Netting
         }
+
         fn get_account(&self) -> Option<AccountAny> {
             None
         }
+
         fn start(&mut self) -> anyhow::Result<()> {
             Ok(())
         }
+
         fn stop(&mut self) -> anyhow::Result<()> {
             Ok(())
         }
@@ -831,6 +836,7 @@ mod tests {
         ) -> anyhow::Result<Option<ExecutionMassStatus>> {
             std::future::pending().await
         }
+
         fn generate_account_state(
             &self,
             _balances: Vec<AccountBalance>,
@@ -937,6 +943,7 @@ mod tests {
             UnixNanos::default(),
             None,
         );
+
         assert_eq!(
             client.venue_order_ids(&mass_status),
             Some(IndexMap::from_iter([(
@@ -1306,7 +1313,6 @@ mod tests {
         let client = LiveExecutionClient::new(Box::new(ReportExecutionClient::default()));
         let finalized = Rc::new(Cell::new(0));
         let finalized_for_task = Rc::clone(&finalized);
-
         let (task, started, gate) = cpu_collection(move |value| {
             finalized_for_task.set(finalized_for_task.get() + 1);
             Ok(value)
@@ -1360,6 +1366,7 @@ mod tests {
             async { panic!("report decoding failed") },
             Ok,
         );
+
         let failure = client
             .collect_report(task)
             .await
@@ -1507,6 +1514,7 @@ mod tests {
         let client = Rc::new(LiveExecutionClient::new(Box::new(
             ReportExecutionClient::default(),
         )));
+
         let client_for_finish = Rc::clone(&client);
 
         let task = ExecutionReportTask {

@@ -64,6 +64,7 @@ Before running:
   see [installation](../getting_started/installation.md).
 - Check provider retention for the historical examples' fixed past windows.
 
+Set `MARKET_ID` in the example you plan to run to an [active Polymarket outcome ID](#selecting-an-outcome).
 Run from the repository root:
 
 ```bash tab="Rust"
@@ -82,7 +83,7 @@ examples register the factory with `LiveNode` and route `DataTester` through `FI
 
 | Setting           | Example value                                             |
 | ----------------- | --------------------------------------------------------- |
-| Outcome           | `2026-BALANCE-OF-POWER-D-SENATE-D-HOUSE-949_NO`.          |
+| Outcome           | Active Polymarket outcome ID set in `MARKET_ID`.          |
 | Subscriptions     | Quotes, trades, L2 book replacements; logs incoming data. |
 | Stop timer        | 60 seconds including startup; shutdown can take longer.   |
 | Managed allowance | Eight attempts; no application retries.                   |
@@ -91,15 +92,16 @@ examples register the factory with `LiveNode` and route `DataTester` through `FI
 No orders, bars, or history requests run. Bootstrap costs two attempts; initial activity/book polls cost one each.
 For longer runs, [size the allowance](#request-cost-and-retries).
 
-### Selecting another outcome
+### Selecting an outcome
 
-Use `POLYMARKET` with the provider's
-[active-market endpoint](https://www.finfeedapi.com/products/prediction-markets-api/docs/rest-api/markets/markets/exchange_id/active/get?ref=nautilus).
-Set `MARKET_ID` to an exact binary Yes/No outcome ID, including its suffix.
-Full metadata must pass the [definition rules](#supported-venues-and-outcomes).
+Use the provider's
+[active-market endpoint](https://www.finfeedapi.com/products/prediction-markets-api/docs/rest-api/markets/markets/exchange_id/active/get?ref=nautilus)
+with `POLYMARKET`.
+Choose an exact outcome ID ending in `_YES` or `_NO`. Check that its full metadata reports an open
+market and passes the [definition rules](#supported-venues-and-outcomes).
 
 Use the loaded precision and FinFeed instrument ID. Do not round data or substitute a native
-Polymarket ID. Closed or unavailable markets may produce no new activity.
+Polymarket ID. The adapter rejects subscriptions for closed or resolved outcomes.
 
 ### Discovering an outcome in Python
 
@@ -446,6 +448,9 @@ Load a definition before history or current-book requests.
 | Trades | Covering UTC hours; 10000 rows per page. | Sole `timestamp` for ordering and both clocks; `NO_AGGRESSOR`.                          |
 | Bars   | Period lookup; 100000 rows per page.     | Complete periods inside the window, closed by request time; both clocks use period end. |
 
+Native quote history fails with `crossed FinFeed quote` if a retrieved bid exceeds its ask.
+Raw REST access preserves the provider's values.
+
 #### Coverage and truncation
 
 **Native history paginates automatically**. Raw REST history remains single-response; partial-hour native
@@ -564,7 +569,9 @@ in a saturated cycle.
 REST subscriptions sample data. There is no WebSocket stream, continuity, automatic backfill, or completeness guarantee.
 :::
 
-`DEBUG` diagnostics report activity/OHLCV counts, limits, and saturation. Saturation does not trigger recovery.
+Activity and OHLCV polls report counts and limits. The first full result in a series logs at `WARN`.
+Other results log at `DEBUG`. A full response signals possible truncation. The adapter relies on overlapping
+responses to deduplicate records, so saturation alone cannot establish a gap or trigger recovery.
 
 ### Timestamps and deduplication
 
@@ -581,7 +588,7 @@ Quotes use entry/receive times for `ts_event`/`ts_init`; trades use their sole t
 
 | Condition                                                         | Effect                         |
 | ----------------------------------------------------------------- | ------------------------------ |
-| Invalid activity record                                           | Log and omit the record.       |
+| Invalid activity record, including a bid above its ask            | Log and omit the record.       |
 | Wire-decoding failure                                             | Reject the response.           |
 | Empty list                                                        | Publish nothing.               |
 | Exhausted transient retries, decode failure, or HTTP 404          | Allow a later scheduled poll.  |
@@ -741,7 +748,8 @@ Default: `https://api.prediction-markets.finfeedapi.com/v1/` (production).
 
 ### Python configuration
 
-Register the factory with bounded settings:
+Set `market_id` to an [active Polymarket outcome ID](#selecting-an-outcome) and register the factory
+with bounded settings:
 
 ```python
 from nautilus_trader.adapters.finfeed import FinFeedDataClientConfig
@@ -755,7 +763,7 @@ config = FinFeedDataClientConfig(
     instruments=[
         FinFeedInstrumentSelection(
             "POLYMARKET",
-            ["2026-BALANCE-OF-POWER-D-SENATE-D-HOUSE-949_NO"],
+            [market_id],
         ),
     ],
     attempt_budget=8,
@@ -936,8 +944,16 @@ other clients. Check provider usage before starting the next bounded window.
 
 #### Retryable failures
 
-Retry transport/timeouts and HTTP 429, 500, 502, 503, and 504, honoring integer `Retry-After` seconds.
-Admission can expire before sending.
+Retry transport/timeouts and HTTP 429, 500, 502, 503, and 504, using integer `Retry-After` seconds as a
+minimum retry delay. When the transport returns an HTTP 429 with this header, the client pauses new
+authenticated FinFeed attempts if the deadline fits the local timer, even when retries are disabled.
+Reconnecting the same data client retains the deadline.
+Public Kalshi metadata uses ordinary request pacing. A failed response body read can leave the status
+and header unavailable to the adapter. Admission can expire before sending.
+
+At `DEBUG`, each completed transport attempt reports the provider, endpoint, time waiting for admission,
+HTTP elapsed time, status when received, and remaining FinFeed attempts. Use the timings to distinguish
+local admission delays from transport time. Admission includes concurrency, pacing, and the 429 cooldown.
 
 #### Local attempts and provider quota
 

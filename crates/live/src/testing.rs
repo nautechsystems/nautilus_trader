@@ -128,6 +128,7 @@ impl ExecutionHarness {
             clock.clone(),
             cache.clone(),
         )));
+
         RiskEngine::register_msgbus_handlers(&risk_engine);
 
         let exec_config = ExecutionEngineConfig::builder()
@@ -140,6 +141,7 @@ impl ExecutionHarness {
             cache.clone(),
             Some(exec_config),
         )));
+
         ExecutionEngine::register_msgbus_handlers(&exec_engine);
 
         let (exec_tx, exec_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -297,6 +299,7 @@ impl ExecutionHarness {
             None,
             None,
         );
+
         msgbus::send_trading_command(
             MessagingSwitchboard::risk_engine_execute(),
             TradingCommand::ModifyOrder(cmd),
@@ -325,6 +328,7 @@ impl ExecutionHarness {
             None,
             None,
         );
+
         msgbus::send_trading_command(
             MessagingSwitchboard::exec_engine_queue_execute(),
             TradingCommand::CancelOrder(cmd),
@@ -350,7 +354,6 @@ impl ExecutionHarness {
     /// Routes every execution event received during the supplied duration.
     pub async fn pump_for(&mut self, duration: Duration) {
         let deadline = dst::time::Instant::now() + duration;
-
         while dst::time::Instant::now() < deadline {
             let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
             match dst::time::timeout(remaining.min(EVENT_POLL_INTERVAL), self.exec_rx.recv()).await
@@ -381,6 +384,7 @@ impl ExecutionHarness {
             self.cache.clone(),
             None,
         )));
+
         StrategyNative::strategy_core_mut(&mut tester)
             .register(
                 self.trader_id,
@@ -409,6 +413,7 @@ impl ExecutionHarness {
             false,
             cached.venue_order_id(),
         );
+
         pending.causation_id = causation_id;
         self.apply_pending_event(&OrderEventAny::PendingCancel(pending));
     }
@@ -448,6 +453,7 @@ impl ExecutionHarness {
             false,
             cached.venue_order_id(),
         );
+
         pending.causation_id = Some(command_id);
         self.apply_pending_event(&OrderEventAny::PendingUpdate(pending));
     }
@@ -676,6 +682,7 @@ mod tests {
             account_id,
             instrument.clone().into(),
         );
+
         harness
             .register_client(Box::new(StubExecutionClient::new(
                 client_id,

@@ -462,8 +462,9 @@ the root correlation ID, and `completed` marks the final envelope for that reque
 When present, `sub_correlation_id` identifies the child request.
 
 Requests with `params["time_range_generator"]` deliver each window's payload through the typed hook
-and `on_data_response`, with `completed=False`. On success, the final envelope has an empty payload.
-Its `params["data_count"]` reports the total count when nonzero.
+and `on_data_response`, with `completed=False`. [Order book delta requests](#historical-order-book-deltas)
+can skip a window's envelope while an event is open. On success, the final envelope has an empty
+payload. Its `params["data_count"]` reports the total count when nonzero.
 
 Check `failure_reason` at completion. Operational failures preserve data from successful work. A
 terminal envelope can have `data=None`; it then has no payload metadata and invokes no typed payload hook.
@@ -553,6 +554,51 @@ logged and do not prevent group completion. Request IDs and failure metadata rem
 grouping until actor request cleanup; payload batches are not retained for grouping. Successful reset
 or disposal, fault, and `release_subscriptions` clear this state and discard unfinished groups without
 completion events. Python `request_join` uses the same lifecycle.
+
+### Historical order book deltas
+
+`request_book_deltas` delivers each payload to `on_historical_book_deltas` as individual deltas. The
+`DataEngine` also publishes them as `OrderBookDeltas` events on the
+[pipeline topic](message_bus.md#topic-hierarchy)
+(`data.pipeline.book.deltas...`).
+
+#### Start snapshot
+
+By default, a catalog read begins at midnight UTC on the day of `start`. When `start` is later than
+midnight, the engine rebuilds the book from deltas before `start` if the first delta belongs to
+a midnight snapshot and the instrument is cached. The first payload opens with a snapshot stamped
+at `start`, followed by the unchanged deltas at or after `start`. Set `params["from_day_start"]`
+to `False` to begin the catalog read at `start`. A time-range request rebuilds the snapshot for its
+first window only.
+
+If the rebuild fails, the request completes with `failure_reason` set and withholds all deltas for
+that instrument. Other instruments can still deliver deltas.
+
+The cutoff uses `ts_init`. If `start` falls inside an event, the snapshot includes the earlier deltas
+and the engine treats the remainder as a separate event. Align `start` with an event boundary to
+keep events whole.
+
+#### Event boundaries
+
+The engine holds an open event across payloads and time-range windows and delivers its deltas with
+the payload that closes it. Each delivered payload contains complete events. The engine skips a
+non-final envelope when it holds back all its deltas. See
+[delta flags and event boundaries](data/index.md#delta-flags-and-event-boundaries).
+
+Use contiguous time-range windows for book deltas. Point-data windows sample individual
+timestamps and can skip the delta that closes an event.
+
+For each instrument, a qualifying `F_LAST` is on a delta outside a snapshot with an action other
+than `Clear`. The engine checks the deltas after start snapshot replay.
+
+- A `Clear` flagged `F_SNAPSHOT` starts a snapshot and cuts off any open event, even within a
+  payload. A plain `Clear` stays in its event.
+- If a request has seen a qualifying `F_LAST`, an event still open at a snapshot or at request
+  completion is withheld from requesters, pipeline subscribers, and the cached book. The request
+  reports the failure at completion.
+- Until the request sees a qualifying `F_LAST`, the engine delivers and publishes open deltas as
+  one event ahead of a snapshot, at request completion, or when a payload leaves 10,000 or more
+  open deltas. The engine logs a warning each time. The size limit applies only during this fallback.
 
 ### Subscription lists
 

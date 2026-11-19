@@ -238,8 +238,11 @@ where
     C: Clock,
 {
     /// Adds or updates a quota for a specific key.
+    ///
+    /// Clears the key's prior usage, so earlier checks do not count against the new quota.
     pub fn add_quota_for_key(&self, key: K, value: Quota) {
         let _guard = self.decision_lock.lock();
+        self.state.remove(&key);
         self.gcra.insert(key, Gcra::new(value));
     }
 
@@ -591,6 +594,40 @@ mod tests {
         assert!(mock_limiter.check_key(&"default".to_string()).is_ok());
         assert!(mock_limiter.check_key(&"default".to_string()).is_ok());
         assert!(mock_limiter.check_key(&"default".to_string()).is_err());
+    }
+
+    #[rstest]
+    #[case::replaces_keyed_quota(true)]
+    #[case::replaces_default_quota(false)]
+    fn test_add_quota_for_key_resets_key_state(#[case] slow_is_keyed: bool) {
+        let burst = 3;
+        let interval = Duration::from_nanos(100);
+        let slow = Quota::with_period(Duration::from_secs(3600)).unwrap();
+        let fast = Quota::with_period(interval)
+            .unwrap()
+            .allow_burst(NonZeroU32::new(burst).unwrap());
+        let key = "requests";
+        let other = "other";
+        let clock = FakeRelativeClock::default();
+        let limiter = if slow_is_keyed {
+            RateLimiter::new_with_clock(None, vec![(key, slow), (other, slow)], clock.clone())
+        } else {
+            RateLimiter::new_with_clock(Some(slow), vec![], clock.clone())
+        };
+
+        assert_eq!(limiter.check_key(&key), Ok(()));
+        assert_eq!(limiter.check_key(&other), Ok(()));
+
+        limiter.add_quota_for_key(key, fast);
+
+        for _ in 0..burst {
+            assert_eq!(limiter.check_key(&key), Ok(()));
+        }
+
+        let denied = limiter.check_key(&key).unwrap_err();
+        assert_eq!(denied.quota(), fast);
+        assert_eq!(denied.wait_time_from(clock.now()), interval);
+        assert_eq!(limiter.check_key(&other).unwrap_err().quota(), slow);
     }
 
     #[rstest]

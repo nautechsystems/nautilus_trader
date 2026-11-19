@@ -2281,6 +2281,7 @@ impl KrakenFuturesHttpClient {
             // Resolve the row and compare instrument ids, so a scoped read cannot match on a
             // spelling and cannot fall through to every instrument when the id is not held.
             let resolved = self.get_instrument_by_raw_symbol(&fill.symbol);
+
             if let Some(ref target_id) = instrument_id
                 && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
             {
@@ -2337,6 +2338,7 @@ impl KrakenFuturesHttpClient {
             // Resolve the row and compare instrument ids, so a scoped read cannot match on a
             // spelling and cannot fall through to every instrument when the id is not held.
             let resolved = self.get_instrument_by_raw_symbol(&position.symbol);
+
             if let Some(ref target_id) = instrument_id
                 && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
             {

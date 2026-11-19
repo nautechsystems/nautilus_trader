@@ -9115,90 +9115,13 @@ async fn test_http_place_algo_order_returns_error_on_nonzero_scode() {
     );
 }
 
-/// Verifies that `request_spot_margin_position_reports` resolves a BTC
-/// margin balance to the highest-priority spot pair, never to a derivative
-/// sharing the same base currency. With BTC-USD, BTC-USDT, and
-/// BTC-USDT-SWAP all cached, the USDT-quoted spot pair must win (quote
-/// priority USDT > USD) and the perpetual must never be selected.
-#[rstest]
-#[tokio::test]
-async fn test_http_request_spot_margin_position_reports_prefers_currency_pair() {
-    // Balance payload with a BTC short margin position (`spotInUseAmt` < 0,
-    // non-zero `liab`). Built from a raw string to stay under the `json!`
-    // macro recursion limit on the `OKXBalanceDetail` shape.
-    let balance_body: serde_json::Value = serde_json::from_str(
-        r#"{
-            "code": "0",
-            "msg": "",
-            "data": [{
-                "adjEq": "",
-                "borrowFroz": "",
-                "imr": "0",
-                "isoEq": "0",
-                "mgnRatio": "",
-                "mmr": "0",
-                "notionalUsd": "0",
-                "notionalUsdForBorrow": "0",
-                "notionalUsdForFutures": "0",
-                "notionalUsdForOption": "0",
-                "notionalUsdForSwap": "0",
-                "ordFroz": "0",
-                "totalEq": "0",
-                "uTime": "1744498994783",
-                "upl": "0",
-                "details": [{
-                    "accAvgPx": "",
-                    "availBal": "0",
-                    "availEq": "0",
-                    "borrowFroz": "",
-                    "cashBal": "0",
-                    "ccy": "BTC",
-                    "clSpotInUseAmt": "",
-                    "collateralEnabled": false,
-                    "crossLiab": "0.1",
-                    "disEq": "0",
-                    "eq": "-0.1",
-                    "eqUsd": "0",
-                    "fixedBal": "0",
-                    "frozenBal": "0",
-                    "imr": "0",
-                    "interest": "",
-                    "isoEq": "0",
-                    "isoLiab": "",
-                    "isoUpl": "0",
-                    "liab": "0.1",
-                    "maxLoan": "",
-                    "maxSpotInUseAmt": "",
-                    "mgnRatio": "",
-                    "mmr": "0",
-                    "notionalLever": "0",
-                    "openAvgPx": "",
-                    "ordFrozen": "0",
-                    "rewardBal": "0",
-                    "smtSyncEq": "0",
-                    "spotBal": "",
-                    "spotCopyTradingEq": "0",
-                    "spotInUseAmt": "-0.1",
-                    "spotIsoBal": "0",
-                    "spotUpl": "",
-                    "spotUplRatio": "",
-                    "stgyEq": "0",
-                    "totalPnl": "",
-                    "totalPnlRatio": "",
-                    "twap": "0",
-                    "uTime": "1744498994783",
-                    "upl": "0",
-                    "uplLiab": ""
-                }]
-            }]
-        }"#,
-    )
-    .expect("balance fixture must parse");
-
+/// Returns a client that reads `balance` and has spot, margin, and swap instruments cached, so
+/// BTC is the base of `BTC-USD`, `BTC-USDT`, and `BTC-USDT-SWAP`.
+async fn create_spot_position_report_client(balance: Value) -> OKXHttpClient {
     let router = Router::new().route(
         "/api/v5/account/balance",
         get(move |headers: HeaderMap| {
-            let body = balance_body.clone();
+            let body = balance.clone();
             async move {
                 if !has_auth_headers(&headers) {
                     return (
@@ -9220,23 +9143,17 @@ async fn test_http_request_spot_margin_position_reports_prefers_currency_pair() 
             .unwrap();
     });
 
-    // No /public/instruments route, so poll an always-404 path to confirm the
-    // server is accepting connections.
     wait_until_async(
-        || {
-            let addr_copy = addr;
-            async move { tokio::net::TcpStream::connect(addr_copy).await.is_ok() }
-        },
+        || async move { tokio::net::TcpStream::connect(addr).await.is_ok() },
         Duration::from_secs(5),
     )
     .await;
 
-    let base_url = format!("http://{addr}");
     let client = OKXHttpClient::with_credentials(
         Some("test_key".to_string()),
         Some("test_secret".to_string()),
         Some("test_passphrase".to_string()),
-        Some(base_url),
+        Some(format!("http://{addr}")),
         60,
         3,
         1000,
@@ -9246,48 +9163,275 @@ async fn test_http_request_spot_margin_position_reports_prefers_currency_pair() 
     )
     .unwrap();
 
-    // Seed three sources that all share BTC as the base currency:
-    //   - `http_get_instruments_spot.json` contributes BTC-USD (CurrencyPair)
-    //   - `http_get_instruments_margin.json` contributes BTC-USDT (also
-    //     parses to CurrencyPair via the Margin → spot path)
-    //   - `http_get_instruments_swap.json` contributes BTC-USDT-SWAP
-    //     (CryptoPerpetual)
-    // The filter must pick BTC-USDT (quote-priority USDT > USD), never the
-    // lexically-earlier BTC-USD and never the BTC-USDT-SWAP derivative.
-    for instrument in load_instruments_any() {
+    for instrument in load_instruments_any()
+        .into_iter()
+        .chain(load_instruments_from("http_get_instruments_margin.json"))
+        .chain(load_swap_instruments_any())
+    {
         client.cache_instrument(instrument);
     }
 
-    for instrument in load_instruments_from("http_get_instruments_margin.json") {
-        client.cache_instrument(instrument);
-    }
+    client
+}
 
-    for instrument in load_swap_instruments_any() {
-        client.cache_instrument(instrument);
+#[rstest]
+#[case::usdt("USDT", vec![("BTC-USDT.OKX", PositionSide::Long, "1.23456789"), ("ETH-USDT.OKX", PositionSide::Short, "2.500000")])]
+#[case::usd(
+    "USD",
+    vec![
+        ("BTC-USD.OKX", PositionSide::Long, "1.23456789"),
+        ("ETH-USD.OKX", PositionSide::Short, "2.500000"),
+        ("USDT-USD.OKX", PositionSide::Long, "5000.0000"),
+    ]
+)]
+#[tokio::test]
+async fn test_http_request_spot_position_reports_bulk(
+    #[case] quote_currency: &str,
+    #[case] expected: Vec<(&str, PositionSide, &str)>,
+) {
+    let client = create_spot_position_report_client(crate::common::balance_response(&[
+        ("BTC", "1.234567899", ""),
+        ("ETH", "-2.5", "2.5"),
+        ("SOL", "-0.0000009", "0.0000009"),
+        ("OKB", "0", "0"),
+        ("USDT", "5000", ""),
+    ]))
+    .await;
+    let account_id = AccountId::new("OKX-001");
+
+    let mut reports = client
+        .request_spot_position_reports(account_id, None, Ustr::from(quote_currency))
+        .await
+        .unwrap();
+    reports.sort_by_key(|report| report.instrument_id.to_string());
+
+    assert_eq!(reports.len(), expected.len());
+
+    for (report, (instrument_id, position_side, quantity)) in reports.iter().zip(expected) {
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.instrument_id, InstrumentId::from(instrument_id));
+        assert_eq!(report.position_side, position_side);
+        assert_eq!(report.quantity, Quantity::from(quantity));
+        assert_eq!(
+            report.quantity.precision,
+            Quantity::from(quantity).precision
+        );
+        assert_eq!(report.avg_px_open, None);
+        assert_eq!(report.venue_position_id, None);
     }
+}
+
+#[rstest]
+#[case::long("BTC-USDT.OKX", Some((PositionSide::Long, "1.23456789")))]
+#[case::flat_zero_balance("OKB-USDT.OKX", Some((PositionSide::Flat, "0.000000")))]
+#[case::flat_dust("SOL-USDT.OKX", Some((PositionSide::Flat, "0.000000")))]
+#[case::flat_no_balance_row("ETH-USDT.OKX", Some((PositionSide::Flat, "0.000000")))]
+#[case::other_quote("BTC-USD.OKX", None)]
+#[case::derivative("BTC-USDT-SWAP.OKX", None)]
+#[case::uncached("DOGE-USDT.OKX", None)]
+#[tokio::test]
+async fn test_http_request_spot_position_reports_scoped(
+    #[case] instrument_id: &str,
+    #[case] expected: Option<(PositionSide, &str)>,
+) {
+    let client = create_spot_position_report_client(crate::common::balance_response(&[
+        ("BTC", "1.234567899", ""),
+        ("SOL", "0.0000009", ""),
+        ("OKB", "0", ""),
+    ]))
+    .await;
+    let instrument_id = InstrumentId::from(instrument_id);
 
     let reports = client
-        .request_spot_margin_position_reports(AccountId::new("OKX-001"))
+        .request_spot_position_reports(
+            AccountId::new("OKX-001"),
+            Some(instrument_id),
+            Ustr::from("USDT"),
+        )
         .await
         .unwrap();
 
-    assert_eq!(reports.len(), 1, "expected one BTC margin report");
+    let actual: Vec<_> = reports
+        .iter()
+        .map(|report| (report.instrument_id, report.position_side, report.quantity))
+        .collect();
+    let expected: Vec<_> = expected
+        .into_iter()
+        .map(|(position_side, quantity)| (instrument_id, position_side, Quantity::from(quantity)))
+        .collect();
+    assert_eq!(actual, expected);
+}
+
+#[rstest]
+#[case::long(&[("BTC", "5", "2")], PositionSide::Long, "5.00000000")]
+#[case::short(&[("BTC", "-3", "3")], PositionSide::Short, "3.00000000")]
+#[case::flat(&[("BTC", "0", "0")], PositionSide::Flat, "0.00000000")]
+#[case::negative_cash(&[("BTC", "-1", "0")], PositionSide::Short, "1.00000000")]
+#[case::negative_cash_with_liab(&[("BTC", "-1", "1")], PositionSide::Short, "1.00000000")]
+#[case::long_round_down(&[("BTC", "1.234567899", "0")], PositionSide::Long, "1.23456789")]
+#[case::short_round_down(&[("BTC", "-1.234567899", "1.234567899")], PositionSide::Short, "1.23456789")]
+#[case::short_dust(&[("BTC", "-0.000000009", "0.000000009")], PositionSide::Flat, "0.00000000")]
+#[case::liability_not_subtracted(&[("BTC", "1.000000001", "0.000000009")], PositionSide::Long, "1.00000000")]
+#[case::aggregate_before_rounding(
+    &[("BTC", "1.000000009", "0"), ("BTC", "0.000000009", "0")],
+    PositionSide::Long,
+    "1.00000001"
+)]
+#[case::aggregate_signed_rows(
+    &[("BTC", "-2", "2"), ("BTC", "0.25", "0")],
+    PositionSide::Short,
+    "1.75000000"
+)]
+#[case::aggregate_exact_carry(
+    &[("BTC", "4.9999999999999999999999999999", "0"), ("BTC", "5.0000000000000000000000000001", "0")],
+    PositionSide::Long,
+    "10.00000000"
+)]
+#[case::aggregate_exact_cancellation(
+    &[("BTC", "4.9999999999999999999999999999", "0"), ("BTC", "-4", "0")],
+    PositionSide::Long,
+    "0.99999999"
+)]
+#[tokio::test]
+async fn test_http_request_spot_position_reports_net_balance(
+    #[case] details: &[(&str, &str, &str)],
+    #[case] position_side: PositionSide,
+    #[case] quantity: &str,
+) {
+    let client = create_spot_position_report_client(crate::common::balance_response(details)).await;
+    let account_id = AccountId::new("OKX-001");
+    let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+
+    let reports = client
+        .request_spot_position_reports(account_id, Some(instrument_id), Ustr::from("USDT"))
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1);
     let report = &reports[0];
+    assert_eq!(report.account_id, account_id);
+    assert_eq!(report.instrument_id, instrument_id);
+    assert_eq!(report.position_side, position_side);
+    assert_eq!(report.quantity, Quantity::from(quantity));
+    assert_eq!(report.quantity.precision, 8);
+    assert_eq!(report.avg_px_open, None);
+    assert_eq!(report.venue_position_id, None);
+    assert_eq!(report.ts_last, report.ts_init);
+}
+
+#[rstest]
+#[case::invalid_liab(&[("BTC", "1", "x")], "invalid liab 'x' for BTC")]
+#[case::invalid_cash_bal(&[("BTC", "x", "")], "invalid cashBal 'x' for BTC")]
+#[case::empty_cash_bal(&[("BTC", "", "")], "invalid cashBal '' for BTC")]
+#[case::inexact_liab(
+    &[("BTC", "1", "0.00000000000000000000000000001")],
+    "invalid liab '0.00000000000000000000000000001' for BTC"
+)]
+#[case::inexact_cash_bal(
+    &[("BTC", "0.99999999999999999999999999999", "")],
+    "invalid cashBal '0.99999999999999999999999999999' for BTC"
+)]
+#[case::later_row_unreadable(&[("ETH", "2", ""), ("BTC", "1", "x")], "invalid liab 'x' for BTC")]
+#[case::sum_overflow(
+    &[("BTC", "79228162514264337593543950335", "0"), ("BTC", "1", "0")],
+    "net balance overflowed for BTC"
+)]
+#[case::positive_precision_loss(
+    &[("BTC", "4.9999999999999999999999999999", "0"), ("BTC", "5", "0")],
+    "net balance lost precision for BTC"
+)]
+#[case::negative_precision_loss(
+    &[("BTC", "-4.9999999999999999999999999999", "0"), ("BTC", "-5", "0")],
+    "net balance lost precision for BTC"
+)]
+// Final cancellation exposes lost balances instead of a quantity-range failure
+#[case::large_first_precision_loss(
+    &[("BTC", "7922816251426433759354395033", "0"), ("BTC", "0.04", "0"), ("BTC", "-7922816251426433759354395033", "0")],
+    "net balance lost precision for BTC"
+)]
+#[case::small_first_precision_loss(
+    &[("BTC", "0.04", "0"), ("BTC", "7922816251426433759354395033", "0"), ("BTC", "-7922816251426433759354395033", "0")],
+    "net balance lost precision for BTC"
+)]
+#[case::quantity_unrepresentable(&[("BTC", "100000000000000", "0")], "Quantity")]
+#[tokio::test]
+async fn test_http_request_spot_position_reports_fails_closed(
+    #[case] details: &[(&str, &str, &str)],
+    #[case] expected: &str,
+) {
+    let client = create_spot_position_report_client(crate::common::balance_response(details)).await;
+
+    let error = client
+        .request_spot_position_reports(AccountId::new("OKX-001"), None, Ustr::from("USDT"))
+        .await
+        .unwrap_err();
+
+    assert!(error.to_string().contains(expected), "{error}");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_spot_position_reports_fails_without_account() {
+    let client = create_spot_position_report_client(okx_response(&[])).await;
+
+    let error = client
+        .request_spot_position_reports(AccountId::new("OKX-001"), None, Ustr::from("USDT"))
+        .await
+        .unwrap_err();
 
     assert_eq!(
-        report.instrument_id,
-        InstrumentId::from("BTC-USDT.OKX"),
-        "spot-margin report must prefer the USDT-quoted pair over USD and never a derivative",
+        error.to_string(),
+        "OKX balance response contained no account"
     );
-    assert_ne!(
-        report.instrument_id,
-        InstrumentId::from("BTC-USDT-SWAP.OKX"),
-        "derivative must never win the base-currency lookup",
-    );
-    assert_ne!(
-        report.instrument_id,
-        InstrumentId::from("BTC-USD.OKX"),
-        "USD must lose to USDT in the quote-priority tiebreaker",
+}
+
+#[rstest]
+#[case::derivative("BTC-USDT-SWAP.OKX")]
+#[case::other_quote("BTC-USD.OKX")]
+#[tokio::test]
+async fn test_http_request_spot_position_reports_skips_balance_without_covered_instrument(
+    #[case] instrument_id: &str,
+) {
+    // A balance read would fail here: the response contains no account
+    let client = create_spot_position_report_client(okx_response(&[])).await;
+
+    let reports = client
+        .request_spot_position_reports(
+            AccountId::new("OKX-001"),
+            Some(InstrumentId::from(instrument_id)),
+            Ustr::from("USDT"),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(reports, vec![]);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_spot_position_reports_ignores_unreported_currencies() {
+    let client = create_spot_position_report_client(crate::common::balance_response(&[
+        ("BTC", "1", ""),
+        ("USDT", "-250", "250"),
+        ("XYZ", "", "x"),
+    ]))
+    .await;
+
+    let reports = client
+        .request_spot_position_reports(AccountId::new("OKX-001"), None, Ustr::from("USDT"))
+        .await
+        .unwrap();
+
+    let actual: Vec<_> = reports
+        .iter()
+        .map(|report| (report.instrument_id, report.quantity))
+        .collect();
+    assert_eq!(
+        actual,
+        vec![(
+            InstrumentId::from("BTC-USDT.OKX"),
+            Quantity::from("1.00000000")
+        )]
     );
 }
 

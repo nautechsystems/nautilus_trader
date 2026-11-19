@@ -84,6 +84,7 @@ fn external_messages(
     msgbus::get_message_bus()
         .borrow_mut()
         .set_external_egress(Box::new(egress), encoding);
+
     let messages = states
         .iter()
         .map(|state| {
@@ -100,9 +101,11 @@ fn external_messages(
                 stream: "accounts".into(),
                 sequence: 1,
             });
+
             message
         })
         .collect();
+
     msgbus::get_message_bus()
         .borrow_mut()
         .add_streaming_type(BusPayloadType::AccountState);
@@ -123,19 +126,24 @@ fn test_external_account_applies_before_publication(
         account_state(account_type, "SIM-002", "200 USD"),
         account_state(account_type, "SIM-001", "0 USD"),
     ];
+
     let (mut messages, egress) = external_messages(encoding, &states);
 
     // Account publication uses the account identity, including for nonstandard ingress topics
     for message in &mut messages {
         message.topic = "external.accounts".into();
     }
+
     let cache = Rc::new(RefCell::new(Cache::default()));
+
     let mut portfolio = Portfolio::new(
         Rc::new(RefCell::new(VirtualClock::new())),
         Rc::clone(&cache),
         None,
     );
+
     let observed = Rc::new(RefCell::new(Vec::new()));
+
     let handler = TypedHandler::from({
         let observed = Rc::clone(&observed);
         let cache = Rc::clone(&cache);
@@ -155,12 +163,15 @@ fn test_external_account_applies_before_publication(
             ));
         }
     });
+
     msgbus::subscribe_account_state("events.account.*".into(), handler, Some(20));
     let scoped = Rc::new(RefCell::new(Vec::new()));
+
     let scoped_handler = TypedHandler::from({
         let scoped = Rc::clone(&scoped);
         move |event: &AccountState| scoped.borrow_mut().push(event.event_id)
     });
+
     msgbus::subscribe_account_state("events.account.SIM-001".into(), scoped_handler, None);
 
     for message in &messages {
@@ -213,6 +224,7 @@ fn test_external_rejected_account_is_not_published(
     let rejected = account_state(account_type, "SIM-001", "-1 USD");
     let (messages, egress) = external_messages(encoding, &[rejected]);
     let cache = Rc::new(RefCell::new(Cache::default()));
+
     let mut portfolio = Portfolio::new(
         Rc::new(RefCell::new(VirtualClock::new())),
         Rc::clone(&cache),
@@ -231,11 +243,14 @@ fn test_external_rejected_account_is_not_published(
         );
         egress.borrow_mut().clear();
     }
+
     let received = Rc::new(RefCell::new(Vec::new()));
+
     let handler = TypedHandler::from({
         let received = Rc::clone(&received);
         move |event: &AccountState| received.borrow_mut().push(event.clone())
     });
+
     msgbus::subscribe_account_state("events.account.*".into(), handler, Some(20));
     msgbus::republish_external_message(&messages[0]).unwrap();
 
@@ -243,7 +258,6 @@ fn test_external_rejected_account_is_not_published(
     assert!(egress.borrow().is_empty());
     assert_eq!(msgbus::current_external_source(), None);
     let cache = cache.borrow();
-
     if existing_account {
         let account = cache.account(&initial.account_id).unwrap();
         assert_eq!(account.last_event(), Some(initial));

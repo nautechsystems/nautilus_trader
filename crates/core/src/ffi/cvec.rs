@@ -218,6 +218,7 @@ mod tests {
         let test_data = vec![1_u64, 2, 3];
         let mut vec_len = 0;
         let mut vec_cap = 0;
+
         let cvec: CVec = {
             let data = test_data.clone();
             vec_len = data.len();
@@ -298,6 +299,7 @@ mod tests {
     #[rstest]
     fn as_slice_borrows_without_consuming_caller_storage() {
         let values = vec![1_u64, 2, 3];
+
         let cvec = CVec {
             ptr: values.as_ptr().cast_mut().cast(),
             len: values.len(),

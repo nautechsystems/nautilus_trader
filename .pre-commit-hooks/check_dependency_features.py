@@ -283,6 +283,27 @@ def _dependency_sections(data: dict[str, Any]) -> list[tuple[str, object]]:
     return sections
 
 
+def _check_redundant_dev_dependencies(manifests: list[Manifest]) -> list[str]:
+    violations = []
+
+    for path, data in manifests:
+        sections = dict(_dependency_sections(data))
+        for section, dev in sections.items():
+            if not section.endswith("dev-dependencies") or not isinstance(dev, dict):
+                continue
+            normal_section = section.removesuffix("dev-dependencies") + "dependencies"
+            normal = sections[normal_section]
+            if not isinstance(normal, dict):
+                continue
+
+            for name, declaration in dev.items():
+                if normal.get(name) == declaration:
+                    violations.append(
+                        f"{path}: [{section}] dependency {name!r} duplicates [{normal_section}]",
+                    )
+    return violations
+
+
 def _check_test_support(  # noqa: C901, PLR0912
     manifests: list[Manifest],
     expected_dev_packages: frozenset[str],
@@ -476,6 +497,7 @@ def _check_repository(repo_root: Path) -> list[str]:
         ),
     )
     violations.extend(_check_test_support(manifests, TEST_SUPPORT_DEV_PACKAGES))
+    violations.extend(_check_redundant_dev_dependencies(manifests))
 
     quickstart = _find_manifest(
         manifests,

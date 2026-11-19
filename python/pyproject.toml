@@ -30,7 +30,7 @@ visualization = [
   "pandas>=2.3.3,<4.0.0",
   "plotly>=7.0.0,<8.0.0",
   "kaleido>=1.5.0,<2.0.0",
-  "simplejson>=4.2.0,<5.0.0",
+  "simplejson>=4.3.0,<5.0.0",
 ]
 
 [project.urls]
@@ -152,7 +152,7 @@ no-build-package = [
 ]
 
 [dependency-groups]
-dev = ["maturin==1.16.0", "ruff>=0.17.5", "ty>=0.0.99"]
+dev = ["maturin==1.16.0", "ruff>=0.17.5", "ty>=0.0.100"]
 test = [
   "pyarrow>=26.0.0",
   "polars",
@@ -167,7 +167,7 @@ test = [
 docs = [
   "furo==2025.12.19",
   "linkify-it-py>=2.1.0,<3.0.0",
-  "myst-parser>=5.1.0,<6.0.0",
+  "myst-parser>=5.2.0,<6.0.0",
   "sphinx-comments>=0.0.3,<1.0.0",
 ]
 

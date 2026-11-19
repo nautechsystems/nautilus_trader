@@ -465,6 +465,7 @@ impl KrakenFuturesWebSocketClient {
                         };
 
                         let challenge = SecretString::from(challenge);
+
                         match cred
                             .sign_ws_challenge(challenge.expose_secret())
                             .map(SecretString::from)

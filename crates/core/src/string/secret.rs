@@ -103,7 +103,6 @@ pub fn zeroize_json_value(value: &mut serde_json::Value) {
 pub fn mask_api_key(key: &str) -> String {
     // Work with Unicode scalars to avoid panicking on multibyte characters.
     let len = key.chars().count();
-
     if len <= 8 {
         return "*".repeat(len);
     }

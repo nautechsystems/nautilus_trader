@@ -200,6 +200,45 @@ def _test_test_support_policy() -> None:
         raise AssertionError(f"Weak feature forwarding was not reported: {violations!r}")
 
 
+def _test_redundant_dev_dependencies() -> None:
+    check: Callable[..., list[str]] = CHECKER["_check_redundant_dev_dependencies"]
+    manifest = _manifest(
+        "crates/example/Cargo.toml",
+        "nautilus-example",
+        {
+            "dependencies": {
+                "duplicate": {"workspace": True},
+                "optional": {"workspace": True, "optional": True},
+                "test-features": {"workspace": True},
+            },
+            "dev-dependencies": {
+                "duplicate": {"workspace": True},
+                "optional": {"workspace": True},
+                "test-features": {"workspace": True, "features": ["test-util"]},
+                "dev-only": {"workspace": True},
+            },
+            "target": {
+                "cfg(unix)": {"dependencies": {"platform": "1.2"}},
+                "cfg(windows)": {
+                    "dependencies": {"windows-only": "2.3"},
+                    "dev-dependencies": {"platform": "1.2", "windows-only": "2.3"},
+                },
+            },
+        },
+    )
+    path, _ = manifest
+    _assert_equal(
+        check([manifest]),
+        [
+            f"{path}: [dev-dependencies] dependency 'duplicate' duplicates [dependencies]",
+            (
+                f"{path}: [target.cfg(windows).dev-dependencies] "
+                "dependency 'windows-only' duplicates [target.cfg(windows).dependencies]"
+            ),
+        ],
+    )
+
+
 def _test_tracked_paths() -> None:
     tracked_paths: Callable[..., list[Path]] = CHECKER["_tracked_paths"]
     with tempfile.TemporaryDirectory() as directory:
@@ -303,6 +342,7 @@ def main() -> None:
     _test_workspace_dependency_policy()
     _test_consumer_classification()
     _test_test_support_policy()
+    _test_redundant_dev_dependencies()
     _test_tracked_paths()
     _test_lockfile_metadata_uses_cargo_proxy()
     _test_hook_trigger()

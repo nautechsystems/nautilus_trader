@@ -1576,6 +1576,7 @@ fn reemit_terminal_cancel(
 
     if let Some(cancel_ts) = cancel_ts {
         log::debug!("Re-emitting cancel for {venue_order_id} after fill to restore terminal state");
+
         match ctx.order_contexts.get(&venue_order_id) {
             Some(context) => {
                 if state

@@ -72,6 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let example_order_id = 12345u64;
+
     match client
         .info_order_status(user_address, example_order_id)
         .await

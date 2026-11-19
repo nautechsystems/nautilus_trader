@@ -69,7 +69,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
-    types::{Price, Quantity},
+    types::{Currency, Price, Quantity},
 };
 use nautilus_network::{
     http::{
@@ -140,9 +140,8 @@ use crate::{
             parse_fill_report, parse_funding_rate, parse_index_price_update, parse_instrument_any,
             parse_mark_price_update, parse_millisecond_timestamp, parse_order_status_report,
             parse_position_status_report, parse_price, parse_quantity,
-            parse_spot_margin_position_from_balance, parse_spread_fill_report,
-            parse_spread_instrument, parse_spread_order_status_report, parse_trade_tick,
-            prefer_rpi_response_fields,
+            parse_spot_position_quantity, parse_spread_fill_report, parse_spread_instrument,
+            parse_spread_order_status_report, parse_trade_tick, prefer_rpi_response_fields,
         },
     },
     http::models::{OKXCandlestick, OKXTrade},
@@ -185,19 +184,6 @@ impl OKXPendingAlgoOrderReportsError {
     fn new(source: anyhow::Error) -> Self {
         Self { source }
     }
-}
-
-/// Ranks a spot instrument's quote currency for deterministic tie-breaking
-/// when multiple pairs share the same base. Matches OKX's dominant-quote
-/// ordering so spot-margin position reports stay on a stable instrument id
-/// across restarts.
-fn spot_quote_priority(symbol: &str) -> u8 {
-    symbol.rsplit_once('-').map_or(4, |(_, quote)| match quote {
-        "USDT" => 0,
-        "USDC" => 1,
-        "USD" => 2,
-        _ => 3,
-    })
 }
 
 // OKX omits `data` from gateway errors such as authentication failures
@@ -1385,6 +1371,7 @@ impl OKXRawHttpClient {
                     let status = StatusCode::from_u16(resp.status.as_u16())
                         .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
                     let error_body = String::from_utf8_lossy(&resp.body);
+
                     if status == StatusCode::NOT_FOUND {
                         log::debug!("HTTP 404 with body: {error_body}");
                     } else {
@@ -6184,97 +6171,87 @@ impl OKXHttpClient {
         })
     }
 
-    /// Requests spot margin position status reports from account balance.
+    /// Requests spot position status reports derived from net wallet balances.
     ///
-    /// Spot margin positions appear in `/api/v5/account/balance` as balance sheet items
-    /// with non-zero `liab` (liability) or `spotInUseAmt` fields, rather than in the
-    /// positions endpoint. This method fetches the balance and converts any margin
-    /// positions into position status reports.
+    /// Reports the signed base currency `cashBal` of each cached spot pair quoted in
+    /// `quote_currency`, as `LONG` or `SHORT` according to its sign. A balance that rounds to
+    /// zero is omitted from bulk requests and reported `FLAT` for a targeted request. A pair
+    /// quoted in another currency gets no report.
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or parsing fails.
+    /// Returns an error if the request fails, the response contains no account, `cashBal` or `liab`
+    /// cannot be parsed exactly, the balance sum overflows or loses precision, or the quantity
+    /// cannot be represented.
     ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-balance>
-    pub async fn request_spot_margin_position_reports(
+    pub async fn request_spot_position_reports(
         &self,
         account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+        quote_currency: Ustr,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        let covered: Vec<(InstrumentId, Ustr, u8)> = {
+            let cache = self.instruments_cache.load();
+            let instruments: Vec<&InstrumentAny> = match instrument_id {
+                Some(instrument_id) => cache
+                    .get(&instrument_id.symbol.inner())
+                    .into_iter()
+                    .collect(),
+                None => cache.values().collect(),
+            };
+
+            instruments
+                .into_iter()
+                .filter_map(|instrument| {
+                    let base_currency = spot_position_base_currency(instrument, quote_currency)?;
+                    Some((
+                        instrument.id(),
+                        base_currency.code,
+                        instrument.size_precision(),
+                    ))
+                })
+                .collect()
+        };
+
+        if covered.is_empty() {
+            return Ok(Vec::new());
+        }
+
         let accounts = self
             .inner
             .get_balance()
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
+        anyhow::ensure!(
+            !accounts.is_empty(),
+            "OKX balance response contained no account"
+        );
 
         let ts_init = self.generate_ts_init();
         let mut reports = Vec::new();
 
-        // Build a base-currency lookup over the cached spot pairs once per
-        // call. Restricting to `CurrencyPair` (spot) ensures a derivative
-        // sharing the same base (e.g. `BTC-USDT-SWAP`) is never reported as
-        // a spot margin position with the wrong instrument id or size
-        // precision.
-        //
-        // When multiple spot pairs share the same base currency, prefer the
-        // dominant OKX quote (USDT, then USDC, then USD) so a live
-        // `BTC-USDT` margin position stays reported under `BTC-USDT.OKX`
-        // rather than being redirected to `BTC-USD.OKX` or any other
-        // lexically-earlier pair. Unknown quotes fall back to a stable
-        // lexical order by symbol, matching OKX's own listing precedence
-        // and keeping the selection deterministic across runs.
-        let cache_snapshot = self.instruments_cache.load();
-        let mut candidates: Vec<&InstrumentAny> = cache_snapshot
-            .values()
-            .filter(|inst| matches!(inst, InstrumentAny::CurrencyPair(_)))
-            .collect();
-        candidates.sort_by(|a, b| {
-            let a_sym = a.id().symbol.as_str().to_string();
-            let b_sym = b.id().symbol.as_str().to_string();
-            spot_quote_priority(&a_sym)
-                .cmp(&spot_quote_priority(&b_sym))
-                .then_with(|| a_sym.cmp(&b_sym))
-        });
+        for (covered_id, base_code, size_precision) in covered {
+            let (position_side, quantity) =
+                parse_spot_position_quantity(&accounts, base_code, size_precision)?;
 
-        let mut by_base: AHashMap<Ustr, (InstrumentId, u8)> = AHashMap::new();
-
-        for inst in candidates {
-            if let Some(base) = inst.base_currency() {
-                let base_code = base.code;
-                by_base
-                    .entry(base_code)
-                    .or_insert_with(|| (inst.id(), inst.size_precision()));
+            if quantity.is_zero() && instrument_id.is_none() {
+                continue;
             }
-        }
 
-        for account in accounts {
-            for balance in account.details {
-                let ccy_str = balance.ccy.as_str();
-
-                let Some((instrument_id, size_precision)) =
-                    by_base.get(&Ustr::from(ccy_str)).copied()
-                else {
-                    log::debug!("Skipping balance for {ccy_str} - no matching instrument in cache");
-                    continue;
-                };
-
-                match parse_spot_margin_position_from_balance(
-                    &balance,
-                    account_id,
-                    instrument_id,
-                    size_precision,
-                    ts_init,
-                ) {
-                    Ok(Some(report)) => reports.push(report),
-                    Ok(None) => {} // No margin position for this currency
-                    Err(e) => {
-                        log::error!(
-                            "Failed to parse spot margin position from balance for {ccy_str}: {e}"
-                        );
-                    }
-                }
-            }
+            reports.push(PositionStatusReport::new(
+                account_id,
+                covered_id,
+                position_side,
+                quantity,
+                ts_init,
+                ts_init,
+                None,
+                None,
+                None,
+            ));
         }
 
         Ok(reports)
@@ -8148,4 +8125,19 @@ fn reconciliation_history_page_limit(max_pages: Option<u32>) -> usize {
     max_pages.map_or(MAX_RECONCILIATION_PAGES, |pages| {
         (pages as usize).min(MAX_RECONCILIATION_PAGES)
     })
+}
+
+/// Returns the base currency whose cash balance a wallet-derived position report covers for
+/// `instrument`, or `None` when the instrument is not a spot pair quoted in `quote_currency`.
+fn spot_position_base_currency(
+    instrument: &InstrumentAny,
+    quote_currency: Ustr,
+) -> Option<Currency> {
+    if !matches!(instrument, InstrumentAny::CurrencyPair(_))
+        || instrument.quote_currency().code != quote_currency
+    {
+        return None;
+    }
+
+    instrument.base_currency()
 }

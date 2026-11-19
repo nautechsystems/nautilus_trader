@@ -1312,6 +1312,12 @@ pub struct SubscribeOptionChain {
 }
 
 impl SubscribeOptionChain {
+    /// Returns the subscription owner ID: `correlation_id` when set, otherwise `command_id`.
+    #[must_use]
+    pub fn owner_id(&self) -> UUID4 {
+        self.correlation_id.unwrap_or(self.command_id)
+    }
+
     // panics-doc-ok
     /// Creates a checked option-chain subscription command.
     ///

@@ -732,18 +732,6 @@ impl BybitRawHttpClient {
         matches!(method, &Method::GET | &Method::HEAD)
     }
 
-    #[cfg(test)]
-    fn build_path<S: Serialize>(base: &str, params: &S) -> Result<String, BybitHttpError> {
-        let query = serde_urlencoded::to_string(params)
-            .map_err(|e| BybitHttpError::JsonError(e.to_string()))?;
-
-        if query.is_empty() {
-            Ok(base.to_owned())
-        } else {
-            Ok(format!("{base}?{query}"))
-        }
-    }
-
     /// Fetches the current server time from Bybit.
     ///
     /// # Errors
@@ -5109,6 +5097,11 @@ fn perp_status(status: MarketStatusAction, is_scheduled_perp: bool) -> MarketSta
 
 #[cfg(test)]
 mod tests {
+    use axum::{
+        Json, Router,
+        http::{HeaderMap, Uri},
+        routing::get,
+    };
     use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
 
@@ -5158,84 +5151,109 @@ mod tests {
     }
 
     #[rstest]
-    fn test_build_path_with_params() {
-        #[derive(Serialize)]
-        struct TestParams {
-            category: String,
-            symbol: String,
+    #[case::without_query(None, None, None, None)]
+    #[case::symbol(
+        Some(BybitProductType::Linear),
+        Some("BTCUSDT"),
+        None,
+        Some("category=linear&symbol=BTCUSDT")
+    )]
+    #[case::limit(
+        Some(BybitProductType::Spot),
+        None,
+        Some(50),
+        Some("category=spot&limit=50")
+    )]
+    #[case::ordered(
+        Some(BybitProductType::Spot),
+        Some("BTCUSDT"),
+        Some(50),
+        Some("category=spot&symbol=BTCUSDT&limit=50")
+    )]
+    #[tokio::test]
+    async fn get_request_signs_the_query_sent_on_the_wire(
+        #[case] category: Option<BybitProductType>,
+        #[case] symbol: Option<&str>,
+        #[case] limit: Option<u32>,
+        #[case] expected_query: Option<&str>,
+    ) {
+        const RECV_WINDOW_MS: u64 = 5_000;
+
+        let (requests_tx, mut requests_rx) = tokio::sync::mpsc::unbounded_channel();
+        let response: serde_json::Value = serde_json::from_str(include_str!(
+            "../../test_data/http_get_orders_realtime.json"
+        ))
+        .unwrap();
+
+        let router = Router::new().route(
+            BYBIT_ORDER_REALTIME,
+            get(move |uri: Uri, headers: HeaderMap| async move {
+                requests_tx.send((uri, headers)).unwrap();
+                Json(response)
+            }),
+        );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let client = BybitRawHttpClient::with_credentials(
+            "test-key".to_string(),
+            "test-secret".to_string(),
+            Some(format!("http://{addr}")),
+            2,
+            0,
+            1,
+            1,
+            RECV_WINDOW_MS,
+            None,
+        )
+        .unwrap();
+
+        if let Some(category) = category {
+            for _ in 0..2 {
+                client
+                    .get_open_orders(
+                        category,
+                        symbol.map(str::to_owned),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        limit,
+                        None,
+                    )
+                    .await
+                    .unwrap();
+            }
+        } else {
+            for params in [None, Some(&())] {
+                let _: BybitOpenOrdersResponse = client
+                    .send_request(Method::GET, BYBIT_ORDER_REALTIME, params, None, true)
+                    .await
+                    .unwrap();
+            }
         }
 
-        let params = TestParams {
-            category: "linear".to_string(),
-            symbol: "BTCUSDT".to_string(),
-        };
+        server.abort();
+        let requests = std::iter::from_fn(|| requests_rx.try_recv().ok()).collect::<Vec<_>>();
 
-        let path = BybitRawHttpClient::build_path("/v5/market/test", &params);
-        assert!(path.is_ok());
-        assert!(path.unwrap().contains("category=linear"));
-    }
+        assert_eq!(requests.len(), 2);
 
-    #[rstest]
-    fn test_build_path_without_params() {
-        let params = ();
-        let path = BybitRawHttpClient::build_path("/v5/market/time", &params);
-        assert!(path.is_ok());
-        assert_eq!(path.unwrap(), "/v5/market/time");
-    }
-
-    #[rstest]
-    fn test_params_serialization_matches_build_path() {
-        // This test ensures our new serialization produces the same result as the old build_path
-        #[derive(Serialize)]
-        struct TestParams {
-            category: String,
-            limit: u32,
+        for (uri, headers) in requests {
+            assert_eq!(uri.path(), BYBIT_ORDER_REALTIME);
+            assert_eq!(uri.query(), expected_query);
+            assert_eq!(headers["x-bapi-api-key"], "test-key");
+            assert_eq!(headers["x-bapi-recv-window"], RECV_WINDOW_MS.to_string());
+            let timestamp = headers["x-bapi-timestamp"].to_str().unwrap();
+            let expected_signature = client.credential().unwrap().sign_with_payload(
+                timestamp,
+                RECV_WINDOW_MS,
+                expected_query,
+            );
+            assert_eq!(headers["x-bapi-sign"], expected_signature);
         }
-
-        let params = TestParams {
-            category: "spot".to_string(),
-            limit: 50,
-        };
-
-        // Old way: build_path serialized params
-        let old_path = BybitRawHttpClient::build_path(BYBIT_ORDER_REALTIME, &params).unwrap();
-        let old_query = old_path.split('?').nth(1).unwrap_or("");
-
-        // New way: direct serialization
-        let new_query = serde_urlencoded::to_string(&params).unwrap();
-
-        // They must match for signatures to work
-        assert_eq!(old_query, new_query);
-    }
-
-    #[rstest]
-    fn test_params_serialization_order() {
-        // Verify that serialization order is deterministic
-        #[derive(Serialize)]
-        struct OrderParams {
-            category: String,
-            symbol: String,
-            limit: u32,
-        }
-
-        let params = OrderParams {
-            category: "spot".to_string(),
-            symbol: "BTCUSDT".to_string(),
-            limit: 50,
-        };
-
-        // Serialize multiple times to ensure consistent ordering
-        let query1 = serde_urlencoded::to_string(&params).unwrap();
-        let query2 = serde_urlencoded::to_string(&params).unwrap();
-        let query3 = serde_urlencoded::to_string(&params).unwrap();
-
-        assert_eq!(query1, query2);
-        assert_eq!(query2, query3);
-
-        // The query should contain all params
-        assert!(query1.contains("category=spot"));
-        assert!(query1.contains("symbol=BTCUSDT"));
-        assert!(query1.contains("limit=50"));
     }
 
     #[rstest]

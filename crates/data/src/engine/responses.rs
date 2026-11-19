@@ -20,34 +20,38 @@ use nautilus_model::data::BatchView;
 
 use super::{
     BookDeltasResponse, BookType, CustomData, CustomDataResponse, Data, DataEngine, DataResponse,
-    Display, FromStr, HasTsInit, InstrumentAny, InstrumentId, NANOSECONDS_IN_DAY, OrderBook,
-    OrderBookDelta, OrderBookDeltas, RecordFlag, RequestCommand, UUID4, UnixNanos, type_name,
+    DataResponseEnvelope, Display, FromStr, HasTsInit, InstrumentAny, InstrumentId,
+    NANOSECONDS_IN_DAY, OrderBook, OrderBookDeltas, RecordFlag, RequestCommand, UUID4, UnixNanos,
+    type_name,
 };
 
 impl DataEngine {
     // Replays a day-start snapshot forward to the request's original start: when the first delta
-    // is an F_SNAPSHOT on a UTC day boundary, rebuilds the book from the pre-start deltas and
-    // replaces them with one snapshot keyed at the original start, then forwards the rest.
-    pub(super) fn book_deltas_snapshot_replay(&self, resp: &mut BookDeltasResponse) {
+    // is an F_SNAPSHOT on a UTC day boundary, rebuilds the book from the deltas before the start
+    // and replaces them with one snapshot keyed at the start, then forwards the rest unchanged.
+    pub(super) fn book_deltas_snapshot_replay(
+        &self,
+        resp: &mut BookDeltasResponse,
+    ) -> anyhow::Result<()> {
         let Some(original_start_ns) = resp.start else {
-            return;
+            return Ok(());
         };
 
         let Some(first) = resp.data.first().copied() else {
-            return;
+            return Ok(());
         };
 
         if !RecordFlag::F_SNAPSHOT.matches(first.flags) {
-            return;
+            return Ok(());
         }
 
         if first.ts_init.as_u64() % NANOSECONDS_IN_DAY != 0 {
-            return;
+            return Ok(());
         }
 
         // Nothing to fast-forward when the request starts at or before the day-start snapshot
         if original_start_ns <= first.ts_init {
-            return;
+            return Ok(());
         }
 
         if self
@@ -60,7 +64,7 @@ impl DataEngine {
                 "Instrument {} not found in cache, skipping snapshot replay",
                 resp.instrument_id,
             );
-            return;
+            return Ok(());
         }
 
         let book_type = resp
@@ -70,47 +74,41 @@ impl DataEngine {
             .and_then(|s| BookType::from_str(s).ok())
             .unwrap_or(BookType::L2_MBP);
 
+        let split = resp
+            .data
+            .iter()
+            .position(|delta| delta.ts_init >= original_start_ns)
+            .unwrap_or(resp.data.len());
+        let (before, after) = resp.data.split_at(split);
+
         let mut book = OrderBook::new(resp.instrument_id, book_type);
-        let mut before: Vec<OrderBookDelta> = Vec::new();
-        let mut after: Vec<OrderBookDelta> = Vec::new();
-        let mut last_applied_ts: Option<UnixNanos> = None;
-        let mut crossed = false;
-        for delta in resp.data.iter() {
-            if crossed {
-                after.push(*delta);
-            } else {
-                before.push(*delta);
-                if delta.ts_init >= original_start_ns {
-                    crossed = true;
-                    last_applied_ts = Some(delta.ts_init);
-                }
-            }
+        let batch = OrderBookDeltas::new(resp.instrument_id, before.to_vec());
+        if let Err(e) = book.apply_deltas(&batch) {
+            anyhow::bail!(
+                "Failed to rebuild order book {} for snapshot replay: {e}",
+                resp.instrument_id,
+            );
         }
 
-        if !before.is_empty() {
-            if last_applied_ts.is_none() {
-                last_applied_ts = before.last().map(|d| d.ts_init);
-            }
-
-            let batch = OrderBookDeltas::new(resp.instrument_id, before);
-            if let Err(e) = book.apply_deltas(&batch) {
-                log::error!(
-                    "Failed to rebuild book for snapshot replay on {}: {e}",
-                    resp.instrument_id,
-                );
-                return;
-            }
-        }
-
-        let Some(last_ts) = last_applied_ts else {
-            return;
-        };
-
-        let snapshot_ts = last_ts.max(original_start_ns);
-        let mut new_data = book.to_deltas(snapshot_ts, snapshot_ts).deltas;
-        new_data.extend(after);
+        let mut new_data = book.to_deltas(original_start_ns, original_start_ns).deltas;
+        new_data.extend_from_slice(after);
         resp.data = new_data.into();
+
+        Ok(())
     }
+}
+
+// Keeps an earlier failure reason when a completed envelope fails again
+pub(super) fn append_failure(
+    envelope: DataResponseEnvelope,
+    reason: String,
+) -> DataResponseEnvelope {
+    let reason = match envelope.failure_reason() {
+        Some(existing) => format!("{existing}; {reason}"),
+        None => reason,
+    };
+
+    envelope.with_failure(reason)
 }
 
 #[inline(always)]

@@ -75,7 +75,8 @@ use nautilus_common::{
         self, BusPayloadType, BusTap, Endpoint, MStr, MessageBus, Topic, TypedHandler,
         TypedIntoHandler,
         stubs::{
-            get_any_saving_handler, get_response_saving_handler, get_typed_message_saving_handler,
+            TypedMessageSavingHandler, get_any_saving_handler, get_response_saving_handler,
+            get_typed_message_saving_handler,
         },
         switchboard::{self, MessagingSwitchboard},
     },

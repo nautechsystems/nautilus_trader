@@ -349,6 +349,7 @@ impl PolymarketExecutionClient {
                 Ok(response) => {
                     for (venue_order_id, order) in &orders {
                         let venue_order_id_str = venue_order_id.to_string();
+
                         if cancel_by_id
                             || response.not_canceled.contains_key(&venue_order_id_str)
                             || response

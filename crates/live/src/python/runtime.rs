@@ -130,6 +130,7 @@ impl ClientRuntime {
 
     fn bind(&self, py: Python<'_>, event_loop: Py<PyAny>) -> PyResult<()> {
         self.check_thread()?;
+
         {
             let state = self.state.lock();
             if state.event_loop.is_some() || state.disposed {
@@ -277,6 +278,7 @@ impl ClientRuntime {
             let disposed = state.disposed;
             state.disposed = true;
             state.accepting = false;
+
             (
                 disposed,
                 state
@@ -288,7 +290,6 @@ impl ClientRuntime {
         };
 
         self.discard_commands(py)?;
-
         for task in tasks {
             if task.call_method0(py, "done")?.extract::<bool>(py)? {
                 self.completed(py, task.bind(py))?;
@@ -328,7 +329,6 @@ impl ClientRuntime {
         awaited: bool,
     ) -> PyResult<Py<PyAny>> {
         let py = slf.py();
-
         let validation = (|| {
             slf.get().check_bound(py)?;
             if !slf.get().state.lock().accepting {
@@ -368,7 +368,6 @@ impl ClientRuntime {
         let kwargs = PyDict::new(py);
         kwargs.set_item("name", format!("{}:{operation}", slf.get().name))?;
         let event_loop = slf.get().event_loop(py).expect("validated event loop");
-
         let task = match event_loop.call_method(py, "create_task", (&wrapper,), Some(&kwargs)) {
             Ok(task) => task,
             Err(e) => {
@@ -398,7 +397,6 @@ impl ClientRuntime {
 
         // Release ownership while attached, before the callback capsule is destroyed
         let runtime = Mutex::new(Some(slf.clone().unbind()));
-
         let callback = pyo3::types::PyCFunction::new_closure(
             py,
             None,
@@ -511,7 +509,6 @@ impl ClientRuntime {
 
         // Inspect without re-raising: repeated Task.result() calls can replace the traceback
         let exception = task.call_method0("exception")?;
-
         if log_failure && !exception.is_none() {
             self.log_error(py, operation, &PyErr::from_value(exception))?;
         }
@@ -691,7 +688,6 @@ impl RuntimeOperation {
                     };
 
                     runtime.discard_commands(py)?;
-
                     if let Some(worker) = worker {
                         runtime.cancel_task(worker.bind(py))?;
                     }
@@ -900,7 +896,6 @@ impl PythonOperation {
     pub(crate) fn new(py: Python<'_>, task: Py<PyAny>, runtime: Py<PyAny>) -> PyResult<Self> {
         let waker: Arc<Mutex<Option<Waker>>> = Arc::default();
         let callback_waker = waker.clone();
-
         let callback = PyCFunction::new_closure(
             py,
             None,
@@ -926,6 +921,7 @@ impl PythonOperation {
 
 impl Future for PythonOperation {
     type Output = PyResult<Py<PyAny>>;
+
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         *self.waker.lock() = Some(cx.waker().clone());
         Python::attach(|py| {

@@ -1326,6 +1326,92 @@ fn test_time_range_pipeline_request_join_runs_end_to_end(
 }
 
 #[rstest]
+fn test_time_range_join_replays_book_snapshot_for_first_window_only(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = clock;
+    advance_test_clock_to(&clock, 10_000_000_000);
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+    let mut engine = DataEngine::new(clock, cache, None);
+
+    let root = UUID4::new();
+    let leg = UUID4::new();
+    let (handler, saver) = get_typed_message_saving_handler::<DataResponseEnvelope>(None);
+    msgbus::register_response_handler(&root, handler);
+
+    let params: Params = serde_json::from_value(json!({
+        "time_range_generator": "",
+        "durations_seconds": [1],
+    }))
+    .unwrap();
+    let start = UnixNanos::from(1_000_000_000);
+    engine
+        .execute_request(RequestCommand::Join(RequestJoin::new(
+            vec![leg],
+            Some(start.to_datetime_utc()),
+            Some(UnixNanos::from(3_000_000_000).to_datetime_utc()),
+            root,
+            UnixNanos::default(),
+            Some(params),
+            None,
+        )))
+        .unwrap();
+
+    let f_last = RecordFlag::F_LAST as u8;
+    let mut midnight =
+        OrderBookDelta::clear(instrument_id, 0, UnixNanos::default(), UnixNanos::default());
+    midnight.flags |= f_last;
+    let closed = delta_with_flag(instrument_id, 1_200_000_000, f_last);
+    let open = delta_with_flag(instrument_id, 1_500_000_000, 0);
+    let close = delta_with_flag(instrument_id, 2_500_000_000, f_last);
+
+    engine.response(leg_book_deltas_response(
+        leg,
+        instrument_id,
+        client_id,
+        vec![midnight, closed, open],
+    ));
+    engine.response(leg_book_deltas_response(
+        leg,
+        instrument_id,
+        client_id,
+        vec![midnight, close],
+    ));
+
+    let mut start_snapshot = OrderBookDelta::clear(instrument_id, 0, start, start);
+    start_snapshot.flags |= f_last;
+
+    let completions: Vec<_> = saver
+        .get_messages()
+        .iter()
+        .map(|envelope| {
+            (
+                envelope.completed(),
+                envelope.failure_reason().map(str::to_owned),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        delivered_book_deltas(&saver),
+        vec![vec![start_snapshot, closed], vec![open, close], vec![]]
+    );
+    assert_eq!(
+        completions,
+        vec![(false, None), (false, None), (true, None)]
+    );
+}
+
+#[rstest]
 fn test_time_range_pipeline_request_join_rejects_empty_window(
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
@@ -1486,6 +1572,240 @@ fn test_time_range_pipeline_supports_book_deltas_variant(
             .and_then(Value::as_u64),
         Some(1)
     );
+}
+
+#[rstest]
+#[case::closed_in_next_window(RecordFlag::F_LAST as u8)]
+#[case::open_at_completion(0)]
+fn test_time_range_pipeline_carries_open_book_event_across_windows(
+    #[case] second_flags: u8,
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
+    let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
+
+    let live_topic = switchboard::get_book_deltas_topic(instrument_id);
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
+    let (pipeline_handler, pipeline_saver) = get_typed_message_saving_handler::<OrderBookDeltas>(
+        Some(Ustr::from("time-range-deltas-carry")),
+    );
+    msgbus::subscribe_book_deltas(pipeline_topic.into(), pipeline_handler, None);
+
+    let params: Params = serde_json::from_value(json!({
+        "time_range_generator": "",
+        "durations_seconds": [1],
+    }))
+    .unwrap();
+    let parent_id = UUID4::new();
+    let (handler, envelopes) = get_typed_message_saving_handler::<DataResponseEnvelope>(None);
+    msgbus::register_response_handler(&parent_id, handler);
+    let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        Some(params),
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let first_window = recorded_time_range_request_book_deltas(&recorder)[0].clone();
+    let first = delta_with_flag(instrument_id, 1_500_000_000, 0);
+    data_engine.response(time_range_book_deltas_response(
+        &first_window,
+        instrument_id,
+        client_id,
+        1,
+        vec![first],
+    ));
+
+    let second_window = recorded_time_range_request_book_deltas(&recorder)[1].clone();
+    let second = delta_with_flag(instrument_id, 2_500_000_000, second_flags);
+    data_engine.response(time_range_book_deltas_response(
+        &second_window,
+        instrument_id,
+        client_id,
+        1,
+        vec![second],
+    ));
+
+    let events: Vec<Vec<OrderBookDelta>> = pipeline_saver
+        .get_messages()
+        .iter()
+        .map(|batch| batch.deltas.clone())
+        .collect();
+    let completed: Vec<bool> = envelopes
+        .get_messages()
+        .iter()
+        .map(DataResponseEnvelope::completed)
+        .collect();
+    assert_eq!(events, vec![vec![first, second]]);
+    assert_eq!(
+        delivered_book_deltas(&envelopes),
+        vec![vec![first, second], vec![]],
+        "the requester receives the event whole, ahead of the final envelope"
+    );
+    assert_eq!(completed, vec![false, true]);
+    assert_eq!(data_engine.time_range_pipeline_count(), 0);
+}
+
+#[rstest]
+#[case::completed(false, false, None)]
+#[case::failed(false, true, Some("Window unavailable"))]
+#[case::completed_mid_event(
+    true,
+    false,
+    Some(
+        "Order book deltas end without an `F_LAST` delta for AUD/USD.SIM \
+         (1 pending, ts_init 1500000000 to 1500000000)"
+    )
+)]
+#[case::failed_mid_event(
+    true,
+    true,
+    Some(
+        "Window unavailable; Order book deltas end without an `F_LAST` delta for AUD/USD.SIM \
+         (1 pending, ts_init 1500000000 to 1500000000)"
+    )
+)]
+fn test_time_range_pipeline_completes_open_book_event_when_join_leg_completes(
+    #[case] source_sets_f_last: bool,
+    #[case] fail_second_window: bool,
+    #[case] expected_failure: Option<&str>,
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_test_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
+    let recorder = register_time_range_recorder(&mut data_engine, clock, cache, client_id, venue);
+
+    let live_topic = switchboard::get_book_deltas_topic(instrument_id);
+    let pipeline_topic_str = pipeline_topic_of(live_topic.as_ref());
+    let pipeline_topic: MStr<Topic> = pipeline_topic_str.as_str().into();
+    let (pipeline_handler, pipeline_saver) = get_typed_message_saving_handler::<OrderBookDeltas>(
+        Some(Ustr::from("time-range-deltas-join-leg")),
+    );
+    msgbus::subscribe_book_deltas(pipeline_topic.into(), pipeline_handler, None);
+
+    let root = UUID4::new();
+    let leg = UUID4::new();
+    let (root_handler, root_saver) = get_typed_message_saving_handler::<DataResponseEnvelope>(None);
+    msgbus::register_response_handler(&root, root_handler);
+    let (leg_handler, leg_saver) = get_typed_message_saving_handler::<DataResponseEnvelope>(None);
+    msgbus::register_response_handler(&leg, leg_handler);
+    data_engine
+        .execute_request(RequestCommand::Join(RequestJoin::new(
+            vec![leg],
+            None,
+            None,
+            root,
+            UnixNanos::default(),
+            None,
+            None,
+        )))
+        .unwrap();
+
+    let params: Params = serde_json::from_value(json!({
+        "time_range_generator": "",
+        "durations_seconds": [1],
+    }))
+    .unwrap();
+    data_engine
+        .execute_request(RequestCommand::BookDeltas(RequestBookDeltas::new(
+            instrument_id,
+            Some(UnixNanos::from(1_000_000_000).to_datetime_utc()),
+            Some(UnixNanos::from(3_000_000_000).to_datetime_utc()),
+            None,
+            Some(client_id),
+            leg,
+            UnixNanos::default(),
+            Some(params),
+        )))
+        .unwrap();
+
+    let first_window = recorded_time_range_request_book_deltas(&recorder)[0].clone();
+    let closed = delta_with_flag(instrument_id, 1_200_000_000, RecordFlag::F_LAST as u8);
+    let open = delta_with_flag(instrument_id, 1_500_000_000, 0);
+
+    let first_payload = if source_sets_f_last {
+        vec![closed, open]
+    } else {
+        vec![open]
+    };
+
+    data_engine.response(time_range_book_deltas_response(
+        &first_window,
+        instrument_id,
+        client_id,
+        first_payload.len() as u64,
+        first_payload,
+    ));
+
+    let second_window = recorded_time_range_request_book_deltas(&recorder)[1].clone();
+
+    if fail_second_window {
+        data_engine.request_failed(DataRequestFailed {
+            request_id: second_window.request_id,
+            reason: "Window unavailable".to_owned(),
+            response: None,
+        });
+    } else {
+        data_engine.response(time_range_book_deltas_response(
+            &second_window,
+            instrument_id,
+            client_id,
+            0,
+            Vec::new(),
+        ));
+    }
+
+    let events: Vec<Vec<OrderBookDelta>> = pipeline_saver
+        .get_messages()
+        .iter()
+        .map(|batch| batch.deltas.clone())
+        .collect();
+
+    let completions: Vec<(bool, Option<String>)> = root_saver
+        .get_messages()
+        .iter()
+        .map(|envelope| {
+            (
+                envelope.completed(),
+                envelope.failure_reason().map(str::to_owned),
+            )
+        })
+        .collect();
+
+    let leg_deltas: Vec<Vec<OrderBookDelta>> = delivered_book_deltas(&leg_saver)
+        .into_iter()
+        .filter(|deltas| !deltas.is_empty())
+        .collect();
+
+    let expected_event = if source_sets_f_last { closed } else { open };
+    assert_eq!(events, vec![vec![expected_event]]);
+    assert_eq!(leg_deltas, vec![vec![expected_event]]);
+    assert_eq!(
+        completions,
+        vec![(true, expected_failure.map(str::to_owned))]
+    );
+    assert_eq!(data_engine.time_range_pipeline_count(), 0);
 }
 
 #[rstest]
@@ -3885,6 +4205,193 @@ fn test_book_pipeline_waits_for_final_partition(
     assert_eq!(envelopes[2].failure_reason(), reason);
     assert_eq!(engine.request_pipeline_count(), 0);
     assert!(stub_msgbus.borrow().get_response_handler(&root).is_none());
+}
+
+#[rstest]
+fn test_book_pipeline_fails_request_when_snapshot_replay_cannot_rebuild_book(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_order_book(OrderBook::new(instrument_id, BookType::L3_MBO))
+        .unwrap();
+    let mut engine = DataEngine::new(clock, Rc::clone(&cache), None);
+
+    let pipeline_topic =
+        MessagingSwitchboard::default().get_pipeline_book_deltas_topic(instrument_id);
+    let (pipeline_handler, pipeline_saver) =
+        get_typed_message_saving_handler::<OrderBookDeltas>(Some(Ustr::from("replay-failure")));
+    msgbus::subscribe_book_deltas(pipeline_topic.into(), pipeline_handler, None);
+
+    let root = UUID4::new();
+    let child = UUID4::new();
+
+    let request = RequestBookDeltas::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        None,
+        None,
+        Some(client_id),
+        root,
+        UnixNanos::from(47),
+        None,
+    );
+
+    engine.new_request_pipeline(RequestCommand::BookDeltas(request), 1);
+    engine.register_request_pipeline_leg(child, root);
+    let (handler, saver) = get_typed_message_saving_handler::<DataResponseEnvelope>(None);
+    msgbus::register_response_handler(&root, handler);
+
+    engine.response_envelope(DataResponseEnvelope::new(
+        leg_book_deltas_response(
+            child,
+            instrument_id,
+            client_id,
+            unsided_snapshot_replay_deltas(instrument_id),
+        ),
+        true,
+        None,
+    ));
+
+    let envelopes = saver.get_messages();
+    let cache_update_count = cache
+        .borrow()
+        .order_book(&instrument_id)
+        .expect("seeded book")
+        .update_count;
+    assert_eq!(envelopes.len(), 1);
+    assert_eq!(envelopes[0].correlation_id(), &root);
+    assert!(envelopes[0].completed());
+    assert!(
+        envelopes[0].response().is_none(),
+        "deltas without their snapshot must not reach the requester"
+    );
+    assert_eq!(
+        envelopes[0].failure_reason(),
+        Some(
+            "Failed to rebuild order book AUD/USD.SIM for snapshot replay: \
+             Integrity error: invalid `NoOrderSide` in book"
+        )
+    );
+    assert!(pipeline_saver.get_messages().is_empty());
+    assert_eq!(cache_update_count, 0);
+    assert_eq!(engine.request_pipeline_count(), 0);
+}
+
+#[rstest]
+#[case::snapshot_first(false)]
+#[case::snapshot_last(true)]
+fn test_book_pipeline_withholds_partitions_when_snapshot_replay_cannot_rebuild_book(
+    #[case] snapshot_last: bool,
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let failing = audusd_sim.id;
+    let healthy = InstrumentId::from("GBP/USD.SIM");
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+    let mut engine = DataEngine::new(clock, cache, None);
+
+    let pipeline_topic = MessagingSwitchboard::default().get_pipeline_book_deltas_topic(failing);
+    let (pipeline_handler, pipeline_saver) = get_typed_message_saving_handler::<OrderBookDeltas>(
+        Some(Ustr::from("replay-failure-partition")),
+    );
+    msgbus::subscribe_book_deltas(pipeline_topic.into(), pipeline_handler, None);
+
+    let root = UUID4::new();
+    let child = UUID4::new();
+
+    let request = RequestBookDeltas::new(
+        failing,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        None,
+        None,
+        Some(client_id),
+        root,
+        UnixNanos::from(47),
+        None,
+    );
+
+    engine.new_request_pipeline(RequestCommand::BookDeltas(request), 1);
+    engine.register_request_pipeline_leg(child, root);
+    let (handler, saver) = get_typed_message_saving_handler::<DataResponseEnvelope>(None);
+    msgbus::register_response_handler(&root, handler);
+    let healthy_event = delta_with_flag(healthy, 1_500, RecordFlag::F_LAST as u8);
+
+    let mut failing_partitions = vec![
+        unsided_snapshot_replay_deltas(failing),
+        vec![delta_with_flag(failing, 1_800, RecordFlag::F_LAST as u8)],
+    ];
+
+    if snapshot_last {
+        failing_partitions.reverse();
+    }
+
+    for deltas in failing_partitions {
+        engine.response_envelope(DataResponseEnvelope::new(
+            leg_book_deltas_response(child, failing, client_id, deltas),
+            false,
+            None,
+        ));
+    }
+
+    engine.response_envelope(DataResponseEnvelope::new(
+        leg_book_deltas_response(child, healthy, client_id, vec![healthy_event]),
+        true,
+        None,
+    ));
+
+    let envelopes = saver.get_messages();
+    let completed: Vec<bool> = envelopes
+        .iter()
+        .map(DataResponseEnvelope::completed)
+        .collect();
+    assert_eq!(
+        delivered_book_deltas(&saver),
+        vec![vec![healthy_event], vec![]],
+        "no partition of the instrument without a usable book reaches the requester"
+    );
+    assert_eq!(completed, vec![false, true]);
+    assert_eq!(envelopes[0].failure_reason(), None);
+    assert_eq!(
+        envelopes[1].failure_reason(),
+        Some(
+            "Failed to rebuild order book AUD/USD.SIM for snapshot replay: \
+             Integrity error: invalid `NoOrderSide` in book"
+        )
+    );
+    assert!(pipeline_saver.get_messages().is_empty());
+    assert_eq!(engine.request_pipeline_count(), 0);
+}
+
+// A day-start snapshot, then an add the book cannot place before the request start at 1,000
+fn unsided_snapshot_replay_deltas(instrument_id: InstrumentId) -> Vec<OrderBookDelta> {
+    let f_last = RecordFlag::F_LAST as u8;
+    let mut unsided = delta_with_flag(instrument_id, 500, f_last);
+    unsided.order.side = None;
+    unsided.order.order_id = 2;
+
+    vec![
+        delta_with_flag(instrument_id, 0, RecordFlag::F_SNAPSHOT as u8 | f_last),
+        unsided,
+        delta_with_flag(instrument_id, 1_500, f_last),
+    ]
 }
 
 #[rstest]

@@ -85,7 +85,7 @@ use crate::{
         apply_count_limit,
         coverage::ReportCoverage,
         error::{
-            KrakenBatchOrderError, KrakenHttpError, KrakenModifyOrderError, KrakenSubmitOrderError,
+            KrakenBatchOrderError, KrakenHttpError, KrakenSubmitOrderError,
             kraken_http_should_retry,
         },
     },
@@ -2446,6 +2446,7 @@ impl KrakenSpotHttpClient {
 
             for (trade_id, trade) in &trades {
                 let resolved = self.get_instrument_by_raw_symbol(trade.pair.as_str());
+
                 if let Some(ref target_id) = instrument_id
                     && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
                 {
@@ -3207,6 +3208,9 @@ impl KrakenSpotHttpClient {
     /// Uses the AmendOrder endpoint which modifies the order in-place,
     /// keeping the same order ID and queue position.
     ///
+    /// Returns the supplied `venue_order_id` as `Some`, or `None` when amending
+    /// by `client_order_id` alone.
+    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -3221,7 +3225,7 @@ impl KrakenSpotHttpClient {
         quantity: Option<Quantity>,
         price: Option<Price>,
         trigger_price: Option<Price>,
-    ) -> anyhow::Result<VenueOrderId> {
+    ) -> anyhow::Result<Option<VenueOrderId>> {
         let _ = self
             .get_cached_instrument(&instrument_id.symbol.inner())
             .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
@@ -3258,10 +3262,8 @@ impl KrakenSpotHttpClient {
 
         let _response = self.inner.amend_order(&params).await?;
 
-        // AmendOrder modifies in-place, so the order keeps its original ID
-        let order_id = venue_order_id.ok_or(KrakenModifyOrderError::MissingOrderId)?;
-
-        Ok(order_id)
+        // AmendOrder modifies in-place, so the order keeps its original ID if provided
+        Ok(venue_order_id)
     }
 
     /// Cancels an order on the Kraken Spot exchange.
@@ -3701,6 +3703,7 @@ mod tests {
         time::Duration,
     };
 
+    use axum::{Router, http::header, routing::post};
     use nautilus_model::instruments::CurrencyPair;
     use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
@@ -4764,6 +4767,85 @@ mod tests {
         assert!(
             err.to_string().contains("Leverage tiers not loaded"),
             "expected cache-miss rejection: {err}"
+        );
+    }
+
+    #[rstest]
+    #[case::venue_id(None, Some(VenueOrderId::from("V-ORDER-001")))]
+    #[case::client_id(Some(ClientOrderId::new("C-ORDER-001")), None)]
+    #[tokio::test]
+    async fn test_modify_order_returns_supplied_venue_id(
+        #[case] client_order_id: Option<ClientOrderId>,
+        #[case] venue_order_id: Option<VenueOrderId>,
+    ) {
+        let app = Router::new().route(
+            "/0/private/AmendOrder",
+            post(|| async {
+                (
+                    [(header::CONTENT_TYPE, "application/json")],
+                    include_str!("../../../test_data/http_amend_order_spot.json"),
+                )
+            }),
+        );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let client = KrakenSpotHttpClient::with_credentials(
+            "test".to_string(),
+            "c2VjcmV0".to_string(),
+            KrakenEnvironment::Live,
+            Some(format!("http://{addr}")),
+            10,
+            None,
+            None,
+            None,
+            None,
+            10,
+        )
+        .unwrap();
+        let instrument_id = cache_test_spot_instrument(&client);
+
+        let result = client
+            .modify_order(
+                instrument_id,
+                client_order_id,
+                venue_order_id,
+                Some(Quantity::from("0.02")),
+                Some(Price::from("51000.0")),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result, venue_order_id);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_modify_order_without_ids_fails() {
+        let client = KrakenSpotHttpClient::default();
+        let instrument_id = cache_test_spot_instrument(&client);
+
+        let err = client
+            .modify_order(
+                instrument_id,
+                None,
+                None,
+                Some(Quantity::from("0.02")),
+                Some(Price::from("51000.0")),
+                None,
+            )
+            .await
+            .unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("Either client_order_id or venue_order_id must be provided"),
+            "expected missing ID rejection: {err}"
         );
     }
 }

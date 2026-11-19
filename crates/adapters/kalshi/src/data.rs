@@ -188,21 +188,6 @@ impl KalshiDataClient {
         Ok(())
     }
 
-    #[cfg(all(test, not(all(feature = "simulation", madsim))))]
-    pub(crate) fn config(&self) -> &KalshiDataClientConfig {
-        &self.config
-    }
-
-    #[cfg(all(test, not(all(feature = "simulation", madsim))))]
-    pub(crate) fn instruments(&self) -> &[InstrumentId] {
-        &self.instruments
-    }
-
-    #[cfg(all(test, not(all(feature = "simulation", madsim))))]
-    pub(crate) fn cache(&self) -> &CacheView {
-        &self.cache
-    }
-
     fn subscribe_lifecycle(
         &self,
         id: InstrumentId,
@@ -1307,6 +1292,20 @@ mod tests {
         },
         websocket::messages::KalshiDataMessage,
     };
+
+    impl KalshiDataClient {
+        pub(crate) fn config(&self) -> &KalshiDataClientConfig {
+            &self.config
+        }
+
+        pub(crate) fn instruments(&self) -> &[InstrumentId] {
+            &self.instruments
+        }
+
+        pub(crate) fn cache(&self) -> &CacheView {
+            &self.cache
+        }
+    }
 
     #[allow(
         dead_code,

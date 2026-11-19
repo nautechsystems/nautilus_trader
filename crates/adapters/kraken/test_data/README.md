@@ -92,3 +92,9 @@ amend and that a reduction in the amend applies when the hold opens.
 
 This fixture and its test check local dispatch and downstream order-state compatibility. They do
 not certify venue activation, feed ordering, margin reservation, REST response envelopes, or batch behavior.
+
+## Spot amend response
+
+`http_amend_order_spot.json` is the successful response example from Kraken's
+[Amend Order reference](https://docs.kraken.com/api-reference/trading/amend-order),
+retrieved on 2026-11-16, with two-space indentation.

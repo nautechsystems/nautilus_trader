@@ -37,8 +37,13 @@ pub struct OptionChainQuoteHandler {
 }
 
 impl OptionChainQuoteHandler {
-    pub fn new(manager: &Rc<RefCell<OptionChainManager>>, series_id: OptionSeriesId) -> Self {
-        let id = Ustr::from(&format!("OptionChainQuoteHandler({series_id})"));
+    pub fn new(
+        manager: &Rc<RefCell<OptionChainManager>>,
+        series_id: OptionSeriesId,
+        slot: usize,
+    ) -> Self {
+        let id = Ustr::from(&format!("OptionChainQuoteHandler({series_id},{slot})"));
+
         Self {
             manager: WeakCell::from(Rc::downgrade(manager)),
             id,
@@ -66,8 +71,13 @@ pub struct OptionChainGreeksHandler {
 }
 
 impl OptionChainGreeksHandler {
-    pub fn new(manager: &Rc<RefCell<OptionChainManager>>, series_id: OptionSeriesId) -> Self {
-        let id = Ustr::from(&format!("OptionChainGreeksHandler({series_id})"));
+    pub fn new(
+        manager: &Rc<RefCell<OptionChainManager>>,
+        series_id: OptionSeriesId,
+        slot: usize,
+    ) -> Self {
+        let id = Ustr::from(&format!("OptionChainGreeksHandler({series_id},{slot})"));
+
         Self {
             manager: WeakCell::from(Rc::downgrade(manager)),
             id,
@@ -87,7 +97,7 @@ impl Handler<OptionGreeks> for OptionChainGreeksHandler {
     }
 }
 
-/// Timer callback that triggers snapshot publishing for a per-series manager.
+/// Timer callback that triggers snapshot publishing for a per-owner manager.
 ///
 /// Follows the same closure-based timer pattern as `BookSnapshotter`.
 #[derive(Debug)]

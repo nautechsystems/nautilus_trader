@@ -93,6 +93,7 @@ impl StateActor {
 impl DataActor for StateActor {
     fn on_load(&mut self, state: IndexMap<String, Vec<u8>>) -> anyhow::Result<()> {
         self.control.record("actor.on_load");
+
         if self.fail_load {
             anyhow::bail!("test actor on_load failure");
         }
@@ -102,6 +103,7 @@ impl DataActor for StateActor {
 
     fn on_start(&mut self) -> anyhow::Result<()> {
         self.control.record("actor.on_start");
+
         if self.fail_start {
             anyhow::bail!("test actor on_start failure");
         }
@@ -115,6 +117,7 @@ impl DataActor for StateActor {
 
     fn on_save(&self) -> anyhow::Result<IndexMap<String, Vec<u8>>> {
         self.control.record("actor.on_save");
+
         if self.fail_save {
             anyhow::bail!("test actor on_save failure");
         }
@@ -189,6 +192,7 @@ impl StateStrategy {
 impl DataActor for StateStrategy {
     fn on_load(&mut self, state: IndexMap<String, Vec<u8>>) -> anyhow::Result<()> {
         self.control.record("strategy.on_load");
+
         if self.fail_load {
             anyhow::bail!("test strategy on_load failure");
         }
@@ -198,6 +202,7 @@ impl DataActor for StateStrategy {
 
     fn on_start(&mut self) -> anyhow::Result<()> {
         self.control.record("strategy.on_start");
+
         if self.fail_start {
             anyhow::bail!("test strategy on_start failure");
         }
@@ -211,6 +216,7 @@ impl DataActor for StateStrategy {
 
     fn on_save(&self) -> anyhow::Result<IndexMap<String, Vec<u8>>> {
         self.control.record("strategy.on_save");
+
         if self.fail_save {
             anyhow::bail!("test strategy on_save failure");
         }

@@ -359,6 +359,7 @@ pub(crate) fn add_reconciliation_test_account(node: &LiveNode) {
         ),
         true,
     );
+
     node.kernel()
         .cache()
         .borrow_mut()

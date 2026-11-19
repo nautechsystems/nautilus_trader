@@ -73,6 +73,7 @@ use nautilus_model::{
     types::{AccountBalance, MarginBalance, Quantity},
 };
 use rust_decimal::Decimal;
+use ustr::Ustr;
 
 mod stream;
 
@@ -140,12 +141,21 @@ impl OKXExecutionClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the client fails to initialize.
+    /// Returns an error if the configuration is invalid, if `use_spot_position_reports` is set
+    /// without a NETTING OMS, or if the client fails to initialize.
     pub fn new(
         core: ExecutionClientCore,
         config: OKXExecutionClientConfig,
     ) -> anyhow::Result<Self> {
         config.validate()?;
+
+        // A wallet holding is one net quantity per pair, a HEDGING correction opens a new
+        // position instead of changing the cached one.
+        anyhow::ensure!(
+            !config.use_spot_position_reports || core.oms_type == OmsType::Netting,
+            "`use_spot_position_reports` requires a NETTING OMS, was {}; set `oms_type` to NETTING",
+            core.oms_type,
+        );
 
         let api_key = config
             .api_key
@@ -323,6 +333,7 @@ impl OKXExecutionClient {
             account_id: self.core.account_id,
             http_client: self.http_client.clone(),
             instrument_types: self.config.instrument_types.clone(),
+            spot_positions_quote_currency: self.spot_positions_quote_currency(),
             recover_inst_id_codes: self.config.has_instrument_filters(),
             load_spreads: self.config.load_spreads,
             margin_mode: (self.position_mode == OKXPositionMode::LongShortMode).then_some(
@@ -336,6 +347,17 @@ impl OKXExecutionClient {
 
     fn instrument_types(&self) -> Vec<OKXInstrumentType> {
         OKXReportClient::instrument_types(&self.config.instrument_types)
+    }
+
+    fn spot_positions_quote_currency(&self) -> Option<Ustr> {
+        (self.config.use_spot_position_reports
+            && self.instrument_types().iter().any(|inst_type| {
+                matches!(
+                    inst_type,
+                    OKXInstrumentType::Spot | OKXInstrumentType::Margin
+                )
+            }))
+        .then(|| Ustr::from(self.config.spot_positions_quote_currency.as_str()))
     }
 
     async fn collect_order_status_reports(
@@ -3221,6 +3243,7 @@ struct OKXReportClient {
     account_id: AccountId,
     http_client: OKXHttpClient,
     instrument_types: Vec<OKXInstrumentType>,
+    spot_positions_quote_currency: Option<Ustr>,
     recover_inst_id_codes: bool,
     load_spreads: bool,
     margin_mode: Option<OKXMarginMode>,
@@ -3698,16 +3721,17 @@ impl OKXReportClient {
             }
         }
 
-        let mut margin_reports = self
-            .http_client
-            .request_spot_margin_position_reports(self.account_id)
-            .await?;
-
-        if let Some(instrument_id) = cmd.instrument_id {
-            margin_reports.retain(|report| report.instrument_id == instrument_id);
+        if let Some(quote_currency) = self.spot_positions_quote_currency {
+            reports.extend(
+                self.http_client
+                    .request_spot_position_reports(
+                        self.account_id,
+                        cmd.instrument_id,
+                        quote_currency,
+                    )
+                    .await?,
+            );
         }
-
-        reports.append(&mut margin_reports);
 
         let instrument_ids = reports.iter().map(|report| report.instrument_id).collect();
         self.prepare_inst_id_codes(instrument_ids).await?;

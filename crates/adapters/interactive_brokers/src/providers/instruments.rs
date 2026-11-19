@@ -177,38 +177,6 @@ impl InteractiveBrokersInstrumentProvider {
         })
     }
 
-    #[cfg(test)]
-    pub(crate) fn insert_test_instrument(
-        &self,
-        instrument: InstrumentAny,
-        contract_id: i32,
-        price_magnifier: i32,
-    ) {
-        let instrument_id = instrument.id();
-        self.instruments.insert(instrument_id, instrument);
-        self.contract_id_to_instrument_id
-            .insert(contract_id, instrument_id);
-        self.contracts.insert(
-            instrument_id,
-            Contract {
-                contract_id,
-                ..Default::default()
-            },
-        );
-
-        self.price_magnifiers.insert(instrument_id, price_magnifier);
-    }
-
-    #[cfg(test)]
-    pub(crate) fn insert_test_contract_id_mapping(
-        &self,
-        contract_id: i32,
-        instrument_id: InstrumentId,
-    ) {
-        self.contract_id_to_instrument_id
-            .insert(contract_id, instrument_id);
-    }
-
     /// Initialize the provider by loading cache if configured.
     ///
     /// This is equivalent to Python's `provider.initialize()` method.
@@ -2718,6 +2686,38 @@ mod tests {
 
     use super::*;
     use crate::common::contract_to_json_value;
+
+    impl InteractiveBrokersInstrumentProvider {
+        pub(crate) fn insert_test_instrument(
+            &self,
+            instrument: InstrumentAny,
+            contract_id: i32,
+            price_magnifier: i32,
+        ) {
+            let instrument_id = instrument.id();
+            self.instruments.insert(instrument_id, instrument);
+            self.contract_id_to_instrument_id
+                .insert(contract_id, instrument_id);
+            self.contracts.insert(
+                instrument_id,
+                Contract {
+                    contract_id,
+                    ..Default::default()
+                },
+            );
+
+            self.price_magnifiers.insert(instrument_id, price_magnifier);
+        }
+
+        pub(crate) fn insert_test_contract_id_mapping(
+            &self,
+            contract_id: i32,
+            instrument_id: InstrumentId,
+        ) {
+            self.contract_id_to_instrument_id
+                .insert(contract_id, instrument_id);
+        }
+    }
 
     struct TestStartupLoader {
         id_calls: AtomicUsize,

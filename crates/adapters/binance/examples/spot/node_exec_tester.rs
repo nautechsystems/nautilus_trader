@@ -114,6 +114,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .enable_limit_sells(false)
         .open_position_on_start_qty(order_qty.as_decimal())
         .use_post_only(true)
+        .reduce_only_on_stop(false)
         .build()?;
 
     let tester = ExecTester::new(tester_config);

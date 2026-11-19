@@ -257,6 +257,7 @@ pub struct MessageBus {
     pub(crate) router_greeks: TopicRouter<GreeksData>,
     pub(crate) router_option_greeks: TopicRouter<OptionGreeks>,
     pub(crate) router_option_chain: TopicRouter<OptionChainSlice>,
+    pub(crate) option_chain_owners: AHashMap<UUID4, TypedHandler<OptionChainSlice>>,
     pub(crate) router_instruments: TopicRouter<InstrumentAny>,
     #[cfg(feature = "defi")]
     pub(crate) router_defi_blocks: TopicRouter<nautilus_model::defi::Block>, // nautilus-import-ok
@@ -355,6 +356,7 @@ impl MessageBus {
             router_greeks: TopicRouter::new(),
             router_option_greeks: TopicRouter::new(),
             router_option_chain: TopicRouter::new(),
+            option_chain_owners: AHashMap::new(),
             router_instruments: TopicRouter::new(),
             #[cfg(feature = "defi")]
             router_defi_blocks: TopicRouter::new(),
@@ -582,6 +584,7 @@ impl MessageBus {
         self.router_greeks.clear();
         self.router_option_greeks.clear();
         self.router_option_chain.clear();
+        self.option_chain_owners.clear();
         self.router_instruments.clear();
 
         #[cfg(feature = "defi")]

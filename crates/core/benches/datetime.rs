@@ -35,6 +35,7 @@ fn raw_fallback_nanos() -> u64 {
 
 fn bench_unix_nanos_to_iso8601(c: &mut Criterion) {
     let mut group = c.benchmark_group("datetime/unix_nanos_to_iso8601");
+
     let cases = [
         ("epoch", EPOCH),
         ("current_sample", CURRENT_SAMPLE),
@@ -47,11 +48,13 @@ fn bench_unix_nanos_to_iso8601(c: &mut Criterion) {
             b.iter(|| unix_nanos_to_iso8601(UnixNanos::from(black_box(nanos))));
         });
     }
+
     group.finish();
 }
 
 fn bench_unix_nanos_to_iso8601_millis(c: &mut Criterion) {
     let mut group = c.benchmark_group("datetime/unix_nanos_to_iso8601_millis");
+
     let cases = [
         ("epoch", EPOCH),
         ("millis_sample", MILLIS_SAMPLE),
@@ -63,6 +66,7 @@ fn bench_unix_nanos_to_iso8601_millis(c: &mut Criterion) {
             b.iter(|| unix_nanos_to_iso8601_millis(UnixNanos::from(black_box(nanos))));
         });
     }
+
     group.finish();
 }
 

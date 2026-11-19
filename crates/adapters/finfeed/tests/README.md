@@ -393,8 +393,8 @@ Retention tests cover 128-instrument/bar-type bounds, per-subscribed-list alloca
 Book scopes retain one full valid snapshot per instrument; memory depends on supplied depth.
 
 Large-batch tests cover limits 1000, 1001, and 10000, independent quote/trade caps, exact wire limits,
-serial scheduling, pacing, and in-flight disconnect. Saturation checks pin `DEBUG` diagnostics and
-per-list/OHLCV flags: two short lists are not saturated merely because their combined count exceeds
-one list's cap. Bars reserve an extra running-period slot at limits 1, 1000, 1001, and 10000.
+serial scheduling, pacing, and in-flight disconnect. Saturation checks pin the per-list and OHLCV
+flags and the transition from `WARN` to `DEBUG` for sustained saturation. Two short lists are
+within their limits even when their combined count exceeds one list's cap. Bars reserve an extra running-period slot at limits 1, 1000, 1001, and 10000.
 The ignored `live::bounded_activity_publication_and_reconnect::case_2` tests `poll_limit=10000`, retained
 IDs after reconnect, and quiet shutdown with the same bounded allowance as its default-limit case.

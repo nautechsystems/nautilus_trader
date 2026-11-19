@@ -1709,6 +1709,7 @@ During provider or historical loading, a fee-enabled market with a missing or ze
 The adapter logs a warning unless `feeType` is `zero_fees`.
 Runtime automatic instrument loading also uses zero for a missing or zero rate, but does not log this warning.
 The CLOB `/fee-rate` response's `base_fee` is a legacy base fee and does not supply the effective taker rate.
+A zero estimate can therefore mean the effective rate was unavailable.
 
 The adapter reads each instrument's `fee_schedule` and applies its `rate` and `exponent` as:
 
@@ -1716,9 +1717,21 @@ The adapter reads each instrument's `fee_schedule` and applies its `rate` and `e
 platform fee = shares * rate * (price * (1 - price)) ^ exponent
 ```
 
-The current public schedule uses exponent `1`, which is Polymarket's published
+The public schedule uses exponent `1`, which is Polymarket's published
 `C * feeRate * p * (1 - p)` formula. Platform fees peak at `p = 0.50`, decrease
 symmetrically toward the extremes, and apply only to taker fills.
+
+Polymarket schedules changes to DeFi taker fee coefficients and taker rebate tiers for
+November 20, 2026 at 23:59 UTC. Maker rebate tiers replace daily market-wide pools at the same
+time. The taker fee formula stays the same.
+See the [November fee and rebate changes](https://docs.polymarket.com/programs/fee-and-rebate-changes-november-2026).
+
+Quote-quantity market buys and newly admitted taker fills can use the prior coefficient while
+the adapter holds stale instrument metadata. When enabled, periodic refresh covers the
+instrument configuration and registered filters. For retained fills, see
+[Fee basis across instrument updates](#fee-basis-across-instrument-updates).
+
+The table shows the published schedule before that change.
 
 | Category        | Taker `feeRate` | Maker `feeRate` | Maker rebate |
 | --------------- | --------------- | --------------- | ------------ |
@@ -1802,11 +1815,16 @@ recreate its quantity without the Polymarket commission.
 
 ### Backtest fee model
 
-Use `PolymarketFeeModel` for backtests that include taker fees and maker rebates. The model reads `rate`,
-`rebateRate`, `exponent`, and `takerOnly` from each binary option instrument's `fee_schedule`. It requires a
-maker or taker liquidity side, a fill price in `[0, 1]`, and a taker-only schedule with exponent `1`.
-Unsupported instruments and invalid inputs return an error. An instrument without a fee schedule produces zero
-commission.
+Use `PolymarketFeeModel` to estimate taker fees before rebates and maker rebates under the daily pool
+program. The model reads `rate`, `rebateRate`, `exponent`, and `takerOnly` from each binary option
+instrument's `fee_schedule`. It requires a maker or taker liquidity side, a fill price in `[0, 1]`, and
+a taker-only schedule with exponent `1`. Unsupported instruments and invalid inputs return an error.
+An instrument without a fee schedule produces zero commission.
+
+`PolymarketDataLoader` reads the Gamma fee schedule at instrument load time. The date range passed to
+`load_trades` filters trades independently of that schedule. The fee model uses the attached rate
+for both taker fees and maker rebate estimates. Use the instrument schedule in effect for each simulated
+period, including replays that fall entirely before or after the cutover.
 
 ```rust tab="Rust"
 use nautilus_execution::models::fee::FeeModelHandle;
@@ -1832,9 +1850,13 @@ For maker fills, `fee_equivalent` is the platform fee formula above using the sc
 Polymarket's daily pool allocation because a backtest does not know the total fee equivalent from
 other makers in that market.
 
-Live maker fills have zero commission. Polymarket pays the actual pUSD rebate separately each day. The model
-does not represent that payment as a separate event, and it does not model competition between makers, daily
-aggregation, or the minimum payout threshold. See Polymarket's
+The provider and historical loader supply the category-based maker rebate rates shown above.
+The announced maker and taker rebate tiers use separate 30-day weighted volumes for each account. Both
+account-level rebate programs require separate modeling.
+
+Live maker fills have zero commission. Under the pool program, Polymarket pays the pUSD rebate
+separately each day. The model does not represent that payment as a separate event, and it does not
+model competition between makers, daily aggregation, or the minimum payout threshold. See Polymarket's
 [Maker Rebates Program](https://docs.polymarket.com/programs/maker-rebates) for the venue formula.
 
 ## Reconciliation

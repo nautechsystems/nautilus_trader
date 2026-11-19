@@ -3397,6 +3397,7 @@ mod tests {
 
         let decoded_request: RequestCommand =
             rmp_serde::from_slice(&captured_request.payload).expect("decode RequestCommand");
+
         match (decoded_request, request) {
             (RequestCommand::Quotes(decoded), RequestCommand::Quotes(expected)) => {
                 assert_eq!(decoded.request_id, expected.request_id);
@@ -3419,6 +3420,7 @@ mod tests {
 
         let decoded_subscribe: SubscribeCommand =
             rmp_serde::from_slice(&captured_subscribe.payload).expect("decode SubscribeCommand");
+
         match (decoded_subscribe, subscribe) {
             (SubscribeCommand::Quotes(decoded), SubscribeCommand::Quotes(expected)) => {
                 assert_eq!(decoded.command_id, expected.command_id);

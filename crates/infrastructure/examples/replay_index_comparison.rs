@@ -296,6 +296,7 @@ fn main() {
     // Cold means a genuine cold canonical index at the first flip, not a forced reset each step.
     // Subsequent flips inherit exactly the state left by the previous engine/adapter operations.
     println!("backend,start,first,history_fills,step,operation,elapsed_ns");
+
     for (step, events) in steps.iter().enumerate() {
         let ns = process(&mut engine, &events.flip);
         println!("{backend},{start},{first},{n},{step},flip,{ns}");
@@ -358,6 +359,7 @@ fn main() {
     cache.borrow_mut().dispose();
     let drain = t.elapsed().as_nanos();
     println!("{backend},{start},{first},{n},{count},dispose_and_drain,{drain}");
+
     if backend != "memory" {
         let mut a = adapter(port, trader);
         let t = Instant::now();

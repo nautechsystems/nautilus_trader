@@ -163,7 +163,7 @@ runs:
 
     - name: Set up Rust toolchain
       # https://github.com/actions-rust-lang/setup-rust-toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+      uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
       with:
         toolchain: ${{ steps.rust-toolchain.outputs.toolchain }}
         components: clippy,rustfmt
@@ -175,7 +175,7 @@ runs:
     - name: Rust cache
       if: inputs.rust-cache-enabled == 'true'
       # https://github.com/Swatinem/rust-cache
-      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         workspaces: ${{ inputs.rust-cache-workspaces || '. -> target' }}
         cache-on-failure: ${{ inputs.rust-cache-on-failure }}
@@ -193,7 +193,7 @@ runs:
     - name: Install cargo-nextest
       if: inputs.build-type != 'pre-commit' && runner.os != 'macOS'
       # https://github.com/taiki-e/install-action
-      uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+      uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
       with:
         tool: cargo-nextest@${{ steps.nextest-version.outputs.version }}
 
@@ -213,7 +213,7 @@ runs:
     # > Python
     - name: Set up Python environment
       # https://github.com/actions/setup-python
-      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
       with:
         python-version: ${{ inputs.python-version }}
 
@@ -273,7 +273,7 @@ runs:
 
     - name: Install uv
       # https://github.com/astral-sh/setup-uv
-      uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       with:
         version: ${{ steps.uv-version.outputs.version }}
         enable-cache: >-

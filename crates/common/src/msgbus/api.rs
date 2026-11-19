@@ -429,6 +429,8 @@ pub fn subscribe_option_greeks(
 }
 
 /// Subscribes a handler to option chain slice updates matching a pattern.
+///
+/// Engine-generated slices use [`register_option_chain_owner`] instead of topic delivery.
 pub fn subscribe_option_chain(
     pattern: MStr<Pattern>,
     handler: TypedHandler<OptionChainSlice>,
@@ -438,6 +440,43 @@ pub fn subscribe_option_chain(
         .borrow_mut()
         .router_option_chain
         .subscribe(pattern, handler, priority.unwrap_or(0));
+}
+
+/// Registers a handler for one option-chain owner. An existing registration is retained.
+pub fn register_option_chain_owner(owner_id: UUID4, handler: TypedHandler<OptionChainSlice>) {
+    get_message_bus()
+        .borrow_mut()
+        .option_chain_owners
+        .entry(owner_id)
+        .or_insert(handler);
+}
+
+/// Removes an option-chain owner's handler.
+pub fn unregister_option_chain_owner(owner_id: UUID4) {
+    get_message_bus()
+        .borrow_mut()
+        .option_chain_owners
+        .remove(&owner_id);
+}
+
+/// Delivers a slice to its registered option-chain owner.
+pub fn publish_option_chain_owner(owner_id: UUID4, slice: &OptionChainSlice) {
+    let _publication = PublicationScope::enter();
+    dispatch_tap_publish(
+        super::switchboard::get_option_chain_topic(slice.series_id),
+        slice,
+    );
+
+    let handler = {
+        let bus = get_message_bus();
+        let mut bus = bus.borrow_mut();
+        bus.increment_pub_count();
+        bus.option_chain_owners.get(&owner_id).cloned()
+    };
+
+    if let Some(handler) = handler {
+        handler.handle(slice);
+    }
 }
 
 /// Subscribes a handler to order events matching a pattern.
@@ -1769,6 +1808,72 @@ mod tests {
             2,
             "{response_kind} duplicate responses must still increment the response count",
         );
+    }
+
+    #[rstest]
+    fn test_option_chain_owner_delivery_releases_registration() {
+        reset_message_bus();
+        let tap = Rc::new(RecordingTap::default());
+        set_bus_tap(tap.clone());
+        let series_id = OptionSeriesId::new_derived(
+            Venue::from("DERIBIT"),
+            Ustr::from("BTC"),
+            Ustr::from("BTC"),
+            UnixNanos::from(1),
+        );
+
+        let slice = OptionChainSlice {
+            series_id,
+            atm_strike: None,
+            calls: Default::default(),
+            puts: Default::default(),
+            ts_event: UnixNanos::default(),
+            ts_init: UnixNanos::default(),
+        };
+
+        let delivered = Rc::new(Cell::new(0));
+
+        for index in 1..=2 {
+            let owner_id = UUID4::new();
+            let count = Rc::clone(&delivered);
+            let weak = Rc::downgrade(&count);
+
+            let handler =
+                TypedHandler::from_with_id("chain-owner-test", move |_: &OptionChainSlice| {
+                    count.set(count.get() + 1);
+                    unregister_option_chain_owner(owner_id);
+                });
+
+            register_option_chain_owner(owner_id, handler);
+            register_option_chain_owner(
+                owner_id,
+                TypedHandler::from_with_id("chain-duplicate-test", |_: &OptionChainSlice| {
+                    panic!("duplicate replaced the owner")
+                }),
+            );
+
+            publish_option_chain_owner(UUID4::new(), &slice);
+            assert_eq!(delivered.get(), index - 1);
+            publish_option_chain_owner(owner_id, &slice);
+            publish_option_chain_owner(owner_id, &slice);
+            assert_eq!(delivered.get(), index);
+            assert!(get_message_bus().borrow().option_chain_owners.is_empty());
+            assert_eq!(weak.strong_count(), 1);
+        }
+
+        clear_bus_tap();
+        assert_eq!(get_message_bus().borrow().pub_count(), 6);
+        assert_eq!(
+            tap.publish_topics(),
+            vec![super::super::switchboard::get_option_chain_topic(series_id).to_string(); 6]
+        );
+        let owner_id = UUID4::new();
+        register_option_chain_owner(
+            owner_id,
+            TypedHandler::from_with_id("chain-disposal-test", |_: &OptionChainSlice| {}),
+        );
+        get_message_bus().borrow_mut().dispose();
+        assert!(get_message_bus().borrow().option_chain_owners.is_empty());
     }
 
     #[rstest]

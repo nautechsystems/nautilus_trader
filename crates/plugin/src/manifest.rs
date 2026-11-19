@@ -202,6 +202,7 @@ fn validate_build_id(build_id: &PluginBuildId, errors: &mut PluginManifestValida
     validate_optional_str("build_id.rustc_version", build_id.rustc_version, errors);
     validate_optional_str("build_id.target_triple", build_id.target_triple, errors);
     validate_optional_str("build_id.build_profile", build_id.build_profile, errors);
+
     if let Some(precision_mode) =
         validate_required_str("build_id.precision_mode", build_id.precision_mode, errors)
     {

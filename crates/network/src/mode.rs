@@ -244,6 +244,13 @@ impl ConnectionMode {
     pub const fn is_closed(&self) -> bool {
         matches!(self, Self::Closed)
     }
+
+    /// Returns true when the client is disconnecting or closed.
+    #[inline]
+    #[must_use]
+    pub const fn is_terminal(&self) -> bool {
+        matches!(self, Self::Disconnect | Self::Closed)
+    }
 }
 
 /// Outcome of a controller-owned reconnect request.

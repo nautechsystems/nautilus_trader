@@ -256,6 +256,7 @@ pub async fn init_postgres(
 
     // Create role if not exists
     let escaped_password = escape_sql_string(&password);
+
     match sqlx::query(AssertSqlSafe(format!(
         "CREATE ROLE {database} PASSWORD '{escaped_password}' LOGIN;"
     )))

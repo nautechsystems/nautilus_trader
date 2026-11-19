@@ -1260,6 +1260,7 @@ impl LighterHttpClient {
 
         let limit_satisfied =
             !start_was_unspecified && requested_limit.is_some_and(|limit| bars.len() >= limit);
+
         if pages >= MAX_BAR_REQUEST_PAGES && cursor_ms < end_ms && !limit_satisfied {
             return Err(LighterHttpError::HistoryIncomplete {
                 data_type: "bar",
@@ -1412,6 +1413,7 @@ impl LighterHttpClient {
 
         let limit_satisfied = !start_was_unspecified
             && requested_limit.is_some_and(|limit| funding_rates.len() >= limit);
+
         if pages >= MAX_FUNDING_REQUEST_PAGES && cursor_ms < end_ms && !limit_satisfied {
             return Err(LighterHttpError::HistoryIncomplete {
                 data_type: "funding rate",

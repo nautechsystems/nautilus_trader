@@ -57,6 +57,12 @@ ignore = [
   # Accept this risk until upstream permits crypto-bigint >=0.7.6 or backports the fix.
   { id = "RUSTSEC-2026-0387", reason = "crypto-bigint timing leaks in signing, accepted pending an upstream-compatible fix" },
 
+  # Arrow/DataFusion and object_store retain these unmaintained dependencies,
+  # no fixed releases exist; remove the ignores when upstream migrates.
+  { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained, transitive via Arrow/DataFusion and object_store, no fixed release" },
+  { id = "RUSTSEC-2026-0555", reason = "chrono-tz unmaintained, transitive via Arrow/DataFusion, no fixed release" },
+  { id = "RUSTSEC-2026-0542", reason = "humantime unmaintained, transitive via object_store, no fixed release" },
+
   # NOTE: lockfile scanners also flag RUSTSEC-2024-0388 (derivative), which cargo-deny
   # does not surface. Its scanner-specific ignores are in .cargo/audit.toml and
   # osv-scanner.toml.
@@ -197,6 +203,10 @@ skip = [
   # Signature traits - v2 via cosmrs/tendermint, v3 via ed25519-dalek
   { crate = "ed25519:<3" },
   { crate = "signature:<3" },
+
+  # ECDSA retains DER/SPKI 0.7 while Ed25519 PKCS8 requires 0.8
+  { crate = "der:=0.7.10" },
+  { crate = "spki:=0.7.3" },
 
   # Perfect hash function crates - transitive
   { crate = "phf:<0.14" },

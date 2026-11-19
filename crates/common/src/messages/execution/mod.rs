@@ -64,6 +64,7 @@ impl Display for ExecutionReport {
             Self::Fill(report) => write!(f, "{report}"),
             Self::OrderWithFills(report, fills) => {
                 write!(f, "OrderWithFills(order={report}, fills=[")?;
+
                 for (index, fill) in fills.iter().enumerate() {
                     if index > 0 {
                         f.write_str(", ")?;

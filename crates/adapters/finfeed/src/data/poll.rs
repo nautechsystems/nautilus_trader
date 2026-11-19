@@ -473,6 +473,7 @@ enum Batch {
 struct Schedule {
     revision: u64,
     suspended: bool,
+    saturated: bool,
     due: time::Instant,
 }
 
@@ -481,7 +482,19 @@ impl Default for Schedule {
         Self {
             revision: 0,
             suspended: false,
+            saturated: false,
             due: time::Instant::now(),
+        }
+    }
+}
+
+impl Schedule {
+    fn saturation_level(&mut self, saturated: bool) -> log::Level {
+        let was_saturated = std::mem::replace(&mut self.saturated, saturated);
+        if saturated && !was_saturated {
+            log::Level::Warn
+        } else {
+            log::Level::Debug
         }
     }
 }
@@ -498,6 +511,22 @@ struct ActivityScope {
     schedule: Schedule,
     quote_ids: Option<Identities<QuoteTick>>,
     trade_ids: Option<Identities<TradeId>>,
+}
+
+impl ActivityScope {
+    fn log_saturation(&mut self, id: InstrumentId, batch: &ActivityBatch, limit: u32) {
+        let quotes = batch.quotes.as_ref().map_or(0, Vec::len);
+        let trades = batch.trades.as_ref().map_or(0, Vec::len);
+        let quotes_saturated = self.quote_ids.is_some() && quotes == limit as usize;
+        let trades_saturated = self.trade_ids.is_some() && trades == limit as usize;
+        let level = self
+            .schedule
+            .saturation_level(quotes_saturated || trades_saturated);
+        log::log!(
+            level,
+            "FinFeed activity received for {id}, quotes={quotes}, trades={trades}, per-list limit={limit}, quotes_saturated={quotes_saturated}, trades_saturated={trades_saturated}"
+        );
+    }
 }
 
 #[derive(Debug)]
@@ -588,15 +617,7 @@ impl Scope {
                     return Ok(());
                 };
 
-                let quotes = batch.quotes.as_ref().map_or(0, Vec::len);
-                let trades = batch.trades.as_ref().map_or(0, Vec::len);
-                let quotes_saturated = activity.quote_ids.is_some() && quotes == limit as usize;
-                let trades_saturated = activity.trade_ids.is_some() && trades == limit as usize;
-                log::debug!(
-                    "FinFeed activity received for {}, quotes={quotes}, trades={trades}, per-list limit={limit}, quotes_saturated={quotes_saturated}, trades_saturated={trades_saturated}",
-                    instrument.id
-                );
-
+                activity.log_saturation(instrument.id, &batch, limit);
                 publish(activity, instrument, batch, sender)
             }
             Batch::Book(source) => {
@@ -612,10 +633,12 @@ impl Scope {
                 };
 
                 let limit = limit + 1;
-                log::debug!(
-                    "FinFeed OHLCV received for {bar_type}, records={}, limit={limit}, saturated={}",
-                    records.len(),
-                    records.len() == limit as usize
+                let saturated = records.len() == limit as usize;
+                let level = bars.schedule.saturation_level(saturated);
+                log::log!(
+                    level,
+                    "FinFeed OHLCV received for {bar_type}, records={}, limit={limit}, saturated={saturated}",
+                    records.len()
                 );
 
                 if let Err(e) = bars.publish(records, cutoff, bar_type, &period, instrument, sender)
@@ -760,7 +783,10 @@ fn publish(
                 }
                 Ok(_) => {}
                 Err(e) => {
-                    log::warn!("Invalid FinFeed poll quote omitted: {e}");
+                    log::warn!(
+                        "Invalid FinFeed poll quote omitted for {}: {e}",
+                        instrument.id
+                    );
                 }
             }
         }

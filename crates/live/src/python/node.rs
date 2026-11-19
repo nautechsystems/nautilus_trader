@@ -234,7 +234,6 @@ impl BlockingWake {
             };
 
             let timeout = self.signal.wait_for(&mut woken, remaining);
-
             if timeout.timed_out() && !*woken {
                 return false;
             }
@@ -460,7 +459,6 @@ impl HostWakePump {
         };
 
         let mut thread = Some(thread);
-
         let result = match py {
             Some(py) => py.detach(|| thread.take().expect("thread presence checked").join()),
             None => Python::try_attach(|py| {
@@ -543,7 +541,6 @@ impl PyNodeRun {
         let handle = node.handle();
         let mut node = Box::new(node);
         let node_ptr = SendPtr(std::ptr::from_mut::<LiveNode>(node.as_mut()));
-
         let future: Pin<Box<dyn Future<Output = anyhow::Result<()>>>> = Box::pin(async move {
             let ptr = node_ptr;
             // SAFETY: the node is boxed, so its address is stable for as long as this type owns
@@ -1062,6 +1059,7 @@ impl PyLiveNode {
             wake_pump,
             self.clients.clone(),
         );
+
         HOSTED_RUN_ACTIVE.set(true);
 
         driver.call1(py, (Py::new(py, run)?,))
@@ -1207,7 +1205,6 @@ impl PyLiveNode {
         }
 
         let mut node = self.node_mut()?;
-
         let stop_result = if node.is_running() {
             stop_live_node_detached(py, &mut node)
         } else {
@@ -1240,7 +1237,6 @@ impl PyLiveNode {
         log::debug!("`add_actor` with a constructed instance");
 
         let actor = actor.clone().unbind();
-
         let actor_id = Python::attach(|py| {
             let actor = actor.bind(py);
             let config = actor
@@ -1619,7 +1615,6 @@ impl LiveNode {
                 .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))?;
 
             let config_instance = create_config_instance(py, &config.config_path, &config.config)?;
-
             let python_strategy = if let Some(config_obj) = config_instance {
                 strategy_class.call1((config_obj,))?
             } else {
@@ -1799,7 +1794,6 @@ fn finish_owned_run<'py>(
     result: PyResult<()>,
 ) -> PyResult<()> {
     let mut errors: Vec<PyErr> = result.err().into_iter().collect();
-
     if let Err(e) = event_loop.call_method0("close") {
         errors.push(e);
     }
@@ -1884,7 +1878,6 @@ fn create_python_exec_algorithm(
                 .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))?;
 
             let config_instance = create_config_instance(py, &config.config_path, &config.config)?;
-
             let python_exec_algorithm = if let Some(config_obj) = config_instance.clone() {
                 algo_class.call1((config_obj,))?
             } else {
@@ -2011,7 +2004,6 @@ fn create_config_instance<'py>(
 
     // Convert config dict to Python dict
     let py_dict = PyDict::new(py);
-
     for (key, value) in config {
         let py_value = config_value_to_py(py, key, value)?;
         py_dict.set_item(key, py_value)?;
@@ -2034,7 +2026,6 @@ fn create_config_instance<'py>(
 
                     for (key, value) in config {
                         let py_value = config_value_to_py(py, key, value)?;
-
                         if let Err(setattr_err) = instance.setattr(key, py_value) {
                             anyhow::bail!("Failed to set attribute {key}: {setattr_err}");
                         }
@@ -2408,7 +2399,6 @@ impl PyLiveNodeBuilder {
             let registry = get_global_pyo3_registry();
             let is_custom =
                 python_client_factory_is_custom(py, factory.bind(py), "DataClientFactory")?;
-
             if is_custom {
                 config.extract::<crate::config::DataClientConfig>(py)?;
                 let client_name =
@@ -2468,7 +2458,6 @@ impl PyLiveNodeBuilder {
             }
 
             let builder = operation.take_builder()?;
-
             let updated_builder = match routing {
                 Some(routing) => builder.add_data_client_with_routing(
                     Some(client_name),
@@ -2499,7 +2488,6 @@ impl PyLiveNodeBuilder {
             let registry = get_global_pyo3_registry();
             let is_custom =
                 python_client_factory_is_custom(py, factory.bind(py), "ExecutionClientFactory")?;
-
             if is_custom {
                 config.extract::<crate::config::ExecutionClientConfig>(py)?;
                 let client_name =
@@ -2559,7 +2547,6 @@ impl PyLiveNodeBuilder {
             }
 
             let builder = operation.take_builder()?;
-
             let updated_builder = match routing {
                 Some(routing) => builder.add_exec_client_with_routing(
                     Some(client_name),
@@ -2611,7 +2598,6 @@ impl PyLiveNodeBuilder {
     fn py_build(&self) -> PyResult<PyLiveNode> {
         let mut operation = self.begin_operation()?;
         let mut builder = operation.take_builder()?;
-
         let node = match builder.build_in_place() {
             Ok(node) => node,
             Err(e) => {
@@ -2692,7 +2678,6 @@ impl Debug for PyLiveNodeBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Preserve the existing Python repr despite the internal state change
         let state = self.state.replace(PyLiveNodeBuilderState::InProgress);
-
         let result = match &state {
             PyLiveNodeBuilderState::Ready(builder) => write!(
                 f,
@@ -2890,7 +2875,6 @@ primary = KeyboardInterrupt("run failed")
             module.setattr("close_error", close_error).unwrap();
             module.setattr("restore_error", restore_error).unwrap();
             let primary = module.getattr("primary").unwrap();
-
             let result = if run_error {
                 Err(pyo3::PyErr::from_value(primary.clone()))
             } else {
@@ -2922,7 +2906,6 @@ primary = KeyboardInterrupt("run failed")
                 Ok(()) => Vec::new(),
                 Err(e) => {
                     let error = e.value(py);
-
                     let errors = if error.is_instance_of::<pyo3::exceptions::PyBaseExceptionGroup>()
                     {
                         error
@@ -3050,7 +3033,6 @@ primary = KeyboardInterrupt("run failed")
             )
             .unwrap();
             let second_builder = Py::new(py, second_builder).unwrap();
-
             let result = match constructor {
                 "instance" => node.bind(py).call_method1("build", ("Extra",)),
                 "class" => py
@@ -4521,7 +4503,6 @@ class ClaimsStrategy(Strategy):
         let (locked_tx, locked_rx) = mpsc::channel();
         let dependency_lock = Arc::new(Mutex::new(()));
         let dependency_lock_for_thread = dependency_lock.clone();
-
         let wake_thread = thread::spawn(move || {
             let _guard = dependency_lock_for_thread.lock();
             locked_tx.send(()).unwrap();
@@ -4752,7 +4733,6 @@ class ClaimsStrategy(Strategy):
         let stop_returned = Arc::new(AtomicBool::new(false));
         let stop_returned_for_thread = stop_returned.clone();
         let mut gil_thread = None;
-
         Python::attach(|py| {
             gil_thread = Some(thread::spawn(move || {
                 attempt_tx
@@ -5239,6 +5219,7 @@ class ClaimsStrategy(Strategy):
         let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
             .unwrap()
             .with_reconciliation(false)
+            .with_delay_post_stop_secs(0)
             .build()
             .unwrap();
 
@@ -5865,6 +5846,7 @@ class NoConfigActorAlgorithm(ActorAlgorithm):
             response_sent_count.clone(),
             handler_visible_count.clone(),
         );
+
         let config = TestDataClientConfig;
 
         let node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)

@@ -39,6 +39,7 @@ from typing import NoReturn
 
 
 MIN_EPHEMERAL_PORT = 20_000
+MAX_REDIS_REPLY = 65_536
 LONG_HISTORY = 36_000
 DUPLICATE_RELOAD_EXIT = 2
 
@@ -46,6 +47,8 @@ DUPLICATE_RELOAD_EXIT = 2
 parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
 parser.add_argument("--binary-dir", type=pathlib.Path, required=True)
 parser.add_argument("--output-dir", type=pathlib.Path, required=True)
+parser.add_argument("--baseline-allocations", type=pathlib.Path)
+parser.add_argument("--head-allocations", type=pathlib.Path)
 parser.add_argument("--redis-server", default=shutil.which("redis-server"))
 parser.add_argument(
     "--smoke",
@@ -53,6 +56,21 @@ parser.add_argument(
     help="Run only small correctness fixtures and memory probes",
 )
 options = parser.parse_args()
+
+ALLOCATIONS = {
+    "baseline": options.baseline_allocations,
+    "head": options.head_allocations,
+}
+
+if any(ALLOCATIONS.values()) and not all(ALLOCATIONS.values()):
+    parser.error("supply both --baseline-allocations and --head-allocations")
+
+for variant, executable in ALLOCATIONS.items():
+    if executable is not None:
+        ALLOCATIONS[variant] = executable.resolve()
+        if not executable.is_file():
+            parser.error(f"missing allocation binary: {variant}")
+
 if not options.redis_server:
     parser.error("redis-server is not on PATH; supply --redis-server")
 
@@ -72,6 +90,11 @@ ENV = dict(os.environ, NAUTILUS_WORKER_THREADS="1")
     json.dumps(
         {
             "smoke": options.smoke,
+            "allocation_binaries": {
+                variant: hashlib.sha256(path.read_bytes()).hexdigest()
+                for variant, path in ALLOCATIONS.items()
+                if path is not None
+            },
             "nice": os.getpriority(os.PRIO_PROCESS, 0),
             "binaries": {
                 p.name: hashlib.sha256(p.read_bytes()).hexdigest()
@@ -95,18 +118,55 @@ def stop_on_termination(signum: int, _frame: FrameType | None) -> NoReturn:
 signal.signal(signal.SIGTERM, stop_on_termination)
 
 
-def run(binary: str, args: list[str | int], tag: str) -> int:
+def redis_command(port: int, *args: str) -> bytes | int:
     """
-    Run one caller-selected local fixture and retain its output.
+    Read one bounded Redis reply without changing database contents.
     """
-    if server.poll() is not None:
-        raise RuntimeError("Private Redis exited before fixture launch")
+    command = f"*{len(args)}\r\n".encode()
+    for arg in args:
+        encoded = arg.encode()
+        command += f"${len(encoded)}\r\n".encode() + encoded + b"\r\n"
+    with socket.create_connection(("127.0.0.1", port), timeout=0.2) as sock:
+        sock.sendall(command)
+        with sock.makefile("rb") as stream:
+            header = stream.readline(4096)
+            if header.startswith(b":"):
+                return int(header[1:])
+
+            if not header.startswith(b"$"):
+                raise RuntimeError("Unexpected Redis response")
+            length = int(header[1:])
+            if not 0 <= length <= MAX_REDIS_REPLY:
+                raise RuntimeError("Invalid Redis response length")
+            payload = stream.read(length)
+            if len(payload) != length or stream.read(2) != b"\r\n":
+                raise RuntimeError("Incomplete Redis response")
+            return payload
+
+
+def stop_child(child: subprocess.Popen) -> None:
+    """
+    Reap only the child process created by this runner.
+    """
+    if child.poll() is None:
+        child.terminate()
+        try:
+            child.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait(timeout=10)
+
+
+def run_fixture(binary: str, args: list[str | int], tag: str) -> int:
+    """
+    Execute one fixture; subprocess.run reaps it on timeout or interruption.
+    """
     started = time.monotonic()
     with (
         (ROOT / (tag + ".out")).open("x") as out,
         (ROOT / (tag + ".err")).open("x") as err,
     ):
-        p = subprocess.run(  # noqa: S603 (explicit local binaries, argv only; no shell)
+        process = subprocess.run(  # noqa: S603 (explicit local binaries; no shell)
             [str(BIN / binary), *map(str, args)],
             stdout=out,
             stderr=err,
@@ -115,59 +175,147 @@ def run(binary: str, args: list[str | int], tag: str) -> int:
             check=False,
         )
     time.sleep(max(3, min(30, time.monotonic() - started)))
-    return p.returncode
+    return process.returncode
 
 
-with socket.socket() as sock:
-    sock.bind(("127.0.0.1", 0))
-    port = sock.getsockname()[1]
+seen_run_ids: set[str] = set()
 
-if port < MIN_EPHEMERAL_PORT:
-    raise RuntimeError("Allocated port is outside the fixture port range")
-log = (ROOT / "redis.log").open("x")
 
-server = subprocess.Popen(  # noqa: S603 (explicit local Redis executable; no shell)
-    [
-        options.redis_server,
-        "--bind",
-        "127.0.0.1",
-        "--port",
-        str(port),
-        "--save",
-        "",
-        "--appendonly",
-        "no",
-        "--protected-mode",
-        "yes",
-        "--dir",
-        str(ROOT),
-    ],
-    stdout=log,
-    stderr=subprocess.STDOUT,
-)
+def redis_identity(port: int, pid: int) -> str:
+    """
+    Verify ownership before trusting the server instance identifier.
+    """
+    payload = redis_command(port, "INFO", "server")
+    if not isinstance(payload, bytes):
+        raise TypeError("Unexpected Redis INFO response")
+    info = dict(line.split(b":", 1) for line in payload.splitlines() if b":" in line)
+    if info.get(b"process_id") != str(pid).encode():
+        raise RuntimeError("Redis port is not owned by the process we launched")
+    run_id = info.get(b"run_id", b"").decode("ascii")
+    if not run_id:
+        raise RuntimeError("Missing Redis run_id")
+    return run_id
 
-results = []
-try:
+
+def await_ready(server: subprocess.Popen, port: int, metadata: dict[str, object]) -> None:
+    """
+    Verify a fresh owned empty server before any fixture timing starts.
+    """
     for _ in range(100):
         if server.poll() is not None:
             raise RuntimeError("Private Redis exited")
         try:
-            with socket.create_connection(("127.0.0.1", port), timeout=0.2) as sock:
-                sock.sendall(b"*2\r\n$4\r\nINFO\r\n$6\r\nserver\r\n")
-                with sock.makefile("rb") as stream:
-                    header = stream.readline()
-                    if not header.startswith(b"$"):
-                        raise RuntimeError("Unexpected Redis INFO response")
-                    payload = stream.read(int(header[1:]))
-                info = dict(line.split(b":", 1) for line in payload.splitlines() if b":" in line)
-                if info.get(b"process_id") != str(server.pid).encode():
-                    raise RuntimeError("Redis port is not owned by the process we launched")
-            break
+            run_id = redis_identity(port, server.pid)
+            if run_id in seen_run_ids:
+                raise RuntimeError("Reused Redis run_id")
+            size = redis_command(port, "DBSIZE")
+            metadata.update(run_id=run_id, initial_dbsize=size)
+            if size != 0:
+                raise RuntimeError("Private Redis database is not empty")
+
+            if redis_identity(port, server.pid) != run_id or server.poll() is not None:
+                raise RuntimeError("Redis identity changed during readiness")
+            seen_run_ids.add(run_id)
+            metadata["ready"] = True
         except OSError:
             time.sleep(0.05)
-    else:
-        raise RuntimeError("Private Redis not ready")
+        else:
+            return
+    raise RuntimeError("Private Redis not ready")
 
+
+def run(binary: str, args: list[str | int], tag: str) -> int:
+    """
+    Give each engine invocation its own verified empty Redis process.
+    """
+    if binary.endswith("-memory") or (args and args[1] == "memory"):
+        return run_fixture(binary, args, tag)
+    directory = ROOT / tag
+    directory.mkdir(exist_ok=False)
+    metadata: dict[str, object] = {"tag": tag, "directory": directory.name, "ready": False}
+    server = None
+    with (directory / "redis.log").open("x") as log:
+        try:
+            with socket.socket() as sock:
+                sock.bind(("127.0.0.1", 0))
+                port = sock.getsockname()[1]
+
+            if port < MIN_EPHEMERAL_PORT:
+                raise RuntimeError("Allocated port is outside the fixture port range")
+
+            server = subprocess.Popen(  # noqa: S603 (explicit local Redis executable; no shell)
+                [
+                    options.redis_server,
+                    "--bind",
+                    "127.0.0.1",
+                    "--port",
+                    str(port),
+                    "--save",
+                    "",
+                    "--appendonly",
+                    "no",
+                    "--protected-mode",
+                    "yes",
+                    "--dir",
+                    str(directory),
+                ],
+                stdout=log,
+                stderr=subprocess.STDOUT,
+            )
+
+            metadata.update(pid=server.pid, port=port)
+            await_ready(server, port, metadata)
+            fixture_args = list(args)
+            fixture_args[2] = port
+            code = run_fixture(binary, fixture_args, tag)
+            metadata["fixture_exit"] = code
+            return code
+        finally:
+            try:
+                if server is not None:
+                    stop_child(server)
+                    metadata["redis_exit"] = server.returncode
+            finally:
+                (directory / "redis-metadata.json").write_text(json.dumps(metadata, indent=2))
+
+
+def record_reopen_result(
+    results: list[dict[str, object]],
+    tag: str,
+    code: int,
+    fixture: tuple[int, str, str, str],
+) -> None:
+    """
+    Keep the independently reproduced recovery failure distinct from passing samples.
+    """
+    n, backend, mode, first = fixture
+    result: dict[str, object] = {"tag": tag, "code": code, "expected": 0, "outcome": "passed"}
+    if backend == "redis-nonvirtual" and mode == "reopen-carry" and first == "unique-only":
+        diagnostic = (ROOT / (tag + ".err")).read_text()
+        marker = (
+            "RELOAD_HISTORY_MISMATCH economics_equal=true other_fields_equal=true "
+            f"expected_replay_events={n + 2} actual_replay_events=1"
+        )
+
+        if (
+            code == -signal.SIGABRT
+            and marker in diagnostic.splitlines()
+            and "Redis lost complete replay state" in diagnostic
+        ):
+            result.update(
+                expected=code,
+                outcome="known_recovery_failure",
+                economics_equal=True,
+                other_fields_equal=True,
+                replay_history_equal=False,
+            )
+    results.append(result)
+    if code != result["expected"]:
+        raise RuntimeError(f"{tag}: unexpected exit {code}")
+
+
+results = []
+try:
     # Full state checks and duplicates are separate from measured normal-flow runs.
     for variant, n, backend, start, first, mode in itertools.product(
         ["head", "baseline"],
@@ -180,7 +328,7 @@ try:
         if mode == "continue" and first != "unique-only":
             continue
         tag = f"check-{variant}-{n}-{backend}-{start}-{first}-{mode}"
-        args = [n, backend, port, start, first, 3, "full", mode]
+        args = [n, backend, 0, start, first, 3, "full", mode]
         code = run(variant + "-engine", args, tag)
         expected = (
             DUPLICATE_RELOAD_EXIT if backend == "redis-nonvirtual" and first == "duplicate" else 0
@@ -213,12 +361,61 @@ try:
                 tag = f"measure-r{round_id}-{variant}-{n}-{backend}-{start}-{mode}"
                 code = run(
                     variant + "-engine",
-                    [n, backend, port, start, "unique-only", count, "economics", mode],
+                    [n, backend, 0, start, "unique-only", count, "economics", mode],
                     tag,
                 )
                 results.append({"tag": tag, "code": code, "expected": 0})
                 if code:
                     raise RuntimeError(f"{tag}: unexpected exit {code}")
+
+    # Closed seed -> actual engine reopen, with both history-retention choices.
+    for variant, n, backend, start, mode, first in itertools.product(
+        ["head", "baseline"],
+        [8] if options.smoke else [8, LONG_HISTORY],
+        ["memory", "redis-nonvirtual"],
+        ["cold", "warm"],
+        ["reopen-discard", "reopen-carry"],
+        ["unique-only", "duplicate", "middle", "latest"],
+    ):
+        tag = f"check-{variant}-{n}-{backend}-{start}-{first}-{mode}"
+        code = run(variant + "-engine", [n, backend, 0, start, first, 1, "full", mode], tag)
+        record_reopen_result(results, tag, code, (n, backend, mode, first))
+
+    for round_id in range(0 if options.smoke else 3):
+        variants = ["baseline", "head"] if round_id % 2 == 0 else ["head", "baseline"]
+        for n, backend, start, mode in itertools.product(
+            [8, LONG_HISTORY],
+            ["memory", "redis-nonvirtual"],
+            ["cold", "warm"],
+            ["reopen-discard", "reopen-carry"],
+        ):
+            for variant in variants:
+                tag = f"measure-r{round_id}-{variant}-{n}-{backend}-{start}-{mode}"
+                code = run(
+                    variant + "-engine",
+                    [n, backend, 0, start, "unique-only", 1, "economics", mode],
+                    tag,
+                )
+                record_reopen_result(results, tag, code, (n, backend, mode, "unique-only"))
+
+    # Allocation instrumentation runs separately from ordinary latency measurements.
+    if all(ALLOCATIONS.values()):
+        for variant, n, start, mode, first in itertools.product(
+            ["baseline", "head"],
+            [8, LONG_HISTORY],
+            ["cold", "warm"],
+            ["reopen-discard", "reopen-carry"],
+            ["unique-only", "duplicate", "middle", "latest"],
+        ):
+            tag = f"allocations-{variant}-{n}-memory-{start}-{first}-{mode}"
+            code = run(
+                str(ALLOCATIONS[variant]),
+                [n, "memory", 0, start, first, 1, "full", mode],
+                tag,
+            )
+            results.append({"tag": tag, "code": code, "expected": 0})
+            if code:
+                raise RuntimeError(f"{tag}: unexpected exit {code}")
 
     for variant in ["baseline", "head"]:
         code = run(variant + "-memory", [], "memory-" + variant)
@@ -226,14 +423,6 @@ try:
         if code:
             raise RuntimeError("Memory probe failed")
 finally:
-    try:
-        server.terminate()
-        try:
-            server.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            server.kill()
-            server.wait(timeout=10)
-    finally:
-        log.close()
-        (ROOT / "run-results.json").write_text(json.dumps(results, indent=2))
-sys.stdout.write(f"Completed {len(results)} runs\n")
+    (ROOT / "run-results.json").write_text(json.dumps(results, indent=2))
+failures = sum(result["code"] != 0 for result in results)
+sys.stdout.write(f"Completed {len(results)} runs; {failures} recorded failures (not passes)\n")

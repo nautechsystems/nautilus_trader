@@ -129,6 +129,11 @@ unsafe impl GlobalAlloc for CountedAllocator {
 }
 
 fn main() {
+    eprintln!(
+        "BUILD_IDENTITY manifest={} position_bytes={}",
+        env!("CARGO_MANIFEST_DIR"),
+        std::mem::size_of::<Position>()
+    );
     let missing = TradeId::from("MISSING");
     let _ = missing;
     println!("inline_position_bytes={}", std::mem::size_of::<Position>());

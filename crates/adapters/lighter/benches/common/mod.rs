@@ -89,7 +89,9 @@ pub(crate) fn fixed_hashed_msg() -> Fp5 {
 }
 
 pub(crate) fn fixed_signature() -> Signature {
-    fixed_sk().sign(fixed_hashed_msg(), fixed_k())
+    fixed_sk()
+        .sign(fixed_hashed_msg(), fixed_k())
+        .expect("the fixture signing nonce is valid")
 }
 
 pub(crate) fn create_order_tx() -> CreateOrderTxInfo {

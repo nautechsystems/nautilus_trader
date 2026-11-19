@@ -8,7 +8,8 @@ for each benchmark process.
 Refresh on substantive perf change or before release; bump the date.
 Absolute numbers vary by machine; only same-machine deltas are meaningful.
 Rows marked `*` use 2026-10-26 AEST measurements: Linux 7.0.0-38-generic, rustc 1.99.1, CPU 48,
-three interleaved runs per state, and concurrent workloads. Unmarked rows retain the earlier measurements.
+three interleaved runs per state, and concurrent workloads. Unmarked rows retain the earlier measurements
+unless their section records a separate baseline.
 
 ## How to reproduce
 
@@ -33,6 +34,59 @@ channel emission, and network I/O.
 | Bench                               | Median | Throughput       |
 | ----------------------------------- | ------ | ---------------- |
 | `dispatch/price_change_interleaved` | 367 ns | 16.3 M changes/s |
+
+### Local book application (`src/data/dispatch.rs`)
+
+The ignored `price_change_book_application_benchmark` compares parse-only work with the production
+`apply_book_changes` path. `wire` sets `compute_effective_deltas=false`; `effective` sets it to `true`.
+Both modes time the same application function, so their row differences do not establish a setting-specific cost.
+Criterion IDs follow `dispatch/book_application/<mode>/<batch>/<stage>`.
+
+Values are nanoseconds, rounded to 0.1 ns: the median of three session median estimates. `Added` is the
+median of the three paired session differences, so it can differ from the column difference. Its range
+shows their minimum and maximum, not a confidence interval.
+
+| Mode      | Batch    | Parse (ns) | With book (ns) | Added (ns) | Added range (ns) |
+| --------- | -------- | ---------: | -------------: | ---------: | ---------------- |
+| Wire      | Ordinary |       97.7 |          244.1 |      145.9 | [145.1, 154.5]   |
+| Effective | Ordinary |       97.1 |          247.6 |      151.9 | [146.6, 155.9]   |
+| Wire      | Crossing |       97.1 |          674.8 |      577.8 | [541.3, 595.4]   |
+| Effective | Crossing |       97.0 |          674.9 |      577.9 | [567.0, 578.3]   |
+
+Keep the local L2 book in both modes. Relative to parse-only, the production application path adds about
+150 ns per ordinary batch; the crossing case adds about 580 ns while emitting two pruning deletes.
+A top-only cache cannot enumerate the stale
+levels needed for those deletes. A separate ordered price index would still process every update and
+introduce another book representation. These measurements do not establish an end-to-end bottleneck
+that justifies that change. `dispatch/price_change_interleaved` and `inbound_pipeline/book_deltas`
+measure different work and are not controls for this comparison.
+
+- **Workload**: One instrument's one-change batch from the captured crossing-burst fixture. Ordinary
+  uses the first update after the initial 24-bid, 22-ask snapshot; crossing replays the preceding updates
+  and measures the SELL remainder that prunes two bids. Each case checks the complete output batch and
+  final best prices before timing.
+- **Timed**: Both benches parse the timestamp and construct deltas. `with_book` also fills a separate
+  delta vector, takes the DashMap write guard, and applies the L2 batch through `apply_book_changes`,
+  including cross checking and pruning. Parse-only collection reuses its input buffer, so `Added`
+  includes the buffer-handling difference as well as book application.
+- **Excluded**: Fixture decode, replay, book reset, asset lookup, grouping, the integrity lock, sequence
+  and subscription validation, channel emission, and network I/O. Snapshot seeding is not measured.
+- **Criterion**: 100 samples, one-second warm-up, three-second measurement windows. `PerIteration`
+  resets the book outside each timed call. Per-call clock timing affects the absolute estimates;
+  paired differences reduce its shared overhead.
+- **Host**: 2026-11-17, source base `35e619c2b1`, AMD Ryzen Threadripper 9980X, Linux 7.0.0-43-generic,
+  rustc 1.100.0, and `bench-lto` with the settings above. All three sessions use CPU 48 with its governor
+  set to `performance` and process ASLR disabled. Desktop processes are active during measurement.
+
+Build without affinity pinning, then run the four cases serially. Repeat the timed command three times
+with [the publication controls](../../../../docs/developer_guide/benchmarking.md#measure-criterion-for-publication):
+
+```bash
+CARGO_BUILD_JOBS=4 cargo test -p nautilus-polymarket --lib --profile bench-lto --no-run
+CARGO_BUILD_JOBS=4 taskset -c 48 setarch "$(uname -m)" -R \
+    cargo test -p nautilus-polymarket --lib --profile bench-lto \
+    price_change_book_application_benchmark -- --ignored --nocapture --test-threads=1
+```
 
 ## Inbound pipeline (`data.rs`)
 

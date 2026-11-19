@@ -73,7 +73,10 @@ mod serial_tests {
     use redis::AsyncCommands;
     use rstest::rstest;
 
-    use crate::position_flip::populate_flip_cache;
+    use crate::{
+        position_flip::populate_flip_cache,
+        position_reopen::{ReplayMode, check_netting_position_reopen},
+    };
 
     fn redis_test_mutex() -> &'static tokio::sync::Mutex<()> {
         static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
@@ -819,6 +822,56 @@ mod serial_tests {
         cache.dispose();
         let keys: Vec<String> = conn.keys(format!("{trader_key}:*")).await.unwrap();
         let _: usize = conn.del(keys).await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_netting_position_reopen_survives_cache_restart(
+        #[values(SerializationEncoding::Json, SerializationEncoding::MsgPack)]
+        encoding: SerializationEncoding,
+        #[values(ReplayMode::Fresh, ReplayMode::Carry, ReplayMode::Corrected)] mode: ReplayMode,
+    ) {
+        let _guard = redis_test_mutex().lock().await;
+        let trader_id = TraderId::from(format!("reopen-{}", UUID4::new()));
+
+        let config = CacheConfig {
+            encoding,
+            ..Default::default()
+        };
+
+        let database_config = redis_cache_config();
+        let database = RedisCacheDatabase::new(
+            trader_id,
+            UUID4::new(),
+            config.clone(),
+            database_config.clone(),
+        )
+        .await
+        .unwrap();
+        let trader_key = database.trader_key.clone();
+        let mut conn = database.con.clone();
+        let adapter = Box::new(RedisCacheDatabaseAdapter { database });
+        let mut restarted =
+            check_netting_position_reopen(adapter, &database_config, config, trader_id, mode).await;
+        restarted.close().unwrap();
+
+        let snapshot_keys: Vec<String> = conn
+            .keys(format!("{trader_key}:snapshots:positions:*"))
+            .await
+            .unwrap();
+
+        let [snapshot_key] = snapshot_keys.as_slice() else {
+            panic!("Expected exactly one position snapshot list");
+        };
+
+        let snapshot_count: usize = conn.llen(snapshot_key).await.unwrap();
+        let keys: Vec<String> = conn.keys(format!("{trader_key}:*")).await.unwrap();
+        let _: usize = conn.del(keys).await.unwrap();
+
+        assert_eq!(
+            snapshot_count,
+            if mode == ReplayMode::Fresh { 2 } else { 3 },
+        );
     }
 
     #[tokio::test]
@@ -2556,6 +2609,29 @@ mod serial_tests {
 
         assert_eq!(fills, reopened_position.events.clone());
 
+        let trader_key = &adapter.database.trader_key;
+        let snapshot = PositionSnapshot::from(&closed_position, None);
+        let summary = DatabaseQueries::serialize_payload(encoding, &snapshot).unwrap();
+        redis::pipe()
+            .atomic()
+            .rpush(
+                format!("{trader_key}:snapshots:positions:{position_id}"),
+                summary,
+            )
+            .hdel(
+                format!("{trader_key}:index:positions_replay_source"),
+                position_id.to_string(),
+            )
+            .query_async::<()>(&mut adapter.database.con.clone())
+            .await
+            .unwrap();
+
+        let loaded = adapter.load_position(&position_id).await.unwrap().unwrap();
+        assert_eq!(
+            serde_json::to_value(loaded).unwrap(),
+            serde_json::to_value(reopened_position).unwrap(),
+        );
+
         let mut adapter = adapter;
         adapter.flush().unwrap();
     }
@@ -2620,14 +2696,35 @@ mod serial_tests {
         adapter.flush().unwrap();
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_load_position_uses_latest_fill_void_snapshot() {
+    #[rstest]
+    #[case::typed_json(SerializationEncoding::Json, None)]
+    #[case::raw_json(SerializationEncoding::Json, Some("ZZVOIDJSON"))]
+    #[case::raw_msgpack(SerializationEncoding::MsgPack, Some("ZZVOIDMP"))]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_load_position_uses_latest_fill_void_snapshot(
+        #[case] encoding: SerializationEncoding,
+        #[case] raw_quote_code: Option<&str>,
+    ) {
         let _guard = redis_test_mutex().lock().await;
-        let adapter = get_redis_cache_adapter()
-            .await
-            .expect("Failed to create adapter");
+        let trader_id = TraderId::from(format!("void-replay-{}", UUID4::new()));
 
-        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let config = CacheConfig {
+            encoding,
+            ..Default::default()
+        };
+
+        let database = RedisCacheDatabase::new(
+            trader_id,
+            UUID4::new(),
+            config.clone(),
+            redis_cache_config(),
+        )
+        .await
+        .unwrap();
+        let mut adapter = RedisCacheDatabaseAdapter { database };
+
+        let quote_currency = raw_quote_code.map_or_else(Currency::USDT, unregistered_currency);
+        let instrument = instrument_quoted_in(quote_currency);
         let order = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(instrument.id())
             .side(OrderSide::Buy)
@@ -2651,7 +2748,9 @@ mod serial_tests {
             unreachable!();
         };
         let mut position = Position::new(&instrument, fill.clone());
+        let snapshot_key = format!("snapshots:positions:{position_id}");
 
+        adapter.add_currency(&quote_currency).unwrap();
         adapter.add_instrument(&instrument).unwrap();
         adapter.add_position(&position).unwrap();
 
@@ -2673,39 +2772,59 @@ mod serial_tests {
                 .position_id(position_id)
                 .build();
             position.apply_fill_void(event, voided_qty, None).unwrap();
-            adapter.update_position(&position).unwrap();
+            if raw_quote_code.is_some() {
+                let snapshot = PositionSnapshot::from_replay_state(&position, None);
+                let payload = DatabaseQueries::serialize_payload(encoding, &snapshot).unwrap();
+                adapter
+                    .database
+                    .insert(snapshot_key.clone(), Some(vec![Bytes::from(payload)]))
+                    .unwrap();
+            } else {
+                adapter.update_position(&position).unwrap();
+            }
         }
         adapter
             .snapshot_position_state(&position, UnixNanos::from(2_000_000_000), None)
             .unwrap();
 
-        let snapshot_key = format!(
-            "{}:snapshots:positions:{position_id}",
-            adapter.database.trader_key,
-        );
-        wait_until_async(
-            || async {
-                let mut conn = adapter.database.con.clone();
-                let snapshot_count = conn
-                    .llen::<_, usize>(&snapshot_key)
-                    .await
-                    .unwrap_or_default();
-                snapshot_count == 3
-                    && adapter.load_position(&position_id).await.unwrap().as_ref()
-                        == Some(&position)
-            },
-            Duration::from_secs(5),
-        )
-        .await;
+        adapter.close().unwrap();
 
-        let loaded = adapter.load_position(&position_id).await.unwrap().unwrap();
+        if let Some(code) = raw_quote_code {
+            assert_eq!(Currency::try_from_str(code), None);
+        }
+
+        adapter.database =
+            RedisCacheDatabase::new(trader_id, UUID4::new(), config, redis_cache_config())
+                .await
+                .unwrap();
+        let restored = adapter.load_all().await.unwrap();
+        let loaded = restored.positions.get(&position_id).unwrap();
+        let snapshots = adapter.database.read(&snapshot_key).await.unwrap();
+        let source = adapter.database.read("index:positions_replay_source").await;
+        clear_test_trader(&adapter).await;
+        adapter.close().unwrap();
 
         assert_eq!(loaded.quantity, Quantity::from("0.5"));
-        assert_eq!(loaded.fill_voids.len(), 2);
-        assert_eq!(loaded, position);
+        assert_eq!(
+            restored.currencies.get(&quote_currency.code),
+            Some(&quote_currency)
+        );
+        assert_eq!(
+            serde_json::to_value(loaded).unwrap(),
+            serde_json::to_value(position).unwrap(),
+        );
+        assert_eq!(snapshots.len(), 3);
+        let source = source.unwrap();
 
-        let mut adapter = adapter;
-        adapter.flush().unwrap();
+        let [source] = source.as_slice() else {
+            panic!("Expected one replay-source hash");
+        };
+
+        let source: AHashMap<String, String> = serde_json::from_slice(source).unwrap();
+        assert_eq!(
+            source,
+            AHashMap::from([(position_id.to_string(), "1".to_string())])
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]

@@ -1235,7 +1235,6 @@ pub(crate) mod serial_tests {
             cmd: GenerateFillReports,
         ) -> anyhow::Result<Vec<FillReport>> {
             let request_count = self.state.fill_report_count.fetch_add(1, Ordering::Relaxed) + 1;
-
             if request_count == 1
                 && let Some(release) = &self.fill_report_release
             {
@@ -1243,7 +1242,6 @@ pub(crate) mod serial_tests {
             }
 
             let mut responses = self.fill_report_responses.lock();
-
             let mut reports = if responses.len() > 1 {
                 responses.pop_front().unwrap()
             } else {
@@ -1255,7 +1253,6 @@ pub(crate) mod serial_tests {
             // test asserting fill application must respond inside the window.
             if self.fill_reports_at_window_end {
                 let window_end = cmd.end.unwrap_or(cmd.ts_init);
-
                 for report in &mut reports {
                     report.ts_event = window_end;
                     report.ts_init = window_end;
@@ -1322,7 +1319,6 @@ pub(crate) mod serial_tests {
 
                     *state.report_thread.lock() = Some(std::thread::current().id());
                     Self::run_report_cpu(&state, request_count);
-
                     if order_reports_complete {
                         state
                             .report_response_returned
@@ -1678,7 +1674,6 @@ pub(crate) mod serial_tests {
 
     fn apply_reconciliation_events(node: &mut LiveNode, events: &[OrderEventAny]) {
         let exec_engine = node.kernel().exec_engine().clone();
-
         for event in events {
             exec_engine.borrow_mut().process(event);
             if let OrderEventAny::Filled(fill) = event {
@@ -2762,6 +2757,7 @@ pub(crate) mod serial_tests {
                 ts,
                 None, // correlation_id
             );
+
             msgbus::publish_any(
                 MessagingSwitchboard::shutdown_system_topic(),
                 command.as_any(),
@@ -2790,7 +2786,6 @@ pub(crate) mod serial_tests {
         let mut node = LiveNode::build("TestNode".to_string(), Some(config)).unwrap();
         let handle = node.handle();
         let state_handle = handle.clone();
-
         let log_thread = std::thread::spawn(move || {
             wait_until(|| state_handle.is_running(), Duration::from_secs(5));
             log::error!("LiveNode shutdown-on-error smoke test");
@@ -3344,6 +3339,7 @@ pub(crate) mod serial_tests {
             UnixNanos::default(),
             None,
         );
+
         mass_status.add_order_reports(vec![report]);
         *source_state.mass_status.lock() = Some(mass_status);
 
@@ -3431,6 +3427,7 @@ pub(crate) mod serial_tests {
             UnixNanos::default(),
             None,
         );
+
         mass_status.add_order_reports(vec![test_order_report(
             AccountId::from(reported_account_id),
             client_order_id,
@@ -3500,6 +3497,7 @@ pub(crate) mod serial_tests {
             UnixNanos::default(),
             None,
         );
+
         mass_status.add_order_reports(vec![test_order_report(
             source_account_id,
             client_order_id,
@@ -3526,6 +3524,7 @@ pub(crate) mod serial_tests {
             .expect("untrusted cached order origin should warn, not abort startup");
 
         assert!(state.registered_external_orders.lock().is_empty());
+
         {
             let cache = node.kernel().cache();
             let cache = cache.borrow();
@@ -3560,6 +3559,7 @@ pub(crate) mod serial_tests {
             UnixNanos::default(),
             None,
         );
+
         mass_status.add_order_reports(vec![test_order_report(
             source_account_id,
             client_order_id,
@@ -3577,7 +3577,6 @@ pub(crate) mod serial_tests {
         add_accepted_test_order(&node, client_order_id, venue_order_id, source_client_id);
 
         let exec_engine = node.kernel().exec_engine().clone();
-
         let handler = ShareableMessageHandler::from_typed(move |_report: &OrderStatusReport| {
             exec_engine
                 .borrow_mut()
@@ -3938,6 +3937,7 @@ pub(crate) mod serial_tests {
 
         let driver = async {
             wait_until_async(|| async { handle.is_running() }, Duration::from_secs(2)).await;
+
             {
                 let mut cache = cache.borrow_mut();
                 cache.add_instrument(instrument).unwrap();
@@ -5935,7 +5935,6 @@ pub(crate) mod serial_tests {
         };
 
         let mut config = reconciliation_node_config(1);
-
         if timeout_retry {
             config.timeout_reconciliation = Duration::from_millis(100);
         }
@@ -6087,6 +6086,7 @@ pub(crate) mod serial_tests {
             UnixNanos::default(),
             None,
         );
+
         mass_status.add_order_reports(vec![report]);
         mass_status.add_fill_reports(vec![fill]);
         *state.mass_status.lock() = Some(mass_status);
@@ -6318,7 +6318,6 @@ pub(crate) mod serial_tests {
         let mut order_reports = Vec::with_capacity(ORDER_COUNT);
         let mut fill_reports = Vec::with_capacity(ORDER_COUNT);
         let mut order_ids = Vec::with_capacity(ORDER_COUNT);
-
         for index in 0..ORDER_COUNT {
             let client_order_id = ClientOrderId::from(format!("O-STRESS-{index:02}").as_str());
             let venue_order_id = VenueOrderId::from(format!("V-STRESS-{index:02}").as_str());
@@ -6394,7 +6393,6 @@ pub(crate) mod serial_tests {
             .await;
             let sender = get_exec_event_sender();
             let mut sample = SEED;
-
             for index in 0..EXEC_BACKLOG {
                 sample ^= sample << 13;
                 sample ^= sample >> 7;

@@ -25,7 +25,7 @@ use nautilus_common::{
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{OrderBookDeltas, OrderBookDepth, QuoteTick},
-    enums::{BookType, InstrumentClass},
+    enums::{BookAction, BookType, InstrumentClass},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::Instrument,
     orderbook::OrderBook,
@@ -33,12 +33,15 @@ use nautilus_model::{
 use ustr::Ustr;
 
 use super::{
-    BookDeltasResponse, BookDepthResponse, DataEngine, DurationNanos, FAILED, OrderBookDelta,
-    PARAMS_IS_PARENT, Params, RecordFlag, SubscribeBookDeltas, SubscribeBookDepth, SubscriptionKey,
-    TimeEventCallback, TypedHandler, UUID4, UnsubscribeBookDeltas, UnsubscribeBookDepth,
-    UnsubscribeBookSnapshots, UnsubscribeCommand, is_parent_subscription,
-    log_error_on_cache_insert,
+    BookDeltasResponse, BookDepthResponse, DataEngine, DataResponse, DataResponseEnvelope,
+    DurationNanos, FAILED, OrderBookDelta, PARAMS_IS_PARENT, Params, RecordFlag,
+    SubscribeBookDeltas, SubscribeBookDepth, SubscriptionKey, TimeEventCallback, TypedHandler,
+    UUID4, UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeBookSnapshots,
+    UnsubscribeCommand, is_parent_subscription, log_error_on_cache_insert, log_if_empty_response,
 };
+
+// Bounds the deltas held per request and instrument for a source that sets no `F_LAST`
+const REQUEST_BOOK_EVENT_OPEN_LIMIT: usize = 10_000;
 
 impl DataEngine {
     /// Returns all instrument IDs for which book delta subscriptions exist.
@@ -741,46 +744,154 @@ impl DataEngine {
         }
     }
 
-    pub(super) fn handle_book_deltas_response(&self, resp: &BookDeltasResponse) {
-        if !self.cache_is_owned_by_live_subscription(&resp.instrument_id) {
-            let mut cache = self.cache.as_ref().borrow_mut();
-            if let Some(book) = cache.order_book_mut(&resp.instrument_id) {
-                for delta in resp.data.iter() {
-                    if let Err(e) = book.apply_delta(delta) {
-                        log::error!("Failed to apply historical delta to cache: {e}");
-                    }
-                }
-            } else {
-                log::debug!(
-                    "Skipping cache write for {} historical deltas on {}: no cache book yet",
-                    resp.data.len(),
-                    resp.instrument_id,
-                );
-            }
+    // Cuts the envelope's book deltas to the events they complete, then applies and publishes
+    // those events. Returns whether the envelope still needs delivery.
+    pub(super) fn handle_book_deltas_envelope(
+        &mut self,
+        envelope: &mut DataResponseEnvelope,
+    ) -> bool {
+        let request_id = *envelope.correlation_id();
+        let completed = envelope.completed();
+        let sub_correlation_id = envelope.sub_correlation_id();
+
+        let Some(DataResponse::BookDeltas(resp)) = envelope.response_mut() else {
+            return true;
+        };
+
+        if log_if_empty_response(&resp.data, &resp.instrument_id, &request_id) {
+            return true;
         }
 
-        // Group deltas by `F_LAST` so each published batch preserves the original event
-        // boundary and metadata (timestamps and sequence from the closing delta), matching
-        // the live `handle_delta` buffering semantic. Collapsing the whole response into
-        // one batch would surface a synthetic event with the trailing delta's flags only.
-        if resp.data.is_empty() {
+        let key = (request_id, resp.instrument_id);
+        let mut events = self.request_book_events.remove(&key).unwrap_or_default();
+        let held = events.open_len();
+        let withheld = events.withheld.len();
+        let batches = events.take_ready(resp, request_id, sub_correlation_id, completed);
+        resp.data = if held == 0 && events.withheld.len() == withheld {
+            resp.data.slice(0, resp.data.len() - events.open_len())
+        } else {
+            let deltas: Vec<OrderBookDelta> = batches
+                .iter()
+                .flat_map(|batch| batch.deltas.iter().copied())
+                .collect();
+            deltas.into()
+        };
+
+        // The request's next envelope may close the open event, and its completion reads the flag
+        if events.seen_f_last || events.open.is_some() {
+            self.request_book_events.insert(key, events);
+        }
+
+        if batches.is_empty() {
+            return completed;
+        }
+
+        self.apply_book_deltas_to_cache(resp);
+
+        let topic = switchboard::get_pipeline_book_deltas_topic(resp.instrument_id);
+        for batch in &batches {
+            msgbus::publish_deltas(topic, batch);
+        }
+
+        true
+    }
+
+    fn apply_book_deltas_to_cache(&self, resp: &BookDeltasResponse) {
+        if self.cache_is_owned_by_live_subscription(&resp.instrument_id) {
             return;
         }
 
-        let topic = switchboard::get_pipeline_book_deltas_topic(resp.instrument_id);
-        let mut frame: Vec<OrderBookDelta> = Vec::new();
+        let mut cache = self.cache.as_ref().borrow_mut();
+
+        let Some(book) = cache.order_book_mut(&resp.instrument_id) else {
+            log::debug!(
+                "Skipping cache write for {} historical deltas on {}: no cache book yet",
+                resp.data.len(),
+                resp.instrument_id,
+            );
+            return;
+        };
+
         for delta in resp.data.iter() {
-            frame.push(*delta);
-            if RecordFlag::F_LAST.matches(delta.flags) {
-                let batch = OrderBookDeltas::new(resp.instrument_id, std::mem::take(&mut frame));
-                msgbus::publish_deltas(topic, &batch);
+            if let Err(e) = book.apply_delta(delta) {
+                log::error!("Failed to apply historical delta to cache: {e}");
             }
         }
+    }
 
-        if !frame.is_empty() {
-            let batch = OrderBookDeltas::new(resp.instrument_id, frame);
+    // Returns a failure reason when a source that sets `F_LAST` left an event open at a snapshot
+    // or at the end, which stays undelivered. A source that sets no `F_LAST` has its open event
+    // delivered in its own envelope.
+    pub(super) fn complete_request_book_events(&mut self, request_id: &UUID4) -> Option<String> {
+        let mut completed: Vec<(InstrumentId, RequestBookEvents)> = self
+            .request_book_events
+            .extract_if(|(id, _), _| id == request_id)
+            .map(|((_, instrument_id), events)| (instrument_id, events))
+            .collect();
+        completed.sort_by_key(|(instrument_id, _)| *instrument_id);
+
+        let mut interrupted = Vec::new();
+        let mut unterminated = Vec::new();
+
+        for (instrument_id, events) in completed {
+            for pending in &events.withheld {
+                interrupted.push(format!("{instrument_id} ({pending})"));
+            }
+
+            let Some(open) = events.open else {
+                continue;
+            };
+
+            if events.seen_f_last {
+                let pending = pending_details(&open.deltas);
+                unterminated.push(format!("{instrument_id} ({pending})"));
+                continue;
+            }
+
+            log::warn!(
+                "Publishing open book event for {instrument_id} with {} deltas without F_LAST, completed request={request_id}",
+                open.deltas.len(),
+            );
+
+            let batch = OrderBookDeltas::new(instrument_id, open.deltas);
+
+            let response = BookDeltasResponse {
+                data: batch.deltas.clone().into(),
+                ..open.response
+            };
+
+            self.apply_book_deltas_to_cache(&response);
+
+            let topic = switchboard::get_pipeline_book_deltas_topic(instrument_id);
             msgbus::publish_deltas(topic, &batch);
+
+            let response = DataResponse::BookDeltas(response);
+            let envelope = DataResponseEnvelope::new(response, false, open.sub_correlation_id)
+                .with_correlation_id(*request_id);
+            msgbus::send_response_envelope(&envelope);
         }
+
+        let mut reasons = Vec::new();
+
+        if !interrupted.is_empty() {
+            let details = interrupted.join(", ");
+            reasons.push(format!(
+                "Order book deltas reach a snapshot without an `F_LAST` delta for {details}"
+            ));
+        }
+
+        if !unterminated.is_empty() {
+            let details = unterminated.join(", ");
+            reasons.push(format!(
+                "Order book deltas end without an `F_LAST` delta for {details}"
+            ));
+        }
+
+        if reasons.is_empty() {
+            return None;
+        }
+
+        Some(reasons.join("; "))
     }
 
     pub(super) fn handle_book_depth_response(&self, resp: &BookDepthResponse) {
@@ -834,6 +945,128 @@ impl DataEngine {
 
         Ok(())
     }
+}
+
+#[derive(Debug, Default)]
+pub(super) struct RequestBookEvents {
+    open: Option<OpenBookEvent>,
+    seen_f_last: bool,
+    withheld: Vec<String>,
+}
+
+// `response` and `sub_correlation_id` rebuild the envelope the held deltas arrived in
+#[derive(Debug)]
+struct OpenBookEvent {
+    deltas: Vec<OrderBookDelta>,
+    response: BookDeltasResponse,
+    sub_correlation_id: Option<UUID4>,
+}
+
+impl RequestBookEvents {
+    fn open_len(&self) -> usize {
+        self.open.as_ref().map_or(0, |event| event.deltas.len())
+    }
+
+    // Returns the events `resp` completes, led by the deltas held from the request's earlier
+    // envelopes, and holds the open remainder for its next envelope
+    fn take_ready(
+        &mut self,
+        resp: &BookDeltasResponse,
+        request_id: UUID4,
+        sub_correlation_id: Option<UUID4>,
+        completed: bool,
+    ) -> Vec<OrderBookDeltas> {
+        let instrument_id = resp.instrument_id;
+        let mut open = self.open.take().map_or_default(|event| event.deltas);
+        let mut batches = Vec::new();
+
+        // Group deltas by `F_LAST` so each published batch preserves the original event
+        // boundary and metadata (timestamps and sequence from the closing delta), matching
+        // the live `handle_delta` buffering semantic.
+        for delta in resp.data.iter() {
+            let starts_snapshot =
+                delta.action == BookAction::Clear && RecordFlag::F_SNAPSHOT.matches(delta.flags);
+
+            if starts_snapshot && !open.is_empty() {
+                let deltas = std::mem::take(&mut open);
+                batches.extend(self.end_before_snapshot(instrument_id, deltas, request_id));
+            }
+
+            open.push(*delta);
+            if RecordFlag::F_LAST.matches(delta.flags) {
+                // A snapshot or book clear sets `F_LAST` even when the source marks no other event
+                self.seen_f_last |= !RecordFlag::F_SNAPSHOT.matches(delta.flags)
+                    && delta.action != BookAction::Clear;
+
+                let batch = OrderBookDeltas::new(instrument_id, std::mem::take(&mut open));
+                batches.push(batch);
+            }
+        }
+
+        // A source that sets no `F_LAST` closes no event, so its deltas go out at the limit and
+        // with the request's final payload
+        let releases = completed || open.len() >= REQUEST_BOOK_EVENT_OPEN_LIMIT;
+        if !self.seen_f_last && !open.is_empty() && releases {
+            log::warn!(
+                "Publishing open book event for {instrument_id} with {} deltas without F_LAST, request={request_id}",
+                open.len(),
+            );
+
+            let batch = OrderBookDeltas::new(instrument_id, std::mem::take(&mut open));
+            batches.push(batch);
+        }
+
+        if !open.is_empty() {
+            let response = BookDeltasResponse {
+                data: Vec::new().into(),
+                ..resp.clone()
+            };
+
+            self.open = Some(OpenBookEvent {
+                deltas: open,
+                response,
+                sub_correlation_id,
+            });
+        }
+
+        batches
+    }
+
+    // A snapshot starts a new event, so the event open before it can no longer close. A source
+    // that sets `F_LAST` has it withheld, and any other source has it released as its own event.
+    fn end_before_snapshot(
+        &mut self,
+        instrument_id: InstrumentId,
+        deltas: Vec<OrderBookDelta>,
+        request_id: UUID4,
+    ) -> Option<OrderBookDeltas> {
+        if self.seen_f_last {
+            log::warn!(
+                "Withholding open book event for {instrument_id} with {} deltas before a snapshot, request={request_id}",
+                deltas.len(),
+            );
+
+            let pending = pending_details(&deltas);
+            self.withheld.push(pending);
+            return None;
+        }
+
+        log::warn!(
+            "Publishing open book event for {instrument_id} with {} deltas before a snapshot, request={request_id}",
+            deltas.len(),
+        );
+
+        Some(OrderBookDeltas::new(instrument_id, deltas))
+    }
+}
+
+fn pending_details(deltas: &[OrderBookDelta]) -> String {
+    format!(
+        "{} pending, ts_init {} to {}",
+        deltas.len(),
+        deltas[0].ts_init,
+        deltas[deltas.len() - 1].ts_init,
+    )
 }
 
 #[derive(Debug, Default)]

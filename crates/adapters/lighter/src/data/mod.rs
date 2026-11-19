@@ -268,6 +268,7 @@ impl LighterDataClient {
 
     async fn shutdown_tasks(&mut self) -> anyhow::Result<()> {
         self.tasks.begin_shutdown();
+
         if let Err(e) = self
             .tasks
             .finish_shutdown(Duration::from_secs(1), DISCONNECT_TIMEOUT)

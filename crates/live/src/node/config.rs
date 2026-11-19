@@ -26,6 +26,7 @@ use nautilus_common::{
         check_supported_field, check_valid_format,
     },
     enums::Environment,
+    live::dst,
     logging::logger::LoggerConfig,
     msgbus::MessageBusConfig,
     throttler::RateLimit,
@@ -263,13 +264,11 @@ pub(crate) fn parse_rate_limit(field: impl Into<String>, input: &str) -> ConfigR
     let (limit, interval) = input
         .split_once('/')
         .ok_or_else(|| ConfigError::invalid_format(field.clone(), RATE_LIMIT_FORMAT))?;
-
     let limit = limit
         .parse::<usize>()
         .map_err(|e| ConfigError::invalid_format(field.clone(), format!("limit: {e}")))?;
 
     let mut parts = interval.split(':');
-
     let mut next = |label: &str| -> ConfigResult<u64> {
         parts
             .next()
@@ -298,7 +297,6 @@ pub(crate) fn parse_rate_limit(field: impl Into<String>, input: &str) -> ConfigR
 
     let interval_ns = DurationNanos::try_from_secs(interval_secs)
         .map_err(|e| ConfigError::range(field.clone(), e.to_string()))?;
-
     RateLimit::new_checked(limit, interval_ns).map_err(|e| ConfigError::range(field, e.to_string()))
 }
 
@@ -745,6 +743,9 @@ impl Default for PluginConfig {
 }
 
 /// Configuration for live Nautilus system nodes.
+///
+/// Connection, disconnection, and post-stop durations must fit in an unsigned 64-bit nanosecond
+/// count and in the platform's monotonic timer range.
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.live", dict, from_py_object)
@@ -856,13 +857,12 @@ impl Default for LiveNodeConfig {
 }
 
 impl LiveNodeConfig {
-    /// Validates config fields that the Rust live runtime does not support yet, and checks
-    /// that supported fields hold values the downstream engine conversions can parse.
+    /// Validates whether the Rust live runtime supports the configured fields and values.
     ///
     /// # Errors
     ///
-    /// Returns an error if a config field would otherwise be ignored at runtime, or when a
-    /// supported field holds a value that cannot be converted to its engine-side representation.
+    /// Returns an error if a field is unsupported, a value falls outside the runtime's accepted
+    /// range, or the downstream engine configuration cannot parse a value.
     pub(crate) fn validate_runtime_support(&self) -> ConfigResult<()> {
         let mut collector = ConfigErrorCollector::new();
 
@@ -876,10 +876,18 @@ impl LiveNodeConfig {
             !self.loop_debug,
             RUST_RUNTIME_UNSUPPORTED,
         ));
+        let now = dst::time::Instant::now();
+        for (field, duration) in [
+            ("timeout_connection", self.timeout_connection),
+            ("timeout_disconnection", self.timeout_disconnection),
+            ("delay_post_stop", self.delay_post_stop),
+        ] {
+            collector.collect(live_deadline(now, duration, field).map(|_| ()));
+        }
+
         collector.collect(self.data_engine.validate_runtime_support());
         collector.collect(self.risk_engine.validate_runtime_support());
         collector.collect(self.exec_engine.validate_runtime_support());
-
         if let Some(queue_monitor) = &self.queue_monitor {
             collector.collect(queue_monitor.validate());
         }
@@ -891,13 +899,31 @@ impl LiveNodeConfig {
 
     fn validate_plugin_configs(&self) -> ConfigResult<()> {
         let mut collector = ConfigErrorCollector::new();
-
         for (index, plugin) in self.plugins.iter().enumerate() {
             collector.collect(plugin.validate_runtime_support(index));
         }
 
         collector.into_result()
     }
+}
+
+pub(super) fn live_deadline(
+    now: dst::time::Instant,
+    duration: Duration,
+    field: &str,
+) -> ConfigResult<dst::time::Instant> {
+    // The engine's nanosecond range stays below Tokio's millisecond tick ceiling
+    DurationNanos::try_from(duration)
+        .ok()
+        .and_then(|_| now.checked_add(duration))
+        // Tokio rounds timer deadlines up to a millisecond
+        .filter(|deadline| deadline.checked_add(Duration::from_millis(1)).is_some())
+        .ok_or_else(|| {
+            ConfigError::range(
+                format!("LiveNodeConfig.{field}"),
+                "duration exceeds the monotonic deadline range",
+            )
+        })
 }
 
 impl PluginConfig {
@@ -1382,7 +1408,6 @@ mean_dispatch_ns_clear = 700
         };
 
         let error = config.validate_runtime_support().unwrap_err();
-
         match error {
             ConfigError::Multiple { errors } => {
                 assert_eq!(errors.len(), 2);
@@ -1942,7 +1967,6 @@ mean_dispatch_ns_clear = 700
     #[case(86_400.1)]
     fn test_duration_from_secs_f64_rejects_invalid_values(#[case] value: f64) {
         let error = duration_from_secs_f64("LiveNodeConfig.timeout_connection", value).unwrap_err();
-
         match error {
             ConfigError::Range { field, reason } => {
                 assert_eq!(field, "LiveNodeConfig.timeout_connection");

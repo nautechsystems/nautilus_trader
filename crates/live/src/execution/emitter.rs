@@ -421,6 +421,7 @@ impl ExecutionEventEmitter {
             false,
             due_post_only,
         );
+
         self.send_order_event(OrderEventAny::Rejected(event));
     }
 
@@ -451,6 +452,7 @@ impl ExecutionEventEmitter {
             venue_order_id,
             Some(self.factory.account_id()),
         );
+
         event.causation_id = causation_id;
         self.send_order_event(OrderEventAny::ModifyDenied(event));
     }
@@ -483,6 +485,7 @@ impl ExecutionEventEmitter {
             venue_order_id,
             Some(self.factory.account_id()),
         );
+
         event.causation_id = causation_id;
         self.send_order_event(OrderEventAny::ModifyRejected(event));
     }
@@ -514,6 +517,7 @@ impl ExecutionEventEmitter {
             venue_order_id,
             Some(self.factory.account_id()),
         );
+
         event.causation_id = causation_id;
         self.send_order_event(OrderEventAny::CancelDenied(event));
     }
@@ -546,6 +550,7 @@ impl ExecutionEventEmitter {
             venue_order_id,
             Some(self.factory.account_id()),
         );
+
         event.causation_id = causation_id;
         self.send_order_event(OrderEventAny::CancelRejected(event));
     }

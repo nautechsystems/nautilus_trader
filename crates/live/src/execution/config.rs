@@ -120,7 +120,6 @@ impl ExecutionManagerConfig {
     /// into one error.
     pub fn validate(&self) -> ConfigResult<()> {
         let mut errors = ConfigErrorCollector::with_capacity(3);
-
         if let Some(mins) = self.lookback_mins {
             errors.check(
                 checked_mins_to_secs(mins).is_some(),

@@ -188,7 +188,7 @@ hyper-util = { version = "0.1.21", default-features = false, features = [
 implied-vol = { version = "2.1.0" }
 indexmap = { version = "2.14.2", features = ["serde"] }
 itchy = "0.3"
-jiff = { version = "0.2.43", default-features = false, features = [
+jiff = { version = "0.2.44", default-features = false, features = [
   "perf-inline",
   "serde",
   "std",
@@ -238,8 +238,8 @@ rand = { version = "0.10.3", default-features = false, features = [
   "std",
   "thread_rng",
 ] }
-redb = { version = "4.5.0", default-features = false }
-redis = { version = "1.8.1", default-features = false, features = [
+redb = { version = "4.6.0", default-features = false }
+redis = { version = "1.8.2", default-features = false, features = [
   "connection-manager",
   "sentinel",
   "streams",

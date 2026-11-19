@@ -1281,7 +1281,17 @@ impl DatabaseQueries {
         snapshot: PositionSnapshot,
     ) -> anyhow::Result<()> {
         let mut transaction = pool.begin().await?;
+        Self::insert_position_snapshot(&mut transaction, snapshot).await?;
+        transaction
+            .commit()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to commit transaction: {e}"))
+    }
 
+    async fn insert_position_snapshot(
+        transaction: &mut Transaction<'_, Postgres>,
+        snapshot: PositionSnapshot,
+    ) -> anyhow::Result<()> {
         // Insert trader if it does not exist
         // TODO remove this when node and trader initialization is implemented
         sqlx::query(
@@ -1290,7 +1300,7 @@ impl DatabaseQueries {
         "#,
         )
         .bind(snapshot.trader_id.to_string())
-        .execute(&mut *transaction)
+        .execute(&mut **transaction)
         .await
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("Failed to insert into trader table: {e}"))?;
@@ -1339,14 +1349,10 @@ impl DatabaseQueries {
             .bind(snapshot.ts_init.to_string())
             .bind(snapshot.ts_last.to_string())
             .bind(snapshot.replay_state)
-            .execute(&mut *transaction)
+            .execute(&mut **transaction)
             .await
             .map(|_| ())
-            .map_err(|e| anyhow::anyhow!("Failed to insert into position table: {e}"))?;
-        transaction
-            .commit()
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to commit transaction: {e}"))
+            .map_err(|e| anyhow::anyhow!("Failed to insert into position table: {e}"))
     }
 
     /// Loads a `PositionSnapshot` entry by `position_id` via the provided `pool`.
@@ -1665,6 +1671,7 @@ impl DatabaseQueries {
                 .collect()
         })
         .map_err(|e| anyhow::anyhow!("Failed to load order ids: {e}"))?;
+
         for id in client_order_ids {
             let order = Self::load_order(pool, &id, trader_id).await?;
             if let Some(order) = order {
@@ -1683,6 +1690,15 @@ impl DatabaseQueries {
         pool: &PgPool,
         position_id: PositionId,
         event: &OrderFilled,
+    ) -> anyhow::Result<()> {
+        Self::replace_position(pool, position_id, event, None).await
+    }
+
+    pub(super) async fn replace_position(
+        pool: &PgPool,
+        position_id: PositionId,
+        event: &OrderFilled,
+        snapshot: Option<PositionSnapshot>,
     ) -> anyhow::Result<()> {
         let event_position_id = Self::event_position_id(event)?;
         if event_position_id != position_id {
@@ -1707,6 +1723,20 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to delete position_event rows: {e}"))?;
 
         Self::insert_position_event(&mut transaction, event).await?;
+        if let Some(snapshot) = snapshot {
+            Self::insert_position_snapshot(&mut transaction, snapshot).await?;
+        } else {
+            sqlx::query(
+                r#"UPDATE "position" SET replay_state = NULL
+                   WHERE id = $1 AND trader_id = $2 AND replay_state IS NOT NULL"#,
+            )
+            .bind(position_id.to_string())
+            .bind(event.trader_id.to_string())
+            .execute(&mut *transaction)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to clear position replay state: {e}"))?;
+        }
+
         transaction
             .commit()
             .await
@@ -1779,19 +1809,39 @@ impl DatabaseQueries {
         position_id: &PositionId,
         trader_id: &TraderId,
     ) -> anyhow::Result<Option<Position>> {
-        if let Some(snapshot) = Self::load_position_snapshot(pool, position_id, trader_id).await?
-            && let Some(replay_state) = snapshot.replay_state
-        {
+        let rows = sqlx::query(
+            r#"
+            SELECT snapshot.replay_state, fill.*
+            FROM (VALUES ($1::text, $2::text)) AS target(position_id, trader_id)
+            LEFT JOIN "position" AS snapshot
+                ON snapshot.id = target.position_id AND snapshot.trader_id = target.trader_id
+            LEFT JOIN position_event AS fill
+                ON snapshot.replay_state IS NULL
+                AND fill.position_id = target.position_id AND fill.trader_id = target.trader_id
+            WHERE snapshot.replay_state IS NOT NULL OR fill.event_sequence IS NOT NULL
+            ORDER BY fill.event_sequence ASC
+        "#,
+        )
+        .bind(position_id.to_string())
+        .bind(trader_id.to_string())
+        .fetch_all(pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to load position replay state or events: {e}"))?;
+
+        let Some((first, remaining)) = rows.split_first() else {
+            return Ok(None);
+        };
+
+        let replay_state: Option<serde_json::Value> = first.try_get("replay_state")?;
+        if let Some(replay_state) = replay_state {
             let position: Position = serde_json::from_value(replay_state)
                 .map_err(|e| anyhow::anyhow!("Failed to decode position replay state: {e}"))?;
             position.check_accounting()?;
             return Ok(Some(position));
         }
 
-        let fills = Self::load_position_events(pool, position_id, trader_id).await?;
-        let Some((first_fill, remaining_fills)) = fills.split_first() else {
-            return Ok(None);
-        };
+        let first_fill = OrderFilledRow::from_row(first)?.0;
+
         let Some(instrument) = Self::load_instrument(pool, &first_fill.instrument_id).await? else {
             log::error!(
                 "Instrument not found for position {position_id}: {}",
@@ -1800,8 +1850,10 @@ impl DatabaseQueries {
             return Ok(None);
         };
 
-        let mut position = Position::new_checked(&instrument, first_fill.clone())?;
-        for fill in remaining_fills {
+        let mut position = Position::new_checked(&instrument, first_fill)?;
+
+        for row in remaining {
+            let fill = OrderFilledRow::from_row(row)?.0;
             if position.trade_ids.contains(&fill.trade_id) {
                 anyhow::bail!(
                     "Duplicate fill event for position {position_id}: {}",
@@ -1809,7 +1861,7 @@ impl DatabaseQueries {
                 );
             }
 
-            position.try_apply(fill)?;
+            position.try_apply(&fill)?;
         }
 
         Ok(Some(position))
@@ -2125,6 +2177,7 @@ impl DatabaseQueries {
                 .collect()
         })
         .map_err(|e| anyhow::anyhow!("Failed to load account ids: {e}"))?;
+
         for id in account_ids {
             let account = Self::load_account(pool, &id, trader_id).await?;
             if let Some(account) = account {

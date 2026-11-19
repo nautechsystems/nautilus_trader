@@ -1115,6 +1115,12 @@ async fn handle_positions(State(state): State<TestServerState>) -> Json<serde_js
     Json(load_test_data("http_get_positions.json"))
 }
 
+async fn handle_funding_rates() -> Json<serde_json::Value> {
+    let mut payload = load_test_data("http_get_funding_rates.json");
+    payload["funding_rates"].as_array_mut().unwrap().reverse();
+    Json(payload)
+}
+
 fn create_test_router(state: TestServerState) -> Router {
     Router::new()
         // WebSocket routes
@@ -1128,6 +1134,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/risk-snapshot", get(handle_get_risk_snapshot))
         .route("/whoami", get(handle_get_whoami))
         .route("/positions", get(handle_positions))
+        .route("/funding-rates", get(handle_funding_rates))
         .route("/cancel-all-orders", post(handle_cancel_all_orders))
         .route(
             "/preview-aggressive-limit-order",

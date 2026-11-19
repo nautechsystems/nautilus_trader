@@ -32,6 +32,7 @@ pub(super) fn bench_corpus(c: &mut Criterion) {
                     .collect()
             })
             .collect();
+
         let encoded: Vec<String> = inputs
             .iter()
             .map(|bytes| bytes.iter().map(|byte| format!("{byte:02x}")).collect())
@@ -42,6 +43,7 @@ pub(super) fn bench_corpus(c: &mut Criterion) {
             assert_eq!(hex::encode_prefixed(bytes), format!("0x{expected}"));
             assert_eq!(hex::decode(expected).unwrap(), *bytes);
         }
+
         group.throughput(Throughput::Elements(len as u64));
         group.bench_with_input(BenchmarkId::new("encode", len), &inputs, |b, inputs| {
             let mut cursor = 0;
@@ -51,6 +53,7 @@ pub(super) fn bench_corpus(c: &mut Criterion) {
                 black_box(result)
             });
         });
+
         group.bench_with_input(BenchmarkId::new("prefixed", len), &inputs, |b, inputs| {
             let mut cursor = 0;
             b.iter(|| {
@@ -59,6 +62,7 @@ pub(super) fn bench_corpus(c: &mut Criterion) {
                 black_box(result)
             });
         });
+
         group.bench_with_input(BenchmarkId::new("decode", len), &encoded, |b, inputs| {
             let mut cursor = 0;
             b.iter(|| {
@@ -68,5 +72,6 @@ pub(super) fn bench_corpus(c: &mut Criterion) {
             });
         });
     }
+
     group.finish();
 }

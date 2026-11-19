@@ -113,16 +113,6 @@ impl WsSubscriptionHandle {
             })
             .map_err(|e| anyhow::anyhow!("Failed to send CycleMarketSubscription: {e}"))
     }
-
-    // Constructs a handle around a raw command sender. Test-only: lets unit
-    // tests observe the commands the handle emits without spinning up the real
-    // feed handler.
-    #[cfg(test)]
-    pub(crate) fn from_sender(sender: tokio::sync::mpsc::UnboundedSender<HandlerCommand>) -> Self {
-        Self {
-            cmd_tx: Arc::new(tokio::sync::RwLock::new(sender)),
-        }
-    }
 }
 
 /// Provides a WebSocket client for the Polymarket CLOB API.
@@ -276,11 +266,6 @@ impl PolymarketWebSocketClient {
     pub(crate) fn with_socket_control(mut self, control: SocketControl) -> Self {
         self.socket_control = Some(control);
         self
-    }
-
-    #[cfg(test)]
-    pub(crate) fn proxy_url(&self) -> Option<&ProxyUrl> {
-        self.proxy_url.as_ref()
     }
 
     /// Establishes the WebSocket connection and spawns the message handler.
@@ -678,6 +663,22 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    impl WsSubscriptionHandle {
+        pub(crate) fn from_sender(
+            sender: tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
+        ) -> Self {
+            Self {
+                cmd_tx: Arc::new(tokio::sync::RwLock::new(sender)),
+            }
+        }
+    }
+
+    impl PolymarketWebSocketClient {
+        pub(crate) fn proxy_url(&self) -> Option<&ProxyUrl> {
+            self.proxy_url.as_ref()
+        }
+    }
 
     #[rstest]
     #[case("wss://stream.example.com/feed", "wss://stream.example.com")]

@@ -1425,6 +1425,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             }
         };
         let old_venue_order_id = venue_order_id.filter(|id| id.as_str().parse::<u64>().is_ok());
+
         if matches!(modify_target, HyperliquidExchangeModifyTarget::Cloid(_))
             && old_venue_order_id.is_none()
         {
@@ -2177,6 +2178,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         // Post-WS setup: if any step fails, tear down WS before returning
         if let Err(e) = self.await_account_registered(30.0).await {
             log::warn!("Connect failed after WS started, tearing down: {e}");
+
             if let Err(teardown_error) = self.teardown_partial_connect().await {
                 return Err(e.context(format!(
                     "Hyperliquid execution startup teardown failed: {teardown_error}"

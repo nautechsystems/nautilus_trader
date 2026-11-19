@@ -293,6 +293,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
                             .map_or_default(|s| s.replace('/', ":"));
 
                         let ack = json!({"type":"unsubscribed", "channel": channel});
+
                         if sink
                             .send(Message::Text(ack.to_string().into()))
                             .await

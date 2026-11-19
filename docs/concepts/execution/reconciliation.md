@@ -517,7 +517,7 @@ flowchart TD
     Fills --> Pos[Position Reconciliation<br/>compare net positions per instrument]
     Pos --> Match{Positions<br/>match venue?}
     Match -->|Yes| Done[Reconciliation complete<br/>system ready for trading]
-    Match -->|No| Gen[Generate missing orders<br/>strategy: EXTERNAL, tag: RECONCILIATION]
+    Match -->|No| Gen[Generate missing orders<br/>Claiming strategy or EXTERNAL<br/>Tag RECONCILIATION]
     Gen --> Recovered{In-scope reports match<br/>within tolerances?}
     Recovered -->|Yes| Done
     Recovered -->|No| Abort[Startup fails<br/>actors and strategies do not start]
@@ -582,8 +582,9 @@ Ordering changes only when events apply. Each event keeps its reported timestamp
   the account's quantity tolerance.
 - Generates external order events when order reconciliation leaves a position that differs from
   the venue.
-- When `generate_missing_orders` is enabled (default: True), generates orders with strategy ID
-  `EXTERNAL` and tag `RECONCILIATION` to align discrepancies.
+- When `generate_missing_orders` is enabled (default: True), generates orders tagged
+  `RECONCILIATION` to align discrepancies. The orders belong to the claiming strategy for the
+  instrument, or to `EXTERNAL` if there is no active claim.
 - Logs a warning when NETTING ownership is split across multiple strategies for the same account
   and instrument, since venue position reports are account-level net positions.
 

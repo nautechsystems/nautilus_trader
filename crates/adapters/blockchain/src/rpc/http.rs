@@ -840,6 +840,7 @@ impl BlockchainHttpRpcClient {
         let parsed =
             serde_json::from_slice::<RpcNodeHttpResponse<serde_json::Value>>(bytes.as_ref())
                 .map_err(|_| anyhow::anyhow!("Failed to parse debug_traceTransaction response"))?;
+
         if parsed.jsonrpc.is_none()
             && let (Some(code), Some(_)) = (parsed.code, parsed.message)
         {

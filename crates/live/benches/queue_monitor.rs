@@ -69,7 +69,6 @@ fn bench_evaluate_batch(c: &mut Criterion) {
     group.bench_function("steady_1024_ticks", |b| {
         b.iter(|| {
             let mut monitor = QueueMonitor::new(&config, RunnerMetricsSnapshot::default());
-
             for snapshot in snapshots.iter().copied() {
                 black_box(monitor.evaluate(black_box(snapshot)));
             }

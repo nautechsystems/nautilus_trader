@@ -244,6 +244,7 @@ async fn handle_public_ws_upgrade(
 
 async fn handle_public_ws_socket(mut socket: WebSocket, state: Arc<WsTeardownState>) {
     state.opened.fetch_add(1, Ordering::Relaxed);
+
     while socket.next().await.is_some() {}
     state.closed.fetch_add(1, Ordering::Relaxed);
 }

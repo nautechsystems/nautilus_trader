@@ -183,7 +183,6 @@ pub unsafe extern "C" fn min_increment_precision_from_cstr(ptr: *const c_char) -
 // TODO: Remove this temporary parser when v1 drops its legacy source-text precision contract
 fn precision_from_v1_str(value: &str) -> u8 {
     let value = value.trim().to_ascii_lowercase();
-
     if value.contains("e-") {
         let exponent = value
             .split("e-")

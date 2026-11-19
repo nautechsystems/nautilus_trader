@@ -333,9 +333,9 @@ and output format.
 - `GET /fills` and `GET /funding-rates` use cursor pagination. The adapter traverses each cursor chain as a
   best-effort historical read. AX corrections during traversal are not an atomic snapshot.
 - `GET /orders` exposes cursor metadata and supports `order_id`, `order_ids`, `account_id`, and
-  optional timestamp filters. Order-report history traversals follow the cursor chain,
-  accept partial pages, and validate declared limits and totals. Empty continuation pages,
-  repeated cursors, duplicate order IDs, and incomplete declared totals fail the request.
+  optional timestamp filters. Order-report history follows the cursor chain through partial and
+  empty pages and validates declared limits and totals. An empty string or repeated value in
+  `next_cursor`, duplicate order IDs, and incomplete declared totals fail the request.
 - Open-order, historical-order, fill, and position report requests resolve an uncached symbol
   through `GET /instrument` and cache the result. An instrument request or parse failure fails that
   entire report request instead of dropping venue state.

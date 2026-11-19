@@ -486,7 +486,6 @@ mod tests {
     fn object(token: &str, tagged: bool) -> String {
         let mut fields = BTreeMap::new();
         fields.insert("value", RawValue::from_string(token.to_string()).unwrap());
-
         if tagged {
             fields.insert(
                 "kind",

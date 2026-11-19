@@ -58,9 +58,8 @@ python = [
   "streaming",
 ]
 defi = [
-  "dep:nautilus-data",
   "nautilus-common/defi",
-  "nautilus-data/defi",
+  "nautilus-data?/defi",
   "nautilus-persistence?/defi",
 ]
 simulation = [
@@ -74,11 +73,6 @@ test-support = [
   "dep:nautilus-testkit",
   "dep:nautilus-trading",
 ]
-
-[package.metadata.cargo-machete]
-ignored = [
-  "nautilus-persistence",
-] # Optional dep activated only via the streaming feature
 
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
@@ -140,7 +134,6 @@ rust_decimal_macros = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "macros", "rt"] }
 tokio-tungstenite = { workspace = true }
 toml = { workspace = true }
-ustr = { workspace = true }
 
 # Run with `cargo bench -p nautilus-live --bench runner`
 [[bench]]

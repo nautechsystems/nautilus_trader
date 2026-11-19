@@ -46,7 +46,9 @@ use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 use ustr::Ustr;
 
-use crate::common::server::start_test_server as start_common_test_server;
+use crate::common::server::{
+    create_test_instrument, start_test_server as start_common_test_server,
+};
 
 #[derive(Debug, Clone, Copy)]
 enum RequiredInstrumentCachePath {
@@ -1652,13 +1654,6 @@ async fn test_unknown_order_classification_aborts_complete_snapshot(
     1,
     "AX orders returned an empty next_cursor"
 )]
-#[case::empty_page(
-    Some(1),
-    Some(100),
-    Some("next"),
-    0,
-    "AX orders returned an empty page with a next_cursor"
-)]
 #[tokio::test]
 async fn test_order_history_rejects_invalid_page_metadata(
     #[case] total: Option<i64>,
@@ -1705,6 +1700,63 @@ async fn test_order_history_rejects_invalid_page_metadata(
         .unwrap_err();
     assert_eq!(error.to_string(), expected);
     server.abort();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_order_history_follows_cursor_through_empty_page() {
+    let mut payload = load_test_data("http_get_orders.json");
+    payload["orders"][1]["o"] = json!("CANCELED");
+    payload["orders"][1]["xq"] = json!(0);
+
+    let app = Router::new().route(
+        "/orders",
+        get(move |Query(query): Query<HashMap<String, String>>| {
+            let payload = payload.clone();
+
+            async move {
+                let (orders, next_cursor) = match query.get("cursor").map(String::as_str) {
+                    None => (vec![payload["orders"][0].clone()], Some("empty")),
+                    Some("empty") => (vec![], Some("remaining")),
+                    Some("remaining") => (vec![payload["orders"][1].clone()], None),
+                    cursor => panic!("Unexpected orders cursor {cursor:?}"),
+                };
+
+                Json(json!({
+                    "orders": orders,
+                    "total_count": 2,
+                    "limit": 100,
+                    "next_cursor": next_cursor,
+                }))
+            }
+        }),
+    );
+
+    let addr = start_server(app).await;
+    let url = format!("http://{addr}");
+    let client = AxHttpClient::new(Some(url.clone()), Some(url), 5, 0, 1, 1, None).unwrap();
+    client.set_session_token("test-token".into());
+    client.cache_instrument(create_test_instrument("EURUSD-PERP"));
+    client.cache_instrument(create_test_instrument("GBPUSD-PERP"));
+
+    let reports = client
+        .request_historical_order_status_reports(
+            AccountId::from("AX-001"),
+            None,
+            None,
+            None::<fn(u64) -> Option<ClientOrderId>>,
+        )
+        .await
+        .unwrap();
+
+    let ids: Vec<_> = reports.iter().map(|report| report.venue_order_id).collect();
+    assert_eq!(
+        ids,
+        [
+            VenueOrderId::from("O-01ARZ3NDEKTSV4RRFFQ69G5FAV"),
+            VenueOrderId::from("O-01ARZ3NDEKTSV4RRFFQ69G5FBW"),
+        ]
+    );
 }
 
 #[rstest]

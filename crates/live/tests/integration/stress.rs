@@ -318,7 +318,6 @@ async fn stress_trade_burst() {
     let handle = node.handle();
 
     let driver_handle = handle.clone();
-
     let driver = async move {
         wait_until_running(&driver_handle).await;
 
@@ -442,7 +441,6 @@ async fn stress_cancel_starvation() {
         let mut yield_iters_total: u64 = 0;
         let mut yield_iters_max: u32 = 0;
         let trade_step = total_trades / cancels;
-
         for seq in 0..cancels {
             for _ in 0..trade_step {
                 data_sender

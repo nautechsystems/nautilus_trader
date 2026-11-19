@@ -476,7 +476,6 @@ impl LiveNodeBuilder {
         routing: RoutingConfig,
     ) -> anyhow::Result<Self> {
         let name = name.unwrap_or_else(|| factory.name().to_string());
-
         if self.data_client_factories.contains_key(&name) {
             anyhow::bail!("Data client '{name}' is already registered");
         }
@@ -521,7 +520,6 @@ impl LiveNodeBuilder {
         routing: RoutingConfig,
     ) -> anyhow::Result<Self> {
         let name = name.unwrap_or_else(|| factory.name().to_string());
-
         if self.exec_client_factories.contains_key(&name) {
             anyhow::bail!("Execution client '{name}' is already registered");
         }
@@ -548,7 +546,6 @@ impl LiveNodeBuilder {
         config: Box<dyn ClientConfig>,
     ) -> anyhow::Result<Self> {
         let name = name.unwrap_or_else(|| factory.name().to_string());
-
         if self.exec_client_factories.contains_key(&name) {
             anyhow::bail!("Execution client '{name}' is already registered");
         }
@@ -631,7 +628,6 @@ impl LiveNodeBuilder {
         }
 
         let (external_egress, external_ingress) = self.create_external_msgbus(&kernel)?;
-
         if let Some(external_egress) = external_egress {
             let config = self.config.msgbus.clone().unwrap_or_default();
             nautilus_common::msgbus::get_message_bus()
@@ -666,7 +662,6 @@ impl LiveNodeBuilder {
                 {
                     let mut data_engine = kernel.data_engine.borrow_mut();
                     data_engine.register_client(adapter, venue);
-
                     if routing.default {
                         data_engine.set_default_client(client_id)?;
                     }
@@ -725,7 +720,6 @@ impl LiveNodeBuilder {
                 {
                     let mut exec_engine = kernel.exec_engine.borrow_mut();
                     exec_engine.register_client(Box::new(client.clone()))?;
-
                     if routing.default {
                         exec_engine.set_default_client(client_id)?;
                         has_default_client = true;
@@ -737,7 +731,6 @@ impl LiveNodeBuilder {
                             exec_engine.register_venue_routing(client_id, route_venue)?;
                             venues_explicit.insert(route_venue);
                             instrument_venues.insert(route_venue);
-
                             if client.settles_contract_expirations() {
                                 self_settling_venues.insert(route_venue);
                             }
@@ -747,7 +740,6 @@ impl LiveNodeBuilder {
 
                 venue_candidates.entry(venue).or_default().push(client_id);
                 instrument_venues.insert(venue);
-
                 if client.settles_contract_expirations() {
                     self_settling_venues.insert(venue);
                 }
@@ -780,7 +772,6 @@ impl LiveNodeBuilder {
 
         for venue in instrument_venues {
             ExecutionEngine::subscribe_venue_instruments(&kernel.exec_engine, venue);
-
             if !self_settling_venues.contains(&venue) {
                 ExecutionEngine::subscribe_venue_instrument_closes(&kernel.exec_engine, venue);
             }
@@ -847,7 +838,6 @@ impl LiveNodeBuilder {
             .is_some_and(|streams| !streams.is_empty());
         config.validate()?;
         let backing = factory.create(self.config.trader_id, kernel.instance_id, config)?;
-
         if has_external_streams {
             let (external_egress, external_ingress) = external_io_from_backing(backing);
             Ok((
@@ -958,7 +948,6 @@ mod tests {
         let mut builder =
             LiveNodeBuilder::new(TraderId::test_default(), Environment::Live).unwrap();
         let mut indices: Vec<_> = (0..count).collect();
-
         if reverse {
             indices.reverse();
         }
@@ -1103,6 +1092,7 @@ mod tests {
             .quantity(Quantity::from(200))
             .price(Price::from("1.00000"))
             .build();
+
         {
             let mut cache = node.kernel().cache.borrow_mut();
             cache.add_instrument(instrument).unwrap();
@@ -1228,6 +1218,7 @@ mod tests {
         let native = audusd_sim();
         let mut other = native.clone();
         other.id.venue = Venue::from("OTHER");
+
         let instruments = [
             InstrumentAny::CurrencyPair(native),
             InstrumentAny::CurrencyPair(other),
@@ -1321,6 +1312,7 @@ mod tests {
                 OmsType::Netting,
                 None,
             );
+
             builder = builder
                 .add_exec_client_with_routing(
                     Some(format!("client-{i}")),
@@ -1354,6 +1346,7 @@ mod tests {
             UnixNanos::default(),
             None,
         );
+
         AccountAny::Cash(CashAccount::new(state, false, false))
     }
 

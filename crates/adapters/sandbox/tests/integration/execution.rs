@@ -6323,6 +6323,7 @@ fn test_submit_order_through_exec_engine_no_reentrant_panic(
     let submit_time = test_clock.borrow().timestamp_ns();
     let due = UnixNanos::from(*submit_time + INSERT_LATENCY_NS);
     let first = submit_market("O-ENGINE-1");
+
     if deferred {
         // The first submit is due but unreleased when the second arrives under the engine's
         // borrow, so the second is issued against a due queue and joins it behind the first

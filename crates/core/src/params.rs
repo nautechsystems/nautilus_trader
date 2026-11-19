@@ -557,6 +557,7 @@ mod tests {
                 .map(|(key, value)| (key.clone(), value.clone()))
                 .collect(),
         );
+
         let empty = Params::from_shared(IndexMap::new());
 
         assert_eq!(first, reverse);

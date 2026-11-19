@@ -66,7 +66,7 @@ use nautilus_model::{
     orders::{
         Order, OrderAny, OrderError, OrderList,
         builder::OrderTestBuilder,
-        stubs::{TestOrderEventStubs, TestOrdersGenerator},
+        stubs::{OrderFilledTestBuilder, TestOrderEventStubs, TestOrderStubs, TestOrdersGenerator},
     },
     position::{Position, PositionReplayEvent},
     stubs::TestDefault,
@@ -2125,6 +2125,107 @@ fn test_build_index_replaces_combined_reload_and_preserves_persisted_mappings(
     assert_eq!(cache.venue_order_id(&stale_order_id), None);
     assert!(!cache.is_order_pending_cancel_local(&stale_order_id));
     assert_eq!(cache.oms_type(&stale_position_id), None);
+    assert!(cache.check_integrity());
+}
+
+#[rstest]
+fn test_build_index_restores_open_orders_for_position_after_load(audusd_sim: CurrencyPair) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let entry_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::new("O-ENTRY"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let mut entry_order = TestOrderStubs::make_accepted_order(&entry_order);
+    let fill = OrderFilledTestBuilder::new(&entry_order, &instrument)
+        .without_position_id()
+        .build();
+    entry_order.apply(fill.clone()).unwrap();
+
+    let OrderEventAny::Filled(mut position_fill) = fill else {
+        panic!("Expected the entry order to be filled");
+    };
+
+    // Recover the entry from fill history and the stop from the persisted mapping
+    let position_id = PositionId::new("P-ENTRY");
+    position_fill.position_id = Some(position_id);
+    let position = Position::new(&instrument, position_fill);
+    let destination = snapshot_test_position();
+    let destination_id = destination.id;
+    let strategy_id = position.strategy_id;
+    let entry_order_id = entry_order.client_order_id();
+    let stop_order_id = ClientOrderId::new("O-STOP");
+    let mut stop_order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument.id())
+        .client_order_id(stop_order_id)
+        .strategy_id(position.strategy_id)
+        .side(OrderSide::Sell)
+        .quantity(position.quantity)
+        .trigger_price(Price::from("0.99900"))
+        .reduce_only(true)
+        .build();
+    let accepted = TestOrderEventStubs::accepted(
+        &stop_order,
+        position.account_id,
+        VenueOrderId::new("V-STOP"),
+    );
+    stop_order.apply(accepted).unwrap();
+
+    let database = SnapshotBlobTestDatabase {
+        orders: AHashMap::from([(entry_order_id, entry_order), (stop_order_id, stop_order)]),
+        positions: AHashMap::from([(position_id, position), (destination_id, destination)]),
+        order_positions: AHashMap::from([(stop_order_id, position_id)]),
+        ..Default::default()
+    };
+
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    futures::executor::block_on(cache.cache_all()).unwrap();
+    cache.build_index();
+
+    assert_eq!(cache.position_id(&stop_order_id), Some(&position_id));
+    assert_eq!(cache.order_ref(&stop_order_id).unwrap().position_id(), None);
+    assert!(cache.is_order_open(&stop_order_id));
+    assert_eq!(
+        order_id_set(&cache.orders_for_position(&position_id)),
+        AHashSet::from([entry_order_id, stop_order_id]),
+    );
+    assert!(cache.check_integrity());
+
+    let venue = instrument.id().venue;
+    cache
+        .add_position_id(&position_id, &venue, &entry_order_id, &strategy_id)
+        .unwrap();
+
+    for order_id in [entry_order_id, stop_order_id] {
+        cache
+            .add_position_id(&destination_id, &venue, &order_id, &strategy_id)
+            .unwrap();
+    }
+
+    assert_eq!(cache.position_id(&stop_order_id), Some(&destination_id));
+    assert_eq!(
+        order_id_set(&cache.orders_for_position(&destination_id)),
+        AHashSet::from([entry_order_id, stop_order_id]),
+    );
+
+    let stop_order = cache.order_owned(&stop_order_id).unwrap();
+    let canceled = TestOrderEventStubs::canceled(
+        &stop_order,
+        stop_order.account_id().unwrap(),
+        stop_order.venue_order_id(),
+    );
+    cache.update_order(&canceled).unwrap();
+    cache.purge_order(stop_order_id, false).unwrap();
+
+    assert_eq!(
+        order_id_set(&cache.orders_for_position(&position_id)),
+        AHashSet::from([entry_order_id]),
+    );
+    assert_eq!(
+        order_id_set(&cache.orders_for_position(&destination_id)),
+        AHashSet::from([entry_order_id]),
+    );
     assert!(cache.check_integrity());
 }
 
@@ -8180,6 +8281,7 @@ fn test_price_mid_defi_precisions(mut cache: Cache, audusd_sim: CurrencyPair) {
             Some((max - 1, precision)),
         );
         assert_eq!(max % 10, 0);
+
         for (bid_raw, ask_raw, expected_raw) in [
             (max - 1, max, max),
             (max - 2, max - 1, max - 2),
@@ -14051,6 +14153,7 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
             .lock()
             .actor_updates
             .push((*actor_id, state.clone()));
+
         if self.fail_persistence_io {
             anyhow::bail!("state I/O failed");
         }
@@ -14066,6 +14169,7 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
             .lock()
             .strategy_updates
             .push((*strategy_id, state.clone()));
+
         if self.fail_persistence_io {
             anyhow::bail!("state I/O failed");
         }

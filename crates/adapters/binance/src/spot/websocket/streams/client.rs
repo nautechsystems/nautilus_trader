@@ -344,6 +344,7 @@ impl BinanceSpotWebSocketClient {
             .flat_map(|slot| std::mem::take(&mut slot.shutdown_errors))
             .collect::<Vec<_>>();
         batch.slots.retain(|slot| slot.task_handle.is_some());
+
         if !errors.is_empty() {
             return Err(BinanceWsError::ClientError(errors.join("; ")));
         }

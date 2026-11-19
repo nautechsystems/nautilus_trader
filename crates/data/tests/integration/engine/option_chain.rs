@@ -13,6 +13,21 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::sync::Arc;
+
+use nautilus_common::{
+    actor::{
+        DataActor, DataActorCore,
+        data_actor::DataActorConfig,
+        registry::{deregister_actor, get_actor_unchecked, register_actor},
+    },
+    component::Component,
+    messages::data::DataRequestFailed,
+    nautilus_actor,
+    runner::{SyncDataCommandSender, set_data_cmd_sender},
+};
+use nautilus_model::identifiers::ActorId;
+
 use super::*;
 
 #[rstest]
@@ -157,7 +172,7 @@ fn test_reset_clears_book_and_option_chain_state_and_allows_resubscribe(
 }
 
 #[rstest]
-fn test_external_option_chain_releases_after_final_owner(
+fn test_external_option_chain_releases_each_owner(
     #[values(false, true)] stopped: bool,
     _stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
@@ -203,52 +218,34 @@ fn test_external_option_chain_releases_after_final_owner(
         data_engine.stop();
     }
 
-    data_engine.execute(DataCommand::Subscribe(subscribe(
-        UUID4::new(),
-        "50000",
-        first_params,
-    )));
-    data_engine.execute(DataCommand::Subscribe(subscribe(
-        UUID4::new(),
-        "51000",
-        second_params.clone(),
-    )));
+    let first = subscribe(UUID4::new(), "50000", first_params.clone());
+    let second = subscribe(UUID4::new(), "51000", second_params.clone());
+    data_engine.execute(DataCommand::Subscribe(first.clone()));
+    data_engine.execute(DataCommand::Subscribe(second.clone()));
     assert_eq!(
         subscribe_saver.get_messages().len(),
         if stopped { 0 } else { 2 }
     );
 
-    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::OptionChain(
-        UnsubscribeOptionChain::new(
-            series_id,
-            UUID4::new(),
-            UnixNanos::from(1),
-            Some(client_id),
-            Some(venue),
-        ),
-    )));
-    assert!(unsubscribe_saver.get_messages().is_empty());
+    for (subscribe, params, ts) in [(first, first_params, 1), (second, second_params, 2)] {
+        let owner_id = subscribe.command_id();
+        let unsubscribe = subscribe.into_unsubscribe(UUID4::new(), UnixNanos::from(ts), None);
+        data_engine.execute(DataCommand::Unsubscribe(unsubscribe.clone()));
+        data_engine.execute(DataCommand::Unsubscribe(unsubscribe));
+        let commands = unsubscribe_saver.get_messages();
+        assert_eq!(commands.len(), ts as usize);
 
-    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::OptionChain(
-        UnsubscribeOptionChain::new(
-            series_id,
-            UUID4::new(),
-            UnixNanos::from(2),
-            Some(client_id),
-            Some(venue),
-        ),
-    )));
-    let commands = unsubscribe_saver.get_messages();
+        let UnsubscribeCommand::OptionChain(command) = commands.last().unwrap() else {
+            panic!("expected external option chain unsubscribe");
+        };
 
-    let [UnsubscribeCommand::OptionChain(command)] = commands.as_slice() else {
-        panic!("expected one final external option chain unsubscribe, was {commands:?}");
-    };
-
-    assert_eq!(command.series_id, series_id);
-    assert_eq!(command.client_id, Some(client_id));
-    assert_eq!(command.venue, Some(venue));
-    assert_eq!(command.ts_init, UnixNanos::from(2));
-    assert_eq!(command.params.as_ref(), Some(&second_params));
+        assert_eq!(command.series_id, series_id);
+        assert_eq!(command.client_id, Some(client_id));
+        assert_eq!(command.venue, Some(venue));
+        assert_eq!(command.ts_init, UnixNanos::from(ts));
+        assert_eq!(command.correlation_id, Some(owner_id));
+        assert_eq!(command.params.as_ref(), Some(&params));
+    }
 }
 
 #[rstest]
@@ -885,10 +882,10 @@ fn test_option_chain_manager_survives_partial_retirement(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
-    let client_id = ClientId::new("DERIBIT");
-    let venue = Venue::new("DERIBIT");
-    let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+    let engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
+    let client_id = ClientId::from("DERIBIT");
+    let venue = Venue::from("DERIBIT");
+    let recorder = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         clock,
         Rc::clone(&cache),
@@ -896,65 +893,48 @@ fn test_option_chain_manager_survives_partial_retirement(
         venue,
         Some(venue),
         &recorder,
-        &mut data_engine.borrow_mut(),
+        &mut engine.borrow_mut(),
     );
-    let _ = cache
+    cache
         .borrow_mut()
-        .add_instrument(make_btc_option("50000.000", OptionKind::Call));
-    let series_id = make_series_id();
-    let topic = switchboard::get_option_chain_topic(series_id);
-    let (first_handler, _first_saver) = get_typed_message_saving_handler::<OptionChainSlice>(Some(
-        Ustr::from("first-option-chain-owner"),
-    ));
-    let (second_handler, _second_saver) = get_typed_message_saving_handler::<OptionChainSlice>(
-        Some(Ustr::from("second-option-chain-owner")),
+        .add_instrument(make_btc_option("50000.000", OptionKind::Call))
+        .unwrap();
+    let series = make_series_id();
+    let first = make_subscribe_option_chain(
+        series,
+        vec![Price::from("50000.000")],
+        Some(client_id),
+        Some(venue),
     );
-    msgbus::subscribe_option_chain(topic.into(), first_handler.clone(), None);
-    data_engine
-        .borrow_mut()
-        .execute(make_subscribe_option_chain(
-            series_id,
-            vec![Price::from("50000.000")],
-            Some(client_id),
-            Some(venue),
-        ));
-    msgbus::subscribe_option_chain(topic.into(), second_handler.clone(), None);
-    data_engine
-        .borrow_mut()
-        .execute(make_subscribe_option_chain(
-            series_id,
-            vec![Price::from("50000.000")],
-            Some(client_id),
-            Some(venue),
-        ));
+    let second = make_subscribe_option_chain(
+        series,
+        vec![Price::from("50000.000")],
+        Some(client_id),
+        Some(venue),
+    );
+    engine.borrow_mut().execute(first.clone());
+    engine.borrow_mut().execute(second.clone());
     recorder.borrow_mut().clear();
-
-    msgbus::unsubscribe_option_chain(topic.into(), &first_handler);
-    data_engine
-        .borrow_mut()
-        .execute(make_unsubscribe_option_chain(
-            series_id,
-            Some(client_id),
-            Some(venue),
-        ));
-
-    assert!(data_engine.borrow().has_option_chain_manager(&series_id));
+    engine.borrow_mut().execute(make_unsubscribe_option_chain(
+        series,
+        Some(client_id),
+        Some(venue),
+    ));
     assert!(recorder.borrow().is_empty());
-
-    msgbus::unsubscribe_option_chain(topic.into(), &second_handler);
-    data_engine
+    assert_eq!(engine.borrow().clock().borrow().timer_count(), 2);
+    engine
         .borrow_mut()
-        .execute(make_unsubscribe_option_chain(
-            series_id,
-            Some(client_id),
-            Some(venue),
-        ));
-
-    assert!(!data_engine.borrow().has_option_chain_manager(&series_id));
-    assert!(recorder.borrow().iter().any(|command| matches!(
-        command,
-        DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(_))
-    )));
+        .execute(option_chain_unsubscribe(&first));
+    engine
+        .borrow_mut()
+        .execute(option_chain_unsubscribe(&first));
+    assert!(engine.borrow().has_option_chain_manager(&series));
+    assert!(recorder.borrow().is_empty());
+    engine
+        .borrow_mut()
+        .execute(option_chain_unsubscribe(&second));
+    assert!(!engine.borrow().has_option_chain_manager(&series));
+    assert_eq!(recorder.borrow().len(), 3);
 }
 
 #[rstest]
@@ -1051,6 +1031,11 @@ fn test_option_chain_settles_rebalance_before_retirement(
     assert!(recorder.borrow().is_empty());
 
     if edit {
+        engine.borrow_mut().execute(make_unsubscribe_option_chain(
+            series_id,
+            Some(client_id),
+            Some(venue),
+        ));
         engine.borrow_mut().execute(make_subscribe_option_chain(
             series_id,
             vec![Price::from("50000.000")],
@@ -1098,10 +1083,10 @@ fn test_pending_option_chain_survives_partial_retirement(
     cache: Rc<RefCell<Cache>>,
 ) {
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
-    let client_id = ClientId::new("DERIBIT");
-    let venue = Venue::new("DERIBIT");
-    let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+    let engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
+    let client_id = ClientId::from("DERIBIT");
+    let venue = Venue::from("DERIBIT");
+    let recorder = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         clock,
         Rc::clone(&cache),
@@ -1109,70 +1094,60 @@ fn test_pending_option_chain_survives_partial_retirement(
         venue,
         Some(venue),
         &recorder,
-        &mut data_engine.borrow_mut(),
+        &mut engine.borrow_mut(),
     );
-    let _ = cache
+    cache
         .borrow_mut()
-        .add_instrument(make_btc_option("50000.000", OptionKind::Call));
-    let series_id = make_series_id();
-    let topic = switchboard::get_option_chain_topic(series_id);
-    let (first_handler, _first_saver) = get_typed_message_saving_handler::<OptionChainSlice>(Some(
-        Ustr::from("first-pending-option-chain-owner"),
-    ));
-    let (second_handler, _second_saver) = get_typed_message_saving_handler::<OptionChainSlice>(
-        Some(Ustr::from("second-pending-option-chain-owner")),
-    );
-
-    let subscribe = || {
-        DataCommand::Subscribe(SubscribeCommand::OptionChain(
-            SubscribeOptionChain::new(
-                series_id,
-                StrikeRange::AtmRelative {
-                    strikes_above: 2,
-                    strikes_below: 2,
-                },
-                Some(1_000),
-                UUID4::new(),
-                UnixNanos::default(),
-                Some(client_id),
-                Some(venue),
+        .add_instrument(make_btc_option("50000.000", OptionKind::Call))
+        .unwrap();
+    let series = make_series_id();
+    let first = make_subscribe_option_chain_atm(series, client_id, venue);
+    let second = make_subscribe_option_chain_atm(series, client_id, venue);
+    engine.borrow_mut().execute(first.clone());
+    let first_request = option_chain_reference_price_request_id(&recorder);
+    recorder.borrow_mut().clear();
+    engine.borrow_mut().execute(second.clone());
+    let second_request = option_chain_reference_price_request_id(&recorder);
+    assert_eq!(engine.borrow().pending_option_chain_request_count(), 2);
+    engine
+        .borrow_mut()
+        .execute(option_chain_unsubscribe(&first));
+    engine
+        .borrow_mut()
+        .response(DataResponse::OptionChainReferencePrice(
+            OptionChainReferencePriceResponse::new(
+                first_request,
+                client_id,
+                series,
+                Some(Price::from("50000.000")),
+                UnixNanos::from(1),
                 None,
-            )
-            .unwrap(),
-        ))
-    };
-
-    msgbus::subscribe_option_chain(topic.into(), first_handler.clone(), None);
-    data_engine.borrow_mut().execute(subscribe());
-    msgbus::subscribe_option_chain(topic.into(), second_handler.clone(), None);
-    data_engine.borrow_mut().execute(subscribe());
-    assert_eq!(data_engine.borrow().pending_option_chain_request_count(), 1);
-
-    msgbus::unsubscribe_option_chain(topic.into(), &first_handler);
-    data_engine
-        .borrow_mut()
-        .execute(make_unsubscribe_option_chain(
-            series_id,
-            Some(client_id),
-            Some(venue),
+            ),
         ));
-
-    assert_eq!(data_engine.borrow().pending_option_chain_request_count(), 1);
-
-    msgbus::unsubscribe_option_chain(topic.into(), &second_handler);
-    data_engine
+    assert_eq!(engine.borrow().pending_option_chain_request_count(), 1);
+    assert!(!engine.borrow().has_option_chain_manager(&series));
+    engine
         .borrow_mut()
-        .execute(make_unsubscribe_option_chain(
-            series_id,
-            Some(client_id),
-            Some(venue),
+        .response(DataResponse::OptionChainReferencePrice(
+            OptionChainReferencePriceResponse::new(
+                second_request,
+                client_id,
+                series,
+                Some(Price::from("50000.000")),
+                UnixNanos::from(2),
+                None,
+            ),
         ));
-
-    assert_eq!(data_engine.borrow().pending_option_chain_request_count(), 0);
+    assert_eq!(engine.borrow().pending_option_chain_request_count(), 0);
+    assert!(engine.borrow().has_option_chain_manager(&series));
+    engine
+        .borrow_mut()
+        .execute(option_chain_unsubscribe(&second));
+    assert!(!engine.borrow().has_option_chain_manager(&series));
 }
 
 #[rstest]
-fn test_option_chain_client_edit_releases_old_and_active_routes(
+fn test_option_chain_owners_keep_separate_clients(
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
 ) {
@@ -1207,48 +1182,46 @@ fn test_option_chain_client_edit_releases_old_and_active_routes(
     let series_id = make_series_id();
     let strikes = vec![Price::from("50000.000")];
 
-    data_engine
-        .borrow_mut()
-        .execute(make_subscribe_option_chain(
-            series_id,
-            strikes.clone(),
-            Some(first_client_id),
-            Some(venue),
-        ));
-    data_engine
-        .borrow_mut()
-        .execute(make_subscribe_option_chain(
-            series_id,
-            strikes,
-            Some(second_client_id),
-            Some(venue),
-        ));
-
-    assert!(first_recorder.borrow().iter().any(|command| matches!(
-        command,
-        DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command))
-            if command.client_id == Some(first_client_id)
-    )));
+    let first = make_subscribe_option_chain(
+        series_id,
+        strikes.clone(),
+        Some(first_client_id),
+        Some(venue),
+    );
+    let second =
+        make_subscribe_option_chain(series_id, strikes, Some(second_client_id), Some(venue));
+    data_engine.borrow_mut().execute(first.clone());
+    data_engine.borrow_mut().execute(second.clone());
+    assert!(
+        !first_recorder
+            .borrow()
+            .iter()
+            .any(|command| matches!(command, DataCommand::Unsubscribe(_)))
+    );
     assert!(
         !second_recorder
             .borrow()
             .iter()
             .any(|command| matches!(command, DataCommand::Unsubscribe(_)))
     );
-
     data_engine
         .borrow_mut()
-        .execute(make_unsubscribe_option_chain(
-            series_id,
-            Some(first_client_id),
-            Some(venue),
-        ));
-
-    assert!(second_recorder.borrow().iter().any(|command| matches!(
-        command,
-        DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command))
-            if command.client_id == Some(second_client_id)
-    )));
+        .execute(option_chain_unsubscribe(&first));
+    assert!(first_recorder.borrow().iter().any(|command| matches!(command,
+        DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command)) if command.client_id == Some(first_client_id))));
+    assert!(
+        !second_recorder
+            .borrow()
+            .iter()
+            .any(|command| matches!(command, DataCommand::Unsubscribe(_)))
+    );
+    assert!(data_engine.borrow().has_option_chain_manager(&series_id));
+    data_engine
+        .borrow_mut()
+        .execute(option_chain_unsubscribe(&second));
+    assert!(second_recorder.borrow().iter().any(|command| matches!(command,
+        DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command)) if command.client_id == Some(second_client_id))));
+    assert!(!data_engine.borrow().has_option_chain_manager(&series_id));
 }
 
 #[rstest]
@@ -1267,7 +1240,7 @@ fn test_unsubscribe_option_chain_not_subscribed_does_not_panic(
 }
 
 #[rstest]
-fn test_subscribe_option_chain_resubscribe_replaces_manager(
+fn test_subscribe_option_chain_replay_keeps_manager(
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
 ) {
@@ -1295,48 +1268,16 @@ fn test_subscribe_option_chain_resubscribe_replaces_manager(
     // Subscribe twice
     let series_id = make_series_id();
     let strikes = vec![Price::from("50000.000")];
-    let cmd1 =
-        make_subscribe_option_chain(series_id, strikes.clone(), Some(client_id), Some(venue));
-    data_engine.borrow_mut().execute(cmd1);
-
-    let cmd2 = make_subscribe_option_chain(series_id, strikes, Some(client_id), Some(venue));
-    data_engine.borrow_mut().execute(cmd2);
-
-    // Should have unsubscribes from teardown of first manager, then resubscribes
-    let recorded = recorder.borrow();
-    let unsub_quotes = recorded
-        .iter()
-        .filter(|cmd| matches!(cmd, DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(_))))
-        .count();
-
-    let unsub_greeks = recorded
-        .iter()
-        .filter(|cmd| {
-            matches!(
-                cmd,
-                DataCommand::Unsubscribe(UnsubscribeCommand::OptionGreeks(_))
-            )
-        })
-        .count();
-
-    let sub_quotes = recorded
-        .iter()
-        .filter(|cmd| matches!(cmd, DataCommand::Subscribe(SubscribeCommand::Quotes(_))))
-        .count();
-
-    // First subscribe: 1 call, second subscribe: teardown 1 + subscribe 1
-    assert_eq!(
-        unsub_quotes, 1,
-        "Expected 1 quote unsubscribe from teardown"
-    );
-    assert_eq!(
-        unsub_greeks, 1,
-        "Expected 1 greeks unsubscribe from teardown"
-    );
-    assert_eq!(
-        sub_quotes, 2,
-        "Expected 2 quote subscribes (initial + re-subscribe)"
-    );
+    let command = make_subscribe_option_chain(series_id, strikes, Some(client_id), Some(venue));
+    data_engine.borrow_mut().execute(command.clone());
+    data_engine.borrow_mut().execute(command.clone());
+    assert_eq!(recorder.borrow().len(), 3);
+    assert_eq!(data_engine.borrow().clock().borrow().timer_count(), 1);
+    data_engine
+        .borrow_mut()
+        .execute(option_chain_unsubscribe(&command));
+    assert!(!data_engine.borrow().has_option_chain_manager(&series_id));
+    assert_eq!(recorder.borrow().len(), 6);
 }
 
 #[rstest]
@@ -2346,9 +2287,9 @@ fn test_option_chain_deferred_bootstrap_from_greeks_keeps_bootstrap_event(
     }
 
     let series_id = make_series_id();
-    let topic = switchboard::get_option_chain_topic(series_id);
+    let owner_id = UUID4::new();
     let (handler, saver) = get_typed_message_saving_handler::<OptionChainSlice>(None);
-    msgbus::subscribe_option_chain(topic.into(), handler, None);
+    msgbus::register_option_chain_owner(owner_id, handler);
 
     let cmd = DataCommand::Subscribe(SubscribeCommand::OptionChain(
         SubscribeOptionChain::new(
@@ -2358,7 +2299,7 @@ fn test_option_chain_deferred_bootstrap_from_greeks_keeps_bootstrap_event(
                 strikes_below: 1,
             },
             None,
-            UUID4::new(),
+            owner_id,
             UnixNanos::default(),
             Some(client_id),
             Some(venue),
@@ -2522,9 +2463,9 @@ fn test_option_chain_unsubscribe_releases_active_bootstrap_sample(
     }
 
     let series_id = make_series_id();
-    let topic = switchboard::get_option_chain_topic(series_id);
+    let owner_id = UUID4::new();
     let (handler, _saver) = get_typed_message_saving_handler::<OptionChainSlice>(None);
-    msgbus::subscribe_option_chain(topic.into(), handler.clone(), None);
+    msgbus::register_option_chain_owner(owner_id, handler);
     data_engine
         .borrow_mut()
         .execute(DataCommand::Subscribe(SubscribeCommand::OptionChain(
@@ -2535,7 +2476,7 @@ fn test_option_chain_unsubscribe_releases_active_bootstrap_sample(
                     strikes_below: 1,
                 },
                 None,
-                UUID4::new(),
+                owner_id,
                 UnixNanos::default(),
                 Some(client_id),
                 Some(venue),
@@ -2592,7 +2533,7 @@ fn test_option_chain_unsubscribe_releases_active_bootstrap_sample(
 
     assert!(greeks_unsubscribes(&recorder).is_empty());
 
-    msgbus::unsubscribe_option_chain(topic.into(), &handler);
+    msgbus::unregister_option_chain_owner(owner_id);
     recorder.borrow_mut().clear();
     data_engine
         .borrow_mut()
@@ -2682,6 +2623,752 @@ fn test_process_pipeline_instrument_status_skips_option_chain_expiry(
     );
 }
 
+#[rstest]
+fn test_external_option_chain_anonymous_release_checks_all_clients(
+    _stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let clients = [ClientId::from("EXTERNAL-A"), ClientId::from("EXTERNAL-B")];
+
+    let config = DataEngineConfig {
+        external_clients: Some(clients.to_vec()),
+        ..Default::default()
+    };
+
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut engine = DataEngine::new(clock, Rc::new(RefCell::new(Cache::default())), Some(config));
+    let series_id = make_series_id();
+    let mut commands = Vec::new();
+
+    let savers = clients.map(|client_id| {
+        let topic = format!("commands.data.{client_id}");
+        let (handler, saver) = get_any_saving_handler::<UnsubscribeCommand>(None);
+        msgbus::subscribe_any(topic.as_str().into(), handler, None);
+        let command = make_subscribe_option_chain(
+            series_id,
+            vec![Price::from("50000")],
+            Some(client_id),
+            Some(series_id.venue),
+        );
+        engine.execute(command.clone());
+        commands.push(command);
+        saver
+    });
+
+    engine.execute(make_unsubscribe_option_chain(
+        series_id,
+        Some(clients[0]),
+        Some(series_id.venue),
+    ));
+    assert!(savers.iter().all(|saver| saver.get_messages().is_empty()));
+    engine.execute(option_chain_unsubscribe(&commands[0]));
+    assert_eq!(savers[0].get_messages().len(), 1);
+    assert!(savers[1].get_messages().is_empty());
+    engine.execute(make_unsubscribe_option_chain(
+        series_id,
+        Some(clients[1]),
+        Some(series_id.venue),
+    ));
+    assert_eq!(savers[1].get_messages().len(), 1);
+}
+
+#[rstest]
+#[case::terminal_price(false, Some(Price::from("50000.000")))]
+#[case::terminal_fallback(false, None)]
+#[case::partial_price(true, Some(Price::from("50000.000")))]
+#[case::partial_fallback(true, None)]
+fn test_option_chain_status_retirement_does_not_revive_strikes(
+    #[case] partial: bool,
+    #[case] price: Option<Price>,
+    #[values(false, true)] replay: bool,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(clock, &cache);
+    let open = make_btc_option("51000.000", OptionKind::Call);
+    let open_id = open.id();
+    if partial {
+        fixture.engine.borrow_mut().process(&open);
+    }
+
+    fixture.subscribe(
+        0,
+        StrikeRange::Fixed(vec![Price::from("50000.000"), Price::from("51000.000")]),
+        Some(1_000),
+    );
+    fixture.subscribe(
+        1,
+        StrikeRange::AtmRelative {
+            strikes_above: 1,
+            strikes_below: 1,
+        },
+        Some(1_000),
+    );
+
+    let request_id = option_chain_reference_price_request_id(&fixture.recorder);
+    let closed = make_btc_option("50000.000", OptionKind::Call);
+    fixture
+        .engine
+        .borrow_mut()
+        .process_data(Data::InstrumentStatus(InstrumentStatus::new(
+            closed.id(),
+            MarketStatusAction::Close,
+            UnixNanos::from(3),
+            UnixNanos::from(5),
+            None,
+            None,
+            Some(false),
+            Some(false),
+            None,
+        )));
+    fixture.recorder.borrow_mut().clear();
+    if replay {
+        fixture
+            .engine
+            .borrow_mut()
+            .process_pipeline(Data::InstrumentStatus(InstrumentStatus::new(
+                closed.id(),
+                MarketStatusAction::Trading,
+                UnixNanos::from(1),
+                UnixNanos::from(9),
+                None,
+                None,
+                Some(true),
+                Some(true),
+                None,
+            )));
+        assert_eq!(
+            cache
+                .borrow()
+                .instrument_status(&closed.id())
+                .unwrap()
+                .action,
+            MarketStatusAction::Trading
+        );
+    }
+
+    fixture.engine.borrow_mut().process(&closed);
+    fixture
+        .engine
+        .borrow_mut()
+        .response(DataResponse::OptionChainReferencePrice(
+            OptionChainReferencePriceResponse::new(
+                request_id,
+                fixture.client_id,
+                make_series_id(),
+                price,
+                UnixNanos::from(7),
+                None,
+            ),
+        ));
+
+    if partial {
+        fixture
+            .engine
+            .borrow_mut()
+            .process_data(Data::OptionGreeks(make_option_chain_greeks(
+                open_id, 51000.0,
+            )));
+        let quote = make_quote(open_id, "101.000", "103.000", 11);
+        fixture.engine.borrow_mut().process_data(Data::Quote(quote));
+        advance_clock_and_dispatch(&fixture.clock, 2_000_000_000);
+        for id in &fixture.actors {
+            let actor = get_actor_unchecked::<OptionChainActor>(id);
+            let slice = actor
+                .slices
+                .last()
+                .expect("remaining strike reaches each owner");
+            assert_eq!(
+                slice.calls.keys().copied().collect::<Vec<_>>(),
+                [Price::from("51000.000")]
+            );
+            assert_eq!(slice.calls[&Price::from("51000.000")].quote, quote);
+        }
+    }
+
+    assert_eq!(
+        fixture.engine.borrow().pending_option_chain_request_count(),
+        0
+    );
+    assert_eq!(
+        fixture
+            .engine
+            .borrow()
+            .has_option_chain_manager(&make_series_id()),
+        partial
+    );
+    assert_eq!(
+        fixture.clock.borrow().timer_count(),
+        if partial { 2 } else { 0 }
+    );
+    assert_eq!(
+        fixture.engine.borrow().subscribed_quotes(),
+        if partial { vec![open_id] } else { vec![] }
+    );
+    assert!(fixture.recorder.borrow().is_empty());
+    fixture.dispose();
+}
+
+#[rstest]
+#[case::missing(false, false)]
+#[case::replaced(true, false)]
+#[case::default_replaced(true, true)]
+fn test_option_chain_client_removal_never_releases_replacement_feeds(
+    #[case] acquired: bool,
+    #[case] default_replacement: bool,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(Rc::clone(&clock), &cache);
+    let range = StrikeRange::Fixed(vec![Price::from("50000.000")]);
+    if acquired {
+        fixture.subscribe(0, range.clone(), None);
+    }
+
+    if default_replacement {
+        let client = MockDataClient::new_with_recorder(
+            clock,
+            cache,
+            fixture.client_id,
+            Some(Venue::from("DERIBIT")),
+            Some(Rc::clone(&fixture.recorder)),
+        );
+        fixture
+            .engine
+            .borrow_mut()
+            .register_default_client(DataClientAdapter::new(
+                fixture.client_id,
+                None,
+                true,
+                true,
+                Box::new(client),
+            ));
+    } else {
+        fixture
+            .engine
+            .borrow_mut()
+            .deregister_client(&fixture.client_id);
+        if !acquired {
+            fixture.subscribe(0, range.clone(), None);
+        }
+
+        register_mock_client(
+            clock,
+            cache,
+            fixture.client_id,
+            Venue::from("DERIBIT"),
+            Some(Venue::from("DERIBIT")),
+            &fixture.recorder,
+            &mut fixture.engine.borrow_mut(),
+        );
+    }
+
+    fixture.subscribe(1, range, None);
+    fixture.recorder.borrow_mut().clear();
+    get_actor_unchecked::<OptionChainActor>(&fixture.actors[0])
+        .unsubscribe_option_chain(make_series_id(), None);
+    let instrument_id = make_btc_option("50000.000", OptionKind::Call).id();
+    let quote = make_quote(instrument_id, "101.000", "103.000", 11);
+    fixture.engine.borrow_mut().process_data(Data::Quote(quote));
+    let actor = get_actor_unchecked::<OptionChainActor>(&fixture.actors[1]);
+    let slice = actor.slices.last().expect("peer still receives its slice");
+    assert_eq!(slice.calls[&Price::from("50000.000")].quote, quote);
+    drop(actor);
+    assert!(fixture.recorder.borrow().is_empty());
+    assert_eq!(fixture.engine.borrow().subscribed_quotes(), [instrument_id]);
+    assert_eq!(
+        fixture.engine.borrow().get_clients()[0]
+            .subscriptions_option_greeks
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
+        [instrument_id]
+    );
+    assert_eq!(
+        fixture.engine.borrow().subscribed_instrument_status(),
+        [instrument_id]
+    );
+    fixture.dispose();
+    assert_eq!(fixture.recorder.borrow().len(), 3);
+}
+
+#[rstest]
+#[case::ordinary(false, false)]
+#[case::failed_explicit(true, false)]
+#[case::failed_routed(true, true)]
+fn test_option_chain_client_removal_cancels_pending_owner_only(
+    #[case] failed: bool,
+    #[case] inferred: bool,
+    #[values(false, true)] pending_peer: bool,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(Rc::clone(&clock), &cache);
+    let other = ClientId::from("OTHER-CHAIN");
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        Rc::clone(&clock),
+        Rc::clone(&cache),
+        other,
+        Venue::from("DERIBIT"),
+        None,
+        &recorder,
+        &mut fixture.engine.borrow_mut(),
+    );
+    get_actor_unchecked::<OptionChainActor>(&fixture.actors[0])
+        .subscribe_option_chain(
+            make_series_id(),
+            StrikeRange::AtmRelative {
+                strikes_above: 1,
+                strikes_below: 1,
+            },
+            Some(1_000),
+            if inferred {
+                None
+            } else {
+                Some(fixture.client_id)
+            },
+            Some(fixture.params(0)),
+        )
+        .unwrap();
+
+    let request_id = option_chain_reference_price_request_id(&fixture.recorder);
+    get_actor_unchecked::<OptionChainActor>(&fixture.actors[1])
+        .subscribe_option_chain(
+            make_series_id(),
+            if pending_peer {
+                StrikeRange::AtmRelative {
+                    strikes_above: 1,
+                    strikes_below: 1,
+                }
+            } else {
+                StrikeRange::Fixed(vec![Price::from("50000.000")])
+            },
+            None,
+            Some(other),
+            Some(fixture.params(1)),
+        )
+        .unwrap();
+
+    let other_request = pending_peer.then(|| option_chain_reference_price_request_id(&recorder));
+
+    if failed {
+        fixture.engine.borrow_mut().process(&DataRequestFailed {
+            request_id,
+            reason: "Reference price unavailable".to_string(),
+            response: None,
+        });
+    }
+
+    recorder.borrow_mut().clear();
+    fixture
+        .engine
+        .borrow_mut()
+        .deregister_client(&fixture.client_id);
+    assert_eq!(
+        fixture.engine.borrow().pending_option_chain_request_count(),
+        usize::from(pending_peer)
+    );
+    assert_eq!(
+        fixture.clock.borrow().timer_count(),
+        usize::from(pending_peer)
+    );
+    register_mock_client(
+        clock,
+        cache,
+        fixture.client_id,
+        Venue::from("DERIBIT"),
+        Some(Venue::from("DERIBIT")),
+        &fixture.recorder,
+        &mut fixture.engine.borrow_mut(),
+    );
+    fixture
+        .engine
+        .borrow_mut()
+        .response(DataResponse::OptionChainReferencePrice(
+            OptionChainReferencePriceResponse::new(
+                request_id,
+                fixture.client_id,
+                make_series_id(),
+                Some(Price::from("50000.000")),
+                UnixNanos::from(1),
+                None,
+            ),
+        ));
+
+    if let Some(request_id) = other_request {
+        fixture
+            .engine
+            .borrow_mut()
+            .response(DataResponse::OptionChainReferencePrice(
+                OptionChainReferencePriceResponse::new(
+                    request_id,
+                    other,
+                    make_series_id(),
+                    Some(Price::from("50000.000")),
+                    UnixNanos::from(3),
+                    None,
+                ),
+            ));
+        recorder.borrow_mut().clear();
+    }
+
+    get_actor_unchecked::<OptionChainActor>(&fixture.actors[0])
+        .unsubscribe_option_chain(make_series_id(), None);
+    let instrument_id = make_btc_option("50000.000", OptionKind::Call).id();
+    let quote = make_quote(instrument_id, "101.000", "103.000", 11);
+    fixture.engine.borrow_mut().process_data(Data::Quote(quote));
+    let actor = get_actor_unchecked::<OptionChainActor>(&fixture.actors[1]);
+    assert_eq!(
+        actor.slices.last().unwrap().calls[&Price::from("50000.000")].quote,
+        quote
+    );
+    drop(actor);
+    assert_eq!(
+        fixture.engine.borrow().pending_option_chain_request_count(),
+        0
+    );
+    assert_eq!(fixture.clock.borrow().timer_count(), 0);
+    assert!(recorder.borrow().is_empty());
+    fixture.dispose();
+}
+
+#[rstest]
+fn test_option_chain_close_before_definition_stays_retired(
+    #[values(false, true)] active_series: bool,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(clock, &cache);
+    if active_series {
+        fixture.subscribe(
+            0,
+            StrikeRange::Fixed(vec![Price::from("50000.000"), Price::from("51000.000")]),
+            None,
+        );
+    }
+
+    fixture.recorder.borrow_mut().clear();
+    let closed = make_btc_option("51000.000", OptionKind::Call);
+    fixture
+        .engine
+        .borrow_mut()
+        .process_data(Data::InstrumentStatus(InstrumentStatus::new(
+            closed.id(),
+            MarketStatusAction::Close,
+            UnixNanos::from(5),
+            UnixNanos::from(7),
+            None,
+            None,
+            Some(false),
+            Some(false),
+            None,
+        )));
+    fixture
+        .engine
+        .borrow_mut()
+        .process_pipeline(Data::InstrumentStatus(InstrumentStatus::new(
+            closed.id(),
+            MarketStatusAction::Trading,
+            UnixNanos::from(1),
+            UnixNanos::from(9),
+            None,
+            None,
+            Some(true),
+            Some(true),
+            None,
+        )));
+    fixture.engine.borrow_mut().process(&closed);
+    fixture.subscribe(1, StrikeRange::Fixed(vec![Price::from("51000.000")]), None);
+    fixture
+        .engine
+        .borrow_mut()
+        .process_data(Data::Quote(make_quote(
+            closed.id(),
+            "201.000",
+            "203.000",
+            11,
+        )));
+    let known = make_btc_option("50000.000", OptionKind::Call).id();
+
+    if active_series {
+        fixture
+            .engine
+            .borrow_mut()
+            .process_data(Data::Quote(make_quote(known, "101.000", "103.000", 13)));
+        let actor = get_actor_unchecked::<OptionChainActor>(&fixture.actors[0]);
+        assert_eq!(
+            actor
+                .slices
+                .last()
+                .unwrap()
+                .calls
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            [Price::from("50000.000")]
+        );
+    }
+
+    assert!(fixture.recorder.borrow().is_empty());
+    assert_eq!(
+        fixture.engine.borrow().subscribed_quotes(),
+        if active_series { vec![known] } else { vec![] }
+    );
+    assert!(
+        get_actor_unchecked::<OptionChainActor>(&fixture.actors[1])
+            .slices
+            .is_empty()
+    );
+    fixture.dispose();
+}
+
+#[rstest]
+fn test_option_chain_replayed_close_does_not_retire_new_live_owner(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(clock, &cache);
+    let range = StrikeRange::Fixed(vec![Price::from("50000.000")]);
+    fixture.subscribe(0, range.clone(), None);
+    let instrument_id = make_btc_option("50000.000", OptionKind::Call).id();
+    fixture
+        .engine
+        .borrow_mut()
+        .process_pipeline(Data::InstrumentStatus(InstrumentStatus::new(
+            instrument_id,
+            MarketStatusAction::Close,
+            UnixNanos::from(1),
+            UnixNanos::from(9),
+            None,
+            None,
+            Some(false),
+            Some(false),
+            None,
+        )));
+    fixture.subscribe(1, range, None);
+    let quote = make_quote(instrument_id, "101.000", "103.000", 11);
+    fixture.engine.borrow_mut().process_data(Data::Quote(quote));
+    for id in &fixture.actors {
+        let actor = get_actor_unchecked::<OptionChainActor>(id);
+        assert_eq!(
+            actor.slices.last().unwrap().calls[&Price::from("50000.000")].quote,
+            quote
+        );
+    }
+
+    fixture.dispose();
+}
+
+#[rstest]
+#[case::disconnect(false)]
+#[case::replacement(true)]
+fn test_option_chain_retirement_tracks_live_lifecycle(
+    #[values(false, true)] trading: bool,
+    #[case] replace: bool,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(Rc::clone(&clock), &cache);
+    let instrument_id = make_btc_option("50000.000", OptionKind::Call).id();
+    fixture
+        .engine
+        .borrow_mut()
+        .process_data(Data::InstrumentStatus(InstrumentStatus::new(
+            instrument_id,
+            MarketStatusAction::Close,
+            UnixNanos::from(5),
+            UnixNanos::from(7),
+            None,
+            None,
+            Some(false),
+            Some(false),
+            None,
+        )));
+
+    if replace {
+        fixture
+            .engine
+            .borrow_mut()
+            .deregister_client(&fixture.client_id);
+        register_mock_client(
+            clock,
+            cache,
+            fixture.client_id,
+            Venue::from("DERIBIT"),
+            Some(Venue::from("DERIBIT")),
+            &fixture.recorder,
+            &mut fixture.engine.borrow_mut(),
+        );
+    } else {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        runtime
+            .block_on(fixture.engine.borrow_mut().disconnect())
+            .unwrap();
+        runtime
+            .block_on(fixture.engine.borrow_mut().connect())
+            .unwrap();
+    }
+
+    fixture
+        .engine
+        .borrow_mut()
+        .process_pipeline(Data::InstrumentStatus(InstrumentStatus::new(
+            instrument_id,
+            MarketStatusAction::Trading,
+            UnixNanos::from(1),
+            UnixNanos::from(9),
+            None,
+            None,
+            Some(true),
+            Some(true),
+            None,
+        )));
+    let range = StrikeRange::Fixed(vec![Price::from("50000.000")]);
+    fixture.subscribe(0, range.clone(), None);
+    assert!(fixture.recorder.borrow().is_empty());
+    assert!(fixture.engine.borrow().subscribed_quotes().is_empty());
+
+    if trading {
+        fixture
+            .engine
+            .borrow_mut()
+            .process_data(Data::InstrumentStatus(InstrumentStatus::new(
+                instrument_id,
+                MarketStatusAction::Trading,
+                UnixNanos::from(11),
+                UnixNanos::from(13),
+                None,
+                None,
+                Some(true),
+                Some(true),
+                None,
+            )));
+    } else {
+        fixture.engine.borrow_mut().reset();
+    }
+
+    get_actor_unchecked::<OptionChainActor>(&fixture.actors[0])
+        .unsubscribe_option_chain(make_series_id(), None);
+    fixture.subscribe(0, range, None);
+    let quote = make_quote(instrument_id, "101.000", "103.000", 11);
+    fixture.engine.borrow_mut().process_data(Data::Quote(quote));
+    let actor = get_actor_unchecked::<OptionChainActor>(&fixture.actors[0]);
+    assert_eq!(
+        actor.slices.last().unwrap().calls[&Price::from("50000.000")].quote,
+        quote
+    );
+    drop(actor);
+    assert_eq!(fixture.engine.borrow().subscribed_quotes(), [instrument_id]);
+    fixture.dispose();
+}
+
+#[rstest]
+fn test_option_chain_backtest_keeps_reference_price_request_client(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(Rc::clone(&clock), &cache);
+    let backtest = ClientId::from("BACKTEST");
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        backtest,
+        Venue::from("DERIBIT"),
+        None,
+        &recorder,
+        &mut fixture.engine.borrow_mut(),
+    );
+    fixture.subscribe(
+        0,
+        StrikeRange::AtmRelative {
+            strikes_above: 1,
+            strikes_below: 1,
+        },
+        None,
+    );
+
+    let request_id = option_chain_reference_price_request_id(&fixture.recorder);
+    assert!(recorder.borrow().is_empty());
+    fixture
+        .engine
+        .borrow_mut()
+        .response(DataResponse::OptionChainReferencePrice(
+            OptionChainReferencePriceResponse::new(
+                request_id,
+                fixture.client_id,
+                make_series_id(),
+                Some(Price::from("50000.000")),
+                UnixNanos::from(1),
+                None,
+            ),
+        ));
+
+    let commands = recorder.borrow().clone();
+    assert_eq!(commands.len(), 3);
+
+    for command in commands {
+        let DataCommand::Subscribe(command) = command else {
+            panic!("expected child subscribe");
+        };
+
+        assert_eq!(command.client_id(), Some(&backtest));
+    }
+
+    assert_eq!(fixture.recorder.borrow().len(), 1);
+    fixture.dispose();
+}
+
+#[rstest]
+fn test_option_chain_resubscribe_reuses_timer_slots(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(clock, &cache);
+    let range = StrikeRange::Fixed(vec![Price::from("50000.000")]);
+    fixture.subscribe(0, range.clone(), Some(1_000));
+    fixture.subscribe(1, range.clone(), Some(2_000));
+    let mut initial = fixture
+        .clock
+        .borrow()
+        .timer_names()
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    initial.sort_unstable();
+    assert_eq!(initial.len(), 2);
+    get_actor_unchecked::<OptionChainActor>(&fixture.actors[0])
+        .unsubscribe_option_chain(make_series_id(), None);
+    fixture.subscribe(0, range, Some(3_000));
+    let mut current = fixture
+        .clock
+        .borrow()
+        .timer_names()
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    current.sort_unstable();
+
+    assert_eq!(current, initial);
+    let instrument_id = make_btc_option("50000.000", OptionKind::Call).id();
+    let quote = make_quote(instrument_id, "101.000", "103.000", 1);
+    fixture.engine.borrow_mut().process_data(Data::Quote(quote));
+    advance_clock_and_dispatch(&fixture.clock, 6_000_000_000);
+    for id in &fixture.actors {
+        let actor = get_actor_unchecked::<OptionChainActor>(id);
+        let slice = actor
+            .slices
+            .last()
+            .unwrap_or_else(|| panic!("owner {id} has no slice"));
+        assert_eq!(slice.calls[&Price::from("50000.000")].quote, quote);
+    }
+
+    fixture.dispose();
+    assert_eq!(fixture.clock.borrow().timer_count(), 0);
+}
+
 fn make_btc_option(strike: &str, kind: OptionKind) -> InstrumentAny {
     let kind_char = match kind {
         OptionKind::Call => "C",
@@ -2721,6 +3408,1157 @@ fn make_series_id() -> OptionSeriesId {
         ustr::Ustr::from("BTC"),
         UnixNanos::from(1_704_067_200_000_000_000u64),
     )
+}
+
+#[rstest]
+#[case::raw(None)]
+#[case::timed(Some(1_000))]
+fn test_option_chain_actors_keep_distinct_slices(
+    #[case] interval: Option<u64>,
+    #[values(0, 1)] first_to_leave: usize,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(clock, &cache);
+    let strikes = [Price::from("50000.000"), Price::from("51000.000")];
+
+    for index in 0..2 {
+        fixture.subscribe(
+            index,
+            StrikeRange::Fixed(strikes[..=index].to_vec()),
+            interval,
+        );
+    }
+
+    let first_id = make_btc_option("50000.000", OptionKind::Call).id();
+    let first_quote = make_quote(first_id, "101.000", "103.000", 11);
+    fixture
+        .engine
+        .borrow_mut()
+        .process_data(Data::Quote(first_quote));
+    let added = make_btc_option("51000.000", OptionKind::Call);
+    let added_quote = make_quote(added.id(), "211.000", "217.000", 13);
+    fixture.engine.borrow_mut().process(&added);
+    fixture
+        .engine
+        .borrow_mut()
+        .process_data(Data::Quote(added_quote));
+
+    if interval.is_some() {
+        advance_clock_and_dispatch(&fixture.clock, 2_000_000_000);
+    }
+
+    for (index, id) in fixture.actors.iter().enumerate() {
+        let actor = get_actor_unchecked::<OptionChainActor>(id);
+        let slice = actor.slices.last().expect("actor receives its chain slice");
+        assert_eq!(slice.series_id, make_series_id());
+        assert_eq!(slice.atm_strike, None);
+        assert_eq!(
+            slice.calls.keys().copied().collect::<Vec<_>>(),
+            strikes[..=index]
+        );
+        assert_eq!(slice.calls[&strikes[0]].quote, first_quote);
+        assert_eq!(slice.calls[&strikes[0]].greeks, None);
+        assert!(slice.puts.is_empty());
+
+        if index == 1 {
+            assert_eq!(slice.calls[&strikes[1]].quote, added_quote);
+            assert_eq!(slice.calls[&strikes[1]].greeks, None);
+        }
+    }
+
+    let before_leave: Vec<_> = fixture
+        .actors
+        .iter()
+        .map(|id| get_actor_unchecked::<OptionChainActor>(id).slices.len())
+        .collect();
+    let commands = fixture.recorder.borrow();
+    assert_eq!(commands.len(), 6);
+
+    for command in commands.iter() {
+        let DataCommand::Subscribe(command) = command else {
+            panic!("expected child subscribe");
+        };
+
+        let instrument = command.instrument_ids().unwrap()[0];
+        let index = usize::from(instrument == added.id());
+        assert_eq!(command.client_id(), Some(&fixture.client_id));
+        assert_eq!(command.params(), Some(&fixture.params(index)));
+    }
+
+    drop(commands);
+    fixture.recorder.borrow_mut().clear();
+    get_actor_unchecked::<OptionChainActor>(&fixture.actors[first_to_leave])
+        .unsubscribe_option_chain(make_series_id(), Some(fixture.client_id));
+    let survivor = 1 - first_to_leave;
+    let updated_quote = make_quote(first_id, "307.000", "311.000", 17);
+    fixture
+        .engine
+        .borrow_mut()
+        .process_data(Data::Quote(updated_quote));
+
+    if interval.is_some() {
+        advance_clock_and_dispatch(&fixture.clock, 1_000_000_000);
+    }
+
+    assert_eq!(
+        get_actor_unchecked::<OptionChainActor>(&fixture.actors[first_to_leave])
+            .slices
+            .len(),
+        before_leave[first_to_leave]
+    );
+    let actor = get_actor_unchecked::<OptionChainActor>(&fixture.actors[survivor]);
+    assert_eq!(actor.slices.len(), before_leave[survivor] + 1);
+    assert_eq!(
+        actor.slices.last().unwrap().calls[&strikes[0]].quote,
+        updated_quote
+    );
+    drop(actor);
+    assert!(
+        fixture
+            .engine
+            .borrow()
+            .subscribed_quotes()
+            .contains(&first_id)
+    );
+    fixture.dispose();
+    assert!(
+        !fixture
+            .engine
+            .borrow()
+            .has_option_chain_manager(&make_series_id())
+    );
+    assert_eq!(fixture.clock.borrow().timer_count(), 0);
+
+    for instrument in [first_id, added.id()] {
+        assert_eq!(
+            msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(instrument)),
+            0
+        );
+        assert_eq!(
+            msgbus::exact_subscriber_count_option_greeks(switchboard::get_option_greeks_topic(
+                instrument
+            )),
+            0
+        );
+    }
+
+    let commands = fixture.recorder.borrow();
+    assert_eq!(commands.len(), 6);
+    assert_eq!(commands.iter().filter(|command| matches!(command,
+        DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command)) if command.instrument_ids == [first_id]
+    )).count(), 1);
+}
+
+#[rstest]
+#[case::reset(false)]
+#[case::disconnect(true)]
+fn test_option_chain_engine_cleanup_releases_every_owner(
+    #[case] disconnect: bool,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(clock, &cache);
+    let instrument_id = make_btc_option("50000.000", OptionKind::Call).id();
+    let second = make_btc_option("51000.000", OptionKind::Call);
+    let second_id = second.id();
+    fixture.engine.borrow_mut().process(&second);
+    fixture.subscribe(
+        0,
+        StrikeRange::Fixed(vec![Price::from("50000.000"), Price::from("51000.000")]),
+        Some(1_000),
+    );
+    fixture.subscribe(
+        1,
+        StrikeRange::AtmRelative {
+            strikes_above: 1,
+            strikes_below: 1,
+        },
+        Some(1_000),
+    );
+
+    assert_eq!(
+        fixture.engine.borrow().pending_option_chain_request_count(),
+        1
+    );
+
+    if disconnect {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        runtime
+            .block_on(fixture.engine.borrow_mut().disconnect())
+            .unwrap();
+    } else {
+        fixture.engine.borrow_mut().reset();
+    }
+
+    assert!(
+        !fixture
+            .engine
+            .borrow()
+            .has_option_chain_manager(&make_series_id())
+    );
+    assert_eq!(
+        fixture.engine.borrow().pending_option_chain_request_count(),
+        0
+    );
+    assert_eq!(fixture.clock.borrow().timer_count(), 0);
+    assert!(fixture.engine.borrow().subscribed_quotes().is_empty());
+    assert!(
+        fixture
+            .engine
+            .borrow()
+            .subscribed_instrument_status()
+            .is_empty()
+    );
+    assert_eq!(
+        msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(instrument_id)),
+        0
+    );
+    assert_eq!(
+        msgbus::exact_subscriber_count_option_greeks(switchboard::get_option_greeks_topic(
+            instrument_id
+        )),
+        0
+    );
+
+    let released: Vec<_> = fixture
+        .recorder
+        .borrow()
+        .iter()
+        .filter_map(|command| match command {
+            DataCommand::Unsubscribe(command) => Some(command.instrument_ids().unwrap()[0]),
+            _ => None,
+        })
+        .collect();
+
+    let mut expected_ids = [instrument_id, second_id];
+    expected_ids.sort_unstable();
+    let expected: Vec<_> = expected_ids.into_iter().flat_map(|id| [id; 3]).collect();
+    assert_eq!(released, expected);
+    fixture.dispose();
+}
+
+#[rstest]
+#[case::reference_price(ChainBootstrap::Response(Some(Price::from("50000.000"))))]
+#[case::greeks_fallback(ChainBootstrap::Response(None))]
+#[case::timeout(ChainBootstrap::Timeout)]
+fn test_option_chain_actors_bootstrap_independently(
+    #[case] response: ChainBootstrap,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(clock, &cache);
+    for strike in ["49000.000", "51000.000"] {
+        fixture
+            .engine
+            .borrow_mut()
+            .process(&make_btc_option(strike, OptionKind::Call));
+    }
+
+    for index in 0..2 {
+        fixture.subscribe(
+            index,
+            StrikeRange::AtmRelative {
+                strikes_above: index,
+                strikes_below: index,
+            },
+            None,
+        );
+    }
+
+    let requests: Vec<_> = fixture
+        .recorder
+        .borrow()
+        .iter()
+        .filter_map(|command| match command {
+            DataCommand::Request(RequestCommand::OptionChainReferencePrice(command)) => {
+                Some(command.clone())
+            }
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(requests.len(), 2);
+
+    for (index, request) in requests.iter().enumerate() {
+        assert_eq!(request.series_id, make_series_id());
+        assert_eq!(request.client_id, Some(fixture.client_id));
+        assert_eq!(request.params.as_ref(), Some(&fixture.params(index)));
+    }
+
+    match response {
+        ChainBootstrap::Response(price) => {
+            for request in &requests {
+                fixture
+                    .engine
+                    .borrow_mut()
+                    .response(DataResponse::OptionChainReferencePrice(
+                        OptionChainReferencePriceResponse::new(
+                            request.request_id,
+                            fixture.client_id,
+                            make_series_id(),
+                            price,
+                            UnixNanos::from(1),
+                            None,
+                        ),
+                    ));
+            }
+        }
+        ChainBootstrap::Timeout => {
+            advance_clock_and_dispatch(&fixture.clock, 30_000_000_000);
+            let commands = fixture.recorder.borrow();
+
+            let first = commands
+                .iter()
+                .find_map(|command| match command {
+                    DataCommand::Subscribe(SubscribeCommand::OptionGreeks(command)) => {
+                        Some(command)
+                    }
+                    _ => None,
+                })
+                .expect("first bootstrap sample acquisition");
+
+            assert_eq!(first.params.as_ref(), Some(&fixture.params(0)));
+        }
+    }
+
+    let sample_id = make_btc_option("49000.000", OptionKind::Call).id();
+    fixture
+        .engine
+        .borrow_mut()
+        .process_data(Data::OptionGreeks(make_option_chain_greeks(
+            sample_id, 50000.0,
+        )));
+
+    let expected = [
+        Price::from("49000.000"),
+        Price::from("50000.000"),
+        Price::from("51000.000"),
+    ];
+
+    for (index, strike) in ["49000.000", "50000.000", "51000.000"]
+        .into_iter()
+        .enumerate()
+    {
+        let instrument_id = make_btc_option(strike, OptionKind::Call).id();
+        fixture
+            .engine
+            .borrow_mut()
+            .process_data(Data::Quote(make_quote(
+                instrument_id,
+                "101.000",
+                "103.000",
+                index as u64 + 3,
+            )));
+    }
+
+    assert_eq!(
+        fixture.engine.borrow().pending_option_chain_request_count(),
+        0
+    );
+    assert_eq!(fixture.clock.borrow().timer_count(), 0);
+
+    for (index, id) in fixture.actors.iter().enumerate() {
+        let actor = get_actor_unchecked::<OptionChainActor>(id);
+        let slice = actor
+            .slices
+            .last()
+            .expect("bootstrapped actor receives its own slice");
+        let strikes: Vec<_> = slice.calls.keys().copied().collect();
+        assert_eq!(
+            strikes,
+            if index == 0 {
+                expected[1..2].to_vec()
+            } else {
+                expected.to_vec()
+            }
+        );
+    }
+
+    fixture.dispose();
+    assert!(fixture.engine.borrow().subscribed_quotes().is_empty());
+    assert!(
+        fixture
+            .engine
+            .borrow()
+            .subscribed_instrument_status()
+            .is_empty()
+    );
+    assert_eq!(
+        msgbus::exact_subscriber_count_option_greeks(switchboard::get_option_greeks_topic(
+            sample_id
+        )),
+        0
+    );
+}
+
+#[rstest]
+#[case::status(false)]
+#[case::timer(true)]
+fn test_option_chain_expiry_releases_all_owners(
+    #[case] timer_expiry: bool,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    if timer_expiry {
+        let start = make_series_id().expiration_ns - DurationNanos::from_secs(2);
+        clock.borrow_mut().advance_time(start, true);
+    }
+
+    let fixture = OptionChainFixture::new(clock, &cache);
+    let instrument_id = make_btc_option("50000.000", OptionKind::Call).id();
+
+    for index in 0..2 {
+        fixture.subscribe(
+            index,
+            StrikeRange::Fixed(vec![Price::from("50000.000")]),
+            Some(1_000),
+        );
+    }
+
+    fixture.recorder.borrow_mut().clear();
+    if timer_expiry {
+        advance_clock_and_dispatch(&fixture.clock, 2_000_000_000);
+        let quote = make_quote(instrument_id, "101.000", "103.000", 1);
+        fixture.engine.borrow_mut().process_data(Data::Quote(quote));
+    } else {
+        let status = InstrumentStatus::new(
+            instrument_id,
+            MarketStatusAction::Close,
+            UnixNanos::from(3),
+            UnixNanos::from(5),
+            None,
+            None,
+            Some(false),
+            Some(false),
+            None,
+        );
+
+        fixture
+            .engine
+            .borrow_mut()
+            .process_data(Data::InstrumentStatus(status));
+    }
+
+    assert!(
+        !fixture
+            .engine
+            .borrow()
+            .has_option_chain_manager(&make_series_id())
+    );
+    assert!(fixture.engine.borrow().subscribed_quotes().is_empty());
+    assert!(
+        fixture
+            .engine
+            .borrow()
+            .subscribed_instrument_status()
+            .is_empty()
+    );
+    assert_eq!(fixture.clock.borrow().timer_count(), 0);
+    assert_eq!(fixture.recorder.borrow().len(), 3);
+    assert_eq!(
+        msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(instrument_id)),
+        0
+    );
+    assert_eq!(
+        msgbus::exact_subscriber_count_option_greeks(switchboard::get_option_greeks_topic(
+            instrument_id
+        )),
+        0
+    );
+    fixture.dispose();
+    assert_eq!(fixture.recorder.borrow().len(), 3);
+}
+
+#[rstest]
+fn test_option_chain_retirement_preserves_direct_quotes(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(clock, &cache);
+    let instrument_id = make_btc_option("50000.000", OptionKind::Call).id();
+    let direct_params = Params::new([("route".to_string(), json!(71))].into());
+    let direct = SubscribeCommand::Quotes(SubscribeQuotes::new(
+        instrument_id,
+        Some(fixture.client_id),
+        Some(instrument_id.venue),
+        UUID4::new(),
+        UnixNanos::from(1),
+        None,
+        Some(direct_params.clone()),
+    ));
+    fixture
+        .engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(direct.clone()));
+
+    for index in 0..2 {
+        fixture.subscribe(
+            index,
+            StrikeRange::Fixed(vec![Price::from("50000.000")]),
+            None,
+        );
+    }
+
+    fixture.recorder.borrow_mut().clear();
+    fixture.dispose();
+    assert!(
+        !fixture
+            .engine
+            .borrow()
+            .has_option_chain_manager(&make_series_id())
+    );
+    assert_eq!(
+        fixture.engine.borrow().subscribed_quotes(),
+        vec![instrument_id]
+    );
+    assert!(
+        fixture
+            .engine
+            .borrow()
+            .subscribed_instrument_status()
+            .is_empty()
+    );
+    assert_eq!(fixture.recorder.borrow().len(), 2);
+    let unsubscribe = direct.into_unsubscribe(UUID4::new(), UnixNanos::from(2), None);
+    fixture
+        .engine
+        .borrow_mut()
+        .execute(DataCommand::Unsubscribe(unsubscribe));
+    assert!(fixture.engine.borrow().subscribed_quotes().is_empty());
+    let commands = fixture.recorder.borrow();
+
+    let DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command)) = commands.last().unwrap()
+    else {
+        panic!("expected final direct quote unsubscribe");
+    };
+
+    assert_eq!(command.instrument_ids, vec![instrument_id]);
+    assert_eq!(command.client_id, Some(fixture.client_id));
+    assert_eq!(command.params.as_ref(), Some(&direct_params));
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ChainBootstrap {
+    Response(Option<Price>),
+    Timeout,
+}
+
+#[derive(Debug)]
+struct OptionChainActor {
+    core: DataActorCore,
+    slices: Vec<OptionChainSlice>,
+}
+
+nautilus_actor!(OptionChainActor);
+
+impl DataActor for OptionChainActor {
+    fn on_option_chain(&mut self, slice: &OptionChainSlice) -> anyhow::Result<()> {
+        self.slices.push(slice.clone());
+        Ok(())
+    }
+}
+
+#[rstest]
+fn test_option_chain_cache_only_close_preserves_unlisted_owner(
+    #[values(false, true)] active_peer: bool,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(clock, &cache);
+    let closed = make_btc_option("50000.000", OptionKind::Call);
+    let listing = make_btc_option("51000.000", OptionKind::Call);
+    cache.borrow_mut().purge_instrument(closed.id());
+    fixture.subscribe(0, StrikeRange::Fixed(vec![Price::from("51000.000")]), None);
+    for instrument in [closed.clone(), listing.clone()] {
+        fixture
+            .engine
+            .borrow_mut()
+            .response(DataResponse::Instrument(Box::new(InstrumentResponse::new(
+                UUID4::new(),
+                fixture.client_id,
+                instrument.id(),
+                instrument,
+                None,
+                None,
+                UnixNanos::from(1),
+                None,
+            ))));
+    }
+
+    if active_peer {
+        fixture.subscribe(1, StrikeRange::Fixed(vec![Price::from("50000.000")]), None);
+    }
+
+    fixture
+        .engine
+        .borrow_mut()
+        .process_data(Data::InstrumentStatus(InstrumentStatus::new(
+            closed.id(),
+            MarketStatusAction::Close,
+            UnixNanos::from(2),
+            UnixNanos::from(3),
+            None,
+            None,
+            Some(false),
+            None,
+            None,
+        )));
+    fixture.recorder.borrow_mut().clear();
+    fixture.engine.borrow_mut().process(&listing);
+    let quote = make_quote(listing.id(), "201.000", "203.000", 5);
+    fixture.engine.borrow_mut().process_data(Data::Quote(quote));
+
+    let actor = get_actor_unchecked::<OptionChainActor>(&fixture.actors[0]);
+    assert_eq!(actor.slices.len(), 1);
+    assert_eq!(
+        actor.slices[0].calls[&Price::from("51000.000")].quote,
+        quote
+    );
+    drop(actor);
+    assert_eq!(fixture.engine.borrow().subscribed_quotes(), [listing.id()]);
+    assert_eq!(
+        fixture.engine.borrow().subscribed_instrument_status(),
+        [listing.id()]
+    );
+    assert_eq!(fixture.recorder.borrow().len(), 3);
+    fixture.dispose();
+    assert_eq!(fixture.recorder.borrow().len(), 6);
+    assert!(fixture.engine.borrow().subscribed_quotes().is_empty());
+    assert!(
+        fixture
+            .engine
+            .borrow()
+            .subscribed_instrument_status()
+            .is_empty()
+    );
+    assert!(
+        fixture.engine.borrow().get_clients()[0]
+            .subscriptions_option_greeks
+            .is_empty()
+    );
+    assert_eq!(
+        msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(listing.id())),
+        0
+    );
+    assert_eq!(
+        msgbus::exact_subscriber_count_option_greeks(switchboard::get_option_greeks_topic(
+            listing.id()
+        )),
+        0
+    );
+}
+
+#[rstest]
+fn test_option_chain_pending_retirement_uses_cached_catalog(
+    #[values(false, true)] active_owner: bool,
+    #[values(false, true)] remaining_contract: bool,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(clock, &cache);
+    if active_owner {
+        fixture.subscribe(0, StrikeRange::Fixed(vec![Price::from("50000.000")]), None);
+    }
+
+    let open = make_btc_option("51000.000", OptionKind::Call);
+
+    if remaining_contract {
+        fixture
+            .engine
+            .borrow_mut()
+            .response(DataResponse::Instrument(Box::new(InstrumentResponse::new(
+                UUID4::new(),
+                fixture.client_id,
+                open.id(),
+                open.clone(),
+                None,
+                None,
+                UnixNanos::from(1),
+                None,
+            ))));
+    }
+
+    fixture.subscribe(
+        1,
+        StrikeRange::AtmRelative {
+            strikes_above: 1,
+            strikes_below: 1,
+        },
+        Some(1_000),
+    );
+
+    let request_id = option_chain_reference_price_request_id(&fixture.recorder);
+    let closed = make_btc_option("50000.000", OptionKind::Call).id();
+    fixture
+        .engine
+        .borrow_mut()
+        .process_data(Data::InstrumentStatus(InstrumentStatus::new(
+            closed,
+            MarketStatusAction::Close,
+            UnixNanos::from(2),
+            UnixNanos::from(3),
+            None,
+            None,
+            Some(false),
+            None,
+            None,
+        )));
+    assert_eq!(
+        fixture.engine.borrow().pending_option_chain_request_count(),
+        usize::from(remaining_contract)
+    );
+    fixture.recorder.borrow_mut().clear();
+    fixture
+        .engine
+        .borrow_mut()
+        .response(DataResponse::OptionChainReferencePrice(
+            OptionChainReferencePriceResponse::new(
+                request_id,
+                fixture.client_id,
+                make_series_id(),
+                Some(Price::from("51000.000")),
+                UnixNanos::from(4),
+                None,
+            ),
+        ));
+    fixture
+        .engine
+        .borrow_mut()
+        .process_data(Data::OptionGreeks(make_option_chain_greeks(
+            open.id(),
+            51000.0,
+        )));
+    let quote = make_quote(open.id(), "201.000", "203.000", 5);
+    fixture.engine.borrow_mut().process_data(Data::Quote(quote));
+    advance_clock_and_dispatch(&fixture.clock, 2_000_000_000);
+
+    assert_eq!(
+        fixture
+            .engine
+            .borrow()
+            .has_option_chain_manager(&make_series_id()),
+        remaining_contract
+    );
+    assert_eq!(
+        fixture.clock.borrow().timer_count(),
+        usize::from(remaining_contract)
+    );
+    let actor = get_actor_unchecked::<OptionChainActor>(&fixture.actors[1]);
+
+    if remaining_contract {
+        assert_eq!(actor.slices.len(), 1);
+        assert_eq!(
+            actor.slices[0].calls[&Price::from("51000.000")].quote,
+            quote
+        );
+        assert_eq!(fixture.engine.borrow().subscribed_quotes(), [open.id()]);
+        assert_eq!(fixture.recorder.borrow().len(), 3);
+    } else {
+        assert!(actor.slices.is_empty());
+        assert!(fixture.engine.borrow().subscribed_quotes().is_empty());
+        assert!(fixture.recorder.borrow().is_empty());
+    }
+
+    drop(actor);
+    fixture.dispose();
+    assert!(fixture.engine.borrow().subscribed_quotes().is_empty());
+    assert!(
+        fixture
+            .engine
+            .borrow()
+            .subscribed_instrument_status()
+            .is_empty()
+    );
+    assert_eq!(fixture.clock.borrow().timer_count(), 0);
+}
+
+#[rstest]
+fn test_option_chain_backtest_registration_preserves_acquired_client(
+    #[values(false, true)] dynamic: bool,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(Rc::clone(&clock), &cache);
+    let range = StrikeRange::Fixed(vec![Price::from("50000.000"), Price::from("51000.000")]);
+    fixture.subscribe(0, range.clone(), None);
+    let backtest = ClientId::from("BACKTEST");
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        backtest,
+        Venue::from("DERIBIT"),
+        None,
+        &recorder,
+        &mut fixture.engine.borrow_mut(),
+    );
+    fixture.subscribe(1, range, None);
+    if dynamic {
+        fixture
+            .engine
+            .borrow_mut()
+            .process(&make_btc_option("51000.000", OptionKind::Call));
+    }
+
+    fixture.recorder.borrow_mut().clear();
+    recorder.borrow_mut().clear();
+    get_actor_unchecked::<OptionChainActor>(&fixture.actors[0])
+        .unsubscribe_option_chain(make_series_id(), None);
+    assert!(recorder.borrow().is_empty());
+
+    let expected = if dynamic { 6 } else { 3 };
+    assert_eq!(fixture.recorder.borrow().len(), expected);
+
+    for client in fixture.engine.borrow().get_clients() {
+        assert_eq!(
+            client.subscriptions_quotes.len(),
+            if client.client_id() == backtest {
+                expected / 3
+            } else {
+                0
+            }
+        );
+        assert_eq!(
+            client.subscriptions_option_greeks.len(),
+            if client.client_id() == backtest {
+                expected / 3
+            } else {
+                0
+            }
+        );
+        assert_eq!(
+            client.subscriptions_instrument_status.len(),
+            if client.client_id() == backtest {
+                expected / 3
+            } else {
+                0
+            }
+        );
+    }
+
+    let quote = make_quote(
+        make_btc_option("50000.000", OptionKind::Call).id(),
+        "101.000",
+        "103.000",
+        7,
+    );
+    fixture.engine.borrow_mut().process_data(Data::Quote(quote));
+    assert_eq!(
+        get_actor_unchecked::<OptionChainActor>(&fixture.actors[1])
+            .slices
+            .last()
+            .unwrap()
+            .calls[&Price::from("50000.000")]
+            .quote,
+        quote
+    );
+    fixture.dispose();
+    assert_eq!(recorder.borrow().len(), expected);
+    assert!(fixture.engine.borrow().subscribed_quotes().is_empty());
+}
+
+#[rstest]
+fn test_option_chain_expired_series_rejects_late_definitions(
+    #[values(false, true)] dynamic: bool,
+    #[values(None, Some(1_000))] interval: Option<u64>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(clock, &cache);
+    fixture.subscribe(0, StrikeRange::Fixed(vec![Price::from("50000.000")]), None);
+    fixture
+        .clock
+        .borrow_mut()
+        .advance_time(make_series_id().expiration_ns, true);
+    fixture
+        .engine
+        .borrow_mut()
+        .process_data(Data::Quote(make_quote(
+            make_btc_option("50000.000", OptionKind::Call).id(),
+            "101.000",
+            "103.000",
+            make_series_id().expiration_ns.as_u64(),
+        )));
+    let late = make_btc_option("51000.000", OptionKind::Call);
+    fixture
+        .engine
+        .borrow_mut()
+        .response(DataResponse::Instrument(Box::new(InstrumentResponse::new(
+            UUID4::new(),
+            fixture.client_id,
+            late.id(),
+            late,
+            None,
+            None,
+            make_series_id().expiration_ns,
+            None,
+        ))));
+    fixture.recorder.borrow_mut().clear();
+    fixture.subscribe(
+        1,
+        if dynamic {
+            StrikeRange::AtmRelative {
+                strikes_above: 1,
+                strikes_below: 1,
+            }
+        } else {
+            StrikeRange::Fixed(vec![Price::from("51000.000")])
+        },
+        interval,
+    );
+
+    assert!(fixture.recorder.borrow().is_empty());
+    assert!(
+        !fixture
+            .engine
+            .borrow()
+            .has_option_chain_manager(&make_series_id())
+    );
+    assert_eq!(
+        fixture.engine.borrow().pending_option_chain_request_count(),
+        0
+    );
+    assert_eq!(fixture.clock.borrow().timer_count(), 0);
+    assert!(fixture.engine.borrow().subscribed_quotes().is_empty());
+    assert!(
+        fixture
+            .engine
+            .borrow()
+            .subscribed_instrument_status()
+            .is_empty()
+    );
+    fixture.dispose();
+}
+
+#[rstest]
+fn test_option_chain_expired_series_ignores_pending_response(
+    #[values(None, Some(Price::from("50000.000")))] price: Option<Price>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(clock, &cache);
+    fixture.subscribe(
+        0,
+        StrikeRange::AtmRelative {
+            strikes_above: 1,
+            strikes_below: 1,
+        },
+        Some(1_000),
+    );
+
+    let request_id = option_chain_reference_price_request_id(&fixture.recorder);
+    fixture
+        .clock
+        .borrow_mut()
+        .advance_time(make_series_id().expiration_ns, true);
+    fixture.recorder.borrow_mut().clear();
+    fixture
+        .engine
+        .borrow_mut()
+        .response(DataResponse::OptionChainReferencePrice(
+            OptionChainReferencePriceResponse::new(
+                request_id,
+                fixture.client_id,
+                make_series_id(),
+                price,
+                make_series_id().expiration_ns,
+                None,
+            ),
+        ));
+
+    assert!(fixture.recorder.borrow().is_empty());
+    assert!(
+        !fixture
+            .engine
+            .borrow()
+            .has_option_chain_manager(&make_series_id())
+    );
+    assert_eq!(
+        fixture.engine.borrow().pending_option_chain_request_count(),
+        0
+    );
+    assert_eq!(fixture.clock.borrow().timer_count(), 0);
+    assert!(fixture.engine.borrow().subscribed_quotes().is_empty());
+    assert!(
+        fixture
+            .engine
+            .borrow()
+            .subscribed_instrument_status()
+            .is_empty()
+    );
+    assert!(
+        fixture.engine.borrow().get_clients()[0]
+            .subscriptions_option_greeks
+            .is_empty()
+    );
+    fixture.dispose();
+}
+
+#[rstest]
+fn test_option_chain_fixed_range_first_listing_acquires_once(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(clock, &cache);
+    fixture.subscribe(0, StrikeRange::Fixed(vec![Price::from("51000.000")]), None);
+    assert!(fixture.recorder.borrow().is_empty());
+    let listing = make_btc_option("51000.000", OptionKind::Call);
+    fixture.engine.borrow_mut().process(&listing);
+    fixture
+        .engine
+        .borrow_mut()
+        .process_data(Data::OptionGreeks(make_option_chain_greeks(
+            listing.id(),
+            51000.0,
+        )));
+    let quote = make_quote(listing.id(), "201.000", "203.000", 5);
+    fixture.engine.borrow_mut().process_data(Data::Quote(quote));
+    assert_eq!(
+        get_actor_unchecked::<OptionChainActor>(&fixture.actors[0])
+            .slices
+            .last()
+            .unwrap()
+            .calls[&Price::from("51000.000")]
+            .quote,
+        quote
+    );
+    assert_eq!(fixture.recorder.borrow().len(), 3);
+    fixture.dispose();
+    assert_eq!(fixture.recorder.borrow().len(), 6);
+    assert!(fixture.engine.borrow().subscribed_quotes().is_empty());
+    assert!(
+        fixture
+            .engine
+            .borrow()
+            .subscribed_instrument_status()
+            .is_empty()
+    );
+    assert!(
+        fixture.engine.borrow().get_clients()[0]
+            .subscriptions_option_greeks
+            .is_empty()
+    );
+    assert_eq!(
+        msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(listing.id())),
+        0
+    );
+    assert_eq!(
+        msgbus::exact_subscriber_count_option_greeks(switchboard::get_option_greeks_topic(
+            listing.id()
+        )),
+        0
+    );
+}
+
+struct OptionChainFixture {
+    clock: Rc<RefCell<VirtualClock>>,
+    engine: Rc<RefCell<DataEngine>>,
+    recorder: Rc<RefCell<Vec<DataCommand>>>,
+    actors: [Ustr; 2],
+    client_id: ClientId,
+}
+
+impl OptionChainFixture {
+    fn new(clock: Rc<RefCell<VirtualClock>>, cache: &Rc<RefCell<Cache>>) -> Self {
+        let _bus = MessageBus::new(TraderId::test_default(), UUID4::new(), None, None)
+            .register_message_bus();
+        set_data_cmd_sender(Arc::new(SyncDataCommandSender));
+        let engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(cache));
+        let target = Rc::clone(&engine);
+        msgbus::register_data_command_endpoint(
+            MessagingSwitchboard::data_engine_queue_execute(),
+            TypedIntoHandler::from(move |command: DataCommand| {
+                target.borrow_mut().execute(command);
+            }),
+        );
+
+        let client_id = ClientId::from("DERIBIT-CHAIN");
+        let recorder = Rc::new(RefCell::new(Vec::new()));
+        register_mock_client(
+            Rc::clone(&clock),
+            Rc::clone(cache),
+            client_id,
+            Venue::from("DERIBIT"),
+            Some(Venue::from("DERIBIT")),
+            &recorder,
+            &mut engine.borrow_mut(),
+        );
+        cache
+            .borrow_mut()
+            .add_instrument(make_btc_option("50000.000", OptionKind::Call))
+            .unwrap();
+
+        let actors = std::array::from_fn(|index| {
+            let mut actor = OptionChainActor {
+                core: DataActorCore::new(DataActorConfig {
+                    actor_id: Some(ActorId::from(format!("CHAIN-{index}"))),
+                    ..Default::default()
+                }),
+                slices: Vec::new(),
+            };
+
+            actor
+                .register(
+                    TraderId::test_default(),
+                    Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+                    Rc::clone(cache),
+                )
+                .unwrap();
+            actor.start().unwrap();
+            let id = actor.actor_id().inner();
+            register_actor(actor);
+            id
+        });
+
+        Self {
+            clock,
+            engine,
+            recorder,
+            actors,
+            client_id,
+        }
+    }
+
+    fn params(&self, index: usize) -> Params {
+        Params::new([("route".to_string(), json!(index + 23))].into())
+    }
+
+    fn subscribe(&self, index: usize, range: StrikeRange, interval: Option<u64>) {
+        get_actor_unchecked::<OptionChainActor>(&self.actors[index])
+            .subscribe_option_chain(
+                make_series_id(),
+                range,
+                interval,
+                Some(self.client_id),
+                Some(self.params(index)),
+            )
+            .unwrap();
+    }
+
+    fn dispose(&self) {
+        for id in &self.actors {
+            let mut actor = get_actor_unchecked::<OptionChainActor>(id);
+            actor.stop().unwrap();
+            actor.dispose().unwrap();
+            drop(actor);
+            deregister_actor(id);
+        }
+    }
+}
+
+fn option_chain_unsubscribe(command: &DataCommand) -> DataCommand {
+    let DataCommand::Subscribe(command) = command else {
+        panic!("expected subscribe command");
+    };
+
+    DataCommand::Unsubscribe(command.clone().into_unsubscribe(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    ))
 }
 
 fn make_subscribe_option_chain(

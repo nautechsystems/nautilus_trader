@@ -817,6 +817,7 @@ impl OcmState {
                     .order_correlations
                     .get_mut(&client_order_id)
                     .is_some_and(|correlation| std::mem::take(&mut correlation.terminal_retained));
+
                 if retained {
                     self.remove_order_correlation(&client_order_id);
                 }

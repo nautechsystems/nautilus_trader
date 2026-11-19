@@ -132,7 +132,6 @@ pub fn json_value_to_py(py: Python<'_>, value: &serde_json::Value) -> PyResult<P
         }
         serde_json::Value::Object(obj) => {
             let dict = pyo3::types::PyDict::new(py);
-
             for (k, v) in obj {
                 dict.set_item(k, json_value_to_py(py, v)?)?;
             }
@@ -868,7 +867,6 @@ impl InstrumentProviderConfig {
     #[getter]
     fn filters(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = pyo3::types::PyDict::new(py);
-
         for (k, v) in &self.filters {
             let py_val = json_value_to_py(py, v)?;
             dict.set_item(k, py_val)?;
@@ -1075,7 +1073,6 @@ impl PluginConfig {
     #[getter]
     fn config(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         let dict = PyDict::new(py);
-
         for (key, value) in &self.config {
             dict.set_item(key, json_value_to_py(py, value)?)?;
         }
@@ -1141,6 +1138,9 @@ impl QueueMonitorConfig {
 #[pymethods]
 impl LiveNodeConfig {
     /// Configuration for live Nautilus system nodes.
+    ///
+    /// Connection, disconnection, and post-stop durations must fit in an unsigned 64-bit nanosecond
+    /// count and in the platform's monotonic timer range.
     #[new]
     #[expect(clippy::too_many_arguments)]
     #[pyo3(signature = (environment=None, trader_id=None, load_state=None, save_state=None, shutdown_on_error=None, logging=None, instance_id=None, timeout_connection_secs=None, timeout_reconciliation_secs=None, timeout_portfolio_secs=None, timeout_disconnection_secs=None, delay_post_stop_secs=None, timeout_shutdown_secs=None, cache=None, msgbus=None, portfolio=None, queue_monitor=None, loop_debug=None, data_engine=None, risk_engine=None, exec_engine=None, controller=None, plugins=None, streaming=None, catalogs=None, *, data_clients=None, exec_clients=None))]

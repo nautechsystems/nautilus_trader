@@ -46,7 +46,7 @@ const PARAM_SKIP_CATALOG_DATA: &str = "skip_catalog_data";
 pub(super) const PARAM_UPDATE_CATALOG: &str = "update_catalog";
 const PARAM_FORCE_INSTRUMENT_UPDATE: &str = "force_instrument_update";
 const PARAM_SUBSCRIPTION_NAME: &str = "subscription_name";
-const PARAM_FROM_DAY_START: &str = "from_day_start";
+pub(super) const PARAM_FROM_DAY_START: &str = "from_day_start";
 const CATALOG_CLIENT_ID: &str = "CATALOG";
 
 pub(crate) type CatalogMap = AHashMap<Ustr, DataCatalog>;

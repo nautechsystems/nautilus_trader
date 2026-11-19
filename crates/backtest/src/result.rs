@@ -402,6 +402,7 @@ fn validate_diagnostics(value: &Value) -> anyhow::Result<()> {
     let diagnostics = value
         .as_array()
         .ok_or_else(|| anyhow::anyhow!("canonical diagnostics must be an array"))?;
+
     for diagnostic in diagnostics {
         let object = diagnostic
             .as_object()
@@ -1037,6 +1038,7 @@ fn first_divergence(
             let len = expected.len().max(actual.len());
             for index in 0..len {
                 let next_path = format!("{path}/{index}");
+
                 match (expected.get(index), actual.get(index)) {
                     (Some(expected), Some(actual)) => {
                         if let Some(divergence) = first_divergence(expected, actual, next_path) {

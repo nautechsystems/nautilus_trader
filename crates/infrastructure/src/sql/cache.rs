@@ -292,6 +292,7 @@ pub enum DatabaseQuery {
     AddOrder(OrderInitialized, Option<ClientId>),
     AddOrderSnapshot(OrderSnapshot),
     AddPosition(PositionId, OrderFilled),
+    AddPositionWithSnapshot(PositionId, OrderFilled, Box<PositionSnapshot>),
     AddPositionSnapshot(PositionSnapshot),
     AddAccount(AccountState, bool),
     AddSignal(Signal),
@@ -1265,16 +1266,16 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
 
     fn add_position(&self, position: &Position) -> anyhow::Result<()> {
         let event = position_last_event(position)?;
-        let query = DatabaseQuery::AddPosition(position.id, event);
+        let query = if position.requires_replay_state() {
+            let snapshot = PositionSnapshot::from_replay_state(position, None);
+            DatabaseQuery::AddPositionWithSnapshot(position.id, event, Box::new(snapshot))
+        } else {
+            DatabaseQuery::AddPosition(position.id, event)
+        };
+
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query add_position to database message handler: {e}")
-        })?;
-
-        if position.requires_replay_state() {
-            self.add_position_snapshot(&PositionSnapshot::from_replay_state(position, None))?;
-        }
-
-        Ok(())
+        })
     }
 
     fn add_position_snapshot(&self, snapshot: &PositionSnapshot) -> anyhow::Result<()> {
@@ -1742,6 +1743,9 @@ async fn drain_buffer(pool: &PgPool, trader_id: &TraderId, buffer: &mut VecDeque
             }
             DatabaseQuery::AddPosition(position_id, event) => {
                 DatabaseQueries::add_position(pool, position_id, &event).await
+            }
+            DatabaseQuery::AddPositionWithSnapshot(position_id, event, snapshot) => {
+                DatabaseQueries::replace_position(pool, position_id, &event, Some(*snapshot)).await
             }
             DatabaseQuery::AddPositionSnapshot(snapshot) => {
                 DatabaseQueries::add_position_snapshot(pool, snapshot).await

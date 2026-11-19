@@ -84,12 +84,15 @@ use nautilus_model::{
 };
 use redis::{AsyncCommands, Pipeline, aio::ConnectionManager};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use ustr::Ustr;
 
 use super::{REDIS_DELIMITER, REDIS_FLUSHDB, get_index_key};
 use crate::redis::{
     RedisConnectionConfig, create_redis_connection,
-    queries::{CurrencyRecord, DatabaseQueries},
+    queries::{
+        CurrencyRecord, DatabaseQueries, INDEX_POSITIONS_REPLAY_SOURCE, POSITION_SNAPSHOTS_PREFIX,
+    },
 };
 
 // Task and connection names
@@ -271,6 +274,10 @@ pub enum DatabaseOperation {
     Update,
     UpdateOrder,
     ReplaceList,
+    WritePosition {
+        position_id: PositionId,
+        replace_fills: bool,
+    },
     Delete,
     DeletePositionIndex,
     Flush(SyncSender<()>),
@@ -513,11 +520,31 @@ impl RedisCacheDatabase {
     ///
     /// Returns an error if the command cannot be sent to the background task channel.
     pub fn insert(&self, key: String, payload: Option<Vec<Bytes>>) -> anyhow::Result<()> {
-        let op = DatabaseCommand::new(DatabaseOperation::Insert, key, payload);
+        let operation = payload
+            .as_deref()
+            .and_then(|payload| self.replay_snapshot_position_id(&key, payload))
+            .map_or(DatabaseOperation::Insert, |position_id| {
+                DatabaseOperation::WritePosition {
+                    position_id,
+                    replace_fills: false,
+                }
+            });
+
+        let op = DatabaseCommand::new(operation, key, payload);
         match self.tx.send(op) {
             Ok(()) => Ok(()),
             Err(e) => anyhow::bail!("{FAILED_TX_CHANNEL}: {e}"),
         }
+    }
+
+    fn replay_snapshot_position_id(&self, key: &str, payload: &[Bytes]) -> Option<PositionId> {
+        let position_id = key.strip_prefix(POSITION_SNAPSHOTS_PREFIX)?;
+        let snapshot: Value =
+            DatabaseQueries::deserialize_payload(self.encoding, payload.first()?).ok()?;
+        snapshot
+            .get("replay_state")
+            .filter(|state| !state.is_null())?;
+        PositionId::new_checked(position_id).ok()
     }
 
     /// Stores custom data in Redis (key format: `custom:<ts_init_020>:<uuid>`, value: full JSON).
@@ -666,9 +693,7 @@ impl RedisCacheDatabase {
             .send(op)
             .map_err(|e| anyhow::anyhow!("Failed to send delete position command: {e}"))?;
 
-        self.delete_key(format!(
-            "{SNAPSHOTS}{REDIS_DELIMITER}{POSITIONS}{REDIS_DELIMITER}{position_id}"
-        ))?;
+        self.delete_key(format!("{POSITION_SNAPSHOTS_PREFIX}{position_id}"))?;
         self.delete_key(format!(
             "{GENERAL}{REDIS_DELIMITER}position_oms:{position_id}"
         ))?;
@@ -678,6 +703,7 @@ impl RedisCacheDatabase {
             INDEX_POSITIONS,
             INDEX_POSITIONS_OPEN,
             INDEX_POSITIONS_CLOSED,
+            INDEX_POSITIONS_REPLAY_SOURCE,
         ];
 
         for index_key in &index_keys {
@@ -928,8 +954,14 @@ async fn drain_buffer(
             DatabaseOperation::Close => panic!("Close command should not be drained"),
             DatabaseOperation::Flush(_) => panic!("Flush command should not be drained"),
             operation => {
-                match append_pipeline_command(&mut pipe, collection, &key, &operation, msg.payload)
-                {
+                match append_pipeline_command(
+                    &mut pipe,
+                    trader_key,
+                    collection,
+                    &key,
+                    &operation,
+                    msg.payload,
+                ) {
                     Ok(()) => {
                         has_pending_ops = true;
                         Ok(())
@@ -949,6 +981,7 @@ async fn drain_buffer(
 
 fn append_pipeline_command(
     pipe: &mut Pipeline,
+    trader_key: &str,
     collection: &str,
     key: &str,
     operation: &DatabaseOperation,
@@ -965,8 +998,50 @@ fn append_pipeline_command(
         DatabaseOperation::Insert => insert(pipe, collection, key, &payload),
         DatabaseOperation::Update => update(pipe, collection, key, &payload),
         DatabaseOperation::ReplaceList => replace_list_operation(pipe, collection, key, &payload),
+        DatabaseOperation::WritePosition {
+            position_id,
+            replace_fills,
+        } => write_position(
+            pipe,
+            trader_key,
+            key,
+            *position_id,
+            *replace_fills,
+            &payload,
+        ),
         _ => unreachable!("only pipeline operations are appended"),
     }
+}
+
+fn write_position(
+    pipe: &mut Pipeline,
+    trader_key: &str,
+    key: &str,
+    position_id: PositionId,
+    replace_fills: bool,
+    payload: &[Bytes],
+) -> anyhow::Result<()> {
+    let (fill, snapshot) = match (replace_fills, payload) {
+        (true, [fill]) => (Some(fill), None),
+        (true, [fill, snapshot]) => (Some(fill), Some(snapshot)),
+        (false, [snapshot, ..]) => (None, Some(snapshot)),
+        _ => anyhow::bail!("Invalid position write payload"),
+    };
+
+    if let Some(fill) = fill {
+        replace_list(pipe, key, fill);
+    }
+
+    if let Some(snapshot) = snapshot {
+        let snapshot_key =
+            format!("{trader_key}{REDIS_DELIMITER}{POSITION_SNAPSHOTS_PREFIX}{position_id}");
+        insert_list(pipe, &snapshot_key, snapshot);
+    }
+
+    let source_key = full_redis_key(trader_key, INDEX_POSITIONS_REPLAY_SOURCE);
+    pipe.hset(source_key, position_id.to_string(), snapshot.is_some());
+
+    Ok(())
 }
 
 async fn execute_state_command(
@@ -1223,7 +1298,7 @@ fn delete_from_index(
             remove_from_set(pipe, key, value[0].as_ref());
             Ok(())
         }
-        INDEX_ORDER_POSITION | INDEX_ORDER_CLIENT => {
+        INDEX_ORDER_POSITION | INDEX_ORDER_CLIENT | INDEX_POSITIONS_REPLAY_SOURCE => {
             remove_from_hash(pipe, key, value[0].as_ref());
             Ok(())
         }
@@ -1942,12 +2017,23 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         let position_id = position.id;
         let key = format!("{POSITIONS}{REDIS_DELIMITER}{position_id}");
 
-        let payload = self.serialize_position_event(position)?;
-        self.replace_list(key, payload)?;
+        let fill = self.serialize_position_event(position)?;
+        let mut payload = vec![fill];
 
         if position.requires_replay_state() {
-            self.add_position_snapshot(&PositionSnapshot::from_replay_state(position, None))?;
+            let snapshot = PositionSnapshot::from_replay_state(position, None);
+            let snapshot_payload = self.database.serialize_payload(&snapshot)?;
+            payload.push(Bytes::from(snapshot_payload));
         }
+
+        self.send_command(
+            DatabaseOperation::WritePosition {
+                position_id,
+                replace_fills: true,
+            },
+            key,
+            Some(payload),
+        )?;
 
         let position_id_bytes = Bytes::from(position_id.to_string());
         self.database.insert(
@@ -1968,12 +2054,23 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     fn add_position_snapshot(&self, snapshot: &PositionSnapshot) -> anyhow::Result<()> {
-        let key = format!(
-            "{SNAPSHOTS}{REDIS_DELIMITER}{POSITIONS}{REDIS_DELIMITER}{}",
-            snapshot.position_id
-        );
+        let position_id = snapshot.position_id;
+        let key = format!("{POSITION_SNAPSHOTS_PREFIX}{position_id}");
         let payload = self.database.serialize_payload(snapshot)?;
-        self.database.insert(key, Some(vec![Bytes::from(payload)]))
+        let payload = Some(vec![Bytes::from(payload)]);
+
+        if snapshot.replay_state.is_some() {
+            self.send_command(
+                DatabaseOperation::WritePosition {
+                    position_id,
+                    replace_fills: false,
+                },
+                key,
+                payload,
+            )
+        } else {
+            self.send_command(DatabaseOperation::Insert, key, payload)
+        }
     }
 
     fn add_order_book(&self, _order_book: &OrderBook) -> anyhow::Result<()> {

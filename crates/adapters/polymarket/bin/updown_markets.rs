@@ -60,6 +60,7 @@ fn build_updown_slugs() -> Vec<String> {
 
     for i in 0..NUM_PERIODS {
         let timestamp = period_start + i * PERIOD_SECS;
+
         for asset in ASSETS {
             slugs.push(format!("{asset}-updown-15m-{timestamp}"));
         }

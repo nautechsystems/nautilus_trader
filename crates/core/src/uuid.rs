@@ -61,6 +61,7 @@ impl UUID4 {
     #[must_use]
     pub fn new() -> Self {
         let bytes = Self::new_bytes();
+
         Self {
             value: format_uuid4_bytes(bytes),
         }
@@ -70,6 +71,7 @@ impl UUID4 {
     #[must_use]
     pub fn new_bytes() -> [u8; 16] {
         let mut bytes = [0u8; 16];
+
         #[cfg(all(feature = "simulation", madsim))]
         {
             // Deterministic RNG when running inside a madsim runtime; otherwise
@@ -82,6 +84,7 @@ impl UUID4 {
                 rand::rng().fill_bytes(&mut bytes); // dst-ok: tests outside a madsim runtime
             }
         }
+
         #[cfg(not(all(feature = "simulation", madsim)))]
         rand::rng().fill_bytes(&mut bytes);
 
@@ -99,6 +102,7 @@ impl UUID4 {
     pub fn from_bytes(mut bytes: [u8; 16]) -> Self {
         bytes[6] = (bytes[6] & 0x0F) | 0x40;
         bytes[8] = (bytes[8] & 0x3F) | 0x80;
+
         Self {
             value: format_uuid4_bytes(bytes),
         }
@@ -158,6 +162,7 @@ impl UUID4 {
             | (self.value[13] ^ b'-')
             | (self.value[18] ^ b'-')
             | (self.value[23] ^ b'-');
+
         if (invalid_nibbles & 0xf0) | invalid_delimiters != 0 {
             return self.as_bytes_checked();
         }
@@ -197,6 +202,7 @@ impl UUID4 {
         if uuid.get_variant() != uuid::Variant::RFC4122 {
             return Err("UUID is not RFC 4122 variant".to_string());
         }
+
         Ok(())
     }
 
@@ -649,6 +655,7 @@ mod tests {
             let text = uuid.to_cstr().to_str().expect("Valid UTF-8");
             *Uuid::parse_str(text).expect("Valid UUID4").as_bytes()
         });
+
         assert!(expected.is_err());
         assert_eq!(uuid_bytes_outcome(|| uuid.as_bytes()), expected);
     }
@@ -697,6 +704,7 @@ mod tests {
             0x2d, 0x89, 0x66, 0x6b, 0x1a, 0x1e, 0x4a, 0x75, 0xb1, 0x93, 0x4e, 0xb3, 0xb4, 0x54,
             0xc7, 0x57,
         ];
+
         let uuid = UUID4::from_bytes(bytes);
         assert_eq!(uuid.to_string(), "2d89666b-1a1e-4a75-b193-4eb3b454c757");
         assert_eq!(uuid.as_bytes(), bytes);

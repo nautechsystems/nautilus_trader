@@ -205,7 +205,6 @@ impl BookStreamChecker {
 
         let book_bids: BTreeMap<_, _> = checked.book.bids_as_map(Some(depth)).into_iter().collect();
         let book_asks: BTreeMap<_, _> = checked.book.asks_as_map(Some(depth)).into_iter().collect();
-
         if book_bids != *bids || book_asks != *asks {
             return Err(BookContractViolation::TruthMismatch { sequence });
         }
@@ -251,7 +250,6 @@ impl CheckedBook {
     ) -> Result<(), BookContractViolation> {
         let snapshot = group[0].action == BookAction::Clear;
         let sequence = group[group.len() - 1].sequence;
-
         if group
             .iter()
             .any(|delta| RecordFlag::F_SNAPSHOT.matches(delta.flags) != snapshot)
@@ -465,7 +463,6 @@ mod tests {
         checker.apply(&snapshot(10)).unwrap();
 
         let result = checker.apply(&batch(deltas));
-
         match (result, expected) {
             (Err(BookContractViolation::Integrity(_)), BookContractViolation::Integrity(_)) => {}
             (result, expected) => assert_eq!(result, Err(expected)),
@@ -600,7 +597,6 @@ mod tests {
     #[case::reopened(true)]
     fn verify_requires_snapshot_since_open(#[case] reopened: bool) {
         let mut checker = checker();
-
         if reopened {
             checker.apply(&snapshot(10)).unwrap();
             checker.open(instrument_id());

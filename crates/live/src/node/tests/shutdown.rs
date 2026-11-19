@@ -17,6 +17,7 @@ use nautilus_common::{
     clients::{DataClient, ExecutionReportTask},
     component::component_state,
     enums::ComponentState,
+    live::dst::time,
     messages::{
         data::UnsubscribeCommand,
         execution::{CancelOrder, QueryOrder},
@@ -121,7 +122,6 @@ async fn test_report_shutdown_timeout_preserves_observed_worker_failure(
     }
     drop(pending_collection);
     node.exec_clients = vec![failed, pending];
-
     if pending_first {
         node.exec_clients.reverse();
     }
@@ -200,8 +200,9 @@ async fn test_client_connect_failure_aborts_startup(
                 true,
                 Box::new(DataConnectClient {
                     connected: false,
-                    connect_error,
+                    connect_error: Some(connect_error),
                     connect_delay,
+                    stop_handle: None,
                 }),
             ),
             None,
@@ -213,6 +214,7 @@ async fn test_client_connect_failure_aborts_startup(
             .register_client(Box::new(ShutdownClient {
                 connected: false,
                 connect_error: Some(connect_error),
+                connect_count: Rc::default(),
                 connect_delay,
                 retain: false,
                 disconnect_event: Rc::default(),
@@ -269,11 +271,153 @@ async fn test_client_connect_failure_aborts_startup(
     }
 }
 
+#[rstest]
+#[case::connection("timeout_connection", |config: &mut LiveNodeConfig, duration| config.timeout_connection = duration)]
+#[case::disconnection("timeout_disconnection", |config: &mut LiveNodeConfig, duration| config.timeout_disconnection = duration)]
+#[case::post_stop("delay_post_stop", |config: &mut LiveNodeConfig, duration| config.delay_post_stop = duration)]
+fn test_node_build_rejects_overflowing_lifecycle_deadline(
+    #[case] field: &str,
+    #[case] configure: fn(&mut LiveNodeConfig, Duration),
+    #[values(Duration::MAX, Duration::from_millis(u64::MAX))] duration: Duration,
+) {
+    let mut config = LiveNodeConfig::default();
+    configure(&mut config, duration);
+    let expected =
+        format!("invalid LiveNodeConfig.{field}: duration exceeds the monotonic deadline range");
+
+    let direct = LiveNode::build("InvalidDeadlineNode".to_string(), Some(config.clone()));
+    assert_eq!(direct.unwrap_err().to_string(), expected);
+
+    let builder = LiveNodeBuilder::from_config(config).unwrap();
+    assert_eq!(builder.build().unwrap_err().to_string(), expected);
+}
+
+mod dst {
+    use super::*;
+
+    #[rstest]
+    #[case::manual(None)]
+    #[case::hosted(Some(NodeRunMode::Hosted))]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_stop_during_data_connect_skips_execution_connect(
+        #[case] mode: Option<NodeRunMode>,
+    ) {
+        let config = LiveNodeConfig {
+            timeout_connection: Duration::ZERO,
+            timeout_disconnection: Duration::ZERO,
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+
+        let mut node = LiveNode::build("CancelledStartupNode".to_string(), Some(config)).unwrap();
+        let handle = node.handle();
+        let connect_count = Rc::new(Cell::new(0));
+
+        node.kernel.data_engine.borrow_mut().register_client(
+            DataClientAdapter::new(
+                ClientId::from("DATA"),
+                None,
+                true,
+                true,
+                Box::new(DataConnectClient {
+                    connected: false,
+                    connect_error: None,
+                    connect_delay: Duration::ZERO,
+                    stop_handle: Some(handle.clone()),
+                }),
+            ),
+            None,
+        );
+
+        node.kernel
+            .exec_engine
+            .borrow_mut()
+            .register_client(Box::new(ShutdownClient {
+                connected: false,
+                connect_error: None,
+                connect_count: Rc::clone(&connect_count),
+                connect_delay: Duration::ZERO,
+                retain: false,
+                disconnect_event: Rc::default(),
+                submitted: Rc::default(),
+                queries: Rc::default(),
+                report_task: RefCell::default(),
+                disconnect_delay: Duration::ZERO,
+            }))
+            .unwrap();
+
+        time::timeout(Duration::from_secs(2), async {
+            match mode {
+                None => node.start().await,
+                Some(mode) => node.run_with_mode(mode).await,
+            }
+        })
+        .await
+        .expect("startup did not abort")
+        .unwrap();
+
+        assert_eq!(connect_count.get(), 0);
+        assert_eq!(node.state(), NodeState::Stopped);
+        assert!(handle.should_stop());
+    }
+
+    #[rstest]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_hosted_startup_aborts_when_connection_deadline_overflows() {
+        let mut node = LiveNode::build("InvalidDeadlineNode".to_string(), None).unwrap();
+        node.config.timeout_connection = Duration::MAX;
+
+        let error = node.run_with_mode(NodeRunMode::Hosted).await.unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "invalid LiveNodeConfig.timeout_connection: duration exceeds the monotonic deadline range"
+        );
+        assert_eq!(node.state(), NodeState::Stopped);
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[rstest]
+fn test_live_deadline_leaves_room_for_timer_rounding() {
+    let now = time::Instant::now();
+    let mut duration = Duration::ZERO;
+    let mut step = Duration::MAX / 2;
+
+    // Find a duration within one millisecond of the platform's last representable deadline
+    while !step.is_zero() {
+        let candidate = duration + step;
+        if now.checked_add(candidate).is_some() {
+            duration = candidate;
+        }
+
+        step /= 2;
+    }
+
+    let deadline = now.checked_add(duration).unwrap();
+    let rounding = Duration::from_millis(1);
+    let near_limit = deadline.checked_sub(rounding).unwrap();
+    assert!(deadline.checked_add(rounding).is_none());
+    assert_eq!(
+        live_deadline(near_limit, rounding, "delay_post_stop")
+            .unwrap_err()
+            .to_string(),
+        "invalid LiveNodeConfig.delay_post_stop: duration exceeds the monotonic deadline range"
+    );
+    assert_eq!(
+        live_deadline(near_limit, Duration::ZERO, "delay_post_stop").unwrap(),
+        near_limit
+    );
+}
+
 #[derive(Debug)]
 struct DataConnectClient {
     connected: bool,
-    connect_error: &'static str,
+    connect_error: Option<&'static str>,
     connect_delay: Duration,
+    stop_handle: Option<LiveNodeHandle>,
 }
 
 #[async_trait::async_trait(?Send)]
@@ -317,7 +461,17 @@ impl DataClient for DataConnectClient {
             tokio::time::sleep(self.connect_delay).await;
         }
 
-        anyhow::bail!("{}", self.connect_error)
+        if let Some(message) = self.connect_error {
+            anyhow::bail!("{message}");
+        }
+
+        self.connected = true;
+
+        if let Some(handle) = &self.stop_handle {
+            handle.stop();
+        }
+
+        Ok(())
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
@@ -428,6 +582,7 @@ fn shutdown_report_client(
     let client = LiveExecutionClient::new(Box::new(ShutdownClient {
         connected: true,
         connect_error: None,
+        connect_count: Rc::default(),
         connect_delay: Duration::ZERO,
         retain: false,
         disconnect_event: Rc::default(),
@@ -444,6 +599,7 @@ fn shutdown_report_client(
 struct ShutdownClient {
     connected: bool,
     connect_error: Option<&'static str>,
+    connect_count: Rc<Cell<usize>>,
     connect_delay: Duration,
     retain: bool,
     disconnect_event: Rc<RefCell<Option<OrderEventAny>>>,
@@ -512,6 +668,8 @@ impl ExecutionClient for ShutdownClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
+        self.connect_count.set(self.connect_count.get() + 1);
+
         if !self.connect_delay.is_zero() {
             tokio::time::sleep(self.connect_delay).await;
         }
@@ -533,6 +691,7 @@ impl ExecutionClient for ShutdownClient {
         if let Some(event) = self.disconnect_event.borrow_mut().take() {
             get_exec_event_sender().send(ExecutionEvent::Order(event))?;
         }
+
         Ok(())
     }
 
@@ -591,6 +750,7 @@ fn shutdown_node(
         timeout_shutdown: Duration::ZERO,
         ..Default::default()
     };
+
     let mut node = LiveNode::build("SubmissionShutdown".to_string(), Some(config)).unwrap();
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
     let account_id = client.account_id();
@@ -656,6 +816,7 @@ fn shutdown_node(
         ..Default::default()
     }))
     .unwrap();
+
     let order = OrderTestBuilder::new(OrderType::Limit)
         .trader_id(node.trader_id())
         .strategy_id(strategy_id)
@@ -701,11 +862,13 @@ async fn test_submission_shutdown_boundary(
 ) {
     let queries = Rc::new(Cell::new(0));
     let disconnect_event = Rc::default();
+
     let (mut node, order) = shutdown_node(
         policy,
         ShutdownClient {
             connected: false,
             connect_error: None,
+            connect_count: Rc::default(),
             connect_delay: Duration::ZERO,
             retain: client_retains,
             disconnect_event: Rc::clone(&disconnect_event),
@@ -737,15 +900,19 @@ async fn test_submission_shutdown_boundary(
             1
         );
     }
+
     let start = tokio::time::Instant::now();
+
     let result = if hosted {
         let handle = node.handle();
         let stop = tokio::spawn(async move {
             while !handle.is_running() {
                 tokio::task::yield_now().await;
             }
+
             handle.stop();
         });
+
         let result = node.run_with_mode(NodeRunMode::Hosted).await;
         stop.await.unwrap();
         result
@@ -764,6 +931,7 @@ async fn test_submission_shutdown_boundary(
     } else {
         result.unwrap();
     }
+
     assert!(start.elapsed() < Duration::from_millis(200));
     assert_eq!(node.state(), NodeState::Stopped);
     assert!(node.kernel.check_engines_disconnected());
@@ -790,11 +958,13 @@ async fn test_submission_shutdown_late_fill_completes_managed_exit(
     #[values(false, true)] hosted: bool,
 ) {
     let submitted = Rc::new(RefCell::new(Vec::new()));
+
     let (mut node, order) = shutdown_node(
         SubmissionRecoveryPolicy::RetainUnresolved,
         ShutdownClient {
             connected: false,
             connect_error: None,
+            connect_count: Rc::default(),
             connect_delay: Duration::ZERO,
             retain: false,
             disconnect_event: Rc::default(),
@@ -805,6 +975,7 @@ async fn test_submission_shutdown_late_fill_completes_managed_exit(
         },
         true,
     );
+
     tokio::time::sleep(Duration::from_millis(1)).await;
     let exhausted = node.exec_manager.check_inflight_orders();
     assert!(exhausted.events.is_empty());
@@ -825,10 +996,10 @@ async fn test_submission_shutdown_late_fill_completes_managed_exit(
     .commission(Money::zero(Currency::USDT()))
     .build();
     let handle = node.handle();
-
     if !hosted {
         node.start().await.unwrap();
     }
+
     let sender = get_exec_event_sender();
 
     let late_fill = tokio::spawn(async move {
@@ -836,12 +1007,14 @@ async fn test_submission_shutdown_late_fill_completes_managed_exit(
             while !handle.is_running() {
                 tokio::task::yield_now().await;
             }
+
             handle.stop();
         }
 
         while handle.state() != NodeState::ShuttingDown {
             tokio::time::sleep(Duration::from_millis(1)).await;
         }
+
         tokio::time::sleep(Duration::from_millis(2)).await;
         assert_eq!(handle.state(), NodeState::ShuttingDown);
         sender.send(ExecutionEvent::Order(fill)).unwrap();
@@ -852,6 +1025,7 @@ async fn test_submission_shutdown_late_fill_completes_managed_exit(
     } else {
         node.stop().await.unwrap();
     }
+
     late_fill.await.unwrap();
     let commands = submitted.borrow();
     assert_eq!(commands.len(), 1);
@@ -897,6 +1071,7 @@ impl DataActor for FailingStopActor {
         let callback = TimeEventCallback::RustLocal(Rc::new(move |_| {
             crate::dispatch::tests::latch_callback_failure();
         }));
+
         nautilus_common::runner::get_time_event_sender().send(TimeEventMessage::new(
             TimeEvent::new(
                 "shutdown-callback-failure".into(),
@@ -918,6 +1093,7 @@ fn test_submission_shutdown_python_result(
     #[values(false, true)] callback_failure: bool,
 ) {
     Python::initialize();
+
     let (mut node, order) = shutdown_node(
         if retain {
             SubmissionRecoveryPolicy::RetainUnresolved
@@ -927,6 +1103,7 @@ fn test_submission_shutdown_python_result(
         ShutdownClient {
             connected: false,
             connect_error: None,
+            connect_count: Rc::default(),
             connect_delay: Duration::ZERO,
             retain: false,
             disconnect_event: Rc::default(),
@@ -947,6 +1124,7 @@ fn test_submission_shutdown_python_result(
         })
         .unwrap();
     }
+
     let handle = node.handle();
     let cache = node.kernel.cache.clone();
 
