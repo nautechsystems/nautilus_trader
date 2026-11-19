@@ -599,7 +599,9 @@ async fn tx(
     object.insert("code".to_string(), json!(200));
     object.entry("hash").or_insert_with(|| json!(tx_hash));
     object.entry("type").or_insert_with(|| json!(tx_type));
-    object.insert("info".to_string(), json!(info.to_string()));
+    object
+        .entry("info")
+        .or_insert_with(|| json!(info.to_string()));
     object
         .entry("account_index")
         .or_insert_with(|| info["AccountIndex"].clone());
@@ -868,7 +870,8 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
                                 })
                             });
 
-                        if sink
+                        if !ack.is_null()
+                            && sink
                             .send(Message::Text(ack.to_string().into()))
                             .await
                             .is_err()
@@ -3584,6 +3587,178 @@ async fn test_reconnect_during_create_probe_preserves_identity() {
         Some(OrderEventAny::Accepted(_)),
     ));
 
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[case::failed(0, "application_error", Some(OrderStatus::Rejected), 1)]
+#[case::executed_application_error(2, "application_error", Some(OrderStatus::Rejected), 1)]
+#[case::executed_after_two_reconnects(2, "valid", Some(OrderStatus::Accepted), 1)]
+#[case::post_only_rejection(2, "post_only", Some(OrderStatus::Rejected), 1)]
+#[case::unreceived(21500, "valid", None, 3)]
+#[case::wrong_receipt_account(2, "wrong_account", None, 1)]
+#[case::nonfinal_status(1, "application_error", None, 3)]
+#[case::malformed_application_error(2, "nonstring_error", None, 3)]
+#[case::missing_application_error(2, "missing_error", None, 3)]
+#[case::positional_application_result(2, "positional_event", None, 3)]
+#[case::failed_positional_application_result(0, "positional_event", Some(OrderStatus::Rejected), 1)]
+#[case::positional_order_receipt(2, "positional_order", None, 3)]
+#[case::positional_transaction_info(2, "positional_info", None, 3)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_reconnect_checks_unanswered_create_receipt(
+    #[case] status: u32,
+    #[case] event_shape: &str,
+    #[case] expected: Option<OrderStatus>,
+    #[case] lookups: usize,
+) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.expect("connect");
+    assert!(client.retain_unresolved_submissions());
+    let post_only = event_shape == "post_only";
+
+    let order = make_limit_order(
+        "O-RECONNECT-RECEIPT",
+        OrderSide::Buy,
+        Quantity::from("0.0050"),
+        Price::from("2361.31"),
+        if post_only {
+            TimeInForce::Gtc
+        } else {
+            TimeInForce::Ioc
+        },
+        post_only,
+        false,
+    );
+
+    let cloid = order.client_order_id();
+    let index = client.dispatch.derive_client_order_index(&cloid);
+    let venue_id = VenueOrderId::new("281476929510555");
+
+    // Receipt fields captured from Lighter mainnet `/tx` with identifiers replaced
+    let mut receipt = load_json("http_create_order_receipt_event.json");
+    receipt["to"]["u"] = json!(index);
+    receipt["to"]["a"] = json!(TEST_ACCOUNT_INDEX);
+    let reason = "reduce only increases position";
+
+    match event_shape {
+        "valid" | "post_only" | "positional_info" => {}
+        "application_error" => receipt = json!({"ae": reason}),
+        "wrong_account" => receipt["to"]["a"] = json!(TEST_ACCOUNT_INDEX + 1),
+        "nonstring_error" => receipt["ae"] = json!(4),
+        "missing_error" => {
+            receipt.as_object_mut().unwrap().remove("ae");
+        }
+        "positional_event" => receipt = json!(["post-only"]),
+        "positional_order" => {
+            receipt["to"] = json!([receipt["to"]["i"], index, TEST_ACCOUNT_INDEX]);
+        }
+        _ => unreachable!(),
+    }
+
+    let mut tx = if status == 21500 {
+        json!({"code":21500,"message":"transaction not found"})
+    } else {
+        json!({"status":status,"event_info":receipt.to_string()})
+    };
+
+    if event_shape == "positional_info" {
+        tx["info"] = json!(json!([index]).to_string());
+    }
+
+    state
+        .tx_responses
+        .lock()
+        .await
+        .extend(std::iter::repeat_n(tx, lookups));
+    let mut receipt_requested = state.tx_response_started.subscribe();
+    let reconnect_again = expected == Some(OrderStatus::Accepted);
+    state
+        .tx_response_blocked
+        .store(reconnect_again, Ordering::Release);
+    *state.next_send_tx_ack.lock().await = Some(Value::Null);
+    state.close_after_next_frame.store(true, Ordering::Release);
+    cache_order(&cache, order.clone());
+    client.submit_order(submit_command(&order)).expect("submit");
+    assert!(matches!(
+        next_order_event(&mut rx, Duration::from_secs(2)).await,
+        Some(OrderEventAny::Submitted(event)) if event.client_order_id == cloid,
+    ));
+    await_tx_calls(&state, lookups).await;
+
+    if reconnect_again {
+        tokio::time::timeout(Duration::from_secs(2), receipt_requested.recv())
+            .await
+            .expect("receipt lookup started before reconnect")
+            .expect("receipt lookup notification");
+        let mut nonce_requests = state.next_nonce_requested.subscribe();
+        state.close_after_next_frame.store(true, Ordering::Release);
+        client
+            .ws_client
+            .subscribe_book(eth_perp_id())
+            .await
+            .expect("send book subscription");
+        tokio::time::timeout(Duration::from_secs(5), nonce_requests.recv())
+            .await
+            .expect("nonce refresh after second reconnect")
+            .expect("nonce refresh notification");
+        state.tx_response_release.notify_one();
+    }
+
+    if post_only {
+        wait_until_async(
+            || async { client.dispatch.lookup_venue_order_id(&cloid) == Some(venue_id) },
+            Duration::from_secs(2),
+        )
+        .await;
+        assert!(!client.dispatch.accepted_was_emitted(&cloid));
+
+        let nonce = send_tx_info(&state.send_txs().await[0])["Nonce"]
+            .as_i64()
+            .unwrap();
+        let mut venue_order =
+            account_all_orders_open_entry(index, venue_id.as_str(), &index.to_string(), nonce);
+        venue_order["order_index"] = receipt["to"]["i"].clone();
+        venue_order["status"] = json!("canceled-post-only");
+        venue_order["time_in_force"] = json!("post-only");
+        state.push_frame(&json!({
+            "type": "update/account_all_orders",
+            "channel": format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),
+            "orders": {"0": [venue_order]},
+        }));
+    }
+
+    let received = next_order_event(&mut rx, Duration::from_millis(500)).await;
+
+    let expected_reason = match event_shape {
+        "post_only" => "post-only",
+        "positional_event" => "transaction failed without an application error",
+        _ => reason,
+    };
+
+    match expected {
+        Some(OrderStatus::Accepted) => assert!(matches!(received,
+            Some(OrderEventAny::Accepted(event)) if event.client_order_id == cloid && event.venue_order_id == venue_id)),
+        Some(OrderStatus::Rejected) => assert!(matches!(received,
+            Some(OrderEventAny::Rejected(event)) if event.client_order_id == cloid
+                && event.reason.contains(expected_reason) && event.due_post_only == post_only)),
+        None => {
+            assert_eq!(received, None);
+            let nonce = send_tx_info(&state.send_txs().await[0])["Nonce"]
+                .as_i64()
+                .unwrap();
+            assert!(
+                client
+                    .dispatch
+                    .create_submission_is_pending(&cloid, index, nonce)
+            );
+        }
+        _ => unreachable!(),
+    }
+
+    assert_eq!(state.send_txs().await.len(), 1);
+    assert_eq!(state.active_orders_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(state.trades_calls.load(Ordering::Relaxed), 0);
     client.disconnect().await.expect("disconnect");
 }
 

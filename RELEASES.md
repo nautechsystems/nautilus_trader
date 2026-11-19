@@ -148,6 +148,7 @@ Released on TBD (UTC).
 - Fixed Lighter metadata decoding rejecting responses without `funding_fee_discounts_enabled`
 - Fixed Lighter order reports mapping venue time in force `Unknown` to `GTC`
 - Fixed Lighter raw WebSocket frames losing `subscribed/` types and unmodeled fields
+- Fixed Lighter recovery of unacknowledged order creates on reconnect (#5696), thanks @aaurix
 - Fixed OKX balances not refreshing after a WebSocket reconnect
 - Fixed OKX execution clients not subscribing to venue position updates
 - Fixed OKX fills for untracked orders arriving without their order terms

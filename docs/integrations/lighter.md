@@ -680,9 +680,8 @@ Use `post_only` on limit-style orders. The adapter does not synthesize maker-onl
 The adapter maps Lighter's `canceled-post-only` status to `OrderCanceled` after acceptance or fills,
 otherwise to `OrderRejected` with `due_post_only=true`.
 
-Lighter Mainnet testing confirms `reduce_only=true` closes perpetual positions. Invalid reduce-only opens can
-be dropped without a venue order report. `ResolveLocally` reconciles them as `INFLIGHT_TIMEOUT` without a venue
-rejection reason; the default `RetainUnresolved` leaves them `SUBMITTED`.
+Lighter Mainnet testing confirms `reduce_only=true` closes perpetual positions. Lighter can drop invalid
+reduce-only opens without an order report. See [Outcome recovery](#outcome-recovery).
 
 ### Advanced order features
 
@@ -916,6 +915,17 @@ During this delay:
 Order updates and transaction lookups resolve create and cancel outcomes. REST recovery, including pending
 modifications, performs up to three lookups at two-second intervals while the pending action remains current.
 It validates transaction hash, type, account, API key, and original submission nonce.
+
+The adapter [retains unresolved submissions](../concepts/execution/reconciliation.md#submission-recovery)
+in `SUBMITTED` after recovery ends, even under `ResolveLocally`. If they are still unresolved at the
+[shutdown boundary](../concepts/live.md#submission-recovery-at-shutdown), `LiveNode` stops and returns
+an error listing their client order IDs.
+
+After an execution WebSocket reconnect, the adapter looks up `CreateOrder` transactions that received
+no `sendTx` response by their signed hashes. A confirmed failure emits `OrderRejected`. If an executed
+transaction's receipt identifies the order, the adapter emits `OrderAccepted` with the venue order ID.
+For post-only creates, the receipt supplies the venue order ID and the usual order updates determine
+acceptance. Grouped creates, subsequent order status, and fills recover through the usual execution paths.
 
 Resolved or superseded cancels stop their probes, including requests waiting for REST quota.
 When a cancel transaction executes, recovery retries missing or nonterminal order status within the same three lookups.

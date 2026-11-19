@@ -1492,13 +1492,18 @@ impl LighterExecutionClient {
                                 // `generate_position_status_reports` may
                                 // return stale data.
 
-                                // Drained creates have unknown outcomes;
-                                // reconciliation resolves them, so warn
-                                // rather than emit rejections.
                                 let refresh_guard = nonce_submission_gate.write().await;
                                 let disconnected_epoch = connection_epoch.saturating_sub(1);
                                 let stale = dispatch.drain_pending_sendtx(disconnected_epoch);
                                 warn_pending_sendtx_unknown(&stale, "reconnect");
+
+                                if let Some(context) = &child_context {
+                                    for pending in &stale {
+                                        if matches!(pending.kind, PendingSendTxKind::Create { .. }) {
+                                            spawn_order_probe(pending, context.clone(), true);
+                                        }
+                                    }
+                                }
 
                                 if let Some(credential) = &credential_for_loop {
                                     match http_client_for_loop
@@ -1562,7 +1567,7 @@ impl LighterExecutionClient {
                                     let Some(credential) = credential_for_loop.clone() else { continue; };
 
                                     if matches!(pending.kind, PendingSendTxKind::Modify { .. }) { continue; }
-                                    spawn_acked_order_probe(
+                                    spawn_order_probe(
                                         &pending,
                                         AckedOrderProbeContext {
                                             http_client: http_client_for_loop.clone(),
@@ -1576,6 +1581,7 @@ impl LighterExecutionClient {
                                             cancellation_token: cancellation_token.clone(),
                                             pending_tasks: pending_tasks_for_loop.clone(),
                                         },
+                                        false,
                                     );
                                 }
                             }
@@ -2448,7 +2454,7 @@ impl LighterExecutionClient {
             };
 
             dispatch.enqueue_pending_sendtx(pending.clone());
-            spawn_acked_order_probe(&pending, probe_context);
+            spawn_order_probe(&pending, probe_context, false);
 
             if let Err(e) = ws_client
                 .send_tx_on_connection(LighterTxType::ModifyOrder as u8, tx_info, connection_epoch)
@@ -4128,7 +4134,7 @@ impl FanoutDispatchContext {
         self.dispatch
             .enqueue_pending_sendtx(prepared.pending.clone());
         if matches!(prepared.pending.kind, PendingSendTxKind::Modify { .. }) {
-            spawn_acked_order_probe(&prepared.pending, self.probe_context());
+            spawn_order_probe(&prepared.pending, self.probe_context(), false);
         }
     }
 
@@ -4621,7 +4627,7 @@ fn handle_send_tx_batch_result(
     (Vec::new(), resync)
 }
 
-fn spawn_acked_order_probe(pending: &PendingSendTx, context: AckedOrderProbeContext) {
+fn spawn_order_probe(pending: &PendingSendTx, context: AckedOrderProbeContext, reconnected: bool) {
     if let PendingSendTxKind::CreateGroup { orders } = &pending.kind {
         for (order, index) in orders {
             let mut leg = pending.clone();
@@ -4631,7 +4637,7 @@ fn spawn_acked_order_probe(pending: &PendingSendTx, context: AckedOrderProbeCont
                 client_order_index: *index,
             };
 
-            spawn_acked_order_probe(&leg, context.clone());
+            spawn_order_probe(&leg, context.clone(), reconnected);
         }
 
         return;
@@ -4642,7 +4648,12 @@ fn spawn_acked_order_probe(pending: &PendingSendTx, context: AckedOrderProbeCont
         PendingSendTxKind::Modify { .. } | PendingSendTxKind::Cancel { .. }
     )
     .then(|| pending.clone());
-    let probe = AckedOrderProbe::from_pending(pending);
+
+    let probe = AckedOrderProbe::from_pending(pending).map(|mut probe| {
+        probe.connection_epoch = (!reconnected).then_some(pending.connection_epoch);
+        probe
+    });
+
     if action.is_none() && probe.is_none() {
         return;
     }
@@ -4688,7 +4699,7 @@ fn spawn_acked_order_probe(pending: &PendingSendTx, context: AckedOrderProbeCont
         if let Some(probe) = probe
             && let Err(e) = probe_acked_create(&probe, &context).await
         {
-            log::warn!("Lighter acknowledged order probe failed: {e:?}");
+            log::warn!("Lighter create outcome probe failed: {e:?}");
         }
     };
 
@@ -5245,10 +5256,13 @@ async fn probe_acked_create(
     } = probe;
 
     let client_order_id = order.client_order_id();
+    let reconnected = connection_epoch.is_none();
     let mut transaction_executed = false;
 
     for attempt in 1..=ACKED_ORDER_PROBE_ATTEMPTS {
-        if context.connection_epoch.load(Ordering::Acquire) != *connection_epoch {
+        if connection_epoch
+            .is_some_and(|epoch| context.connection_epoch.load(Ordering::Acquire) != epoch)
+        {
             log::warn!(
                 "Lighter acknowledged create outcome unresolved after reconnect for {client_order_id}; retaining identity for reconciliation",
             );
@@ -5263,7 +5277,7 @@ async fn probe_acked_create(
             return Ok(());
         }
 
-        if probe_acked_create_report(probe, context, attempt).await {
+        if !reconnected && probe_acked_create_report(probe, context, attempt).await {
             return Ok(());
         }
 
@@ -5280,7 +5294,7 @@ async fn probe_acked_create(
         }
     }
 
-    if transaction_executed {
+    if transaction_executed && !reconnected {
         let _ = context.dispatch.confirm_create_submission(
             &client_order_id,
             *client_order_index,
@@ -5291,7 +5305,7 @@ async fn probe_acked_create(
         );
     } else {
         log::warn!(
-            "Lighter acknowledged create outcome unresolved after {ACKED_ORDER_PROBE_ATTEMPTS} transaction lookups for {client_order_id}; retaining identity for reconciliation",
+            "Lighter create outcome unresolved after {ACKED_ORDER_PROBE_ATTEMPTS} transaction lookups for {client_order_id}; retaining identity for reconciliation",
         );
     }
     Ok(())
@@ -5377,6 +5391,7 @@ async fn probe_acked_create_tx(
     } = probe;
 
     let client_order_id = order.client_order_id();
+    let reconnected = connection_epoch.is_none();
 
     let tx = match context.http_client.get_tx(tx_hash.clone()).await {
         Ok(tx) => tx,
@@ -5391,6 +5406,17 @@ async fn probe_acked_create_tx(
         }
     };
 
+    if reconnected
+        && (tx.tx_type != LighterTxType::CreateOrder as u8
+            || !tx.info.trim_start().starts_with('{')
+            || !matches!(
+                tx.status,
+                LighterTxStatus::Failed | LighterTxStatus::Executed
+            ))
+    {
+        return Ok(ControlFlow::Continue(false));
+    }
+
     validate_acked_create_tx(
         &tx,
         context.credential.account_index(),
@@ -5400,18 +5426,37 @@ async fn probe_acked_create_tx(
         tx_hash,
     )?;
 
-    let event = parse_acked_tx_event(&tx.event_info).unwrap_or_else(|e| {
-        log::warn!(
-            "Lighter create transaction carried invalid event_info for {client_order_id}: {e}",
-        );
-        AckedTxEvent::default()
-    });
+    // Serde also accepts positional arrays for derived structs
+    let event = parse_acked_tx_event(&tx.event_info)
+        .and_then(|event| {
+            anyhow::ensure!(
+                !reconnected || tx.event_info.trim_start().starts_with('{'),
+                "Lighter create event must be a JSON object"
+            );
+            Ok(event)
+        })
+        .inspect_err(|e| {
+            log::warn!(
+                "Lighter create transaction carried invalid event_info for {client_order_id}: {e}",
+            );
+        });
 
+    if reconnected && tx.status == LighterTxStatus::Executed && event.is_err() {
+        return Ok(ControlFlow::Continue(false));
+    }
+
+    let event = event.unwrap_or_default();
     if tx.status == LighterTxStatus::Failed || !event.app_error.is_empty() {
         let detail = acked_tx_error_detail(&event.app_error);
-        let reason = format!(
-            "Lighter sequencer rejected acknowledged create transaction {tx_hash}: {detail}",
-        );
+
+        let source = if reconnected {
+            "unanswered"
+        } else {
+            "acknowledged"
+        };
+
+        let reason =
+            format!("Lighter sequencer rejected {source} create transaction {tx_hash}: {detail}");
         reject_create_order(
             &context.dispatch,
             &context.emitter,
@@ -5421,14 +5466,94 @@ async fn probe_acked_create_tx(
             &reason,
             context.clock.get_time_ns(),
             lighter_reason_indicates_post_only_rejection(detail),
-            Some((&context.connection_epoch, *connection_epoch)),
+            connection_epoch.map(|epoch| (context.connection_epoch.as_ref(), epoch)),
         );
         return Ok(ControlFlow::Break(()));
     }
 
-    Ok(ControlFlow::Continue(
-        tx.status == LighterTxStatus::Executed,
-    ))
+    let executed = tx.status == LighterTxStatus::Executed;
+    if executed && reconnected && bind_reconnect_create_receipt(probe, context, &tx.event_info)? {
+        return Ok(ControlFlow::Break(()));
+    }
+
+    Ok(ControlFlow::Continue(executed))
+}
+
+fn bind_reconnect_create_receipt(
+    probe: &AckedOrderProbe,
+    context: &AckedOrderProbeContext,
+    event_info: &str,
+) -> anyhow::Result<bool> {
+    let receipt: CreateReceipt =
+        serde_json::from_str(event_info).context("failed to parse Lighter create receipt")?;
+
+    let Some(order) = receipt.order.filter(|order| {
+        receipt.app_error.as_deref() == Some("") && order.get().trim_start().starts_with('{')
+    }) else {
+        return Ok(false);
+    };
+
+    let order: CreateReceiptOrder =
+        serde_json::from_str(order.get()).context("failed to parse Lighter receipt order")?;
+
+    anyhow::ensure!(
+        order.order_index > 0
+            && order.account_index == context.credential.account_index()
+            && order.client_order_index == probe.client_order_index
+            && receipt.market_index.is_some()
+            && context.registry.market_index(&probe.order.instrument_id()) == receipt.market_index,
+        "Lighter create receipt did not match the reconnected submission"
+    );
+
+    let dispatch = &context.dispatch;
+    let _events = dispatch.order_events.lock();
+    let cloid = probe.order.client_order_id();
+    let venue_order_id = VenueOrderId::new(order.order_index.to_string());
+
+    // Bind post-only receipts too, but let order updates determine acceptance
+    if let Some(identity) = dispatch.order_identity(&cloid)
+        && dispatch.create_submission_is_pending(&cloid, probe.client_order_index, probe.nonce)
+        && dispatch.observe_create_submission(
+            &cloid,
+            probe.client_order_index,
+            probe.nonce,
+            venue_order_id,
+        )
+        && !probe.order.is_post_only()
+    {
+        ensure_accepted_emitted(
+            cloid,
+            venue_order_id,
+            &identity,
+            context.account_id,
+            context.emitter.trader_id(),
+            &context.emitter,
+            dispatch,
+            context.clock.get_time_ns(),
+        );
+    }
+
+    Ok(true)
+}
+
+#[derive(Deserialize)]
+struct CreateReceipt<'a> {
+    #[serde(rename = "ae")]
+    app_error: Option<String>,
+    #[serde(rename = "m")]
+    market_index: Option<i64>,
+    #[serde(borrow, rename = "to")]
+    order: Option<&'a serde_json::value::RawValue>,
+}
+
+#[derive(Deserialize)]
+struct CreateReceiptOrder {
+    #[serde(rename = "i")]
+    order_index: i64,
+    #[serde(rename = "u")]
+    client_order_index: i64,
+    #[serde(rename = "a")]
+    account_index: i64,
 }
 
 #[derive(Deserialize)]
@@ -5527,7 +5652,8 @@ fn acked_tx_error_detail(app_error: &str) -> &str {
 struct AckedOrderProbe {
     order: Box<OrderAny>,
     client_order_index: i64,
-    connection_epoch: u64,
+    // Only probes responding to a socket acknowledgment belong to a socket epoch
+    connection_epoch: Option<u64>,
     nonce: i64,
     api_key_index: u8,
     tx_hash: String,
@@ -5546,7 +5672,7 @@ impl AckedOrderProbe {
         Some(Self {
             order: order.clone(),
             client_order_index: *client_order_index,
-            connection_epoch: pending.connection_epoch,
+            connection_epoch: Some(pending.connection_epoch),
             nonce: pending.nonce,
             api_key_index: pending.api_key_index,
             tx_hash: pending.tx_hash.clone(),
@@ -6060,6 +6186,10 @@ impl ExecutionClient for LighterExecutionClient {
 
     fn get_account(&self) -> Option<AccountAny> {
         self.core.cache().account_owned(&self.core.account_id)
+    }
+
+    fn retain_unresolved_submissions(&self) -> bool {
+        true
     }
 
     fn generate_account_state(
@@ -21752,7 +21882,7 @@ mod tests {
             AckedOrderProbe::from_pending(&acked),
             Some(AckedOrderProbe {
                 nonce: 11,
-                connection_epoch: 0,
+                connection_epoch: Some(0),
                 ..
             }),
         ));
@@ -22408,7 +22538,7 @@ mod tests {
             pending_tasks: client.pending_tasks.spawner().expect("task spawner"),
         };
 
-        spawn_acked_order_probe(&pending, context);
+        spawn_order_probe(&pending, context, false);
 
         assert_eq!(client.pending_tasks.len(), 1);
 
@@ -26468,7 +26598,7 @@ mod tests {
             let probe = AckedOrderProbe {
                 order: Box::new(cached),
                 client_order_index: index,
-                connection_epoch: 0,
+                connection_epoch: Some(0),
                 nonce: TEST_SUBMISSION_NONCE,
                 api_key_index: TEST_API_KEY_INDEX,
                 tx_hash: "create-probe".to_string(),
