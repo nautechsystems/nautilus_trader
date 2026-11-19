@@ -102,6 +102,12 @@ use crate::{
 /// See [`OrderAny::is_fill_report_order`] for the classification requirements.
 pub const FILL_REPORT_ORDER_TAG: &str = "FILL_REPORT";
 
+/// Marks a zero limit price used to reconstruct an unfilled terminal external order.
+///
+/// The placeholder supplies neither an inferred fill price nor a slippage reference.
+/// An [`OrderUpdated`] with a price removes the tag.
+pub const RECONCILIATION_PRICE_UNKNOWN_TAG: &str = "RECONCILIATION_PRICE_UNKNOWN";
+
 /// Order types that have stop/trigger prices.
 pub const STOP_ORDER_TYPES: &[OrderType] = &[
     OrderType::StopMarket,

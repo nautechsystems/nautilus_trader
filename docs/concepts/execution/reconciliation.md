@@ -273,6 +273,21 @@ When a report references an order that is absent from the cache, the engine crea
 order**. This covers venue-initiated ADL, liquidation, or settlement, orders placed by another
 process, and orders not yet observed locally.
 
+**Missing limit prices.** When creating an external limit order from a report that omits the price,
+reconciliation sets the limit price to `0` and adds the `RECONCILIATION_PRICE_UNKNOWN` tag if all
+three conditions hold.
+
+- The reported status is canceled, rejected, or expired.
+- The reported filled quantity is zero.
+- No accompanying fill has a nonzero quantity.
+
+Later reconciliation reports leave the tagged placeholder in place. While the tag is present,
+the order skips slippage calculations, and reconciliation excludes the placeholder from inferred
+fill prices. Reconciliation also excludes a reported limit price of zero because it may echo the
+cached placeholder. A reported average fill price, including zero, remains valid fill evidence.
+
+If the order is already cached, a report that omits the price leaves the cached limit price in place.
+
 The naming distinguishes configuration intent from live ownership state:
 
 - `external_order_instrument_ids` is the serializable strategy configuration intent. It names the
@@ -388,7 +403,7 @@ continue managing the recovered state.
 
 | Order source                  | Unclaimed                        | Claimed                                 |
 | ----------------------------- | -------------------------------- | --------------------------------------- |
-| Venue order                   | `EXTERNAL`, tag `VENUE`          | Claiming strategy, no tag               |
+| Venue order                   | `EXTERNAL`, tag `VENUE`          | Claiming strategy, no origin tag        |
 | Position reconciliation order | `EXTERNAL`, tag `RECONCILIATION` | Claiming strategy, tag `RECONCILIATION` |
 
 :::tip

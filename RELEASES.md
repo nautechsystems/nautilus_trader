@@ -104,6 +104,7 @@ Released on TBD (UTC).
 - Fixed stale order status reports overwriting newer amendments for clients requiring authoritative fills
 - Fixed reconciliation applying `Accepted` reports to orders with fills or a closed status
 - Fixed execution reconciliation dropping later fills and duplicating executions for split external fills
+- Fixed reconciliation failing on closed, unfilled external limit orders without a price
 - Fixed TWAP slices ignoring the size increment and minimum quantity, and panics on excessive interval counts
 - Fixed Feather rotation splitting rows with equal `ts_init` across files (#5611), thanks @aaurix
 - Fixed `ExecTester` submitting non-positive limit prices when tick offsets reach or exceed the bid

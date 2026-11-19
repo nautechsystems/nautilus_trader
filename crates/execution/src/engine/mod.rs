@@ -100,7 +100,8 @@ use crate::{
         check_position_reconciliation, fill_precedes_reconciled_position,
         fill_precedes_snapshot_reconciled_position, generate_external_order_status_events,
         generate_reconciliation_order_events, generate_reconciliation_order_pre_fill_events,
-        generate_reconciliation_order_snapshot_events, preserve_order_amendment,
+        generate_reconciliation_order_snapshot_events, initialize_external_order_price,
+        needs_external_order_price_placeholder, preserve_order_amendment,
         reconcile_fill_report as reconcile_fill,
     },
 };
@@ -1118,7 +1119,7 @@ impl ExecutionEngine {
         if let Some(order) = order {
             self.reconcile_cached_order_status(&order, report, instrument.as_ref(), is_snapshot);
         } else if instrument.is_some() && self.order_report_has_missing_fills(report, None) {
-            let _ = self.accept_external_order_from_status(report);
+            let _ = self.accept_external_order_from_status(report, false);
         } else {
             self.create_external_order(report, instrument.as_ref());
         }
@@ -1208,8 +1209,9 @@ impl ExecutionEngine {
     fn accept_external_order_from_status(
         &mut self,
         report: &OrderStatusReport,
+        has_fills: bool,
     ) -> Option<OrderAny> {
-        let order = self.materialize_external_order_from_status(report)?;
+        let order = self.materialize_external_order_from_status(report, has_fills)?;
         let ts_now = self.clock.borrow().timestamp_ns();
 
         let accepted = OrderAccepted::new(
@@ -1247,7 +1249,7 @@ impl ExecutionEngine {
             return;
         };
 
-        let Some(order) = self.materialize_external_order_from_status(report) else {
+        let Some(order) = self.materialize_external_order_from_status(report, false) else {
             return;
         };
 
@@ -1270,6 +1272,7 @@ impl ExecutionEngine {
     fn materialize_external_order_from_status(
         &mut self,
         report: &OrderStatusReport,
+        has_fills: bool,
     ) -> Option<OrderAny> {
         let strategy_id = self.resolve_external_strategy(&report.instrument_id);
         if self.should_filter_unclaimed_external_order(strategy_id) {
@@ -1300,13 +1303,14 @@ impl ExecutionEngine {
             return None;
         }
 
-        self.materialize_external_order_from_status_with_strategy(report, strategy_id)
+        self.materialize_external_order_from_status_with_strategy(report, strategy_id, has_fills)
     }
 
     fn materialize_external_order_from_status_with_strategy(
         &self,
         report: &OrderStatusReport,
         strategy_id: StrategyId,
+        has_fills: bool,
     ) -> Option<OrderAny> {
         let client_order_id = report
             .client_order_id
@@ -1324,7 +1328,7 @@ impl ExecutionEngine {
             return None;
         };
 
-        let initialized = match OrderInitialized::new_checked(
+        let mut initialized = match OrderInitialized::new_checked(
             trader_id,
             strategy_id,
             report.instrument_id,
@@ -1366,6 +1370,8 @@ impl ExecutionEngine {
                 return None;
             }
         };
+
+        initialize_external_order_price(&mut initialized, report, has_fills);
 
         self.materialize_external_order(
             initialized,
@@ -1754,6 +1760,14 @@ impl ExecutionEngine {
         let instrument = cache.instrument(&report.instrument_id).cloned();
         drop(cache);
 
+        if order.is_none()
+            && needs_external_order_price_placeholder(report)
+            && fills.iter().all(|fill| fill.last_qty.is_zero())
+        {
+            self.create_external_order(report, instrument.as_ref());
+            return;
+        }
+
         let Some(instrument) = instrument else {
             log::debug!(
                 "Cannot reconcile bundled report for venue_order_id={}: instrument {} not found",
@@ -1794,7 +1808,8 @@ impl ExecutionEngine {
                     .unwrap_or(order)
             }
             None => {
-                let Some(order) = self.accept_external_order_from_status(report) else {
+                let Some(order) = self.accept_external_order_from_status(report, !fills.is_empty())
+                else {
                     return;
                 };
 
@@ -5481,7 +5496,9 @@ mod tests {
         },
         identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
         instruments::{InstrumentAny, stubs::audusd_sim},
-        orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
+        orders::{
+            RECONCILIATION_PRICE_UNKNOWN_TAG, builder::OrderTestBuilder, stubs::TestOrderEventStubs,
+        },
         position::PositionFillVoid,
         types::Price,
     };
@@ -5687,6 +5704,113 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    #[rstest]
+    #[case(OrderStatus::Canceled)]
+    #[case(OrderStatus::Rejected)]
+    #[case(OrderStatus::Expired)]
+    fn materialize_external_terminal_limit_without_price(#[case] status: OrderStatus) {
+        set_message_bus(Rc::new(RefCell::new(MessageBus::default())));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let engine = ExecutionEngine::new(
+            Rc::new(RefCell::new(VirtualClock::new())),
+            Rc::clone(&cache),
+            None,
+        );
+
+        let report = OrderStatusReport::new(
+            AccountId::from("SIM-001"),
+            InstrumentId::from("AUD/USD.SIM"),
+            Some(ClientOrderId::from("O-PRICE-UNKNOWN")),
+            VenueOrderId::from("V-PRICE-UNKNOWN"),
+            Some(OrderSide::Buy),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            status,
+            Quantity::from(10),
+            Quantity::zero(0),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+
+        let order = engine
+            .materialize_external_order_from_status_with_strategy(
+                &report,
+                StrategyId::from("EXTERNAL"),
+                false,
+            )
+            .unwrap();
+
+        assert_eq!(order.price(), Some(Price::zero(0)));
+        assert_eq!(order.quantity(), Quantity::from(10));
+        assert_eq!(order.filled_qty(), Quantity::zero(0));
+        assert_eq!(
+            order.tags(),
+            Some([Ustr::from(RECONCILIATION_PRICE_UNKNOWN_TAG)].as_slice())
+        );
+        assert_eq!(report.price, None);
+    }
+
+    #[rstest]
+    #[case(OrderStatus::Canceled)]
+    #[case(OrderStatus::Rejected)]
+    #[case(OrderStatus::Expired)]
+    fn bundled_fills_exclude_external_price_placeholder(#[case] status: OrderStatus) {
+        set_message_bus(Rc::new(RefCell::new(MessageBus::default())));
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+
+        let mut engine = ExecutionEngine::new(
+            Rc::new(RefCell::new(VirtualClock::new())),
+            Rc::clone(&cache),
+            None,
+        );
+
+        let report = OrderStatusReport::new(
+            AccountId::from("SIM-001"),
+            instrument.id(),
+            Some(ClientOrderId::from("O-BUNDLED-PRICE-UNKNOWN")),
+            VenueOrderId::from("V-BUNDLED-PRICE-UNKNOWN"),
+            Some(OrderSide::Buy),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            status,
+            Quantity::from(10),
+            Quantity::zero(0),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+
+        let fill = FillReport::new(
+            report.account_id,
+            instrument.id(),
+            report.venue_order_id,
+            TradeId::from("T-BUNDLED-PRICE-UNKNOWN"),
+            OrderSide::Buy,
+            Quantity::from(1),
+            Price::from("1.5"),
+            Money::zero(instrument.quote_currency()),
+            LiquiditySide::Taker,
+            report.client_order_id,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+
+        engine.reconcile_order_with_fills(&report, &[fill]);
+
+        assert_eq!(cache.borrow().order(&report.client_order_id.unwrap()), None);
     }
 
     #[rstest]

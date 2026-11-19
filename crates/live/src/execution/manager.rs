@@ -67,7 +67,8 @@ use nautilus_execution::{
         generate_reconciliation_order_pre_fill_events,
         generate_reconciliation_order_snapshot_events_with_commission,
         incremental_inferred_fill_price_and_liquidity, inferred_fill_price_and_liquidity,
-        position_prices_match, preserve_order_amendment, process_mass_status_for_reconciliation,
+        initialize_external_order_price, position_prices_match, preserve_order_amendment,
+        process_mass_status_for_reconciliation,
         process_mass_status_for_reconciliation_without_synthetic_reports,
         reconcile_order_report_with_commission, should_reconciliation_update,
     },
@@ -4756,7 +4757,7 @@ impl ExecutionManager {
             return (Vec::new(), None);
         };
 
-        let initialized = match OrderInitialized::new_checked(
+        let mut initialized = match OrderInitialized::new_checked(
             self.config.trader_id,
             strategy_id,
             report.instrument_id,
@@ -4798,6 +4799,8 @@ impl ExecutionManager {
                 return (Vec::new(), None);
             }
         };
+
+        initialize_external_order_price(&mut initialized, report, !fills.is_empty());
 
         let initialized = OrderEventAny::Initialized(initialized);
 

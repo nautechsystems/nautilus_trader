@@ -26,11 +26,14 @@ use nautilus_model::{
     enums::{LiquiditySide, OrderStatus, OrderType},
     events::{
         OrderAccepted, OrderCanceled, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled,
-        OrderRejected, OrderTriggered, OrderUpdated,
+        OrderInitialized, OrderRejected, OrderTriggered, OrderUpdated,
     },
     identifiers::{AccountId, PositionId, TradeId},
     instruments::{Instrument, InstrumentAny},
-    orders::{LIMIT_ORDER_TYPES, Order, OrderAny, TRIGGERABLE_ORDER_TYPES},
+    orders::{
+        LIMIT_ORDER_TYPES, Order, OrderAny, RECONCILIATION_PRICE_UNKNOWN_TAG,
+        TRIGGERABLE_ORDER_TYPES,
+    },
     reports::{FillReport, OrderStatusReport},
     types::{Money, Price, Quantity},
 };
@@ -477,6 +480,39 @@ fn is_unchanged_accepted_report_during_pending_command(
         && !should_reconciliation_update(order, report)
 }
 
+/// Sets a zero placeholder price tagged [`RECONCILIATION_PRICE_UNKNOWN_TAG`] on an external
+/// limit order initialized without a price.
+///
+/// Applies only when the report is canceled, rejected, or expired with zero filled quantity
+/// and `has_fills` is false.
+pub fn initialize_external_order_price(
+    initialized: &mut OrderInitialized,
+    report: &OrderStatusReport,
+    has_fills: bool,
+) {
+    if initialized.price.is_none()
+        && initialized.order_type == OrderType::Limit
+        && !has_fills
+        && needs_external_order_price_placeholder(report)
+    {
+        initialized.price = Some(Price::zero(0));
+        initialized
+            .tags
+            .get_or_insert_with(Vec::new)
+            .push(Ustr::from(RECONCILIATION_PRICE_UNKNOWN_TAG));
+    }
+}
+
+pub(crate) fn needs_external_order_price_placeholder(report: &OrderStatusReport) -> bool {
+    report.price.is_none()
+        && report.order_type == OrderType::Limit
+        && matches!(
+            report.order_status,
+            OrderStatus::Canceled | OrderStatus::Rejected | OrderStatus::Expired
+        )
+        && report.filled_qty.is_zero()
+}
+
 /// Generates the appropriate order events for an external order and order status report.
 ///
 /// After creating an external order, we need to transition it to its actual state
@@ -903,7 +939,8 @@ pub fn should_reconciliation_update(order: &OrderAny, report: &OrderStatusReport
         return true;
     }
 
-    let price_drift = report.price.is_some() && report.price != order.price();
+    let price = reported_update_price(order, report);
+    let price_drift = price.is_some() && price != order.price();
     let trigger_drift =
         report.trigger_price.is_some() && report.trigger_price != order.trigger_price();
 
@@ -1097,7 +1134,7 @@ pub(super) fn create_reconciliation_updated(
     let price = if LIMIT_ORDER_TYPES.contains(&order.order_type())
         || order.order_type() == OrderType::MarketToLimit
     {
-        report.price
+        reported_update_price(order, report)
     } else {
         None
     };
@@ -1691,8 +1728,23 @@ fn resolve_fill_price(
                 })
                 .ok()
         })
-        .or(report.price)
-        .or_else(|| order.price())
+        .or_else(|| {
+            report
+                .price
+                .filter(|price| !price.is_zero() || !has_unknown_price(order))
+        })
+        .or_else(|| order.price().filter(|_| !has_unknown_price(order)))
+}
+
+fn reported_update_price(order: &OrderAny, report: &OrderStatusReport) -> Option<Price> {
+    report.price.filter(|_| !has_unknown_price(order))
+}
+
+fn has_unknown_price(order: &OrderAny) -> bool {
+    order.tags().is_some_and(|tags| {
+        tags.iter()
+            .any(|tag| tag.as_str() == RECONCILIATION_PRICE_UNKNOWN_TAG)
+    })
 }
 
 /// Caps an inferred fill price at the instrument's maximum price.

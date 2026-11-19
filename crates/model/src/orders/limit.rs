@@ -27,7 +27,10 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::{Order, OrderAny, OrderCore, check_display_qty, check_time_in_force};
+use super::{
+    Order, OrderAny, OrderCore, RECONCILIATION_PRICE_UNKNOWN_TAG, check_display_qty,
+    check_time_in_force,
+};
 use crate::{
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
@@ -486,7 +489,14 @@ impl Order for LimitOrder {
         }
 
         if updates_slippage {
-            self.core.set_slippage(self.price);
+            if self.tags.as_ref().is_some_and(|tags| {
+                tags.iter()
+                    .any(|tag| tag.as_str() == RECONCILIATION_PRICE_UNKNOWN_TAG)
+            }) {
+                self.core.slippage = None;
+            } else {
+                self.core.set_slippage(self.price);
+            }
         }
 
         Ok(())
@@ -501,6 +511,10 @@ impl Order for LimitOrder {
 
         if let Some(price) = event.price {
             self.price = price;
+
+            if let Some(tags) = self.tags.as_mut() {
+                tags.retain(|tag| tag.as_str() != RECONCILIATION_PRICE_UNKNOWN_TAG);
+            }
         }
 
         self.core.apply_updated_quantity(event.quantity);
@@ -627,13 +641,19 @@ impl TryFrom<OrderInitialized> for LimitOrder {
 mod tests {
     use nautilus_core::UnixNanos;
     use rstest::rstest;
+    use rust_decimal_macros::dec;
+    use ustr::Ustr;
 
+    use super::RECONCILIATION_PRICE_UNKNOWN_TAG;
     use crate::{
         enums::{OrderSide, OrderType, TimeInForce},
         events::{OrderEventAny, OrderUpdated},
-        identifiers::InstrumentId,
-        instruments::{CurrencyPair, stubs::*},
-        orders::{Order, OrderError, OrderTestBuilder, stubs::TestOrderStubs},
+        identifiers::{InstrumentId, TradeId},
+        instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::*},
+        orders::{
+            Order, OrderAny, OrderError, OrderTestBuilder,
+            stubs::{OrderFilledTestBuilder, TestOrderStubs},
+        },
         types::{Price, Quantity},
     };
 
@@ -791,6 +811,79 @@ mod tests {
 
         assert_eq!(accepted_order.quantity(), updated_quantity);
         assert_eq!(accepted_order.price(), Some(updated_price));
+    }
+
+    #[rstest]
+    fn test_unknown_reconciliation_price_preserves_fills_and_replay(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .quantity(Quantity::from(10))
+            .price(Price::zero(0))
+            .tags(vec![
+                Ustr::from(RECONCILIATION_PRICE_UNKNOWN_TAG),
+                Ustr::from("EXTERNAL"),
+            ])
+            .build();
+        let mut order = TestOrderStubs::make_accepted_order(&order);
+        let fill = OrderFilledTestBuilder::new(&order, &instrument)
+            .last_qty(Quantity::from(4))
+            .last_px(Price::from("1.5"))
+            .build();
+        order.apply(fill).unwrap();
+        let first_avg = order.avg_px();
+        let first_slippage = order.slippage();
+        let persisted = serde_json::to_string(&order).unwrap();
+        let restored: OrderAny = serde_json::from_str(&persisted).unwrap();
+        let events = order.events().into_iter().cloned().collect();
+        let partial_replayed = OrderAny::from_events(events).unwrap();
+
+        let updated = OrderUpdated {
+            client_order_id: order.client_order_id(),
+            strategy_id: order.strategy_id(),
+            price: Some(Price::from("1.3")),
+            quantity: order.quantity(),
+            ..Default::default()
+        };
+
+        order.apply(OrderEventAny::Updated(updated)).unwrap();
+        let fill = OrderFilledTestBuilder::new(&order, &instrument)
+            .last_qty(Quantity::from(6))
+            .last_px(Price::from("1.5"))
+            .trade_id(TradeId::from("T-SECOND"))
+            .build();
+        order.apply(fill).unwrap();
+        let events = order.events().into_iter().cloned().collect();
+        let replayed = OrderAny::from_events(events).unwrap();
+
+        assert_eq!(first_avg, Some(dec!(1.5)));
+        assert_eq!(first_slippage, None);
+        assert_eq!(restored.price(), Some(Price::zero(0)));
+        assert_eq!(restored.filled_qty(), Quantity::from(4));
+        assert_eq!(restored.avg_px(), first_avg);
+        assert_eq!(restored.slippage(), None);
+        assert_eq!(restored.tags(), partial_replayed.tags());
+        assert_eq!(partial_replayed.price(), Some(Price::zero(0)));
+        assert_eq!(partial_replayed.slippage(), None);
+        assert_eq!(
+            partial_replayed.tags(),
+            Some(
+                [
+                    Ustr::from(RECONCILIATION_PRICE_UNKNOWN_TAG),
+                    Ustr::from("EXTERNAL")
+                ]
+                .as_slice()
+            )
+        );
+        assert_eq!(order.avg_px(), Some(dec!(1.5)));
+        assert_eq!(order.filled_qty(), Quantity::from(10));
+        assert_eq!(order.price(), Some(Price::from("1.3")));
+        assert_eq!(order.slippage(), Some(dec!(0.2)));
+        assert_eq!(order.tags(), Some([Ustr::from("EXTERNAL")].as_slice()));
+        assert_eq!(replayed.price(), order.price());
+        assert_eq!(replayed.avg_px(), order.avg_px());
+        assert_eq!(replayed.slippage(), order.slippage());
+        assert_eq!(replayed.tags(), order.tags());
     }
 
     #[rstest]

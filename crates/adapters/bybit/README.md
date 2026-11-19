@@ -50,6 +50,13 @@ Post-only orders omit attribution when background detection identifies the accou
 - [Rust examples](examples/)
 - [Python examples](../../../examples/live/bybit/)
 
+## Test fixtures
+
+`test_data/http_get_order_iv_canceled.json` contains one order from Bybit mainnet
+`GET /v5/order/history?category=option`, captured on 2026-11-17. The `orderId` and `orderLinkId`
+values are replaced; all other fields retain their venue values, including the empty `price` and
+`avgPrice` fields.
+
 ## License
 
 The source code for NautilusTrader is available on GitHub under the [GNU Lesser General Public License v3.0](https://www.gnu.org/licenses/lgpl-3.0.en.html).

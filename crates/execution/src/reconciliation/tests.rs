@@ -28,8 +28,9 @@ use nautilus_model::{
         OrderAccepted, OrderEvent, OrderEventAny, OrderPendingCancel, OrderPendingUpdate,
         OrderSubmitted, OrderUpdated,
         order::spec::{
-            OrderAcceptedSpec, OrderCanceledSpec, OrderFilledSpec, OrderPendingCancelSpec,
-            OrderPendingUpdateSpec, OrderRejectedSpec, OrderSubmittedSpec, OrderUpdatedSpec,
+            OrderAcceptedSpec, OrderCanceledSpec, OrderFilledSpec, OrderInitializedSpec,
+            OrderPendingCancelSpec, OrderPendingUpdateSpec, OrderRejectedSpec, OrderSubmittedSpec,
+            OrderUpdatedSpec,
         },
     },
     identifiers::{
@@ -44,8 +45,8 @@ use nautilus_model::{
         },
     },
     orders::{
-        Order, OrderAny, OrderTestBuilder,
-        stubs::{TestOrderEventStubs, TestOrderStubs},
+        Order, OrderAny, OrderTestBuilder, RECONCILIATION_PRICE_UNKNOWN_TAG,
+        stubs::{OrderFilledTestBuilder, TestOrderEventStubs, TestOrderStubs},
     },
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{Currency, Money, Price, Quantity, fixed::FIXED_PRECISION},
@@ -94,6 +95,251 @@ fn test_reconciliation_price_rounds_at_fixed_precision() {
 
     assert_eq!(price.as_decimal(), expected);
     assert_eq!(price.precision, FIXED_PRECISION);
+}
+
+#[rstest]
+#[case(OrderType::Limit, OrderStatus::Canceled, "0", false, true)]
+#[case(OrderType::Limit, OrderStatus::Rejected, "0", false, true)]
+#[case(OrderType::Limit, OrderStatus::Expired, "0", false, true)]
+#[case(OrderType::Limit, OrderStatus::Accepted, "0", false, false)]
+#[case(OrderType::Limit, OrderStatus::Filled, "0", false, false)]
+#[case(OrderType::Limit, OrderStatus::Denied, "0", false, false)]
+#[case(OrderType::Limit, OrderStatus::Voided, "0", false, false)]
+#[case(OrderType::Limit, OrderStatus::Canceled, "1", false, false)]
+#[case(OrderType::Limit, OrderStatus::Canceled, "0", true, false)]
+#[case(OrderType::Market, OrderStatus::Canceled, "0", false, false)]
+#[case(OrderType::StopLimit, OrderStatus::Canceled, "0", false, false)]
+fn test_initialize_external_order_price(
+    #[case] order_type: OrderType,
+    #[case] status: OrderStatus,
+    #[case] filled_qty: &str,
+    #[case] has_fills: bool,
+    #[case] expected_fallback: bool,
+) {
+    let mut initialized = OrderInitializedSpec::builder()
+        .order_type(order_type)
+        .reconciliation(true)
+        .tags(vec![Ustr::from("EXTERNAL")])
+        .build();
+    let mut report = make_test_report(initialized.instrument_id, order_type, status, "10", false);
+    report.price = None;
+    report.filled_qty = Quantity::from(filled_qty);
+
+    initialize_external_order_price(&mut initialized, &report, has_fills);
+
+    let expected_price = expected_fallback.then(|| Price::zero(0));
+    let mut expected_tags = vec![Ustr::from("EXTERNAL")];
+    if expected_fallback {
+        expected_tags.push(Ustr::from(RECONCILIATION_PRICE_UNKNOWN_TAG));
+    }
+
+    assert_eq!(initialized.price, expected_price);
+    assert_eq!(initialized.tags, Some(expected_tags));
+    assert_eq!(report.price, None);
+}
+
+#[rstest]
+fn test_initialize_external_order_price_preserves_supplied_price() {
+    let mut initialized = OrderInitializedSpec::builder()
+        .order_type(OrderType::Limit)
+        .price(Price::from("1.3"))
+        .reconciliation(true)
+        .build();
+    let mut report = make_test_report(
+        initialized.instrument_id,
+        OrderType::Limit,
+        OrderStatus::Canceled,
+        "10",
+        false,
+    );
+    report.price = None;
+    report.filled_qty = Quantity::zero(0);
+
+    initialize_external_order_price(&mut initialized, &report, false);
+
+    assert_eq!(initialized.price, Some(Price::from("1.3")));
+    assert_eq!(initialized.tags, None);
+}
+
+#[rstest]
+#[case(None, None, None)]
+#[case(None, Some(Price::zero(0)), None)]
+#[case(Some(dec!(0)), None, Some(Price::zero(2)))]
+#[case(Some(dec!(123.45)), None, Some(Price::from("123.45")))]
+#[case(None, Some(Price::from("111.11")), Some(Price::from("111.11")))]
+fn test_inferred_fill_price_excludes_placeholder(
+    #[case] avg_px: Option<Decimal>,
+    #[case] price: Option<Price>,
+    #[case] expected: Option<Price>,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .quantity(Quantity::from("10"))
+        .price(Price::zero(0))
+        .tags(vec![Ustr::from(RECONCILIATION_PRICE_UNKNOWN_TAG)])
+        .build();
+    let mut report = make_test_report(
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Filled,
+        "10",
+        false,
+    );
+    report.avg_px = avg_px;
+    report.price = price;
+
+    let actual = inferred_fill_price_and_liquidity(&order, &report, &instrument);
+    let incremental = incremental_inferred_fill_price_and_liquidity(&order, &report, &instrument);
+
+    assert_eq!(actual.map(|(price, _)| price), expected);
+    assert_eq!(incremental.map(|(price, _)| price), expected);
+}
+
+#[rstest]
+fn test_missing_terminal_report_price_preserves_cached_limit() {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .quantity(Quantity::from(10))
+        .price(Price::from("1.3"))
+        .build();
+    let order = TestOrderStubs::make_accepted_order(&order);
+    let mut report = make_test_report(
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Canceled,
+        "0",
+        false,
+    );
+    report.client_order_id = Some(order.client_order_id());
+    report.venue_order_id = order.venue_order_id().unwrap();
+    report.quantity = order.quantity();
+    report.price = None;
+    report.avg_px = None;
+
+    let events = generate_reconciliation_order_events(
+        &order,
+        &report,
+        Some(&instrument),
+        UnixNanos::default(),
+    );
+    let after = apply_events(&order, &events);
+
+    assert_eq!(after.status(), OrderStatus::Canceled);
+    assert_eq!(after.price(), Some(Price::from("1.3")));
+    assert_eq!(after.tags(), None);
+    assert_eq!(after.filled_qty(), Quantity::zero(0));
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Updated(_)))
+    );
+}
+
+#[rstest]
+#[case(OrderStatus::Canceled)]
+#[case(OrderStatus::Rejected)]
+#[case(OrderStatus::Expired)]
+fn test_unknown_terminal_limit_ignores_reported_price(#[case] status: OrderStatus) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .quantity(Quantity::from(10))
+        .price(Price::zero(0))
+        .tags(vec![Ustr::from(RECONCILIATION_PRICE_UNKNOWN_TAG)])
+        .build();
+    let mut report = make_test_report(instrument.id(), OrderType::Limit, status, "0", false);
+    report.client_order_id = Some(order.client_order_id());
+    report.quantity = order.quantity();
+    report.price = None;
+    let events = generate_external_order_status_events(
+        &order,
+        &report,
+        &report.account_id,
+        &instrument,
+        UnixNanos::default(),
+    );
+    let order = apply_events(&order, &events);
+    report.price = Some(Price::from("1.3"));
+
+    let events = generate_reconciliation_order_events(
+        &order,
+        &report,
+        Some(&instrument),
+        UnixNanos::default(),
+    );
+    assert!(events.is_empty());
+}
+
+#[rstest]
+#[case(Price::zero(0))]
+#[case(Price::from("1.3"))]
+fn test_quantity_update_preserves_unknown_price_evidence(#[case] reported_price: Price) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .quantity(Quantity::from(10))
+        .price(Price::zero(0))
+        .tags(vec![Ustr::from(RECONCILIATION_PRICE_UNKNOWN_TAG)])
+        .build();
+    let mut order = TestOrderStubs::make_accepted_order(&order);
+    let canceled =
+        TestOrderEventStubs::canceled(&order, order.account_id().unwrap(), order.venue_order_id());
+    order.apply(canceled).unwrap();
+    let mut report = order.to_order_status_report(None).unwrap();
+    report.quantity = Quantity::from(20);
+    report.price = Some(reported_price);
+
+    let updated = generate_reconciliation_order_events(
+        &order,
+        &report,
+        Some(&instrument),
+        UnixNanos::default(),
+    );
+    let mut order = apply_events(&order, &updated);
+    let tags_after_update = order.tags().map(<[Ustr]>::to_vec);
+    report.price = None;
+    report.filled_qty = Quantity::from(1);
+    let inferred = generate_reconciliation_order_events(
+        &order,
+        &report,
+        Some(&instrument),
+        UnixNanos::default(),
+    );
+    let fill = OrderFilledTestBuilder::new(&order, &instrument)
+        .last_qty(Quantity::from(1))
+        .last_px(Price::from("1.5"))
+        .build();
+    order.apply(fill).unwrap();
+    let replayed = OrderAny::from_events(order.events().into_iter().cloned().collect()).unwrap();
+
+    assert_eq!(updated.len(), 1);
+
+    let OrderEventAny::Updated(event) = &updated[0] else {
+        panic!("expected quantity update")
+    };
+
+    assert_eq!(event.price, None);
+    assert_eq!(
+        tags_after_update,
+        Some(vec![Ustr::from(RECONCILIATION_PRICE_UNKNOWN_TAG)])
+    );
+    assert_eq!(
+        inferred
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+            .count(),
+        0
+    );
+    assert_eq!(order.quantity(), Quantity::from(20));
+    assert_eq!(order.price(), Some(Price::zero(0)));
+    assert_eq!(order.filled_qty(), Quantity::from(1));
+    assert_eq!(order.avg_px(), Some(dec!(1.5)));
+    assert_eq!(order.slippage(), None);
+    assert_eq!(replayed.tags(), order.tags());
+    assert_eq!(replayed.avg_px(), order.avg_px());
+    assert_eq!(replayed.slippage(), None);
 }
 
 fn create_test_venue_order_id(value: &str) -> VenueOrderId {

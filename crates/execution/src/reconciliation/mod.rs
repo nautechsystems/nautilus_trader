@@ -62,6 +62,7 @@ pub use ids::{
     create_inferred_reconciliation_trade_id, create_position_reconciliation_venue_order_id,
     inferred_reconciliation_trade_ids, is_inferred_reconciliation_trade_id_format,
 };
+pub(crate) use orders::needs_external_order_price_placeholder;
 pub use orders::{
     create_incremental_inferred_fill, create_inferred_fill_for_qty, create_reconciliation_rejected,
     create_reconciliation_triggered, generate_external_order_status_events,
@@ -69,8 +70,8 @@ pub use orders::{
     generate_reconciliation_order_pre_fill_events, generate_reconciliation_order_snapshot_events,
     generate_reconciliation_order_snapshot_events_with_commission,
     incremental_inferred_fill_price_and_liquidity, inferred_fill_price_and_liquidity,
-    preserve_order_amendment, reconcile_fill_report, reconcile_order_report,
-    reconcile_order_report_with_commission, should_reconciliation_update,
+    initialize_external_order_price, preserve_order_amendment, reconcile_fill_report,
+    reconcile_order_report, reconcile_order_report_with_commission, should_reconciliation_update,
 };
 pub(crate) use positions::fill_precedes_reconciled_position;
 pub use positions::{
