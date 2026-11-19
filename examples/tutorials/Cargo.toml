@@ -17,8 +17,10 @@ workspace = true
 default = []
 examples = [
   "dep:anyhow",
+  "dep:aws-lc-rs",
   "dep:dotenvy",
   "dep:nautilus-backtest",
+  "dep:nautilus-coinapi",
   "dep:nautilus-common",
   "dep:nautilus-core",
   "dep:nautilus-data",
@@ -37,12 +39,15 @@ examples = [
 
 [package.metadata.cargo-machete]
 ignored = [
-  "rust_decimal", # Used by the `dec!` macro expansion in the FinFeed tutorial binary
+  "rust_decimal", # Used by the `dec!` macro expansion in the CoinAPI and FinFeed tutorial binaries
 ]
 
 [dependencies]
 nautilus-backtest = { workspace = true, features = [
   "streaming",
+], optional = true }
+nautilus-coinapi = { workspace = true, features = [
+  "high-precision",
 ], optional = true }
 nautilus-common = { workspace = true, features = ["live"], optional = true }
 nautilus-core = { workspace = true, optional = true }
@@ -70,10 +75,18 @@ nautilus-trading = { workspace = true, features = [
 ], optional = true }
 
 anyhow = { workspace = true, optional = true }
+aws-lc-rs = { workspace = true, optional = true }
 dotenvy = { workspace = true, optional = true }
 rust_decimal = { workspace = true, optional = true }
 rust_decimal_macros = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
+
+[[bin]]
+name = "coinapi-lighter-book-imbalance"
+path = "src/bin/coinapi_lighter_book_imbalance.rs"
+required-features = ["examples"]
+doc = false
+test = false
 
 [[bin]]
 name = "finfeed-polymarket-book-imbalance"

@@ -216,6 +216,7 @@ Released on TBD (UTC).
 ### Documentation Updates
 
 - Documented backtest account-history purging and its effect on balance reports
+- Added Rust program to the CoinAPI Lighter pre-IPO order book backtest tutorial
 - Documented Polymarket order message size units for resting and market order types
 
 ---

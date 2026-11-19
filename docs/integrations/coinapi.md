@@ -22,7 +22,7 @@ The Rust crate also exposes `CoinApiHttpClient` and `CoinApiWebSocketClient` for
 
 ## Examples
 
-- [Backtest with Pre-IPO Order Book Data (CoinAPI)](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/backtest_orderbook_coinapi.py)
+- [Backtest with Pre-IPO Order Book Data (CoinAPI)](../tutorials/backtest_orderbook_coinapi.md)
 - [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/coinapi/)
 - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/coinapi/examples/)
 

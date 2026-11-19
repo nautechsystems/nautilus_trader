@@ -32,7 +32,8 @@ A Polymarket market asks a yes/no question, such as whether Bitcoin is above 76K
 2026. Yes shares and No shares trade in separate order books. A winning share redeems for 1 pUSD and
 a losing share for nothing, so share prices lie between 0 and 1 pUSD.
 
-FinFeed gives each outcome its own ID. This tutorial loads two things for one outcome:
+FinFeed assigns each outcome its own ID. For one outcome, the tutorial loads the instrument
+definition and the order book history:
 
 | FinFeed data                    | Example                                    | Nautilus object                  |
 | ------------------------------- | ------------------------------------------ | -------------------------------- |

@@ -1,13 +1,12 @@
 """
-Render the CoinAPI tutorial's panels from its pinned Lighter ANTHROPIC backtest.
+Render book, liquidity, and position panels from the CoinAPI tutorial program.
 
-Run from the repository root with the tutorial and visualization dependencies installed:
+Run from the repository root with the tutorial dependencies and a Chrome-compatible browser:
 
     uv run --project python --no-sync --with pandas --with plotly --with kaleido \
         python docs/tutorials/assets/backtest_orderbook_coinapi/render_panels.py
 
-The tutorial reuses its cached export or performs its documented first download.
-The figures use the same native replay and reports as the tutorial.
+The program reuses its cached catalog or performs its documented first download.
 
 """
 
@@ -23,8 +22,12 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from nautilus_trader.analysis.tearsheet import _hex_to_rgba
-from nautilus_trader.analysis.tearsheet import _padded_range
 from nautilus_trader.analysis.tearsheet import _write_figure
+from nautilus_trader.model import BookType
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import OrderBook
+from nautilus_trader.model import OrderBookDelta
+from nautilus_trader.model import RecordFlag
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -33,30 +36,91 @@ from orderbook_panels import COLORS
 from orderbook_panels import apply_layout
 
 
-TUTORIAL_DIR = Path(__file__).resolve().parents[2]
+PROGRAM = (
+    Path(__file__).resolve().parents[4]
+    / "examples"
+    / "backtest"
+    / "coinapi_lighter_book_imbalance.py"
+)
 OUT = Path(__file__).resolve().parent
 NEGATIVE_FILL = _hex_to_rgba(COLORS["negative"], 0.14)
+LASTING_STATE = pd.Timedelta(milliseconds=1)
+SHORT_INTERVAL = pd.Timedelta(microseconds=10)
 
 
 def main() -> None:
     """
-    Run the tutorial and write panels from its book and execution reports.
+    Run the tutorial program and export panels from its native reports.
     """
-    sys.path.insert(0, str(TUTORIAL_DIR))
-    run = runpy.run_path(str(TUTORIAL_DIR / "backtest_orderbook_coinapi.py"))
-    book = run["top_of_book"]
-    executions = run["executions"]
+    run = runpy.run_path(str(PROGRAM), run_name="__main__")
+    book = _top_of_book(run["deltas"], run["INSTRUMENT_ID"], run["BOOK_TYPE"])
+    executions = run["executions"].sort_values("ts_event", kind="stable")
     account = run["account"]
+
+    durations = book["duration"].dropna()
+    lasting = book.loc[book["duration"] >= LASTING_STATE, "spread"]
+    print(f"Spread range: {book['spread'].min()} to {book['spread'].max()} USDC")
+    print(f"Spread range for states lasting 1 ms or more: {lasting.min()} to {lasting.max()} USDC")
+    print(f"Intervals under 10 us: {(durations < SHORT_INTERVAL).sum():,} of {len(durations):,}")
 
     panels = {
         "panel_a_top_book.png": _book_figure(book, executions),
         "panel_b_liquidity.png": _liquidity_figure(book),
-        "panel_c_position.png": _position_figure(book, executions),
-        "panel_d_pnl.png": _pnl_figure(book, account),
+        "panel_c_position_pnl.png": _position_pnl_figure(book, executions, account),
     }
 
     for filename, figure in panels.items():
+        figure.update_xaxes(
+            tickformat="%H:%M",
+            dtick=600_000,
+            range=[
+                book.index[0].floor("h") - pd.Timedelta(seconds=45),
+                book.index[-1].ceil("min") + pd.Timedelta(seconds=45),
+            ],
+        )
         _write_figure(figure, str(OUT / filename))
+
+
+def _top_of_book(
+    deltas: list[OrderBookDelta],
+    instrument_id: InstrumentId,
+    book_type: BookType,
+) -> pd.DataFrame:
+    book = OrderBook(instrument_id, book_type)
+    rows = []
+
+    for delta in deltas:
+        book.apply_delta(delta)
+        if not RecordFlag.F_LAST.matches(delta.flags):
+            continue  # The book is incomplete until the batch ends
+
+        state = {"time": pd.Timestamp(delta.ts_init, tz="UTC")}
+        rows.append(state)
+
+        bid, ask = book.best_bid_price(), book.best_ask_price()
+        bid_size, ask_size = book.best_bid_size(), book.best_ask_size()
+        if bid is None or ask is None or bid_size is None or ask_size is None:
+            continue  # One side of the book is empty
+
+        bid_px, ask_px = bid.as_decimal(), ask.as_decimal()
+        if ask_px <= bid_px:
+            continue  # Locked or crossed book: no spread
+
+        state.update(
+            {
+                "bid": bid_px,
+                "ask": ask_px,
+                "spread": ask_px - bid_px,
+                "bid_size": bid_size.as_decimal(),
+                "ask_size": ask_size.as_decimal(),
+            },
+        )
+
+    states = pd.DataFrame(rows)
+    states["duration"] = (
+        states["time"].shift(-1) - states["time"]
+    )  # Until the next batch of any kind
+    return states.dropna(subset=["spread"]).set_index("time")
 
 
 def _book_figure(book: pd.DataFrame, executions: pd.DataFrame) -> go.Figure:
@@ -110,12 +174,16 @@ def _book_figure(book: pd.DataFrame, executions: pd.DataFrame) -> go.Figure:
             ),
         )
 
-    _apply_layout(
-        figure,
-        "ANTHROPIC pre-IPO perpetual: book and executions",
-        f"Lighter | {book.index[0]:%Y-%m-%d} | All book events and execution fills",
-        book,
+    apply_layout(figure)
+    figure.update_layout(
+        title={
+            "text": "ANTHROPIC pre-IPO perpetual: book and executions",
+            "subtitle": {
+                "text": f"Lighter | {book.index[0]:%Y-%m-%d} | All book events and execution fills",
+            },
+        },
     )
+    figure.update_xaxes(title_text="Time (UTC)")
     figure.update_yaxes(title_text="Price (USDC)", tickformat=".1f")
     return figure
 
@@ -157,17 +225,17 @@ def _liquidity_figure(book: pd.DataFrame) -> go.Figure:
             col=1,
         )
 
-    _apply_layout(
-        figure,
-        "Spread and best-quote depth",
-        "Lighter ANTHROPIC | Full hour | Depth uses a logarithmic scale",
-        book,
-        height=680,
-    )
-    figure.update_xaxes(title_text=None, row=1, col=1)
-    figure.update_layout(legend={"y": 0.47})
-    figure.update_yaxes(title_text="Spread (USDC)", rangemode="tozero", row=1, col=1)
     ticks = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10]
+    apply_layout(figure, height=680)
+    figure.update_layout(
+        title={
+            "text": "Spread and best-quote depth",
+            "subtitle": {"text": "Lighter ANTHROPIC | Full hour | Depth uses a logarithmic scale"},
+        },
+        legend={"y": 0.47},
+    )
+    figure.update_xaxes(title_text="Time (UTC)", row=2, col=1)
+    figure.update_yaxes(title_text="Spread (USDC)", rangemode="tozero", row=1, col=1)
     figure.update_yaxes(
         title_text="Contract units (log)",
         type="log",
@@ -180,18 +248,33 @@ def _liquidity_figure(book: pd.DataFrame) -> go.Figure:
     return figure
 
 
-def _position_figure(book: pd.DataFrame, executions: pd.DataFrame) -> go.Figure:
-    ordered = executions.sort_values("ts_event", kind="stable")
-    quantities = [
-        Decimal(row.last_qty) * (1 if row.order_side == "BUY" else -1)
-        for row in ordered.itertuples()
-    ]
-    position = pd.Series(quantities).cumsum()
-    position.index = pd.to_datetime(ordered["ts_event"], utc=True)
-    position = pd.concat([pd.Series([Decimal(0)], index=book.index[:1]), position])
-    position = position.groupby(level=0, sort=False).last()
+def _position_pnl_figure(
+    book: pd.DataFrame,
+    executions: pd.DataFrame,
+    account: pd.DataFrame,
+) -> go.Figure:
+    position, marked_pnl = _position_and_marked_pnl(book, executions)
+    totals = account["total"].map(Decimal).groupby(level=0, sort=False).last()
+    realized_pnl = totals - totals.iloc[0]
+    if marked_pnl.iloc[-1] != realized_pnl.iloc[-1]:
+        msg = (
+            f"Marked PnL {marked_pnl.iloc[-1]} does not match the balance change "
+            f"{realized_pnl.iloc[-1]} after the close"
+        )
+        raise ValueError(msg)
 
-    figure = go.Figure(
+    figure = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.14,
+        row_heights=[0.45, 0.55],
+        subplot_titles=(
+            "Net position",
+            "PnL with the open position marked at the midpoint",
+        ),
+    )
+    figure.add_trace(
         go.Scatter(
             x=position.index,
             y=position.map(float),
@@ -202,101 +285,85 @@ def _position_figure(book: pd.DataFrame, executions: pd.DataFrame) -> go.Figure:
             fillcolor=NEGATIVE_FILL,
             showlegend=False,
         ),
+        row=1,
+        col=1,
     )
 
-    _apply_layout(
-        figure,
-        "Position accumulation and final close",
-        f"Peak short: {-position.min():.5f} units | Final position: {position.iloc[-1]:.5f} units",
-        book,
-    )
-    figure.update_yaxes(
-        title_text="Net position (contract units)",
-        zeroline=True,
-        tickformat=".1f",
-        range=_padded_range(float(position.min()), float(position.max())),
-    )
     figure.add_trace(
         go.Scatter(
-            x=position.index[-1:],
-            y=position.iloc[-1:].map(float),
-            mode="markers+text",
-            text=["Flat"],
-            textposition="bottom left",
-            marker={"color": COLORS["positive"], "size": 8},
-            showlegend=False,
-        ),
-    )
-    return figure
-
-
-def _pnl_figure(book: pd.DataFrame, account: pd.DataFrame) -> go.Figure:
-    totals = account["total"].map(Decimal)
-    pnl = (totals - totals.iloc[0]).groupby(level=0, sort=False).last()
-
-    figure = go.Figure(
-        go.Scatter(
-            x=pnl.index,
-            y=pnl.map(float),
+            x=marked_pnl.index,
+            y=marked_pnl.map(float),
             mode="lines",
-            name="Realized PnL",
-            line={"color": COLORS["negative"], "width": 2, "shape": "hv"},
-            fill="tozeroy",
-            fillcolor=NEGATIVE_FILL,
+            name="PnL marked at the midpoint",
+            line={"color": COLORS["primary"], "width": 1.5, "shape": "hv"},
             showlegend=False,
         ),
-    )
-
-    _apply_layout(
-        figure,
-        "Realized PnL and final account balance",
-        f"Realized PnL: {pnl.iloc[-1]:.8f} USDC | Final balance: {totals.iloc[-1]:,.8f} USDC",
-        book,
-    )
-    figure.update_yaxes(
-        title_text="Realized PnL (USDC)",
-        zeroline=True,
-        tickformat=".2f",
-        range=_padded_range(float(pnl.min()), float(pnl.max())),
+        row=2,
+        col=1,
     )
     figure.add_trace(
         go.Scatter(
-            x=pnl.index[-1:],
-            y=pnl.iloc[-1:].map(float),
-            mode="markers+text",
-            text=["Final close"],
-            textposition="top left",
+            x=realized_pnl.index[-1:],
+            y=realized_pnl.iloc[-1:].map(float),
+            mode="markers",
             marker={"color": COLORS["negative"], "size": 8},
             showlegend=False,
         ),
+        row=2,
+        col=1,
     )
+    figure.add_annotation(
+        x=realized_pnl.index[-1],
+        y=float(realized_pnl.iloc[-1]),
+        text=f"Flat: {realized_pnl.iloc[-1]} USDC realized",
+        ax=-130,
+        ay=-90,
+        arrowcolor=COLORS["muted"],
+        font={"color": COLORS["text"]},
+        row=2,
+        col=1,
+    )
+
+    apply_layout(figure, height=640)
+    figure.update_layout(
+        title={
+            "text": "Short position and mark-to-market PnL",
+            "subtitle": {
+                "text": (
+                    f"Peak short {-position.min()} units | Realized PnL {realized_pnl.iloc[-1]} "
+                    "USDC with zero fees"
+                ),
+            },
+        },
+    )
+    figure.update_xaxes(title_text="Time (UTC)", row=2, col=1)
+    figure.update_yaxes(title_text="Contract units", zeroline=True, row=1, col=1)
+    figure.update_yaxes(title_text="USDC", zeroline=True, row=2, col=1)
     return figure
 
 
-def _apply_layout(
-    figure: go.Figure,
-    title: str,
-    subtitle: str,
+def _position_and_marked_pnl(
     book: pd.DataFrame,
-    *,
-    height: int = 520,
-) -> None:
-    figure.update_layout(
-        title={
-            "text": title,
-            "subtitle": {"text": subtitle},
-        },
-    )
-    apply_layout(figure, height=height)
-    figure.update_xaxes(
-        title_text="Time (UTC)",
-        tickformat="%H:%M",
-        dtick=600_000,
-        range=[
-            book.index[0].floor("h") - pd.Timedelta(seconds=45),
-            book.index[-1].ceil("min") + pd.Timedelta(seconds=45),
-        ],
-    )
+    executions: pd.DataFrame,
+) -> tuple[pd.Series, pd.Series]:
+    times = pd.to_datetime(executions["ts_event"], utc=True)
+    quantities = [
+        Decimal(row.last_qty) * (1 if row.order_side == "BUY" else -1)
+        for row in executions.itertuples()
+    ]
+    cash_flows = [
+        -quantity * Decimal(price)
+        for quantity, price in zip(quantities, executions["last_px"], strict=True)
+    ]
+    position = pd.Series(quantities, index=times).cumsum().groupby(level=0, sort=False).last()
+    cash = pd.Series(cash_flows, index=times).cumsum().groupby(level=0, sort=False).last()
+    midpoint = ((book["bid"] + book["ask"]) / 2).groupby(level=0, sort=False).last()
+
+    index = midpoint.index.union(position.index).sort_values()
+    held = position.reindex(index).ffill().fillna(Decimal(0))
+    flows = cash.reindex(index).ffill().fillna(Decimal(0))
+    marks = midpoint.reindex(index).ffill()
+    return held, flows + held * marks
 
 
 if __name__ == "__main__":

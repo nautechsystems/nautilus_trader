@@ -7323,8 +7323,10 @@ name = "nautilus-tutorials"
 version = "0.69.0"
 dependencies = [
  "anyhow",
+ "aws-lc-rs",
  "dotenvy",
  "nautilus-backtest",
+ "nautilus-coinapi",
  "nautilus-common",
  "nautilus-core",
  "nautilus-data",
