@@ -7322,14 +7322,22 @@ dependencies = [
 name = "nautilus-tutorials"
 version = "0.69.0"
 dependencies = [
+ "anyhow",
  "dotenvy",
+ "nautilus-backtest",
  "nautilus-common",
  "nautilus-core",
+ "nautilus-data",
  "nautilus-databento",
+ "nautilus-execution",
+ "nautilus-finfeed",
  "nautilus-lighter",
  "nautilus-live",
  "nautilus-model",
+ "nautilus-persistence",
  "nautilus-trading",
+ "rust_decimal",
+ "rust_decimal_macros",
  "tokio",
 ]
 

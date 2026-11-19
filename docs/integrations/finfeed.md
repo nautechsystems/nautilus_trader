@@ -52,7 +52,7 @@ Start with [Python configuration](#python-configuration) or the [examples](#exam
 
 ## Examples
 
-The [Polymarket order book backtest tutorial](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/backtest_orderbook_finfeed.py)
+The [Polymarket order book backtest tutorial](../tutorials/backtest_orderbook_finfeed.md)
 collects paginated historical L2 data, caches it in Parquet, and runs an imbalance strategy with plotted results.
 
 ### Running the examples
@@ -304,7 +304,7 @@ raises `ValueError`, before any request. These methods share the native client's
 processing and return no partial result on failure. Book limits preserve complete batches. See
 [historical books](#historical-books) for snapshot requirements, replay clocks, and continuation limits.
 
-The [Polymarket backtest tutorial](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/backtest_orderbook_finfeed.py) shows definition retrieval,
+The [Polymarket backtest tutorial](../tutorials/backtest_orderbook_finfeed.md) shows definition retrieval,
 book download, catalog writes, and replay with `BacktestNode`.
 
 Kalshi definitions written to a Parquet catalog retain their exact tick schemes, including the

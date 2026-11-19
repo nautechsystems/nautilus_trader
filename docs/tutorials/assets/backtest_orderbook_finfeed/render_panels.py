@@ -1,12 +1,12 @@
 """
-Render book, liquidity, position, and equity panels from the FinFeed tutorial.
+Render book, liquidity, and round-trip panels from the FinFeed tutorial program.
 
 Run from the repository root with the tutorial dependencies and a Chrome-compatible browser:
 
     uv run --project python --no-sync --with pandas --with plotly --with kaleido \
         python docs/tutorials/assets/backtest_orderbook_finfeed/render_panels.py
 
-The tutorial reuses its cached catalog or performs its documented first collection.
+The program reuses its cached catalog or performs its documented first collection.
 
 """
 
@@ -22,6 +22,11 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from nautilus_trader.analysis.tearsheet import _write_figure
+from nautilus_trader.model import BookType
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import OrderBook
+from nautilus_trader.model import OrderBookDelta
+from nautilus_trader.model import RecordFlag
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -30,71 +35,88 @@ from orderbook_panels import COLORS
 from orderbook_panels import apply_layout
 
 
-TUTORIAL_DIR = Path(__file__).resolve().parents[2]
+PROGRAM = (
+    Path(__file__).resolve().parents[4]
+    / "examples"
+    / "backtest"
+    / "finfeed_polymarket_book_imbalance.py"
+)
 OUT = Path(__file__).resolve().parent
+ROUND_TRIP_MARGIN = pd.Timedelta(seconds=4)
 
 
 def main() -> None:
     """
-    Replay the cached series and export panels from the native reports.
+    Run the tutorial program and export panels from its native reports.
     """
-    sys.path.insert(0, str(TUTORIAL_DIR))
-    run = runpy.run_path(str(TUTORIAL_DIR / "backtest_orderbook_finfeed.py"))
-    book = run["top_of_book"]
+    run = runpy.run_path(str(PROGRAM), run_name="__main__")
+    book = _top_of_book(run["deltas"], run["INSTRUMENT_ID"], run["BOOK_TYPE"])
+    print(f"Spread range: {book['spread'].min()} to {book['spread'].max()} pUSD")
     executions = run["executions"].sort_values("ts_event", kind="stable")
     account = run["account"]
+    fills = pd.to_datetime(executions["ts_event"], utc=True)
+    window = [run["START"], run["END"]]
+    round_trip_window = [fills.min() - ROUND_TRIP_MARGIN, fills.max() + ROUND_TRIP_MARGIN]
 
-    panels = {
-        "panel_a_top_book.png": _book_figure(book, executions),
-        "panel_b_liquidity.png": _liquidity_figure(book),
-        "panel_c_position.png": _position_figure(book, executions),
-        "panel_d_pnl.png": _equity_figure(book, executions, account),
-    }
+    panels = [
+        ("panel_a_top_book.png", _book_figure(book, executions), window, 520),
+        ("panel_b_liquidity.png", _liquidity_figure(book), window, 720),
+        (
+            "panel_c_round_trip.png",
+            _round_trip_figure(book, executions, account),
+            round_trip_window,
+            640,
+        ),
+    ]
 
-    for filename, figure in panels.items():
-        apply_layout(figure, height=720 if "liquidity" in filename else 520)
-        figure.update_xaxes(
-            title_text="Time (UTC)",
-            tickformat="%H:%M:%S",
-            range=[run["START"], run["END"]],
+    for filename, figure, x_range, height in panels:
+        apply_layout(figure, height=height)
+        figure.update_xaxes(tickformat="%H:%M:%S", range=x_range)
+        _write_figure(figure, str(OUT / filename))
+
+
+def _top_of_book(
+    deltas: list[OrderBookDelta],
+    instrument_id: InstrumentId,
+    book_type: BookType,
+) -> pd.DataFrame:
+    book = OrderBook(instrument_id, book_type)
+    rows = []
+
+    for delta in deltas:
+        book.apply_delta(delta)
+        if not RecordFlag.F_LAST.matches(delta.flags):
+            continue  # The book is incomplete until the batch ends
+
+        bid, ask = book.best_bid_price(), book.best_ask_price()
+        bid_size, ask_size = book.best_bid_size(), book.best_ask_size()
+        if bid is None or ask is None or bid_size is None or ask_size is None:
+            continue  # One side of the book is empty
+
+        bid_px, ask_px = bid.as_decimal(), ask.as_decimal()
+        bid_qty, ask_qty = bid_size.as_decimal(), ask_size.as_decimal()
+
+        if ask_px <= bid_px:
+            continue  # Locked book: no spread
+
+        rows.append(
+            {
+                "time": pd.Timestamp(delta.ts_init, tz="UTC"),
+                "bid": bid_px,
+                "ask": ask_px,
+                "spread": ask_px - bid_px,
+                "bid_size": bid_qty,
+                "ask_size": ask_qty,
+                "imbalance": (bid_qty - ask_qty) / (bid_qty + ask_qty),
+            },
         )
 
-        if "liquidity" in filename:
-            figure.update_xaxes(title_text=None, row=1, col=1)
-            figure.update_xaxes(title_text=None, row=2, col=1)
-        _write_figure(figure, str(OUT / filename))
+    return pd.DataFrame(rows).set_index("time")
 
 
 def _book_figure(book: pd.DataFrame, executions: pd.DataFrame) -> go.Figure:
     figure = go.Figure()
-    for column, label, color in [
-        ("bid", "Best bid", COLORS["positive"]),
-        ("ask", "Best ask", COLORS["negative"]),
-    ]:
-        figure.add_trace(
-            go.Scatter(
-                x=book.index,
-                y=book[column].map(float),
-                mode="lines",
-                name=label,
-                line={"color": color, "shape": "hv", "width": 1},
-            ),
-        )
-
-    for side, symbol, color in [
-        ("BUY", "triangle-up", COLORS["positive"]),
-        ("SELL", "triangle-down", COLORS["negative"]),
-    ]:
-        fills = executions[executions["order_side"] == side]
-        figure.add_trace(
-            go.Scatter(
-                x=pd.to_datetime(fills["ts_event"], utc=True),
-                y=fills["last_px"].map(float),
-                mode="markers",
-                name=f"{side.title()} fills",
-                marker={"symbol": symbol, "color": color, "size": 7},
-            ),
-        )
+    _add_book_traces(figure, book, executions)
     figure.update_layout(
         title={
             "text": "Bitcoin daily threshold: Yes-share book and executions",
@@ -105,6 +127,7 @@ def _book_figure(book: pd.DataFrame, executions: pd.DataFrame) -> go.Figure:
             },
         },
     )
+    figure.update_xaxes(title_text="Time (UTC)")
     figure.update_yaxes(title_text="Share price (pUSD)")
     return figure
 
@@ -136,6 +159,7 @@ def _liquidity_figure(book: pd.DataFrame) -> go.Figure:
             row=row,
             col=1,
         )
+    figure.update_xaxes(title_text="Time (UTC)", row=3, col=1)
     figure.update_yaxes(title_text="pUSD", row=1, col=1)
     figure.update_yaxes(title_text="Shares", row=2, col=1)
     figure.update_yaxes(title_text="Imbalance", range=[-1, 1], row=3, col=1)
@@ -150,6 +174,118 @@ def _liquidity_figure(book: pd.DataFrame) -> go.Figure:
     return figure
 
 
+def _round_trip_figure(
+    book: pd.DataFrame,
+    executions: pd.DataFrame,
+    account: pd.DataFrame,
+) -> go.Figure:
+    sides = executions["order_side"].tolist()
+    if sides != ["BUY", "SELL"]:
+        msg = f"Round-trip panel expects one buy then one sell, was {sides}"
+        raise ValueError(msg)
+
+    figure = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.14,
+        row_heights=[0.6, 0.4],
+        subplot_titles=(
+            "Best bid and ask with the fills",
+            "Equity change: cash plus the held share at the midpoint",
+        ),
+    )
+    _add_book_traces(figure, book, executions, row=1, labels=True)
+
+    equity = _equity_series(book, executions, account)
+    figure.add_trace(
+        go.Scatter(
+            x=equity.index,
+            y=equity.map(float),
+            mode="lines",
+            name="Equity change",
+            line={"color": COLORS["primary"], "shape": "hv"},
+            showlegend=False,
+        ),
+        row=2,
+        col=1,
+    )
+
+    fills = pd.to_datetime(executions["ts_event"], utc=True)
+    figure.add_vrect(
+        x0=fills.min(),
+        x1=fills.max(),
+        fillcolor=COLORS["primary"],
+        opacity=0.12,
+        line_width=0,
+        row="all",
+        col=1,
+    )
+
+    buy = executions[executions["order_side"] == "BUY"].iloc[0]
+    sell = executions[executions["order_side"] == "SELL"].iloc[-1]
+    held = (fills.max() - fills.min()).total_seconds()
+    figure.update_layout(
+        title={
+            "text": "One round trip: buy at the ask, sell at the bid",
+            "subtitle": {
+                "text": (
+                    f"Bought at {buy.last_px}, sold {held:.1f} s later at {sell.last_px} "
+                    f"(shaded) | Net PnL {equity.iloc[-1]:.6f} pUSD with zero fees"
+                ),
+            },
+        },
+    )
+    figure.update_xaxes(title_text="Time (UTC)", row=2, col=1)
+    figure.update_yaxes(title_text="pUSD", row=1, col=1)
+    figure.update_yaxes(title_text="pUSD", zeroline=True, row=2, col=1)
+    return figure
+
+
+def _add_book_traces(
+    figure: go.Figure,
+    book: pd.DataFrame,
+    executions: pd.DataFrame,
+    *,
+    row: int | None = None,
+    labels: bool = False,
+) -> None:
+    for column, label, color in [
+        ("bid", "Best bid", COLORS["positive"]),
+        ("ask", "Best ask", COLORS["negative"]),
+    ]:
+        figure.add_trace(
+            go.Scatter(
+                x=book.index,
+                y=book[column].map(float),
+                mode="lines",
+                name=label,
+                line={"color": color, "shape": "hv", "width": 1},
+            ),
+            row=row,
+            col=None if row is None else 1,
+        )
+
+    for side, symbol, color, position in [
+        ("BUY", "triangle-up", COLORS["positive"], "top center"),
+        ("SELL", "triangle-down", COLORS["negative"], "bottom center"),
+    ]:
+        fills = executions[executions["order_side"] == side]
+        figure.add_trace(
+            go.Scatter(
+                x=pd.to_datetime(fills["ts_event"], utc=True),
+                y=fills["last_px"].map(float),
+                mode="markers+text" if labels else "markers",
+                text=[f"{side.title()} {price}" for price in fills["last_px"]] if labels else None,
+                textposition=position,
+                name=f"{side.title()} fills",
+                marker={"symbol": symbol, "color": color, "size": 10 if labels else 7},
+            ),
+            row=row,
+            col=None if row is None else 1,
+        )
+
+
 def _position_series(book: pd.DataFrame, executions: pd.DataFrame) -> pd.Series:
     quantities = [
         Decimal(row.last_qty) * (1 if row.order_side == "BUY" else -1)
@@ -162,40 +298,11 @@ def _position_series(book: pd.DataFrame, executions: pd.DataFrame) -> pd.Series:
     return position.reindex(position.index.union(book.index[-1:])).ffill()
 
 
-def _position_figure(book: pd.DataFrame, executions: pd.DataFrame) -> go.Figure:
-    position = _position_series(book, executions)
-
-    figure = go.Figure(
-        go.Scatter(
-            x=position.index,
-            y=position.map(float),
-            mode="lines",
-            name="Yes shares held",
-            line={"color": COLORS["positive"], "shape": "hv"},
-            fill="tozeroy",
-        ),
-    )
-
-    figure.update_layout(
-        title={
-            "text": "Yes-share inventory and final close",
-            "subtitle": {
-                "text": (
-                    f"Peak long: {position.max():.6f} shares | "
-                    f"Final position: {position.iloc[-1]:.6f} shares"
-                ),
-            },
-        },
-    )
-    figure.update_yaxes(title_text="Shares held", rangemode="tozero")
-    return figure
-
-
-def _equity_figure(
+def _equity_series(
     book: pd.DataFrame,
     executions: pd.DataFrame,
     account: pd.DataFrame,
-) -> go.Figure:
+) -> pd.Series:
     position = _position_series(book, executions)
     cash = account["total"].map(Decimal).groupby(level=0, sort=False).last()
     midpoint = ((book["bid"] + book["ask"]) / 2).groupby(level=0, sort=False).last()
@@ -203,31 +310,7 @@ def _equity_figure(
     shares = position.reindex(index).ffill().fillna(Decimal(0))
     balance = cash.reindex(index).ffill()
     marks = midpoint.reindex(index).ffill()
-    pnl = balance + shares * marks - cash.iloc[0]
-
-    figure = go.Figure(
-        go.Scatter(
-            x=pnl.index,
-            y=pnl.map(float),
-            mode="lines",
-            name="Equity change",
-            line={"color": COLORS["primary"], "shape": "hv"},
-        ),
-    )
-
-    figure.update_layout(
-        title={
-            "text": "Cash plus Yes shares marked at the midpoint",
-            "subtitle": {
-                "text": (
-                    f"Equity change: {pnl.iloc[-1]:.6f} pUSD | "
-                    f"Final cash balance: {cash.iloc[-1]:,.6f} pUSD"
-                ),
-            },
-        },
-    )
-    figure.update_yaxes(title_text="Equity change (pUSD)", zeroline=True)
-    return figure
+    return balance + shares * marks - cash.iloc[0]
 
 
 if __name__ == "__main__":
