@@ -43,7 +43,7 @@ use crate::{
     config::{InteractiveBrokersDataClientConfig, MarketDataType},
     data::{
         convert::{
-            IbPriceConverter, bar_request_range, bar_type_to_ib_bar_size,
+            IbPriceConverter, TickPageOutcome, bar_request_range, bar_type_to_ib_bar_size,
             extend_historical_tick_batch, historical_tick_request_end, ib_bar_to_nautilus_bar,
             ib_timestamp_to_unix_nanos, jiff_to_ib_datetime,
             price_type_to_ib_what_to_show_for_security, retain_historical_ticks_in_range,
@@ -627,7 +627,7 @@ impl HistoricalInteractiveBrokersClient {
                             batch_ticks.push(Data::Trade(trade_tick));
                         }
 
-                        if !extend_historical_tick_batch(
+                        if extend_historical_tick_batch(
                             &mut contract_ticks,
                             batch_ticks,
                             current_start_date,
@@ -636,7 +636,8 @@ impl HistoricalInteractiveBrokersClient {
                             Some(end_date_time_ns),
                             limit,
                             data_ts_event,
-                        ) {
+                        ) != TickPageOutcome::Continue
+                        {
                             break;
                         }
                     }
@@ -734,7 +735,7 @@ impl HistoricalInteractiveBrokersClient {
                             batch_ticks.push(Data::Quote(quote_tick));
                         }
 
-                        if !extend_historical_tick_batch(
+                        if extend_historical_tick_batch(
                             &mut contract_ticks,
                             batch_ticks,
                             current_start_date,
@@ -743,7 +744,8 @@ impl HistoricalInteractiveBrokersClient {
                             Some(end_date_time_ns),
                             limit,
                             data_ts_event,
-                        ) {
+                        ) != TickPageOutcome::Continue
+                        {
                             break;
                         }
                     }

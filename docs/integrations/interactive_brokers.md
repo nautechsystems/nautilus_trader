@@ -397,13 +397,38 @@ A bar request with a start time returns the bars closing within `[start, end]`. 
 request, or for one-second bars in consecutive requests of at most `2000 S`, IB's limit for that bar size. IB's
 pacing rules refuse six or more requests for one contract within two seconds, so a one-second range over about
 10,000 seconds can fail. If a request fails, the historical client returns an error and the data client
-responds with no bars. Historical trade ticks with IB's zero size are skipped before constructing the
+fails the request with no bars. Historical trade ticks with IB's zero size are skipped before constructing the
 positive-quantity Nautilus type. Other invalid conversions still fail the request.
 
 IB controls pacing, available history, supported bar sizes, and regular-trading-hours filtering.
 For continuous futures, IB rejects an explicit bar end time. The adapter omits it and requests one
 duration segment anchored to the request time, so the result can fall outside the requested start
 and end range.
+
+### Catalog write-back
+
+Historical and instrument requests on the data client report whether IB returned everything requested. The data
+client turns this coverage into one of three events:
+
+| Coverage   | Condition                                                                         | Event                                      |
+| ---------- | --------------------------------------------------------------------------------- | ------------------------------------------ |
+| Complete   | Quote and trade paging reached `start`, or bar requests covered `[start, end]`.   | Completed `DataResponseEnvelope`.          |
+| Failed     | A request, a stream item, or a row conversion failed.                             | `DataRequestFailed` with the rows fetched. |
+| Unverified | Any other result.                                                                 | Plain `DataResponse`.                      |
+
+A window that did not fail is unverified when the request has no `start` or sets `limit`, when tick paging found no
+older ticks before `start` or could not move its end back, and for bar requests by IB duration, including continuous
+futures. Ticks dropped by design do not fail a request: trades without a size or with a zero size, and ticks whose
+size the instrument's size precision cannot hold.
+
+Only a complete window is written back to a catalog when the request sets `params={"update_catalog": True}`. Set
+`start` and leave `limit` unset; the data engine rejects a request that sets both `update_catalog` and `limit`. See
+[catalog write-back](../concepts/data/catalog.md#reading-data).
+
+Instrument requests answer with a completed `DataResponseEnvelope`. A failed contract details fetch fails
+`request_instrument` without an instrument. An `ib_contracts` value or contract specification that fails to parse or
+load, or a failed reload with `force_instrument_update`, fails `request_instruments` with the reason and the
+instruments it loaded, which skips write-back.
 
 ## Execution capabilities
 

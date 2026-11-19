@@ -504,7 +504,25 @@ pub(crate) fn historical_tick_request_end(end: Timestamp) -> Timestamp {
     truncate_to_second(end).unwrap_or(end) + SignedDuration::from_secs(1)
 }
 
+/// What a backward historical tick pagination does after adding a page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TickPageOutcome {
+    /// The next page ends at this page's earliest second.
+    Continue,
+    /// The page reached the start of the window.
+    ReachedStart,
+    /// The ticks reached the record limit.
+    LimitReached,
+    /// IB returned no ticks before the requested end.
+    Empty,
+    /// The page did not precede the requested end, so the end could not move back.
+    Stalled,
+}
+
 /// Add a historical tick page and move the next request's end to its earliest tick's second.
+///
+/// Returns [`TickPageOutcome::Continue`] when the pagination needs another page, otherwise why it
+/// stops.
 #[allow(clippy::too_many_arguments)] // The parameters describe one pagination transition.
 pub(crate) fn extend_historical_tick_batch<T>(
     all_ticks: &mut Vec<T>,
@@ -515,17 +533,17 @@ pub(crate) fn extend_historical_tick_batch<T>(
     end_nanos: Option<UnixNanos>,
     limit: Option<usize>,
     ts_event: impl Fn(&T) -> UnixNanos,
-) -> bool {
+) -> TickPageOutcome {
     // IB returns every tick of a page's earliest second and leaves out the end second of a
     // request, so the next page ends at that earliest second without overlapping this one
     let Some(min_ts_nanos) = batch_ticks.iter().map(&ts_event).min() else {
-        return false;
+        return TickPageOutcome::Empty;
     };
     let Some(new_end) = Timestamp::from_nanosecond(i128::from(min_ts_nanos.as_u64()))
         .ok()
         .and_then(truncate_to_second)
     else {
-        return false;
+        return TickPageOutcome::Stalled;
     };
 
     // A page at or past the requested end cannot move the end back
@@ -535,7 +553,7 @@ pub(crate) fn extend_historical_tick_batch<T>(
              requested end"
         );
         retain_historical_ticks_in_range(all_ticks, start_nanos, end_nanos, &ts_event);
-        return false;
+        return TickPageOutcome::Stalled;
     }
 
     *current_end_date = Some(new_end);
@@ -543,10 +561,14 @@ pub(crate) fn extend_historical_tick_batch<T>(
     all_ticks.extend(batch_ticks);
     if current_start_date.is_some_and(|start| new_end <= start) {
         retain_historical_ticks_in_range(all_ticks, start_nanos, end_nanos, &ts_event);
-        return false;
+        return TickPageOutcome::ReachedStart;
     }
 
-    limit.is_none_or(|limit| all_ticks.len() < limit)
+    if limit.is_none_or(|limit| all_ticks.len() < limit) {
+        TickPageOutcome::Continue
+    } else {
+        TickPageOutcome::LimitReached
+    }
 }
 
 fn truncate_to_second(timestamp: Timestamp) -> Option<Timestamp> {
@@ -1233,7 +1255,7 @@ mod tests {
         let mut ticks = vec![seconds(30)];
         let mut end = Some(Timestamp::from_second(30).unwrap());
 
-        let should_continue = extend_historical_tick_batch(
+        let outcome = extend_historical_tick_batch(
             &mut ticks,
             vec![seconds(20), seconds(10), seconds(10)],
             Some(Timestamp::from_second(1).unwrap()),
@@ -1244,7 +1266,7 @@ mod tests {
             |ts| *ts,
         );
 
-        assert!(should_continue);
+        assert_eq!(outcome, TickPageOutcome::Continue);
         assert_eq!(
             ticks,
             vec![seconds(30), seconds(20), seconds(10), seconds(10)]
@@ -1257,7 +1279,7 @@ mod tests {
         let mut ticks = Vec::new();
         let mut end = Some(Timestamp::from_second(100).unwrap());
 
-        let should_continue = extend_historical_tick_batch(
+        let outcome = extend_historical_tick_batch(
             &mut ticks,
             vec![seconds(20), seconds(10)],
             Some(Timestamp::from_second(10).unwrap()),
@@ -1268,7 +1290,7 @@ mod tests {
             |ts| *ts,
         );
 
-        assert!(!should_continue);
+        assert_eq!(outcome, TickPageOutcome::ReachedStart);
         assert_eq!(ticks, vec![seconds(10)]);
         assert_eq!(end, Some(Timestamp::from_second(10).unwrap()));
     }
@@ -1278,7 +1300,7 @@ mod tests {
         let mut ticks = vec![seconds(30)];
         let mut end = Some(Timestamp::from_second(30).unwrap());
 
-        let should_continue = extend_historical_tick_batch(
+        let outcome = extend_historical_tick_batch(
             &mut ticks,
             vec![seconds(35), seconds(30)],
             None,
@@ -1289,9 +1311,51 @@ mod tests {
             |ts| *ts,
         );
 
-        assert!(!should_continue);
+        assert_eq!(outcome, TickPageOutcome::Stalled);
         assert_eq!(ticks, vec![seconds(30)]);
         assert_eq!(end, Some(Timestamp::from_second(30).unwrap()));
+    }
+
+    #[rstest]
+    fn test_extend_historical_tick_batch_stops_on_an_empty_page() {
+        let mut ticks = vec![seconds(30)];
+        let mut end = Some(Timestamp::from_second(30).unwrap());
+
+        let outcome = extend_historical_tick_batch(
+            &mut ticks,
+            Vec::new(),
+            Some(Timestamp::from_second(1).unwrap()),
+            &mut end,
+            Some(seconds(1)),
+            None,
+            None,
+            |ts| *ts,
+        );
+
+        assert_eq!(outcome, TickPageOutcome::Empty);
+        assert_eq!(ticks, vec![seconds(30)]);
+        assert_eq!(end, Some(Timestamp::from_second(30).unwrap()));
+    }
+
+    #[rstest]
+    fn test_extend_historical_tick_batch_stops_at_the_limit() {
+        let mut ticks = vec![seconds(30)];
+        let mut end = Some(Timestamp::from_second(30).unwrap());
+
+        let outcome = extend_historical_tick_batch(
+            &mut ticks,
+            vec![seconds(20), seconds(10)],
+            None,
+            &mut end,
+            None,
+            None,
+            Some(3),
+            |ts| *ts,
+        );
+
+        assert_eq!(outcome, TickPageOutcome::LimitReached);
+        assert_eq!(ticks, vec![seconds(30), seconds(20), seconds(10)]);
+        assert_eq!(end, Some(Timestamp::from_second(10).unwrap()));
     }
 
     fn timestamp(value: &str) -> Timestamp {
