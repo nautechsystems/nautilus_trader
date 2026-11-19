@@ -616,7 +616,7 @@ impl CoinApiHttpClient {
                     let mut status = None;
                     let mut retry_after = None;
 
-                    let request = self.client.get_with_params_on_headers(url.as_str(), query, |code, headers| {
+                    let request = self.client.get_with_params_on_headers(url.as_str(), query, None, |code, headers| {
                         status = Some(code.as_u16());
                         retry_after = headers
                             .get(RETRY_AFTER)

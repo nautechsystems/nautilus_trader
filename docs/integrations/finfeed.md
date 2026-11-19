@@ -899,8 +899,10 @@ chosen row. See [public controls](#public-controls-and-defaults) for equivalent 
 1280 seconds per sweep, or 2560 with 128 book scopes, before latency. A 60-second poll delay cannot make
 those scopes update once per minute; reduce selections or increase the delay.
 
-`max_concurrent_requests` bounds in-flight work but does not parallelize serial bootstrap/polling or bypass
-pacing. Separate clients have independent controls; coordinate their account-wide load.
+`max_concurrent_requests` bounds requests in flight. Attempts wait for pacing before taking a slot.
+FinFeed attempts also wait for the [shared cooldown](#retryable-failures). Bootstrap and polling stay serial.
+Reconnecting the same data client preserves both delays. Separate clients have independent controls.
+Coordinate their account-wide load.
 
 | Deadline                     | Covers                                                           |
 | ---------------------------- | ---------------------------------------------------------------- |
@@ -944,16 +946,17 @@ other clients. Check provider usage before starting the next bounded window.
 
 #### Retryable failures
 
-Retry transport/timeouts and HTTP 429, 500, 502, 503, and 504, using integer `Retry-After` seconds as a
-minimum retry delay. When the transport returns an HTTP 429 with this header, the client pauses new
-authenticated FinFeed attempts if the deadline fits the local timer, even when retries are disabled.
-Reconnecting the same data client retains the deadline.
-Public Kalshi metadata uses ordinary request pacing. A failed response body read can leave the status
-and header unavailable to the adapter. Admission can expire before sending.
+The client retries transport failures, timeouts, and HTTP 429, 500, 502, 503, and 504. For these status
+codes, it accepts `Retry-After` in integer seconds or as an `IMF-fixdate` HTTP date. The minimum delay
+starts at header receipt.
+If the deadline fits the local clock, a FinFeed response starts a shared cooldown for later FinFeed
+attempts, even if retries are disabled or reading the body fails. Public Kalshi metadata uses ordinary
+pacing and honors `Retry-After` for its own retries. A failed body read still returns a read error.
+Admission can expire before sending.
 
 At `DEBUG`, each completed transport attempt reports the provider, endpoint, time waiting for admission,
 HTTP elapsed time, status when received, and remaining FinFeed attempts. Use the timings to distinguish
-local admission delays from transport time. Admission includes concurrency, pacing, and the 429 cooldown.
+local admission delays from transport time. Admission includes concurrency, pacing, and the shared cooldown.
 
 #### Local attempts and provider quota
 

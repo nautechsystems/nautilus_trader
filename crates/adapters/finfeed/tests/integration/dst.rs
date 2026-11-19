@@ -24,9 +24,9 @@ use std::{
     time::Duration,
 };
 
-use jiff::Timestamp;
+use jiff::{Timestamp, fmt::rfc2822::DateTimePrinter};
 use nautilus_common::{clients::DataClient, live::dst::task::JoinError};
-use nautilus_core::{UnixNanos, string::secret::SecretString};
+use nautilus_core::{UnixNanos, string::secret::SecretString, time::wall_clock_now};
 use nautilus_finfeed::{
     common::symbol::to_instrument_id,
     config::FinFeedDataClientConfig,
@@ -847,6 +847,137 @@ async fn retry_after_delays_other_finfeed_requests_without_retries() {
     assert_eq!(fields[5..], ["status=Some(200)", "attempts_remaining=101"]);
 }
 
+#[rstest]
+#[case::rate_limit_seconds(429, false)]
+#[case::service_unavailable_date(503, true)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn retry_after_gates_requests_before_a_failed_body_read(
+    #[case] status: u16,
+    #[case] http_date: bool,
+) {
+    let (listener, address) = bind_peer().await;
+    let mut config = FinFeedHttpConfig::builder()
+        .base_url(format!("http://{address}/v1/"))
+        .min_request_interval_ms(1)
+        .max_concurrent_requests(2)
+        .build();
+    config.retry.max_retries = 0;
+    config.retry.operation_timeout_ms = Some(3_500);
+    let client = new_client(config.clone());
+
+    let peer = task::spawn(async move {
+        let (mut stalled, _) = listener.accept().await.unwrap();
+        let first = read_request(&mut stalled).await;
+        let sent = time::Instant::now();
+
+        let (header, delay) = if http_date {
+            let now = Timestamp::try_from(wall_clock_now()).unwrap();
+            let retry_at = Timestamp::from_second(now.as_second() + 2).unwrap();
+            let mut date = String::new();
+            DateTimePrinter::new()
+                .print_timestamp_rfc9110(&retry_at, &mut date)
+                .unwrap();
+            (date, retry_at.duration_since(now).unsigned_abs())
+        } else {
+            ("1".to_owned(), Duration::from_secs(1))
+        };
+
+        let response = format!(
+            "HTTP/1.1 {status} Retry\r\nRetry-After: {header}\r\nContent-Encoding: gzip\r\nContent-Length: 4\r\nConnection: close\r\n\r\n"
+        );
+        stalled.write_all(response.as_bytes()).await.unwrap();
+        stalled.flush().await.unwrap();
+
+        let (mut next, _) = listener.accept().await.unwrap();
+        let second = read_request(&mut next).await;
+        let elapsed = sent.elapsed();
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{PERIODS}",
+            PERIODS.len()
+        );
+        next.write_all(response.as_bytes()).await.unwrap();
+        next.flush().await.unwrap();
+        stalled.write_all(b"nope").await.unwrap();
+        stalled.flush().await.unwrap();
+        (first, second, elapsed, delay)
+    });
+
+    let second = async {
+        wait_for_condition(|| format!("{client:?}").contains("cooldown: Some(")).await;
+        assert_eq!(client.attempts_remaining(), 99);
+        client.get_periods().await
+    };
+
+    let (first, second) = tokio::join!(client.get_exchanges(), second);
+    assert!(matches!(first, Err(Error::Configuration)));
+    second.unwrap();
+
+    let (first, second, elapsed, delay) = peer.await.unwrap();
+    assert!(
+        elapsed >= delay,
+        "request started after {elapsed:?}, expected {delay:?}"
+    );
+    assert_request(&first, "/v1/exchanges", &config);
+    assert_request(&second, "/v1/ohlcv/periods", &config);
+    assert_eq!(client.attempts_remaining(), 98);
+}
+
+#[cfg(all(feature = "simulation", madsim))]
+#[rstest]
+#[case::completed_body(false)]
+#[case::timed_out_body(true)]
+#[madsim::test]
+async fn retry_after_uses_only_the_delay_remaining_after_the_body(#[case] body_timeout: bool) {
+    let (listener, address) = bind_peer().await;
+    let mut config = FinFeedHttpConfig::builder()
+        .base_url(format!("http://{address}/v1/"))
+        .min_request_interval_ms(1)
+        .build();
+    config.retry.max_retries = 1;
+    config.retry.initial_delay_ms = 10;
+    config.retry.max_elapsed_ms = Some(1_250);
+    if body_timeout {
+        config.retry.operation_timeout_ms = Some(300);
+    }
+
+    let client = new_client(config.clone());
+
+    let peer = task::spawn(async move {
+        let (mut first, _) = listener.accept().await.unwrap();
+        let initial = read_request(&mut first).await;
+        let sent = time::Instant::now();
+        first
+            .write_all(b"HTTP/1.1 503 Busy\r\nRetry-After: 1\r\nContent-Length: 4\r\nConnection: close\r\n\r\n")
+            .await
+            .unwrap();
+        first.flush().await.unwrap();
+
+        if !body_timeout {
+            time::sleep(Duration::from_millis(700)).await;
+            first.write_all(b"busy").await.unwrap();
+            first.flush().await.unwrap();
+        }
+
+        let (mut second, _) = listener.accept().await.unwrap();
+        let retry = read_request(&mut second).await;
+        let elapsed = sent.elapsed();
+        second
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n[]")
+            .await
+            .unwrap();
+        second.flush().await.unwrap();
+        (initial, retry, elapsed)
+    });
+
+    assert_eq!(client.get_exchanges().await.unwrap(), vec![]);
+    let (initial, retry, elapsed) = peer.await.unwrap();
+    assert!((Duration::from_secs(1)..Duration::from_millis(1_250)).contains(&elapsed));
+    assert_request(&initial, "/v1/exchanges", &config);
+    assert_request(&retry, "/v1/exchanges", &config);
+    assert_eq!(client.attempts_remaining(), 98);
+}
+
 #[cfg(all(feature = "simulation", madsim))]
 #[rstest]
 #[case::shorter_then_longer([("Retry-After: 1\r\n", 1), ("Retry-After: 3\r\n", 3)])]
@@ -969,20 +1100,33 @@ async fn exhausted_budget_takes_precedence_over_cooldown() {
     assert_eq!(peer.await.unwrap().len(), 1);
 }
 
+#[rstest]
+#[case::cooldown(429, "Retry-After: 1\r\n", Some(1), 1)]
+#[case::spacing(503, "", None, 1_000)]
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
-async fn connect_preserves_the_finfeed_retry_deadline_after_bootstrap_failure() {
-    let (peer, mut http) = start_peer(vec![
-        (429, "Retry-After: 1\r\n", EMPTY),
-        (200, "", EXCHANGES),
-        (
-            200,
-            "",
-            include_str!("../../test_data/polymarket-market.json"),
-        ),
-    ])
+async fn connect_preserves_the_finfeed_request_deadline_after_bootstrap_failure(
+    #[case] status: u16,
+    #[case] header: &'static str,
+    #[case] retry_after_secs: Option<u64>,
+    #[case] min_request_interval_ms: u64,
+) {
+    let (peer, mut http, mut observed) = start_peer_waiting(
+        vec![
+            (status, header, EMPTY),
+            (200, "", EXCHANGES),
+            (
+                200,
+                "",
+                include_str!("../../test_data/polymarket-market.json"),
+            ),
+        ],
+        |_| std::future::ready(()),
+        false,
+    )
     .await;
     http.retry.max_retries = 0;
+    http.min_request_interval_ms = min_request_interval_ms;
 
     let config = FinFeedDataClientConfig {
         api_key: Some("test-api-key".into()),
@@ -1000,15 +1144,19 @@ async fn connect_preserves_the_finfeed_retry_deadline_after_bootstrap_failure() 
     let error = client.connect().await.unwrap_err();
     assert!(matches!(
         error.downcast_ref::<Error>(),
-        Some(Error::Http {
-            status: 429,
-            retry_after_secs: Some(1)
-        })
+        Some(Error::Http { status: actual, retry_after_secs: delay })
+            if *actual == status && *delay == retry_after_secs
     ));
     assert!(client.is_disconnected());
+    assert_eq!(next_request(&mut observed).await, 0);
+    #[cfg(all(feature = "simulation", madsim))]
     let started = time::Instant::now();
-    client.connect().await.unwrap();
-    assert!(started.elapsed() >= Duration::from_millis(900));
+    let (result, ()) = tokio::join!(client.connect(), async {
+        assert_eq!(next_request(&mut observed).await, 1);
+        #[cfg(all(feature = "simulation", madsim))]
+        assert!(started.elapsed() >= Duration::from_millis(900));
+    });
+    result.unwrap();
     assert!(client.is_connected());
     receiver.try_recv().unwrap();
     client.disconnect().await.unwrap();

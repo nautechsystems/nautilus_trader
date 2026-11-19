@@ -431,7 +431,7 @@ async fn public_metadata_failure_is_identified_without_response_content() {
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
 async fn public_metadata_retries_share_pacing_without_spending_finfeed_allowance() {
     let (native_peer, native_http) = start_peer(vec![
-        (503, "", NATIVE_MARKET),
+        (503, "Retry-After: 1\r\n", NATIVE_MARKET),
         (200, "", NATIVE_MARKET),
         (200, "", NATIVE_EVENT),
     ])
@@ -454,8 +454,12 @@ async fn public_metadata_retries_share_pacing_without_spending_finfeed_allowance
     let requests = native_peer.await.unwrap();
 
     assert_eq!(instrument.id, id);
-    assert!(elapsed >= Duration::from_millis(60), "elapsed {elapsed:?}");
+    assert!(
+        elapsed >= Duration::from_millis(1_040),
+        "elapsed {elapsed:?}"
+    );
     assert_eq!(http.attempts_remaining(), 0);
+    assert!(format!("{http:?}").contains("cooldown: None"));
     assert_eq!(requests.len(), 3);
     assert!(requests[0].starts_with("GET /v1/markets/TEST-KALSHI-30 HTTP/1.1"));
     assert!(requests[1].starts_with("GET /v1/markets/TEST-KALSHI-30 HTTP/1.1"));

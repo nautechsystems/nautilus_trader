@@ -119,6 +119,8 @@ Released on TBD (UTC).
 - Fixed Bybit fast-execution fee rates loading after the private stream connects
 - Fixed Bybit WebSocket holding replay messages indefinitely when re-authentication gets no reply
 - Fixed Bybit WebSocket authentication failures dropping the venue's rejection reason
+- Fixed FinFeed dropping `Retry-After` on failed reads and missing HTTP dates and retryable 5xx cooldowns
+- Fixed FinFeed resetting request spacing on reconnect
 - Fixed Hyperliquid venue timestamps losing nanosecond exactness through float conversion
 - Fixed Hyperliquid order queries missing orders closed before acceptance (#5650), thanks for reporting @AlphaTraderK
 - Fixed Kalshi trading with subaccount-restricted API keys (#5654), thanks for reporting @wangschien

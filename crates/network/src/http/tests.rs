@@ -1605,7 +1605,9 @@ async fn header_observer_runs_before_a_body_decode_error() {
 
     let peer = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
-        read_headers(&mut stream).await;
+        let request = read_headers(&mut stream).await.to_ascii_lowercase();
+        assert!(request.starts_with("get /corrupt?limit=1 http/1.1\r\n"));
+        assert!(request.contains("\r\nx-referrer: test-client\r\n"));
         stream
             .write_all(b"HTTP/1.1 429 Too Many Requests\r\nRetry-After: 2\r\nContent-Encoding: gzip\r\nContent-Length: 4\r\n\r\n")
             .await
@@ -1624,6 +1626,7 @@ async fn header_observer_runs_before_a_body_decode_error() {
         .get_with_params_on_headers(
             &format!("http://{addr}/corrupt"),
             &[("limit", 1)],
+            Some(HashMap::from([("X-Referrer".into(), "test-client".into())])),
             |status, headers| {
                 assert_eq!(status.as_u16(), 429);
                 assert_eq!(headers["retry-after"], "2");

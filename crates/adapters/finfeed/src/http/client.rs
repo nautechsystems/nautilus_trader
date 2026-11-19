@@ -24,13 +24,14 @@ use std::{
     time::Duration,
 };
 
-use nautilus_core::string::secret::SecretString;
+use jiff::Timestamp;
+use nautilus_core::{string::secret::SecretString, time::wall_clock_now};
 use nautilus_network::{
     ConnectionUrl,
     backoff::ExponentialBackoff,
     dst::time,
-    http::{HttpClient, HttpRedirectPolicy, Method},
-    retry::{RetryConfig, RetryManager},
+    http::{HttpClient, HttpRedirectPolicy, RETRY_AFTER, StatusCode, parse_retry_after},
+    retry::{RetryConfig, RetryError, RetryManager},
 };
 use parking_lot::Mutex;
 use serde::{
@@ -141,8 +142,7 @@ pub struct FinFeedHttpClient {
     base_url: ConnectionUrl,
     api_key: SecretString,
     concurrency: tokio::sync::Semaphore,
-    next_request: tokio::sync::Mutex<Option<time::Instant>>,
-    cooldown: Arc<Mutex<Option<time::Instant>>>,
+    schedule: Arc<Mutex<RequestSchedule>>,
     interval: Duration,
     attempts_remaining: AtomicU64,
     retry: RetryManager<Error>,
@@ -199,15 +199,13 @@ impl FinFeedHttpClient {
                     .as_ref()
                     .map(|url| url.expose_secret().to_owned()),
             )
-            .header_keys(vec!["retry-after".into()])
             .build()?;
         Ok(Self {
             client,
             base_url: base_url.as_str().into(),
             api_key,
             concurrency: tokio::sync::Semaphore::new(config.max_concurrent_requests),
-            next_request: tokio::sync::Mutex::new(None),
-            cooldown: Arc::default(),
+            schedule: Arc::default(),
             interval: Duration::from_millis(config.min_request_interval_ms),
             attempts_remaining: AtomicU64::new(config.attempt_budget),
             retry: RetryManager::new(config.retry),
@@ -218,7 +216,7 @@ impl FinFeedHttpClient {
 
     pub(crate) fn new_generation(&self, config: FinFeedHttpConfig) -> Result<Self, Error> {
         let mut client = Self::new(Some(self.api_key.clone()), config)?;
-        client.cooldown = Arc::clone(&self.cooldown);
+        client.schedule = Arc::clone(&self.schedule);
         Ok(client)
     }
 
@@ -226,6 +224,7 @@ impl FinFeedHttpClient {
     ///
     /// Construct a new client to make further requests.
     pub fn cancel(&self) {
+        let _schedule = self.schedule.lock();
         self.cancellation.cancel();
     }
 
@@ -696,6 +695,7 @@ impl FinFeedHttpClient {
             .map_err(|()| Error::Validation("invalid base URL path".into()))?
             .pop_if_empty()
             .extend(path);
+        let attempt_retry_after = Mutex::new(None);
         self.retry
             .invocation(
                 if finfeed {
@@ -704,6 +704,7 @@ impl FinFeedHttpClient {
                     "Public Kalshi metadata GET"
                 },
                 || async {
+                    *attempt_retry_after.lock() = None;
                     let queued = log::log_enabled!(log::Level::Debug).then(time::Instant::now);
                     let _permit = self.admit(finfeed).await?;
                     let mut headers = HashMap::from([("Accept".into(), "application/json".into())]);
@@ -716,29 +717,20 @@ impl FinFeedHttpClient {
                     }
 
                     let started = queued.map(|_| time::Instant::now());
-                    let response = self
-                        .client
-                        .request_with_params(
-                            Method::GET,
-                            url.to_string(),
-                            Some(query),
-                            Some(headers),
-                            None,
-                            None,
-                            None,
-                        )
-                        .await;
-                    let elapsed = started.map(|started| started.elapsed());
-                    let status = response.as_ref().ok().map(|response| response.status.as_u16());
+                    let mut status = None;
+                    let mut retry_after = None;
 
-                    let retry_after_secs = response.as_ref().ok().and_then(|response| {
-                        response.headers.get("retry-after").and_then(|value| value.parse().ok())
+                    let request = self.client.get_with_params_on_headers(url.as_str(), query, Some(headers), |code, headers| {
+                        status = Some(code.as_u16());
+                        retry_after = headers
+                            .get(RETRY_AFTER)
+                            .and_then(|value| value.to_str().ok())
+                            .and_then(parse_rest_retry_after);
+                        *attempt_retry_after.lock() = self.observe_retry_after(finfeed, code, retry_after);
                     });
 
-                    if finfeed && status == Some(429) {
-                        self.apply_cooldown(retry_after_secs);
-                    }
-
+                    let response = request.await;
+                    let elapsed = started.map(|started| started.elapsed());
                     if let (Some(queued), Some(started), Some(elapsed)) = (queued, started, elapsed) {
                         log::debug!(
                             "GET provider={} endpoint={} admission_wait_ms={} http_elapsed_ms={} status={status:?} attempts_remaining={}",
@@ -754,7 +746,7 @@ impl FinFeedHttpClient {
                     if !response.status.is_success() {
                         return Err(Error::Http {
                             status: response.status.as_u16(),
-                            retry_after_secs,
+                            retry_after_secs: retry_after.map(retry_after_seconds),
                         });
                     }
 
@@ -763,7 +755,11 @@ impl FinFeedHttpClient {
                 Error::is_retryable,
                 Error::Retry,
             )
-            .retry_delay(&Error::retry_delay)
+            .retry_delay(&|_| {
+                attempt_retry_after
+                    .lock()
+                    .map(|(observed, delay)| delay.saturating_sub(observed.elapsed()))
+            })
             .cancellation_token(&self.cancellation)
             .execute()
             .await
@@ -771,55 +767,106 @@ impl FinFeedHttpClient {
 
     async fn admit(&self, finfeed: bool) -> Result<tokio::sync::SemaphorePermit<'_>, Error> {
         loop {
-            let wait = {
-                let permit = self
-                    .concurrency
-                    .acquire()
-                    .await
-                    .map_err(|_| Error::Response("admission closed"))?;
-                let mut next = self.next_request.lock().await;
-                if let Some(deadline) = *next {
-                    time::sleep_until(deadline).await;
-                }
+            if finfeed && self.attempts_remaining() == 0 {
+                return Err(Error::AttemptBudget);
+            }
 
-                let cooldown = finfeed.then(|| self.cooldown.lock());
-                let now = time::Instant::now();
-                let deadline = cooldown.as_deref().copied().flatten();
-                if let Some(deadline) = deadline.filter(|deadline| *deadline > now) {
-                    if self.attempts_remaining() == 0 {
-                        return Err(Error::AttemptBudget);
-                    }
+            let deadline = self.schedule.lock().not_before(finfeed);
+            let now = time::Instant::now();
 
-                    deadline
-                } else {
-                    if finfeed {
-                        self.attempts_remaining
-                            .try_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
-                                remaining.checked_sub(1)
-                            })
-                            .map_err(|_| Error::AttemptBudget)?;
-                    }
+            if let Some(deadline) = deadline.filter(|deadline| *deadline > now) {
+                // Keep distant provider deadlines out of the timer's registration arithmetic
+                time::sleep_until(deadline.min(now + Duration::from_secs(60))).await;
+                continue;
+            }
 
-                    *next = Some(now + self.interval);
-                    return Ok(permit);
-                }
-            };
+            let permit = self
+                .concurrency
+                .acquire()
+                .await
+                .map_err(|_| Error::Response("admission closed"))?;
+            let mut schedule = self.schedule.lock();
+            let now = time::Instant::now();
 
-            time::sleep_until(wait).await;
+            if schedule
+                .not_before(finfeed)
+                .is_some_and(|deadline| deadline > now)
+            {
+                continue;
+            }
+
+            if self.cancellation.is_cancelled() {
+                return Err(Error::Retry(RetryError::Canceled));
+            }
+
+            if finfeed {
+                self.attempts_remaining
+                    .try_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
+                        remaining.checked_sub(1)
+                    })
+                    .map_err(|_| Error::AttemptBudget)?;
+            }
+
+            schedule.next_request = Some(now + self.interval);
+            return Ok(permit);
         }
     }
 
-    fn apply_cooldown(&self, retry_after_secs: Option<u64>) {
-        let deadline = retry_after_secs
-            .and_then(|seconds| time::Instant::now().checked_add(Duration::from_secs(seconds)));
-
-        if let Some(deadline) = deadline {
-            let mut cooldown = self.cooldown.lock();
-            *cooldown = (*cooldown).max(Some(deadline));
+    fn observe_retry_after(
+        &self,
+        finfeed: bool,
+        status: StatusCode,
+        retry_after: Option<Duration>,
+    ) -> Option<(time::Instant, Duration)> {
+        if !Error::is_retryable_status(status.as_u16()) {
+            return None;
         }
 
-        log::warn!("FinFeed received HTTP 429, retry_after_secs={retry_after_secs:?}");
+        let observed = time::Instant::now();
+        if finfeed {
+            if let Some(deadline) = retry_after.and_then(|delay| observed.checked_add(delay)) {
+                let mut schedule = self.schedule.lock();
+                schedule.cooldown = schedule.cooldown.max(Some(deadline));
+            }
+
+            if status == StatusCode::TOO_MANY_REQUESTS || retry_after.is_some() {
+                let retry_after_secs = retry_after.map(retry_after_seconds);
+                log::warn!(
+                    "FinFeed received HTTP {status}, retry_after_secs={retry_after_secs:?}",
+                    status = status.as_u16()
+                );
+            }
+        }
+
+        retry_after.map(|delay| (observed, delay))
     }
+}
+
+#[derive(Debug, Default)]
+struct RequestSchedule {
+    next_request: Option<time::Instant>,
+    cooldown: Option<time::Instant>,
+}
+
+impl RequestSchedule {
+    fn not_before(&self, finfeed: bool) -> Option<time::Instant> {
+        if finfeed {
+            self.next_request.max(self.cooldown)
+        } else {
+            self.next_request
+        }
+    }
+}
+
+fn parse_rest_retry_after(value: &str) -> Option<Duration> {
+    let now = Timestamp::try_from(wall_clock_now()).ok()?;
+    parse_retry_after(value, now)
+}
+
+fn retry_after_seconds(delay: Duration) -> u64 {
+    delay
+        .as_secs()
+        .saturating_add(u64::from(delay.subsec_nanos() != 0))
 }
 
 fn endpoint_name(path: &[&str]) -> &'static str {
@@ -975,7 +1022,11 @@ mod tests {
         )
         .unwrap();
 
-        client.apply_cooldown(Some(10));
+        client.observe_retry_after(
+            true,
+            StatusCode::TOO_MANY_REQUESTS,
+            Some(Duration::from_secs(10)),
+        );
 
         let finfeed = client.admit(true);
         tokio::pin!(finfeed);
@@ -994,5 +1045,58 @@ mod tests {
 
         let _finfeed = finfeed.await.unwrap();
         assert_eq!(client.attempts_remaining(), 0);
+    }
+
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    async fn kalshi_retry_after_leaves_finfeed_admission_open() {
+        let client =
+            FinFeedHttpClient::new(Some("test-api-key".into()), FinFeedHttpConfig::default())
+                .unwrap();
+        let hint = Duration::from_secs(1);
+        let retry = client.observe_retry_after(false, StatusCode::SERVICE_UNAVAILABLE, Some(hint));
+        assert_eq!(retry.map(|(_, delay)| delay), Some(hint));
+
+        let _finfeed = time::timeout(Duration::from_millis(100), client.admit(true))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(client.attempts_remaining(), 99);
+    }
+
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    async fn waiting_for_request_spacing_leaves_the_permit_and_budget_free() {
+        let client = FinFeedHttpClient::new(
+            Some("test-api-key".into()),
+            FinFeedHttpConfig {
+                attempt_budget: 2,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        drop(client.admit(true).await.unwrap());
+
+        let next = client.admit(true);
+        tokio::pin!(next);
+        poll_fn(|cx| {
+            assert!(next.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+
+        assert_eq!(client.concurrency.available_permits(), 1);
+        assert_eq!(client.attempts_remaining(), 1);
+        let permit = next.await.unwrap();
+        assert_eq!(client.concurrency.available_permits(), 0);
+        assert_eq!(client.attempts_remaining(), 0);
+        drop(permit);
     }
 }

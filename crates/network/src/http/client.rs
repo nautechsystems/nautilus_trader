@@ -363,7 +363,7 @@ impl HttpClient {
             .await
     }
 
-    /// Sends a GET request with query parameters and observes its response headers.
+    /// Sends a GET request with query parameters and optional request headers.
     ///
     /// Calls `on_headers` with the final response status and headers before reading the body.
     /// The buffered response uses the client's body size limits and content decoding.
@@ -375,11 +375,12 @@ impl HttpClient {
         &self,
         url: &str,
         params: &P,
+        headers: Option<HashMap<String, String>>,
         on_headers: impl FnOnce(StatusCode, &HeaderMap),
     ) -> Result<HttpResponse, HttpClientError> {
         self.await_rate_limits(None).await;
         // Keep the callback out of the shared buffered request future to limit its size
-        let headers = self.client.buffered_request_headers(None);
+        let headers = self.client.buffered_request_headers(headers);
         let stream = self
             .client
             .send_stream_internal(Method::GET, url, Some(params), Some(headers), None, None)
