@@ -24,6 +24,8 @@ from decimal import Decimal
 from http.server import BaseHTTPRequestHandler
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs
+from urllib.parse import urlsplit
 
 import pytest
 from tests.providers import TestInstrumentProvider
@@ -409,6 +411,106 @@ def test_data_loader_rejects_missing_metadata_before_opening_files() -> None:
 
     with pytest.raises(ValueError, match=r"No loaded instrument BTCUSDT\.BINANCE"):
         loader.load_trades("missing.csv", BINANCE)
+
+
+@pytest.mark.parametrize(
+    ("start", "error", "match"),
+    [
+        (
+            dt.datetime(2025, 9, 1, tzinfo=dt.UTC),
+            RuntimeError,
+            r"No loaded instrument BTCUSDT\.BINANCE",
+        ),
+        (dt.datetime(2025, 9, 1), TypeError, "non-None tzinfo"),  # noqa: DTZ001
+        (dt.datetime(1969, 12, 31, tzinfo=dt.UTC), ValueError, "cannot be negative"),
+    ],
+)
+def test_data_loader_request_bounds_are_timezone_aware_datetimes(
+    start: dt.datetime,
+    error: type[Exception],
+    match: str,
+) -> None:
+    """
+    Accept aware bounds and reject naive or pre-epoch bounds before any request.
+    """
+    loader = CoinApiDataLoader()
+    end = dt.datetime(2025, 9, 2, tzinfo=dt.UTC)
+
+    async def request() -> None:
+        await loader.request_quotes(BINANCE, start, end)
+
+    with pytest.raises(error, match=match):
+        asyncio.run(request())
+
+
+@pytest.mark.parametrize(
+    ("method", "subject", "path"),
+    [
+        ("request_quotes", COINBASE, "/v1/quotes/COINBASE_SPOT_BTC_USD/history"),
+        ("request_trades", COINBASE, "/v1/trades/COINBASE_SPOT_BTC_USD/history"),
+        (
+            "request_bars",
+            BarType.from_str("BTC-USD.COINBASE-1-MINUTE-LAST-EXTERNAL"),
+            "/v1/ohlcv/COINBASE_SPOT_BTC_USD/history",
+        ),
+    ],
+)
+def test_data_loader_history_requests_send_datetime_bounds(
+    method: str,
+    subject: InstrumentId | BarType,
+    path: str,
+) -> None:
+    """
+    Send both datetime bounds as the history request window.
+    """
+    requests = []
+    symbols = (FIXTURES.parent / "symbols_spot.json").read_bytes()
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            requests.append(self.path)
+            body = symbols if self.path.startswith("/v1/symbols/") else b"[]"
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    loader = CoinApiDataLoader(
+        api_key="python-rest-secret",
+        base_url=f"http://127.0.0.1:{server.server_port}/v1/",
+        max_retries=0,
+        timeout_secs=2,
+    )
+
+    start = dt.datetime(2025, 9, 1, 0, 0, 1, tzinfo=dt.UTC)
+    end = dt.datetime(2025, 9, 1, 0, 2, tzinfo=dt.UTC)
+
+    async def collect():
+        await loader.request_instruments(
+            [coinapi.CoinApiInstrumentSelection("COINBASE", [COINBASE])],
+        )
+        return await getattr(loader, method)(subject, start, end)
+
+    try:
+        asyncio.run(collect())
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    history = urlsplit(requests[1])
+    query = parse_qs(history.query)
+
+    assert history.path == path
+    assert query["time_start"] == ["2025-09-01T00:00:01.0000000Z"]
+    assert query["time_end"] == ["2025-09-01T00:02:00.0000000Z"]
 
 
 def test_data_loader_book_stream_owns_definition_snapshot() -> None:

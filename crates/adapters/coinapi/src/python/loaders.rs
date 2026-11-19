@@ -17,9 +17,9 @@
 
 use std::{collections::HashMap, num::NonZeroUsize, path::PathBuf, sync::Arc};
 
-use jiff::civil::Date;
+use jiff::{Timestamp, civil::Date};
 use nautilus_core::{
-    UnixNanos,
+    datetime::try_datetime_to_unix_nanos,
     python::{to_pyruntime_err, to_pyvalue_err},
     string::secret::SecretString,
 };
@@ -42,7 +42,8 @@ use crate::{
 /// Standalone ingestion with reusable instrument definitions and lazy credentials.
 ///
 /// Register or request definitions before loading market data. Construction sends no requests.
-/// History bounds are integer UNIX nanoseconds; limits must be positive.
+/// History bounds are timezone-aware datetimes; naive bounds raise `TypeError` and pre-epoch bounds
+/// raise `ValueError` before any request. Limits must be positive.
 /// Local decoding failures raise `ValueError`; downloads and REST failures raise `RuntimeError`.
 /// Requested chunk sizes must be in `[1, 1_000_000]`.
 #[derive(Debug)]
@@ -319,31 +320,28 @@ impl PyCoinApiDataLoader {
 
     /// Retrieves historical quotes using retained metadata.
     ///
-    /// Bounds are UNIX nanoseconds in `[start, end)`; conversion or retrieval failures raise
-    /// without partial results.
+    /// Bounds are timezone-aware datetimes in `[start, end)`; conversion or retrieval failures
+    /// raise without partial results.
     #[pyo3(signature = (instrument_id, start, end, limit=None))]
     #[gen_stub(override_return_type(type_repr = "typing.Awaitable[list[nautilus_trader.model.QuoteTick]]", imports = ("typing", "nautilus_trader.model")))]
     fn request_quotes<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        start: u64,
-        end: u64,
+        start: Timestamp,
+        end: Timestamp,
         limit: Option<usize>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let limit = limit
             .map(NonZeroUsize::try_from)
             .transpose()
             .map_err(to_pyvalue_err)?;
+        let start = try_datetime_to_unix_nanos(start).map_err(to_pyvalue_err)?;
+        let end = try_datetime_to_unix_nanos(end).map_err(to_pyvalue_err)?;
         let loader = Arc::clone(&self.inner);
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let records = loader
-                .request_quotes(
-                    instrument_id,
-                    UnixNanos::from(start),
-                    UnixNanos::from(end),
-                    limit,
-                )
+                .request_quotes(instrument_id, start, end, limit)
                 .await
                 .map_err(to_pyruntime_err)?;
             Python::attach(|py| records.into_py_any(py))
@@ -352,31 +350,28 @@ impl PyCoinApiDataLoader {
 
     /// Retrieves historical trades using retained metadata.
     ///
-    /// Bounds are UNIX nanoseconds in `[start, end)`; conversion or retrieval failures raise
-    /// without partial results.
+    /// Bounds are timezone-aware datetimes in `[start, end)`; conversion or retrieval failures
+    /// raise without partial results.
     #[pyo3(signature = (instrument_id, start, end, limit=None))]
     #[gen_stub(override_return_type(type_repr = "typing.Awaitable[list[nautilus_trader.model.TradeTick]]", imports = ("typing", "nautilus_trader.model")))]
     fn request_trades<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        start: u64,
-        end: u64,
+        start: Timestamp,
+        end: Timestamp,
         limit: Option<usize>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let limit = limit
             .map(NonZeroUsize::try_from)
             .transpose()
             .map_err(to_pyvalue_err)?;
+        let start = try_datetime_to_unix_nanos(start).map_err(to_pyvalue_err)?;
+        let end = try_datetime_to_unix_nanos(end).map_err(to_pyvalue_err)?;
         let loader = Arc::clone(&self.inner);
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let records = loader
-                .request_trades(
-                    instrument_id,
-                    UnixNanos::from(start),
-                    UnixNanos::from(end),
-                    limit,
-                )
+                .request_trades(instrument_id, start, end, limit)
                 .await
                 .map_err(to_pyruntime_err)?;
             Python::attach(|py| records.into_py_any(py))
@@ -385,31 +380,28 @@ impl PyCoinApiDataLoader {
 
     /// Retrieves historical bars using retained metadata.
     ///
-    /// Bounds are UNIX nanoseconds in `[start, end)`; conversion or retrieval failures raise
-    /// without partial results.
+    /// Bounds are timezone-aware datetimes in `[start, end)`; conversion or retrieval failures
+    /// raise without partial results.
     #[pyo3(signature = (bar_type, start, end, limit=None))]
     #[gen_stub(override_return_type(type_repr = "typing.Awaitable[list[nautilus_trader.model.Bar]]", imports = ("typing", "nautilus_trader.model")))]
     fn request_bars<'py>(
         &self,
         py: Python<'py>,
         bar_type: BarType,
-        start: u64,
-        end: u64,
+        start: Timestamp,
+        end: Timestamp,
         limit: Option<usize>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let limit = limit
             .map(NonZeroUsize::try_from)
             .transpose()
             .map_err(to_pyvalue_err)?;
+        let start = try_datetime_to_unix_nanos(start).map_err(to_pyvalue_err)?;
+        let end = try_datetime_to_unix_nanos(end).map_err(to_pyvalue_err)?;
         let loader = Arc::clone(&self.inner);
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let records = loader
-                .request_bars(
-                    bar_type,
-                    UnixNanos::from(start),
-                    UnixNanos::from(end),
-                    limit,
-                )
+                .request_bars(bar_type, start, end, limit)
                 .await
                 .map_err(to_pyruntime_err)?;
             Python::attach(|py| records.into_py_any(py))

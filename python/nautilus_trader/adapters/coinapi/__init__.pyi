@@ -190,11 +190,23 @@ class CoinApiDataLoader:
         self, instrument_id: model.InstrumentId, depth: int | None = None
     ) -> typing.Awaitable[model.OrderBook]: ...
     def request_quotes(
-        self, instrument_id: model.InstrumentId, start: int, end: int, limit: int | None = None
+        self,
+        instrument_id: model.InstrumentId,
+        start: datetime.datetime,
+        end: datetime.datetime,
+        limit: int | None = None,
     ) -> typing.Awaitable[list[model.QuoteTick]]: ...
     def request_trades(
-        self, instrument_id: model.InstrumentId, start: int, end: int, limit: int | None = None
+        self,
+        instrument_id: model.InstrumentId,
+        start: datetime.datetime,
+        end: datetime.datetime,
+        limit: int | None = None,
     ) -> typing.Awaitable[list[model.TradeTick]]: ...
     def request_bars(
-        self, bar_type: model.BarType, start: int, end: int, limit: int | None = None
+        self,
+        bar_type: model.BarType,
+        start: datetime.datetime,
+        end: datetime.datetime,
+        limit: int | None = None,
     ) -> typing.Awaitable[list[model.Bar]]: ...

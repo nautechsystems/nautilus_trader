@@ -59,6 +59,7 @@ Released on TBD (UTC).
 - Changed `BybitExecutionClientConfig` literals; add `load_ids: None`
 - Changed Bybit HTTP reports to fail on uncached in-scope instruments; load instruments first
 - Changed Bybit `use_ws_execution_fast` to reject the Option product type; use the standard stream
+- Changed Python `CoinApiDataLoader` history `start` and `end` to timezone-aware `datetime` (microsecond precision)
 - Changed Python `FinFeedDataLoader` history `start` and `end` to timezone-aware `datetime` (microsecond precision)
 - Changed `FinFeedHttpConfig` literals; add `kalshi_metadata_url: None`
 - Changed FinFeed HTTP errors with `KalshiMetadata`; update exhaustive matches

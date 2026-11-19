@@ -614,8 +614,11 @@ and size precision and reject values requiring rounding. Consolidated bar volume
 - `download_flat_file(bucket, object_key, filepath)` streams a selected S3 object to disk without
   requiring instrument definitions. Authentication and HTTP controls come from the loader constructor.
 - `request_book_snapshot`, `request_quotes`, `request_trades`, and `request_bars` fetch Nautilus objects
-  directly. Historical methods take integer UNIX nanoseconds with `[start, end)` bounds and an optional
-  positive limit. Bars must close within the window and by the current time.
+  directly. Historical methods take timezone-aware `datetime` bounds in `[start, end)` and an optional
+  positive limit. Bounds keep microsecond precision; use a `datetime.timezone` offset, such as
+  `datetime.UTC`, or a `zoneinfo.ZoneInfo` zone. A naive bound raises `TypeError` and a pre-epoch
+  bound raises `ValueError`, before any request. Bars must close within the window and by the
+  current time.
 
 REST history raises if the credit budget truncates retrieval or any record fails conversion. It returns
 no partial result. Each loader shares its configured credit allowance across all REST calls.
