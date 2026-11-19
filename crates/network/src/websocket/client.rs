@@ -1982,13 +1982,6 @@ impl WebSocketClientInner {
                             reconnect_buffer.clear();
                         }
 
-                        // Attempt to close the writer gracefully before exiting,
-                        // we ignore any error as the writer may already be closed.
-                        _ = dst::time::timeout(
-                            Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
-                            active_writer.close(),
-                        )
-                        .await;
                         break;
                     }
                     ConnectionMode::Closed => {
@@ -3471,7 +3464,11 @@ impl WebSocketClient {
         }
     }
 
-    /// Disconnects the client and waits for the controller task to stop.
+    /// Disconnects the client and waits up to 5 seconds for the controller task to stop.
+    ///
+    /// On timeout, aborts the controller and waits briefly for it to stop. A controller blocked in
+    /// a synchronous handler can still be running when this returns, in which case
+    /// [`Self::is_disconnected`] returns `false`.
     ///
     /// If an [`AuthTracker`] is registered, this fails pending auth waits.
     pub async fn disconnect(&self) {
@@ -3510,6 +3507,19 @@ impl WebSocketClient {
 
             self.connection_mode
                 .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+
+            // Abort lands at the controller's next poll, which a blocked handler can postpone
+            if dst::time::timeout(Duration::from_millis(GRACEFUL_SHUTDOWN_DELAY_MS), async {
+                while !self.controller_task.is_finished() {
+                    dst::time::sleep(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS))
+                        .await;
+                }
+            })
+            .await
+            .is_err()
+            {
+                log::warn!("Controller task still running after abort");
+            }
         }
     }
 
@@ -3778,6 +3788,9 @@ impl WebSocketClient {
                             task.abort();
                             log_task_aborted("heartbeat");
                         }
+
+                        // Dropping inner aborts the writer, so let it finish its bounded close
+                        _ = (&mut inner.write_task).await;
                     })
                     .await
                     .is_err()
@@ -8817,6 +8830,173 @@ mod rust_tests {
         ) -> Poll<Result<(), Self::Error>> {
             Poll::Ready(Ok(()))
         }
+    }
+
+    struct SlowCloseTransport {
+        delay: Duration,
+        pending_close: Option<Pin<Box<tokio::time::Sleep>>>,
+        closes: Arc<AtomicUsize>,
+    }
+
+    impl futures_util::Stream for SlowCloseTransport {
+        type Item = Result<Message, TransportError>;
+
+        fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            Poll::Pending
+        }
+    }
+
+    impl futures_util::Sink<Message> for SlowCloseTransport {
+        type Error = TransportError;
+
+        fn poll_ready(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn start_send(self: Pin<&mut Self>, _item: Message) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn poll_flush(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_close(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            let delay = self.delay;
+            let pending_close = self
+                .pending_close
+                .get_or_insert_with(|| Box::pin(tokio::time::sleep(delay)));
+            std::task::ready!(pending_close.as_mut().poll(cx));
+            self.pending_close = None;
+            self.closes.fetch_add(1, Ordering::SeqCst);
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_controller_disconnect_waits_for_writer_close() {
+        let closes = Arc::new(AtomicUsize::new(0));
+
+        let transport: BoxedWsTransport = Box::pin(SlowCloseTransport {
+            // Outlasts the controller's shutdown delay but fits its shutdown timeout
+            delay: Duration::from_secs(1),
+            pending_close: None,
+            closes: Arc::clone(&closes),
+        });
+
+        let (writer, _reader) = transport.split();
+        let config = WebSocketConfig::builder()
+            .url("ws://localhost".to_string())
+            .build()
+            .unwrap();
+        let inner = WebSocketClientInner::new_with_writer(config, writer)
+            .await
+            .unwrap();
+        let connection_mode = Arc::clone(&inner.connection_mode);
+        let state_notify = Arc::clone(&inner.state_notify);
+        let auth_tracker = Arc::clone(&inner.auth_tracker);
+        let controller_notify = Arc::clone(&inner.controller_notify);
+        let reconnect_published = Arc::clone(&inner.reconnect_published);
+        let controller_task = WebSocketClient::spawn_controller_task(
+            inner,
+            Arc::clone(&connection_mode),
+            Arc::clone(&state_notify),
+            auth_tracker,
+            Arc::new(ControllerLifecycle::new()),
+            controller_notify,
+            reconnect_published,
+        );
+
+        assert!(ConnectionMode::request_disconnect(&connection_mode));
+        state_notify.notify_waiters();
+        controller_task.await.unwrap();
+
+        assert_eq!(closes.load(Ordering::SeqCst), 1);
+    }
+
+    fn test_websocket_client(controller_task: dst::task::JoinHandle<()>) -> WebSocketClient {
+        let controller_lifecycle = Arc::new(ControllerLifecycle::new());
+        let abort_handle = controller_task.abort_handle();
+        controller_lifecycle.set_abort(move || abort_handle.abort());
+        let (writer_tx, _writer_rx) = crate::writer::channel(DEFAULT_WRITER_CAPACITY);
+
+        WebSocketClient {
+            controller_task,
+            connection_mode: Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8())),
+            connection_epoch: Arc::new(AtomicU64::new(0)),
+            state_notify: Arc::new(tokio::sync::Notify::new()),
+            connect_timeout: TEST_TIMEOUT,
+            rate_limiter: Arc::new(RateLimiter::new_with_quota(None, Vec::new())),
+            writer_tx,
+            auth_tracker: Arc::new(OnceLock::new()),
+            reconnect_buffer_waits_for_auth: Arc::new(AtomicBool::new(false)),
+            reconnect_headers: ReconnectHeaders::new(Vec::new()),
+            state_sink: None,
+            controller_lifecycle,
+            controller_notify: Arc::new(tokio::sync::Notify::new()),
+            reconnect_published: Arc::new(AtomicBool::new(false)),
+            reconnect_supported: true,
+        }
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_disconnect_timeout_waits_for_aborted_controller() {
+        let client = test_websocket_client(dst::task::spawn(std::future::pending::<()>()));
+
+        client.disconnect().await;
+
+        assert!(client.is_disconnected());
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_disconnect_timeout_returns_while_aborted_controller_is_blocked() {
+        let (started_tx, started_rx) = oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+
+        // Abort cannot cancel a running blocking task, like a controller stuck in a handler
+        let client = test_websocket_client(task::spawn_blocking(move || {
+            started_tx.send(()).unwrap();
+            let _ = release_rx.recv();
+        }));
+
+        // A queued blocking task is still cancellable, so start blocking before the abort
+        started_rx.await.unwrap();
+
+        let disconnect = client.disconnect();
+        tokio::pin!(disconnect);
+
+        // Blocking tasks inhibit auto-advance, so drive the clock past the shutdown timeout
+        let mut returned = false;
+
+        for _ in 0..1_000 {
+            if futures_util::poll!(&mut disconnect).is_ready() {
+                returned = true;
+                break;
+            }
+
+            tokio::time::advance(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
+        }
+
+        let disconnected = client.is_disconnected();
+        release_tx.send(()).unwrap();
+
+        assert!(
+            returned,
+            "disconnect did not return while the controller stayed blocked"
+        );
+        assert!(!disconnected);
     }
 
     #[rstest]

@@ -1423,6 +1423,9 @@ impl SocketClient {
                             task.abort();
                             log_task_aborted("heartbeat");
                         }
+
+                        // Dropping inner aborts the writer, so let it finish its bounded close
+                        _ = (&mut inner.write_task).await;
                     })
                     .await
                     .is_err()
@@ -2752,6 +2755,40 @@ mod rust_tests {
         }
     }
 
+    struct SlowShutdownWriter {
+        delay: Duration,
+        pending_shutdown: Option<Pin<Box<tokio::time::Sleep>>>,
+        shutdowns: Arc<AtomicUsize>,
+    }
+
+    impl AsyncWrite for SlowShutdownWriter {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            Poll::Ready(Ok(buf.len()))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            let delay = self.delay;
+            let pending_shutdown = self
+                .pending_shutdown
+                .get_or_insert_with(|| Box::pin(tokio::time::sleep(delay)));
+            std::task::ready!(pending_shutdown.as_mut().poll(cx));
+            self.pending_shutdown = None;
+            self.shutdowns.fetch_add(1, Ordering::SeqCst);
+            Poll::Ready(Ok(()))
+        }
+    }
+
     fn test_socket_client(
         connection_state: Arc<AtomicU8>,
         state_notify: Arc<tokio::sync::Notify>,
@@ -2939,6 +2976,58 @@ mod rust_tests {
             .await
             .expect("Drop did not cancel the pending writer update");
         drop(request);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_controller_disconnect_waits_for_writer_shutdown() {
+        type TestWriter = Pin<Box<dyn AsyncWrite + Send>>;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let mut inner = SocketClientInner::connect_url(reconnect_test_config(port), None)
+            .await
+            .unwrap();
+        let (_peer, _) = listener.accept().await.unwrap();
+        tokio::time::pause();
+
+        let shutdowns = Arc::new(AtomicUsize::new(0));
+
+        let writer: TestWriter = Box::pin(SlowShutdownWriter {
+            // Outlasts the controller's shutdown delay but fits its shutdown timeout
+            delay: Duration::from_secs(1),
+            pending_shutdown: None,
+            shutdowns: Arc::clone(&shutdowns),
+        });
+
+        let (_writer_tx, writer_rx) =
+            writer::channel::<WriterCommand<TestWriter>>(DEFAULT_WRITER_CAPACITY);
+        let write_task = SocketClientInner::spawn_write_task(
+            Arc::clone(&inner.connection_mode),
+            Arc::clone(&inner.state_notify),
+            writer,
+            writer_rx,
+            b"\r\n".to_vec(),
+            None,
+        );
+        std::mem::replace(&mut inner.write_task, write_task).abort();
+        let connection_mode = Arc::clone(&inner.connection_mode);
+        let state_notify = Arc::clone(&inner.state_notify);
+        let controller_task = SocketClient::spawn_controller_task(
+            inner,
+            Arc::clone(&connection_mode),
+            Arc::clone(&state_notify),
+            Arc::new(ControllerLifecycle::new()),
+            Arc::new(tokio::sync::Notify::new()),
+            None,
+            None,
+        );
+
+        assert!(ConnectionMode::request_disconnect(&connection_mode));
+        state_notify.notify_waiters();
+        controller_task.await.unwrap();
+
+        assert_eq!(shutdowns.load(Ordering::SeqCst), 1);
     }
 
     #[rstest]

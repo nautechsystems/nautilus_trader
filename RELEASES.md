@@ -99,8 +99,10 @@ Released on TBD (UTC).
 - Fixed socket client sending a superseded replayable command after its replacement on reconnect
 - Fixed TCP socket replay continuing during shutdown
 - Fixed spurious WebSocket writer update errors when shutdown cancels a reconnect
+- Fixed WebSocket and TCP socket disconnects cutting off the graceful connection close
 - Fixed HTTP client rejecting zero-length `Content-Encoding: gzip` responses, losing their status and headers
 - Fixed an extra `&` when the HTTP client appends query parameters from a map after a trailing `?` or `&`
+- Fixed `RateLimiter::add_quota_for_key` carrying over usage from a prior keyed or default quota
 - Fixed Redis and PostgreSQL restoring a prior NETTING cycle after a position ID is reused
 - Fixed `Cache.orders_for_position` omitting linked open orders after a reload (#5690), thanks for reporting @qOeOp
 - Fixed own order books retaining stale orders after cache reload
