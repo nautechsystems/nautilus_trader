@@ -38,6 +38,7 @@ import pytest
 from pandas import Timestamp
 
 from nautilus_trader.adapters import finfeed as ff
+from nautilus_trader.model import BarType
 from nautilus_trader.model import BookAction
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import RecordFlag
@@ -1159,8 +1160,9 @@ def test_loader_reuses_metadata_and_replays_catalog(
     Reuse one definition and preserve deltas through Parquet.
     """
     instrument_id = InstrumentId.from_str("TEST-OUTCOME_NO.FINFEED_POLYMARKET")
-    start = Timestamp("2026-10-11T00:00:05Z").value
-    end = Timestamp("2026-10-11T00:00:10Z").value
+    start = Timestamp("2026-10-11T00:00:05Z")
+    end = Timestamp("2026-10-11T00:00:10Z")
+    batch = Timestamp("2026-10-11T00:00:05.0000001Z")
 
     responses = [
         (200, _response("polymarket-market.json")),
@@ -1197,7 +1199,7 @@ def test_loader_reuses_metadata_and_replays_catalog(
     assert first == second
     assert first[0].instrument_id == instrument_id
     assert first[0].action == BookAction.CLEAR
-    assert first[0].ts_init == start
+    assert [delta.ts_init for delta in first] == [start.value] + [batch.value] * 3
     assert RecordFlag.F_LAST.matches(first[-1].flags)
     assert catalog.query_order_book_deltas(identifiers=[str(instrument_id)]) == first
     assert catalog.instruments(instrument_ids=[str(instrument_id)]) == [instrument]
@@ -1334,11 +1336,97 @@ def test_loader_checks_metadata_and_limit_before_network(
     monkeypatch.delenv("FINFEED_API_KEY", raising=False)
     loader = ff.FinFeedDataLoader(api_key=api_key)
     instrument_id = InstrumentId.from_str("TEST-OUTCOME_NO.FINFEED_POLYMARKET")
+    start = Timestamp("2026-10-11T00:00:05Z")
+    end = Timestamp("2026-10-11T00:00:10Z")
 
     async def request():
         with pytest.raises(RuntimeError, match="No loaded instrument"):
-            await loader.request_trades(instrument_id, 1, 2)
+            await loader.request_trades(instrument_id, start, end)
         with pytest.raises(ValueError, match="number would be zero for non-zero type"):
-            await loader.request_book_deltas(instrument_id, 1, 2, limit=0)
+            await loader.request_book_deltas(instrument_id, start, end, limit=0)
 
     asyncio.run(request())
+
+
+@pytest.mark.parametrize(
+    ("start", "error", "match"),
+    [
+        (Timestamp("2026-10-11T00:00:05"), TypeError, "non-None tzinfo"),
+        (Timestamp("1969-12-31T23:59:59Z"), ValueError, "cannot be negative"),
+    ],
+)
+def test_loader_rejects_naive_and_pre_epoch_bounds(
+    start: Timestamp,
+    error: type[Exception],
+    match: str,
+) -> None:
+    """
+    Reject bounds without a time zone or before the UNIX epoch before any request.
+    """
+    loader = ff.FinFeedDataLoader(api_key="python-rest-secret")
+    instrument_id = InstrumentId.from_str("TEST-OUTCOME_NO.FINFEED_POLYMARKET")
+    end = Timestamp("2026-10-11T00:00:10Z")
+
+    async def request():
+        await loader.request_book_deltas(instrument_id, start, end)
+
+    with pytest.raises(error, match=match):
+        asyncio.run(request())
+
+
+@pytest.mark.parametrize(
+    ("method", "subject", "bodies", "start", "end", "expected"),
+    [
+        pytest.param(
+            "request_quotes",
+            InstrumentId.from_str("TEST-OUTCOME_NO.FINFEED_POLYMARKET"),
+            ["client-quotes.json"],
+            Timestamp("2026-10-11T00:00:01Z"),
+            Timestamp("2026-10-11T00:00:02Z"),
+            ["2026-10-11T00:00:01Z", "2026-10-11T00:00:02Z", "2026-10-11T00:00:02Z"],
+            id="quotes",
+        ),
+        pytest.param(
+            "request_trades",
+            InstrumentId.from_str("TEST-OUTCOME_NO.FINFEED_POLYMARKET"),
+            ["client-trades.json"],
+            Timestamp("2026-10-11T00:00:01Z"),
+            Timestamp("2026-10-11T00:00:02Z"),
+            ["2026-10-11T00:00:01Z", "2026-10-11T00:00:02Z", "2026-10-11T00:00:02Z"],
+            id="trades",
+        ),
+        pytest.param(
+            "request_bars",
+            BarType.from_str("TEST-OUTCOME_NO.FINFEED_POLYMARKET-1-MINUTE-LAST-EXTERNAL"),
+            ["periods.json", "client-bars.json"],
+            Timestamp("2020-10-11T00:00:00Z"),
+            Timestamp("2020-10-11T00:02:00Z"),
+            ["2020-10-11T00:01:00Z", "2020-10-11T00:02:00Z"],
+            id="bars",
+        ),
+    ],
+)
+def test_loader_history_keeps_records_within_datetime_bounds(
+    method: str,
+    subject: InstrumentId | BarType,
+    bodies: list[str],
+    start: Timestamp,
+    end: Timestamp,
+    expected: list[str],
+) -> None:
+    """
+    Apply both inclusive datetime bounds to quote, trade, and bar history.
+    """
+    instrument_id = InstrumentId.from_str("TEST-OUTCOME_NO.FINFEED_POLYMARKET")
+    responses = [(200, _response("polymarket-market.json"))]
+    responses += [(200, _response(body)) for body in bodies]
+
+    with _peer(responses, client_type=ff.FinFeedDataLoader) as (loader, *_):
+
+        async def collect():
+            await loader.request_instrument(instrument_id)
+            return await getattr(loader, method)(subject, start, end)
+
+        records = asyncio.run(collect())
+
+    assert [record.ts_init for record in records] == [Timestamp(ts).value for ts in expected]

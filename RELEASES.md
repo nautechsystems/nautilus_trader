@@ -16,6 +16,7 @@ Released on TBD (UTC).
 - Added Deribit option `exercise_style` from the venue contract specification
 - Added Derive option `exercise_style` and `settlement_type` from the venue contract specification
 - Added Kalshi market data support to the FinFeed adapter
+- Added FinFeed `finfeed_instrument_id` Python function to build instrument IDs from exchange and outcome IDs
 - Added Hyperliquid opt-in compact L2 book feed (#5587), thanks @graceyangfan
 - Added Hyperliquid product scope for execution clients (#5570), thanks @graceyangfan
 - Added Kalshi numbered subaccount support (#5648), thanks for reporting @wangschien
@@ -58,6 +59,7 @@ Released on TBD (UTC).
 - Changed `BybitExecutionClientConfig` literals; add `load_ids: None`
 - Changed Bybit HTTP reports to fail on uncached in-scope instruments; load instruments first
 - Changed Bybit `use_ws_execution_fast` to reject the Option product type; use the standard stream
+- Changed Python `FinFeedDataLoader` history `start` and `end` to timezone-aware `datetime` (microsecond precision)
 - Changed `FinFeedHttpConfig` literals; add `kalshi_metadata_url: None`
 - Changed FinFeed HTTP errors with `KalshiMetadata`; update exhaustive matches
 - Changed `KalshiExecutionClientConfig` literals; add `subaccount: 0` for the primary account

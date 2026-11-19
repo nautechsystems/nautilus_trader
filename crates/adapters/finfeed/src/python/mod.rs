@@ -25,11 +25,15 @@ mod query;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_model::identifiers::InstrumentId;
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 use crate::{
-    common::consts::{FINFEED, FINFEED_CLIENT_ID},
+    common::{
+        consts::{FINFEED, FINFEED_CLIENT_ID},
+        symbol::to_instrument_id,
+    },
     config::FinFeedDataClientConfig,
     factories::FinFeedDataClientFactory,
     instruments::FinFeedInstrumentSelection,
@@ -48,6 +52,7 @@ pub fn finfeed(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<FinFeedDataClientFactory>()?;
     m.add_class::<loaders::PyFinFeedDataLoader>()?;
     m.add_class::<FinFeedInstrumentSelection>()?;
+    m.add_function(wrap_pyfunction!(py_finfeed_instrument_id, m)?)?;
     http::register(m)?;
     models::register(m)?;
     query::register(m)?;
@@ -71,6 +76,21 @@ pub fn finfeed(m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     Ok(())
+}
+
+/// Returns the FinFeed instrument ID for an exchange and an exact outcome ID.
+///
+/// The venue is `FINFEED_<exchange_id>`, for example `FINFEED_POLYMARKET`. The inputs are checked
+/// locally, without a request.
+///
+/// # Errors
+///
+/// Returns an error if the exchange is unknown or the outcome ID is invalid.
+#[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.finfeed")]
+#[pyo3(name = "finfeed_instrument_id")]
+fn py_finfeed_instrument_id(exchange_id: &str, market_id: &str) -> PyResult<InstrumentId> {
+    to_instrument_id(exchange_id, market_id).map_err(to_pyvalue_err)
 }
 
 #[expect(clippy::needless_pass_by_value)]

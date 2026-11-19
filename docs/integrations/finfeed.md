@@ -234,6 +234,10 @@ Polymarket definitions use these conventions:
 | Activation    | Zero                                        | Source activation time is unavailable.                                                                |
 | Expiration    | Source `EndDateIso`                         | Simulated trading cutoff, not authoritative venue closure or settlement.                              |
 
+In Python, `finfeed_instrument_id("POLYMARKET", market_id)` from `nautilus_trader.adapters.finfeed`
+returns this instrument ID. It checks the exchange and outcome ID locally, without a request, and raises
+`ValueError` for an unknown exchange or invalid outcome ID. Rust uses `common::symbol::to_instrument_id`.
+
 Definition metadata retains description, outcome, condition/token IDs, provider status, and available
 question/tags fields. Additional order quantity, notional, and price limits stay unset.
 Metadata does not imply execution compatibility.
@@ -292,11 +296,13 @@ Call `await loader.request_instrument(instrument_id)` to fetch and retain one de
 registers an existing definition. Failed refreshes preserve the retained definitions. Market-data calls
 use cached metadata; they do not refresh it implicitly.
 
-`request_book_deltas`, `request_quotes`, `request_trades`, and `request_bars` take integer UNIX nanosecond
-`start` and `end` bounds and an optional positive limit. Bounds are inclusive on the adapter's ordering
-clock. These methods share the native client's historical processing and return no partial result on
-failure. Book limits preserve complete batches. See [historical books](#historical-books) for snapshot
-requirements, replay clocks, and continuation limits.
+`request_book_deltas`, `request_quotes`, `request_trades`, and `request_bars` take timezone-aware
+`datetime` `start` and `end` bounds and an optional positive limit. Bounds are inclusive on the
+adapter's ordering clock and keep microsecond precision. Use a `datetime.timezone` offset, such as
+`datetime.UTC`, or a `zoneinfo.ZoneInfo` zone. A naive bound raises `TypeError` and a pre-epoch bound
+raises `ValueError`, before any request. These methods share the native client's historical
+processing and return no partial result on failure. Book limits preserve complete batches. See
+[historical books](#historical-books) for snapshot requirements, replay clocks, and continuation limits.
 
 The [Polymarket backtest tutorial](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/backtest_orderbook_finfeed.py) shows definition retrieval,
 book download, catalog writes, and replay with `BacktestNode`.

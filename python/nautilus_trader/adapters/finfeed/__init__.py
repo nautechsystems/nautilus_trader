@@ -50,6 +50,7 @@ __all__ = [
     "FinFeedQuote",
     "FinFeedTrade",
     "FinFeedTradeSide",
+    "finfeed_instrument_id",
 ]
 
 fixup_module_names(globals(), __name__)
