@@ -231,6 +231,23 @@ impl BacktestNode {
         load_data(config, start, end, &default_catalog_factories())
     }
 
+    /// Streams data for a specific data config using the default catalog factory registry.
+    ///
+    /// Yields the rows [`Self::load_data_config`] returns, reading the catalog a batch at a time
+    /// rather than collecting it into memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if catalog creation or the query fails.
+    pub fn stream_data_config(
+        config: &BacktestDataConfig,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+    ) -> anyhow::Result<Box<dyn Iterator<Item = anyhow::Result<Data>>>> {
+        let mut catalog = create_catalog(config, &default_catalog_factories())?;
+        dispatch_query(&mut catalog, config, start, end)
+    }
+
     /// Disposes all engines and releases resources.
     /// Subsequent calls to [`run()`](Self::run) or [`build()`](Self::build)
     /// return an error; create a new node to run again.

@@ -1209,6 +1209,33 @@ fn test_load_data_config_with_time_bounds(crypto_perpetual_ethusdt: CryptoPerpet
 }
 
 #[rstest]
+fn test_stream_data_config_yields_load_data_config_rows(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let base_ts = 1_000_000_000u64;
+    let (_temp_dir, catalog_path) = create_catalog_with_quotes(&instrument, 10, base_ts);
+    let config = data_config(&catalog_path, instrument.id());
+    let start = Some(UnixNanos::from(base_ts + 3_000_000_000));
+    let end = Some(UnixNanos::from(base_ts + 6_000_000_000));
+    let quote = |data: Data| match data {
+        Data::Quote(quote) => quote,
+        _ => panic!("Expected a quote"),
+    };
+
+    let streamed = BacktestNode::stream_data_config(&config, start, end)
+        .unwrap()
+        .map(|data| quote(data.unwrap()))
+        .collect::<Vec<_>>();
+    let loaded = BacktestNode::load_data_config(&config, start, end)
+        .unwrap()
+        .into_iter()
+        .map(quote)
+        .collect::<Vec<_>>();
+
+    assert_eq!(streamed.len(), 4);
+    assert_eq!(streamed, loaded);
+}
+
+#[rstest]
 fn test_data_config_query_identifiers_simple() {
     let instrument_id = InstrumentId::from("ETH/USDT.BINANCE");
     let config = BacktestDataConfig::builder()

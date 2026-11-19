@@ -201,7 +201,8 @@ The builder's `build()` validates the run configurations and creates the node wi
 its engines. Call `node.build()` to initialize them, or `node.run()` to initialize them and run the
 backtest. The selected registry supplies instrument loading and replay data in both one-shot and
 streaming runs. The builder defaults to the built-in registry; `BacktestNode::new`,
-`BacktestNode::load_catalog`, and `BacktestNode::load_data_config` always use the built-in registry.
+`BacktestNode::load_catalog`, `BacktestNode::load_data_config`, and
+`BacktestNode::stream_data_config` always use the built-in registry.
 
 The kernel uses its built-in factories for `BacktestEngineConfig.catalogs` and streaming output;
 the node's selected registry applies only to `BacktestDataConfig` loading.
