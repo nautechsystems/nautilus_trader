@@ -425,9 +425,14 @@ pub struct OptionChainSlice {
     pub calls: BTreeMap<Price, OptionStrikeData>,
     /// Put option data keyed by strike price (sorted).
     pub puts: BTreeMap<Price, OptionStrikeData>,
-    /// UNIX timestamp (nanoseconds) when the snapshot event occurred.
+    /// Source event time as a UNIX timestamp (nanoseconds).
+    ///
+    /// For engine-produced slices, this is the maximum `ts_event` of quotes and Greeks
+    /// accepted by the subscription.
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the instance was initialized.
+    ///
+    /// For engine-produced slices, this comes from the engine clock at publication.
     pub ts_init: UnixNanos,
 }
 

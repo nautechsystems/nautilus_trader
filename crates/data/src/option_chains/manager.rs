@@ -31,7 +31,7 @@ use nautilus_common::{
     msgbus::{self, TypedHandler, switchboard},
     timer::{TimeEvent, TimeEventCallback},
 };
-use nautilus_core::{DurationNanos, Params, UUID4, correctness::FAILED};
+use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos, correctness::FAILED};
 use nautilus_model::{
     data::{
         QuoteTick,
@@ -53,29 +53,29 @@ use crate::{
     engine::{DeferredCommand, DeferredCommandQueue},
 };
 
-/// Per-owner option chain manager.
+/// Manages one option series subscription.
 ///
-/// Each instance manages one subscription to an option series: its aggregator,
-/// handlers, timer, and lifecycle. Different subscribers retain independent managers.
+/// A subscription that needs an ATM price can defer strike selection until the
+/// first price arrives. In raw mode, quotes and Greeks for active instruments
+/// trigger publication. In timed mode, the subscription timer triggers publication.
+///
+/// The data engine processes deferred subscription and expiry commands outside
+/// the manager's callbacks. It reuses handler and timer slots after a subscription
+/// ends, so subsequent subscriptions to the same series can reuse interned names.
 #[derive(Debug)]
 pub struct OptionChainManager {
     aggregator: OptionChainAggregator,
     owner_id: UUID4,
-    // Reuse interned handler and timer names after an owner retires
     slot: usize,
     quote_handlers: Vec<TypedHandler<QuoteTick>>,
     greeks_handlers: Vec<TypedHandler<OptionGreeks>>,
     timer_name: Option<Ustr>,
     msgbus_priority: u32,
-    /// Whether the first ATM price has been received and the active set bootstrapped.
     bootstrapped: bool,
-    /// Shared deferred command queue - the `DataEngine` drains this on each data tick.
     deferred_cmd_queue: DeferredCommandQueue,
-    /// Clock reference for constructing command timestamps.
     clock: Rc<RefCell<dyn Clock>>,
     client_id: Option<ClientId>,
     params: Option<Params>,
-    /// When `true`, every quote/greeks update for an active instrument immediately publishes a snapshot.
     raw_mode: bool,
 }
 
@@ -389,11 +389,7 @@ impl OptionChainManager {
             return;
         }
 
-        if let Err(e) = self
-            .aggregator
-            .atm_tracker_mut()
-            .try_update_from_option_greeks(greeks)
-        {
+        if let Err(e) = self.aggregator.try_update_atm_from_greeks(greeks) {
             log::warn!(
                 "Dropping greeks for {}: invalid forward price: {e}",
                 greeks.instrument_id,
@@ -688,20 +684,20 @@ impl OptionChainManager {
     }
 
     /// Takes the accumulated snapshot and publishes it to the msgbus.
-    pub fn publish_slice(&mut self, ts: nautilus_core::UnixNanos) {
+    pub fn publish_slice(&mut self, trigger_time: UnixNanos) {
         // Proactive expiry safeguard
-        if self.aggregator.is_expired(ts) {
+        if self.aggregator.is_expired(trigger_time) {
             self.deferred_cmd_queue
                 .borrow_mut()
                 .push_back(DeferredCommand::ExpireSeries(self.aggregator.series_id()));
             return;
         }
 
-        self.maybe_rebalance(ts);
+        self.maybe_rebalance(trigger_time);
 
         let series_id = self.aggregator.series_id();
-        let slice = self.aggregator.snapshot(ts);
-
+        let ts_init = self.clock.borrow().timestamp_ns();
+        let slice = self.aggregator.snapshot(ts_init);
         if slice.is_empty() {
             log::debug!("OptionChainSlice empty for {series_id}, skipping publish");
             return;
@@ -1010,12 +1006,18 @@ mod tests {
         let greeks = OptionGreeks {
             instrument_id: InstrumentId::from("BTC-20240101-50000-C.DERIBIT"),
             underlying_price: Some(50000.0),
+            ts_event: UnixNanos::from(20),
             ..Default::default()
         };
         manager.handle_greeks(&greeks);
+        let slice = manager.aggregator.snapshot(UnixNanos::from(30));
         assert!(manager.bootstrapped);
         // 3 strikes × 2 sides = 6 active instruments
         assert_eq!(manager.aggregator.instrument_ids().len(), 6);
+        assert_eq!(slice.atm_strike, Some(Price::from("50000")));
+        assert!(slice.is_empty());
+        assert_eq!(slice.ts_event, UnixNanos::from(20));
+        assert_eq!(slice.ts_init, UnixNanos::from(30));
     }
 
     #[rstest]
@@ -1029,10 +1031,15 @@ mod tests {
         let greeks = OptionGreeks {
             instrument_id: InstrumentId::from("BTC-20240101-50000-C.DERIBIT"),
             underlying_price: None,
+            ts_event: UnixNanos::from(20),
             ..Default::default()
         };
         manager.handle_greeks(&greeks);
         assert!(!manager.bootstrapped);
+        assert_eq!(
+            manager.aggregator.snapshot(UnixNanos::from(30)).ts_event,
+            UnixNanos::from(0)
+        );
     }
 
     #[rstest]
@@ -1080,6 +1087,7 @@ mod tests {
                 delta: 0.55,
                 ..Default::default()
             },
+            ts_event: UnixNanos::from(20),
             ..Default::default()
         };
         manager.handle_greeks(&greeks);
@@ -1090,6 +1098,7 @@ mod tests {
             Price::from("50000.00")
         );
         assert!(slice.get_call_greeks(&Price::from("50000")).is_none());
+        assert_eq!(slice.ts_event, UnixNanos::from(1));
         assert!(queue.borrow().is_empty());
     }
 

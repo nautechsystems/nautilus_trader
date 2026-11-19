@@ -559,12 +559,19 @@ single option contract:
 
 Properties:
 
-| Property     | Type             | Description                         |
-| ------------ | ---------------- | ----------------------------------- |
-| `series_id`  | `OptionSeriesId` | The option series identifier.       |
-| `atm_strike` | `Price` or None  | Current ATM strike (if determined). |
-| `ts_event`   | `int`            | UNIX timestamp (nanoseconds).       |
-| `ts_init`    | `int`            | UNIX timestamp (nanoseconds).       |
+| Property     | Type             | Description                                                          |
+| ------------ | ---------------- | -------------------------------------------------------------------- |
+| `series_id`  | `OptionSeriesId` | The option series identifier.                                        |
+| `atm_strike` | `Price` or None  | Current ATM strike (if determined).                                  |
+| `ts_event`   | `int`            | Highest `ts_event` of accepted quotes and Greeks (UNIX nanoseconds). |
+| `ts_init`    | `int`            | Publication time as a UNIX timestamp (nanoseconds).                  |
+
+For engine-published slices, `ts_event` never decreases within a subscription. Greeks count while
+they wait for the first quote or when the chain uses them to set the ATM price. After a rebalance,
+`ts_event` can be later than every quote and Greek in the slice.
+Without new market data, a timer tick leaves `ts_event` unchanged.
+
+The engine uses its clock for `ts_init` in raw mode, timer mode, and replay.
 
 Call and put data are accessed through methods, not as direct properties.
 Each `OptionStrikeData` returned by these methods contains a `quote` (`QuoteTick`)

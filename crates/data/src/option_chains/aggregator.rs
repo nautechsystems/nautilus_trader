@@ -20,7 +20,7 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
 };
 
-use nautilus_core::{DurationNanos, UnixNanos};
+use nautilus_core::{DurationNanos, UnixNanos, correctness::CorrectnessResult};
 use nautilus_model::{
     data::{
         QuoteTick,
@@ -37,38 +37,26 @@ use super::{
     constants::{DEFAULT_REBALANCE_COOLDOWN, DEFAULT_REBALANCE_HYSTERESIS},
 };
 
-/// Per-series aggregator that accumulates quotes and greeks between snapshots.
+/// Accumulates quotes and Greeks and builds snapshots for an option series.
 ///
-/// Owns mutable accumulator buffers and produces immutable `OptionChainSlice`
-/// snapshots on each timer tick.
+/// The active set is a subset of the series catalog, which includes contracts
+/// added through [`Self::add_instrument`]. Greeks can contribute to the highest
+/// accepted source event time while they wait for a first quote. Rebalancing
+/// can evict strike data while the highest accepted event time persists.
 #[derive(Debug)]
 pub struct OptionChainAggregator {
-    /// The option series identifier for this aggregator.
     series_id: OptionSeriesId,
-    /// Defines which strikes to include in the active set.
     strike_range: StrikeRange,
-    /// Tracks the current ATM price from market data events.
     atm_tracker: AtmTracker,
-    /// All instruments for this series. Grows dynamically when the exchange
-    /// lists new strikes via [`Self::add_instrument`].
     instruments: HashMap<InstrumentId, (Price, OptionKind)>,
-    /// Currently active instrument IDs (subset of `instruments`).
     active_ids: HashSet<InstrumentId>,
-    /// The closest ATM strike at the time of the last rebalance.
     last_atm_strike: Option<Price>,
-    /// Hysteresis band for ATM rebalancing.
     hysteresis: f64,
-    /// Minimum nanoseconds between rebalances.
     cooldown_ns: DurationNanos,
-    /// Timestamp of the last rebalance.
     last_rebalance_ns: Option<UnixNanos>,
-    /// Maximum `ts_event` seen across all quote updates.
     max_ts_event: UnixNanos,
-    /// Greeks received before the corresponding quote arrived.
     pending_greeks: HashMap<InstrumentId, OptionGreeks>,
-    /// Call option accumulator buffer keyed by strike price.
     call_buffer: BTreeMap<Price, OptionStrikeData>,
-    /// Put option accumulator buffer keyed by strike price.
     put_buffer: BTreeMap<Price, OptionStrikeData>,
 }
 
@@ -108,6 +96,17 @@ impl OptionChainAggregator {
     /// Returns a mutable reference to the ATM tracker.
     pub fn atm_tracker_mut(&mut self) -> &mut AtmTracker {
         &mut self.atm_tracker
+    }
+
+    pub(crate) fn try_update_atm_from_greeks(
+        &mut self,
+        greeks: &OptionGreeks,
+    ) -> CorrectnessResult<()> {
+        if self.atm_tracker.try_update_from_option_greeks(greeks)? {
+            self.max_ts_event = self.max_ts_event.max(greeks.ts_event);
+        }
+
+        Ok(())
     }
 
     /// Returns the currently active instrument IDs.
@@ -410,10 +409,7 @@ impl OptionChainAggregator {
         }
 
         if let Some(&(strike, kind)) = self.instruments.get(&quote.instrument_id) {
-            // Track max ts_event across all quotes
-            if quote.ts_event > self.max_ts_event {
-                self.max_ts_event = quote.ts_event;
-            }
+            self.max_ts_event = self.max_ts_event.max(quote.ts_event);
 
             let buffer = match kind {
                 OptionKind::Call => &mut self.call_buffer,
@@ -458,6 +454,8 @@ impl OptionChainAggregator {
         }
 
         if let Some(&(strike, kind)) = self.instruments.get(&greeks.instrument_id) {
+            self.max_ts_event = self.max_ts_event.max(greeks.ts_event);
+
             let buffer = match kind {
                 OptionKind::Call => &mut self.call_buffer,
                 OptionKind::Put => &mut self.put_buffer,
@@ -513,19 +511,12 @@ impl OptionChainAggregator {
             }
         }
 
-        // Use the max observed ts_event from quotes, falling back to ts_init
-        let ts_event = if self.max_ts_event == UnixNanos::default() {
-            ts_init
-        } else {
-            self.max_ts_event
-        };
-
         OptionChainSlice {
             series_id: self.series_id,
             atm_strike,
             calls,
             puts,
-            ts_event,
+            ts_event: self.max_ts_event,
             ts_init,
         }
     }
@@ -968,17 +959,33 @@ mod tests {
 
         // Feed quotes for the 47500 call
         let call_47500 = InstrumentId::from("BTC-20240101-47500-C.DERIBIT");
-        let quote = make_quote(call_47500, "100.00", "101.00");
+
+        let quote = QuoteTick {
+            ts_event: UnixNanos::from(20),
+            ts_init: UnixNanos::from(25),
+            ..make_quote(call_47500, "100.00", "101.00")
+        };
+
+        let call_52500 = InstrumentId::from("BTC-20240101-52500-C.DERIBIT");
+        let retained_quote = make_quote(call_52500, "20.00", "21.00");
         agg.update_quote(&quote);
-        assert_eq!(agg.call_buffer_len(), 1);
+        agg.update_quote(&retained_quote);
+        assert_eq!(agg.call_buffer_len(), 2);
 
         // Now shift ATM up so 47500 is out of range
         set_atm_via_greeks(&mut agg, 55000.0);
         let action2 = agg.check_rebalance(now()).unwrap();
         agg.apply_rebalance(&action2, now());
 
-        // Buffer for 47500 should be cleaned
-        assert_eq!(agg.call_buffer_len(), 0);
+        let slice = agg.snapshot(UnixNanos::from(30));
+        assert_eq!(agg.call_buffer_len(), 1);
+        assert_eq!(slice.get_call_quote(&Price::from("47500")), None);
+        assert_eq!(
+            slice.get_call_quote(&Price::from("52500")),
+            Some(&retained_quote)
+        );
+        assert_eq!(slice.ts_event, UnixNanos::from(20));
+        assert_eq!(slice.ts_init, UnixNanos::from(30));
     }
 
     #[rstest]
@@ -1249,28 +1256,34 @@ mod tests {
     fn test_pending_greeks_consumed_on_first_quote() {
         let (mut agg, call_id, _) = make_aggregator();
 
-        // Send greeks before any quote
         let greeks = OptionGreeks {
             instrument_id: call_id,
             greeks: OptionGreekValues {
                 delta: 0.55,
                 ..Default::default()
             },
+            ts_event: UnixNanos::from(20),
+            ts_init: UnixNanos::from(25),
             ..Default::default()
         };
         agg.update_greeks(&greeks);
         assert_eq!(agg.pending_greeks_count(), 1);
 
-        // Now send the first quote: pending greeks should be consumed
+        let pending_slice = agg.snapshot(UnixNanos::from(30));
+        assert!(pending_slice.is_empty());
+        assert_eq!(pending_slice.ts_event, UnixNanos::from(20));
+        assert_eq!(pending_slice.ts_init, UnixNanos::from(30));
+
         let quote = make_quote(call_id, "100.00", "101.00");
         agg.update_quote(&quote);
         assert_eq!(agg.pending_greeks_count(), 0);
 
-        // Verify greeks were attached
+        let slice = agg.snapshot(UnixNanos::from(40));
         let strike = Price::from("50000");
-        let data = agg.get_call_greeks_from_buffer(&strike);
-        assert!(data.is_some());
-        assert_eq!(data.unwrap().delta, 0.55);
+        assert_eq!(slice.get_call_quote(&strike), Some(&quote));
+        assert_eq!(slice.get_call_greeks(&strike), Some(&greeks));
+        assert_eq!(slice.ts_event, UnixNanos::from(20));
+        assert_eq!(slice.ts_init, UnixNanos::from(40));
     }
 
     // -- ts_event tracking tests --
@@ -1307,11 +1320,33 @@ mod tests {
     }
 
     #[rstest]
-    fn test_snapshot_ts_event_fallback_when_no_quotes() {
+    fn test_snapshot_event_time_after_greeks() {
+        let (mut agg, call_id, _) = make_aggregator();
+        let quote = make_quote(call_id, "100.00", "101.00");
+        agg.update_quote(&quote);
+
+        let greeks = OptionGreeks {
+            instrument_id: call_id,
+            ts_event: UnixNanos::from(2),
+            ..Default::default()
+        };
+
+        agg.update_greeks(&greeks);
+        let slice = agg.snapshot(UnixNanos::from(3));
+
+        assert_eq!(slice.get_call_greeks(&Price::from("50000")), Some(&greeks));
+        assert_eq!(slice.ts_event, UnixNanos::from(2));
+        assert_eq!(slice.ts_init, UnixNanos::from(3));
+    }
+
+    #[rstest]
+    fn test_snapshot_event_time_without_market_data() {
         let (agg, _, _) = make_aggregator();
         let slice = agg.snapshot(UnixNanos::from(1000u64));
-        // No quotes: ts_event falls back to ts_init
-        assert_eq!(slice.ts_event, UnixNanos::from(1000u64));
+
+        assert!(slice.is_empty());
+        assert_eq!(slice.ts_event, UnixNanos::from(0));
+        assert_eq!(slice.ts_init, UnixNanos::from(1000));
     }
 
     #[rstest]

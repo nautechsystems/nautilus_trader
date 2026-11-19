@@ -82,6 +82,7 @@ Released on TBD (UTC).
 - Fixed option-chain subscribers replacing each other's managers and releasing shared feeds early
 - Fixed data client removal leaving option-chain managers, timers, and pending requests active
 - Fixed retired option contracts rejoining chains on later definitions or subscriptions
+- Fixed `OptionChainSlice` ignoring Greeks in `ts_event` and using trigger timestamps for `ts_init`
 - Fixed PostgreSQL `OptionSpread` reloads panicking and dropping `tick_scheme`
 - Fixed local catalog paths with `#`, `%`, or `?` in queries, migration, and run manifests
 - Fixed open-only order checks leaving closed venue orders unresolved after lost updates

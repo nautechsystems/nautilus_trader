@@ -3411,6 +3411,103 @@ fn make_series_id() -> OptionSeriesId {
 }
 
 #[rstest]
+fn test_option_chain_raw_slice_timestamps(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(clock, &cache);
+    fixture.subscribe(0, StrikeRange::Fixed(vec![Price::from("50000.000")]), None);
+    let instrument_id = make_btc_option("50000.000", OptionKind::Call).id();
+
+    let greeks = OptionGreeks {
+        underlying_price: None,
+        ts_event: UnixNanos::from(20),
+        ts_init: UnixNanos::from(25),
+        ..make_option_chain_greeks(instrument_id, 50000.0)
+    };
+
+    let older_greeks = OptionGreeks {
+        ts_event: UnixNanos::from(15),
+        ts_init: UnixNanos::from(35),
+        ..greeks
+    };
+
+    let updates = [
+        (
+            100,
+            Data::Quote(make_quote(instrument_id, "101", "103", 10)),
+        ),
+        (200, Data::OptionGreeks(greeks)),
+        (300, Data::OptionGreeks(older_greeks)),
+        (400, Data::Quote(make_quote(instrument_id, "102", "104", 5))),
+    ];
+
+    for (publication_time, update) in updates {
+        fixture.clock.borrow().set_time(publication_time.into());
+        fixture.engine.borrow_mut().process_data(update);
+    }
+
+    let actor = get_actor_unchecked::<OptionChainActor>(&fixture.actors[0]);
+    let timestamps: Vec<_> = actor
+        .slices
+        .iter()
+        .map(|slice| (slice.ts_event.as_u64(), slice.ts_init.as_u64()))
+        .collect();
+    assert_eq!(timestamps, [(10, 100), (20, 200), (20, 300), (20, 400)]);
+    drop(actor);
+    fixture.dispose();
+}
+
+#[rstest]
+fn test_option_chain_timer_slice_timestamps(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(clock, &cache);
+    fixture.subscribe(
+        0,
+        StrikeRange::Fixed(vec![Price::from("50000.000")]),
+        Some(1_000),
+    );
+    let instrument_id = make_btc_option("50000.000", OptionKind::Call).id();
+    advance_clock_and_dispatch(&fixture.clock, 2_000_000_001);
+    assert!(
+        get_actor_unchecked::<OptionChainActor>(&fixture.actors[0])
+            .slices
+            .is_empty()
+    );
+    let quote = make_quote(instrument_id, "101", "103", 0);
+    fixture.engine.borrow_mut().process_data(Data::Quote(quote));
+    advance_clock_and_dispatch(&fixture.clock, 1_000_000_000);
+
+    let greeks = OptionGreeks {
+        ts_event: UnixNanos::from(20),
+        ts_init: UnixNanos::from(25),
+        ..make_option_chain_greeks(instrument_id, 50000.0)
+    };
+
+    fixture
+        .engine
+        .borrow_mut()
+        .process_data(Data::OptionGreeks(greeks));
+    advance_clock_and_dispatch(&fixture.clock, 1_000_000_000);
+    advance_clock_and_dispatch(&fixture.clock, 1_000_000_000);
+
+    let actor = get_actor_unchecked::<OptionChainActor>(&fixture.actors[0]);
+    let timestamps: Vec<_> = actor
+        .slices
+        .iter()
+        .map(|slice| (slice.ts_event.as_u64(), slice.ts_init.as_u64()))
+        .collect();
+    assert_eq!(
+        timestamps,
+        [(0, 3_000_000_001), (20, 4_000_000_001), (20, 5_000_000_001)]
+    );
+    drop(actor);
+    fixture.dispose();
+}
+
+#[rstest]
 #[case::raw(None)]
 #[case::timed(Some(1_000))]
 fn test_option_chain_actors_keep_distinct_slices(
