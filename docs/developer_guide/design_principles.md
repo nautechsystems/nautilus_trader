@@ -182,12 +182,14 @@ The [common core](../concepts/architecture.md#common-core) supplies the engines 
 
 Canonical actor and strategy delivery must preserve publication order, exclusive component access,
 and lifecycle eligibility, with bounded progress. Reentrancy must not change the ordering rule.
-Ordered delivery does not imply an event-time cache snapshot.
+Each callback reads the cache as it stands when it runs. Ordered delivery does not imply an event-time
+cache snapshot.
 
-The runtime owns drain scheduling at a small set of explicit ownership boundaries, after enclosing
-mutable borrows end. Individual dispatch, flush, and lifecycle methods must not each acquire a
-draining policy. Keep failure handling and cleanup under existing lifecycle owners. Share scheduling
-code only where it reduces complexity while preserving backtest settlement and live yielding rules.
+The runtime owns drain scheduling at a small set of explicit ownership boundaries, invoking queued
+callbacks only after the enclosing synchronous operation has completed and released its mutable
+borrows. Individual dispatch, flush, and lifecycle methods must not each acquire a draining policy.
+Keep failure handling and cleanup under existing lifecycle owners. Share scheduling code only where it
+reduces complexity while preserving backtest settlement and live yielding rules.
 
 Deterministic callback order in the synchronous core and backtesting is a required activation criterion.
 Verify exact sequences through real native and Python components. Include nested publication, fan-out,

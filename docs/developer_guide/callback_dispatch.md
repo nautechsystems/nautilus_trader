@@ -70,16 +70,16 @@ budget. Sending from a foreign thread or an unrelated task does not inherit R au
 
 ## Terminology
 
-| Term          | Meaning                                                                                       |
-| ------------- | --------------------------------------------------------------------------------------------- |
-| Publication   | One event publication whose ordinal is reserved before synchronous subscriber work.           |
-| Admission     | Reservation of callback count, known storage, and queue position before capture construction. |
-| Slot          | One ordered queue entry, whether reserved, ready, or cancelled.                               |
-| Capture       | Owned values retained for a callback or invocation.                                           |
-| Root          | Causal ownership and cumulative delivery accounting shared by descendant work. No rollback.   |
-| Retained work | Queued or suspended work that keeps its root alive beyond the current call or drain.          |
-| Drain         | One bounded pass over callback slots in order.                                                |
-| Safe boundary | Runtime-owned point where enclosing borrows have ended and callback invocation is permitted.  |
+| Term          | Meaning                                                                                              |
+| ------------- | ---------------------------------------------------------------------------------------------------- |
+| Publication   | One event publication whose ordinal is reserved before synchronous subscriber work.                  |
+| Admission     | Reservation of callback count, known storage, and queue position before capture construction.        |
+| Slot          | One ordered queue entry, whether reserved, ready, or cancelled.                                      |
+| Capture       | Owned values retained for a callback or invocation.                                                  |
+| Root          | Causal ownership and cumulative delivery accounting shared by descendant work. No rollback.          |
+| Retained work | Queued or suspended work that keeps its root alive beyond the current call or drain.                 |
+| Drain         | One bounded pass over callback slots in order.                                                       |
+| Safe boundary | Runtime-owned point for callbacks, after the enclosing operation completes and releases its borrows. |
 
 ## Implementation limits
 
@@ -132,14 +132,28 @@ emitted by maintenance enter the same ordered dispatch mechanism.
 
 ### Cache state and eligibility
 
-Engine [cache](../concepts/architecture.md#cache) mutations and direct facade effects stay synchronous.
-Callbacks observe **current cache state**. Ordered delivery does not provide an event-time cache snapshot. The
-immutable event payload records the event, while the cache may already reflect later changes. Keeping
-indicator updates with event delivery preserves their ordering relative to the corresponding callbacks.
+Each callback receives the event that triggered it and reads the [cache](../concepts/architecture.md#cache)
+as it stands when the callback runs. The immutable event payload records the event; the cache records
+**current state**. Ordered delivery does not provide an event-time cache snapshot.
 
-For example, the engine can apply order update E1, queue its callback, and apply E2 before
-that callback drains. The E1 callback receives E1's immutable payload, but a cache lookup can return
-the order state after E2. Use the payload for facts about E1 and the cache for current runtime state.
+- **Completed operations**: The runtime invokes queued callbacks only at [completed-operation
+  boundaries](#completed-operation-boundaries), after the enclosing synchronous operation has completed and
+  released its mutable borrows.
+- **Later state**: The cache can already include later events from the same operation, work from other
+  venues, and the synchronous effects of earlier callbacks.
+- **Synchronous effects**: Engine cache mutations and direct facade effects stay synchronous.
+- **Indicators**: Indicator updates run with event delivery, which preserves their order relative to the
+  corresponding callbacks.
+
+For example, a venue can accept and fill a marketable limit order in one matching operation, so its
+`OrderAccepted` callback can find the order `Filled`. The order emulator publishes the transformed
+order's `OrderInitialized`, applies `OrderReleased`, and then publishes the release. Both callbacks can
+find the order `Released` if it has not advanced again before they run.
+
+Use the event payload, and the order's event history when needed, to determine what happened at that
+event. For a decision about what to do now, check the current status or predicate that the action
+requires. Do not infer what an event did from the cached state: a fill callback can find the order
+closed by a later cancel. These rules also apply to framework maintenance that runs with the event.
 
 Author callbacks require eligibility at **both event arrival and delivery**. Stop, reset, or retirement
 must not carry old callbacks into a new registration or [lifecycle](../concepts/actors.md#lifecycle) generation.
@@ -170,13 +184,54 @@ Each boundary must identify:
 
 Keep shutdown and ownership cleanup under that lifecycle owner. Callback dispatch must not introduce
 a parallel lifecycle or recovery state machine. On failure, stop further dispatch, preserve the error,
-and release retained ownership in the order required by the cleanup contract.
+and release retained ownership in the order required by the cleanup contract. After a fatal failure is
+latched, let the current operation finish its synchronous effects. Before dispatching the next independent
+command, event, or replay row, including the next item of a collected batch, check the latch and stop if
+it is set. Checking only at the next drain is too late.
 
 Use the smallest set of boundaries that satisfies ordering, progress, and ownership requirements. Moving a
 drain outward is valid only when it preserves those requirements. Verify boundary placement with exact
 callback sequence tests, including continuation across bounded drain passes. Fewer drain sites alone do not
 establish correctness. In the synchronous core and backtesting, deterministic callback order stays a required
 activation criterion.
+
+### Completed-operation boundaries
+
+A drain boundary follows a completed runtime operation: the enclosing synchronous operation has applied
+its effects and released its mutable engine, venue, and client borrows. Other pending work, such as a
+report future, can still hold borrows compatible with the callback's access.
+
+Activation adds these turns to the [existing](#runtime-integration) startup, settlement, live
+running-loop, and stop drains. At each turn the runtime attempts bounded delivery.
+
+**Backtest**:
+
+- After each replay row, once venue routing and data-engine processing return.
+- After each pass over all active venues in `settle_venues`, once for command processing and once for
+  matching-engine iteration, after the exchange borrows are released.
+- After each buffered execution-client order event.
+
+**Live**:
+
+- After each event in `LiveNode::process_reconciliation_events`, once submission confirmation and any
+  applicable fill-deduplication bookkeeping finish.
+
+Do not deliver callbacks at these points:
+
+- **Inside a venue or matching operation**: A callback sees partial state. For example, a fill callback
+  reads the quote before the one that caused the fill, and a send to the venue's quote endpoint borrows
+  the exchange again and panics.
+- **Inside an execution report**: The execution engine holds its mutable borrow while it applies the
+  report's events.
+- **Within an execution batch envelope**: Finish the batch's pre-dispatch observation, member dispatch,
+  and applicable post-dispatch bookkeeping before delivering callbacks.
+- **Between commands in a collected batch**: A turn there makes callback effects visible to later
+  siblings and can change the order of subsequently enqueued work. Commands sent through the synchronous
+  sender still stay queued for a later drain. Add a turn there only for a named ordering requirement.
+
+A single drain at the end of backtest settlement is too coarse: callbacks then run after work that
+follows their operation. This changes order histories and lets callbacks find state from later
+operations.
 
 ### Scheduling and ownership boundaries
 
@@ -189,18 +244,18 @@ so removes duplication without adding those mechanisms.
 The boundary map separates existing integration and ownership rules from evidence required for
 queued callback activation. The last column states test requirements, not completed validation.
 
-| Runtime and boundary            | Existing integration                                                                    | Retained ownership and release                                                            | Required activation evidence                                                                                |
-| ------------------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Backtest startup                | Settles data commands and callbacks. Leaves trading commands queued                     | Startup engine borrows end before settlement                                              | Startup callback sequence before the first input. Trading commands remain queued                            |
-| Backtest event settlement       | `drain_command_queues` after engine work and each timer handler                         | Enclosing engine and venue borrows end before settlement                                  | Callback-generated commands settle before the next timer or time advance                                    |
-| Backtest normal stop            | Settles due work, stops trader, settles stop-generated commands, then stops engines     | Trader and engine borrows end before callback delivery                                    | Exact stop-generated command and callback sequence                                                          |
-| Backtest failure and teardown   | Abort cleanup and guarded callback clearing                                             | Owned synchronous work releases before captures are cleared                               | Fatal-abort discard and rejection while external roots remain                                               |
-| Live startup                    | First running-loop drain after successful startup                                       | Connection and mass-status futures retain engine borrows until completion or cancellation | Instruments precede execution connection. Native and Python callbacks run after enclosing borrows end       |
-| Live event settlement           | Bounded running-loop passes with yield and stop checks                                  | Synchronous event-handler borrows end before the next drain                               | Exact callback sequence, batch continuation, stop eligibility, and unchanged channel-only scheduling        |
-| Live report requests            | Serializes report families. Commands use shared client access. Instrument updates defer | Shared client borrows span loop iterations and end before deferred instruments flush      | Hold a report pending while exercising the real callback route. Prove access safety and subsequent progress |
-| Live normal stop                | Residual deadline and final buffered dispatch. Standalone runner retains channels       | Report futures drop before deferred-instrument flush and client disconnection             | Pending-report completion, timeout, and shutdown cancellation preserve ordering                             |
-| Live fatal failure and disposal | Existing shutdown handles failure. Disposal clears without delivery                     | Kernel disposal precedes retained-runner release and guarded clearing                     | Stop-generated work is discarded. External roots still reject clearing                                      |
-| Live hosted-run abandonment     | Dropping the run future can leave shutdown incomplete                                   | Report futures drop before the node returns. Later disposal attempts cleanup              | Distinguish awaited cancellation from abandonment. Verify capture release and guarded cleanup               |
+| Runtime and boundary            | Existing integration                                                                    | Retained ownership and release                                                       | Required activation evidence                                                                                |
+| ------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| Backtest startup                | Settles data commands and callbacks. Leaves trading commands queued                     | Startup engine borrows end before settlement                                         | Startup callback sequence before the first input. Trading commands remain queued                            |
+| Backtest event settlement       | `drain_command_queues` after engine work and each timer handler                         | Enclosing engine and venue borrows end before settlement                             | Callback-generated commands settle before the next timer or time advance                                    |
+| Backtest normal stop            | Settles due work, stops trader, settles stop-generated commands, then stops engines     | Trader and engine borrows end before callback delivery                               | Exact stop-generated command and callback sequence                                                          |
+| Backtest failure and teardown   | Abort cleanup and guarded callback clearing                                             | Owned synchronous work releases before captures are cleared                          | Fatal-abort discard and rejection while external roots remain                                               |
+| Live startup                    | First running-loop drain after successful startup                                       | Connection and mass-status futures retain borrows until completion or cancellation   | Instruments precede execution connection. Native and Python callbacks run after enclosing borrows end       |
+| Live event settlement           | Bounded running-loop passes with yield and stop checks                                  | Synchronous event-handler borrows end before the next drain                          | Exact callback sequence, batch continuation, stop eligibility, and unchanged channel-only scheduling        |
+| Live report requests            | Serializes report families. Commands use shared client access. Instrument updates defer | Shared client borrows span loop iterations and end before deferred instruments flush | Hold a report pending while exercising the real callback route. Prove access safety and subsequent progress |
+| Live normal stop                | Residual deadline and final buffered dispatch. Standalone runner retains channels       | Report futures drop before deferred-instrument flush and client disconnection        | Pending-report completion, timeout, and shutdown cancellation preserve ordering                             |
+| Live fatal failure and disposal | Existing shutdown handles failure. Disposal clears without delivery                     | Kernel disposal precedes retained-runner release and guarded clearing                | Stop-generated work is discarded. External roots still reject clearing                                      |
+| Live hosted-run abandonment     | Dropping the run future can leave shutdown incomplete                                   | Report futures drop before the node returns. Later disposal attempts cleanup         | Distinguish awaited cancellation from abandonment. Verify capture release and guarded cleanup               |
 
 Live ownership is implemented by the [execution-client facade](../../crates/live/src/execution/client.rs),
 [report-task lifecycle](../../crates/live/src/node/reconciliation.rs),
@@ -227,9 +282,10 @@ start, plug-in start, and startup system dispatch, before selecting another chan
 that existing boundary unless an identified producer and ordering requirement establish a need for
 an earlier drain.
 
-Connection futures hold mutable engine borrows across their awaits, as does the
-mass-status request during startup reconciliation. Their completion alone does not justify another
-drain site. Replay and startup failures take separate exits and require their own ownership proof.
+Connection futures hold mutable engine borrows across their awaits. The mass-status request during
+startup reconciliation holds a shared execution-client borrow across its await. Their completion alone
+does not justify another drain site. Replay and startup failures take separate exits and require their
+own ownership proof.
 
 #### Standalone lifecycle restrictions
 
@@ -375,6 +431,11 @@ those retained borrows.
 
 These boundaries do not activate queued actor delivery. Before activation, runtime integration must:
 
+- Deliver callbacks at the [completed-operation boundaries](#completed-operation-boundaries) and nowhere
+  inside an operation.
+- Activate canonical routes together whenever synchronous delivery on one could overtake a pending
+  delivery on another. This includes ordered publications from a common producer, such as an order fill
+  followed by its position events, as well as nested publications.
 - Preserve the [independent ingress boundaries](#sender-types-and-ingress) when activating additional callback routes or
   introducing reusable invocation storage.
 - Complete live lifecycle drain boundaries and ownership coverage outside terminal disposal.
