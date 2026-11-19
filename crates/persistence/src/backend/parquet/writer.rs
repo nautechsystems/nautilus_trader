@@ -672,7 +672,9 @@ mod tests {
         test_data::RustTestHashMapCustomData,
         writer::{
             feather::{FEATHER_PARTIAL_EXTENSION, FeatherWriter, RotationConfig},
-            promotion::{list_session_feather_files, tests::assert_scheduled_count},
+            promotion::{
+                list_session_feather_files, schedule_new_paths, tests::assert_scheduled_count,
+            },
             traits::StreamingSink,
         },
     };
@@ -2906,6 +2908,36 @@ mod tests {
         );
         assert!(directory.path().join(&files[0]).exists());
         assert_eq!(retry.unwrap().files(), files);
+    }
+
+    #[rstest]
+    fn finalize_all_reports_and_releases_every_failed_promotion() {
+        let directory = TempDir::new().unwrap();
+        let config = WriterConnectConfig::new(
+            directory.path().join("live/run-both").to_string_lossy(),
+            Some(local_catalog(&directory)),
+        );
+        let mut writer =
+            ParquetWriter::new(&config, WriterClock::Test(Arc::new(AtomicU64::new(1)))).unwrap();
+        let schedule = writer.core.promotion_driver.schedule();
+        let failed = |file: &str| PromotionResult {
+            files: vec![file.to_string()],
+            committed_paths: Vec::new(),
+            deleted_paths: Vec::new(),
+            refused_paths: Vec::new(),
+            partial_converted: Vec::new(),
+            recorded_status: Some(RunStatus::Failed),
+            converted: Err(anyhow::anyhow!("{file} refused")),
+        };
+        schedule_new_paths(&schedule, vec!["a.feather".into(), "b.feather".into()]).unwrap();
+
+        let error = writer
+            .finalize_all(vec![failed("a.feather"), failed("b.feather")])
+            .unwrap_err();
+
+        assert_eq!(error.to_string(), "a.feather refused; b.feather refused");
+        assert_scheduled_count(&schedule, 0);
+        assert_eq!(writer.run_status, RunStatus::Failed);
     }
 
     #[rstest]
