@@ -279,7 +279,8 @@ impl OrderManager {
             self.oto_target_quantities.remove(&updated.client_order_id);
         }
 
-        if order.contingency_type().is_some() {
+        // A later fill or terminal event that closed the source handles its contingencies instead
+        if order.contingency_type().is_some() && !self.is_closed_by_later_event(&order, &updated) {
             actions.extend(self.handle_contingencies_update(&order));
         }
 
@@ -699,6 +700,43 @@ impl OrderManager {
                 .unwrap_or_else(|| Quantity::zero(order.quantity().precision)),
             None => order.leaves_qty(),
         }
+    }
+
+    // Uses the closed-source condition `handle_contingencies` applies before canceling linked
+    // orders; a reconciliation update can itself close the order, so only a later event counts
+    fn is_closed_by_later_event(&self, order: &OrderAny, updated: &OrderUpdated) -> bool {
+        if !order.is_closed() {
+            return false;
+        }
+
+        let is_spawn_active = order.exec_spawn_id().is_some_and(|exec_spawn_id| {
+            self.cache
+                .borrow()
+                .exec_spawn_total_leaves_qty(&exec_spawn_id, true)
+                .is_some_and(|leaves_qty| leaves_qty.is_positive())
+        });
+
+        if is_spawn_active {
+            return false;
+        }
+
+        let events = order.events();
+
+        let Some(position) = events.iter().position(|event| {
+            matches!(event, OrderEventAny::Updated(event) if event.event_id == updated.event_id)
+        }) else {
+            return false;
+        };
+
+        events[position + 1..].iter().any(|event| {
+            matches!(
+                event,
+                OrderEventAny::Filled(_)
+                    | OrderEventAny::Canceled(_)
+                    | OrderEventAny::Expired(_)
+                    | OrderEventAny::Rejected(_)
+            )
+        })
     }
 
     fn oto_parent_position_id(&self, order: &OrderAny) -> Option<PositionId> {

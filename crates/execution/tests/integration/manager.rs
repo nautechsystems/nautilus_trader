@@ -4133,6 +4133,278 @@ fn test_handle_ouo_partial_fill_resizes_open_sibling() {
 }
 
 #[rstest]
+fn test_handle_ouo_update_after_source_filled_leaves_sibling_to_fill_event() {
+    let (clock, cache) = create_test_components();
+    let mut manager = OrderManager::new(clock, cache.clone(), false);
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    let parent_id = ClientOrderId::from("O-PARENT");
+    let sibling_id = ClientOrderId::from("O-SIBLING");
+    let parent = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(parent_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![parent_id, sibling_id])
+        .submit(true)
+        .build();
+    let sibling = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(sibling_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("1.00100"))
+        .quantity(Quantity::from(100_000))
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(parent.clone(), None, None, false)
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_order(sibling, None, None, false)
+        .unwrap();
+
+    // The update reaches the manager only after the source has fully filled
+    let updated = apply_update(&cache, &parent, Quantity::from(100_000));
+    let parent = cache.borrow().order_owned(&parent_id).unwrap();
+    let filled = apply_fill(
+        &cache,
+        &parent,
+        &instrument,
+        "T-OUO",
+        Quantity::from(100_000),
+    );
+
+    let update_actions = manager.handle_event(&updated);
+    let fill_actions = manager.handle_event(&filled);
+
+    assert!(update_actions.is_empty());
+    assert!(matches!(
+        fill_actions.as_slice(),
+        [OrderManagerAction::CancelLocal(order)] if order.client_order_id() == sibling_id
+    ));
+}
+
+#[rstest]
+fn test_handle_ouo_reconciliation_update_closing_source_cancels_sibling() {
+    let (clock, cache) = create_test_components();
+    let mut manager = OrderManager::new(clock, cache.clone(), false);
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    let parent_id = ClientOrderId::from("O-PARENT");
+    let sibling_id = ClientOrderId::from("O-SIBLING");
+    let parent = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(parent_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![parent_id, sibling_id])
+        .submit(true)
+        .build();
+    let sibling = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(sibling_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("1.00100"))
+        .quantity(Quantity::from(100_000))
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(parent.clone(), None, None, false)
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_order(sibling.clone(), None, None, false)
+        .unwrap();
+    let account_id = AccountId::from("ACCOUNT-001");
+    let sibling = cache
+        .borrow_mut()
+        .update_order(&TestOrderEventStubs::accepted(
+            &sibling,
+            account_id,
+            VenueOrderId::from("V-SIBLING"),
+        ))
+        .unwrap();
+    let parent = cache
+        .borrow_mut()
+        .update_order(&TestOrderEventStubs::accepted(
+            &parent,
+            account_id,
+            VenueOrderId::from("V-PARENT"),
+        ))
+        .unwrap();
+    apply_fill(
+        &cache,
+        &sibling,
+        &instrument,
+        "T-SIBLING",
+        Quantity::from(50_000),
+    );
+    apply_fill(
+        &cache,
+        &parent,
+        &instrument,
+        "T-PARENT",
+        Quantity::from(40_000),
+    );
+
+    // The venue reduces the source to its filled quantity, so this update alone closes it
+    let parent = cache.borrow().order_owned(&parent_id).unwrap();
+    let updated = OrderEventAny::Updated(
+        OrderUpdatedSpec::builder()
+            .trader_id(parent.trader_id())
+            .strategy_id(parent.strategy_id())
+            .instrument_id(parent.instrument_id())
+            .client_order_id(parent_id)
+            .quantity(Quantity::from(40_000))
+            .venue_order_id(VenueOrderId::from("V-PARENT"))
+            .account_id(account_id)
+            .reconciliation(true)
+            .build(),
+    );
+    cache.borrow_mut().update_order(&updated).unwrap();
+    let status = cache.borrow().order(&parent_id).unwrap().status();
+
+    let actions = manager.handle_event(&updated);
+
+    assert_eq!(status, OrderStatus::Filled);
+    assert!(matches!(
+        actions.as_slice(),
+        [OrderManagerAction::CancelLocal(order)] if order.client_order_id() == sibling_id
+    ));
+}
+
+#[rstest]
+fn test_handle_oto_update_after_parent_canceled_leaves_child_to_cancel_event() {
+    let (clock, cache) = create_test_components();
+    let mut manager = OrderManager::new(clock, cache.clone(), false);
+    let instrument = audusd_sim();
+    let parent_id = ClientOrderId::from("O-PARENT");
+    let child_id = ClientOrderId::from("O-CHILD");
+    let child = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(child_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("1.00100"))
+        .quantity(Quantity::from(100_000))
+        .submit(true)
+        .build();
+    let parent = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(parent_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![child_id])
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(child, None, None, false)
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_order(parent.clone(), None, None, false)
+        .unwrap();
+    apply_accepted(&cache, &parent, "V-PARENT");
+
+    // The emulator can queue an amendment's event behind a cancel command already queued
+    let parent = cache.borrow().order_owned(&parent_id).unwrap();
+    let updated = apply_update(&cache, &parent, Quantity::from(120_000));
+    let parent = cache.borrow().order_owned(&parent_id).unwrap();
+    let canceled = TestOrderEventStubs::canceled(&parent, AccountId::from("ACCOUNT-001"), None);
+    cache.borrow_mut().update_order(&canceled).unwrap();
+
+    let update_actions = manager.handle_event(&updated);
+    let cancel_actions = manager.handle_event(&canceled);
+
+    assert!(update_actions.is_empty());
+    assert!(matches!(
+        cancel_actions.as_slice(),
+        [OrderManagerAction::CancelLocal(order)] if order.client_order_id() == child_id
+    ));
+}
+
+#[rstest]
+fn test_handle_oto_spawn_update_after_slice_filled_syncs_child_while_spawn_active() {
+    let (clock, cache) = create_test_components();
+    let mut manager = OrderManager::new(clock, cache.clone(), false);
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    let spawn_id = ClientOrderId::from("O-SPAWN");
+    let first_id = ClientOrderId::from("O-SPAWN-1");
+    let second_id = ClientOrderId::from("O-SPAWN-2");
+    let child_id = ClientOrderId::from("O-CHILD");
+    let exec_algorithm_id = ExecAlgorithmId::from("TWAP");
+    let first = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(first_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(60_000))
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![child_id])
+        .exec_algorithm_id(exec_algorithm_id)
+        .exec_spawn_id(spawn_id)
+        .submit(true)
+        .build();
+    let second = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(second_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(40_000))
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![child_id])
+        .exec_algorithm_id(exec_algorithm_id)
+        .exec_spawn_id(spawn_id)
+        .submit(true)
+        .build();
+    let child = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(child_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("1.00100"))
+        .quantity(Quantity::from(100_000))
+        .submit(true)
+        .build();
+
+    for order in [&first, &second, &child] {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    apply_accepted(&cache, &first, "V-SPAWN-1");
+    apply_accepted(&cache, &second, "V-SPAWN-2");
+
+    // The first slice fills before its earlier update is handled, while the second stays working
+    let first = cache.borrow().order_owned(&first_id).unwrap();
+    let updated = apply_update(&cache, &first, Quantity::from(60_000));
+    let first = cache.borrow().order_owned(&first_id).unwrap();
+    apply_fill(
+        &cache,
+        &first,
+        &instrument,
+        "T-SPAWN-1",
+        Quantity::from(60_000),
+    );
+
+    let actions = manager.handle_event(&updated);
+
+    assert!(matches!(
+        actions.as_slice(),
+        [OrderManagerAction::ModifyLocalQuantity { order, quantity }]
+            if order.client_order_id() == child_id && *quantity == Quantity::from(60_000)
+    ));
+}
+
+#[rstest]
 fn test_handle_ouo_partial_fill_cancels_sibling_filled_past_target() {
     let (clock, cache) = create_test_components();
     let mut manager = OrderManager::new(clock, cache.clone(), false);
