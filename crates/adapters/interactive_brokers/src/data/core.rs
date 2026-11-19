@@ -1631,23 +1631,21 @@ impl DataClient for InteractiveBrokersDataClient {
                             contract.last_trade_date_or_contract_month.as_str()
                         );
 
-                        match instrument_provider
+                        let result = instrument_provider
                             .load_contract_spec(&client_clone, &contract, Some(&contract_spec))
-                            .await
-                        {
-                            Ok(mut instrument_ids) => {
-                                loaded_instrument_ids.append(&mut instrument_ids);
-                            }
-                            Err(e) => {
-                                tracing::warn!(
-                                    "Failed to load IB contract spec {:?}: {}",
-                                    contract_spec,
-                                    e
-                                );
-                                failures.push(format!(
-                                    "Failed to load IB contract spec {contract_spec}: {e}"
-                                ));
-                            }
+                            .await;
+
+                        if let Err(e) = &result {
+                            tracing::warn!(
+                                "Failed to load IB contract spec {:?}: {}",
+                                contract_spec,
+                                e
+                            );
+                        }
+                        failures.extend(contract_spec_failure(&contract_spec, &result));
+
+                        if let Ok(mut instrument_ids) = result {
+                            loaded_instrument_ids.append(&mut instrument_ids);
                         }
                     }
                 }
@@ -1660,19 +1658,12 @@ impl DataClient for InteractiveBrokersDataClient {
                         .map(|inst| inst.id())
                         .collect();
 
-                    if !all_instrument_ids.is_empty() {
-                        match instrument_provider
+                    if !all_instrument_ids.is_empty()
+                        && let Ok(mut reloaded_ids) = instrument_provider
                             .batch_load(&client_clone, all_instrument_ids, None)
                             .await
-                        {
-                            Ok(mut reloaded_ids) => {
-                                loaded_instrument_ids.append(&mut reloaded_ids);
-                            }
-                            Err(e) => {
-                                tracing::warn!("Failed to reload IB instruments: {e}");
-                                failures.push(format!("Failed to reload IB instruments: {e}"));
-                            }
-                        }
+                    {
+                        loaded_instrument_ids.append(&mut reloaded_ids);
                     }
                 }
 
@@ -1780,7 +1771,8 @@ impl DataClient for InteractiveBrokersDataClient {
         let end_nanos_clone = end_nanos;
         let cmd_start = cmd.start;
         let cmd_end = cmd.end;
-        let trading_hours = request_trading_hours(self.config.use_regular_trading_hours);
+        let use_regular_trading_hours = self.config.use_regular_trading_hours;
+        let trading_hours = request_trading_hours(use_regular_trading_hours);
 
         self.spawn_command(async move {
             let mut all_quotes = Vec::new();
@@ -1851,12 +1843,7 @@ impl DataClient for InteractiveBrokersDataClient {
                                 Ok(quote_tick) => batch_quotes.push(quote_tick),
                                 Err(e) => {
                                     tracing::warn!("Failed to parse quote tick: {:?}", e);
-
-                                    if !is_expected_tick_drop(&e) {
-                                        failures.push(format!(
-                                            "Failed to parse IB quote tick for {instrument_id}: {e}"
-                                        ));
-                                    }
+                                    failures.extend(tick_parse_failure("quote", instrument_id, &e));
                                 }
                             }
                         }
@@ -1906,6 +1893,13 @@ impl DataClient for InteractiveBrokersDataClient {
             }
 
             let quotes_count = all_quotes.len();
+            let ts_init = clock.get_time_ns();
+            let final_window = window_is_final(
+                use_regular_trading_hours,
+                end_nanos_clone,
+                ts_init,
+                HISTORY_SETTLE_DELAY_NS,
+            );
             let response = DataResponse::Quotes(QuotesResponse::new(
                 request_id,
                 client_id,
@@ -1913,10 +1907,11 @@ impl DataClient for InteractiveBrokersDataClient {
                 all_quotes,
                 start_nanos_clone,
                 end_nanos_clone,
-                clock.get_time_ns(),
+                ts_init,
                 params,
             ));
-            let coverage = tick_coverage(start_nanos_clone, limit, outcome, &failures);
+            let coverage =
+                tick_coverage(start_nanos_clone, limit, outcome, final_window, &failures);
 
             if let Err(e) = data_sender.send(history_event(request_id, response, coverage)) {
                 tracing::error!("Failed to send quotes response: {e}");
@@ -1988,7 +1983,8 @@ impl DataClient for InteractiveBrokersDataClient {
         let end_nanos_clone = end_nanos;
         let cmd_start = cmd.start;
         let cmd_end = cmd.end;
-        let trading_hours = request_trading_hours(self.config.use_regular_trading_hours);
+        let use_regular_trading_hours = self.config.use_regular_trading_hours;
+        let trading_hours = request_trading_hours(use_regular_trading_hours);
 
         self.spawn_command(async move {
             let mut all_trades = Vec::new();
@@ -2078,12 +2074,7 @@ impl DataClient for InteractiveBrokersDataClient {
                                 Ok(trade_tick) => batch_trades.push(trade_tick),
                                 Err(e) => {
                                     log_tick_parse_error("trade", instrument_id, &e);
-
-                                    if !is_expected_tick_drop(&e) {
-                                        failures.push(format!(
-                                            "Failed to parse IB trade tick for {instrument_id}: {e}"
-                                        ));
-                                    }
+                                    failures.extend(tick_parse_failure("trade", instrument_id, &e));
                                 }
                             }
                         }
@@ -2133,6 +2124,13 @@ impl DataClient for InteractiveBrokersDataClient {
             }
 
             let trades_count = all_trades.len();
+            let ts_init = clock.get_time_ns();
+            let final_window = window_is_final(
+                use_regular_trading_hours,
+                end_nanos_clone,
+                ts_init,
+                HISTORY_SETTLE_DELAY_NS,
+            );
             let response = DataResponse::Trades(TradesResponse::new(
                 request_id,
                 client_id,
@@ -2140,10 +2138,11 @@ impl DataClient for InteractiveBrokersDataClient {
                 all_trades,
                 start_nanos_clone,
                 end_nanos_clone,
-                clock.get_time_ns(),
+                ts_init,
                 params,
             ));
-            let coverage = tick_coverage(start_nanos_clone, limit, outcome, &failures);
+            let coverage =
+                tick_coverage(start_nanos_clone, limit, outcome, final_window, &failures);
 
             if let Err(e) = data_sender.send(history_event(request_id, response, coverage)) {
                 tracing::error!("Failed to send trades response: {e}");
@@ -2219,7 +2218,8 @@ impl DataClient for InteractiveBrokersDataClient {
         let limit = cmd.limit.map(|limit| limit.get());
 
         let client_clone = client.as_arc().clone();
-        let trading_hours = request_trading_hours(self.config.use_regular_trading_hours);
+        let use_regular_trading_hours = self.config.use_regular_trading_hours;
+        let trading_hours = request_trading_hours(use_regular_trading_hours);
 
         self.spawn_command(async move {
             let mut all_bars = Vec::new();
@@ -2282,6 +2282,13 @@ impl DataClient for InteractiveBrokersDataClient {
             }
 
             let bars_count = all_bars.len();
+            let ts_init = clock.get_time_ns();
+            let final_window = window_is_final(
+                use_regular_trading_hours,
+                end_nanos,
+                ts_init,
+                bar_settle_delay(&bar_type),
+            );
 
             let response = DataResponse::Bars(BarsResponse::new(
                 request_id,
@@ -2290,10 +2297,10 @@ impl DataClient for InteractiveBrokersDataClient {
                 all_bars,
                 start_nanos,
                 end_nanos,
-                clock.get_time_ns(),
+                ts_init,
                 params,
             ));
-            let coverage = bar_coverage(range, limit, &failures);
+            let coverage = bar_coverage(range, limit, final_window, &failures);
 
             if let Err(e) = data_sender.send(history_event(request_id, response, coverage)) {
                 tracing::error!("Failed to send bars response: {e}");
@@ -2593,19 +2600,24 @@ impl HistoryCoverage {
 /// `outcome`, or `None` when it requested no page.
 ///
 /// Only pagination that reached `start` covers the window; with a `limit` the ticks are the
-/// latest ones rather than the window.
+/// latest ones rather than the window. A window that is not final (see [`window_is_final`])
+/// stays unverified.
 fn tick_coverage(
     start: Option<UnixNanos>,
     limit: Option<usize>,
     outcome: Option<TickPageOutcome>,
+    final_window: bool,
     failures: &[String],
 ) -> HistoryCoverage {
-    let coverage =
-        if start.is_some() && limit.is_none() && outcome == Some(TickPageOutcome::ReachedStart) {
-            HistoryCoverage::Complete
-        } else {
-            HistoryCoverage::Unverified
-        };
+    let coverage = if final_window
+        && start.is_some()
+        && limit.is_none()
+        && outcome == Some(TickPageOutcome::ReachedStart)
+    {
+        HistoryCoverage::Complete
+    } else {
+        HistoryCoverage::Unverified
+    };
 
     HistoryCoverage::unless_failed(failures, coverage)
 }
@@ -2614,14 +2626,18 @@ fn tick_coverage(
 ///
 /// The `between` requests of a range with a start fetch every bar closing in it. A duration
 /// request, used without a start and for continuous futures, is anchored to IB's trading time
-/// and can fall outside the requested window.
+/// and can fall outside the requested window. A window that is not final (see
+/// [`window_is_final`]) stays unverified.
 fn bar_coverage(
     range: Option<BarRequestRange>,
     limit: Option<usize>,
+    final_window: bool,
     failures: &[String],
 ) -> HistoryCoverage {
     let coverage = match range {
-        Some(BarRequestRange::Between(..)) if limit.is_none() => HistoryCoverage::Complete,
+        Some(BarRequestRange::Between(..)) if final_window && limit.is_none() => {
+            HistoryCoverage::Complete
+        }
         _ => HistoryCoverage::Unverified,
     };
 
@@ -2656,6 +2672,61 @@ fn request_failure(request_id: UUID4, reason: String) -> DataEvent {
         reason,
         response: None,
     })
+}
+
+/// How long after a window's end IB's data for it counts as final: IB still adds ticks to the
+/// current second and builds the current bar, and its historical data can lag the market.
+const HISTORY_SETTLE_DELAY_NS: u64 = 60_000_000_000;
+
+/// Returns whether a catalog can hold a window ending at `end`, `None` being the current time,
+/// as IB returned it at `now`.
+///
+/// IB must not have filtered it to regular trading hours, which a catalog does not record, and
+/// the window must have ended at least `settle_delay` nanoseconds before `now`.
+fn window_is_final(
+    use_regular_trading_hours: bool,
+    end: Option<UnixNanos>,
+    now: UnixNanos,
+    settle_delay: u64,
+) -> bool {
+    !use_regular_trading_hours
+        && end.is_some_and(|end| end.as_u64().saturating_add(settle_delay) <= now.as_u64())
+}
+
+/// Returns how long after a window's end the bars of `bar_type` count as final: the history
+/// settle delay, or one bar when a bar is longer.
+fn bar_settle_delay(bar_type: &BarType) -> u64 {
+    u64::try_from(bar_type.spec().timedelta().as_nanos())
+        .unwrap_or(u64::MAX)
+        .max(HISTORY_SETTLE_DELAY_NS)
+}
+
+/// Returns the failure a historical tick that failed to parse leaves in its window, or `None`
+/// when the adapter drops such a tick by design.
+fn tick_parse_failure(
+    kind: &str,
+    instrument_id: InstrumentId,
+    e: &anyhow::Error,
+) -> Option<String> {
+    (!is_expected_tick_drop(e))
+        .then(|| format!("Failed to parse IB {kind} tick for {instrument_id}: {e}"))
+}
+
+/// Returns the failure loading `contract_spec` leaves in an instruments request: an error, or
+/// no instrument loaded.
+fn contract_spec_failure(
+    contract_spec: &serde_json::Value,
+    result: &anyhow::Result<Vec<InstrumentId>>,
+) -> Option<String> {
+    match result {
+        Ok(instrument_ids) if instrument_ids.is_empty() => Some(format!(
+            "IB contract spec {contract_spec} loaded no instrument"
+        )),
+        Ok(_) => None,
+        Err(e) => Some(format!(
+            "Failed to load IB contract spec {contract_spec}: {e}"
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -2988,7 +3059,7 @@ mod tests {
                 assert_eq!(failure.reason, "contract details failed");
                 assert!(failure.response.is_none());
             }
-            event => panic!("expected a failed request, got {event:?}"),
+            event => panic!("expected a failed request, was {event:?}"),
         }
     }
 
@@ -3006,62 +3077,156 @@ mod tests {
     }
 
     #[rstest]
-    #[case::reached_start(true, None, Some(TickPageOutcome::ReachedStart), &[], HistoryCoverage::Complete)]
-    #[case::failure_wins(true, None, Some(TickPageOutcome::ReachedStart), &["stream error"], HistoryCoverage::Failed("stream error".to_string()))]
-    #[case::failure_without_start(false, None, Some(TickPageOutcome::Empty), &["request failed"], HistoryCoverage::Failed("request failed".to_string()))]
-    #[case::no_start(false, None, Some(TickPageOutcome::Empty), &[], HistoryCoverage::Unverified)]
-    #[case::limit(true, Some(10), Some(TickPageOutcome::ReachedStart), &[], HistoryCoverage::Unverified)]
-    #[case::limit_reached(true, None, Some(TickPageOutcome::LimitReached), &[], HistoryCoverage::Unverified)]
-    #[case::nothing_older(true, None, Some(TickPageOutcome::Empty), &[], HistoryCoverage::Unverified)]
-    #[case::stalled(true, None, Some(TickPageOutcome::Stalled), &[], HistoryCoverage::Unverified)]
-    #[case::no_page(true, None, None, &[], HistoryCoverage::Unverified)]
+    #[case::reached_start(true, None, Some(TickPageOutcome::ReachedStart), true, &[], HistoryCoverage::Complete)]
+    #[case::window_not_final(true, None, Some(TickPageOutcome::ReachedStart), false, &[], HistoryCoverage::Unverified)]
+    #[case::failure_wins(true, None, Some(TickPageOutcome::ReachedStart), true, &["stream error"], HistoryCoverage::Failed("stream error".to_string()))]
+    #[case::failure_in_open_window(true, None, Some(TickPageOutcome::ReachedStart), false, &["stream error"], HistoryCoverage::Failed("stream error".to_string()))]
+    #[case::failure_without_start(false, None, Some(TickPageOutcome::Empty), true, &["request failed"], HistoryCoverage::Failed("request failed".to_string()))]
+    #[case::no_start(false, None, Some(TickPageOutcome::Empty), true, &[], HistoryCoverage::Unverified)]
+    #[case::limit(true, Some(10), Some(TickPageOutcome::ReachedStart), true, &[], HistoryCoverage::Unverified)]
+    #[case::limit_reached(true, None, Some(TickPageOutcome::LimitReached), true, &[], HistoryCoverage::Unverified)]
+    #[case::nothing_older(true, None, Some(TickPageOutcome::Empty), true, &[], HistoryCoverage::Unverified)]
+    #[case::stalled(true, None, Some(TickPageOutcome::Stalled), true, &[], HistoryCoverage::Unverified)]
+    #[case::no_page(true, None, None, true, &[], HistoryCoverage::Unverified)]
     fn test_tick_coverage(
         #[case] has_start: bool,
         #[case] limit: Option<usize>,
         #[case] outcome: Option<TickPageOutcome>,
+        #[case] final_window: bool,
         #[case] failures: &[&str],
         #[case] expected: HistoryCoverage,
     ) {
         let start = has_start.then(|| UnixNanos::from(1_000_000_000));
         let failures: Vec<String> = failures.iter().map(ToString::to_string).collect();
 
-        assert_eq!(tick_coverage(start, limit, outcome, &failures), expected);
+        assert_eq!(
+            tick_coverage(start, limit, outcome, final_window, &failures),
+            expected
+        );
     }
 
     #[rstest]
-    #[case::between(
-        Some(BarRequestRange::Between(jiff::Timestamp::from_second(60).unwrap(), None)),
-        None,
-        &[],
-        HistoryCoverage::Complete
-    )]
+    #[case::between(between_range(), None, true, &[], HistoryCoverage::Complete)]
+    #[case::window_not_final(between_range(), None, false, &[], HistoryCoverage::Unverified)]
     #[case::between_failed(
-        Some(BarRequestRange::Between(jiff::Timestamp::from_second(60).unwrap(), None)),
+        between_range(),
         None,
+        true,
         &["request failed"],
         HistoryCoverage::Failed("request failed".to_string())
     )]
-    #[case::limit(
-        Some(BarRequestRange::Between(jiff::Timestamp::from_second(60).unwrap(), None)),
-        Some(10),
-        &[],
-        HistoryCoverage::Unverified
-    )]
+    #[case::limit(between_range(), Some(10), true, &[], HistoryCoverage::Unverified)]
     #[case::duration(
         Some(BarRequestRange::Ending(None, IBDuration::days(1))),
         None,
+        true,
         &[],
         HistoryCoverage::Unverified
     )]
-    #[case::empty_window(None, None, &[], HistoryCoverage::Unverified)]
+    #[case::empty_window(None, None, true, &[], HistoryCoverage::Unverified)]
     fn test_bar_coverage(
         #[case] range: Option<BarRequestRange>,
         #[case] limit: Option<usize>,
+        #[case] final_window: bool,
         #[case] failures: &[&str],
         #[case] expected: HistoryCoverage,
     ) {
         let failures: Vec<String> = failures.iter().map(ToString::to_string).collect();
 
-        assert_eq!(bar_coverage(range, limit, &failures), expected);
+        assert_eq!(
+            bar_coverage(range, limit, final_window, &failures),
+            expected
+        );
+    }
+
+    fn between_range() -> Option<BarRequestRange> {
+        Some(BarRequestRange::Between(
+            jiff::Timestamp::from_second(60).unwrap(),
+            Some(jiff::Timestamp::from_second(120).unwrap()),
+        ))
+    }
+
+    const MINUTE_NS: u64 = 60_000_000_000;
+
+    #[rstest]
+    #[case::settled(false, Some(MINUTE_NS), 3 * MINUTE_NS, MINUTE_NS, true)]
+    #[case::settled_exactly(false, Some(MINUTE_NS), 2 * MINUTE_NS, MINUTE_NS, true)]
+    #[case::ends_within_delay(false, Some(MINUTE_NS + 1), 2 * MINUTE_NS, MINUTE_NS, false)]
+    #[case::ends_in_future(false, Some(3 * MINUTE_NS), 2 * MINUTE_NS, MINUTE_NS, false)]
+    #[case::open_end(false, None, 2 * MINUTE_NS, MINUTE_NS, false)]
+    #[case::regular_trading_hours(true, Some(MINUTE_NS), 10 * MINUTE_NS, MINUTE_NS, false)]
+    fn test_window_is_final(
+        #[case] use_regular_trading_hours: bool,
+        #[case] end: Option<u64>,
+        #[case] now: u64,
+        #[case] settle_delay: u64,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(
+            window_is_final(
+                use_regular_trading_hours,
+                end.map(UnixNanos::from),
+                UnixNanos::from(now),
+                settle_delay,
+            ),
+            expected
+        );
+    }
+
+    #[rstest]
+    fn test_bar_settle_delay_covers_a_bar_longer_than_the_history_delay() {
+        let hour_bars = BarType::from("AAPL.NASDAQ-1-HOUR-LAST-EXTERNAL");
+        let second_bars = BarType::from("AAPL.NASDAQ-1-SECOND-LAST-EXTERNAL");
+
+        assert_eq!(bar_settle_delay(&hour_bars), 3_600_000_000_000);
+        assert_eq!(bar_settle_delay(&second_bars), HISTORY_SETTLE_DELAY_NS);
+    }
+
+    #[rstest]
+    fn test_tick_parse_failure_skips_expected_drops() {
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+        let precision_drop = super::super::parse::parse_trade_tick(
+            instrument_id,
+            150.25,
+            0.5,
+            super::super::convert::IbPriceConverter::new(2),
+            0,
+            UnixNanos::new(1000),
+            UnixNanos::new(1000),
+            None,
+        )
+        .unwrap_err();
+        let invalid_size = anyhow::anyhow!("invalid quantity size=-1");
+
+        assert_eq!(
+            tick_parse_failure("trade", instrument_id, &precision_drop),
+            None
+        );
+        assert_eq!(
+            tick_parse_failure("trade", instrument_id, &invalid_size),
+            Some(
+                "Failed to parse IB trade tick for AAPL.NASDAQ: invalid quantity size=-1"
+                    .to_string()
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_contract_spec_failure() {
+        let spec = serde_json::json!({"symbol": "AAPL"});
+        let loaded = vec![InstrumentId::from("AAPL.NASDAQ")];
+
+        assert_eq!(contract_spec_failure(&spec, &Ok(loaded)), None);
+        assert_eq!(
+            contract_spec_failure(&spec, &Ok(Vec::new())),
+            Some(r#"IB contract spec {"symbol":"AAPL"} loaded no instrument"#.to_string())
+        );
+        assert_eq!(
+            contract_spec_failure(&spec, &Err(anyhow::anyhow!("no contract details"))),
+            Some(
+                r#"Failed to load IB contract spec {"symbol":"AAPL"}: no contract details"#
+                    .to_string()
+            )
+        );
     }
 }

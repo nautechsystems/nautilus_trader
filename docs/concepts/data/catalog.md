@@ -226,7 +226,7 @@ or a Python adapter.
 OKX reports completion only for instrument requests whose fetches and parsing all succeeded, and for bar, trade, and
 funding rate windows it returned in full; see [OKX historical requests](../../integrations/okx.md#historical-requests).
 Interactive Brokers reports completion only for instrument requests that loaded every requested contract, and for
-bar, quote, and trade windows it returned in full; see
+bar, quote, and trade windows it returned in full, outside regular-hours filtering and at least a minute old; see
 [Interactive Brokers catalog write-back](../../integrations/interactive_brokers.md#catalog-write-back).
 Other clients return data without updating the catalog and log why write-back is skipped.
 

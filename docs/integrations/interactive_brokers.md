@@ -410,25 +410,34 @@ and end range.
 Historical and instrument requests on the data client report whether IB returned everything requested. The data
 client turns this coverage into one of three events:
 
-| Coverage   | Condition                                                                         | Event                                      |
-| ---------- | --------------------------------------------------------------------------------- | ------------------------------------------ |
-| Complete   | Quote and trade paging reached `start`, or bar requests covered `[start, end]`.   | Completed `DataResponseEnvelope`.          |
-| Failed     | A request, a stream item, or a row conversion failed.                             | `DataRequestFailed` with the rows fetched. |
-| Unverified | Any other result.                                                                 | Plain `DataResponse`.                      |
+| Coverage   | Condition                                                                       | Event                                      |
+| ---------- | ------------------------------------------------------------------------------- | ------------------------------------------ |
+| Complete   | Quote and trade paging reached `start`, or bar requests covered `[start, end]`. | Completed `DataResponseEnvelope`.          |
+| Failed     | A request, a stream item, or a row conversion failed.                           | `DataRequestFailed` with the rows fetched. |
+| Unverified | Any other result.                                                               | Plain `DataResponse`.                      |
 
 A window that did not fail is unverified when the request has no `start` or sets `limit`, when tick paging found no
 older ticks before `start` or could not move its end back, and for bar requests by IB duration, including continuous
-futures. Ticks dropped by design do not fail a request: trades without a size or with a zero size, and ticks whose
-size the instrument's size precision cannot hold.
+futures. A window is also unverified unless it is final:
 
-Only a complete window is written back to a catalog when the request sets `params={"update_catalog": True}`. Set
-`start` and leave `limit` unset; the data engine rejects a request that sets both `update_catalog` and `limit`. See
+- **Regular trading hours**: with `use_regular_trading_hours=True`, the default, IB returns only regular-hours data,
+  and a catalog does not record that filter. Set it to `False` on clients that write back to a catalog.
+- **Recent data**: the window must end at least one minute before the response, and for bars at least one bar
+  before it. IB still adds ticks to the current second and builds the current bar, and its historical data can lag
+  the market. A request without `end` ends at the current time, so set `end` to write back.
+
+Ticks dropped by design do not fail a request: trades without a size or with a zero size, and ticks whose size the
+instrument's size precision cannot hold. Any IB error on a bar request fails it, including error 162 when IB has no
+data for the window.
+
+Only a complete window is written back to a catalog when the request sets `params={"update_catalog": True}`. The data
+engine rejects a request that sets both `update_catalog` and `limit`. See
 [catalog write-back](../concepts/data/catalog.md#reading-data).
 
 Instrument requests answer with a completed `DataResponseEnvelope`. A failed contract details fetch fails
-`request_instrument` without an instrument. An `ib_contracts` value or contract specification that fails to parse or
-load, or a failed reload with `force_instrument_update`, fails `request_instruments` with the reason and the
-instruments it loaded, which skips write-back.
+`request_instrument` without an instrument. An `ib_contracts` value or contract specification that fails to parse,
+fails to load, or loads no instrument fails `request_instruments` with the reason and the instruments it loaded,
+which skips write-back.
 
 ## Execution capabilities
 
