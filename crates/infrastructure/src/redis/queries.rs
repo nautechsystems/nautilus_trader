@@ -2752,7 +2752,7 @@ mod tests {
         assert_eq!(result, AccountId::new(value));
     }
 
-    #[test]
+    #[rstest]
     fn test_parse_key_helpers_reject_invalid_prefix_or_empty_id() {
         assert!(parse_position_key("OTHER:positions:POS-1", "TRADER-001:positions:").is_err());
         assert!(parse_position_key("TRADER-001:positions:", "TRADER-001:positions:").is_err());
