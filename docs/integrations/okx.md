@@ -1306,7 +1306,7 @@ By default the adapter emits both on every `opt-summary` tick. Each emitted `Opt
 carries a `convention` field set to `GreeksConvention.BLACK_SCHOLES` or
 `GreeksConvention.PRICE_ADJUSTED`, so receivers can branch per message.
 
-To narrow the stream, pass `params["greeks_convention"]` on subscribe:
+To narrow a direct `subscribe_option_greeks` stream, pass `params["greeks_convention"]`:
 
 - Single string: `"BLACK_SCHOLES"` or `"PRICE_ADJUSTED"` (case-insensitive).
 - List of strings: `["BLACK_SCHOLES", "PRICE_ADJUSTED"]`.
@@ -1346,8 +1346,10 @@ self.subscribe_option_greeks(
 :::note
 The data engine deduplicates option-greeks subscriptions by `instrument_id`. If two actors on one node subscribe
 to the same instrument with different single conventions, only the first subscription reaches the adapter.
-The second actor gets the first actor's convention set. Workaround: either actor can subscribe without `params`
-(or with the full list) to receive both streams and filter locally on `greeks.convention`.
+To make both conventions available, omit `greeks_convention` or list both on the first subscription.
+Each actor can then filter on `greeks.convention`. [Option chains](../concepts/options.md#greeks-convention)
+validate the parameter and select one convention for the slice. A chain that opens the shared feed
+uses the client's default coverage of both conventions.
 :::
 
 ### Position Greeks

@@ -37,7 +37,7 @@ use nautilus_model::{
         QuoteTick,
         option_chain::{OptionGreeks, StrikeRange},
     },
-    enums::OptionKind,
+    enums::{GreeksConvention, OptionKind},
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Venue},
     instruments::Instrument,
     types::Price,
@@ -76,6 +76,8 @@ pub struct OptionChainManager {
     clock: Rc<RefCell<dyn Clock>>,
     client_id: Option<ClientId>,
     params: Option<Params>,
+    greeks_feed_params: Option<Params>,
+    greeks_convention: GreeksConvention,
     raw_mode: bool,
 }
 
@@ -95,6 +97,7 @@ impl OptionChainManager {
         msgbus_priority: u32,
         client: Option<&mut DataClientAdapter>,
         initial_atm_price: Option<Price>,
+        greeks_convention: GreeksConvention,
         deferred_cmd_queue: DeferredCommandQueue,
         slot: usize,
     ) -> Rc<RefCell<Self>> {
@@ -139,6 +142,8 @@ impl OptionChainManager {
             clock: Rc::clone(clock),
             client_id,
             params: cmd.params.clone(),
+            greeks_feed_params: cmd.greeks_feed_params(),
+            greeks_convention,
             raw_mode,
         };
         let manager_rc = Rc::new(RefCell::new(manager));
@@ -330,6 +335,10 @@ impl OptionChainManager {
         self.client_id
     }
 
+    pub(crate) const fn greeks_feed_params(&self) -> Option<&Params> {
+        self.greeks_feed_params.as_ref()
+    }
+
     pub(crate) fn unsubscribe_commands(&self) -> Vec<UnsubscribeCommand> {
         let mut instrument_ids = self.aggregator.instrument_ids();
         instrument_ids.sort_unstable();
@@ -372,7 +381,7 @@ impl OptionChainManager {
         self.greeks_handlers.clear();
     }
 
-    /// Routes incoming greeks to the aggregator.
+    /// Routes incoming Greeks in the selected convention to the aggregator.
     ///
     /// Also updates the ATM tracker from the reference price when one is available,
     /// and triggers deferred bootstrap on the first arrival.
@@ -386,6 +395,10 @@ impl OptionChainManager {
             self.deferred_cmd_queue
                 .borrow_mut()
                 .push_back(DeferredCommand::ExpireInstrument(greeks.instrument_id));
+            return;
+        }
+
+        if greeks.convention != self.greeks_convention {
             return;
         }
 
@@ -603,7 +616,7 @@ impl OptionChainManager {
                     UUID4::new(),
                     ts_init,
                     None,
-                    self.params.clone(),
+                    self.greeks_feed_params.clone(),
                 )),
                 SubscribeCommand::InstrumentStatus(SubscribeInstrumentStatus::new(
                     instrument_id,
@@ -803,6 +816,8 @@ mod tests {
             clock,
             client_id: Some(ClientId::from("DERIBIT")),
             params: None,
+            greeks_feed_params: None,
+            greeks_convention: GreeksConvention::BlackScholes,
             raw_mode: false,
         };
         (manager, queue)
@@ -881,6 +896,8 @@ mod tests {
             clock,
             client_id: Some(ClientId::from("DERIBIT")),
             params: None,
+            greeks_feed_params: None,
+            greeks_convention: GreeksConvention::BlackScholes,
             raw_mode: false,
         };
         (manager, queue)
@@ -1167,6 +1184,8 @@ mod tests {
             clock,
             client_id: Some(ClientId::from("DERIBIT")),
             params: None,
+            greeks_feed_params: None,
+            greeks_convention: GreeksConvention::BlackScholes,
             raw_mode: false,
         };
 

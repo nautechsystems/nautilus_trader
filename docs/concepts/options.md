@@ -268,12 +268,15 @@ def on_option_chain(self, chain) -> None:
   Unsubscribe before changing the range, interval, client, or `params`.
 - **Shared feeds**: Quote, Greeks, and instrument status feeds share ownership with other chains and direct
   subscriptions. The first physical subscription determines `params` until the last owner releases it.
-- **Routing**: Wire subscription commands retain the selected client and `params`. Incoming data uses
-  instrument-based topics and is not isolated by client.
+- **Routing**: Wire subscription commands retain the selected client and venue parameters. Chain-owned
+  Greeks feeds use the client's default convention coverage. Incoming data uses instrument-based topics
+  and is not isolated by client.
 - **Retirement**: Streamed `Close` and `NotAvailableForTrading` statuses, including backtest events, retire
-  contracts. Statuses from historical requests do not change chain membership. Retirements persist across
-  client replacement and disconnect; engine reset or disposal clears them. A streamed `Trading` status
-  restores eligibility for later definitions or subscriptions.
+  contracts across owners. A chain that receives a quote or Greeks tick at expiry retires the contract
+  for all owners. The series expiry timer also applies across owners. Statuses from historical requests
+  do not change chain membership. Retirements persist across client replacement and disconnect.
+  Engine reset or disposal clears them. A streamed `Trading` status restores eligibility for later
+  definitions or subscriptions.
 - **Actor cleanup**: Actor unsubscribe, reset, fault, and disposal release only that actor's chain.
 - **Engine cleanup**: Client removal releases that client's chains and pending reference-price requests before
   removing the adapter. Engine reset, disposal, and explicit disconnect remove all chain managers, handlers,
@@ -296,9 +299,9 @@ def on_option_chain(self, chain) -> None:
 Python factories raise `ValueError` for invalid values.
 
 For dynamic strike ranges, subscriptions are **deferred until the ATM price is determined**. ATM is derived
-from the venue reference price in `OptionGreeks.underlying_price`. It can also be seeded from a reference
-price fetched for the option series through HTTP. This permits immediate bootstrap before live WebSocket ticks
-arrive. As ATM shifts, the active strike set rebalances automatically.
+from `OptionGreeks.underlying_price` updates in the selected convention. The engine can also seed ATM
+from a reference price fetched over HTTP, before WebSocket updates arrive. As ATM shifts, the active strike
+set rebalances automatically.
 
 `Delta` resolves from venue-provided Greeks: a strike is active when its call or put delta magnitude (calls
 positive, puts negative, compared by absolute value) falls within `tolerance` of `target`. A typical
@@ -309,8 +312,24 @@ Bootstrap and fallback depend on the available data:
 - **Before ATM is known**: `Delta` is deferred like other dynamic ranges.
 - **After ATM is known**: `Delta` falls back to an ATM-relative window when no active strike's Greeks match
   the band, including before any Greeks arrive. This window includes five strikes either side of ATM.
-- **Before switching to selected delta strikes**: the aggregator waits until each fallback leg has Greeks so
-  partial early updates do not drop neighboring strikes.
+- **Before switching to selected delta strikes**: the aggregator waits until each fallback leg has
+  Greeks in the selected convention so partial early updates do not drop neighboring strikes.
+
+### Greeks convention
+
+The data engine uses Black-Scholes Greeks by default when it builds a chain. To select price-adjusted
+Greeks, pass `params={"greeks_convention": "PRICE_ADJUSTED"}` to `subscribe_option_chain`. The
+parameter accepts `BLACK_SCHOLES` or `PRICE_ADJUSTED` as a case-insensitive string or a nonempty list
+of supported strings. Listing both selects Black-Scholes. For JSON-serializable values, Python
+raises `ValueError` if the parameter is invalid.
+
+When the selected convention is unavailable, quoted legs show `greeks=None` and delta selection uses
+the ATM fallback if the reference price is known. Without a reference price, a dynamic chain waits for
+a forward price from a Greeks update in the selected convention.
+
+When a chain opens the shared OKX Greeks feed, OKX's data client emits both conventions. A direct
+`subscribe_option_greeks` call that opens the feed can limit it to a single convention. Omit
+`greeks_convention` on that call to make both available. See [OKX option Greeks](../integrations/okx.md#option-greeks).
 
 ### Snapshot vs. raw mode
 
@@ -319,8 +338,8 @@ The `snapshot_interval_ms` parameter controls publishing behavior:
 - **Snapshot mode** (`snapshot_interval_ms=1000`): Quotes and Greeks accumulate in a
   buffer and publish as an `OptionChainSlice` on a timer. Suitable for periodic
   portfolio rebalancing or UI display.
-- **Raw mode** (`snapshot_interval_ms=None`): Each quote or Greeks update for an
-  active instrument publishes a slice immediately. Suitable for latency-sensitive
+- **Raw mode** (`snapshot_interval_ms=None`): Each quote or Greeks update in the selected convention
+  for an active instrument publishes a slice immediately. Suitable for latency-sensitive
   strategies that react to individual updates.
 
 `subscribe_option_chain` raises `ValueError` for `snapshot_interval_ms=0`. Use `None` for raw mode.
@@ -375,7 +394,7 @@ self.subscribe_option_chain(
 ```
 
 Use `snapshot_interval_ms=None` for raw mode. Raw mode publishes a slice after each
-quote or Greeks update for an active instrument. Use an integer interval for
+quote or Greeks update in the selected convention for an active instrument. Use an integer interval for
 thinned snapshots. Thinned mode accumulates the latest BBO and Greeks per instrument
 and publishes the chain on the timer cadence, reducing event volume for large chains.
 
@@ -482,7 +501,8 @@ The `DataEngine` feeds the manager market data through `handle_quote()` and `han
 bootstraps the active instrument set internally on the first ATM price.
 
 - **Snapshot mode**: timer callbacks call `publish_slice()`.
-- **Raw mode**: each active quote or Greeks update calls `publish_slice()` immediately.
+- **Raw mode**: each active quote or Greeks update in the selected convention calls `publish_slice()`
+  immediately.
 
 #### OptionChainAggregator
 
@@ -521,10 +541,9 @@ determined until the ATM price is known. Two bootstrap paths are available:
    subscribes that sample's Greeks as the bootstrap source. Without a client or sample,
    bootstrap still depends on relevant Greeks data already flowing from another
    subscription.
-1. When the engine feeds an `OptionGreeks` event with `underlying_price` through `handle_greeks()`, the
-   manager bootstraps the active instrument set. It registers message bus handlers and queues the new wire
-   subscriptions for the engine to drain. The sample subscription becomes part of the active set or is
-   released.
+1. The manager bootstraps the active instrument set when a Greeks update in the selected convention
+   includes an `underlying_price`. It registers message bus handlers and queues the wire subscriptions
+   for the engine to drain. The sample subscription becomes part of the active set or is released.
 
 Once bootstrapped, the aggregator monitors ATM drift. On each snapshot timer tick,
 the manager calls the aggregator's `check_rebalance()` which returns any instruments

@@ -17,11 +17,11 @@ use std::num::NonZeroUsize;
 
 use nautilus_core::{
     Params, UUID4, UnixNanos,
-    correctness::{CorrectnessResult, check_positive_u64},
+    correctness::{CorrectnessError, CorrectnessResult, check_positive_u64},
 };
 use nautilus_model::{
     data::{BarType, DataType, option_chain::StrikeRange},
-    enums::BookType,
+    enums::{BookType, GreeksConvention},
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Venue},
 };
 use serde::{Deserialize, Serialize};
@@ -1312,6 +1312,8 @@ pub struct SubscribeOptionChain {
 }
 
 impl SubscribeOptionChain {
+    const GREEKS_CONVENTION_PARAM: &'static str = "greeks_convention";
+
     /// Returns the subscription owner ID: `correlation_id` when set, otherwise `command_id`.
     #[must_use]
     pub fn owner_id(&self) -> UUID4 {
@@ -1323,7 +1325,8 @@ impl SubscribeOptionChain {
     ///
     /// # Errors
     ///
-    /// Returns an error if the snapshot interval is zero.
+    /// Returns an error if the snapshot interval is zero or the Greeks convention parameter
+    /// is invalid.
     ///
     /// # Panics
     ///
@@ -1348,7 +1351,7 @@ impl SubscribeOptionChain {
             check_positive_u64(interval, "snapshot_interval_ms")?;
         }
 
-        Ok(Self {
+        let command = Self {
             series_id,
             strike_range,
             snapshot_interval_ms,
@@ -1358,7 +1361,72 @@ impl SubscribeOptionChain {
             venue,
             correlation_id: None,
             params,
-        })
+        };
+
+        command.greeks_convention()?;
+        Ok(command)
+    }
+
+    /// Returns the Greeks convention selected by this subscription.
+    ///
+    /// The `greeks_convention` parameter accepts case-insensitive `BLACK_SCHOLES` and
+    /// `PRICE_ADJUSTED` strings. Black-Scholes is selected when the parameter is omitted
+    /// or lists both conventions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the parameter is neither a supported convention string nor a
+    /// nonempty array of supported convention strings.
+    pub fn greeks_convention(&self) -> CorrectnessResult<GreeksConvention> {
+        let default = GreeksConvention::default();
+
+        let Some(value) = self
+            .params
+            .as_ref()
+            .and_then(|p| p.get(Self::GREEKS_CONVENTION_PARAM))
+        else {
+            return Ok(default);
+        };
+
+        let invalid_value = || CorrectnessError::InvalidValue {
+            param: Self::GREEKS_CONVENTION_PARAM.to_string(),
+            value: value.to_string(),
+            type_name: "Greeks convention",
+        };
+
+        let values = value
+            .as_array()
+            .map_or(std::slice::from_ref(value), Vec::as_slice);
+        let mut selected = None;
+
+        for value in values {
+            let convention = value
+                .as_str()
+                .and_then(|name| name.parse::<GreeksConvention>().ok())
+                .ok_or_else(invalid_value)?;
+
+            if selected.is_none() || convention == default {
+                selected = Some(convention);
+            }
+        }
+
+        selected.ok_or_else(invalid_value)
+    }
+
+    /// Returns the parameters for acquiring the shared Greeks feed.
+    ///
+    /// The convention selects which events this chain consumes. If the chain
+    /// opens the feed, it uses the data client's default convention coverage.
+    #[must_use]
+    pub fn greeks_feed_params(&self) -> Option<Params> {
+        let params = self.params.as_ref()?;
+        if !params.contains_key(Self::GREEKS_CONVENTION_PARAM) {
+            return Some(params.clone());
+        }
+
+        let mut feed_params = params.to_shared_map();
+        feed_params.shift_remove(Self::GREEKS_CONVENTION_PARAM);
+        (!feed_params.is_empty()).then(|| Params::from_shared(feed_params))
     }
 }
 
@@ -1426,6 +1494,39 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "invalid u64 for 'snapshot_interval_ms' not positive, was 0",
+        );
+    }
+
+    #[rstest]
+    #[case::unknown(serde_json::json!("INDEX_PRICE"))]
+    #[case::wrong_type(serde_json::json!(7))]
+    #[case::empty_list(serde_json::json!([]))]
+    #[case::mixed_list(serde_json::json!(["BLACK_SCHOLES", "INDEX_PRICE"]))]
+    fn test_option_chain_command_rejects_invalid_greeks_convention(
+        #[case] value: serde_json::Value,
+    ) {
+        let venue = Venue::from("OKX");
+        let error = SubscribeOptionChain::new(
+            OptionSeriesId::new_derived(venue, "BTC".into(), "BTC".into(), UnixNanos::from(37)),
+            StrikeRange::Fixed(vec![]),
+            None,
+            UUID4::new(),
+            UnixNanos::from(19),
+            None,
+            Some(venue),
+            Some(Params::new(
+                [("greeks_convention".to_string(), value.clone())].into(),
+            )),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::InvalidValue {
+                param: "greeks_convention".to_string(),
+                value: value.to_string(),
+                type_name: "Greeks convention",
+            },
         );
     }
 }

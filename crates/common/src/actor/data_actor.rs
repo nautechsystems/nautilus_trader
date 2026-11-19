@@ -2213,12 +2213,14 @@ pub trait DataActor {
     /// Repeated subscriptions to the same series retain the first configuration.
     /// Unsubscribe before changing the range, interval, client, or parameters.
     ///
-    /// The ATM price is always derived from the exchange-provided forward price
-    /// embedded in each option greeks/ticker update.
+    /// A requested reference price can seed ATM for a dynamic range. Forward prices in the
+    /// selected Greeks convention update ATM. See [`SubscribeOptionChain::greeks_convention`]
+    /// for the default and accepted values.
     ///
     /// # Errors
     ///
-    /// Returns an error if the snapshot interval is zero.
+    /// Returns an error if the snapshot interval is zero or the Greeks convention parameter
+    /// is invalid.
     fn subscribe_option_chain(
         &mut self,
         series_id: OptionSeriesId,
@@ -5671,7 +5673,8 @@ impl DataActorCore {
     ///
     /// # Errors
     ///
-    /// Returns an error if the snapshot interval is zero.
+    /// Returns an error if the snapshot interval is zero or the Greeks convention parameter
+    /// is invalid.
     #[expect(
         clippy::too_many_arguments,
         reason = "subscription command mirrors the option chain request fields"

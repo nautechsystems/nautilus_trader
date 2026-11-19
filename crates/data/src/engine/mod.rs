@@ -1080,7 +1080,7 @@ impl DataEngine {
                 }
             }
             SubscribeCommand::OptionChain(cmd) => {
-                self.subscribe_option_chain(cmd);
+                self.subscribe_option_chain(cmd, cmd.greeks_convention()?);
                 return Ok(None);
             }
             SubscribeCommand::Quotes(cmd) if self.subscribe_quotes(cmd)? => {
@@ -1326,6 +1326,7 @@ impl DataEngine {
     ) -> anyhow::Result<()> {
         let (dispatch, result) = match cmd {
             SubscribeCommand::OptionChain(command) => {
+                command.greeks_convention()?;
                 let acquired = self.retain_external_option_chain(client_id, command, cmd);
                 (acquired.then(|| cmd.clone()), Ok(()))
             }
@@ -1752,11 +1753,7 @@ impl DataEngine {
         } else if let Some(funding_rate) = data.downcast_ref::<FundingRateUpdate>() {
             self.handle_funding_rate(*funding_rate);
         } else if let Some(option_greeks) = data.downcast_ref::<OptionGreeks>() {
-            self.cache.borrow_mut().add_option_greeks(*option_greeks);
-            self.feed_option_greeks_to_pre_bootstrap_chain(option_greeks);
-            let topic = switchboard::get_option_greeks_topic(option_greeks.instrument_id);
-            msgbus::publish_option_greeks(topic, option_greeks);
-            self.drain_deferred_commands();
+            self.handle_option_greeks(option_greeks);
         } else if let Some(status) = data.downcast_ref::<InstrumentStatus>() {
             self.handle_instrument_status(*status);
         } else if let Some(custom) = data.downcast_ref::<CustomData>() {
@@ -1770,6 +1767,15 @@ impl DataEngine {
 
             log::error!("Cannot process data {data:?}, type is unrecognized");
         }
+    }
+
+    fn handle_option_greeks(&mut self, greeks: &OptionGreeks) {
+        self.drain_deferred_commands();
+        self.cache.borrow_mut().add_option_greeks(*greeks);
+        self.feed_option_greeks_to_pre_bootstrap_chain(greeks);
+        let topic = switchboard::get_option_greeks_topic(greeks.instrument_id);
+        msgbus::publish_option_greeks(topic, greeks);
+        self.drain_deferred_commands();
     }
 
     /// Processes a `Data` enum instance, dispatching to live handlers.
@@ -1812,6 +1818,7 @@ impl DataEngine {
             DataRef::BookDeltas(deltas) => self.handle_deltas(deltas),
             DataRef::BookDepth(depth) => self.handle_depth(depth),
             DataRef::Quote(quote) => {
+                self.drain_deferred_commands();
                 self.handle_quote(*quote);
                 self.drain_deferred_commands();
             }
@@ -1830,11 +1837,7 @@ impl DataEngine {
                 self.drain_deferred_commands();
             }
             DataRef::OptionGreeks(greeks) => {
-                self.cache.borrow_mut().add_option_greeks(*greeks);
-                self.feed_option_greeks_to_pre_bootstrap_chain(greeks);
-                let topic = switchboard::get_option_greeks_topic(greeks.instrument_id);
-                msgbus::publish_option_greeks(topic, greeks);
-                self.drain_deferred_commands();
+                self.handle_option_greeks(greeks);
             }
             DataRef::InstrumentStatus(status) => {
                 self.handle_instrument_status(*status);

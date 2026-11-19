@@ -26,7 +26,10 @@ use nautilus_common::{
     nautilus_actor,
     runner::{SyncDataCommandSender, set_data_cmd_sender},
 };
-use nautilus_model::identifiers::ActorId;
+use nautilus_model::{
+    enums::GreeksConvention::{BlackScholes, PriceAdjusted},
+    identifiers::ActorId,
+};
 
 use super::*;
 
@@ -528,6 +531,54 @@ fn test_subscribe_option_chain_rejects_explicit_reference(
             .collect::<Vec<_>>(),
         timers,
     );
+}
+
+#[rstest]
+#[case::local(false)]
+#[case::external(true)]
+fn test_option_chain_rejects_invalid_greeks_convention_at_dispatch(
+    #[case] external: bool,
+    _stub_msgbus: Rc<RefCell<MessageBus>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let series_id = make_series_id();
+    let client_id = ClientId::from("DERIBIT");
+
+    let config = DataEngineConfig {
+        external_clients: external.then_some(vec![client_id]),
+        ..Default::default()
+    };
+
+    let mut engine = DataEngine::new(clock, cache, Some(config));
+    let (handler, saver) = get_any_saving_handler::<SubscribeCommand>(None);
+    let topic = format!("commands.data.{client_id}");
+    msgbus::subscribe_any(topic.as_str().into(), handler, None);
+
+    let mut command = SubscribeOptionChain::new(
+        series_id,
+        StrikeRange::Fixed(vec![Price::from("50000.000")]),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(client_id),
+        Some(series_id.venue),
+        None,
+    )
+    .unwrap();
+    command.params = Some(Params::new(
+        [("greeks_convention".to_string(), json!("INDEX_PRICE"))].into(),
+    ));
+    let error = engine
+        .execute_subscribe(SubscribeCommand::OptionChain(command))
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        r#"invalid Greeks convention for 'greeks_convention', was "INDEX_PRICE""#,
+    );
+    assert!(!engine.has_option_chain_manager(&series_id));
+    assert!(saver.get_messages().is_empty());
 }
 
 #[rstest]
@@ -1669,6 +1720,175 @@ fn test_option_chain_reference_price_response_bootstraps_dynamic_range(
 }
 
 #[rstest]
+#[case::okx_black_scholes_first("OKX", None, &[BlackScholes, PriceAdjusted], Some(BlackScholes))]
+#[case::okx_price_adjusted_first("OKX", None, &[PriceAdjusted, BlackScholes], Some(BlackScholes))]
+#[case::okx_explicit("OKX", Some(json!("price_adjusted")), &[PriceAdjusted, BlackScholes], Some(PriceAdjusted))]
+#[case::okx_both("OKX", Some(json!(["PRICE_ADJUSTED", "BLACK_SCHOLES"])), &[PriceAdjusted, BlackScholes], Some(BlackScholes))]
+#[case::okx_both_reversed("OKX", Some(json!(["BLACK_SCHOLES", "PRICE_ADJUSTED"])), &[PriceAdjusted, BlackScholes], Some(BlackScholes))]
+#[case::deribit_default("DERIBIT", None, &[BlackScholes], Some(BlackScholes))]
+#[case::deribit_unavailable("DERIBIT", Some(json!(["PRICE_ADJUSTED"])), &[BlackScholes], None)]
+fn test_option_chain_delta_greeks_convention(
+    #[case] venue: &str,
+    #[case] requested: Option<serde_json::Value>,
+    #[case] updates: &[GreeksConvention],
+    #[case] expected: Option<GreeksConvention>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
+    let client_id = ClientId::from(venue);
+    let venue = Venue::from(venue);
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        Rc::clone(&clock),
+        Rc::clone(&cache),
+        client_id,
+        venue,
+        Some(venue),
+        &recorder,
+        &mut engine.borrow_mut(),
+    );
+
+    let series_id = OptionSeriesId::new_derived(
+        venue,
+        "BTC".into(),
+        "BTC".into(),
+        make_series_id().expiration_ns,
+    );
+    let strikes = ["50000.000", "51000.000"];
+
+    let ids = strikes.map(|strike| {
+        let instrument = make_crypto_option(
+            &format!("BTC-20240101-{strike}-C.{venue}"),
+            "BTC",
+            "BTC",
+            strike,
+            OptionKind::Call,
+            series_id.expiration_ns,
+        );
+        let id = instrument.id();
+        cache.borrow_mut().add_instrument(instrument).unwrap();
+        id
+    });
+
+    let feed_params = requested
+        .as_ref()
+        .map(|_| Params::new([("route".to_string(), json!(37))].into()));
+
+    let params = requested.map(|value| {
+        Params::new(
+            [
+                ("greeks_convention".to_string(), value),
+                ("route".to_string(), json!(37)),
+            ]
+            .into(),
+        )
+    });
+
+    let owner_id = UUID4::new();
+    let (handler, saver) = get_typed_message_saving_handler::<OptionChainSlice>(None);
+    msgbus::register_option_chain_owner(owner_id, handler);
+    let command = SubscribeOptionChain::new(
+        series_id,
+        StrikeRange::delta(0.25, 0.03).unwrap(),
+        Some(1_000),
+        owner_id,
+        UnixNanos::default(),
+        Some(client_id),
+        Some(venue),
+        params,
+    )
+    .unwrap();
+    engine
+        .borrow_mut()
+        .execute_subscribe(SubscribeCommand::OptionChain(command))
+        .unwrap();
+    let request_id = option_chain_reference_price_request_id(&recorder);
+    engine
+        .borrow_mut()
+        .response(DataResponse::OptionChainReferencePrice(
+            OptionChainReferencePriceResponse::new(
+                request_id,
+                client_id,
+                series_id,
+                Some(Price::from(strikes[0])),
+                UnixNanos::from(1),
+                None,
+            ),
+        ));
+
+    let make_greeks = |index: usize, convention| {
+        let (delta, forward, ts_event) = match (index, convention) {
+            (0, BlackScholes) => (0.25, 50000.0, 11),
+            (0, PriceAdjusted) => (0.45, 51000.0, 12),
+            (_, BlackScholes) => (0.15, 50000.0, 11),
+            (_, PriceAdjusted) => (0.25, 51000.0, 12),
+        };
+
+        let mut greeks = make_option_chain_greeks(ids[index], forward);
+        greeks.convention = convention;
+        greeks.greeks.delta = delta;
+        greeks.ts_event = UnixNanos::from(ts_event);
+        greeks
+    };
+
+    let [first_quote, second_quote] = ids.map(|id| make_quote(id, "101.000", "103.000", 5));
+    engine.borrow_mut().process_data(Data::Quote(first_quote));
+    for &convention in updates {
+        let mut engine = engine.borrow_mut();
+        engine.process_data(Data::OptionGreeks(make_greeks(0, convention)));
+        engine.process_data(Data::OptionGreeks(make_greeks(1, convention)));
+    }
+
+    engine.borrow_mut().process_data(Data::Quote(second_quote));
+    advance_clock_and_dispatch(&clock, 2_000_000_000);
+
+    let mut child_subscriptions: Vec<_> = recorder
+        .borrow()
+        .iter()
+        .filter_map(|command| match command {
+            DataCommand::Subscribe(SubscribeCommand::OptionGreeks(command)) => Some((
+                command.single_instrument_id().unwrap(),
+                command.client_id,
+                command.params.clone(),
+            )),
+            _ => None,
+        })
+        .collect();
+
+    child_subscriptions.sort_unstable_by_key(|(id, _, _)| *id);
+    assert_eq!(
+        child_subscriptions,
+        ids.map(|id| (id, Some(client_id), feed_params.clone())),
+    );
+
+    let messages = saver.get_messages();
+    assert_eq!(messages.len(), 1);
+    let slice = &messages[0];
+    assert!(slice.puts.is_empty());
+
+    if let Some(convention) = expected {
+        let index = usize::from(convention == PriceAdjusted);
+        let strike = Price::from(strikes[index]);
+        assert_eq!(slice.calls.keys().copied().collect::<Vec<_>>(), [strike]);
+        let greeks = make_greeks(index, convention);
+        assert_eq!(slice.get_call_greeks(&strike), Some(&greeks));
+        assert_eq!(slice.atm_strike, Some(strike));
+        assert_eq!(slice.ts_event, greeks.ts_event);
+    } else {
+        assert_eq!(
+            slice.calls.keys().copied().collect::<Vec<_>>(),
+            strikes.map(Price::from)
+        );
+        assert!(slice.calls.values().all(|leg| leg.greeks.is_none()));
+        assert_eq!(slice.atm_strike, Some(Price::from(strikes[0])));
+        assert_eq!(slice.ts_event, UnixNanos::from(5));
+    }
+
+    msgbus::unregister_option_chain_owner(owner_id);
+}
+
+#[rstest]
 fn test_option_chain_without_sample_bootstraps_from_live_data(
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
@@ -2004,6 +2224,16 @@ fn test_option_chain_greeks_bootstrap_releases_inactive_sample(
     }
 
     let series_id = make_series_id();
+
+    let params = Params::new(
+        [
+            ("greeks_convention".to_string(), json!("PRICE_ADJUSTED")),
+            ("route".to_string(), json!(37)),
+        ]
+        .into(),
+    );
+
+    let feed_params = Params::new([("route".to_string(), json!(37))].into());
     data_engine
         .borrow_mut()
         .execute(DataCommand::Subscribe(SubscribeCommand::OptionChain(
@@ -2018,12 +2248,24 @@ fn test_option_chain_greeks_bootstrap_releases_inactive_sample(
                 UnixNanos::default(),
                 Some(client_id),
                 Some(venue),
-                None,
+                Some(params.clone()),
             )
             .unwrap(),
         )));
 
-    let request_id = option_chain_reference_price_request_id(&recorder);
+    let request_id = {
+        let recorded = recorder.borrow();
+
+        let [DataCommand::Request(RequestCommand::OptionChainReferencePrice(request))] =
+            recorded.as_slice()
+        else {
+            panic!("Expected one option-chain reference price request");
+        };
+
+        assert_eq!(request.params.as_ref(), Some(&params));
+        request.request_id
+    };
+
     recorder.borrow_mut().clear();
 
     data_engine
@@ -2044,15 +2286,21 @@ fn test_option_chain_greeks_bootstrap_releases_inactive_sample(
             cmd,
             DataCommand::Subscribe(SubscribeCommand::OptionGreeks(cmd))
                 if cmd.single_instrument_id().unwrap() == sample_id && cmd.client_id == Some(client_id)
+                    && cmd.params.as_ref() == Some(&feed_params)
         )
     }));
     recorder.borrow_mut().clear();
 
+    let greeks = make_option_chain_greeks(sample_id, 50000.0);
+    data_engine.borrow_mut().process(&greeks);
+    assert!(recorder.borrow().is_empty());
+
     data_engine
         .borrow_mut()
-        .process_data(Data::OptionGreeks(make_option_chain_greeks(
-            sample_id, 50000.0,
-        )));
+        .process_data(Data::OptionGreeks(OptionGreeks {
+            convention: PriceAdjusted,
+            ..greeks
+        }));
 
     let recorded = recorder.borrow();
     let quote_subscriptions = recorded
@@ -2060,15 +2308,13 @@ fn test_option_chain_greeks_bootstrap_releases_inactive_sample(
         .filter(|cmd| matches!(cmd, DataCommand::Subscribe(SubscribeCommand::Quotes(_))))
         .count();
 
-    let greeks_subscriptions = recorded
+    let greeks_subscriptions: Vec<_> = recorded
         .iter()
-        .filter(|cmd| {
-            matches!(
-                cmd,
-                DataCommand::Subscribe(SubscribeCommand::OptionGreeks(_))
-            )
+        .filter_map(|cmd| match cmd {
+            DataCommand::Subscribe(SubscribeCommand::OptionGreeks(cmd)) => Some(cmd),
+            _ => None,
         })
-        .count();
+        .collect();
 
     let greeks_unsubscriptions: Vec<InstrumentId> = recorded
         .iter()
@@ -2081,7 +2327,12 @@ fn test_option_chain_greeks_bootstrap_releases_inactive_sample(
         .collect();
 
     assert_eq!(quote_subscriptions, 2);
-    assert_eq!(greeks_subscriptions, 2);
+    assert_eq!(greeks_subscriptions.len(), 2);
+    assert!(
+        greeks_subscriptions
+            .iter()
+            .all(|cmd| cmd.params.as_ref() == Some(&feed_params))
+    );
     assert_eq!(greeks_unsubscriptions, vec![sample_id]);
 }
 
@@ -3459,6 +3710,73 @@ fn test_option_chain_raw_slice_timestamps(
 }
 
 #[rstest]
+fn test_option_chain_greeks_expiry_applies_across_conventions(
+    #[values(false, true)] overlapping_owner: bool,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(clock, &cache);
+    let series = make_series_id();
+    let strike = Price::from("50000.000");
+    fixture.subscribe(0, StrikeRange::Fixed(vec![strike]), None);
+
+    if overlapping_owner {
+        let params =
+            Params::new([("greeks_convention".to_string(), json!("PRICE_ADJUSTED"))].into());
+        get_actor_unchecked::<OptionChainActor>(&fixture.actors[1])
+            .subscribe_option_chain(
+                series,
+                StrikeRange::Fixed(vec![strike]),
+                None,
+                Some(fixture.client_id),
+                Some(params),
+            )
+            .unwrap();
+    }
+
+    let instrument = make_btc_option("50000.000", OptionKind::Call);
+    let instrument_id = instrument.id();
+    let quote = make_quote(instrument_id, "101", "103", 10);
+
+    let accepted = OptionGreeks {
+        ts_event: series.expiration_ns - DurationNanos::new(1),
+        ..make_option_chain_greeks(instrument_id, 50000.0)
+    };
+
+    {
+        let mut engine = fixture.engine.borrow_mut();
+        engine.process_data(Data::Quote(quote));
+        engine.process_data(Data::OptionGreeks(OptionGreeks {
+            convention: PriceAdjusted,
+            ts_event: series.expiration_ns,
+            ..accepted
+        }));
+
+        engine.process(&instrument);
+        engine.process_data(Data::OptionGreeks(accepted));
+        let update = make_quote(instrument_id, "102", "104", 11);
+        engine.process_data(Data::Quote(update));
+
+        assert!(!engine.has_option_chain_manager(&series));
+        assert!(engine.subscribed_quotes().is_empty());
+        assert!(
+            engine.get_clients()[0]
+                .subscriptions_option_greeks
+                .is_empty()
+        );
+    }
+
+    for &id in &fixture.actors[..if overlapping_owner { 2 } else { 1 }] {
+        let actor = get_actor_unchecked::<OptionChainActor>(&id);
+        assert_eq!(actor.slices.len(), 1);
+        assert_eq!(actor.slices[0].calls[&strike].quote, quote);
+        assert_eq!(actor.slices[0].get_call_greeks(&strike), None);
+    }
+
+    fixture.dispose();
+}
+
+#[rstest]
 fn test_option_chain_timer_slice_timestamps(
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
@@ -3889,6 +4207,164 @@ fn test_option_chain_actors_bootstrap_independently(
         )),
         0
     );
+}
+
+#[rstest]
+#[case::black_scholes_first([BlackScholes, PriceAdjusted], 0)]
+#[case::price_adjusted_first([PriceAdjusted, BlackScholes], 1)]
+fn test_option_chain_deferred_bootstrap_preserves_shared_greeks_coverage(
+    #[case] conventions: [GreeksConvention; 2],
+    #[case] first_to_bootstrap: usize,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(clock, &cache);
+    let sample = make_btc_option("49000.000", OptionKind::Call);
+    let instrument_id = make_btc_option("50000.000", OptionKind::Call).id();
+    fixture.engine.borrow_mut().process(&sample);
+
+    let range = StrikeRange::AtmRelative {
+        strikes_above: 0,
+        strikes_below: 0,
+    };
+
+    fixture.subscribe(0, range.clone(), None);
+    let mut params = fixture.params(1).to_shared_map();
+    params.insert(
+        "greeks_convention".to_string(),
+        Arc::new(json!("PRICE_ADJUSTED")),
+    );
+    get_actor_unchecked::<OptionChainActor>(&fixture.actors[1])
+        .subscribe_option_chain(
+            make_series_id(),
+            range,
+            None,
+            Some(fixture.client_id),
+            Some(Params::from_shared(params)),
+        )
+        .unwrap();
+
+    advance_clock_and_dispatch(&fixture.clock, 30_000_000_000);
+    for convention in conventions {
+        fixture.engine.borrow_mut().process(&OptionGreeks {
+            convention,
+            ..make_option_chain_greeks(sample.id(), 50000.0)
+        });
+    }
+
+    let recorded: Vec<_> = fixture
+        .recorder
+        .borrow()
+        .iter()
+        .filter_map(|command| match command {
+            DataCommand::Subscribe(SubscribeCommand::OptionGreeks(command)) => Some((
+                command.single_instrument_id().unwrap(),
+                command.client_id,
+                command.params.clone(),
+            )),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        recorded,
+        [
+            (
+                sample.id(),
+                Some(fixture.client_id),
+                Some(fixture.params(0))
+            ),
+            (
+                instrument_id,
+                Some(fixture.client_id),
+                Some(fixture.params(first_to_bootstrap)),
+            ),
+        ],
+    );
+
+    let quote = make_quote(instrument_id, "101", "103", 2);
+    fixture.engine.borrow_mut().process_data(Data::Quote(quote));
+    let strike = Price::from("50000.000");
+
+    for convention in conventions {
+        fixture.engine.borrow_mut().process(&OptionGreeks {
+            convention,
+            ..make_option_chain_greeks(instrument_id, 50000.0)
+        });
+    }
+
+    for (index, convention) in [BlackScholes, PriceAdjusted].into_iter().enumerate() {
+        let actor = get_actor_unchecked::<OptionChainActor>(&fixture.actors[index]);
+        assert_eq!(actor.slices.len(), 2);
+        assert_eq!(actor.slices[1].calls[&strike].quote, quote);
+        assert_eq!(
+            actor.slices[1].get_call_greeks(&strike),
+            Some(&OptionGreeks {
+                convention,
+                ..make_option_chain_greeks(instrument_id, 50000.0)
+            }),
+        );
+    }
+
+    fixture.dispose();
+}
+
+#[rstest]
+#[case::quote(None, false)]
+#[case::selected_greeks_typed(Some(BlackScholes), false)]
+#[case::other_greeks_typed(Some(PriceAdjusted), false)]
+#[case::selected_greeks_dynamic(Some(BlackScholes), true)]
+#[case::other_greeks_dynamic(Some(PriceAdjusted), true)]
+fn test_option_chain_queued_timer_expiry_precedes_delayed_data(
+    #[case] convention: Option<GreeksConvention>,
+    #[case] process_as_any: bool,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let series = make_series_id();
+    let start = series.expiration_ns - DurationNanos::from_secs(2);
+    clock.borrow_mut().advance_time(start, true);
+    let fixture = OptionChainFixture::new(clock, &cache);
+    let strike = Price::from("50000.000");
+    let range = StrikeRange::Fixed(vec![strike]);
+    fixture.subscribe(0, range.clone(), None);
+    fixture.subscribe(1, range, Some(1_000));
+    let instrument_id = make_btc_option("50000.000", OptionKind::Call).id();
+    let quote = make_quote(instrument_id, "101", "103", start.as_u64());
+    fixture.engine.borrow_mut().process_data(Data::Quote(quote));
+
+    advance_clock_and_dispatch(&fixture.clock, 2_000_000_000);
+
+    let before_expiry = series.expiration_ns - DurationNanos::new(1);
+
+    {
+        let mut engine = fixture.engine.borrow_mut();
+
+        if let Some(convention) = convention {
+            let greeks = OptionGreeks {
+                convention,
+                ts_event: before_expiry,
+                ..make_option_chain_greeks(instrument_id, 50000.0)
+            };
+
+            if process_as_any {
+                engine.process(&greeks);
+            } else {
+                engine.process_data(Data::OptionGreeks(greeks));
+            }
+        } else {
+            let delayed_quote = make_quote(instrument_id, "102", "104", before_expiry.as_u64());
+            engine.process_data(Data::Quote(delayed_quote));
+        }
+    }
+
+    let actor = get_actor_unchecked::<OptionChainActor>(&fixture.actors[0]);
+    assert_eq!(actor.slices.len(), 1);
+    assert_eq!(actor.slices[0].calls[&strike].quote, quote);
+    assert_eq!(actor.slices[0].get_call_greeks(&strike), None);
+    assert!(!fixture.engine.borrow().has_option_chain_manager(&series));
+    drop(actor);
+    fixture.dispose();
 }
 
 #[rstest]

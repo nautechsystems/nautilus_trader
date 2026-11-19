@@ -15,6 +15,7 @@
 
 use indexmap::IndexMap;
 use nautilus_core::correctness::check_valid_string_utf8;
+use nautilus_model::enums::GreeksConvention;
 
 use super::{
     AHashSet, ClientId, DataEngine, Debug, DeferredCommand, DurationNanos, Instrument,
@@ -295,13 +296,9 @@ impl DataEngine {
     /// data client.
     pub(super) fn drain_deferred_commands(&mut self) {
         // Loop because expire_series pushes Unsubscribe commands; converges in <= 3 iterations
-        loop {
+        while !self.deferred_cmd_queue.borrow().is_empty() {
             let commands: VecDeque<DeferredCommand> =
                 std::mem::take(&mut *self.deferred_cmd_queue.borrow_mut());
-
-            if commands.is_empty() {
-                break;
-            }
 
             for cmd in commands {
                 match cmd {
@@ -364,7 +361,11 @@ impl DataEngine {
         log::info!("Proactively torn down expired option chain {series_id}");
     }
 
-    pub(super) fn subscribe_option_chain(&mut self, cmd: &SubscribeOptionChain) {
+    pub(super) fn subscribe_option_chain(
+        &mut self,
+        cmd: &SubscribeOptionChain,
+        greeks_convention: GreeksConvention,
+    ) {
         if !cmd.series_id.is_derived() {
             log::error!(
                 "Cannot subscribe option chain {}: explicit reference instruments are unsupported",
@@ -436,6 +437,7 @@ impl DataEngine {
                 PendingOptionChainRequest {
                     command,
                     deadline_ns,
+                    greeks_convention,
                 },
             );
 
@@ -459,7 +461,7 @@ impl DataEngine {
             return;
         }
 
-        let _ = self.create_option_chain_manager(cmd, None);
+        let _ = self.create_option_chain_manager(cmd, None, greeks_convention);
     }
 
     fn option_chain_expired(&self, series_id: OptionSeriesId) -> bool {
@@ -598,6 +600,7 @@ impl DataEngine {
         &mut self,
         cmd: &SubscribeOptionChain,
         initial_atm_price: Option<Price>,
+        greeks_convention: GreeksConvention,
     ) -> Option<Rc<RefCell<OptionChainManager>>> {
         let series_id = cmd.series_id;
         if self.option_chain_expired(series_id) {
@@ -640,6 +643,7 @@ impl DataEngine {
                 priority,
                 client,
                 initial_atm_price,
+                greeks_convention,
                 deferred_cmd_queue,
                 slot,
             )
@@ -665,7 +669,8 @@ impl DataEngine {
         let series_id = cmd.series_id;
         let owner_id = cmd.owner_id();
 
-        let Some(manager) = self.create_option_chain_manager(&cmd, None) else {
+        let Some(manager) = self.create_option_chain_manager(&cmd, None, pending.greeks_convention)
+        else {
             return;
         };
 
@@ -678,6 +683,7 @@ impl DataEngine {
         };
 
         let slot = manager.borrow().slot();
+        let greeks_feed_params = manager.borrow().greeks_feed_params().cloned();
         let ownership_handler = TypedHandler::from_with_id(
             format!("OptionChainBootstrap({series_id},{slot})"),
             |_: &OptionGreeks| {},
@@ -695,7 +701,7 @@ impl DataEngine {
                 instrument_id,
                 client_id,
                 venue: series_id.venue,
-                params: cmd.params.clone(),
+                params: greeks_feed_params.clone(),
                 ownership_handler,
             },
         );
@@ -714,7 +720,7 @@ impl DataEngine {
             UUID4::new(),
             ts_init,
             None,
-            cmd.params.clone(),
+            greeks_feed_params,
         ));
 
         if let Some(client) = self.get_client(Some(&client_id), Some(&series_id.venue)) {
@@ -993,7 +999,11 @@ impl DataEngine {
         }
 
         if resp.price.is_some() {
-            let _ = self.create_option_chain_manager(&pending.command, resp.price);
+            let _ = self.create_option_chain_manager(
+                &pending.command,
+                resp.price,
+                pending.greeks_convention,
+            );
         } else {
             self.create_option_chain_manager_with_greeks_bootstrap(pending);
         }
@@ -1025,6 +1035,7 @@ impl OptionChainBootstrapper {
 pub(super) struct PendingOptionChainRequest {
     command: SubscribeOptionChain,
     deadline_ns: UnixNanos,
+    greeks_convention: GreeksConvention,
 }
 
 #[derive(Debug)]
@@ -1155,6 +1166,7 @@ mod tests {
             PendingOptionChainRequest {
                 command,
                 deadline_ns: UnixNanos::default(),
+                greeks_convention: GreeksConvention::BlackScholes,
             },
         );
 
