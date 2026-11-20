@@ -254,7 +254,7 @@ pub fn parse_market_catalogue(
             .market_type(market_type)
             .market_start_time(market_start_time)
             .selection_id(runner.selection_id)
-            .selection_name(Ustr::from(&runner.runner_name))
+            .selection_name(Ustr::from(runner.runner_name.as_deref().unwrap_or("")))
             .selection_handicap(handicap.to_f64().unwrap_or(0.0))
             .currency(currency)
             .price_precision(BETFAIR_PRICE_PRECISION)
@@ -271,7 +271,8 @@ pub fn parse_market_catalogue(
             .with_context(|| {
                 format!(
                     "failed to create BettingInstrument for {market_id}/{}/{}",
-                    runner.selection_id, runner.runner_name
+                    runner.selection_id,
+                    runner.runner_name.as_deref().unwrap_or("")
                 )
             })?;
 
@@ -655,6 +656,43 @@ mod tests {
             assert_eq!(inst.price_precision, 2);
             assert_eq!(inst.size_precision, 2);
             assert_eq!(inst.currency, Currency::GBP());
+        } else {
+            panic!("expected BettingInstrument");
+        }
+    }
+
+    #[rstest]
+    fn test_parse_market_catalogue_with_missing_or_null_runner_name() {
+        let data = load_test_json("rest/list_market_catalogue.json");
+        let mut value: serde_json::Value = serde_json::from_str(&data).unwrap();
+        // Remove runnerName from first runner and set null on second
+        value["runners"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("runnerName");
+        value["runners"][1]["runnerName"] = serde_json::Value::Null;
+
+        let catalogue: MarketCatalogue = serde_json::from_value(value).unwrap();
+        let instruments =
+            parse_market_catalogue(&catalogue, Currency::GBP(), UnixNanos::default(), None)
+                .unwrap();
+
+        assert_eq!(instruments.len(), 3);
+        if let InstrumentAny::Betting(inst) = &instruments[0] {
+            assert_eq!(inst.selection_id, 20075720);
+            assert_eq!(inst.selection_name, "");
+        } else {
+            panic!("expected BettingInstrument");
+        }
+
+        if let InstrumentAny::Betting(inst) = &instruments[1] {
+            assert_eq!(inst.selection_name, "");
+        } else {
+            panic!("expected BettingInstrument");
+        }
+
+        if let InstrumentAny::Betting(inst) = &instruments[2] {
+            assert_eq!(inst.selection_name, "3. Roberts Delight");
         } else {
             panic!("expected BettingInstrument");
         }

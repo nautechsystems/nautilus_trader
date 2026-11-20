@@ -245,7 +245,8 @@ pub struct LineRangeInfo {
 #[serde(rename_all = "camelCase")]
 pub struct RunnerCatalog {
     pub selection_id: SelectionId,
-    pub runner_name: String,
+    #[serde(default, deserialize_with = "deserialize_optional_string_lenient")]
+    pub runner_name: Option<String>,
     #[serde(deserialize_with = "deserialize_decimal_native")]
     pub handicap: Handicap,
     pub sort_priority: Option<u32>,
@@ -997,5 +998,38 @@ mod tests {
         let data = load_test_json("rest/betting_list_market_catalogue.json");
         let catalogues: Vec<MarketCatalogue> = serde_json::from_str(&data).unwrap();
         assert!(!catalogues.is_empty());
+    }
+
+    #[rstest]
+    fn test_runner_catalog_optional_runner_name() {
+        let json_missing_name = r#"{
+            "selectionId": 288792,
+            "handicap": 0.0,
+            "sortPriority": 1,
+            "metadata": {
+                "runnerId": "288792"
+            }
+        }"#;
+        let runner_missing: RunnerCatalog = serde_json::from_str(json_missing_name).unwrap();
+        assert_eq!(runner_missing.selection_id, 288792);
+        assert_eq!(runner_missing.runner_name, None);
+
+        let json_null_name = r#"{
+            "selectionId": 288793,
+            "runnerName": null,
+            "handicap": 0.0
+        }"#;
+        let runner_null: RunnerCatalog = serde_json::from_str(json_null_name).unwrap();
+        assert_eq!(runner_null.selection_id, 288793);
+        assert_eq!(runner_null.runner_name, None);
+
+        let json_numeric_name = r#"{
+            "selectionId": 288794,
+            "runnerName": 42,
+            "handicap": 0.0
+        }"#;
+        let runner_numeric: RunnerCatalog = serde_json::from_str(json_numeric_name).unwrap();
+        assert_eq!(runner_numeric.selection_id, 288794);
+        assert_eq!(runner_numeric.runner_name, Some("42".to_string()));
     }
 }
