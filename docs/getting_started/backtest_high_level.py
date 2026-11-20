@@ -91,22 +91,22 @@ raw_files
 # %%
 if raw_files:
     instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD")
-    ticks = TestDataProvider.quotes_from_histdata_csv(instrument, raw_files[0])
+    quotes = TestDataProvider.quotes_from_histdata_csv(instrument, raw_files[0])
 else:
     instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
-    ticks = TestDataProvider.quotes_from_truefx_csv(
+    quotes = TestDataProvider.quotes_from_truefx_csv(
         instrument,
         "truefx/audusd-ticks.csv",
         max_rows=20_000,
     )
 
 # Vendor exports are not always monotonic; the catalog requires ascending timestamps
-ticks.sort(key=lambda tick: tick.ts_init)
+quotes.sort(key=lambda tick: tick.ts_init)
 
-print(f"Loaded {len(ticks)} quote ticks for {instrument.id}")
+print(f"Loaded {len(quotes)} quote ticks for {instrument.id}")
 
 # Preview: see first 2 ticks
-ticks[0:2]
+quotes[0:2]
 
 # %% [markdown]
 # See the [Loading data](../concepts/data/) guide for more details.
@@ -131,12 +131,12 @@ catalog = ParquetDataCatalog(str(CATALOG_PATH))
 catalog.write_instruments([instrument])
 
 # Write ticks to the catalog
-catalog.write_quote_ticks(ticks)
+catalog.write_quotes(quotes)
 
 # %% [markdown]
 # ## Query the catalog
 #
-# The catalog provides methods like `.instruments()` and `.query_quote_ticks()`
+# The catalog provides methods like `.instruments()` and `.query_quotes()`
 # to query stored data and determine the available time range.
 
 # %%
@@ -149,28 +149,28 @@ catalog.instruments()[0]
 
 # %%
 # Query quote ticks from catalog to determine the data range
-all_ticks = catalog.query_quote_ticks(identifiers=[instrument.id.value])
-print(f"Total ticks in catalog: {len(all_ticks)}")
-if all_ticks:
+all_quotes = catalog.query_quotes(identifiers=[instrument.id.value])
+print(f"Total ticks in catalog: {len(all_quotes)}")
+if all_quotes:
     # Get timestamps from the data
-    first_tick_time = pd.Timestamp(all_ticks[0].ts_init, unit="ns", tz="UTC")
-    last_tick_time = pd.Timestamp(all_ticks[-1].ts_init, unit="ns", tz="UTC")
+    first_tick_time = pd.Timestamp(all_quotes[0].ts_init, unit="ns", tz="UTC")
+    last_tick_time = pd.Timestamp(all_quotes[-1].ts_init, unit="ns", tz="UTC")
     print(f"Data range: {first_tick_time} to {last_tick_time}")
 
     # Cap the backtest range at 2 weeks from the first tick (as UNIX nanoseconds);
     # the AUD/USD sample spans about 5 hours, so it runs in full
-    start_ns = all_ticks[0].ts_init
+    start_ns = all_quotes[0].ts_init
     end_ns = dt_to_unix_nanos(first_tick_time + pd.Timedelta(days=14))
     print(f"Backtest range: {first_tick_time} to {first_tick_time + pd.Timedelta(days=14)}")
 
     # Preview selected data
-    selected_quote_ticks = catalog.query_quote_ticks(
+    selected_quotes = catalog.query_quotes(
         identifiers=[instrument.id.value],
         start=start_ns,
         end=end_ns,
     )
-    print(f"Selected ticks for backtest: {len(selected_quote_ticks)}")
-    selected_quote_ticks[:2]
+    print(f"Selected ticks for backtest: {len(selected_quotes)}")
+    selected_quotes[:2]
 else:
     raise ValueError("No ticks found in catalog")
 

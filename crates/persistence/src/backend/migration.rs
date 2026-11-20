@@ -1997,14 +1997,10 @@ mod tests {
             .join(precision_dir)
             .join("bars.parquet");
         fs::copy(fixture, bar_dir.join("bars.parquet")).unwrap();
-        let source = crate::backend::parquet::catalog::ParquetDataCatalog::from_uri(
-            source_path.to_str().unwrap(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let source = crate::backend::parquet::catalog::ParquetDataCatalog::builder()
+            .uri(&source_path)
+            .build()
+            .unwrap();
 
         let plan = build_catalog_migration_plan(&source).unwrap();
 
@@ -2042,14 +2038,10 @@ mod tests {
         let mut writer = ::parquet::arrow::ArrowWriter::try_new(file, schema, None).unwrap();
         writer.write(&batch).unwrap();
         writer.close().unwrap();
-        let source = crate::backend::parquet::catalog::ParquetDataCatalog::from_uri(
-            source_path.to_str().unwrap(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let source = crate::backend::parquet::catalog::ParquetDataCatalog::builder()
+            .uri(&source_path)
+            .build()
+            .unwrap();
 
         let plan = build_catalog_migration_plan(&source).unwrap();
         let error = plan.ensure_ready().unwrap_err();

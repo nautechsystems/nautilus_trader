@@ -65,13 +65,10 @@ pub fn migrate_parquet_catalog(
     let source_uri = normalize_storage_location(&config.source_uri)?;
     let target_uri = normalize_storage_location(&config.target_uri)?;
     ensure_distinct_migration_locations(&source_uri, &target_uri)?;
-    let source = ParquetDataCatalog::from_uri(
-        &source_uri,
-        Some(config.source_options.into_iter().collect()),
-        None,
-        None,
-        None,
-    )?;
+    let source = ParquetDataCatalog::builder()
+        .uri(&source_uri)
+        .storage_options(config.source_options.into_iter().collect())
+        .build()?;
     let plan = build_catalog_migration_plan(&source)?;
     plan.ensure_ready()?;
     if config.dry_run {
@@ -85,13 +82,10 @@ pub fn migrate_parquet_catalog(
         std::fs::create_dir_all(path)?;
     }
 
-    let target = ParquetDataCatalog::from_uri(
-        &target_uri,
-        Some(config.target_options.into_iter().collect()),
-        None,
-        None,
-        None,
-    )?;
+    let target = ParquetDataCatalog::builder()
+        .uri(&target_uri)
+        .storage_options(config.target_options.into_iter().collect())
+        .build()?;
     target.migrate_from_legacy_parquet_catalog_plan(&source, &plan)
 }
 

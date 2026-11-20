@@ -60,7 +60,10 @@ const CI_DELTA_LIMIT_GRID_MM: usize = 10_000;
 fn create_itch_catalog(quotes: &[QuoteTick], instrument: &InstrumentAny) -> (TempDir, String) {
     let temp_dir = TempDir::new().unwrap();
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     catalog.write_instruments(vec![instrument.clone()]).unwrap();
     catalog.write_to_parquet(quotes, None, None, None).unwrap();

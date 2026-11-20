@@ -97,7 +97,10 @@ mod tests {
 
         report_samples("promote", || {
             let directory = TempDir::new().unwrap();
-            let catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+            let catalog = ParquetDataCatalog::builder()
+                .uri(directory.path())
+                .build()
+                .unwrap();
             let data_type = NautilusDataType::OrderBookDelta.into();
             let start = Instant::now();
             catalog

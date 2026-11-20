@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added `underlying_instrument_id` and `settlement_type` to `OptionContract` and `CryptoOption`
 - Added `ExerciseStyle` and optional `exercise_style` to `OptionContract` and `CryptoOption`
 - Added complete balance snapshot support for `AccountState`, zeroing balances a full snapshot omits
+- Added `ParquetDataCatalog::builder()` to open catalogs with named, optional settings
 - Added Bybit `load_ids` execution config option to limit reconciliation to selected instruments
 - Added Bybit bounded reconciliation windows that retain older open orders
 - Added Bybit option `exercise_style` and `settlement_type` from the venue contract specification
@@ -34,6 +35,8 @@ Released on TBD (UTC).
 - Removed `nautilus-cryptography` features `python` and `extension-module`; drop them from dependent manifests
 - Removed blockchain cache `toggle_performance_settings` and `toggle_perf_sync_settings`; sync uses server settings
 - Renamed `CacheConfig.tick_capacity` to `data_capacity`; serialized configs must use the new key
+- Renamed `ParquetDataCatalog` `quote_ticks` and `trade_ticks` queries to `quotes` and `trades`
+- Renamed Python `ParquetDataCatalog` `*_quote_ticks` and `*_trade_ticks` methods to `*_quotes` and `*_trades`
 - Changed `Position` layout. Use `PositionReplayEvents` for `replay_events` via `.into()` (#5551), thanks @Milchstrassse
 - Changed repeat option-chain subscribes from one actor to no-ops; unsubscribe before changing configuration
 - Changed `UnsubscribeOptionChain` literals; use `correlation_id: Some(owner_id)` (`None` requires a sole owner)
@@ -60,6 +63,9 @@ Released on TBD (UTC).
 - Changed book delta requests to fail when a source that sets `F_LAST` leaves an event open
 - Changed book delta requests to fail when the start snapshot cannot be rebuilt
 - Changed time-range book delta requests to rebuild the start snapshot for the first window only
+- Changed `ParquetDataCatalog::query` to a builder; set filters with setters and finish with `execute()`
+- Changed `ParquetDataCatalog` typed queries such as `bars()` to return a builder; call `execute()`
+- Changed `ParquetDataCatalog::from_uri` to take `impl AsRef<Path>`; pass paths, not `&Cow<str>` values
 - Changed Databento and Interactive Brokers share-class stock IDs to use a space (`BRK B`) (#5606), thanks @mmatvien
 - Changed `BybitExecutionClientConfig` literals; add `load_ids: None`
 - Changed Bybit HTTP reports to fail on uncached in-scope instruments; load instruments first
@@ -103,6 +109,7 @@ Released on TBD (UTC).
 - Fixed PostgreSQL cache restoring another trader's OMS type when position IDs overlap
 - Fixed PostgreSQL `OptionSpread` reloads panicking and dropping `tick_scheme`
 - Fixed local catalog paths with `#`, `%`, or `?` in queries, migration, and run manifests
+- Fixed `ParquetDataCatalog::new` converting non-UTF-8 paths lossily, which could open another catalog
 - Fixed open-only order checks leaving closed venue orders unresolved after lost updates
 - Fixed trailing stops updating while markets are not open or from stale reopen prices
 - Fixed consecutive simulated maker fills leaking synthetic last prices into later matching

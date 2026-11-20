@@ -94,7 +94,7 @@ async def main() -> None:
     print("Requesting trade ticks...", flush=True)
     ticks_end = historical_end().replace(hour=10, minute=1)
     ticks_start = ticks_end - dt.timedelta(minutes=1)
-    trade_ticks = await client.request_ticks(
+    trades = await client.request_ticks(
         tick_type=ib.IbHistoricalTickType.TRADES,
         start_date_time=ticks_start,
         end_date_time=ticks_end,
@@ -102,10 +102,10 @@ async def main() -> None:
         use_rth=trading_hours.use_rth(),
         timeout=env_int("IB_V2_HISTORICAL_TIMEOUT", 60),
     )
-    print(f"Downloaded {len(trade_ticks)} trade tick(s)", flush=True)
+    print(f"Downloaded {len(trades)} trade tick(s)", flush=True)
 
     print("Requesting quote ticks...", flush=True)
-    quote_ticks = await client.request_ticks(
+    quotes = await client.request_ticks(
         tick_type=ib.IbHistoricalTickType.BID_ASK,
         start_date_time=ticks_start,
         end_date_time=ticks_end,
@@ -113,13 +113,13 @@ async def main() -> None:
         use_rth=trading_hours.use_rth(),
         timeout=env_int("IB_V2_HISTORICAL_TIMEOUT", 60),
     )
-    print(f"Downloaded {len(quote_ticks)} quote tick(s)", flush=True)
+    print(f"Downloaded {len(quotes)} quote tick(s)", flush=True)
 
     catalog = ParquetDataCatalog("./catalog")
     catalog.write_instruments(instruments)
     catalog.write_bars(bars)
-    catalog.write_trade_ticks(trade_ticks)
-    catalog.write_quote_ticks(quote_ticks)
+    catalog.write_trades(trades)
+    catalog.write_quotes(quotes)
 
 
 if __name__ == "__main__":

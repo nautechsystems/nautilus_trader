@@ -184,7 +184,7 @@ def test_node_applies_configured_latency_model(tmp_path: Path) -> None:
     catalog = ParquetDataCatalog(str(catalog_path))
     quotes = _whipsaw_quotes(instrument, count=10)
     catalog.write_instruments([instrument])
-    catalog.write_quote_ticks(quotes)
+    catalog.write_quotes(quotes)
 
     venue = BacktestVenueConfig(
         name="BINANCE",
@@ -600,7 +600,7 @@ def test_engine_streaming_promotes_into_separate_catalog(tmp_path: Path) -> None
 
     try:
         engine.run()
-        promoted = ParquetDataCatalog(str(catalog_path)).query_quote_ticks()
+        promoted = ParquetDataCatalog(str(catalog_path)).query_quotes()
 
         assert promoted == quotes
         assert (writer_path / "backtest" / str(instance_id) / "quotes").is_dir()
@@ -684,7 +684,7 @@ def test_node_run_fails_when_fill_cost_exceeds_cash_balance(
     instrument = TestInstrumentProvider.aapl_equity()
     catalog = ParquetDataCatalog(str(tmp_path))
     catalog.write_instruments([instrument])
-    catalog.write_quote_ticks(
+    catalog.write_quotes(
         [
             TestDataProviderPyo3.quote_tick(
                 instrument_id=instrument.id,
@@ -958,7 +958,7 @@ def test_node_post_run_inspection_retains_exact_engine_state(tmp_path: Path) -> 
     catalog = ParquetDataCatalog(str(catalog_path))
     quotes = _whipsaw_quotes(instrument, count=30)
     catalog.write_instruments([instrument])
-    catalog.write_quote_ticks(quotes)
+    catalog.write_quotes(quotes)
     node, config = _build_ema_cross_node(
         str(catalog_path),
         instrument,
@@ -1021,7 +1021,7 @@ def test_result_tearsheet_rejects_default_disposed_node_state(
     catalog_path.mkdir()
     catalog = ParquetDataCatalog(str(catalog_path))
     catalog.write_instruments([instrument])
-    catalog.write_quote_ticks(_whipsaw_quotes(instrument, count=30))
+    catalog.write_quotes(_whipsaw_quotes(instrument, count=30))
     node, config = _build_ema_cross_node(str(catalog_path), instrument, chunk_size=7)
 
     try:
@@ -1053,7 +1053,7 @@ def test_node_streaming_matches_oneshot_from_local_catalog(tmp_path: Path) -> No
     catalog = ParquetDataCatalog(str(catalog_path))
     quotes = _whipsaw_quotes(instrument, count=30)
     catalog.write_instruments([instrument])
-    catalog.write_quote_ticks(quotes)
+    catalog.write_quotes(quotes)
 
     oneshot = _run_ema_cross_node(str(catalog_path), instrument, chunk_size=None)
     streaming = _run_ema_cross_node(str(catalog_path), instrument, chunk_size=7)
@@ -1089,7 +1089,7 @@ def _build_component_node(
     catalog = ParquetDataCatalog(str(catalog_path))
     quotes = _whipsaw_quotes(instrument, count=quote_count)
     catalog.write_instruments([instrument])
-    catalog.write_quote_ticks(quotes)
+    catalog.write_quotes(quotes)
 
     venue = BacktestVenueConfig(
         name="BINANCE",

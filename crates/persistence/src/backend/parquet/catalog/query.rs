@@ -48,6 +48,7 @@ use crate::{
     common::arrow::{empty_display_batch_with_identifier, validate_catalog_schema},
 };
 
+#[bon::bon]
 impl ParquetDataCatalog {
     /// Queries instruments from the catalog.
     ///
@@ -75,13 +76,9 @@ impl ParquetDataCatalog {
     /// use nautilus_model::instruments::InstrumentAny;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     ///
     /// // Query all instruments
     /// let instruments = catalog.query_instruments(None)?;
@@ -299,41 +296,31 @@ impl ParquetDataCatalog {
         ))
     }
 
-    /// Queries data of type `T` from the catalog.
+    /// Returns a query for data of type `T`; call `execute` to run it.
     ///
     /// # Type Parameters
     ///
     /// - `T`: The data type to query and return, which selects the catalog directory and decoder.
     ///
-    /// # Parameters
+    /// # Settings
     ///
-    /// - `identifiers`: Optional list of identifiers to filter by. Can be `instrument_id` strings (e.g., "EUR/USD.SIM")
-    ///   or `bar_type` strings (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL"). If `None`, queries all identifiers.
+    /// Every setting is optional. A query with no settings reads all data of type `T`.
+    ///
+    /// - `identifiers`: Identifiers to filter by. Can be `instrument_id` strings (e.g., "EUR/USD.SIM")
+    ///   or `bar_type` strings (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL"). If omitted, queries all identifiers.
     ///   For bars, partial matching is supported (e.g., "EUR/USD.SIM" will match "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
-    /// - `start`: Optional start timestamp for filtering (inclusive). If `None`, queries from the beginning.
-    /// - `end`: Optional end timestamp for filtering (inclusive). If `None`, queries to the end.
-    /// - `where_clause`: Optional SQL WHERE clause for additional filtering. Use standard SQL syntax
+    /// - `start`: Start timestamp for filtering (inclusive). If omitted, queries from the beginning.
+    /// - `end`: End timestamp for filtering (inclusive). If omitted, queries to the end.
+    /// - `where_clause`: SQL WHERE clause for additional filtering. Use standard SQL syntax
     ///   with column names matching the Parquet schema (e.g., "`bid_price` > 1.2000", "volume > 1000").
-    /// - `files`: Optional list of catalog files to read in place of the files matching the filters.
-    /// - `optimize_file_loading`: Whether to register each parent directory as one table rather
-    ///   than each file as its own table. When `true`, every file in those directories is read,
-    ///   including files not listed in `files`. A directory whose files cannot merge into one
-    ///   schema, such as one instrument written at two precisions, instead registers only the
-    ///   files selected by `files` or the filters, each as its own table.
-    ///
-    /// # Returns
-    ///
-    /// Returns a vector of the specific data type `T`, sorted by timestamp. The vector will be
-    /// empty if no data matches the query criteria.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The underlying query execution fails.
-    /// - Record batch decoding fails.
-    /// - A file uses a legacy catalog schema.
-    /// - Object store access fails.
-    /// - Invalid WHERE clause syntax is provided.
+    /// - `files`: Catalog files to read in place of the files matching the filters. With `files`
+    ///   set, `identifiers` has no effect, because identifiers only select files; `start`, `end`,
+    ///   and `where_clause` still filter rows.
+    /// - `optimize_file_loading` (default `true`): Whether to register each parent directory as
+    ///   one table rather than each file as its own table. When `true`, every file in those
+    ///   directories is read, including files not listed in `files`. A directory whose files
+    ///   cannot merge into one schema, such as one instrument written at two precisions, instead
+    ///   registers only the files selected by `files` or the filters, each as its own table.
     ///
     /// # Performance Considerations
     ///
@@ -349,65 +336,59 @@ impl ParquetDataCatalog {
     /// use nautilus_model::data::{Bar, QuoteTick, TradeTick};
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     ///
     /// // Query all quotes for a specific instrument
-    /// let quotes: Vec<QuoteTick> = catalog.query(
-    ///     Some(vec!["EUR/USD.SIM".to_string()]),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     true,
-    /// )?;
+    /// let quotes = catalog
+    ///     .query::<QuoteTick>()
+    ///     .identifiers(vec!["EUR/USD.SIM".to_string()])
+    ///     .execute()?;
     ///
     /// // Query trades within a specific time range
-    /// let trades: Vec<TradeTick> = catalog.query(
-    ///     Some(vec!["BTC/USD.SIM".to_string()]),
-    ///     Some(UnixNanos::from(1609459200000000000)),
-    ///     Some(UnixNanos::from(1609545600000000000)),
-    ///     None,
-    ///     None,
-    ///     true,
-    /// )?;
+    /// let trades = catalog
+    ///     .query::<TradeTick>()
+    ///     .identifiers(vec!["BTC/USD.SIM".to_string()])
+    ///     .start(UnixNanos::from(1609459200000000000))
+    ///     .end(UnixNanos::from(1609545600000000000))
+    ///     .execute()?;
     ///
     /// // Query bars with volume filter (using instrument_id - partial match for bar_type)
-    /// let bars: Vec<Bar> = catalog.query(
-    ///     Some(vec!["AAPL.NASDAQ".to_string()]),
-    ///     None,
-    ///     None,
-    ///     Some("volume > 1000000"),
-    ///     None,
-    ///     true,
-    /// )?;
+    /// let bars = catalog
+    ///     .query::<Bar>()
+    ///     .identifiers(vec!["AAPL.NASDAQ".to_string()])
+    ///     .where_clause("volume > 1000000")
+    ///     .execute()?;
     ///
     /// // Query bars with specific bar_type
-    /// let bars: Vec<Bar> = catalog.query(
-    ///     Some(vec!["AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL".to_string()]),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     true,
-    /// )?;
+    /// let bars = catalog
+    ///     .query::<Bar>()
+    ///     .identifiers(vec!["AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL".to_string()])
+    ///     .execute()?;
     ///
     /// // Query multiple instruments with price filter
-    /// let quotes: Vec<QuoteTick> = catalog.query(
-    ///     Some(vec!["EUR/USD.SIM".to_string(), "GBP/USD.SIM".to_string()]),
-    ///     None,
-    ///     None,
-    ///     Some("bid_price > 1.2000 AND ask_price < 1.3000"),
-    ///     None,
-    ///     true,
-    /// )?;
+    /// let quotes = catalog
+    ///     .query::<QuoteTick>()
+    ///     .identifiers(vec!["EUR/USD.SIM".to_string(), "GBP/USD.SIM".to_string()])
+    ///     .where_clause("bid_price > 1.2000 AND ask_price < 1.3000")
+    ///     .execute()?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
+    #[builder(finish_fn(name = execute, doc {
+        /// Runs the query and returns the matching data of type `T`, sorted by timestamp.
+        ///
+        /// Returns an empty vector if no data matches the query.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if:
+        /// - The underlying query execution fails.
+        /// - Record batch decoding fails.
+        /// - A file uses a legacy catalog schema.
+        /// - Object store access fails.
+        /// - Invalid WHERE clause syntax is provided.
+    }))]
     pub fn query<T>(
         &mut self,
         identifiers: Option<Vec<String>>,
@@ -415,7 +396,7 @@ impl ParquetDataCatalog {
         end: Option<UnixNanos>,
         where_clause: Option<&str>,
         files: Option<Vec<String>>,
-        optimize_file_loading: bool,
+        #[builder(default = true)] optimize_file_loading: bool,
     ) -> anyhow::Result<Vec<T>>
     where
         T: DecodeTypedFromRecordBatch + HasCatalogDataType + HasTsInit,
@@ -851,13 +832,9 @@ impl ParquetDataCatalog {
     /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     ///
     /// // Query all quote files
     /// let files = catalog.query_files(&NautilusDataType::QuoteTick.into(), None, None, None)?;
@@ -942,84 +919,44 @@ impl ParquetDataCatalog {
         Ok(files)
     }
 
-    /// Queries quote tick data for the specified instrument(s) and time range.
-    pub fn quote_ticks(
-        &mut self,
-        instrument_ids: Option<Vec<String>>,
-        start: Option<UnixNanos>,
-        end: Option<UnixNanos>,
-    ) -> anyhow::Result<Vec<QuoteTick>> {
-        self.query::<QuoteTick>(instrument_ids, start, end, None, None, true)
+    /// Returns a [`Self::query`] for quote data.
+    pub fn quotes(&mut self) -> ParquetDataCatalogQueryBuilder<'_, '_, QuoteTick> {
+        self.query::<QuoteTick>()
     }
 
-    /// Queries trade tick data for the specified instrument(s) and time range.
-    pub fn trade_ticks(
-        &mut self,
-        instrument_ids: Option<Vec<String>>,
-        start: Option<UnixNanos>,
-        end: Option<UnixNanos>,
-    ) -> anyhow::Result<Vec<TradeTick>> {
-        self.query::<TradeTick>(instrument_ids, start, end, None, None, true)
+    /// Returns a [`Self::query`] for trade data.
+    pub fn trades(&mut self) -> ParquetDataCatalogQueryBuilder<'_, '_, TradeTick> {
+        self.query::<TradeTick>()
     }
 
-    /// Queries bar data for the specified instrument(s) and time range.
-    pub fn bars(
-        &mut self,
-        instrument_ids: Option<Vec<String>>,
-        start: Option<UnixNanos>,
-        end: Option<UnixNanos>,
-    ) -> anyhow::Result<Vec<Bar>> {
-        self.query::<Bar>(instrument_ids, start, end, None, None, true)
+    /// Returns a [`Self::query`] for bar data.
+    pub fn bars(&mut self) -> ParquetDataCatalogQueryBuilder<'_, '_, Bar> {
+        self.query::<Bar>()
     }
 
-    /// Queries order book delta data for the specified instrument(s) and time range.
-    pub fn order_book_deltas(
-        &mut self,
-        instrument_ids: Option<Vec<String>>,
-        start: Option<UnixNanos>,
-        end: Option<UnixNanos>,
-    ) -> anyhow::Result<Vec<OrderBookDelta>> {
-        self.query::<OrderBookDelta>(instrument_ids, start, end, None, None, true)
+    /// Returns a [`Self::query`] for order book delta data.
+    pub fn order_book_deltas(&mut self) -> ParquetDataCatalogQueryBuilder<'_, '_, OrderBookDelta> {
+        self.query::<OrderBookDelta>()
     }
 
-    /// Queries order book depth data for the specified instrument(s) and time range.
-    pub fn order_book_depths(
-        &mut self,
-        instrument_ids: Option<Vec<String>>,
-        start: Option<UnixNanos>,
-        end: Option<UnixNanos>,
-    ) -> anyhow::Result<Vec<OrderBookDepth>> {
-        self.query::<OrderBookDepth>(instrument_ids, start, end, None, None, true)
+    /// Returns a [`Self::query`] for order book depth data.
+    pub fn order_book_depths(&mut self) -> ParquetDataCatalogQueryBuilder<'_, '_, OrderBookDepth> {
+        self.query::<OrderBookDepth>()
     }
 
-    /// Queries funding rate updates for the specified instrument(s) and time range.
-    pub fn funding_rates(
-        &mut self,
-        instrument_ids: Option<Vec<String>>,
-        start: Option<UnixNanos>,
-        end: Option<UnixNanos>,
-    ) -> anyhow::Result<Vec<FundingRateUpdate>> {
-        self.query::<FundingRateUpdate>(instrument_ids, start, end, None, None, true)
+    /// Returns a [`Self::query`] for funding rate update data.
+    pub fn funding_rates(&mut self) -> ParquetDataCatalogQueryBuilder<'_, '_, FundingRateUpdate> {
+        self.query::<FundingRateUpdate>()
     }
 
-    /// Queries instrument close data for the specified instrument(s) and time range.
-    pub fn instrument_closes(
-        &mut self,
-        instrument_ids: Option<Vec<String>>,
-        start: Option<UnixNanos>,
-        end: Option<UnixNanos>,
-    ) -> anyhow::Result<Vec<InstrumentClose>> {
-        self.query::<InstrumentClose>(instrument_ids, start, end, None, None, true)
+    /// Returns a [`Self::query`] for instrument close data.
+    pub fn instrument_closes(&mut self) -> ParquetDataCatalogQueryBuilder<'_, '_, InstrumentClose> {
+        self.query::<InstrumentClose>()
     }
 
-    /// Queries option greeks data for the specified instrument(s) and time range.
-    pub fn option_greeks(
-        &mut self,
-        instrument_ids: Option<Vec<String>>,
-        start: Option<UnixNanos>,
-        end: Option<UnixNanos>,
-    ) -> anyhow::Result<Vec<OptionGreeks>> {
-        self.query::<OptionGreeks>(instrument_ids, start, end, None, None, true)
+    /// Returns a [`Self::query`] for option greeks data.
+    pub fn option_greeks(&mut self) -> ParquetDataCatalogQueryBuilder<'_, '_, OptionGreeks> {
+        self.query::<OptionGreeks>()
     }
 
     /// Queries any instrument data for the specified instrument(s) and time range.
@@ -1057,13 +994,9 @@ impl ParquetDataCatalog {
     /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     /// let files = catalog.get_file_list_from_data_cls(&NautilusDataType::QuoteTick.into())?;
     ///
     /// for file in files {
@@ -1116,13 +1049,9 @@ impl ParquetDataCatalog {
     /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     /// let all_files = catalog.get_file_list_from_data_cls(&NautilusDataType::QuoteTick.into())?;
     ///
     /// let filtered = catalog.filter_files(

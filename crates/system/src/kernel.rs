@@ -1402,7 +1402,10 @@ mod streaming_tests {
                 UnixNanos::from(2),
             ),
         ];
-        let catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
         catalog.write_to_parquet(&quotes, None, None, None).unwrap();
         let config = KernelConfig {
             catalogs: vec![
@@ -1669,10 +1672,11 @@ mod streaming_tests {
         msgbus::publish_quote(MStr::from("data.quotes.SIM.AUD/USD"), &quote);
         kernel.close_streaming_writer().unwrap();
 
-        let mut catalog = ParquetDataCatalog::new(&catalog_path, None, None, None, None);
-        let promoted = catalog
-            .query::<QuoteTick>(None, None, None, None, None, true)
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(&catalog_path)
+            .build()
             .unwrap();
+        let promoted = catalog.query::<QuoteTick>().execute().unwrap();
         let run_directory = writer_directory
             .path()
             .join("backtest")

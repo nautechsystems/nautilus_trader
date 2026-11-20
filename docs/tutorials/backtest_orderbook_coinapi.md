@@ -313,7 +313,7 @@ loader.add_instrument(instrument.clone(), None, None)?;
 let deltas = loader.load_book_deltas(&filepath, instrument_id, None, None)?;
 
 std::fs::create_dir_all(&catalog_path)?;
-let catalog = ParquetDataCatalog::new(&catalog_path, None, None, None, None);
+let catalog = ParquetDataCatalog::builder().uri(&catalog_path).build()?;
 let instruments = vec![instrument];
 catalog.write_instruments(instruments)?;
 catalog.write_to_parquet(&deltas, None, None, None)?;
@@ -350,14 +350,17 @@ snapshot batch and at the end of the file. Both programs then print these counts
 three levels of the final book.
 
 ```rust tab="Rust"
-let mut catalog = ParquetDataCatalog::new(&catalog_path, None, None, None, None);
+let mut catalog = ParquetDataCatalog::builder().uri(&catalog_path).build()?;
 let instrument_ids = vec![instrument_id.to_string()];
 let instrument = catalog
     .instruments(Some(&instrument_ids), None, None)?
     .into_iter()
     .next()
     .context("instrument missing from catalog")?;
-let deltas = catalog.order_book_deltas(Some(instrument_ids), None, None)?;
+let deltas = catalog
+    .order_book_deltas()
+    .identifiers(instrument_ids)
+    .execute()?;
 
 let first = deltas.first().context("catalog has no book deltas")?;
 anyhow::ensure!(

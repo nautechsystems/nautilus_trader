@@ -327,7 +327,10 @@ mod tests {
 
         ensure_custom_data_registered::<BinanceBar>();
         let temp_dir = TempDir::new().unwrap();
-        let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
         let mut catalog = catalog;
         let bar = stub_binance_bar();
         let bar_type_str = bar.bar_type.to_string();

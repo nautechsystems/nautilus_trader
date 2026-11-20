@@ -880,13 +880,22 @@ mod tests {
             batch_and_write_greeks(greeks, id, cursor.date_utc, &data_path, compression);
         }
 
-        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
         let identifiers = Some(vec![instrument_id.to_string()]);
 
         let quotes_out = catalog
-            .quote_ticks(identifiers.clone(), None, None)
+            .quotes()
+            .maybe_identifiers(identifiers.clone())
+            .execute()
             .unwrap();
-        let greeks_out = catalog.option_greeks(identifiers, None, None).unwrap();
+        let greeks_out = catalog
+            .option_greeks()
+            .maybe_identifiers(identifiers)
+            .execute()
+            .unwrap();
 
         assert_eq!(greeks_out, vec![greeks_1, greeks_2]);
         assert_eq!(greeks_out[0].instrument_id, instrument_id);
@@ -949,9 +958,14 @@ mod tests {
         assert!(data_path.join(TradeTick::path_prefix()).exists());
         assert!(!data_path.join("trade_tick").exists());
 
-        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
         let trades_out = catalog
-            .trade_ticks(Some(vec![instrument_id.to_string()]), None, None)
+            .trades()
+            .identifiers(vec![instrument_id.to_string()])
+            .execute()
             .unwrap();
 
         assert_eq!(trades_out, vec![trade_1, trade_2]);
@@ -1016,8 +1030,11 @@ mod tests {
         assert!(data_path.join(Bar::path_prefix()).exists());
         assert!(!data_path.join("bar").exists());
 
-        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
-        let bars_out = catalog.bars(None, None, None).unwrap();
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
+        let bars_out = catalog.bars().execute().unwrap();
 
         assert_eq!(bars_out, vec![bar_1, bar_2]);
         assert_eq!(bars_out[0].bar_type, bar_type);

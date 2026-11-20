@@ -62,13 +62,9 @@ impl ParquetDataCatalog {
     /// use nautilus_model::data::Data;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     /// let mixed_data: Vec<Data> = vec![/* mixed data types */];
     ///
     /// catalog.write_data_enum(&mixed_data, None, None, None)?;
@@ -220,13 +216,9 @@ impl ParquetDataCatalog {
     /// use nautilus_model::data::QuoteTick;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     /// let quotes: Vec<QuoteTick> = vec![/* quote data */];
     ///
     /// let path = catalog.write_to_parquet(&quotes, None, None, None)?;
@@ -460,13 +452,9 @@ impl ParquetDataCatalog {
     /// use nautilus_model::instruments::InstrumentAny;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     /// let instruments: Vec<InstrumentAny> = vec![/* instruments */];
     ///
     /// let paths = catalog.write_instruments(instruments)?;
@@ -653,13 +641,9 @@ impl ParquetDataCatalog {
     /// use nautilus_model::data::TradeTick;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     /// let trades: Vec<TradeTick> = vec![/* trade data */];
     ///
     /// let path = catalog.write_to_json(
@@ -886,14 +870,12 @@ mod tests {
         empty.bid_counts.clear();
         empty.ask_counts.clear();
         let directory = TempDir::new().unwrap();
-        let catalog = ParquetDataCatalog::from_uri(
-            directory.path().to_str().unwrap(),
-            None,
-            Some(2),
-            None,
-            Some(2),
-        )
-        .unwrap();
+        let catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .batch_size(2)
+            .max_row_group_size(2)
+            .build()
+            .unwrap();
         let data = vec![empty.clone(), empty, stub_depth10];
 
         let path = catalog.write_to_parquet(&data, None, None, None).unwrap();
@@ -923,14 +905,11 @@ mod tests {
     #[rstest]
     fn leading_clear_delta_writes_with_following_precision(stub_delta: OrderBookDelta) {
         let directory = TempDir::new().unwrap();
-        let catalog = ParquetDataCatalog::from_uri(
-            directory.path().to_str().unwrap(),
-            None,
-            Some(2),
-            None,
-            None,
-        )
-        .unwrap();
+        let catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .batch_size(2)
+            .build()
+            .unwrap();
         let clear = OrderBookDelta::clear(
             stub_delta.instrument_id,
             0,

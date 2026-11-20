@@ -73,17 +73,17 @@ raw_files
 # %%
 if raw_files:
     instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD")
-    ticks = TestDataProvider.quotes_from_histdata_csv(instrument, raw_files[0])
+    quotes = TestDataProvider.quotes_from_histdata_csv(instrument, raw_files[0])
 else:
     instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
-    ticks = TestDataProvider.quotes_from_truefx_csv(
+    quotes = TestDataProvider.quotes_from_truefx_csv(
         instrument,
         "truefx/audusd-ticks.csv",
         max_rows=20_000,
     )
 
 # Vendor exports are not always monotonic; the catalog requires ascending timestamps
-ticks.sort(key=lambda tick: tick.ts_init)
+quotes.sort(key=lambda tick: tick.ts_init)
 
 # %% [markdown]
 # ## Write to the data catalog
@@ -105,18 +105,18 @@ catalog = ParquetDataCatalog(str(CATALOG_PATH))
 
 # %%
 catalog.write_instruments([instrument])
-catalog.write_quote_ticks(ticks)
+catalog.write_quotes(quotes)
 
 # %%
 # Verify instruments written to catalog
 catalog.instruments()
 
 # %%
-start = ticks[0].ts_event
-end = ticks[-1].ts_event + 1
+start = quotes[0].ts_event
+end = quotes[-1].ts_event + 1
 
-ticks = catalog.query_quote_ticks(identifiers=[instrument.id.value], start=start, end=end)
-ticks[:10]
+quotes = catalog.query_quotes(identifiers=[instrument.id.value], start=start, end=end)
+quotes[:10]
 
 # %% [markdown]
 # ## Configure and run the backtest

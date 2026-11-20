@@ -206,7 +206,7 @@ data from this catalog, and later runs reuse it instead of downloading again.
 
 ```rust tab="Rust"
 std::fs::create_dir_all(&catalog_path)?;
-let catalog = ParquetDataCatalog::new(&catalog_path, None, None, None, None);
+let catalog = ParquetDataCatalog::builder().uri(&catalog_path).build()?;
 let instruments = vec![InstrumentAny::BinaryOption(instrument)];
 catalog.write_instruments(instruments)?;
 catalog.write_to_parquet(&deltas, None, None, None)?;
@@ -233,14 +233,17 @@ Apply the deltas in their original order and check the book's integrity at the e
 book.
 
 ```rust tab="Rust"
-let mut catalog = ParquetDataCatalog::new(&catalog_path, None, None, None, None);
+let mut catalog = ParquetDataCatalog::builder().uri(&catalog_path).build()?;
 let instrument_ids = vec![instrument_id.to_string()];
 let instrument = catalog
     .instruments(Some(&instrument_ids), None, None)?
     .into_iter()
     .next()
     .context("instrument missing from catalog")?;
-let deltas = catalog.order_book_deltas(Some(instrument_ids), None, None)?;
+let deltas = catalog
+    .order_book_deltas()
+    .identifiers(instrument_ids)
+    .execute()?;
 
 let mut book = OrderBook::new(instrument_id, book_type);
 let mut batches = 0;

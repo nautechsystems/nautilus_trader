@@ -172,14 +172,14 @@ class ParquetDataCatalog:
         end: int | None = None,
         skip_disjoint_check: bool = False,
     ) -> str: ...
-    def write_quote_ticks(
+    def write_quotes(
         self,
         data: typing.Sequence[model.QuoteTick],
         start: int | None = None,
         end: int | None = None,
         skip_disjoint_check: bool = False,
     ) -> str: ...
-    def write_trade_ticks(
+    def write_trades(
         self,
         data: typing.Sequence[model.TradeTick],
         start: int | None = None,
@@ -437,14 +437,14 @@ class ParquetDataCatalog:
         end: int | None = None,
         where_clause: str | None = None,
     ) -> list[model.OrderBookDepth]: ...
-    def query_quote_ticks(
+    def query_quotes(
         self,
         identifiers: typing.Sequence[str] | None = None,
         start: int | None = None,
         end: int | None = None,
         where_clause: str | None = None,
     ) -> list[model.QuoteTick]: ...
-    def query_trade_ticks(
+    def query_trades(
         self,
         identifiers: typing.Sequence[str] | None = None,
         start: int | None = None,

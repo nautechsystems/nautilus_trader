@@ -656,14 +656,10 @@ mod tests {
         second.bid_price = Price::from("100.1234");
         second.ask_price = Price::from("100.5678");
         second.ts_init = UnixNanos::from(24);
-        let mut catalog = ParquetDataCatalog::from_uri(
-            directory.path().to_str().unwrap(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
         sink.write_data(Data::Quote(quote)).unwrap();
         sink.write_data(Data::Quote(second)).unwrap();
         sink.flush().unwrap();
@@ -716,14 +712,10 @@ mod tests {
                 .unwrap();
         sink.close().unwrap();
 
-        let mut catalog = ParquetDataCatalog::from_uri(
-            directory.path().to_str().unwrap(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
         let rows = catalog
             .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
             .unwrap();
@@ -751,14 +743,10 @@ mod tests {
 
         sink.close().unwrap();
 
-        let mut catalog = ParquetDataCatalog::from_uri(
-            directory.path().to_str().unwrap(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
 
         let DataBatch::Quote(rows) = catalog
             .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
@@ -776,14 +764,10 @@ mod tests {
         let directory = TempDir::new().unwrap();
         let staging = directory.path().join("backtest").join("run-1");
         let (quote, _) = stage_per_identifier_quote(&staging);
-        let mut catalog = ParquetDataCatalog::from_uri(
-            directory.path().to_str().unwrap(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
 
         catalog
             .convert_stream_to_data(
@@ -816,7 +800,11 @@ mod tests {
             Environment::Backtest,
             "run-1",
         );
-        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
         catalog.base_path = "catalog".to_string();
         catalog.original_uri = "s3://test-bucket/catalog".to_string();
         catalog.object_store = Arc::new(InMemory::new());
@@ -875,9 +863,10 @@ mod tests {
         sink.write_data(Data::Quote(quote)).unwrap();
         sink.close().unwrap();
 
-        let mut catalog =
-            ParquetDataCatalog::from_uri(catalog_path.to_str().unwrap(), None, None, None, None)
-                .unwrap();
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(&catalog_path)
+            .build()
+            .unwrap();
 
         let DataBatch::Quote(rows) = catalog
             .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
@@ -1006,23 +995,15 @@ mod tests {
         sink.write_data(Data::Quote(quote)).unwrap();
         sink.close().unwrap();
 
-        let promoted = ParquetDataCatalog::from_uri(
-            directory.path().to_str().unwrap(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let promoted = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
         let direct_directory = TempDir::new().unwrap();
-        let direct = ParquetDataCatalog::from_uri(
-            direct_directory.path().to_str().unwrap(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let direct = ParquetDataCatalog::builder()
+            .uri(direct_directory.path())
+            .build()
+            .unwrap();
         direct.write_to_parquet(&[quote], None, None, None).unwrap();
 
         assert_eq!(
@@ -1061,7 +1042,10 @@ mod tests {
 
         sink.close().unwrap();
 
-        let files = ParquetDataCatalog::new(directory.path(), None, None, None, None)
+        let files = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap()
             .query_files(&NautilusDataType::QuoteTick.into(), None, None, None)
             .unwrap();
         let reader = SerializedFileReader::new(
@@ -1137,14 +1121,10 @@ mod tests {
         clock.store(1_000_000, Ordering::Relaxed);
         sink.flush().unwrap();
         sink.close().unwrap();
-        let mut catalog = ParquetDataCatalog::from_uri(
-            directory.path().to_str().unwrap(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
         let before_manual = catalog
             .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
             .unwrap();
@@ -1249,7 +1229,10 @@ mod tests {
         writer.maybe_promote().unwrap();
         writer.wait().unwrap();
 
-        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
 
         let DataBatch::Quote(rows) = catalog
             .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
@@ -1293,14 +1276,10 @@ mod tests {
         );
         assert!(sink.write_any(&funding).unwrap());
         sink.close().unwrap();
-        let mut catalog = ParquetDataCatalog::from_uri(
-            directory.path().to_str().unwrap(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
         let rows = catalog
             .query_batch(&CatalogQuery::new(NautilusDataType::FundingRateUpdate))
             .unwrap();
@@ -1351,14 +1330,10 @@ mod tests {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim());
         assert!(sink.write_any(&instrument).unwrap());
         sink.close().unwrap();
-        let mut catalog = ParquetDataCatalog::from_uri(
-            directory.path().to_str().unwrap(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
         let rows = catalog
             .query_batch(&CatalogQuery::new(NautilusDataType::Instrument))
             .unwrap();
@@ -1663,7 +1638,11 @@ mod tests {
             type_name: expected[0].data_type.type_name().to_string(),
         };
 
-        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
+
         if !automatic {
             catalog
                 .convert_stream_to_data(
@@ -1709,7 +1688,11 @@ mod tests {
         let record_type = T::get_schema(None).metadata()["type_name"]
             .parse::<NautilusRecordType>()
             .unwrap();
-        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
+
         if !automatic {
             catalog
                 .convert_stream_to_data(
@@ -1761,14 +1744,10 @@ mod tests {
         let event = OrderFillVoidedSpec::builder().is_reopened(true).build();
         assert!(sink.write_any(&event).unwrap());
         sink.close().unwrap();
-        let mut catalog = ParquetDataCatalog::from_uri(
-            directory.path().to_str().unwrap(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
         let batches = catalog
             .query_record_batches(
                 &NautilusRecordType::OrderFillVoided.into(),
@@ -1844,7 +1823,10 @@ mod tests {
         }
 
         sink.close().unwrap();
-        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
         let storage = create_storage_backend_from_path(staging.to_str().unwrap(), None).unwrap();
         let staged = block_on_nautilus_with(|| storage.list_files("", Some(".feather"))).unwrap();
         let mut originals = Vec::new();
@@ -1876,9 +1858,7 @@ mod tests {
                 .unwrap();
         }
 
-        let actual = catalog
-            .query::<OrderBookDelta>(None, None, None, None, None, true)
-            .unwrap();
+        let actual = catalog.query::<OrderBookDelta>().execute().unwrap();
         assert_eq!(actual.len(), rows.len());
 
         for (actual, expected) in actual.iter().zip(&rows) {
@@ -1978,7 +1958,10 @@ mod tests {
         writer.close().unwrap();
         let source = staging.join("order_book_deltas/order_book_deltas_0.feather");
         let original = fs::read(&source).unwrap();
-        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
 
         let failure = if automatic {
             let mut config = WriterConnectConfig::new(
@@ -2056,14 +2039,10 @@ mod tests {
         sink.write_any(&populated).unwrap();
         sink.close().unwrap();
 
-        let mut catalog = ParquetDataCatalog::from_uri(
-            directory.path().to_str().unwrap(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
 
         if !automatic {
             catalog
@@ -2150,14 +2129,10 @@ mod tests {
         }
 
         sink.close().unwrap();
-        let mut catalog = ParquetDataCatalog::from_uri(
-            directory.path().to_str().unwrap(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
 
         if !automatic {
             catalog
@@ -2259,14 +2234,10 @@ mod tests {
         ];
         sink.write_batch(deltas.into_iter().map(Data::from).collect())
             .unwrap();
-        let mut catalog = ParquetDataCatalog::from_uri(
-            directory.path().to_str().unwrap(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
 
         let error = if automatic {
             sink.close().unwrap_err()
@@ -2326,14 +2297,10 @@ mod tests {
 
         sink.close().unwrap();
 
-        let mut catalog = ParquetDataCatalog::from_uri(
-            directory.path().to_str().unwrap(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
 
         for _ in 0..2 {
             catalog
@@ -2399,14 +2366,10 @@ mod tests {
 
         sink.close().unwrap();
 
-        let mut catalog = ParquetDataCatalog::from_uri(
-            directory.path().to_str().unwrap(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
         catalog
             .convert_stream_to_data(
                 "run-custom-ids",
@@ -2617,7 +2580,10 @@ mod tests {
         }
 
         let promoted = writer.promote_now().unwrap();
-        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
 
         let DataBatch::Bar(rows) = catalog
             .query_batch(&CatalogQuery::new(NautilusDataType::Bar))
@@ -2718,7 +2684,10 @@ mod tests {
         let work = writer.prepare_promotion().unwrap().unwrap();
         let files = work.files().to_vec();
         let error = writer.finalize(work.execute()).unwrap_err();
-        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
 
         let DataBatch::Bar(rows) = catalog
             .query_batch(&CatalogQuery::new(NautilusDataType::Bar))
@@ -2752,7 +2721,10 @@ mod tests {
     #[rstest]
     fn bar_replay_manual_conversion_is_idempotent() {
         let directory = TempDir::new().unwrap();
-        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
         let first = sample_bar();
 
         let next = Bar {
@@ -2901,7 +2873,11 @@ mod tests {
         assert_eq!(writer.finalize(result).unwrap().len(), expected_files);
         assert!(writer.prepare_promotion().unwrap().is_none());
 
-        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
+
         let DataBatch::Quote(rows) = catalog
             .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
             .unwrap()
@@ -2946,7 +2922,11 @@ mod tests {
         assert_eq!(restarted.finalize(work.execute()).unwrap(), promoted);
         assert!(restarted.prepare_promotion().unwrap().is_none());
 
-        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
+
         let DataBatch::Quote(rows) = catalog
             .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
             .unwrap()
@@ -2983,7 +2963,11 @@ mod tests {
         assert_eq!(restarted.finalize(work.execute()).unwrap(), promoted);
         assert!(restarted.prepare_promotion().unwrap().is_none());
 
-        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
+
         let DataBatch::Quote(rows) = catalog
             .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
             .unwrap()
@@ -3057,7 +3041,11 @@ mod tests {
         assert_scheduled_count(&restarted.core.promotion_driver.schedule(), 0);
         assert_eq!(sealed.exists(), !delete_source);
 
-        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
+
         let DataBatch::Quote(rows) = catalog
             .query_batch(&CatalogQuery::new(NautilusDataType::QuoteTick))
             .unwrap()
@@ -3075,7 +3063,10 @@ mod tests {
         #[case] expected_prefix: &str,
     ) {
         let directory = TempDir::new().unwrap();
-        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
         catalog.base_path = base_path.to_string();
 
         let backend = ParquetPromotionBackend {

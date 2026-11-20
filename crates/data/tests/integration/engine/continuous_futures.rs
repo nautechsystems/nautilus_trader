@@ -2328,7 +2328,11 @@ fn test_continuous_future_catalog_segment_preserves_failure_and_cleans_up(
     }
 
     let directory = CatalogTempDir::new("continuous-segment-failure");
-    let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(directory.path())
+        .build()
+        .unwrap();
+
     let cached = [
         make_trade(first, "100.00", 1, "cached-1", 1),
         make_trade(first, "101.00", 1, "cached-2", 2),

@@ -933,7 +933,7 @@ from nautilus_trader.persistence import ParquetDataCatalog
 
 catalog = ParquetDataCatalog(base_path="catalog")
 catalog.write_instruments(instruments)
-catalog.write_trade_ticks(trades)
+catalog.write_trades(trades)
 ```
 
 Use the schema-specific methods for files whose schema is not the default for that output type:

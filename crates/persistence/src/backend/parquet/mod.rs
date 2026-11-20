@@ -62,13 +62,15 @@ pub(crate) fn open_catalog(
         &[],
     )?;
 
-    catalog::ParquetDataCatalog::from_uri(
-        &config.uri,
-        config.storage_options.clone(),
-        config.batch_size,
-        config.compression.map(Compression::from),
-        config.max_row_group_size,
-    )
+    let compression = config.compression.map(Compression::from);
+
+    catalog::ParquetDataCatalog::builder()
+        .uri(&config.uri)
+        .maybe_storage_options(config.storage_options.clone())
+        .maybe_batch_size(config.batch_size)
+        .maybe_compression(compression)
+        .maybe_max_row_group_size(config.max_row_group_size)
+        .build()
 }
 
 impl From<CatalogCompression> for Compression {
@@ -87,6 +89,8 @@ impl From<CatalogCompression> for Compression {
 #[cfg(test)]
 mod tests {
     use std::fs::File;
+    #[cfg(unix)]
+    use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
 
     use arrow::record_batch::RecordBatch;
     use nautilus_core::{Params, UnixNanos};
@@ -100,7 +104,38 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::config::DataCatalogConfig;
+    use crate::{catalog::session::DEFAULT_DATA_BATCH_CHUNK_SIZE, config::DataCatalogConfig};
+
+    #[rstest]
+    fn catalog_builder_applies_defaults_for_omitted_settings() {
+        let directory = TempDir::new().unwrap();
+
+        let catalog = catalog::ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
+
+        assert_eq!(catalog.batch_size, DEFAULT_DATA_BATCH_CHUNK_SIZE);
+        assert_eq!(catalog.compression, Compression::ZSTD(ZstdLevel::default()));
+        assert_eq!(catalog.max_row_group_size, DEFAULT_ROW_GROUP_SIZE);
+    }
+
+    #[cfg(unix)]
+    #[rstest]
+    fn catalog_builder_rejects_non_utf8_path() {
+        let directory = TempDir::new().unwrap();
+        let path = directory.path().join(OsStr::from_bytes(b"catalog\xff"));
+
+        let error = catalog::ParquetDataCatalog::builder()
+            .uri(&path)
+            .build()
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("Catalog URI must be valid UTF-8, was {}", path.display())
+        );
+    }
 
     #[rstest]
     fn open_catalog_writes_with_typed_settings() {
@@ -194,9 +229,7 @@ mod tests {
             .write_to_parquet(&[quote(1)], None, None, None)
             .unwrap();
 
-        let quotes = catalog
-            .query::<QuoteTick>(None, None, None, None, None, true)
-            .unwrap();
+        let quotes = catalog.query::<QuoteTick>().execute().unwrap();
 
         assert_eq!(quotes, vec![quote(1)]);
         quote_file_metadata(&catalog, &directory);
@@ -265,14 +298,12 @@ mod tests {
     ) {
         let directory = TempDir::new().unwrap();
 
-        let error = catalog::ParquetDataCatalog::from_uri(
-            &directory.path().to_string_lossy(),
-            None,
-            batch_size,
-            None,
-            max_row_group_size,
-        )
-        .unwrap_err();
+        let error = catalog::ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .maybe_batch_size(batch_size)
+            .maybe_max_row_group_size(max_row_group_size)
+            .build()
+            .unwrap_err();
 
         assert_eq!(
             error.to_string(),

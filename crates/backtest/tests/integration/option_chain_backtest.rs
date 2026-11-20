@@ -206,7 +206,10 @@ fn build_catalog() -> (
 ) {
     let temp_dir = TempDir::new().unwrap();
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     let call = make_btc_option(STRIKE, OptionKind::Call);
     let put = make_btc_option(STRIKE, OptionKind::Put);

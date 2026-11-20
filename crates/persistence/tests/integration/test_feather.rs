@@ -356,7 +356,10 @@ fn run_writer(root: &std::path::Path) -> FeatherWriter {
 }
 
 fn read_run(root: &std::path::Path) -> Vec<Data> {
-    ParquetDataCatalog::new(root, None, None, None, None)
+    ParquetDataCatalog::builder()
+        .uri(root)
+        .build()
+        .unwrap()
         .read_backtest("run-001")
         .unwrap()
 }

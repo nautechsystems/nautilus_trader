@@ -87,7 +87,10 @@ const DEPTH10_LEN: usize = 10;
 
 fn create_temp_catalog() -> (TempDir, ParquetDataCatalog) {
     let temp_dir = TempDir::new().unwrap();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
     (temp_dir, catalog)
 }
 
@@ -437,7 +440,9 @@ fn test_rust_write_2_bars_to_catalog() {
         .get_intervals(&NautilusDataType::Bar.into(), Some(&bar_type))
         .unwrap();
     let loaded = catalog
-        .bars(Some(vec!["AUD/USD.SIM".to_string()]), None, None)
+        .bars()
+        .identifiers(vec!["AUD/USD.SIM".to_string()])
+        .execute()
         .unwrap();
 
     assert_eq!(intervals, vec![(1, 2)]);
@@ -454,7 +459,9 @@ fn test_rust_query_bars_inside_nautilus_runtime() {
     let loaded = get_runtime().block_on(async {
         tokio::task::yield_now().await;
         catalog
-            .bars(Some(vec!["AUD/USD.SIM".to_string()]), None, None)
+            .bars()
+            .identifiers(vec!["AUD/USD.SIM".to_string()])
+            .execute()
             .unwrap()
     });
 
@@ -608,14 +615,9 @@ fn test_rust_consolidate_depth_uses_populated_precision(
         .unwrap();
 
     let decoded = catalog
-        .query::<OrderBookDepth>(
-            Some(vec!["ETH/USDT.BINANCE".to_string()]),
-            None,
-            None,
-            None,
-            None,
-            true,
-        )
+        .query::<OrderBookDepth>()
+        .identifiers(vec!["ETH/USDT.BINANCE".to_string()])
+        .execute()
         .unwrap();
     let populated_decoded = decoded.iter().find(|depth| !depth.bids.is_empty()).unwrap();
     let files = catalog
@@ -729,14 +731,9 @@ fn test_rust_consolidate_all_empty_depths() {
         .unwrap();
 
     let decoded = catalog
-        .query::<OrderBookDepth>(
-            Some(vec!["ETH/USDT.BINANCE".to_string()]),
-            None,
-            None,
-            None,
-            None,
-            true,
-        )
+        .query::<OrderBookDepth>()
+        .identifiers(vec!["ETH/USDT.BINANCE".to_string()])
+        .execute()
         .unwrap();
     let files = catalog
         .query_files(
@@ -823,14 +820,9 @@ fn test_rust_consolidate_with_deduplication() {
 
     // Without deduplication the combined data has 4 rows (ts=2 appears twice)
     let raw = catalog
-        .query::<Bar>(
-            Some(vec!["AUD/USD.SIM".to_string()]),
-            None,
-            None,
-            None,
-            None,
-            true,
-        )
+        .query::<Bar>()
+        .identifiers(vec!["AUD/USD.SIM".to_string()])
+        .execute()
         .unwrap();
     assert_eq!(raw.len(), 4);
 
@@ -860,14 +852,9 @@ fn test_rust_consolidate_with_deduplication() {
 
     // The data should contain exactly 3 unique rows (duplicate ts=2 removed)
     let result = catalog
-        .query::<Bar>(
-            Some(vec!["AUD/USD.SIM".to_string()]),
-            None,
-            None,
-            None,
-            None,
-            true,
-        )
+        .query::<Bar>()
+        .identifiers(vec!["AUD/USD.SIM".to_string()])
+        .execute()
         .unwrap();
     assert_eq!(result.len(), 3);
     assert_eq!(result[0].bar_type, bars_a[0].bar_type);
@@ -1005,14 +992,9 @@ fn test_rust_consolidate_index_with_deduplication() {
 
     // Without deduplication the combined data has 4 rows (ts=2 appears twice)
     let raw = catalog
-        .query::<Bar>(
-            Some(vec!["^SPX.CBOE".to_string()]),
-            None,
-            None,
-            None,
-            None,
-            true,
-        )
+        .query::<Bar>()
+        .identifiers(vec!["^SPX.CBOE".to_string()])
+        .execute()
         .unwrap();
     assert_eq!(raw.len(), 4);
 
@@ -1042,14 +1024,9 @@ fn test_rust_consolidate_index_with_deduplication() {
 
     // The data should contain exactly 3 unique rows (duplicate ts=2 removed)
     let result = catalog
-        .query::<Bar>(
-            Some(vec!["^SPX.CBOE".to_string()]),
-            None,
-            None,
-            None,
-            None,
-            true,
-        )
+        .query::<Bar>()
+        .identifiers(vec!["^SPX.CBOE".to_string()])
+        .execute()
         .unwrap();
     assert_eq!(result.len(), 3);
     assert_eq!(result[0].bar_type, bars_a[0].bar_type);
@@ -1153,7 +1130,10 @@ fn test_rust_extend_file_name_rejects_forward_overlap() {
     );
 
     // A failed extension must not poison later writes: reopen and append disjoint data
-    let reopened = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let reopened = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
     let bars3 = vec![create_bar(20)];
     reopened.write_to_parquet(&bars3, None, None, None).unwrap();
     assert_eq!(
@@ -1563,35 +1543,35 @@ fn test_rust_reset_file_names_rejects_new_name_held_by_another_file() {
 }
 
 #[rstest]
-fn test_rust_write_quote_ticks() {
+fn test_rust_write_quotes() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
 
-    let quote_ticks = vec![create_quote_tick(1), create_quote_tick(2)];
-    catalog
-        .write_to_parquet(&quote_ticks, None, None, None)
-        .unwrap();
+    let quotes = vec![create_quote_tick(1), create_quote_tick(2)];
+    catalog.write_to_parquet(&quotes, None, None, None).unwrap();
 
     let loaded = catalog
-        .quote_ticks(Some(vec!["ETH/USDT.BINANCE".to_string()]), None, None)
+        .quotes()
+        .identifiers(vec!["ETH/USDT.BINANCE".to_string()])
+        .execute()
         .unwrap();
 
-    assert_eq!(loaded, quote_ticks);
+    assert_eq!(loaded, quotes);
 }
 
 #[rstest]
-fn test_rust_write_trade_ticks() {
+fn test_rust_write_trades() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
 
-    let trade_ticks = vec![create_trade_tick(1), create_trade_tick(2)];
-    catalog
-        .write_to_parquet(&trade_ticks, None, None, None)
-        .unwrap();
+    let trades = vec![create_trade_tick(1), create_trade_tick(2)];
+    catalog.write_to_parquet(&trades, None, None, None).unwrap();
 
     let loaded = catalog
-        .trade_ticks(Some(vec!["ETH/USDT.BINANCE".to_string()]), None, None)
+        .trades()
+        .identifiers(vec!["ETH/USDT.BINANCE".to_string()])
+        .execute()
         .unwrap();
 
-    assert_eq!(loaded, trade_ticks);
+    assert_eq!(loaded, trades);
 }
 
 // Non-ASCII ids are stored percent-encoded on disk; queries must resolve the on-disk name.
@@ -1625,11 +1605,14 @@ fn test_query_round_trip_non_ascii_instrument_id() {
     // must resolve the percent-encoded on-disk directory, with and without an id filter.
     for optimize in [true, false] {
         for identifiers in [None, ids.clone()] {
-            let ticks: Vec<TradeTick> = catalog
-                .query(identifiers, None, None, None, None, optimize)
+            let trades: Vec<TradeTick> = catalog
+                .query()
+                .maybe_identifiers(identifiers)
+                .optimize_file_loading(optimize)
+                .execute()
                 .unwrap();
-            assert_eq!(ticks.len(), 1, "optimize={optimize}");
-            assert_eq!(ticks[0].instrument_id, id);
+            assert_eq!(trades.len(), 1, "optimize={optimize}");
+            assert_eq!(trades[0].instrument_id, id);
         }
     }
 }
@@ -1642,14 +1625,17 @@ fn test_query_round_trip_with_url_syntax_in_catalog_root(#[case] directory: &str
     let temp_dir = TempDir::new().unwrap();
     let root = temp_dir.path().join(directory).join("catalog");
     fs::create_dir_all(&root).unwrap();
-    let mut catalog = ParquetDataCatalog::new(&root, None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder().uri(&root).build().unwrap();
     let bars = vec![create_bar(1), create_bar(2)];
     catalog.write_to_parquet(&bars, None, None, None).unwrap();
     let ids = Some(vec![bars[0].bar_type.to_string()]);
     for optimize in [true, false] {
         for identifiers in [None, ids.clone()] {
             let loaded: Vec<Bar> = catalog
-                .query(identifiers, None, None, None, None, optimize)
+                .query()
+                .maybe_identifiers(identifiers)
+                .optimize_file_loading(optimize)
+                .execute()
                 .unwrap();
 
             assert_eq!(loaded, bars, "optimize={optimize}");
@@ -1834,7 +1820,10 @@ fn test_query_bars_non_ascii_instrument_id_partial_match() {
 
     for optimize in [true, false] {
         let bars: Vec<Bar> = catalog
-            .query(Some(ids.clone()), None, None, None, None, optimize)
+            .query()
+            .identifiers(ids.clone())
+            .optimize_file_loading(optimize)
+            .execute()
             .unwrap();
         assert_eq!(bars.len(), 1, "optimize={optimize}");
         assert_eq!(bars[0].bar_type.instrument_id(), instrument_id);
@@ -1887,14 +1876,9 @@ fn test_rust_write_order_book_deltas() {
     catalog.write_to_parquet(&deltas, None, None, None).unwrap();
 
     let loaded = catalog
-        .query::<OrderBookDelta>(
-            Some(vec!["ETH/USDT.BINANCE".to_string()]),
-            None,
-            None,
-            None,
-            None,
-            true,
-        )
+        .query::<OrderBookDelta>()
+        .identifiers(vec!["ETH/USDT.BINANCE".to_string()])
+        .execute()
         .unwrap();
 
     assert_eq!(loaded.len(), deltas.len());
@@ -1921,14 +1905,9 @@ fn test_rust_write_order_book_depths() {
     catalog.write_to_parquet(&depths, None, None, None).unwrap();
 
     let loaded = catalog
-        .query::<OrderBookDepth>(
-            Some(vec!["ETH/USDT.BINANCE".to_string()]),
-            None,
-            None,
-            None,
-            None,
-            true,
-        )
+        .query::<OrderBookDepth>()
+        .identifiers(vec!["ETH/USDT.BINANCE".to_string()])
+        .execute()
         .unwrap();
 
     assert_eq!(loaded.len(), depths.len());
@@ -1972,14 +1951,9 @@ fn test_query_order_book_depth_fixture() {
     fs::copy(source, target).unwrap();
 
     let depths = catalog
-        .query::<OrderBookDepth>(
-            Some(vec!["AAPL.XNAS".to_string()]),
-            None,
-            None,
-            None,
-            None,
-            true,
-        )
+        .query::<OrderBookDepth>()
+        .identifiers(vec!["AAPL.XNAS".to_string()])
+        .execute()
         .unwrap();
 
     let expected = OrderBookDepth::new(
@@ -2027,14 +2001,9 @@ fn test_rust_write_empty_order_book_depths() {
         .write_to_parquet(std::slice::from_ref(&depth), None, None, None)
         .unwrap();
     let loaded = catalog
-        .query::<OrderBookDepth>(
-            Some(vec![depth.instrument_id.to_string()]),
-            None,
-            None,
-            None,
-            None,
-            true,
-        )
+        .query::<OrderBookDepth>()
+        .identifiers(vec![depth.instrument_id.to_string()])
+        .execute()
         .unwrap();
 
     assert_eq!(loaded, vec![depth]);
@@ -2512,12 +2481,8 @@ fn test_consolidate_catalog_by_period_merges_every_leaf_directory() {
     let quote_files = catalog
         .query_files(&NautilusDataType::QuoteTick.into(), None, None, None)
         .unwrap();
-    let bars = catalog
-        .query::<Bar>(None, None, None, None, None, true)
-        .unwrap();
-    let quotes = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let bars = catalog.query::<Bar>().execute().unwrap();
+    let quotes = catalog.query::<QuoteTick>().execute().unwrap();
     assert_eq!(bar_files.len(), 1);
     assert_eq!(quote_files.len(), 1);
     assert_eq!(bars, vec![create_bar(1000), create_bar(2000)]);
@@ -2695,14 +2660,12 @@ fn test_generic_query_quotes() {
 
     // query using generic typed data function
     let result = catalog
-        .query::<QuoteTick>(
-            Some(vec!["ETH/USDT.BINANCE".to_string()]),
-            Some(UnixNanos::from(500)),
-            Some(UnixNanos::from(2500)),
-            None,
-            None,
-            true, // optimize_file_loading=true (default)
-        )
+        .query::<QuoteTick>()
+        .identifiers(vec!["ETH/USDT.BINANCE".to_string()])
+        .start(UnixNanos::from(500))
+        .end(UnixNanos::from(2500))
+        .optimize_file_loading(true)
+        .execute()
         .unwrap();
     assert_eq!(result.len(), 2);
 
@@ -2722,14 +2685,12 @@ fn test_generic_query_bars() {
 
     // query using generic typed data function
     let result = catalog
-        .query::<Bar>(
-            Some(vec!["AUD/USD.SIM".to_string()]),
-            Some(UnixNanos::from(500)),
-            Some(UnixNanos::from(2500)),
-            None,
-            None,
-            true, // optimize_file_loading=true (default)
-        )
+        .query::<Bar>()
+        .identifiers(vec!["AUD/USD.SIM".to_string()])
+        .start(UnixNanos::from(500))
+        .end(UnixNanos::from(2500))
+        .optimize_file_loading(true)
+        .execute()
         .unwrap();
     assert_eq!(result.len(), 2);
 
@@ -2750,14 +2711,11 @@ fn test_write_data_enum_option_greeks_round_trip() {
         .unwrap();
 
     let result = catalog
-        .query::<OptionGreeks>(
-            Some(vec!["ETH/USDT.BINANCE".to_string()]),
-            Some(UnixNanos::from(500)),
-            Some(UnixNanos::from(2500)),
-            None,
-            None,
-            true,
-        )
+        .query::<OptionGreeks>()
+        .identifiers(vec!["ETH/USDT.BINANCE".to_string()])
+        .start(UnixNanos::from(500))
+        .end(UnixNanos::from(2500))
+        .execute()
         .unwrap();
 
     assert_eq!(result, greeks);
@@ -2781,11 +2739,11 @@ fn test_write_data_enum_funding_rates_round_trip() {
         .unwrap();
 
     let result = catalog
-        .funding_rates(
-            Some(vec!["ETH/USDT.BINANCE".to_string()]),
-            Some(UnixNanos::from(500)),
-            Some(UnixNanos::from(2500)),
-        )
+        .funding_rates()
+        .identifiers(vec!["ETH/USDT.BINANCE".to_string()])
+        .start(UnixNanos::from(500))
+        .end(UnixNanos::from(2500))
+        .execute()
         .unwrap();
 
     assert_eq!(result, funding_rates);
@@ -2806,10 +2764,14 @@ fn test_write_data_enum_groups_mixed_bar_types() {
         .unwrap();
 
     let audusd_result = catalog
-        .bars(Some(vec![audusd_bars[0].bar_type.to_string()]), None, None)
+        .bars()
+        .identifiers(vec![audusd_bars[0].bar_type.to_string()])
+        .execute()
         .unwrap();
     let index_result = catalog
-        .bars(Some(vec![index_bars[0].bar_type.to_string()]), None, None)
+        .bars()
+        .identifiers(vec![index_bars[0].bar_type.to_string()])
+        .execute()
         .unwrap();
 
     assert_eq!(audusd_result, audusd_bars);
@@ -2835,14 +2797,12 @@ fn test_generic_query_empty_result() {
 
     // query with no matching data
     let result = catalog
-        .query::<QuoteTick>(
-            Some(vec!["NONEXISTENT".to_string()]),
-            Some(UnixNanos::from(500)),
-            Some(UnixNanos::from(2500)),
-            None,
-            None,
-            true, // optimize_file_loading=true (default)
-        )
+        .query::<QuoteTick>()
+        .identifiers(vec!["NONEXISTENT".to_string()])
+        .start(UnixNanos::from(500))
+        .end(UnixNanos::from(2500))
+        .optimize_file_loading(true)
+        .execute()
         .unwrap();
     assert!(result.is_empty());
 }
@@ -2857,14 +2817,13 @@ fn test_generic_query_with_where_clause() {
 
     // query with WHERE clause
     let result = catalog
-        .query::<QuoteTick>(
-            Some(vec!["ETH/USDT.BINANCE".to_string()]),
-            Some(UnixNanos::from(500)),
-            Some(UnixNanos::from(2500)),
-            Some("ts_init >= TIMESTAMP '1970-01-01 00:00:00.000001500'"),
-            None,
-            true, // optimize_file_loading=true (default)
-        )
+        .query::<QuoteTick>()
+        .identifiers(vec!["ETH/USDT.BINANCE".to_string()])
+        .start(UnixNanos::from(500))
+        .end(UnixNanos::from(2500))
+        .where_clause("ts_init >= TIMESTAMP '1970-01-01 00:00:00.000001500'")
+        .optimize_file_loading(true)
+        .execute()
         .unwrap();
 
     // should only return the second quote
@@ -2977,7 +2936,9 @@ fn test_generic_consolidate_data_by_period_keeps_skipped_target() {
         .unwrap();
 
     let bars = catalog
-        .query::<Bar>(Some(vec![bar_type.clone()]), None, None, None, None, true)
+        .query::<Bar>()
+        .identifiers(vec![bar_type.clone()])
+        .execute()
         .unwrap();
     let timestamps: Vec<u64> = bars.iter().map(|bar| bar.ts_init.as_u64()).collect();
 
@@ -3147,7 +3108,10 @@ fn test_to_object_path_trailing_slash() {
     let base_dir = tmp.path().join("catalog");
     std::fs::create_dir_all(&base_dir).unwrap();
 
-    let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(&base_dir)
+        .build()
+        .unwrap();
 
     // Build a sample path under the catalog base
     let sample_path = format!(
@@ -3188,8 +3152,10 @@ fn test_to_object_path_trailing_slash() {
 #[cfg(feature = "cloud")]
 #[rstest]
 fn test_remote_to_object_path_preserves_base_path() {
-    let catalog =
-        ParquetDataCatalog::from_uri("s3://bucket/base/path", None, None, None, None).unwrap();
+    let catalog = ParquetDataCatalog::builder()
+        .uri("s3://bucket/base/path")
+        .build()
+        .unwrap();
 
     let relative = catalog.to_object_path("data/quotes/file.parquet").unwrap();
     assert_eq!(relative.as_ref(), "base/path/data/quotes/file.parquet");
@@ -3234,8 +3200,10 @@ fn test_remote_to_object_path_preserves_base_path() {
 #[cfg(feature = "cloud")]
 #[rstest]
 fn test_remote_to_object_path_rejects_cross_store_uri() {
-    let catalog =
-        ParquetDataCatalog::from_uri("s3://bucket/base/path", None, None, None, None).unwrap();
+    let catalog = ParquetDataCatalog::builder()
+        .uri("s3://bucket/base/path")
+        .build()
+        .unwrap();
 
     // Different bucket on the same scheme
     let cross_bucket = catalog.to_object_path("s3://other-bucket/data/quotes/file.parquet");
@@ -3263,7 +3231,9 @@ fn test_remote_to_object_path_rejects_cross_store_uri() {
 fn test_from_uri_rejects_base_path_that_paths_change() {
     let uri = "s3://test-bucket/préfix";
 
-    let error = ParquetDataCatalog::from_uri(uri, None, None, None, None)
+    let error = ParquetDataCatalog::builder()
+        .uri(uri)
+        .build()
         .err()
         .unwrap()
         .to_string();
@@ -3281,8 +3251,10 @@ fn test_from_uri_rejects_base_path_that_paths_change() {
 #[rstest]
 fn test_is_remote_uri() {
     // Test S3 URIs
-    let s3_catalog =
-        ParquetDataCatalog::from_uri("s3://bucket/path", None, None, None, None).unwrap();
+    let s3_catalog = ParquetDataCatalog::builder()
+        .uri("s3://bucket/path")
+        .build()
+        .unwrap();
     assert!(s3_catalog.is_remote_uri());
 }
 
@@ -3292,7 +3264,10 @@ fn test_extract_data_cls_and_identifier_from_path_moved() {
     let base_dir = tmp.path().join("catalog");
     std::fs::create_dir_all(&base_dir).unwrap();
 
-    let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(&base_dir)
+        .build()
+        .unwrap();
 
     // Test path with instrument ID
     let path_with_id = format!("{}/data/quotes/BTCUSD", base_dir.to_string_lossy());
@@ -3469,7 +3444,10 @@ fn test_make_path_custom_data_roundtrip() {
     let base_dir = tmp.path().join("catalog");
     std::fs::create_dir_all(&base_dir).unwrap();
 
-    let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(&base_dir)
+        .build()
+        .unwrap();
 
     let path_no_id = catalog.make_path_custom_data("MyCustomType", None).unwrap();
     assert!(path_no_id.contains("data/custom/MyCustomType"));
@@ -3506,7 +3484,10 @@ fn test_group_contiguous_intervals_moved() {
     let base_dir = tmp.path().join("catalog");
     std::fs::create_dir_all(&base_dir).unwrap();
 
-    let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(&base_dir)
+        .build()
+        .unwrap();
 
     // Legacy chunked files: gap of 1ns, one group regardless of period
     let intervals = vec![(1, 5), (6, 10), (11, 15)];
@@ -3572,7 +3553,10 @@ fn test_prepare_consolidation_queries_basic_moved() {
     let base_dir = tmp.path().join("catalog");
     std::fs::create_dir_all(&base_dir).unwrap();
 
-    let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(&base_dir)
+        .build()
+        .unwrap();
 
     // Test basic period consolidation
     let intervals = vec![(1000, 5000), (5001, 10000)];
@@ -3598,7 +3582,10 @@ fn test_prepare_consolidation_queries_with_splits_moved() {
     let base_dir = tmp.path().join("catalog");
     std::fs::create_dir_all(&base_dir).unwrap();
 
-    let catalog = ParquetDataCatalog::new(&base_dir, None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(&base_dir)
+        .build()
+        .unwrap();
 
     // Test with interval splitting
     // File: [1000, 5000], Request: start=2000, end=4000
@@ -3656,12 +3643,16 @@ fn test_prepare_consolidation_queries_with_splits_moved() {
 #[rstest]
 fn test_is_remote_uri_extended_moved() {
     // Test GCS URIs
-    let gcs_catalog =
-        ParquetDataCatalog::from_uri("gs://bucket/path", None, None, None, None).unwrap();
+    let gcs_catalog = ParquetDataCatalog::builder()
+        .uri("gs://bucket/path")
+        .build()
+        .unwrap();
     assert!(gcs_catalog.is_remote_uri());
 
-    let gcs2_catalog =
-        ParquetDataCatalog::from_uri("gcs://bucket/path", None, None, None, None).unwrap();
+    let gcs2_catalog = ParquetDataCatalog::builder()
+        .uri("gcs://bucket/path")
+        .build()
+        .unwrap();
     assert!(gcs2_catalog.is_remote_uri());
 
     // Test Azure URIs
@@ -3671,38 +3662,46 @@ fn test_is_remote_uri_extended_moved() {
             .cloned()
             .collect(),
     );
-    let azure_catalog =
-        ParquetDataCatalog::from_uri("az://container/path", azure_test_options, None, None, None)
-            .unwrap();
+    let azure_catalog = ParquetDataCatalog::builder()
+        .uri("az://container/path")
+        .maybe_storage_options(azure_test_options)
+        .build()
+        .unwrap();
     assert!(azure_catalog.is_remote_uri());
 
-    let abfs_catalog = ParquetDataCatalog::from_uri(
-        "abfs://container@account.dfs.core.windows.net/path",
-        None,
-        None,
-        None,
-        None,
-    )
-    .unwrap();
+    let abfs_catalog = ParquetDataCatalog::builder()
+        .uri("abfs://container@account.dfs.core.windows.net/path")
+        .build()
+        .unwrap();
     assert!(abfs_catalog.is_remote_uri());
 
     // Test HTTP URIs
-    let http_catalog =
-        ParquetDataCatalog::from_uri("http://example.com/path", None, None, None, None).unwrap();
+    let http_catalog = ParquetDataCatalog::builder()
+        .uri("http://example.com/path")
+        .build()
+        .unwrap();
     assert!(http_catalog.is_remote_uri());
 
-    let https_catalog =
-        ParquetDataCatalog::from_uri("https://example.com/path", None, None, None, None).unwrap();
+    let https_catalog = ParquetDataCatalog::builder()
+        .uri("https://example.com/path")
+        .build()
+        .unwrap();
     assert!(https_catalog.is_remote_uri());
 
     // Test local paths (should not be remote)
     let tmp = tempfile::tempdir().unwrap();
-    let local_catalog = ParquetDataCatalog::new(tmp.path(), None, None, None, None);
+    let local_catalog = ParquetDataCatalog::builder()
+        .uri(tmp.path())
+        .build()
+        .unwrap();
     assert!(!local_catalog.is_remote_uri());
 
     let tmp_file = tempfile::tempdir().unwrap();
     let file_uri = format!("file://{}", tmp_file.path().display());
-    let file_catalog = ParquetDataCatalog::from_uri(&file_uri, None, None, None, None).unwrap();
+    let file_catalog = ParquetDataCatalog::builder()
+        .uri(&file_uri)
+        .build()
+        .unwrap();
     assert!(!file_catalog.is_remote_uri());
 }
 
@@ -3710,8 +3709,10 @@ fn test_is_remote_uri_extended_moved() {
 #[rstest]
 fn test_reconstruct_full_uri_moved() {
     // Test S3 URI reconstruction
-    let s3_catalog =
-        ParquetDataCatalog::from_uri("s3://bucket/base/path", None, None, None, None).unwrap();
+    let s3_catalog = ParquetDataCatalog::builder()
+        .uri("s3://bucket/base/path")
+        .build()
+        .unwrap();
     let reconstructed = s3_catalog.reconstruct_full_uri("data/quotes/file.parquet");
     assert_eq!(
         reconstructed,
@@ -3719,8 +3720,10 @@ fn test_reconstruct_full_uri_moved() {
     );
 
     // Test GCS URI reconstruction
-    let gcs_catalog =
-        ParquetDataCatalog::from_uri("gs://bucket/base/path", None, None, None, None).unwrap();
+    let gcs_catalog = ParquetDataCatalog::builder()
+        .uri("gs://bucket/base/path")
+        .build()
+        .unwrap();
     let reconstructed = gcs_catalog.reconstruct_full_uri("data/trades/file.parquet");
     assert_eq!(
         reconstructed,
@@ -3734,16 +3737,19 @@ fn test_reconstruct_full_uri_moved() {
             .cloned()
             .collect(),
     );
-    let azure_catalog =
-        ParquetDataCatalog::from_uri("az://container/path", azure_test_options, None, None, None)
-            .unwrap();
+    let azure_catalog = ParquetDataCatalog::builder()
+        .uri("az://container/path")
+        .maybe_storage_options(azure_test_options)
+        .build()
+        .unwrap();
     let reconstructed = azure_catalog.reconstruct_full_uri("data/bars/file.parquet");
     assert_eq!(reconstructed, "az://container/path/data/bars/file.parquet");
 
     // Test HTTP URI reconstruction
-    let http_catalog =
-        ParquetDataCatalog::from_uri("https://example.com:9000/base/path", None, None, None, None)
-            .unwrap();
+    let http_catalog = ParquetDataCatalog::builder()
+        .uri("https://example.com:9000/base/path")
+        .build()
+        .unwrap();
     let reconstructed = http_catalog.reconstruct_full_uri("data/quotes/file.parquet");
     assert_eq!(
         reconstructed,
@@ -3751,14 +3757,10 @@ fn test_reconstruct_full_uri_moved() {
     );
 
     // Test ABFS URI reconstruction preserves the container in the authority
-    let abfs_catalog = ParquetDataCatalog::from_uri(
-        "abfs://container@account.dfs.core.windows.net/base/path",
-        None,
-        None,
-        None,
-        None,
-    )
-    .unwrap();
+    let abfs_catalog = ParquetDataCatalog::builder()
+        .uri("abfs://container@account.dfs.core.windows.net/base/path")
+        .build()
+        .unwrap();
     let reconstructed = abfs_catalog.reconstruct_full_uri("data/quotes/file.parquet");
     assert_eq!(
         reconstructed,
@@ -3776,7 +3778,10 @@ fn test_reconstruct_full_uri_moved() {
 
     // Test local path (should return full absolute path)
     let tmp = tempfile::tempdir().unwrap();
-    let local_catalog = ParquetDataCatalog::new(tmp.path(), None, None, None, None);
+    let local_catalog = ParquetDataCatalog::builder()
+        .uri(tmp.path())
+        .build()
+        .unwrap();
     let reconstructed = local_catalog.reconstruct_full_uri("data/quotes/file.parquet");
     let expected = format!("{}/data/quotes/file.parquet", tmp.path().display());
     assert_eq!(reconstructed, expected);
@@ -3796,9 +3801,7 @@ fn test_delete_data_range_complete_file_deletion() {
     catalog.write_to_parquet(&quotes, None, None, None).unwrap();
 
     // Verify initial state
-    let initial_data = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let initial_data = catalog.query::<QuoteTick>().execute().unwrap();
     assert_eq!(initial_data.len(), 2);
 
     // delete all data
@@ -3812,9 +3815,7 @@ fn test_delete_data_range_complete_file_deletion() {
         .unwrap();
 
     // verify deletion
-    let remaining_data = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let remaining_data = catalog.query::<QuoteTick>().execute().unwrap();
     assert_eq!(remaining_data.len(), 0);
 }
 
@@ -3851,9 +3852,7 @@ fn test_delete_data_range_removes_replay_identity_suffix() {
         )
         .unwrap();
 
-    let remaining = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let remaining = catalog.query::<QuoteTick>().execute().unwrap();
     assert!(remaining.is_empty());
     assert!(!suffixed.exists());
 }
@@ -4027,9 +4026,7 @@ fn test_delete_data_range_returns_error_when_file_cannot_be_removed() {
     catalog
         .write_to_parquet(&[create_quote_tick(1_000_000_000)], None, None, None)
         .unwrap();
-    let before = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let before = catalog.query::<QuoteTick>().execute().unwrap();
     assert_eq!(before.len(), 1);
 
     let inner = catalog.object_store.clone();
@@ -4053,9 +4050,7 @@ fn test_delete_data_range_returns_error_when_file_cannot_be_removed() {
     );
 
     catalog.object_store = inner;
-    let remaining = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let remaining = catalog.query::<QuoteTick>().execute().unwrap();
     assert_eq!(remaining.len(), 1);
 }
 
@@ -4111,9 +4106,7 @@ fn test_delete_data_range_without_identifier_removes_every_file() {
         .delete_data_range(&NautilusDataType::QuoteTick, None, None, None)
         .unwrap();
 
-    let remaining = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let remaining = catalog.query::<QuoteTick>().execute().unwrap();
     assert!(remaining.is_empty());
 }
 
@@ -4142,9 +4135,7 @@ fn test_delete_data_range_partial_file_overlap_start() {
         .unwrap();
 
     // verify remaining data
-    let remaining_data = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let remaining_data = catalog.query::<QuoteTick>().execute().unwrap();
     assert_eq!(remaining_data.len(), 2);
     assert_eq!(remaining_data[0].ts_init.as_u64(), 2_000_000_000);
     assert_eq!(remaining_data[1].ts_init.as_u64(), 3_000_000_000);
@@ -4180,9 +4171,7 @@ fn test_delete_data_range_merges_splits_sharing_a_file() {
             Some(UnixNanos::from(3)),
         )
         .unwrap();
-    let remaining = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let remaining = catalog.query::<QuoteTick>().execute().unwrap();
 
     assert_eq!(
         catalog_relative_paths(&temp_dir),
@@ -4277,9 +4266,7 @@ fn test_delete_data_range_without_identifier_writes_splits_per_directory() {
     );
 
     delete_quotes(&mut catalog, None, 3, 3).unwrap();
-    let remaining = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let remaining = catalog.query::<QuoteTick>().execute().unwrap();
 
     assert_eq!(
         catalog_relative_paths(&temp_dir),
@@ -4356,9 +4343,7 @@ fn test_delete_data_range_keeps_split_target_holding_rows() {
     write_quotes_over(&catalog, &[create_quote_tick_for(eth, 1, 1)], 0, 2);
 
     delete_quotes(&mut catalog, Some("ETH/USDT.BINANCE"), 3, 3).unwrap();
-    let remaining = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let remaining = catalog.query::<QuoteTick>().execute().unwrap();
 
     assert_eq!(
         catalog_relative_paths(&temp_dir),
@@ -4481,9 +4466,7 @@ fn test_delete_data_range_partial_file_overlap_end() {
         .unwrap();
 
     // verify remaining data
-    let remaining_data = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let remaining_data = catalog.query::<QuoteTick>().execute().unwrap();
     assert_eq!(remaining_data.len(), 2);
     assert_eq!(remaining_data[0].ts_init.as_u64(), 1_000_000_000);
     assert_eq!(remaining_data[1].ts_init.as_u64(), 2_000_000_000);
@@ -4515,9 +4498,7 @@ fn test_delete_data_range_partial_file_overlap_middle() {
         .unwrap();
 
     // verify remaining data
-    let remaining_data = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let remaining_data = catalog.query::<QuoteTick>().execute().unwrap();
     assert_eq!(remaining_data.len(), 2);
     assert_eq!(remaining_data[0].ts_init.as_u64(), 1_000_000_000);
     assert_eq!(remaining_data[1].ts_init.as_u64(), 4_000_000_000);
@@ -4539,9 +4520,7 @@ fn test_delete_data_range_no_data() {
     assert!(result.is_ok());
 
     // Verify no data
-    let remaining_data = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let remaining_data = catalog.query::<QuoteTick>().execute().unwrap();
     assert_eq!(remaining_data.len(), 0);
 }
 
@@ -4566,9 +4545,7 @@ fn test_delete_data_range_no_intersection() {
         .unwrap();
 
     // verify all existing data remains
-    let remaining_data = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let remaining_data = catalog.query::<QuoteTick>().execute().unwrap();
     assert_eq!(remaining_data.len(), 1);
     assert_eq!(remaining_data[0].ts_init.as_u64(), 2_000_000_000);
 }
@@ -4588,12 +4565,8 @@ fn test_delete_catalog_range_multiple_data_types() {
     catalog.write_to_parquet(&bars, None, None, None).unwrap();
 
     // Verify initial state
-    let initial_quotes = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
-    let initial_bars = catalog
-        .query::<Bar>(None, None, None, None, None, true)
-        .unwrap();
+    let initial_quotes = catalog.query::<QuoteTick>().execute().unwrap();
+    let initial_bars = catalog.query::<Bar>().execute().unwrap();
     assert_eq!(initial_quotes.len(), 2);
     assert_eq!(initial_bars.len(), 2);
 
@@ -4606,12 +4579,8 @@ fn test_delete_catalog_range_multiple_data_types() {
         .unwrap();
 
     // verify deletion from both data types within the range
-    let remaining_quotes = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
-    let remaining_bars = catalog
-        .query::<Bar>(None, None, None, None, None, true)
-        .unwrap();
+    let remaining_quotes = catalog.query::<QuoteTick>().execute().unwrap();
+    let remaining_bars = catalog.query::<Bar>().execute().unwrap();
 
     // Should keep quotes outside the deletion range
     assert_eq!(remaining_quotes.len(), 1);
@@ -4634,20 +4603,8 @@ fn test_delete_catalog_range_complete_deletion() {
     catalog.write_to_parquet(&bars, None, None, None).unwrap();
 
     // Verify initial state
-    assert_eq!(
-        catalog
-            .query::<QuoteTick>(None, None, None, None, None, true)
-            .unwrap()
-            .len(),
-        1
-    );
-    assert_eq!(
-        catalog
-            .query::<Bar>(None, None, None, None, None, true)
-            .unwrap()
-            .len(),
-        1
-    );
+    assert_eq!(catalog.query::<QuoteTick>().execute().unwrap().len(), 1);
+    assert_eq!(catalog.query::<Bar>().execute().unwrap().len(), 1);
 
     // delete all data
     catalog
@@ -4658,20 +4615,8 @@ fn test_delete_catalog_range_complete_deletion() {
         .unwrap();
 
     // should have no data left
-    assert_eq!(
-        catalog
-            .query::<QuoteTick>(None, None, None, None, None, true)
-            .unwrap()
-            .len(),
-        0
-    );
-    assert_eq!(
-        catalog
-            .query::<Bar>(None, None, None, None, None, true)
-            .unwrap()
-            .len(),
-        0
-    );
+    assert_eq!(catalog.query::<QuoteTick>().execute().unwrap().len(), 0);
+    assert_eq!(catalog.query::<Bar>().execute().unwrap().len(), 0);
 }
 
 #[rstest]
@@ -4686,20 +4631,8 @@ fn test_delete_catalog_range_empty_catalog() {
 
     // should not raise any errors
     assert!(result.is_ok());
-    assert_eq!(
-        catalog
-            .query::<QuoteTick>(None, None, None, None, None, true)
-            .unwrap()
-            .len(),
-        0
-    );
-    assert_eq!(
-        catalog
-            .query::<Bar>(None, None, None, None, None, true)
-            .unwrap()
-            .len(),
-        0
-    );
+    assert_eq!(catalog.query::<QuoteTick>().execute().unwrap().len(), 0);
+    assert_eq!(catalog.query::<Bar>().execute().unwrap().len(), 0);
 }
 
 #[rstest]
@@ -4727,12 +4660,8 @@ fn test_delete_catalog_range_open_boundaries() {
         .unwrap();
 
     // should keep data after end boundary
-    let remaining_quotes = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
-    let remaining_bars = catalog
-        .query::<Bar>(None, None, None, None, None, true)
-        .unwrap();
+    let remaining_quotes = catalog.query::<QuoteTick>().execute().unwrap();
+    let remaining_bars = catalog.query::<Bar>().execute().unwrap();
 
     assert_eq!(remaining_quotes.len(), 1);
     assert_eq!(remaining_quotes[0].ts_init.as_u64(), 3_000_000_000);
@@ -4826,9 +4755,7 @@ fn test_delete_data_range_nanosecond_precision_boundaries() {
         .unwrap();
 
     // should keep only first and last timestamps
-    let remaining_data = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let remaining_data = catalog.query::<QuoteTick>().execute().unwrap();
     assert_eq!(remaining_data.len(), 2);
     assert_eq!(remaining_data[0].ts_init.as_u64(), 1_000_000_000);
     assert_eq!(remaining_data[1].ts_init.as_u64(), 1_000_000_003);
@@ -4861,9 +4788,7 @@ fn test_delete_data_range_single_file_double_split() {
         .unwrap();
 
     // should keep data before and after deletion range
-    let remaining_data = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let remaining_data = catalog.query::<QuoteTick>().execute().unwrap();
     assert_eq!(remaining_data.len(), 4);
 
     let timestamps: Vec<u64> = remaining_data.iter().map(|q| q.ts_init.as_u64()).collect();
@@ -4897,9 +4822,7 @@ fn test_delete_data_range_saturating_arithmetic_edge_cases() {
         .unwrap();
 
     // should keep only timestamp 2
-    let remaining_data = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let remaining_data = catalog.query::<QuoteTick>().execute().unwrap();
     assert_eq!(remaining_data.len(), 1);
     assert_eq!(remaining_data[0].ts_init.as_u64(), 2);
 }
@@ -6113,7 +6036,10 @@ fn test_rust_custom_data_remote_query_registers_object_store() {
 
     let temp_dir = TempDir::new().unwrap();
     let local_store = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
-    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
     catalog.base_path = "catalog".to_string();
     catalog.original_uri = "s3://test-bucket/catalog".to_string();
     catalog.object_store = Arc::new(local_store);
@@ -7421,39 +7347,27 @@ fn test_query_repeated_calls() {
     catalog.write_to_parquet(&quotes, None, None, None).unwrap();
 
     let result1 = catalog
-        .query::<QuoteTick>(
-            Some(vec!["ETH/USDT.BINANCE".to_string()]),
-            None,
-            None,
-            None,
-            None,
-            true, // optimize_file_loading=true (default)
-        )
+        .query::<QuoteTick>()
+        .identifiers(vec!["ETH/USDT.BINANCE".to_string()])
+        .optimize_file_loading(true)
+        .execute()
         .unwrap();
     assert_eq!(result1.len(), 2);
 
     // This was returning empty before the fix
     let result2 = catalog
-        .query::<QuoteTick>(
-            Some(vec!["ETH/USDT.BINANCE".to_string()]),
-            None,
-            None,
-            None,
-            None,
-            true, // optimize_file_loading=true (default)
-        )
+        .query::<QuoteTick>()
+        .identifiers(vec!["ETH/USDT.BINANCE".to_string()])
+        .optimize_file_loading(true)
+        .execute()
         .unwrap();
     assert_eq!(result2.len(), 2);
 
     let result3 = catalog
-        .query::<QuoteTick>(
-            Some(vec!["ETH/USDT.BINANCE".to_string()]),
-            None,
-            None,
-            None,
-            None,
-            true, // optimize_file_loading=true (default)
-        )
+        .query::<QuoteTick>()
+        .identifiers(vec!["ETH/USDT.BINANCE".to_string()])
+        .optimize_file_loading(true)
+        .execute()
         .unwrap();
     assert_eq!(result3.len(), 2);
 
@@ -8307,7 +8221,10 @@ fn test_instrument_roundtrip_with_info_params() {
 #[rstest]
 fn test_write_instruments_appends_time_series_versions_for_same_instrument() {
     let temp_dir = TempDir::new().unwrap();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     let base = audusd_sim();
     let base_id = base.id;
@@ -8359,7 +8276,10 @@ fn test_write_instruments_appends_time_series_versions_for_same_instrument() {
 #[rstest]
 fn test_data_catalog_instruments_applies_where_clause() {
     let temp_dir = TempDir::new().unwrap();
-    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     let mut instrument_v1 = audusd_sim();
     let instrument_id = instrument_v1.id;
@@ -8401,7 +8321,10 @@ fn test_instrument_family_coverage_spans_every_class(
     #[case] equity_ts: u64,
 ) {
     let temp_dir = TempDir::new().unwrap();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     let mut currency_pair = audusd_sim();
     currency_pair.ts_event = UnixNanos::from(currency_pair_ts);
@@ -8458,7 +8381,10 @@ fn test_instrument_family_coverage_spans_every_class(
 #[rstest]
 fn test_instrument_family_file_operations_span_every_class() {
     let temp_dir = TempDir::new().unwrap();
-    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     let currency_pair_id = audusd_sim().id.to_string();
     let equity_id = equity_aapl().id.to_string();
@@ -8548,7 +8474,10 @@ fn test_instrument_family_file_operations_span_every_class() {
 #[rstest]
 fn test_list_instruments_aggregate_reports_shared_identifier_once() {
     let temp_dir = TempDir::new().unwrap();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
     let currency_pair = audusd_sim();
     let shared_id = currency_pair.id;
     let mut equity = equity_aapl();
@@ -8580,7 +8509,10 @@ fn test_consolidate_data_by_period_rejects_non_data_selectors(
     #[case] display: &str,
 ) {
     let temp_dir = TempDir::new().unwrap();
-    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     let error = catalog
         .consolidate_data_by_period(&data_type, None, None, None, None, None)
@@ -8603,7 +8535,10 @@ fn test_extend_file_name_extends_every_class_holding_the_identifier(
     #[case] currency_pair_end: u64,
 ) {
     let temp_dir = TempDir::new().unwrap();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     let mut currency_pair = audusd_sim();
     let shared_id = currency_pair.id;
@@ -8731,7 +8666,10 @@ fn test_instrument_family_class_filter_applies_to_catalog_readers(
 #[rstest]
 fn test_query_metadata_honors_the_instrument_class_filter() {
     let temp_dir = TempDir::new().unwrap();
-    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
     let currency_pair = audusd_sim();
     let equity = equity_aapl();
     let equity_id = equity.id.to_string();
@@ -8762,7 +8700,10 @@ fn test_query_metadata_honors_the_instrument_class_filter() {
 #[rstest]
 fn test_write_instruments_groups_by_type_and_id_before_encoding() {
     let temp_dir = TempDir::new().unwrap();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     let currency_pair = audusd_sim();
     let shared_id = currency_pair.id;
@@ -9145,14 +9086,10 @@ fn test_decimal_price_where_clause_prunes_disjoint_files() {
     );
 
     let data = catalog
-        .query::<QuoteTick>(
-            Some(vec![instrument_id.to_string()]),
-            None,
-            None,
-            Some("bid_price > 50"),
-            None,
-            true,
-        )
+        .query::<QuoteTick>()
+        .identifiers(vec![instrument_id.to_string()])
+        .where_clause("bid_price > 50")
+        .execute()
         .map(|rows| rows.into_iter().map(Data::from).map(Ok::<_, anyhow::Error>))
         .unwrap()
         .collect::<anyhow::Result<Vec<_>>>()
@@ -9247,7 +9184,10 @@ fn test_catalog_query_multiple_instruments_table_naming() {
     // This verifies the table naming fix for identifier-dependent table names
 
     let temp_dir = TempDir::new().unwrap();
-    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     // Create quote ticks for multiple instruments with different identifier patterns
     let eurusd_quotes = create_quote_ticks_for_instrument("EUR/USD.SIM", 1000, 3);
@@ -9273,7 +9213,9 @@ fn test_catalog_query_multiple_instruments_table_naming() {
     ];
 
     let result = catalog
-        .query::<QuoteTick>(Some(instrument_ids), None, None, None, None, true)
+        .query::<QuoteTick>()
+        .identifiers(instrument_ids)
+        .execute()
         .map(|rows| rows.into_iter().map(Data::from).map(Ok::<_, anyhow::Error>));
     assert!(
         result.is_ok(),
@@ -9310,7 +9252,10 @@ fn test_catalog_query_multiple_instruments_table_naming() {
 fn test_query_directory_based_registration() {
     // Test that directory-based registration (optimize_file_loading=true) reads all files in directory
     let temp_dir = TempDir::new().unwrap();
-    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     // Create multiple batches of quotes for the same instrument with disjoint timestamp ranges
     // Each batch needs non-overlapping timestamps to create separate files
@@ -9326,14 +9271,10 @@ fn test_query_directory_based_registration() {
 
     // Query with directory-based registration (default)
     let result = catalog
-        .query::<QuoteTick>(
-            Some(vec![instrument_id.to_string()]),
-            None,
-            None,
-            None,
-            None,
-            true, // optimize_file_loading = true (directory-based)
-        )
+        .query::<QuoteTick>()
+        .identifiers(vec![instrument_id.to_string()])
+        .optimize_file_loading(true)
+        .execute()
         .map(|rows| rows.into_iter().map(Data::from).map(Ok::<_, anyhow::Error>));
 
     assert!(
@@ -9354,7 +9295,10 @@ fn test_query_directory_based_registration() {
 #[rstest]
 fn test_query_directory_based_registration_preserves_equal_timestamp_order() {
     let temp_dir = TempDir::new().unwrap();
-    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     catalog
         .write_to_parquet(
@@ -9374,7 +9318,8 @@ fn test_query_directory_based_registration_preserves_equal_timestamp_order() {
         .unwrap();
 
     let result = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
+        .query::<QuoteTick>()
+        .execute()
         .map(|rows| rows.into_iter().map(Data::from).map(Ok::<_, anyhow::Error>))
         .unwrap();
 
@@ -9392,7 +9337,10 @@ fn test_query_directory_based_registration_preserves_equal_timestamp_order() {
 fn test_query_file_based_registration() {
     // Test that file-based registration (optimize_file_loading=false) only reads specified files
     let temp_dir = TempDir::new().unwrap();
-    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     // Create multiple batches of quotes for the same instrument with disjoint timestamp ranges
     let instrument_id = "GBP/USD.SIM";
@@ -9419,14 +9367,11 @@ fn test_query_file_based_registration() {
     // Query with file-based registration, specifying only the first file
     let selected_files = vec![all_files[0].clone()];
     let result = catalog
-        .query::<QuoteTick>(
-            Some(vec![instrument_id.to_string()]),
-            None,
-            None,
-            None,
-            Some(selected_files),
-            false, // optimize_file_loading = false (file-based)
-        )
+        .query::<QuoteTick>()
+        .identifiers(vec![instrument_id.to_string()])
+        .files(selected_files)
+        .optimize_file_loading(false)
+        .execute()
         .map(|rows| rows.into_iter().map(Data::from).map(Ok::<_, anyhow::Error>));
 
     assert!(
@@ -9446,7 +9391,10 @@ fn test_query_file_based_registration() {
 fn test_query_directory_based_vs_file_based() {
     // Test that directory-based and file-based registration produce same results when all files are specified
     let temp_dir = TempDir::new().unwrap();
-    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     // Create multiple batches of quotes with disjoint timestamp ranges
     let instrument_id = "AUD/USD.SIM";
@@ -9468,27 +9416,20 @@ fn test_query_directory_based_vs_file_based() {
 
     // Query with directory-based registration
     let result_dir = catalog
-        .query::<QuoteTick>(
-            Some(vec![instrument_id.to_string()]),
-            None,
-            None,
-            None,
-            None,
-            true, // directory-based
-        )
+        .query::<QuoteTick>()
+        .identifiers(vec![instrument_id.to_string()])
+        .optimize_file_loading(true)
+        .execute()
         .map(|rows| rows.into_iter().map(Data::from).map(Ok::<_, anyhow::Error>));
     let data_dir: Vec<Data> = result_dir.unwrap().collect::<anyhow::Result<_>>().unwrap();
 
     // Query with file-based registration (all files)
     let result_file = catalog
-        .query::<QuoteTick>(
-            Some(vec![instrument_id.to_string()]),
-            None,
-            None,
-            None,
-            Some(all_files),
-            false, // file-based
-        )
+        .query::<QuoteTick>()
+        .identifiers(vec![instrument_id.to_string()])
+        .files(all_files)
+        .optimize_file_loading(false)
+        .execute()
         .map(|rows| rows.into_iter().map(Data::from).map(Ok::<_, anyhow::Error>));
     let data_file: Vec<Data> = result_file.unwrap().collect::<anyhow::Result<_>>().unwrap();
 
@@ -9511,7 +9452,9 @@ fn test_query_directory_with_files_at_different_precisions(#[case] optimize_file
         .unwrap();
 
     let quotes = catalog
-        .query::<QuoteTick>(None, None, None, None, None, optimize_file_loading)
+        .query::<QuoteTick>()
+        .optimize_file_loading(optimize_file_loading)
+        .execute()
         .unwrap();
 
     assert_eq!(
@@ -9535,7 +9478,9 @@ fn test_query_directory_with_files_at_different_precisions_reads_only_listed_fil
         .unwrap();
 
     let quotes = catalog
-        .query::<QuoteTick>(None, None, None, None, Some(vec![files[0].clone()]), true)
+        .query::<QuoteTick>()
+        .files(vec![files[0].clone()])
+        .execute()
         .unwrap();
 
     assert_eq!(quotes, expected[..2]);
@@ -9554,7 +9499,9 @@ fn test_query_directory_registration_reads_unlisted_files() {
         .unwrap();
 
     let quotes = catalog
-        .query::<QuoteTick>(None, None, None, None, Some(vec![files[0].clone()]), true)
+        .query::<QuoteTick>()
+        .files(vec![files[0].clone()])
+        .execute()
         .unwrap();
 
     assert_eq!(quotes, [first, second].concat());
@@ -9565,7 +9512,10 @@ fn test_query_rejects_listed_file_without_directory() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
 
     let error = catalog
-        .query::<QuoteTick>(None, None, None, None, Some(vec![String::new()]), false)
+        .query::<QuoteTick>()
+        .files(vec![String::new()])
+        .optimize_file_loading(false)
+        .execute()
         .unwrap_err();
 
     assert_eq!(error.to_string(), "Cannot extract directory from ''");
@@ -9852,8 +9802,9 @@ fn test_query_directory_based_registration_with_cloud_uri() {
     // It verifies that the URI reconstruction and directory path handling works correctly
 
     // Create a catalog with an S3 URI (won't actually connect, but tests the logic)
-    let s3_catalog_result =
-        ParquetDataCatalog::from_uri("s3://test-bucket/catalog", None, None, None, None);
+    let s3_catalog_result = ParquetDataCatalog::builder()
+        .uri("s3://test-bucket/catalog")
+        .build();
 
     // The catalog creation might fail if cloud features aren't properly configured,
     // but we can at least verify the URI detection works
@@ -9885,7 +9836,10 @@ fn test_query_directory_based_registration_with_cloud_uri() {
 
     // Also test with a local path to ensure directory-based registration works there too
     let temp_dir = TempDir::new().unwrap();
-    let mut local_catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let mut local_catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     // Create multiple batches of quotes with disjoint timestamp ranges
     let instrument_id = "USD/JPY.SIM";
@@ -9902,14 +9856,10 @@ fn test_query_directory_based_registration_with_cloud_uri() {
 
     // Verify that directory-based registration works with local paths
     let result = local_catalog
-        .query::<QuoteTick>(
-            Some(vec![instrument_id.to_string()]),
-            None,
-            None,
-            None,
-            None,
-            true, // optimize_file_loading = true (directory-based)
-        )
+        .query::<QuoteTick>()
+        .identifiers(vec![instrument_id.to_string()])
+        .optimize_file_loading(true)
+        .execute()
         .map(|rows| rows.into_iter().map(Data::from).map(Ok::<_, anyhow::Error>));
 
     assert!(
@@ -9978,14 +9928,9 @@ fn test_delta_batches_share_catalog_write_dispatch(#[case] enum_writer: bool) {
 
     for (instrument_id, expected) in ids.into_iter().zip(expected) {
         let actual = catalog
-            .query::<OrderBookDelta>(
-                Some(vec![instrument_id.to_string()]),
-                None,
-                None,
-                None,
-                None,
-                true,
-            )
+            .query::<OrderBookDelta>()
+            .identifiers(vec![instrument_id.to_string()])
+            .execute()
             .unwrap();
         assert_eq!(
             serde_json::to_value(actual).unwrap(),
@@ -10150,9 +10095,7 @@ fn test_find_leaf_data_directories_keeps_prefix_related_siblings() {
 
     let leaves = catalog.find_leaf_data_directories().unwrap();
     catalog.delete_catalog_range(None, None).unwrap();
-    let remaining = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let remaining = catalog.query::<QuoteTick>().execute().unwrap();
 
     assert_eq!(
         leaves,
@@ -10233,7 +10176,9 @@ fn test_query_bars_with_mixed_bar_type_and_instrument_id_identifiers() {
     ];
 
     let bars = catalog
-        .query::<Bar>(Some(identifiers.clone()), None, None, None, None, true)
+        .query::<Bar>()
+        .identifiers(identifiers.clone())
+        .execute()
         .unwrap();
     let all_files = catalog
         .get_file_list_from_data_cls(&NautilusDataType::Bar.into())
@@ -10355,7 +10300,7 @@ fn test_consolidation_of_non_ascii_identifier_replaces_source_files(
     }
     .unwrap();
 
-    let quotes: Vec<QuoteTick> = catalog.query(None, None, None, None, None, true).unwrap();
+    let quotes: Vec<QuoteTick> = catalog.query().execute().unwrap();
 
     assert_eq!(
         non_ascii_quote_keys(&catalog),
@@ -10419,7 +10364,7 @@ fn test_delete_catalog_range_of_non_ascii_identifier(#[values(false, true)] remo
         .delete_catalog_range(Some(UnixNanos::from(4_000)), None)
         .unwrap();
 
-    let quotes: Vec<QuoteTick> = catalog.query(None, None, None, None, None, true).unwrap();
+    let quotes: Vec<QuoteTick> = catalog.query().execute().unwrap();
 
     assert_eq!(
         non_ascii_quote_keys(&catalog),
@@ -10742,9 +10687,7 @@ fn test_raw_consolidation_delete_failure_keeps_rows_and_retries(
     let error = catalog
         .consolidate_data(&data_type, Some(&identifier), None, None, Some(false), None)
         .unwrap_err();
-    let actual = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let actual = catalog.query::<QuoteTick>().execute().unwrap();
     let query = CatalogQuery::new(NautilusDataType::QuoteTick);
     let mut session = CatalogReader::query_batch_session(&mut catalog, &query, Some(1)).unwrap();
     let mut streamed = Vec::new();
@@ -10762,9 +10705,7 @@ fn test_raw_consolidation_delete_failure_keeps_rows_and_retries(
     catalog
         .consolidate_data(&data_type, Some(&identifier), None, None, None, None)
         .unwrap();
-    let retried = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let retried = catalog.query::<QuoteTick>().execute().unwrap();
     let files = catalog
         .list_parquet_files(&catalog.make_path("quotes", Some(&identifier)).unwrap())
         .unwrap();
@@ -10819,16 +10760,12 @@ fn test_raw_consolidation_publish_failure_preserves_rows(
     let error = catalog
         .consolidate_data(&data_type, Some(&identifier), None, None, Some(false), None)
         .unwrap_err();
-    let actual = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let actual = catalog.query::<QuoteTick>().execute().unwrap();
     catalog.object_store = store;
     catalog
         .consolidate_data(&data_type, Some(&identifier), None, None, Some(false), None)
         .unwrap();
-    let retried = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let retried = catalog.query::<QuoteTick>().execute().unwrap();
 
     assert!(error.to_string().contains("injected publish failure"));
     assert_eq!(actual, rows);
@@ -10857,16 +10794,12 @@ fn test_raw_consolidation_retry_when_target_is_an_input() {
     let error = catalog
         .consolidate_data(&data_type, Some(&identifier), None, None, Some(false), None)
         .unwrap_err();
-    let actual = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let actual = catalog.query::<QuoteTick>().execute().unwrap();
     catalog.object_store = store;
     catalog
         .consolidate_data(&data_type, Some(&identifier), None, None, None, None)
         .unwrap();
-    let retried = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let retried = catalog.query::<QuoteTick>().execute().unwrap();
 
     assert!(error.to_string().contains("injected delete failure"));
     assert_eq!(actual, rows);
@@ -10906,7 +10839,9 @@ fn test_raw_consolidation_pending_cleanup_precedes_mutations(
         .consolidate_data(&data_type, None, None, None, None, None)
         .unwrap_err();
     let visible = catalog
-        .query::<QuoteTick>(Some(vec![identifier.clone()]), None, None, None, None, true)
+        .query::<QuoteTick>()
+        .identifiers(vec![identifier.clone()])
+        .execute()
         .unwrap();
     catalog.object_store = store;
     let mut added = create_quote_tick(10);
@@ -10939,9 +10874,7 @@ fn test_raw_consolidation_pending_cleanup_precedes_mutations(
         _ => unreachable!(),
     };
 
-    let actual = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let actual = catalog.query::<QuoteTick>().execute().unwrap();
 
     let objects = catalog
         .execute_async(|| async {
@@ -11008,16 +10941,12 @@ fn test_raw_consolidation_recovery_preserves_replaced_source() {
         })
         .unwrap();
 
-    let mut before = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let mut before = catalog.query::<QuoteTick>().execute().unwrap();
     catalog.object_store = store;
     catalog
         .consolidate_data(&data_type, Some(&identifier), None, None, Some(false), None)
         .unwrap();
-    let mut after = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let mut after = catalog.query::<QuoteTick>().execute().unwrap();
     let mut expected = [rows.to_vec(), replaced.to_vec()].concat();
     for values in [&mut expected, &mut before, &mut after] {
         values.sort_by_key(|row| (row.ts_init, row.bid_size.as_decimal()));
@@ -11050,9 +10979,7 @@ fn test_raw_consolidation_respects_catalog_storage_prefix(#[case] prefix: &str) 
         failure: StoreFailure::ReadOutside(ObjectPath::from(prefix)),
     });
 
-    let before = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let before = catalog.query::<QuoteTick>().execute().unwrap();
     catalog
         .consolidate_data(
             &NautilusDataType::QuoteTick.into(),
@@ -11063,9 +10990,7 @@ fn test_raw_consolidation_respects_catalog_storage_prefix(#[case] prefix: &str) 
             None,
         )
         .unwrap();
-    let after = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let after = catalog.query::<QuoteTick>().execute().unwrap();
 
     assert_eq!(before, rows);
     assert_eq!(after, rows);
@@ -11095,16 +11020,12 @@ fn test_raw_consolidation_recovers_versioned_sources() {
     let error = catalog
         .consolidate_data(&data_type, None, None, None, None, None)
         .unwrap_err();
-    let before = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let before = catalog.query::<QuoteTick>().execute().unwrap();
     deletes_left.store(usize::MAX, Ordering::SeqCst);
     catalog
         .consolidate_data(&data_type, None, None, None, None, None)
         .unwrap();
-    let after = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let after = catalog.query::<QuoteTick>().execute().unwrap();
     let files = catalog
         .list_parquet_files(&catalog.make_path("quotes", None).unwrap())
         .unwrap();
@@ -11130,7 +11051,7 @@ fn test_query_with_explicit_local_paths(
     let directory = TempDir::new().unwrap();
     let root = directory.path().join("catalog space");
     fs::create_dir_all(&root).unwrap();
-    let mut catalog = ParquetDataCatalog::new(&root, None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder().uri(&root).build().unwrap();
     let mut rows = [1, 2].map(create_quote_tick);
     for row in &mut rows {
         row.instrument_id = InstrumentId::from(NON_ASCII_IDENTIFIER);
@@ -11163,7 +11084,10 @@ fn test_query_with_explicit_local_paths(
         .collect();
 
     let actual = catalog
-        .query::<QuoteTick>(None, None, None, None, Some(uris), optimize_file_loading)
+        .query::<QuoteTick>()
+        .files(uris)
+        .optimize_file_loading(optimize_file_loading)
+        .execute()
         .unwrap();
 
     assert_eq!(actual, rows);
@@ -11263,14 +11187,9 @@ fn test_raw_consolidation_preserves_identifier_partitions(#[values(false, true)]
         expected_files.push(path.to_string());
         actual_rows.push(
             catalog
-                .query::<QuoteTick>(
-                    Some(vec![identifier.to_string()]),
-                    None,
-                    None,
-                    None,
-                    None,
-                    true,
-                )
+                .query::<QuoteTick>()
+                .identifiers(vec![identifier.to_string()])
+                .execute()
                 .unwrap(),
         );
     }
@@ -11285,7 +11204,10 @@ fn test_raw_consolidation_preserves_identifier_partitions(#[values(false, true)]
 #[rstest]
 fn test_colon_identifier_listing_get_intervals_and_consolidation() {
     let root = tempfile::tempdir().unwrap();
-    let mut catalog = ParquetDataCatalog::new(root.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(root.path())
+        .build()
+        .unwrap();
     let id = "io:ANTH-USD-PERP.HYPERLIQUID";
 
     let trades = [10_000u64, 20_000].map(|ts| {
@@ -11330,7 +11252,9 @@ fn test_colon_identifier_listing_get_intervals_and_consolidation() {
     assert_eq!(after_files.len(), 1);
 
     let trades_after_first = catalog
-        .trade_ticks(Some(vec![id.into()]), None, None)
+        .trades()
+        .identifiers(vec![id.into()])
+        .execute()
         .unwrap();
     assert_eq!(trades_after_first, trades);
 
@@ -11345,7 +11269,9 @@ fn test_colon_identifier_listing_get_intervals_and_consolidation() {
     assert_eq!(after_second_files.len(), 1);
 
     let trades_after_second = catalog
-        .trade_ticks(Some(vec![id.into()]), None, None)
+        .trades()
+        .identifiers(vec![id.into()])
+        .execute()
         .unwrap();
     assert_eq!(trades_after_second, trades);
 }

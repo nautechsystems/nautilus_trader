@@ -297,7 +297,7 @@ def _assert_option_greeks(df) -> None:
     [
         (
             NautilusDataType.QuoteTick,
-            "write_quote_ticks",
+            "write_quotes",
             lambda: TestDataProviderPyo3.quote_tick(ts_event=10, ts_init=11),
             [
                 "instrument_id",
@@ -312,7 +312,7 @@ def _assert_option_greeks(df) -> None:
         ),
         (
             NautilusDataType.TradeTick,
-            "write_trade_ticks",
+            "write_trades",
             lambda: TestDataProviderPyo3.trade_tick(ts_event=20, ts_init=21),
             [
                 "instrument_id",
@@ -475,7 +475,7 @@ def test_query_catalog_defaults_to_pandas(tmp_path: Path) -> None:
         tmp_path,
         "parquet",
         NautilusDataType.QuoteTick,
-        "write_quote_ticks",
+        "write_quotes",
         TestDataProviderPyo3.quote_tick(ts_event=10, ts_init=11),
     )
 
@@ -491,7 +491,7 @@ def test_query_catalog_accepts_nautilus_data_type(tmp_path: Path) -> None:
     path = tmp_path / "parquet" / "quotes"
     path.mkdir(parents=True, exist_ok=True)
     catalog = ParquetDataCatalog(str(path))
-    catalog.write_quote_ticks([TestDataProviderPyo3.quote_tick(ts_event=10, ts_init=11)])
+    catalog.write_quotes([TestDataProviderPyo3.quote_tick(ts_event=10, ts_init=11)])
 
     df = query_catalog(catalog, NautilusDataType.QuoteTick)
 
@@ -590,7 +590,7 @@ def test_query_catalog_use_arrow_dtypes_uses_arrow_dtypes(tmp_path: Path) -> Non
     path = tmp_path / "parquet" / "quotes"
     path.mkdir(parents=True, exist_ok=True)
     catalog = ParquetDataCatalog(str(path))
-    catalog.write_quote_ticks(
+    catalog.write_quotes(
         [TestDataProviderPyo3.quote_tick(ts_event=10, ts_init=11)],
     )
     df = query_catalog(catalog, NautilusDataType.QuoteTick, use_arrow_dtypes=True)
@@ -609,7 +609,7 @@ def test_query_catalog_rejects_arrow_dtypes_for_non_pandas_output(
     path = tmp_path / "parquet" / "quotes"
     path.mkdir(parents=True, exist_ok=True)
     catalog = ParquetDataCatalog(str(path))
-    catalog.write_quote_ticks([TestDataProviderPyo3.quote_tick(ts_event=10, ts_init=11)])
+    catalog.write_quotes([TestDataProviderPyo3.quote_tick(ts_event=10, ts_init=11)])
 
     with pytest.raises(ValueError, match="only valid with pandas output"):
         query_catalog(
@@ -675,7 +675,7 @@ def test_query_catalog_can_return_arrow_table(tmp_path: Path) -> None:
         tmp_path,
         "parquet",
         NautilusDataType.QuoteTick,
-        "write_quote_ticks",
+        "write_quotes",
         TestDataProviderPyo3.quote_tick(ts_event=10, ts_init=11),
         output=CatalogOutput.ARROW,
     )
@@ -708,7 +708,7 @@ def test_arrow_and_pandas_outputs_do_not_import_other_dataframe_engines(
         tmp_path,
         "parquet",
         NautilusDataType.QuoteTick,
-        "write_quote_ticks",
+        "write_quotes",
         TestDataProviderPyo3.quote_tick(ts_event=10, ts_init=11),
         output=output,
     )

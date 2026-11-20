@@ -185,13 +185,9 @@ impl ParquetDataCatalog {
     /// ```rust,no_run
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     ///
     /// // Read data from a live run
     /// let data = catalog.read_live_run("instance-123")?;
@@ -232,13 +228,9 @@ impl ParquetDataCatalog {
     /// ```rust,no_run
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     ///
     /// // Read data from a backtest run
     /// let data = catalog.read_backtest("instance-123")?;
@@ -620,13 +612,9 @@ impl ParquetDataCatalog {
     /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     ///
     /// // Convert backtest stream data to parquet
     /// catalog.convert_stream_to_data(
@@ -1670,7 +1658,10 @@ mod promotion_group_tests {
     #[rstest]
     fn overlapping_empty_precision_group_is_promoted() {
         let temp = TempDir::new().unwrap();
-        let catalog = ParquetDataCatalog::new(temp.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp.path())
+            .build()
+            .unwrap();
         let batches = vec![
             precision_batch("0", vec![1, 3], None),
             precision_batch("2", vec![2], Some(20_000_000_000_000_000)),
@@ -1713,7 +1704,10 @@ mod promotion_group_tests {
     #[rstest]
     fn promotion_rejects_reserved_row_index() {
         let temp = TempDir::new().unwrap();
-        let catalog = ParquetDataCatalog::new(temp.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp.path())
+            .build()
+            .unwrap();
         let batch = precision_batch("2", vec![1], Some(1));
         let mut fields = batch.schema().fields().to_vec();
         fields.push(Arc::new(Field::new(
@@ -1759,7 +1753,10 @@ mod promotion_group_tests {
     #[rstest]
     fn overlapping_incompatible_groups_write_nothing() {
         let temp = TempDir::new().unwrap();
-        let catalog = ParquetDataCatalog::new(temp.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp.path())
+            .build()
+            .unwrap();
         let batches = vec![
             precision_batch("2", vec![1, 3], Some(1)),
             precision_batch("5", vec![2], Some(2)),
@@ -1793,7 +1790,10 @@ mod promotion_group_tests {
         #[values(false, true)] repeated_schema: bool,
     ) {
         let temp = TempDir::new().unwrap();
-        let catalog = ParquetDataCatalog::new(temp.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp.path())
+            .build()
+            .unwrap();
         let mut batches = vec![
             precision_batch("2", vec![1, 2], Some(10)),
             precision_batch("0", vec![2, 3], None),
@@ -1879,7 +1879,10 @@ mod promotion_group_tests {
     #[rstest]
     fn promote_feather_file_skips_staged_batches_without_rows() {
         let temp = TempDir::new().unwrap();
-        let catalog = ParquetDataCatalog::new(temp.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp.path())
+            .build()
+            .unwrap();
         let storage =
             create_storage_backend_from_path(temp.path().to_str().unwrap(), None).unwrap();
         let source = FeatherSessionSource::new(storage, Environment::Backtest, "run-1");
@@ -1911,7 +1914,10 @@ mod promotion_group_tests {
     #[rstest]
     fn overlapping_groups_with_different_fields_write_nothing() {
         let temp = TempDir::new().unwrap();
-        let catalog = ParquetDataCatalog::new(temp.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp.path())
+            .build()
+            .unwrap();
         let nullable = precision_batch("2", vec![2], Some(2));
         let schema = nullable.schema();
         let non_nullable = RecordBatch::try_new(
@@ -2059,7 +2065,10 @@ mod read_run_tests {
     }
 
     fn read_backtest(temp_dir: &TempDir) -> Vec<Data> {
-        ParquetDataCatalog::new(temp_dir.path(), None, None, None, None)
+        ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap()
             .read_backtest("run-001")
             .unwrap()
     }
@@ -2111,7 +2120,10 @@ mod read_run_tests {
         instance_id: &str,
     ) {
         let temp_dir = TempDir::new().unwrap();
-        let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
 
         let e = reader(&catalog, instance_id).unwrap_err();
 
@@ -2147,7 +2159,10 @@ mod read_run_tests {
             )
         };
 
-        let catalog = ParquetDataCatalog::new(&catalog_path, None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(&catalog_path)
+            .build()
+            .unwrap();
 
         let result = reader(&catalog, &instance_id);
 
@@ -2165,7 +2180,10 @@ mod read_run_tests {
     ) {
         let temp_dir = TempDir::new().unwrap();
         write_crashed_run(&temp_dir, &[quote_aud(1_000), quote_eth(2_000)]);
-        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
         fs::remove_dir_all(temp_dir.path().join(directory)).unwrap();
 
         let data = reader(&catalog, "run-001").unwrap();
@@ -2185,7 +2203,10 @@ mod read_run_tests {
     #[rstest]
     fn convert_stream_to_data_rejects_path_bearing_ids() {
         let temp_dir = TempDir::new().unwrap();
-        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
 
         let e = catalog
             .convert_stream_to_data(
@@ -2226,7 +2247,10 @@ mod read_run_tests {
             std::os::unix::fs::symlink(&run, root.join("run-001")).unwrap();
         }
 
-        let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
         let result = reader(&catalog, "run-001");
 
         assert!(result.is_err());
@@ -2245,7 +2269,11 @@ mod read_run_tests {
             .path()
             .join("backtest/run-001/quotes/quotes_0.feather.partial");
         let original = fs::read(&partial).unwrap();
-        let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
+
         let result = if environment_symlink {
             std::os::unix::fs::symlink(temp_dir.path(), temp_dir.path().join("live")).unwrap();
             catalog.read_live_run("backtest")
@@ -2290,7 +2318,10 @@ mod read_run_tests {
         };
 
         let target = fs::read_link(&link).unwrap();
-        let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
 
         let data = reader(&catalog, "run-001").unwrap();
 
@@ -2320,7 +2351,11 @@ mod read_run_tests {
             std::os::unix::fs::symlink(&run, temp_dir.path().join("backtest/run-alias")).unwrap();
         }
 
-        let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
+
         let data = if environment_symlink {
             catalog.read_live_run("run-001").unwrap()
         } else {
@@ -2380,7 +2415,10 @@ mod read_run_tests {
             [None, Some(&selected[..])]
         };
 
-        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
 
         for identifiers in conversions {
             catalog
@@ -2395,9 +2433,7 @@ mod read_run_tests {
         }
 
         assert_eq!(
-            catalog
-                .query::<QuoteTick>(None, None, None, None, None, true)
-                .unwrap(),
+            catalog.query::<QuoteTick>().execute().unwrap(),
             vec![quote_aud(1_000), quote_eth(2_000)],
         );
     }
@@ -2434,7 +2470,10 @@ mod read_run_tests {
     fn convert_stream_to_data_recovers_crashed_partial_files() {
         let temp_dir = TempDir::new().unwrap();
         write_crashed_run(&temp_dir, &[quote_aud(1_000), quote_eth(2_000)]);
-        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
 
         catalog
             .convert_stream_to_data(
@@ -2447,9 +2486,7 @@ mod read_run_tests {
             .unwrap();
 
         assert_eq!(
-            catalog
-                .query::<QuoteTick>(None, None, None, None, None, true)
-                .unwrap(),
+            catalog.query::<QuoteTick>().execute().unwrap(),
             vec![quote_aud(1_000)],
         );
     }

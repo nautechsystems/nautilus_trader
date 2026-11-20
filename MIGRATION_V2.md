@@ -911,7 +911,7 @@ See the [Python adapter guide](docs/developer_guide/python_adapters.md) and
 ### Catalog queries and legacy data
 
 `DataBackendSession`, `DataQueryResult`, and `ParquetDataCatalog.backend_session()` are removed. Query a
-catalog with `ParquetDataCatalog.query(...)` or a typed method such as `query_quote_ticks(...)`, which return
+catalog with `ParquetDataCatalog.query(...)` or a typed method such as `query_quotes(...)`, which return
 typed Python objects, or stream Arrow data with `query_data_arrow_stream(...)`.
 
 The v2 Python catalog API and Arrow schemas differ from v1. Migrate recognized legacy files before querying

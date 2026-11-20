@@ -77,7 +77,10 @@ fn create_catalog_with_quotes(
 ) -> (TempDir, String) {
     let temp_dir = TempDir::new().unwrap();
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     catalog.write_instruments(vec![instrument.clone()]).unwrap();
 
@@ -110,7 +113,10 @@ fn create_catalog_with_quotes_and_trades(
 ) -> (TempDir, String) {
     let temp_dir = TempDir::new().unwrap();
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     catalog.write_instruments(vec![instrument.clone()]).unwrap();
 
@@ -158,7 +164,10 @@ fn create_catalog_with_funding_rates(
 ) -> (TempDir, String, Vec<FundingRateUpdate>) {
     let temp_dir = TempDir::new().unwrap();
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     catalog.write_instruments(vec![instrument.clone()]).unwrap();
 
@@ -1055,7 +1064,7 @@ fn test_node_uses_extended_catalog_factories(
     let factory_connections = Arc::clone(&connections);
     let factory: CatalogFactory = Arc::new(move |config| {
         factory_connections.lock().unwrap().push(config.uri.clone());
-        let catalog = ParquetDataCatalog::from_uri(&catalog_path, None, None, None, None)?;
+        let catalog = ParquetDataCatalog::builder().uri(&catalog_path).build()?;
         Ok(Box::new(catalog))
     });
 
@@ -1809,7 +1818,11 @@ fn test_l2_streaming_accepts_quote_chunk_after_book_chunk(
     let instrument_id = instrument.id();
     let temp_dir = TempDir::new().unwrap();
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
+
     let delta = OrderBookDelta::new(
         instrument_id,
         BookAction::Add,
@@ -1881,7 +1894,10 @@ fn test_streaming_same_timestamp_events(crypto_perpetual_ethusdt: CryptoPerpetua
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     let temp_dir = TempDir::new().unwrap();
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     catalog.write_instruments(vec![instrument.clone()]).unwrap();
 
@@ -2027,7 +2043,10 @@ fn create_catalog_with_deltas(
 ) -> (TempDir, String) {
     let temp_dir = TempDir::new().unwrap();
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     catalog.write_instruments(vec![instrument.clone()]).unwrap();
 
@@ -2640,7 +2659,10 @@ fn test_catalog_replay_rows_match_timestamp_aligned_batches(
     #[values(1, 2, 5)] chunk_size: usize,
 ) {
     let temp = TempDir::new().unwrap();
-    let mut catalog = ParquetDataCatalog::new(temp.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(temp.path())
+        .build()
+        .unwrap();
     let data_type = NautilusDataType::from_data(&sample);
     let ts = 1_700_000_000_000_000_123_u64;
 

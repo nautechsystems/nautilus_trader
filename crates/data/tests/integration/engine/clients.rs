@@ -1328,13 +1328,12 @@ fn test_data_request_failure_preserves_only_safe_reason(
     let directory = planned.then(|| CatalogTempDir::new("request-rejection"));
     if let Some(directory) = &directory {
         engine.register_catalog(
-            Box::new(ParquetDataCatalog::new(
-                directory.path(),
-                None,
-                None,
-                None,
-                None,
-            )),
+            Box::new(
+                ParquetDataCatalog::builder()
+                    .uri(directory.path())
+                    .build()
+                    .unwrap(),
+            ),
             Some("history"),
         );
     }

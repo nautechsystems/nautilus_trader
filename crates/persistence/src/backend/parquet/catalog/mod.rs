@@ -46,21 +46,17 @@
 //! # Usage
 //!
 //! ```rust,no_run
-//! use std::path::Path;
-//!
 //! use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
 //!
-//! // Create a new catalog
-//! let catalog = ParquetDataCatalog::new(
-//!     Path::new("/path/to/data"),
-//!     None,       // storage_options
-//!     Some(5000), // batch_size
-//!     None,       // compression (defaults to ZSTD level 1)
-//!     None,       // max_row_group_size (defaults to 131,072)
-//! );
+//! // Create a new catalog; omitted settings take their defaults
+//! let catalog = ParquetDataCatalog::builder()
+//!     .uri("/path/to/data")
+//!     .batch_size(5000)
+//!     .build()?;
 //!
 //! // Write data to the catalog
 //! // catalog.write_to_parquet(&data, None, None, None)?;
+//! # Ok::<(), anyhow::Error>(())
 //! ```
 
 #![expect(
@@ -133,6 +129,8 @@ mod session;
 mod store;
 mod write;
 
+pub use query::ParquetDataCatalogQueryBuilder;
+
 // Re-export public items from sibling modules so historical
 // `crate::backend::parquet::catalog::...` imports continue to resolve.
 pub use crate::backend::parquet::{
@@ -171,14 +169,13 @@ macro_rules! define_builtin_data_dispatch {
                 $(
                     NautilusDataType::$variant => Some(
                         catalog
-                            .query::<$type>(
-                                identifiers,
-                                start,
-                                end,
-                                where_clause,
-                                None,
-                                optimize_file_loading,
-                            )
+                            .query::<$type>()
+                            .maybe_identifiers(identifiers)
+                            .maybe_start(start)
+                            .maybe_end(end)
+                            .maybe_where_clause(where_clause)
+                            .optimize_file_loading(optimize_file_loading)
+                            .execute()
                             .map(|data| DataBatch::$batch(data.into())),
                     ),
                 )+
@@ -263,6 +260,7 @@ impl Debug for ParquetDataCatalog {
     }
 }
 
+#[bon::bon]
 impl ParquetDataCatalog {
     /// Creates a new [`ParquetDataCatalog`] instance from a local file path.
     ///
@@ -305,9 +303,8 @@ impl ParquetDataCatalog {
         compression: Option<parquet::basic::Compression>,
         max_row_group_size: Option<usize>,
     ) -> Self {
-        let path_str = base_path.to_string_lossy().to_string();
         Self::from_uri(
-            &path_str,
+            base_path,
             storage_options,
             batch_size,
             compression,
@@ -331,7 +328,7 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `uri`: The URI for the data storage location.
+    /// - `uri`: The URI or local path for the data storage location.
     /// - `storage_options`: Optional `HashMap` of `object_store` configuration keys for the scheme:
     ///   - For S3: `endpoint_url`, region, `access_key_id`, `secret_access_key`, `session_token`, etc.
     ///   - For GCS: `service_account_path`, `service_account_key`, `application_credentials`, etc.
@@ -344,58 +341,84 @@ impl ParquetDataCatalog {
     ///
     /// Returns an error if:
     /// - `batch_size` or `max_row_group_size` is zero.
+    /// - `uri` is not valid UTF-8.
     /// - The URI format is invalid or unsupported.
     /// - A storage option key is unknown for the URI scheme.
     /// - The object store cannot be created or accessed.
     /// - Authentication fails for cloud storage backends.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use ahash::AHashMap;
-    /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
-    ///
-    /// // Local filesystem
-    /// let local_catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
-    ///
-    /// // S3 bucket
-    /// let s3_catalog =
-    ///     ParquetDataCatalog::from_uri("s3://my-bucket/nautilus-data", None, None, None, None)?;
-    ///
-    /// // Google Cloud Storage
-    /// let gcs_catalog =
-    ///     ParquetDataCatalog::from_uri("gs://my-bucket/nautilus-data", None, None, None, None)?;
-    ///
-    /// // Azure Blob Storage
-    /// let azure_catalog =
-    ///     ParquetDataCatalog::from_uri("az://container/nautilus-data", None, None, None, None)?;
-    ///
-    /// // S3 with custom endpoint and credentials
-    /// let mut storage_options = AHashMap::new();
-    /// storage_options.insert(
-    ///     "endpoint_url".to_string(),
-    ///     "https://my-s3-endpoint.com".to_string(),
-    /// );
-    /// storage_options.insert("access_key_id".to_string(), "my-key".to_string());
-    /// storage_options.insert("secret_access_key".to_string(), "my-secret".to_string());
-    ///
-    /// let custom_s3_catalog = ParquetDataCatalog::from_uri(
-    ///     "s3://my-bucket/nautilus-data",
-    ///     Some(storage_options),
-    ///     None,
-    ///     None,
-    ///     None,
-    /// )?;
-    /// # Ok::<(), anyhow::Error>(())
-    /// ```
+    #[builder(
+        builder_type = ParquetDataCatalogBuilder,
+        start_fn(name = builder, doc {
+            /// Returns a builder for a [`ParquetDataCatalog`] at `uri`, a URI or local path.
+            ///
+            /// The builder takes the settings of [`ParquetDataCatalog::from_uri`], with the same
+            /// defaults and validation. Omit a setting to use its default.
+            ///
+            /// # Examples
+            ///
+            /// ```rust,no_run
+            /// use ahash::AHashMap;
+            /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
+            ///
+            /// // Local filesystem, with a smaller batch size
+            /// let local_catalog = ParquetDataCatalog::builder()
+            ///     .uri("/tmp/nautilus_data")
+            ///     .batch_size(1000)
+            ///     .build()?;
+            ///
+            /// // S3 bucket
+            /// let s3_catalog = ParquetDataCatalog::builder()
+            ///     .uri("s3://my-bucket/nautilus-data")
+            ///     .build()?;
+            ///
+            /// // Google Cloud Storage
+            /// let gcs_catalog = ParquetDataCatalog::builder()
+            ///     .uri("gs://my-bucket/nautilus-data")
+            ///     .build()?;
+            ///
+            /// // Azure Blob Storage
+            /// let azure_catalog = ParquetDataCatalog::builder()
+            ///     .uri("abfs://container@account.dfs.core.windows.net/nautilus-data")
+            ///     .build()?;
+            ///
+            /// // S3 with custom endpoint and credentials
+            /// let mut storage_options = AHashMap::new();
+            /// storage_options.insert(
+            ///     "endpoint_url".to_string(),
+            ///     "https://my-s3-endpoint.com".to_string(),
+            /// );
+            /// storage_options.insert("access_key_id".to_string(), "my-key".to_string());
+            /// storage_options.insert("secret_access_key".to_string(), "my-secret".to_string());
+            ///
+            /// let custom_s3_catalog = ParquetDataCatalog::builder()
+            ///     .uri("s3://my-bucket/nautilus-data")
+            ///     .storage_options(storage_options)
+            ///     .build()?;
+            /// # Ok::<(), anyhow::Error>(())
+            /// ```
+        }),
+        finish_fn(name = build, doc {
+            /// Opens the [`ParquetDataCatalog`] with the configured settings.
+            ///
+            /// # Errors
+            ///
+            /// Returns an error if any condition listed on [`ParquetDataCatalog::from_uri`] applies.
+        }),
+    )]
     pub fn from_uri(
-        uri: &str,
+        uri: impl AsRef<Path>,
         storage_options: Option<AHashMap<String, String>>,
         batch_size: Option<usize>,
         compression: Option<parquet::basic::Compression>,
         max_row_group_size: Option<usize>,
     ) -> anyhow::Result<Self> {
         validate_catalog_counts(batch_size, max_row_group_size)?;
+
+        let path = uri.as_ref();
+
+        let Some(uri) = path.to_str() else {
+            anyhow::bail!("Catalog URI must be valid UTF-8, was {}", path.display());
+        };
 
         let batch_size = batch_size.unwrap_or(DEFAULT_DATA_BATCH_CHUNK_SIZE);
         let compression = compression.unwrap_or(parquet::basic::Compression::ZSTD(

@@ -214,7 +214,7 @@ def margin_account_factory(request: pytest.FixtureRequest, tmp_path: Path) -> Ca
         if request.param == "node":
             catalog = ParquetDataCatalog(str(tmp_path))
             catalog.write_instruments([instrument])
-            catalog.write_quote_ticks([quote])
+            catalog.write_quotes([quote])
 
             config = BacktestRunConfig(
                 venues=[

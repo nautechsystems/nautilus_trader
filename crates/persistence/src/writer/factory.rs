@@ -408,7 +408,10 @@ mod tests {
         writer.write_data(Data::Quote(expected)).unwrap();
         writer.close().unwrap();
 
-        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
         catalog
             .convert_stream_to_data(
                 "run-001",
@@ -419,9 +422,7 @@ mod tests {
             )
             .unwrap();
 
-        let loaded = catalog
-            .query::<QuoteTick>(None, None, None, None, None, true)
-            .unwrap();
+        let loaded = catalog.query::<QuoteTick>().execute().unwrap();
         assert_eq!(loaded, vec![expected]);
     }
 
@@ -492,7 +493,10 @@ mod tests {
 
         writer.close().unwrap();
 
-        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
 
         for data_type in [
             NautilusDataType::InstrumentStatus,
@@ -509,12 +513,8 @@ mod tests {
                 .unwrap();
         }
 
-        let loaded_statuses = catalog
-            .query::<InstrumentStatus>(None, None, None, None, None, true)
-            .unwrap();
-        let loaded_closes = catalog
-            .query::<InstrumentClose>(None, None, None, None, None, true)
-            .unwrap();
+        let loaded_statuses = catalog.query::<InstrumentStatus>().execute().unwrap();
+        let loaded_closes = catalog.query::<InstrumentClose>().execute().unwrap();
         assert_eq!(loaded_statuses, statuses);
         assert_eq!(loaded_closes, closes);
     }
@@ -547,7 +547,10 @@ mod tests {
             .unwrap();
         writer.close().unwrap();
 
-        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
         catalog
             .convert_stream_to_data(
                 "run-001",

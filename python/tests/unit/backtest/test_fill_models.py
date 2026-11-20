@@ -217,7 +217,7 @@ def test_node_dispatches_configured_python_fill_model(
 
     catalog = ParquetDataCatalog(str(tmp_path))
     catalog.write_instruments([instrument])
-    catalog.write_quote_ticks([quote])
+    catalog.write_quotes([quote])
 
     venue = BacktestVenueConfig(
         name="SIM",

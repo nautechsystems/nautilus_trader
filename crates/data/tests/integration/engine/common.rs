@@ -732,7 +732,10 @@ pub(super) fn register_quote_catalog_with_quotes(
     interval: Option<(u64, u64)>,
 ) -> CatalogTempDir {
     let catalog_dir = CatalogTempDir::new(label);
-    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(catalog_dir.path())
+        .build()
+        .unwrap();
 
     let (start, end) = match interval {
         Some((s, e)) => (Some(UnixNanos::from(s)), Some(UnixNanos::from(e))),
@@ -752,7 +755,10 @@ pub(super) fn register_trade_catalog_with_trades(
     interval: Option<(u64, u64)>,
 ) -> CatalogTempDir {
     let catalog_dir = CatalogTempDir::new(label);
-    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(catalog_dir.path())
+        .build()
+        .unwrap();
 
     let (start, end) = match interval {
         Some((s, e)) => (Some(UnixNanos::from(s)), Some(UnixNanos::from(e))),
@@ -821,7 +827,10 @@ pub(super) fn register_deltas_catalog_with_deltas(
     interval: Option<(u64, u64)>,
 ) -> CatalogTempDir {
     let catalog_dir = CatalogTempDir::new(label);
-    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(catalog_dir.path())
+        .build()
+        .unwrap();
 
     let (start, end) = match interval {
         Some((s, e)) => (Some(UnixNanos::from(s)), Some(UnixNanos::from(e))),

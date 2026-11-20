@@ -77,13 +77,9 @@ pub fn convert_options_chain_csv(
     config: &TardisOptionsChainCSVConverterConfig,
 ) -> anyhow::Result<()> {
     let underlyings = normalize_underlying_filters(config.underlyings.clone());
-    let catalog = ParquetDataCatalog::from_uri(
-        &config.catalog_path.to_string_lossy(),
-        None,
-        None,
-        None,
-        None,
-    )?;
+    let catalog = ParquetDataCatalog::builder()
+        .uri(&config.catalog_path)
+        .build()?;
     let mut precision_by_instrument: AHashMap<InstrumentId, OptionsChainPrecision> =
         AHashMap::new();
     let mut instrument_states: AHashMap<InstrumentId, InstrumentBuildState> = AHashMap::new();
@@ -529,27 +525,20 @@ mod tests {
 
         convert_options_chain_csv(&config).unwrap();
 
-        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
         let instrument_id = "BTC-9JUN20-9875-P.DERIBIT".to_string();
         let quotes = catalog
-            .query::<QuoteTick>(
-                Some(vec![instrument_id.clone()]),
-                None,
-                None,
-                None,
-                None,
-                true,
-            )
+            .query::<QuoteTick>()
+            .identifiers(vec![instrument_id.clone()])
+            .execute()
             .unwrap();
         let greeks = catalog
-            .query::<OptionGreeks>(
-                Some(vec![instrument_id.clone()]),
-                None,
-                None,
-                None,
-                None,
-                true,
-            )
+            .query::<OptionGreeks>()
+            .identifiers(vec![instrument_id.clone()])
+            .execute()
             .unwrap();
         let instruments = catalog
             .query_instruments(Some(std::slice::from_ref(&instrument_id)))
@@ -606,21 +595,21 @@ mod tests {
 
         convert_options_chain_csv(&config).unwrap();
 
-        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
         let call_id = "BTC-9JUN20-10000-C.DERIBIT".to_string();
         let next_expiry_id = "BTC-10JUN20-10000-C.DERIBIT".to_string();
         let call_quotes = catalog
-            .query::<QuoteTick>(Some(vec![call_id.clone()]), None, None, None, None, true)
+            .query::<QuoteTick>()
+            .identifiers(vec![call_id.clone()])
+            .execute()
             .unwrap();
         let next_expiry_greeks = catalog
-            .query::<OptionGreeks>(
-                Some(vec![next_expiry_id.clone()]),
-                None,
-                None,
-                None,
-                None,
-                true,
-            )
+            .query::<OptionGreeks>()
+            .identifiers(vec![next_expiry_id.clone()])
+            .execute()
             .unwrap();
 
         assert_eq!(call_quotes.len(), 1);
@@ -651,27 +640,20 @@ mod tests {
 
         convert_options_chain_csv(&config).unwrap();
 
-        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
         let instrument_id = "BTC-9JUN20-9875-P.DERIBIT".to_string();
         let quotes = catalog
-            .query::<QuoteTick>(
-                Some(vec![instrument_id.clone()]),
-                None,
-                None,
-                None,
-                None,
-                true,
-            )
+            .query::<QuoteTick>()
+            .identifiers(vec![instrument_id.clone()])
+            .execute()
             .unwrap();
         let greeks = catalog
-            .query::<OptionGreeks>(
-                Some(vec![instrument_id.clone()]),
-                None,
-                None,
-                None,
-                None,
-                true,
-            )
+            .query::<OptionGreeks>()
+            .identifiers(vec![instrument_id.clone()])
+            .execute()
             .unwrap();
 
         assert_eq!(quotes.len(), 3);
@@ -705,27 +687,20 @@ mod tests {
 
         convert_options_chain_csv(&config).unwrap();
 
-        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
         let instrument_id = "BTC-9JUN20-9875-P.DERIBIT".to_string();
         let quotes = catalog
-            .query::<QuoteTick>(
-                Some(vec![instrument_id.clone()]),
-                None,
-                None,
-                None,
-                None,
-                true,
-            )
+            .query::<QuoteTick>()
+            .identifiers(vec![instrument_id.clone()])
+            .execute()
             .unwrap();
         let greeks = catalog
-            .query::<OptionGreeks>(
-                Some(vec![instrument_id.clone()]),
-                None,
-                None,
-                None,
-                None,
-                true,
-            )
+            .query::<OptionGreeks>()
+            .identifiers(vec![instrument_id.clone()])
+            .execute()
             .unwrap();
 
         assert!(quotes.is_empty());
@@ -762,17 +737,26 @@ mod tests {
 
         convert_options_chain_csv(&config).unwrap();
 
-        let mut catalog = ParquetDataCatalog::new(&catalog_path, None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(&catalog_path)
+            .build()
+            .unwrap();
         let btc_id = "BTC-9JUN20-9875-P.DERIBIT".to_string();
         let eth_id = "ETH-9JUN20-250-P.DERIBIT".to_string();
         let btc_quotes = catalog
-            .query::<QuoteTick>(Some(vec![btc_id.clone()]), None, None, None, None, true)
+            .query::<QuoteTick>()
+            .identifiers(vec![btc_id.clone()])
+            .execute()
             .unwrap();
         let eth_quotes = catalog
-            .query::<QuoteTick>(Some(vec![eth_id.clone()]), None, None, None, None, true)
+            .query::<QuoteTick>()
+            .identifiers(vec![eth_id.clone()])
+            .execute()
             .unwrap();
         let eth_greeks = catalog
-            .query::<OptionGreeks>(Some(vec![eth_id.clone()]), None, None, None, None, true)
+            .query::<OptionGreeks>()
+            .identifiers(vec![eth_id.clone()])
+            .execute()
             .unwrap();
 
         assert_eq!(btc_quotes.len(), 1);

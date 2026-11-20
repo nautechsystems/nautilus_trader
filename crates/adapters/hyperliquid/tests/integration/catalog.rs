@@ -60,7 +60,10 @@ fn twap_user_data_type(type_name: &str, user: &str) -> DataType {
 fn public_trade_catalog_round_trip_preserves_counterparties() {
     register_hyperliquid_custom_data();
     let temp_dir = TempDir::new().unwrap();
-    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
     let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
     let data_type = public_trade_data_type(instrument_id);
     let original = HyperliquidPublicTrade::new(
@@ -116,7 +119,10 @@ fn public_trade_catalog_round_trip_preserves_counterparties() {
 fn twap_history_catalog_round_trip_preserves_option_enum_and_decimals() {
     register_hyperliquid_custom_data();
     let temp_dir = TempDir::new().unwrap();
-    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
     let user = "0xabc123def456";
     let data_type = twap_user_data_type("HyperliquidTwapHistory", user);
     let original = HyperliquidTwapHistory::new(
@@ -179,7 +185,10 @@ fn twap_history_catalog_round_trip_preserves_option_enum_and_decimals() {
 fn twap_history_catalog_round_trip_preserves_none_optionals() {
     register_hyperliquid_custom_data();
     let temp_dir = TempDir::new().unwrap();
-    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
     let user = "0xnoneoptions";
     let data_type = twap_user_data_type("HyperliquidTwapHistory", user);
     let original = HyperliquidTwapHistory::new(
@@ -241,7 +250,10 @@ fn twap_history_catalog_round_trip_preserves_none_optionals() {
 fn twap_slice_fill_catalog_round_trip_preserves_decimals_and_flags() {
     register_hyperliquid_custom_data();
     let temp_dir = TempDir::new().unwrap();
-    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
     let user = "0xslicefilluser";
     let data_type = twap_user_data_type("HyperliquidTwapSliceFill", user);
     let original = HyperliquidTwapSliceFill::new(

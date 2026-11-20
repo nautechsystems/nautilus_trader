@@ -76,32 +76,37 @@ impl ReplayCatalog for ParquetReplayCatalog<'_> {
         let start = Some(plan.query.start);
         let end = Some(plan.query.end);
         let files = Some(plan.coverage.files.clone());
-
         match plan.query.data_cls.as_str() {
-            "quotes" => Ok(catalog_replay_records(self.catalog.query::<QuoteTick>(
-                identifiers,
-                start,
-                end,
-                None,
-                files,
-                false,
-            )?)),
-            "trades" => Ok(catalog_replay_records(self.catalog.query::<TradeTick>(
-                identifiers,
-                start,
-                end,
-                None,
-                files,
-                false,
-            )?)),
-            "bars" => Ok(catalog_replay_records(self.catalog.query::<Bar>(
-                identifiers,
-                start,
-                end,
-                None,
-                files,
-                false,
-            )?)),
+            "quotes" => Ok(catalog_replay_records(
+                self.catalog
+                    .query::<QuoteTick>()
+                    .maybe_identifiers(identifiers)
+                    .maybe_start(start)
+                    .maybe_end(end)
+                    .maybe_files(files)
+                    .optimize_file_loading(false)
+                    .execute()?,
+            )),
+            "trades" => Ok(catalog_replay_records(
+                self.catalog
+                    .query::<TradeTick>()
+                    .maybe_identifiers(identifiers)
+                    .maybe_start(start)
+                    .maybe_end(end)
+                    .maybe_files(files)
+                    .optimize_file_loading(false)
+                    .execute()?,
+            )),
+            "bars" => Ok(catalog_replay_records(
+                self.catalog
+                    .query::<Bar>()
+                    .maybe_identifiers(identifiers)
+                    .maybe_start(start)
+                    .maybe_end(end)
+                    .maybe_files(files)
+                    .optimize_file_loading(false)
+                    .execute()?,
+            )),
             data_cls => {
                 anyhow::bail!("catalog replay loading for {data_cls} is not supported")
             }
@@ -144,7 +149,10 @@ mod tests {
     #[rstest]
     fn parquet_replay_catalog_plans_selected_slice_files() {
         let temp_dir = TempDir::new().unwrap();
-        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
 
         create_catalog_file(temp_dir.path(), "quotes", "AUDUSD.SIM", 1_000, 2_000);
         create_catalog_file(temp_dir.path(), "quotes", "AUDUSD.SIM", 10_000, 11_000);
@@ -209,7 +217,10 @@ mod tests {
     #[rstest]
     fn parquet_replay_catalog_loads_selected_quote_records() {
         let temp_dir = TempDir::new().unwrap();
-        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
         let instrument_id = InstrumentId::from("AUD/USD.SIM");
         let quotes = vec![
             QuoteTick::new(
@@ -268,7 +279,10 @@ mod tests {
     #[rstest]
     fn parquet_replay_catalog_loads_selected_trade_records() {
         let temp_dir = TempDir::new().unwrap();
-        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
         let instrument_id = InstrumentId::from("AUD/USD.SIM");
         let trades = vec![
             TradeTick::new(
@@ -327,7 +341,10 @@ mod tests {
     #[rstest]
     fn parquet_replay_catalog_loads_selected_bar_records() {
         let temp_dir = TempDir::new().unwrap();
-        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
         let instrument_id = InstrumentId::from("AUD/USD.SIM");
         let bar_type = BarType::new(
             instrument_id,
@@ -394,7 +411,11 @@ mod tests {
     #[rstest]
     fn parquet_replay_catalog_rejects_unsupported_load_slice() {
         let temp_dir = TempDir::new().unwrap();
-        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
+
         let plan = CatalogSlicePlan {
             query: CatalogSliceQuery {
                 data_cls: "order_book_deltas".to_string(),
