@@ -2009,8 +2009,8 @@ impl PyStrategy {
             .map_err(to_pyruntime_err)
     }
 
-    #[pyo3(name = "register_indicator_for_quote_ticks")]
-    fn py_register_indicator_for_quote_ticks(
+    #[pyo3(name = "register_indicator_for_quotes")]
+    fn py_register_indicator_for_quotes(
         &mut self,
         py: Python<'_>,
         instrument_id: InstrumentId,
@@ -2019,11 +2019,11 @@ impl PyStrategy {
         let indicator = wrap_python_indicator(py, indicator);
         let inner = self.inner_mut();
         DataActorNative::core_mut(&mut inner.core)
-            .register_indicator_for_quote_ticks(instrument_id, indicator);
+            .register_indicator_for_quotes(instrument_id, indicator);
     }
 
-    #[pyo3(name = "register_indicator_for_trade_ticks")]
-    fn py_register_indicator_for_trade_ticks(
+    #[pyo3(name = "register_indicator_for_trades")]
+    fn py_register_indicator_for_trades(
         &mut self,
         py: Python<'_>,
         instrument_id: InstrumentId,
@@ -2032,7 +2032,7 @@ impl PyStrategy {
         let indicator = wrap_python_indicator(py, indicator);
         let inner = self.inner_mut();
         DataActorNative::core_mut(&mut inner.core)
-            .register_indicator_for_trade_ticks(instrument_id, indicator);
+            .register_indicator_for_trades(instrument_id, indicator);
     }
 
     #[pyo3(name = "register_indicator_for_bars")]
@@ -5568,12 +5568,12 @@ class IndicatorEventStrategy:
             );
             assert!(!rust_strategy.py_indicators_initialized(py).unwrap());
 
-            rust_strategy.py_register_indicator_for_quote_ticks(
+            rust_strategy.py_register_indicator_for_quotes(
                 py,
                 instrument_id,
                 indicator.clone_ref(py),
             );
-            rust_strategy.py_register_indicator_for_trade_ticks(
+            rust_strategy.py_register_indicator_for_trades(
                 py,
                 instrument_id,
                 indicator.clone_ref(py),
@@ -5631,12 +5631,12 @@ class IndicatorEventStrategy:
             ))
             .unwrap();
 
-            rust_strategy.py_register_indicator_for_quote_ticks(
+            rust_strategy.py_register_indicator_for_quotes(
                 py,
                 quote.instrument_id,
                 indicator.clone_ref(py),
             );
-            rust_strategy.py_register_indicator_for_trade_ticks(
+            rust_strategy.py_register_indicator_for_trades(
                 py,
                 trade.instrument_id,
                 indicator.clone_ref(py),
@@ -5683,12 +5683,12 @@ class IndicatorEventStrategy:
             let trades = vec![trade];
             let bars = vec![bar];
 
-            rust_strategy.py_register_indicator_for_quote_ticks(
+            rust_strategy.py_register_indicator_for_quotes(
                 py,
                 quote.instrument_id,
                 indicator.clone_ref(py),
             );
-            rust_strategy.py_register_indicator_for_trade_ticks(
+            rust_strategy.py_register_indicator_for_trades(
                 py,
                 trade.instrument_id,
                 indicator.clone_ref(py),

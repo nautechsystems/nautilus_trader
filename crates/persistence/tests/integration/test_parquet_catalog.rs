@@ -307,11 +307,7 @@ fn create_quote_tick(ts_init: u64) -> QuoteTick {
     )
 }
 
-fn create_quote_ticks_for_instrument(
-    instrument_id: &str,
-    base_ts: u64,
-    count: usize,
-) -> Vec<QuoteTick> {
+fn create_quotes_for_instrument(instrument_id: &str, base_ts: u64, count: usize) -> Vec<QuoteTick> {
     let instrument_id = InstrumentId::from_str(instrument_id).unwrap();
     (0..count)
         .map(|i| {
@@ -491,8 +487,8 @@ fn test_rust_get_intervals_without_identifier_aggregates_across_partitions() {
     // per-identifier subdirectory, not just the parent directory's top level.
     let (_temp_dir, catalog) = create_temp_catalog();
 
-    let audusd = create_quote_ticks_for_instrument("AUD/USD.SIM", 1_000, 2);
-    let ethusdt = create_quote_ticks_for_instrument("ETH/USDT.BINANCE", 5_000, 2);
+    let audusd = create_quotes_for_instrument("AUD/USD.SIM", 1_000, 2);
+    let ethusdt = create_quotes_for_instrument("ETH/USDT.BINANCE", 5_000, 2);
 
     catalog.write_to_parquet(&audusd, None, None, None).unwrap();
     catalog
@@ -524,8 +520,8 @@ fn test_rust_get_intervals_without_identifier_merges_overlapping_partitions() {
     // last interval when sorted by start. One identifier straddles the other.
     let (_temp_dir, catalog) = create_temp_catalog();
 
-    let audusd = create_quote_ticks_for_instrument("AUD/USD.SIM", 1_000, 10);
-    let ethusdt = create_quote_ticks_for_instrument("ETH/USDT.BINANCE", 5_000, 2);
+    let audusd = create_quotes_for_instrument("AUD/USD.SIM", 1_000, 10);
+    let ethusdt = create_quotes_for_instrument("ETH/USDT.BINANCE", 5_000, 2);
 
     catalog.write_to_parquet(&audusd, None, None, None).unwrap();
     catalog
@@ -1850,8 +1846,8 @@ fn test_query_bar_identifiers_by_instrument_id_partial_match() {
 #[rstest]
 fn test_query_identifiers_excludes_paths_without_matching_rows() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
-    let audusd = create_quote_ticks_for_instrument("AUD/USD.SIM", 1_000, 1);
-    let ethusdt = create_quote_ticks_for_instrument("ETH/USDT.BINANCE", 5_000, 1);
+    let audusd = create_quotes_for_instrument("AUD/USD.SIM", 1_000, 1);
+    let ethusdt = create_quotes_for_instrument("ETH/USDT.BINANCE", 5_000, 1);
     catalog.write_to_parquet(&audusd, None, None, None).unwrap();
     catalog
         .write_to_parquet(&ethusdt, None, None, None)
@@ -3357,7 +3353,7 @@ fn test_delete_catalog_range_on_remote_base_path_with_data_segment() {
     catalog.base_path = "data/catalog".to_string();
     catalog.original_uri = "s3://test-bucket/data/catalog".to_string();
     catalog.object_store = Arc::new(LocalFileSystem::new_with_prefix(temporary.path()).unwrap());
-    let quotes = create_quote_ticks_for_instrument("BTCUSD.SIM", 1_000, 2);
+    let quotes = create_quotes_for_instrument("BTCUSD.SIM", 1_000, 2);
     catalog.write_to_parquet(&quotes, None, None, None).unwrap();
 
     catalog.delete_catalog_range(None, None).unwrap();
@@ -9190,9 +9186,9 @@ fn test_catalog_query_multiple_instruments_table_naming() {
         .unwrap();
 
     // Create quote ticks for multiple instruments with different identifier patterns
-    let eurusd_quotes = create_quote_ticks_for_instrument("EUR/USD.SIM", 1000, 3);
-    let btcusd_quotes = create_quote_ticks_for_instrument("BTC-USD.COINBASE", 2000, 3);
-    let ethusdt_quotes = create_quote_ticks_for_instrument("ETH/USDT.BINANCE", 3000, 3);
+    let eurusd_quotes = create_quotes_for_instrument("EUR/USD.SIM", 1000, 3);
+    let btcusd_quotes = create_quotes_for_instrument("BTC-USD.COINBASE", 2000, 3);
+    let ethusdt_quotes = create_quotes_for_instrument("ETH/USDT.BINANCE", 3000, 3);
 
     // Write data for all instruments
     catalog
@@ -9260,9 +9256,9 @@ fn test_query_directory_based_registration() {
     // Create multiple batches of quotes for the same instrument with disjoint timestamp ranges
     // Each batch needs non-overlapping timestamps to create separate files
     let instrument_id = "EUR/USD.SIM";
-    let batch1 = create_quote_ticks_for_instrument(instrument_id, 1000, 3);
-    let batch2 = create_quote_ticks_for_instrument(instrument_id, 10000, 3); // Large gap to ensure disjoint
-    let batch3 = create_quote_ticks_for_instrument(instrument_id, 20000, 3); // Large gap to ensure disjoint
+    let batch1 = create_quotes_for_instrument(instrument_id, 1000, 3);
+    let batch2 = create_quotes_for_instrument(instrument_id, 10000, 3); // Large gap to ensure disjoint
+    let batch3 = create_quotes_for_instrument(instrument_id, 20000, 3); // Large gap to ensure disjoint
 
     // Write each batch separately to create multiple files
     catalog.write_to_parquet(&batch1, None, None, None).unwrap();
@@ -9302,7 +9298,7 @@ fn test_query_directory_based_registration_preserves_equal_timestamp_order() {
 
     catalog
         .write_to_parquet(
-            &create_quote_ticks_for_instrument("ETH/USDT.BINANCE", 1000, 1),
+            &create_quotes_for_instrument("ETH/USDT.BINANCE", 1000, 1),
             None,
             None,
             None,
@@ -9310,7 +9306,7 @@ fn test_query_directory_based_registration_preserves_equal_timestamp_order() {
         .unwrap();
     catalog
         .write_to_parquet(
-            &create_quote_ticks_for_instrument("AUD/USD.SIM", 1000, 1),
+            &create_quotes_for_instrument("AUD/USD.SIM", 1000, 1),
             None,
             None,
             None,
@@ -9344,9 +9340,9 @@ fn test_query_file_based_registration() {
 
     // Create multiple batches of quotes for the same instrument with disjoint timestamp ranges
     let instrument_id = "GBP/USD.SIM";
-    let batch1 = create_quote_ticks_for_instrument(instrument_id, 1000, 3);
-    let batch2 = create_quote_ticks_for_instrument(instrument_id, 10000, 3); // Large gap to ensure disjoint
-    let batch3 = create_quote_ticks_for_instrument(instrument_id, 20000, 3); // Large gap to ensure disjoint
+    let batch1 = create_quotes_for_instrument(instrument_id, 1000, 3);
+    let batch2 = create_quotes_for_instrument(instrument_id, 10000, 3); // Large gap to ensure disjoint
+    let batch3 = create_quotes_for_instrument(instrument_id, 20000, 3); // Large gap to ensure disjoint
 
     // Write each batch separately to create multiple files
     catalog.write_to_parquet(&batch1, None, None, None).unwrap();
@@ -9398,8 +9394,8 @@ fn test_query_directory_based_vs_file_based() {
 
     // Create multiple batches of quotes with disjoint timestamp ranges
     let instrument_id = "AUD/USD.SIM";
-    let batch1 = create_quote_ticks_for_instrument(instrument_id, 1000, 2);
-    let batch2 = create_quote_ticks_for_instrument(instrument_id, 10000, 2); // Large gap to ensure disjoint
+    let batch1 = create_quotes_for_instrument(instrument_id, 1000, 2);
+    let batch2 = create_quotes_for_instrument(instrument_id, 10000, 2); // Large gap to ensure disjoint
 
     catalog.write_to_parquet(&batch1, None, None, None).unwrap();
     catalog.write_to_parquet(&batch2, None, None, None).unwrap();
@@ -9446,7 +9442,7 @@ fn test_query_directory_based_vs_file_based() {
 fn test_query_directory_with_files_at_different_precisions(#[case] optimize_file_loading: bool) {
     let (_temp_dir, mut catalog) = create_temp_catalog();
     let mixed = write_quotes_at_two_precisions(&catalog);
-    let uniform = create_quote_ticks_for_instrument("ETH/USDT.BINANCE", 1_001, 2);
+    let uniform = create_quotes_for_instrument("ETH/USDT.BINANCE", 1_001, 2);
     catalog
         .write_to_parquet(&uniform, None, None, None)
         .unwrap();
@@ -9490,8 +9486,8 @@ fn test_query_directory_with_files_at_different_precisions_reads_only_listed_fil
 #[rstest]
 fn test_query_directory_registration_reads_unlisted_files() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
-    let first = create_quote_ticks_for_instrument("EUR/USD.SIM", 1_000, 2);
-    let second = create_quote_ticks_for_instrument("EUR/USD.SIM", 10_000, 2);
+    let first = create_quotes_for_instrument("EUR/USD.SIM", 1_000, 2);
+    let second = create_quotes_for_instrument("EUR/USD.SIM", 10_000, 2);
     catalog.write_to_parquet(&first, None, None, None).unwrap();
     catalog.write_to_parquet(&second, None, None, None).unwrap();
     let files = catalog
@@ -9525,7 +9521,7 @@ fn test_query_rejects_listed_file_without_directory() {
 fn test_query_batch_session_directory_with_files_at_different_precisions() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
     let mixed = write_quotes_at_two_precisions(&catalog);
-    let uniform = create_quote_ticks_for_instrument("ETH/USDT.BINANCE", 1_001, 2);
+    let uniform = create_quotes_for_instrument("ETH/USDT.BINANCE", 1_001, 2);
     catalog
         .write_to_parquet(&uniform, None, None, None)
         .unwrap();
@@ -9843,8 +9839,8 @@ fn test_query_directory_based_registration_with_cloud_uri() {
 
     // Create multiple batches of quotes with disjoint timestamp ranges
     let instrument_id = "USD/JPY.SIM";
-    let batch1 = create_quote_ticks_for_instrument(instrument_id, 1000, 2);
-    let batch2 = create_quote_ticks_for_instrument(instrument_id, 10000, 2); // Large gap to ensure disjoint
+    let batch1 = create_quotes_for_instrument(instrument_id, 1000, 2);
+    let batch2 = create_quotes_for_instrument(instrument_id, 10000, 2); // Large gap to ensure disjoint
 
     // Write each batch separately to create multiple files
     local_catalog
@@ -9972,8 +9968,8 @@ fn test_display_queries_keep_colliding_sql_identifiers(#[case] optimize: bool) {
     use arrow::array::{Float64Array, StringArray};
 
     let (_temp, mut catalog) = create_temp_catalog();
-    let mut first = create_quote_ticks_for_instrument("FOO-BAR.SIM", 100, 1);
-    let mut second = create_quote_ticks_for_instrument("FOO_BAR.SIM", 100, 1);
+    let mut first = create_quotes_for_instrument("FOO-BAR.SIM", 100, 1);
+    let mut second = create_quotes_for_instrument("FOO_BAR.SIM", 100, 1);
     first[0].bid_price = Price::from("1.0003");
     second[0].bid_price = Price::from("1.0004");
     catalog.write_to_parquet(&first, None, None, None).unwrap();
@@ -10027,8 +10023,8 @@ fn test_display_queries_keep_colliding_sql_identifiers(#[case] optimize: bool) {
 fn test_record_queries_keep_colliding_sql_identifiers(#[case] optimize: bool) {
     use arrow::array::Decimal128Array;
     let (_temp, mut catalog) = create_temp_catalog();
-    let mut first = create_quote_ticks_for_instrument("FOO-BAR.SIM", 100, 1);
-    let mut second = create_quote_ticks_for_instrument("FOO_BAR.SIM", 100, 1);
+    let mut first = create_quotes_for_instrument("FOO-BAR.SIM", 100, 1);
+    let mut second = create_quotes_for_instrument("FOO_BAR.SIM", 100, 1);
     first[0].bid_price = Price::from("1.0003");
     second[0].bid_price = Price::from("1.0004");
     catalog.write_to_parquet(&first, None, None, None).unwrap();
@@ -10089,7 +10085,7 @@ fn test_find_leaf_data_directories_keeps_prefix_related_siblings() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
 
     for instrument_id in ["BTCUSD.SIM", "BTCUSD.SIM2"] {
-        let quotes = create_quote_ticks_for_instrument(instrument_id, 1_000, 1);
+        let quotes = create_quotes_for_instrument(instrument_id, 1_000, 1);
         catalog.write_to_parquet(&quotes, None, None, None).unwrap();
     }
 
@@ -10269,8 +10265,8 @@ fn test_consolidation_of_non_ascii_identifier_replaces_source_files(
     #[values("data", "data_by_period", "catalog", "catalog_by_period")] operation: &str,
 ) {
     let (_temp_dir, mut catalog) = create_temp_catalog_on_store(remote);
-    let first = create_quote_ticks_for_instrument(NON_ASCII_IDENTIFIER, 1_000, 2);
-    let second = create_quote_ticks_for_instrument(NON_ASCII_IDENTIFIER, 5_000, 2);
+    let first = create_quotes_for_instrument(NON_ASCII_IDENTIFIER, 1_000, 2);
+    let second = create_quotes_for_instrument(NON_ASCII_IDENTIFIER, 5_000, 2);
     catalog.write_to_parquet(&first, None, None, None).unwrap();
     catalog.write_to_parquet(&second, None, None, None).unwrap();
     let data_type = CatalogDataType::from(NautilusDataType::QuoteTick);
@@ -10355,8 +10351,8 @@ fn test_consolidate_data_by_period_keeps_non_ascii_custom_data(
 #[rstest]
 fn test_delete_catalog_range_of_non_ascii_identifier(#[values(false, true)] remote: bool) {
     let (_temp_dir, mut catalog) = create_temp_catalog_on_store(remote);
-    let first = create_quote_ticks_for_instrument(NON_ASCII_IDENTIFIER, 1_000, 2);
-    let second = create_quote_ticks_for_instrument(NON_ASCII_IDENTIFIER, 5_000, 2);
+    let first = create_quotes_for_instrument(NON_ASCII_IDENTIFIER, 1_000, 2);
+    let second = create_quotes_for_instrument(NON_ASCII_IDENTIFIER, 5_000, 2);
     catalog.write_to_parquet(&first, None, None, None).unwrap();
     catalog.write_to_parquet(&second, None, None, None).unwrap();
 
@@ -10379,7 +10375,7 @@ fn test_reset_file_names_of_non_ascii_identifier(
     #[values(false, true)] whole_catalog: bool,
 ) {
     let (_temp_dir, catalog) = create_temp_catalog_on_store(remote);
-    let quotes = create_quote_ticks_for_instrument(NON_ASCII_IDENTIFIER, 1_000, 2);
+    let quotes = create_quotes_for_instrument(NON_ASCII_IDENTIFIER, 1_000, 2);
     catalog
         .write_to_parquet(
             &quotes,
@@ -10408,7 +10404,7 @@ fn test_reset_file_names_of_non_ascii_identifier(
 #[rstest]
 fn test_get_intervals_of_non_ascii_identifier(#[values(false, true)] remote: bool) {
     let (_temp_dir, catalog) = create_temp_catalog_on_store(remote);
-    let quotes = create_quote_ticks_for_instrument(NON_ASCII_IDENTIFIER, 1_000, 2);
+    let quotes = create_quotes_for_instrument(NON_ASCII_IDENTIFIER, 1_000, 2);
     catalog.write_to_parquet(&quotes, None, None, None).unwrap();
 
     let intervals = catalog
@@ -10474,7 +10470,7 @@ fn test_reset_data_file_names_without_identifier_renames_nothing_on_refusal(
     #[values(false, true)] remote: bool,
 ) {
     let (_temp_dir, catalog) = create_temp_catalog_on_store(remote);
-    let valid = create_quote_ticks_for_instrument("AUD/USD.SIM", 1_000, 2);
+    let valid = create_quotes_for_instrument("AUD/USD.SIM", 1_000, 2);
     catalog
         .write_to_parquet(
             &valid,
@@ -10485,7 +10481,7 @@ fn test_reset_data_file_names_without_identifier_renames_nothing_on_refusal(
         .unwrap();
 
     for start in [1_000, 1_500] {
-        let overlapping = create_quote_ticks_for_instrument("EUR/USD.SIM", start, 2);
+        let overlapping = create_quotes_for_instrument("EUR/USD.SIM", start, 2);
         catalog
             .write_to_parquet(&overlapping, None, None, Some(true))
             .unwrap();
@@ -10527,7 +10523,7 @@ fn test_reset_data_file_names_without_identifier_keeps_identifier_directories(
 
     for (index, identifier) in identifiers.iter().enumerate() {
         let start = 1_000 + index as u64 * 500;
-        let quotes = create_quote_ticks_for_instrument(identifier, start, 2);
+        let quotes = create_quotes_for_instrument(identifier, start, 2);
         catalog
             .write_to_parquet(
                 &quotes,

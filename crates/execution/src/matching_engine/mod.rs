@@ -2058,14 +2058,14 @@ impl OrderMatchingEngine {
         }
 
         match price_type {
-            PriceType::Last | PriceType::Mid => self.process_trade_ticks_from_bar(bar),
+            PriceType::Last | PriceType::Mid => self.process_trades_from_bar(bar),
             PriceType::Bid => {
                 self.last_bar_bid = Some(bar.to_owned());
-                self.process_quote_ticks_from_bar();
+                self.process_quotes_from_bar();
             }
             PriceType::Ask => {
                 self.last_bar_ask = Some(bar.to_owned());
-                self.process_quote_ticks_from_bar();
+                self.process_quotes_from_bar();
             }
             PriceType::Mark => {
                 unreachable!("PriceType::Mark bars return before execution bar state updates")
@@ -2073,7 +2073,7 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn process_trade_ticks_from_bar(&mut self, bar: &Bar) {
+    fn process_trades_from_bar(&mut self, bar: &Bar) {
         // With nothing to match, each trade tick only replaces the L1 book, so walk the
         // legs updating `core.last` and apply just the last trade tick
         self.collapse_bar_trades = self.has_nothing_to_match(bar.ts_init);
@@ -2217,7 +2217,7 @@ impl OrderMatchingEngine {
         true
     }
 
-    fn process_quote_ticks_from_bar(&mut self) {
+    fn process_quotes_from_bar(&mut self) {
         // Wait for next bar
         let (Some(bid_bar), Some(ask_bar)) = (self.last_bar_bid, self.last_bar_ask) else {
             return;

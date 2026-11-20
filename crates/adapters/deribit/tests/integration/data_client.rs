@@ -127,7 +127,7 @@ async fn subscription_event_trade_symbols(
     symbols
 }
 
-async fn collect_trade_ticks(
+async fn collect_trades(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     expected_count: usize,
 ) -> Vec<TradeTick> {
@@ -1278,7 +1278,7 @@ async fn test_data_client_subscribe_combo_legs_delivers_parent_and_leg_trades() 
     )
     .await;
 
-    let trades = collect_trade_ticks(&mut rx, 3).await;
+    let trades = collect_trades(&mut rx, 3).await;
     let instrument_ids = trades
         .iter()
         .map(|trade| trade.instrument_id)

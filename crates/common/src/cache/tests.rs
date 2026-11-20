@@ -8593,13 +8593,13 @@ fn test_quote_tick_when_some(mut cache: Cache) {
 }
 
 #[rstest]
-fn test_quote_ticks_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
+fn test_quotes_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
     let result = cache.quotes(&audusd_sim.id);
     assert!(result.is_none());
 }
 
 #[rstest]
-fn test_quote_ticks_when_some(mut cache: Cache) {
+fn test_quotes_when_some(mut cache: Cache) {
     let quotes = vec![
         QuoteTick::default(),
         QuoteTick::default(),
@@ -8625,13 +8625,13 @@ fn test_trade_tick_when_some(mut cache: Cache) {
 }
 
 #[rstest]
-fn test_trade_ticks_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
+fn test_trades_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
     let result = cache.trades(&audusd_sim.id);
     assert!(result.is_none());
 }
 
 #[rstest]
-fn test_trade_ticks_when_some(mut cache: Cache) {
+fn test_trades_when_some(mut cache: Cache) {
     let trades = vec![
         TradeTick::default(),
         TradeTick::default(),
@@ -11313,8 +11313,8 @@ fn test_purge_instrument_removes_market_data_and_preserves_history() {
     assert!(position.is_closed());
 
     assert!(cache.instrument(&instrument_id).is_some());
-    assert!(cache.has_quote_ticks(&instrument_id));
-    assert!(cache.has_trade_ticks(&instrument_id));
+    assert!(cache.has_quotes(&instrument_id));
+    assert!(cache.has_trades(&instrument_id));
     assert!(cache.has_bars(&bar_type));
     assert!(cache.order_book(&instrument_id).is_some());
     assert!(cache.mark_price(&instrument_id).is_some());
@@ -11326,8 +11326,8 @@ fn test_purge_instrument_removes_market_data_and_preserves_history() {
     cache.purge_instrument(instrument_id);
 
     assert!(cache.instrument(&instrument_id).is_none());
-    assert!(!cache.has_quote_ticks(&instrument_id));
-    assert!(!cache.has_trade_ticks(&instrument_id));
+    assert!(!cache.has_quotes(&instrument_id));
+    assert!(!cache.has_trades(&instrument_id));
     assert!(!cache.has_bars(&bar_type));
     assert!(cache.order_book(&instrument_id).is_none());
     assert!(cache.mark_price(&instrument_id).is_none());

@@ -5842,7 +5842,7 @@ fn test_bar_gap_stop_fills_at_open() {
 #[case::three("0.003")]
 #[case::four("0.004")]
 #[case::many("10.000")]
-fn test_bar_trade_ticks_without_orders_match_per_tick_processing(
+fn test_bar_trades_without_orders_match_per_tick_processing(
     #[case] volume: &str,
     #[values(false, true)] adaptive_ordering: bool,
     #[values(false, true)] liquidity_consumption: bool,
@@ -6199,7 +6199,7 @@ fn test_quote_bar_waits_for_matching_pair(
     engine.last_bar_ask = ask_bar;
     engine.fill_at_market = false;
 
-    engine.process_quote_ticks_from_bar();
+    engine.process_quotes_from_bar();
 
     assert_eq!(engine.last_bar_bid, bid_bar);
     assert_eq!(engine.last_bar_ask, ask_bar);

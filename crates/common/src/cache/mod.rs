@@ -7415,13 +7415,13 @@ impl Cache {
 
     /// Returns whether the cache contains quotes for the `instrument_id`.
     #[must_use]
-    pub fn has_quote_ticks(&self, instrument_id: &InstrumentId) -> bool {
+    pub fn has_quotes(&self, instrument_id: &InstrumentId) -> bool {
         self.quote_count(instrument_id) > 0
     }
 
     /// Returns whether the cache contains trades for the `instrument_id`.
     #[must_use]
-    pub fn has_trade_ticks(&self, instrument_id: &InstrumentId) -> bool {
+    pub fn has_trades(&self, instrument_id: &InstrumentId) -> bool {
         self.trade_count(instrument_id) > 0
     }
 

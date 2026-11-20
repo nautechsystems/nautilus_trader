@@ -1756,7 +1756,7 @@ fn test_add_strategies_stops_at_first_error() {
 }
 
 #[rstest]
-fn test_run_processes_quote_ticks(crypto_perpetual_ethusdt: CryptoPerpetual) {
+fn test_run_processes_quotes(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let mut engine = create_engine();
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     let instrument_id = instrument.id();

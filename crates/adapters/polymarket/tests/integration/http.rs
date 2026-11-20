@@ -5285,7 +5285,7 @@ async fn test_data_api_http_error_preserves_status_and_clean_reason() {
 
 #[rstest]
 #[tokio::test]
-async fn test_request_trade_ticks_paginates_multiple_pages() {
+async fn test_request_trades_paginates_multiple_pages() {
     let state = TestServerState::default();
     let token = "token_aaa";
     let condition_id = "0xcondition_test";
@@ -5312,7 +5312,7 @@ async fn test_request_trade_ticks_paginates_multiple_pages() {
     let client = create_data_api_client(&addr);
 
     let ticks = client
-        .request_trade_ticks(
+        .request_trades(
             InstrumentId::from("0xcondition_test-token_aaa.POLYMARKET"),
             condition_id,
             token,
@@ -5344,7 +5344,7 @@ async fn test_request_trade_ticks_paginates_multiple_pages() {
 
 #[rstest]
 #[tokio::test]
-async fn test_request_trade_ticks_rejects_repeated_cursor() {
+async fn test_request_trades_rejects_repeated_cursor() {
     let state = TestServerState::default();
     let token = "token_repeat_cursor";
     let first = serde_json::to_string(&data_api_page(
@@ -5371,7 +5371,7 @@ async fn test_request_trade_ticks_rejects_repeated_cursor() {
     let client = create_data_api_client(&addr);
 
     let error = client
-        .request_trade_ticks(
+        .request_trades(
             InstrumentId::from("0xcondition_test-token_repeat_cursor.POLYMARKET"),
             "0xcondition_test",
             token,
@@ -5393,7 +5393,7 @@ async fn test_request_trade_ticks_rejects_repeated_cursor() {
 
 #[rstest]
 #[tokio::test]
-async fn test_request_trade_ticks_rejects_trade_outside_requested_condition() {
+async fn test_request_trades_rejects_trade_outside_requested_condition() {
     let state = TestServerState::default();
     let token = "token_wrong_condition";
     let mut trade = make_data_api_trade(token, 0.50, 1_710_000_000, "wrong-condition");
@@ -5408,7 +5408,7 @@ async fn test_request_trade_ticks_rejects_trade_outside_requested_condition() {
     let client = create_data_api_client(&addr);
 
     let error = client
-        .request_trade_ticks(
+        .request_trades(
             InstrumentId::from("0xcondition_test-token_wrong_condition.POLYMARKET"),
             "0xcondition_test",
             token,
@@ -5429,7 +5429,7 @@ async fn test_request_trade_ticks_rejects_trade_outside_requested_condition() {
 
 #[rstest]
 #[tokio::test]
-async fn test_request_trade_ticks_accepts_equivalent_condition_id_hex_case() {
+async fn test_request_trades_accepts_equivalent_condition_id_hex_case() {
     let state = TestServerState::default();
     let token = "token_condition_case";
     let condition_id = format!("0x{}", "ab".repeat(32));
@@ -5446,7 +5446,7 @@ async fn test_request_trade_ticks_accepts_equivalent_condition_id_hex_case() {
     let instrument_id = InstrumentId::from(format!("{condition_id}-{token}.POLYMARKET"));
 
     let ticks = client
-        .request_trade_ticks(instrument_id, &condition_id, token, 2, 2, None, None, None)
+        .request_trades(instrument_id, &condition_id, token, 2, 2, None, None, None)
         .await
         .unwrap();
 
@@ -5455,7 +5455,7 @@ async fn test_request_trade_ticks_accepts_equivalent_condition_id_hex_case() {
 
 #[rstest]
 #[tokio::test]
-async fn test_request_trade_ticks_limit_truncation() {
+async fn test_request_trades_limit_truncation() {
     let state = TestServerState::default();
     let token = "token_bbb";
     let condition_id = "0xcondition_test";
@@ -5470,7 +5470,7 @@ async fn test_request_trade_ticks_limit_truncation() {
     let client = create_data_api_client(&addr);
 
     let ticks = client
-        .request_trade_ticks(
+        .request_trades(
             InstrumentId::from("0xcondition_test-token_bbb.POLYMARKET"),
             condition_id,
             token,
@@ -5488,7 +5488,7 @@ async fn test_request_trade_ticks_limit_truncation() {
 
 #[rstest]
 #[tokio::test]
-async fn test_request_trade_ticks_latest_limit_stops_after_enough_matching_trades() {
+async fn test_request_trades_latest_limit_stops_after_enough_matching_trades() {
     let state = TestServerState::default();
     let token = "token_latest";
     let trades = (0..500)
@@ -5512,7 +5512,7 @@ async fn test_request_trade_ticks_latest_limit_stops_after_enough_matching_trade
     let client = create_data_api_client(&addr);
 
     let ticks = client
-        .request_trade_ticks(
+        .request_trades(
             InstrumentId::from("0xcondition_test-token_latest.POLYMARKET"),
             "0xcondition_test",
             token,
@@ -5534,7 +5534,7 @@ async fn test_request_trade_ticks_latest_limit_stops_after_enough_matching_trade
 
 #[rstest]
 #[tokio::test]
-async fn test_request_trade_ticks_end_limit_counts_exact_boundary() {
+async fn test_request_trades_end_limit_counts_exact_boundary() {
     let state = TestServerState::default();
     let token = "token_end";
     let boundary_trades = (0..500)
@@ -5549,7 +5549,7 @@ async fn test_request_trade_ticks_end_limit_counts_exact_boundary() {
     let client = create_data_api_client(&addr);
 
     let ticks = client
-        .request_trade_ticks(
+        .request_trades(
             InstrumentId::from("0xcondition_test-token_end.POLYMARKET"),
             "0xcondition_test",
             token,
@@ -5573,7 +5573,7 @@ async fn test_request_trade_ticks_end_limit_counts_exact_boundary() {
 
 #[rstest]
 #[tokio::test]
-async fn test_request_trade_ticks_single_page_partial() {
+async fn test_request_trades_single_page_partial() {
     let state = TestServerState::default();
     let token = "token_ccc";
     let condition_id = "0xcondition_test";
@@ -5590,7 +5590,7 @@ async fn test_request_trade_ticks_single_page_partial() {
     let client = create_data_api_client(&addr);
 
     let ticks = client
-        .request_trade_ticks(
+        .request_trades(
             InstrumentId::from("0xcondition_test-token_ccc.POLYMARKET"),
             condition_id,
             token,
@@ -5608,14 +5608,14 @@ async fn test_request_trade_ticks_single_page_partial() {
 
 #[rstest]
 #[tokio::test]
-async fn test_request_trade_ticks_empty_response() {
+async fn test_request_trades_empty_response() {
     let state = TestServerState::default();
     // No pages enqueued → handler returns empty array
     let addr = start_mock_server(state.clone()).await;
     let client = create_data_api_client(&addr);
 
     let ticks = client
-        .request_trade_ticks(
+        .request_trades(
             InstrumentId::from("0xcondition_test-token_ddd.POLYMARKET"),
             "0xcondition_test",
             "token_ddd",
@@ -5633,7 +5633,7 @@ async fn test_request_trade_ticks_empty_response() {
 
 #[rstest]
 #[tokio::test]
-async fn test_request_trade_ticks_honors_start_end_and_limit_after_token_filtering() {
+async fn test_request_trades_honors_start_end_and_limit_after_token_filtering() {
     let state = TestServerState::default();
     let token = "token_window";
     state.data_api_trade_pages.lock().await.extend([json!([
@@ -5651,7 +5651,7 @@ async fn test_request_trade_ticks_honors_start_end_and_limit_after_token_filteri
     let end = nautilus_core::UnixNanos::from(1_710_000_004_999_999_999_u64);
 
     let ticks = client
-        .request_trade_ticks(
+        .request_trades(
             InstrumentId::from("0xcondition_test-token_window.POLYMARKET"),
             "0xcondition_test",
             token,
@@ -5682,7 +5682,7 @@ async fn test_request_trade_ticks_honors_start_end_and_limit_after_token_filteri
 
 #[rstest]
 #[tokio::test]
-async fn test_request_trade_ticks_caps_unbounded_walk() {
+async fn test_request_trades_caps_unbounded_walk() {
     let state = TestServerState::default();
     let token = "token_unbounded";
     let row = make_data_api_trade(token, 0.50, 1_710_000_000, "unbounded");
@@ -5695,7 +5695,7 @@ async fn test_request_trade_ticks_caps_unbounded_walk() {
     let client = create_data_api_client(&addr);
 
     let ticks = client
-        .request_trade_ticks(
+        .request_trades(
             InstrumentId::from("0xcondition_test-token_unbounded.POLYMARKET"),
             "0xcondition_test",
             token,
@@ -5722,7 +5722,7 @@ async fn test_request_trade_ticks_caps_unbounded_walk() {
 
 #[rstest]
 #[tokio::test]
-async fn test_request_trade_ticks_cap_counts_window_rows_for_end_only_walk() {
+async fn test_request_trades_cap_counts_window_rows_for_end_only_walk() {
     let state = TestServerState::default();
     let token = "token_end_only";
     // Newest-first feed with eleven out-of-window pages above `end`, then
@@ -5763,7 +5763,7 @@ async fn test_request_trade_ticks_cap_counts_window_rows_for_end_only_walk() {
     let client = create_data_api_client(&addr);
 
     let ticks = client
-        .request_trade_ticks(
+        .request_trades(
             InstrumentId::from("0xcondition_test-token_end_only.POLYMARKET"),
             "0xcondition_test",
             token,
@@ -5790,7 +5790,7 @@ async fn test_request_trade_ticks_cap_counts_window_rows_for_end_only_walk() {
 
 #[rstest]
 #[tokio::test]
-async fn test_request_trade_ticks_start_bound_stops_when_whole_page_precedes_start() {
+async fn test_request_trades_start_bound_stops_when_whole_page_precedes_start() {
     let state = TestServerState::default();
     let token = "token_start_stop";
     let newest = (0..5)
@@ -5849,7 +5849,7 @@ async fn test_request_trade_ticks_start_bound_stops_when_whole_page_precedes_sta
     let client = create_data_api_client(&addr);
 
     let ticks = client
-        .request_trade_ticks(
+        .request_trades(
             InstrumentId::from("0xcondition_test-token_start_stop.POLYMARKET"),
             "0xcondition_test",
             token,
@@ -5887,7 +5887,7 @@ async fn test_request_trade_ticks_start_bound_stops_when_whole_page_precedes_sta
 
 #[rstest]
 #[tokio::test]
-async fn test_request_trade_ticks_start_bound_returns_complete_results_across_pages() {
+async fn test_request_trades_start_bound_returns_complete_results_across_pages() {
     let state = TestServerState::default();
     let token = "token_start_complete";
     // Newest-first pages spanning the start bound, plus an all-older tail.
@@ -5916,7 +5916,7 @@ async fn test_request_trade_ticks_start_bound_returns_complete_results_across_pa
     let client = create_data_api_client(&addr);
 
     let ticks = client
-        .request_trade_ticks(
+        .request_trades(
             InstrumentId::from("0xcondition_test-token_start_complete.POLYMARKET"),
             "0xcondition_test",
             token,

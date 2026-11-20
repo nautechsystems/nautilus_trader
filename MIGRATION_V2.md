@@ -190,37 +190,41 @@ step.
 
 ### Strategy and cache renames
 
-`QuoteTick`, `TradeTick`, and `register_indicator_for_*_ticks` retain their names:
+`QuoteTick` and `TradeTick` retain their names:
 
-| v1 name                              | v2 name                        |
-| ------------------------------------ | ------------------------------ |
-| `on_quote_tick`                      | `on_quote`                     |
-| `on_trade_tick`                      | `on_trade`                     |
-| `on_order_book`                      | `on_book`                      |
-| `on_order_book_deltas`               | `on_book_deltas`               |
-| `on_order_book_depth`                | `on_book_depth`                |
-| `subscribe_quote_ticks`              | `subscribe_quotes`             |
-| `subscribe_trade_ticks`              | `subscribe_trades`             |
-| `unsubscribe_quote_ticks`            | `unsubscribe_quotes`           |
-| `unsubscribe_trade_ticks`            | `unsubscribe_trades`           |
-| `request_quote_ticks`                | `request_quotes`               |
-| `request_trade_ticks`                | `request_trades`               |
-| `subscribe_order_book_deltas`        | `subscribe_book_deltas`        |
-| `subscribe_order_book_depth`         | `subscribe_book_depth`         |
-| `subscribe_order_book_at_interval`   | `subscribe_book_at_interval`   |
-| `unsubscribe_order_book_deltas`      | `unsubscribe_book_deltas`      |
-| `unsubscribe_order_book_depth`       | `unsubscribe_book_depth`       |
-| `unsubscribe_order_book_at_interval` | `unsubscribe_book_at_interval` |
-| `request_order_book_snapshot`        | `request_book_snapshot`        |
-| `request_order_book_deltas`          | `request_book_deltas`          |
-| `request_order_book_depth`           | `request_book_depth`           |
-| `cache.quote_tick`                   | `cache.quote`                  |
-| `cache.trade_tick`                   | `cache.trade`                  |
-| `cache.quote_ticks`                  | `cache.quotes`                 |
-| `cache.trade_ticks`                  | `cache.trades`                 |
-| `cache.quote_tick_count`             | `cache.quote_count`            |
-| `cache.trade_tick_count`             | `cache.trade_count`            |
-| `CacheConfig.tick_capacity`          | `CacheConfig.data_capacity`    |
+| v1 name                              | v2 name                         |
+| ------------------------------------ | ------------------------------- |
+| `on_quote_tick`                      | `on_quote`                      |
+| `on_trade_tick`                      | `on_trade`                      |
+| `on_order_book`                      | `on_book`                       |
+| `on_order_book_deltas`               | `on_book_deltas`                |
+| `on_order_book_depth`                | `on_book_depth`                 |
+| `subscribe_quote_ticks`              | `subscribe_quotes`              |
+| `subscribe_trade_ticks`              | `subscribe_trades`              |
+| `unsubscribe_quote_ticks`            | `unsubscribe_quotes`            |
+| `unsubscribe_trade_ticks`            | `unsubscribe_trades`            |
+| `request_quote_ticks`                | `request_quotes`                |
+| `request_trade_ticks`                | `request_trades`                |
+| `subscribe_order_book_deltas`        | `subscribe_book_deltas`         |
+| `subscribe_order_book_depth`         | `subscribe_book_depth`          |
+| `subscribe_order_book_at_interval`   | `subscribe_book_at_interval`    |
+| `unsubscribe_order_book_deltas`      | `unsubscribe_book_deltas`       |
+| `unsubscribe_order_book_depth`       | `unsubscribe_book_depth`        |
+| `unsubscribe_order_book_at_interval` | `unsubscribe_book_at_interval`  |
+| `request_order_book_snapshot`        | `request_book_snapshot`         |
+| `request_order_book_deltas`          | `request_book_deltas`           |
+| `request_order_book_depth`           | `request_book_depth`            |
+| `register_indicator_for_quote_ticks` | `register_indicator_for_quotes` |
+| `register_indicator_for_trade_ticks` | `register_indicator_for_trades` |
+| `cache.quote_tick`                   | `cache.quote`                   |
+| `cache.trade_tick`                   | `cache.trade`                   |
+| `cache.quote_ticks`                  | `cache.quotes`                  |
+| `cache.trade_ticks`                  | `cache.trades`                  |
+| `cache.quote_tick_count`             | `cache.quote_count`             |
+| `cache.trade_tick_count`             | `cache.trade_count`             |
+| `cache.has_quote_ticks`              | `cache.has_quotes`              |
+| `cache.has_trade_ticks`              | `cache.has_trades`              |
+| `CacheConfig.tick_capacity`          | `CacheConfig.data_capacity`     |
 
 ### Data subscription lists
 

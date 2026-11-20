@@ -1061,7 +1061,7 @@ impl DataClient for AxDataClient {
 
         self.spawn_task(async move {
             match http
-                .request_trade_ticks(symbol, limit, start_nanos, end_nanos)
+                .request_trades(symbol, limit, start_nanos, end_nanos)
                 .await
             {
                 Ok(ticks) => {

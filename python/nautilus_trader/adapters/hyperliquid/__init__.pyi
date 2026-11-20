@@ -233,14 +233,14 @@ class HyperliquidHttpClient:
         include_perps_hip3: bool = False,
         include_outcomes: bool = False,
     ) -> typing.Any: ...
-    def request_quote_ticks(
+    def request_quotes(
         self,
         instrument_id: model.InstrumentId,
         start: datetime.datetime | None = None,
         end: datetime.datetime | None = None,
         limit: int | None = None,
     ) -> typing.Any: ...
-    def request_trade_ticks(
+    def request_trades(
         self,
         instrument_id: model.InstrumentId,
         start: datetime.datetime | None = None,

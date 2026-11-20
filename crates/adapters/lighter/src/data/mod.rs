@@ -1648,7 +1648,7 @@ impl DataClient for LighterDataClient {
         self.spawn_task(async move {
             match http.request_recent_trades(&instrument, limit).await {
                 Ok(mut trades) => {
-                    retain_trade_ticks_in_range(&mut trades, start_nanos, end_nanos);
+                    retain_trades_in_range(&mut trades, start_nanos, end_nanos);
 
                     let response = DataResponse::Trades(TradesResponse::new(
                         request_id,
@@ -1805,7 +1805,7 @@ impl DataClient for LighterDataClient {
     }
 }
 
-fn retain_trade_ticks_in_range(
+fn retain_trades_in_range(
     trades: &mut Vec<TradeTick>,
     start_nanos: Option<UnixNanos>,
     end_nanos: Option<UnixNanos>,
@@ -2878,7 +2878,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_retain_trade_ticks_in_range_sorts_ascending() {
+    fn test_retain_trades_in_range_sorts_ascending() {
         let instrument_id = InstrumentId::new(Symbol::new("ETH-PERP"), *LIGHTER_VENUE);
         let tick = |ts_event, trade_id| {
             TradeTick::new(
@@ -2893,7 +2893,7 @@ mod tests {
         };
         let mut trades = vec![tick(4, "4"), tick(1, "1"), tick(3, "3"), tick(2, "2")];
 
-        retain_trade_ticks_in_range(
+        retain_trades_in_range(
             &mut trades,
             Some(UnixNanos::from(2)),
             Some(UnixNanos::from(4)),

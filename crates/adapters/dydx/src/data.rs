@@ -1206,8 +1206,7 @@ impl DydxDataClient {
                     return;
                 };
                 let instrument_id = instrument.id();
-
-                match ws_parse::parse_trade_ticks(instrument_id, &instrument, &contents, ts_init) {
+                match ws_parse::parse_trades(instrument_id, &instrument, &contents, ts_init) {
                     Ok(data) => {
                         Self::handle_data_message(
                             data,

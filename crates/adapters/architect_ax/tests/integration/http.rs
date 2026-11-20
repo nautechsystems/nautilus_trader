@@ -1431,7 +1431,7 @@ async fn test_public_market_data_request_missing_cached_instrument_returns_error
             client.request_book_snapshot(symbol, None).await.map(|_| ())
         }
         RequiredInstrumentCachePath::Trades => client
-            .request_trade_ticks(symbol, None, None, None)
+            .request_trades(symbol, None, None, None)
             .await
             .map(|_| ()),
         RequiredInstrumentCachePath::Bars => client

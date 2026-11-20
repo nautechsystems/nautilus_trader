@@ -746,7 +746,7 @@ pub fn parse_orderbook_deltas_with_flag(
 /// # Errors
 ///
 /// Returns an error if price/size/timestamp parsing fails.
-pub fn parse_trade_ticks(
+pub fn parse_trades(
     instrument_id: InstrumentId,
     instrument: &InstrumentAny,
     contents: &DydxTradeContents,
@@ -1927,7 +1927,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_trade_ticks_ws() {
+    fn test_parse_trades_ws() {
         let json = load_json_fixture("ws_trades_subscribed.json");
         let contents: DydxTradeContents = serde_json::from_value(json["contents"].clone())
             .expect("Failed to parse trade contents");
@@ -1936,7 +1936,7 @@ mod tests {
         let instrument_id = instrument.id();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
-        let ticks = parse_trade_ticks(instrument_id, &instrument, &contents, ts_init)
+        let ticks = parse_trades(instrument_id, &instrument, &contents, ts_init)
             .expect("Failed to parse trade ticks");
 
         assert_eq!(ticks.len(), 1);

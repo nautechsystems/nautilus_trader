@@ -695,7 +695,7 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
             )
             assert sequence_qty == Decimal("0.010000")
 
-    def test_run_ema_cross_with_trade_ticks_from_bar_data(self) -> None:
+    def test_run_ema_cross_with_trades_from_bar_data(self) -> None:
         """
         Test run ema cross with trade ticks from bar data.
         """

@@ -1272,7 +1272,7 @@ mod tests {
             }
 
             let trades = data
-                .request_trade_ticks(
+                .request_trades(
                     instruments[0].id(),
                     &markets[0].condition_id,
                     definitions[0].token_id.as_str(),

@@ -1700,8 +1700,8 @@ impl<'a> CacheApi<'a> {
     ///
     /// Panics if the cache is already mutably borrowed.
     #[must_use]
-    pub fn has_quote_ticks(&self, instrument_id: &InstrumentId) -> bool {
-        self.cache().has_quote_ticks(instrument_id)
+    pub fn has_quotes(&self, instrument_id: &InstrumentId) -> bool {
+        self.cache().has_quotes(instrument_id)
     }
 
     /// Returns whether the cache contains trades for the `instrument_id`.
@@ -1710,8 +1710,8 @@ impl<'a> CacheApi<'a> {
     ///
     /// Panics if the cache is already mutably borrowed.
     #[must_use]
-    pub fn has_trade_ticks(&self, instrument_id: &InstrumentId) -> bool {
-        self.cache().has_trade_ticks(instrument_id)
+    pub fn has_trades(&self, instrument_id: &InstrumentId) -> bool {
+        self.cache().has_trades(instrument_id)
     }
 
     /// Returns whether the cache contains mark price updates for the `instrument_id`.

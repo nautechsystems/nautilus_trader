@@ -177,7 +177,7 @@ impl PageReducer<DataApiTrade, anyhow::Error> for TradeTickReducer {
         let end_secs = self
             .end
             .map(|value| (value.as_u64() / 1_000_000_000) as i64);
-        let mut trades = parse_trade_ticks(
+        let mut trades = parse_trades(
             self.rows,
             self.instrument_id,
             &self.token_id,
@@ -337,7 +337,7 @@ impl PolymarketDataApiHttpClient {
     /// stops as soon as an entire page precedes `start` (the feed is served
     /// newest-first).
     #[expect(clippy::too_many_arguments)]
-    pub async fn request_trade_ticks(
+    pub async fn request_trades(
         &self,
         instrument_id: InstrumentId,
         condition_id: &str,
@@ -442,9 +442,9 @@ fn start_predates_retention_window(start_secs: i64, now_secs: i64) -> bool {
     start_secs < now_secs - TRADE_RETENTION_SECONDS
 }
 
-// Extracted from `request_trade_ticks` so the parse behavior can be
+// Extracted from `request_trades` so the parse behavior can be
 // unit-tested without HTTP
-fn parse_trade_ticks(
+fn parse_trades(
     mut data_api_trades: Vec<DataApiTrade>,
     instrument_id: InstrumentId,
     token_id: &str,
@@ -616,7 +616,7 @@ mod tests {
     )]
     #[case::zero_limit(None, None, Some(0), "limit must be greater than zero")]
     #[tokio::test]
-    async fn test_request_trade_ticks_rejects_invalid_arguments(
+    async fn test_request_trades_rejects_invalid_arguments(
         #[case] start: Option<UnixNanos>,
         #[case] end: Option<UnixNanos>,
         #[case] limit: Option<u32>,
@@ -625,7 +625,7 @@ mod tests {
         let client = PolymarketDataApiHttpClient::new(None, 5).unwrap();
 
         let error = client
-            .request_trade_ticks(
+            .request_trades(
                 test_instrument_id(),
                 "0xcondition_test",
                 "token_aaa",
@@ -685,7 +685,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_build_trade_ticks_filters_by_token_id() {
+    fn test_build_trades_filters_by_token_id() {
         let trades = load_trades();
         let instrument_id = InstrumentId::from(
             "0xc8f1cf5d4f26e0fd9c8fe89f2a7b3263b902cf14fde7bfccef525753bb492e47-71321045863084981365469005770620412523470745398083994982746259498689308907982.POLYMARKET",
@@ -731,7 +731,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_build_trade_ticks_chronological_order() {
+    fn test_build_trades_chronological_order() {
         let trades = load_trades();
         let instrument_id = InstrumentId::from(
             "0xc8f1cf5d4f26e0fd9c8fe89f2a7b3263b902cf14fde7bfccef525753bb492e47-71321045863084981365469005770620412523470745398083994982746259498689308907982.POLYMARKET",
@@ -861,7 +861,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_trade_ticks_filters_other_tokens() {
+    fn test_parse_trades_filters_other_tokens() {
         let token_id = "T_KEEP";
         let trades = vec![
             make_trade(
@@ -882,14 +882,14 @@ mod tests {
             ),
         ];
 
-        let trades = parse_trade_ticks(trades, test_instrument_id(), token_id, 2, 2).unwrap();
+        let trades = parse_trades(trades, test_instrument_id(), token_id, 2, 2).unwrap();
 
         assert_eq!(trades.len(), 1);
         assert_eq!(trades[0].aggressor_side, AggressorSide::Buy);
     }
 
     #[rstest]
-    fn test_parse_trade_ticks_disambiguates_multi_fill_transaction() {
+    fn test_parse_trades_disambiguates_multi_fill_transaction() {
         // Two fills sharing tx + asset must produce distinct TradeIds
         let token_id = "12345token";
         let same_hash = "0x000000000000000000000000000000000000000000000000000000000000abcdef";
@@ -912,7 +912,7 @@ mod tests {
             ),
         ];
 
-        let trades = parse_trade_ticks(trades, test_instrument_id(), token_id, 2, 2).unwrap();
+        let trades = parse_trades(trades, test_instrument_id(), token_id, 2, 2).unwrap();
 
         assert_eq!(trades.len(), 2);
         assert_ne!(trades[0].trade_id, trades[1].trade_id);
@@ -928,7 +928,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_trade_ticks_distinct_tx_share_timestamp() {
+    fn test_parse_trades_distinct_tx_share_timestamp() {
         // Different transactions in the same epoch second still get distinct
         // ts_event values (the tiebreaker is per-second, not per-transaction).
         let token_id = "T";
@@ -959,7 +959,7 @@ mod tests {
             ),
         ];
 
-        let trades = parse_trade_ticks(trades, test_instrument_id(), token_id, 2, 2).unwrap();
+        let trades = parse_trades(trades, test_instrument_id(), token_id, 2, 2).unwrap();
 
         assert_eq!(trades.len(), 3);
         // Strictly increasing ts_event
@@ -972,7 +972,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_trade_ticks_assigns_per_second_tiebreakers() {
+    fn test_parse_trades_assigns_per_second_tiebreakers() {
         // Same-second fills get strictly increasing nanosecond tiebreakers
         // starting at zero, all bounded below 1 second.
         let token_id = "T";
@@ -990,7 +990,7 @@ mod tests {
             ));
         }
 
-        let trades = parse_trade_ticks(trades, test_instrument_id(), token_id, 2, 2).unwrap();
+        let trades = parse_trades(trades, test_instrument_id(), token_id, 2, 2).unwrap();
 
         assert_eq!(trades.len(), 3);
         let base_ns = 1_729_000_000u64 * 1_000_000_000;
@@ -1002,9 +1002,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_trade_ticks_sorts_inputs_by_composite_key() {
+    fn test_parse_trades_sorts_inputs_by_composite_key() {
         // Mirror what the API may return: same-second fills delivered out
-        // of order. parse_trade_ticks must produce a deterministic stream.
+        // of order. parse_trades must produce a deterministic stream.
         let token_id = "T";
         let trades = vec![
             make_trade(
@@ -1041,7 +1041,7 @@ mod tests {
             ),
         ];
 
-        let trades = parse_trade_ticks(trades, test_instrument_id(), token_id, 2, 2).unwrap();
+        let trades = parse_trades(trades, test_instrument_id(), token_id, 2, 2).unwrap();
 
         assert_eq!(trades.len(), 4);
 
@@ -1059,7 +1059,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_trade_ticks_propagates_invalid_price() {
+    fn test_parse_trades_propagates_invalid_price() {
         let token_id = "T";
         let mut trade = make_trade(
             1729000000,
@@ -1071,7 +1071,7 @@ mod tests {
         );
         trade.price = Decimal::from_str_exact("99999999999999999999.99").unwrap();
 
-        let error = parse_trade_ticks(vec![trade], test_instrument_id(), token_id, 2, 2)
+        let error = parse_trades(vec![trade], test_instrument_id(), token_id, 2, 2)
             .expect_err("out-of-range price should fail");
 
         assert_eq!(
@@ -1082,7 +1082,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_trade_ticks_propagates_invalid_size() {
+    fn test_parse_trades_propagates_invalid_size() {
         let token_id = "T";
         let trade = make_trade(
             1729000000,
@@ -1093,7 +1093,7 @@ mod tests {
             -1.5,
         );
 
-        let error = parse_trade_ticks(vec![trade], test_instrument_id(), token_id, 2, 2)
+        let error = parse_trades(vec![trade], test_instrument_id(), token_id, 2, 2)
             .expect_err("negative size should fail");
 
         assert_eq!(

@@ -247,8 +247,8 @@ impl HyperliquidHttpClient {
         })
     }
 
-    #[pyo3(name = "request_quote_ticks", signature = (instrument_id, start=None, end=None, limit=None))]
-    fn py_request_quote_ticks<'py>(
+    #[pyo3(name = "request_quotes", signature = (instrument_id, start=None, end=None, limit=None))]
+    fn py_request_quotes<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
@@ -264,8 +264,8 @@ impl HyperliquidHttpClient {
         })
     }
 
-    #[pyo3(name = "request_trade_ticks", signature = (instrument_id, start=None, end=None, limit=None))]
-    fn py_request_trade_ticks<'py>(
+    #[pyo3(name = "request_trades", signature = (instrument_id, start=None, end=None, limit=None))]
+    fn py_request_trades<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,

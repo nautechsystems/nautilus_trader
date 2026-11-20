@@ -1615,7 +1615,7 @@ impl AxHttpClient {
     /// - The instrument is not found in the cache.
     /// - The HTTP request fails.
     /// - Trade parsing fails.
-    pub async fn request_trade_ticks(
+    pub async fn request_trades(
         &self,
         symbol: Ustr,
         limit: Option<i32>,

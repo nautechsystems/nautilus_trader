@@ -406,7 +406,7 @@ second_last_quote = self.cache.quote(instrument_id, index=1)
 
 # Check quote availability
 quote_count = self.cache.quote_count(instrument_id)
-has_quotes = self.cache.has_quote_ticks(instrument_id)
+has_quotes = self.cache.has_quotes(instrument_id)
 ```
 
 #### Trade ticks
@@ -423,7 +423,7 @@ second_last_trade = self.cache.trade(instrument_id, index=1)
 
 # Check trade availability
 trade_count = self.cache.trade_count(instrument_id)
-has_trades = self.cache.has_trade_ticks(instrument_id)
+has_trades = self.cache.has_trades(instrument_id)
 ```
 
 Quotes and trades accumulate all ticks, including those sharing a timestamp.

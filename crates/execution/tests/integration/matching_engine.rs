@@ -13363,7 +13363,7 @@ fn test_l1_queue_position_deep_order_deferred_snapshot(
 #[rstest]
 #[case(OrderSide::Buy, AggressorSide::Sell, "54.59")]
 #[case(OrderSide::Sell, AggressorSide::Buy, "54.62")]
-fn test_l1_identical_trade_ticks_have_independent_fill_budgets(
+fn test_l1_identical_trades_have_independent_fill_budgets(
     account_id: AccountId,
     instrument_eth_usdt: InstrumentAny,
     #[case] side: OrderSide,

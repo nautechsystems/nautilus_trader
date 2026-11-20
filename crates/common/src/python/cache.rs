@@ -521,14 +521,14 @@ impl PyCache {
         self.0.borrow().book_update_count(&instrument_id)
     }
 
-    #[pyo3(name = "has_quote_ticks")]
-    fn py_has_quote_ticks(&self, instrument_id: InstrumentId) -> bool {
-        self.0.borrow().has_quote_ticks(&instrument_id)
+    #[pyo3(name = "has_quotes")]
+    fn py_has_quotes(&self, instrument_id: InstrumentId) -> bool {
+        self.0.borrow().has_quotes(&instrument_id)
     }
 
-    #[pyo3(name = "has_trade_ticks")]
-    fn py_has_trade_ticks(&self, instrument_id: InstrumentId) -> bool {
-        self.0.borrow().has_trade_ticks(&instrument_id)
+    #[pyo3(name = "has_trades")]
+    fn py_has_trades(&self, instrument_id: InstrumentId) -> bool {
+        self.0.borrow().has_trades(&instrument_id)
     }
 
     #[pyo3(name = "has_mark_prices")]
@@ -2560,15 +2560,15 @@ impl Cache {
     }
 
     /// Returns whether the cache contains quotes for the `instrument_id`.
-    #[pyo3(name = "has_quote_ticks")]
-    fn py_has_quote_ticks(&self, instrument_id: InstrumentId) -> bool {
-        self.has_quote_ticks(&instrument_id)
+    #[pyo3(name = "has_quotes")]
+    fn py_has_quotes(&self, instrument_id: InstrumentId) -> bool {
+        self.has_quotes(&instrument_id)
     }
 
     /// Returns whether the cache contains trades for the `instrument_id`.
-    #[pyo3(name = "has_trade_ticks")]
-    fn py_has_trade_ticks(&self, instrument_id: InstrumentId) -> bool {
-        self.has_trade_ticks(&instrument_id)
+    #[pyo3(name = "has_trades")]
+    fn py_has_trades(&self, instrument_id: InstrumentId) -> bool {
+        self.has_trades(&instrument_id)
     }
 
     /// Returns whether the cache contains mark price updates for the `instrument_id`.

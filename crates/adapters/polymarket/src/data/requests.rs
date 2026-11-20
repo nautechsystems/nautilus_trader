@@ -481,7 +481,7 @@ pub(super) fn request_trades(
     let end_nanos = datetime_to_unix_nanos(request.end);
     let future = async move {
         match data_api_client
-            .request_trade_ticks(
+            .request_trades(
                 instrument_id,
                 &condition_id,
                 &token_id,
