@@ -532,7 +532,7 @@ fn reconcile_book_availability(
     let terminal = subscriptions.lock_closed_conditions();
 
     for id in ids {
-        subscriptions.reconcile_book_availability(id, snapshot_timeout, tasks, &terminal, false);
+        subscriptions.reconcile_book_availability(id, snapshot_timeout, tasks, &terminal);
     }
 }
 

@@ -549,10 +549,7 @@ impl PolymarketExecutionClient {
                             }
                         }
                     }
-                    Some(
-                        PolymarketWsMessage::Market(_)
-                        | PolymarketWsMessage::MarketSubscribeRejected(_),
-                    ) => {}
+                    Some(PolymarketWsMessage::Market(_)) => {}
                     Some(PolymarketWsMessage::Reconnected { .. }) => {
                         log::info!("User WebSocket reconnected");
                         // A disconnect ends provisional-application eligibility for trades and

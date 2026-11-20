@@ -23,7 +23,7 @@ use std::{
     time::Duration,
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use nautilus_core::string::secret::SecretString;
 use nautilus_live::book::snapshot::SnapshotGate;
 use nautilus_network::{
@@ -49,6 +49,7 @@ use super::{
 use crate::{common::credential::Credential, http::error::sanitize_error_text};
 
 const INITIAL_DUMP: bool = true;
+const MARKET_SUBSCRIBE_RETRY_DELAY: Duration = Duration::from_secs(1);
 
 /// Commands sent from the outer client to the inner message handler.
 #[derive(Debug)]
@@ -76,16 +77,22 @@ pub enum HandlerCommand {
 /// Outcome of a recovery subscription cycle.
 #[derive(Clone, Debug)]
 pub enum CycleMarketOutcome {
-    /// The subscribe wrote on the current connection and requested a fresh snapshot.
+    /// Both legs wrote on one connection; a fresh snapshot should follow.
     Completed,
     /// The connection changed mid-cycle; reconnect replay owns restoration.
     ConnectionChanged,
-    /// The attempt was abandoned; a written unsubscribe leg was restored.
+    /// The attempt was abandoned and any written unsubscribe leg is being restored.
     Cancelled,
     /// A genuine unsubscribe won; nothing was sent or restored.
     NotDesired,
-    /// A wire write failed; a written unsubscribe leg was restored.
+    /// A wire write failed during the cycle.
     SendFailed(SendError),
+}
+
+struct MarketSubscribeRetry {
+    deadline: tokio::time::Instant,
+    epoch: u64,
+    asset_ids: AHashSet<String>,
 }
 
 pub(super) struct FeedHandler {
@@ -103,6 +110,7 @@ pub(super) struct FeedHandler {
     // True once SubscribeUser has been explicitly requested by the caller
     user_subscribed: bool,
     market_heartbeat_next: Option<(tokio::time::Instant, u64)>,
+    market_subscribe_retry: Option<MarketSubscribeRetry>,
     // Assets awaiting first authoritative data, keyed by the connection that wrote the subscribe.
     market_subscription_epochs: AHashMap<String, u64>,
     // Overflow buffer for batched frames, drained before reading the next raw message
@@ -142,6 +150,7 @@ impl FeedHandler {
             auth_tracker,
             user_subscribed,
             market_heartbeat_next: None,
+            market_subscribe_retry: None,
             market_subscription_epochs: AHashMap::new(),
             message_buffer: Vec::new(),
             subscribe_new_markets,
@@ -164,14 +173,6 @@ impl FeedHandler {
             .await
         {
             log::error!("Failed to send market subscribe: {e}");
-
-            // Transport failures trigger reconnect in the writer. A full queue leaves the
-            // connection active, so book recovery must retry the rejected subscribe.
-            if matches!(e, SendError::BufferFull) && !asset_ids.is_empty() {
-                let _ = self.send(PolymarketWsMessage::MarketSubscribeRejected(
-                    asset_ids.to_vec(),
-                ));
-            }
         }
     }
 
@@ -188,6 +189,9 @@ impl FeedHandler {
         let connection_epoch = connection_epoch.unwrap_or_else(|| client.connection_epoch());
 
         for id in asset_ids {
+            if let Some(retry) = &mut self.market_subscribe_retry {
+                retry.asset_ids.remove(id);
+            }
             self.market_subscription_epochs.remove(id);
             self.subscriptions.mark_subscribe(id);
         }
@@ -244,8 +248,51 @@ impl FeedHandler {
                     self.subscriptions.mark_failure(id);
                 }
 
+                // BufferFull rejects the frame before writing on a potentially healthy connection.
+                if matches!(e, SendError::BufferFull)
+                    && !asset_ids.is_empty()
+                    && client.connection_epoch() == connection_epoch
+                {
+                    self.queue_market_subscribe_retry(asset_ids, connection_epoch);
+                }
+
                 Err(e)
             }
+        }
+    }
+
+    fn queue_market_subscribe_retry(&mut self, asset_ids: &[String], epoch: u64) {
+        let mut retry = self
+            .market_subscribe_retry
+            .take()
+            .filter(|retry| retry.epoch == epoch)
+            .unwrap_or_else(|| MarketSubscribeRetry {
+                deadline: tokio::time::Instant::now() + MARKET_SUBSCRIBE_RETRY_DELAY,
+                epoch,
+                asset_ids: AHashSet::new(),
+            });
+        retry.asset_ids.extend(asset_ids.iter().cloned());
+        self.market_subscribe_retry = Some(retry);
+    }
+
+    async fn retry_market_subscriptions(&mut self, mut retry: MarketSubscribeRetry) {
+        if self
+            .client
+            .as_ref()
+            .is_none_or(|client| client.connection_epoch() != retry.epoch)
+        {
+            return;
+        }
+
+        retry
+            .asset_ids
+            .retain(|id| self.market_subscription_desired(id));
+
+        if !retry.asset_ids.is_empty() {
+            let mut asset_ids: Vec<_> = retry.asset_ids.into_iter().collect();
+            asset_ids.sort_unstable();
+            self.send_subscribe_market(&asset_ids, Some(retry.epoch))
+                .await;
         }
     }
 
@@ -313,24 +360,18 @@ impl FeedHandler {
             return CycleMarketOutcome::NotDesired;
         }
 
-        // The first market frame initializes the channel for incremental operations.
-        let initialized = self.market_heartbeat_next.is_some();
-
-        if initialized {
-            // Desired state is untouched: the pool retains ownership throughout the cycle.
-            match self.try_send_unsubscribe_market(asset_ids, epoch).await {
-                Ok(()) | Err(SendError::WriteTimeout) => {}
-                Err(SendError::ConnectionChanged) => {
-                    return CycleMarketOutcome::ConnectionChanged;
-                }
-                Err(e) => return CycleMarketOutcome::SendFailed(e),
+        // Leg 1: venue-side unsubscribe. Desired state is untouched: the pool
+        // retains ownership throughout the cycle.
+        match self.try_send_unsubscribe_market(asset_ids, epoch).await {
+            Ok(()) | Err(SendError::WriteTimeout) => {}
+            Err(SendError::ConnectionChanged) => {
+                return CycleMarketOutcome::ConnectionChanged;
             }
+            Err(e) => return CycleMarketOutcome::SendFailed(e),
         }
 
         if cancel.is_cancelled() {
-            if initialized {
-                self.restore_market_subscription(asset_ids, epoch).await;
-            }
+            self.restore_market_subscription(asset_ids, epoch).await;
             return CycleMarketOutcome::Cancelled;
         }
 
@@ -360,17 +401,13 @@ impl FeedHandler {
             }
             Err(SendError::ConnectionChanged) => CycleMarketOutcome::ConnectionChanged,
             Err(e) => {
-                if initialized {
-                    self.restore_market_subscription(asset_ids, epoch).await;
-                }
+                self.restore_market_subscription(asset_ids, epoch).await;
                 CycleMarketOutcome::SendFailed(e)
             }
         }
     }
 
     async fn restore_market_subscription(&mut self, asset_ids: &[String], epoch: u64) {
-        // Best effort: on failure the next recovery attempt or reconnect
-        // replay owns restoration from the retained desired state.
         if let Err(e) = self.try_send_subscribe_market(asset_ids, Some(epoch)).await {
             log::warn!("Failed to restore market subscription after cycle abort: {e}");
         }
@@ -427,6 +464,7 @@ impl FeedHandler {
     async fn resubscribe_all(&mut self, connection_epoch: u64) {
         match self.channel {
             WsChannel::Market => {
+                self.market_subscribe_retry = None;
                 let ids = self.subscriptions.reset_after_reconnect();
                 if ids.is_empty() && !self.discovery_subscribed.load(Ordering::Relaxed) {
                     return;
@@ -520,6 +558,10 @@ impl FeedHandler {
 
         loop {
             let market_heartbeat_next = self.market_heartbeat_next;
+            let market_retry_deadline = self
+                .market_subscribe_retry
+                .as_ref()
+                .map(|retry| retry.deadline);
 
             tokio::select! {
                 connection_epoch = async move {
@@ -532,6 +574,17 @@ impl FeedHandler {
                 } => {
                     self.send_market_heartbeat(connection_epoch).await;
                     self.schedule_market_heartbeat(connection_epoch);
+                }
+                () = async move {
+                    if let Some(deadline) = market_retry_deadline {
+                        tokio::time::sleep_until(deadline).await;
+                    } else {
+                        std::future::pending::<()>().await;
+                    }
+                } => {
+                    if let Some(retry) = self.market_subscribe_retry.take() {
+                        self.retry_market_subscriptions(retry).await;
+                    }
                 }
                 Some(cmd) = self.cmd_rx.recv() => {
                     match cmd {
@@ -768,6 +821,10 @@ mod tests {
             .backend(TransportBackend::Tungstenite)
             .build()
             .expect("valid websocket config");
+        recording_client_with_config(config).await
+    }
+
+    async fn recording_client_with_config(config: WebSocketConfig) -> WebSocketClient {
         let (message_handler, _message_rx) = channel_message_handler();
         WebSocketClient::builder()
             .config(config)
@@ -1501,20 +1558,11 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn cycle_market_subscription_preserves_desired_state(
-        #[values(false, true)] written: bool,
-    ) {
+    async fn cycle_market_subscription_resubscribes_without_changing_desired_state() {
         let (url, messages) = recording_server().await;
         let client = recording_client(url).await;
         let (mut handler, _raw_tx, subscriptions) = market_handler_with(client);
         subscriptions.mark_subscribe(MARKET_ASSET_ID);
-
-        if written {
-            handler
-                .try_send_subscribe_market(&cycle_asset_ids(), None)
-                .await
-                .unwrap();
-        }
 
         let gate = SnapshotGate::default();
         gate.lock().close();
@@ -1525,20 +1573,10 @@ mod tests {
         assert!(matches!(outcome, CycleMarketOutcome::Completed));
         assert!(!gate.lock().is_closed());
 
-        let expected = if written {
-            vec!["subscribe", "unsubscribe", "subscribe"]
-        } else {
-            vec!["subscribe"]
-        };
-        wait_for_recorded_messages(&messages, expected.len()).await;
+        wait_for_recorded_messages(&messages, 2).await;
         let frames = messages.lock().clone();
-        assert_eq!(
-            frames
-                .iter()
-                .map(|frame| frame_kind(frame))
-                .collect::<Vec<_>>(),
-            expected
-        );
+        assert_eq!(frame_kind(&frames[0]), "unsubscribe");
+        assert_eq!(frame_kind(&frames[1]), "subscribe");
 
         for frame in &frames {
             assert_eq!(frame_assets(frame), cycle_asset_ids());
@@ -1664,14 +1702,58 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
+    async fn rejected_market_restore_retries_on_the_same_connection() {
+        let (url, messages) = recording_server().await;
+        let config = WebSocketConfig::builder()
+            .url(url)
+            .backend(TransportBackend::Tungstenite)
+            .writer_capacity(1)
+            .build()
+            .unwrap();
+        let client = recording_client_with_config(config).await;
+        let epoch = client.connection_epoch();
+        let (mut handler, cmd_tx, _raw_tx, _) = market_handler_with_cmd_tx(client);
+        let asset_ids = cycle_asset_ids();
+        handler
+            .try_send_subscribe_market(&asset_ids, Some(epoch))
+            .await
+            .unwrap();
+        handler
+            .try_send_unsubscribe_market(&asset_ids, epoch)
+            .await
+            .unwrap();
+
+        // Fill the single control slot before a restore can enqueue its write.
+        let client = handler.client.as_ref().unwrap();
+        client.send_pong(Vec::new()).await.unwrap();
+        handler.restore_market_subscription(&asset_ids, epoch).await;
+        assert!(
+            !handler
+                .market_subscription_epochs
+                .contains_key(MARKET_ASSET_ID)
+        );
+
+        let task = tokio::spawn(async move { handler.next().await });
+        wait_until_async(
+            || async { messages.lock().len() == 3 },
+            Duration::from_secs(3),
+        )
+        .await;
+        let frames = messages.lock().clone();
+        assert_eq!(frame_kind(&frames[1]), "unsubscribe");
+        assert_eq!(frame_kind(&frames[2]), "subscribe");
+        assert_eq!(frame_assets(&frames[2]), asset_ids);
+        cmd_tx.send(HandlerCommand::Disconnect).unwrap();
+        assert!(task.await.unwrap().is_none());
+    }
+
+    #[rstest]
+    #[tokio::test]
     async fn cycle_followed_by_queued_unsubscribe_honors_the_unsubscribe() {
         let (url, messages) = recording_server().await;
         let client = recording_client(url).await;
-        let (mut handler, cmd_tx, _raw_tx, _) = market_handler_with_cmd_tx(client);
-        handler
-            .try_send_subscribe_market(&cycle_asset_ids(), None)
-            .await
-            .unwrap();
+        let (mut handler, cmd_tx, _raw_tx, subscriptions) = market_handler_with_cmd_tx(client);
+        subscriptions.mark_subscribe(MARKET_ASSET_ID);
 
         // Commands serialize: the cycle completes first, then the unsubscribe wins
         let (responder, response) = tokio::sync::oneshot::channel();
@@ -1706,7 +1788,7 @@ mod tests {
 
         tokio::time::timeout(Duration::from_secs(5), async {
             loop {
-                if messages.lock().len() >= 4 {
+                if messages.lock().len() >= 3 {
                     break;
                 }
 
@@ -1720,10 +1802,9 @@ mod tests {
         .expect("queued unsubscribe should reach the wire");
 
         let frames = messages.lock().clone();
-        assert_eq!(frame_kind(&frames[0]), "subscribe");
-        assert_eq!(frame_kind(&frames[1]), "unsubscribe");
-        assert_eq!(frame_kind(&frames[2]), "subscribe");
-        assert_eq!(frame_kind(&frames[3]), "unsubscribe");
+        assert_eq!(frame_kind(&frames[0]), "unsubscribe");
+        assert_eq!(frame_kind(&frames[1]), "subscribe");
+        assert_eq!(frame_kind(&frames[2]), "unsubscribe");
 
         assert!(!handler.market_subscription_desired(MARKET_ASSET_ID));
 
