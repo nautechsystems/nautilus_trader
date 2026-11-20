@@ -37,7 +37,7 @@ use super::instruments::TokenMeta;
 use crate::{
     book::{
         integrity::BookIntegrity,
-        recovery::{spawn_recovery_monitor, start_initial_snapshot},
+        recovery::{spawn_recovery_monitor, spawn_recovery_task},
         sync::BookSyncTracker,
     },
     common::{consts::MARKET_VERSION_KEY, parse::validate_data_market_version},
@@ -382,13 +382,29 @@ impl DataSubscriptions {
             && let Ok(token_id) = resolve_token_id_from(&self.instruments, instrument_id)
             && self.is_token_open(&token_id)
         {
-            start_initial_snapshot(
+            self.start_initial_snapshot(instrument_id, token_id, timeout, tasks);
+        }
+    }
+
+    pub(super) fn start_initial_snapshot(
+        &self,
+        instrument_id: InstrumentId,
+        token_id: String,
+        timeout: Duration,
+        tasks: &TaskSpawner,
+    ) {
+        if let Some(recovery) = self
+            .book_sync
+            .claim_initial_snapshot(&self.active_delta_subs, instrument_id)
+        {
+            log::debug!("Requesting a book snapshot for {instrument_id} on an open token");
+            spawn_recovery_task(
                 instrument_id,
                 token_id,
-                &self.active_delta_subs,
-                &self.book_sync,
-                &self.ws_client,
+                recovery,
+                self.ws_client.clone(),
                 timeout,
+                self.book_sync.clone(),
                 tasks,
             );
         }

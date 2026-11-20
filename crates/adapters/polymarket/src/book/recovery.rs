@@ -121,33 +121,7 @@ pub(crate) fn start_recovery(
     );
 }
 
-pub(crate) fn start_initial_snapshot(
-    instrument_id: InstrumentId,
-    token_id: String,
-    active_delta_subs: &Arc<DashSet<InstrumentId>>,
-    book_sync: &BookSyncTracker,
-    pool: &PolymarketMarketPoolHandle,
-    snapshot_timeout: Duration,
-    tasks: &TaskSpawner,
-) {
-    let Some(recovery) = book_sync.claim_initial_snapshot(active_delta_subs, instrument_id) else {
-        return;
-    };
-
-    log::debug!("Requesting a book snapshot for {instrument_id} on an open token");
-
-    spawn_recovery_task(
-        instrument_id,
-        token_id,
-        recovery,
-        pool.clone(),
-        snapshot_timeout,
-        book_sync.clone(),
-        tasks,
-    );
-}
-
-fn spawn_recovery_task(
+pub(crate) fn spawn_recovery_task(
     instrument_id: InstrumentId,
     token_id: String,
     recovery: Arc<BookRecovery>,
@@ -381,13 +355,16 @@ mod tests {
         let pool = PolymarketMarketPoolHandle::test_single_shard(ws_tx, &["0xTOKEN"]);
         let (tasks, spawner) = test_tasks();
 
-        start_initial_snapshot(
+        let recovery = book_sync
+            .claim_initial_snapshot(&active_delta_subs, id)
+            .unwrap();
+        spawn_recovery_task(
             id,
             "0xTOKEN".to_string(),
-            &active_delta_subs,
-            &book_sync,
-            &pool,
+            recovery,
+            pool,
             Duration::from_millis(20),
+            book_sync.clone(),
             &spawner,
         );
 

@@ -39,6 +39,7 @@ use super::{
         preserve_expiry,
     },
     runtime::is_instrument_expired_and_not_reported_open,
+    spawn_task,
 };
 use crate::{
     common::consts::POLYMARKET_VENUE,
@@ -305,9 +306,7 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
         }
     };
 
-    if let Err(e) = tasks.spawn(future) {
-        log::debug!("Skipping Polymarket data task after shutdown began: {e}");
-    }
+    spawn_task(&tasks, future);
 }
 
 pub(super) fn request_instrument(
@@ -432,9 +431,7 @@ pub(super) fn request_instrument(
         }
     };
 
-    if let Err(e) = tasks.spawn(future) {
-        log::debug!("Skipping Polymarket data task after shutdown began: {e}");
-    }
+    spawn_task(&tasks, future);
 
     Ok(())
 }

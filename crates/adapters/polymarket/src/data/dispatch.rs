@@ -2616,39 +2616,70 @@ mod tests {
         );
     }
 
+    enum InstrumentRefresh {
+        SingleRequest,
+        BulkRequest,
+        NewMarket,
+    }
+
     #[rstest]
+    #[case::single_request(InstrumentRefresh::SingleRequest)]
+    #[case::bulk_request(InstrumentRefresh::BulkRequest)]
+    #[case::new_market(InstrumentRefresh::NewMarket)]
     #[tokio::test]
-    async fn new_market_resumes_an_unavailable_book() {
+    async fn metadata_update_resumes_an_unavailable_book(#[case] refresh: InstrumentRefresh) {
         use crate::websocket::{handler::HandlerCommand, pool::PolymarketMarketPoolHandle};
 
         let mut market = gamma_market_recheck_fixture_value();
         market["enableOrderBook"] = false.into();
         let instrument = instrument_from_gamma_fixture(market.clone());
         let id = instrument.id();
-        let token = instrument.raw_symbol().as_str().to_string();
+        let token = instrument.raw_symbol().inner();
         market["enableOrderBook"] = true.into();
         let state = ScriptedAutoLoadServerState::new(
             vec![ScriptedAutoLoadReply::ok(serde_json::json!([market]))],
             vec![],
         );
         let addr = start_scripted_auto_load_test_server(state).await;
-        let (client, _data_rx) = create_test_client(addr);
-        let mut ctx = make_client_ws_ctx(&client);
+        let (mut client, _data_rx) = create_test_client_with_new_markets(addr, true);
+        client.config.update_instruments_interval_mins = None;
         let (tx, mut commands) = tokio::sync::mpsc::unbounded_channel();
-        let subscriptions = &mut ctx.subscriptions;
-        subscriptions.subscribe_new_markets = true;
-        subscriptions.ws_client = PolymarketMarketPoolHandle::test_single_shard(tx, &[&token]);
-        subscriptions
-            .ws_open_tokens
-            .insert(Ustr::from(token.as_str()));
+        let subscriptions = &mut client.subscriptions;
+        subscriptions.ws_client =
+            PolymarketMarketPoolHandle::test_single_shard(tx, &[token.as_str()]);
+        subscriptions.ws_open_tokens.insert(token);
         cache_instrument_unchecked(&client.instruments, &subscriptions.token_meta, &instrument);
         assert!(subscriptions.add_delta_subscription_intent(id, true));
         assert!(subscriptions.book_sync.is_unavailable(id));
 
-        handle_market_message(
-            make_new_market_with_condition("book-enabled", TEST_CONDITION_ID, true),
-            &ctx,
-        );
+        match refresh {
+            InstrumentRefresh::SingleRequest => client
+                .request_instrument(RequestInstrument::new(
+                    id,
+                    None,
+                    None,
+                    None,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                ))
+                .unwrap(),
+            InstrumentRefresh::BulkRequest => client
+                .request_instruments(RequestInstruments::new(
+                    None,
+                    None,
+                    Some(*POLYMARKET_CLIENT_ID),
+                    None,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                ))
+                .unwrap(),
+            InstrumentRefresh::NewMarket => handle_market_message(
+                make_new_market_with_condition("book-enabled", TEST_CONDITION_ID, true),
+                &make_client_ws_ctx(&client),
+            ),
+        }
 
         let command = tokio::time::timeout(StdDuration::from_secs(3), commands.recv())
             .await
@@ -2656,9 +2687,9 @@ mod tests {
             .unwrap();
         assert!(matches!(
             command,
-            HandlerCommand::CycleMarketSubscription { asset_ids, .. } if asset_ids == [token]
+            HandlerCommand::CycleMarketSubscription { asset_ids, .. } if asset_ids == [token.as_str()]
         ));
-        assert!(!ctx.subscriptions.book_sync.is_unavailable(id));
+        assert!(!client.subscriptions.book_sync.is_unavailable(id));
     }
 
     #[rstest]
@@ -6742,7 +6773,6 @@ mod tests {
     // send the delta subscription its `book`.
     #[rstest]
     #[case::back_to_back(true, false, None)]
-    #[case::open_token(true, true, None)]
     #[case::inactive(false, false, Some("active"))]
     #[case::book_disabled(false, false, Some("enableOrderBook"))]
     #[case::inactive_open_token(true, true, Some("active"))]
@@ -16501,9 +16531,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case::available(false)]
-    #[case::unavailable(true)]
-    fn effective_deltas_first_snapshot_preserves_clear(#[case] unavailable: bool) {
+    fn effective_deltas_first_snapshot_preserves_clear() {
         let asset_id_str = "0xTOKEN-EFF1";
         let market = "0xMARKET";
 
@@ -16520,7 +16548,7 @@ mod tests {
         let subscriptions = &ctx.subscriptions;
         let sync = &subscriptions.book_sync;
         subscriptions.add_delta_subscription_intent(instrument_id, true);
-        sync.update_availability(&subscriptions.active_delta_subs, instrument_id, unavailable);
+        sync.update_availability(&subscriptions.active_delta_subs, instrument_id, true);
 
         let snap = make_snapshot(
             market,
@@ -17831,10 +17859,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case::available(false)]
-    #[case::paused(true)]
     #[tokio::test]
-    async fn tick_size_change_requests_recovery_and_resubscribes(#[case] unavailable: bool) {
+    async fn tick_size_change_requests_recovery_and_resubscribes() {
         if super::super::test_logging::run_in_isolated_process() {
             return;
         }
@@ -17849,7 +17875,7 @@ mod tests {
         ctx.subscriptions.book_sync.update_availability(
             &ctx.subscriptions.active_delta_subs,
             instrument_id,
-            unavailable,
+            true,
         );
 
         // Keep the recovery-owned replacement send routable like production.

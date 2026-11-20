@@ -16,6 +16,7 @@
 //! WebSocket message handler for the Polymarket CLOB API.
 
 use std::{
+    collections::BTreeSet,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -23,7 +24,7 @@ use std::{
     time::Duration,
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
 use nautilus_core::string::secret::SecretString;
 use nautilus_live::book::snapshot::SnapshotGate;
 use nautilus_network::{
@@ -92,7 +93,7 @@ pub enum CycleMarketOutcome {
 struct MarketSubscribeRetry {
     deadline: tokio::time::Instant,
     epoch: u64,
-    asset_ids: AHashSet<String>,
+    asset_ids: BTreeSet<String>,
 }
 
 pub(super) struct FeedHandler {
@@ -269,13 +270,17 @@ impl FeedHandler {
             .unwrap_or_else(|| MarketSubscribeRetry {
                 deadline: tokio::time::Instant::now() + MARKET_SUBSCRIBE_RETRY_DELAY,
                 epoch,
-                asset_ids: AHashSet::new(),
+                asset_ids: BTreeSet::new(),
             });
         retry.asset_ids.extend(asset_ids.iter().cloned());
         self.market_subscribe_retry = Some(retry);
     }
 
-    async fn retry_market_subscriptions(&mut self, mut retry: MarketSubscribeRetry) {
+    async fn retry_market_subscriptions(&mut self) {
+        let Some(mut retry) = self.market_subscribe_retry.take() else {
+            return;
+        };
+
         if self
             .client
             .as_ref()
@@ -289,8 +294,7 @@ impl FeedHandler {
             .retain(|id| self.market_subscription_desired(id));
 
         if !retry.asset_ids.is_empty() {
-            let mut asset_ids: Vec<_> = retry.asset_ids.into_iter().collect();
-            asset_ids.sort_unstable();
+            let asset_ids: Vec<_> = retry.asset_ids.into_iter().collect();
             self.send_subscribe_market(&asset_ids, Some(retry.epoch))
                 .await;
         }
@@ -558,10 +562,7 @@ impl FeedHandler {
 
         loop {
             let market_heartbeat_next = self.market_heartbeat_next;
-            let market_retry_deadline = self
-                .market_subscribe_retry
-                .as_ref()
-                .map(|retry| retry.deadline);
+            let market_subscribe_retry = &self.market_subscribe_retry;
 
             tokio::select! {
                 connection_epoch = async move {
@@ -576,16 +577,11 @@ impl FeedHandler {
                     self.schedule_market_heartbeat(connection_epoch);
                 }
                 () = async move {
-                    if let Some(deadline) = market_retry_deadline {
-                        tokio::time::sleep_until(deadline).await;
-                    } else {
-                        std::future::pending::<()>().await;
+                    match market_subscribe_retry {
+                        Some(retry) => tokio::time::sleep_until(retry.deadline).await,
+                        None => std::future::pending().await,
                     }
-                } => {
-                    if let Some(retry) = self.market_subscribe_retry.take() {
-                        self.retry_market_subscriptions(retry).await;
-                    }
-                }
+                } => self.retry_market_subscriptions().await,
                 Some(cmd) = self.cmd_rx.recv() => {
                     match cmd {
                         HandlerCommand::SetClient(client) => {

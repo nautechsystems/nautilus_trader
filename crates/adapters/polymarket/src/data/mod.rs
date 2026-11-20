@@ -84,7 +84,6 @@ use self::{
     subscriptions::{SubscriptionKind, resolve_token_id_from},
 };
 use crate::{
-    book::recovery::start_initial_snapshot,
     common::{
         consts::{MARKET_VERSION_KEY, POLYMARKET_VENUE},
         credential::Credential,
@@ -462,12 +461,9 @@ impl PolymarketDataClient {
                 .await;
 
             if was_open {
-                start_initial_snapshot(
+                subscriptions.start_initial_snapshot(
                     instrument_id,
                     token_id,
-                    &subscriptions.active_delta_subs,
-                    &subscriptions.book_sync,
-                    &subscriptions.ws_client,
                     snapshot_timeout,
                     &spawner,
                 );

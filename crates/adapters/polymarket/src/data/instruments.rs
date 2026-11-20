@@ -1788,10 +1788,7 @@ mod tests {
 
     #[tokio::test]
     async fn tracked_metadata_refresh_resumes_an_unavailable_book() {
-        use crate::websocket::{
-            handler::{CycleMarketOutcome, HandlerCommand},
-            pool::PolymarketMarketPoolHandle,
-        };
+        use crate::websocket::{handler::HandlerCommand, pool::PolymarketMarketPoolHandle};
 
         let definition = |enabled: bool| {
             let mut market = past_end_open_market();
@@ -1803,18 +1800,16 @@ mod tests {
         };
         let instrument = definition(false);
         let id = instrument.id();
-        let token = instrument.raw_symbol().as_str().to_string();
+        let token = instrument.raw_symbol().inner();
 
         let mut client = make_client(PolymarketDataClientConfig::default());
         let (tx, mut commands) = tokio::sync::mpsc::unbounded_channel();
         client.subscriptions.ws_client =
-            PolymarketMarketPoolHandle::test_single_shard(tx, &[&token]);
+            PolymarketMarketPoolHandle::test_single_shard(tx, &[token.as_str()]);
         let ctx = client.resolution_context();
         let subscriptions = &ctx.subscriptions;
         cache_instrument_unchecked(&ctx.instruments, &subscriptions.token_meta, &instrument);
-        subscriptions
-            .ws_open_tokens
-            .insert(Ustr::from(token.as_str()));
+        subscriptions.ws_open_tokens.insert(token);
         assert!(subscriptions.add_delta_subscription_intent(id, true));
         assert!(subscriptions.book_sync.is_unavailable(id));
 
@@ -1836,20 +1831,12 @@ mod tests {
 
         let command = tokio::time::timeout(Duration::from_secs(2), commands.recv())
             .await
-            .unwrap()
             .unwrap();
-        let HandlerCommand::CycleMarketSubscription {
-            asset_ids,
-            responder,
-            gate,
-            ..
-        } = command
-        else {
-            panic!("expected initial snapshot request, was {command:?}");
-        };
-        assert_eq!(asset_ids, [token]);
-        gate.open();
-        responder.send(CycleMarketOutcome::Completed).unwrap();
+        assert!(matches!(
+            command,
+            Some(HandlerCommand::CycleMarketSubscription { asset_ids, .. })
+                if asset_ids == [token.as_str()]
+        ));
         assert!(!subscriptions.book_sync.is_unavailable(id));
     }
 

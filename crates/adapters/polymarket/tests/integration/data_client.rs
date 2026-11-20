@@ -1715,55 +1715,6 @@ mod subscriptions {
     use super::*;
 
     #[rstest]
-    #[case::single(false)]
-    #[case::bulk(true)]
-    #[tokio::test]
-    async fn instrument_request_resumes_an_unavailable_book(#[case] bulk: bool) {
-        let state = TestServerState::default();
-        let mut market = gamma_market_request_fixture();
-        market["enableOrderBook"] = false.into();
-        *state.gamma_response.lock().await = Some(json!([market]));
-        let addr = start_mock_server(state.clone()).await;
-        let (mut client, mut rx) = create_test_data_client_with_config(
-            addr,
-            PolymarketDataClientConfig {
-                update_instruments_interval_mins: None,
-                resolve_poll_enabled: false,
-                ..Default::default()
-            },
-        );
-
-        client.connect().await.unwrap();
-        let id = yes_instrument_id();
-        prime_instrument(&client, &mut rx, id).await;
-        subscribe_book(&mut client, id);
-        wait_for_market_payload_count(&state, 1, false, Duration::from_secs(3)).await;
-
-        *state.gamma_response.lock().await = Some(json!([gamma_market_request_fixture()]));
-
-        if bulk {
-            let request_id = UUID4::new();
-            client
-                .request_instruments(RequestInstruments::new(
-                    None,
-                    None,
-                    Some(*POLYMARKET_CLIENT_ID),
-                    None,
-                    request_id,
-                    UnixNanos::default(),
-                    None,
-                ))
-                .unwrap();
-            collect_data_events_until_response(&mut rx, request_id, Duration::from_secs(3)).await;
-        } else {
-            prime_instrument(&client, &mut rx, id).await;
-        }
-
-        wait_for_market_payload_count(&state, 3, false, Duration::from_secs(3)).await;
-        client.disconnect().await.unwrap();
-    }
-
-    #[rstest]
     #[case::deadline(1, true, false, true)]
     #[case::disabled(0, false, false, true)]
     #[case::received(1, false, true, true)]
