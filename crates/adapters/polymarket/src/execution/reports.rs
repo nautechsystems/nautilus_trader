@@ -1007,7 +1007,7 @@ impl PolymarketExecutionClient {
         }
     }
 
-    fn resolved_balance_scope(&self) -> ResolvedBalanceScope {
+    pub(super) fn resolved_balance_scope(&self) -> ResolvedBalanceScope {
         ResolvedBalanceScope::from_cache(&self.core.cache(), self.core.venue, self.core.account_id)
     }
 }

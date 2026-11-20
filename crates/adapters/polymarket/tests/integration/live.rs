@@ -416,6 +416,10 @@ async fn confirmed_buy_releases_collateral_after_offsetting_credit(
             .await
     );
     h.mock_state.startup_request_paths.lock().await.clear();
+    // Connect reads open orders to load wallet instruments
+    h.mock_state
+        .orders_get_count
+        .store(0, std::sync::atomic::Ordering::Release);
     let confirmed = user_trade("ws_user_trade.json", "CONFIRMED");
     let trade_id = confirmed["id"].as_str().unwrap().to_string();
     let update = if rest_confirmation {

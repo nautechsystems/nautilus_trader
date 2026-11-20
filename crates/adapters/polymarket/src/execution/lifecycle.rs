@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
+    collections::HashMap,
     hash::Hash,
     sync::{
         Arc,
@@ -25,8 +26,10 @@ use std::{
 use ahash::AHashMap;
 use anyhow::Context;
 use nautilus_common::{
-    live::runner::get_exec_event_sender,
+    live::runner::{get_exec_event_sender, try_get_data_event_sender},
+    messages::DataEvent,
     msgbus::{self, TypedHandler},
+    providers::InstrumentProvider,
 };
 use nautilus_core::{collections::AtomicMap, string::secret::SecretString, time::AtomicTime};
 use nautilus_live::{ExecutionClientCore, execution::context::OrderContext, task::TaskGroupGuard};
@@ -38,6 +41,7 @@ use nautilus_model::{
     orders::Order,
     types::{Money, Price, Quantity},
 };
+use nautilus_network::retry::RetryConfig;
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -48,16 +52,21 @@ use crate::{
     execution::{
         collateral::CollateralLocks,
         context::OrderContextRegistry,
-        reconciliation::venue_leg_filled_before_and_quantity,
+        reconciliation::{
+            polymarket_instrument_ids_equivalent, venue_leg_filled_before_and_quantity,
+            wallet_instrument_ids,
+        },
         reports::{fetch_and_emit_account_state, get_pusd_currency},
         settlement::{SettlementRegistry, UncertainOrder, UncertainOrderKind},
     },
     http::{
         clob::{HeartbeatResponse, PolymarketClobHttpClient},
         error::Error as HttpError,
+        gamma::PolymarketGammaHttpClient,
         models::PolymarketTradeReport,
         query::GetTradesParams,
     },
+    providers::PolymarketInstrumentProvider,
     websocket::{
         dispatch::{
             WsDispatchContext, WsDispatchState, apply_rest_trade_evidence,
@@ -84,6 +93,9 @@ const TASK_ABORT_TIMEOUT: Duration = Duration::from_secs(2);
 // canceled.
 const DISCONNECT_BUDGET: Duration = Duration::from_secs(6);
 const DISCONNECT_ABORT_JOIN: Duration = Duration::from_secs(1);
+
+// LiveNode's default connection timeout is 60s and also covers data client connection
+const WALLET_INSTRUMENT_LOAD_BUDGET: Duration = Duration::from_secs(15);
 
 /// Sweep interval for retrying targeted terminal REST resolution.
 const RESOLUTION_SWEEP_INTERVAL: Duration = Duration::from_millis(500);
@@ -790,6 +802,82 @@ impl PolymarketExecutionClient {
         }
     }
 
+    // The node caches emitted instruments before startup reconciliation
+    pub(super) async fn load_wallet_instruments(&self) -> anyhow::Result<()> {
+        let ctx = self.fill_context();
+        let resolved_balances = self.resolved_balance_scope();
+        let mut required = wallet_instrument_ids(
+            &self.http_client,
+            &self.data_api_client,
+            &self.shared_token_instruments,
+            &ctx,
+            self.config.reconciliation_load_ids(),
+            &resolved_balances,
+        )
+        .await?;
+        required.sort_unstable();
+        required.dedup();
+        if required.is_empty() {
+            return Ok(());
+        }
+
+        let gamma_client = PolymarketGammaHttpClient::new_with_proxy(
+            Some(self.config.gamma_url()),
+            self.config.http_timeout_secs,
+            RetryConfig::default(),
+            self.config.validated_proxy_url()?,
+        )?;
+        let mut provider = PolymarketInstrumentProvider::new(gamma_client, None)?;
+
+        for closed in [false, true] {
+            let filters = HashMap::from([("closed".to_string(), closed.to_string())]);
+            provider.load_ids(&required, Some(&filters)).await?;
+        }
+
+        let mut instruments: Vec<_> = provider.store().get_all().values().cloned().collect();
+        instruments.retain(|instrument| {
+            required
+                .iter()
+                .any(|id| polymarket_instrument_ids_equivalent(instrument.id(), *id))
+        });
+
+        let missing: Vec<_> = required
+            .iter()
+            .filter(|id| {
+                !instruments
+                    .iter()
+                    .any(|instrument| polymarket_instrument_ids_equivalent(instrument.id(), **id))
+            })
+            .collect();
+
+        if !missing.is_empty() {
+            log::warn!("Gamma returned no metadata for Polymarket wallet instruments {missing:?}");
+        }
+
+        if instruments.is_empty() {
+            return Ok(());
+        }
+
+        let sender = try_get_data_event_sender().context("data event sender is not installed")?;
+
+        for instrument in &instruments {
+            let instrument_id = instrument.id();
+            sender
+                .send(DataEvent::Data(instrument.clone().into()))
+                .map_err(|e| {
+                    anyhow::anyhow!("Failed to emit wallet instrument {instrument_id}: {e}")
+                })?;
+        }
+
+        upsert_execution_lookups(
+            &self.shared_token_instruments,
+            &self.neg_risk_index,
+            &instruments,
+        );
+
+        Ok(())
+    }
+
     pub(super) fn load_orders_from_cache(&self) {
         let cache = self.core.cache();
         let orders: Vec<_> = cache
@@ -1016,6 +1104,23 @@ impl PolymarketExecutionClient {
         self.ensure_settlement_observers();
         self.load_instruments_from_cache();
         self.load_orders_from_cache();
+
+        // Reconciliation fails later if a required instrument is still missing
+        let result = tokio::time::timeout(
+            WALLET_INSTRUMENT_LOAD_BUDGET,
+            self.load_wallet_instruments(),
+        )
+        .await
+        .unwrap_or_else(|_| {
+            Err(anyhow::anyhow!(
+                "timed out after {WALLET_INSTRUMENT_LOAD_BUDGET:?}"
+            ))
+        });
+
+        if let Err(e) = result {
+            log::warn!("Failed to load Polymarket wallet instruments: {e:#}");
+        }
+
         self.core.set_instruments_initialized();
         self.settlement.begin_session();
         self.settlement.mark_live();

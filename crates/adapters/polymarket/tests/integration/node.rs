@@ -29,7 +29,10 @@ use std::{
 use nautilus_common::{
     actor::DataActor,
     enums::Environment,
-    msgbus::{self, MessagingSwitchboard, stubs::get_any_saving_handler},
+    msgbus::{
+        self, MessagingSwitchboard,
+        stubs::{get_any_saving_handler, get_typed_message_saving_handler},
+    },
     testing::wait_until_async,
 };
 use nautilus_live::{
@@ -41,10 +44,10 @@ use nautilus_live::{
 use nautilus_model::{
     enums::OrderStatus,
     events::{OrderAccepted, OrderCanceled, OrderFillVoided, OrderFilled, OrderRejected},
-    identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
-    instruments::Instrument,
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
+    instruments::{Instrument, InstrumentAny},
     orders::Order,
-    types::Quantity,
+    types::{Price, Quantity},
 };
 use nautilus_polymarket::{
     common::consts::POLYMARKET,
@@ -202,14 +205,25 @@ fn build_node_with_execution_config(
 }
 
 #[rstest]
+#[case::startup(None)]
+#[case::winner(Some((r#"["1","0"]"#, "1")))]
+#[case::loser(Some((r#"["0","1"]"#, "0")))]
 #[tokio::test]
+async fn startup_mass_status_loads_position_in_past_end_market(
+    #[case] resolution: Option<(&str, &str)>,
+    #[values(false, true)] closed: bool,
+) {
+    check_wallet_position_lifecycle(closed, resolution).await;
+}
+
 #[expect(
     clippy::await_holding_refcell_ref,
     reason = "the node is stopped before the standalone report request"
 )]
-async fn startup_mass_status_loads_position_in_past_end_open_market() {
+async fn check_wallet_position_lifecycle(closed: bool, resolution: Option<(&str, &str)>) {
     let state = TestServerState::default();
-    let market = load_json("gamma_market_past_end_date_open.json");
+    let mut market = load_json("gamma_market_past_end_date_open.json");
+    market["closed"] = json!(closed);
     let condition_id = market["conditionId"].as_str().unwrap();
     let tokens: Vec<String> =
         serde_json::from_str(market["clobTokenIds"].as_str().unwrap()).unwrap();
@@ -221,7 +235,14 @@ async fn startup_mass_status_loads_position_in_past_end_open_market() {
         "avg_price": "0.321",
     }]));
     *state.gamma_response.lock().await = Some(json!([market]));
-    *state.orders_response_override.lock().await = Some(json!({"data": [], "next_cursor": "LTE="}));
+    let mut order = load_json("http_open_order.json");
+    order["market"] = json!(condition_id);
+    order["asset_id"] = json!(tokens[1]);
+    order["outcome"] = json!("No");
+    order["maker_address"] = json!(super::mock_venue::TEST_SIGNER_ADDRESS);
+    order["size_matched"] = json!("0");
+    *state.orders_response_override.lock().await =
+        Some(json!({"data": [order], "next_cursor": "LTE="}));
     *state.trades_response_override.lock().await = Some(json!({"data": [], "next_cursor": "LTE="}));
     let addr = start_mock_server(state.clone()).await;
     let base_url = format!("http://{addr}");
@@ -241,10 +262,15 @@ async fn startup_mass_status_loads_position_in_past_end_open_market() {
         base_url_data_api: Some(base_url),
         base_url_ws: Some(format!("ws://{addr}/ws")),
         instrument_config: Some(PolymarketInstrumentProviderConfig {
-            load_ids: Some(vec![instrument_id]),
+            filters: Some(std::collections::HashMap::from([(
+                "end_date_min".to_string(),
+                "2100-01-01T00:00:00Z".to_string(),
+            )])),
             ..Default::default()
         }),
-        resolve_poll_enabled: false,
+        resolve_poll_enabled: resolution.is_some(),
+        resolve_poll_interval_secs: 1,
+        resolve_poll_max_wait_secs: u64::MAX,
         ..Default::default()
     };
 
@@ -266,7 +292,18 @@ async fn startup_mass_status_loads_position_in_past_end_open_market() {
         .build()
         .unwrap();
 
+    harness::add_account(
+        &mut node.kernel().cache.borrow_mut(),
+        AccountId::from(harness::ACCOUNT_ID),
+    );
     let handle = node.handle();
+    let data_engine = node.kernel().data_engine.clone();
+    let cache = node.kernel().cache.clone();
+    let resolve_state = state.clone();
+    let mut resolved_market = market.clone();
+    let (handler, instruments) = get_typed_message_saving_handler::<InstrumentAny>(None);
+    let pattern = msgbus::switchboard::get_instruments_pattern(instrument_id.venue);
+    msgbus::subscribe_instruments(pattern, handler, None);
 
     let driver = async move {
         wait_until_async(
@@ -275,6 +312,39 @@ async fn startup_mass_status_loads_position_in_past_end_open_market() {
         )
         .await;
         let running = handle.state();
+
+        if let Some((outcome_prices, close_price)) = resolution {
+            {
+                let cache = cache.borrow();
+                assert_eq!(
+                    cache.positions_open_count(None, Some(&instrument_id), None, None, None),
+                    1
+                );
+            }
+
+            resolved_market["closed"] = json!(true);
+            resolved_market["outcomePrices"] = json!(outcome_prices);
+            *resolve_state.gamma_response.lock().await = Some(json!([resolved_market]));
+            *resolve_state.positions_response_override.lock().await = Some(json!([]));
+            wait_until_async(
+                || async {
+                    let cache = cache.borrow();
+                    cache.positions_closed_count(None, Some(&instrument_id), None, None, None) == 1
+                },
+                DEADLINE,
+            )
+            .await;
+
+            let cache = cache.borrow();
+            assert_eq!(
+                cache.instrument_close(&instrument_id).unwrap().close_price,
+                Price::from(close_price),
+            );
+        }
+
+        assert!(data_engine.borrow().subscribed_book_deltas().is_empty());
+        assert!(data_engine.borrow().subscribed_quotes().is_empty());
+        assert!(data_engine.borrow().subscribed_trades().is_empty());
         handle.stop();
         running
     };
@@ -284,6 +354,36 @@ async fn startup_mass_status_loads_position_in_past_end_open_market() {
             .await
             .unwrap();
     result.expect("startup mass status");
+    assert_eq!(
+        node.kernel()
+            .cache
+            .borrow()
+            .orders_open_count(None, None, None, None, None),
+        1,
+    );
+    let mut published: Vec<_> = instruments
+        .get_messages()
+        .iter()
+        .map(Instrument::id)
+        .collect();
+    published.sort_unstable();
+    let mut expected = vec![
+        instrument_id,
+        InstrumentId::from(format!("{condition_id}-{}.POLYMARKET", tokens[1])),
+    ];
+    expected.sort_unstable();
+    assert_eq!(published, expected);
+    let queries = state.gamma_queries.lock().await;
+
+    if resolution.is_some() {
+        assert!(queries.len() >= 3);
+    } else {
+        assert_eq!(queries.len(), if closed { 3 } else { 2 });
+    }
+
+    assert_eq!(queries[0]["end_date_min"], "2100-01-01T00:00:00Z");
+    assert_eq!(queries[1]["condition_ids"], condition_id);
+    drop(queries);
     let cached = node
         .kernel()
         .cache
@@ -301,10 +401,17 @@ async fn startup_mass_status_loads_position_in_past_end_open_market() {
         .unwrap();
 
     assert_eq!(running, NodeState::Running);
+    assert_eq!(mass_status.order_reports().len(), 1);
     assert!(
         cached.expiration_ns().unwrap()
             < nautilus_core::time::get_atomic_clock_realtime().get_time_ns()
     );
+
+    if resolution.is_some() {
+        assert!(mass_status.position_reports().is_empty());
+        return;
+    }
+
     assert_eq!(mass_status.position_reports().len(), 1);
     let positions = &mass_status.position_reports()[&instrument_id];
     assert_eq!(positions.len(), 1);
@@ -314,7 +421,7 @@ async fn startup_mass_status_loads_position_in_past_end_open_market() {
         positions[0].avg_px_open,
         Some(Decimal::from_str_exact("0.321").unwrap())
     );
-    assert_eq!(state.orders_get_count.load(Ordering::Acquire), 2);
+    assert_eq!(state.orders_get_count.load(Ordering::Acquire), 3);
 }
 
 #[rstest]

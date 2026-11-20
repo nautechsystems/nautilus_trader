@@ -2869,8 +2869,12 @@ subscriptions without further retries or a terminal-miss error. It logs the reje
 
 The Rust data client tracks Polymarket exposure by `condition_id` so both YES and NO legs
 close together when the venue resolves the market. Position events add open Polymarket binary
-option instruments to an internal watchlist. Data clients can also watch an instrument without a
-position by subscribing to `InstrumentStatus`, `InstrumentClose`, or both.
+option instruments to an internal watchlist. The data client takes a position's instrument from its loaded
+set or, failing that, from the shared cache, so wallet positions outside discovery filters also enter the
+watchlist. Periodic metadata refresh does not cover a watch taken from the shared cache: it keeps the cached
+end date, so a postponed market can time out before it resolves. To keep its deadline current, include the
+market in the data client's discovery filters or `load_ids`. Data clients can also watch an instrument
+without a position by subscribing to `InstrumentStatus`, `InstrumentClose`, or both.
 
 The subscriptions are independent: a status subscription emits only the status close, while a close
 subscription emits only the settlement price. Unsubscribing from one does not remove the other.
@@ -2976,7 +2980,8 @@ users can redeem CTF and V2 positions with [Position operations](#position-opera
   automatic polling, and manual requests. Successful resolution emits each admitted owner's event
   types once, removes those owners and the condition's watch, and releases its WebSocket subscriptions.
   Existing pending data intents retain their outcome until admission or cancellation. New subscriptions
-  cannot re-enroll the resolved condition. Automatic delivery never bypasses instrument-filter admission.
+  cannot re-enroll the resolved condition. Automatic delivery for pending data subscriptions requires
+  instrument-filter admission.
 
 #### Timeout, reconnect, and reset
 
@@ -3297,6 +3302,7 @@ Class/struct: `PolymarketExecutionClientConfig`.
 | `signature_type`                                    | `Eoa`                 | `Eoa`, `PolyProxy`, `PolyGnosisSafe`, or `Poly1271`.                                                                  |
 | `signer_type`                                       | `Owner`               | `Owner` or `Session`; sessions require explicit credentials and `Poly1271`.                                           |
 | `base_url_http`, `base_url_ws`, `base_url_data_api` | `None`                | Override the respective production endpoint.                                                                          |
+| `base_url_gamma`                                    | `None`                | Override the Gamma endpoint used to load wallet instruments during connect.                                           |
 | `proxy_url`                                         | `None`                | HTTP or HTTPS proxy for every execution transport.                                                                    |
 | `http_timeout_secs`                                 | `60`                  | HTTP timeout in seconds.                                                                                              |
 | `max_retries`                                       | `3`                   | Retries for single-order submit/cancel requests and for each batch-cancel chunk.                                      |
@@ -3336,7 +3342,7 @@ After such a failure, explicitly disconnect and reconnect the client to restore 
 
 Set `proxy_url` to apply one HTTP or HTTPS proxy to every transport owned by that client. The data
 client routes CLOB HTTP, Gamma HTTP, Data API HTTP, the market WebSocket pool, and PolyBolt through the
-proxy. The execution client routes authenticated CLOB HTTP, Data API HTTP, and the authenticated
+proxy. The execution client routes authenticated CLOB HTTP, Gamma HTTP, Data API HTTP, and the authenticated
 user WebSocket through it. Configure the same value on both clients when running data and execution
 together.
 
@@ -3364,6 +3370,24 @@ For unmapped open orders and positions inside either scope, the adapter checks t
 CLOB after applying account ownership, instrument filters, and position dust and resolved-balance
 exclusions. It skips rows for unsupported markets with a warning. An unmapped supported `v1` or `v2` row
 or a failed version lookup still fails the report request.
+
+During each connection setup, including when startup reconciliation is disabled, the execution client reads
+the wallet's open orders and, for `Owner` signers, its positions, and applies these scope rules. It loads
+missing supported `v1` and `v2` instruments by condition ID from open and closed Gamma markets, independently
+of discovery filters, and emits them as instrument events. `LiveNode::run()` caches them before startup
+reconciliation, and instrument subscribers receive them. The adapter does not subscribe to market data for
+them.
+
+- **Failures**: A failed lookup, a lookup that exceeds 15 seconds, or missing Gamma metadata logs a warning
+  and does not fail the connection. Startup reconciliation fails for an in-scope open order or position whose
+  instrument is still missing. If the node's `timeout_connection` expires during the lookup, startup fails with
+  an `exec-connect timeout` instead.
+- **Large wallets**: The client checks each missing market on CLOB in turn, so a wallet with many markets
+  outside discovery can exceed the budget. Set `load_ids` or widen discovery to cover those markets.
+- **Timing**: The client loads instruments only for records that exist at connect.
+
+The cache includes metadata needed to understand existing exposure. Strategies must apply their own
+entry scope rather than treating every cached or published instrument as an entry candidate.
 
 Cached open orders and positions without explicit supported protocol metadata are skipped with a warning.
 Confirmed trades on those instruments fail fill-report generation. Reload old cached instruments before trading.

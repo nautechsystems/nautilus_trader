@@ -26,6 +26,7 @@ Released on TBD (UTC).
 - Added OKX `order_request_ttl_ms` option to set `expTime` on order requests (#5646), thanks @michalismeng
 - Added OKX option `exercise_style` and `settlement_type` from the venue contract specification
 - Added OKX `use_spot_position_reports` option to report net spot wallet balances as positions
+- Added Polymarket `base_url_gamma` execution config option (#5649), thanks @imbolc
 - Added Tardis option `exercise_style` and `settlement_type` by source exchange
 
 ### Breaking Changes
@@ -173,6 +174,7 @@ Released on TBD (UTC).
 - Fixed Polymarket balances not refreshing after auto-redemption events
 - Fixed Polymarket inferred reconciliation fills keeping free balance reduced after restart
 - Fixed Polymarket maker fills applying when maker quantities do not sum to the trade size
+- Fixed Polymarket reconciliation of wallet orders and positions outside discovery filters (#5649), thanks @imbolc
 - Fixed Polymarket stale metadata and resolution deadlines for tracked markets (#5671, #5655), thanks @imbolc
 
 ### Internal Improvements
