@@ -103,7 +103,8 @@ use nautilus_model::{
         TraderId, VenueOrderId,
     },
     instruments::Instrument,
-    orders::{Order, OrderAny, OrderList, OrderTestBuilder},
+    orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
+    position::Position,
     reports::{ExecutionMassStatus, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
@@ -164,6 +165,7 @@ struct WsState {
     login_frames: Arc<tokio::sync::Mutex<Vec<Value>>>,
     subscribe_frames: Arc<tokio::sync::Mutex<Vec<Value>>>,
     subscribe_status: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
+    reject_first_login: Arc<AtomicBool>,
     login_failures_after_first: Arc<AtomicUsize>,
     disconnect_after_subscribe: Arc<AtomicBool>,
     // Order entry now flows over the WebSocket Trading API. Each vector holds
@@ -210,6 +212,7 @@ impl Default for WsState {
             login_frames: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             subscribe_frames: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             subscribe_status: Arc::new(tokio::sync::Mutex::new(None)),
+            reject_first_login: Arc::new(AtomicBool::new(false)),
             login_failures_after_first: Arc::new(AtomicUsize::new(0)),
             disconnect_after_subscribe: Arc::new(AtomicBool::new(false)),
             submitted_orders: Arc::new(tokio::sync::Mutex::new(Vec::new())),
@@ -587,17 +590,20 @@ async fn handle_ws(mut socket: WebSocket, state: WsState) {
                                     frames.push(payload.clone());
                                     frames.len()
                                 };
-                                let reject_reconnect = login_count > 1
-                                    && state
+                                let reject_login = if login_count == 1 {
+                                    state.reject_first_login.load(Ordering::SeqCst)
+                                } else {
+                                    state
                                         .login_failures_after_first
                                         .try_update(
                                             Ordering::SeqCst,
                                             Ordering::SeqCst,
                                             |remaining| remaining.checked_sub(1),
                                         )
-                                        .is_ok();
+                                        .is_ok()
+                                };
 
-                                if reject_reconnect {
+                                if reject_login {
                                     json!({
                                         "id": id,
                                         "error": {"code": 9002, "message": "Backend unavailable"},
@@ -2327,6 +2333,762 @@ async fn test_exec_client_reconnect_refreshes_account_and_submits_mass_status(
     tc.client.disconnect().await.expect("disconnect succeeds");
 }
 
+#[rstest]
+#[case::bounded(Some(10_080))]
+#[case::covers_gap(Some(0))]
+#[case::unbounded(None)]
+#[tokio::test]
+async fn test_reconnect_uses_startup_mass_status_lookback(#[case] lookback_mins: Option<u64>) {
+    let rest = RestState::default();
+    let registry = SocketReconnectRegistry::default();
+    let mut tc = build_client_with_config(
+        rest.clone(),
+        WsState::default(),
+        Some(&registry),
+        |config| config,
+    )
+    .await;
+    let instrument = serde_json::from_value(sample_instrument_json()).unwrap();
+    tc.client.cache_instrument(instrument).unwrap();
+    let (time_sender, mut time_events) = tokio::sync::mpsc::unbounded_channel();
+    set_time_event_sender(Arc::new(ReconciliationTimeSender(time_sender)));
+    let connect_started = get_atomic_clock_realtime().get_time_ns();
+    tc.client.connect().await.unwrap();
+
+    let startup = tc
+        .client
+        .generate_mass_status(lookback_mins)
+        .await
+        .unwrap()
+        .unwrap();
+    tc.client.generate_mass_status(None).await.unwrap().unwrap();
+    let requested_at = get_atomic_clock_realtime().get_time_ns();
+    let outcome = registry
+        .handle(ClientId::from("DERIVE"), Ustr::from("derive-user-streams"))
+        .unwrap()
+        .request_reconnect();
+    assert_eq!(outcome, SocketReconnectRequestOutcome::Accepted);
+
+    let event = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            tokio::select! {
+                message = time_events.recv() => assert!(message.unwrap().dispatch()),
+                event = tc.rx.recv() => {
+                    if let Some(ExecutionEvent::Report(ExecutionReport::MassStatus(status))) = event {
+                        break status;
+                    }
+                }
+            }
+        }
+    }).await.expect("reconnect mass status");
+
+    tc.client.disconnect().await.unwrap();
+
+    let expected_start = lookback_mins.map(|mins| {
+        if mins == 0 {
+            let start = event.lookback_start().expect("outage cutoff");
+            let history_overlap = DurationNanos::from_mins(1);
+            assert!(
+                (connect_started.saturating_sub(history_overlap)
+                    ..=requested_at.saturating_sub(history_overlap))
+                    .contains(&start)
+            );
+            start
+        } else {
+            event.ts_init.saturating_sub(DurationNanos::from_mins(mins))
+        }
+    });
+
+    let expected_timestamps = [startup.lookback_start(), None, expected_start]
+        .map(|start| start.map(|ts| json!(ts.as_millis())));
+
+    assert!(event.ts_init > startup.ts_init);
+    assert_eq!(event.lookback_start(), expected_start);
+    assert!(event.reports_complete());
+    assert_eq!(event.order_reports().len(), 1);
+    assert_eq!(
+        event.order_reports()[&VenueOrderId::from("ord-mock-1")].order_status,
+        OrderStatus::Accepted
+    );
+
+    for calls in [&rest.order_history_calls, &rest.trade_history_calls] {
+        let calls = calls.lock().await;
+        assert_eq!(calls.len(), expected_timestamps.len());
+
+        for (call, expected) in calls.iter().zip(&expected_timestamps) {
+            assert_eq!(call.get("from_timestamp"), expected.as_ref());
+        }
+    }
+
+    for calls in [&rest.open_orders_calls, &rest.positions_calls] {
+        let calls = calls.lock().await;
+        assert_eq!(calls.len(), 3);
+        assert!(
+            calls
+                .iter()
+                .all(|call| call.get("from_timestamp").is_none())
+        );
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_reconnect_uses_lookback_supplied_during_account_refresh() {
+    let rest = RestState::default();
+    let registry = SocketReconnectRegistry::default();
+    let mut tc =
+        build_client_with_config(rest.clone(), WsState::default(), Some(&registry), |c| c).await;
+    tc.client
+        .cache_instrument(serde_json::from_value(sample_instrument_json()).unwrap())
+        .unwrap();
+    tc.client.connect().await.unwrap();
+    let initial_reads = rest.get_subaccount_calls.lock().await.len();
+    let account_response = rest.subaccount_response.lock().await;
+    let socket = registry
+        .handle(ClientId::from("DERIVE"), Ustr::from("derive-user-streams"))
+        .unwrap();
+    assert_eq!(
+        socket.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    wait_until(
+        || async { rest.get_subaccount_calls.lock().await.len() == initial_reads + 1 },
+        "recovery account refresh in flight",
+    )
+    .await;
+
+    tc.client
+        .generate_mass_status(Some(10_080))
+        .await
+        .unwrap()
+        .unwrap();
+    drop(account_response);
+
+    let event = drain_until(
+        &mut tc.rx,
+        |event| {
+            matches!(
+                event,
+                ExecutionEvent::Report(ExecutionReport::MassStatus(_))
+            )
+        },
+        "reconnect mass status",
+    )
+    .await;
+
+    tc.client.disconnect().await.unwrap();
+
+    let ExecutionEvent::Report(ExecutionReport::MassStatus(status)) = event else {
+        unreachable!()
+    };
+
+    let start = status
+        .ts_init
+        .saturating_sub(DurationNanos::from_mins(10_080));
+    assert_eq!(status.lookback_start(), Some(start));
+
+    for calls in [&rest.order_history_calls, &rest.trade_history_calls] {
+        let calls = calls.lock().await;
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[1]["from_timestamp"], json!(start.as_millis()));
+    }
+}
+
+#[derive(Debug)]
+struct ReconnectWarnings(std::sync::Mutex<Vec<String>>);
+
+impl ReconnectWarnings {
+    async fn capture() -> (&'static Self, tokio::sync::MutexGuard<'static, ()>) {
+        static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+        static INSTALLED: std::sync::Once = std::sync::Once::new();
+        static WARNINGS: ReconnectWarnings = ReconnectWarnings(std::sync::Mutex::new(Vec::new()));
+        let guard = SERIAL.lock().await;
+        INSTALLED.call_once(|| {
+            log::set_logger(&WARNINGS).unwrap();
+            log::set_max_level(log::LevelFilter::Warn);
+        });
+
+        WARNINGS.0.lock().unwrap().clear();
+        (&WARNINGS, guard)
+    }
+}
+
+impl log::Log for ReconnectWarnings {
+    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+        metadata.level() == log::Level::Warn
+    }
+
+    fn log(&self, record: &log::Record<'_>) {
+        if self.enabled(record.metadata()) {
+            let message = record.args().to_string();
+            if message.starts_with("Derive post-reconnect recovery failed:") {
+                self.0.lock().unwrap().push(message);
+            }
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+#[rstest]
+#[case::source_failure(true, "failed to fetch Derive positions: JSON-RPC error -32602")]
+#[case::lost_records(false, "incomplete Derive report coverage")]
+#[tokio::test]
+async fn test_bounded_reconnect_rejects_incomplete_snapshot(
+    #[case] source_failure: bool,
+    #[case] expected_reason: &str,
+) {
+    let (warnings, _guard) = ReconnectWarnings::capture().await;
+    let rest = RestState::default();
+    let registry = SocketReconnectRegistry::default();
+    let mut tc = build_client_with_config(
+        rest.clone(),
+        WsState::default(),
+        Some(&registry),
+        |config| config,
+    )
+    .await;
+    tc.client
+        .cache_instrument(serde_json::from_value(sample_instrument_json()).unwrap())
+        .unwrap();
+    tc.client.connect().await.unwrap();
+    tc.client
+        .generate_mass_status(Some(10_080))
+        .await
+        .unwrap()
+        .unwrap();
+
+    if source_failure {
+        *rest.positions_response.lock().await =
+            json!({"error": {"code": -32602, "message": "credential-shaped test payload"}});
+    } else {
+        *rest.trade_history_response.lock().await = json!({
+            "trades": [sample_trade_json("", "ord-mock-1", "ETH-PERP")],
+            "pagination": {"count": 1, "num_pages": 1},
+            "subaccount_id": TEST_SUBACCOUNT,
+        });
+    }
+
+    let outcome = registry
+        .handle(ClientId::from("DERIVE"), Ustr::from("derive-user-streams"))
+        .unwrap()
+        .request_reconnect();
+    assert_eq!(outcome, SocketReconnectRequestOutcome::Accepted);
+    let expected = format!("Derive post-reconnect recovery failed: {expected_reason}");
+    wait_until(
+        || async {
+            warnings
+                .0
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|warning| warning.starts_with(&expected))
+        },
+        "reconnect failure",
+    )
+    .await;
+
+    tc.client.disconnect().await.unwrap();
+
+    assert_eq!(
+        warnings
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|warning| warning.starts_with(&expected))
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        [expected.as_str()]
+    );
+    assert!(
+        !std::iter::from_fn(|| tc.rx.try_recv().ok()).any(|event| matches!(
+            event,
+            ExecutionEvent::Report(ExecutionReport::MassStatus(_))
+        ))
+    );
+}
+
+#[rstest]
+#[case::same_transport(false)]
+#[case::rebuilt_transport(true)]
+#[tokio::test]
+async fn test_incomplete_reconnect_keeps_coverage_for_next_session(#[case] rebuild: bool) {
+    let rest = RestState::default();
+    let ws = WsState::default();
+    let registry = SocketReconnectRegistry::default();
+    *rest.open_orders_response.lock().await =
+        json!({"orders": [], "subaccount_id": TEST_SUBACCOUNT});
+    *rest.positions_response.lock().await =
+        json!({"positions": [], "subaccount_id": TEST_SUBACCOUNT});
+    let mut tc = build_client_with_config(rest.clone(), ws.clone(), Some(&registry), |c| c).await;
+    tc.client.connect().await.unwrap();
+    tc.client.generate_mass_status(Some(0)).await.unwrap();
+
+    let venue_order_id = VenueOrderId::from("ord-reconnect-unloaded");
+    let trade_id = TradeId::from("trade-reconnect-unloaded");
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let timestamp = get_atomic_clock_realtime().get_time_ns();
+    let timestamp_ms = timestamp.as_millis() as i64;
+    let mut order = order_json_with(
+        venue_order_id.as_str(),
+        "L-RECOVER-METADATA",
+        "buy",
+        "ETH-PERP",
+        timestamp_ms,
+        "filled",
+    );
+    order["creation_timestamp"] = json!(timestamp_ms);
+    order["filled_amount"] = json!("1");
+    let mut fill = sample_trade_json(trade_id.as_str(), venue_order_id.as_str(), "ETH-PERP");
+    fill["timestamp"] = json!(timestamp_ms);
+    fill["label"] = order["label"].clone();
+    *rest.order_history_response.lock().await = json!({
+        "orders": [order],
+        "pagination": {"count": 1, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT,
+    });
+    *rest.trade_history_response.lock().await = json!({
+        "trades": [fill],
+        "pagination": {"count": 1, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT,
+    });
+
+    let socket = registry
+        .handle(ClientId::from("DERIVE"), Ustr::from("derive-user-streams"))
+        .unwrap();
+    assert_eq!(
+        socket.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+
+    let is_mass_status = |event: &ExecutionEvent| {
+        matches!(
+            event,
+            ExecutionEvent::Report(ExecutionReport::MassStatus(_))
+        )
+    };
+
+    let ExecutionEvent::Report(ExecutionReport::MassStatus(first)) =
+        drain_until(&mut tc.rx, is_mass_status, "first reconnect reports").await
+    else {
+        unreachable!()
+    };
+
+    assert!(!first.reports_complete());
+    assert_eq!(first.fill_reports()[&venue_order_id][0].trade_id, trade_id);
+    assert!(tc.cache.borrow().instrument(&instrument_id).is_none());
+
+    let definition = serde_json::from_value(sample_instrument_json()).unwrap();
+    let instrument = parse_derive_instrument_any(&definition, UnixNanos::default())
+        .unwrap()
+        .unwrap();
+    tc.cache.borrow_mut().add_instrument(instrument).unwrap();
+    tc.client.cache_instrument(definition).unwrap();
+
+    if rebuild {
+        ws.login_failures_after_first.store(3, Ordering::SeqCst);
+    }
+
+    assert_eq!(
+        socket.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+
+    if rebuild {
+        wait_until(
+            || async { !tc.client.is_connected() },
+            "reconnect login retries exhausted",
+        )
+        .await;
+        tc.client.connect().await.unwrap();
+    }
+
+    let ExecutionEvent::Report(ExecutionReport::MassStatus(next)) = drain_until(
+        &mut tc.rx,
+        is_mass_status,
+        "next session recovers incomplete history",
+    )
+    .await
+    else {
+        unreachable!()
+    };
+
+    tc.client.disconnect().await.unwrap();
+
+    let start = first.lookback_start().unwrap();
+    assert!(start <= timestamp);
+    assert_eq!(next.lookback_start(), Some(start));
+    assert!(next.reports_complete());
+    assert_eq!(
+        next.order_reports()[&venue_order_id].instrument_id,
+        instrument_id
+    );
+    let fills = &next.fill_reports()[&venue_order_id];
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].trade_id, trade_id);
+    assert_eq!(fills[0].instrument_id, instrument_id);
+
+    for calls in [&rest.order_history_calls, &rest.trade_history_calls] {
+        let calls = calls.lock().await;
+        assert_eq!(calls.len(), 3);
+        assert_eq!(calls[1]["from_timestamp"], json!(start.as_millis()));
+        assert_eq!(calls[2]["from_timestamp"], json!(start.as_millis()));
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_second_disconnect_supersedes_reconnect_snapshot() {
+    let rest = RestState::default();
+    let registry = SocketReconnectRegistry::default();
+    let mut tc = build_client_with_config(
+        rest.clone(),
+        WsState::default(),
+        Some(&registry),
+        |config| config,
+    )
+    .await;
+    tc.client
+        .cache_instrument(serde_json::from_value(sample_instrument_json()).unwrap())
+        .unwrap();
+    tc.client.connect().await.unwrap();
+    tc.client
+        .generate_mass_status(Some(10_080))
+        .await
+        .unwrap()
+        .unwrap();
+    let socket = registry
+        .handle(ClientId::from("DERIVE"), Ustr::from("derive-user-streams"))
+        .unwrap();
+
+    let response = rest.positions_response.lock().await;
+    assert_eq!(
+        socket.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    wait_until(
+        || async { rest.positions_calls.lock().await.len() == 2 },
+        "first reconnect snapshot waiting for positions",
+    )
+    .await;
+
+    let next_reconnect_at = get_atomic_clock_realtime().get_time_ns();
+    assert_eq!(
+        socket.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    wait_until(
+        || async { rest.positions_calls.lock().await.len() == 3 },
+        "second recovery collects positions while the first response is blocked",
+    )
+    .await;
+    drop(response);
+
+    let event = drain_until(
+        &mut tc.rx,
+        |event| {
+            matches!(
+                event,
+                ExecutionEvent::Report(ExecutionReport::MassStatus(_))
+            )
+        },
+        "latest reconnect mass status",
+    )
+    .await;
+
+    tc.client.disconnect().await.unwrap();
+
+    let ExecutionEvent::Report(ExecutionReport::MassStatus(status)) = event else {
+        unreachable!()
+    };
+
+    assert!(status.ts_init >= next_reconnect_at);
+    assert_eq!(rest.positions_calls.lock().await.len(), 3);
+    assert!(
+        !std::iter::from_fn(|| tc.rx.try_recv().ok()).any(|event| matches!(
+            event,
+            ExecutionEvent::Report(ExecutionReport::MassStatus(_))
+        ))
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_second_disconnect_discards_superseded_account_refresh() {
+    let rest = RestState::default();
+    let ws = WsState::default();
+    let registry = SocketReconnectRegistry::default();
+    let mut tc = build_client_with_config(rest.clone(), ws.clone(), Some(&registry), |c| c).await;
+    tc.client
+        .cache_instrument(serde_json::from_value(sample_instrument_json()).unwrap())
+        .unwrap();
+    tc.client.connect().await.unwrap();
+    while tc.rx.try_recv().is_ok() {}
+    let initial_reads = rest.get_subaccount_calls.lock().await.len();
+
+    let response = rest.subaccount_response.lock().await;
+    let socket = registry
+        .handle(ClientId::from("DERIVE"), Ustr::from("derive-user-streams"))
+        .unwrap();
+    assert_eq!(
+        socket.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    wait_until(
+        || async { rest.get_subaccount_calls.lock().await.len() == initial_reads + 1 },
+        "first reconnect account refresh in flight",
+    )
+    .await;
+
+    let replay = ws.subscribe_status.lock().await;
+    assert_eq!(
+        socket.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    wait_until(
+        || async { ws.subscribe_frames.lock().await.len() == 3 },
+        "second reconnect reached subscription replay",
+    )
+    .await;
+    drop(response);
+
+    let premature = tokio::time::timeout(Duration::from_millis(200), tc.rx.recv()).await;
+    drop(replay);
+    assert!(premature.is_err());
+    drain_until(
+        &mut tc.rx,
+        |event| matches!(event, ExecutionEvent::Account(_)),
+        "current recovery account refresh",
+    )
+    .await;
+    drain_until(
+        &mut tc.rx,
+        |event| {
+            matches!(
+                event,
+                ExecutionEvent::Report(ExecutionReport::MassStatus(_))
+            )
+        },
+        "current reconnect reconciliation",
+    )
+    .await;
+
+    tc.client.disconnect().await.unwrap();
+    assert_eq!(
+        rest.get_subaccount_calls.lock().await.len(),
+        initial_reads + 2
+    );
+}
+
+#[rstest]
+#[case::covered(false)]
+#[case::outside_load_ids(true)]
+#[tokio::test]
+async fn test_bounded_reconnect_reports_cached_instrument_flat(#[case] excluded: bool) {
+    let registry = SocketReconnectRegistry::default();
+    let eth = InstrumentId::from("ETH-PERP.DERIVE");
+    let btc = InstrumentId::from("BTC-PERP.DERIVE");
+    let account = AccountId::from("DERIVE-001");
+
+    let mut tc = build_client_with_config(
+        RestState::default(),
+        WsState::default(),
+        Some(&registry),
+        |mut config| {
+            config.load_ids = excluded.then_some(vec![eth]);
+            config
+        },
+    )
+    .await;
+
+    let eth_definition = sample_instrument_json();
+    let mut btc_definition = eth_definition.clone();
+    btc_definition["instrument_name"] = json!("BTC-PERP");
+    tc.client
+        .cache_instrument(serde_json::from_value(eth_definition).unwrap())
+        .unwrap();
+    let btc_definition = serde_json::from_value(btc_definition).unwrap();
+    let btc_instrument = parse_derive_instrument_any(&btc_definition, UnixNanos::default())
+        .unwrap()
+        .unwrap();
+    tc.client.cache_instrument(btc_definition).unwrap();
+    tc.cache
+        .borrow_mut()
+        .add_instrument(btc_instrument.clone())
+        .unwrap();
+
+    let (sender, mut time_events) = tokio::sync::mpsc::unbounded_channel();
+    set_time_event_sender(Arc::new(ReconciliationTimeSender(sender)));
+    tc.client.connect().await.unwrap();
+    tc.client
+        .generate_mass_status(Some(10_080))
+        .await
+        .unwrap()
+        .unwrap();
+
+    let order = build_limit_order(
+        btc,
+        ClientOrderId::from("OLD-BTC-ORDER"),
+        OrderSide::Buy,
+        Price::from("3500"),
+        Quantity::from("1"),
+    );
+
+    let OrderEventAny::Filled(fill) = TestOrderEventStubs::filled(
+        &order,
+        &btc_instrument,
+        Some(TradeId::from("OLD-BTC-FILL")),
+        None,
+        None,
+        None,
+        Some(LiquiditySide::Taker),
+        Some(Money::zero(Currency::USDC())),
+        None,
+        Some(account),
+    ) else {
+        unreachable!()
+    };
+
+    let position = Position::new(&btc_instrument, fill);
+    tc.cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    let socket = registry
+        .handle(ClientId::from("DERIVE"), Ustr::from("derive-user-streams"))
+        .unwrap();
+    assert_eq!(
+        socket.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_secs(5), time_events.recv())
+            .await
+            .unwrap()
+            .unwrap()
+            .dispatch()
+    );
+
+    let event = drain_until(
+        &mut tc.rx,
+        |event| {
+            matches!(
+                event,
+                ExecutionEvent::Report(ExecutionReport::MassStatus(_))
+            )
+        },
+        "bounded reconnect mass status",
+    )
+    .await;
+
+    tc.client.disconnect().await.unwrap();
+
+    let ExecutionEvent::Report(ExecutionReport::MassStatus(status)) = event else {
+        unreachable!()
+    };
+
+    assert!(
+        status
+            .order_reports()
+            .values()
+            .all(|order| order.instrument_id == eth)
+    );
+    assert!(status.fill_reports().is_empty());
+    let reports = status.position_reports();
+    assert_eq!(reports.len(), if excluded { 1 } else { 2 });
+
+    if excluded {
+        assert!(!reports.contains_key(&btc));
+    } else {
+        let flat = &reports[&btc][0];
+        assert_eq!(flat.account_id, account);
+        assert_eq!(flat.instrument_id, btc);
+        assert_eq!(flat.position_side, PositionSide::Flat);
+        assert_eq!(flat.signed_decimal_qty, Decimal::ZERO);
+        assert_eq!(flat.ts_init, status.ts_init);
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_second_disconnect_during_cache_snapshot_preserves_recovery() {
+    let rest = RestState::default();
+    let ws = WsState::default();
+    let registry = SocketReconnectRegistry::default();
+    let mut tc = build_client_with_config(rest.clone(), ws.clone(), Some(&registry), |c| c).await;
+    tc.client
+        .cache_instrument(serde_json::from_value(sample_instrument_json()).unwrap())
+        .unwrap();
+    let (sender, mut time_events) = tokio::sync::mpsc::unbounded_channel();
+    set_time_event_sender(Arc::new(ReconciliationTimeSender(sender)));
+    tc.client.connect().await.unwrap();
+    tc.client
+        .generate_mass_status(Some(0))
+        .await
+        .unwrap()
+        .unwrap();
+    let socket = registry
+        .handle(ClientId::from("DERIVE"), Ustr::from("derive-user-streams"))
+        .unwrap();
+
+    assert_eq!(
+        socket.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    let first_snapshot = tokio::time::timeout(Duration::from_secs(5), time_events.recv())
+        .await
+        .expect("first recovery requests a cache snapshot")
+        .unwrap();
+
+    let replay = ws.subscribe_status.lock().await;
+    assert_eq!(
+        socket.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    wait_until(
+        || async { ws.subscribe_frames.lock().await.len() == 3 },
+        "second reconnect reached subscription replay",
+    )
+    .await;
+    assert!(first_snapshot.dispatch());
+
+    let premature = tokio::time::timeout(Duration::from_millis(200), async {
+        while let Some(event) = tc.rx.recv().await {
+            if let ExecutionEvent::Report(ExecutionReport::MassStatus(status)) = event {
+                return status;
+            }
+        }
+
+        panic!("execution event stream closed");
+    })
+    .await;
+
+    let replay_released = get_atomic_clock_realtime().get_time_ns();
+    drop(replay);
+    assert!(
+        premature.is_err(),
+        "published recovery before second replay completed"
+    );
+
+    let status = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            tokio::select! {
+                message = time_events.recv() => assert!(message.unwrap().dispatch()),
+                event = tc.rx.recv() => {
+                    if let Some(ExecutionEvent::Report(ExecutionReport::MassStatus(status))) = event {
+                        break status;
+                    }
+                }
+            }
+        }
+    }).await.expect("second reconnect publishes recovery");
+
+    tc.client.disconnect().await.unwrap();
+
+    assert!(status.ts_init >= replay_released);
+    assert_eq!(rest.positions_calls.lock().await.len(), 2);
+}
+
 #[derive(Debug)]
 struct ReconciliationTimeSender(tokio::sync::mpsc::UnboundedSender<TimeEventMessage>);
 
@@ -2540,6 +3302,139 @@ async fn test_reconnect_refreshes_cached_replacement_after_terminal_eviction() {
     assert_eq!(ws.submitted_orders.lock().await.len(), 1);
     assert_eq!(ws.replace_orders.lock().await.len(), 1);
     tc.client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_failed_initial_login_does_not_start_reconnect_recovery() {
+    let rest = RestState::default();
+    let ws = WsState::default();
+    ws.reject_first_login.store(true, Ordering::SeqCst);
+    let mut tc = build_client(rest.clone(), ws.clone()).await;
+    let (sender, mut time_events) = tokio::sync::mpsc::unbounded_channel();
+    set_time_event_sender(Arc::new(ReconciliationTimeSender(sender)));
+
+    let error = tc.client.connect().await.unwrap_err();
+    assert_eq!(error.to_string(), "failed to connect Derive WebSocket");
+    assert!(!tc.client.is_connected());
+
+    tc.client.connect().await.unwrap();
+    assert!(tc.client.is_connected());
+    let premature = tokio::time::timeout(Duration::from_millis(200), time_events.recv()).await;
+    tc.client.disconnect().await.unwrap();
+
+    assert!(premature.is_err(), "startup requested a reconnect snapshot");
+    assert_eq!(ws.login_frames.lock().await.len(), 2);
+    assert_eq!(ws.subscribe_frames.lock().await.len(), 1);
+    assert!(rest.order_history_calls.lock().await.is_empty());
+    assert!(rest.trade_history_calls.lock().await.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_reconnect_rebuild_rejects_unsent_modify() {
+    let rest = RestState::default();
+    let ws = WsState::default();
+    let registry = SocketReconnectRegistry::default();
+    let mut tc = build_client_with_config(rest.clone(), ws.clone(), Some(&registry), |c| c).await;
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let client_order_id = ClientOrderId::from("REBUILD-MODIFY");
+    let venue_order_id = VenueOrderId::from("ord-rebuild-modify");
+    let order_json = order_json_with(
+        venue_order_id.as_str(),
+        client_order_id.as_str(),
+        "buy",
+        "ETH-PERP",
+        1_700_000_001_000,
+        "open",
+    );
+    *rest.open_orders_response.lock().await =
+        json!({"orders": [order_json], "subaccount_id": TEST_SUBACCOUNT});
+    *rest.get_order_response.lock().await = order_json;
+    let definition = serde_json::from_value(sample_instrument_json()).unwrap();
+    let instrument = parse_derive_instrument_any(&definition, UnixNanos::default())
+        .unwrap()
+        .unwrap();
+    tc.cache.borrow_mut().add_instrument(instrument).unwrap();
+    tc.client.cache_instrument(definition).unwrap();
+    let order = accepted_order(
+        build_limit_order(
+            instrument_id,
+            client_order_id,
+            OrderSide::Buy,
+            Price::from("3500.00"),
+            Quantity::from("1.000"),
+        ),
+        venue_order_id,
+        AccountId::from("DERIVE-001"),
+    );
+    add_order_to_cache(&tc.cache, order, Some(ClientId::from("DERIVE")));
+    tc.client.connect().await.unwrap();
+
+    let command_id = UUID4::new();
+    let reads_before = rest.get_order_calls.lock().await.len();
+    let response = rest.get_order_response.lock().await;
+    tc.client
+        .modify_order(ModifyOrder::new(
+            TraderId::from("TRADER-001"),
+            Some(ClientId::from("DERIVE")),
+            StrategyId::from("S-1"),
+            instrument_id,
+            client_order_id,
+            Some(venue_order_id),
+            None,
+            Some(Price::from("3505.00")),
+            None,
+            command_id,
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    wait_until(
+        || async { rest.get_order_calls.lock().await.len() == reads_before + 1 },
+        "modify pre-signing read is in flight",
+    )
+    .await;
+
+    ws.login_failures_after_first.store(3, Ordering::SeqCst);
+    let socket = registry
+        .handle(ClientId::from("DERIVE"), Ustr::from("derive-user-streams"))
+        .unwrap();
+    assert_eq!(
+        socket.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    wait_until(
+        || async { !tc.client.is_connected() },
+        "private stream exhausted login retries",
+    )
+    .await;
+
+    tc.client
+        .connect()
+        .await
+        .expect("rebuild can prime the original order");
+    drop(response);
+    assert!(tc.client.is_connected());
+
+    let ExecutionEvent::Order(OrderEventAny::ModifyDenied(denied)) = drain_until(
+        &mut tc.rx,
+        |event| matches!(event, ExecutionEvent::Order(OrderEventAny::ModifyDenied(_))),
+        "unsent modify denied during rebuild",
+    )
+    .await
+    else {
+        unreachable!()
+    };
+
+    tc.client.disconnect().await.unwrap();
+
+    assert_eq!(denied.client_order_id, client_order_id);
+    assert_eq!(denied.venue_order_id, Some(venue_order_id));
+    assert_eq!(denied.causation_id, Some(command_id));
+    assert_eq!(denied.reason, "Derive modify stopped before transmission");
+    assert!(ws.replace_orders.lock().await.is_empty());
 }
 
 #[rstest]
@@ -9269,7 +10164,7 @@ async fn test_mass_status_missing_execution_identity_never_completes_history(
     } else {
         assert_eq!(
             result.unwrap_err().to_string(),
-            "incomplete unbounded Derive report coverage"
+            "incomplete Derive report coverage"
         );
     }
 
@@ -9771,10 +10666,7 @@ async fn test_mass_status_unavailable_companion_remains_incomplete(
         assert_eq!(later_fills[0].trade_id, TradeId::from("missing-third"));
     } else {
         let error = result.unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            "incomplete unbounded Derive report coverage"
-        );
+        assert_eq!(error.to_string(), "incomplete Derive report coverage");
         assert!(matches!(
             error.downcast_ref::<DeriveHttpError>(),
             Some(DeriveHttpError::JsonRpc { code: 11006, .. })
@@ -17794,10 +18686,7 @@ async fn test_mass_status_partial_sources_obey_report_window(
     let error = result.unwrap_err();
 
     if source == 3 {
-        assert_eq!(
-            error.to_string(),
-            "incomplete unbounded Derive report coverage"
-        );
+        assert_eq!(error.to_string(), "incomplete Derive report coverage");
     } else {
         assert!(
             matches!(error.downcast_ref::<DeriveHttpError>(), Some(DeriveHttpError::JsonRpc {code: -32602, message, ..}) if message == "source unavailable")

@@ -136,6 +136,7 @@ Released on TBD (UTC).
 - Fixed Bybit fast-execution fee rates loading after the private stream connects
 - Fixed Bybit WebSocket holding replay messages indefinitely when re-authentication gets no reply
 - Fixed Bybit WebSocket authentication failures dropping the venue's rejection reason
+- Fixed Derive reconnect ignoring the startup reconciliation lookback (#5709), thanks for reporting @Aviksaikat
 - Fixed FinFeed dropping `Retry-After` on failed reads and missing HTTP dates and retryable 5xx cooldowns
 - Fixed FinFeed resetting request spacing on reconnect
 - Fixed Hyperliquid venue timestamps losing nanosecond exactness through float conversion

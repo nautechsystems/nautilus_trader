@@ -143,14 +143,15 @@ Order, trigger-order, and replace requests sign the seven-word Trade ABI with 1e
 Financial inputs must fit 12 fractional digits, including trailing zeros. Excess precision raises an error
 instead of truncating the signed value. The request sends the same decimal values used to build the signature.
 
-Action nonces use UNIX nanoseconds and travel as decimal strings in requests and responses.
-The allocator shares a monotonic stream per wallet and subaccount across client instances in the
-same process, regardless of wallet lettercase. Clock rollback advances the last nonce only while
-it remains within one hour of local time. The adapter applies the inclusive order window
-[local time minus 90 days, local time plus 1 hour], a conservative lookback within the venue's
-documented 120-day window. Local time
-approximates the server clock, so clock skew can still cause venue rejection. Login timestamps use
-milliseconds, and signature expiry uses seconds.
+- **Nonce allocation.** Action nonces use UNIX nanoseconds and travel as decimal strings in requests
+  and responses. Client instances in the same process share a monotonic stream per wallet and
+  subaccount, regardless of wallet lettercase.
+- **Clock rollback.** The allocator advances the last nonce only while it remains within one hour of
+  local time.
+- **Order window.** The adapter uses the inclusive window [local time minus 90 days, local time plus
+  1 hour]. This is a conservative lookback within the venue's documented 120-day window. Local time
+  approximates the server clock, so clock skew can still cause venue rejection.
+- **Other time units.** Login timestamps use milliseconds, and signature expiry uses seconds.
 
 ### Switch an existing deployment to v3
 
@@ -511,24 +512,27 @@ Set execution-client `load_ids` to restrict reconciliation to specific instrumen
 list includes every instrument. Bulk-load their currencies through data-client `currencies`, and set
 `reconciliation_instrument_ids` to the same set so continuous checks do not treat omitted positions as flat.
 
-Before private streaming starts, the execution client publishes account state. It loads instrument definitions
-required by the in-scope native portfolio and this client's cached active orders, including owned orders outside
-`load_ids`. It waits for the engine cache to observe those definitions before private streaming starts.
-It restores owned active order context from cached order events,
-including known venue IDs and processed trade IDs, then verifies active orders against native open orders and
-history for their instruments. Historical metadata gaps do not prevent this binding check.
+1. **Load the portfolio.** The execution client publishes account state and loads the instrument definitions
+   required by the in-scope native portfolio and this client's cached active orders, including owned orders
+   outside `load_ids`. It waits for the engine cache to observe those definitions before private streaming starts.
+1. **Restore active orders.** The client restores owned order context from cached order events, including known
+   venue IDs and processed trade IDs. It then verifies those orders against native open orders and history for
+   their instruments. Historical metadata gaps do not prevent this binding check.
+1. **Refresh after subscription.** Once the venue confirms the private subscriptions, the client refreshes
+   account state and required instrument definitions before processing stream updates. This closes the interval
+   between the initial portfolio snapshot and subscription confirmation.
 
-After private subscription confirmation, it refreshes account state and required instrument definitions again
-before processing stream updates. This closes the interval between the initial portfolio snapshot and
-subscription confirmation.
+#### Report scope
 
-- Excluded records log at debug and do not make history incomplete.
-- An included active order or position with missing metadata fails the report request.
-- Included historical metadata gaps warn and fail direct report requests. Mass-status coverage follows the
-  snapshot rules below.
+- **Excluded records.** The adapter logs them at debug level. They do not make history incomplete.
+- **Missing active metadata.** An included active order or position with missing metadata fails the request.
+- **Missing historical metadata.** The adapter logs a warning. Direct report requests fail.
+  Mass-status requests follow the [snapshot coverage](#snapshot-coverage) rules.
 
 Report generation does not fetch missing definitions. A single-order query fails if the venue returns an excluded
 record. Private WebSocket streams remain subaccount-wide.
+
+#### Replacement bindings
 
 When `private/get_order` returns `11006` for a known venue ID, the adapter searches paginated
 `private/get_order_history` for that exact ID. It does not infer an unproved replacement binding
@@ -542,7 +546,7 @@ one hour before the retained nonce timestamp, allowing for the venue's accepted 
 An absent successor does not prove that the replacement failed. After a process restart, cached
 `PendingUpdate` events do not retain enough evidence to resolve an ambiguous replacement automatically.
 
-If an unresolved replacement prevents startup:
+If an unresolved replacement prevents startup, follow these steps.
 
 1. Stop the trading node and preserve its cache and order event history.
 1. Inspect the subaccount's native orders, trades, and positions through the venue's account tools. Match
@@ -552,46 +556,47 @@ If an unresolved replacement prevents startup:
    before resuming trading. The adapter provides no automatic cache repair for this case. Clearing
    `PendingUpdate` alone does not establish the replacement's outcome.
 
-Mass status retains native replacement legs and fills. For an uncached replacement chain, startup
-reconciliation restores the proven live successor with cumulative fills and native venue order IDs. Recovered
-replacement successors support queries, modification, and cancellation. Reconnect snapshots leave uncached
-replacement reports native. They do not reconstruct these chains.
+| Order status query                         | Result                                  |
+| ------------------------------------------ | --------------------------------------- |
+| Open-only request                          | Active orders                           |
+| Request for a known replaced leg           | Current logical order                   |
+| Single-order or bulk query, uncached chain | Native reports for the replacement legs |
 
-When an uncached replacement chain starts before a bounded lookback, mass status extends the full history
-window to its first leg.
-Mass status fetches fill companions absent from history and open orders by exact venue ID, including uncached
-orders, and retains them outside the lookback window.
+Mass status retains native replacement legs and fills.
 
-Cached legs retain identity and replacement checks. Uncached orders and fills with reused labels outside one
-replacement chain omit client order IDs. This check uses history and open-order ancestry. Active open orders
-keep their IDs.
+- **Startup restoration.** For an uncached replacement chain, startup reconciliation restores the proven live
+  successor with cumulative fills and native venue order IDs. Recovered successors support queries, modification,
+  and cancellation. Reconnect snapshots leave uncached replacement reports native and do not reconstruct chains.
+- **History extension.** When an uncached chain starts before a bounded lookback, mass status extends the full
+  history window to the chain's first leg.
+- **Fill companions.** Mass status fetches companions missing from history and open orders by exact venue ID,
+  including uncached orders, and retains them outside the lookback window.
+- **Order identity.** Cached legs retain identity and replacement checks. Uncached orders and fills with reused
+  labels outside one replacement chain omit client order IDs. The check uses history and open-order ancestry.
+  Active open orders keep their IDs.
+- **Engine filters and timeouts.** Startup validates all labeled uncached chains on in-scope instruments before
+  engine filters apply, including other bots' chains. Invalid chains can prevent startup. Long chains extend
+  history reads and can exceed the reconciliation timeout.
 
-**Recovery limits**:
+**Do not let another process replace orders adopted by this node.** Startup registers all adopted open orders
+for tracking. An external replacement without a local pending modify leaves the binding unresolved. It blocks
+reports and commands until the native state is reconciled and the node restarts.
 
-- Startup validates all labeled uncached replacement chains on in-scope instruments before engine filters apply,
-  including other bots' chains. Invalid chains can prevent startup. Long chains extend history reads and can
-  exceed the reconciliation timeout.
-- Do not let another process replace orders adopted by this node. Startup registers all adopted open orders
-  for tracking. An external replacement without a local pending modify leaves the binding unresolved. It
-  blocks reports and commands until the native state is reconciled and the node restarts.
-- Bounded snapshots mark coverage incomplete if history fails or an uncached companion remains missing
-  after fallback. Failed history skips companion lookups.
-- Startup recovery of an uncached replacement chain requires complete order, fill, and position sources, with
+#### Snapshot coverage
+
+- **Bounded startup and on-demand snapshots.** The adapter retains valid reports and marks coverage incomplete
+  if history fails, rows or metadata are missing, or an uncached companion remains unavailable after fallback.
+  Failed history skips companion lookups.
+- **Reconnect snapshots and unbounded mass-status requests.** The request fails if a source fails, records are
+  lost, or a fill has no matching order report. It stops at the first fill companion unavailable after fallback
+  and retains the venue error as the cause. It accepts retained historical rows with inferred precision.
+- **Uncached replacement chains at startup.** Recovery requires complete order, fill, and position sources, with
   native fills matching each previous leg and the cumulative filled quantity. Otherwise the request fails.
-- Contradictory identities or invalid replacement ancestry fail requests, including bounded snapshots.
-  With history available, unavailable cached companions or lookup errors other than `11006` also fail requests.
-
-Open-only requests return active orders. Requests for known replaced legs return the current logical order.
-Single-order and bulk queries return native reports for uncached replacement chains. Startup reconciliation
-restores the chain.
-
-Unbounded reconnect snapshots fail if a source fails, records are lost, or a fill has no matching
-order report. Unbounded snapshots stop at the first fill companion unavailable after fallback and
-retain the venue error as the cause, without looking up remaining companions. Retained historical
-rows with inferred precision do not fail these snapshots. Bounded snapshots retain valid reports and
-mark metadata gaps or lost records as incomplete coverage. If the
-venue changes a private history's record or page count during pagination, the adapter discards the scan and restarts it
-at most twice. Further count changes fail the request.
+- **Identity and companion errors.** Contradictory identities or invalid replacement ancestry fail requests,
+  including bounded snapshots. With history available, unavailable cached companions or lookup errors other than
+  `11006` also fail requests.
+- **Pagination changes.** If the venue changes a private history's record or page count during pagination,
+  the adapter discards the scan and restarts it at most twice. Further count changes fail the request.
 
 ### Margin model selection
 
@@ -975,16 +980,18 @@ forever because no WebSocket frame will arrive.
 
 ### Budget scopes and refill
 
-Derive v3 applies [two tiers of rate limits](https://docs.derive.xyz/rate-limits). Request budgets use fixed
-five-second windows. Instrument order budgets refill continuously, with capacity equal to five seconds of
-their configured refill rate. An exhausted instrument bucket gains one token after one second at the default
-rate. A window boundary does not replenish its entire capacity.
+Derive v3 applies [two tiers of rate limits](https://docs.derive.xyz/rate-limits).
 
-Authenticated HTTP and WebSocket clients on the same API host share wallet budgets across session keys and
-subaccounts. Public requests, including WebSocket login, share a separate process-local budget per API host.
-This conservatively assumes one source IP. Clients behind separate proxies still share that allowance. Clients
-in separate processes must coordinate their combined traffic. Custom URLs with different API hosts use
-separate limiter state.
+- **Request budgets** use fixed five-second windows. Authenticated HTTP and WebSocket clients on the same
+  API host share wallet budgets across session keys and subaccounts.
+- **Instrument order budgets** refill continuously. Capacity equals five seconds of the configured refill
+  rate. An exhausted bucket gains one token after one second at the default rate. A request window boundary
+  does not replenish its entire capacity.
+
+Public requests, including WebSocket login, share a separate process-local budget per API host.
+This conservatively assumes one source IP, so clients behind separate proxies still share that allowance.
+Clients in separate processes must coordinate their combined traffic. Custom URLs with different API hosts
+use separate limiter state.
 
 Request windows align to the creation of the shared limiter because the venue's window phase is not
 observable. Bursts on either side of a local boundary can arrive within one venue window, especially when
@@ -1017,18 +1024,20 @@ retains 10 TPS for its label-cancel endpoint budget.
 
 #### Matching write allocation
 
-Order, replace, cancel, cancel-by-nonce, and cancel-by-instrument requests consume the matching
-request budget and the supplied instrument's token bucket. The per-instrument configuration
-applies to perpetuals, spot, and options and stays independent of the wallet matching allowance.
+| Operation                                                         | Budgets charged         |
+| ----------------------------------------------------------------- | ----------------------- |
+| Order, replace, cancel, cancel-by-nonce, and cancel-by-instrument | Matching and instrument |
+| `cancel_by_label`                                                 | Matching and endpoint   |
+| `cancel_all`                                                      | Endpoint only           |
+| `cancel_trigger_order` and trigger-order reads                    | Non-matching            |
 
-The adapter paces `cancel_by_label` against both matching and endpoint budgets, following the canonical
-rate-limit reference. Raw HTTP requests whose body includes `instrument_name` also consume instrument credit.
+Per-instrument configuration applies to perpetuals, spot, and options independently of the wallet matching
+allowance. Raw HTTP requests with `instrument_name` in the body also consume instrument credit. Trigger
+creation uses `private/order` and reserves matching quota before signing.
+
 The typed label-cancel parameters currently support unscoped calls only. Testnet currently charges the
-matching budget for scoped label cancels only. The adapter retains the stricter documented rule for unscoped
-calls. `cancel_all` uses its endpoint budget alone.
-
-`cancel_trigger_order` and trigger-order reads use the non-matching budget. Trigger creation
-uses `private/order` and reserves matching quota before signing.
+matching budget for scoped label cancels only. The adapter follows the canonical rate-limit reference and
+retains the stricter documented rule for unscoped calls.
 
 The first explicit wallet and instrument settings apply to the shared limiter. A later constructor
 with unset options preserves them. The limiter ignores conflicting explicit settings and logs a
@@ -1055,28 +1064,41 @@ require reconciliation. The adapter does not blindly retry signed writes.
 
 The data and execution clients reconnect automatically after a peer close, transport error, or heartbeat
 timeout. The adapter sends protocol Ping frames every 30 seconds and treats 60 seconds without any inbound
-frame as a dead connection. The selected transport can report a missed Pong sooner. The transport retries
-connections with exponential backoff and jitter.
+frame as a dead connection. The selected transport can report a missed Pong sooner.
 
-Recovery completes in this order:
+1. **Reconnect the transport.** The transport retries with exponential backoff and jitter. If another
+   disconnect occurs, recovery follows the latest connection.
+1. **Restore subscriptions.** Credentialed sessions log in again. Every session then replays its confirmed
+   and pending subscriptions in channel order. The client skips pending and acknowledged unsubscriptions.
+1. **Reconcile execution state.** The execution client captures owned order context and open position
+   instruments on the runner thread. It refreshes account state, then generates mass status for orders,
+   fills, and positions. If recovery fails, the client logs a diagnostic and skips mass-status reconciliation.
 
-1. The transport reconnects. If another disconnect occurs, recovery follows the latest connection.
-1. Credentialed sessions log in again, then every session replays its confirmed and pending subscriptions
-   in channel order. Pending and acknowledged unsubscriptions are not replayed.
-1. The execution client captures current owned order context on the runner thread, refreshes account state,
-   then generates mass status for orders, fills, and positions. A rejected account snapshot skips mass status.
-   A position conversion failure rejects the whole mass status.
+### Reconnect snapshots
 
-Custom hosts must process the runner's time-event messages to refresh cached order context on
-reconnect. The refresh uses the configured `ws_timeout_secs` deadline. Without a time-event sender,
-the client retains its initial context and refuses reconciliation after terminal binding eviction.
+- **Lookback.** Reconnect reuses `LiveExecutionEngineConfig.reconciliation_lookback_mins`, counted back from
+  the reconnect snapshot time. An unset lookback requests unbounded history. If startup reconciliation
+  is disabled, the first on-demand mass-status request sets the lookback for later reconnects.
+- **Gap coverage.** A gap can start before disconnect detection. To cover it, the client extends the window
+  back to the start of the affected private session when needed, with a 60-second overlap. If a snapshot fails
+  or has incomplete coverage, the client retains the window and retries on the next reconnect. A newer
+  recovered session supersedes an older collection.
+- **Flat positions.** If the venue positions request succeeds, an in-scope instrument with a cached open
+  position can be reported as flat even if its history falls outside the lookback.
+- **Missing fill companions.** If the venue's direct order lookup cannot find the exact order, the adapter
+  can search the instrument's older order history.
 
-State-changing requests follow the [order rejection semantics](#order-rejection-semantics): the
-adapter sends them once and never replays them. After three failed login or subscription recovery
-attempts, the client logs the error, marks itself disconnected, and stops that WebSocket session.
+### Timeouts and replay limits
 
-`ws_timeout_secs` applies to individual WebSocket operations and reconnect cache refresh, not
-heartbeat detection or reconnect backoff.
+- **Custom hosts.** Process the runner's time-event messages to refresh cached order and position context on
+  reconnect. Without a time-event sender, the client retains its initial context and refuses reconciliation
+  after terminal binding eviction.
+- **Operation timeout.** `ws_timeout_secs` sets the deadline for individual WebSocket operations and reconnect
+  cache refresh. Heartbeat detection and reconnect backoff use separate timing.
+- **State-changing requests.** The adapter sends them once and never replays them. See
+  [Order rejection semantics](#order-rejection-semantics).
+- **Session failure.** After three failed login or subscription recovery attempts, the client logs the error,
+  marks itself disconnected, and stops that WebSocket session.
 
 ### Order book recovery
 

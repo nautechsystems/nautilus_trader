@@ -36,8 +36,9 @@ use nautilus_common::live::dst::time;
 #[cfg(test)]
 use nautilus_common::live::get_runtime;
 use nautilus_core::{
-    UUID4,
+    UUID4, UnixNanos,
     string::secret::{REDACTED, SecretString},
+    time::get_atomic_clock_realtime,
 };
 use nautilus_live::{
     SocketControl,
@@ -54,6 +55,7 @@ use nautilus_network::{
         channel_message_handler,
     },
 };
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::value::RawValue;
 use tokio_util::sync::CancellationToken;
@@ -146,6 +148,75 @@ const SUBSCRIPTION_ACCEPTED_STATUSES: &[&str] = &["ok"];
 const SUBSCRIPTION_REPLAY_ACCEPTED_STATUSES: &[&str] = &["ok", "already subscribed"];
 pub(super) const UNAUTHENTICATED_CONNECTION_EPOCH: u64 = u64::MAX;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ReconnectWindow {
+    pub(crate) epoch: u64,
+    pub(crate) start: UnixNanos,
+}
+
+#[derive(Debug, Default)]
+struct ReconnectCoverage {
+    session_epoch: Option<u64>,
+    session_start: Option<UnixNanos>,
+    pending: Option<ReconnectWindow>,
+}
+
+impl ReconnectCoverage {
+    fn record_session(&mut self, epoch: u64, started: UnixNanos) {
+        if self.session_epoch.is_some_and(|current| epoch <= current) {
+            return;
+        }
+
+        self.pending = self
+            .pending
+            .map(|window| window.start)
+            .or(self.session_start)
+            .map(|start| ReconnectWindow { epoch, start });
+        self.session_epoch = Some(epoch);
+        self.session_start = Some(started);
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct ReconnectSocket {
+    mode: Arc<AtomicU8>,
+    epoch: Arc<AtomicU64>,
+    authenticated_epoch: Arc<AtomicU64>,
+    coverage: Arc<Mutex<ReconnectCoverage>>,
+}
+
+impl ReconnectSocket {
+    pub(crate) fn pending(&self) -> Option<ReconnectWindow> {
+        self.coverage.lock().pending
+    }
+
+    pub(crate) fn is_active(&self, epoch: u64) -> bool {
+        session_connection_is_active(&self.mode, &self.epoch, epoch)
+            && self.authenticated_epoch.load(Ordering::Acquire) == epoch
+    }
+
+    pub(crate) fn publish(
+        &self,
+        window: ReconnectWindow,
+        complete: bool,
+        send: impl FnOnce() -> anyhow::Result<()>,
+    ) -> anyhow::Result<bool> {
+        let mut coverage = self.coverage.lock();
+        if coverage.pending != Some(window) || !self.is_active(window.epoch) {
+            return Ok(false);
+        }
+
+        // A disconnect after this check still records a gap at the next recovery
+        send()?;
+
+        if complete {
+            coverage.pending = None;
+        }
+
+        Ok(true)
+    }
+}
+
 /// WebSocket client for the Derive JSON-RPC stream.
 ///
 /// Construct with [`Self::new`] (public-only) or [`Self::with_credentials`]
@@ -176,6 +247,7 @@ pub struct DeriveWebSocketClient {
     conn_id: Arc<ArcSwap<String>>,
     rate_limiter: Arc<WsRateLimiter>,
     socket_control: Option<SocketControl>,
+    reconnect_coverage: Option<Arc<Mutex<ReconnectCoverage>>>,
 }
 
 /// Cloneable command handle for Derive public market data subscriptions.
@@ -307,6 +379,7 @@ impl DeriveWebSocketClient {
             conn_id: Arc::new(ArcSwap::from_pointee(UUID4::new().to_string())),
             rate_limiter,
             socket_control: None,
+            reconnect_coverage: None,
         }
     }
 
@@ -321,6 +394,21 @@ impl DeriveWebSocketClient {
     pub fn with_socket_control(mut self, control: SocketControl) -> Self {
         self.socket_control = Some(control);
         self
+    }
+
+    #[must_use]
+    pub(crate) fn with_reconnect_coverage(mut self) -> Self {
+        self.reconnect_coverage = Some(Arc::new(Mutex::new(ReconnectCoverage::default())));
+        self
+    }
+
+    pub(crate) fn reconnect_socket(&self) -> Option<ReconnectSocket> {
+        Some(ReconnectSocket {
+            mode: self.connection_mode.load_full(),
+            epoch: self.connection_epoch.load_full(),
+            authenticated_epoch: Arc::clone(&self.authenticated_epoch),
+            coverage: self.reconnect_coverage.clone()?,
+        })
     }
 
     /// Returns the configured WebSocket URL.
@@ -421,6 +509,11 @@ impl DeriveWebSocketClient {
             .await
             .map_err(|e| DeriveWsError::transport(e.to_string()))?;
 
+        let transport_started = self.reconnect_coverage.as_ref().map(|coverage| {
+            coverage.lock().session_epoch = None;
+            get_atomic_clock_realtime().get_time_ns()
+        });
+
         // Register the tracker so the network controller clears
         // `is_authenticated()` on dead-socket detection, not just on the
         // later RECONNECTED sentinel.
@@ -459,6 +552,7 @@ impl DeriveWebSocketClient {
             connection_epoch: Arc::clone(&connection_epoch),
             credentials: self.credentials.clone(),
             signal: Arc::clone(&self.signal),
+            reconnect_coverage: self.reconnect_coverage.clone(),
         };
 
         let handler = FeedHandler::new_with_send_task(
@@ -493,8 +587,8 @@ impl DeriveWebSocketClient {
             control.register(move || reconnect_handle.request_reconnect());
         }
 
-        if let Some(creds) = self.credentials.clone()
-            && let Err(e) = login_via_handler(
+        if let Some(creds) = self.credentials.clone() {
+            let epoch = match login_via_handler(
                 &self.rate_limiter,
                 &cmd_tx,
                 &self.auth_tracker,
@@ -505,15 +599,22 @@ impl DeriveWebSocketClient {
                 self.request_timeout,
             )
             .await
-        {
-            // Without teardown, a retry connect() would short-circuit on
-            // is_active() and return Ok without a valid session.
-            log::warn!(
-                "Derive WebSocket login failed; tearing down transport: {}",
-                e.redacted_message()
-            );
-            self.teardown().await?;
-            return Err(e);
+            {
+                Ok(epoch) => epoch,
+                Err(e) => {
+                    // A retry must rebuild the unauthenticated transport
+                    log::warn!(
+                        "Derive WebSocket login failed; tearing down transport: {}",
+                        e.redacted_message()
+                    );
+                    self.teardown().await?;
+                    return Err(e);
+                }
+            };
+
+            if let (Some(coverage), Some(started)) = (&self.reconnect_coverage, transport_started) {
+                coverage.lock().record_session(epoch, started);
+            }
         }
 
         setup_guard.disarm();
@@ -882,6 +983,7 @@ struct SessionRecovery {
     connection_epoch: Arc<AtomicU64>,
     credentials: Option<DeriveWsCredentials>,
     signal: Arc<AtomicBool>,
+    reconnect_coverage: Option<Arc<Mutex<ReconnectCoverage>>>,
 }
 
 async fn run_session_handler(
@@ -941,8 +1043,24 @@ impl SessionRecovery {
 
         while let Some(mut requested_epoch) = rx.recv().await {
             take_latest_epoch(&mut rx, &mut requested_epoch);
+            let started = get_atomic_clock_realtime().get_time_ns();
+
             match self.recover_until_current(&mut rx, requested_epoch).await {
-                Ok(()) => {
+                Ok(epoch) => {
+                    if let Some(coverage) = &self.reconnect_coverage {
+                        let mut coverage = coverage.lock();
+
+                        if !session_connection_is_active(
+                            &self.connection_mode,
+                            &self.connection_epoch,
+                            epoch,
+                        ) {
+                            continue;
+                        }
+
+                        coverage.record_session(epoch, started);
+                    }
+
                     if out_tx.send(DeriveWsMessage::Reconnected).is_err() {
                         log::debug!("Derive outer receiver dropped during recovery");
                     }
@@ -964,7 +1082,7 @@ impl SessionRecovery {
         &self,
         rx: &mut tokio::sync::mpsc::UnboundedReceiver<u64>,
         mut requested_epoch: u64,
-    ) -> Result<()> {
+    ) -> Result<u64> {
         loop {
             match recover_session(
                 &self.subscription.rate_limiter,
@@ -992,7 +1110,7 @@ impl SessionRecovery {
                         continue;
                     }
 
-                    return Ok(());
+                    return Ok(recovered_epoch);
                 }
                 Err(e) => {
                     if take_latest_epoch(rx, &mut requested_epoch) {
@@ -1439,7 +1557,7 @@ impl DeriveWsExecutionHandle {
         let reservation = self
             .reserve_matching_request(methods::PRIVATE_REPLACE, &params.order.instrument_name)
             .await?;
-        self.modify_order_after_rate_limit(params, reservation)
+        self.modify_order_after_rate_limit(params, reservation, || {})
             .await
             .and_then(|response| {
                 response
@@ -1464,12 +1582,14 @@ impl DeriveWsExecutionHandle {
         &self,
         params: &DeriveReplaceParams,
         reservation: MatchingRateLimitReservation,
+        before_enqueue: impl FnOnce(),
     ) -> Result<DeriveReplaceResponse> {
         self.ensure_authenticated(methods::PRIVATE_REPLACE)?;
         debug_assert_eq!(reservation.method, methods::PRIVATE_REPLACE);
         let cmd_tx = self.cmd_tx.read().await.clone();
         self.ensure_authenticated(reservation.method)?;
         self.commit_matching_reservation(reservation)?;
+        before_enqueue();
         let response = send_raw_after_rate_limit(
             &self.rate_limiter,
             &cmd_tx,
@@ -1975,7 +2095,7 @@ async fn login_via_handler(
     connection_epoch: &AtomicU64,
     creds: &DeriveWsCredentials,
     timeout: Duration,
-) -> Result<()> {
+) -> Result<u64> {
     let _receiver = auth_tracker.begin();
     let expected_epoch = connection_epoch.load(Ordering::Acquire);
 
@@ -1991,7 +2111,7 @@ async fn login_via_handler(
         {
             log::debug!("Derive WebSocket authenticated");
 
-            Ok(())
+            Ok(expected_epoch)
         }
         Ok(()) => {
             let e = DeriveWsError::transport(
@@ -2368,6 +2488,84 @@ mod tests {
         },
         http::{DeriveHttpClient, client::DeriveCredentials},
     };
+
+    #[rstest]
+    fn test_reconnect_coverage_retains_first_outstanding_session() {
+        let mut coverage = ReconnectCoverage::default();
+        coverage.record_session(0, UnixNanos::from(10));
+
+        coverage.record_session(1, UnixNanos::from(50));
+        coverage.record_session(1, UnixNanos::from(90));
+        coverage.record_session(2, UnixNanos::from(100));
+        assert_eq!(
+            coverage.pending,
+            Some(ReconnectWindow {
+                epoch: 2,
+                start: UnixNanos::from(10),
+            })
+        );
+
+        coverage.pending = None;
+        coverage.record_session(3, UnixNanos::from(150));
+        assert_eq!(
+            coverage.pending,
+            Some(ReconnectWindow {
+                epoch: 3,
+                start: UnixNanos::from(100),
+            })
+        );
+    }
+
+    #[rstest]
+    fn test_reconnect_publication_requires_active_authenticated_epoch() {
+        let window = ReconnectWindow {
+            epoch: 1,
+            start: UnixNanos::from(20),
+        };
+
+        let socket = ReconnectSocket {
+            mode: Arc::new(AtomicU8::new(ConnectionMode::Reconnect as u8)),
+            epoch: Arc::new(AtomicU64::new(1)),
+            authenticated_epoch: Arc::new(AtomicU64::new(1)),
+            coverage: Arc::new(Mutex::new(ReconnectCoverage {
+                pending: Some(window),
+                ..Default::default()
+            })),
+        };
+
+        assert!(
+            !socket
+                .publish(window, true, || panic!("inactive session"))
+                .unwrap()
+        );
+        socket
+            .mode
+            .store(ConnectionMode::Active as u8, Ordering::Release);
+        socket.authenticated_epoch.store(0, Ordering::Release);
+        assert!(
+            !socket
+                .publish(window, true, || panic!("unauthenticated session"))
+                .unwrap()
+        );
+        socket.authenticated_epoch.store(1, Ordering::Release);
+        socket.epoch.store(2, Ordering::Release);
+        assert!(
+            !socket
+                .publish(window, true, || panic!("superseded session"))
+                .unwrap()
+        );
+        socket.epoch.store(1, Ordering::Release);
+        assert!(
+            socket
+                .publish(window, true, || anyhow::bail!("receiver closed"))
+                .is_err()
+        );
+        assert_eq!(socket.pending(), Some(window));
+        assert!(socket.publish(window, false, || Ok(())).unwrap());
+        assert_eq!(socket.pending(), Some(window));
+        assert!(socket.publish(window, true, || Ok(())).unwrap());
+        assert_eq!(socket.pending(), None);
+    }
 
     #[tokio::test]
     async fn command_during_sender_publication_reaches_initialized_handler() {
