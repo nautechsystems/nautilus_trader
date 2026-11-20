@@ -33,12 +33,10 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
-    PolymarketDataClient,
-    runtime::is_instrument_expired_and_not_reported_open,
-    subscriptions::{DataSubscriptions, resolve_token_id_from},
+    PolymarketDataClient, runtime::is_instrument_expired_and_not_reported_open,
+    subscriptions::DataSubscriptions,
 };
 use crate::{
-    book::recovery::start_initial_snapshot,
     common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE,
     config::PolymarketInstrumentProviderConfig,
     filters::{
@@ -532,20 +530,7 @@ fn reconcile_book_availability(
     ids.sort_unstable();
 
     for id in ids {
-        if subscriptions.update_book_availability(id)
-            && let Ok(token_id) = resolve_token_id_from(&subscriptions.instruments, id)
-            && subscriptions.is_token_open(&token_id)
-        {
-            start_initial_snapshot(
-                id,
-                token_id,
-                &subscriptions.active_delta_subs,
-                &subscriptions.book_sync,
-                &subscriptions.ws_client,
-                snapshot_timeout,
-                tasks,
-            );
-        }
+        subscriptions.reconcile_book_availability(id, snapshot_timeout, tasks);
     }
 }
 

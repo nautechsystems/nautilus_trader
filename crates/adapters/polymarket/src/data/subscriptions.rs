@@ -35,7 +35,11 @@ use ustr::Ustr;
 
 use super::instruments::TokenMeta;
 use crate::{
-    book::{integrity::BookIntegrity, recovery::spawn_recovery_monitor, sync::BookSyncTracker},
+    book::{
+        integrity::BookIntegrity,
+        recovery::{spawn_recovery_monitor, start_initial_snapshot},
+        sync::BookSyncTracker,
+    },
     common::{consts::MARKET_VERSION_KEY, parse::validate_data_market_version},
     resolve::{
         ResolveWatchEntry, ResolveWatchlist, StrictResolvedMarket, remove_data_resolve_watch_entry,
@@ -366,8 +370,32 @@ impl DataSubscriptions {
         );
     }
 
-    pub(super) fn update_book_availability(&self, instrument_id: InstrumentId) -> bool {
-        if !self.active_delta_subs.contains(&instrument_id) {
+    pub(super) fn reconcile_book_availability(
+        &self,
+        instrument_id: InstrumentId,
+        timeout: Duration,
+        tasks: &TaskSpawner,
+    ) {
+        if self.update_book_availability(instrument_id)
+            && let Ok(token_id) = resolve_token_id_from(&self.instruments, instrument_id)
+            && self.is_token_open(&token_id)
+        {
+            start_initial_snapshot(
+                instrument_id,
+                token_id,
+                &self.active_delta_subs,
+                &self.book_sync,
+                &self.ws_client,
+                timeout,
+                tasks,
+            );
+        }
+    }
+
+    fn update_book_availability(&self, instrument_id: InstrumentId) -> bool {
+        if !self.active_delta_subs.contains(&instrument_id)
+            || self.book_sync.is_observed(instrument_id)
+        {
             return false;
         }
 
