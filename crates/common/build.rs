@@ -170,7 +170,7 @@ fn crc32_ieee(data: &[u8]) -> u32 {
             if crc & 1 == 0 {
                 crc >>= 1;
             } else {
-                crc = (crc >> 1) ^ 0xEDB8_8320;
+                crc = (crc >> 1) ^ 0xedb8_8320;
             }
         }
     }

@@ -284,7 +284,7 @@ mod tests {
 
     #[rstest]
     fn as_text_returns_none_for_invalid_utf8() {
-        let msg = Message::Text(Bytes::from_static(&[0xFF, 0xFE]));
+        let msg = Message::Text(Bytes::from_static(&[0xff, 0xfe]));
         assert!(msg.as_text().is_none());
     }
 

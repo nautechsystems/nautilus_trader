@@ -1105,13 +1105,13 @@ mod tests {
             .append_snapshot(&s1, compute_marker_hash(&s1))
             .expect("append s1");
         backend
-            .append_hifi(&m2, [0xBB; 32])
+            .append_hifi(&m2, [0xbb; 32])
             .expect("append bad hifi hash");
         backend
-            .append_gap(&g3, [0xCC; 32])
+            .append_gap(&g3, [0xcc; 32])
             .expect("append bad gap hash");
         backend
-            .put_dict(&d0, [0xDD; 32])
+            .put_dict(&d0, [0xdd; 32])
             .expect("put bad dict hash");
 
         let report = MarkerVerifier::scan(&backend, 1).expect("scan");
@@ -1159,7 +1159,7 @@ mod tests {
         let mut backend = open_backend();
         let s1 = snapshot(1, 1, 100, 1);
         backend
-            .append_snapshot(&s1, [0xAA; 32])
+            .append_snapshot(&s1, [0xaa; 32])
             .expect("append bad hash");
 
         let report = MarkerVerifier::scan(&backend, 1).expect("scan");

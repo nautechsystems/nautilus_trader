@@ -115,7 +115,7 @@ impl BlackScholesReal for f32 {
         }
 
         let exponent = ((bits >> 23) as i32 - 127) as Self;
-        let mantissa = Self::from_bits((bits & 0x007F_FFFF) | 0x3f80_0000);
+        let mantissa = Self::from_bits((bits & 0x007f_ffff) | 0x3f80_0000);
         let x = (mantissa - 1.0) / (mantissa + 1.0);
         let x2 = x * x;
         let mut res = 0.239_282_85_f32;
@@ -434,7 +434,7 @@ mod tests {
     fn old_ln_formula(input: f32) -> f32 {
         let bits = input.to_bits();
         let exponent = ((bits >> 23) as i32 - 127) as f32;
-        let mantissa = f32::from_bits((bits & 0x007F_FFFF) | 0x3f80_0000);
+        let mantissa = f32::from_bits((bits & 0x007f_ffff) | 0x3f80_0000);
         let x = (mantissa - 1.0) / (mantissa + 1.0);
         let x2 = x * x;
         let mut res = 0.239_282_85_f32;

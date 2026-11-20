@@ -5280,7 +5280,7 @@ fn test_rust_custom_data_binary_roundtrip() {
             ts_init: UnixNanos::from(1),
         },
         RustTestBytesCustomData {
-            value: vec![0x00, 0x7F, 0xFF],
+            value: vec![0x00, 0x7f, 0xff],
             ts_event: UnixNanos::from(2),
             ts_init: UnixNanos::from(2),
         },

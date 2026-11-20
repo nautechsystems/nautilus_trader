@@ -21,7 +21,7 @@ use crate::defi::tick_map::bit_math::{least_significant_bit, most_significant_bi
 /// Calculate word position and bit position for the target tick.
 fn tick_position(tick: i32) -> (i16, u8) {
     let word_pos = (tick >> 8) as i16;
-    let bit_pos = (tick & 0xFF) as u8;
+    let bit_pos = (tick & 0xff) as u8;
     (word_pos, bit_pos)
 }
 

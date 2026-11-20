@@ -60,9 +60,9 @@ pub const MAX_SAFE_CLIENT_ID: u32 = u32::MAX - 1000;
 /// Bit positions for client_metadata packing.
 const TRADER_SHIFT: u32 = 22; // Bits [31:22]
 const STRATEGY_SHIFT: u32 = 12; // Bits [21:12]
-const COUNT_MASK: u32 = 0xFFF; // Bits [11:0] = 12 bits
-const TRADER_MASK: u32 = 0x3FF; // 10 bits
-const STRATEGY_MASK: u32 = 0x3FF; // 10 bits
+const COUNT_MASK: u32 = 0xfff; // Bits [11:0] = 12 bits
+const TRADER_MASK: u32 = 0x3ff; // 10 bits
+const STRATEGY_MASK: u32 = 0x3ff; // 10 bits
 
 /// Marker value for client_metadata to identify sequential allocation.
 /// Sequential IDs use: client_id = counter (unique), client_metadata = SEQUENTIAL_METADATA_MARKER

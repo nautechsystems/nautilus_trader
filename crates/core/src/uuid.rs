@@ -88,8 +88,8 @@ impl UUID4 {
         #[cfg(not(all(feature = "simulation", madsim)))]
         rand::rng().fill_bytes(&mut bytes);
 
-        bytes[6] = (bytes[6] & 0x0F) | 0x40; // Set the version to 4
-        bytes[8] = (bytes[8] & 0x3F) | 0x80; // Set the variant to RFC 4122
+        bytes[6] = (bytes[6] & 0x0f) | 0x40; // Set the version to 4
+        bytes[8] = (bytes[8] & 0x3f) | 0x80; // Set the variant to RFC 4122
 
         bytes
     }
@@ -100,8 +100,8 @@ impl UUID4 {
     /// so any 16 bytes produce a valid v4 UUID.
     #[must_use]
     pub fn from_bytes(mut bytes: [u8; 16]) -> Self {
-        bytes[6] = (bytes[6] & 0x0F) | 0x40;
-        bytes[8] = (bytes[8] & 0x3F) | 0x80;
+        bytes[6] = (bytes[6] & 0x0f) | 0x40;
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
 
         Self {
             value: format_uuid4_bytes(bytes),
@@ -743,7 +743,7 @@ mod tests {
 
     #[rstest]
     fn test_from_bytes_all_ones_is_valid_v4() {
-        let uuid = UUID4::from_bytes([0xFFu8; 16]);
+        let uuid = UUID4::from_bytes([0xffu8; 16]);
         let parsed = Uuid::parse_str(uuid.as_str()).unwrap();
         assert_eq!(parsed.get_version(), Some(uuid::Version::Random));
         assert_eq!(parsed.get_variant(), uuid::Variant::RFC4122);

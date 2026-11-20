@@ -312,7 +312,7 @@ mod tests {
             ts_event: UnixNanos::from(1_700_000_000_000_000_000),
             ts_init: UnixNanos::from(1_700_000_000_000_000_001),
             same_ts_ordinal: 0,
-            record_fingerprint: [0xABu8; 32],
+            record_fingerprint: [0xabu8; 32],
         }
     }
 

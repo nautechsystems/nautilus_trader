@@ -547,8 +547,8 @@ mod tests {
     #[rstest]
     fn hash_input_rejects_non_canonical_limb() {
         // u64::MAX > MODULUS so the 8-byte chunk is non-canonical.
-        let mut bytes = [0xFFu8; 8];
-        bytes[7] = 0xFF;
+        let mut bytes = [0xffu8; 8];
+        bytes[7] = 0xff;
         let err = super::ascii_to_fp_limbs(&bytes).expect_err("must reject non-canonical");
         assert_eq!(err, AuthTokenError::MessageEncoding { offset: 0 });
     }

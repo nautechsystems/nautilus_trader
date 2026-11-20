@@ -40,14 +40,14 @@ use crate::common::turmoil::{seeded_builder, seeded_builder_with_duration, stres
 // 2-second budget in simulated time, covering reconnect timings across these tests.
 const POLL_ITERS: u32 = 200;
 const POLL_STEP: Duration = Duration::from_millis(10);
-const BASIC_CONNECT_SEED: u64 = 0x51C0_0001;
-const RECONNECTION_SEED: u64 = 0x51C0_0002;
-const NETWORK_PARTITION_SEED: u64 = 0x51C0_0003;
-const CLOSE_DURING_RECONNECT_SEED: u64 = 0x51C0_0004;
-const CLOSE_DURING_BACKOFF_SEED: u64 = 0x51C0_0005;
-const UNSTABLE_RECONNECT_SEED: u64 = 0x51C0_0006;
-const STABLE_RECONNECT_SEED: u64 = 0x51C0_0007;
-const RECONNECT_STORM_SEED: u64 = 0x51C0_0008;
+const BASIC_CONNECT_SEED: u64 = 0x51c0_0001;
+const RECONNECTION_SEED: u64 = 0x51c0_0002;
+const NETWORK_PARTITION_SEED: u64 = 0x51c0_0003;
+const CLOSE_DURING_RECONNECT_SEED: u64 = 0x51c0_0004;
+const CLOSE_DURING_BACKOFF_SEED: u64 = 0x51c0_0005;
+const UNSTABLE_RECONNECT_SEED: u64 = 0x51c0_0006;
+const STABLE_RECONNECT_SEED: u64 = 0x51c0_0007;
+const RECONNECT_STORM_SEED: u64 = 0x51c0_0008;
 const UNSTABLE_RECONNECT_DELAY_MS: u64 = 750;
 
 async fn wait_for<F>(mut condition: F) -> bool
@@ -626,9 +626,9 @@ fn test_turmoil_real_socket_disconnect_during_backoff(mut socket_config: SocketC
 }
 
 #[rstest]
-#[case::seed_a(0x51C0_1001)]
-#[case::seed_b(0x51C0_1002)]
-#[case::seed_c(0x51C0_1003)]
+#[case::seed_a(0x51c0_1001)]
+#[case::seed_b(0x51c0_1002)]
+#[case::seed_c(0x51c0_1003)]
 fn test_turmoil_socket_repeated_drops_preserve_message_order(
     mut socket_config: SocketConfig,
     #[case] seed: u64,

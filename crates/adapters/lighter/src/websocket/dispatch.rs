@@ -595,7 +595,7 @@ impl PendingSendTxKind {
 /// degenerate seed never spins indefinitely while still leaving headroom.
 pub(crate) const CLOID_INDEX_PROBE_LIMIT: usize = 16;
 
-const CLOID_INDEX_MAX: u32 = 0x7FFF_FFFF;
+const CLOID_INDEX_MAX: u32 = 0x7fff_ffff;
 
 /// Maximum terminal orders and trade ids retained for reconnect replay.
 const REPLAY_CACHE_CAPACITY: usize = 100_000;
@@ -951,10 +951,10 @@ pub(crate) struct OrderShapeSnapshot {
 /// same N to find that order via REST lookup.
 static CLOID_HASHER: LazyLock<RandomState> = LazyLock::new(|| {
     RandomState::with_seeds(
-        0x4C49_4748_5445_5253, // "LIGHTERS"
-        0x434C_4F49_445F_4853, // "CLOID_HS"
-        0x4E41_5554_494C_5553, // "NAUTILUS"
-        0x5F4C_4F4F_4B5F_5550, // "_LOOK_UP"
+        0x4c49_4748_5445_5253, // "LIGHTERS"
+        0x434c_4f49_445f_4853, // "CLOID_HS"
+        0x4e41_5554_494c_5553, // "NAUTILUS"
+        0x5f4c_4f4f_4b5f_5550, // "_LOOK_UP"
     )
 });
 
@@ -4758,7 +4758,7 @@ mod tests {
             let derived = state.derive_client_order_index(&cid);
             assert!(derived >= 0, "negative derived index: {derived}");
             assert!(
-                derived <= 0x7FFF_FFFF,
+                derived <= 0x7fff_ffff,
                 "index {derived} exceeds 31-bit venue cap",
             );
         }

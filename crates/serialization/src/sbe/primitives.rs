@@ -171,7 +171,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_var_string8_invalid_utf8() {
-        let buf = [2u8, 0xFF, 0xFF];
+        let buf = [2u8, 0xff, 0xff];
         let err = decode_var_string8(&buf).unwrap_err();
         assert_eq!(err, SbeDecodeError::InvalidUtf8);
     }

@@ -71,7 +71,7 @@ const ENCODE_PAIR: [[u8; 2]; 256] = {
 
 // 0xFF sentinel marks non-hex characters
 const DECODE_NIBBLE: [u8; 256] = {
-    let mut table = [0xFFu8; 256];
+    let mut table = [0xffu8; 256];
     let mut i = 0u8;
     while i < 10 {
         table[(b'0' + i) as usize] = i;
@@ -187,7 +187,7 @@ pub fn decode_bytes(input: &[u8]) -> Cow<'_, [u8]> {
         if i + 2 < input.len() {
             let hi = DECODE_NIBBLE[input[i + 1] as usize];
             let lo = DECODE_NIBBLE[input[i + 2] as usize];
-            if (hi | lo) & 0xF0 == 0 {
+            if (hi | lo) & 0xf0 == 0 {
                 out.push((hi << 4) | lo);
                 i += 3;
                 continue;
@@ -388,7 +388,7 @@ mod tests {
     fn test_decode_invalid_utf8_bytes_ok() {
         // `decode_bytes` does not validate UTF-8.
         let out = decode_bytes(b"%FF");
-        assert_eq!(out.as_ref(), &[0xFF]);
+        assert_eq!(out.as_ref(), &[0xff]);
     }
 
     #[rstest]

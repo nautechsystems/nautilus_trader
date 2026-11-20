@@ -415,7 +415,7 @@ mod tests {
 
     #[rstest]
     fn borrowed_str_try_as_str_rejects_invalid_utf8() {
-        static INVALID_UTF8: [u8; 1] = [0xFF];
+        static INVALID_UTF8: [u8; 1] = [0xff];
         let mut b = BorrowedStr::empty();
         b.ptr = INVALID_UTF8.as_ptr();
         b.len = INVALID_UTF8.len();
@@ -428,7 +428,7 @@ mod tests {
 
     #[rstest]
     fn borrowed_str_to_string_lossy_replaces_invalid_utf8() {
-        static INVALID_UTF8: [u8; 1] = [0xFF];
+        static INVALID_UTF8: [u8; 1] = [0xff];
         let mut b = BorrowedStr::empty();
         b.ptr = INVALID_UTF8.as_ptr();
         b.len = INVALID_UTF8.len();

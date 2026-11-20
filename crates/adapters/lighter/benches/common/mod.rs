@@ -80,8 +80,8 @@ pub(crate) fn fixed_k() -> Scalar {
 
 pub(crate) fn fixed_hashed_msg() -> Fp5 {
     Fp5::from_u64s_reduce([
-        0x0123_4567_89AB_CDEF,
-        0xFEDC_BA98_7654_3210,
+        0x0123_4567_89ab_cdef,
+        0xfedc_ba98_7654_3210,
         0x1111_2222_3333_4444,
         0x5555_6666_7777_8888,
         0x0000_0001_0000_0001,
@@ -134,26 +134,26 @@ pub(crate) fn cancel_order_tx() -> CancelOrderTxInfo {
 
 pub(crate) fn fp_inputs() -> (Fp, Fp) {
     (
-        Fp::from_u64_reduce(0x9E37_79B9_7F4A_7C15),
-        Fp::from_u64_reduce(0xBB67_AE85_84CA_A73B),
+        Fp::from_u64_reduce(0x9e37_79b9_7f4a_7c15),
+        Fp::from_u64_reduce(0xbb67_ae85_84ca_a73b),
     )
 }
 
 pub(crate) fn fp5_inputs() -> (Fp5, Fp5) {
     (
         Fp5::from_u64s_reduce([
-            0x9E37_79B9_7F4A_7C15,
-            0xBB67_AE85_84CA_A73B,
-            0x3C6E_F372_FE94_F82B,
-            0xA54F_F53A_5F1D_36F1,
-            0x510E_527F_ADE6_82D1,
+            0x9e37_79b9_7f4a_7c15,
+            0xbb67_ae85_84ca_a73b,
+            0x3c6e_f372_fe94_f82b,
+            0xa54f_f53a_5f1d_36f1,
+            0x510e_527f_ade6_82d1,
         ]),
         Fp5::from_u64s_reduce([
-            0xCBBB_9D5D_C105_9ED8,
-            0x629A_292A_367C_D507,
-            0x9159_015A_3070_DD17,
-            0x152F_ECD8_F70E_5939,
-            0x6712_6F22_38D5_C9F8,
+            0xcbbb_9d5d_c105_9ed8,
+            0x629a_292a_367c_d507,
+            0x9159_015a_3070_dd17,
+            0x152f_ecd8_f70e_5939,
+            0x6712_6f22_38d5_c9f8,
         ]),
     )
 }

@@ -1375,7 +1375,7 @@ mod tests {
     #[rstest]
     fn header_bad_magic_rejected() {
         let mut bytes = encode_to_vec(&entry(Headers::empty())).unwrap();
-        bytes[0] ^= 0xFF;
+        bytes[0] ^= 0xff;
 
         assert!(matches!(
             decode_from_slice::<EventStoreEntry>(&bytes),
@@ -1496,7 +1496,7 @@ mod tests {
     #[rstest]
     fn invalid_utf8_rejected() {
         let mut bytes = encode_to_vec(&"ok".to_string()).unwrap();
-        bytes[HEADER_LEN + 8] = 0xFF;
+        bytes[HEADER_LEN + 8] = 0xff;
 
         assert!(matches!(
             decode_from_slice::<String>(&bytes),
@@ -1518,7 +1518,7 @@ mod tests {
     #[rstest]
     fn trailing_bytes_rejected() {
         let mut bytes = encode_to_vec(&RunStatus::Running).unwrap();
-        bytes.push(0xFF);
+        bytes.push(0xff);
 
         assert!(matches!(
             decode_from_slice::<RunStatus>(&bytes),

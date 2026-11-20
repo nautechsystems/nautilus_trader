@@ -1,6 +1,6 @@
 version = 1
 repository = "https://github.com/nautechsystems/nautilus_engineering"
-revision = "2bfa4e5b132648226c0a280d8b5d2fba07fc976c"
+revision = "c74b4368428c4a9e74f1892bc4b86829f3ada9f8"
 manifest_sha256 = "8689b59a2c9458bdf1a6141a7d95d30934fbd5892c78d6430c055f464b62e471"
 marker_file = ".nautilus-engineering.syncing"
 profiles = ["sync"]
@@ -68,7 +68,7 @@ executable = false
 [[file]]
 artifact = "rustfmt-config"
 path = "rustfmt.toml"
-sha256 = "a8d6b13a334b7ed058811f355e4d6601dfe5f0f32280c0a055a5c36f5a7b1076"
+sha256 = "0657f04366f54d76cf2e63e9770fada93d393b9ff88042b6b0cfe12cd60f54bc"
 executable = false
 
 [[file]]

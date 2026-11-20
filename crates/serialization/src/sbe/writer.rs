@@ -207,9 +207,9 @@ mod tests {
         let mut buf = [0u8; 2];
         let mut writer = SbeWriter::new(&mut buf);
         writer.write_u8(0x42);
-        writer.write_u8(0xFF);
+        writer.write_u8(0xff);
         assert_eq!(writer.pos(), 2);
-        assert_eq!(buf, [0x42, 0xFF]);
+        assert_eq!(buf, [0x42, 0xff]);
     }
 
     #[rstest]
@@ -233,7 +233,7 @@ mod tests {
 
     #[rstest]
     fn test_write_u128_le() {
-        let value: u128 = 0x0123_4567_89AB_CDEF_FEDC_BA98_7654_3210;
+        let value: u128 = 0x0123_4567_89ab_cdef_fedc_ba98_7654_3210;
         let mut buf = [0u8; 16];
         let mut writer = SbeWriter::new(&mut buf);
         writer.write_u128_le(value);
@@ -255,13 +255,13 @@ mod tests {
     fn test_write_into_uninit() {
         let mut buf: [MaybeUninit<u8>; 4] = [const { MaybeUninit::uninit() }; 4];
         let mut writer = SbeWriter::new_uninit(&mut buf);
-        writer.write_u8(0xAA);
+        writer.write_u8(0xaa);
         writer.write_u16_le(0x1234);
-        writer.write_u8(0xBB);
+        writer.write_u8(0xbb);
         assert_eq!(writer.pos(), 4);
         // SAFETY: all 4 bytes were written by the writer above.
         let initialized: [u8; 4] = unsafe { std::mem::transmute(buf) };
-        assert_eq!(initialized, [0xAA, 0x34, 0x12, 0xBB]);
+        assert_eq!(initialized, [0xaa, 0x34, 0x12, 0xbb]);
     }
 
     #[rstest]

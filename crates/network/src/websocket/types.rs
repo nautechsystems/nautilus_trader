@@ -175,7 +175,7 @@ mod tests {
 
         // Invalid UTF-8 in a Text frame must not propagate or panic,
         // the shim logs and drops it when Utf8Bytes::try_from fails.
-        handler(Message::Text(Bytes::from_static(&[0xFF, 0xFE])));
+        handler(Message::Text(Bytes::from_static(&[0xff, 0xfe])));
         handler(Message::Binary(Bytes::from_static(b"ok")));
 
         let received = rx.try_recv().expect("binary should arrive");

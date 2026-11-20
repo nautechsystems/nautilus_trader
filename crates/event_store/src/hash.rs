@@ -49,7 +49,7 @@ impl EntryHash {
 
         for byte in self.0 {
             out.push(nibble_to_hex(byte >> 4));
-            out.push(nibble_to_hex(byte & 0x0F));
+            out.push(nibble_to_hex(byte & 0x0f));
         }
         out
     }
@@ -228,12 +228,12 @@ mod tests {
         // between the two header fields (both write a single 0x00 None marker); this
         // vector flips if the writer ever swaps the two fields' positions.
         let correlation = UUID4::from_bytes([
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
-            0x0F, 0x10,
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+            0x0f, 0x10,
         ]);
         let causation = UUID4::from_bytes([
-            0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E,
-            0x1F, 0x20,
+            0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e,
+            0x1f, 0x20,
         ]);
         let mut input = baseline();
         input.headers = Headers {
@@ -252,7 +252,7 @@ mod tests {
         // Pinning EntryHash::to_hex's output: high nibble first, lowercase, fixed
         // 64 chars. Catches nibble-swap or uppercase regressions that the prior
         // length-and-charclass check let through.
-        let hash = EntryHash([0xABu8; 32]);
+        let hash = EntryHash([0xabu8; 32]);
 
         assert_eq!(hash.to_hex(), "ab".repeat(32));
     }

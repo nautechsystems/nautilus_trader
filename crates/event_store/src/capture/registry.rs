@@ -502,7 +502,7 @@ mod tests {
 
         registry.register_encoder::<Sample>(
             Ustr::from("Stateful"),
-            Arc::new(StatefulEncoder { prefix: 0xA5 }),
+            Arc::new(StatefulEncoder { prefix: 0xa5 }),
         );
         let sample = Sample(7);
         let (payload_type, encoded) = registry.encode(&sample).expect("encode").expect("hit");
@@ -513,7 +513,7 @@ mod tests {
         assert_eq!(payload_type.as_str(), "Stateful");
         assert_eq!(
             encoded,
-            EncodedPayload::without_indices(Bytes::from_static(&[0xA5, 7])),
+            EncodedPayload::without_indices(Bytes::from_static(&[0xa5, 7])),
         );
         assert_eq!(
             headers,

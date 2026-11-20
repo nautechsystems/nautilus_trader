@@ -226,7 +226,7 @@ mod tests {
 
     #[rstest]
     fn private_key_debug_redacts_secret_limbs() {
-        let secret_pattern = [0xABu8; SCALAR_BYTES];
+        let secret_pattern = [0xabu8; SCALAR_BYTES];
         let sk = PrivateKey::from_le_bytes_reduce(secret_pattern);
         let formatted = format!("{sk:?}");
 
@@ -239,7 +239,7 @@ mod tests {
 
     #[rstest]
     fn private_key_zeroize_clears_secret_limbs() {
-        let mut private_key = PrivateKey::from_le_bytes_reduce([0xAB; SCALAR_BYTES]);
+        let mut private_key = PrivateKey::from_le_bytes_reduce([0xab; SCALAR_BYTES]);
 
         private_key.zeroize();
 

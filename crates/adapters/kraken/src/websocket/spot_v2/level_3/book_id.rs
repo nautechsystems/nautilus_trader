@@ -27,10 +27,10 @@ impl BookOrderIdHasher {
     /// Creates a new hasher with deterministic fixed seeds.
     pub(crate) fn new() -> Self {
         Self(ahash::RandomState::with_seeds(
-            0x4B52_414B_454E_5F4C,
-            0x3330_5F4F_5244_4552,
-            0x4944_5F48_4153_4831,
-            0x5631_305F_5F5F_5F5F,
+            0x4b52_414b_454e_5f4c,
+            0x3330_5f4f_5244_4552,
+            0x4944_5f48_4153_4831,
+            0x5631_305f_5f5f_5f5f,
         ))
     }
 

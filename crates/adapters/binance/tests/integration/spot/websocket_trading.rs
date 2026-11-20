@@ -169,10 +169,10 @@ fn build_new_order_full_response(order_id: u64, client_order_id: &str, symbol: &
     let mut block = vec![0u8; usize::from(block_length)];
 
     // priceExponent at offset 0 (i8)
-    block[0] = 0xFE; // -2
+    block[0] = 0xfe; // -2
 
     // qtyExponent at offset 1 (i8)
-    block[1] = 0xFD; // -3
+    block[1] = 0xfd; // -3
 
     // orderId at offset 2 (u64)
     block[2..10].copy_from_slice(&order_id.to_le_bytes());

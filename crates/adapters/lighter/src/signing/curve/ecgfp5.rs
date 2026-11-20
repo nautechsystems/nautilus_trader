@@ -870,10 +870,10 @@ mod tests {
             Scalar::ZERO,
             Scalar::ONE,
             Scalar::from_limbs([2, 0, 0, 0, 0]),
-            Scalar::from_limbs([0xDEAD_BEEF, 0, 0, 0, 0]),
+            Scalar::from_limbs([0xdead_beef, 0, 0, 0, 0]),
             Scalar::from_limbs([
-                0x0123_4567_89AB_CDEF,
-                0xFEDC_BA98_7654_3210,
+                0x0123_4567_89ab_cdef,
+                0xfedc_ba98_7654_3210,
                 0x1111_2222_3333_4444,
                 0x5555_6666_7777_8888,
                 0x0000_0001_0000_0001,

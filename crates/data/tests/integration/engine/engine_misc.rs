@@ -888,7 +888,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
         0,
         0,
         None,
-        Address::from([0xAB; 20]),
+        Address::from([0xab; 20]),
         10000u128, // Add significant liquidity
         U256::from(1000000u128),
         U256::from(2000000u128),
@@ -1098,7 +1098,7 @@ fn test_pool_updater_processes_mint_updates_profiler(
         0,
         0,
         None,
-        Address::from([0xAB; 20]),
+        Address::from([0xab; 20]),
         1000u128, // liquidity amount
         U256::from(100000u128),
         U256::from(200000u128),
@@ -1191,7 +1191,7 @@ fn test_pool_updater_processes_burn_updates_profiler(
     profiler.initialize(initial_price).unwrap();
 
     // First mint some liquidity
-    let owner = Address::from([0xAB; 20]);
+    let owner = Address::from([0xab; 20]);
 
     let mint = PoolLiquidityUpdate::new(
         Arc::clone(&chain),
@@ -1355,7 +1355,7 @@ fn test_pool_updater_processes_collect_updates_profiler(
     data_engine.borrow_mut().execute(cmd);
 
     // Create and process collect event
-    let owner = Address::from([0xAB; 20]);
+    let owner = Address::from([0xab; 20]);
 
     let collect = PoolFeeCollect::new(
         chain,
@@ -1470,8 +1470,8 @@ fn test_pool_updater_processes_flash_updates_profiler(
     data_engine.borrow_mut().execute(cmd);
 
     // Create and process flash event
-    let initiator = Address::from([0xAB; 20]);
-    let recipient = Address::from([0xCD; 20]);
+    let initiator = Address::from([0xab; 20]);
+    let recipient = Address::from([0xcd; 20]);
 
     let flash = PoolFlash::new(
         chain,
@@ -1545,9 +1545,10 @@ fn test_process_defi_pools_publishes_distinct_tradable_instruments(
         "QUOTE".to_string(),
         6,
     );
-    let address_a = Address::from([0xAA; 20]);
-    let address_b = Address::from([0xBB; 20]);
-    let address_invalid = Address::from([0xCC; 20]);
+
+    let address_a = Address::from([0xaa; 20]);
+    let address_b = Address::from([0xbb; 20]);
+    let address_invalid = Address::from([0xcc; 20]);
 
     let pool_a = Pool::new(
         Arc::clone(&chain),
@@ -2171,8 +2172,8 @@ fn test_pool_arrival_with_snapshot_pending_does_not_create_profiler(
     let mut pool = Pool::new(
         chain,
         dex,
-        Address::from([0xAA; 20]),
-        PoolIdentifier::from_address(Address::from([0xAA; 20])),
+        Address::from([0xaa; 20]),
+        PoolIdentifier::from_address(Address::from([0xaa; 20])),
         12_345_678u64,
         token0,
         token1,
@@ -2287,8 +2288,8 @@ fn test_pool_snapshot_handler_refuses_empty_stub_at_creation_block(
     let mut pool = Pool::new(
         chain,
         dex,
-        Address::from([0xBB; 20]),
-        PoolIdentifier::from_address(Address::from([0xBB; 20])),
+        Address::from([0xbb; 20]),
+        PoolIdentifier::from_address(Address::from([0xbb; 20])),
         creation_block,
         token0,
         token1,

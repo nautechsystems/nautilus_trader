@@ -99,7 +99,7 @@ mod tests {
     #[rstest]
     fn test_crc32_ieee_known_value() {
         // CRC32 of b"123456789" == 0xCBF43926 (standard check value)
-        assert_eq!(crc32_ieee(b"123456789"), 0xCBF4_3926);
+        assert_eq!(crc32_ieee(b"123456789"), 0xcbf4_3926);
     }
 
     #[rstest]

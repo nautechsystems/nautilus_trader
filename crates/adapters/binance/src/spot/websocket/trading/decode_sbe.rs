@@ -943,10 +943,10 @@ mod tests {
         enc.strategy_type(i32::MIN);
         enc.strategy_id(i64::MIN);
         enc.counter_order_id(i64::MIN);
-        enc.subscription_id(0xFFFF); // null
+        enc.subscription_id(0xffff); // null
         enc.peg_price_type(peg_price_type::PegPriceType::default());
         enc.peg_offset_type(peg_offset_type::PegOffsetType::default());
-        enc.peg_offset_value(0xFF); // null
+        enc.peg_offset_value(0xff); // null
         enc.pegged_price(i64::MIN);
         enc.expiry_reason(expiry_reason);
 
@@ -1011,7 +1011,7 @@ mod tests {
 
         enc.event_time(event_time_us);
         enc.update_time(update_time_us);
-        enc.subscription_id(0xFFFF); // null
+        enc.subscription_id(0xffff); // null
 
         let balances_enc =
             outbound_account_position_event_codec::encoder::BalancesEncoder::default();
@@ -2069,7 +2069,7 @@ mod tests {
         let group_offset =
             HEADER_LEN + usize::from(outbound_account_position_event_codec::SBE_BLOCK_LENGTH);
         let mut data = original[..HEADER_LEN + ACCOUNT_POSITION_BLOCK_LENGTH_V0].to_vec();
-        data.resize(HEADER_LEN + block_length, 0xA5);
+        data.resize(HEADER_LEN + block_length, 0xa5);
         data[..2].copy_from_slice(&(block_length as u16).to_le_bytes());
         data[6..8].copy_from_slice(&version.to_le_bytes());
         data.extend_from_slice(
@@ -2085,7 +2085,7 @@ mod tests {
             );
             data.resize(
                 data.len() + entry_block_length - ACCOUNT_POSITION_BALANCE_BLOCK_LENGTH,
-                0xA5,
+                0xa5,
             );
             let asset_offset = entry_offset + ACCOUNT_POSITION_BALANCE_BLOCK_LENGTH;
             entry_offset = asset_offset + 1 + asset.len();
@@ -2126,7 +2126,7 @@ mod tests {
         enc.clear_time(clear_time_us);
         enc.qty_exponent(qty_exponent);
         enc.free_qty_delta(free_qty_delta);
-        enc.subscription_id(0xFFFF); // null
+        enc.subscription_id(0xffff); // null
         enc.asset(asset);
 
         buf_vec
@@ -2255,7 +2255,7 @@ mod tests {
         let original = encode_balance_update(123000, 456000, -2, 12345, "BTC");
         let asset_offset = HEADER_LEN + usize::from(balance_update_event_codec::SBE_BLOCK_LENGTH);
         let mut data = original[..HEADER_LEN + BALANCE_UPDATE_BLOCK_LENGTH_V0].to_vec();
-        data.resize(HEADER_LEN + block_length, 0xA5);
+        data.resize(HEADER_LEN + block_length, 0xa5);
         data[..2].copy_from_slice(&(block_length as u16).to_le_bytes());
         data[6..8].copy_from_slice(&version.to_le_bytes());
         data.extend_from_slice(&original[asset_offset..]);

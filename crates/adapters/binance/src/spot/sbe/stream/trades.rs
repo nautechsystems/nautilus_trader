@@ -270,7 +270,7 @@ mod tests {
         let width = Trade::ENCODED_LENGTH;
         for index in (0..2).rev() {
             let end = 32 + (index + 1) * width;
-            buf.splice(end..end, [0xFF; 3]);
+            buf.splice(end..end, [0xff; 3]);
         }
 
         buf[26..28].copy_from_slice(&((width + 3) as u16).to_le_bytes());

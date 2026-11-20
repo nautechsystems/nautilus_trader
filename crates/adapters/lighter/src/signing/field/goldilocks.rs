@@ -30,10 +30,10 @@
 use core::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 /// Goldilocks prime modulus: `p = 2^64 - 2^32 + 1`.
-pub const MODULUS: u64 = 0xFFFF_FFFF_0000_0001;
+pub const MODULUS: u64 = 0xffff_ffff_0000_0001;
 
 /// `R^2 mod p` with `R = 2^64`. Used to lift a `u64` into Montgomery form.
-const R2: u64 = 0xFFFF_FFFE_0000_0001;
+const R2: u64 = 0xffff_fffe_0000_0001;
 
 /// 2-adicity of `p - 1`: `p - 1 = 2^32 * (2^32 - 1)`.
 const TWO_ADICITY: u32 = 32;

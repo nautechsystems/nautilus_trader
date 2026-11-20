@@ -73,7 +73,7 @@ fn message(payload_type: BusPayloadType) -> BusMessage {
     BusMessage::with_str_topic(
         "commands.execution.EXTERNAL",
         payload_type,
-        Bytes::from(vec![0xAB; 256]),
+        Bytes::from(vec![0xab; 256]),
         SerializationEncoding::Json,
     )
 }

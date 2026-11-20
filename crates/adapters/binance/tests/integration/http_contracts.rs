@@ -74,7 +74,7 @@ async fn test_signed_query_assembly(
             0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22,
             0x04, 0x20,
         ];
-        der.extend_from_slice(&[0xABu8; 32]);
+        der.extend_from_slice(&[0xabu8; 32]);
         STANDARD.encode(der)
     } else {
         "test-secret".to_string()

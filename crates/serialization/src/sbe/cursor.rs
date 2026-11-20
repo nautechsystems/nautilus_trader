@@ -485,13 +485,13 @@ mod tests {
 
     #[rstest]
     fn test_read_u8() {
-        let buf = [0x42, 0xFF];
+        let buf = [0x42, 0xff];
         let mut cursor = SbeCursor::new(&buf);
 
         assert_eq!(cursor.read_u8().unwrap(), 0x42);
         assert_eq!(cursor.pos(), 1);
 
-        assert_eq!(cursor.read_u8().unwrap(), 0xFF);
+        assert_eq!(cursor.read_u8().unwrap(), 0xff);
         assert_eq!(cursor.pos(), 2);
 
         assert!(cursor.read_u8().is_err());
@@ -499,7 +499,7 @@ mod tests {
 
     #[rstest]
     fn test_read_i8() {
-        let buf = [0x7F, 0x80]; // 127, -128
+        let buf = [0x7f, 0x80]; // 127, -128
         let mut cursor = SbeCursor::new(&buf);
 
         assert_eq!(cursor.read_i8().unwrap(), 127);
@@ -588,7 +588,7 @@ mod tests {
 
     #[rstest]
     fn test_read_var_string8_invalid_utf8() {
-        let buf = [2, 0xFF, 0xFE]; // length = 2, invalid UTF-8
+        let buf = [2, 0xff, 0xfe]; // length = 2, invalid UTF-8
         let mut cursor = SbeCursor::new(&buf);
 
         assert!(matches!(

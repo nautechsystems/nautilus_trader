@@ -31,7 +31,7 @@ pub(crate) const ENCODE_PAIR: [[u8; 2]; 256] = {
 
 // 0xFF sentinel marks invalid hex characters
 pub(crate) const DECODE_NIBBLE: [u8; 256] = {
-    let mut table = [0xFFu8; 256];
+    let mut table = [0xffu8; 256];
     let mut i = 0u8;
     while i < 10 {
         table[(b'0' + i) as usize] = i;
@@ -122,8 +122,8 @@ fn decode_pairs_into(hex: &[u8], out: &mut Vec<u8>) -> Result<(), DecodeError> {
     for pair in hex.as_chunks::<2>().0 {
         let hi = DECODE_NIBBLE[pair[0] as usize];
         let lo = DECODE_NIBBLE[pair[1] as usize];
-        if (hi | lo) & 0xF0 != 0 {
-            return Err(if hi == 0xFF {
+        if (hi | lo) & 0xf0 != 0 {
+            return Err(if hi == 0xff {
                 DecodeError::InvalidChar(pair[0])
             } else {
                 DecodeError::InvalidChar(pair[1])
@@ -172,8 +172,8 @@ fn decode_into(hex: &[u8], out: &mut [u8]) -> Result<(), DecodeError> {
     for (decoded, pair) in out_tail.iter_mut().zip(tail.as_chunks::<2>().0) {
         let hi = DECODE_NIBBLE[pair[0] as usize];
         let lo = DECODE_NIBBLE[pair[1] as usize];
-        if (hi | lo) & 0xF0 != 0 {
-            return Err(if hi == 0xFF {
+        if (hi | lo) & 0xf0 != 0 {
+            return Err(if hi == 0xff {
                 DecodeError::InvalidChar(pair[0])
             } else {
                 DecodeError::InvalidChar(pair[1])

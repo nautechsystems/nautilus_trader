@@ -3232,7 +3232,7 @@ mod tests {
         // A continuation marker followed by a negative metadata length is corrupt, not cut short
         let mut staged = fs::read(&partial).unwrap();
         staged.truncate(staged.len() - 8);
-        staged.extend_from_slice(&[0xFF, 0xFF, 0xFF, 0xFF, 0xF0, 0xFF, 0xFF, 0xFF]);
+        staged.extend_from_slice(&[0xff, 0xff, 0xff, 0xff, 0xf0, 0xff, 0xff, 0xff]);
         fs::write(&partial, &staged).unwrap();
 
         let warnings = recover_with_warnings(temp_dir.path());

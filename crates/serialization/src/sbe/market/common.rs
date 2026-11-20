@@ -311,7 +311,7 @@ pub(super) fn validate_precision(field: &'static str, precision: u8) -> Result<(
 }
 
 // Sentinel byte that marks an optional bool as absent (None)
-const OPTIONAL_BOOL_NULL: u8 = 0xFF;
+const OPTIONAL_BOOL_NULL: u8 = 0xff;
 
 #[must_use]
 pub(super) fn encode_optional_bool(value: Option<bool>) -> u8 {

@@ -246,7 +246,7 @@ mod tests {
         for header in [asks_header, bids_header] {
             for index in (0..2).rev() {
                 let end = header + 4 + (index + 1) * width;
-                buf.splice(end..end, [0xFF; 3]);
+                buf.splice(end..end, [0xff; 3]);
             }
 
             buf[header..header + 2].copy_from_slice(&((width + 3) as u16).to_le_bytes());

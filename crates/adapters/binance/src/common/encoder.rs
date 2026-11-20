@@ -145,7 +145,7 @@ const BASE62_CHARS: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij
 /// Lookup table mapping ASCII byte values to base62 digit values.
 /// Invalid characters map to `0xFF`.
 const BASE62_DECODE: [u8; 128] = {
-    let mut table = [0xFFu8; 128];
+    let mut table = [0xffu8; 128];
     let mut i = 0u8;
     while i < 62 {
         table[BASE62_CHARS[i as usize] as usize] = i;
@@ -364,9 +364,8 @@ fn decode_base62(encoded: &[u8]) -> Option<u128> {
     let mut value: u128 = 0;
 
     for &byte in encoded {
-        let digit = BASE62_DECODE[byte as usize & 0x7F];
-
-        if digit == 0xFF || !byte.is_ascii() {
+        let digit = BASE62_DECODE[byte as usize & 0x7f];
+        if digit == 0xff || !byte.is_ascii() {
             return None;
         }
         value = value.checked_mul(62)?.checked_add(digit as u128)?;
@@ -436,7 +435,7 @@ fn pack_o_format(id_str: &str) -> Option<(u128, bool)> {
             )
         };
 
-    if trader > 1023 || strategy > 1023 || count > 0xF_FFFF {
+    if trader > 1023 || strategy > 1023 || count > 0xf_ffff {
         return None;
     }
 
@@ -455,9 +454,9 @@ fn pack_o_format(id_str: &str) -> Option<(u128, bool)> {
 }
 
 fn unpack_o_format(packed: u128, has_hyphens: bool) -> String {
-    let count = (packed & 0xF_FFFF) as u32;
-    let strategy = ((packed >> 20) & 0x3FF) as u32;
-    let trader = ((packed >> 30) & 0x3FF) as u32;
+    let count = (packed & 0xf_ffff) as u32;
+    let strategy = ((packed >> 20) & 0x3ff) as u32;
+    let trader = ((packed >> 30) & 0x3ff) as u32;
     let secs_since_epoch = (packed >> 40) as i64;
 
     let timestamp = secs_since_epoch + O_FORMAT_EPOCH;
@@ -547,8 +546,8 @@ fn unpack_o_tags(packed: u128) -> anyhow::Result<String> {
         "tagged O-format payload exceeds its bit budget"
     );
     let count = (packed & O_TAGS_COUNT_MAX as u128) as u32;
-    let numeric = ((packed >> O_TAGS_COUNT_BITS) & 0x3FF) as u32;
-    let tag = unpack_tag(((packed >> 32) & 0xFFF) as u32)?;
+    let numeric = ((packed >> O_TAGS_COUNT_BITS) & 0x3ff) as u32;
+    let tag = unpack_tag(((packed >> 32) & 0xfff) as u32)?;
     let swapped = ((packed >> 44) & 1) != 0;
     let (year, month, day, hour, minute, second) =
         epoch_to_civil((packed >> 45) as i64 + O_FORMAT_EPOCH)
@@ -578,7 +577,7 @@ fn pack_tag(tag: &str) -> Option<u32> {
 
     for byte in tag.bytes() {
         let digit = *BASE62_DECODE.get(byte as usize)?;
-        if digit == 0xFF {
+        if digit == 0xff {
             return None;
         }
 
@@ -652,7 +651,7 @@ fn format_uuid(value: u128, has_hyphens: bool) -> String {
                 pos += 1;
             }
             buf[pos] = HEX[(b >> 4) as usize];
-            buf[pos + 1] = HEX[(b & 0x0F) as usize];
+            buf[pos + 1] = HEX[(b & 0x0f) as usize];
             pos += 2;
         }
         std::str::from_utf8(&buf)
@@ -662,7 +661,7 @@ fn format_uuid(value: u128, has_hyphens: bool) -> String {
         let mut buf = [0u8; 32];
         for (i, &b) in bytes.iter().enumerate() {
             buf[i * 2] = HEX[(b >> 4) as usize];
-            buf[i * 2 + 1] = HEX[(b & 0x0F) as usize];
+            buf[i * 2 + 1] = HEX[(b & 0x0f) as usize];
         }
         std::str::from_utf8(&buf)
             .expect("hex is valid UTF-8")

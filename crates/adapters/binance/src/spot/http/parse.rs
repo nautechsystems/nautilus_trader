@@ -1605,7 +1605,7 @@ mod tests {
                     buf.extend_from_slice(&[1, 0]);
                 }
 
-                buf.extend_from_slice(&[0xFF; 3]);
+                buf.extend_from_slice(&[0xff; 3]);
             }
         }
 
@@ -2166,7 +2166,7 @@ mod tests {
 
         let order_start = buf.len();
         buf.extend_from_slice(&[0u8; ORDER_MIN_BLOCK_LENGTH as usize]);
-        buf.push(0xFF); // Sentinel for the new expiryReason byte (null/absent)
+        buf.push(0xff); // Sentinel for the new expiryReason byte (null/absent)
         assert_eq!(buf.len() - order_start, V4_BLOCK_LENGTH as usize);
 
         write_var_string(&mut buf, "BTCUSDT");
@@ -2194,7 +2194,7 @@ mod tests {
 
         // Fill the fixed block with non-zero, non-0xff padding so the previous
         // bug (returning that last byte as expiry_reason) would surface.
-        buf.extend_from_slice(&[0xAAu8; PRE_V4_BLOCK_LENGTH as usize]);
+        buf.extend_from_slice(&[0xaau8; PRE_V4_BLOCK_LENGTH as usize]);
 
         write_var_string(&mut buf, "BTCUSDT");
         write_var_string(&mut buf, "pre-v4-order");
@@ -2268,7 +2268,7 @@ mod tests {
 
         // Invalid UTF-8 sequence
         buf.push(4);
-        buf.extend_from_slice(&[0xFF, 0xFE, 0x00, 0x01]);
+        buf.extend_from_slice(&[0xff, 0xfe, 0x00, 0x01]);
 
         let err = decode_orders(&buf).unwrap_err();
         assert!(matches!(err, SbeDecodeError::InvalidUtf8));
@@ -2699,7 +2699,7 @@ mod tests {
         buf.push(0); // default_self_trade_prevention_mode
         buf.push(0); // allowed_self_trade_prevention_modes
         buf.push(0); // peg_instructions_allowed
-        buf.resize(buf.len() + padding, 0xFF);
+        buf.resize(buf.len() + padding, 0xff);
         buf.extend_from_slice(&create_group_header(0, 0)); // No filters
         buf.extend_from_slice(&create_group_header(0, 0)); // No permission sets
         write_var_string(&mut buf, "BTCUSDT");
@@ -2725,7 +2725,7 @@ mod tests {
         buf.push(0); // default_self_trade_prevention_mode
         buf.push(0); // allowed_self_trade_prevention_modes
         buf.push(0); // peg_instructions_allowed
-        buf.resize(buf.len() + padding, 0xFF);
+        buf.resize(buf.len() + padding, 0xff);
         buf.extend_from_slice(&create_group_header(0, 0)); // No filters
         buf.extend_from_slice(&create_group_header(0, 0)); // No permission sets
         write_var_string(&mut buf, "ETHUSDT");

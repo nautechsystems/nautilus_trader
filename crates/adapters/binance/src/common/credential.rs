@@ -746,7 +746,7 @@ mod tests {
     #[rstest]
     fn test_ed25519_rejects_raw_32_byte_seed() {
         // Accepting raw seeds would silently misclassify base64 HMAC secrets as Ed25519
-        let seed = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, [0xABu8; 32]);
+        let seed = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, [0xabu8; 32]);
 
         let result = Ed25519Credential::new("test_key".into(), seed.into());
 
