@@ -60,6 +60,9 @@ for cases where a docs example is missing or stale.
   `load_event_fixture` loader in tests.
 - For SBE coverage, the docs define the expected fields. Live capture supplies
   the canonical wire bytes.
+- The fixture `spot/market_data_json/trade_stream.json` adapts the
+  [Spot trade stream example](https://developers.binance.com/docs/binance-spot-api-docs/web-socket-streams#trade-streams)
+  to a combined-stream frame with BTCUSDT values and distinct event and trade timestamps.
 - As of November 10, 2026, Binance does not list a USD-M individual trade
   stream on the market-stream docs pages. The fixtures
   `futures/market_data_json/trade_stream.json` and

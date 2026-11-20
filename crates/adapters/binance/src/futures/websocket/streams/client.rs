@@ -51,13 +51,12 @@ use nautilus_network::{
     },
 };
 use parking_lot::Mutex;
-use tokio_tungstenite::tungstenite::Message;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
     error::{BinanceWsError, BinanceWsResult},
-    handler::BinanceFuturesDataWsFeedHandler,
+    handler::{BinanceFuturesDataWsFeedHandler, RawFrames},
     messages::{BinanceFuturesWsStreamsCommand, BinanceFuturesWsStreamsMessage},
 };
 use crate::common::{
@@ -82,7 +81,6 @@ struct ConnectionSlot {
     streams: Vec<String>,
     subscriptions_state: SubscriptionState,
     handler_task: TaskSlot<()>,
-    bytes_task: TaskSlot<()>,
     cancellation_token: CancellationToken,
     connection_mode: Arc<AtomicU8>,
     socket_control: Option<SocketControl>,
@@ -322,15 +320,7 @@ impl BinanceFuturesWebSocketClient {
                 slot.shutdown_errors.push(error);
             }
 
-            if let Some(error) = finish_slot_task(&mut slot.bytes_task, "Futures byte stream").await
-            {
-                slot.shutdown_errors.push(error);
-            }
-
-            if slot.handler_task.is_none()
-                && slot.bytes_task.is_none()
-                && slot.shutdown_errors.is_empty()
-            {
+            if slot.handler_task.is_none() && slot.shutdown_errors.is_empty() {
                 batch.slots.remove(index);
             }
         }
@@ -343,9 +333,7 @@ impl BinanceFuturesWebSocketClient {
             .iter_mut()
             .flat_map(|slot| std::mem::take(&mut slot.shutdown_errors))
             .collect::<Vec<_>>();
-        batch
-            .slots
-            .retain(|slot| slot.handler_task.is_some() || slot.bytes_task.is_some());
+        batch.slots.retain(|slot| slot.handler_task.is_some());
 
         if !errors.is_empty() {
             return Err(BinanceWsError::ClientError(errors.join("; ")));
@@ -678,40 +666,10 @@ impl BinanceFuturesWebSocketClient {
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
 
-        // Convert raw Message frames to Vec<u8> for the JSON handler
-        let (bytes_tx, bytes_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-
-        let mut bytes_task = TaskSlot::new();
-        if let Err(e) = bytes_task.spawn(async move {
-            let mut raw_rx = raw_rx;
-            while let Some(msg) = raw_rx.recv().await {
-                let data = match msg {
-                    Message::Binary(data) => data.to_vec(),
-                    Message::Text(text) => text.as_bytes().to_vec(),
-                    Message::Close(_) => break,
-                    Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => continue,
-                };
-
-                if bytes_tx.send(data).is_err() {
-                    break;
-                }
-            }
-        }) {
-            let shutdown_error =
-                finish_slot_task(&mut bytes_task, "Binance futures WS bytes").await;
-            return Err(BinanceWsError::ClientError(match shutdown_error {
-                Some(shutdown_error) => format!(
-                    "Failed to start futures WS bytes task: {e}; startup rollback failed: \
-                     {shutdown_error}"
-                ),
-                None => format!("Failed to start futures WS bytes task: {e}"),
-            }));
-        }
-
-        let mut handler = BinanceFuturesDataWsFeedHandler::new(
+        let mut handler = BinanceFuturesDataWsFeedHandler::from_frames(
             self.signal.clone(),
             cmd_rx,
-            bytes_rx,
+            RawFrames::WebSocket(raw_rx),
             out_tx.clone(),
             subscriptions_state.clone(),
             self.request_id_counter.clone(),
@@ -777,28 +735,15 @@ impl BinanceFuturesWebSocketClient {
             }
         }) {
             cancellation_token.cancel();
-            bytes_task.abort();
-            let mut shutdown_errors = Vec::new();
 
-            if let Some(error) =
-                finish_slot_task(&mut handler_task, "Binance futures WS handler").await
-            {
-                shutdown_errors.push(error);
-            }
+            let error = match finish_slot_task(&mut handler_task, "Binance futures WS handler").await {
+                Some(error) => format!(
+                    "Failed to start futures WS handler task: {e}; startup rollback failed: {error}"
+                ),
+                None => format!("Failed to start futures WS handler task: {e}"),
+            };
 
-            if let Some(error) =
-                finish_slot_task(&mut bytes_task, "Binance futures WS bytes").await
-            {
-                shutdown_errors.push(error);
-            }
-            return Err(BinanceWsError::ClientError(if shutdown_errors.is_empty() {
-                format!("Failed to start futures WS handler task: {e}")
-            } else {
-                format!(
-                    "Failed to start futures WS handler task: {e}; startup rollback failed: {}",
-                    shutdown_errors.join("; ")
-                )
-            }));
+            return Err(BinanceWsError::ClientError(error));
         }
 
         if let Some(control) = &socket_control {
@@ -810,7 +755,6 @@ impl BinanceFuturesWebSocketClient {
             streams: Vec::new(),
             subscriptions_state,
             handler_task,
-            bytes_task,
             cancellation_token,
             connection_mode,
             socket_control,
@@ -834,10 +778,6 @@ impl Drop for ConnectionSlots {
         for slot in self.0.get_mut().iter() {
             slot.cancellation_token.cancel();
             if let Some(handle) = slot.handler_task.as_ref() {
-                handle.abort();
-            }
-
-            if let Some(handle) = slot.bytes_task.as_ref() {
                 handle.abort();
             }
 
@@ -905,7 +845,6 @@ mod tests {
             streams: Vec::new(),
             subscriptions_state: SubscriptionState::new('@'),
             handler_task: TaskSlot::from_handle(tokio::spawn(std::future::pending())),
-            bytes_task: TaskSlot::new(),
             cancellation_token: CancellationToken::new(),
             connection_mode: Arc::new(AtomicU8::new(ConnectionMode::Active as u8)),
             socket_control: None,

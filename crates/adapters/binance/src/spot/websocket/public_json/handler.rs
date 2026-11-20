@@ -16,7 +16,6 @@
 //! Binance Spot public JSON WebSocket handler.
 
 use std::{
-    collections::VecDeque,
     fmt::Debug,
     sync::{
         Arc,
@@ -28,20 +27,22 @@ use nautilus_network::{
     RECONNECTED,
     websocket::{SubscriptionState, WebSocketClient},
 };
+use serde::Deserialize;
+use serde_json::{Value, value::RawValue};
+use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
 use super::messages::{
-    BinanceCombinedStreamEvent, BinanceSpotBookTickerMsg, BinanceSpotDepthDiffMsg,
-    BinanceSpotKlineMsg, BinanceSpotPartialDepthMsg, BinanceSpotPartialDepthPayload,
+    BinanceSpotBookTickerMsg, BinanceSpotPartialDepthMsg, BinanceSpotPartialDepthPayload,
     BinanceSpotPublicWsCommand, BinanceSpotPublicWsMessage, BinanceSpotServerShutdownMsg,
-    BinanceSpotTickerMsg, BinanceSpotTradeMsg, BinanceSpotWsErrorResponse, BinanceSpotWsResponse,
-    BinanceWsSubscription,
+    BinanceSpotWsErrorResponse, BinanceSpotWsResponse, BinanceWsSubscription,
 };
 use crate::common::{
     consts::BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION,
     enums::BinanceWsEventType,
     websocket::{
-        PendingSubscriptionRequest, PendingSubscriptionRequests, reset_requests_after_reconnect,
+        PendingSubscriptionRequest, PendingSubscriptionRequests, json_field_present,
+        reset_requests_after_reconnect,
     },
 };
 
@@ -49,9 +50,8 @@ use crate::common::{
 pub(super) struct BinanceSpotPublicWsHandler {
     signal: Arc<AtomicBool>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<BinanceSpotPublicWsCommand>,
-    raw_rx: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
+    raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
     inner: Option<WebSocketClient>,
-    pending_messages: VecDeque<BinanceSpotPublicWsMessage>,
     subscriptions: SubscriptionState,
     request_id_counter: Arc<AtomicU64>,
     pending_requests: PendingSubscriptionRequests,
@@ -69,7 +69,7 @@ impl BinanceSpotPublicWsHandler {
     pub(super) fn new(
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<BinanceSpotPublicWsCommand>,
-        raw_rx: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
+        raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
         subscriptions: SubscriptionState,
         request_id_counter: Arc<AtomicU64>,
     ) -> Self {
@@ -78,7 +78,6 @@ impl BinanceSpotPublicWsHandler {
             cmd_rx,
             raw_rx,
             inner: None,
-            pending_messages: VecDeque::new(),
             subscriptions,
             request_id_counter,
             pending_requests: PendingSubscriptionRequests::default(),
@@ -87,10 +86,6 @@ impl BinanceSpotPublicWsHandler {
 
     pub(super) async fn next(&mut self) -> Option<BinanceSpotPublicWsMessage> {
         loop {
-            if let Some(msg) = self.pending_messages.pop_front() {
-                return Some(msg);
-            }
-
             if self.signal.load(Ordering::Relaxed) {
                 return None;
             }
@@ -100,15 +95,15 @@ impl BinanceSpotPublicWsHandler {
                     self.handle_command(cmd).await;
                 }
                 Some(raw) = self.raw_rx.recv() => {
-                    let out = self.handle_raw_message(raw).await;
-                    if !out.is_empty() {
-                        let mut iter = out.into_iter();
-                        let first = iter.next();
-                        self.pending_messages.extend(iter);
+                    let data = match &raw {
+                        Message::Binary(data) => data.as_ref(),
+                        Message::Text(text) => text.as_bytes(),
+                        Message::Close(_) => return None,
+                        Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => continue,
+                    };
 
-                        if let Some(msg) = first {
-                            return Some(msg);
-                        }
+                    if let Some(msg) = self.handle_raw_message(data) {
+                        return Some(msg);
                     }
                 }
                 else => {
@@ -205,20 +200,22 @@ impl BinanceSpotPublicWsHandler {
         }
     }
 
-    async fn handle_raw_message(&mut self, raw: Vec<u8>) -> Vec<BinanceSpotPublicWsMessage> {
-        if let Ok(text) = std::str::from_utf8(&raw)
-            && text == RECONNECTED
-        {
+    fn handle_raw_message(&mut self, raw: &[u8]) -> Option<BinanceSpotPublicWsMessage> {
+        if raw == RECONNECTED.as_bytes() {
             reset_requests_after_reconnect(&mut self.pending_requests, &self.subscriptions);
             log::debug!("WebSocket reconnected signal received");
-            return vec![BinanceSpotPublicWsMessage::Reconnected];
+            return Some(BinanceSpotPublicWsMessage::Reconnected);
         }
 
-        let json: serde_json::Value = match serde_json::from_slice(&raw) {
+        if let Some(message) = decode_market_data(raw) {
+            return Some(message);
+        }
+
+        let json: Value = match serde_json::from_slice(raw) {
             Ok(j) => j,
             Err(e) => {
                 log::warn!("Failed to parse Spot public JSON message: {e}");
-                return vec![];
+                return None;
             }
         };
 
@@ -231,20 +228,20 @@ impl BinanceSpotPublicWsHandler {
                 .and_then(|m| m.as_str())
                 .unwrap_or("Unknown error")
                 .to_string();
-            return vec![BinanceSpotPublicWsMessage::Error(
+            return Some(BinanceSpotPublicWsMessage::Error(
                 crate::spot::websocket::streams::messages::BinanceWsErrorMsg {
                     code: code as i32,
                     msg,
                 },
-            )];
+            ));
         }
 
         if json.get("result").is_some() || json.get("id").is_some() {
             self.handle_subscription_response(&json);
-            return vec![];
+            return None;
         }
 
-        self.handle_stream_data(&json)
+        self.handle_stream_data(json)
     }
 
     fn handle_subscription_response(&mut self, json: &serde_json::Value) {
@@ -278,106 +275,157 @@ impl BinanceSpotPublicWsHandler {
         }
     }
 
-    fn handle_stream_data(&self, json: &serde_json::Value) -> Vec<BinanceSpotPublicWsMessage> {
+    fn handle_stream_data(&self, json: Value) -> Option<BinanceSpotPublicWsMessage> {
         let (stream_name, payload) = split_combined_payload(json);
+        if let Some(stream_name) = stream_name.as_deref() {
+            if let Ok(parsed) = BinanceSpotPartialDepthPayload::deserialize(&payload) {
+                return Some(partial_depth_with_symbol(parsed, stream_name));
+            }
 
-        if let Some(depth) = parse_partial_depth_with_symbol(&payload, stream_name.as_deref()) {
-            return vec![BinanceSpotPublicWsMessage::DepthSnapshot(depth)];
+            if stream_name.ends_with("@bookTicker") {
+                return serde_json::from_value::<BinanceSpotBookTickerMsg>(payload)
+                    .map(BinanceSpotPublicWsMessage::BookTicker)
+                    .map_err(|e| log::warn!("Failed to parse Spot bookTicker: {e}"))
+                    .ok();
+            }
         }
 
-        if let Some(stream_name) = stream_name.as_deref()
-            && stream_name.ends_with("@bookTicker")
-        {
-            return serde_json::from_value::<BinanceSpotBookTickerMsg>(payload)
-                .map(BinanceSpotPublicWsMessage::BookTicker)
-                .map_err(|e| log::warn!("Failed to parse Spot bookTicker: {e}"))
-                .ok()
-                .into_iter()
-                .collect();
-        }
-
-        // `serverShutdown` is not a `BinanceWsEventType` variant (it deserializes to
-        // `Unknown` via `#[serde(other)]`), so detect it from the raw `e` field before
-        // enum dispatch, mirroring the SBE streams handler.
-        if payload.get("e").and_then(|v| v.as_str()) == Some("serverShutdown") {
+        // The shared event enum maps `serverShutdown` to `Unknown`
+        if payload.get("e").and_then(Value::as_str) == Some("serverShutdown") {
             return serde_json::from_value::<BinanceSpotServerShutdownMsg>(payload)
                 .map(BinanceSpotPublicWsMessage::ServerShutdown)
                 .map_err(|e| log::warn!("Failed to parse Spot server shutdown event: {e}"))
-                .ok()
-                .into_iter()
-                .collect();
+                .ok();
         }
 
-        let Some(event_type) = extract_event_type(&payload) else {
-            return vec![BinanceSpotPublicWsMessage::RawJson(payload)];
-        };
+        let event_type = payload
+            .get("e")
+            .and_then(|value| BinanceWsEventType::deserialize(value).ok());
 
         match event_type {
-            BinanceWsEventType::Trade => serde_json::from_value::<BinanceSpotTradeMsg>(payload)
+            Some(BinanceWsEventType::Trade) => serde_json::from_value(payload)
                 .map(BinanceSpotPublicWsMessage::Trade)
                 .map_err(|e| log::warn!("Failed to parse Spot trade: {e}"))
-                .ok()
-                .into_iter()
-                .collect(),
-            BinanceWsEventType::BookTicker => {
-                serde_json::from_value::<BinanceSpotBookTickerMsg>(payload)
-                    .map(BinanceSpotPublicWsMessage::BookTicker)
-                    .map_err(|e| log::warn!("Failed to parse Spot bookTicker: {e}"))
-                    .ok()
-                    .into_iter()
-                    .collect()
-            }
-            BinanceWsEventType::DepthUpdate => {
-                serde_json::from_value::<BinanceSpotDepthDiffMsg>(payload)
-                    .map(BinanceSpotPublicWsMessage::DepthDiff)
-                    .map_err(|e| log::warn!("Failed to parse Spot depthUpdate: {e}"))
-                    .ok()
-                    .into_iter()
-                    .collect()
-            }
-            BinanceWsEventType::Kline => serde_json::from_value::<BinanceSpotKlineMsg>(payload)
+                .ok(),
+            Some(BinanceWsEventType::BookTicker) => serde_json::from_value(payload)
+                .map(BinanceSpotPublicWsMessage::BookTicker)
+                .map_err(|e| log::warn!("Failed to parse Spot bookTicker: {e}"))
+                .ok(),
+            Some(BinanceWsEventType::DepthUpdate) => serde_json::from_value(payload)
+                .map(BinanceSpotPublicWsMessage::DepthDiff)
+                .map_err(|e| log::warn!("Failed to parse Spot depthUpdate: {e}"))
+                .ok(),
+            Some(BinanceWsEventType::Kline) => serde_json::from_value(payload)
                 .map(BinanceSpotPublicWsMessage::Kline)
                 .map_err(|e| log::warn!("Failed to parse Spot kline: {e}"))
-                .ok()
-                .into_iter()
-                .collect(),
-            BinanceWsEventType::Ticker24Hr => {
-                serde_json::from_value::<BinanceSpotTickerMsg>(payload)
-                    .map(BinanceSpotPublicWsMessage::Ticker)
-                    .map_err(|e| log::warn!("Failed to parse Spot ticker: {e}"))
-                    .ok()
-                    .into_iter()
-                    .collect()
-            }
-            _ => vec![BinanceSpotPublicWsMessage::RawJson(payload)],
+                .ok(),
+            Some(BinanceWsEventType::Ticker24Hr) => serde_json::from_value(payload)
+                .map(BinanceSpotPublicWsMessage::Ticker)
+                .map_err(|e| log::warn!("Failed to parse Spot ticker: {e}"))
+                .ok(),
+            _ => Some(BinanceSpotPublicWsMessage::RawJson(payload)),
         }
     }
 }
 
-fn split_combined_payload(json: &serde_json::Value) -> (Option<String>, serde_json::Value) {
-    if let Ok(wrapper) = serde_json::from_value::<BinanceCombinedStreamEvent>(json.clone()) {
-        (Some(wrapper.stream), wrapper.data)
+fn split_combined_payload(mut json: Value) -> (Option<String>, Value) {
+    if let Some(stream) = json.get("stream").and_then(Value::as_str)
+        && json.get("data").is_some()
+    {
+        let stream = stream.to_owned();
+        (Some(stream), json["data"].take())
+    } else if let Value::Array(values) = &mut json
+        && let [Value::String(stream), data] = values.as_mut_slice()
+    {
+        (Some(std::mem::take(stream)), data.take())
     } else {
-        (None, json.clone())
+        (None, json)
     }
 }
 
-fn extract_event_type(json: &serde_json::Value) -> Option<BinanceWsEventType> {
-    json.get("e")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
+#[derive(Deserialize)]
+struct MarketDataRoute<'a> {
+    #[serde(borrow)]
+    stream: Option<&'a str>,
+    #[serde(borrow)]
+    data: Option<&'a RawValue>,
+    #[serde(rename = "e")]
+    event_type: Option<BinanceWsEventType>,
+    #[serde(
+        rename = "lastUpdateId",
+        default,
+        deserialize_with = "json_field_present"
+    )]
+    partial_depth: bool,
+    #[serde(default, deserialize_with = "json_field_present")]
+    result: bool,
+    #[serde(default, deserialize_with = "json_field_present")]
+    id: bool,
+    #[serde(default, deserialize_with = "json_field_present")]
+    code: bool,
 }
 
-fn parse_partial_depth_with_symbol(
-    payload: &serde_json::Value,
-    stream_name: Option<&str>,
-) -> Option<BinanceSpotPartialDepthMsg> {
-    let parsed = serde_json::from_value::<BinanceSpotPartialDepthPayload>(payload.clone()).ok()?;
+fn decode_market_data(raw: &[u8]) -> Option<BinanceSpotPublicWsMessage> {
+    // Serde also accepts positional arrays for structs
+    if raw.trim_ascii_start().first() != Some(&b'{') {
+        return None;
+    }
 
+    let outer = serde_json::from_slice::<MarketDataRoute<'_>>(raw).ok()?;
+    if outer.result || outer.id || outer.code {
+        return None;
+    }
+
+    let stream_name = outer.stream;
+    let (raw, route) = if stream_name.is_some() {
+        let data = outer.data?.get().as_bytes();
+        (data, serde_json::from_slice(data).ok()?)
+    } else {
+        (raw, outer)
+    };
+
+    if let Some(stream_name) = stream_name {
+        if route.partial_depth {
+            let parsed = serde_json::from_slice(raw).ok()?;
+            return Some(partial_depth_with_symbol(parsed, stream_name));
+        }
+
+        if stream_name.ends_with("@bookTicker") {
+            return serde_json::from_slice(raw)
+                .ok()
+                .map(BinanceSpotPublicWsMessage::BookTicker);
+        }
+    }
+
+    match route.event_type? {
+        BinanceWsEventType::Trade => serde_json::from_slice(raw)
+            .ok()
+            .map(BinanceSpotPublicWsMessage::Trade),
+        BinanceWsEventType::BookTicker => serde_json::from_slice(raw)
+            .ok()
+            .map(BinanceSpotPublicWsMessage::BookTicker),
+        BinanceWsEventType::DepthUpdate => serde_json::from_slice(raw)
+            .ok()
+            .map(BinanceSpotPublicWsMessage::DepthDiff),
+        BinanceWsEventType::Kline => serde_json::from_slice(raw)
+            .ok()
+            .map(BinanceSpotPublicWsMessage::Kline),
+        BinanceWsEventType::Ticker24Hr => serde_json::from_slice(raw)
+            .ok()
+            .map(BinanceSpotPublicWsMessage::Ticker),
+        _ => None,
+    }
+}
+
+fn partial_depth_with_symbol(
+    parsed: BinanceSpotPartialDepthPayload,
+    stream_name: &str,
+) -> BinanceSpotPublicWsMessage {
     let symbol = stream_name
-        .and_then(|stream| stream.split('@').next())
-        .map(|s| Ustr::from(s.to_uppercase().as_str()))?;
-
-    Some(BinanceSpotPartialDepthMsg {
+        .split_once('@')
+        .map_or(stream_name, |(symbol, _)| symbol);
+    let symbol = Ustr::from(symbol.to_uppercase().as_str());
+    BinanceSpotPublicWsMessage::DepthSnapshot(BinanceSpotPartialDepthMsg {
         symbol,
         last_update_id: parsed.last_update_id,
         bids: parsed.bids,
@@ -393,31 +441,143 @@ mod tests {
     };
 
     use nautilus_network::{RECONNECTED, websocket::SubscriptionState};
-    use rstest::rstest;
+    use rstest::{fixture, rstest};
     use serde_json::json;
     use ustr::Ustr;
 
     use super::*;
 
+    const TRADE_STREAM: &str =
+        include_str!("../../../../test_data/spot/market_data_json/trade_stream.json");
+
     #[rstest]
-    fn test_parse_partial_depth_with_symbol_uppercases_symbol_from_stream_name() {
+    #[case::combined(true)]
+    #[case::raw(false)]
+    fn test_decode_trade(#[case] combined: bool) {
+        let frame = if combined {
+            TRADE_STREAM.to_owned()
+        } else {
+            let frame: Value = serde_json::from_str(TRADE_STREAM).unwrap();
+            frame["data"].to_string()
+        };
+
+        let Some(BinanceSpotPublicWsMessage::Trade(trade)) = decode_market_data(frame.as_bytes())
+        else {
+            panic!("expected a Spot trade");
+        };
+
+        assert_eq!(trade.event_type, "trade");
+        assert_eq!(trade.event_time, 1672515782138);
+        assert_eq!(trade.symbol, Ustr::from("BTCUSDT"));
+        assert_eq!(trade.trade_id, 12345);
+        assert_eq!(trade.price, "42000.12000000");
+        assert_eq!(trade.quantity, "0.00510000");
+        assert_eq!(trade.trade_time, 1672515782136);
+        assert!(trade.is_buyer_maker);
+    }
+
+    #[rstest]
+    fn test_handle_raw_message_preserves_unknown_array(mut handler: BinanceSpotPublicWsHandler) {
+        let frame: Value = serde_json::from_str(TRADE_STREAM).unwrap();
+        let array = json!([frame["stream"], frame["data"], null]);
+        let bytes = serde_json::to_vec(&array).unwrap();
+
+        let Some(BinanceSpotPublicWsMessage::RawJson(parsed)) = handler.handle_raw_message(&bytes)
+        else {
+            panic!("expected a raw JSON array");
+        };
+
+        assert_eq!(parsed, array);
+    }
+
+    #[rstest]
+    #[case(json!(["btcusdt@depth20", {
+        "lastUpdateId": 12345,
+        "bids": [["42000.1", "0.5"]],
+        "asks": [["42000.2", "0.8"]]
+    }]))]
+    #[case(json!({"stream": "btcusdt@depth20", "data": [
+        12345,
+        [["42000.1", "0.5"]],
+        [["42000.2", "0.8"]]
+    ]}))]
+    fn test_handle_raw_message_preserves_positional_depth(
+        #[case] frame: Value,
+        mut handler: BinanceSpotPublicWsHandler,
+    ) {
+        let bytes = serde_json::to_vec(&frame).unwrap();
+
+        let Some(BinanceSpotPublicWsMessage::DepthSnapshot(parsed)) =
+            handler.handle_raw_message(&bytes)
+        else {
+            panic!("expected a partial depth snapshot");
+        };
+
+        assert_eq!(parsed.symbol, Ustr::from("BTCUSDT"));
+        assert_eq!(parsed.last_update_id, 12345);
+        assert_eq!(parsed.bids, [["42000.1", "0.5"]]);
+        assert_eq!(parsed.asks, [["42000.2", "0.8"]]);
+    }
+
+    #[fixture]
+    fn handler() -> BinanceSpotPublicWsHandler {
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        BinanceSpotPublicWsHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            SubscriptionState::new('@'),
+            Arc::new(AtomicU64::new(1)),
+        )
+    }
+
+    #[rstest]
+    #[case("result", Value::Null)]
+    #[case("id", Value::Null)]
+    #[case("code", Value::from(-1))]
+    fn test_combined_market_data_defers_control_fields(#[case] key: &str, #[case] value: Value) {
+        let fixture = include_bytes!(
+            "../../../../test_data/futures/market_data_json/book_ticker_stream.json"
+        );
+        let data: Value = serde_json::from_slice(fixture).unwrap();
+        let mut frame = json!({"stream": "btcusdt@bookTicker", "data": data});
+        let bytes = serde_json::to_vec(&frame).unwrap();
+        assert!(matches!(
+            decode_market_data(&bytes),
+            Some(BinanceSpotPublicWsMessage::BookTicker(_))
+        ));
+
+        frame[key] = value;
+        let bytes = serde_json::to_vec(&frame).unwrap();
+        assert!(decode_market_data(&bytes).is_none());
+    }
+
+    #[rstest]
+    fn test_decode_partial_depth_uppercases_stream_symbol() {
         let payload = json!({
             "lastUpdateId": 12345,
             "bids": [["42000.1", "0.5"]],
             "asks": [["42000.2", "0.8"]]
         });
 
-        let parsed = parse_partial_depth_with_symbol(&payload, Some("btcusdt@depth20"))
-            .expect("depth payload should parse");
+        let frame = json!({"stream": "btcusdt@depth20", "data": payload});
+
+        let Some(BinanceSpotPublicWsMessage::DepthSnapshot(parsed)) =
+            decode_market_data(&serde_json::to_vec(&frame).unwrap())
+        else {
+            panic!("expected a partial depth snapshot");
+        };
 
         assert_eq!(parsed.symbol, Ustr::from("BTCUSDT"));
         assert_eq!(parsed.last_update_id, 12345);
-        assert_eq!(parsed.bids.len(), 1);
-        assert_eq!(parsed.asks.len(), 1);
+        assert_eq!(parsed.bids, [["42000.1", "0.5"]]);
+        assert_eq!(parsed.asks, [["42000.2", "0.8"]]);
     }
 
-    #[tokio::test]
-    async fn test_handle_raw_message_emits_reconnected_signal() {
+    #[rstest]
+    fn test_handle_raw_message_emits_reconnected_signal() {
         let signal = Arc::new(AtomicBool::new(false));
         let request_id_counter = Arc::new(AtomicU64::new(1));
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -432,11 +592,8 @@ mod tests {
             request_id_counter,
         );
 
-        let out = handler
-            .handle_raw_message(RECONNECTED.as_bytes().to_vec())
-            .await;
-        assert_eq!(out.len(), 1);
-        assert!(matches!(out[0], BinanceSpotPublicWsMessage::Reconnected));
+        let out = handler.handle_raw_message(RECONNECTED.as_bytes());
+        assert!(matches!(out, Some(BinanceSpotPublicWsMessage::Reconnected)));
     }
 
     #[rstest]
@@ -479,8 +636,8 @@ mod tests {
         assert_eq!(handler.pending_requests.len(), 0);
     }
 
-    #[tokio::test]
-    async fn test_handle_raw_message_error_with_id_emits_error() {
+    #[rstest]
+    fn test_handle_raw_message_error_with_id_emits_error() {
         let signal = Arc::new(AtomicBool::new(false));
         let request_id_counter = Arc::new(AtomicU64::new(2));
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -505,12 +662,9 @@ mod tests {
             "id": 1
         });
 
-        let out = handler
-            .handle_raw_message(payload.to_string().into_bytes())
-            .await;
-        assert_eq!(out.len(), 1);
-        match &out[0] {
-            BinanceSpotPublicWsMessage::Error(err) => {
+        let out = handler.handle_raw_message(&serde_json::to_vec(&payload).unwrap());
+        match out {
+            Some(BinanceSpotPublicWsMessage::Error(err)) => {
                 assert_eq!(err.code, 2);
                 assert_eq!(err.msg, "Invalid request");
             }
@@ -605,7 +759,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_stream_data_parses_book_ticker_without_event_type() {
+    #[case::direct(true)]
+    #[case::fallback(false)]
+    fn test_parses_book_ticker_without_event_type(#[case] direct: bool) {
         let signal = Arc::new(AtomicBool::new(false));
         let request_id_counter = Arc::new(AtomicU64::new(1));
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -632,9 +788,22 @@ mod tests {
             }
         });
 
-        let out = handler.handle_stream_data(&payload);
-        assert_eq!(out.len(), 1);
-        assert!(matches!(out[0], BinanceSpotPublicWsMessage::BookTicker(_)));
+        let out = if direct {
+            decode_market_data(&serde_json::to_vec(&payload).unwrap())
+        } else {
+            handler.handle_stream_data(payload)
+        };
+
+        let Some(BinanceSpotPublicWsMessage::BookTicker(out)) = out else {
+            panic!("expected book ticker");
+        };
+
+        assert_eq!(out.book_update_id, 94528182161);
+        assert_eq!(out.symbol, "BTCUSDT");
+        assert_eq!(out.best_bid_price, "73650.51000000");
+        assert_eq!(out.best_bid_qty, "2.95126000");
+        assert_eq!(out.best_ask_price, "73650.52000000");
+        assert_eq!(out.best_ask_qty, "1.38108000");
     }
 
     #[rstest]
@@ -657,11 +826,10 @@ mod tests {
         // recognized from the raw `e` field rather than dropped as RawJson.
         let payload = json!({"e": "serverShutdown", "E": 1_700_000_000_000_i64});
 
-        let out = handler.handle_stream_data(&payload);
-        assert_eq!(out.len(), 1);
+        let out = handler.handle_stream_data(payload);
         assert!(matches!(
-            out[0],
-            BinanceSpotPublicWsMessage::ServerShutdown(_)
+            out,
+            Some(BinanceSpotPublicWsMessage::ServerShutdown(_))
         ));
     }
 }

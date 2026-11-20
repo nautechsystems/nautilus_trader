@@ -32,6 +32,8 @@ use nautilus_network::{
     RECONNECTED,
     websocket::{SubscriptionState, WebSocketClient},
 };
+use serde::Deserialize;
+use tokio_tungstenite::tungstenite::Message;
 
 use super::{
     messages::{
@@ -50,7 +52,8 @@ use crate::common::{
     consts::BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION,
     enums::{BinanceWsEventType, BinanceWsMethod},
     websocket::{
-        PendingSubscriptionRequest, PendingSubscriptionRequests, reset_requests_after_reconnect,
+        PendingSubscriptionRequest, PendingSubscriptionRequests, json_field_present,
+        reset_requests_after_reconnect,
     },
 };
 
@@ -63,7 +66,7 @@ pub struct BinanceFuturesDataWsFeedHandler {
     #[allow(dead_code)]
     signal: Arc<AtomicBool>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<BinanceFuturesWsStreamsCommand>,
-    raw_rx: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
+    raw_rx: RawFrames,
     #[allow(dead_code)]
     out_tx: tokio::sync::mpsc::UnboundedSender<BinanceFuturesWsStreamsMessage>,
     inner: Option<WebSocketClient>,
@@ -87,6 +90,24 @@ impl BinanceFuturesDataWsFeedHandler {
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<BinanceFuturesWsStreamsCommand>,
         raw_rx: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
+        out_tx: tokio::sync::mpsc::UnboundedSender<BinanceFuturesWsStreamsMessage>,
+        subscriptions_state: SubscriptionState,
+        request_id_counter: Arc<AtomicU64>,
+    ) -> Self {
+        Self::from_frames(
+            signal,
+            cmd_rx,
+            RawFrames::Payloads(raw_rx),
+            out_tx,
+            subscriptions_state,
+            request_id_counter,
+        )
+    }
+
+    pub(super) fn from_frames(
+        signal: Arc<AtomicBool>,
+        cmd_rx: tokio::sync::mpsc::UnboundedReceiver<BinanceFuturesWsStreamsCommand>,
+        raw_rx: RawFrames,
         out_tx: tokio::sync::mpsc::UnboundedSender<BinanceFuturesWsStreamsMessage>,
         subscriptions_state: SubscriptionState,
         request_id_counter: Arc<AtomicU64>,
@@ -118,7 +139,14 @@ impl BinanceFuturesDataWsFeedHandler {
                     self.handle_command(cmd).await;
                 }
                 Some(raw) = self.raw_rx.recv() => {
-                    if let Some(msg) = self.handle_raw_message(raw).await {
+                    let data = match &raw {
+                        Message::Binary(data) => data.as_ref(),
+                        Message::Text(text) => text.as_bytes(),
+                        Message::Close(_) => return None,
+                        Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => continue,
+                    };
+
+                    if let Some(msg) = self.handle_raw_message(data) {
                         return Some(msg);
                     }
                 }
@@ -237,10 +265,8 @@ impl BinanceFuturesDataWsFeedHandler {
         }
     }
 
-    async fn handle_raw_message(&mut self, raw: Vec<u8>) -> Option<BinanceFuturesWsStreamsMessage> {
-        if let Ok(text) = std::str::from_utf8(&raw)
-            && text == RECONNECTED
-        {
+    fn handle_raw_message(&mut self, raw: &[u8]) -> Option<BinanceFuturesWsStreamsMessage> {
+        if raw == RECONNECTED.as_bytes() {
             let abandoned = self
                 .unsubscribe_correlations
                 .values()
@@ -252,7 +278,11 @@ impl BinanceFuturesDataWsFeedHandler {
             return Some(BinanceFuturesWsStreamsMessage::Reconnected(abandoned));
         }
 
-        let json: serde_json::Value = match serde_json::from_slice(&raw) {
+        if let Some(message) = decode_market_data(raw) {
+            return Some(message);
+        }
+
+        let json: serde_json::Value = match serde_json::from_slice(raw) {
             Ok(j) => j,
             Err(e) => {
                 log::warn!("Failed to parse JSON message: {e}");
@@ -277,7 +307,7 @@ impl BinanceFuturesDataWsFeedHandler {
             ));
         }
 
-        self.handle_stream_data(&json)
+        self.handle_stream_data(json)
     }
 
     fn handle_subscription_response(
@@ -333,55 +363,50 @@ impl BinanceFuturesDataWsFeedHandler {
 
     fn handle_stream_data(
         &self,
-        json: &serde_json::Value,
+        json: serde_json::Value,
     ) -> Option<BinanceFuturesWsStreamsMessage> {
-        let event_type = extract_event_type(json)?;
-
+        let event_type = extract_event_type(&json)?;
         match event_type {
             BinanceWsEventType::AggTrade => {
-                serde_json::from_value::<BinanceFuturesAggTradeMsg>(json.clone())
+                serde_json::from_value::<BinanceFuturesAggTradeMsg>(json)
                     .map(BinanceFuturesWsStreamsMessage::AggTrade)
                     .map_err(|e| log::warn!("Failed to parse aggregate trade: {e}"))
                     .ok()
             }
-            BinanceWsEventType::Trade => {
-                serde_json::from_value::<BinanceFuturesTradeMsg>(json.clone())
-                    .map(BinanceFuturesWsStreamsMessage::Trade)
-                    .map_err(|e| log::warn!("Failed to parse trade: {e}"))
-                    .ok()
-            }
+            BinanceWsEventType::Trade => serde_json::from_value::<BinanceFuturesTradeMsg>(json)
+                .map(BinanceFuturesWsStreamsMessage::Trade)
+                .map_err(|e| log::warn!("Failed to parse trade: {e}"))
+                .ok(),
             BinanceWsEventType::BookTicker => {
-                serde_json::from_value::<BinanceFuturesBookTickerMsg>(json.clone())
+                serde_json::from_value::<BinanceFuturesBookTickerMsg>(json)
                     .map(BinanceFuturesWsStreamsMessage::BookTicker)
                     .map_err(|e| log::warn!("Failed to parse book ticker: {e}"))
                     .ok()
             }
             BinanceWsEventType::DepthUpdate => {
-                serde_json::from_value::<BinanceFuturesDepthUpdateMsg>(json.clone())
+                serde_json::from_value::<BinanceFuturesDepthUpdateMsg>(json)
                     .map(BinanceFuturesWsStreamsMessage::DepthUpdate)
                     .map_err(|e| log::warn!("Failed to parse depth update: {e}"))
                     .ok()
             }
             BinanceWsEventType::MarkPriceUpdate => {
-                serde_json::from_value::<BinanceFuturesMarkPriceMsg>(json.clone())
+                serde_json::from_value::<BinanceFuturesMarkPriceMsg>(json)
                     .map(BinanceFuturesWsStreamsMessage::MarkPrice)
                     .map_err(|e| log::warn!("Failed to parse mark price: {e}"))
                     .ok()
             }
-            BinanceWsEventType::Kline => {
-                serde_json::from_value::<BinanceFuturesKlineMsg>(json.clone())
-                    .map(BinanceFuturesWsStreamsMessage::Kline)
-                    .map_err(|e| log::warn!("Failed to parse kline: {e}"))
-                    .ok()
-            }
+            BinanceWsEventType::Kline => serde_json::from_value::<BinanceFuturesKlineMsg>(json)
+                .map(BinanceFuturesWsStreamsMessage::Kline)
+                .map_err(|e| log::warn!("Failed to parse kline: {e}"))
+                .ok(),
             BinanceWsEventType::ForceOrder => {
-                serde_json::from_value::<BinanceFuturesLiquidationMsg>(json.clone())
+                serde_json::from_value::<BinanceFuturesLiquidationMsg>(json)
                     .map(BinanceFuturesWsStreamsMessage::ForceOrder)
                     .map_err(|e| log::warn!("Failed to parse force order: {e}"))
                     .ok()
             }
             BinanceWsEventType::Ticker24Hr => {
-                serde_json::from_value::<BinanceFuturesTickerMsg>(json.clone())
+                serde_json::from_value::<BinanceFuturesTickerMsg>(json)
                     .map(BinanceFuturesWsStreamsMessage::Ticker)
                     .map_err(|e| log::warn!("Failed to parse ticker: {e}"))
                     .ok()
@@ -391,7 +416,7 @@ impl BinanceFuturesDataWsFeedHandler {
                 None
             }
             BinanceWsEventType::AccountUpdate => {
-                serde_json::from_value::<BinanceFuturesAccountUpdateMsg>(json.clone())
+                serde_json::from_value::<BinanceFuturesAccountUpdateMsg>(json)
                     .map(|msg| {
                         log::debug!(
                             "Account update: reason={:?}, balances={}, positions={}",
@@ -405,7 +430,7 @@ impl BinanceFuturesDataWsFeedHandler {
                     .ok()
             }
             BinanceWsEventType::OrderTradeUpdate => {
-                serde_json::from_value::<BinanceFuturesOrderUpdateMsg>(json.clone())
+                serde_json::from_value::<BinanceFuturesOrderUpdateMsg>(json)
                     .map(|msg| {
                         log::debug!(
                             "Order update: symbol={}, order_id={}, exec={:?}, status={:?}",
@@ -420,7 +445,7 @@ impl BinanceFuturesDataWsFeedHandler {
                     .ok()
             }
             BinanceWsEventType::TradeLite => {
-                serde_json::from_value::<BinanceFuturesTradeLiteMsg>(json.clone())
+                serde_json::from_value::<BinanceFuturesTradeLiteMsg>(json)
                     .map(|msg| {
                         log::debug!(
                             "Trade lite: symbol={}, order_id={}, trade_id={}",
@@ -434,7 +459,7 @@ impl BinanceFuturesDataWsFeedHandler {
                     .ok()
             }
             BinanceWsEventType::AlgoUpdate => {
-                serde_json::from_value::<BinanceFuturesAlgoUpdateMsg>(json.clone())
+                serde_json::from_value::<BinanceFuturesAlgoUpdateMsg>(json)
                     .map(|msg| {
                         log::debug!(
                             "Algo order update: symbol={}, algo_id={}, status={:?}",
@@ -448,7 +473,7 @@ impl BinanceFuturesDataWsFeedHandler {
                     .ok()
             }
             BinanceWsEventType::MarginCall => {
-                serde_json::from_value::<BinanceFuturesMarginCallMsg>(json.clone())
+                serde_json::from_value::<BinanceFuturesMarginCallMsg>(json)
                     .map(|msg| {
                         log::warn!(
                             "Margin call: cross_wallet_balance={}, positions_at_risk={}",
@@ -461,7 +486,7 @@ impl BinanceFuturesDataWsFeedHandler {
                     .ok()
             }
             BinanceWsEventType::AccountConfigUpdate => {
-                serde_json::from_value::<BinanceFuturesAccountConfigMsg>(json.clone())
+                serde_json::from_value::<BinanceFuturesAccountConfigMsg>(json)
                     .map(|msg| {
                         if let Some(ref lc) = msg.leverage_config {
                             log::debug!(
@@ -476,9 +501,7 @@ impl BinanceFuturesDataWsFeedHandler {
                     .ok()
             }
             BinanceWsEventType::ListenKeyExpired => {
-                if let Ok(msg) =
-                    serde_json::from_value::<BinanceFuturesListenKeyExpiredMsg>(json.clone())
-                {
+                if let Ok(msg) = serde_json::from_value::<BinanceFuturesListenKeyExpiredMsg>(json) {
                     log::debug!("Listen key expired at {}", msg.event_time);
                 }
                 Some(BinanceFuturesWsStreamsMessage::ListenKeyExpired)
@@ -491,11 +514,140 @@ impl BinanceFuturesDataWsFeedHandler {
     }
 }
 
+pub(super) enum RawFrames {
+    Payloads(tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>),
+    WebSocket(tokio::sync::mpsc::UnboundedReceiver<Message>),
+}
+
+impl RawFrames {
+    async fn recv(&mut self) -> Option<Message> {
+        match self {
+            Self::Payloads(rx) => rx
+                .recv()
+                .await
+                .map(|payload| Message::Binary(payload.into())),
+            Self::WebSocket(rx) => rx.recv().await,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct MarketDataRoute {
+    #[serde(rename = "e")]
+    event_type: BinanceWsEventType,
+    #[serde(default, deserialize_with = "json_field_present")]
+    result: bool,
+    #[serde(default, deserialize_with = "json_field_present")]
+    id: bool,
+    #[serde(default, deserialize_with = "json_field_present")]
+    code: bool,
+}
+
+fn decode_market_data(raw: &[u8]) -> Option<BinanceFuturesWsStreamsMessage> {
+    let route = serde_json::from_slice::<MarketDataRoute>(raw).ok()?;
+    if route.result || route.id || route.code {
+        return None;
+    }
+
+    match route.event_type {
+        BinanceWsEventType::BookTicker => serde_json::from_slice(raw)
+            .ok()
+            .map(BinanceFuturesWsStreamsMessage::BookTicker),
+        BinanceWsEventType::DepthUpdate => serde_json::from_slice(raw)
+            .ok()
+            .map(BinanceFuturesWsStreamsMessage::DepthUpdate),
+        BinanceWsEventType::AggTrade => serde_json::from_slice(raw)
+            .ok()
+            .map(BinanceFuturesWsStreamsMessage::AggTrade),
+        BinanceWsEventType::Trade => serde_json::from_slice(raw)
+            .ok()
+            .map(BinanceFuturesWsStreamsMessage::Trade),
+        BinanceWsEventType::MarkPriceUpdate => serde_json::from_slice(raw)
+            .ok()
+            .map(BinanceFuturesWsStreamsMessage::MarkPrice),
+        BinanceWsEventType::Kline => serde_json::from_slice(raw)
+            .ok()
+            .map(BinanceFuturesWsStreamsMessage::Kline),
+        BinanceWsEventType::ForceOrder => serde_json::from_slice(raw)
+            .ok()
+            .map(BinanceFuturesWsStreamsMessage::ForceOrder),
+        BinanceWsEventType::Ticker24Hr => serde_json::from_slice(raw)
+            .ok()
+            .map(BinanceFuturesWsStreamsMessage::Ticker),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case::agg_trade(
+        include_str!("../../../../test_data/futures/market_data_json/agg_trade_stream.json"),
+        |event| matches!(event, BinanceFuturesWsStreamsMessage::AggTrade(_)),
+    )]
+    #[case::trade(
+        include_str!("../../../../test_data/futures/market_data_json/trade_stream.json"),
+        |event| matches!(event, BinanceFuturesWsStreamsMessage::Trade(_)),
+    )]
+    #[case::book_ticker(
+        include_str!("../../../../test_data/futures/market_data_json/book_ticker_stream.json"),
+        |event| matches!(event, BinanceFuturesWsStreamsMessage::BookTicker(_)),
+    )]
+    #[case::depth(
+        include_str!("../../../../test_data/futures/market_data_json/depth_update_stream.json"),
+        |event| matches!(event, BinanceFuturesWsStreamsMessage::DepthUpdate(_)),
+    )]
+    #[case::mark_price(
+        include_str!("../../../../test_data/futures/market_data_json/mark_price_stream.json"),
+        |event| matches!(event, BinanceFuturesWsStreamsMessage::MarkPrice(_)),
+    )]
+    #[case::kline(
+        include_str!("../../../../test_data/futures/market_data_json/kline_stream_open.json"),
+        |event| matches!(event, BinanceFuturesWsStreamsMessage::Kline(_)),
+    )]
+    #[case::liquidation(
+        include_str!("../../../../test_data/futures/market_data_json/liquidation_stream.json"),
+        |event| matches!(event, BinanceFuturesWsStreamsMessage::ForceOrder(_)),
+    )]
+    #[case::ticker(
+        include_str!("../../../../test_data/futures/market_data_json/ticker_stream.json"),
+        |event| matches!(event, BinanceFuturesWsStreamsMessage::Ticker(_)),
+    )]
+    fn test_decode_market_data_routes_directly(
+        #[case] fixture: &str,
+        #[case] matches_event: fn(BinanceFuturesWsStreamsMessage) -> bool,
+    ) {
+        let event = decode_market_data(fixture.as_bytes()).expect("expected a typed message");
+
+        assert!(matches_event(event));
+    }
+
+    #[rstest]
+    #[case("result", serde_json::Value::Null)]
+    #[case("id", serde_json::Value::Null)]
+    #[case("code", serde_json::Value::from(-1))]
+    fn test_market_data_decode_defers_control_frames(
+        #[case] key: &str,
+        #[case] value: serde_json::Value,
+    ) {
+        let fixture = include_bytes!(
+            "../../../../test_data/futures/market_data_json/book_ticker_stream.json"
+        );
+        assert!(matches!(
+            decode_market_data(fixture),
+            Some(BinanceFuturesWsStreamsMessage::BookTicker(_))
+        ));
+
+        let mut frame: serde_json::Value = serde_json::from_slice(fixture).unwrap();
+        frame[key] = value;
+        let payload = serde_json::to_vec(&frame).unwrap();
+
+        assert!(decode_market_data(&payload).is_none());
+    }
 
     #[rstest]
     #[tokio::test]
@@ -564,9 +716,8 @@ mod tests {
             .send_unsubscribe(vec!["btcusdt@depth5@100ms".to_string()], Some(7))
             .await;
 
-        let msg = handler
-            .handle_raw_message(RECONNECTED.as_bytes().to_vec())
-            .await;
+        let msg = handler.handle_raw_message(RECONNECTED.as_bytes());
+
         let Some(BinanceFuturesWsStreamsMessage::Reconnected(abandoned)) = msg else {
             panic!("expected Reconnected");
         };

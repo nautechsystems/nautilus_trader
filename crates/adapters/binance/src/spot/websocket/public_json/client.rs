@@ -40,7 +40,6 @@ use nautilus_network::{
     },
 };
 use parking_lot::Mutex;
-use tokio_tungstenite::tungstenite::Message;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -62,7 +61,6 @@ struct ConnectionSlot {
     cmd_tx: tokio::sync::mpsc::UnboundedSender<BinanceSpotPublicWsCommand>,
     streams: Vec<String>,
     handler_task: TaskSlot<()>,
-    bytes_task: TaskSlot<()>,
     cancellation_token: CancellationToken,
     connection_mode: Arc<AtomicU8>,
     socket_control: Option<SocketControl>,
@@ -263,16 +261,7 @@ impl BinanceSpotPublicJsonWebSocketClient {
                 slot.shutdown_errors.push(error);
             }
 
-            if let Some(error) =
-                finish_slot_task(&mut slot.bytes_task, "Spot public byte stream").await
-            {
-                slot.shutdown_errors.push(error);
-            }
-
-            if slot.handler_task.is_none()
-                && slot.bytes_task.is_none()
-                && slot.shutdown_errors.is_empty()
-            {
+            if slot.handler_task.is_none() && slot.shutdown_errors.is_empty() {
                 batch.slots.remove(index);
             }
         }
@@ -285,9 +274,7 @@ impl BinanceSpotPublicJsonWebSocketClient {
             .iter_mut()
             .flat_map(|slot| std::mem::take(&mut slot.shutdown_errors))
             .collect::<Vec<_>>();
-        batch
-            .slots
-            .retain(|slot| slot.handler_task.is_some() || slot.bytes_task.is_some());
+        batch.slots.retain(|slot| slot.handler_task.is_some());
 
         if !errors.is_empty() {
             anyhow::bail!(errors.join("; "));
@@ -563,38 +550,10 @@ impl BinanceSpotPublicJsonWebSocketClient {
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
 
-        let (bytes_tx, bytes_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-
-        let mut bytes_task = TaskSlot::new();
-        if let Err(e) = bytes_task.spawn(async move {
-            let mut raw_rx = raw_rx;
-            while let Some(msg) = raw_rx.recv().await {
-                let data = match msg {
-                    Message::Binary(data) => data.to_vec(),
-                    Message::Text(text) => text.as_bytes().to_vec(),
-                    Message::Close(_) => break,
-                    Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => continue,
-                };
-
-                if bytes_tx.send(data).is_err() {
-                    break;
-                }
-            }
-        }) {
-            let shutdown_error = finish_slot_task(&mut bytes_task, "Binance Spot WS bytes").await;
-            anyhow::bail!(match shutdown_error {
-                Some(shutdown_error) => format!(
-                    "Failed to start Spot public JSON WS bytes task: {e}; startup rollback failed: \
-                     {shutdown_error}"
-                ),
-                None => format!("Failed to start Spot public JSON WS bytes task: {e}"),
-            });
-        }
-
         let mut handler = BinanceSpotPublicWsHandler::new(
             self.signal.clone(),
             cmd_rx,
-            bytes_rx,
+            raw_rx,
             subscriptions_state.clone(),
             self.request_id_counter.clone(),
         );
@@ -647,29 +606,16 @@ impl BinanceSpotPublicJsonWebSocketClient {
             }
         }) {
             cancellation_token.cancel();
-            bytes_task.abort();
-            let mut shutdown_errors = Vec::new();
 
-            if let Some(error) =
-                finish_slot_task(&mut handler_task, "Binance Spot public JSON handler").await
-            {
-                shutdown_errors.push(error);
-            }
+            let error =
+                match finish_slot_task(&mut handler_task, "Binance Spot public JSON handler").await {
+                    Some(error) => format!(
+                        "Failed to start Spot public JSON WS handler task: {e}; startup rollback failed: {error}"
+                    ),
+                    None => format!("Failed to start Spot public JSON WS handler task: {e}"),
+                };
 
-            if let Some(error) =
-                finish_slot_task(&mut bytes_task, "Binance Spot public JSON bytes").await
-            {
-                shutdown_errors.push(error);
-            }
-            anyhow::bail!(if shutdown_errors.is_empty() {
-                format!("Failed to start Spot public JSON WS handler task: {e}")
-            } else {
-                format!(
-                    "Failed to start Spot public JSON WS handler task: {e}; startup rollback failed: \
-                     {}",
-                    shutdown_errors.join("; ")
-                )
-            });
+            anyhow::bail!(error);
         }
 
         if let Some(control) = &socket_control {
@@ -680,7 +626,6 @@ impl BinanceSpotPublicJsonWebSocketClient {
             cmd_tx,
             streams: Vec::new(),
             handler_task,
-            bytes_task,
             cancellation_token,
             connection_mode,
             socket_control,
@@ -704,10 +649,6 @@ impl Drop for ConnectionSlots {
         for slot in self.0.get_mut().iter() {
             slot.cancellation_token.cancel();
             if let Some(handle) = slot.handler_task.as_ref() {
-                handle.abort();
-            }
-
-            if let Some(handle) = slot.bytes_task.as_ref() {
                 handle.abort();
             }
 
@@ -796,13 +737,10 @@ mod tests {
 
         let handler_task = tokio::spawn(async {});
 
-        let bytes_task = tokio::spawn(async {});
-
         let slot = ConnectionSlot {
             cmd_tx,
             streams,
             handler_task: TaskSlot::from_handle(handler_task),
-            bytes_task: TaskSlot::from_handle(bytes_task),
             cancellation_token: CancellationToken::new(),
             connection_mode: Arc::new(AtomicU8::new(ConnectionMode::Active as u8)),
             socket_control: None,

@@ -23,6 +23,7 @@ use nautilus_model::{
 };
 use nautilus_network::websocket::SubscriptionState;
 use parking_lot::Mutex;
+use serde::{Deserialize, Deserializer, de::IgnoredAny};
 
 #[derive(Debug)]
 pub(crate) enum PendingSubscriptionRequest {
@@ -214,6 +215,12 @@ pub(crate) fn send_book_snapshot(
     if let Err(e) = sender.send(DataEvent::Data(Data::BookDeltas(Box::new(snapshot)))) {
         log::error!("Failed to emit book snapshot: {e}");
     }
+}
+
+pub(crate) fn json_field_present<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<bool, D::Error> {
+    IgnoredAny::deserialize(deserializer).map(|_| true)
 }
 
 #[cfg(test)]
