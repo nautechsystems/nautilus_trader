@@ -76,7 +76,7 @@ pub enum HandlerCommand {
 /// Outcome of a recovery subscription cycle.
 #[derive(Clone, Debug)]
 pub enum CycleMarketOutcome {
-    /// Both legs wrote on one connection; a fresh snapshot should follow.
+    /// The subscribe wrote on the current connection and requested a fresh snapshot.
     Completed,
     /// The connection changed mid-cycle; reconnect replay owns restoration.
     ConnectionChanged,
@@ -164,6 +164,14 @@ impl FeedHandler {
             .await
         {
             log::error!("Failed to send market subscribe: {e}");
+
+            // Transport failures trigger reconnect in the writer. A full queue leaves the
+            // connection active, so book recovery must retry the rejected subscribe.
+            if matches!(e, SendError::BufferFull) && !asset_ids.is_empty() {
+                let _ = self.send(PolymarketWsMessage::MarketSubscribeRejected(
+                    asset_ids.to_vec(),
+                ));
+            }
         }
     }
 
@@ -305,18 +313,24 @@ impl FeedHandler {
             return CycleMarketOutcome::NotDesired;
         }
 
-        // Leg 1: venue-side unsubscribe. Desired state is untouched: the pool
-        // retains ownership throughout the cycle.
-        match self.try_send_unsubscribe_market(asset_ids, epoch).await {
-            Ok(()) | Err(SendError::WriteTimeout) => {}
-            Err(SendError::ConnectionChanged) => {
-                return CycleMarketOutcome::ConnectionChanged;
+        // The first market frame initializes the channel for incremental operations.
+        let initialized = self.market_heartbeat_next.is_some();
+
+        if initialized {
+            // Desired state is untouched: the pool retains ownership throughout the cycle.
+            match self.try_send_unsubscribe_market(asset_ids, epoch).await {
+                Ok(()) | Err(SendError::WriteTimeout) => {}
+                Err(SendError::ConnectionChanged) => {
+                    return CycleMarketOutcome::ConnectionChanged;
+                }
+                Err(e) => return CycleMarketOutcome::SendFailed(e),
             }
-            Err(e) => return CycleMarketOutcome::SendFailed(e),
         }
 
         if cancel.is_cancelled() {
-            self.restore_market_subscription(asset_ids, epoch).await;
+            if initialized {
+                self.restore_market_subscription(asset_ids, epoch).await;
+            }
             return CycleMarketOutcome::Cancelled;
         }
 
@@ -346,7 +360,9 @@ impl FeedHandler {
             }
             Err(SendError::ConnectionChanged) => CycleMarketOutcome::ConnectionChanged,
             Err(e) => {
-                self.restore_market_subscription(asset_ids, epoch).await;
+                if initialized {
+                    self.restore_market_subscription(asset_ids, epoch).await;
+                }
                 CycleMarketOutcome::SendFailed(e)
             }
         }
@@ -1485,11 +1501,20 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn cycle_market_subscription_resubscribes_without_changing_desired_state() {
+    async fn cycle_market_subscription_preserves_desired_state(
+        #[values(false, true)] written: bool,
+    ) {
         let (url, messages) = recording_server().await;
         let client = recording_client(url).await;
         let (mut handler, _raw_tx, subscriptions) = market_handler_with(client);
         subscriptions.mark_subscribe(MARKET_ASSET_ID);
+
+        if written {
+            handler
+                .try_send_subscribe_market(&cycle_asset_ids(), None)
+                .await
+                .unwrap();
+        }
 
         let gate = SnapshotGate::default();
         gate.lock().close();
@@ -1500,10 +1525,20 @@ mod tests {
         assert!(matches!(outcome, CycleMarketOutcome::Completed));
         assert!(!gate.lock().is_closed());
 
-        wait_for_recorded_messages(&messages, 2).await;
+        let expected = if written {
+            vec!["subscribe", "unsubscribe", "subscribe"]
+        } else {
+            vec!["subscribe"]
+        };
+        wait_for_recorded_messages(&messages, expected.len()).await;
         let frames = messages.lock().clone();
-        assert_eq!(frame_kind(&frames[0]), "unsubscribe");
-        assert_eq!(frame_kind(&frames[1]), "subscribe");
+        assert_eq!(
+            frames
+                .iter()
+                .map(|frame| frame_kind(frame))
+                .collect::<Vec<_>>(),
+            expected
+        );
 
         for frame in &frames {
             assert_eq!(frame_assets(frame), cycle_asset_ids());

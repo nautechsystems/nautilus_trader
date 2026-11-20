@@ -377,8 +377,13 @@ impl DataSubscriptions {
         timeout: Duration,
         tasks: &TaskSpawner,
         terminal: &MutexGuard<'_, AHashSet<String>>,
+        retry_unavailable: bool,
     ) {
-        if self.update_book_availability(instrument_id, terminal)
+        let Some(resumed) = self.update_book_availability(instrument_id, terminal) else {
+            return;
+        };
+
+        if (resumed || (retry_unavailable && self.book_sync.is_unavailable(instrument_id)))
             && let Ok(token_id) = resolve_token_id_from(&self.instruments, instrument_id)
             && self.is_token_open(&token_id)
         {
@@ -399,22 +404,19 @@ impl DataSubscriptions {
         &self,
         instrument_id: InstrumentId,
         terminal: &MutexGuard<'_, AHashSet<String>>,
-    ) -> bool {
+    ) -> Option<bool> {
         if !self.active_delta_subs.contains(&instrument_id)
             || self.book_sync.is_observed(instrument_id)
             || crate::providers::extract_condition_id(&instrument_id)
                 .is_ok_and(|id| terminal.contains(&id))
         {
-            return false;
+            return None;
         }
 
         let loaded = self.instruments.load();
-        let Some(instrument) = loaded
+        let instrument = loaded
             .get(&instrument_id)
-            .filter(|instrument| crate::filters::market_closed(instrument) != Some(true))
-        else {
-            return false;
-        };
+            .filter(|instrument| crate::filters::market_closed(instrument) != Some(true))?;
 
         let unavailable = instrument
             .info()
@@ -424,8 +426,11 @@ impl DataSubscriptions {
                 market["active"].as_bool() == Some(false)
                     || market["enableOrderBook"].as_bool() == Some(false)
             });
-        self.book_sync
-            .update_availability(&self.active_delta_subs, instrument_id, unavailable)
+        Some(self.book_sync.update_availability(
+            &self.active_delta_subs,
+            instrument_id,
+            unavailable,
+        ))
     }
 
     fn intent(&self, kind: SubscriptionKind) -> &Arc<DashSet<InstrumentId>> {

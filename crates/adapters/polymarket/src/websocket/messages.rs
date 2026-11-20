@@ -651,6 +651,8 @@ struct UserWsTag {
 pub enum PolymarketWsMessage {
     Market(MarketWsMessage),
     User(UserWsMessage),
+    /// Market subscribe rejected before writing because the writer queue was full.
+    MarketSubscribeRejected(Vec<String>),
     /// Emitted when the underlying WebSocket reconnects.
     ///
     /// `shard_id` identifies the market pool shard that reconnected. Direct

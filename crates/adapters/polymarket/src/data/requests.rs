@@ -301,6 +301,7 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
                 snapshot_timeout,
                 &recovery_tasks,
                 &terminal,
+                false,
             );
         }
     };
@@ -425,6 +426,7 @@ pub(super) fn request_instrument(
                     snapshot_timeout,
                     &recovery_tasks,
                     &terminal,
+                    false,
                 );
             }
         } else {

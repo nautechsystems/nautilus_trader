@@ -73,6 +73,7 @@ use nautilus_model::{
 };
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
+use ustr::Ustr;
 
 use super::{
     NEW_MARKET_EMPTY_RECHECK_DELAY, NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS,
@@ -213,6 +214,26 @@ pub(super) fn handle_ws_message(message: PolymarketWsMessage, ctx: &WsMessageCon
         }
         PolymarketWsMessage::User(_) => {
             log::debug!("Ignoring user message on data client");
+        }
+        PolymarketWsMessage::MarketSubscribeRejected(asset_ids) => {
+            let subscriptions = &ctx.subscriptions;
+            let terminal = subscriptions.lock_closed_conditions();
+
+            for asset_id in asset_ids {
+                if let Some(instrument_id) = subscriptions
+                    .token_meta
+                    .get(&Ustr::from(asset_id.as_str()))
+                    .map(|meta| meta.instrument_id)
+                {
+                    subscriptions.reconcile_book_availability(
+                        instrument_id,
+                        ctx.book_snapshot_timeout,
+                        &ctx.tasks,
+                        &terminal,
+                        true,
+                    );
+                }
+            }
         }
         PolymarketWsMessage::Reconnected { shard_id } => {
             log::info!("Polymarket WS reconnected");
@@ -1058,6 +1079,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                                     snapshot_timeout,
                                     &recovery_tasks,
                                     &terminal,
+                                    false,
                                 );
                             }
                         }
@@ -2614,6 +2636,45 @@ mod tests {
             emitted_instrument,
             "expected emitted DataEvent::Data(NautilusData::Instrument(...)) after successful recheck"
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn rejected_market_subscribe_retries_an_unavailable_book() {
+        use crate::websocket::{handler::HandlerCommand, pool::PolymarketMarketPoolHandle};
+
+        let (mut ctx, _data_rx) = make_ws_ctx();
+        let mut market = gamma_market_recheck_fixture_value();
+        market["enableOrderBook"] = false.into();
+        let instrument = instrument_from_gamma_fixture(market);
+        let id = instrument.id();
+        let token = instrument.raw_symbol().as_str().to_string();
+        let subscriptions = &mut ctx.subscriptions;
+        let (tx, mut commands) = tokio::sync::mpsc::unbounded_channel();
+        subscriptions.ws_client = PolymarketMarketPoolHandle::test_single_shard(tx, &[&token]);
+        subscriptions
+            .ws_open_tokens
+            .insert(Ustr::from(token.as_str()));
+        assert!(subscriptions.add_delta_subscription_intent(id, true));
+        cache_instrument_unchecked(
+            &subscriptions.instruments,
+            &subscriptions.token_meta,
+            &instrument,
+        );
+
+        handle_ws_message(
+            PolymarketWsMessage::MarketSubscribeRejected(vec![token.clone()]),
+            &ctx,
+        );
+
+        let command = tokio::time::timeout(StdDuration::from_secs(2), commands.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            command,
+            HandlerCommand::CycleMarketSubscription { asset_ids, .. } if asset_ids == [token]
+        ));
     }
 
     #[rstest]
