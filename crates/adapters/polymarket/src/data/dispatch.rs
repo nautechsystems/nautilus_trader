@@ -359,6 +359,7 @@ fn reject_book_snapshot(
     );
 
     if outcome == BookSequenceOutcome::Recover {
+        log::debug!("Resyncing book for {instrument_id} after snapshot application failure");
         start_book_recovery(ctx, instrument_id);
     }
 }
@@ -527,10 +528,12 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                         // The snapshot could not seed the book; without an
                         // accepted snapshot the book stays gated inside the
                         // current episode.
-                        request_book_recovery(
+                        reject_book_snapshot(
                             ctx,
                             instrument_id,
-                            "after snapshot application failure",
+                            PolymarketWsError::InvalidSnapshot(
+                                "Book snapshot could not be applied".into(),
+                            ),
                         );
                     }
                 }
@@ -6682,16 +6685,28 @@ mod tests {
     // The venue ignores a duplicate subscribe, so a token quotes already hold needs a cycle to
     // send the delta subscription its `book`.
     #[rstest]
-    #[case::back_to_back(true, false)]
+    #[case::back_to_back(true, false, None)]
+    #[case::open_token(true, true, None)]
+    #[case::inactive(false, false, Some("active"))]
+    #[case::book_disabled(false, false, Some("enableOrderBook"))]
+    #[case::inactive_open_token(true, true, Some("active"))]
     #[tokio::test]
     async fn book_delta_subscription_cycles_only_an_open_token(
         #[case] quotes_first: bool,
         #[case] quotes_settled: bool,
+        #[case] unavailable_flag: Option<&str>,
     ) {
         let state = TestServerState::default();
         let addr = start_mock_server(state.clone()).await;
         let (mut client, _data_rx) = create_test_client(addr);
-        let instrument = instrument_from_gamma_fixture(gamma_market_recheck_fixture_value());
+        let mut market = gamma_market_recheck_fixture_value();
+
+        if let Some(flag) = unavailable_flag {
+            market[flag] = false.into();
+            client.config.book_snapshot_timeout_secs = 1;
+        }
+
+        let instrument = instrument_from_gamma_fixture(market);
         let instrument_id = instrument.id();
         cache_instrument_unchecked(
             &client.instruments,
@@ -6750,9 +6765,21 @@ mod tests {
         let expected_count = if quotes_settled { 3 } else { 1 };
         wait_until_async(|| payload_count(expected_count), StdDuration::from_secs(3)).await;
 
-        // Quiet period: a fresh or back-to-back subscription must not also cycle its token
-        tokio::time::sleep(StdDuration::from_millis(200)).await;
+        // Wait past the snapshot timeout in the unavailable cases to catch unnecessary cycles
+        tokio::time::sleep(StdDuration::from_millis(if unavailable_flag.is_some() {
+            1400
+        } else {
+            200
+        }))
+        .await;
         let payloads = state.market_payloads.lock().await.clone();
+
+        assert!(
+            client
+                .subscriptions
+                .active_delta_subs
+                .contains(&instrument_id)
+        );
         client
             .ws_client
             .disconnect()
@@ -16418,7 +16445,9 @@ mod tests {
     }
 
     #[rstest]
-    fn effective_deltas_first_snapshot_preserves_clear() {
+    #[case::available(false)]
+    #[case::unavailable(true)]
+    fn effective_deltas_first_snapshot_preserves_clear(#[case] unavailable: bool) {
         let asset_id_str = "0xTOKEN-EFF1";
         let market = "0xMARKET";
 
@@ -16431,8 +16460,11 @@ mod tests {
             Quantity::from("0.01"),
         );
         let instrument_id = inst.id();
-        ctx.subscriptions
-            .add_delta_subscription_intent(instrument_id, true);
+
+        let subscriptions = &ctx.subscriptions;
+        let sync = &subscriptions.book_sync;
+        subscriptions.add_delta_subscription_intent(instrument_id, true);
+        sync.update_availability(&subscriptions.active_delta_subs, instrument_id, unavailable);
 
         let snap = make_snapshot(
             market,
@@ -16443,6 +16475,8 @@ mod tests {
 
         let batches = collect_delta_batches(&mut data_rx);
         assert_eq!(batches.len(), 1);
+        sync.update_availability(&subscriptions.active_delta_subs, instrument_id, true);
+        assert!(!sync.book_gated(instrument_id));
 
         let MarketWsMessage::Book(snap) = snap else {
             panic!("expected book snapshot");

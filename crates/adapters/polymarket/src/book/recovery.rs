@@ -116,6 +116,35 @@ pub(crate) fn start_recovery(
         recovery,
         pool.clone(),
         snapshot_timeout,
+        None,
+        tasks,
+    );
+}
+
+pub(crate) fn start_initial_snapshot(
+    instrument_id: InstrumentId,
+    token_id: String,
+    active_delta_subs: &Arc<DashSet<InstrumentId>>,
+    book_sync: &BookSyncTracker,
+    pool: &PolymarketMarketPoolHandle,
+    snapshot_timeout: Duration,
+    tasks: &TaskSpawner,
+) {
+    let Some((recovery, unavailable)) =
+        book_sync.claim_initial_snapshot(active_delta_subs, instrument_id)
+    else {
+        return;
+    };
+
+    log::debug!("Requesting a book snapshot for {instrument_id} on an open token");
+
+    spawn_recovery_task(
+        instrument_id,
+        token_id,
+        recovery,
+        pool.clone(),
+        snapshot_timeout,
+        unavailable.then(|| book_sync.clone()),
         tasks,
     );
 }
@@ -126,6 +155,7 @@ fn spawn_recovery_task(
     recovery: Arc<BookRecovery>,
     pool: PolymarketMarketPoolHandle,
     snapshot_timeout: Duration,
+    unavailable: Option<BookSyncTracker>,
     tasks: &TaskSpawner,
 ) {
     let shutdown = tasks.cancellation_token();
@@ -143,6 +173,8 @@ fn spawn_recovery_task(
                 |attempt_cancel, gate| {
                     let pool = pool.clone();
                     let token_id = token_id.clone();
+                    let unavailable = unavailable.as_ref();
+                    let recovery = &recovery;
                     async move {
                         if attempt_cancel.is_cancelled() {
                             return Err(PolymarketWsError::Client(
@@ -154,9 +186,16 @@ fn spawn_recovery_task(
                             .resubscribe_market(vec![token_id], &attempt_cancel, &gate)
                             .await
                             .map_err(|e| PolymarketWsError::Client(e.to_string()))?;
-                        cycle_outcome_result(outcome)?;
 
-                        Ok(())
+                        // Failed writes retry normally. A successful write can leave an
+                        // unavailable book waiting without a snapshot deadline.
+                        if let Some(book_sync) = unavailable
+                            && matches!(outcome, CycleMarketOutcome::Completed
+                                | CycleMarketOutcome::Cancelled | CycleMarketOutcome::NotDesired)
+                        {
+                            book_sync.release_unavailable_recovery(instrument_id, recovery);
+                        }
+                        cycle_outcome_result(outcome)
                     }
                 },
                 is_retryable_error,
@@ -209,7 +248,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::websocket::pool::PolymarketMarketPoolHandle;
+    use crate::websocket::{handler::HandlerCommand, pool::PolymarketMarketPoolHandle};
 
     fn instrument_id() -> InstrumentId {
         InstrumentId::from("0xCOND-0xTOKEN.POLYMARKET")
@@ -331,6 +370,53 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn unavailable_book_retries_failed_writes_until_initial_request_succeeds() {
+        let book_sync = BookSyncTracker::default();
+        let active_delta_subs = Arc::new(DashSet::new());
+        let id = instrument_id();
+        active_delta_subs.insert(id);
+        book_sync.update_availability(&active_delta_subs, id, true);
+        let (ws_tx, mut ws_rx) = tokio::sync::mpsc::unbounded_channel();
+        let pool = PolymarketMarketPoolHandle::test_single_shard(ws_tx, &["0xTOKEN"]);
+        let (tasks, spawner) = test_tasks();
+
+        start_initial_snapshot(
+            id,
+            "0xTOKEN".to_string(),
+            &active_delta_subs,
+            &book_sync,
+            &pool,
+            Duration::from_millis(20),
+            &spawner,
+        );
+
+        for outcome in [
+            CycleMarketOutcome::SendFailed(SendError::BufferFull),
+            CycleMarketOutcome::Completed,
+        ] {
+            let command = tokio::time::timeout(StdDuration::from_secs(5), ws_rx.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            let HandlerCommand::CycleMarketSubscription {
+                responder, gate, ..
+            } = command
+            else {
+                panic!("expected subscription cycle, was {command:?}");
+            };
+
+            if matches!(outcome, CycleMarketOutcome::Completed) {
+                gate.open();
+            }
+            responder.send(outcome).unwrap();
+        }
+
+        wait_until_async(|| async { tasks.all_finished() }, StdDuration::from_secs(5)).await;
+        assert!(ws_rx.try_recv().is_err());
+        assert!(book_sync.is_unavailable(id));
+    }
+
     #[rstest]
     #[tokio::test]
     async fn recovery_task_keeps_ownership_after_non_retryable_failure() {
@@ -353,6 +439,7 @@ mod tests {
             recovery.clone(),
             pool,
             Duration::from_secs(10),
+            None,
             &spawner,
         );
 

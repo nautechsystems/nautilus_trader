@@ -118,6 +118,8 @@ impl DataSubscriptions {
             instrument_id,
             SubscriptionKind::Deltas,
             || {
+                self.update_book_availability(instrument_id);
+
                 if compute_effective_deltas {
                     self.order_books
                         .entry(instrument_id)
@@ -340,6 +342,8 @@ impl DataSubscriptions {
         timeout: Duration,
         tasks: &TaskSpawner,
     ) {
+        self.update_book_availability(instrument_id);
+
         if timeout.is_zero()
             || !self.book_sync.seed_missing_snapshot(
                 &self.active_delta_subs,
@@ -360,6 +364,31 @@ impl DataSubscriptions {
             timeout,
             tasks,
         );
+    }
+
+    pub(super) fn update_book_availability(&self, instrument_id: InstrumentId) -> bool {
+        if !self.active_delta_subs.contains(&instrument_id) {
+            return false;
+        }
+
+        let loaded = self.instruments.load();
+        let Some(instrument) = loaded
+            .get(&instrument_id)
+            .filter(|instrument| crate::filters::market_closed(instrument) != Some(true))
+        else {
+            return false;
+        };
+
+        let unavailable = instrument
+            .info()
+            .and_then(|info| info.get_str("gamma_market"))
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+            .is_some_and(|market| {
+                market["active"].as_bool() == Some(false)
+                    || market["enableOrderBook"].as_bool() == Some(false)
+            });
+        self.book_sync
+            .update_availability(&self.active_delta_subs, instrument_id, unavailable)
     }
 
     fn intent(&self, kind: SubscriptionKind) -> &Arc<DashSet<InstrumentId>> {

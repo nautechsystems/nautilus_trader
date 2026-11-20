@@ -29,6 +29,8 @@
 //! subscription before acquiring the lock, so a message that observed a live subscription
 //! cannot insert tracking state after the clearing path's locked removal.
 //!
+//! Gamma hints can pause an unobserved book until traffic arrives or its metadata changes.
+//!
 //! Every `price_change` for an unsynced book goes through [`BookSync::gap`], so a book that no
 //! running recovery or armed deadline owns keeps requesting recovery. The data client claims only
 //! after it has a token to recover with; an early return leaves the book unowned for the next
@@ -37,7 +39,7 @@
 use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
-use dashmap::DashSet;
+use dashmap::{DashMap, DashSet};
 use nautilus_common::live::dst::time::{Duration, Instant};
 use nautilus_live::book::sync::BookSync;
 use nautilus_model::identifiers::InstrumentId;
@@ -48,18 +50,67 @@ use crate::websocket::error::PolymarketWsError;
 
 type Book = BookSync<PolymarketWsError>;
 
+#[derive(Debug, PartialEq, Eq)]
+enum Availability {
+    Unavailable,
+    Observed,
+}
+
 #[derive(Debug, Clone, Default)]
 pub(crate) struct BookSyncTracker {
     books: Arc<Mutex<AHashMap<InstrumentId, Book>>>,
+    availability: Arc<DashMap<InstrumentId, Availability>>,
 }
 
 impl BookSyncTracker {
     pub(crate) fn remove(&self, instrument_id: InstrumentId) {
-        self.books.lock().remove(&instrument_id);
+        let mut books = self.books.lock();
+        books.remove(&instrument_id);
+        self.availability.remove(&instrument_id);
     }
 
     pub(crate) fn clear(&self) {
-        self.books.lock().clear();
+        let mut books = self.books.lock();
+        books.clear();
+        self.availability.clear();
+    }
+
+    pub(crate) fn update_availability(
+        &self,
+        active_delta_subs: &DashSet<InstrumentId>,
+        instrument_id: InstrumentId,
+        unavailable: bool,
+    ) -> bool {
+        let mut books = self.books.lock();
+
+        if !active_delta_subs.contains(&instrument_id) || self.is_observed(instrument_id) {
+            return false;
+        }
+
+        if unavailable {
+            if self
+                .availability
+                .insert(instrument_id, Availability::Unavailable)
+                .is_none()
+            {
+                books.remove(&instrument_id);
+            }
+            false
+        } else {
+            self.availability.remove(&instrument_id).is_some()
+        }
+    }
+
+    pub(crate) fn is_unavailable(&self, instrument_id: InstrumentId) -> bool {
+        self.availability
+            .get(&instrument_id)
+            .is_some_and(|state| *state == Availability::Unavailable)
+    }
+
+    pub(crate) fn is_observed(&self, instrument_id: InstrumentId) -> bool {
+        self.availability
+            .get(&instrument_id)
+            .is_some_and(|state| *state == Availability::Observed)
     }
 
     pub(crate) fn record_snapshot_if_subscribed(
@@ -77,6 +128,8 @@ impl BookSyncTracker {
             return false;
         }
 
+        self.availability
+            .insert(instrument_id, Availability::Observed);
         books
             .entry(instrument_id)
             .or_insert_with(|| Book::new(now))
@@ -96,6 +149,8 @@ impl BookSyncTracker {
             return BookSequenceOutcome::Suppress;
         }
 
+        self.availability
+            .insert(instrument_id, Availability::Observed);
         validate_incremental(&mut books, instrument_id, now)
     }
 
@@ -108,35 +163,47 @@ impl BookSyncTracker {
         // Checked under the state lock, as in `record_snapshot_if_subscribed`.
         let mut books = self.books.lock();
 
-        if !active_delta_subs.contains(&instrument_id) {
+        if !active_delta_subs.contains(&instrument_id) || self.is_unavailable(instrument_id) {
             return BookSequenceOutcome::Suppress;
         }
 
         request_recovery(&mut books, instrument_id, now)
     }
 
-    /// Requests recovery for a book with no accepted snapshot, suppressing once a snapshot is
-    /// accepted or an owner holds the book.
-    pub(crate) fn request_snapshot_if_subscribed(
+    pub(crate) fn claim_initial_snapshot(
         &self,
         active_delta_subs: &DashSet<InstrumentId>,
         instrument_id: InstrumentId,
-        now: Instant,
-    ) -> BookSequenceOutcome {
+    ) -> Option<(Arc<BookRecovery>, bool)> {
         // Checked under the state lock, as in `record_snapshot_if_subscribed`
         let mut books = self.books.lock();
 
         if !active_delta_subs.contains(&instrument_id) {
-            return BookSequenceOutcome::Suppress;
+            return None;
         }
 
-        let book = books.entry(instrument_id).or_insert_with(|| Book::new(now));
+        let book = books
+            .entry(instrument_id)
+            .or_insert_with(|| Book::new(Instant::now()));
 
-        if book.position().is_some() {
-            return BookSequenceOutcome::Suppress;
+        if book.position().is_some() || book.gap() != BookSequenceOutcome::Recover {
+            return None;
         }
 
-        book.gap()
+        book.claim()
+            .map(|recovery| (recovery, self.is_unavailable(instrument_id)))
+    }
+
+    pub(crate) fn release_unavailable_recovery(
+        &self,
+        instrument_id: InstrumentId,
+        recovery: &BookRecovery,
+    ) {
+        let _books = self.books.lock();
+
+        if self.is_unavailable(instrument_id) {
+            recovery.cancellation.cancel();
+        }
     }
 
     /// Marks the book gated after a snapshot fails validation and delivers `error` to the running
@@ -155,6 +222,8 @@ impl BookSyncTracker {
             return BookSequenceOutcome::Suppress;
         }
 
+        self.availability
+            .insert(instrument_id, Availability::Observed);
         let outcome = request_recovery(&mut books, instrument_id, now);
 
         if outcome == BookSequenceOutcome::Suppress
@@ -177,7 +246,7 @@ impl BookSyncTracker {
         for instrument_id in instrument_ids {
             // Re-checked under the state lock: the caller filters first, but
             // an unsubscribe can land between that filter and this reset.
-            if !active_delta_subs.contains(instrument_id) {
+            if !active_delta_subs.contains(instrument_id) || self.is_unavailable(*instrument_id) {
                 continue;
             }
 
@@ -201,7 +270,9 @@ impl BookSyncTracker {
         instrument_ids
             .iter()
             // Re-checked under the state lock, as in `reset_for_instruments`.
-            .filter(|instrument_id| active_delta_subs.contains(instrument_id))
+            .filter(|instrument_id| {
+                active_delta_subs.contains(instrument_id) && !self.is_unavailable(**instrument_id)
+            })
             .filter(|instrument_id| {
                 books
                     .entry(**instrument_id)
@@ -220,7 +291,7 @@ impl BookSyncTracker {
     ) -> bool {
         let mut books = self.books.lock();
 
-        if !active_delta_subs.contains(&instrument_id) {
+        if !active_delta_subs.contains(&instrument_id) || self.is_unavailable(instrument_id) {
             return false;
         }
 
@@ -238,7 +309,7 @@ impl BookSyncTracker {
         // Checked under the state lock, as in `record_snapshot_if_subscribed`.
         let mut books = self.books.lock();
 
-        if !active_delta_subs.contains(&instrument_id) {
+        if !active_delta_subs.contains(&instrument_id) || self.is_unavailable(instrument_id) {
             return None;
         }
 
@@ -250,10 +321,11 @@ impl BookSyncTracker {
 
     /// Reports whether book delta output is gated pending a valid snapshot.
     pub(crate) fn book_gated(&self, instrument_id: InstrumentId) -> bool {
-        self.books
-            .lock()
-            .get(&instrument_id)
-            .is_some_and(|book| book.position().is_none() || book.has_pending_snapshot())
+        let books = self.books.lock();
+        self.is_unavailable(instrument_id)
+            || books
+                .get(&instrument_id)
+                .is_some_and(|book| book.position().is_none() || book.has_pending_snapshot())
     }
 
     /// Reports books without a running recovery whose feed has exceeded `threshold` since the
@@ -264,6 +336,7 @@ impl BookSyncTracker {
             .books
             .lock()
             .iter_mut()
+            .filter(|(id, _)| !self.is_unavailable(**id))
             .filter_map(|(instrument_id, book)| {
                 book.stale(threshold, now).map(|elapsed| BookSyncSignal {
                     instrument_id: *instrument_id,
@@ -410,23 +483,21 @@ mod tests {
         let instrument_id = instrument_id();
         let now = Instant::now();
 
-        let unsynced = tracker.request_snapshot_if_subscribed(&subs, instrument_id, now);
-        let recovery = tracker
-            .claim_recovery_if_subscribed(&subs, instrument_id)
+        let (recovery, unavailable) = tracker
+            .claim_initial_snapshot(&subs, instrument_id)
             .unwrap();
-        let owned = tracker.request_snapshot_if_subscribed(&subs, instrument_id, now);
+        let owned = tracker.claim_initial_snapshot(&subs, instrument_id);
         assert!(tracker.record_snapshot_if_subscribed(&subs, instrument_id, now));
-        let synced = tracker.request_snapshot_if_subscribed(&subs, instrument_id, now);
-        let unsubscribed = tracker.request_snapshot_if_subscribed(
+        let synced = tracker.claim_initial_snapshot(&subs, instrument_id);
+        let unsubscribed = tracker.claim_initial_snapshot(
             &DashSet::new(),
             InstrumentId::from("0xCOND-0xOTHER.POLYMARKET"),
-            now,
         );
 
-        assert_eq!(unsynced, BookSequenceOutcome::Recover);
-        assert_eq!(owned, BookSequenceOutcome::Suppress);
-        assert_eq!(synced, BookSequenceOutcome::Suppress);
-        assert_eq!(unsubscribed, BookSequenceOutcome::Suppress);
+        assert!(!unavailable);
+        assert!(owned.is_none());
+        assert!(synced.is_none());
+        assert!(unsubscribed.is_none());
         assert!(recovery.is_accepted());
         assert!(!tracker.book_gated(instrument_id));
         assert_eq!(tracker.books.lock().len(), 1);

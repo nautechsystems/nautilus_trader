@@ -40,7 +40,7 @@ use dashmap::DashMap;
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::{DataClient, execute_instrument_subscriptions},
-    live::{dst::time::Instant, runner::get_data_event_sender, sender::EventSender},
+    live::{runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
         data::{
@@ -84,7 +84,7 @@ use self::{
     subscriptions::{SubscriptionKind, resolve_token_id_from},
 };
 use crate::{
-    book::{BookSequenceOutcome, recovery::start_recovery},
+    book::recovery::start_initial_snapshot,
     common::{
         consts::{MARKET_VERSION_KEY, POLYMARKET_VENUE},
         credential::Credential,
@@ -461,24 +461,17 @@ impl PolymarketDataClient {
                 .reconcile(instrument_id, token_id.clone())
                 .await;
 
-            if was_open
-                && subscriptions.book_sync.request_snapshot_if_subscribed(
-                    &subscriptions.active_delta_subs,
+            if was_open {
+                start_initial_snapshot(
                     instrument_id,
-                    Instant::now(),
-                ) == BookSequenceOutcome::Recover
-            {
-                log::debug!("Requesting a book snapshot for {instrument_id} on an open token");
-                start_recovery(
-                    instrument_id,
-                    Some(token_id),
+                    token_id,
                     &subscriptions.active_delta_subs,
                     &subscriptions.book_sync,
                     &subscriptions.ws_client,
                     snapshot_timeout,
                     &spawner,
                 );
-            } else if !was_open {
+            } else {
                 subscriptions.monitor_book_snapshot(instrument_id, snapshot_timeout, &spawner);
             }
         };

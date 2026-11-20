@@ -21,6 +21,7 @@ use nautilus_common::{
     live::sender::EventSender, messages::DataEvent, providers::InstrumentProvider,
 };
 use nautilus_core::{AtomicMap, DurationNanos, Params, UnixNanos, time::AtomicTime};
+use nautilus_live::task::TaskSpawner;
 use nautilus_model::{
     identifiers::InstrumentId,
     instruments::{BinaryOption, Instrument, InstrumentAny},
@@ -31,8 +32,13 @@ use serde_json::{Value, from_str, to_string, value::RawValue};
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
-use super::{PolymarketDataClient, runtime::is_instrument_expired_and_not_reported_open};
+use super::{
+    PolymarketDataClient,
+    runtime::is_instrument_expired_and_not_reported_open,
+    subscriptions::{DataSubscriptions, resolve_token_id_from},
+};
 use crate::{
+    book::recovery::start_initial_snapshot,
     common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE,
     config::PolymarketInstrumentProviderConfig,
     filters::{
@@ -510,6 +516,37 @@ async fn refresh_instruments(
     }
 
     total
+}
+
+fn reconcile_book_availability(
+    subscriptions: &DataSubscriptions,
+    snapshot_timeout: Duration,
+    tasks: &TaskSpawner,
+) {
+    let mut ids = subscriptions
+        .active_delta_subs
+        .iter()
+        .map(|id| *id)
+        .filter(|id| !subscriptions.book_sync.is_observed(*id))
+        .collect::<Vec<_>>();
+    ids.sort_unstable();
+
+    for id in ids {
+        if subscriptions.update_book_availability(id)
+            && let Ok(token_id) = resolve_token_id_from(&subscriptions.instruments, id)
+            && subscriptions.is_token_open(&token_id)
+        {
+            start_initial_snapshot(
+                id,
+                token_id,
+                &subscriptions.active_delta_subs,
+                &subscriptions.book_sync,
+                &subscriptions.ws_client,
+                snapshot_timeout,
+                tasks,
+            );
+        }
+    }
 }
 
 fn tracked_refresh_candidates(
@@ -1264,6 +1301,8 @@ impl PolymarketDataClient {
         let config = self.config.instrument_config.clone();
         let ctx = self.resolution_context();
         let update_state = self.instrument_update_state.clone();
+        let snapshot_timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
+        let tasks = self.tasks.spawner()?;
         let max_wait = self
             .config
             .resolve_poll_max_wait_secs
@@ -1286,6 +1325,7 @@ impl PolymarketDataClient {
                 };
 
                 if total > 0 {
+                    reconcile_book_availability(&ctx.subscriptions, snapshot_timeout, &tasks);
                     log::debug!("Refreshed {total} Polymarket instruments into the live cache");
                 }
             }
@@ -1757,6 +1797,73 @@ mod tests {
                 Some(*instrument)
             );
         }
+    }
+
+    #[tokio::test]
+    async fn tracked_metadata_refresh_resumes_an_unavailable_book() {
+        use crate::websocket::{
+            handler::{CycleMarketOutcome, HandlerCommand},
+            pool::PolymarketMarketPoolHandle,
+        };
+
+        let definition = |enabled: bool| {
+            let mut market = past_end_open_market();
+            market["enableOrderBook"] = enabled.into();
+            let market = from_value::<GammaMarket>(market).unwrap();
+            parse_markets_with_transient(&[market], UnixNanos::default())
+                .0
+                .remove(0)
+        };
+        let instrument = definition(false);
+        let id = instrument.id();
+        let token = instrument.raw_symbol().as_str().to_string();
+
+        let mut client = make_client(PolymarketDataClientConfig::default());
+        let (tx, mut commands) = tokio::sync::mpsc::unbounded_channel();
+        client.subscriptions.ws_client =
+            PolymarketMarketPoolHandle::test_single_shard(tx, &[&token]);
+        let ctx = client.resolution_context();
+        let subscriptions = &ctx.subscriptions;
+        cache_instrument_unchecked(&ctx.instruments, &subscriptions.token_meta, &instrument);
+        subscriptions
+            .ws_open_tokens
+            .insert(Ustr::from(token.as_str()));
+        assert!(subscriptions.add_delta_subscription_intent(id, true));
+        assert!(subscriptions.book_sync.is_unavailable(id));
+
+        let snapshot = Arc::clone(&ctx.instruments.load());
+        let refreshed = apply_instrument_refresh(
+            &ctx,
+            &client.instrument_update_state,
+            &snapshot,
+            vec![definition(true)],
+            true,
+            DurationNanos::MAX,
+            &mut AHashMap::new(),
+        )
+        .await;
+        assert!(refreshed.contains(&id));
+
+        let tasks = client.tasks.spawner().unwrap();
+        reconcile_book_availability(subscriptions, Duration::from_secs(2), &tasks);
+
+        let command = tokio::time::timeout(Duration::from_secs(2), commands.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let HandlerCommand::CycleMarketSubscription {
+            asset_ids,
+            responder,
+            gate,
+            ..
+        } = command
+        else {
+            panic!("expected initial snapshot request, was {command:?}");
+        };
+        assert_eq!(asset_ids, [token]);
+        gate.open();
+        responder.send(CycleMarketOutcome::Completed).unwrap();
+        assert!(!subscriptions.book_sync.is_unavailable(id));
     }
 
     #[rstest]
