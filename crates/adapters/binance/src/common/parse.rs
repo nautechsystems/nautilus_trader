@@ -309,6 +309,14 @@ pub(crate) fn parse_usdm_instrument_with_fees(
         Delivery,
     }
 
+    if symbol.status != BinanceTradingStatus::Trading {
+        anyhow::bail!(
+            "Symbol '{}' is not trading (status: {:?})",
+            symbol.symbol,
+            symbol.status
+        );
+    }
+
     let contract_kind = match symbol.contract_type.as_str() {
         CONTRACT_TYPE_PERPETUAL => ContractKind::CryptoPerpetual,
         CONTRACT_TYPE_TRADIFI_PERPETUAL => ContractKind::TradFi(parse_tradifi_asset_class(symbol)?),
@@ -324,14 +332,6 @@ pub(crate) fn parse_usdm_instrument_with_fees(
             symbol.symbol,
         ),
     };
-
-    if symbol.status != BinanceTradingStatus::Trading {
-        anyhow::bail!(
-            "Symbol '{}' is not trading (status: {:?})",
-            symbol.symbol,
-            symbol.status
-        );
-    }
 
     let quote_currency = get_currency(symbol.quote_asset.as_str());
     let settlement_currency = get_currency(symbol.margin_asset.as_str());
