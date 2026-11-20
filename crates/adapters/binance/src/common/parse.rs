@@ -2455,6 +2455,33 @@ mod tests {
     }
 
     #[rstest]
+    #[case::delivering(BinanceTradingStatus::Delivering, "CURRENT_QUARTER DELIVERING", None)]
+    #[case::pending_tradifi(
+        BinanceTradingStatus::PendingTrading,
+        "TRADIFI_PERPETUAL",
+        Some("COIN")
+    )]
+    fn test_usdm_non_trading_skips_warn_only_for_explicit_symbols(
+        #[case] status: BinanceTradingStatus,
+        #[case] contract_type: &str,
+        #[case] underlying_type: Option<&str>,
+    ) {
+        let mut symbol = sample_usdm_symbol();
+        symbol.status = status;
+        symbol.contract_type = contract_type.to_string();
+        symbol.underlying_type = underlying_type.map(str::to_string);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+
+        let error = parse_usdm_instrument(&symbol, ts, ts).unwrap_err();
+
+        assert!(
+            !should_warn_on_instrument_parse_error(true, false, &error),
+            "Unexpected warning in bulk load: {error}"
+        );
+        assert!(should_warn_on_instrument_parse_error(true, true, &error));
+    }
+
+    #[rstest]
     fn test_all_producers_emit_detectable_not_trading_errors() {
         let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
 
