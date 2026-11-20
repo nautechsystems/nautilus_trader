@@ -251,7 +251,9 @@ impl BookSyncTracker {
         for instrument_id in instrument_ids {
             // Re-checked under the state lock: the caller filters first, but
             // an unsubscribe can land between that filter and this reset.
-            if !active_delta_subs.contains(instrument_id) || self.is_unavailable(*instrument_id) {
+            if !active_delta_subs.contains(instrument_id)
+                || (self.is_unavailable(*instrument_id) && !books.contains_key(instrument_id))
+            {
                 continue;
             }
 
@@ -979,6 +981,45 @@ mod tests {
             tracker.validate_incremental_if_subscribed(&subs, instrument_id, now),
             BookSequenceOutcome::Accept
         );
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn reconnect_wakes_recovery_for_unavailable_book() {
+        let (tracker, subs) = subscribed_tracker();
+        let id = instrument_id();
+        tracker.update_availability(&subs, id, true);
+        let recovery = tracker.claim_initial_snapshot(&subs, id).unwrap();
+        let attempts = std::cell::Cell::new(0);
+        let timeout = Duration::from_secs(1);
+        let error = || PolymarketWsError::Client("subscription unavailable".into());
+        let run = recovery.run(
+            id,
+            timeout,
+            |_, _| {
+                attempts.set(attempts.get() + 1);
+                async { Err(error()) }
+            },
+            |_| false,
+            PolymarketWsError::Client,
+            error,
+        );
+
+        let reconnect = async {
+            tokio::time::sleep(timeout).await;
+            assert_eq!(attempts.get(), 1);
+            let now = Instant::now();
+            tracker.reset_for_instruments(&subs, &[id], now);
+            assert_eq!(
+                tracker.seed_pending_snapshots(&subs, &[id], timeout, now),
+                0
+            );
+            tokio::time::sleep(timeout).await;
+            recovery.cancellation.cancel();
+        };
+
+        tokio::join!(run, reconnect);
+        assert_eq!(attempts.get(), 2);
     }
 
     #[rstest]
