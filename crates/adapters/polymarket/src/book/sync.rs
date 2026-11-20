@@ -92,8 +92,9 @@ impl BookSyncTracker {
                 .availability
                 .insert(instrument_id, Availability::Unavailable)
                 .is_none()
+                && let Some(book) = books.get_mut(&instrument_id)
             {
-                books.remove(&instrument_id);
+                book.pause_snapshot_recovery();
             }
             false
         } else {
@@ -128,12 +129,17 @@ impl BookSyncTracker {
             return false;
         }
 
-        self.availability
-            .insert(instrument_id, Availability::Observed);
-        books
+        let accepted = books
             .entry(instrument_id)
             .or_insert_with(|| Book::new(now))
-            .accept_snapshot((), now)
+            .accept_snapshot((), now);
+
+        if accepted {
+            self.availability
+                .insert(instrument_id, Availability::Observed);
+        }
+
+        accepted
     }
 
     pub(crate) fn validate_incremental_if_subscribed(
@@ -174,7 +180,7 @@ impl BookSyncTracker {
         &self,
         active_delta_subs: &DashSet<InstrumentId>,
         instrument_id: InstrumentId,
-    ) -> Option<(Arc<BookRecovery>, bool)> {
+    ) -> Option<Arc<BookRecovery>> {
         // Checked under the state lock, as in `record_snapshot_if_subscribed`
         let mut books = self.books.lock();
 
@@ -191,7 +197,6 @@ impl BookSyncTracker {
         }
 
         book.claim()
-            .map(|recovery| (recovery, self.is_unavailable(instrument_id)))
     }
 
     pub(crate) fn release_unavailable_recovery(
@@ -483,7 +488,7 @@ mod tests {
         let instrument_id = instrument_id();
         let now = Instant::now();
 
-        let (recovery, unavailable) = tracker
+        let recovery = tracker
             .claim_initial_snapshot(&subs, instrument_id)
             .unwrap();
         let owned = tracker.claim_initial_snapshot(&subs, instrument_id);
@@ -494,7 +499,6 @@ mod tests {
             InstrumentId::from("0xCOND-0xOTHER.POLYMARKET"),
         );
 
-        assert!(!unavailable);
         assert!(owned.is_none());
         assert!(synced.is_none());
         assert!(unsubscribed.is_none());

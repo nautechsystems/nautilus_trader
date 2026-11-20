@@ -116,7 +116,7 @@ pub(crate) fn start_recovery(
         recovery,
         pool.clone(),
         snapshot_timeout,
-        None,
+        book_sync.clone(),
         tasks,
     );
 }
@@ -130,9 +130,7 @@ pub(crate) fn start_initial_snapshot(
     snapshot_timeout: Duration,
     tasks: &TaskSpawner,
 ) {
-    let Some((recovery, unavailable)) =
-        book_sync.claim_initial_snapshot(active_delta_subs, instrument_id)
-    else {
+    let Some(recovery) = book_sync.claim_initial_snapshot(active_delta_subs, instrument_id) else {
         return;
     };
 
@@ -144,7 +142,7 @@ pub(crate) fn start_initial_snapshot(
         recovery,
         pool.clone(),
         snapshot_timeout,
-        unavailable.then(|| book_sync.clone()),
+        book_sync.clone(),
         tasks,
     );
 }
@@ -155,7 +153,7 @@ fn spawn_recovery_task(
     recovery: Arc<BookRecovery>,
     pool: PolymarketMarketPoolHandle,
     snapshot_timeout: Duration,
-    unavailable: Option<BookSyncTracker>,
+    book_sync: BookSyncTracker,
     tasks: &TaskSpawner,
 ) {
     let shutdown = tasks.cancellation_token();
@@ -173,7 +171,7 @@ fn spawn_recovery_task(
                 |attempt_cancel, gate| {
                     let pool = pool.clone();
                     let token_id = token_id.clone();
-                    let unavailable = unavailable.as_ref();
+                    let book_sync = &book_sync;
                     let recovery = &recovery;
                     async move {
                         if attempt_cancel.is_cancelled() {
@@ -189,10 +187,7 @@ fn spawn_recovery_task(
 
                         // Failed writes retry normally. A successful write can leave an
                         // unavailable book waiting without a snapshot deadline.
-                        if let Some(book_sync) = unavailable
-                            && matches!(outcome, CycleMarketOutcome::Completed
-                                | CycleMarketOutcome::Cancelled | CycleMarketOutcome::NotDesired)
-                        {
+                        if matches!(outcome, CycleMarketOutcome::Completed) {
                             book_sync.release_unavailable_recovery(instrument_id, recovery);
                         }
                         cycle_outcome_result(outcome)
@@ -370,13 +365,18 @@ mod tests {
         );
     }
 
+    #[rstest]
+    #[case::unavailable_at_start(true)]
+    #[case::paused_during_write(false)]
     #[tokio::test]
-    async fn unavailable_book_retries_failed_writes_until_initial_request_succeeds() {
+    async fn unavailable_book_retries_failed_writes_until_initial_request_succeeds(
+        #[case] initially_unavailable: bool,
+    ) {
         let book_sync = BookSyncTracker::default();
         let active_delta_subs = Arc::new(DashSet::new());
         let id = instrument_id();
         active_delta_subs.insert(id);
-        book_sync.update_availability(&active_delta_subs, id, true);
+        book_sync.update_availability(&active_delta_subs, id, initially_unavailable);
         let (ws_tx, mut ws_rx) = tokio::sync::mpsc::unbounded_channel();
         let pool = PolymarketMarketPoolHandle::test_single_shard(ws_tx, &["0xTOKEN"]);
         let (tasks, spawner) = test_tasks();
@@ -408,6 +408,14 @@ mod tests {
 
             if matches!(outcome, CycleMarketOutcome::Completed) {
                 gate.open();
+            } else {
+                book_sync.update_availability(&active_delta_subs, id, true);
+                assert!(!book_sync.record_snapshot_if_subscribed(
+                    &active_delta_subs,
+                    id,
+                    Instant::now(),
+                ));
+                assert!(book_sync.is_unavailable(id));
             }
             responder.send(outcome).unwrap();
         }
@@ -415,6 +423,8 @@ mod tests {
         wait_until_async(|| async { tasks.all_finished() }, StdDuration::from_secs(5)).await;
         assert!(ws_rx.try_recv().is_err());
         assert!(book_sync.is_unavailable(id));
+        assert!(book_sync.record_snapshot_if_subscribed(&active_delta_subs, id, Instant::now()));
+        assert!(!book_sync.is_unavailable(id));
     }
 
     #[rstest]
@@ -439,7 +449,7 @@ mod tests {
             recovery.clone(),
             pool,
             Duration::from_secs(10),
-            None,
+            book_sync.clone(),
             &spawner,
         );
 
