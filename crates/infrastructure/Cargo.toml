@@ -92,25 +92,24 @@ harness = false
 required-features = ["redis"]
 
 [[example]]
-name = "replay_index_comparison"
-doc = false
-required-features = ["redis"]
-
-[[example]]
 name = "replay_recovery"
+path = "examples/position_replay/recovery.rs"
 doc = false
 required-features = ["redis"]
 
 [[example]]
 name = "replay_latest_comparison"
+path = "examples/position_replay/compare.rs"
 doc = false
 required-features = ["redis"]
 
 [[example]]
 name = "replay_latest_memory"
+path = "examples/position_replay/memory.rs"
 doc = false
 
 [[example]]
 name = "replay_latest_allocations"
+path = "examples/position_replay/allocations.rs"
 doc = false
 required-features = ["redis"]

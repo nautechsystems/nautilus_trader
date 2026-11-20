@@ -11,11 +11,10 @@ use std::{hint::black_box, time::Instant};
 use nautilus_execution::engine::ExecutionEngine;
 use nautilus_model::events::OrderEventAny;
 
-#[path = "common/replay_comparison.rs"]
-mod replay_comparison;
+mod comparison;
 
 fn main() -> std::process::ExitCode {
-    replay_comparison::run(process, "elapsed_ns")
+    comparison::run(process, "elapsed_ns")
 }
 
 fn process(engine: &mut ExecutionEngine, event: &OrderEventAny) -> u128 {

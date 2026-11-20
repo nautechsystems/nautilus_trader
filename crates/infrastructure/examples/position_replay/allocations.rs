@@ -17,8 +17,7 @@ use std::{
 use nautilus_execution::engine::ExecutionEngine;
 use nautilus_model::events::OrderEventAny;
 
-#[path = "common/replay_comparison.rs"]
-mod replay_comparison;
+mod comparison;
 
 static LIVE: AtomicUsize = AtomicUsize::new(0);
 static TOTAL: AtomicUsize = AtomicUsize::new(0);
@@ -40,6 +39,7 @@ unsafe impl GlobalAlloc for CountedAllocator {
         if !ptr.is_null() {
             allocated(layout.size());
         }
+
         ptr
     }
 
@@ -54,13 +54,14 @@ unsafe impl GlobalAlloc for CountedAllocator {
             LIVE.fetch_sub(layout.size(), Ordering::Relaxed);
             allocated(size);
         }
+
         ptr
     }
 }
 
 fn main() -> std::process::ExitCode {
     assert_eq!(std::env::args().nth(2).as_deref(), Some("memory"));
-    replay_comparison::run(process, "allocated_bytes")
+    comparison::run(process, "allocated_bytes")
 }
 
 fn process(engine: &mut ExecutionEngine, event: &OrderEventAny) -> u128 {
