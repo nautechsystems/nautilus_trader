@@ -135,6 +135,9 @@ Released on TBD (UTC).
 - Fixed `Cache.orders_for_position` omitting linked open orders after a reload (#5690), thanks for reporting @qOeOp
 - Fixed `Cache::add_order` omitting lifecycle status and venue order IDs for inserted order snapshots
 - Fixed `Cache::replace_order` leaving stale lookups after moving an order to a cached position
+- Fixed `Cache` purges leaving stale position links or removing links to surviving positions
+- Fixed spawned orders disappearing from `Cache` queries after purging their primary order
+- Fixed `Cache` purging orders whose fills are still needed to size linked OTO children
 - Fixed reopened NETTING positions appearing under their previous account in cache queries
 - Fixed own order books retaining stale orders after cache reload
 - Fixed historical book delta events splitting across response envelopes and time-range windows, thanks @faysou

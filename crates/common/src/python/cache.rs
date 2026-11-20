@@ -1912,9 +1912,9 @@ impl Cache {
 
     /// Purges all closed orders from the cache that are older than `buffer_secs`.
     ///
-    ///
     /// Only orders that have been closed for at least this amount of time will be purged.
     /// A value of 0 means purge all closed orders regardless of when they were closed.
+    /// Applies the spawn order retention rule in `Self.purge_order`.
     ///
     /// When `purge_from_database` is true, also requests deletion from the backing database.
     ///
@@ -2024,7 +2024,10 @@ impl Cache {
 
     /// Purges the order with the `client_order_id` from the cache (if found).
     ///
-    /// For safety, an order is prevented from being purged if it's open.
+    /// Skips open orders with a warning. Purging an order retains its fills in cached positions.
+    ///
+    /// Retains a spawn order with fills while another order in the spawn has a nonterminal OTO
+    /// child that uses the spawn's filled quantity.
     ///
     /// When `purge_from_database` is true, also requests deletion from the backing database.
     ///
@@ -2045,7 +2048,8 @@ impl Cache {
 
     /// Purges the position with the `position_id` from the cache (if found).
     ///
-    /// For safety, a position is prevented from being purged if it's open.
+    /// Skips open positions with a warning. Clears `Self.position_id` lookups that point to the
+    /// purged position. Preserves pre-fill assignments when the position has yet to be created.
     ///
     /// When `purge_from_database` is true, also requests deletion from the backing database.
     ///
