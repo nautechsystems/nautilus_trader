@@ -209,7 +209,8 @@ impl ExecutionAlgorithmCore {
 
     /// Generates the next spawn client order ID for a primary order.
     ///
-    /// The generated ID follows the pattern: `{primary_id}-E{sequence}`.
+    /// The generated ID follows the pattern: `{primary_id}-E{sequence}` when hyphens are used,
+    /// or `{primary_id}E{sequence}` when hyphens are disabled.
     #[must_use]
     pub fn spawn_client_order_id(&mut self, primary_id: &ClientOrderId) -> ClientOrderId {
         let sequence = self
@@ -218,7 +219,13 @@ impl ExecutionAlgorithmCore {
             .and_modify(|s| *s += 1)
             .or_insert(1);
 
-        ClientOrderId::new(format!("{primary_id}-E{sequence}"))
+        let use_hyphens = self
+            .config
+            .use_hyphens_in_client_order_ids
+            .unwrap_or_else(|| primary_id.as_str().contains('-'));
+
+        let separator = if use_hyphens { "-E" } else { "E" };
+        ClientOrderId::new(format!("{primary_id}{separator}{sequence}"))
     }
 
     /// Returns the current spawn sequence for a primary order, if any.
@@ -504,6 +511,44 @@ mod tests {
         assert_eq!(spawn1_1.as_str(), "O-001-E1");
         assert_eq!(spawn2_1.as_str(), "O-002-E1");
         assert_eq!(spawn1_2.as_str(), "O-001-E2");
+    }
+
+    #[rstest]
+    fn test_spawn_client_order_id_without_hyphens_inferred() {
+        let config = create_test_config();
+        let mut core = ExecutionAlgorithmCore::new(config);
+
+        let primary_id = ClientOrderId::new("O202611200910100010002");
+
+        let spawn1 = core.spawn_client_order_id(&primary_id);
+        assert_eq!(spawn1.as_str(), "O202611200910100010002E1");
+
+        let spawn2 = core.spawn_client_order_id(&primary_id);
+        assert_eq!(spawn2.as_str(), "O202611200910100010002E2");
+
+        let spawn3 = core.spawn_client_order_id(&primary_id);
+        assert_eq!(spawn3.as_str(), "O202611200910100010002E3");
+    }
+
+    #[rstest]
+    fn test_spawn_client_order_id_config_override() {
+        let mut config_no_hyphens = create_test_config();
+        config_no_hyphens.use_hyphens_in_client_order_ids = Some(false);
+        let mut core_no_hyphens = ExecutionAlgorithmCore::new(config_no_hyphens);
+
+        // Even with hyphenated primary, config overrides to no hyphens
+        let primary_hyphenated = ClientOrderId::new("O-001");
+        let spawn_no_hyphens = core_no_hyphens.spawn_client_order_id(&primary_hyphenated);
+        assert_eq!(spawn_no_hyphens.as_str(), "O-001E1");
+
+        let mut config_with_hyphens = create_test_config();
+        config_with_hyphens.use_hyphens_in_client_order_ids = Some(true);
+        let mut core_with_hyphens = ExecutionAlgorithmCore::new(config_with_hyphens);
+
+        // Even with unhyphenated primary, config overrides to include hyphen separator
+        let primary_unhyphenated = ClientOrderId::new("O202611200910100010002");
+        let spawn_with_hyphens = core_with_hyphens.spawn_client_order_id(&primary_unhyphenated);
+        assert_eq!(spawn_with_hyphens.as_str(), "O202611200910100010002-E1");
     }
 
     #[rstest]

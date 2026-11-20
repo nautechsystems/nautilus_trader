@@ -498,6 +498,7 @@ def test_execution_algorithm_config_defaults() -> None:
     assert config.exec_algorithm_id is None
     assert config.log_events is True
     assert config.log_commands is True
+    assert config.use_hyphens_in_client_order_ids is None
 
 
 def test_execution_algorithm_config_supports_custom_fields() -> None:
@@ -597,11 +598,13 @@ def test_execution_algorithm_config_with_explicit_values() -> None:
         exec_algorithm_id=ExecAlgorithmId("TWAP-001"),
         log_events=False,
         log_commands=False,
+        use_hyphens_in_client_order_ids=False,
     )
 
     assert config.exec_algorithm_id == ExecAlgorithmId("TWAP-001")
     assert config.log_events is False
     assert config.log_commands is False
+    assert config.use_hyphens_in_client_order_ids is False
 
 
 def test_execution_algorithm_derives_default_id_from_runtime_class() -> None:
