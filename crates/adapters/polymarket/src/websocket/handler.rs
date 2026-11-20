@@ -1667,8 +1667,11 @@ mod tests {
     async fn cycle_followed_by_queued_unsubscribe_honors_the_unsubscribe() {
         let (url, messages) = recording_server().await;
         let client = recording_client(url).await;
-        let (mut handler, cmd_tx, _raw_tx, subscriptions) = market_handler_with_cmd_tx(client);
-        subscriptions.mark_subscribe(MARKET_ASSET_ID);
+        let (mut handler, cmd_tx, _raw_tx, _) = market_handler_with_cmd_tx(client);
+        handler
+            .try_send_subscribe_market(&cycle_asset_ids(), None)
+            .await
+            .unwrap();
 
         // Commands serialize: the cycle completes first, then the unsubscribe wins
         let (responder, response) = tokio::sync::oneshot::channel();
@@ -1703,7 +1706,7 @@ mod tests {
 
         tokio::time::timeout(Duration::from_secs(5), async {
             loop {
-                if messages.lock().len() >= 3 {
+                if messages.lock().len() >= 4 {
                     break;
                 }
 
@@ -1717,9 +1720,10 @@ mod tests {
         .expect("queued unsubscribe should reach the wire");
 
         let frames = messages.lock().clone();
-        assert_eq!(frame_kind(&frames[0]), "unsubscribe");
-        assert_eq!(frame_kind(&frames[1]), "subscribe");
-        assert_eq!(frame_kind(&frames[2]), "unsubscribe");
+        assert_eq!(frame_kind(&frames[0]), "subscribe");
+        assert_eq!(frame_kind(&frames[1]), "unsubscribe");
+        assert_eq!(frame_kind(&frames[2]), "subscribe");
+        assert_eq!(frame_kind(&frames[3]), "unsubscribe");
 
         assert!(!handler.market_subscription_desired(MARKET_ASSET_ID));
 
