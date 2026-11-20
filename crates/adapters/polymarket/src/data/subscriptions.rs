@@ -110,7 +110,7 @@ impl DataSubscriptions {
         instrument_id: InstrumentId,
         kind: SubscriptionKind,
     ) -> bool {
-        self.add_live_subscription_intent_with_state(instrument_id, kind, || {})
+        self.add_live_subscription_intent_with_state(instrument_id, kind, |_| {})
     }
 
     pub(super) fn add_delta_subscription_intent(
@@ -121,8 +121,8 @@ impl DataSubscriptions {
         self.add_live_subscription_intent_with_state(
             instrument_id,
             SubscriptionKind::Deltas,
-            || {
-                self.update_book_availability(instrument_id);
+            |terminal| {
+                self.update_book_availability(instrument_id, terminal);
 
                 if compute_effective_deltas {
                     self.order_books
@@ -346,7 +346,8 @@ impl DataSubscriptions {
         timeout: Duration,
         tasks: &TaskSpawner,
     ) {
-        self.update_book_availability(instrument_id);
+        let terminal = self.lock_closed_conditions();
+        self.update_book_availability(instrument_id, &terminal);
 
         if timeout.is_zero()
             || !self.book_sync.seed_missing_snapshot(
@@ -375,8 +376,9 @@ impl DataSubscriptions {
         instrument_id: InstrumentId,
         timeout: Duration,
         tasks: &TaskSpawner,
+        terminal: &MutexGuard<'_, AHashSet<String>>,
     ) {
-        if self.update_book_availability(instrument_id)
+        if self.update_book_availability(instrument_id, terminal)
             && let Ok(token_id) = resolve_token_id_from(&self.instruments, instrument_id)
             && self.is_token_open(&token_id)
         {
@@ -392,9 +394,16 @@ impl DataSubscriptions {
         }
     }
 
-    fn update_book_availability(&self, instrument_id: InstrumentId) -> bool {
+    // The terminal guard serializes cache publication with availability decisions
+    fn update_book_availability(
+        &self,
+        instrument_id: InstrumentId,
+        terminal: &MutexGuard<'_, AHashSet<String>>,
+    ) -> bool {
         if !self.active_delta_subs.contains(&instrument_id)
             || self.book_sync.is_observed(instrument_id)
+            || crate::providers::extract_condition_id(&instrument_id)
+                .is_ok_and(|id| terminal.contains(&id))
         {
             return false;
         }
@@ -483,27 +492,21 @@ impl DataSubscriptions {
         &self,
         instrument_id: InstrumentId,
         kind: SubscriptionKind,
-        initialize_state: impl FnOnce(),
+        initialize_state: impl FnOnce(&MutexGuard<'_, AHashSet<String>>),
     ) -> bool {
-        let subscriptions = self.intent(kind);
+        let terminal = self.lock_closed_conditions();
 
-        let Ok(condition_id) = crate::providers::extract_condition_id(&instrument_id) else {
-            subscriptions.insert(instrument_id);
-            initialize_state();
-            return true;
-        };
-
-        let closed = self.closed_condition_ids.lock();
-
-        if closed.contains(&condition_id) {
+        if let Ok(condition_id) = crate::providers::extract_condition_id(&instrument_id)
+            && terminal.contains(&condition_id)
+        {
             log::debug!(
                 "Ignoring live subscription for terminally closed Polymarket condition {condition_id}"
             );
             return false;
         }
 
-        subscriptions.insert(instrument_id);
-        initialize_state();
+        self.intent(kind).insert(instrument_id);
+        initialize_state(&terminal);
         true
     }
 

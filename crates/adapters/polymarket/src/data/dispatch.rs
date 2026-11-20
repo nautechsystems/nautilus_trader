@@ -857,10 +857,10 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
 
             let gamma_client = ctx.gamma_client.clone();
             let filters = ctx.filters.clone();
-            let token_meta = ctx.subscriptions.token_meta.clone();
+            let subscriptions = ctx.subscriptions.clone();
             let instruments = ctx.instruments.clone();
             let instrument_update_state = ctx.instrument_update_state.clone();
-            let closed_condition_ids = ctx.subscriptions.closed_condition_ids.clone();
+            let snapshot_timeout = ctx.book_snapshot_timeout;
             let data_sender = ctx.data_sender.clone();
             let clock = ctx.clock;
             let cancellation = ctx.cancellation_token.clone();
@@ -869,6 +869,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
             let active = nm.active;
 
             let tasks = ctx.tasks.clone();
+            let recovery_tasks = tasks.clone();
 
             let inflight_guard = NewMarketInflightGuard::new(inflight_keys, dedupe_key.clone());
             let future = async move {
@@ -1000,11 +1001,11 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                                 continue;
                             }
 
-                            apply_live_instrument(
-                                &closed_condition_ids,
+                            let applied = apply_live_instrument(
+                                &subscriptions.closed_condition_ids,
                                 &update_state,
                                 &instruments,
-                                &token_meta,
+                                &subscriptions.token_meta,
                                 replace,
                                 &instrument,
                                 |instrument| {
@@ -1049,6 +1050,16 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                                     }
                                 },
                             );
+
+                            if applied {
+                                let terminal = subscriptions.lock_closed_conditions();
+                                subscriptions.reconcile_book_availability(
+                                    instrument_id,
+                                    snapshot_timeout,
+                                    &recovery_tasks,
+                                    &terminal,
+                                );
+                            }
                         }
                     }
                     Err(e) => {
@@ -2603,6 +2614,51 @@ mod tests {
             emitted_instrument,
             "expected emitted DataEvent::Data(NautilusData::Instrument(...)) after successful recheck"
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn new_market_resumes_an_unavailable_book() {
+        use crate::websocket::{handler::HandlerCommand, pool::PolymarketMarketPoolHandle};
+
+        let mut market = gamma_market_recheck_fixture_value();
+        market["enableOrderBook"] = false.into();
+        let instrument = instrument_from_gamma_fixture(market.clone());
+        let id = instrument.id();
+        let token = instrument.raw_symbol().as_str().to_string();
+        market["enableOrderBook"] = true.into();
+        let state = ScriptedAutoLoadServerState::new(
+            vec![ScriptedAutoLoadReply::ok(serde_json::json!([market]))],
+            vec![],
+        );
+        let addr = start_scripted_auto_load_test_server(state).await;
+        let (client, _data_rx) = create_test_client(addr);
+        let mut ctx = make_client_ws_ctx(&client);
+        let (tx, mut commands) = tokio::sync::mpsc::unbounded_channel();
+        let subscriptions = &mut ctx.subscriptions;
+        subscriptions.subscribe_new_markets = true;
+        subscriptions.ws_client = PolymarketMarketPoolHandle::test_single_shard(tx, &[&token]);
+        subscriptions
+            .ws_open_tokens
+            .insert(Ustr::from(token.as_str()));
+        cache_instrument_unchecked(&client.instruments, &subscriptions.token_meta, &instrument);
+        assert!(subscriptions.add_delta_subscription_intent(id, true));
+        assert!(subscriptions.book_sync.is_unavailable(id));
+
+        handle_market_message(
+            make_new_market_with_condition("book-enabled", TEST_CONDITION_ID, true),
+            &ctx,
+        );
+
+        let command = tokio::time::timeout(StdDuration::from_secs(3), commands.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            command,
+            HandlerCommand::CycleMarketSubscription { asset_ids, .. } if asset_ids == [token]
+        ));
+        assert!(!ctx.subscriptions.book_sync.is_unavailable(id));
     }
 
     #[rstest]

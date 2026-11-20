@@ -529,8 +529,10 @@ fn reconcile_book_availability(
         .collect::<Vec<_>>();
     ids.sort_unstable();
 
+    let terminal = subscriptions.lock_closed_conditions();
+
     for id in ids {
-        subscriptions.reconcile_book_availability(id, snapshot_timeout, tasks);
+        subscriptions.reconcile_book_availability(id, snapshot_timeout, tasks, &terminal);
     }
 }
 
