@@ -192,6 +192,7 @@ Released on TBD (UTC).
 - Optimized order fill processing for orders with many fills
 - Optimized duplicate-fill and price-restatement lookups in carried position history (#5551), thanks @Milchstrassse
 - Optimized Binance Spot and Futures WebSocket JSON market data decoding to reduce allocations
+- Optimized OKX public WebSocket decoding for quotes, trades, and index prices
 - Upgraded Rust (MSRV) to 1.100.0
 - Upgraded `cargo-audit` tool to v0.23.0
 - Upgraded `cargo-binstall` tool to v1.27.0

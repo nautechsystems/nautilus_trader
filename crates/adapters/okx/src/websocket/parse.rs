@@ -61,10 +61,11 @@ use crate::{
         },
         models::OKXInstrument,
         parse::{
-            determine_order_type_with_alt, is_market_price, okx_channel_to_bar_spec,
-            okx_status_to_market_action, parse_fee, parse_fee_currency, parse_funding_rate_msg,
-            parse_instrument_any, parse_instrument_id, parse_message_vec,
-            parse_millisecond_timestamp, parse_parent_client_order_id, parse_price, parse_quantity,
+            decode_messages, determine_order_type_with_alt, is_market_price,
+            okx_channel_to_bar_spec, okx_status_to_market_action, parse_decoded_messages,
+            parse_fee, parse_fee_currency, parse_funding_rate_msg, parse_instrument_any,
+            parse_instrument_id, parse_message_vec, parse_millisecond_timestamp,
+            parse_parent_client_order_id, parse_price, parse_quantity,
             parse_spread_order_status_report as parse_common_spread_order_status_report,
             venue_position_id,
         },
@@ -766,17 +767,26 @@ pub fn parse_trade_msg_vec(
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Vec<Data>> {
-    parse_message_vec(
-        data,
-        |msg| {
-            parse_trade_msg(
-                msg,
-                *instrument_id,
-                price_precision,
-                size_precision,
-                ts_init,
-            )
-        },
+    let messages = decode_messages(data)?;
+    parse_trades(
+        &messages,
+        *instrument_id,
+        price_precision,
+        size_precision,
+        ts_init,
+    )
+}
+
+pub(crate) fn parse_trades(
+    messages: &[OKXTradeMsg],
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Vec<Data>> {
+    parse_decoded_messages(
+        messages,
+        |msg| parse_trade_msg(msg, instrument_id, price_precision, size_precision, ts_init),
         Data::Trade,
     )
 }
@@ -810,9 +820,19 @@ pub fn parse_index_price_msg_vec(
     price_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Vec<Data>> {
-    parse_message_vec(
-        data,
-        |msg| parse_index_price_msg(msg, *instrument_id, price_precision, ts_init),
+    let messages = decode_messages(data)?;
+    parse_index_prices(&messages, *instrument_id, price_precision, ts_init)
+}
+
+pub(crate) fn parse_index_prices(
+    messages: &[OKXIndexPriceMsg],
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Vec<Data>> {
+    parse_decoded_messages(
+        messages,
+        |msg| parse_index_price_msg(msg, instrument_id, price_precision, ts_init),
         Data::IndexPrice,
     )
 }

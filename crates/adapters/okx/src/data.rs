@@ -84,9 +84,10 @@ use crate::{
         },
         models::OKXInstrument,
         parse::{
-            extract_inst_family, instrument_definitions_match, okx_instrument_type_from_symbol,
-            okx_status_to_market_action, parse_base_quote_from_symbol, parse_instrument_any,
-            parse_instrument_id, parse_millisecond_timestamp, parse_price, parse_quantity,
+            decode_messages, extract_inst_family, instrument_definitions_match,
+            okx_instrument_type_from_symbol, okx_status_to_market_action,
+            parse_base_quote_from_symbol, parse_instrument_any, parse_instrument_id,
+            parse_millisecond_timestamp, parse_price, parse_quantity,
         },
         task::{spawn_task, terminate_tasks},
     },
@@ -100,10 +101,13 @@ use crate::{
         enums::OKXWsChannel,
         error::OKXWsError,
         handler::SnapshotGate,
-        messages::{NautilusWsMessage, OKXBookMsg, OKXOptionSummaryMsg, OKXWsMessage},
+        messages::{
+            NautilusWsMessage, OKXBookMsg, OKXMarketData, OKXOptionSummaryMsg, OKXWsInbound,
+            OKXWsMessage,
+        },
         parse::{
             extract_fees_from_cached_instrument, parse_book_depth_msg, parse_book_msg_vec,
-            parse_index_price_msg_vec, parse_option_summary_greeks, parse_rpi_book_msg_vec,
+            parse_index_prices, parse_option_summary_greeks, parse_rpi_book_msg_vec, parse_trades,
             parse_ws_message_data,
         },
     },
@@ -607,7 +611,7 @@ impl OKXDataClient {
 
     #[expect(clippy::too_many_arguments)]
     fn handle_ws_message(
-        message: OKXWsMessage,
+        message: impl Into<OKXWsInbound<OKXWsMessage>>,
         data_sender: &EventSender<DataEvent>,
         instruments_by_symbol: &Arc<AtomicMap<Ustr, InstrumentAny>>,
         http_client: &OKXHttpClient,
@@ -628,6 +632,21 @@ impl OKXDataClient {
         tasks: &TaskSpawner,
         clock: &AtomicTime,
     ) {
+        let message = match message.into() {
+            OKXWsInbound::Standard(message) => message,
+            OKXWsInbound::MarketData { inst_id, data } => {
+                Self::handle_market_data(
+                    inst_id,
+                    data,
+                    instruments_by_symbol,
+                    quote_cache,
+                    data_sender,
+                    clock,
+                );
+                return;
+            }
+        };
+
         // Book recovery must run on the socket that owns the failed channel:
         // the public websocket for market-data books, the business websocket
         // for spread books.
@@ -880,6 +899,14 @@ impl OKXDataClient {
 
                     drop(map_guard);
 
+                    let messages = match decode_messages(data) {
+                        Ok(messages) => messages,
+                        Err(e) => {
+                            log::error!("Failed to parse index price data: {e}");
+                            return;
+                        }
+                    };
+
                     let instruments_guard = instruments_by_symbol.load();
 
                     for sym in &symbols {
@@ -888,9 +915,9 @@ impl OKXDataClient {
                             continue;
                         };
 
-                        match parse_index_price_msg_vec(
-                            data.clone(),
-                            &instrument.id(),
+                        match parse_index_prices(
+                            &messages,
+                            instrument.id(),
                             instrument.price_precision(),
                             ts_init,
                         ) {
@@ -999,34 +1026,7 @@ impl OKXDataClient {
                         }
                     };
 
-                    for msg in &msgs {
-                        let bid = msg.bids.first();
-                        let ask = msg.asks.first();
-                        let bid_price =
-                            bid.and_then(|e| parse_price(&e.price, price_precision).ok());
-                        let bid_size =
-                            bid.and_then(|e| parse_quantity(&e.size, size_precision).ok());
-                        let ask_price =
-                            ask.and_then(|e| parse_price(&e.price, price_precision).ok());
-                        let ask_size =
-                            ask.and_then(|e| parse_quantity(&e.size, size_precision).ok());
-                        let ts_event = parse_millisecond_timestamp(msg.ts);
-
-                        match quote_cache.process(
-                            instrument_id,
-                            bid_price,
-                            ask_price,
-                            bid_size,
-                            ask_size,
-                            ts_event,
-                            ts_init,
-                        ) {
-                            Ok(quote) => Self::send_data(data_sender, Data::Quote(quote)),
-                            Err(e) => {
-                                log::debug!("Skipping partial BboTbt for {instrument_id}: {e}");
-                            }
-                        }
-                    }
+                    Self::send_quotes(&msgs, instrument, ts_init, quote_cache, data_sender);
 
                     return;
                 }
@@ -1214,6 +1214,90 @@ impl OKXDataClient {
         }
     }
 
+    fn handle_market_data(
+        inst_id: Option<Ustr>,
+        data: OKXMarketData,
+        instruments: &AtomicMap<Ustr, InstrumentAny>,
+        quote_cache: &mut QuoteCache,
+        data_sender: &EventSender<DataEvent>,
+        clock: &AtomicTime,
+    ) {
+        let channel = data.channel();
+
+        let Some(inst_id) = inst_id else {
+            log::debug!("Channel data without inst_id: {channel:?}");
+            return;
+        };
+
+        let instruments = instruments.load();
+
+        let Some(instrument) = instruments.get(&inst_id) else {
+            log::warn!("No cached instrument for {channel:?}: {inst_id}");
+            return;
+        };
+
+        let ts_init = clock.get_time_ns();
+
+        match data {
+            OKXMarketData::Bbo(messages) => {
+                Self::send_quotes(&messages, instrument, ts_init, quote_cache, data_sender);
+            }
+            OKXMarketData::Trades(messages) => {
+                match parse_trades(
+                    &messages,
+                    instrument.id(),
+                    instrument.price_precision(),
+                    instrument.size_precision(),
+                    ts_init,
+                ) {
+                    Ok(trades) => {
+                        for trade in trades {
+                            Self::send_data(data_sender, trade);
+                        }
+                    }
+                    Err(e) => log::error!("Failed to parse {channel:?} data: {e}"),
+                }
+            }
+        }
+    }
+
+    fn send_quotes(
+        messages: &[OKXBookMsg],
+        instrument: &InstrumentAny,
+        ts_init: UnixNanos,
+        quote_cache: &mut QuoteCache,
+        data_sender: &EventSender<DataEvent>,
+    ) {
+        let instrument_id = instrument.id();
+        let price_precision = instrument.price_precision();
+        let size_precision = instrument.size_precision();
+
+        for msg in messages {
+            let bid = msg.bids.first();
+            let ask = msg.asks.first();
+            let bid_price = bid.and_then(|e| parse_price(&e.price, price_precision).ok());
+            let bid_size = bid.and_then(|e| parse_quantity(&e.size, size_precision).ok());
+            let ask_price = ask.and_then(|e| parse_price(&e.price, price_precision).ok());
+            let ask_size = ask.and_then(|e| parse_quantity(&e.size, size_precision).ok());
+            let ts_event = parse_millisecond_timestamp(msg.ts);
+
+            match quote_cache.process(
+                instrument_id,
+                bid_price,
+                ask_price,
+                bid_size,
+                ask_size,
+                ts_event,
+                ts_init,
+            ) {
+                Ok(quote) => Self::send_data(data_sender, Data::Quote(quote)),
+                Err(e) => {
+                    log::debug!("Skipping partial BboTbt for {instrument_id}: {e}");
+                }
+            }
+        }
+    }
+
     /// Establishes instrument context and both WebSocket transports.
     ///
     /// Any failure leaves partially started transports for [`Self::teardown_transports`].
@@ -1284,14 +1368,14 @@ impl OKXDataClient {
         let instrument_types = configured_instrument_types(&self.config);
 
         if let Some(ref mut ws) = self.ws_public {
-            ws.connect()
+            ws.connect_market_data()
                 .await
                 .context("failed to connect OKX public websocket")?;
             ws.wait_until_active(10.0)
                 .await
                 .context("public websocket did not become active")?;
 
-            let stream = ws.stream();
+            let stream = ws.inbound_stream();
             let sender = self.data_sender.clone();
             let insts = self.instruments_by_symbol.clone();
             let http = self.http_client.clone();
@@ -3220,10 +3304,15 @@ fn push_convention_str(out: &mut AHashSet<OKXGreeksType>, raw: &str) {
 }
 
 #[cfg(test)]
+#[path = "../benches/market_data/mod.rs"]
+mod market_data_tests;
+
+#[cfg(test)]
 mod tests {
     use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
     use axum::{Router, extract::Query, response::Json, routing::get};
+    use futures_util::SinkExt;
     use nautilus_common::{
         config::ConfigError, live::runner::replace_data_event_sender, testing::wait_until_async,
     };
@@ -3239,6 +3328,7 @@ mod tests {
     use nautilus_network::websocket::TransportBackend;
     use rstest::rstest;
     use serde_json::{Value, json};
+    use tokio_tungstenite::{accept_async, tungstenite::Message};
 
     use super::*;
     use crate::{
@@ -5456,6 +5546,74 @@ mod tests {
         terminate_tasks(&client.tasks, "test data client")
             .await
             .expect("data task terminated");
+    }
+
+    #[tokio::test]
+    async fn public_market_data_delivers_typed_frames_from_socket() {
+        let state = spot_refresh_state();
+        let bbo_instruments = test_payload("http_get_instruments_spot_group_id.json");
+        state.instruments_payload.lock().await["data"]
+            .as_array_mut()
+            .unwrap()
+            .push(bbo_instruments["data"][0].clone());
+        let http_addr = start_refresh_server(state).await;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let public_addr = listener.local_addr().unwrap();
+        let public_server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut socket = accept_async(stream).await.unwrap();
+            for fixture in ["ws_bbo_tbt.json", "ws_trades.json"] {
+                socket
+                    .send(Message::Text(load_test_json(fixture).into()))
+                    .await
+                    .unwrap();
+            }
+
+            while socket.next().await.is_some() {}
+        });
+
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(sender);
+
+        let config = OKXDataClientConfig {
+            base_url_http: Some(format!("http://{http_addr}")),
+            base_url_ws_public: Some(format!("ws://{public_addr}")),
+            base_url_ws_business: Some(format!("ws://{http_addr}/ws/business")),
+            update_instruments_interval_mins: 0,
+            book_stale_check_interval_secs: 0,
+            ..OKXDataClientConfig::default()
+        };
+
+        let mut client = OKXDataClient::new(*OKX_CLIENT_ID, config).unwrap();
+        client.connect().await.unwrap();
+
+        let events = tokio::time::timeout(Duration::from_secs(2), async {
+            let mut events = Vec::with_capacity(2);
+            while events.len() < 2 {
+                if let DataEvent::Data(data @ (Data::Quote(_) | Data::Trade(_))) =
+                    receiver.recv().await.expect("open data stream")
+                {
+                    events.push(data);
+                }
+            }
+
+            events
+        })
+        .await;
+
+        client.disconnect().await.unwrap();
+        public_server.abort();
+
+        let events = events.expect("public socket must deliver both market data events");
+
+        let [Data::Quote(quote), Data::Trade(trade)] = events.as_slice() else {
+            panic!("Expected quote and trade in wire order, received {events:?}");
+        };
+
+        assert_eq!(quote.instrument_id, InstrumentId::from("BTC-USDT.OKX"));
+        assert_eq!(quote.ts_event, UnixNanos::from(1_597_026_383_085_000_000));
+        assert_eq!(trade.instrument_id, InstrumentId::from("BTC-USD.OKX"));
+        assert_eq!(trade.ts_event, UnixNanos::from(1_630_048_897_897_000_000));
     }
 
     #[tokio::test]

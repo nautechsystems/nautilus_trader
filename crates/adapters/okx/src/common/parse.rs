@@ -1373,12 +1373,23 @@ where
     F: Fn(&T) -> anyhow::Result<R>,
     W: Fn(R) -> Data,
 {
-    let messages: Vec<T> =
-        serde_json::from_value(data).map_err(|e| anyhow::anyhow!("Expected array payload: {e}"))?;
+    let messages = decode_messages(data)?;
+    parse_decoded_messages(&messages, parser, wrapper)
+}
 
+pub(crate) fn decode_messages<T: DeserializeOwned>(
+    data: serde_json::Value,
+) -> anyhow::Result<Vec<T>> {
+    serde_json::from_value(data).map_err(|e| anyhow::anyhow!("Expected array payload: {e}"))
+}
+
+pub(crate) fn parse_decoded_messages<T, R>(
+    messages: &[T],
+    parser: impl Fn(&T) -> anyhow::Result<R>,
+    wrapper: impl Fn(R) -> Data,
+) -> anyhow::Result<Vec<Data>> {
     let mut results = Vec::with_capacity(messages.len());
-
-    for message in &messages {
+    for message in messages {
         let parsed = parser(message)?;
         results.push(wrapper(parsed));
     }
