@@ -149,3 +149,7 @@ harness = false
 name = "position_replay_criterion"
 path = "benches/position_replay_criterion.rs"
 harness = false
+
+[[test]]
+name = "position_replay_recovery"
+required-features = ["test-support"]

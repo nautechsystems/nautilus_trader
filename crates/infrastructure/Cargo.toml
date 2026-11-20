@@ -90,3 +90,27 @@ toml = { workspace = true }
 name = "redis_msgbus"
 harness = false
 required-features = ["redis"]
+
+[[example]]
+name = "replay_index_comparison"
+doc = false
+required-features = ["redis"]
+
+[[example]]
+name = "replay_recovery"
+doc = false
+required-features = ["redis"]
+
+[[example]]
+name = "replay_latest_comparison"
+doc = false
+required-features = ["redis"]
+
+[[example]]
+name = "replay_latest_memory"
+doc = false
+
+[[example]]
+name = "replay_latest_allocations"
+doc = false
+required-features = ["redis"]

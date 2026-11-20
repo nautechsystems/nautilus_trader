@@ -124,6 +124,11 @@ fn engine_fixture(cycles: usize, carry_replay_events: bool, candidate: Candidate
         let mut cached = cache.position_mut(&PositionId::from(POSITION_ID)).unwrap();
         cached.replay_events.reserve(1);
         assert!(cached.replay_events.capacity() > cached.replay_events.len());
+
+        // Measure an established live history; cache insertion and reserve invalidate lookups
+        if carry_replay_events {
+            black_box(cached.has_replay_trade_id(TradeId::from("NOT-IN-HISTORY")));
+        }
     }
 
     let config = ExecutionEngineConfig::builder()

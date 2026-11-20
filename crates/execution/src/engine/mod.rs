@@ -4906,6 +4906,9 @@ impl ExecutionEngine {
         oms_type: OmsType,
     ) -> anyhow::Result<Vec<PositionEvent>> {
         let position = Position::new_checked(instrument, fill.clone())?;
+        let carry_replay = self.config.carry_replay_events_on_reopen
+            || (oms_type == OmsType::Hedging
+                && prior_position_id.is_some_and(|id| id.is_virtual()));
 
         if let Some(position_id) = prior_position_id {
             let prior_snapshot = {
@@ -4914,7 +4917,17 @@ impl ExecutionEngine {
                     .position(&position_id)
                     .ok_or_else(|| anyhow::anyhow!("position {position_id} is not cached"))?;
 
-                if archive_prior && position.has_replay_trade_id(fill.trade_id) {
+                let duplicate = archive_prior
+                    && if carry_replay {
+                        position.has_replay_trade_id(fill.trade_id)
+                    } else {
+                        // Do not build an index for history that the reopen will discard.
+                        position.replay_events.iter().any(|event| {
+                            matches!(event, PositionReplayEvent::Filled(prior) if prior.trade_id == fill.trade_id)
+                        })
+                    };
+
+                if duplicate {
                     log::warn!(
                         "Ignoring duplicate fill {} for closed position {}; no position reopened (side={:?}, qty={}, px={})",
                         fill.trade_id,
@@ -4943,8 +4956,7 @@ impl ExecutionEngine {
                 &position,
                 oms_type,
                 !is_orderless_leg,
-                self.config.carry_replay_events_on_reopen
-                    || (oms_type == OmsType::Hedging && position_id.is_virtual()),
+                carry_replay,
             )?;
         } else if is_orderless_leg {
             self.cache
@@ -5852,7 +5864,124 @@ mod tests {
     }
 
     #[rstest]
-    fn carry_replay_reopen_transfers_history_allocations() {
+    fn closed_netting_reopen_checks_full_history(
+        #[values(false, true)] carry_replay: bool,
+        #[values(false, true)] void_opening: bool,
+        #[values(None, Some(0), Some(32), Some(64))] duplicate_index: Option<usize>,
+    ) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let position_id = PositionId::from("P-CLOSED-REPLAY");
+        let opening = position_fill(&instrument, position_id, "O-0", "T-0", OrderSide::Buy, 1, 1);
+        let mut position = Position::new(&instrument, opening.clone());
+
+        for index in 1..64 {
+            let fill = position_fill(
+                &instrument,
+                position_id,
+                &format!("O-{index}"),
+                &format!("T-{index}"),
+                OrderSide::Buy,
+                1,
+                index + 1,
+            );
+            position.try_apply(&fill).unwrap();
+        }
+
+        if void_opening {
+            let void = OrderFillVoidedSpec::builder()
+                .trader_id(opening.trader_id)
+                .strategy_id(opening.strategy_id)
+                .instrument_id(opening.instrument_id)
+                .client_order_id(opening.client_order_id)
+                .venue_order_id(opening.venue_order_id)
+                .account_id(opening.account_id)
+                .trade_id(opening.trade_id)
+                .voided_qty(Quantity::from(1))
+                .order_side(opening.order_side)
+                .order_type(opening.order_type)
+                .last_px(opening.last_px)
+                .currency(opening.currency)
+                .liquidity_side(opening.liquidity_side)
+                .position_id(position_id)
+                .event_id(UUID4::new())
+                .build();
+            position
+                .apply_fill_void(void, Quantity::from(1), None)
+                .unwrap();
+        }
+
+        let closing = position_fill(
+            &instrument,
+            position_id,
+            "O-64",
+            "T-64",
+            OrderSide::Sell,
+            if void_opening { 63 } else { 64 },
+            66,
+        );
+        position.try_apply(&closing).unwrap();
+        assert!(position.is_closed());
+        let history_len = position.replay_events.len();
+        let before = serde_json::to_value(&position).unwrap();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        cache
+            .borrow_mut()
+            .add_position_without_order(&position, OmsType::Netting)
+            .unwrap();
+        let config = ExecutionEngineConfig::builder()
+            .carry_replay_events_on_reopen(carry_replay)
+            .build()
+            .unwrap();
+        let engine = ExecutionEngine::new(
+            Rc::new(RefCell::new(VirtualClock::new())),
+            Rc::clone(&cache),
+            Some(config),
+        );
+        let trade_id =
+            duplicate_index.map_or_else(|| "T-NEW".to_string(), |index| format!("T-{index}"));
+        let reopening = position_fill(
+            &instrument,
+            position_id,
+            "O-REOPEN",
+            &trade_id,
+            OrderSide::Buy,
+            1,
+            67,
+        );
+
+        let events = engine
+            .open_position(
+                &instrument,
+                Some(position_id),
+                true,
+                reopening,
+                OmsType::Netting,
+            )
+            .unwrap();
+
+        let cache = cache.borrow();
+        let current = cache.position(&position_id).unwrap();
+
+        if duplicate_index.is_some() {
+            assert!(events.is_empty());
+            assert_eq!(serde_json::to_value(&*current).unwrap(), before);
+        } else {
+            assert_eq!(events.len(), 1);
+            assert_eq!(current.quantity, Quantity::from(1));
+            assert_eq!(
+                current.replay_events.len(),
+                if carry_replay { history_len + 1 } else { 1 }
+            );
+        }
+    }
+
+    #[rstest]
+    #[case::netting(OmsType::Netting, true)]
+    #[case::virtual_hedging(OmsType::Hedging, false)]
+    fn carry_replay_reopen_transfers_history_allocations(
+        #[case] oms_type: OmsType,
+        #[case] carry_replay: bool,
+    ) {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim());
         let position_id = PositionId::from("P-REOPEN-TRANSFER");
         let opening = position_fill(
@@ -5914,7 +6043,7 @@ mod tests {
         let cache = Rc::new(RefCell::new(Cache::default()));
         cache
             .borrow_mut()
-            .add_position_without_order(&position, OmsType::Netting)
+            .add_position_without_order(&position, oms_type)
             .unwrap();
         {
             let mut cached = cache.borrow_mut();
@@ -5935,7 +6064,7 @@ mod tests {
             )
         };
         let config = ExecutionEngineConfig::builder()
-            .carry_replay_events_on_reopen(true)
+            .carry_replay_events_on_reopen(carry_replay)
             .build()
             .unwrap();
         let mut engine = ExecutionEngine::new(
@@ -5944,7 +6073,7 @@ mod tests {
             Some(config),
         );
 
-        let events = engine.handle_position_update(&instrument, reopening, OmsType::Netting);
+        let events = engine.handle_position_update(&instrument, reopening, oms_type);
 
         assert_eq!(events.len(), 1);
         let cache = cache.borrow();
