@@ -29,9 +29,9 @@ impl DataEngine {
         !self.config.disable_historical_cache
     }
 
-    pub(crate) fn handle_instrument(&mut self, instrument: &InstrumentAny) {
+    pub(crate) fn handle_instrument(&mut self, instrument: &InstrumentAny, is_live: bool) {
         if self.cache_instrument(instrument) {
-            self.publish_instrument(instrument);
+            self.publish_instrument(instrument, is_live);
         }
     }
 
@@ -63,12 +63,12 @@ impl DataEngine {
         true
     }
 
-    pub(crate) fn publish_instrument(&mut self, instrument: &InstrumentAny) {
+    pub(crate) fn publish_instrument(&mut self, instrument: &InstrumentAny, is_live: bool) {
         let topic = switchboard::get_instrument_topic(instrument.id());
         log::debug!("Publishing instrument to topic: {topic}");
         msgbus::publish_instrument(topic, instrument);
 
-        self.update_option_chains(instrument);
+        self.update_option_chains(instrument, is_live);
     }
 
     pub(super) fn handle_delta(&mut self, delta: OrderBookDelta) {
@@ -213,6 +213,7 @@ impl DataEngine {
             MarketStatusAction::Close | MarketStatusAction::NotAvailableForTrading
         ) {
             self.expire_option_chain_instrument(status.instrument_id);
+            self.drain_deferred_commands();
         } else if status.action == MarketStatusAction::Trading {
             self.option_chain_instruments_expired
                 .remove(&status.instrument_id);

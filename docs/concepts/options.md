@@ -272,8 +272,9 @@ def on_option_chain(self, chain) -> None:
   Greeks feeds use the client's default convention coverage. Incoming data uses instrument-based topics
   and is not isolated by client.
 - **Retirement**: Streamed `Close` and `NotAvailableForTrading` statuses, including backtest events, retire
-  contracts across owners. A chain that receives a quote or Greeks tick at expiry retires the contract
-  for all owners. The series expiry timer also applies across owners. Statuses from historical requests
+  contracts across owners. When a delta chain receives a quote or Greeks tick at expiry, the engine
+  retires the series for all owners. For other ranges, the tick retires the contract for all owners.
+  The series expiry timer also applies across owners. Statuses from historical requests
   do not change chain membership. Retirements persist across client replacement and disconnect.
   Engine reset or disposal clears them. A streamed `Trading` status restores eligibility for later
   definitions or subscriptions.
@@ -303,17 +304,22 @@ from `OptionGreeks.underlying_price` updates in the selected convention. The eng
 from a reference price fetched over HTTP, before WebSocket updates arrive. As ATM shifts, the active strike
 set rebalances automatically.
 
-`Delta` resolves from venue-provided Greeks: a strike is active when its call or put delta magnitude (calls
-positive, puts negative, compared by absolute value) falls within `tolerance` of `target`. A typical
+`Delta` selects strikes from venue-provided Greeks. A strike matches when the absolute value of its
+call or put delta falls within `tolerance` of `target`. A typical
 out-of-the-money target such as `0.25` selects a strike on each side of ATM.
 
-Bootstrap and fallback depend on the available data:
-
-- **Before ATM is known**: `Delta` is deferred like other dynamic ranges.
-- **After ATM is known**: `Delta` falls back to an ATM-relative window when no active strike's Greeks match
-  the band, including before any Greeks arrive. This window includes five strikes either side of ATM.
-- **Before switching to selected delta strikes**: the aggregator waits until each fallback leg has
-  Greeks in the selected convention so partial early updates do not drop neighboring strikes.
+- **Discovery**: Once ATM is known, the chain subscribes to the nearest cached strike and up to ten
+  cached strikes on either side. It keeps at most one call and one put per strike, up to 42 contracts.
+  When contracts share a strike and option kind, the chain chooses the lowest instrument ID.
+  The window follows the nearest ATM strike subject to a five-second cooldown. Listings and retirements
+  can update it immediately. The chain subscribes to incoming contracts before releasing outgoing
+  contracts to keep shared venue feeds active during the move.
+- **Fallback**: The slice uses the discovery window's center strike and up to five strikes on either
+  side if any fallback leg lacks Greeks in the selected convention or if no strike matches. During
+  cooldown, the reported ATM strike can move before the window does.
+- **Selection**: When all fallback legs have Greeks and a strike matches, the slice contains matching
+  strikes from the discovery window. It includes both quoted legs at each strike, so one leg can
+  have an out-of-band delta or `greeks=None`.
 
 ### Greeks convention
 
@@ -338,9 +344,9 @@ The `snapshot_interval_ms` parameter controls publishing behavior:
 - **Snapshot mode** (`snapshot_interval_ms=1000`): Quotes and Greeks accumulate in a
   buffer and publish as an `OptionChainSlice` on a timer. Suitable for periodic
   portfolio rebalancing or UI display.
-- **Raw mode** (`snapshot_interval_ms=None`): Each quote or Greeks update in the selected convention
-  for an active instrument publishes a slice immediately. Suitable for latency-sensitive
-  strategies that react to individual updates.
+- **Raw mode** (`snapshot_interval_ms=None`): A quote or selected-convention Greeks update for a
+  subscribed instrument triggers publication if the slice has quotes. For `Delta`, updates from any
+  discovery contract can trigger a slice with the same strikes and leg values as the previous slice.
 
 `subscribe_option_chain` raises `ValueError` for `snapshot_interval_ms=0`. Use `None` for raw mode.
 
@@ -393,10 +399,8 @@ self.subscribe_option_chain(
 )
 ```
 
-Use `snapshot_interval_ms=None` for raw mode. Raw mode publishes a slice after each
-quote or Greeks update in the selected convention for an active instrument. Use an integer interval for
-thinned snapshots. Thinned mode accumulates the latest BBO and Greeks per instrument
-and publishes the chain on the timer cadence, reducing event volume for large chains.
+Use an integer interval to reduce publication volume for large chains. See
+[Snapshot vs. raw mode](#snapshot-vs-raw-mode).
 
 Each `OptionChainSlice` joins the latest BBO and Greeks by instrument, then groups the result by strike and
 option kind. A quote can arrive before Greeks, and Greeks can arrive before a quote. The aggregator keeps
@@ -545,10 +549,10 @@ determined until the ATM price is known. Two bootstrap paths are available:
    includes an `underlying_price`. It registers message bus handlers and queues the wire subscriptions
    for the engine to drain. The sample subscription becomes part of the active set or is released.
 
-Once bootstrapped, the aggregator monitors ATM drift. On each snapshot timer tick,
-the manager calls the aggregator's `check_rebalance()` which returns any instruments
-to add or remove. A hysteresis threshold and cooldown period prevent thrashing near
-strike boundaries.
+Once bootstrapped, the manager checks for an ATM rebalance when preparing each slice.
+Price-based dynamic ranges use a hysteresis threshold and cooldown to limit churn near strike
+boundaries. `Delta` uses the cooldown for ATM moves and also updates discovery when the contract
+list changes.
 
 ## OptionGreeks data type
 

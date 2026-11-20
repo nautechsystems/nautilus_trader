@@ -1749,7 +1749,7 @@ impl DataEngine {
         self.data_count += 1;
 
         if let Some(instrument) = data.downcast_ref::<InstrumentAny>() {
-            self.handle_instrument(instrument);
+            self.handle_instrument_live(instrument);
         } else if let Some(funding_rate) = data.downcast_ref::<FundingRateUpdate>() {
             self.handle_funding_rate(*funding_rate);
         } else if let Some(option_greeks) = data.downcast_ref::<OptionGreeks>() {
@@ -1767,6 +1767,12 @@ impl DataEngine {
 
             log::error!("Cannot process data {data:?}, type is unrecognized");
         }
+    }
+
+    fn handle_instrument_live(&mut self, instrument: &InstrumentAny) {
+        self.drain_deferred_commands();
+        self.handle_instrument(instrument, true);
+        self.drain_deferred_commands();
     }
 
     fn handle_option_greeks(&mut self, greeks: &OptionGreeks) {
@@ -1813,7 +1819,7 @@ impl DataEngine {
         self.data_count += 1;
 
         match data {
-            DataRef::Instrument(instrument) => self.handle_instrument(instrument),
+            DataRef::Instrument(instrument) => self.handle_instrument_live(instrument),
             DataRef::BookDelta(delta) => self.handle_delta(*delta),
             DataRef::BookDeltas(deltas) => self.handle_deltas(deltas),
             DataRef::BookDepth(depth) => self.handle_depth(depth),
@@ -1875,7 +1881,7 @@ impl DataEngine {
         self.data_count += 1;
 
         match data {
-            Data::Instrument(instrument) => self.handle_instrument(&instrument),
+            Data::Instrument(instrument) => self.handle_instrument(&instrument, false),
             Data::BookDelta(delta) => self.handle_delta_pipeline(delta),
             Data::BookDeltas(deltas) => self.handle_deltas_pipeline(&deltas),
             Data::BookDepth(depth) => self.handle_depth_pipeline(&depth),

@@ -39,6 +39,7 @@ Released on TBD (UTC).
 - Changed `UnsubscribeOptionChain` literals; use `correlation_id: Some(owner_id)` (`None` requires a sole owner)
 - Changed option chains to require supported `greeks_convention` values when supplied
 - Changed option-chain Greeks feeds to use the data client's default convention coverage
+- Changed delta chains to keep up to 42 discovery contracts and use their updates in raw mode
 - Changed `OptionContract` and `CryptoOption` literals and `build_checked` calls; pass `None` for the new fields
 - Changed PostgreSQL option underlying, exercise, settlement, and spread tick columns; run `nautilus database init`
 - Changed PostgreSQL OMS recovery to restore `UNSPECIFIED` for legacy positions whose OMS metadata has no trader ID
@@ -98,6 +99,7 @@ Released on TBD (UTC).
 - Fixed retired option contracts rejoining chains on later definitions or subscriptions
 - Fixed `OptionChainSlice` ignoring Greeks in `ts_event` and using trigger timestamps for `ts_init`
 - Fixed option-chain delta selection depending on the arrival order of Greeks conventions
+- Fixed delta option chains missing matching strikes outside the ATM fallback
 - Fixed PostgreSQL cache restoring another trader's OMS type when position IDs overlap
 - Fixed PostgreSQL `OptionSpread` reloads panicking and dropping `tick_scheme`
 - Fixed local catalog paths with `#`, `%`, or `?` in queries, migration, and run manifests

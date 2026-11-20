@@ -386,7 +386,7 @@ impl DataEngine {
             return;
         }
 
-        self.publish_instrument(&instrument);
+        self.publish_instrument(&instrument, true);
 
         let topic = defi::switchboard::get_defi_pool_topic(pool.instrument_id);
         msgbus::publish_defi_pool(topic, pool);
