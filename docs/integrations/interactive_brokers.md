@@ -421,6 +421,10 @@ and end range.
 | `TRAILING_STOP_MARKET` | Trailing stop       | Trailing offset and optional trigger. |
 | `TRAILING_STOP_LIMIT`  | Trailing stop limit | Limit and trailing offsets.           |
 
+For individual contracts, including spread legs loaded from IB, `instrument.info["orderTypes"]`
+contains a comma-separated list of the order types IB reports. `ALGO` is a hint that the contract
+may support algo orders. Adaptive eligibility also depends on the specific order.
+
 The adapter maps `DAY`, `GTC`, `IOC`, `FOK`, `GTD`, and `AT_THE_OPEN` time in force values. A market
 or limit order with `AT_THE_CLOSE` becomes the corresponding market-on-close or limit-on-close IB
 order. GTD orders include their Nautilus expiry time in the IB order.
