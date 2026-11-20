@@ -1121,17 +1121,8 @@ impl OKXWebSocketClient {
     }
 
     async fn subscribe(&self, args: Vec<OKXSubscriptionArg>) -> Result<(), OKXWsError> {
-        // Send the command first; only update local state on success
-        self.cmd_tx
-            .read()
-            .await
-            .send(HandlerCommand::Subscribe { args: args.clone() })
-            .map_err(|e| {
-                OKXWsError::ClientError(format!("Failed to send subscribe command: {e}"))
-            })?;
-
-        self.record_subscriptions(&args);
-        Ok(())
+        let sender = self.cmd_tx.read().await;
+        self.send_subscription(&sender, &args, true)
     }
 
     fn record_subscriptions(&self, args: &[OKXSubscriptionArg]) {
@@ -1147,17 +1138,64 @@ impl OKXWebSocketClient {
     }
 
     async fn unsubscribe(&self, args: Vec<OKXSubscriptionArg>) -> Result<(), OKXWsError> {
-        self.cmd_tx
-            .read()
-            .await
-            .send(HandlerCommand::Unsubscribe { args: args.clone() })
-            .map_err(|e| {
-                OKXWsError::ClientError(format!("Failed to send unsubscribe command: {e}"))
-            })?;
+        let sender = self.cmd_tx.read().await;
+        self.send_subscription(&sender, &args, false)
+    }
 
-        for arg in &args {
-            let topic = topic_from_subscription_arg(arg);
-            self.subscriptions_state.mark_unsubscribe(&topic);
+    pub(crate) fn queue_quote_subscription(
+        &self,
+        instrument_id: InstrumentId,
+        channel: OKXWsChannel,
+        subscribe: bool,
+    ) -> Result<(), OKXWsError> {
+        // The data client owns sender publication and serializes it with quote commands
+        let sender = self.cmd_tx.try_read().map_err(|_| {
+            OKXWsError::HandlerUnavailable("WebSocket handler sender is being replaced".into())
+        })?;
+
+        let args = [OKXSubscriptionArg {
+            channel,
+            inst_type: None,
+            inst_family: None,
+            inst_id: Some(instrument_id.symbol.inner()),
+        }];
+
+        self.send_subscription(&sender, &args, subscribe)
+    }
+
+    fn send_subscription(
+        &self,
+        sender: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
+        args: &[OKXSubscriptionArg],
+        subscribe: bool,
+    ) -> Result<(), OKXWsError> {
+        let (command, operation) = if subscribe {
+            (
+                HandlerCommand::Subscribe {
+                    args: args.to_vec(),
+                },
+                "subscribe",
+            )
+        } else {
+            (
+                HandlerCommand::Unsubscribe {
+                    args: args.to_vec(),
+                },
+                "unsubscribe",
+            )
+        };
+
+        sender.send(command).map_err(|e| {
+            OKXWsError::ClientError(format!("Failed to send {operation} command: {e}"))
+        })?;
+
+        if subscribe {
+            self.record_subscriptions(args);
+        } else {
+            for arg in args {
+                let topic = topic_from_subscription_arg(arg);
+                self.subscriptions_state.mark_unsubscribe(&topic);
+            }
         }
 
         Ok(())

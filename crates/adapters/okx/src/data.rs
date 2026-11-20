@@ -299,6 +299,27 @@ impl OKXDataClient {
             .context("business websocket client not available (credentials required)")
     }
 
+    fn queue_quote_subscription(
+        &self,
+        instrument_id: InstrumentId,
+        subscribe: bool,
+    ) -> anyhow::Result<()> {
+        let (ws_client, channel) = if self.http_client.is_spread(instrument_id) {
+            (self.business_ws()?, OKXWsChannel::SprdBboTbt)
+        } else {
+            (self.public_ws()?, OKXWsChannel::BboTbt)
+        };
+
+        if !self.tasks.is_open() {
+            log::debug!("Skipping quote subscription change after OKX shutdown began");
+            return Ok(());
+        }
+
+        ws_client
+            .queue_quote_subscription(instrument_id, channel, subscribe)
+            .context("failed to queue OKX quote subscription change")
+    }
+
     fn send_data(sender: &EventSender<DataEvent>, data: Data) {
         if let Err(e) = sender.send(DataEvent::Data(data)) {
             log::error!("Failed to emit data event: {e}");
@@ -2213,31 +2234,7 @@ impl DataClient for OKXDataClient {
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
         execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
-            if self.http_client.is_spread(instrument_id) {
-                let ws = self.business_ws()?.clone();
-                self.spawn_ws(
-                    async move {
-                        ws.subscribe_spread_quotes(instrument_id)
-                            .await
-                            .context("spread quotes subscription")
-                    },
-                    "spread quote subscription",
-                );
-
-                return Ok(());
-            }
-
-            let ws = self.public_ws()?.clone();
-            self.spawn_ws(
-                async move {
-                    ws.subscribe_quotes(instrument_id)
-                        .await
-                        .context("quotes subscription")
-                },
-                "quote subscription",
-            );
-
-            Ok(())
+            self.queue_quote_subscription(instrument_id, true)
         })
     }
 
@@ -2473,31 +2470,7 @@ impl DataClient for OKXDataClient {
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
         execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
-            if self.http_client.is_spread(instrument_id) {
-                let ws = self.business_ws()?.clone();
-                self.spawn_ws(
-                    async move {
-                        ws.unsubscribe_spread_quotes(instrument_id)
-                            .await
-                            .context("spread quotes unsubscribe")
-                    },
-                    "spread quote unsubscribe",
-                );
-
-                return Ok(());
-            }
-
-            let ws = self.public_ws()?.clone();
-            self.spawn_ws(
-                async move {
-                    ws.unsubscribe_quotes(instrument_id)
-                        .await
-                        .context("quotes unsubscribe")
-                },
-                "quote unsubscribe",
-            );
-
-            Ok(())
+            self.queue_quote_subscription(instrument_id, false)
         })
     }
 
@@ -4833,6 +4806,75 @@ mod tests {
             ))),
             ..RefreshServerState::default()
         }
+    }
+
+    #[rstest]
+    #[case::public("BTC-USDT.OKX", OKXWsChannel::BboTbt)]
+    #[case::business("BTC-USDT_BTC-USDT-SWAP.OKX", OKXWsChannel::SprdBboTbt)]
+    #[tokio::test]
+    async fn quote_resubscribe_records_intent_before_yield(
+        #[case] instrument: &str,
+        #[case] channel: OKXWsChannel,
+    ) {
+        let addr = start_refresh_server(spot_refresh_state()).await;
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(sender);
+        let config = OKXDataClientConfig::builder()
+            .base_url_http(format!("http://{addr}"))
+            .base_url_ws_public(format!("ws://{addr}/ws/public"))
+            .base_url_ws_business(format!("ws://{addr}/ws/business"))
+            .book_stale_check_interval_secs(0)
+            .update_instruments_interval_mins(0)
+            .build();
+        let mut client = OKXDataClient::new(*OKX_CLIENT_ID, config).unwrap();
+        client.connect().await.unwrap();
+
+        let id = InstrumentId::from(instrument);
+
+        let subscribe = SubscribeQuotes::new(
+            id,
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+
+        let unsubscribe = UnsubscribeQuotes::new(
+            id,
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+
+        let subscriptions = |client: &OKXDataClient| {
+            [
+                client.public_ws().unwrap().get_subscriptions(id),
+                client.business_ws().unwrap().get_subscriptions(id),
+            ]
+        };
+
+        let expected = if channel == OKXWsChannel::BboTbt {
+            [vec![channel], vec![]]
+        } else {
+            [vec![], vec![channel]]
+        };
+
+        client.subscribe_quotes(subscribe.clone()).unwrap();
+        assert_eq!(subscriptions(&client), expected);
+        client.unsubscribe_quotes(&unsubscribe).unwrap();
+        assert_eq!(subscriptions(&client), [vec![], vec![]]);
+        client.subscribe_quotes(subscribe).unwrap();
+        assert_eq!(subscriptions(&client), expected);
+
+        client.stop().unwrap();
+        client.unsubscribe_quotes(&unsubscribe).unwrap();
+        assert_eq!(subscriptions(&client), expected);
+        client.disconnect().await.unwrap();
     }
 
     fn instrument_events(

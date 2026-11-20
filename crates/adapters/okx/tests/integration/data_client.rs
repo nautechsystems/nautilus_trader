@@ -998,62 +998,7 @@ async fn test_request_bars_sends_a_completed_envelope_only_for_a_covered_window(
 #[case("BTC-USD_UM-261030.OKX")]
 #[tokio::test]
 async fn usd_margined_futures_use_regular_subscriptions(#[case] instrument_id: &str) {
-    let (captured, mut received) = tokio::sync::mpsc::unbounded_channel();
-    let mut router = Router::new();
-
-    for endpoint in ["/public", "/business"] {
-        let captured = captured.clone();
-        router = router.route(
-            endpoint,
-            get(move |upgrade: WebSocketUpgrade| {
-                let captured = captured.clone();
-                async move {
-                    upgrade.on_upgrade(move |mut socket| async move {
-                        while let Some(Ok(Message::Text(text))) = socket.next().await {
-                            let request: Value = serde_json::from_str(&text).unwrap();
-                            if request["op"] == "subscribe" || request["op"] == "unsubscribe" {
-                                if request["args"][0]["channel"] != "instruments" {
-                                    captured.send((endpoint, request.clone())).unwrap();
-                                }
-
-                                for arg in request["args"].as_array().unwrap() {
-                                    socket
-                                        .send(Message::Text(
-                                            json!({"event": request["op"], "arg": arg})
-                                                .to_string()
-                                                .into(),
-                                        ))
-                                        .await
-                                        .unwrap();
-                                }
-                            }
-                        }
-                    })
-                }
-            }),
-        );
-    }
-
-    let router = router.route(
-        "/api/v5/public/instruments",
-        get(|| async { Json(load_test_data("http_get_instruments_futures.json")) }),
-    );
-
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-    let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
-    replace_data_event_sender(sender);
-    let config = OKXDataClientConfig::builder()
-        .instrument_types(vec![OKXInstrumentType::Futures])
-        .base_url_http(format!("http://{addr}"))
-        .base_url_ws_public(format!("ws://{addr}/public"))
-        .base_url_ws_business(format!("ws://{addr}/business"))
-        .book_stale_check_interval_secs(0)
-        .update_instruments_interval_mins(0)
-        .build();
-    let mut client = OKXDataClient::new(*OKX_CLIENT_ID, config).unwrap();
-    client.connect().await.unwrap();
+    let (mut client, mut received, server) = connect_captured_data_client().await;
     let instrument_id = InstrumentId::from(instrument_id);
     client
         .subscribe_quotes(SubscribeQuotes::new(
@@ -1177,4 +1122,134 @@ async fn usd_margined_futures_use_regular_subscriptions(#[case] instrument_id: &
     expected.sort_by_cached_key(|item| format!("{}{}{}", item.0, item.1, item.2));
 
     assert_eq!(actual, expected);
+}
+
+#[rstest]
+#[case::public("BTC-USD_UM-261030.OKX", "/public", "bbo-tbt", "instId")]
+#[case::business("BTC-USDT_BTC-USDT-SWAP.OKX", "/business", "sprd-bbo-tbt", "sprdId")]
+#[tokio::test]
+async fn quote_resubscribe_preserves_wire_order(
+    #[case] instrument: &str,
+    #[case] socket: &str,
+    #[case] channel: &str,
+    #[case] id_key: &str,
+) {
+    let (mut client, mut received, server) = connect_captured_data_client().await;
+    let id = InstrumentId::from(instrument);
+
+    let subscribe = SubscribeQuotes::new(
+        id,
+        Some(*OKX_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    let unsubscribe = UnsubscribeQuotes::new(
+        id,
+        Some(*OKX_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    client.subscribe_quotes(subscribe.clone()).unwrap();
+    client.unsubscribe_quotes(&unsubscribe).unwrap();
+    client.subscribe_quotes(subscribe).unwrap();
+
+    let mut frames = Vec::new();
+
+    for _ in 0..3 {
+        let (endpoint, frame) = tokio::time::timeout(Duration::from_secs(5), received.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        frames.push((endpoint, frame["op"].clone(), frame["args"].clone()));
+    }
+
+    client.disconnect().await.unwrap();
+    server.abort();
+
+    assert_eq!(
+        frames,
+        ["subscribe", "unsubscribe", "subscribe"].map(|operation| (
+            socket,
+            json!(operation),
+            json!([{"channel": channel, (id_key): id.symbol.as_str()}]),
+        )),
+    );
+}
+
+async fn connect_captured_data_client() -> (
+    OKXDataClient,
+    tokio::sync::mpsc::UnboundedReceiver<(&'static str, Value)>,
+    tokio::task::JoinHandle<()>,
+) {
+    let (captured, received) = tokio::sync::mpsc::unbounded_channel();
+    let mut router = Router::new();
+
+    for endpoint in ["/public", "/business"] {
+        let captured = captured.clone();
+        router = router.route(
+            endpoint,
+            get(move |upgrade: WebSocketUpgrade| {
+                let captured = captured.clone();
+
+                async move {
+                    upgrade.on_upgrade(move |socket| {
+                        capture_subscription_frames(socket, endpoint, captured)
+                    })
+                }
+            }),
+        );
+    }
+
+    let router = router.route(
+        "/api/v5/public/instruments",
+        get(|| async { Json(load_test_data("http_get_instruments_futures.json")) }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+    replace_data_event_sender(sender);
+    let config = OKXDataClientConfig::builder()
+        .instrument_types(vec![OKXInstrumentType::Futures])
+        .base_url_http(format!("http://{addr}"))
+        .base_url_ws_public(format!("ws://{addr}/public"))
+        .base_url_ws_business(format!("ws://{addr}/business"))
+        .book_stale_check_interval_secs(0)
+        .update_instruments_interval_mins(0)
+        .build();
+    let mut client = OKXDataClient::new(*OKX_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+    (client, received, server)
+}
+
+async fn capture_subscription_frames(
+    mut socket: WebSocket,
+    endpoint: &'static str,
+    captured: tokio::sync::mpsc::UnboundedSender<(&'static str, Value)>,
+) {
+    while let Some(Ok(Message::Text(text))) = socket.next().await {
+        let request: Value = serde_json::from_str(&text).unwrap();
+        let operation = &request["op"];
+        if operation != "subscribe" && operation != "unsubscribe" {
+            continue;
+        }
+
+        if request["args"][0]["channel"] != "instruments" {
+            captured.send((endpoint, request.clone())).unwrap();
+        }
+
+        for arg in request["args"].as_array().unwrap() {
+            let response = json!({"event": operation, "arg": arg}).to_string();
+            socket.send(Message::Text(response.into())).await.unwrap();
+        }
+    }
 }

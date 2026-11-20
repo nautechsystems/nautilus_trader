@@ -159,6 +159,7 @@ Released on TBD (UTC).
 - Fixed OKX execution clients not subscribing to venue position updates
 - Fixed OKX fills for untracked orders arriving without their order terms
 - Fixed OKX post-only rejections reporting as canceled in bulk order status reports
+- Fixed OKX quote subscribe and unsubscribe commands reaching the WebSocket out of order
 - Fixed OKX submitting non-positive or misaligned `LIMIT` prices
 - Fixed Polymarket balances not refreshing after auto-redemption events
 - Fixed Polymarket inferred reconciliation fills keeping free balance reduced after restart
