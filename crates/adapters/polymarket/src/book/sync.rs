@@ -169,10 +169,13 @@ impl BookSyncTracker {
         // Checked under the state lock, as in `record_snapshot_if_subscribed`.
         let mut books = self.books.lock();
 
-        if !active_delta_subs.contains(&instrument_id) || self.is_unavailable(instrument_id) {
+        if !active_delta_subs.contains(&instrument_id) {
             return BookSequenceOutcome::Suppress;
         }
 
+        // Callers request recovery in response to live market updates.
+        self.availability
+            .insert(instrument_id, Availability::Observed);
         request_recovery(&mut books, instrument_id, now)
     }
 

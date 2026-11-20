@@ -17831,8 +17831,10 @@ mod tests {
     }
 
     #[rstest]
+    #[case::available(false)]
+    #[case::paused(true)]
     #[tokio::test]
-    async fn tick_size_change_requests_recovery_and_resubscribes() {
+    async fn tick_size_change_requests_recovery_and_resubscribes(#[case] unavailable: bool) {
         if super::super::test_logging::run_in_isolated_process() {
             return;
         }
@@ -17844,6 +17846,11 @@ mod tests {
         let inst = seed_instrument(&ctx, asset_id, Price::from("0.001"), Quantity::from("0.01"));
         let instrument_id = inst.id();
         ctx.subscriptions.active_delta_subs.insert(instrument_id);
+        ctx.subscriptions.book_sync.update_availability(
+            &ctx.subscriptions.active_delta_subs,
+            instrument_id,
+            unavailable,
+        );
 
         // Keep the recovery-owned replacement send routable like production.
         let (ws_tx, mut ws_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -17855,6 +17862,7 @@ mod tests {
 
         handle_market_message(make_tick_change(market, asset_id, "0.001", "0.01"), &ctx);
 
+        assert!(!ctx.subscriptions.book_sync.is_unavailable(instrument_id));
         assert!(ctx.subscriptions.book_sync.book_gated(instrument_id));
         assert!(ctx.subscriptions.active_delta_subs.contains(&instrument_id));
         assert!(
