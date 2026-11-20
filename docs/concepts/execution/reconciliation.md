@@ -608,7 +608,11 @@ Ordering changes only when events apply. Each event keeps its reported timestamp
 Reconciliation generates synthetic MARKET order reports and fills with a known price:
 
 - Opening from flat uses the reported `avg_px_open`.
-- Increasing an existing position uses a calculated price targeting the reported entry average.
+- Increasing an existing position uses a calculated price targeting the reported entry average. For
+  a non-premium inverse instrument with a comparable reported average, reconciliation warns and skips
+  the fill if pricing it within the instrument's bounds leaves the average outside tolerance. It also
+  skips the increase when cached legs oppose each other or the required quantity rounds at the
+  instrument's size precision.
 - Reducing an existing position uses the reported entry average, falling back to the cached average
   when the report omits it. A reduction does not change the remaining position's entry average.
 - Closing to flat uses the cached entry average.
@@ -687,8 +691,9 @@ For an open position with a reported `avg_px_open`, startup also checks the entr
 fill-adjustment relative tolerance of 0.01%. Average entry prices can fall between instrument price ticks. The
 comparison does not round them to instrument price precision.
 
-NETTING reports use quantity-weighted entry averages for each reported side. If a side spans several
-reports, all contributing reports must supply an average to establish that side's price target. A
+NETTING reports use quantity-weighted entry averages for each reported side. For non-premium inverse
+instruments, the average uses a harmonic mean. If a side spans several reports, all contributing
+reports must supply an average to establish that side's price target. A
 report can skip this check or widen its tolerance, as described in
 [reported entry averages](#reported-entry-averages).
 
@@ -704,7 +709,7 @@ keep the behavior described above.
 
 - `avg_px_open_reconciliation`: `MATCH` (default) compares the average with the cached entry average and
   prices synthetic fills from it. `OPENING_ONLY` marks an average computed by a different method, such as the
-  remaining FIFO lots. This average legitimately differs from the cached quantity-weighted average once a
+  remaining FIFO lots. This average can differ from the cached entry average once a
   position has been reduced.
 - `avg_px_open_precision`: the decimal places the venue kept when it rounds or truncates the
   average. When unset, comparisons add no allowance.
@@ -746,6 +751,12 @@ The following conditions govern fill adjustment:
 - A declared `lookback_start` does not skip the adjustment.
 - Without a reported `avg_px_open`, the engine preserves the original orders and fills instead of
   inventing a price for synthetic fill adjustment.
+- For non-premium inverse instruments with a comparable reported average, a synthetic opening or
+  lifecycle replacement must use a quantity representable at the instrument's size precision and
+  reach the reported average within tolerance after price bounding. Otherwise, the engine keeps the
+  original orders and fills.
+- When an inverse position closes to flat and reopens at the same timestamp, the engine keeps the
+  original fills so the reopening stays in the replay.
 - Setting `filter_position_reports` skips fill adjustment for both declared and undeclared windows.
 
 Fill adjustment uses these terms:
@@ -1096,9 +1107,9 @@ These scenarios apply whether or not the mass status declares a `lookback_start`
 | Scenario                                  | Description                                             | System behavior                                                                                                                                                                                |
 | ----------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Complete lifecycle**                    | All fills from opening to current state are captured.   | No adjustment.                                                                                                                                                                                 |
-| **Incomplete single lifecycle**           | Reports miss opening fills, with no zero-crossings.     | Adds a synthetic opening fill with calculated price.                                                                                                                                           |
+| **Incomplete single lifecycle**           | Reports miss opening fills, with no zero-crossings.     | May add a synthetic opening fill under the [fill adjustment rules](#fill-adjustment).                                                                                                          |
 | **Multiple lifecycles, current matches**  | Zero-crossings separate earlier and current lifecycles. | Filters out old lifecycles and keeps the current one. An order whose fills span the crossing keeps its earlier fills, projected onto order state only, so its filled quantity is not inferred. |
-| **Multiple lifecycles, current mismatch** | The current lifecycle differs from the venue position.  | Generates a synthetic position fill and preserves reported orders for replay deduplication, projecting their earlier fills onto order state only.                                              |
+| **Multiple lifecycles, current mismatch** | The current lifecycle differs from the venue position.  | May replace the lifecycle with a synthetic fill. On replacement, keeps orders for replay deduplication and their earlier fills as order-only. See [fill adjustment](#fill-adjustment).         |
 | **Flat position**                         | The venue reports flat regardless of fill history.      | Makes no adjustment.                                                                                                                                                                           |
 | **No fills**                              | The report set contains no fills.                       | Returns the empty fill set.                                                                                                                                                                    |
 

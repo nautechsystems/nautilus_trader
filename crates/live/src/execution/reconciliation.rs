@@ -904,26 +904,51 @@ pub(super) fn responsible_client_ids(
         .collect()
 }
 
-/// Returns the quantity-weighted average of positive position entry prices.
+// Weights positive entry prices by quantity, using the harmonic mean for inverse notional
 pub(super) fn position_avg_px<'a>(
     positions: impl IntoIterator<Item = &'a Position>,
+    divides_notional_by_price: bool,
 ) -> Option<Decimal> {
-    let mut total_value = Decimal::ZERO;
-    let mut total_qty = Decimal::ZERO;
-
-    for position in positions {
+    let entries = positions.into_iter().filter_map(|position| {
         let qty = position.signed_decimal_qty().abs();
-        if position.avg_px_open > Decimal::ZERO && qty > Decimal::ZERO {
-            total_value += position.avg_px_open * qty;
-            total_qty += qty;
-        }
+        let px = position.avg_px_open;
+        (qty > Decimal::ZERO && px > Decimal::ZERO).then_some((qty, px))
+    });
+
+    weighted_entry_px(entries.map(Some), divides_notional_by_price).map(|(_, px)| px)
+}
+
+// Absent entries make the weighted entry price unknown
+pub(super) fn weighted_entry_px(
+    entries: impl Iterator<Item = Option<(Decimal, Decimal)>>,
+    divides_notional_by_price: bool,
+) -> Option<(Decimal, Decimal)> {
+    let mut entries = entries.peekable();
+    let first = entries.next()??;
+    if divides_notional_by_price && entries.peek().is_none() {
+        return Some(first);
     }
 
-    if total_qty > Decimal::ZERO {
-        Some(total_value / total_qty)
-    } else {
-        None
+    let mut total_qty = Decimal::ZERO;
+    let mut total_value = Decimal::ZERO;
+
+    for entry in [Some(first)].into_iter().chain(entries) {
+        let (qty, px) = entry?;
+        total_qty += qty;
+        total_value += if divides_notional_by_price {
+            qty.checked_div(px)?
+        } else {
+            qty * px
+        };
     }
+
+    let px = if divides_notional_by_price {
+        total_qty.checked_div(total_value)?
+    } else {
+        total_value / total_qty
+    };
+
+    Some((total_qty, px))
 }
 
 /// Aggregates signed quantities into net, long, and absolute short totals.
@@ -2222,7 +2247,7 @@ pub(super) mod tests {
             })
             .collect::<Vec<_>>();
 
-        let result = position_avg_px(&positions);
+        let result = position_avg_px(&positions, false);
 
         assert_eq!(result, expected);
     }

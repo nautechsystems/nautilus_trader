@@ -40,14 +40,15 @@ use nautilus_model::{
     instruments::{
         Instrument, InstrumentAny,
         stubs::{
-            audusd_sim, binary_option, crypto_perpetual_ethusdt, currency_pair_btcusdt,
-            futures_spread_es,
+            audusd_sim, binary_option, btcusd_bybit, crypto_perpetual_ethusdt,
+            currency_pair_btcusdt, futures_spread_es,
         },
     },
     orders::{
         Order, OrderAny, OrderTestBuilder, RECONCILIATION_PRICE_UNKNOWN_TAG,
         stubs::{OrderFilledTestBuilder, TestOrderEventStubs, TestOrderStubs},
     },
+    position::Position,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{Currency, Money, Price, Quantity, fixed::FIXED_PRECISION},
 };
@@ -589,9 +590,27 @@ fn test_simulate_position_accumulate_long() {
         FillSnapshot::new(venue_order_id, OrderSide::Buy, dec!(5), dec!(102), 2000),
     ];
 
-    let (qty, value) = simulate_position(&fills);
+    let (qty, value) = simulate_position(&fills, false);
     assert_eq!(qty, dec!(15));
     assert_eq!(value, dec!(1510)); // 10*100 + 5*102
+}
+
+#[rstest]
+#[case::long(OrderSide::Buy, dec!(2))]
+#[case::short(OrderSide::Sell, dec!(-2))]
+fn test_simulate_position_inverse_averages_by_base_value(
+    #[case] side: OrderSide,
+    #[case] expected_qty: Decimal,
+) {
+    let venue_order_id = create_test_venue_order_id("ORDER1");
+    let fills = vec![
+        FillSnapshot::new(venue_order_id, side, dec!(1), dec!(15000), 1000),
+        FillSnapshot::new(venue_order_id, side, dec!(1), dec!(10000), 2000),
+    ];
+
+    let (qty, value) = simulate_position(&fills, true);
+    assert_eq!(qty, expected_qty);
+    assert_eq!(value, dec!(24000)); // 2 at the harmonic mean 12000
 }
 
 #[rstest]
@@ -602,7 +621,7 @@ fn test_simulate_position_close_and_flip() {
         FillSnapshot::new(venue_order_id, OrderSide::Sell, dec!(15), dec!(102), 2000),
     ];
 
-    let (qty, value) = simulate_position(&fills);
+    let (qty, value) = simulate_position(&fills, false);
     assert_eq!(qty, dec!(-5)); // Flipped from +10 to -5
     assert_eq!(value, dec!(510)); // Remaining 5 @ 102
 }
@@ -615,7 +634,7 @@ fn test_simulate_position_partial_close() {
         FillSnapshot::new(venue_order_id, OrderSide::Sell, dec!(5), dec!(102), 2000),
     ];
 
-    let (qty, value) = simulate_position(&fills);
+    let (qty, value) = simulate_position(&fills, false);
     assert_eq!(qty, dec!(5));
     assert_eq!(value, dec!(500)); // Reduced proportionally: 1000 * (1 - 5/10) = 500
 
@@ -633,7 +652,7 @@ fn test_simulate_position_multiple_partial_closes() {
         FillSnapshot::new(venue_order_id, OrderSide::Sell, dec!(25), dec!(12.0), 3000), // Close another 25%
     ];
 
-    let (qty, value) = simulate_position(&fills);
+    let (qty, value) = simulate_position(&fills, false);
     assert_eq!(qty, dec!(50));
     // After first close: value = 1000 * (1 - 25/100) = 1000 * 0.75 = 750
     // After second close: value = 750 * (1 - 25/75) = 750 * (50/75) = 500
@@ -653,7 +672,7 @@ fn test_simulate_position_short_partial_close() {
         FillSnapshot::new(venue_order_id, OrderSide::Buy, dec!(5), dec!(98), 2000), // Partial close
     ];
 
-    let (qty, value) = simulate_position(&fills);
+    let (qty, value) = simulate_position(&fills, false);
     assert_eq!(qty, dec!(-5));
     assert_eq!(value, dec!(500)); // Reduced proportionally: 1000 * (1 - 5/10) = 500
 
@@ -824,6 +843,7 @@ fn test_reconciliation_price_opening_only_average(
         target_avg_px,
         AvgPxReconciliation::OpeningOnly,
         None,
+        false,
     );
 
     assert_eq!(result, expected);
@@ -846,6 +866,7 @@ fn test_reconciliation_price_increase_with_venue_precision(
         Some(target_avg_px),
         AvgPxReconciliation::Match,
         target_avg_px_precision,
+        false,
     );
 
     assert_eq!(result, Some(expected));
@@ -871,7 +892,8 @@ fn test_adjust_fills_price_only_mismatch_after_flat_crossing(
         ..venue_position_snapshot(dec!(1), dec!(60000))
     };
 
-    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
+    let result =
+        adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001), false, None);
 
     let expected = match avg_px_reconciliation {
         AvgPxReconciliation::Match => FillAdjustmentResult::ReplaceCurrentLifecycle {
@@ -913,7 +935,8 @@ fn test_adjust_fills_partial_window_synthetic_opening_with_venue_precision(
         ..venue_position_snapshot(dec!(100.02), dec!(0.5599))
     };
 
-    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
+    let result =
+        adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001), false, None);
 
     assert_eq!(
         result,
@@ -951,7 +974,8 @@ fn test_adjust_fills_partial_window_synthetic_opening_price(
         ..venue_position_snapshot(dec!(2), dec!(70000))
     };
 
-    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
+    let result =
+        adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001), false, None);
 
     assert_eq!(
         result,
@@ -969,6 +993,147 @@ fn test_adjust_fills_partial_window_synthetic_opening_price(
 }
 
 #[rstest]
+fn test_adjust_fills_partial_window_inverse_synthetic_opening_price() {
+    let venue_order_id = create_test_venue_order_id("ORDER1");
+    let fills = vec![FillSnapshot::new(
+        venue_order_id,
+        OrderSide::Buy,
+        dec!(1),
+        dec!(15000),
+        2000,
+    )];
+    let venue_position = venue_position_snapshot(dec!(2), dec!(12000));
+
+    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001), true, None);
+
+    assert_eq!(
+        result,
+        FillAdjustmentResult::AddSyntheticOpening {
+            synthetic_fill: FillSnapshot::new(
+                venue_order_id,
+                OrderSide::Buy,
+                dec!(1),
+                dec!(10000),
+                1999,
+            ),
+            existing_fills: fills,
+        }
+    );
+}
+
+#[rstest]
+fn test_adjust_inverse_partial_window_keeps_precision_marked_average() {
+    let venue_order_id = create_test_venue_order_id("ORDER1");
+    let fills = vec![FillSnapshot::new(
+        venue_order_id,
+        OrderSide::Buy,
+        dec!(100),
+        dec!(50000.50),
+        2000,
+    )];
+
+    let venue = VenuePositionSnapshot {
+        avg_px_precision: Some(0),
+        ..venue_position_snapshot(dec!(101), dec!(50001))
+    };
+
+    let result = adjust_fills_for_partial_window(&fills, &venue, dec!(0.0001), true, None);
+
+    assert_eq!(
+        result,
+        FillAdjustmentResult::AddSyntheticOpening {
+            synthetic_fill: FillSnapshot::new(
+                venue_order_id,
+                OrderSide::Buy,
+                dec!(1),
+                dec!(50000.50),
+                1999,
+            ),
+            existing_fills: fills,
+        }
+    );
+}
+
+#[rstest]
+fn test_adjust_inverse_partial_window_reprices_when_window_average_misses() {
+    let venue_order_id = create_test_venue_order_id("ORDER1");
+
+    let fills = [
+        FillSnapshot::new(venue_order_id, OrderSide::Buy, dec!(100), dec!(50000), 2000),
+        FillSnapshot::new(venue_order_id, OrderSide::Sell, dec!(50), dec!(55000), 3000),
+        FillSnapshot::new(venue_order_id, OrderSide::Buy, dec!(50), dec!(60000), 4000),
+    ];
+
+    let venue = VenuePositionSnapshot {
+        avg_px_precision: Some(0),
+        ..venue_position_snapshot(dec!(150), dec!(54545))
+    };
+
+    let result = adjust_fills_for_partial_window(&fills, &venue, dec!(0.0001), true, None);
+
+    let FillAdjustmentResult::AddSyntheticOpening {
+        synthetic_fill,
+        existing_fills,
+    } = result
+    else {
+        panic!("expected a synthetic opening, was {result:?}");
+    };
+
+    assert_eq!(synthetic_fill.qty, dec!(50));
+    assert_eq!(synthetic_fill.px.round_dp(2), dec!(57140.61));
+    assert_eq!(existing_fills, fills);
+    let replay = std::iter::once(&synthetic_fill).chain(&fills);
+    let (qty, value) = simulate_position(replay, true);
+    assert!(check_position_match(qty, value, &venue, dec!(0.0001)));
+}
+
+#[rstest]
+#[case::reachable(dec!(12000), Some(dec!(20000)))]
+#[case::unreachable(dec!(18000), None)]
+fn test_adjust_fills_partial_window_inverse_opening_before_reduction(
+    #[case] venue_avg_px: Decimal,
+    #[case] expected_px: Option<Decimal>,
+) {
+    let venue_order_id = create_test_venue_order_id("ORDER1");
+
+    let fills = [
+        FillSnapshot::new(venue_order_id, OrderSide::Buy, dec!(10), dec!(10000), 2000),
+        FillSnapshot::new(venue_order_id, OrderSide::Sell, dec!(5), dec!(15000), 3000),
+    ];
+
+    let venue_position = venue_position_snapshot(dec!(10), venue_avg_px);
+
+    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001), true, None);
+
+    if let Some(expected_px) = expected_px {
+        let FillAdjustmentResult::AddSyntheticOpening {
+            synthetic_fill,
+            existing_fills,
+        } = result
+        else {
+            panic!("expected a synthetic opening, was {result:?}");
+        };
+
+        assert_eq!(
+            synthetic_fill,
+            FillSnapshot::new(venue_order_id, OrderSide::Buy, dec!(5), expected_px, 1999)
+        );
+        assert_eq!(existing_fills, fills);
+        let replay = [synthetic_fill, fills[0].clone(), fills[1].clone()];
+        let (qty, value) = simulate_position(&replay, true);
+        assert_eq!(qty, dec!(10));
+        assert!(check_position_match(
+            qty,
+            value,
+            &venue_position,
+            dec!(0.0001)
+        ));
+    } else {
+        assert_eq!(result, FillAdjustmentResult::NoAdjustment);
+    }
+}
+
+#[rstest]
 fn test_adjust_fills_unpriceable_synthetic_opening_keeps_fills() {
     let fills = vec![FillSnapshot::new(
         create_test_venue_order_id("ORDER1"),
@@ -979,7 +1144,8 @@ fn test_adjust_fills_unpriceable_synthetic_opening_keeps_fills() {
     )];
     let venue_position = venue_position_snapshot(dec!(2), dec!(10000));
 
-    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
+    let result =
+        adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001), false, None);
 
     assert_eq!(result, FillAdjustmentResult::NoAdjustment);
 }
@@ -993,6 +1159,7 @@ fn test_reconciliation_price_flat_to_long(_instrument: InstrumentAny) {
         Some(dec!(100)),
         AvgPxReconciliation::Match,
         None,
+        false,
     );
     assert!(result.is_some());
     assert_eq!(result.unwrap(), dec!(100));
@@ -1007,6 +1174,7 @@ fn test_reconciliation_price_no_target_avg_px(_instrument: InstrumentAny) {
         None,
         AvgPxReconciliation::Match,
         None,
+        false,
     );
     assert!(result.is_none());
 }
@@ -1020,6 +1188,7 @@ fn test_reconciliation_price_no_quantity_change(_instrument: InstrumentAny) {
         Some(dec!(105)),
         AvgPxReconciliation::Match,
         None,
+        false,
     );
     assert!(result.is_none());
 }
@@ -1033,6 +1202,7 @@ fn test_reconciliation_price_long_position_increase(_instrument: InstrumentAny) 
         Some(dec!(102)),
         AvgPxReconciliation::Match,
         None,
+        false,
     );
     assert!(result.is_some());
     // Expected: (15 * 102 - 10 * 100) / 5 = (1530 - 1000) / 5 = 106
@@ -1048,6 +1218,7 @@ fn test_reconciliation_price_flat_to_short(_instrument: InstrumentAny) {
         Some(dec!(100)),
         AvgPxReconciliation::Match,
         None,
+        false,
     );
     assert!(result.is_some());
     assert_eq!(result.unwrap(), dec!(100));
@@ -1064,6 +1235,7 @@ fn test_reconciliation_price_long_to_flat(_instrument: InstrumentAny) {
         Some(dec!(0)),
         AvgPxReconciliation::Match,
         None,
+        false,
     );
     assert!(result.is_some());
     assert_eq!(result.unwrap(), dec!(1.20));
@@ -1080,6 +1252,7 @@ fn test_reconciliation_price_short_to_flat(_instrument: InstrumentAny) {
         None,
         AvgPxReconciliation::Match,
         None,
+        false,
     );
     assert!(result.is_some());
     assert_eq!(result.unwrap(), dec!(2.50));
@@ -1098,6 +1271,7 @@ fn test_reconciliation_price_short_position_increase(_instrument: InstrumentAny)
         Some(dec!(1.28)),
         AvgPxReconciliation::Match,
         None,
+        false,
     );
     assert!(result.is_some());
     assert_eq!(result.unwrap(), dec!(1.26));
@@ -1113,6 +1287,7 @@ fn test_reconciliation_price_long_position_decrease(_instrument: InstrumentAny) 
         Some(dec!(1.20)),
         AvgPxReconciliation::Match,
         None,
+        false,
     );
     assert!(result.is_some());
     assert_eq!(result.unwrap(), dec!(1.20));
@@ -1129,6 +1304,7 @@ fn test_reconciliation_price_long_to_short_flip(_instrument: InstrumentAny) {
         Some(dec!(1.25)),
         AvgPxReconciliation::Match,
         None,
+        false,
     );
     assert!(result.is_some());
     assert_eq!(result.unwrap(), dec!(1.25));
@@ -1145,6 +1321,7 @@ fn test_reconciliation_price_short_to_long_flip(_instrument: InstrumentAny) {
         Some(dec!(1.25)),
         AvgPxReconciliation::Match,
         None,
+        false,
     );
     assert!(result.is_some());
     assert_eq!(result.unwrap(), dec!(1.25));
@@ -1163,6 +1340,7 @@ fn test_reconciliation_price_complex_scenario(_instrument: InstrumentAny) {
         Some(dec!(1.24567)),
         AvgPxReconciliation::Match,
         None,
+        false,
     );
     assert!(result.is_some());
     assert_eq!(result.unwrap(), dec!(1.262335));
@@ -1177,6 +1355,7 @@ fn test_reconciliation_price_zero_target_avg_px(_instrument: InstrumentAny) {
         Some(dec!(0)),
         AvgPxReconciliation::Match,
         None,
+        false,
     );
     assert!(result.is_none());
 }
@@ -1194,6 +1373,7 @@ fn test_reconciliation_price_negative_price(_instrument: InstrumentAny) {
         Some(dec!(1.00)),
         AvgPxReconciliation::Match,
         None,
+        false,
     );
     assert!(result.is_none());
 }
@@ -1211,6 +1391,7 @@ fn test_reconciliation_price_flip_simulation_compatibility() {
         Some(dec!(1.25)),
         AvgPxReconciliation::Match,
         None,
+        false,
     )
     .expect("reconciliation price");
 
@@ -1222,7 +1403,7 @@ fn test_reconciliation_price_flip_simulation_compatibility() {
         FillSnapshot::new(venue_order_id, OrderSide::Sell, dec!(200), recon_px, 2000),
     ];
 
-    let (final_qty, final_value) = simulate_position(&fills);
+    let (final_qty, final_value) = simulate_position(&fills, false);
     assert_eq!(final_qty, dec!(-100));
     let final_avg = final_value / final_qty.abs();
     assert_eq!(final_avg, dec!(1.25), "Final average should match target");
@@ -1240,6 +1421,7 @@ fn test_reconciliation_price_accumulation_simulation_compatibility() {
         Some(dec!(1.22)),
         AvgPxReconciliation::Match,
         None,
+        false,
     )
     .expect("reconciliation price");
 
@@ -1249,10 +1431,75 @@ fn test_reconciliation_price_accumulation_simulation_compatibility() {
         FillSnapshot::new(venue_order_id, OrderSide::Buy, dec!(100), recon_px, 2000),
     ];
 
-    let (final_qty, final_value) = simulate_position(&fills);
+    let (final_qty, final_value) = simulate_position(&fills, false);
     assert_eq!(final_qty, dec!(200));
     let final_avg = final_value / final_qty.abs();
     assert_eq!(final_avg, dec!(1.22), "Final average should match target");
+}
+
+#[rstest]
+#[case::long(OrderSide::Buy, dec!(1), dec!(2))]
+#[case::short(OrderSide::Sell, dec!(-1), dec!(-2))]
+fn test_reconciliation_price_inverse_accumulation_matches_position(
+    #[case] side: OrderSide,
+    #[case] current_qty: Decimal,
+    #[case] target_qty: Decimal,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(btcusd_bybit());
+    let recon_px = calculate_reconciliation_price(
+        current_qty,
+        Some(dec!(15000)),
+        target_qty,
+        Some(dec!(12000)),
+        AvgPxReconciliation::Match,
+        None,
+        true,
+    )
+    .expect("reconciliation price");
+
+    let fill = |trade_id: &str, px: Decimal| {
+        OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(PositionId::from("P-1"))
+            .trade_id(TradeId::from(trade_id))
+            .event_id(UUID4::new())
+            .order_side(side)
+            .last_qty(Quantity::from(1))
+            .last_px(Price::from_decimal_dp(px, instrument.price_precision()).unwrap())
+            .build()
+    };
+
+    let mut position = Position::new(&instrument, fill("T-1", dec!(15000)));
+    position.apply(&fill("T-2", recon_px));
+    let venue_order_id = create_test_venue_order_id("ORDER1");
+    let fills = vec![
+        FillSnapshot::new(venue_order_id, side, dec!(1), dec!(15000), 1000),
+        FillSnapshot::new(venue_order_id, side, dec!(1), recon_px, 2000),
+    ];
+    let (qty, value) = simulate_position(&fills, true);
+
+    assert_eq!(recon_px, dec!(10000));
+    assert_eq!(position.avg_px_open, dec!(12000));
+    assert_eq!(qty, target_qty);
+    assert_eq!(value / qty.abs(), dec!(12000));
+}
+
+#[rstest]
+fn test_reconciliation_price_inverse_accumulation_without_positive_price() {
+    let calculate = |divides_notional_by_price| {
+        calculate_reconciliation_price(
+            dec!(1),
+            Some(dec!(10000)),
+            dec!(2),
+            Some(dec!(25000)),
+            AvgPxReconciliation::Match,
+            None,
+            divides_notional_by_price,
+        )
+    };
+
+    assert_eq!(calculate(false), Some(dec!(40000)));
+    assert_eq!(calculate(true), None);
 }
 
 #[rstest]
@@ -1263,7 +1510,7 @@ fn test_simulate_position_accumulate_short() {
         FillSnapshot::new(venue_order_id, OrderSide::Sell, dec!(5), dec!(98), 2000),
     ];
 
-    let (qty, value) = simulate_position(&fills);
+    let (qty, value) = simulate_position(&fills, false);
     assert_eq!(qty, dec!(-15));
     assert_eq!(value, dec!(1490)); // 10*100 + 5*98
 }
@@ -1276,7 +1523,7 @@ fn test_simulate_position_short_to_long_flip() {
         FillSnapshot::new(venue_order_id, OrderSide::Buy, dec!(15), dec!(102), 2000),
     ];
 
-    let (qty, value) = simulate_position(&fills);
+    let (qty, value) = simulate_position(&fills, false);
     assert_eq!(qty, dec!(5)); // Flipped from -10 to +5
     assert_eq!(value, dec!(510)); // Remaining 5 @ 102
 }
@@ -1290,7 +1537,7 @@ fn test_simulate_position_multiple_flips() {
         FillSnapshot::new(venue_order_id, OrderSide::Buy, dec!(10), dec!(110), 3000),  // Flip to +5
     ];
 
-    let (qty, value) = simulate_position(&fills);
+    let (qty, value) = simulate_position(&fills, false);
     assert_eq!(qty, dec!(5)); // Final position: +5
     assert_eq!(value, dec!(550)); // 5 @ 110
 }
@@ -1298,7 +1545,7 @@ fn test_simulate_position_multiple_flips() {
 #[rstest]
 fn test_simulate_position_empty_fills() {
     let fills: Vec<FillSnapshot> = vec![];
-    let (qty, value) = simulate_position(&fills);
+    let (qty, value) = simulate_position(&fills, false);
     assert_eq!(qty, dec!(0));
     assert_eq!(value, dec!(0));
 }
@@ -1425,7 +1672,8 @@ fn test_adjust_fills_no_fills() {
         avg_px_reconciliation: AvgPxReconciliation::Match,
         avg_px_precision: None,
     };
-    let result = adjust_fills_for_partial_window(&[], &venue_position, dec!(0.0001));
+
+    let result = adjust_fills_for_partial_window(&[], &venue_position, dec!(0.0001), false, None);
     assert!(matches!(result, FillAdjustmentResult::NoAdjustment));
 }
 
@@ -1446,7 +1694,9 @@ fn test_adjust_fills_flat_position() {
         avg_px_reconciliation: AvgPxReconciliation::Match,
         avg_px_precision: None,
     };
-    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
+
+    let result =
+        adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001), false, None);
     assert!(matches!(result, FillAdjustmentResult::NoAdjustment));
 }
 
@@ -1477,7 +1727,9 @@ fn test_adjust_fills_complete_lifecycle_no_adjustment() {
         avg_px_reconciliation: AvgPxReconciliation::Match,
         avg_px_precision: None,
     };
-    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
+
+    let result =
+        adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001), false, None);
     assert!(matches!(result, FillAdjustmentResult::NoAdjustment));
 }
 
@@ -1499,7 +1751,9 @@ fn test_adjust_fills_incomplete_lifecycle_adds_synthetic() {
         avg_px_reconciliation: AvgPxReconciliation::Match,
         avg_px_precision: None,
     };
-    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
+
+    let result =
+        adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001), false, None);
 
     match result {
         FillAdjustmentResult::AddSyntheticOpening {
@@ -1554,7 +1808,8 @@ fn test_adjust_fills_with_zero_crossings() {
         avg_px_precision: None,
     };
 
-    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
+    let result =
+        adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001), false, None);
 
     // Should filter to current lifecycle only
     match result {
@@ -1619,7 +1874,8 @@ fn test_adjust_fills_multiple_zero_crossings_mismatch() {
         avg_px_precision: None,
     };
 
-    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
+    let result =
+        adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001), false, None);
 
     // Should replace current lifecycle with synthetic
     match result {
@@ -1711,6 +1967,166 @@ fn create_limit_order_report(
         UnixNanos::from(4_500),
         None,
     )
+}
+
+#[rstest]
+#[case::outside_tolerance("100", "101", dec!(50499), true, None)]
+#[case::within_tolerance("100", "101", dec!(50475), true, Some(Price::from("1000000.0")))]
+#[case::within_tolerance_without_exact_price("1000", "1001", dec!(50051), true, Some(Price::from("1000000.0")))]
+#[case::without_price_cap("1000000", "1000010", dec!(50001), false, Some(Price::max(1)))]
+#[case::unrepresentable_size("1000.4", "1001", dec!(50020), true, None)]
+fn test_process_mass_status_checks_capped_inverse_opening_price(
+    #[case] window_qty: &str,
+    #[case] venue_qty: &str,
+    #[case] venue_avg_px: Decimal,
+    #[case] has_price_cap: bool,
+    #[case] expected_px: Option<Price>,
+) {
+    let mut instrument = btcusd_bybit();
+    instrument.max_price = has_price_cap.then(|| Price::from("1000000.0"));
+    let instrument = InstrumentAny::CryptoPerpetual(instrument);
+    let instrument_id = instrument.id();
+    let venue_order_id = VenueOrderId::from("ORDER1");
+    let fill = create_test_fill_report(
+        instrument_id,
+        venue_order_id,
+        TradeId::from("TRADE1"),
+        Quantity::from(window_qty),
+        Price::from("50000.0"),
+    );
+
+    let position = PositionStatusReport::new(
+        fill.account_id,
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from(venue_qty),
+        UnixNanos::from(2_000_000),
+        UnixNanos::from(2_000_000),
+        None,
+        None,
+        Some(venue_avg_px),
+    );
+
+    let mut mass_status = ExecutionMassStatus::new(
+        ClientId::from("BYBIT"),
+        fill.account_id,
+        instrument_id.venue,
+        UnixNanos::default(),
+        None,
+    );
+
+    mass_status.add_fill_reports(vec![fill]);
+    mass_status.add_position_reports(vec![position]);
+
+    let result = process_mass_status_for_reconciliation(&mass_status, &instrument, None).unwrap();
+
+    assert_eq!(
+        result.fills[&venue_order_id],
+        mass_status.fill_reports()[&venue_order_id]
+    );
+    let synthetic_fills: Vec<_> = result
+        .fills
+        .iter()
+        .filter(|(id, _)| **id != venue_order_id)
+        .flat_map(|(_, fills)| fills.iter().map(|fill| (fill.last_qty, fill.last_px)))
+        .collect();
+
+    let expected = expected_px.map(|px| {
+        let qty = Quantity::from(venue_qty).as_decimal() - Quantity::from(window_qty).as_decimal();
+
+        (
+            Quantity::from_decimal_dp(qty, instrument.size_precision()).unwrap(),
+            px,
+        )
+    });
+
+    assert_eq!(result.orders.len(), expected.as_slice().len());
+    assert_eq!(synthetic_fills, expected.as_slice());
+}
+
+#[rstest]
+#[case::accumulating(
+    &[
+        ("FIRST", OrderSide::Buy, "1000", "50000.0", 1_000_000),
+        ("ADD", OrderSide::Buy, "500", "60000.0", 2_000_000),
+        ("REDUCE", OrderSide::Sell, "500", "50000.0", 2_000_000),
+    ],
+    &[0, 2, 1],
+    "1001",
+    dec!(54540.50),
+)]
+#[case::reopening(
+    &[
+        ("FIRST", OrderSide::Buy, "100", "10000.0", 1_000_000),
+        ("CLOSE", OrderSide::Sell, "100", "12000.0", 2_000_000),
+        ("REOPEN", OrderSide::Buy, "50", "10000.0", 2_000_000),
+        ("ADD", OrderSide::Buy, "50", "15000.0", 3_000_000),
+    ],
+    &[0, 2, 1, 3],
+    "100",
+    dec!(12000),
+)]
+fn test_process_mass_status_inverse_fill_ties_follow_order_report_order(
+    #[case] fills: &[(&str, OrderSide, &str, &str, u64)],
+    #[case] fill_order: &[usize],
+    #[case] venue_qty: &str,
+    #[case] venue_avg_px: Decimal,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(btcusd_bybit());
+    let instrument_id = instrument.id();
+    let account = AccountId::from("TEST-001");
+
+    let mut mass_status = ExecutionMassStatus::new(
+        ClientId::from("BYBIT"),
+        account,
+        instrument_id.venue,
+        UnixNanos::default(),
+        None,
+    );
+
+    let reports: Vec<_> = fills
+        .iter()
+        .copied()
+        .map(|(id, side, qty, px, ts)| {
+            let mut fill = create_test_fill_report(
+                instrument_id,
+                VenueOrderId::from(id),
+                TradeId::from(id),
+                Quantity::from(qty),
+                Price::from(px),
+            );
+            fill.order_side = side;
+            fill.ts_event = UnixNanos::from(ts);
+            let mut order = create_limit_order_report(&instrument, id, OrderStatus::Filled, qty);
+            order.order_side = Some(side);
+            order.quantity = fill.last_qty;
+            (order, fill)
+        })
+        .collect();
+
+    mass_status.add_order_reports(reports.iter().map(|(order, _)| order.clone()).collect());
+    mass_status.add_fill_reports(
+        fill_order
+            .iter()
+            .map(|&index| reports[index].1.clone())
+            .collect(),
+    );
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        account,
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from(venue_qty),
+        UnixNanos::from(3_000_000),
+        UnixNanos::from(3_000_000),
+        None,
+        None,
+        Some(venue_avg_px),
+    )]);
+
+    let result = process_mass_status_for_reconciliation(&mass_status, &instrument, None).unwrap();
+
+    assert_eq!(result.orders, mass_status.order_reports());
+    assert_eq!(result.fills, mass_status.fill_reports());
 }
 
 #[rstest]
@@ -2001,6 +2417,36 @@ fn test_replace_current_lifecycle_preserves_reported_orders(
 }
 
 #[rstest]
+#[case::representable("1", dec!(4050), true)]
+#[case::unrepresentable_size("0.10", dec!(4050), false)]
+#[case::unreachable_price("1", dec!(5050), false)]
+fn test_inverse_lifecycle_replacement_validates_synthetic_opening(
+    #[case] qty: &str,
+    #[case] avg_px: Decimal,
+    #[case] expect_replacement: bool,
+) {
+    let mut instrument = btcusd_bybit();
+    instrument.max_price = Some(Price::from("5000.0"));
+    let instrument = InstrumentAny::CryptoPerpetual(instrument);
+    let quantity = Quantity::from(qty);
+    let mass_status = create_two_lifecycle_mass_status(&instrument, vec![], quantity, avg_px);
+
+    let result = process_mass_status_for_reconciliation(&mass_status, &instrument, None).unwrap();
+
+    if expect_replacement {
+        assert_eq!(result.orders.len(), 1);
+        assert_eq!(result.fills.len(), 1);
+        let fills = result.fills.first().unwrap().1;
+        assert_eq!(fills.len(), 1);
+        assert_eq!(fills[0].last_qty, quantity);
+        assert_eq!(fills[0].last_px.as_decimal(), avg_px);
+    } else {
+        assert_eq!(result.orders, mass_status.order_reports());
+        assert_eq!(result.fills, mass_status.fill_reports());
+    }
+}
+
+#[rstest]
 #[case::unfilled(OrderStatus::Accepted, "0.00")]
 #[case::partially_filled(OrderStatus::PartiallyFilled, "0.05")]
 fn test_replace_current_lifecycle_synthetic_report_preserves_first_fill_order(
@@ -2069,7 +2515,8 @@ fn test_adjust_fills_short_position() {
         avg_px_precision: None,
     };
 
-    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
+    let result =
+        adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001), false, None);
 
     // Should add synthetic opening SHORT fill
     match result {
@@ -2106,7 +2553,8 @@ fn test_adjust_fills_timestamp_underflow_protection() {
         avg_px_precision: None,
     };
 
-    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
+    let result =
+        adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001), false, None);
 
     // Should add synthetic fill with timestamp 0 (not u64::MAX)
     match result {
@@ -2136,13 +2584,14 @@ fn test_adjust_fills_with_flip_scenario() {
         avg_px_precision: None,
     };
 
-    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
+    let result =
+        adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001), false, None);
 
     // Should recognize the flip and match correctly
     match result {
         FillAdjustmentResult::NoAdjustment => {
             // Verify simulation matches
-            let (qty, value) = simulate_position(&fills);
+            let (qty, value) = simulate_position(&fills, false);
             assert_eq!(qty, dec!(-10));
             let avg = value / qty.abs();
             assert_eq!(avg, dec!(105));
@@ -2182,6 +2631,7 @@ fn test_reconciliation_price_partial_close() {
         Some(dec!(1.20)),
         AvgPxReconciliation::Match,
         None,
+        false,
     )
     .expect("reconciliation price");
 
@@ -2191,7 +2641,7 @@ fn test_reconciliation_price_partial_close() {
         FillSnapshot::new(venue_order_id, OrderSide::Sell, dec!(50), recon_px, 2000),
     ];
 
-    let (final_qty, final_value) = simulate_position(&fills);
+    let (final_qty, final_value) = simulate_position(&fills, false);
     assert_eq!(final_qty, dec!(50));
     let final_avg = final_value / final_qty.abs();
     assert_eq!(final_avg, dec!(1.20), "Average should be maintained");
@@ -2216,7 +2666,7 @@ fn test_detect_zero_crossings_identical_timestamps() {
     assert_eq!(crossings[0], 2000);
 
     // Verify final position is flat
-    let (qty, _) = simulate_position(&fills);
+    let (qty, _) = simulate_position(&fills, false);
     assert_eq!(qty, dec!(0));
 }
 
@@ -2252,7 +2702,7 @@ fn test_detect_zero_crossings_five_lifecycles() {
     assert_eq!(crossings[3], 8000);
 
     // Final position should be +30
-    let (qty, _) = simulate_position(&fills);
+    let (qty, _) = simulate_position(&fills, false);
     assert_eq!(qty, dec!(30));
 }
 
@@ -2283,7 +2733,8 @@ fn test_adjust_fills_five_zero_crossings() {
         avg_px_precision: None,
     };
 
-    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
+    let result =
+        adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001), false, None);
 
     // Should filter to current lifecycle only (after last zero-crossing at 8000)
     match result {
@@ -2323,7 +2774,8 @@ fn test_adjust_fills_alternating_long_short_positions() {
         avg_px_precision: None,
     };
 
-    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
+    let result =
+        adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001), false, None);
 
     // Position never went flat (0), just flipped sides. This is treated as one
     // continuous lifecycle since no explicit close occurred. The final position
@@ -2356,7 +2808,8 @@ fn test_adjust_fills_with_flat_crossings() {
         avg_px_precision: None,
     };
 
-    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
+    let result =
+        adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001), false, None);
 
     // Position went flat at ts=2000 and ts=4000
     // Current lifecycle starts after last flat (4000)
@@ -2398,7 +2851,8 @@ fn test_replace_current_lifecycle_seeds_synthetic_id_from_first_fill() {
         avg_px_precision: None,
     };
 
-    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001));
+    let result =
+        adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001), false, None);
 
     // Should replace with synthetic fill using first fill's venue_order_id (order_id_2)
     match result {

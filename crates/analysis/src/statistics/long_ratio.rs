@@ -154,6 +154,8 @@ mod tests {
             instrument_class: InstrumentClass::Spot,
             is_currency_pair: true,
             allows_negative_price: Some(false),
+            inverse_gross_pnl_closed: 0.into(),
+            inverse_entry_notional_closed: 0.into(),
         }
     }
 

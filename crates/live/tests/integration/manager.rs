@@ -11687,6 +11687,69 @@ async fn test_mass_status_netting_rejects_aggregate_mismatch() {
 }
 
 #[rstest]
+#[case::multiple_cached(&[("50", "10000.0"), ("50", "40000.0")], &[("100", dec!(16000))])]
+#[case::multiple_venue(&[("100", "16000.0")], &[("50", dec!(10000)), ("50", dec!(40000))])]
+#[tokio::test]
+async fn test_mass_status_netting_matches_inverse_avg_px_across_positions(
+    #[case] cached: &[(&str, &str)],
+    #[case] venue: &[(&str, Decimal)],
+) {
+    let mut ctx = TestContext::with_config(ExecutionManagerConfig {
+        generate_missing_orders: false,
+        ..Default::default()
+    });
+
+    let instrument = test_instrument2();
+    let instrument_id = instrument.id();
+
+    for (i, &(qty, px)) in cached.iter().enumerate() {
+        let position_id = format!("P-NET-{i}");
+        let position = create_test_position(
+            &instrument,
+            PositionId::from(position_id.as_str()),
+            OrderSide::Buy,
+            qty,
+            px,
+        );
+        ctx.cache
+            .borrow_mut()
+            .add_position(&position, OmsType::Netting)
+            .unwrap();
+    }
+
+    ctx.add_instrument(instrument);
+    let mut mass_status = create_mass_status(vec![], vec![]);
+    mass_status.add_position_reports(
+        venue
+            .iter()
+            .enumerate()
+            .map(|(i, &(qty, px))| {
+                let venue_position_id = format!("V-{i}");
+                create_test_position_report(
+                    test_account_id(),
+                    instrument_id,
+                    PositionSide::Long,
+                    qty,
+                    &venue_position_id,
+                    px,
+                )
+            })
+            .collect(),
+    );
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+
+    assert!(result.events.is_empty(), "{:?}", result.events);
+    assert!(
+        result.unresolved_positions.is_empty(),
+        "{:?}",
+        result.unresolved_positions
+    );
+}
+
+#[rstest]
 #[case::duplicates(0, 2, 0)]
 #[case::distinct_snapshots(1, 0, 3)]
 #[tokio::test]
@@ -21469,6 +21532,279 @@ async fn test_position_check_uses_current_avg_px_after_request() {
 
     assert_eq!(fill.last_qty, Quantity::from("3.0"));
     assert_eq!(fill.last_px, Price::from("3300.00"));
+}
+
+// Cached long 1 at 10,000 and venue long 2 at 12,000: weighted by base value, the venue average
+// needs one contract at 15,000.
+#[rstest]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_position_check_inverse_accumulation_fill_reaches_venue_avg_px() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: DurationNanos::ZERO,
+        ..Default::default()
+    };
+
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument2();
+    let instrument_id = instrument.id();
+    let position = create_test_position(
+        &instrument,
+        PositionId::from("P-INVERSE-ADD"),
+        OrderSide::Buy,
+        "1",
+        "10000.0",
+    );
+
+    let venue_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from("2"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(12000.0)),
+    );
+
+    ctx.add_instrument(instrument);
+    ctx.add_position(&position);
+
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![venue_report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    let fill = events
+        .iter()
+        .find_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .expect("expected a reconciliation fill");
+
+    assert_eq!(fill.last_qty, Quantity::from("1"));
+    assert_eq!(fill.last_px, Price::from("15000.0"));
+}
+
+#[rstest]
+#[case::no_positive_price("1", "10000.0", "2", dec!(25000), true, None)]
+#[case::above_max("100", "50000.0", "101", dec!(50499), true, None)]
+#[case::max_matches("100", "50000.0", "101", dec!(50475), true, Some(Price::from("1000000.0")))]
+#[case::max_matches_without_exact_price("1000", "50000.0", "1001", dec!(50051), true, Some(Price::from("1000000.0")))]
+#[case::below_min("1000000", "50000.0", "1000001", dec!(47000), true, None)]
+#[case::without_price_cap("1000000", "50000.0", "1000010", dec!(50001), false, Some(Price::max(1)))]
+#[case::unrepresentable_size("1.4", "10000.0", "2", dec!(12000), true, None)]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_position_check_inverse_accumulation_checks_price_bounds(
+    #[case] cached_qty: &str,
+    #[case] cached_px: &str,
+    #[case] venue_qty: &str,
+    #[case] venue_avg_px: Decimal,
+    #[case] has_price_cap: bool,
+    #[case] expected_px: Option<Price>,
+) {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: DurationNanos::ZERO,
+        ..Default::default()
+    };
+
+    let mut ctx = TestContext::with_config(config);
+    let mut instrument = btcusd_bybit();
+    instrument.max_price = has_price_cap.then(|| Price::from("1000000.0"));
+    instrument.min_price = Some(Price::from("1.0"));
+    let instrument = InstrumentAny::CryptoPerpetual(instrument);
+    let instrument_id = instrument.id();
+    let position_id = PositionId::from("P-INVERSE-UNREACHABLE");
+    let position = create_test_position(
+        &instrument,
+        position_id,
+        OrderSide::Buy,
+        cached_qty,
+        cached_px,
+    );
+
+    let venue_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from(venue_qty),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(venue_avg_px),
+    );
+
+    ctx.add_instrument(instrument);
+    ctx.add_position(&position);
+
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![venue_report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    let fills: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((fill.last_qty, fill.last_px)),
+            _ => None,
+        })
+        .collect();
+
+    let expected = expected_px.map(|px| {
+        let qty = Quantity::from(venue_qty).as_decimal() - Quantity::from(cached_qty).as_decimal();
+        (Quantity::from_decimal_dp(qty, 0).unwrap(), px)
+    });
+
+    assert_eq!(fills, expected.as_slice());
+    let cache = ctx.cache.borrow();
+    let position = cache.position(&position_id).expect("position must remain");
+    assert_eq!(
+        position.signed_decimal_qty(),
+        Quantity::from(cached_qty).as_decimal()
+    );
+    assert_eq!(position.avg_px_open, Price::from(cached_px).as_decimal());
+}
+
+#[rstest]
+#[case::reachable("50", OrderSide::Buy, "150", dec!(20000), Some(Price::from("40000.0")))]
+#[case::unreachable("50", OrderSide::Buy, "150", dec!(25000), None)]
+#[case::opposing_legs("100", OrderSide::Sell, "51", dec!(38000), None)]
+#[case::opposing_legs_net_flat("50", OrderSide::Sell, "1", dec!(38000), None)]
+#[tokio::test]
+async fn test_position_check_inverse_accumulation_uses_all_cached_open_costs(
+    #[case] first_qty: &str,
+    #[case] second_side: OrderSide,
+    #[case] venue_qty: &str,
+    #[case] venue_avg_px: Decimal,
+    #[case] expected_fill_px: Option<Price>,
+) {
+    let config = ExecutionManagerConfig {
+        position_check_threshold_ns: DurationNanos::ZERO,
+        ..Default::default()
+    };
+
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument2();
+    let instrument_id = instrument.id();
+
+    let (first_px, second_px) = if second_side == OrderSide::Sell {
+        ("50000.0", "25000.0")
+    } else {
+        ("10000.0", "40000.0")
+    };
+
+    let first = create_test_position(
+        &instrument,
+        PositionId::from("P-INVERSE-FIRST"),
+        OrderSide::Buy,
+        first_qty,
+        first_px,
+    );
+    let second = create_test_position(
+        &instrument,
+        PositionId::from("P-INVERSE-SECOND"),
+        second_side,
+        "50",
+        second_px,
+    );
+    ctx.add_instrument(instrument);
+    ctx.add_position(&first);
+    ctx.add_position(&second);
+
+    let venue_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from(venue_qty),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(venue_avg_px),
+    );
+
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![venue_report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    let fills: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((fill.last_qty, fill.last_px)),
+            _ => None,
+        })
+        .collect();
+
+    let expected_fill = expected_fill_px.map(|px| (Quantity::from("50"), px));
+    assert_eq!(fills, expected_fill.as_slice());
+}
+
+#[tokio::test]
+async fn test_reconcile_hedge_unreachable_inverse_avg_px_books_no_fill() {
+    let config = ExecutionManagerConfig {
+        generate_missing_orders: true,
+        ..Default::default()
+    };
+
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument2();
+    let instrument_id = instrument.id();
+    let position_id = PositionId::from("P-HEDGE-INVERSE-UNREACHABLE");
+    let position = create_test_position(&instrument, position_id, OrderSide::Buy, "1", "10000.0");
+    ctx.add_instrument(instrument);
+    ctx.add_position(&position);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+
+    let position_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from("2"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        Some(position_id),
+        Some(dec!(25000.0)),
+    );
+
+    mass_status.add_position_reports(vec![position_report]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+
+    assert!(
+        !result
+            .events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Filled(_))),
+        "an unreachable inverse average must not book a fill, was {:?}",
+        result.events,
+    );
+    let cache = ctx.cache.borrow();
+    let position = cache.position(&position_id).expect("position must remain");
+    assert_eq!(position.signed_decimal_qty(), dec!(1));
+    assert_eq!(position.avg_px_open, dec!(10000.0));
 }
 
 #[rstest]

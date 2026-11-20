@@ -1126,8 +1126,9 @@ applying them would misstate a position, for example when they miss balance chan
 Pass the venue's average entry price through unrounded as `avg_px_open`, and state how
 reconciliation may use it:
 
-- Nautilus computes a quantity-weighted average of opening fills. Reductions do not change it, and reversal
-  resets it. If the venue average follows those rules, keep the defaults.
+- Nautilus computes a quantity-weighted average of opening fills. For non-premium inverse instruments
+  it uses the harmonic mean. Reductions preserve the average and reversals reset it. Keep the defaults
+  when the venue follows those rules.
 - Call `with_avg_px_open_reconciliation(AvgPxReconciliation::OpeningOnly)` when the venue computes
   the average another way, such as over FIFO lots. Reconciliation then uses it only to open a
   position from flat and never compares it with the cached average.

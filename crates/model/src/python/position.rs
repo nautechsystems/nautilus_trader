@@ -54,12 +54,14 @@ impl Position {
     /// coefficient and a maximum scale of 28. Input conversions reject precision loss and overflow;
     /// derived products, cost sums, division, and proportional intermediates use its finite precision.
     ///
-    /// - Cost accumulators preserve the cost basis without reusing rounded average prices.
+    /// - Non-premium inverse positions keep opening cost at the open quantity times the harmonic
+    ///   mean. Other cost accumulators preserve the basis independently of rounded average prices.
     /// - Partial reductions retain unallocated cost; the final reduction consumes it.
     /// - A sub-Money PnL remainder preserves fractional amounts between updates.
     ///
     /// `Money` results round midpoint to even at their native fixed-point scale. `realized_return`
-    /// is a floating-point analytics projection and does not feed accounting.
+    /// is a floating-point analytics projection. For non-premium inverse positions, it divides
+    /// gross closing PnL by the entry notional consumed by those closes, excluding fees and funding.
     #[new]
     fn py_new(py: Python, instrument: Py<PyAny>, fill: OrderFilled) -> PyResult<Self> {
         let instrument_any = pyobject_to_instrument_any(py, instrument)?;
@@ -526,11 +528,14 @@ impl Position {
 /// Replays position legs onto a hypothetical NETTING position in `ts_opened`
 /// order, returning `(net_signed_qty, net_avg_px_open)`.
 ///
-/// Each leg is `(signed_qty, avg_px_open, ts_opened_ns)`. Rules follow
-/// `Position.apply`:
-/// - Same-side legs produce a quantity-weighted average open price.
+/// Each leg is `(signed_qty, avg_px_open, ts_opened_ns)`.
+/// - Same-side legs produce a quantity-weighted arithmetic average open price.
 /// - Opposite-side legs partial-close at the existing average.
 /// - A leg that crosses zero makes the residual take that leg's price.
+///
+/// `Position.apply` averages non-premium inverse positions by base currency value. For those
+/// instruments, the folded average open price can differ from a NETTING position built from the
+/// same fills.
 ///
 /// Zero-quantity legs are skipped. Sort is stable on `ts_opened`; the caller
 /// orders ties (e.g. by `position_id`).

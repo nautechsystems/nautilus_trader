@@ -60,15 +60,15 @@ use nautilus_execution::{
     engine::ExecutionEngine,
     reconciliation::{
         RECONCILIATION_ORDER_TAG, ReconciliationResult as AdjustedReports,
-        calculate_reconciliation_price, create_inferred_fill_for_qty,
-        create_reconciliation_rejected, create_reconciliation_triggered,
-        fill_precedes_snapshot_reconciled_position,
+        bound_inverse_reconciliation_price, calculate_reconciliation_price,
+        create_inferred_fill_for_qty, create_reconciliation_rejected,
+        create_reconciliation_triggered, fill_precedes_snapshot_reconciled_position,
         generate_external_order_status_events_with_commission,
         generate_reconciliation_order_pre_fill_events,
         generate_reconciliation_order_snapshot_events_with_commission,
         incremental_inferred_fill_price_and_liquidity, inferred_fill_price_and_liquidity,
-        initialize_external_order_price, position_prices_match, preserve_order_amendment,
-        process_mass_status_for_reconciliation,
+        initialize_external_order_price, inverse_reconciliation_price_ceiling,
+        position_prices_match, preserve_order_amendment, process_mass_status_for_reconciliation,
         process_mass_status_for_reconciliation_without_synthetic_reports,
         reconcile_order_report_with_commission, should_reconciliation_update,
     },
@@ -114,7 +114,7 @@ use super::{
         distinct_position_reports, has_active_inferred_fill, is_exact_order_match,
         order_report_has_missing_fills, position_avg_px, position_crosses_zero,
         position_qty_aggregates, resolve_inferred_fill_commission, responsible_client_ids,
-        should_project_fill, sort_reconciliation_events,
+        should_project_fill, sort_reconciliation_events, weighted_entry_px,
     },
     submission::{SubmissionRecoveryExhausted, SubmissionRecoveryPolicy, SubmissionRecoverySource},
 };
@@ -1632,6 +1632,12 @@ impl ExecutionManager {
         cached_positions: &[Position],
         reports: &[PositionStatusReport],
     ) -> bool {
+        let divides_notional_by_price = cached_positions.first().is_some_and(|position| {
+            position
+                .instrument_class
+                .divides_notional_by_price(position.is_inverse)
+        });
+
         for negative in [false, true] {
             let reports: Vec<_> = reports
                 .iter()
@@ -1649,14 +1655,14 @@ impl ExecutionManager {
                 continue;
             }
 
-            let Some((venue_value, venue_qty)) = reports.iter().try_fold(
-                (Decimal::ZERO, Decimal::ZERO),
-                |(value, quantity), report| {
-                    let price = report.avg_px_open.filter(|price| *price > Decimal::ZERO)?;
-                    let qty = report.signed_decimal_qty.abs();
-                    Some((value + price * qty, quantity + qty))
-                },
-            ) else {
+            let entries = reports.iter().map(|report| {
+                let price = report.avg_px_open.filter(|price| *price > Decimal::ZERO)?;
+                Some((report.signed_decimal_qty.abs(), price))
+            });
+
+            let Some((venue_qty, venue_avg_px)) =
+                weighted_entry_px(entries, divides_notional_by_price)
+            else {
                 return false;
             };
 
@@ -1681,7 +1687,7 @@ impl ExecutionManager {
                 continue;
             }
 
-            let Some(cached_avg_px) = position_avg_px(positions) else {
+            let Some(cached_avg_px) = position_avg_px(positions, divides_notional_by_price) else {
                 return false;
             };
 
@@ -1691,12 +1697,7 @@ impl ExecutionManager {
                 .filter_map(|report| report.avg_px_open_precision)
                 .min();
 
-            if !position_prices_match(
-                cached_avg_px,
-                venue_value / venue_qty,
-                None,
-                venue_precision,
-            ) {
+            if !position_prices_match(cached_avg_px, venue_avg_px, None, venue_precision) {
                 return false;
             }
         }
@@ -3895,7 +3896,21 @@ impl ExecutionManager {
         let venue_signed_qty = comparison.venue_signed_qty;
         let venue_report = comparison.venue_report.as_ref();
 
-        let cached_avg_px = position_avg_px(cached_positions);
+        let divides_notional_by_price = instrument
+            .instrument_class()
+            .divides_notional_by_price(instrument.is_inverse());
+
+        if divides_notional_by_price
+            && inverse_accumulation_has_opposing_legs(
+                cached_positions.iter(),
+                cached_signed_qty,
+                venue_report,
+            )
+        {
+            return None;
+        }
+
+        let cached_avg_px = position_avg_px(cached_positions, divides_notional_by_price);
         let venue_avg_px = venue_report.and_then(|r| r.avg_px_open);
         let venue_position_id = venue_report.and_then(|report| report.venue_position_id);
         let venue_ts_last = venue_report.map_or(ts_now, |r| r.ts_last);
@@ -3936,42 +3951,36 @@ impl ExecutionManager {
                 OrderSide::Sell
             };
 
-            let reconciliation_px = calculate_reconciliation_price(
+            let fill_px = reconciliation_fill_px(
+                instrument,
                 cached_signed_qty,
                 cached_avg_px,
                 venue_signed_qty,
                 venue_avg_px,
                 venue_report.map_or_default(|report| report.avg_px_open_reconciliation),
                 venue_report.and_then(|report| report.avg_px_open_precision),
+            )?;
+            let quantity =
+                Quantity::from_decimal_dp(qty_diff.abs(), instrument.size_precision()).ok()?;
+            let order_report = create_position_reconciliation_report(
+                instrument,
+                account_id,
+                order_side,
+                quantity,
+                fill_px,
+                venue_position_id,
+                None,
+                ts_now,
+                venue_ts_last,
             );
 
-            reconciliation_px
-                .or(venue_avg_px)
-                .or(cached_avg_px)
-                .and_then(|fill_px| {
-                    let quantity =
-                        Quantity::from_decimal_dp(qty_diff.abs(), instrument.size_precision())
-                            .ok()?;
-                    let order_report = create_position_reconciliation_report(
-                        instrument,
-                        account_id,
-                        order_side,
-                        quantity,
-                        fill_px,
-                        venue_position_id,
-                        None,
-                        ts_now,
-                        venue_ts_last,
-                    );
+            log::info!(
+                color = LogColor::Blue as u8;
+                "Generating synthetic fill for position reconciliation {instrument_id}: side={order_side:?}, qty={}, px={fill_px}", qty_diff.abs(),
+            );
 
-                    log::info!(
-                        color = LogColor::Blue as u8;
-                        "Generating synthetic fill for position reconciliation {instrument_id}: side={order_side:?}, qty={}, px={fill_px}", qty_diff.abs(),
-                    );
-
-                    let events = self.handle_synthetic_order(&order_report, account_id, instrument);
-                    Some(events)
-                })
+            let events = self.handle_synthetic_order(&order_report, account_id, instrument);
+            Some(events)
         }
     }
 
@@ -4251,6 +4260,9 @@ impl ExecutionManager {
         log::debug!("Reconciling NET position for {instrument_id}");
 
         let instrument = self.get_instrument(&instrument_id)?;
+        let divides_notional_by_price = instrument
+            .instrument_class()
+            .divides_notional_by_price(instrument.is_inverse());
 
         let (cached_signed_qty, cached_avg_px) = {
             let cache = self.cache.borrow();
@@ -4260,7 +4272,21 @@ impl ExecutionManager {
                 .iter()
                 .map(|position| position.signed_decimal_qty())
                 .sum::<Decimal>();
-            let cached_avg_px = position_avg_px(positions.iter().map(|position| &**position));
+
+            if divides_notional_by_price
+                && inverse_accumulation_has_opposing_legs(
+                    positions.iter().map(|position| &**position),
+                    cached_signed_qty,
+                    Some(report),
+                )
+            {
+                return None;
+            }
+
+            let cached_avg_px = position_avg_px(
+                positions.iter().map(|position| &**position),
+                divides_notional_by_price,
+            );
 
             (cached_signed_qty, cached_avg_px)
         };
@@ -4387,18 +4413,15 @@ impl ExecutionManager {
             OrderSide::Sell
         };
 
-        let reconciliation_px = calculate_reconciliation_price(
+        let fill_px = reconciliation_fill_px(
+            instrument,
             cached_signed_qty,
             current_avg_px,
             venue_signed_qty,
             report.avg_px_open,
             report.avg_px_open_reconciliation,
             report.avg_px_open_precision,
-        );
-
-        let fill_px = reconciliation_px
-            .or(report.avg_px_open)
-            .or(current_avg_px)?;
+        )?;
 
         let ts_now = self.clock.borrow().timestamp_ns();
         let order_report = create_position_reconciliation_report(
@@ -5284,6 +5307,91 @@ impl ExecutionManager {
 
         Some((event, fill_key))
     }
+}
+
+fn reconciliation_fill_px(
+    instrument: &InstrumentAny,
+    cached_signed_qty: Decimal,
+    cached_avg_px: Option<Decimal>,
+    venue_signed_qty: Decimal,
+    venue_avg_px: Option<Decimal>,
+    avg_px_reconciliation: AvgPxReconciliation,
+    avg_px_precision: Option<u8>,
+) -> Option<Decimal> {
+    let divides_notional_by_price = instrument
+        .instrument_class()
+        .divides_notional_by_price(instrument.is_inverse());
+
+    let reconciliation_px = calculate_reconciliation_price(
+        cached_signed_qty,
+        cached_avg_px,
+        venue_signed_qty,
+        venue_avg_px,
+        avg_px_reconciliation,
+        avg_px_precision,
+        divides_notional_by_price,
+    );
+
+    if divides_notional_by_price
+        && avg_px_reconciliation == AvgPxReconciliation::Match
+        && same_side_accumulation(cached_signed_qty, venue_signed_qty)
+        && let Some(cached_px) = cached_avg_px
+        && let Some(venue_px) = venue_avg_px
+    {
+        let cached_qty = cached_signed_qty.abs();
+        let added_qty = venue_signed_qty.abs() - cached_qty;
+        let fill_qty = Quantity::from_decimal_dp(added_qty, instrument.size_precision()).ok()?;
+        if fill_qty.as_decimal() != added_qty {
+            return None;
+        }
+
+        let fill_px = (cached_px > Decimal::ZERO && venue_px > Decimal::ZERO)
+            .then(|| {
+                reconciliation_px
+                    .unwrap_or_else(|| inverse_reconciliation_price_ceiling(instrument))
+            })
+            .and_then(|px| bound_inverse_reconciliation_price(px, instrument))
+            .filter(|&px| {
+                let entries = [Some((cached_qty, cached_px)), Some((added_qty, px))];
+                weighted_entry_px(entries.into_iter(), true).is_some_and(|(_, projected_px)| {
+                    position_prices_match(projected_px, venue_px, None, avg_px_precision)
+                })
+            });
+
+        if fill_px.is_none() {
+            let instrument_id = instrument.id();
+            log::warn!(
+                "Cannot reconcile {instrument_id}: no fill price moves the cached position {cached_signed_qty} @ {cached_px} to the venue position {venue_signed_qty} @ {venue_px}"
+            );
+        }
+
+        return fill_px;
+    }
+
+    reconciliation_px.or(venue_avg_px).or(cached_avg_px)
+}
+
+fn inverse_accumulation_has_opposing_legs<'a>(
+    mut positions: impl Iterator<Item = &'a Position>,
+    cached_signed_qty: Decimal,
+    report: Option<&PositionStatusReport>,
+) -> bool {
+    report.is_some_and(|report| {
+        report.avg_px_open.is_some()
+            && report.avg_px_open_reconciliation == AvgPxReconciliation::Match
+            && (same_side_accumulation(cached_signed_qty, report.signed_decimal_qty)
+                || (cached_signed_qty.is_zero() && !report.signed_decimal_qty.is_zero()))
+            && positions.any(|position| {
+                position.signed_decimal_qty().is_sign_negative()
+                    != cached_signed_qty.is_sign_negative()
+            })
+    })
+}
+
+fn same_side_accumulation(cached_signed_qty: Decimal, venue_signed_qty: Decimal) -> bool {
+    !cached_signed_qty.is_zero()
+        && cached_signed_qty.is_sign_negative() == venue_signed_qty.is_sign_negative()
+        && venue_signed_qty.abs() > cached_signed_qty.abs()
 }
 
 fn format_log_samples<T>(items: &[T], format_item: impl Fn(&T) -> String) -> String {

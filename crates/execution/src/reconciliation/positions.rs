@@ -33,7 +33,7 @@ use nautilus_model::{
     orders::Order,
     position::Position,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{Money, Quantity},
+    types::{Money, Price, Quantity},
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 
@@ -88,6 +88,9 @@ fn process_mass_status_for_reconciliation_inner(
     let instrument_id = instrument.id();
     let account_id = mass_status.account_id;
     let tol = tolerance.unwrap_or(DEFAULT_TOLERANCE);
+    let divides_notional_by_price = instrument
+        .instrument_class()
+        .divides_notional_by_price(instrument.is_inverse());
 
     let position_reports = mass_status.position_reports();
 
@@ -99,7 +102,8 @@ fn process_mass_status_for_reconciliation_inner(
         }
     };
 
-    let extracted = extract_fills_for_instrument(mass_status, instrument_id);
+    let extracted =
+        extract_fills_for_instrument(mass_status, instrument_id, divides_notional_by_price);
     let fill_snapshots = extracted.snapshots;
     let mut order_map = extracted.orders;
     let mut fill_map = extracted.fills;
@@ -115,15 +119,42 @@ fn process_mass_status_for_reconciliation_inner(
         });
     }
 
-    let result = adjust_fills_for_partial_window(&fill_snapshots, &venue_position, tol);
+    let mut result = adjust_fills_for_partial_window(
+        &fill_snapshots,
+        &venue_position,
+        tol,
+        divides_notional_by_price,
+        Some(inverse_reconciliation_price_ceiling(instrument)),
+    );
+
+    if generate_synthetic_reports
+        && divides_notional_by_price
+        && venue_position.avg_px_reconciliation == AvgPxReconciliation::Match
+    {
+        let opening = match &mut result {
+            FillAdjustmentResult::AddSyntheticOpening {
+                synthetic_fill,
+                existing_fills,
+            } => Some((synthetic_fill, existing_fills.as_slice())),
+            FillAdjustmentResult::ReplaceCurrentLifecycle { synthetic_fill } => {
+                Some((synthetic_fill, &[][..]))
+            }
+            _ => None,
+        };
+
+        if let Some((fill, fills)) = opening
+            && !match_inverse_opening_fill(fill, fills, &venue_position, tol, instrument)
+        {
+            result = FillAdjustmentResult::NoAdjustment;
+        }
+    }
 
     match result {
         FillAdjustmentResult::NoAdjustment => {}
 
-        FillAdjustmentResult::AddSyntheticOpening {
-            synthetic_fill,
-            existing_fills: _,
-        } if generate_synthetic_reports => {
+        FillAdjustmentResult::AddSyntheticOpening { synthetic_fill, .. }
+            if generate_synthetic_reports =>
+        {
             let venue_order_id = create_synthetic_venue_order_id(&synthetic_fill, instrument_id);
 
             let order = create_synthetic_order_report(
@@ -225,6 +256,7 @@ fn process_mass_status_for_reconciliation_inner(
 ///
 /// This function analyzes fills and determines if adjustments are needed when the reconciliation
 /// window doesn't capture the complete position history (missing opening fills).
+/// `divides_notional_by_price` selects inverse averaging, as in [`simulate_position`].
 ///
 /// # Returns
 ///
@@ -234,35 +266,41 @@ pub(super) fn adjust_fills_for_partial_window(
     fills: &[FillSnapshot],
     venue_position: &VenuePositionSnapshot,
     tolerance: Decimal,
+    divides_notional_by_price: bool,
+    max_px: Option<Decimal>,
 ) -> FillAdjustmentResult {
-    let Some(first_fill) = fills.first() else {
-        return FillAdjustmentResult::NoAdjustment;
-    };
-
-    if venue_position.qty == Decimal::ZERO {
+    if fills.is_empty() || venue_position.qty == Decimal::ZERO {
         return FillAdjustmentResult::NoAdjustment;
     }
 
     let zero_crossings = detect_zero_crossings(fills);
-    let venue_qty_signed = venue_position.signed_qty();
 
     // Focus on the current lifecycle after the last zero-crossing
     if let Some(&last_zero_crossing_ts) = zero_crossings.last() {
         // Find the last zero-crossing that lands on FLAT (qty==0)
         // This separates lifecycles; flips within a lifecycle don't count
-        let mut last_flat_crossing_ts = None;
+        let mut last_flat_crossing = None;
         let mut running_qty = Decimal::ZERO;
-
-        for fill in fills {
+        for (index, fill) in fills.iter().enumerate() {
             let prev_qty = running_qty;
             running_qty += Decimal::from(fill.direction()) * fill.qty;
-
             if prev_qty != Decimal::ZERO && running_qty == Decimal::ZERO {
-                last_flat_crossing_ts = Some(fill.ts_event);
+                last_flat_crossing = Some(index);
             }
         }
 
-        let lifecycle_boundary_ts = last_flat_crossing_ts.unwrap_or(last_zero_crossing_ts);
+        let lifecycle_boundary_ts =
+            last_flat_crossing.map_or(last_zero_crossing_ts, |index| fills[index].ts_event);
+
+        // A timestamp cutoff would drop a reopening fill tied with a flat close
+        if divides_notional_by_price
+            && let Some(index) = last_flat_crossing
+            && fills
+                .get(index + 1)
+                .is_some_and(|fill| fill.ts_event == lifecycle_boundary_ts)
+        {
+            return FillAdjustmentResult::NoAdjustment;
+        }
 
         // Get fills from current lifecycle (after lifecycle boundary)
         let current_lifecycle_fills: Vec<FillSnapshot> = fills
@@ -275,7 +313,8 @@ pub(super) fn adjust_fills_for_partial_window(
             return FillAdjustmentResult::NoAdjustment;
         };
 
-        let (current_qty, current_value) = simulate_position(&current_lifecycle_fills);
+        let (current_qty, current_value) =
+            simulate_position(&current_lifecycle_fills, divides_notional_by_price);
 
         if check_position_match(current_qty, current_value, venue_position, tolerance) {
             // Current lifecycle matches - filter out old lifecycles
@@ -297,8 +336,7 @@ pub(super) fn adjust_fills_for_partial_window(
         return FillAdjustmentResult::ReplaceCurrentLifecycle { synthetic_fill };
     }
 
-    let (oldest_qty, oldest_value) = simulate_position(fills);
-
+    let (oldest_qty, oldest_value) = simulate_position(fills, divides_notional_by_price);
     if check_position_match(oldest_qty, oldest_value, venue_position, tolerance) {
         return FillAdjustmentResult::NoAdjustment;
     }
@@ -310,35 +348,17 @@ pub(super) fn adjust_fills_for_partial_window(
         Some(oldest_value / oldest_qty.abs())
     };
 
-    let Some(opening_px) = synthetic_opening_price(oldest_qty, oldest_avg_px, venue_position)
-    else {
+    let Some(synthetic_fill) = synthetic_opening_fill(
+        fills,
+        oldest_qty,
+        oldest_avg_px,
+        venue_position,
+        tolerance,
+        divides_notional_by_price,
+        max_px,
+    ) else {
         return FillAdjustmentResult::NoAdjustment;
     };
-
-    let opening_qty = if oldest_qty == Decimal::ZERO {
-        venue_qty_signed
-    } else {
-        // Work backwards: venue = opening + current fills
-        venue_qty_signed - oldest_qty
-    };
-
-    if opening_qty.abs() == Decimal::ZERO {
-        return FillAdjustmentResult::NoAdjustment;
-    }
-
-    let synthetic_side = if opening_qty > Decimal::ZERO {
-        OrderSide::Buy
-    } else {
-        OrderSide::Sell
-    };
-
-    let synthetic_fill = FillSnapshot::new(
-        first_fill.venue_order_id,
-        synthetic_side,
-        opening_qty.abs(),
-        opening_px,
-        first_fill.ts_event.saturating_sub(1),
-    );
 
     FillAdjustmentResult::AddSyntheticOpening {
         synthetic_fill,
@@ -346,14 +366,54 @@ pub(super) fn adjust_fills_for_partial_window(
     }
 }
 
-fn synthetic_opening_price(
+fn synthetic_opening_fill(
+    fills: &[FillSnapshot],
     window_qty: Decimal,
     window_avg_px: Option<Decimal>,
     venue_position: &VenuePositionSnapshot,
-) -> Option<Decimal> {
-    match venue_position.avg_px_reconciliation {
-        // The synthetic fill opens the position before the window's fills
-        AvgPxReconciliation::OpeningOnly => Some(venue_position.avg_px),
+    tolerance: Decimal,
+    divides_notional_by_price: bool,
+    max_px: Option<Decimal>,
+) -> Option<FillSnapshot> {
+    let opening_qty = venue_position.signed_qty() - window_qty;
+    if opening_qty.is_zero() {
+        return None;
+    }
+
+    let first_fill = fills.first()?;
+
+    let side = if opening_qty > Decimal::ZERO {
+        OrderSide::Buy
+    } else {
+        OrderSide::Sell
+    };
+
+    let mut fill = FillSnapshot::new(
+        first_fill.venue_order_id,
+        side,
+        opening_qty.abs(),
+        window_avg_px.unwrap_or(venue_position.avg_px),
+        first_fill.ts_event.saturating_sub(1),
+    );
+
+    fill.px = match venue_position.avg_px_reconciliation {
+        AvgPxReconciliation::OpeningOnly => venue_position.avg_px,
+        AvgPxReconciliation::Match if divides_notional_by_price => {
+            if window_qty.is_sign_negative() == venue_position.signed_qty().is_sign_negative()
+                && let Some(window_avg_px) = window_avg_px
+                && keeps_current_avg_px(
+                    window_avg_px,
+                    Some(venue_position.avg_px),
+                    AvgPxReconciliation::Match,
+                    venue_position.avg_px_precision,
+                )
+                && inverse_opening_matches(&fill, fills, venue_position, tolerance)
+            {
+                return Some(fill);
+            }
+
+            inverse_synthetic_opening_price(fills, venue_position, max_px)?
+        }
         AvgPxReconciliation::Match => calculate_reconciliation_price(
             window_qty,
             window_avg_px,
@@ -361,8 +421,84 @@ fn synthetic_opening_price(
             Some(venue_position.avg_px),
             AvgPxReconciliation::Match,
             venue_position.avg_px_precision,
-        ),
+            false,
+        )?,
+    };
+
+    Some(fill)
+}
+
+fn match_inverse_opening_fill(
+    fill: &mut FillSnapshot,
+    existing_fills: &[FillSnapshot],
+    venue_position: &VenuePositionSnapshot,
+    tolerance: Decimal,
+    instrument: &InstrumentAny,
+) -> bool {
+    let Ok(quantity) = Quantity::from_decimal_dp(fill.qty, instrument.size_precision()) else {
+        return false;
+    };
+
+    if quantity.as_decimal() != fill.qty {
+        return false;
     }
+
+    let Some(px) = bound_inverse_reconciliation_price(fill.px, instrument) else {
+        return false;
+    };
+
+    fill.px = px;
+
+    inverse_opening_matches(fill, existing_fills, venue_position, tolerance)
+}
+
+fn inverse_opening_matches(
+    opening: &FillSnapshot,
+    fills: &[FillSnapshot],
+    venue_position: &VenuePositionSnapshot,
+    tolerance: Decimal,
+) -> bool {
+    let fills = std::iter::once(opening).chain(fills);
+    let (qty, value) = simulate_position(fills, true);
+    check_position_match(qty, value, venue_position, tolerance)
+}
+
+fn inverse_synthetic_opening_price(
+    fills: &[FillSnapshot],
+    venue_position: &VenuePositionSnapshot,
+    max_px: Option<Decimal>,
+) -> Option<Decimal> {
+    let mut qty = venue_position.signed_qty();
+    let mut avg_px = Some(venue_position.avg_px);
+
+    // Undo the fills in replay order backwards, since reductions retain the prior average
+    for fill in fills.iter().rev() {
+        let fill_qty = Decimal::from(fill.direction()) * fill.qty;
+        let prior_qty = qty - fill_qty;
+        if prior_qty.is_zero() || prior_qty.is_sign_negative() != qty.is_sign_negative() {
+            // Closing or flipping erases the average of the earlier position
+            return None;
+        }
+
+        if fill_qty.is_sign_negative() == qty.is_sign_negative() {
+            // The known fill and the earlier position together produce the later average
+            avg_px = avg_px.and_then(|avg_px| {
+                calculate_reconciliation_price(
+                    fill_qty,
+                    Some(fill.px),
+                    qty,
+                    Some(avg_px),
+                    AvgPxReconciliation::Match,
+                    None,
+                    true,
+                )
+            });
+        }
+
+        qty = prior_qty;
+    }
+
+    avg_px.filter(|px| *px > Decimal::ZERO).or(max_px)
 }
 
 /// Check if a cached position matches the venue position report within tolerance.
@@ -476,6 +612,37 @@ pub(super) fn cap_price_at_instrument_max(px: Decimal, instrument: &InstrumentAn
         RoundingStrategy::ToZero,
     );
     px.min(cap)
+}
+
+/// Returns the maximum synthetic fill price for an inverse instrument.
+#[must_use]
+pub fn inverse_reconciliation_price_ceiling(instrument: &InstrumentAny) -> Decimal {
+    instrument
+        .max_price()
+        .unwrap_or_else(|| Price::max(instrument.price_precision()))
+        .as_decimal()
+}
+
+/// Returns the representable inverse fill price within the instrument's price bounds.
+///
+/// Check the resulting entry average when using the bounded price for reconciliation.
+#[must_use]
+pub fn bound_inverse_reconciliation_price(
+    px: Decimal,
+    instrument: &InstrumentAny,
+) -> Option<Decimal> {
+    if px <= Decimal::ZERO {
+        return None;
+    }
+
+    let min_px = instrument.min_price().map(|min| min.as_decimal());
+    let px = min_px.map_or(px, |min| px.max(min));
+    let px = cap_price_at_instrument_max(
+        px.min(inverse_reconciliation_price_ceiling(instrument)),
+        instrument,
+    );
+    let px = reconciliation_price(px, instrument).ok()?.as_decimal();
+    (px > Decimal::ZERO && min_px.is_none_or(|min| px >= min)).then_some(px)
 }
 
 /// Create a synthetic `OrderStatusReport` from a `FillSnapshot`.
@@ -632,6 +799,7 @@ struct ExtractedFills {
 fn extract_fills_for_instrument(
     mass_status: &ExecutionMassStatus,
     instrument_id: InstrumentId,
+    divides_notional_by_price: bool,
 ) -> ExtractedFills {
     let mut snapshots = Vec::new();
     let mut order_map = IndexMap::new();
@@ -675,8 +843,19 @@ fn extract_fills_for_instrument(
         }
     }
 
-    // Sort chronologically
-    snapshots.sort_by_key(|f| f.ts_event);
+    if divides_notional_by_price {
+        // Startup queues reported orders first and then orphan fills, retaining ties by queue order
+        snapshots.sort_by_key(|fill| {
+            (
+                fill.ts_event,
+                order_map
+                    .get_index_of(&fill.venue_order_id)
+                    .unwrap_or(usize::MAX),
+            )
+        });
+    } else {
+        snapshots.sort_by_key(|fill| fill.ts_event);
+    }
 
     ExtractedFills {
         snapshots,
@@ -687,11 +866,17 @@ fn extract_fills_for_instrument(
 
 /// Simulate position from chronologically ordered fills using netting logic.
 ///
+/// The value is the open quantity times its average price. When `divides_notional_by_price`, fills
+/// average by base currency value, as a non-premium inverse [`Position`] does.
+///
 /// # Returns
 ///
 /// Returns a tuple of (quantity, value) after applying all fills.
 #[must_use]
-pub(super) fn simulate_position(fills: &[FillSnapshot]) -> (Decimal, Decimal) {
+pub(super) fn simulate_position<'a>(
+    fills: impl IntoIterator<Item = &'a FillSnapshot>,
+    divides_notional_by_price: bool,
+) -> (Decimal, Decimal) {
     let mut qty = Decimal::ZERO;
     let mut value = Decimal::ZERO;
 
@@ -702,29 +887,28 @@ pub(super) fn simulate_position(fills: &[FillSnapshot]) -> (Decimal, Decimal) {
             fill.qty,
         );
         let direction = Decimal::from(fill.direction());
-        let new_qty = qty + (direction * fill.qty);
-
-        // Check if we're accumulating or crossing zero (flip/close)
+        let prior_qty = qty.abs();
         if (qty >= Decimal::ZERO && direction > Decimal::ZERO)
             || (qty <= Decimal::ZERO && direction < Decimal::ZERO)
         {
-            // Accumulating in same direction
-            value += fill.qty * fill.px;
-            qty = new_qty;
-        } else {
-            // Closing or flipping position
-            if qty.abs() >= fill.qty {
-                // Partial close - maintain average price by reducing value proportionally
-                let close_ratio = fill.qty / qty.abs();
-                value *= Decimal::ONE - close_ratio;
-                qty = new_qty;
+            if divides_notional_by_price && value > Decimal::ZERO && fill.px > Decimal::ZERO {
+                let total_qty = prior_qty + fill.qty;
+                let avg_px = value / prior_qty;
+                let new_avg_px =
+                    total_qty * avg_px * fill.px / (prior_qty * fill.px + fill.qty * avg_px);
+                value = total_qty * new_avg_px;
             } else {
-                // Close and flip - reset value to opening position
-                let remaining = fill.qty - qty.abs();
-                qty = direction * remaining;
-                value = remaining * fill.px;
+                value += fill.qty * fill.px;
             }
+        } else if prior_qty >= fill.qty {
+            let close_ratio = fill.qty / prior_qty;
+            value *= Decimal::ONE - close_ratio;
+        } else {
+            let remaining = fill.qty - prior_qty;
+            value = remaining * fill.px;
         }
+
+        qty += direction * fill.qty;
     }
 
     debug_assert!(
@@ -863,7 +1047,8 @@ pub fn position_prices_match(
 /// 2. Flat to position: `reconciliation_px` = `target_avg_px`
 /// 3. Position flip (sign change): `reconciliation_px` = `target_avg_px` (due to value reset in simulation)
 /// 4. Reduction: target average price by default (remaining entry average is unchanged)
-/// 5. Accumulation: weighted average formula by default
+/// 5. Accumulation: weighted average formula by default, weighted by base currency value
+///    (`qty / px`) when `divides_notional_by_price`, as a non-premium inverse [`Position`] averages
 pub fn calculate_reconciliation_price(
     current_position_qty: Decimal,
     current_position_avg_px: Option<Decimal>,
@@ -871,6 +1056,7 @@ pub fn calculate_reconciliation_price(
     target_position_avg_px: Option<Decimal>,
     target_avg_px_reconciliation: AvgPxReconciliation,
     target_avg_px_precision: Option<u8>,
+    divides_notional_by_price: bool,
 ) -> Option<Decimal> {
     let qty_diff = target_position_qty - current_position_qty;
 
@@ -926,14 +1112,25 @@ pub fn calculate_reconciliation_price(
         return Some(target_avg_px);
     }
 
-    // For accumulation, use weighted average formula
-    // Formula: (target_qty * target_avg_px) = (current_qty * current_avg_px) + (qty_diff * reconciliation_px)
-    let target_value = target_position_qty * target_avg_px;
-    let current_value = current_position_qty * current_avg_px;
-    let diff_value = target_value - current_value;
+    let reconciliation_px = if divides_notional_by_price {
+        // Formula: (target_qty / target_avg_px) = (current_qty / current_avg_px) + (qty_diff / reconciliation_px)
+        let target_value = target_position_qty.checked_mul(current_avg_px)?;
+        let current_value = current_position_qty.checked_mul(target_avg_px)?;
+        let base_value_diff = target_value.checked_sub(current_value)?;
+        qty_diff
+            .checked_mul(target_avg_px)?
+            .checked_mul(current_avg_px)?
+            .checked_div(base_value_diff)?
+    } else {
+        // For accumulation, use weighted average formula
+        // Formula: (target_qty * target_avg_px) = (current_qty * current_avg_px) + (qty_diff * reconciliation_px)
+        let target_value = target_position_qty * target_avg_px;
+        let current_value = current_position_qty * current_avg_px;
+        let diff_value = target_value - current_value;
 
-    // qty_diff is guaranteed non-zero by the early return above
-    let reconciliation_px = diff_value / qty_diff;
+        // qty_diff is guaranteed non-zero by the early return above
+        diff_value / qty_diff
+    };
 
     // Ensure price is positive
     if reconciliation_px > Decimal::ZERO {

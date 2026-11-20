@@ -75,8 +75,9 @@ pub use orders::{
 };
 pub(crate) use positions::fill_precedes_reconciled_position;
 pub use positions::{
-    calculate_reconciliation_price, check_position_reconciliation,
-    fill_precedes_snapshot_reconciled_position, position_prices_match,
+    bound_inverse_reconciliation_price, calculate_reconciliation_price,
+    check_position_reconciliation, fill_precedes_snapshot_reconciled_position,
+    inverse_reconciliation_price_ceiling, position_prices_match,
     process_mass_status_for_reconciliation,
     process_mass_status_for_reconciliation_without_synthetic_reports,
 };
