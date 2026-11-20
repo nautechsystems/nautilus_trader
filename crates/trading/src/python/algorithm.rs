@@ -1486,6 +1486,7 @@ impl ExecutionAlgorithmConfig {
         exec_algorithm_id=None,
         log_events=true,
         log_commands=true,
+        use_hyphens_in_client_order_ids=None,
         **_kwargs
     ))]
     fn py_new(
@@ -1493,6 +1494,7 @@ impl ExecutionAlgorithmConfig {
         exec_algorithm_id: Option<&Bound<'_, PyAny>>,
         log_events: bool,
         log_commands: bool,
+        use_hyphens_in_client_order_ids: Option<bool>,
         _kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
         let exec_algorithm_id = exec_algorithm_id
@@ -1510,6 +1512,7 @@ impl ExecutionAlgorithmConfig {
             exec_algorithm_id,
             log_events,
             log_commands,
+            use_hyphens_in_client_order_ids,
         })
     }
 
@@ -1526,6 +1529,11 @@ impl ExecutionAlgorithmConfig {
     #[getter]
     fn log_commands(&self) -> bool {
         self.log_commands
+    }
+
+    #[getter]
+    fn use_hyphens_in_client_order_ids(&self) -> Option<bool> {
+        self.use_hyphens_in_client_order_ids
     }
 }
 

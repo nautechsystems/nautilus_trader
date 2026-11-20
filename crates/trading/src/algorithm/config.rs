@@ -50,6 +50,12 @@ pub struct ExecutionAlgorithmConfig {
     #[serde(default = "default_true")]
     #[builder(default = true)]
     pub log_commands: bool,
+    /// If hyphens should be used in generated client order ID values.
+    ///
+    /// If `None`, hyphen usage is automatically inferred from whether the primary order ID
+    /// contains hyphens.
+    #[serde(default)]
+    pub use_hyphens_in_client_order_ids: Option<bool>,
 }
 
 impl Default for ExecutionAlgorithmConfig {
@@ -98,6 +104,7 @@ mod tests {
         assert!(config.exec_algorithm_id.is_none());
         assert!(config.log_events);
         assert!(config.log_commands);
+        assert_eq!(config.use_hyphens_in_client_order_ids, None);
     }
 
     #[rstest]
@@ -117,6 +124,7 @@ mod tests {
             exec_algorithm_id: Some(ExecAlgorithmId::new("TWAP")),
             log_events: false,
             log_commands: true,
+            use_hyphens_in_client_order_ids: Some(false),
         };
 
         let json = serde_json::to_string(&config).unwrap();
@@ -125,5 +133,9 @@ mod tests {
         assert_eq!(config.exec_algorithm_id, deserialized.exec_algorithm_id);
         assert_eq!(config.log_events, deserialized.log_events);
         assert_eq!(config.log_commands, deserialized.log_commands);
+        assert_eq!(
+            config.use_hyphens_in_client_order_ids,
+            deserialized.use_hyphens_in_client_order_ids
+        );
     }
 }

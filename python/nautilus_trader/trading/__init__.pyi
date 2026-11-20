@@ -187,6 +187,7 @@ class ExecutionAlgorithmConfig:
         exec_algorithm_id: model.ExecAlgorithmId | str | None = None,
         log_events: bool = True,
         log_commands: bool = True,
+        use_hyphens_in_client_order_ids: bool | None = None,
         _kwargs: dict | None = ...,
     ) -> None: ...
     @property
@@ -195,6 +196,8 @@ class ExecutionAlgorithmConfig:
     def log_events(self) -> bool: ...
     @property
     def log_commands(self) -> bool: ...
+    @property
+    def use_hyphens_in_client_order_ids(self) -> bool | None: ...
 
 @typing.final
 class GridMarketMakerConfig:
