@@ -788,27 +788,22 @@ impl Cache {
             .orders_pending_cancel
             .retain(|client_order_id| self.orders.contains_key(client_order_id));
 
-        // Index accounts
         for account_id in self.accounts.keys() {
             self.index.add_venue_account(*account_id);
         }
 
-        // Index orders
         for (client_order_id, order_cell) in &self.orders {
             let order = order_cell.borrow();
             let instrument_id = order.instrument_id();
             let venue = instrument_id.venue;
             let strategy_id = order.strategy_id();
 
-            // 1: Build index.venue_orders -> {Venue, {ClientOrderId}}
             self.index
                 .venue_orders
                 .entry(venue)
                 .or_default()
                 .insert(*client_order_id);
 
-            // 2: Build index.venue_order_ids -> {VenueOrderId, ClientOrderId}
-            //    and index.client_order_ids -> {ClientOrderId, VenueOrderId}
             for venue_order_id in order.venue_order_ids() {
                 self.index
                     .venue_order_ids
@@ -821,33 +816,28 @@ impl Cache {
                     .insert(*client_order_id, venue_order_id);
             }
 
-            // 3: Build index.order_position -> {ClientOrderId, PositionId}
             self.index.order_position.extend(
                 order
                     .position_id()
                     .map(|position_id| (*client_order_id, position_id)),
             );
 
-            // 4: Build index.order_strategy -> {ClientOrderId, StrategyId}
             self.index
                 .order_strategy
                 .insert(*client_order_id, strategy_id);
 
-            // 5: Build index.instrument_orders -> {InstrumentId, {ClientOrderId}}
             self.index
                 .instrument_orders
                 .entry(instrument_id)
                 .or_default()
                 .insert(*client_order_id);
 
-            // 6: Build index.strategy_orders -> {StrategyId, {ClientOrderId}}
             self.index
                 .strategy_orders
                 .entry(strategy_id)
                 .or_default()
                 .insert(*client_order_id);
 
-            // 7: Build index.account_orders -> {AccountId, {ClientOrderId}}
             if let Some(account_id) = order.account_id() {
                 self.index
                     .account_orders
@@ -856,7 +846,6 @@ impl Cache {
                     .insert(*client_order_id);
             }
 
-            // 8: Build index.exec_algorithm_orders -> {ExecAlgorithmId, {ClientOrderId}}
             if let Some(exec_algorithm_id) = order.exec_algorithm_id() {
                 self.index
                     .exec_algorithm_orders
@@ -866,7 +855,6 @@ impl Cache {
                 self.index.exec_algorithms.insert(exec_algorithm_id);
             }
 
-            // 9: Build index.exec_spawn_orders -> {ClientOrderId, {ClientOrderId}}
             if let Some(exec_spawn_id) = order.exec_spawn_id() {
                 self.index
                     .exec_spawn_orders
@@ -875,58 +863,29 @@ impl Cache {
                     .insert(*client_order_id);
             }
 
-            // 10: Build index.orders -> {ClientOrderId}
             self.index.orders.insert(*client_order_id);
 
-            // 11: Build index.orders_active_local -> {ClientOrderId}
-            if order.is_active_local() {
-                self.index.orders_active_local.insert(*client_order_id);
-            }
+            Self::index_order_status(&mut self.index, &order);
 
-            // 12: Build index.orders_open -> {ClientOrderId}
-            if order.is_open() {
-                self.index.orders_open.insert(*client_order_id);
-            }
-
-            // 13: Build index.orders_closed -> {ClientOrderId}
-            if order.is_closed() {
-                self.index.orders_closed.insert(*client_order_id);
-            }
-
-            // 14: Build index.orders_emulated -> {ClientOrderId}
-            if order.emulation_trigger().is_some() && !order.is_closed() {
-                self.index.orders_emulated.insert(*client_order_id);
-            }
-
-            // 15: Build index.orders_inflight -> {ClientOrderId}
-            if order.is_inflight() {
-                self.index.orders_inflight.insert(*client_order_id);
-            }
-
-            // 16: Build index.strategies -> {StrategyId}
             self.index.strategies.insert(strategy_id);
         }
 
-        // Index positions
         for (position_id, position_cell) in &self.positions {
             let position = position_cell.borrow();
             let instrument_id = position.instrument_id;
             let venue = instrument_id.venue;
             let strategy_id = position.strategy_id;
 
-            // 1: Build index.venue_positions -> {Venue, {PositionId}}
             self.index
                 .venue_positions
                 .entry(venue)
                 .or_default()
                 .insert(*position_id);
 
-            // 2: Build index.position_strategy -> {PositionId, StrategyId}
             self.index
                 .position_strategy
                 .insert(*position_id, strategy_id);
 
-            // 3: Build index.position_orders -> {PositionId, {ClientOrderId}}
             let position_orders = self.index.position_orders.entry(*position_id).or_default();
             position_orders.extend(
                 position
@@ -935,7 +894,6 @@ impl Cache {
                     .filter(|client_order_id| self.orders.contains_key(client_order_id)),
             );
 
-            // 4: Build index.instrument_positions -> {InstrumentId, {PositionId}}
             self.index
                 .instrument_positions
                 .entry(instrument_id)
@@ -946,7 +904,6 @@ impl Cache {
                 .entry(instrument_id)
                 .or_default();
 
-            // 5: Build index.strategy_positions -> {StrategyId, {PositionId}}
             self.index
                 .strategy_positions
                 .entry(strategy_id)
@@ -954,27 +911,21 @@ impl Cache {
                 .insert(*position_id);
             self.index.strategy_orders.entry(strategy_id).or_default();
 
-            // 6: Build index.account_positions -> {AccountId, {PositionId}}
             self.index
                 .account_positions
                 .entry(position.account_id)
                 .or_default()
                 .insert(*position_id);
 
-            // 7: Build index.positions -> {PositionId}
             self.index.positions.insert(*position_id);
-
-            // 8: Build index.positions_open -> {PositionId}
             if position.is_open() {
                 self.index.positions_open.insert(*position_id);
             }
 
-            // 9: Build index.positions_closed -> {PositionId}
             if position.is_closed() {
                 self.index.positions_closed.insert(*position_id);
             }
 
-            // 10: Build index.strategies -> {StrategyId}
             self.index.strategies.insert(strategy_id);
         }
 
@@ -3302,9 +3253,10 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns an error if the client order ID exists and `replace_existing` is false, a
-    /// replacement claims another order's venue order ID, or the backing reports a DeFi currency
-    /// integrity error.
+    /// Returns an error if:
+    /// - The client order ID exists and `replace_existing` is false.
+    /// - The order claims a venue order ID that belongs to another order.
+    /// - The backing reports a DeFi currency integrity error.
     pub fn add_order(
         &mut self,
         order: OrderAny,
@@ -3331,20 +3283,13 @@ impl Cache {
         log::debug!("Adding {order:?}");
 
         let old_order_cell = self.orders.get(&client_order_id).cloned();
-        let replacing = old_order_cell.is_some();
+        self.index_order_venue_ids(&order, old_order_cell.is_some())?;
         if let Some(old_order_cell) = &old_order_cell {
-            self.reindex_replaced_order(old_order_cell, &order, position_id)?;
+            self.clear_replaced_order_indexes(old_order_cell, &order, position_id);
         }
 
         self.index.orders.insert(client_order_id);
-
-        if order.is_active_local() {
-            self.index.orders_active_local.insert(client_order_id);
-        }
-
-        if order.emulation_trigger().is_some() && (!replacing || !order.is_closed()) {
-            self.index.orders_emulated.insert(client_order_id);
-        }
+        Self::index_order_status(&mut self.index, &order);
 
         self.index
             .order_strategy
@@ -3441,81 +3386,80 @@ impl Cache {
         Ok(())
     }
 
-    fn reindex_replaced_order(
+    fn index_order_venue_ids(&mut self, order: &OrderAny, replacing: bool) -> anyhow::Result<()> {
+        let client_order_id = order.client_order_id();
+        let current_venue_order_id = order.venue_order_id();
+        let venue_order_ids = order.venue_order_ids();
+        for venue_order_id in &venue_order_ids {
+            self.validate_venue_order_id_ownership(&client_order_id, venue_order_id)?;
+        }
+
+        if let Some(venue_order_id) = current_venue_order_id {
+            self.add_venue_order_id(&client_order_id, &venue_order_id, true)?;
+        } else if replacing {
+            self.index.client_order_ids.remove(&client_order_id);
+        }
+
+        for venue_order_id in venue_order_ids {
+            self.index
+                .venue_order_ids
+                .insert(*venue_order_id, client_order_id);
+        }
+
+        Ok(())
+    }
+
+    fn clear_replaced_order_indexes(
         &mut self,
         old_order_cell: &SharedCell<OrderAny>,
         order: &OrderAny,
         position_id: Option<PositionId>,
-    ) -> anyhow::Result<()> {
+    ) {
         let client_order_id = order.client_order_id();
-        let current_venue_order_id = order.venue_order_id();
-        let venue_order_ids = order.venue_order_ids();
+        let old_order = old_order_cell.borrow();
 
-        if let Some(venue_order_id) = current_venue_order_id {
-            self.validate_venue_order_id_ownership(&client_order_id, &venue_order_id)?;
+        if let Some(position_id) = position_id {
+            Self::remove_replaced_order_position_memberships(
+                &mut self.index,
+                &self.positions,
+                &old_order,
+                position_id,
+            );
         }
 
-        for venue_order_id in &venue_order_ids {
-            if current_venue_order_id == Some(**venue_order_id) {
-                continue;
-            }
-
-            self.validate_venue_order_id_ownership(&client_order_id, venue_order_id)?;
-        }
-
-        {
-            let old_order = old_order_cell.borrow();
-
-            if let Some(position_id) = position_id {
-                Self::remove_replaced_order_position_memberships(
-                    &mut self.index,
-                    &self.positions,
-                    &old_order,
-                    position_id,
-                );
-            }
-
-            Self::remove_replaced_order_filter_memberships(&mut self.index, &old_order, order);
-        }
+        Self::remove_replaced_order_filter_memberships(&mut self.index, &old_order, order);
 
         self.index.orders_active_local.remove(&client_order_id);
         self.index.orders_open.remove(&client_order_id);
         self.index.orders_closed.remove(&client_order_id);
         self.index.orders_emulated.remove(&client_order_id);
         self.index.orders_inflight.remove(&client_order_id);
+        if order.is_closed() {
+            self.index.orders_pending_cancel.remove(&client_order_id);
+        }
+    }
+
+    fn index_order_status(index: &mut CacheIndex, order: &OrderAny) {
+        let client_order_id = order.client_order_id();
+        if order.is_active_local() {
+            index.orders_active_local.insert(client_order_id);
+        }
+
         if order.is_open() {
-            self.index.orders_open.insert(client_order_id);
+            index.orders_open.insert(client_order_id);
         }
 
         if order.is_closed() {
-            self.index.orders_pending_cancel.remove(&client_order_id);
-            self.index.orders_closed.insert(client_order_id);
+            index.orders_closed.insert(client_order_id);
+        }
+
+        if order.emulation_trigger().is_some() && !order.is_closed() {
+            index.orders_emulated.insert(client_order_id);
         }
 
         if order.is_inflight() {
-            self.index.orders_inflight.insert(client_order_id);
+            index.orders_inflight.insert(client_order_id);
         }
-
-        self.index.client_order_ids.remove(&client_order_id);
-
-        if let Some(venue_order_id) = current_venue_order_id {
-            self.index
-                .client_order_ids
-                .insert(client_order_id, venue_order_id);
-            self.index
-                .venue_order_ids
-                .insert(venue_order_id, client_order_id);
-        }
-
-        for venue_order_id in venue_order_ids {
-            if current_venue_order_id != Some(*venue_order_id) {
-                self.index
-                    .venue_order_ids
-                    .insert(*venue_order_id, client_order_id);
-            }
-        }
-
-        Ok(())
     }
 
     fn remove_replaced_order_filter_memberships(
@@ -3799,12 +3743,25 @@ impl Cache {
         client_order_id: &ClientOrderId,
         strategy_id: &StrategyId,
     ) {
-        let old_position_id = self
-            .index
-            .order_position
-            .insert(*client_order_id, *position_id);
+        self.index_position(position_id, venue, strategy_id);
+        self.index_order_position(client_order_id, Some(*position_id));
+    }
+
+    fn index_order_position(
+        &mut self,
+        client_order_id: &ClientOrderId,
+        position_id: Option<PositionId>,
+    ) {
+        let old_position_id = match position_id {
+            Some(position_id) => self
+                .index
+                .order_position
+                .insert(*client_order_id, position_id),
+            None => self.index.order_position.remove(client_order_id),
+        };
+
         if let Some(old_position_id) = old_position_id
-            && old_position_id != *position_id
+            && Some(old_position_id) != position_id
             && let Some(orders) = self.index.position_orders.get_mut(&old_position_id)
             && self.positions.get(&old_position_id).is_none_or(|position| {
                 position
@@ -3817,12 +3774,13 @@ impl Cache {
             orders.remove(client_order_id);
         }
 
-        self.index_position(position_id, venue, strategy_id);
-        self.index
-            .position_orders
-            .entry(*position_id)
-            .or_default()
-            .insert(*client_order_id);
+        if let Some(position_id) = position_id {
+            self.index
+                .position_orders
+                .entry(position_id)
+                .or_default()
+                .insert(*client_order_id);
+        }
     }
 
     fn persist_position_id(
@@ -4017,6 +3975,16 @@ impl Cache {
         // transfer and the swap share one borrow, so a failure above cannot strip the prior.
         let position_cell = if let Some(position_cell) = self.positions.get(&position_id).cloned() {
             let mut prior = position_cell.borrow_mut();
+            if prior.account_id != account_id
+                && Self::remove_from_bucket(
+                    &mut self.index.account_positions,
+                    &prior.account_id,
+                    &position_id,
+                )
+            {
+                self.index.account_positions.remove(&prior.account_id);
+            }
+
             if carry_replay_state {
                 position.transfer_replay_state_from(&mut prior);
             }
@@ -4238,6 +4206,12 @@ impl Cache {
     /// Prefer [`Self::update_order`] for lifecycle state changes. Use this only for order state
     /// that is not represented by [`OrderEventAny`].
     ///
+    /// A snapshot position ID change updates the link to a cached position.
+    /// The prior position retains any link backed by the order's fills.
+    ///
+    /// Virtual HEDGING flips use the route established by fill history. Incomplete or ambiguous
+    /// flip history clears the forward link.
+    ///
     /// Persistence failures are logged without failing the operation.
     ///
     /// # Errors
@@ -4250,14 +4224,44 @@ impl Cache {
             self.validate_venue_order_id_ownership(&client_order_id, &venue_order_id)?;
         }
 
-        match self.orders.get(&client_order_id) {
+        let (prior_position_id, prior_venue) = match self.orders.get(&client_order_id) {
             // Reuse the existing cell so the canonical entry stays in place rather than
             // orphaning a stale cell.
-            Some(order_cell) => *order_cell.borrow_mut() = order.clone(),
+            Some(order_cell) => {
+                let mut cached = order_cell.borrow_mut();
+                let prior_position_id = cached.position_id();
+                let prior_venue = cached.instrument_id().venue;
+                *cached = order.clone();
+                (prior_position_id, prior_venue)
+            }
             None => {
                 self.orders
                     .insert(client_order_id, SharedCell::new(order.clone()));
+                (None, order.instrument_id().venue)
             }
+        };
+
+        if let Some(position_id) = order.position_id()
+            && prior_position_id != Some(position_id)
+            && let Some(position_id) =
+                self.resolve_order_position_id(client_order_id, Some(position_id))
+            && self.positions.contains_key(&position_id)
+        {
+            if let Some(prior_position_id) =
+                self.index.order_position.get(&client_order_id).copied()
+                && prior_position_id != position_id
+                && !self.positions.contains_key(&prior_position_id)
+            {
+                Self::remove_replaced_order_position_membership(
+                    &mut self.index,
+                    &self.positions,
+                    client_order_id,
+                    prior_position_id,
+                    prior_venue,
+                );
+            }
+
+            self.index_order_position(&client_order_id, Some(position_id));
         }
 
         self.refresh_order(order)
@@ -6675,26 +6679,34 @@ impl Cache {
     }
 
     fn reindex_hedging_position(&mut self, client_order_id: ClientOrderId) {
+        let Some(position_id) = self.resolve_order_position_id(client_order_id, None) else {
+            return;
+        };
+
+        let position = self
+            .position_ref(&position_id)
+            .expect("proven position is cached");
+        let venue = position.instrument_id.venue;
+        let strategy_id = position.strategy_id;
+        drop(position);
+
+        if let Err(e) = self.add_position_id(&position_id, &venue, &client_order_id, &strategy_id) {
+            log::error!("Failed to index virtual flip for order {client_order_id}: {e}");
+        }
+    }
+
+    fn resolve_order_position_id(
+        &mut self,
+        client_order_id: ClientOrderId,
+        fallback: Option<PositionId>,
+    ) -> Option<PositionId> {
         match self.hedging_flip_position_ids(client_order_id) {
-            Ok(Some([_, position_id])) => {
-                let position = self
-                    .position_ref(&position_id)
-                    .expect("proven position is cached");
-                let venue = position.instrument_id.venue;
-                let strategy_id = position.strategy_id;
-                drop(position);
-
-                if let Err(e) =
-                    self.add_position_id(&position_id, &venue, &client_order_id, &strategy_id)
-                {
-                    log::error!("Failed to index virtual flip for order {client_order_id}: {e}");
-                }
-            }
-            Ok(None) => {}
+            Ok(Some([_, position_id])) => Some(position_id),
+            Ok(None) => fallback,
             Err(e) => {
-                self.index.order_position.remove(&client_order_id);
-
+                self.index_order_position(&client_order_id, None);
                 log::error!("Cannot index virtual flip for order {client_order_id}: {e}");
+                None
             }
         }
     }

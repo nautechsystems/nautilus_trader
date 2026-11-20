@@ -36,7 +36,7 @@ use nautilus_model::{
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId,
-        TraderId,
+        TraderId, VenueOrderId,
     },
     instruments::{CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_option_btc_deribit},
     orders::{Order, OrderAny, builder::OrderTestBuilder},
@@ -1106,6 +1106,7 @@ fn test_fill_void_corrects_only_affected_leg_and_preserves_external_baseline(
         .strategy_id(fill.strategy_id)
         .instrument_id(fill.instrument_id)
         .client_order_id(fill.client_order_id)
+        .venue_order_id(fill.venue_order_id)
         .trade_id(fill.trade_id)
         .order_side(fill.order_side)
         .position_id(position.id)
@@ -1198,11 +1199,13 @@ fn start_strategy_with_positions() -> (DeltaNeutralVol, [Position; 3]) {
             (strategy_id, [4, 5, 6][leg]),
         ] {
             let client_order_id = format!("O-{leg}-{owner}");
+            let venue_order_id = format!("V-{leg}-{owner}");
             let position_id = format!("P-{leg}-{owner}");
             let fill = OrderFilledSpec::builder()
                 .strategy_id(owner)
                 .instrument_id(instrument.id())
                 .client_order_id(ClientOrderId::new(client_order_id))
+                .venue_order_id(VenueOrderId::new(venue_order_id))
                 .position_id(PositionId::new(position_id))
                 .last_qty(Quantity::from(qty))
                 .last_px(Price::from("100.0"))

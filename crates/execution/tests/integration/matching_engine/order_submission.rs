@@ -13,7 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::events::order::spec::OrderExpiredSpec;
+use nautilus_model::{
+    events::order::spec::OrderExpiredSpec, orders::stubs::OrderFilledTestBuilder,
+};
 
 use super::*;
 
@@ -264,7 +266,7 @@ fn test_oto_exit_rejection_exception_requires_rejected_same_parent_sibling(
         Some(AccountType::Margin),
         None,
     );
-    let [parent, _, mut arriving] = bar_bracket_orders(
+    let [mut parent, _, mut arriving] = bar_bracket_orders(
         &instrument,
         OrderSide::Buy,
         ["1500.00", "100.00", "3000.00"],
@@ -272,7 +274,13 @@ fn test_oto_exit_rejection_exception_requires_rejected_same_parent_sibling(
         false,
         TimeInForce::Gtc,
     );
-    let parent = TestOrderStubs::make_filled_order(&parent, &instrument, LiquiditySide::Maker);
+    let parent_venue_order_id = VenueOrderId::new("V-BRACKET-ENTRY");
+    let accepted = TestOrderEventStubs::accepted(&parent, account_id, parent_venue_order_id);
+    parent.apply(accepted).unwrap();
+    let filled = OrderFilledTestBuilder::new(&parent, &instrument)
+        .liquidity_side(LiquiditySide::Maker)
+        .build();
+    parent.apply(filled).unwrap();
 
     let OrderEventAny::Filled(fill) = parent.last_event() else {
         panic!("Expected the parent fill");

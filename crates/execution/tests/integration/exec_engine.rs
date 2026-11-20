@@ -17392,6 +17392,48 @@ fn test_hedging_flip_rejects_unproven_causation(
 }
 
 #[rstest]
+fn test_replace_order_preserves_proven_hedging_flip_route(mut execution_engine: ExecutionEngine) {
+    let (_, destination_id) = run_hedging_flip(&mut execution_engine);
+    let snapshot_position_id = PositionId::new("P-STALE");
+    let instrument = audusd_sim();
+    process_filled_order(
+        &mut execution_engine,
+        TraderId::test_default(),
+        StrategyId::test_default(),
+        &instrument,
+        "O-STALE",
+        "V-STALE",
+        "T-STALE",
+        OrderSide::Buy,
+        25_000,
+        snapshot_position_id,
+    );
+
+    let client_order_id = ClientOrderId::new("O-DURABLE-FLIP");
+    let mut cache = execution_engine.cache().borrow_mut();
+    let mut replacement = cache.order_owned(&client_order_id).unwrap();
+    assert!(cache.position_exists(&snapshot_position_id));
+    assert_ne!(replacement.position_id(), Some(snapshot_position_id));
+    replacement.set_position_id(Some(snapshot_position_id));
+
+    cache.replace_order(&replacement).unwrap();
+
+    let assert_route = |cache: &Cache| {
+        assert_eq!(cache.position_id(&client_order_id), Some(&destination_id));
+        assert_eq!(
+            cache
+                .position_for_order(&client_order_id)
+                .map(|position| position.id),
+            Some(destination_id),
+        );
+    };
+
+    assert_route(&cache);
+    cache.build_index();
+    assert_route(&cache);
+}
+
+#[rstest]
 #[case::source("source", 10_000, 75_000)]
 #[case::destination("destination", 0, 35_000)]
 fn test_hedging_flip_route_survives_other_orders(

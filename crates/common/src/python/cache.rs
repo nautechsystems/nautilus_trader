@@ -2179,9 +2179,10 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns an error if the client order ID exists and `replace_existing` is false, a
-    /// replacement claims another order's venue order ID, or the backing reports a DeFi currency
-    /// integrity error.
+    /// Returns an error if:
+    /// - The client order ID exists and `replace_existing` is false.
+    /// - The order claims a venue order ID that belongs to another order.
+    /// - The backing reports a DeFi currency integrity error.
     #[pyo3(name = "add_order")]
     fn py_add_order(
         &mut self,
