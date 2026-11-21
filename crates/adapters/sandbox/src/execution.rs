@@ -15,7 +15,12 @@
 
 //! Sandbox execution client implementation.
 
-use std::{cell::RefCell, collections::BinaryHeap, fmt::Debug, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    collections::BinaryHeap,
+    fmt::Debug,
+    rc::Rc,
+};
 
 use ahash::{AHashMap, AHashSet};
 use async_trait::async_trait;
@@ -62,7 +67,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, MarginBalance, Money},
+    types::{AccountBalance, Currency, MarginBalance, Money},
 };
 use ustr::Ustr;
 
@@ -87,6 +92,9 @@ pub struct SandboxExecutionClient {
     handlers: RefCell<Option<RegisteredHandlers>>,
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
+    /// Set by `reset`, so the next `connect` reports the starting balances whatever account
+    /// the shared cache still holds.
+    reset_pending: Cell<bool>,
 }
 
 struct RegisteredHandlers {
@@ -213,6 +221,7 @@ impl SandboxExecutionClient {
             handlers: RefCell::new(None),
             clock,
             cache,
+            reset_pending: Cell::new(false),
         })
     }
 
@@ -446,7 +455,7 @@ impl SandboxExecutionClient {
             return (self.get_account_balances(), Vec::new());
         };
 
-        let balances = account.balances().into_values().collect();
+        let balances = reported_balances(&account);
         let margins = match &*account {
             AccountAny::Margin(margin) => margin
                 .margins
@@ -601,6 +610,7 @@ impl SandboxExecutionClient {
 
         inner.clear_inbound_queue();
         self.cancel_inbound_alert();
+        self.reset_pending.set(true);
 
         log::info!(
             "Sandbox execution client reset: venue={}",
@@ -761,7 +771,12 @@ impl ExecutionClient for SandboxExecutionClient {
             return Ok(());
         }
 
-        let (balances, margins) = self.get_current_account_state();
+        // After `reset`, start again from the starting balances whatever the cache still holds
+        let (balances, margins) = if self.reset_pending.take() {
+            (self.get_account_balances(), Vec::new())
+        } else {
+            self.get_current_account_state()
+        };
         let ts_event = self.clock.borrow().timestamp_ns();
         self.generate_account_state(balances, margins, false, ts_event, None)?;
 
@@ -979,6 +994,26 @@ impl ExecutionClient for SandboxExecutionClient {
         let ts_init = self.clock.borrow().timestamp_ns();
         generate_mass_status(self, lookback_mins, ts_init).await
     }
+}
+
+/// Returns the balances to report for `account`.
+///
+/// The portfolio derives a cash account's locked balance from the per-instrument reservations
+/// it keeps on the account, which the cache does not restore. After a restart the restored
+/// locked balance has no reservation behind it, so canceling the orders could never release
+/// it. Deriving the locked balance the same way reports only the reservations the portfolio
+/// holds.
+fn reported_balances(account: &AccountAny) -> Vec<AccountBalance> {
+    let AccountAny::Cash(cash) = account else {
+        return account.balances().into_values().collect();
+    };
+
+    let mut cash = cash.clone();
+    let currencies: Vec<Currency> = cash.base.balances.keys().copied().collect();
+    for currency in currencies {
+        cash.recalculate_balance(currency);
+    }
+    cash.base.balances.into_values().collect()
 }
 
 fn order_status_report(order: &OrderAny, ts_init: UnixNanos) -> Option<OrderStatusReport> {
