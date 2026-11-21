@@ -433,6 +433,8 @@ impl Position {
 
     fn replay_retained_fills(&mut self, filtered_events: &[OrderFilled]) -> CorrectnessResult<()> {
         let first_event = &filtered_events[0];
+
+        // Malformed replay prices must still fail when the journal omits retained fills
         let restatement_indexes = Self::price_restatement_indexes(&self.replay_events);
 
         let start = self.replay_events.iter().position(|event| {
@@ -441,6 +443,14 @@ impl Position {
                 PositionReplayEvent::Filled(fill) if fill.event_id == first_event.event_id
             )
         });
+
+        let Some(start) = start else {
+            for event in filtered_events {
+                self.apply_fill(event, false)?;
+            }
+
+            return Ok(());
+        };
 
         let remaining_orders: AHashSet<_> = filtered_events
             .iter()
@@ -451,26 +461,20 @@ impl Position {
             .map(|event| (event.event_id, event))
             .collect();
 
-        if let Some(start) = start {
-            let replay = self.replay_events.clone();
-            for (index, event) in replay.iter().enumerate().skip(start) {
-                let PositionReplayEvent::Filled(fill) = event else {
-                    continue;
-                };
+        let replay = self.replay_events.clone();
+        for (index, event) in replay.iter().enumerate().skip(start) {
+            let PositionReplayEvent::Filled(fill) = event else {
+                continue;
+            };
 
-                if !remaining_orders.contains(&fill.client_order_id) {
-                    continue;
-                }
-
-                if restatement_indexes.contains(&index) {
-                    self.apply_price_restatement(fill, false)?;
-                } else if let Some(effective) = effective_by_id.get(&fill.event_id) {
-                    self.apply_fill(effective, false)?;
-                }
+            if !remaining_orders.contains(&fill.client_order_id) {
+                continue;
             }
-        } else {
-            for event in filtered_events {
-                self.apply_fill(event, false)?;
+
+            if restatement_indexes.contains(&index) {
+                self.apply_price_restatement(fill, false)?;
+            } else if let Some(effective) = effective_by_id.get(&fill.event_id) {
+                self.apply_fill(effective, false)?;
             }
         }
 
@@ -1086,22 +1090,6 @@ impl Position {
         Ok(price)
     }
 
-    fn voidable_replay_fill<'a>(
-        restatement_indexes: &AHashSet<usize>,
-        index: usize,
-        replay_event: &'a PositionReplayEvent,
-    ) -> Option<&'a OrderFilled> {
-        let PositionReplayEvent::Filled(fill) = replay_event else {
-            return None;
-        };
-
-        if restatement_indexes.contains(&index) {
-            return None;
-        }
-
-        Some(fill)
-    }
-
     fn price_restatement_indexes(replay_events: &[PositionReplayEvent]) -> AHashSet<usize> {
         let mut latest_px = AHashMap::new();
         let mut indexes = AHashSet::new();
@@ -1112,13 +1100,10 @@ impl Position {
             };
 
             let key = (fill.trade_id, fill.client_order_id);
-            if let Some(price) = latest_px.get(&key)
-                && *price != fill.last_px
-            {
+            let previous = latest_px.insert(key, fill.last_px);
+            if previous.is_some_and(|price| price != fill.last_px) {
                 indexes.insert(index);
             }
-
-            latest_px.insert(key, fill.last_px);
         }
 
         indexes
@@ -1273,11 +1258,21 @@ impl Position {
 
     fn accumulate_pnl(&mut self, change: Decimal) -> CorrectnessResult<()> {
         let prior = self.realized_decimal()?;
-        let total = add_pnl(prior, change, self.settlement_currency)?;
-        let rounded = money(total, self.settlement_currency)?;
-        self.realized_pnl_remainder = sub(total, amount(rounded)?)?;
+        let (rounded, remainder) = self.realized_pnl_after(prior, change)?;
+        self.realized_pnl_remainder = remainder;
         self.realized_pnl = Some(rounded);
         Ok(())
+    }
+
+    fn realized_pnl_after(
+        &self,
+        prior: Decimal,
+        change: Decimal,
+    ) -> CorrectnessResult<(Money, Decimal)> {
+        let total = add_pnl(prior, change, self.settlement_currency)?;
+        let rounded = money(total, self.settlement_currency)?;
+        let remainder = sub(total, amount(rounded)?)?;
+        Ok((rounded, remainder))
     }
 
     fn realized_decimal(&self) -> CorrectnessResult<Decimal> {
@@ -1492,9 +1487,8 @@ impl Position {
                 "settlement_currency",
             )?;
             let prior = self.realized_decimal()?;
-            let total = add_pnl(prior, amount(change)?, self.settlement_currency)?;
-            let rounded = money(total, self.settlement_currency)?;
-            (Some(rounded), sub(total, amount(rounded)?)?)
+            let (rounded, remainder) = self.realized_pnl_after(prior, amount(change)?)?;
+            (Some(rounded), remainder)
         } else {
             (self.realized_pnl, self.realized_pnl_remainder)
         };
@@ -1691,15 +1685,13 @@ impl Position {
         self.replay_events
             .iter()
             .enumerate()
-            .filter_map(|(index, event)| match event {
-                PositionReplayEvent::Filled(fill)
-                    if fill.client_order_id == client_order_id
-                        && fill.trade_id == trade_id
-                        && !restatement_indexes.contains(&index) =>
-                {
-                    Some(fill)
-                }
-                _ => None,
+            .filter_map(|(index, event)| {
+                Self::voidable_replay_fill(
+                    &restatement_indexes,
+                    index,
+                    event,
+                    (client_order_id, trade_id),
+                )
             })
             .collect()
     }
@@ -1817,18 +1809,14 @@ impl Position {
     ) -> CorrectnessResult<()> {
         let mut remaining_qty = correction.voided_qty;
         let mut remaining_commission = correction.commission_voided;
+        let order_trade = (correction.event.client_order_id, correction.event.trade_id);
 
         for (index, replay_event) in replay_events.iter().enumerate().rev() {
-            let Some(fill) = Self::voidable_replay_fill(restatement_indexes, index, replay_event)
+            let Some(fill) =
+                Self::voidable_replay_fill(restatement_indexes, index, replay_event, order_trade)
             else {
                 continue;
             };
-
-            if fill.client_order_id != correction.event.client_order_id
-                || fill.trade_id != correction.event.trade_id
-            {
-                continue;
-            }
 
             if !remaining_qty.is_zero() {
                 let removed = remaining_qty.min(fill.last_qty);
@@ -1851,6 +1839,25 @@ impl Position {
         }
 
         Ok(())
+    }
+
+    fn voidable_replay_fill<'a>(
+        restatement_indexes: &AHashSet<usize>,
+        index: usize,
+        replay_event: &'a PositionReplayEvent,
+        order_trade: (ClientOrderId, TradeId),
+    ) -> Option<&'a OrderFilled> {
+        let PositionReplayEvent::Filled(fill) = replay_event else {
+            return None;
+        };
+
+        if (fill.client_order_id, fill.trade_id) != order_trade
+            || restatement_indexes.contains(&index)
+        {
+            return None;
+        }
+
+        Some(fill)
     }
 
     fn bank_closed_cycle_pnl(
@@ -1953,7 +1960,7 @@ impl Position {
         self.apply_adjustment_state(adjustment, false)
     }
 
-    fn latest_fill_voids(&self) -> Vec<&PositionFillVoid> {
+    fn latest_fill_voids(&self) -> impl Iterator<Item = &PositionFillVoid> {
         let mut latest = IndexMap::<(ClientOrderId, TradeId), &PositionFillVoid>::new();
         for correction in &self.fill_voids {
             latest.insert(
@@ -1961,7 +1968,8 @@ impl Position {
                 correction,
             );
         }
-        latest.into_values().collect()
+
+        latest.into_values()
     }
 
     fn reset_derived_state(&mut self) {
@@ -2895,18 +2903,13 @@ pub fn fold_net_position(legs: &[(Decimal, Decimal, u64)]) -> (Decimal, Decimal)
         if same_side {
             let total_abs = net_signed_qty.abs() + p_qty.abs();
             net_avg_px = (net_signed_qty.abs() * net_avg_px + p_qty.abs() * p_px) / total_abs;
-            net_signed_qty = new_net;
-        } else if new_net.is_zero()
-            || new_net.is_sign_negative() == net_signed_qty.is_sign_negative()
-        {
-            net_signed_qty = new_net;
-            if new_net.is_zero() {
-                net_avg_px = Decimal::ZERO;
-            }
-        } else {
-            net_signed_qty = new_net;
+        } else if new_net.is_zero() {
+            net_avg_px = Decimal::ZERO;
+        } else if new_net.is_sign_negative() != net_signed_qty.is_sign_negative() {
             net_avg_px = p_px;
         }
+
+        net_signed_qty = new_net;
     }
 
     (net_signed_qty, net_avg_px)
@@ -2914,6 +2917,8 @@ pub fn fold_net_position(legs: &[(Decimal, Decimal, u64)]) -> (Decimal, Decimal)
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "defi")]
+    use std::panic::{AssertUnwindSafe, catch_unwind};
     use std::str::FromStr;
 
     use ahash::AHashSet;
@@ -8059,6 +8064,29 @@ mod tests {
         assert_eq!(position.trade_ids.len(), 1);
         assert_eq!(position.events[0].client_order_id, order2.client_order_id());
         assert!(position.trade_ids.contains(&TradeId::new("2")));
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_purge_checks_restatement_prices_without_first_retained_fill(
+        mut stub_position_long: Position,
+    ) {
+        let mut replayed = stub_position_long.events[0].clone();
+        replayed.event_id = uuid4();
+        let mut malformed = replayed.clone();
+        malformed.event_id = uuid4();
+        malformed.last_px.precision = u8::MAX;
+        stub_position_long.replay_events = vec![
+            PositionReplayEvent::Filled(replayed),
+            PositionReplayEvent::Filled(malformed),
+        ]
+        .into();
+
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            stub_position_long.purge_events_for_order(ClientOrderId::new("O-ABSENT"))
+        }));
+
+        assert!(result.is_err());
     }
 
     #[rstest]
