@@ -18,6 +18,7 @@
 use std::fmt::Debug;
 
 use ahash::AHashSet;
+use anyhow::Context;
 use nautilus_common::actor::DataActor;
 use nautilus_core::DurationNanos;
 use nautilus_model::{
@@ -29,9 +30,12 @@ use nautilus_model::{
     orders::Order,
     types::{Price, Quantity},
 };
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::Decimal;
 
-use super::config::CompositeMarketMakerConfig;
+use super::{
+    super::{price_change_reaches_threshold, quote_midpoint},
+    config::CompositeMarketMakerConfig,
+};
 use crate::{
     nautilus_strategy,
     strategy::{Strategy, StrategyCore},
@@ -52,11 +56,10 @@ pub struct CompositeMarketMaker {
     pub(super) config: CompositeMarketMakerConfig,
     pub(super) instrument: Option<InstrumentAny>,
     pub(super) trade_size: Option<Quantity>,
-    pub(super) price_precision: Option<u8>,
-    pub(super) last_quoted_anchor: Option<Price>,
-    pub(super) last_quoted_residual: Option<f64>,
-    pub(super) signal_baseline: Option<f64>,
-    pub(super) last_signal: Option<f64>,
+    pub(super) last_quoted_anchor: Option<Decimal>,
+    pub(super) last_quoted_residual: Option<Decimal>,
+    pub(super) signal_baseline: Option<Decimal>,
+    pub(super) last_signal: Option<Decimal>,
     pub(super) pending_self_cancels: AHashSet<ClientOrderId>,
 }
 
@@ -64,13 +67,15 @@ impl CompositeMarketMaker {
     /// Creates a new [`CompositeMarketMaker`] instance from config.
     #[must_use]
     pub fn new(config: CompositeMarketMakerConfig) -> Self {
-        let signal_baseline = config.signal_baseline;
+        let signal_baseline = config
+            .signal_baseline
+            .and_then(|value| Decimal::try_from(value).ok());
+
         Self {
             core: StrategyCore::new(config.base.clone()),
             instrument: None,
             trade_size: config.trade_size,
             config,
-            price_precision: None,
             last_quoted_anchor: None,
             last_quoted_residual: None,
             signal_baseline,
@@ -79,26 +84,33 @@ impl CompositeMarketMaker {
         }
     }
 
-    pub(super) fn should_requote_on_anchor(&self, anchor: Price) -> bool {
+    pub(super) fn should_requote_on_anchor(&self, anchor: Decimal) -> bool {
         match self.last_quoted_anchor {
-            Some(last_anchor) => {
-                let last_f64 = last_anchor.as_f64();
-                if last_f64 == 0.0 {
+            Some(last) => {
+                if last.is_zero() {
                     return true;
                 }
-                let threshold = self.config.requote_threshold_bps as f64 / 10_000.0;
-                (anchor.as_f64() - last_f64).abs() / last_f64 >= threshold
+
+                price_change_reaches_threshold(
+                    (anchor - last).abs(),
+                    last,
+                    self.config.requote_threshold_bps,
+                )
             }
             None => true,
         }
     }
 
-    pub(super) fn should_requote_on_residual(&self, residual: f64, anchor: Price) -> bool {
-        if self.config.signal_skew_factor == 0.0 {
+    pub(super) fn should_requote_on_residual(&self, residual: Decimal, anchor: Decimal) -> bool {
+        let Ok(skew) = Decimal::try_from(self.config.signal_skew_factor) else {
+            return false;
+        };
+
+        if skew.is_zero() {
             return false;
         }
-        let anchor_f64 = anchor.as_f64();
-        if anchor_f64 == 0.0 {
+
+        if anchor.is_zero() {
             return false;
         }
 
@@ -107,39 +119,44 @@ impl CompositeMarketMaker {
                 // The signal's contribution to bid/ask price is signal_skew_factor * residual,
                 // so a residual delta translates to that price units. Compare against the same
                 // bps threshold expressed in price units of the anchor.
-                let price_delta = (residual - last).abs() * self.config.signal_skew_factor.abs();
-                let threshold = self.config.requote_threshold_bps as f64 / 10_000.0;
-                price_delta / anchor_f64 >= threshold
+                residual
+                    .checked_sub(last)
+                    .and_then(|delta| delta.abs().checked_mul(skew.abs()))
+                    .is_some_and(|delta| {
+                        price_change_reaches_threshold(
+                            delta,
+                            anchor,
+                            self.config.requote_threshold_bps,
+                        )
+                    })
             }
             None => true,
         }
     }
 
-    pub(super) fn should_requote(&self, anchor: Price, residual: f64) -> bool {
+    pub(super) fn should_requote(&self, anchor: Decimal, residual: Decimal) -> bool {
         self.should_requote_on_anchor(anchor) || self.should_requote_on_residual(residual, anchor)
     }
 
-    pub(super) fn signal_residual(&self) -> Option<f64> {
+    pub(super) fn signal_residual(&self) -> Option<Decimal> {
         if self.config.signal_skew_factor == 0.0 {
-            return Some(0.0);
+            return Some(Decimal::ZERO);
         }
 
         let signal = self.last_signal?;
         let baseline = self.signal_baseline?;
-
-        if !signal.is_finite() || signal <= 0.0 || !baseline.is_finite() || baseline <= 0.0 {
+        if signal <= Decimal::ZERO || baseline <= Decimal::ZERO {
             return None;
         }
 
-        let residual = signal / baseline - 1.0;
-        residual.is_finite().then_some(residual)
+        signal.checked_sub(baseline)?.checked_div(baseline)
     }
 
     pub(super) fn compute_quotes(
         &self,
-        anchor: Price,
-        signal_residual: f64,
-        net_position: f64,
+        anchor: Decimal,
+        signal_residual: Decimal,
+        net_position: Decimal,
         worst_long: Decimal,
         worst_short: Decimal,
     ) -> anyhow::Result<Vec<(OrderSide, Price)>> {
@@ -152,20 +169,25 @@ impl CompositeMarketMaker {
         let trade_size = trade_size.as_decimal();
         let max_pos = self.config.max_position.as_decimal();
 
-        let anchor_f64 = anchor.as_f64();
-        let half_spread = anchor_f64 * (self.config.half_spread_bps as f64 / 10_000.0);
-        let inventory_shift = self.config.inventory_skew_factor * net_position;
-        let signal_shift = self.config.signal_skew_factor * signal_residual;
-        // Positive signal residual lifts both sides; positive inventory lowers both sides.
-        let total_shift = signal_shift - inventory_shift;
+        let half_spread = anchor * Decimal::new(i64::from(self.config.half_spread_bps), 4);
+        let inventory_factor = Decimal::try_from(self.config.inventory_skew_factor)?;
+        let signal_factor = Decimal::try_from(self.config.signal_skew_factor)?;
+        let signal_shift = signal_factor
+            .checked_mul(signal_residual)
+            .ok_or_else(|| anyhow::anyhow!("Signal skew exceeds the decimal range"))?;
+        let shift = inventory_factor
+            .checked_mul(net_position)
+            .and_then(|inventory_shift| signal_shift.checked_sub(inventory_shift))
+            .ok_or_else(|| anyhow::anyhow!("Quote skew exceeds the decimal range"))?;
 
-        let bid_f64 = anchor_f64 - half_spread + total_shift;
-        let ask_f64 = anchor_f64 + half_spread + total_shift;
-        // next_bid_price floors to the nearest valid bid tick (<=bid_f64),
-        // next_ask_price ceils to the nearest valid ask tick (>=ask_f64),
-        // so a non-crossing pair stays non-crossing after rounding.
-        let bid_price = instrument.next_bid_price(bid_f64, 0);
-        let ask_price = instrument.next_ask_price(ask_f64, 0);
+        let bid_target = (anchor - half_spread)
+            .checked_add(shift)
+            .context("Skewed bid price exceeds the decimal range")?;
+        let ask_target = (anchor + half_spread)
+            .checked_add(shift)
+            .context("Skewed ask price exceeds the decimal range")?;
+        let bid_price = instrument.next_price_from_decimal(OrderSide::Buy, bid_target, 0);
+        let ask_price = instrument.next_price_from_decimal(OrderSide::Sell, ask_target, 0);
 
         // Drop both sides if rounding has collapsed or crossed the spread,
         // which can happen when skew exceeds the half-spread on coarse-tick instruments.
@@ -257,12 +279,14 @@ impl DataActor for CompositeMarketMaker {
             let min_quantity = instrument.min_quantity();
             (instrument, size_precision, min_quantity)
         };
-        self.price_precision = Some(instrument.price_precision());
+
         self.instrument = Some(instrument);
 
         if self.trade_size.is_none() {
-            self.trade_size =
-                Some(min_quantity.unwrap_or_else(|| Quantity::new(1.0, size_precision)));
+            self.trade_size = Some(min_quantity.map_or_else(
+                || Quantity::from_decimal_dp(Decimal::ONE, size_precision),
+                Ok,
+            )?);
         }
 
         self.subscribe_quotes(instrument_id, None, None);
@@ -281,23 +305,14 @@ impl DataActor for CompositeMarketMaker {
     }
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-        if quote.instrument_id == self.config.signal_instrument_id {
-            let bid = quote.bid_price.as_f64();
-            let ask = quote.ask_price.as_f64();
-
-            if bid <= 0.0 || ask <= 0.0 || bid > ask {
-                return Ok(());
-            }
-
-            let signal_mid = f64::midpoint(bid, ask);
-            self.last_signal = Some(signal_mid);
-            if self.signal_baseline.is_none() {
-                self.signal_baseline = Some(signal_mid);
-            }
+        if quote.instrument_id != self.config.signal_instrument_id
+            && quote.instrument_id != self.config.instrument_id
+        {
             return Ok(());
         }
 
-        if quote.instrument_id != self.config.instrument_id {
+        if quote.instrument_id == self.config.signal_instrument_id {
+            self.update_signal(quote)?;
             return Ok(());
         }
 
@@ -305,11 +320,11 @@ impl DataActor for CompositeMarketMaker {
             return Ok(());
         };
 
-        let anchor_f64 = f64::midpoint(quote.bid_price.as_f64(), quote.ask_price.as_f64());
-        let price_precision = self.price_precision.ok_or_else(|| {
-            anyhow::anyhow!("Cannot handle quote: price_precision is not resolved")
-        })?;
-        let anchor = Price::new(anchor_f64, price_precision);
+        let anchor = quote_midpoint(quote)?;
+        anyhow::ensure!(
+            self.instrument.is_some(),
+            "Cannot handle quote: instrument is not resolved"
+        );
 
         let instrument_id = self.config.instrument_id;
         let strategy_id = self.strategy_id().expect("Strategy must be registered");
@@ -332,6 +347,16 @@ impl DataActor for CompositeMarketMaker {
             self.last_quoted_residual,
         );
 
+        let (net_position, worst_long, worst_short) = self.position_exposure(strategy_id);
+
+        let quotes = self.compute_quotes(
+            anchor,
+            signal_residual,
+            net_position,
+            worst_long,
+            worst_short,
+        )?;
+
         if self.config.on_cancel_resubmit {
             let inst = Some(&instrument_id);
             let strategy = Some(&strategy_id);
@@ -348,16 +373,6 @@ impl DataActor for CompositeMarketMaker {
         }
 
         self.cancel_all_orders(instrument_id, None, None, true, None)?;
-
-        let (net_position, worst_long, worst_short) = self.position_exposure(strategy_id);
-
-        let quotes = self.compute_quotes(
-            anchor,
-            signal_residual,
-            net_position,
-            worst_long,
-            worst_short,
-        )?;
 
         if quotes.is_empty() {
             return Ok(());
@@ -405,10 +420,12 @@ impl DataActor for CompositeMarketMaker {
     fn on_reset(&mut self) -> anyhow::Result<()> {
         self.instrument = None;
         self.trade_size = self.config.trade_size;
-        self.price_precision = None;
         self.last_quoted_anchor = None;
         self.last_quoted_residual = None;
-        self.signal_baseline = self.config.signal_baseline;
+        self.signal_baseline = self
+            .config
+            .signal_baseline
+            .and_then(|value| Decimal::try_from(value).ok());
         self.last_signal = None;
         self.pending_self_cancels.clear();
         Ok(())
@@ -416,7 +433,7 @@ impl DataActor for CompositeMarketMaker {
 }
 
 impl CompositeMarketMaker {
-    fn position_exposure(&self, strategy_id: StrategyId) -> (f64, Decimal, Decimal) {
+    fn position_exposure(&self, strategy_id: StrategyId) -> (Decimal, Decimal, Decimal) {
         let instrument_id = Some(&self.config.instrument_id);
         let strategy = Some(&strategy_id);
         let cache = self.cache();
@@ -425,10 +442,6 @@ impl CompositeMarketMaker {
         for p in cache.positions_open(None, instrument_id, strategy, None, None) {
             position_dec += p.signed_qty;
         }
-
-        let position_qty = position_dec
-            .to_f64()
-            .expect("Decimal quantity fits strategy analytics");
 
         let mut pending_buy_dec = Decimal::ZERO;
         let mut pending_sell_dec = Decimal::ZERO;
@@ -449,9 +462,25 @@ impl CompositeMarketMaker {
         }
 
         (
-            position_qty,
+            position_dec,
             position_dec + pending_buy_dec,
             position_dec - pending_sell_dec,
         )
+    }
+}
+
+impl CompositeMarketMaker {
+    fn update_signal(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        if !quote.bid_price.is_positive() || quote.bid_price > quote.ask_price {
+            return Ok(());
+        }
+
+        let signal_mid = quote_midpoint(quote)?;
+        self.last_signal = Some(signal_mid);
+        if self.signal_baseline.is_none() && self.config.signal_baseline.is_none() {
+            self.signal_baseline = Some(signal_mid);
+        }
+
+        Ok(())
     }
 }

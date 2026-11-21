@@ -52,6 +52,9 @@ Released on TBD (UTC).
 - Changed `Cache::add_order` to reject venue order ID conflicts on insert. Handle `VenueOrderIdOwnershipError`
 - Changed `BinaryOption` Parquet writes to require registered tick schemes; register custom schemes before saving
 - Changed `TickSchemeError` with `TicksNotIncreasing`; update exhaustive matches
+- Changed `SimulatedExchange::process_liquidations` to return `anyhow::Result<()>` for callers to handle
+- Changed Python `PortfolioAnalyzer.add_positions` to raise `ValueError` for realized PnL at precision 17 or 18
+- Changed Python backtest reporting to raise on unsupported float precision. `BacktestNode` skips failed runs by default
 - Changed float time conversions and `UnixNanos` float-second parsing to round to nearest instead of truncating
 - Changed `submission_recovery_policy` default to `RetainUnresolved`; select `ResolveLocally` for prior behavior
 - Changed pending cancel and update timeouts to restore the order under `RetainUnresolved` instead of canceling
@@ -116,6 +119,7 @@ Released on TBD (UTC).
 - Fixed consecutive simulated maker fills leaking synthetic last prices into later matching
 - Fixed live startup connecting execution clients after a stop request during data connection
 - Fixed live node panics on excessive `timeout_connection`, `timeout_disconnection`, or `delay_post_stop` values
+- Fixed panics when analytics, backtests, or data aggregation convert values at precision 17 or 18
 - Fixed custom tick-scheme persistence for `BinaryOption` Parquet catalogs
 - Fixed stale order status reports overwriting newer amendments for clients requiring authoritative fills
 - Fixed reconciliation applying `Accepted` reports to orders with fills or a closed status

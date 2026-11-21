@@ -359,6 +359,7 @@ pub struct SimulatedVenueConfig {
     #[builder(default = false)]
     pub liquidation_enabled: bool,
     /// The equity-to-maintenance-margin ratio at or below which liquidation triggers.
+    /// The comparison uses the ratio's shortest round-trip decimal representation.
     #[builder(default = 1.0)]
     pub liquidation_trigger_ratio: f64,
     /// If open orders are canceled before liquidating positions.
@@ -544,6 +545,7 @@ pub struct BacktestVenueConfig {
     liquidation_enabled: bool,
     /// The ratio of equity to maintenance margin at which liquidation is triggered.
     /// A value of 1.0 means liquidation triggers when equity <= `maintenance_margin`.
+    /// The comparison uses the ratio's shortest round-trip decimal representation.
     #[builder(default = 1.0)]
     liquidation_trigger_ratio: f64,
     /// If open orders should be canceled before closing positions during liquidation.

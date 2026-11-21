@@ -470,6 +470,7 @@ def test_portfolio_analyzer_trade_rejects_precision_above_float_precision(
         getattr(analyzer, method)(PositionId("P-1"), 1, pnl)
 
     assert str(exc_info.value) == (
+        f"Cannot analyze TST{precision} realized PnL for P-1: "
         f"Fixed-point precision {precision} exceeds maximum float precision 16"
     )
     assert analyzer.realized_pnls(currency) is None

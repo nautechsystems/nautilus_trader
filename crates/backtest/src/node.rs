@@ -186,17 +186,18 @@ impl BacktestNode {
                 }
             };
 
-            if let Err(e) = run_result {
-                if config.raise_exception() {
-                    return Err(e);
+            match run_result.and_then(|()| engine.try_get_result()) {
+                Ok(result) => results.push(result),
+                Err(e) => {
+                    if config.raise_exception() {
+                        return Err(e);
+                    }
+
+                    log::error!("Error running backtest '{}': {e:#}", config.id());
+                    engine.clear_data();
+                    continue;
                 }
-
-                log::error!("Error running backtest '{}': {e:#}", config.id());
-                engine.clear_data();
-                continue;
             }
-
-            results.push(engine.get_result());
 
             if config.dispose_on_completion() {
                 engine.dispose();

@@ -3051,8 +3051,14 @@ fn test_unsubscribe_option_greeks_ignores_wildcard_observers(
 }
 
 #[rstest]
+#[case(2, true)]
+#[cfg_attr(feature = "defi", case(16, true))]
+#[cfg_attr(feature = "defi", case(17, false))]
+#[cfg_attr(feature = "defi", case(18, false))]
 fn test_synthetic_quote_subscription_publishes_from_component_quotes(
     stub_msgbus: Rc<RefCell<MessageBus>>,
+    #[case] precision: u8,
+    #[case] supported: bool,
 ) {
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
@@ -3078,10 +3084,13 @@ fn test_synthetic_quote_subscription_publishes_from_component_quotes(
     );
     data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(sub)));
 
+    let bid_price = Price::from_decimal_dp(100.into(), precision).unwrap();
+    let ask_price = Price::from_decimal_dp(102.into(), precision).unwrap();
+
     let quote_a = QuoteTick::new(
         component_a,
-        Price::from("100.00"),
-        Price::from("102.00"),
+        bid_price,
+        ask_price,
         Quantity::from(1),
         Quantity::from(1),
         UnixNanos::from(1),
@@ -3100,6 +3109,23 @@ fn test_synthetic_quote_subscription_publishes_from_component_quotes(
         UnixNanos::from(2),
     );
     data_engine.process_data(Data::Quote(quote_b));
+    let trigger = if supported {
+        quote_b
+    } else {
+        assert!(saver.get_messages().is_empty());
+        assert_eq!(cache.borrow().quote(&component_a), Some(&quote_a));
+
+        let replacement = QuoteTick {
+            bid_price: Price::from("100.00"),
+            ask_price: Price::from("102.00"),
+            ts_event: UnixNanos::from(3),
+            ts_init: UnixNanos::from(3),
+            ..quote_a
+        };
+
+        data_engine.process_data(Data::Quote(replacement));
+        replacement
+    };
 
     let messages = saver.get_messages();
     assert_eq!(messages.len(), 1);
@@ -3109,7 +3135,7 @@ fn test_synthetic_quote_subscription_publishes_from_component_quotes(
     assert_eq!(synthetic_quote.ask_price, Price::from("153.00"));
     assert_eq!(synthetic_quote.bid_size, Quantity::from(1));
     assert_eq!(synthetic_quote.ask_size, Quantity::from(1));
-    assert_eq!(synthetic_quote.ts_event, quote_b.ts_event);
+    assert_eq!(synthetic_quote.ts_event, trigger.ts_event);
     assert!(
         data_engine
             .subscribed_synthetic_quotes()
@@ -3119,8 +3145,14 @@ fn test_synthetic_quote_subscription_publishes_from_component_quotes(
 }
 
 #[rstest]
+#[case(2, true)]
+#[cfg_attr(feature = "defi", case(16, true))]
+#[cfg_attr(feature = "defi", case(17, false))]
+#[cfg_attr(feature = "defi", case(18, false))]
 fn test_synthetic_trade_subscription_publishes_from_component_trades(
     stub_msgbus: Rc<RefCell<MessageBus>>,
+    #[case] precision: u8,
+    #[case] supported: bool,
 ) {
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
@@ -3146,9 +3178,11 @@ fn test_synthetic_trade_subscription_publishes_from_component_trades(
     );
     data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Trades(sub)));
 
+    let price = Price::from_decimal_dp(100.into(), precision).unwrap();
+
     let trade_a = TradeTick::new(
         component_a,
-        Price::from("100.00"),
+        price,
         Quantity::from(1),
         AggressorSide::Buy,
         TradeId::new("T-1"),
@@ -3168,6 +3202,23 @@ fn test_synthetic_trade_subscription_publishes_from_component_trades(
         UnixNanos::from(2),
     );
     data_engine.process_data(Data::Trade(trade_b));
+    let trigger = if supported {
+        trade_b
+    } else {
+        assert!(saver.get_messages().is_empty());
+        assert_eq!(cache.borrow().trade(&component_a), Some(&trade_a));
+
+        let replacement = TradeTick {
+            price: Price::from("100.00"),
+            trade_id: TradeId::new("T-3"),
+            ts_event: UnixNanos::from(3),
+            ts_init: UnixNanos::from(3),
+            ..trade_a
+        };
+
+        data_engine.process_data(Data::Trade(replacement));
+        replacement
+    };
 
     let messages = saver.get_messages();
     assert_eq!(messages.len(), 1);
@@ -3175,9 +3226,9 @@ fn test_synthetic_trade_subscription_publishes_from_component_trades(
     assert_eq!(synthetic_trade.instrument_id, synthetic_id);
     assert_eq!(synthetic_trade.price, Price::from("150.00"));
     assert_eq!(synthetic_trade.size, Quantity::from(1));
-    assert_eq!(synthetic_trade.aggressor_side, trade_b.aggressor_side);
-    assert_eq!(synthetic_trade.trade_id, trade_b.trade_id);
-    assert_eq!(synthetic_trade.ts_event, trade_b.ts_event);
+    assert_eq!(synthetic_trade.aggressor_side, trigger.aggressor_side);
+    assert_eq!(synthetic_trade.trade_id, trigger.trade_id);
+    assert_eq!(synthetic_trade.ts_event, trigger.ts_event);
     assert!(
         data_engine
             .subscribed_synthetic_trades()

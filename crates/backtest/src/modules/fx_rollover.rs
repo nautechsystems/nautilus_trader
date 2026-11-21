@@ -896,6 +896,22 @@ mod tests {
 
     use super::*;
 
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[case("1.0000000000000001", "1.0000000000000003", dec!(1.0000000000000002))]
+    #[case("1.00000000000000001", "1.00000000000000003", dec!(1.00000000000000002))]
+    #[case("1.000000000000000001", "1.000000000000000003", dec!(1.000000000000000002))]
+    fn test_rollover_midpoint_preserves_native_precision(
+        #[case] bid: &str,
+        #[case] ask: &str,
+        #[case] expected: Decimal,
+    ) {
+        let bid = Price::from(bid);
+        let ask = Price::from(ask);
+
+        assert_eq!(rollover_midpoint(Some(bid), Some(ask)).unwrap(), expected);
+    }
+
     fn sample_records() -> Vec<InterestRateRecord> {
         vec![
             InterestRateRecord {

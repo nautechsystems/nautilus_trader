@@ -30,9 +30,9 @@ use nautilus_model::{
     identifiers::{ClientId, ClientOrderId, InstrumentId},
     instruments::Instrument,
     orders::Order,
-    types::{Price, Quantity},
+    types::{Price, Quantity, fixed::MAX_FLOAT_PRECISION},
 };
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::{Decimal, RoundingStrategy, prelude::ToPrimitive};
 use serde_json::json;
 use ustr::Ustr;
 
@@ -66,9 +66,9 @@ pub struct DeltaNeutralVol {
     pub(super) put_greeks: Option<OptionGreeks>,
     pub(super) call_delta_ready: bool,
     pub(super) put_delta_ready: bool,
-    pub(super) call_position: f64,
-    pub(super) put_position: f64,
-    pub(super) hedge_position: f64,
+    pub(super) call_position: Decimal,
+    pub(super) put_position: Decimal,
+    pub(super) hedge_position: Decimal,
     pub(super) order_filled_qty: AHashMap<ClientOrderId, Decimal>,
     pub(super) hedge_pending: bool,
     pub(super) entry_attempted: bool,
@@ -93,9 +93,9 @@ impl DeltaNeutralVol {
             put_greeks: None,
             call_delta_ready: false,
             put_delta_ready: false,
-            call_position: 0.0,
-            put_position: 0.0,
-            hedge_position: 0.0,
+            call_position: Decimal::ZERO,
+            put_position: Decimal::ZERO,
+            hedge_position: Decimal::ZERO,
             order_filled_qty: AHashMap::new(),
             hedge_pending: false,
             entry_attempted: false,
@@ -106,9 +106,10 @@ impl DeltaNeutralVol {
     /// Computes the net portfolio delta across option legs and hedge position.
     #[must_use]
     pub fn portfolio_delta(&self) -> f64 {
-        self.call_delta * self.call_position
-            + self.put_delta * self.put_position
-            + self.hedge_position
+        let call = self.call_position.as_f64();
+        let put = self.put_position.as_f64();
+        let hedge = self.hedge_position.as_f64();
+        self.call_delta * call + self.put_delta * put + hedge
     }
 
     /// Returns `true` when both greeks legs have been initialized.
@@ -133,8 +134,8 @@ impl DeltaNeutralVol {
         self.config.enter_strangle
             && self.greeks_initialized()
             && self.entry_price_data_ready()
-            && self.call_position == 0.0
-            && self.put_position == 0.0
+            && self.call_position.is_zero()
+            && self.put_position.is_zero()
             && !self.entry_attempted
             && !self.has_working_entry_orders()
     }
@@ -163,7 +164,7 @@ impl DeltaNeutralVol {
         quote: Option<QuoteTick>,
         greeks: Option<OptionGreeks>,
     ) -> bool {
-        if quote.is_some_and(|q| q.ask_price.as_decimal() > Decimal::ZERO) {
+        if quote.is_some_and(|q| q.ask_price.is_positive()) {
             return true;
         }
 
@@ -297,9 +298,9 @@ impl DeltaNeutralVol {
         greeks: Option<OptionGreeks>,
     ) -> anyhow::Result<Price> {
         if let Some(quote) = quote
-            && quote.ask_price.as_decimal() > Decimal::ZERO
+            && quote.ask_price.is_positive()
         {
-            return self.offset_entry_price(instrument_id, quote.ask_price.as_f64());
+            return self.offset_entry_price(instrument_id, quote.ask_price.as_decimal());
         }
 
         let greeks = greeks.with_context(|| {
@@ -307,13 +308,13 @@ impl DeltaNeutralVol {
         })?;
         let base_price = self.entry_premium_from_greeks(instrument_id, greeks)?;
 
-        self.offset_entry_price(instrument_id, base_price)
+        self.offset_entry_price(instrument_id, Decimal::try_from(base_price)?)
     }
 
     fn offset_entry_price(
         &self,
         instrument_id: InstrumentId,
-        base_price: f64,
+        base_price: Decimal,
     ) -> anyhow::Result<Price> {
         let offset_ticks = self
             .config
@@ -322,9 +323,8 @@ impl DeltaNeutralVol {
 
         let cache = self.cache();
         let instrument = cache.try_instrument(&instrument_id)?;
-
         instrument
-            .next_ask_price(base_price, offset_ticks)
+            .next_price_from_decimal(OrderSide::Sell, base_price, offset_ticks)
             .with_context(|| {
                 format!(
                     "failed to offset premium for {instrument_id}: price={base_price}, ticks={offset_ticks}"
@@ -342,8 +342,11 @@ impl DeltaNeutralVol {
             let instrument = cache.try_instrument(&instrument_id)?;
             let strike = instrument
                 .strike_price()
-                .with_context(|| format!("missing strike for {instrument_id}"))?
-                .as_f64();
+                .with_context(|| format!("missing strike for {instrument_id}"))?;
+            let strike = strike
+                .as_decimal()
+                .to_f32()
+                .expect("Decimal strike fits f32");
             let expiration_ns = instrument
                 .expiration_ns()
                 .with_context(|| format!("missing expiry for {instrument_id}"))?;
@@ -373,7 +376,7 @@ impl DeltaNeutralVol {
             (expiration_ns - now_ns).as_secs_f64() / (365.25 * 24.0 * 60.0 * 60.0);
         let price = compute_greeks(
             underlying_price as f32,
-            strike as f32,
+            strike,
             years_to_expiry as f32,
             0.0,
             0.0,
@@ -409,7 +412,7 @@ impl DeltaNeutralVol {
         let order = self.order().limit(
             instrument_id,
             OrderSide::Sell,
-            Quantity::new(contracts as f64, 0),
+            Quantity::from_decimal_dp(Decimal::from(contracts), 0)?,
             price,
             Some(tif),
             None,
@@ -456,7 +459,17 @@ impl DeltaNeutralVol {
         };
 
         // A delta above the float threshold can still round to zero at the size precision.
-        let hedge_quantity = Quantity::new(hedge_qty, size_precision);
+        let hedge_quantity = if size_precision <= MAX_FLOAT_PRECISION {
+            Quantity::new_checked(hedge_qty, size_precision)?
+        } else {
+            let rounded = Decimal::from_f64_retain(hedge_qty)
+                .context("Hedge delta exceeds the decimal range")?
+                .round_dp_with_strategy(
+                    u32::from(size_precision),
+                    RoundingStrategy::MidpointAwayFromZero,
+                );
+            Quantity::from_decimal_dp(rounded, size_precision)?
+        };
 
         if hedge_quantity.is_zero() {
             log::debug!(
@@ -492,19 +505,15 @@ impl DeltaNeutralVol {
         Ok(())
     }
 
-    fn cached_position(&self, instrument_id: InstrumentId) -> f64 {
+    fn cached_position(&self, instrument_id: InstrumentId) -> Decimal {
         self.cache()
             .positions_open(None, Some(&instrument_id), None, None, None)
             .iter()
-            .map(|p| {
-                p.signed_qty
-                    .to_f64()
-                    .expect("Decimal quantity fits strategy analytics")
-            })
+            .map(|p| p.signed_qty)
             .sum()
     }
 
-    fn position_mut(&mut self, instrument_id: InstrumentId) -> Option<&mut f64> {
+    fn position_mut(&mut self, instrument_id: InstrumentId) -> Option<&mut Decimal> {
         if instrument_id == self.config.hedge_instrument_id {
             Some(&mut self.hedge_position)
         } else if Some(instrument_id) == self.call_instrument_id {
@@ -519,18 +528,17 @@ impl DeltaNeutralVol {
 
 nautilus_strategy!(DeltaNeutralVol, {
     fn on_order_filled(&mut self, event: &OrderFilled) {
-        let qty = event.last_qty.as_f64();
-        let signed_qty = match event.order_side {
-            OrderSide::Buy => qty,
-            OrderSide::Sell => -qty,
-        };
-
         if let Some(position) = self.position_mut(event.instrument_id) {
+            let qty = event.last_qty.as_decimal();
+            let signed_qty = match event.order_side {
+                OrderSide::Buy => qty,
+                OrderSide::Sell => -qty,
+            };
             *position += signed_qty;
             *self
                 .order_filled_qty
                 .entry(event.client_order_id)
-                .or_default() += event.last_qty.as_decimal();
+                .or_default() += qty;
         }
 
         if event.instrument_id == self.config.hedge_instrument_id {
@@ -568,8 +576,9 @@ nautilus_strategy!(DeltaNeutralVol, {
                 );
                 return;
             };
-            order.filled_qty().as_decimal()
+            order.filled_qty()
         };
+        let corrected_qty = corrected_qty.as_decimal();
         let delta = corrected_qty - applied_qty;
         let signed_delta = match event.order_side {
             OrderSide::Buy => delta,
@@ -577,9 +586,7 @@ nautilus_strategy!(DeltaNeutralVol, {
         };
 
         if let Some(position) = self.position_mut(event.instrument_id) {
-            *position += signed_delta
-                .to_f64()
-                .expect("Decimal quantity fits strategy analytics");
+            *position += signed_delta;
             self.order_filled_qty
                 .insert(event.client_order_id, corrected_qty);
         }
@@ -630,104 +637,19 @@ impl Debug for DeltaNeutralVol {
 
 impl DataActor for DeltaNeutralVol {
     fn on_start(&mut self) -> anyhow::Result<()> {
-        let venue = self.config.hedge_instrument_id.venue;
-        let underlying = Ustr::from(&self.config.option_family);
-        let now_ns = self.clock().timestamp_ns().as_u64();
+        let hedge_id = self.config.hedge_instrument_id;
 
-        let mut calls: Vec<(InstrumentId, f64, u64)> = Vec::new();
-        let mut puts: Vec<(InstrumentId, f64, u64)> = Vec::new();
-
-        {
-            let cache = self.cache();
-            let instruments = cache.instruments(&venue, Some(&underlying));
-
-            for inst in &instruments {
-                let Some(expiry_ns) = inst.expiration_ns() else {
-                    continue;
-                };
-
-                if expiry_ns.as_u64() <= now_ns {
-                    continue;
-                }
-
-                if let Some(ref filter) = self.config.expiry_filter {
-                    let symbol = inst.symbol().inner();
-                    if !symbol.as_str().contains(filter.as_str()) {
-                        continue;
-                    }
-                }
-
-                let strike = match inst.strike_price() {
-                    Some(p) => p.as_f64(),
-                    None => continue,
-                };
-
-                match inst.option_kind() {
-                    Some(OptionKind::Call) => {
-                        calls.push((inst.id(), strike, expiry_ns.as_u64()));
-                    }
-                    Some(OptionKind::Put) => {
-                        puts.push((inst.id(), strike, expiry_ns.as_u64()));
-                    }
-                    None => {}
-                }
-            }
-        }
-
-        if calls.is_empty() || puts.is_empty() {
-            log::warn!(
-                "Insufficient options found for family '{}': {} calls, {} puts",
-                self.config.option_family,
-                calls.len(),
-                puts.len(),
-            );
+        let Some([(call_id, call_strike), (put_id, put_strike)]) = self.select_legs(hedge_id)
+        else {
             return Ok(());
-        }
+        };
 
-        if self.config.expiry_filter.is_none() {
-            let nearest = calls
-                .iter()
-                .chain(puts.iter())
-                .map(|(_, _, exp)| *exp)
-                .min()
-                .unwrap();
-            calls.retain(|(_, _, exp)| *exp == nearest);
-            puts.retain(|(_, _, exp)| *exp == nearest);
-        }
+        let premium_entry =
+            self.config.enter_strangle && self.config.entry_premium_offset_ticks.is_some();
 
-        if calls.is_empty() || puts.is_empty() {
-            log::warn!(
-                "Nearest expiry has incomplete chain: {} calls, {} puts",
-                calls.len(),
-                puts.len(),
-            );
-            return Ok(());
-        }
-
-        log::info!(
-            "Found {} calls and {} puts for family '{}'",
-            calls.len(),
-            puts.len(),
-            self.config.option_family,
-        );
-
-        // Strike price approximates delta ordering: higher strikes have
-        // lower call delta, lower strikes have more negative put delta.
-        // A production strategy would subscribe to all greeks first,
-        // then select strikes once actual deltas arrive.
-        calls.sort_by(|(_, s1, _), (_, s2, _)| s1.partial_cmp(s2).unwrap());
-        puts.sort_by(|(_, s1, _), (_, s2, _)| s1.partial_cmp(s2).unwrap());
-
-        // Select call at ~80th percentile strike (OTM, ~0.20 delta)
-        let call_idx = ((1.0 - self.config.target_call_delta) * calls.len() as f64) as usize;
-        let call_idx = call_idx.min(calls.len() - 1);
-        let (call_id, call_strike, _) = calls[call_idx];
-
-        // Select put at ~20th percentile strike (OTM, ~-0.20 delta)
-        let put_idx = (self.config.target_put_delta.abs() * puts.len() as f64) as usize;
-        let put_idx = put_idx.min(puts.len() - 1);
-        let (put_id, put_strike, _) = puts[put_idx];
-
+        let call_position = self.cached_position(call_id);
+        let put_position = self.cached_position(put_id);
+        let hedge_position = self.cached_position(hedge_id);
         self.call_instrument_id = Some(call_id);
         self.put_instrument_id = Some(put_id);
 
@@ -740,10 +662,9 @@ impl DataActor for DeltaNeutralVol {
         );
 
         let strategy_id = self.strategy_id().expect("Registered strategy has an ID");
-        let hedge_id = self.config.hedge_instrument_id;
-        self.call_position = self.cached_position(call_id);
-        self.put_position = self.cached_position(put_id);
-        self.hedge_position = self.cached_position(hedge_id);
+        self.call_position = call_position;
+        self.put_position = put_position;
+        self.hedge_position = hedge_position;
         self.order_filled_qty = {
             let cache = self.cache();
             [call_id, put_id, hedge_id]
@@ -753,7 +674,10 @@ impl DataActor for DeltaNeutralVol {
                 .collect()
         };
 
-        if self.call_position != 0.0 || self.put_position != 0.0 || self.hedge_position != 0.0 {
+        if !self.call_position.is_zero()
+            || !self.put_position.is_zero()
+            || !self.hedge_position.is_zero()
+        {
             log::info!(
                 "Hydrated positions: call={}, put={}, hedge={}",
                 self.call_position,
@@ -770,7 +694,7 @@ impl DataActor for DeltaNeutralVol {
         self.subscribe_option_greeks(put_id, Some(client_id), None);
         self.subscribed_greeks.push(put_id);
 
-        if self.config.enter_strangle && self.config.entry_premium_offset_ticks.is_some() {
+        if premium_entry {
             self.subscribe_quotes(call_id, Some(client_id), None);
             self.subscribe_quotes(put_id, Some(client_id), None);
         }
@@ -891,34 +815,31 @@ impl DataActor for DeltaNeutralVol {
     }
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-        if Some(quote.instrument_id) == self.call_instrument_id {
-            self.call_quote = Some(*quote);
-            log::debug!(
-                "Call quote: bid={} ask={} on {}",
-                quote.bid_price,
-                quote.ask_price,
-                quote.instrument_id,
-            );
-            self.enter_strangle()?;
+        let (entry_quote, leg) = if Some(quote.instrument_id) == self.call_instrument_id {
+            (&mut self.call_quote, "Call")
         } else if Some(quote.instrument_id) == self.put_instrument_id {
-            self.put_quote = Some(*quote);
-            log::debug!(
-                "Put quote: bid={} ask={} on {}",
-                quote.bid_price,
-                quote.ask_price,
-                quote.instrument_id,
-            );
-            self.enter_strangle()?;
-        } else if quote.instrument_id == self.config.hedge_instrument_id {
-            log::debug!(
-                "Hedge quote: bid={} ask={} on {}",
-                quote.bid_price,
-                quote.ask_price,
-                quote.instrument_id,
-            );
-        }
+            (&mut self.put_quote, "Put")
+        } else {
+            if quote.instrument_id == self.config.hedge_instrument_id {
+                log::debug!(
+                    "Hedge quote: bid={} ask={} on {}",
+                    quote.bid_price,
+                    quote.ask_price,
+                    quote.instrument_id,
+                );
+            }
 
-        Ok(())
+            return Ok(());
+        };
+
+        *entry_quote = Some(*quote);
+        log::debug!(
+            "{leg} quote: bid={} ask={} on {}",
+            quote.bid_price,
+            quote.ask_price,
+            quote.instrument_id,
+        );
+        self.enter_strangle()
     }
 
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
@@ -956,12 +877,119 @@ impl DataActor for DeltaNeutralVol {
         self.put_greeks = None;
         self.call_delta_ready = false;
         self.put_delta_ready = false;
-        self.call_position = 0.0;
-        self.put_position = 0.0;
-        self.hedge_position = 0.0;
+        self.call_position = Decimal::ZERO;
+        self.put_position = Decimal::ZERO;
+        self.hedge_position = Decimal::ZERO;
         self.order_filled_qty.clear();
         self.hedge_pending = false;
         self.entry_attempted = false;
         Ok(())
+    }
+}
+
+type OptionLeg = (InstrumentId, Price, u64);
+
+impl DeltaNeutralVol {
+    fn select_legs(&self, hedge_id: InstrumentId) -> Option<[(InstrumentId, Price); 2]> {
+        let [mut calls, mut puts] = self.option_candidates(hedge_id);
+        if calls.is_empty() || puts.is_empty() {
+            log::warn!(
+                "Insufficient options found for family '{}': {} calls, {} puts",
+                self.config.option_family,
+                calls.len(),
+                puts.len(),
+            );
+            return None;
+        }
+
+        if self.config.expiry_filter.is_none() {
+            let nearest = calls
+                .iter()
+                .chain(puts.iter())
+                .map(|(_, _, exp)| *exp)
+                .min()
+                .unwrap();
+            calls.retain(|(_, _, exp)| *exp == nearest);
+            puts.retain(|(_, _, exp)| *exp == nearest);
+        }
+
+        if calls.is_empty() || puts.is_empty() {
+            log::warn!(
+                "Nearest expiry has incomplete chain: {} calls, {} puts",
+                calls.len(),
+                puts.len(),
+            );
+            return None;
+        }
+
+        log::info!(
+            "Found {} calls and {} puts for family '{}'",
+            calls.len(),
+            puts.len(),
+            self.config.option_family,
+        );
+
+        // Strike price approximates delta ordering: higher strikes have
+        // lower call delta, lower strikes have more negative put delta.
+        // A production strategy would subscribe to all greeks first,
+        // then select strikes once actual deltas arrive.
+        calls.sort_by_key(|(_, strike, _)| *strike);
+        puts.sort_by_key(|(_, strike, _)| *strike);
+
+        // Select call at ~80th percentile strike (OTM, ~0.20 delta)
+        let call_idx = ((1.0 - self.config.target_call_delta) * calls.len() as f64) as usize;
+        let call_idx = call_idx.min(calls.len() - 1);
+        let (call_id, call_strike, _) = calls[call_idx];
+
+        // Select put at ~20th percentile strike (OTM, ~-0.20 delta)
+        let put_idx = (self.config.target_put_delta.abs() * puts.len() as f64) as usize;
+        let put_idx = put_idx.min(puts.len() - 1);
+        let (put_id, put_strike, _) = puts[put_idx];
+
+        Some([(call_id, call_strike), (put_id, put_strike)])
+    }
+
+    fn option_candidates(&self, hedge_id: InstrumentId) -> [Vec<OptionLeg>; 2] {
+        let venue = hedge_id.venue;
+        let underlying = Ustr::from(&self.config.option_family);
+        let now_ns = self.clock().timestamp_ns().as_u64();
+
+        let mut calls: Vec<OptionLeg> = Vec::new();
+        let mut puts: Vec<OptionLeg> = Vec::new();
+
+        let cache = self.cache();
+        let instruments = cache.instruments(&venue, Some(&underlying));
+        for inst in &instruments {
+            let Some(expiry_ns) = inst.expiration_ns() else {
+                continue;
+            };
+
+            if expiry_ns.as_u64() <= now_ns {
+                continue;
+            }
+
+            if let Some(ref filter) = self.config.expiry_filter {
+                let symbol = inst.symbol().inner();
+                if !symbol.as_str().contains(filter.as_str()) {
+                    continue;
+                }
+            }
+
+            let Some(strike) = inst.strike_price() else {
+                continue;
+            };
+
+            match inst.option_kind() {
+                Some(OptionKind::Call) => {
+                    calls.push((inst.id(), strike, expiry_ns.as_u64()));
+                }
+                Some(OptionKind::Put) => {
+                    puts.push((inst.id(), strike, expiry_ns.as_u64()));
+                }
+                None => {}
+            }
+        }
+
+        [calls, puts]
     }
 }

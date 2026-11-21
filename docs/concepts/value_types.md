@@ -317,12 +317,35 @@ float_value = price.as_double()
 string_value = str(price)  # "123.456"
 ```
 
-Float conversion supports precision up to 16. `float()`, `as_double()`, and arithmetic with a
-`float` operand raise `ValueError` for precision 17 or 18 rather than round away the extra digits.
-Conversions at precision 16 or below can still round, since a float holds about 16 significant
-digits. Use `as_decimal()` to avoid binary-float conversion. The conversion uses Rust `Decimal`, whose
+Float conversion supports values declared with up to 16 decimal places. Above that limit,
+`float()`, `as_double()`, and arithmetic with a `float` operand raise `ValueError`.
+Supported conversions can still round because a float holds about 16 significant digits.
+Use `as_decimal()` to avoid binary-float conversion. The conversion uses Rust `Decimal`, whose
 96-bit mantissa can lose fractional digits when a value has too many significant digits. String
 serialization preserves the full stored `Money` amount.
+
+DeFi values read from accounts, positions, and market data can exceed the float limit even
+when stored exactly. Bar aggregation also checks that raw fixed-point scales are compatible.
+
+| API or component                                                  | Values checked                                            | Behavior on rejection                                                                             |
+| ----------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `Portfolio.statistics()` (Python)                                 | Account balances, snapshot equity, or realized PnL        | Raises `ValueError`                                                                               |
+| `PortfolioAnalyzer.add_positions()` (Python)                      | Realized PnL                                              | Raises `ValueError` before adding any positions                                                   |
+| `GreeksCalculator` (Python)                                       | Prices, strikes, or multipliers                           | Raises `ValueError`                                                                               |
+| `BacktestEngine.get_result()` (Python)                            | Portfolio analysis inputs                                 | Raises `RuntimeError`                                                                             |
+| `BacktestEngine.run()` and `end()` (Python)                       | Portfolio analysis inputs                                 | Raises `RuntimeError` after the run completes when `run_analysis` is enabled                      |
+| `BacktestNode.run()` (Python)                                     | Portfolio analysis inputs                                 | Logs the error and skips the result by default. Enable `raise_exception` to raise `RuntimeError`. |
+| `Portfolio.statistics()` and `BacktestEngine.get_result()` (Rust) | Balances or equity series                                 | Log and omit affected PnL statistics or equity series                                             |
+| Backtest liquidation (Python)                                     | Balances, maintenance margins, or unrealized PnL          | Raises `RuntimeError`. Call `reset()` before running again.                                       |
+| Bar aggregation                                                   | Prices or quantities with incompatible fixed-point scales | Logs a warning and skips the update                                                               |
+| Midpoint bars                                                     | Quote prices or sizes                                     | Logs a warning and skips the update                                                               |
+| Ratio-adjusted bars                                               | Prices                                                    | Logs a warning and skips the update                                                               |
+| Spread quotes                                                     | Leg and spread prices or sizes                            | Logs a warning and skips the derived quote                                                        |
+| Synthetic instruments                                             | Component prices                                          | Logs a warning and skips the derived quote or trade                                               |
+
+Set `run_analysis=False` to skip post-run analysis in Python.
+`BacktestEngine.get_result()` still checks portfolio statistics.
+In Rust, use `Portfolio::try_analyzer()` and `BacktestEngine::try_get_result()` to receive an error.
 
 ### Creating from strings
 

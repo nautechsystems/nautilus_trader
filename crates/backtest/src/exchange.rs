@@ -66,8 +66,12 @@ use nautilus_model::{
     orderbook::OrderBook,
     orders::{Order, OrderAny},
     position::Position,
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    types::{
+        AccountBalance, Currency, Money, Price, Quantity,
+        fixed::{check_float_precision, fixed_i128_to_f64},
+    },
 };
+use ruint::aliases::U256;
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
@@ -202,8 +206,7 @@ pub struct SimulatedExchange {
     oto_full_trigger: bool,
     defer_option_settlement: bool,
     price_protection_points: u32,
-    liquidation_enabled: bool,
-    liquidation_trigger_ratio: f64,
+    liquidation_trigger_ratio: Option<LiquidationRatio>,
     liquidation_cancel_open_orders: bool,
 }
 
@@ -224,6 +227,7 @@ impl SimulatedExchange {
     /// Returns an error if:
     /// - `starting_balances` is empty.
     /// - `base_currency` is `Some` but `starting_balances` contains multiple currencies.
+    /// - Liquidation is enabled and `liquidation_trigger_ratio` is not positive and finite.
     pub fn new(
         config: SimulatedVenueConfig,
         cache: Rc<RefCell<Cache>>,
@@ -295,8 +299,10 @@ impl SimulatedExchange {
             oto_full_trigger: config.oto_full_trigger,
             defer_option_settlement: config.defer_option_settlement,
             price_protection_points: config.price_protection_points,
-            liquidation_enabled: config.liquidation_enabled,
-            liquidation_trigger_ratio: config.liquidation_trigger_ratio,
+            liquidation_trigger_ratio: config
+                .liquidation_enabled
+                .then(|| LiquidationRatio::new(config.liquidation_trigger_ratio))
+                .transpose()?,
             liquidation_cancel_open_orders: config.liquidation_cancel_open_orders,
         })
     }
@@ -342,7 +348,7 @@ impl SimulatedExchange {
 
     #[must_use]
     pub(crate) const fn liquidation_enabled(&self) -> bool {
-        self.liquidation_enabled
+        self.liquidation_trigger_ratio.is_some()
     }
 
     pub(crate) fn check_callback_error(&self) -> anyhow::Result<()> {
@@ -1748,22 +1754,40 @@ impl SimulatedExchange {
     ///
     /// > **Note**: A future `cross_margin_mode` venue configuration could extend this to
     /// > liquidate all positions across all settlement currencies simultaneously.
-    pub fn process_liquidations(&mut self, ts_now: UnixNanos) {
-        if !self.liquidation_enabled {
-            return;
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a balance, maintenance margin, or PnL exceeds the supported
+    /// precision or if the fixed-point equity calculation overflows.
+    /// The check runs before sending liquidation orders.
+    pub fn process_liquidations(&mut self, ts_now: UnixNanos) -> anyhow::Result<()> {
+        if let Some(plan) = self.plan_liquidations()? {
+            self.execute_liquidations(plan, ts_now);
         }
 
+        Ok(())
+    }
+
+    #[allow(
+        clippy::useless_conversion,
+        reason = "i128::from widens MoneyRaw in standard-precision builds"
+    )]
+    pub(crate) fn plan_liquidations(&self) -> anyhow::Result<Option<LiquidationPlan>> {
+        let Some(ratio) = &self.liquidation_trigger_ratio else {
+            return Ok(None);
+        };
+
         if self.frozen_account {
-            return;
+            return Ok(None);
         }
 
         let account = {
             let cache = self.cache.borrow();
             cache.account_for_venue_owned(&self.id)
         };
-        let Some(account) = account else { return };
-        let AccountAny::Margin(margin_account) = &account else {
-            return;
+
+        let Some(AccountAny::Margin(margin_account)) = account else {
+            return Ok(None);
         };
         let account_id = margin_account.id();
 
@@ -1787,53 +1811,85 @@ impl SimulatedExchange {
                 .push(i);
         }
 
-        for currency in currencies {
-            let Some(balance) = margin_account.balance(Some(currency)) else {
-                continue;
-            };
-            let balance_f64 = balance.total.as_f64();
+        let mut triggers = Vec::new();
 
+        for currency in currencies {
             let Some(indices) = positions_by_currency.get(&currency) else {
                 continue;
             };
 
-            let upnl_f64 = {
-                let cache = self.cache.borrow();
-                liquidation_unrealized_total(&cache, &open_positions, indices)
+            let Some(balance) = margin_account.balance(Some(currency)) else {
+                continue;
             };
 
-            let Some(upnl_f64) = upnl_f64 else {
+            // The precision checks keep balance, PnL, and margin on the same raw scale
+            check_float_precision(currency.precision.max(balance.total.currency.precision))
+                .map_err(|e| {
+                    anyhow::anyhow!(
+                        "Cannot check liquidation balance for {account_id} ({currency}): {e}"
+                    )
+                })?;
+
+            let upnl = {
+                let cache = self.cache.borrow();
+                liquidation_unrealized_total(&cache, &open_positions, indices)?
+            };
+
+            let Some(upnl) = upnl else {
                 continue; // defer until all positions are priced
             };
 
-            let equity = balance_f64 + upnl_f64;
-            let maintenance = margin_account.total_maintenance_margin(currency).as_f64();
+            let equity = i128::from(balance.total.raw()).checked_add(upnl).ok_or_else(|| {
+                anyhow::anyhow!("Cannot calculate liquidation equity for {account_id} ({currency}): overflow")
+            })?;
 
-            if maintenance == 0.0 {
+            for margin in margin_account.margins_in(currency) {
+                check_float_precision(margin.maintenance.currency.precision).map_err(|e| {
+                    let margin_source = margin.instrument_id.map_or_else(
+                        || account_id.to_string(),
+                        |id| id.to_string(),
+                    );
+                    anyhow::anyhow!(
+                        "Cannot check liquidation maintenance margin for {margin_source} ({currency}): {e}"
+                    )
+                })?;
+            }
+
+            let maintenance = i128::from(margin_account.total_maintenance_margin(currency).raw());
+            if maintenance == 0 || !ratio.breached(equity, maintenance) {
                 continue;
             }
 
-            let threshold = maintenance * self.liquidation_trigger_ratio;
-
-            if equity > threshold {
-                continue;
-            }
-
-            log::warn!(
-                "LIQUIDATION triggered for account {} currency {}: equity={:.4} <= threshold={:.4} (maintenance={:.4} x ratio={})",
-                account_id,
+            triggers.push(LiquidationTrigger {
                 currency,
                 equity,
-                threshold,
                 maintenance,
-                self.liquidation_trigger_ratio
+            });
+        }
+
+        Ok(Some(LiquidationPlan {
+            account_id,
+            ratio: ratio.value,
+            triggers,
+        }))
+    }
+
+    pub(crate) fn execute_liquidations(&mut self, plan: LiquidationPlan, ts_now: UnixNanos) {
+        for trigger in plan.triggers {
+            log::warn!(
+                "LIQUIDATION triggered for account {} currency {}: equity={:.4}, maintenance={:.4}, ratio={}",
+                plan.account_id,
+                trigger.currency,
+                fixed_i128_to_f64(trigger.equity),
+                fixed_i128_to_f64(trigger.maintenance),
+                plan.ratio,
             );
 
             for matching_engine in self.matching_engines.values_mut() {
                 matching_engine.liquidate_open_positions(
                     ts_now,
                     self.liquidation_cancel_open_orders,
-                    currency,
+                    trigger.currency,
                 );
             }
         }
@@ -2300,19 +2356,106 @@ fn convert_funding_adjustment(
     Some(converted)
 }
 
+pub(crate) struct LiquidationPlan {
+    account_id: AccountId,
+    ratio: f64,
+    triggers: Vec<LiquidationTrigger>,
+}
+
+struct LiquidationTrigger {
+    currency: Currency,
+    equity: i128,
+    maintenance: i128,
+}
+
+struct LiquidationRatio {
+    value: f64,
+    numerator: U256,
+    denominator: U256,
+}
+
+impl LiquidationRatio {
+    fn new(value: f64) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            value.is_finite() && value > 0.0,
+            "Liquidation trigger ratio must be positive and finite, was {value}"
+        );
+
+        let scientific = format!("{value:e}");
+        let (significand, exponent) = scientific
+            .split_once('e')
+            .ok_or_else(|| anyhow::anyhow!("Invalid scientific notation for ratio {value}"))?;
+        let significand = significand.parse::<Decimal>()?;
+        let exponent = exponent.parse::<i32>()? - i32::try_from(significand.scale())?;
+        let mantissa = U256::from(significand.mantissa().unsigned_abs());
+        let power = U256::from(10_u8).saturating_pow(U256::from(exponent.unsigned_abs()));
+        let (numerator, denominator) = if exponent < 0 {
+            (mantissa, power)
+        } else {
+            (mantissa.saturating_mul(power), U256::ONE)
+        };
+
+        Ok(Self {
+            value,
+            numerator,
+            denominator,
+        })
+    }
+
+    fn breached(&self, equity: i128, maintenance: i128) -> bool {
+        if equity.signum() != maintenance.signum() {
+            return equity < maintenance;
+        }
+
+        // Only one side can saturate. The unscaled side fits in 128 bits plus
+        // the at most 17 decimal digits of the ratio significand.
+        let equity_magnitude = U256::from(equity.unsigned_abs()).saturating_mul(self.denominator);
+        let threshold = U256::from(maintenance.unsigned_abs()).saturating_mul(self.numerator);
+        if equity < 0 {
+            equity_magnitude >= threshold
+        } else {
+            equity_magnitude <= threshold
+        }
+    }
+}
+
+#[allow(
+    clippy::useless_conversion,
+    reason = "i128::from widens MoneyRaw in standard-precision builds"
+)]
 fn liquidation_unrealized_total(
     cache: &Cache,
     positions: &[Position],
     indices: &[usize],
-) -> Option<f64> {
-    let mut upnl = 0.0_f64;
+) -> anyhow::Result<Option<i128>> {
+    let mut upnl = 0_i128;
     let mut bar_types = None;
+
     for &i in indices {
-        let pnl = liquidation_unrealized_pnl(cache, &positions[i], &mut bar_types)?;
-        upnl += pnl.as_f64();
+        let position = &positions[i];
+
+        let Some(pnl) = liquidation_unrealized_pnl(cache, position, &mut bar_types) else {
+            return Ok(None);
+        };
+
+        check_float_precision(pnl.currency.precision).map_err(|e| {
+            anyhow::anyhow!(
+                "Cannot check liquidation unrealized PnL for {} ({}, {}): {e}",
+                position.id,
+                position.instrument_id,
+                pnl.currency
+            )
+        })?;
+
+        upnl = upnl.checked_add(i128::from(pnl.raw())).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Cannot sum liquidation unrealized PnL for {}: overflow",
+                position.id
+            )
+        })?;
     }
 
-    Some(upnl)
+    Ok(Some(upnl))
 }
 
 // Reverts funding adjustments applied in place, newest first, restoring and persisting each
@@ -2954,24 +3097,64 @@ mod tests {
     }
 
     #[rstest]
-    #[case(false)]
-    #[case(true)]
-    fn test_liquidation_enabled(#[case] expected: bool) {
+    #[case(false, 1.0, Ok(false))]
+    #[case(true, 1.0, Ok(true))]
+    #[case(false, f64::NAN, Ok(false))]
+    #[case(
+        true,
+        f64::NAN,
+        Err("Liquidation trigger ratio must be positive and finite, was NaN")
+    )]
+    fn test_liquidation_enabled(
+        #[case] enabled: bool,
+        #[case] ratio: f64,
+        #[case] expected: Result<bool, &str>,
+    ) {
         let cache = Rc::new(RefCell::new(Cache::default()));
         let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
-        let config = SimulatedVenueConfig::builder()
+        let mut config = SimulatedVenueConfig::builder()
             .venue(Venue::new("SIM"))
             .oms_type(OmsType::Netting)
             .account_type(AccountType::Margin)
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::new(1_000.0, Currency::USD())])
-            .liquidation_enabled(expected)
+            .liquidation_enabled(enabled)
             .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
             .build()
             .unwrap();
-        let exchange = SimulatedExchange::new(config, cache, clock).unwrap();
+        config.liquidation_trigger_ratio = ratio;
 
-        assert_eq!(exchange.liquidation_enabled(), expected);
+        let actual = SimulatedExchange::new(config, cache, clock)
+            .map(|exchange| exchange.liquidation_enabled())
+            .map_err(|e| e.to_string());
+
+        assert_eq!(actual.as_ref().copied().map_err(String::as_str), expected);
+    }
+
+    #[rstest]
+    #[case(1.2, 6, 5, true)]
+    #[case(1.2_f64.next_down(), 6, 5, false)]
+    #[case(0.3, 9, 30, true)]
+    #[case(1.5, i128::MAX, i128::MAX, true)]
+    #[case(1.2, -6, -5, true)]
+    #[case(1.2, -5, -5, false)]
+    #[case(f64::MAX, i128::MAX, 1, true)]
+    #[case(f64::MAX, -1, -1, false)]
+    #[case(f64::from_bits(1), 1, i128::MAX, false)]
+    #[case(f64::from_bits(1), 0, i128::MAX, true)]
+    #[case(f64::from_bits(1), 0, -1, false)]
+    fn test_liquidation_ratio_comparison(
+        #[case] ratio: f64,
+        #[case] equity: i128,
+        #[case] maintenance: i128,
+        #[case] breached: bool,
+    ) {
+        assert_eq!(
+            LiquidationRatio::new(ratio)
+                .unwrap()
+                .breached(equity, maintenance),
+            breached
+        );
     }
 
     #[rstest]

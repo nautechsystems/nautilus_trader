@@ -370,7 +370,7 @@ impl MarginAccount {
     }
 
     /// Returns every margin balance reserved in `currency`, per-instrument entries first.
-    fn margins_in(&self, currency: Currency) -> impl Iterator<Item = &MarginBalance> {
+    pub fn margins_in(&self, currency: Currency) -> impl Iterator<Item = &MarginBalance> {
         self.margins
             .values()
             .chain(self.account_margins.values())

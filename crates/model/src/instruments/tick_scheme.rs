@@ -26,21 +26,36 @@ use nautilus_core::correctness::{
     CorrectnessError, CorrectnessResult, check_in_range_inclusive_u8, check_predicate_true,
     check_valid_string_ascii, check_valid_string_ascii_optional,
 };
+use rust_decimal::{Decimal, RoundingStrategy};
 use thiserror::Error;
 
 #[cfg(not(feature = "high-precision"))]
 use crate::types::fixed::{check_fixed_raw_i64 as check_fixed_raw, f64_to_fixed_i64};
 #[cfg(feature = "high-precision")]
 use crate::types::fixed::{check_fixed_raw_i128 as check_fixed_raw, f64_to_fixed_i128};
-use crate::types::{
-    Price,
-    fixed::{FIXED_PRECISION, FIXED_SCALAR},
-    price::{PRICE_MAX, PRICE_MIN, PRICE_RAW_MAX, PRICE_RAW_MIN, PriceRaw},
+use crate::{
+    enums::OrderSide,
+    types::{
+        Price,
+        fixed::{FIXED_PRECISION, FIXED_SCALAR, check_fixed_precision},
+        price::{PRICE_MAX, PRICE_MIN, PRICE_RAW_MAX, PRICE_RAW_MIN, PriceRaw},
+    },
 };
 
 pub trait TickSchemeRule: Display {
     fn next_bid_price(&self, value: f64, n: i32, precision: u8) -> Option<Price>;
     fn next_ask_price(&self, value: f64, n: i32, precision: u8) -> Option<Price>;
+
+    /// Navigates the tick grid from a decimal limit price.
+    fn next_price_from_decimal(
+        &self,
+        _side: OrderSide,
+        _value: Decimal,
+        _n: i32,
+        _precision: u8,
+    ) -> Option<Price> {
+        None
+    }
 }
 
 /// Error returned when tick scheme construction or parsing fails.
@@ -328,6 +343,16 @@ impl TickSchemeRule for FixedTickScheme {
     fn next_ask_price(&self, value: f64, n: i32, precision: u8) -> Option<Price> {
         fixed_next_ask_price(self.tick, value, n, precision)
     }
+
+    fn next_price_from_decimal(
+        &self,
+        side: OrderSide,
+        value: Decimal,
+        n: i32,
+        precision: u8,
+    ) -> Option<Price> {
+        next_price_on_increment(side, value, n, self.tick, precision)
+    }
 }
 
 impl Display for FixedTickScheme {
@@ -572,8 +597,6 @@ impl TieredTickScheme {
 
 impl TickSchemeRule for TieredTickScheme {
     fn next_bid_price(&self, value: f64, n: i32, _precision: u8) -> Option<Price> {
-        let n = usize::try_from(n).ok()?;
-
         if value.is_nan() {
             return None;
         }
@@ -581,28 +604,10 @@ impl TickSchemeRule for TieredTickScheme {
         // Floor to get a raw value guaranteed <= true value, infinite values
         // saturate at the integer bounds during the float-to-integer cast.
         let raw_floor = (value * FIXED_SCALAR).floor() as PriceRaw;
-
-        if raw_floor < self.ticks[0] {
-            return None;
-        }
-
-        // First index where tick >= raw_floor
-        let idx = self.ticks.partition_point(|&t| t < raw_floor);
-
-        if idx < self.ticks.len() && self.ticks[idx] == raw_floor {
-            // Value converts exactly to a tick
-            let target = idx.checked_sub(n)?;
-            return Some(self.price_at(target));
-        }
-
-        // Value is beyond or between ticks; bid is the tick below
-        let target = idx.checked_sub(1)?.checked_sub(n)?;
-        Some(self.price_at(target))
+        self.next_price_from_raw(OrderSide::Buy, raw_floor, n)
     }
 
     fn next_ask_price(&self, value: f64, n: i32, _precision: u8) -> Option<Price> {
-        let n = usize::try_from(n).ok()?;
-
         if value.is_nan() {
             return None;
         }
@@ -610,19 +615,49 @@ impl TickSchemeRule for TieredTickScheme {
         // Ceil to get a raw value guaranteed >= true value, infinite values
         // saturate at the integer bounds during the float-to-integer cast.
         let raw_ceil = (value * FIXED_SCALAR).ceil() as PriceRaw;
+        self.next_price_from_raw(OrderSide::Sell, raw_ceil, n)
+    }
 
-        if raw_ceil > *self.ticks.last()? {
-            return None;
-        }
+    fn next_price_from_decimal(
+        &self,
+        side: OrderSide,
+        value: Decimal,
+        n: i32,
+        precision: u8,
+    ) -> Option<Price> {
+        let raw = decimal_limit_raw(side, value, FIXED_PRECISION).unwrap_or(
+            if value.is_sign_negative() {
+                i128::MIN
+            } else {
+                i128::MAX
+            },
+        );
 
-        // First index where tick >= raw_ceil
-        let idx = self.ticks.partition_point(|&t| t < raw_ceil);
-        let target = idx.checked_add(n)?;
+        #[cfg(not(feature = "high-precision"))]
+        let raw = raw.clamp(i128::from(i64::MIN), i128::from(i64::MAX)) as i64;
 
-        if target >= self.ticks.len() {
-            return None;
-        }
-        Some(self.price_at(target))
+        let tick = self.next_price_from_raw(side, raw, n)?;
+        Price::from_raw_checked(tick_raw_at_precision(tick, precision)?, precision).ok()
+    }
+}
+
+impl TieredTickScheme {
+    fn next_price_from_raw(&self, side: OrderSide, raw: PriceRaw, n: i32) -> Option<Price> {
+        let n = usize::try_from(n).ok()?;
+
+        let target = match side {
+            OrderSide::Buy => self
+                .ticks
+                .partition_point(|&tick| tick <= raw)
+                .checked_sub(1)?
+                .checked_sub(n)?,
+            OrderSide::Sell => self
+                .ticks
+                .partition_point(|&tick| tick < raw)
+                .checked_add(n)?,
+        };
+
+        self.ticks.get(target).map(|_| self.price_at(target))
     }
 }
 
@@ -658,6 +693,23 @@ impl TickSchemeRule for TickScheme {
             Self::Tiered(scheme) => scheme.next_ask_price(value, n, precision),
             Self::Betfair => BETFAIR_TICK_SCHEME.next_ask_price(value, n, precision),
             Self::Crypto => CRYPTO_0_01_TICK_SCHEME.next_ask_price(value, n, precision),
+        }
+    }
+
+    fn next_price_from_decimal(
+        &self,
+        side: OrderSide,
+        value: Decimal,
+        n: i32,
+        precision: u8,
+    ) -> Option<Price> {
+        match self {
+            Self::Fixed(scheme) => scheme.next_price_from_decimal(side, value, n, precision),
+            Self::Tiered(scheme) => scheme.next_price_from_decimal(side, value, n, precision),
+            Self::Betfair => BETFAIR_TICK_SCHEME.next_price_from_decimal(side, value, n, precision),
+            Self::Crypto => {
+                CRYPTO_0_01_TICK_SCHEME.next_price_from_decimal(side, value, n, precision)
+            }
         }
     }
 }
@@ -848,28 +900,95 @@ fn parse_fixed_precision_name_ignore_ascii_case(name: &str) -> Option<u8> {
     name.get(prefix_len..)?.parse::<u8>().ok()
 }
 
+pub(super) fn next_price_on_increment(
+    side: OrderSide,
+    value: Decimal,
+    n: i32,
+    increment: Price,
+    precision: u8,
+) -> Option<Price> {
+    let tick = tick_raw_at_precision(increment, precision)?;
+    #[allow(clippy::useless_conversion, reason = "PriceRaw can be i64 or i128")]
+    let value = PriceRaw::try_from(decimal_limit_raw(
+        side,
+        value,
+        precision.max(FIXED_PRECISION),
+    )?)
+    .ok()?;
+    let raw = next_price_on_raw_grid(side, value, tick, n)?;
+
+    price_from_raw_checked(raw, precision)
+}
+
 fn fixed_next_bid_price(tick: Price, value: f64, n: i32, precision: u8) -> Option<Price> {
-    let n = PriceRaw::from(u32::try_from(n).ok()?);
     let tick_raw = fixed_tick_raw(tick, precision)?;
     let value_raw = value_to_raw(value)?;
-    let base = value_raw
-        .checked_div_euclid(tick_raw)?
-        .checked_mul(tick_raw)?;
-    let offset = tick_raw.checked_mul(n)?;
-    price_from_raw_checked(base.checked_sub(offset)?, precision)
+    let raw = next_price_on_raw_grid(OrderSide::Buy, value_raw, tick_raw, n)?;
+    price_from_raw_checked(raw, precision)
 }
 
 fn fixed_next_ask_price(tick: Price, value: f64, n: i32, precision: u8) -> Option<Price> {
-    let n = PriceRaw::from(u32::try_from(n).ok()?);
     let tick_raw = fixed_tick_raw(tick, precision)?;
     let value_raw = value_to_raw(value)?;
-    let base = value_raw
-        .checked_neg()?
-        .checked_div_euclid(tick_raw)?
-        .checked_neg()?
-        .checked_mul(tick_raw)?;
-    let offset = tick_raw.checked_mul(n)?;
-    price_from_raw_checked(base.checked_add(offset)?, precision)
+    let raw = next_price_on_raw_grid(OrderSide::Sell, value_raw, tick_raw, n)?;
+    price_from_raw_checked(raw, precision)
+}
+
+fn next_price_on_raw_grid(
+    side: OrderSide,
+    value: PriceRaw,
+    tick: PriceRaw,
+    n: i32,
+) -> Option<PriceRaw> {
+    if tick <= 0 {
+        return None;
+    }
+
+    let offset = PriceRaw::from(u32::try_from(n).ok()?);
+    let floor = value.div_euclid(tick);
+    let index = match side {
+        OrderSide::Buy => floor.checked_sub(offset)?,
+        OrderSide::Sell => floor
+            .checked_add(PriceRaw::from(u8::from(value.rem_euclid(tick) != 0)))?
+            .checked_add(offset)?,
+    };
+
+    index.checked_mul(tick)
+}
+
+fn decimal_limit_raw(side: OrderSide, value: Decimal, scale: u8) -> Option<i128> {
+    let rounding = match side {
+        OrderSide::Buy => RoundingStrategy::ToNegativeInfinity,
+        OrderSide::Sell => RoundingStrategy::ToPositiveInfinity,
+    };
+
+    let scale = u32::from(scale);
+    let value = value.round_dp_with_strategy(scale, rounding);
+
+    value
+        .mantissa()
+        .checked_mul(10_i128.pow(scale - value.scale()))
+}
+
+fn tick_raw_at_precision(tick: Price, precision: u8) -> Option<PriceRaw> {
+    check_fixed_precision(tick.precision).ok()?;
+    check_fixed_precision(precision).ok()?;
+    let source = tick.precision.max(FIXED_PRECISION);
+    let target = precision.max(FIXED_PRECISION);
+    let factor = PriceRaw::pow(10, u32::from(source.abs_diff(target)));
+    let raw = if target >= source {
+        tick.raw().checked_mul(factor)?
+    } else {
+        if tick.raw() % factor != 0 {
+            return None;
+        }
+
+        tick.raw() / factor
+    };
+
+    check_fixed_raw(raw, precision).ok()?;
+
+    Some(raw)
 }
 
 fn fixed_tick_raw(tick: Price, precision: u8) -> Option<PriceRaw> {
@@ -923,6 +1042,71 @@ mod tests {
         assert_eq!(scheme.tick_count(), 3);
         assert_eq!(scheme.min_price(), ticks[0]);
         assert_eq!(scheme.max_price(), ticks[2]);
+    }
+
+    #[rstest]
+    fn decimal_tick_navigation_at_tier_boundary() {
+        let grid = TieredTickScheme::betfair();
+        let value = Decimal::new(2_000_000_000_000_000_001, 18);
+
+        assert_eq!(
+            grid.next_price_from_decimal(OrderSide::Buy, value, 0, 2),
+            Some(Price::from("2.00")),
+        );
+        assert_eq!(
+            grid.next_price_from_decimal(OrderSide::Sell, value, 0, 2),
+            Some(Price::from("2.02")),
+        );
+    }
+
+    #[cfg(not(feature = "high-precision"))]
+    #[rstest]
+    fn decimal_tick_navigation_rejects_error_sentinel() {
+        let price = next_price_on_increment(
+            OrderSide::Buy,
+            Decimal::new(i64::MIN, 9),
+            0,
+            Price::from("0.000000001"),
+            9,
+        );
+
+        assert_eq!(price, None);
+    }
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    #[case(OrderSide::Buy, -1)]
+    #[case(OrderSide::Sell, 2)]
+    fn decimal_tick_navigation_preserves_a_wide_raw_price(
+        #[case] side: OrderSide,
+        #[case] adjustment: PriceRaw,
+    ) {
+        let grid = FixedTickScheme::new(Price::from("0.0000000000000003")).unwrap();
+        let decimal = Decimal::from(10_000_000_000_000i64);
+        let expected = 100_000_000_000_000_000_000_000_000_000i128 + adjustment;
+
+        let price = grid.next_price_from_decimal(side, decimal, 0, 16).unwrap();
+
+        assert_eq!(price.raw(), expected);
+        assert_eq!(price.precision, 16);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[case(TickScheme::Crypto, "2.010000000000000000")]
+    #[case(TickScheme::Betfair, "2.020000000000000000")]
+    fn decimal_tick_navigation_returns_named_tick_at_native_precision(
+        #[case] grid: TickScheme,
+        #[case] expected: &str,
+    ) {
+        let value = Decimal::new(2_000_000_000_000_000_001, 18);
+        let price = grid
+            .next_price_from_decimal(OrderSide::Sell, value, 0, 18)
+            .unwrap();
+        let expected = Price::from(expected);
+
+        assert_eq!(price.raw(), expected.raw());
+        assert_eq!(price.precision, 18);
     }
 
     #[rstest]

@@ -25,7 +25,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use indexmap::IndexMap;
-use nautilus_analysis::analyzer::PortfolioAnalyzer;
+use nautilus_analysis::{PortfolioStatistics, analyzer::PortfolioAnalyzer};
 use nautilus_common::{
     actor::{self, CallbackDispatchError, DataActor, DataActorNative},
     cache::Cache,
@@ -124,6 +124,7 @@ pub struct BacktestEngine {
     backtest_start: Option<UnixNanos>,
     backtest_end: Option<UnixNanos>,
     funding_error: Option<String>,
+    liquidation_error: Option<String>,
 }
 
 impl Debug for BacktestEngine {
@@ -193,6 +194,7 @@ impl BacktestEngine {
             backtest_start: None,
             backtest_end: None,
             funding_error: None,
+            liquidation_error: None,
         })
     }
 
@@ -705,6 +707,7 @@ impl BacktestEngine {
     /// Callback dispatch failures abort the run and stop the trader and engines, including when
     /// a failure is already latched before entry. An account rejecting a fill's balance update,
     /// such as a cash balance going negative without borrowing, also aborts the run.
+    /// Unsupported liquidation precision aborts the run and requires a reset.
     pub fn run(
         &mut self,
         start: Option<UnixNanos>,
@@ -721,6 +724,10 @@ impl BacktestEngine {
             anyhow::bail!("{error}");
         }
 
+        if let Some(error) = &self.liquidation_error {
+            anyhow::bail!("{error}");
+        }
+
         if let Err(e) = self.check_exchange_errors() {
             self.abort_run();
             return Err(e);
@@ -733,6 +740,7 @@ impl BacktestEngine {
             if callback_error.is_some()
                 || e.is::<CallbackDispatchError>()
                 || self.funding_error.is_some()
+                || self.liquidation_error.is_some()
                 || self.kernel.portfolio.borrow().balance_error().is_some()
                 || self
                     .venues
@@ -1120,6 +1128,13 @@ impl BacktestEngine {
         if let Err(e) = actor::clear_callbacks() {
             log::error!("Failed to clear callback dispatch while aborting backtest: {e}");
         }
+
+        if self.liquidation_error.is_some()
+            && let Err(e) = self.kernel.close_streaming_writer()
+        {
+            log::error!("Failed to seal streaming output after liquidation error: {e}");
+        }
+
         self.run_finished = Some(UnixNanos::from(nanos_since_unix_epoch()));
         self.backtest_end = Some(self.kernel.clock.borrow().timestamp_ns());
         logging_clock_set_realtime_mode();
@@ -1131,12 +1146,18 @@ impl BacktestEngine {
     ///
     /// Returns an error if callback dispatch or ownership cleanup fails, an account rejects a
     /// fill's balance update, collecting component state fails, the cache backing reports a DeFi
-    /// currency integrity error, or a simulation module cannot produce its diagnostics. Callback
-    /// errors and balance rejections trigger abort cleanup, stopping the trader and engines.
+    /// currency integrity error, a simulation module cannot produce its diagnostics, or a value
+    /// used in liquidation or portfolio analysis exceeds the supported float precision. Callback
+    /// errors, balance rejections, and unsupported liquidation precision trigger abort cleanup.
     pub fn end(&mut self) -> anyhow::Result<()> {
+        if let Some(error) = &self.liquidation_error {
+            anyhow::bail!("{error}");
+        }
+
         let result = self.end_impl();
         if let Err(e) = &result
             && (e.is::<CallbackDispatchError>()
+                || self.liquidation_error.is_some()
                 || self.kernel.portfolio.borrow().balance_error().is_some()
                 || self
                     .venues
@@ -1236,12 +1257,13 @@ impl BacktestEngine {
         // Switch logging back to realtime mode
         logging_clock_set_realtime_mode();
 
-        self.log_post_run();
+        let analysis_result = self.log_post_run();
         callback_result?;
         actor::clear_callbacks()?;
         save_result?;
         diagnostics_result?;
-        streaming_result
+        streaming_result?;
+        analysis_result
     }
 
     /// Returns registered strategies whose state resolves to `Running` after the end sequence.
@@ -1329,6 +1351,7 @@ impl BacktestEngine {
         self.backtest_start = None;
         self.backtest_end = None;
         self.funding_error = None;
+        self.liquidation_error = None;
         self.iteration = 0;
         self.force_stop = false;
         self.last_ns = UnixNanos::default();
@@ -1432,8 +1455,26 @@ impl BacktestEngine {
     }
 
     /// Return the backtest result from the last run.
+    ///
+    /// Logs and omits portfolio analysis inputs that exceed the supported float precision.
+    /// Use [`Self::try_get_result`] to receive these errors.
     #[must_use]
     pub fn get_result(&self) -> BacktestResult {
+        let stats = self.kernel.portfolio.borrow().statistics();
+        self.build_result(stats)
+    }
+
+    /// Returns the result from the last run with checked portfolio statistics.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if portfolio statistics require unsupported float precision.
+    pub fn try_get_result(&self) -> anyhow::Result<BacktestResult> {
+        let analyzer = self.kernel.portfolio.borrow().try_analyzer()?;
+        Ok(self.build_result(analyzer.statistics()))
+    }
+
+    fn build_result(&self, stats: PortfolioStatistics) -> BacktestResult {
         let elapsed_time_secs = match (self.backtest_start, self.backtest_end) {
             (Some(start), Some(end)) => end.saturating_duration_since(start).as_secs_f64(),
             _ => 0.0,
@@ -1461,7 +1502,6 @@ impl BacktestEngine {
 
         let summary = self.build_result_summary(&cache, counts);
 
-        let stats = self.kernel.portfolio.borrow().statistics();
         let stats_pnls = stats.pnls;
         let stats_returns = stats.returns;
         let stats_general = stats.general;
@@ -1498,9 +1538,14 @@ impl BacktestEngine {
     ///
     /// # Errors
     ///
-    /// Returns an error if observable state cannot be projected into the canonical schema.
+    /// Returns an error if liquidation failed or observable state cannot be projected into the
+    /// canonical schema.
     pub fn get_canonical_result(&self) -> anyhow::Result<CanonicalBacktestResult> {
-        let result = self.get_result();
+        if let Some(error) = &self.liquidation_error {
+            anyhow::bail!("{error}");
+        }
+
+        let result = self.try_get_result()?;
         let cache = self.kernel.cache.borrow();
         let orders = cache
             .orders(None, None, None, None, None)
@@ -2226,18 +2271,32 @@ impl BacktestEngine {
         if self.last_liquidation_ns == Some(ts_now) {
             return Ok(());
         }
-        self.last_liquidation_ns = Some(ts_now);
 
         if self
             .venues
             .values()
             .all(|exchange| !exchange.borrow().liquidation_enabled())
         {
+            self.last_liquidation_ns = Some(ts_now);
             return Ok(());
         }
 
+        let mut plans = Vec::new();
+
         for exchange in self.venues.values() {
-            exchange.borrow_mut().process_liquidations(ts_now);
+            match exchange.borrow().plan_liquidations() {
+                Ok(Some(plan)) => plans.push((exchange, plan)),
+                Ok(None) => (),
+                Err(e) => {
+                    self.liquidation_error = Some(e.to_string());
+                    return Err(e);
+                }
+            }
+        }
+
+        self.last_liquidation_ns = Some(ts_now);
+        for (exchange, plan) in plans {
+            exchange.borrow_mut().execute_liquidations(plan, ts_now);
         }
 
         self.drain_command_queues()?;
@@ -2409,7 +2468,7 @@ impl BacktestEngine {
     }
 
     #[rustfmt::skip]
-    fn log_post_run(&self) {
+    fn log_post_run(&self) -> anyhow::Result<()> {
         let cache = self.kernel.cache.borrow();
         let orders = cache.orders(None, None, None, None, None);
         let total_events = event_count_as_usize(self.kernel.exec_engine.borrow().event_count());
@@ -2450,11 +2509,16 @@ impl BacktestEngine {
         log::info!("Total orders: {num_orders}");
         log::info!("Total positions: {num_positions}");
 
-        if !self.config.run_analysis {
-            return;
+        if self.config.run_analysis {
+            let analyzer = self.kernel.portfolio.borrow().try_analyzer().map_err(|e| {
+                anyhow::anyhow!(
+                    "Backtest completed, but portfolio analysis failed. Disable run_analysis to skip post-run analysis. {e:#}"
+                )
+            })?;
+            log_portfolio_performance(&analyzer);
         }
 
-        log_portfolio_performance(&self.kernel.portfolio.borrow().analyzer());
+        Ok(())
     }
 
     fn total_positions_with_snapshots(cache: &Cache, cached_positions_count: usize) -> usize {
@@ -2655,6 +2719,12 @@ mod tests {
             fee::{FeeModelAny, MakerTakerFeeModel},
             latency::{LatencyModelHandle, StaticLatencyModel},
         },
+    };
+    #[cfg(feature = "defi")]
+    use nautilus_model::{
+        accounts::{AccountAny, MarginAccount},
+        events::AccountState,
+        types::{AccountBalance, MarginBalance},
     };
     use nautilus_model::{
         data::{Data, IndexPriceUpdate, InstrumentClose, InstrumentStatus, QuoteTick},
@@ -3422,6 +3492,245 @@ mod tests {
         assert_eq!(
             engine.kernel.clock.borrow().timestamp_ns(),
             UnixNanos::from(expected_ns)
+        );
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_unsupported_liquidation_precision_aborts_and_requires_reset(
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+    ) {
+        let config = BacktestEngineConfig {
+            bypass_logging: true,
+            run_analysis: false,
+            ..Default::default()
+        };
+
+        #[cfg(feature = "streaming")]
+        let directory = tempfile::tempdir().unwrap();
+
+        #[cfg(feature = "streaming")]
+        let config = {
+            use nautilus_system::config::{RotationConfig, StreamingConfig};
+
+            BacktestEngineConfig {
+                instance_id: Some(UUID4::new()),
+                streaming: Some(StreamingConfig::new(
+                    directory.path().to_string_lossy().into_owned(),
+                    None,
+                    1_000,
+                    false,
+                    RotationConfig::NoRotation,
+                )),
+                ..config
+            }
+        };
+
+        #[cfg(feature = "streaming")]
+        let quote_directory = directory
+            .path()
+            .join("backtest")
+            .join(config.instance_id.unwrap().to_string())
+            .join("quotes");
+
+        let mut engine = BacktestEngine::new(config).unwrap();
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        let id = instrument.id();
+        let mut currency = instrument.settlement_currency();
+        currency.precision = 18;
+        let balance = Money::from_decimal(1000.into(), currency).unwrap();
+        let config = SimulatedVenueConfig::builder()
+            .venue(id.venue)
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .starting_balances(vec![balance])
+            .liquidation_enabled(true)
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+            .build()
+            .unwrap();
+        engine.add_venue(config).unwrap();
+        engine.add_instrument(&instrument).unwrap();
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(engine.trader_id())
+            .instrument_id(id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .build();
+        let fill = OrderFilledTestBuilder::new(&order, &instrument).build();
+        let position = Position::new(&instrument, fill.into());
+        engine
+            .kernel
+            .cache
+            .borrow_mut()
+            .add_position(&position, OmsType::Netting)
+            .unwrap();
+
+        let quotes = [1, 2].map(|ts: u64| {
+            Data::Quote(QuoteTick::new(
+                id,
+                Price::from("1000.00"),
+                Price::from("1001.00"),
+                Quantity::from("1.000"),
+                Quantity::from("1.000"),
+                ts.into(),
+                ts.into(),
+            ))
+        });
+
+        engine.add_data(quotes.to_vec(), None, true, true).unwrap();
+
+        let error = engine.run(None, None, None, false).unwrap_err().to_string();
+        let finished = engine.run_finished();
+
+        #[cfg(feature = "streaming")]
+        let (sealed_file, sealed_quotes) = {
+            let files = std::fs::read_dir(&quote_directory)
+                .unwrap()
+                .collect::<std::io::Result<Vec<_>>>()
+                .unwrap();
+            assert_eq!(files.len(), 1);
+            let path = files[0].path();
+            assert_eq!(
+                path.extension().and_then(|ext| ext.to_str()),
+                Some("feather")
+            );
+            let bytes = std::fs::read(&path).unwrap();
+            (path, bytes)
+        };
+
+        assert_eq!(
+            error,
+            format!(
+                "Cannot check liquidation balance for {}-001 ({currency}): Fixed-point precision 18 exceeds maximum float precision 16",
+                id.venue,
+            ),
+        );
+        assert!(finished.is_some());
+        assert!(engine.force_stop);
+        assert_eq!(engine.last_liquidation_ns, None);
+        assert_eq!(
+            engine.run(None, None, None, false).unwrap_err().to_string(),
+            error
+        );
+        assert_eq!(engine.end().unwrap_err().to_string(), error);
+        assert_eq!(engine.run_finished(), finished);
+
+        engine.reset().unwrap();
+        assert!(engine.liquidation_error.is_none());
+
+        #[cfg(feature = "streaming")]
+        {
+            engine.run(None, None, None, false).unwrap();
+            let files = std::fs::read_dir(&quote_directory)
+                .unwrap()
+                .collect::<std::io::Result<Vec<_>>>()
+                .unwrap();
+
+            assert_eq!(files.len(), 2);
+            assert!(files.iter().all(|file| {
+                file.path().extension().and_then(|ext| ext.to_str()) == Some("feather")
+            }));
+            assert_eq!(std::fs::read(sealed_file).unwrap(), sealed_quotes);
+        }
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_liquidation_plans_all_venues_before_emitting_orders(
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+    ) {
+        let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+        let ts = UnixNanos::from(1);
+        let (handler, events) = get_typed_into_message_saving_handler::<OrderEventAny>(None);
+        msgbus::register_order_event_endpoint(MessagingSwitchboard::exec_engine_process(), handler);
+
+        for (venue, precision) in [(Venue::from("SIM1"), 16), (Venue::from("SIM2"), 18)] {
+            let mut contract = crypto_perpetual_ethusdt.clone();
+            contract.id = InstrumentId::new(contract.id.symbol, venue);
+            let instrument = InstrumentAny::CryptoPerpetual(contract);
+            let id = instrument.id();
+            let settlement = instrument.settlement_currency();
+            let mut currency = settlement;
+            currency.precision = precision;
+            let total = Money::from_decimal(1000.into(), settlement).unwrap();
+            let balance = AccountBalance::new(total, Money::zero(settlement), total);
+            let maintenance = Money::from_decimal(2000.into(), currency).unwrap();
+            let margin = MarginBalance::new(Money::zero(currency), maintenance, Some(id));
+            let config = SimulatedVenueConfig::builder()
+                .venue(venue)
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![total])
+                .liquidation_enabled(true)
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+                .build()
+                .unwrap();
+            engine.add_venue(config).unwrap();
+            engine.add_instrument(&instrument).unwrap();
+            let account_id = AccountId::from(format!("{venue}-001").as_str());
+
+            let state = AccountState::new(
+                account_id,
+                AccountType::Margin,
+                vec![balance],
+                vec![margin],
+                false,
+                UUID4::new(),
+                ts,
+                ts,
+                None,
+            );
+
+            let account = AccountAny::Margin(MarginAccount::new(state, false));
+            let size = Quantity::from("1.000");
+            let price = Price::from("1000.00");
+            let order = OrderTestBuilder::new(OrderType::Market)
+                .trader_id(engine.trader_id())
+                .instrument_id(id)
+                .client_order_id(ClientOrderId::from(format!("O-{venue}").as_str()))
+                .side(OrderSide::Buy)
+                .quantity(size)
+                .build();
+            let fill = OrderFilledTestBuilder::new(&order, &instrument)
+                .account_id(account_id)
+                .position_id(PositionId::from(format!("P-{venue}").as_str()))
+                .last_px(price)
+                .build();
+            let position = Position::new(&instrument, fill.into());
+            let quote = QuoteTick::new(id, price, price, size, size, ts, ts);
+
+            {
+                let mut cache = engine.kernel.cache.borrow_mut();
+                cache.add_account(account).unwrap();
+                cache.add_position(&position, OmsType::Netting).unwrap();
+                cache.add_quote(quote).unwrap();
+            }
+
+            engine.venues[&venue]
+                .borrow_mut()
+                .process_quote_tick(&quote)
+                .unwrap();
+        }
+
+        let result = engine.run_venue_liquidations(ts, SettlementScope::All);
+        let error = format!(
+            "Cannot check liquidation maintenance margin for {}.SIM2 ({}): Fixed-point precision 18 exceeds maximum float precision 16",
+            crypto_perpetual_ethusdt.id.symbol,
+            crypto_perpetual_ethusdt.settlement_currency(),
+        );
+
+        assert_eq!(result.unwrap_err().to_string(), error);
+        assert!(events.get_messages().is_empty());
+        assert_eq!(engine.last_liquidation_ns, None);
+
+        engine.abort_run();
+        engine.try_get_result().unwrap();
+        assert_eq!(
+            engine.get_canonical_result().unwrap_err().to_string(),
+            error
         );
     }
 

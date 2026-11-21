@@ -28,7 +28,7 @@ use nautilus_model::{
     identifiers::{InstrumentId, StrategyId, Venue},
     instruments::{Instrument, any::InstrumentAny},
     position::Position,
-    types::Price,
+    types::{Price, fixed::check_float_precision},
 };
 use ustr::Ustr;
 
@@ -362,6 +362,7 @@ impl GreeksCalculator {
     /// Returns an error if:
     /// - Instrument or underlying definitions are missing or ambiguous.
     /// - Required market prices are unavailable.
+    /// - A price, strike, or multiplier exceeds the supported float precision.
     /// - An option has expired or an option spread is requested.
     /// - Valuation inputs or results are invalid, or implied volatility cannot be solved.
     #[expect(clippy::too_many_arguments)]
@@ -628,9 +629,11 @@ impl GreeksCalculator {
         beta_weights: Option<&HashMap<InstrumentId, f64>>,
     ) -> anyhow::Result<GreeksData> {
         let multiplier = instrument.multiplier();
+        check_float_precision(multiplier.precision)
+            .map_err(|e| anyhow::anyhow!("Cannot convert multiplier for {instrument_id}: {e}"))?;
         let underlying_instrument_id = instrument.id();
         let underlying_price = self
-            .get_price(&underlying_instrument_id)
+            .get_price(&underlying_instrument_id)?
             .ok_or_else(|| anyhow::anyhow!("No price available for {underlying_instrument_id}"))?;
         let (delta, _, _) = self.modify_greeks(
             1.0,
@@ -651,9 +654,8 @@ impl GreeksCalculator {
             None,
             None,
         )?;
-        let mut greeks_data =
-            GreeksData::from_delta(instrument_id, delta, multiplier.as_f64(), ts_event);
-
+        let multiplier = multiplier.as_f64();
+        let mut greeks_data = GreeksData::from_delta(instrument_id, delta, multiplier, ts_event);
         if let Some(pos) = position {
             greeks_data.pnl = (underlying_price + spot_shock) - pos.avg_px_open.as_f64();
             greeks_data.price = greeks_data.pnl;
@@ -734,15 +736,21 @@ impl GreeksCalculator {
         };
 
         let multiplier = instrument.multiplier();
+        check_float_precision(multiplier.precision)
+            .map_err(|e| anyhow::anyhow!("Cannot convert multiplier for {instrument_id}: {e}"))?;
         let is_call = instrument.option_kind().unwrap_or(OptionKind::Call) == OptionKind::Call;
-        let strike = instrument.strike_price().unwrap_or_default().as_f64();
+        let strike = price_as_f64(
+            instrument.strike_price().unwrap_or_default(),
+            instrument_id,
+            "strike price",
+        )?;
         let option_price = self
-            .get_price(&instrument_id)
+            .get_price(&instrument_id)?
             .ok_or_else(|| anyhow::anyhow!("No price available for {instrument_id}"))?;
         let underlying_price = self.get_underlying_price(&underlying_instrument_id)?;
 
         if let Some(vol_index_id) = vol_index_instrument_id {
-            self.get_price(&vol_index_id)
+            self.get_price(&vol_index_id)?
                 .ok_or_else(|| anyhow::anyhow!("No price available for {vol_index_id}"))?;
         }
 
@@ -787,6 +795,8 @@ impl GreeksCalculator {
             None,
         )?;
 
+        let multiplier = multiplier.as_f64();
+
         let greeks_data = GreeksData::new(
             instrument_id,
             is_call,
@@ -794,7 +804,7 @@ impl GreeksCalculator {
             expiry_int,
             expiry_in_days,
             expiry_in_years,
-            multiplier.as_f64(),
+            multiplier,
             1.0,
             underlying_price,
             interest_rate,
@@ -899,7 +909,7 @@ impl GreeksCalculator {
     }
 
     fn get_underlying_price(&self, underlying_instrument_id: &InstrumentId) -> anyhow::Result<f64> {
-        if let Some(underlying_price) = self.get_price(underlying_instrument_id) {
+        if let Some(underlying_price) = self.get_price(underlying_instrument_id)? {
             return Ok(underlying_price);
         }
 
@@ -914,9 +924,13 @@ impl GreeksCalculator {
 
         if is_future_or_absent
             && let Some(underlying_price) =
-                self.get_cached_futures_spread_price(*underlying_instrument_id)
+                self.cached_futures_spread_price(*underlying_instrument_id)?
         {
-            return Ok(underlying_price.as_f64());
+            return price_as_f64(
+                underlying_price,
+                *underlying_instrument_id,
+                "implied futures price",
+            );
         }
 
         anyhow::bail!("No price available for {underlying_instrument_id}")
@@ -945,8 +959,8 @@ impl GreeksCalculator {
     ///
     /// # Errors
     ///
-    /// Returns an error if `vol_index_instrument_id` is supplied and no explicit or cached
-    /// volatility index price is available.
+    /// Returns an error if a cached index or volatility index price exceeds the supported float
+    /// precision, or if `vol_index_instrument_id` is supplied without an explicit or cached price.
     #[expect(clippy::too_many_arguments)]
     pub fn modify_greeks(
         &self,
@@ -972,83 +986,54 @@ impl GreeksCalculator {
         let mut gamma = gamma_input;
         let mut vega = vega_input;
 
-        let mut used_index_price = index_price
-            .or_else(|| index_instrument_id.and_then(|index_id| self.get_price(&index_id)));
+        let mut used_index_price = match (index_price, index_instrument_id) {
+            (Some(price), _) => Some(price),
+            (None, Some(index_id)) => self.get_price(&index_id)?,
+            (None, None) => None,
+        };
+
         let mut used_index_vol = vol_index_price;
         if used_index_vol.is_none()
             && let Some(vol_index_id) = vol_index_instrument_id
         {
             used_index_vol = Some(
-                self.get_price(&vol_index_id)
+                self.get_price(&vol_index_id)?
                     .ok_or_else(|| anyhow::anyhow!("No price available for {vol_index_id}"))?,
             );
         }
 
-        if used_index_price.is_some() {
-            let mut beta = 1.0;
-            if let Some(weights) = beta_weights
-                && let Some(&weight) = weights.get(&underlying_instrument_id)
-            {
-                beta = weight;
-            }
-
-            if let Some(ref mut idx_price) = used_index_price {
-                #[expect(clippy::float_cmp, reason = "exact-equality baseline check")]
-                if underlying_price != unshocked_underlying_price {
-                    *idx_price += 1.0 / beta
-                        * (*idx_price / unshocked_underlying_price)
-                        * (underlying_price - unshocked_underlying_price);
-                }
-
-                let delta_multiplier = beta * underlying_price / *idx_price;
-                delta *= delta_multiplier;
-                gamma *= delta_multiplier.powi(2);
-            }
+        if let Some(ref mut idx_price) = used_index_price {
+            let beta = beta_weights
+                .and_then(|weights| weights.get(&underlying_instrument_id))
+                .copied()
+                .unwrap_or(1.0);
+            *idx_price = adjust_index_price(
+                *idx_price,
+                beta,
+                underlying_price,
+                unshocked_underlying_price,
+            );
+            let delta_multiplier = beta * underlying_price / *idx_price;
+            delta *= delta_multiplier;
+            gamma *= delta_multiplier.powi(2);
         }
 
-        if used_index_vol.is_some() {
-            let mut vega_beta = 1.0;
-
-            let used_vol = if unshocked_vol == 0.0 {
-                vol
-            } else {
-                unshocked_vol
-            };
-
-            if let Some(weights) = vol_beta_weights
-                && let Some(&weight) = weights.get(&underlying_instrument_id)
-            {
-                vega_beta = weight;
-            }
-
-            if let Some(ref mut idx_vol) = used_index_vol {
-                *idx_vol *= 0.01;
-
-                #[expect(clippy::float_cmp, reason = "exact-equality baseline check")]
-                if vol != used_vol && used_vol != 0.0 {
-                    *idx_vol += 1.0 / vega_beta * (*idx_vol / used_vol) * (vol - used_vol);
-                }
-
-                if *idx_vol != 0.0 {
-                    vega *= vega_beta * vol / *idx_vol;
-                }
+        if let Some(ref mut idx_vol) = used_index_vol {
+            let vega_beta = vol_beta_weights
+                .and_then(|weights| weights.get(&underlying_instrument_id))
+                .copied()
+                .unwrap_or(1.0);
+            *idx_vol = adjust_index_vol(*idx_vol, vega_beta, vol, unshocked_vol);
+            if *idx_vol != 0.0 {
+                vega *= vega_beta * vol / *idx_vol;
             }
         }
 
         if percent_greeks {
-            if let Some(idx_price) = used_index_price {
-                delta *= idx_price / 100.0;
-                gamma *= (idx_price / 100.0).powi(2);
-            } else {
-                delta *= underlying_price / 100.0;
-                gamma *= (underlying_price / 100.0).powi(2);
-            }
-
-            if let Some(idx_vol) = used_index_vol {
-                vega *= idx_vol / 100.0;
-            } else {
-                vega *= vol / 100.0;
-            }
+            let price_pct = used_index_price.unwrap_or(underlying_price) / 100.0;
+            delta *= price_pct;
+            gamma *= price_pct.powi(2);
+            vega *= used_index_vol.unwrap_or(vol) / 100.0;
         }
 
         // Apply time weighting to vega if vega_time_weight_base is provided
@@ -1202,7 +1187,8 @@ impl GreeksCalculator {
     ///
     /// # Errors
     ///
-    /// Returns an error if instruments or prices are missing or inconsistent.
+    /// Returns an error if instruments or prices are missing or inconsistent, a price exceeds the
+    /// supported float precision, or the calculated spread cannot be applied to the reference price.
     pub fn cache_futures_spread(
         &self,
         call_instrument_id: InstrumentId,
@@ -1285,13 +1271,13 @@ impl GreeksCalculator {
             )
         })?;
 
-        let call_price = self.get_price(&call_instrument_id).ok_or_else(|| {
+        let call_price = self.get_price(&call_instrument_id)?.ok_or_else(|| {
             anyhow::anyhow!(
                 "Cannot cache futures spread: missing option price for {call_instrument_id}"
             )
         })?;
 
-        let put_price = self.get_price(&put_instrument_id).ok_or_else(|| {
+        let put_price = self.get_price(&put_instrument_id)?.ok_or_else(|| {
             anyhow::anyhow!(
                 "Cannot cache futures spread: missing option price for {put_instrument_id}"
             )
@@ -1313,16 +1299,35 @@ impl GreeksCalculator {
         }
 
         let implied_future_price =
-            self.calculate_implied_future_price(&call_instrument, call_price, put_price);
-        let spread = implied_future_price - reference_future_price.as_f64();
-        let spread_price = reference_future_instrument.make_price(spread);
+            self.calculate_implied_future_price(&call_instrument, call_price, put_price)?;
+        let spread = implied_future_price
+            - price_as_f64(
+                reference_future_price,
+                futures_instrument_id,
+                "reference futures price",
+            )?;
+        check_float_precision(reference_future_instrument.price_precision()).map_err(|e| {
+            anyhow::anyhow!(
+                "Cannot construct futures spread price for {futures_instrument_id}: {e}"
+            )
+        })?;
+
+        let spread_price = reference_future_instrument.try_make_price(spread)?;
+
+        let implied_price = reference_future_price
+            .checked_add(spread_price)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Cannot apply futures spread to reference price for {futures_instrument_id}"
+                )
+            })?;
 
         self.cached_futures_spreads.borrow_mut().insert(
             underlying_instrument_id,
             (futures_instrument_id, spread_price),
         );
 
-        Ok(reference_future_price + spread_price)
+        Ok(implied_price)
     }
 
     fn calculate_implied_future_price(
@@ -1330,7 +1335,7 @@ impl GreeksCalculator {
         call_instrument: &InstrumentAny,
         call_price: f64,
         put_price: f64,
-    ) -> f64 {
+    ) -> anyhow::Result<f64> {
         let expiry_utc = call_instrument
             .expiration_ns()
             .map_or_default(|ns| ns.to_datetime_utc());
@@ -1343,25 +1348,59 @@ impl GreeksCalculator {
             .borrow()
             .yield_curve(&currency)
             .map_or(0.0425, |yield_curve| yield_curve(expiry_in_years));
-        let strike = call_instrument.strike_price().unwrap_or_default().as_f64();
+        let strike = price_as_f64(
+            call_instrument.strike_price().unwrap_or_default(),
+            call_instrument.id(),
+            "strike price",
+        )?;
 
-        strike + (interest_rate * expiry_in_years).exp() * (call_price - put_price)
+        Ok(strike + (interest_rate * expiry_in_years).exp() * (call_price - put_price))
     }
 
     /// Resolve a cached futures spread price for an underlying future.
+    ///
+    /// Returns `None` when the reference price is unavailable or the spread cannot be applied.
     #[must_use]
     pub fn get_cached_futures_spread_price(
         &self,
         underlying_instrument_id: InstrumentId,
     ) -> Option<Price> {
-        let (futures_instrument_id, spread) = self
+        match self.cached_futures_spread_price(underlying_instrument_id) {
+            Ok(price) => price,
+            Err(e) => {
+                log::warn!(
+                    "Cannot resolve cached futures spread for {underlying_instrument_id}: {e}"
+                );
+                None
+            }
+        }
+    }
+
+    fn cached_futures_spread_price(
+        &self,
+        underlying_instrument_id: InstrumentId,
+    ) -> anyhow::Result<Option<Price>> {
+        let Some((futures_instrument_id, spread)) = self
             .cached_futures_spreads
             .borrow()
             .get(&underlying_instrument_id)
-            .copied()?;
-        let reference_future_price = self.get_price_object(&futures_instrument_id)?;
+            .copied()
+        else {
+            return Ok(None);
+        };
 
-        Some(reference_future_price + spread)
+        let Some(reference_price) = self.get_price_object(&futures_instrument_id) else {
+            return Ok(None);
+        };
+
+        reference_price
+            .checked_add(spread)
+            .map(Some)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Cannot apply futures spread to reference price for {futures_instrument_id}"
+                )
+            })
     }
 
     fn get_price_object(&self, instrument_id: &InstrumentId) -> Option<Price> {
@@ -1388,9 +1427,10 @@ impl GreeksCalculator {
         price
     }
 
-    fn get_price(&self, instrument_id: &InstrumentId) -> Option<f64> {
+    fn get_price(&self, instrument_id: &InstrumentId) -> anyhow::Result<Option<f64>> {
         self.get_price_object(instrument_id)
-            .map(|price| price.as_f64())
+            .map(|price| price_as_f64(price, *instrument_id, "cached price"))
+            .transpose()
     }
 
     /// Subscribes to Greeks data for options whose underlying symbol equals `underlying`.
@@ -1417,6 +1457,44 @@ impl GreeksCalculator {
             msgbus::subscribe_greeks(pattern, typed_handler, None);
         }
     }
+}
+
+fn price_as_f64(price: Price, instrument_id: InstrumentId, field: &str) -> anyhow::Result<f64> {
+    check_float_precision(price.precision)
+        .map_err(|e| anyhow::anyhow!("Cannot convert {field} for {instrument_id}: {e}"))?;
+    Ok(price.as_f64())
+}
+
+fn adjust_index_price(
+    mut index_price: f64,
+    beta: f64,
+    underlying_price: f64,
+    unshocked_price: f64,
+) -> f64 {
+    #[expect(clippy::float_cmp, reason = "exact-equality baseline check")]
+    if underlying_price != unshocked_price {
+        index_price +=
+            1.0 / beta * (index_price / unshocked_price) * (underlying_price - unshocked_price);
+    }
+
+    index_price
+}
+
+fn adjust_index_vol(mut index_vol: f64, beta: f64, vol: f64, unshocked_vol: f64) -> f64 {
+    let baseline = if unshocked_vol == 0.0 {
+        vol
+    } else {
+        unshocked_vol
+    };
+
+    index_vol *= 0.01;
+
+    #[expect(clippy::float_cmp, reason = "exact-equality baseline check")]
+    if vol != baseline && baseline != 0.0 {
+        index_vol += 1.0 / beta * (index_vol / baseline) * (vol - baseline);
+    }
+
+    index_vol
 }
 
 // Keyed by underlying symbol and full instrument ID so venues and symbol prefixes never collide
@@ -1473,6 +1551,8 @@ mod tests {
     use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
     use jiff::{Timestamp, civil::Date, tz::Offset};
+    #[cfg(feature = "defi")]
+    use nautilus_model::{data::TradeTick, enums::AggressorSide};
     use nautilus_model::{
         data::{IndexPriceUpdate, QuoteTick, YieldCurve},
         enums::{AssetClass, OmsType, OptionKind, OrderSide, PositionSide},
@@ -2656,17 +2736,21 @@ mod tests {
     }
 
     #[rstest]
-    #[case(OrderSide::Buy, 3, [300.0, 300.0, 150.0])]
-    #[case(OrderSide::Sell, 2, [-200.0, -200.0, -100.0])]
+    #[case(OrderSide::Buy, 3, 0, Some([300.0, 300.0, 150.0]))]
+    #[case(OrderSide::Sell, 2, 0, Some([-200.0, -200.0, -100.0]))]
+    #[cfg_attr(feature = "defi", case(OrderSide::Buy, 3, 16, Some([300.0, 300.0, 150.0])))]
+    #[cfg_attr(feature = "defi", case(OrderSide::Buy, 3, 17, None))]
+    #[cfg_attr(feature = "defi", case(OrderSide::Buy, 3, 18, None))]
     fn test_portfolio_greeks_scales_futures_multiplier(
         #[case] side: OrderSide,
         #[case] quantity: u64,
-        #[case] expected: [f64; 3],
+        #[case] precision: u8,
+        #[case] expected: Option<[f64; 3]>,
     ) {
         let now_ns = UnixNanos::from(1_700_000_000_000_000_000);
         let mut future =
             future_with_expiration("ES.GLBX", "ES", UnixNanos::from(1_800_000_000_000_000_000));
-        future.multiplier = Quantity::from(50);
+        future.multiplier = Quantity::from_decimal_dp(50.into(), precision).unwrap();
         let instrument = InstrumentAny::FuturesContract(future);
         let instrument_id = instrument.id();
         let position = position_from_fill(
@@ -2700,10 +2784,20 @@ mod tests {
         clock.borrow_mut().set_time(now_ns);
         let calculator = GreeksCalculator::new(cache, clock);
 
-        let result = calculate_portfolio_greeks(&calculator, None).unwrap();
+        let result = calculate_portfolio_greeks(&calculator, None);
+
+        let Some(expected) = expected else {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                format!(
+                    "Cannot convert multiplier for {instrument_id}: Fixed-point precision {precision} exceeds maximum float precision 16"
+                ),
+            );
+            return;
+        };
 
         assert_portfolio_greeks_eq(
-            &result,
+            &result.unwrap(),
             &PortfolioGreeks::new(
                 expected[0],
                 expected[1],
@@ -3398,6 +3492,65 @@ mod tests {
         assert_eq!(error.to_string(), "No price available for VIX.XCBF");
     }
 
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[case(16, true)]
+    #[case(17, false)]
+    #[case(18, false)]
+    fn test_modify_greeks_checks_cached_index_precision(
+        #[case] precision: u8,
+        #[case] supported: bool,
+    ) {
+        let now_ns = UnixNanos::from(1);
+        let calculator = create_test_calculator();
+        let underlying_id = InstrumentId::from("AAPL.OPRA");
+        let index_id = InstrumentId::from("SPX.XCBF");
+        let price = Price::from_decimal_dp(200.into(), precision).unwrap();
+
+        let trade = TradeTick::new(
+            index_id,
+            price,
+            Quantity::from(1),
+            AggressorSide::Buy,
+            TradeId::new("INDEX-1"),
+            now_ns,
+            now_ns,
+        );
+
+        calculator.cache.borrow_mut().add_trade(trade).unwrap();
+
+        let result = calculator.modify_greeks(
+            1.0,
+            2.0,
+            underlying_id,
+            100.0,
+            100.0,
+            false,
+            Some(index_id),
+            None,
+            3.0,
+            0.0,
+            0,
+            None,
+            0.0,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        if supported {
+            assert_eq!(result.unwrap(), (0.5, 0.5, 3.0));
+        } else {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                format!(
+                    "Cannot convert cached price for {index_id}: Fixed-point precision {precision} exceeds maximum float precision 16"
+                ),
+            );
+        }
+    }
+
     #[rstest]
     fn test_modify_greeks_accepts_explicit_index_prices() {
         let calculator = create_test_calculator();
@@ -3552,7 +3705,14 @@ mod tests {
     }
 
     #[rstest]
-    fn test_cache_futures_spread_returns_price_to_reference_future() {
+    #[case(2, None)]
+    #[cfg_attr(feature = "defi", case(16, None))]
+    #[cfg_attr(feature = "defi", case(17, Some(18)))]
+    #[cfg_attr(feature = "defi", case(18, Some(18)))]
+    fn test_cache_futures_spread_returns_price_to_reference_future(
+        #[case] precision: u8,
+        #[case] rejected_mid_precision: Option<u8>,
+    ) {
         let now = utc_timestamp(2024, 2, 14, 16, 0, 0);
         let expiry = utc_timestamp(2024, 3, 15, 16, 0, 0);
         let now_ns = UnixNanos::from(now);
@@ -3615,10 +3775,12 @@ mod tests {
             now_ns,
         );
 
+        let reference_price = Price::from_decimal_dp(155.into(), precision).unwrap();
+
         let reference_future_quote = QuoteTick::new(
             reference_future.id(),
-            Price::from("155.00"),
-            Price::from("155.00"),
+            reference_price,
+            reference_price,
             Quantity::from(100),
             Quantity::from(100),
             now_ns,
@@ -3635,13 +3797,27 @@ mod tests {
         clock.borrow_mut().set_time(now_ns);
         let calculator = GreeksCalculator::new(cache, clock);
 
-        let cached_future_price = calculator
-            .cache_futures_spread(call_option.id(), put_option.id(), reference_future.id())
-            .unwrap();
+        let result = calculator.cache_futures_spread(
+            call_option.id(),
+            put_option.id(),
+            reference_future.id(),
+        );
+
+        if let Some(precision) = rejected_mid_precision {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                format!(
+                    "Cannot convert reference futures price for {}: Fixed-point precision {precision} exceeds maximum float precision 16",
+                    reference_future.id(),
+                ),
+            );
+            assert!(calculator.cached_futures_spreads.borrow().is_empty());
+            return;
+        }
 
         let expected_underlying = 150.0 + (0.0425_f64 * (30.0 / 365.25)).exp() * (8.50 - 3.33);
         let expected_cached_underlying = reference_future.make_price(expected_underlying);
-        assert_eq!(cached_future_price, expected_cached_underlying);
+        assert_eq!(result.unwrap(), expected_cached_underlying);
         assert_eq!(
             calculator.get_cached_futures_spread_price(InstrumentId::from("ESH4.GLBX")),
             Some(expected_cached_underlying)

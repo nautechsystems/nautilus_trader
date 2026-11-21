@@ -315,6 +315,8 @@ mod tests {
         },
         types::{Price, Quantity},
     };
+    #[cfg(feature = "defi")]
+    use nautilus_model::{data::TradeTick, enums::AggressorSide, identifiers::TradeId};
     use rstest::rstest;
 
     use super::*;
@@ -372,6 +374,59 @@ mod tests {
             .unwrap();
 
         assert_eq!(greeks.underlying_price, 150.0);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[case(16, true)]
+    #[case(17, false)]
+    #[case(18, false)]
+    fn test_py_instrument_greeks_checks_cached_price_precision(
+        #[case] precision: u8,
+        #[case] supported: bool,
+    ) {
+        Python::initialize();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let equity = equity_aapl();
+        let instrument_id = equity.id();
+        let price = Price::from_decimal_dp(150.into(), precision).unwrap();
+        let size = Quantity::from(1);
+        let ts = UnixNanos::from(1);
+
+        let trade = TradeTick::new(
+            instrument_id,
+            price,
+            size,
+            AggressorSide::Buy,
+            TradeId::new("EQ-1"),
+            ts,
+            ts,
+        );
+
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::Equity(equity))
+            .unwrap();
+        cache.borrow_mut().add_trade(trade).unwrap();
+        let calculator = make_calculator(cache);
+
+        let result = py_instrument_greeks(&calculator, instrument_id, None);
+        if supported {
+            let greeks = result.unwrap().unwrap();
+            assert_eq!(greeks.instrument_id, instrument_id);
+            assert_eq!(greeks.greeks.delta, 1.0);
+        } else {
+            let e = result.unwrap_err();
+            Python::attach(|py| {
+                assert!(e.is_instance_of::<pyo3::exceptions::PyValueError>(py));
+                assert_eq!(
+                    e.value(py).to_string(),
+                    format!(
+                        "Cannot convert cached price for {instrument_id}: Fixed-point precision {precision} exceeds maximum float precision 16"
+                    ),
+                );
+            });
+        }
     }
 
     #[rstest]

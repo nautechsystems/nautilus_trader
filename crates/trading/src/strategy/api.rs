@@ -866,6 +866,8 @@ impl<'a> PortfolioApi<'a> {
 
     /// Returns an owned snapshot of computed portfolio performance statistics.
     ///
+    /// Logs and omits PnL statistics and equity series that need unsupported float precision.
+    ///
     /// # Panics
     ///
     /// Panics if the portfolio is already mutably borrowed.

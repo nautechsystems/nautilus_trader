@@ -353,8 +353,8 @@ fn test_new_initializes_clean_state() {
     assert!(strategy.vpin.is_none());
     assert!(strategy.signed_vpin.is_none());
     assert!(strategy.last_close.is_none());
-    assert_eq!(strategy.bucket_buy_volume, 0.0);
-    assert_eq!(strategy.bucket_sell_volume, 0.0);
+    assert_eq!(strategy.bucket_buy_volume, dec!(0));
+    assert_eq!(strategy.bucket_sell_volume, dec!(0));
     assert!(!strategy.exit_cooldown);
     assert!(strategy.entry_order_id.is_none());
     assert!(strategy.exit_order_ids.is_empty());
@@ -381,20 +381,19 @@ fn test_config_defaults() {
 }
 
 #[rstest]
-fn test_buyer_aggressor_adds_to_buy_volume() {
+#[case("5.0", dec!(5))]
+#[cfg_attr(feature = "defi", case("5.00000000000000001", dec!(5.00000000000000001)))]
+#[cfg_attr(feature = "defi", case("5.000000000000000001", dec!(5.000000000000000001)))]
+fn test_buyer_aggressor_adds_to_buy_volume(
+    #[case] size: &str,
+    #[case] expected: rust_decimal::Decimal,
+) {
     let mut strategy = create_strategy(InstrumentId::from("PF_XBTUSD.KRAKEN"));
+    let tick = trade(strategy.config.instrument_id, size, AggressorSide::Buy, 1);
+    strategy.on_trade(&tick).unwrap();
 
-    strategy
-        .on_trade(&trade(
-            strategy.config.instrument_id,
-            "5.0",
-            AggressorSide::Buy,
-            1,
-        ))
-        .unwrap();
-
-    assert_eq!(strategy.bucket_buy_volume, 5.0);
-    assert_eq!(strategy.bucket_sell_volume, 0.0);
+    assert_eq!(strategy.bucket_buy_volume, expected);
+    assert_eq!(strategy.bucket_sell_volume, dec!(0));
 }
 
 #[rstest]
@@ -410,8 +409,8 @@ fn test_seller_aggressor_adds_to_sell_volume() {
         ))
         .unwrap();
 
-    assert_eq!(strategy.bucket_buy_volume, 0.0);
-    assert_eq!(strategy.bucket_sell_volume, 7.0);
+    assert_eq!(strategy.bucket_buy_volume, dec!(0));
+    assert_eq!(strategy.bucket_sell_volume, dec!(7));
 }
 
 #[rstest]
@@ -427,38 +426,49 @@ fn test_no_aggressor_is_ignored() {
         ))
         .unwrap();
 
-    assert_eq!(strategy.bucket_buy_volume, 0.0);
-    assert_eq!(strategy.bucket_sell_volume, 0.0);
+    assert_eq!(strategy.bucket_buy_volume, dec!(0));
+    assert_eq!(strategy.bucket_sell_volume, dec!(0));
 }
 
 #[rstest]
-fn test_first_bar_records_close_but_not_return() {
-    let mut strategy = create_strategy(InstrumentId::from("PF_XBTUSD.KRAKEN"));
-    register_strategy(&mut strategy);
-    let cache = Rc::new(RefCell::new(Cache::default()));
-    cache
-        .borrow_mut()
-        .add_instrument(InstrumentAny::CryptoPerpetual(pf_xbtusd()))
-        .unwrap();
-
-    let bt = bar_type(strategy.config.instrument_id);
-    strategy.on_bar(&bar(bt, "30000.0", 0)).unwrap();
-
-    assert_eq!(strategy.last_close, Some(30000.0));
-    assert_eq!(strategy.returns.len(), 0);
-}
-
-#[rstest]
-fn test_second_bar_appends_log_return() {
+#[case("30000.0")]
+#[cfg_attr(feature = "defi", case("30000.000000000000000001"))]
+fn test_first_bar_records_close_but_not_return(#[case] price: &str) {
     let mut strategy = create_strategy(InstrumentId::from("PF_XBTUSD.KRAKEN"));
     register_strategy(&mut strategy);
 
     let bt = bar_type(strategy.config.instrument_id);
-    strategy.on_bar(&bar(bt, "30000.0", 0)).unwrap();
-    strategy.on_bar(&bar(bt, "33000.0", 1)).unwrap();
+    strategy.on_bar(&bar(bt, price, 0)).unwrap();
+
+    assert_eq!(strategy.last_close, Some(Price::from(price)));
+    assert!(strategy.returns.is_empty());
+}
+
+#[rstest]
+#[case("30000.0", "33000.0", None, 1.1)]
+#[case("0.001", "0.011", Some(2), 11.0)]
+#[cfg_attr(feature = "defi", case("1.000000000000000000", "2.00", None, 2.0))]
+fn test_second_bar_appends_log_return(
+    #[case] first: &str,
+    #[case] second: &str,
+    #[case] display_precision: Option<u8>,
+    #[case] ratio: f64,
+) {
+    let mut strategy = create_strategy(InstrumentId::from("PF_XBTUSD.KRAKEN"));
+    register_strategy(&mut strategy);
+
+    let bt = bar_type(strategy.config.instrument_id);
+    for (ts, close) in [(0, first), (1, second)] {
+        let mut bar = bar(bt, close, ts);
+        if let Some(precision) = display_precision {
+            bar.close.precision = precision;
+        }
+
+        strategy.on_bar(&bar).unwrap();
+    }
 
     assert_eq!(strategy.returns.len(), 1);
-    let expected = (33000.0_f64 / 30000.0_f64).ln();
+    let expected = ratio.ln();
     assert!((strategy.returns[0] - expected).abs() < 1e-9);
 }
 
@@ -504,8 +514,8 @@ fn test_bar_finalizes_bucket_and_resets_accumulators() {
     assert!((strategy.abs_imbalances[0] - 0.4).abs() < 1e-9);
     assert_eq!(strategy.signed_imbalances.len(), 1);
     assert!((strategy.signed_imbalances[0] - 0.4).abs() < 1e-9);
-    assert_eq!(strategy.bucket_buy_volume, 0.0);
-    assert_eq!(strategy.bucket_sell_volume, 0.0);
+    assert_eq!(strategy.bucket_buy_volume, dec!(0));
+    assert_eq!(strategy.bucket_sell_volume, dec!(0));
 }
 
 #[rstest]
@@ -635,9 +645,9 @@ fn test_on_reset_clears_all_state() {
     strategy.returns.push_back(0.01);
     strategy.abs_imbalances.push_back(0.4);
     strategy.signed_imbalances.push_back(-0.3);
-    strategy.last_close = Some(30000.0);
-    strategy.bucket_buy_volume = 1.0;
-    strategy.bucket_sell_volume = 2.0;
+    strategy.last_close = Some(Price::from("30000.0"));
+    strategy.bucket_buy_volume = dec!(1);
+    strategy.bucket_sell_volume = dec!(2);
     strategy.hurst = Some(0.6);
     strategy.vpin = Some(0.4);
     strategy.signed_vpin = Some(0.4);
@@ -652,8 +662,8 @@ fn test_on_reset_clears_all_state() {
     assert!(strategy.abs_imbalances.is_empty());
     assert!(strategy.signed_imbalances.is_empty());
     assert!(strategy.last_close.is_none());
-    assert_eq!(strategy.bucket_buy_volume, 0.0);
-    assert_eq!(strategy.bucket_sell_volume, 0.0);
+    assert_eq!(strategy.bucket_buy_volume, dec!(0));
+    assert_eq!(strategy.bucket_sell_volume, dec!(0));
     assert!(strategy.hurst.is_none());
     assert!(strategy.vpin.is_none());
     assert!(strategy.signed_vpin.is_none());

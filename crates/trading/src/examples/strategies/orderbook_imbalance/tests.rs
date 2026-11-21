@@ -168,6 +168,33 @@ fn trading_commands() -> TypedIntoMessageSavingHandler<TradingCommand> {
 #[case("20", "3.999999", Some(OrderSide::Buy), "0.123456")]
 #[case("0", "20", None, "0")]
 #[case("20", "0", None, "0")]
+#[cfg_attr(
+    feature = "defi",
+    case(
+        "20.0000000000000000",
+        "3.9999999999999999",
+        Some(OrderSide::Buy),
+        "0.123456"
+    )
+)]
+#[cfg_attr(
+    feature = "defi",
+    case(
+        "20.00000000000000000",
+        "3.99999999999999999",
+        Some(OrderSide::Buy),
+        "0.123456"
+    )
+)]
+#[cfg_attr(
+    feature = "defi",
+    case(
+        "20.000000000000000000",
+        "3.999999999999999999",
+        Some(OrderSide::Buy),
+        "0.123456"
+    )
+)]
 fn test_signal_boundaries_and_order_fields(
     #[case] bid: &str,
     #[case] ask: &str,
