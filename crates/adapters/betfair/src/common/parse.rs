@@ -519,6 +519,7 @@ pub fn extract_selection_id(
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use serde_json::Value;
 
     use super::*;
     use crate::{common::testing::load_test_json, stream::messages::StreamMessage};
@@ -673,6 +674,39 @@ mod tests {
             total += instruments.len();
         }
         assert!(total > 0);
+    }
+
+    #[rstest]
+    fn test_parse_market_catalogue_missing_runner_name() {
+        let data = load_test_json("rest/list_market_catalogue.json");
+        let mut catalogue: Value = serde_json::from_str(&data).unwrap();
+        catalogue["runners"][1]
+            .as_object_mut()
+            .unwrap()
+            .remove("runnerName")
+            .unwrap();
+
+        let catalogues: Vec<MarketCatalogue> =
+            serde_json::from_value(Value::Array(vec![catalogue])).unwrap();
+        let instruments =
+            parse_market_catalogue(&catalogues[0], Currency::GBP(), UnixNanos::default(), None)
+                .unwrap();
+
+        let [
+            InstrumentAny::Betting(first),
+            InstrumentAny::Betting(unnamed),
+            InstrumentAny::Betting(third),
+        ] = instruments.as_slice()
+        else {
+            panic!("expected three betting instruments");
+        };
+
+        assert_eq!(first.id.to_string(), "1.221718403-20075720.BETFAIR");
+        assert_eq!(first.selection_name, "1. Searover");
+        assert_eq!(unnamed.id.to_string(), "1.221718403-10733147.BETFAIR");
+        assert_eq!(unnamed.selection_name, "");
+        assert_eq!(third.id.to_string(), "1.221718403-38666189.BETFAIR");
+        assert_eq!(third.selection_name, "3. Roberts Delight");
     }
 
     #[rstest]

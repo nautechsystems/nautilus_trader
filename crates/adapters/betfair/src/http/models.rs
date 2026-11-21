@@ -245,6 +245,7 @@ pub struct LineRangeInfo {
 #[serde(rename_all = "camelCase")]
 pub struct RunnerCatalog {
     pub selection_id: SelectionId,
+    #[serde(default)]
     pub runner_name: String,
     #[serde(deserialize_with = "deserialize_decimal_native")]
     pub handicap: Handicap,
