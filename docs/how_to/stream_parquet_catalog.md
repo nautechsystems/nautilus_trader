@@ -80,7 +80,7 @@ Rotation compares a row with the open file alone, so a late row at or before a s
 Interval-based promotion and explicit seals, such as the Rust `FeatherWriter::seal`, do not follow
 `ts_init`: they seal every open file when they run, so a row written afterward with the same
 `ts_init` as a sealed file's last row starts the next file. Unless the later rows are exact bar
-replays, promotion rejects the overlapping catalog interval and retains that source. Leave
+replays, promotion rejects the overlapping catalog interval and sets that source aside. Leave
 `promotion_interval_ms` unset when rows sharing a `ts_init` must stay in one file.
 
 ## Understand query visibility
@@ -130,6 +130,17 @@ the error before retrying. With `promote_on_close=False`, closing can intentiona
 run staged for later conversion through `ParquetDataCatalog.convert_stream_to_data()`. Pass the
 run's `environment`, such as `Environment.LIVE`, to convert a run outside the default backtest
 folder.
+
+Promotion sets aside a staged file whose rows overlap intervals already in the catalog: it renames
+the file to `.feather.refused`, numbering the name when an earlier refused file holds it, and later
+promotions skip it. The promotion that refuses a file fails and names it, and a writer starting on
+the run warns with every refused file. While a refused file remains, the run manifest records the
+run as `failed`, including when a writer reopens and closes the run. `read_live_run()` and
+`read_backtest()` still return the refused rows. When only the catalog's own files overlap, the
+staged file stays queued, so it promotes after the catalog is repaired. After resolving the overlap,
+remove the refused file's `.refused` suffix and restart the writer on the run, which promotes it. A
+running writer does not pick it up, and `ParquetDataCatalog.convert_stream_to_data()` stops at an
+earlier retained file the catalog already holds.
 
 A writer holds an exclusive lock on each `.feather.partial` file until it seals the file, so a
 crashed process leaves its open files unlocked. Recovery seals each unlocked regular partial file: it keeps
