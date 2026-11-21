@@ -69,7 +69,7 @@ use nautilus_execution::{
 use nautilus_live::manager::{ExecutionManager, ExecutionManagerConfig};
 use nautilus_model::{
     accounts::{
-        AccountAny, CashAccount, MarginAccount,
+        AccountAny, BettingAccount, CashAccount, MarginAccount,
         margin_model::{LeveragedMarginModel, MarginModel, MarginModelAny, StandardMarginModel},
     },
     data::{
@@ -92,9 +92,10 @@ use nautilus_model::{
         TradeId, TraderId, Venue, VenueOrderId,
     },
     instruments::{
-        CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny,
+        BettingInstrument, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny,
         stubs::{
-            binary_option, crypto_perpetual_ethusdt, currency_pair_btcusdt, futures_contract_es,
+            betting, binary_option, crypto_perpetual_ethusdt, currency_pair_btcusdt,
+            futures_contract_es,
         },
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -2951,17 +2952,7 @@ async fn test_client_query_account_keeps_cached_margins(
     setup_account_state_handler(context.cache.clone());
 
     let client = context.client;
-    client
-        .query_account(QueryAccount::new(
-            trader_id,
-            Some(ClientId::new("SANDBOX")),
-            account_id,
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-            None,
-        ))
-        .unwrap();
+    query_sandbox_account(&client, trader_id, account_id);
 
     let account = context.cache.borrow().account(&account_id).unwrap().clone();
     let events = account.events();
@@ -3044,53 +3035,245 @@ async fn test_client_reset_reconnects_with_starting_balances(
     assert_eq!(last.margins, later.margins);
 }
 
-/// A cash account restored from the cache, as after a restart with `load_cache=True`:
-/// fees have been paid and an open buy order holds funds.
-fn restored_cash_account_state(account_id: AccountId) -> AccountState {
-    AccountState::new(
+#[rstest]
+#[case::cash(AccountType::Cash, false)]
+#[case::betting(AccountType::Betting, false)]
+#[case::cash_retry_after_missing_endpoint(AccountType::Cash, true)]
+#[tokio::test]
+async fn test_client_reset_query_keeps_starting_balances(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+    #[case] account_type: AccountType,
+    #[case] missing_endpoint: bool,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let context = create_test_context_with(trader_id, account_id, venue, |config| {
+        config.account_type = account_type;
+        config.base_currency = None;
+    });
+    let restored = AccountState::new(
         account_id,
-        AccountType::Cash,
-        vec![AccountBalance::new(
-            Money::from("99990.00 USDT"),
-            Money::from("1000.00 USDT"),
-            Money::from("98990.00 USDT"),
-        )],
+        account_type,
+        vec![
+            AccountBalance::new(
+                Money::from("99990.00 USD"),
+                Money::from("0 USD"),
+                Money::from("99990.00 USD"),
+            ),
+            AccountBalance::new(
+                Money::from("2 BTC"),
+                Money::from("0 BTC"),
+                Money::from("2 BTC"),
+            ),
+        ],
         vec![],
         false,
         UUID4::new(),
         0.into(),
         0.into(),
         None,
-    )
+    );
+    let reservation = Money::from("1000.00 USD");
+    let btc_reservation = Money::from("1 BTC");
+    let account = match account_type {
+        AccountType::Cash => {
+            let mut cash = CashAccount::new(restored, false, false);
+            cash.update_balance_locked(instrument.id(), reservation)
+                .unwrap();
+            cash.update_balance_locked(instrument.id(), btc_reservation)
+                .unwrap();
+            AccountAny::Cash(cash)
+        }
+        AccountType::Betting => {
+            let mut betting = BettingAccount::new(restored, false);
+            betting
+                .update_balance_locked(instrument.id(), reservation)
+                .unwrap();
+            betting
+                .update_balance_locked(instrument.id(), btc_reservation)
+                .unwrap();
+            AccountAny::Betting(betting)
+        }
+        _ => unreachable!(),
+    };
+    context.cache.borrow_mut().add_account(account).unwrap();
+    setup_account_state_handler(context.cache.clone());
+
+    let mut client = context.client;
+    context.test_clock.borrow_mut().set_time(100.into());
+    client.connect().await.unwrap();
+    client.disconnect().await.unwrap();
+    client.reset();
+
+    if missing_endpoint {
+        *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+        let error = client.connect().await.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!("Sandbox reset account state was not applied for {account_id}")
+        );
+        assert!(!client.is_connected());
+        setup_account_state_handler(context.cache.clone());
+    }
+
+    query_sandbox_account(&client, trader_id, account_id);
+    context.test_clock.borrow_mut().set_time(10.into());
+    client.connect().await.unwrap();
+    query_sandbox_account(&client, trader_id, account_id);
+
+    let cache = context.cache.borrow();
+    let account = cache.account(&account_id).unwrap();
+    let events = account.events();
+    let starting = AccountBalance::new(
+        Money::from("100000.00 USD"),
+        Money::from("0 USD"),
+        Money::from("100000.00 USD"),
+    );
+    let zero = Money::zero(Currency::BTC());
+    let cleared = AccountBalance::new(zero, zero, zero);
+    assert_eq!(events.len(), 5);
+    assert_eq!(events[1].balances[0].locked, reservation);
+    assert_eq!(events[1].balances[1].locked, btc_reservation);
+    assert_eq!(events[2].balances, events[1].balances);
+    assert_eq!(events[3].balances, vec![starting, cleared]);
+    assert_eq!(events[4].balances, vec![starting, cleared]);
+    assert_eq!(account.balances()[&Currency::USD()], starting);
+    assert_eq!(account.balances()[&Currency::BTC()], cleared);
 }
 
-// Startup reconciliation rebuilds the reservation of the restored order, without it the
-// account reports no reservation, and in both cases nothing stays locked after the cancel.
 #[rstest]
-#[case::without_startup_reconciliation(false, "0 USDT")]
-#[case::with_startup_reconciliation(true, "1000.00 USDT")]
 #[tokio::test]
-async fn test_client_cancel_of_last_restored_order_releases_cash_reservation(
+async fn test_client_reset_blocks_reopening_with_cached_open_orders(
     trader_id: TraderId,
     currency_pair_btcusdt: CurrencyPair,
-    #[case] startup_reconciliation: bool,
-    #[case] locked_before_cancel: &str,
 ) {
     *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
-
     let instrument = InstrumentAny::CurrencyPair(currency_pair_btcusdt);
     let venue = instrument.id().venue;
     let account_id = AccountId::from(format!("{venue}-001").as_str());
-    let client_id = ClientId::new("SANDBOX");
-    let cache = Rc::new(RefCell::new(Cache::default()));
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let total = Money::from("100000 USDT");
+    let context = create_test_context_with(trader_id, account_id, venue, |config| {
+        config.account_type = AccountType::Cash;
+        config.base_currency = None;
+        config.starting_balances = vec![total];
+    });
+    setup_account_state_handler(context.cache.clone());
 
-    let restored = restored_cash_account_state(account_id);
     let order = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(instrument.id())
         .side(OrderSide::Buy)
         .price(Price::from("10000.00"))
         .quantity(Quantity::from("0.100000"))
+        .client_order_id("O-RESET-001".into())
+        .build();
+    {
+        let mut cache = context.cache.borrow_mut();
+        cache.add_instrument(instrument).unwrap();
+        cache
+            .add_order(order.clone(), None, Some(ClientId::new("SANDBOX")), false)
+            .unwrap();
+        cache
+            .update_order(&TestOrderEventStubs::submitted(&order, account_id))
+            .unwrap();
+        cache
+            .update_order(&TestOrderEventStubs::accepted(
+                &order,
+                account_id,
+                VenueOrderId::from("SANDBOX-0-1"),
+            ))
+            .unwrap();
+    }
+
+    let mut client = context.client;
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    client.stop().unwrap();
+    client.reset();
+
+    let start_error = client.start().unwrap_err();
+    let connect_error = client.connect().await.unwrap_err();
+    let expected = format!(
+        "Cannot reset Sandbox account {account_id} with open cached orders. Reset the execution engine to clear them"
+    );
+    assert_eq!(start_error.to_string(), expected);
+    assert_eq!(connect_error.to_string(), expected);
+    assert!(!client.is_connected());
+    assert_eq!(cached_status(&context.cache, &order), OrderStatus::Accepted);
+
+    context.cache.borrow_mut().reset();
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let cache = context.cache.borrow();
+    let account = cache.account(&account_id).unwrap();
+    let starting = AccountBalance::new(total, Money::zero(total.currency), total);
+    assert!(client.is_connected());
+    assert_eq!(account.last_event().unwrap().balances, vec![starting]);
+}
+
+#[rstest]
+#[case::cash_without_reconciliation(AccountType::Cash, false)]
+#[case::cash_with_reconciliation(AccountType::Cash, true)]
+#[case::betting_without_reconciliation(AccountType::Betting, false)]
+#[case::betting_with_reconciliation(AccountType::Betting, true)]
+#[tokio::test]
+async fn test_client_cancel_of_last_restored_order_releases_reservation(
+    trader_id: TraderId,
+    currency_pair_btcusdt: CurrencyPair,
+    betting: BettingInstrument,
+    #[case] account_type: AccountType,
+    #[case] startup_reconciliation: bool,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let (instrument, price, qty) = if account_type == AccountType::Betting {
+        (
+            InstrumentAny::Betting(betting),
+            Price::from("2.00"),
+            Quantity::from("1000.00"),
+        )
+    } else {
+        (
+            InstrumentAny::CurrencyPair(currency_pair_btcusdt),
+            Price::from("10000.00"),
+            Quantity::from("0.100000"),
+        )
+    };
+    let venue = instrument.id().venue;
+    let account_id = AccountId::from(format!("{venue}-001").as_str());
+    let client_id = ClientId::new("SANDBOX");
+    let currency = instrument.quote_currency();
+    let TestContext {
+        mut client,
+        cache,
+        test_clock,
+    } = create_test_context_with(trader_id, account_id, venue, |config| {
+        config.account_type = account_type;
+        config.base_currency = None;
+        config.starting_balances = vec![Money::new(100_000.0, currency)];
+    });
+    let clock: Rc<RefCell<dyn Clock>> = test_clock;
+
+    let total = Money::new(99_990.0, currency);
+    let reserved = Money::new(1_000.0, currency);
+    let restored = AccountState::new(
+        account_id,
+        account_type,
+        vec![AccountBalance::new(total, reserved, total - reserved)],
+        vec![],
+        false,
+        UUID4::new(),
+        0.into(),
+        0.into(),
+        None,
+    );
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(price)
+        .quantity(qty)
         .client_order_id("O-RESTART-001".into())
         .ts_init(UnixNanos::from(1))
         .build();
@@ -3098,7 +3281,7 @@ async fn test_client_cancel_of_last_restored_order_releases_cash_reservation(
         let mut cache = cache.borrow_mut();
         cache.add_instrument(instrument.clone()).unwrap();
         cache
-            .add_account(CashAccount::new(restored.clone(), false, false).into())
+            .add_account(AccountAny::try_from_state(restored).unwrap())
             .unwrap();
         cache
             .add_order(order.clone(), None, Some(client_id), false)
@@ -3125,37 +3308,41 @@ async fn test_client_cancel_of_last_restored_order_releases_cash_reservation(
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
     nautilus_common::live::runner::replace_exec_event_sender(tx);
 
-    let mut config = create_config(trader_id, account_id, venue);
-    config.account_type = AccountType::Cash;
-    config.base_currency = None;
-    config.starting_balances = vec![Money::from("100000 USDT")];
-    let core = ExecutionClientCore::new(
-        trader_id,
-        client_id,
-        venue,
-        config.oms_type,
-        config.account_id,
-        config.account_type,
-        config.base_currency,
-        cache.clone(),
-    );
-    let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone()).unwrap();
     client.start().unwrap();
     client.connect().await.unwrap();
-    engine
-        .borrow_mut()
-        .register_client(Box::new(client))
-        .unwrap();
 
     if startup_reconciliation {
         portfolio.initialize_orders();
     }
 
-    let usdt = Currency::USDT();
-    let balance = cache.borrow().account(&account_id).unwrap().balances()[&usdt];
-    assert_eq!(balance.total, Money::from("99990.00 USDT"));
-    assert_eq!(balance.locked, Money::from(locked_before_cancel));
+    let zero = Money::zero(currency);
+    let locked = if startup_reconciliation {
+        reserved
+    } else {
+        zero
+    };
+    let expected = AccountBalance::new(total, locked, total - locked);
+    let previous_event_id = {
+        let cache = cache.borrow();
+        let account = cache.account(&account_id).unwrap();
+        assert_eq!(account.balances()[&currency], expected);
+        account.last_event().unwrap().event_id
+    };
 
+    query_sandbox_account(&client, trader_id, account_id);
+    let event = cache
+        .borrow()
+        .account(&account_id)
+        .unwrap()
+        .last_event()
+        .unwrap();
+    assert_ne!(event.event_id, previous_event_id);
+    assert_eq!(event.balances, vec![expected]);
+
+    engine
+        .borrow_mut()
+        .register_client(Box::new(client))
+        .unwrap();
     msgbus::send_trading_command(
         MessagingSwitchboard::exec_engine_execute(),
         TradingCommand::CancelOrder(cancel_command(
@@ -3173,15 +3360,25 @@ async fn test_client_cancel_of_last_restored_order_releases_cash_reservation(
     }
 
     assert_eq!(cached_status(&cache, &order), OrderStatus::Canceled);
-    let balance = cache.borrow().account(&account_id).unwrap().balances()[&usdt];
-    assert_eq!(
-        balance,
-        AccountBalance::new(
-            Money::from("99990.00 USDT"),
-            Money::from("0 USDT"),
-            Money::from("99990.00 USDT"),
-        ),
+    let balance = cache.borrow().account(&account_id).unwrap().balances()[&currency];
+    assert_eq!(balance, AccountBalance::new(total, zero, total));
+}
+
+fn query_sandbox_account(
+    client: &SandboxExecutionClient,
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    let cmd = QueryAccount::new(
+        trader_id,
+        Some(ClientId::new("SANDBOX")),
+        account_id,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
     );
+    client.query_account(cmd).unwrap();
 }
 
 #[rstest]

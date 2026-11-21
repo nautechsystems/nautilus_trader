@@ -67,7 +67,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, Currency, MarginBalance, Money},
+    types::{AccountBalance, MarginBalance, Money},
 };
 use ustr::Ustr;
 
@@ -627,6 +627,84 @@ impl SandboxExecutionClient {
             .collect()
     }
 
+    fn reset_account_state(&self, ts_event: UnixNanos) -> anyhow::Result<()> {
+        self.ensure_reset_orders_cleared()?;
+        let account_id = self.core.borrow().account_id;
+        let mut balances = self.get_account_balances();
+
+        {
+            let cache = self.cache.borrow();
+            if let Some(account) = cache.account_ref(&account_id) {
+                let mut currencies: AHashSet<_> =
+                    balances.iter().map(|balance| balance.currency).collect();
+                let reservations = match &*account {
+                    AccountAny::Cash(cash) => Some(cash.balances_locked.keys()),
+                    AccountAny::Betting(betting) => Some(betting.balances_locked.keys()),
+                    _ => None,
+                };
+                let reserved_currencies = reservations
+                    .into_iter()
+                    .flatten()
+                    .map(|(_, currency)| *currency);
+
+                // A reset can rewind the clock, so explicitly zero omitted currencies
+                for currency in account.balances().into_keys().chain(reserved_currencies) {
+                    if currencies.insert(currency) {
+                        let zero = Money::zero(currency);
+                        balances.push(AccountBalance::new(zero, zero, zero));
+                    }
+                }
+            }
+        }
+
+        // A fresh simulated venue snapshot clears local reservations when applied
+        let event_id = self.send_account_state(balances, Vec::new(), true, ts_event, None);
+        let applied = self
+            .cache
+            .borrow()
+            .account_ref(&account_id)
+            .and_then(|account| account.last_event())
+            .is_some_and(|event| event.event_id == event_id);
+        anyhow::ensure!(
+            applied,
+            "Sandbox reset account state was not applied for {account_id}"
+        );
+        self.sync_cached_account_config()
+    }
+
+    fn send_account_state(
+        &self,
+        balances: Vec<AccountBalance>,
+        margins: Vec<MarginBalance>,
+        reported: bool,
+        ts_event: UnixNanos,
+        info: Option<Params>,
+    ) -> UUID4 {
+        let ts_init = self.clock.borrow().timestamp_ns();
+        let state = self
+            .factory
+            .generate_account_state(balances, margins, reported, ts_event, ts_init, info);
+        let endpoint = MessagingSwitchboard::portfolio_update_account();
+        msgbus::send_account_state(endpoint, &state);
+        state.event_id
+    }
+
+    fn ensure_reset_orders_cleared(&self) -> anyhow::Result<()> {
+        let account_id = self.core.borrow().account_id;
+        let has_open_orders = self.cache.borrow().has_orders_open(
+            Some(&self.config.venue),
+            None,
+            None,
+            Some(&account_id),
+            None,
+        );
+        anyhow::ensure!(
+            !has_open_orders,
+            "Cannot reset Sandbox account {account_id} with open cached orders. Reset the execution engine to clear them"
+        );
+        Ok(())
+    }
+
     fn get_order(&self, client_order_id: &ClientOrderId) -> anyhow::Result<OrderAny> {
         Ok(self.cache.borrow().try_order_owned(client_order_id)?)
     }
@@ -693,19 +771,17 @@ impl ExecutionClient for SandboxExecutionClient {
         ts_event: UnixNanos,
         info: Option<Params>,
     ) -> anyhow::Result<()> {
-        let ts_init = self.clock.borrow().timestamp_ns();
-        let state = self
-            .factory
-            .generate_account_state(balances, margins, reported, ts_event, ts_init, info);
-        let endpoint = MessagingSwitchboard::portfolio_update_account();
-        msgbus::send_account_state(endpoint, &state);
-        self.sync_cached_account_config()?;
-        Ok(())
+        self.send_account_state(balances, margins, reported, ts_event, info);
+        self.sync_cached_account_config()
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
         if self.core.borrow().is_started() {
             return Ok(());
+        }
+
+        if self.reset_pending.get() {
+            self.ensure_reset_orders_cleared()?;
         }
 
         if let Some(sender) = try_get_exec_event_sender() {
@@ -771,15 +847,15 @@ impl ExecutionClient for SandboxExecutionClient {
             return Ok(());
         }
 
-        // After `reset`, start again from the starting balances whatever the cache still holds
-        let (balances, margins) = if self.reset_pending.take() {
-            (self.get_account_balances(), Vec::new())
-        } else {
-            self.get_current_account_state()
-        };
         let ts_event = self.clock.borrow().timestamp_ns();
-        self.generate_account_state(balances, margins, false, ts_event, None)?;
 
+        if self.reset_pending.get() {
+            self.reset_account_state(ts_event)?;
+            self.reset_pending.set(false);
+        } else {
+            let (balances, margins) = self.get_current_account_state();
+            self.generate_account_state(balances, margins, false, ts_event, None)?;
+        }
         self.core.borrow().set_connected();
         log::info!(
             "Sandbox execution client connected: venue={}",
@@ -996,24 +1072,29 @@ impl ExecutionClient for SandboxExecutionClient {
     }
 }
 
-/// Returns the balances to report for `account`.
-///
-/// The portfolio derives a cash account's locked balance from the per-instrument reservations
-/// it keeps on the account, which the cache does not restore. After a restart the restored
-/// locked balance has no reservation behind it, so canceling the orders could never release
-/// it. Deriving the locked balance the same way reports only the reservations the portfolio
-/// holds.
+// The cache restores aggregate balances for cash and betting accounts without their
+// per-instrument reservations. Report only locks backed by a reservation the portfolio can release.
 fn reported_balances(account: &AccountAny) -> Vec<AccountBalance> {
-    let AccountAny::Cash(cash) = account else {
-        return account.balances().into_values().collect();
+    let balances = account.balances();
+    let currencies = balances.keys().copied();
+    let balances = match account {
+        AccountAny::Cash(cash) => {
+            let mut cash = cash.clone();
+            for currency in currencies {
+                cash.recalculate_balance(currency);
+            }
+            cash.base.balances
+        }
+        AccountAny::Betting(betting) => {
+            let mut betting = betting.clone();
+            for currency in currencies {
+                betting.recalculate_balance(currency);
+            }
+            betting.base.balances
+        }
+        _ => balances,
     };
-
-    let mut cash = cash.clone();
-    let currencies: Vec<Currency> = cash.base.balances.keys().copied().collect();
-    for currency in currencies {
-        cash.recalculate_balance(currency);
-    }
-    cash.base.balances.into_values().collect()
+    balances.into_values().collect()
 }
 
 fn order_status_report(order: &OrderAny, ts_init: UnixNanos) -> Option<OrderStatusReport> {
