@@ -209,8 +209,10 @@ impl ExecutionAlgorithmCore {
 
     /// Generates the next spawn client order ID for a primary order.
     ///
-    /// The generated ID follows the pattern: `{primary_id}-E{sequence}` when hyphens are used,
-    /// or `{primary_id}E{sequence}` when hyphens are disabled.
+    /// The generated ID follows the pattern: `{primary_id}-E{sequence}` when hyphens are used.
+    /// When hyphens are disabled, leading `'O'` is replaced with `'E'` to prevent collision with
+    /// ordinary strategy order IDs, hyphens are stripped, and the ID is bounded to at most 32
+    /// characters (matching exchange limits such as OKX).
     #[must_use]
     pub fn spawn_client_order_id(&mut self, primary_id: &ClientOrderId) -> ClientOrderId {
         let sequence = self
@@ -224,8 +226,25 @@ impl ExecutionAlgorithmCore {
             .use_hyphens_in_client_order_ids
             .unwrap_or_else(|| primary_id.as_str().contains('-'));
 
-        let separator = if use_hyphens { "-E" } else { "E" };
-        ClientOrderId::new(format!("{primary_id}{separator}{sequence}"))
+        if use_hyphens {
+            ClientOrderId::new(format!("{primary_id}-E{sequence}"))
+        } else {
+            let primary_str = primary_id.as_str();
+            let suffix = format!("E{sequence}");
+            let base = if let Some(stripped) = primary_str.strip_prefix('O') {
+                format!("E{stripped}")
+            } else {
+                primary_str.to_string()
+            };
+            let base = base.replace('-', "");
+            let max_base_len = 32usize.saturating_sub(suffix.len());
+            let trimmed_base = if base.len() > max_base_len {
+                &base[..max_base_len]
+            } else {
+                &base
+            };
+            ClientOrderId::new(format!("{trimmed_base}{suffix}"))
+        }
     }
 
     /// Returns the current spawn sequence for a primary order, if any.
@@ -521,13 +540,13 @@ mod tests {
         let primary_id = ClientOrderId::new("O202611200910100010002");
 
         let spawn1 = core.spawn_client_order_id(&primary_id);
-        assert_eq!(spawn1.as_str(), "O202611200910100010002E1");
+        assert_eq!(spawn1.as_str(), "E202611200910100010002E1");
 
         let spawn2 = core.spawn_client_order_id(&primary_id);
-        assert_eq!(spawn2.as_str(), "O202611200910100010002E2");
+        assert_eq!(spawn2.as_str(), "E202611200910100010002E2");
 
         let spawn3 = core.spawn_client_order_id(&primary_id);
-        assert_eq!(spawn3.as_str(), "O202611200910100010002E3");
+        assert_eq!(spawn3.as_str(), "E202611200910100010002E3");
     }
 
     #[rstest]
@@ -536,10 +555,10 @@ mod tests {
         config_no_hyphens.use_hyphens_in_client_order_ids = Some(false);
         let mut core_no_hyphens = ExecutionAlgorithmCore::new(config_no_hyphens);
 
-        // Even with hyphenated primary, config overrides to no hyphens
+        // Even with hyphenated primary, config overrides to no hyphens and replaces leading 'O'
         let primary_hyphenated = ClientOrderId::new("O-001");
         let spawn_no_hyphens = core_no_hyphens.spawn_client_order_id(&primary_hyphenated);
-        assert_eq!(spawn_no_hyphens.as_str(), "O-001E1");
+        assert_eq!(spawn_no_hyphens.as_str(), "E001E1");
 
         let mut config_with_hyphens = create_test_config();
         config_with_hyphens.use_hyphens_in_client_order_ids = Some(true);
@@ -549,6 +568,44 @@ mod tests {
         let primary_unhyphenated = ClientOrderId::new("O202611200910100010002");
         let spawn_with_hyphens = core_with_hyphens.spawn_client_order_id(&primary_unhyphenated);
         assert_eq!(spawn_with_hyphens.as_str(), "O202611200910100010002-E1");
+    }
+
+    #[rstest]
+    fn test_spawn_client_order_id_avoids_strategy_tag_collision_without_hyphens() {
+        let mut config = create_test_config();
+        config.use_hyphens_in_client_order_ids = Some(false);
+        let mut core = ExecutionAlgorithmCore::new(config);
+
+        // Trader generates primary order for strategy tag "A"
+        let primary_a = ClientOrderId::new("O20261120091010001A1");
+        let child_a = core.spawn_client_order_id(&primary_a);
+
+        // Ordinary order ID for strategy tag "A1E" in the same second
+        let ordinary_a1e = ClientOrderId::new("O20261120091010001A1E1");
+
+        // The spawned order ID must not collide with the ordinary order ID
+        assert_ne!(child_a, ordinary_a1e);
+        assert_eq!(child_a.as_str(), "E20261120091010001A1E1");
+        assert_eq!(ordinary_a1e.as_str(), "O20261120091010001A1E1");
+    }
+
+    #[rstest]
+    fn test_spawn_client_order_id_uuid_bounds_to_32_characters() {
+        let mut config = create_test_config();
+        config.use_hyphens_in_client_order_ids = Some(false);
+        let mut core = ExecutionAlgorithmCore::new(config);
+
+        // 32-character unhyphenated UUID (as documented for OKX)
+        let primary_uuid = ClientOrderId::new("c023d8c0bdfd4399b101689255a6217b");
+        assert_eq!(primary_uuid.as_str().len(), 32);
+
+        let child1 = core.spawn_client_order_id(&primary_uuid);
+        assert_eq!(child1.as_str().len(), 32);
+        assert_eq!(child1.as_str(), "c023d8c0bdfd4399b101689255a621E1");
+
+        let child2 = core.spawn_client_order_id(&primary_uuid);
+        assert_eq!(child2.as_str().len(), 32);
+        assert_eq!(child2.as_str(), "c023d8c0bdfd4399b101689255a621E2");
     }
 
     #[rstest]

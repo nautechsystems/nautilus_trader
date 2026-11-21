@@ -3350,7 +3350,68 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(spawned.client_order_id.as_str(), "O202611200910100010002E1");
+        assert_eq!(spawned.client_order_id.as_str(), "E202611200910100010002E1");
+        assert_eq!(
+            spawned.exec_spawn_id,
+            Some(ClientOrderId::from("O202611200910100010002"))
+        );
+        assert_eq!(spawned.instrument_id, instrument_id);
+        assert_eq!(spawned.order_side(), OrderSide::Buy);
+    }
+
+    #[rstest]
+    fn test_algorithm_spawn_limit_with_uuid_bounds_to_32_characters_and_preserves_full_exec_spawn_id()
+     {
+        let mut algo = create_test_algorithm();
+        register_algorithm(&mut algo);
+
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let full_uuid = "c023d8c0bdfd4399b101689255a6217b";
+        let mut primary = OrderAny::Market(MarketOrder::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRAT-001"),
+            instrument_id,
+            ClientOrderId::from(full_uuid),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            TimeInForce::Gtc,
+            UUID4::new(),
+            0.into(),
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ));
+
+        let price = Price::from("50000.0");
+        let spawned = algo
+            .spawn_limit(
+                &mut primary,
+                Quantity::from("0.5"),
+                price,
+                TimeInForce::Gtc,
+                None,  // expire_time
+                false, // post_only
+                false, // reduce_only
+                None,  // display_qty
+                None,  // emulation_trigger
+                None,  // tags
+                false, // reduce_primary
+            )
+            .unwrap();
+
+        assert_eq!(spawned.client_order_id.as_str().len(), 32);
+        assert_eq!(
+            spawned.client_order_id.as_str(),
+            "c023d8c0bdfd4399b101689255a621E1"
+        );
+        assert_eq!(spawned.exec_spawn_id, Some(ClientOrderId::from(full_uuid)));
         assert_eq!(spawned.instrument_id, instrument_id);
         assert_eq!(spawned.order_side(), OrderSide::Buy);
     }

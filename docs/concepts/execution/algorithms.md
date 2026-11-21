@@ -127,7 +127,9 @@ The built-in TWAP algorithm submits the remaining primary order on the final int
 
 ## Spawned orders
 
-Each spawned order sets `exec_spawn_id` to the primary order's `client_order_id`. Its own `client_order_id`
+Each spawned order sets `exec_spawn_id` to the primary order's `client_order_id`.
+
+When hyphens are enabled (`use_hyphens_in_client_order_ids=True`), its own `client_order_id`
 follows this pattern:
 
 ```text
@@ -136,6 +138,15 @@ follows this pattern:
 
 For example, the first order spawned from `O-20230404-001-000` has the ID
 `O-20230404-001-000-E1`.
+
+When hyphens are disabled (`use_hyphens_in_client_order_ids=False` or inferred from an unhyphenated primary ID):
+- If the primary order ID begins with `O`, the leading `O` is replaced with `E` to distinguish spawned orders from standard strategy orders and prevent ID collisions across strategy tags.
+- Any hyphens are stripped, and the spawn sequence is appended as `E{spawn_sequence}`.
+- If the resulting ID exceeds 32 characters (e.g. when trading with 32-character UUID client order IDs on venues like OKX), the primary ID base is bounded to at most `32 - len(E{spawn_sequence})` characters so the spawned ID remains strictly compliant with exchange limits, while `exec_spawn_id` always retains the full primary order ID.
+
+For example:
+- The first order spawned from `O202611200910100010002` has the ID `E202611200910100010002E1`.
+- The first order spawned from a 32-character UUID `c023d8c0bdfd4399b101689255a6217b` has the ID `c023d8c0bdfd4399b101689255a621E1` (32 characters).
 
 :::note
 The primary and spawned terminology distinguishes execution slicing from parent and child

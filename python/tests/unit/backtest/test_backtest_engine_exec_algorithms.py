@@ -119,6 +119,40 @@ class CustomExecutionAlgorithm(ExecutionAlgorithm):
         type(self).received_config = config
 
 
+class SubclassInitExecutionAlgorithmConfig(ExecutionAlgorithmConfig):
+    """
+    Subclass config that explicitly enables hyphens in client order IDs.
+    """
+
+    def __init__(self, **_kwargs: object) -> None:
+        """
+        Initialize the instance.
+        """
+        super().__init__(
+            use_hyphens_in_client_order_ids=True,
+            **_kwargs,
+        )
+
+
+class SubclassInitExecutionAlgorithm(ExecutionAlgorithm):
+    """
+    Subclass algorithm that constructs its own config in __init__ and passes to super().__init__.
+    """
+
+    received_config: SubclassInitExecutionAlgorithmConfig | None = None
+
+    def __init__(self, config: SubclassInitExecutionAlgorithmConfig | None = None) -> None:
+        """
+        Initialize the instance.
+        """
+        if config is None:
+            config = SubclassInitExecutionAlgorithmConfig(
+                exec_algorithm_id=ExecAlgorithmId("SUBCLASS-INIT"),
+            )
+        super().__init__(config)
+        type(self).received_config = config
+
+
 class FirstDefaultExecutionAlgorithm(ExecutionAlgorithm):
     """
     Collect first default execution algorithm tests.
@@ -562,6 +596,29 @@ def test_execution_algorithm_to_importable_config_round_trips_custom_config() ->
     assert received.interval_secs == "3.75"
     assert received.log_events is False
     assert received.log_commands is True
+    engine.dispose()
+
+
+def test_execution_algorithm_subclass_config_in_init_survives_round_trip() -> None:
+    """
+    Test that an explicit True for use_hyphens_in_client_order_ids takes effect
+    when a Python subclass creates its config inside __init__ and passes it to
+    super().__init__(config), and survives a to_importable_config() round trip.
+    """
+    SubclassInitExecutionAlgorithm.received_config = None
+
+    exec_algorithm = SubclassInitExecutionAlgorithm()
+    assert exec_algorithm.config.use_hyphens_in_client_order_ids is True
+
+    importable = exec_algorithm.to_importable_config()
+    assert importable.config.get("use_hyphens_in_client_order_ids") is True
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_exec_algorithm_from_config(importable)
+
+    received = SubclassInitExecutionAlgorithm.received_config
+    assert received is not None
+    assert received.use_hyphens_in_client_order_ids is True
     engine.dispose()
 
 
