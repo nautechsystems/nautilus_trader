@@ -1,0 +1,39 @@
+{
+  "error": [],
+  "result": {
+    "OCAP14-STLMT-000014": {
+      "closetm": 1795000000.0,
+      "cost": "4.56100000",
+      "descr": {
+        "aclass": "forex",
+        "close": "",
+        "leverage": "none",
+        "order": "buy 5.00000000 USDCEUR @ stop loss 0.9121 -> limit 0.9132",
+        "ordertype": "stop-loss-limit",
+        "pair": "USDCEUR",
+        "price": "0.9121",
+        "price2": "0.9132",
+        "type": "buy"
+      },
+      "expiretm": 0,
+      "fee": "0.00912200",
+      "limitprice": "0.91320000",
+      "misc": "stopped",
+      "oflags": "fciq",
+      "opentm": 1795000000.0,
+      "price": "0.9122",
+      "reason": null,
+      "refid": null,
+      "starttm": 0,
+      "status": "closed",
+      "stopprice": "0.91220000",
+      "time_in_force": "gtc",
+      "trades": [
+        "TCAP14-STLMT-000014"
+      ],
+      "userref": 0,
+      "vol": "5.00000000",
+      "vol_exec": "5.00000000"
+    }
+  }
+}

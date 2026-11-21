@@ -21,6 +21,13 @@ value is as Kraken returned it, with two-space indentation.
   canceled untriggered, and a stop-loss-limit, a take-profit-limit and a trailing-stop-limit
   canceled after triggering (`misc` is `stopped` or `touched`).
 
+`http_query_orders_stop_loss_limit_filled.json` is a QueryOrders response Kraken returned on
+2026-11-18, read through Kraken's CLI, for a 5 USDC buy stop-loss-limit on USDC/EUR placed on a live
+account through AddOrder with trigger `0.9121` and limit `0.9132`. It triggered and filled at
+`0.9122`: `descr.price` keeps the trigger, while `stopprice` reads `0.91220000`, the market price
+that triggered it. The order ID, trade ID and timestamps are replaced; every other value is as
+Kraken returned it.
+
 `http_open_orders_doc_example.json` and `http_query_orders_doc_example.json` are the complete
 response examples from Kraken's
 [Get Open Orders](https://docs.kraken.com/api-reference/account-data/get-open-orders) and
@@ -31,17 +38,20 @@ endpoints and received equal rows. The query example's stop-loss-limit row `OBCM
 describes its order as `@ limit 27500.0` with `price2` `0`, a form neither capture returned for a
 canceled or triggered stop-loss-limit, so no test asserts it.
 
-Five robustness tests change captured rows: a malformed `descr.price`, an empty or relative
-`stopprice`, an untriggered trailing-stop-limit's offset written unsigned, a triggered
-take-profit-limit's side flipped with its trigger and limit exchanged, and the same row flipped
-with both prices at the limit. Those variants are not venue responses.
+Eight robustness tests change captured rows: a malformed `descr.price`, an empty or relative
+trailing-stop `stopprice`, an empty or relative stop-loss `descr.price`, a malformed `stopprice` on
+the filled stop-loss-limit, an untriggered trailing-stop-limit's offset written unsigned, a triggered
+take-profit-limit's side flipped with its trigger and limit exchanged, the same row flipped with
+both prices at the limit, and a limit row's order type replaced with `iceberg`. Those variants are
+not venue responses.
 
 ## Spot executions frames
 
 `ws_executions_pending_new_doc_example.json` and `ws_executions_trade_doc_example.json` are the
 `pending_new` and `trade` update frames from Kraken's
 [executions channel documentation](https://docs.kraken.com/exchange/api-reference/spot-websocket-v2/executions),
-retrieved on 2026-10-13 and unchanged apart from whitespace.
+retrieved on 2026-10-13 and unchanged apart from whitespace. A test replaces the `pending_new`
+frame's `order_type` with `iceberg`; that variant is not a venue response.
 
 ## Futures edit response
 
