@@ -6,6 +6,7 @@ Released on TBD (UTC).
 
 - Added per-`DataType` custom data histories to `Cache`, populated by the `DataEngine`, thanks @faysou
 - Added `underlying_instrument_id` and `settlement_type` to `OptionContract` and `CryptoOption`
+- Added explicit underlying instrument resolution to `GreeksCalculator`
 - Added `ExerciseStyle` and optional `exercise_style` to `OptionContract` and `CryptoOption`
 - Added complete balance snapshot support for `AccountState`, zeroing balances a full snapshot omits
 - Added `ParquetDataCatalog::builder()` to open catalogs with named, optional settings
@@ -52,6 +53,9 @@ Released on TBD (UTC).
 - Changed `Cache::add_order` to reject venue order ID conflicts on insert. Handle `VenueOrderIdOwnershipError`
 - Changed `BinaryOption` Parquet writes to require registered tick schemes; register custom schemes before saving
 - Changed `TickSchemeError` with `TicksNotIncreasing`; update exhaustive matches
+- Changed `OptionValuationError` with `UnsupportedConvention`; update exhaustive matches
+- Changed local Greeks and implied forwards to reject inverse and mixed-currency options
+- Changed local option valuation to require currency evidence for the underlying price
 - Changed `OrderDeniedReason` and `OrderDeniedCode` with `MarketExitInProgress`; update exhaustive matches
 - Changed `SimulatedExchange::process_liquidations` to return `anyhow::Result<()>` for callers to handle
 - Changed Python `PortfolioAnalyzer.add_positions` to raise `ValueError` for realized PnL at precision 17 or 18

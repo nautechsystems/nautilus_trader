@@ -28,7 +28,7 @@ use nautilus_model::{
     identifiers::{InstrumentId, StrategyId, Venue},
     instruments::{Instrument, any::InstrumentAny},
     position::Position,
-    types::{Price, fixed::check_float_precision},
+    types::{Currency, Price, fixed::check_float_precision},
 };
 use ustr::Ustr;
 
@@ -39,6 +39,8 @@ use crate::{
     msgbus,
     msgbus::TypedHandler,
 };
+
+const DEFAULT_INTEREST_RATE: f64 = 0.0425;
 
 /// Type alias for a greeks filter function.
 pub type GreeksFilter = Box<dyn Fn(&GreeksData) -> bool>;
@@ -101,7 +103,7 @@ pub struct InstrumentGreeksParams {
     /// The instrument ID to calculate greeks for
     pub instrument_id: InstrumentId,
     /// Flat interest rate (default: 0.0425)
-    #[builder(default = 0.0425)]
+    #[builder(default = DEFAULT_INTEREST_RATE)]
     pub flat_interest_rate: f64,
     /// Flat dividend yield
     pub flat_dividend_yield: Option<f64>,
@@ -189,7 +191,7 @@ pub struct PortfolioGreeksParams {
     /// Position side to filter by (default: `None`)
     pub side: Option<PositionSide>,
     /// Flat interest rate (default: 0.0425)
-    #[builder(default = 0.0425)]
+    #[builder(default = DEFAULT_INTEREST_RATE)]
     pub flat_interest_rate: f64,
     /// Flat dividend yield
     pub flat_dividend_yield: Option<f64>,
@@ -318,7 +320,7 @@ impl PortfolioGreeksParams {
 pub struct GreeksCalculator {
     cache: Rc<RefCell<Cache>>,
     clock: Rc<RefCell<dyn Clock>>,
-    cached_futures_spreads: RefCell<AHashMap<InstrumentId, (InstrumentId, Price)>>,
+    cached_futures_spreads: RefCell<AHashMap<InstrumentId, FuturesSpreadPrice>>,
     cross_venue_underlyings: RefCell<AHashMap<Ustr, InstrumentId>>,
 }
 
@@ -349,7 +351,9 @@ impl GreeksCalculator {
     /// - Compute percent greeks.
     /// - Compute beta-weighted delta, gamma, and vega with respect to an index.
     ///
-    /// Expiration is checked before returning cached option Greeks.
+    /// Checks expiration and the option's pricing convention before using cached Greeks.
+    /// The option's `underlying_instrument_id`, when set, overrides symbol-based resolution.
+    /// Fresh valuations use the strike-currency curve for discounting.
     /// Rho holds carry fixed unless a dividend yield or dividend curve defines carry as
     /// `r - q`. Equal interest and dividend rates still use that rate sensitivity.
     /// Shocked cached valuations retain their cached inputs and select carry rate sensitivity
@@ -364,6 +368,7 @@ impl GreeksCalculator {
     /// - Required market prices are unavailable.
     /// - A price, strike, or multiplier exceeds the supported float precision.
     /// - An option has expired or an option spread is requested.
+    /// - An option uses an unsupported currency or inverse pricing convention.
     /// - Valuation inputs or results are invalid, or implied volatility cannot be solved.
     #[expect(clippy::too_many_arguments)]
     pub fn instrument_greeks(
@@ -388,7 +393,7 @@ impl GreeksCalculator {
         vol_beta_weights: Option<&HashMap<InstrumentId, f64>>,
     ) -> anyhow::Result<GreeksData> {
         // Set default values
-        let flat_interest_rate = flat_interest_rate.unwrap_or(0.0425);
+        let flat_interest_rate = flat_interest_rate.unwrap_or(DEFAULT_INTEREST_RATE);
         let spot_shock = spot_shock.unwrap_or(0.0);
         let vol_shock = vol_shock.unwrap_or(0.0);
         let time_to_expiry_shock = time_to_expiry_shock.unwrap_or(0.0);
@@ -428,6 +433,7 @@ impl GreeksCalculator {
             vol_shock,
             time_to_expiry_shock,
         )?;
+        let currency = option_valuation_currency(&instrument)?;
 
         let has_shocks = spot_shock != 0.0 || vol_shock != 0.0 || time_to_expiry_shock != 0.0;
 
@@ -450,8 +456,8 @@ impl GreeksCalculator {
             self.resolve_underlying_instrument_id(&instrument, instrument_id)?;
         let (greeks_data, db_dr, is_fresh) = self.calculate_option_greeks(
             &instrument,
-            instrument_id,
             underlying_instrument_id,
+            currency,
             flat_interest_rate,
             flat_dividend_yield,
             use_cached_greeks,
@@ -558,6 +564,10 @@ impl GreeksCalculator {
         instrument: &InstrumentAny,
         instrument_id: InstrumentId,
     ) -> anyhow::Result<InstrumentId> {
+        if let Some(underlying_id) = explicit_underlying_id(instrument) {
+            return Ok(underlying_id);
+        }
+
         let Some(underlying) = instrument.underlying() else {
             anyhow::bail!("Instrument {instrument_id} has no underlying identifier");
         };
@@ -668,8 +678,8 @@ impl GreeksCalculator {
     fn calculate_option_greeks(
         &self,
         instrument: &InstrumentAny,
-        instrument_id: InstrumentId,
         underlying_instrument_id: InstrumentId,
+        currency: Currency,
         flat_interest_rate: f64,
         flat_dividend_yield: Option<f64>,
         use_cached_greeks: bool,
@@ -682,6 +692,8 @@ impl GreeksCalculator {
         vol_index_instrument_id: Option<InstrumentId>,
         vol_beta_weights: Option<&HashMap<InstrumentId, f64>>,
     ) -> anyhow::Result<(GreeksData, f64, bool)> {
+        let instrument_id = instrument.id();
+
         if use_cached_greeks {
             let cache = self.cache.borrow();
             if let Some(cached_greeks) = cache.greeks(&instrument_id) {
@@ -714,11 +726,8 @@ impl GreeksCalculator {
         let raw_days = utc_now.duration_until(expiry_utc).as_hours() / 24;
         let expiry_in_days = raw_days.max(1) as i32;
         let expiry_in_years = expiry_in_days as f64 / 365.25;
-        let currency = instrument.quote_currency().code.to_string();
-
         let cache = self.cache.borrow();
-        let yield_curve = cache.yield_curve(&currency);
-
+        let yield_curve = cache.yield_curve(currency.code.as_str());
         let interest_rate = match yield_curve {
             Some(yield_curve) => yield_curve(expiry_in_years),
             None => flat_interest_rate,
@@ -747,7 +756,7 @@ impl GreeksCalculator {
         let option_price = self
             .get_price(&instrument_id)?
             .ok_or_else(|| anyhow::anyhow!("No price available for {instrument_id}"))?;
-        let underlying_price = self.get_underlying_price(&underlying_instrument_id)?;
+        let underlying_price = self.get_underlying_price(underlying_instrument_id, currency)?;
 
         if let Some(vol_index_id) = vol_index_instrument_id {
             self.get_price(&vol_index_id)?
@@ -908,29 +917,40 @@ impl GreeksCalculator {
         ))
     }
 
-    fn get_underlying_price(&self, underlying_instrument_id: &InstrumentId) -> anyhow::Result<f64> {
-        if let Some(underlying_price) = self.get_price(underlying_instrument_id)? {
-            return Ok(underlying_price);
+    fn get_underlying_price(
+        &self,
+        underlying_instrument_id: InstrumentId,
+        currency: Currency,
+    ) -> anyhow::Result<f64> {
+        let cache = self.cache.borrow();
+        let underlying = cache.instrument(&underlying_instrument_id);
+        let price = self.get_price_object(&underlying_instrument_id);
+
+        if let Some(underlying) = underlying {
+            check_price_currency(underlying.id(), underlying.quote_currency(), currency)?;
+
+            if let Some(price) = price {
+                return price_as_f64(price, underlying_instrument_id, "cached price");
+            }
         }
 
-        // Only fall back to cached futures spread when the underlying is a future
-        // (or absent from the cache, since the spread was explicitly cached).
-        let is_future_or_absent = {
-            let cache = self.cache.borrow();
-            cache
-                .instrument(underlying_instrument_id)
-                .is_none_or(|inst| inst.instrument_class() == InstrumentClass::Future)
-        };
-
-        if is_future_or_absent
-            && let Some(underlying_price) =
-                self.cached_futures_spread_price(*underlying_instrument_id)?
+        if let Some((underlying_price, spread_currency)) =
+            self.cached_futures_spread_price(underlying_instrument_id)?
         {
+            check_price_currency(underlying_instrument_id, spread_currency, currency)?;
             return price_as_f64(
                 underlying_price,
-                *underlying_instrument_id,
+                underlying_instrument_id,
                 "implied futures price",
             );
+        }
+
+        if price.is_some() {
+            return Err(OptionValuationError::UnsupportedConvention(
+                underlying_instrument_id,
+                "underlying price currency is unknown without an instrument definition",
+            )
+            .into());
         }
 
         anyhow::bail!("No price available for {underlying_instrument_id}")
@@ -1091,7 +1111,7 @@ impl GreeksCalculator {
             PortfolioGreeks::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, ts_event, ts_event);
 
         // Set default values
-        let flat_interest_rate = flat_interest_rate.unwrap_or(0.0425);
+        let flat_interest_rate = flat_interest_rate.unwrap_or(DEFAULT_INTEREST_RATE);
         let spot_shock = spot_shock.unwrap_or(0.0);
         let vol_shock = vol_shock.unwrap_or(0.0);
         let time_to_expiry_shock = time_to_expiry_shock.unwrap_or(0.0);
@@ -1185,10 +1205,14 @@ impl GreeksCalculator {
 
     /// Cache a futures spread derived from a call/put pair against a reference future.
     ///
+    /// Both legs must resolve to the same underlying ID. Uses the shared strike-currency yield
+    /// curve rate, with a flat rate of 0.0425 when the curve is absent.
+    ///
     /// # Errors
     ///
-    /// Returns an error if instruments or prices are missing or inconsistent, a price exceeds the
-    /// supported float precision, or the calculated spread cannot be applied to the reference price.
+    /// Returns an error if instruments or prices are missing or inconsistent, the currency convention
+    /// is unsupported, a price exceeds the supported float precision, or the calculated spread
+    /// cannot be applied to the reference price.
     pub fn cache_futures_spread(
         &self,
         call_instrument_id: InstrumentId,
@@ -1196,24 +1220,20 @@ impl GreeksCalculator {
         futures_instrument_id: InstrumentId,
     ) -> anyhow::Result<Price> {
         let cache = self.cache.borrow();
-        let call_instrument = cache.instrument(&call_instrument_id).cloned();
-        let put_instrument = cache.instrument(&put_instrument_id).cloned();
-        let reference_future_instrument = cache.instrument(&futures_instrument_id).cloned();
-        drop(cache);
 
-        let Some(call_instrument) = call_instrument else {
+        let Some(call_instrument) = cache.instrument(&call_instrument_id) else {
             anyhow::bail!(
                 "Cannot cache futures spread: missing option instrument {call_instrument_id}"
             );
         };
 
-        let Some(put_instrument) = put_instrument else {
+        let Some(put_instrument) = cache.instrument(&put_instrument_id) else {
             anyhow::bail!(
                 "Cannot cache futures spread: missing option instrument {put_instrument_id}"
             );
         };
 
-        let Some(reference_future_instrument) = reference_future_instrument else {
+        let Some(reference_future_instrument) = cache.instrument(&futures_instrument_id) else {
             anyhow::bail!(
                 "Cannot cache futures spread: no reference futures instrument for {futures_instrument_id}"
             );
@@ -1235,24 +1255,8 @@ impl GreeksCalculator {
             );
         }
 
-        let Some(call_underlying) = call_instrument.underlying() else {
-            anyhow::bail!(
-                "Cannot cache futures spread: missing call underlying for {call_instrument_id}"
-            );
-        };
-
-        let Some(put_underlying) = put_instrument.underlying() else {
-            anyhow::bail!(
-                "Cannot cache futures spread: missing put underlying for {put_instrument_id}"
-            );
-        };
-
-        if call_underlying != put_underlying {
-            anyhow::bail!(
-                "Cannot cache futures spread: option underlyings differ call_instrument_id={call_instrument_id} put_instrument_id={put_instrument_id}"
-            );
-        }
-
+        let underlying_instrument_id =
+            self.resolve_futures_spread_underlying_id(call_instrument, put_instrument)?;
         if call_instrument.strike_price() != put_instrument.strike_price() {
             anyhow::bail!(
                 "Cannot cache futures spread: strike prices differ call_instrument_id={call_instrument_id} put_instrument_id={put_instrument_id}"
@@ -1263,6 +1267,28 @@ impl GreeksCalculator {
             anyhow::bail!(
                 "Cannot cache futures spread: expiration dates differ call_instrument_id={call_instrument_id} put_instrument_id={put_instrument_id}"
             );
+        }
+
+        let currency = option_valuation_currency(call_instrument)?;
+        check_price_currency(
+            put_instrument_id,
+            option_valuation_currency(put_instrument)?,
+            currency,
+        )?;
+        check_futures_spread_reference(reference_future_instrument, currency)?;
+
+        if let Some(underlying) = cache.instrument(&underlying_instrument_id) {
+            if underlying.instrument_class() != InstrumentClass::Future {
+                anyhow::bail!(
+                    "Cannot cache futures spread: underlying {underlying_instrument_id} is not a futures contract"
+                );
+            }
+
+            check_price_currency(
+                underlying_instrument_id,
+                underlying.quote_currency(),
+                currency,
+            )?;
         }
 
         let reference_future_price = self.get_price_object(&futures_instrument_id).ok_or_else(|| {
@@ -1283,23 +1309,8 @@ impl GreeksCalculator {
             )
         })?;
 
-        let underlying_instrument_id =
-            InstrumentId::from(format!("{call_underlying}.{}", call_instrument_id.venue));
-
-        // Reject if the underlying is present in cache but is not a future
-        {
-            let cache = self.cache.borrow();
-            if let Some(underlying) = cache.instrument(&underlying_instrument_id)
-                && underlying.instrument_class() != InstrumentClass::Future
-            {
-                anyhow::bail!(
-                    "Cannot cache futures spread: underlying {underlying_instrument_id} is not a futures contract"
-                );
-            }
-        }
-
         let implied_future_price =
-            self.calculate_implied_future_price(&call_instrument, call_price, put_price)?;
+            self.calculate_implied_future_price(call_instrument, currency, call_price, put_price)?;
         let spread = implied_future_price
             - price_as_f64(
                 reference_future_price,
@@ -1324,15 +1335,52 @@ impl GreeksCalculator {
 
         self.cached_futures_spreads.borrow_mut().insert(
             underlying_instrument_id,
-            (futures_instrument_id, spread_price),
+            FuturesSpreadPrice {
+                reference_id: futures_instrument_id,
+                spread: spread_price,
+                currency,
+            },
         );
 
         Ok(implied_price)
     }
 
+    fn resolve_futures_spread_underlying_id(
+        &self,
+        call_instrument: &InstrumentAny,
+        put_instrument: &InstrumentAny,
+    ) -> anyhow::Result<InstrumentId> {
+        let call_instrument_id = call_instrument.id();
+        let put_instrument_id = put_instrument.id();
+        let same_venue_legacy_pair = call_instrument_id.venue == put_instrument_id.venue
+            && explicit_underlying_id(call_instrument).is_none()
+            && explicit_underlying_id(put_instrument).is_none();
+
+        let (call_underlying_id, put_underlying_id) = if same_venue_legacy_pair {
+            (
+                spread_underlying_id_on_option_venue(call_instrument)?,
+                spread_underlying_id_on_option_venue(put_instrument)?,
+            )
+        } else {
+            (
+                self.resolve_underlying_instrument_id(call_instrument, call_instrument_id)?,
+                self.resolve_underlying_instrument_id(put_instrument, put_instrument_id)?,
+            )
+        };
+
+        if call_underlying_id != put_underlying_id {
+            anyhow::bail!(
+                "Cannot cache futures spread: option underlyings differ call_instrument_id={call_instrument_id} put_instrument_id={put_instrument_id}"
+            );
+        }
+
+        Ok(call_underlying_id)
+    }
+
     fn calculate_implied_future_price(
         &self,
         call_instrument: &InstrumentAny,
+        currency: Currency,
         call_price: f64,
         put_price: f64,
     ) -> anyhow::Result<f64> {
@@ -1342,12 +1390,14 @@ impl GreeksCalculator {
         let now = self.clock.borrow().timestamp_ns().to_datetime_utc();
         let expiry_in_days = (now.duration_until(expiry_utc).as_hours() / 24).max(1) as i32;
         let expiry_in_years = expiry_in_days as f64 / 365.25;
-        let currency = call_instrument.quote_currency().code.to_string();
         let interest_rate = self
             .cache
             .borrow()
-            .yield_curve(&currency)
-            .map_or(0.0425, |yield_curve| yield_curve(expiry_in_years));
+            .yield_curve(currency.code.as_str())
+            .map_or(DEFAULT_INTEREST_RATE, |yield_curve| {
+                yield_curve(expiry_in_years)
+            });
+
         let strike = price_as_f64(
             call_instrument.strike_price().unwrap_or_default(),
             call_instrument.id(),
@@ -1359,14 +1409,16 @@ impl GreeksCalculator {
 
     /// Resolve a cached futures spread price for an underlying future.
     ///
-    /// Returns `None` when the reference price is unavailable or the spread cannot be applied.
+    /// Returns `None` when the reference definition or price is unavailable, a loaded instrument
+    /// is not a futures contract, the reference or underlying currency differs from the cached
+    /// spread currency, or the spread cannot be applied.
     #[must_use]
     pub fn get_cached_futures_spread_price(
         &self,
         underlying_instrument_id: InstrumentId,
     ) -> Option<Price> {
         match self.cached_futures_spread_price(underlying_instrument_id) {
-            Ok(price) => price,
+            Ok(price) => price.map(|(price, _)| price),
             Err(e) => {
                 log::warn!(
                     "Cannot resolve cached futures spread for {underlying_instrument_id}: {e}"
@@ -1379,8 +1431,12 @@ impl GreeksCalculator {
     fn cached_futures_spread_price(
         &self,
         underlying_instrument_id: InstrumentId,
-    ) -> anyhow::Result<Option<Price>> {
-        let Some((futures_instrument_id, spread)) = self
+    ) -> anyhow::Result<Option<(Price, Currency)>> {
+        let Some(FuturesSpreadPrice {
+            reference_id,
+            spread,
+            currency,
+        }) = self
             .cached_futures_spreads
             .borrow()
             .get(&underlying_instrument_id)
@@ -1389,17 +1445,32 @@ impl GreeksCalculator {
             return Ok(None);
         };
 
-        let Some(reference_price) = self.get_price_object(&futures_instrument_id) else {
+        let cache = self.cache.borrow();
+        let underlying = cache.instrument(&underlying_instrument_id);
+        if underlying.is_some_and(|inst| inst.instrument_class() != InstrumentClass::Future) {
+            return Ok(None);
+        }
+
+        let Some(reference_price) = self.get_price_object(&reference_id) else {
             return Ok(None);
         };
 
+        let reference = cache.try_instrument(&reference_id)?;
+        check_futures_spread_reference(reference, currency)?;
+
+        if let Some(underlying) = underlying {
+            check_price_currency(
+                underlying_instrument_id,
+                underlying.quote_currency(),
+                currency,
+            )?;
+        }
+
         reference_price
             .checked_add(spread)
-            .map(Some)
+            .map(|price| Some((price, currency)))
             .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Cannot apply futures spread to reference price for {futures_instrument_id}"
-                )
+                anyhow::anyhow!("Cannot apply futures spread to reference price for {reference_id}")
             })
     }
 
@@ -1457,6 +1528,88 @@ impl GreeksCalculator {
             msgbus::subscribe_greeks(pattern, typed_handler, None);
         }
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct FuturesSpreadPrice {
+    reference_id: InstrumentId,
+    spread: Price,
+    currency: Currency,
+}
+
+fn explicit_underlying_id(instrument: &InstrumentAny) -> Option<InstrumentId> {
+    match instrument {
+        InstrumentAny::OptionContract(option) => option.underlying_instrument_id,
+        InstrumentAny::CryptoOption(option) => option.underlying_instrument_id,
+        _ => None,
+    }
+}
+
+fn spread_underlying_id_on_option_venue(
+    instrument: &InstrumentAny,
+) -> anyhow::Result<InstrumentId> {
+    let Some(underlying) = instrument.underlying() else {
+        anyhow::bail!(
+            "Cannot cache futures spread: missing underlying for {}",
+            instrument.id()
+        );
+    };
+
+    Ok(InstrumentId::from(format!(
+        "{underlying}.{}",
+        instrument.venue()
+    )))
+}
+
+fn option_valuation_currency(instrument: &InstrumentAny) -> Result<Currency, OptionValuationError> {
+    let currency = instrument
+        .strike_currency()
+        .ok_or(OptionValuationError::InvalidInput("strike currency"))?;
+
+    let reason = if instrument.quote_currency() != currency {
+        "premium and strike currencies differ"
+    } else if instrument.settlement_currency() != currency {
+        "settlement and strike currencies differ"
+    } else if instrument.is_inverse() {
+        "inverse option pricing"
+    } else {
+        return Ok(currency);
+    };
+
+    Err(OptionValuationError::UnsupportedConvention(
+        instrument.id(),
+        reason,
+    ))
+}
+
+fn check_futures_spread_reference(
+    reference: &InstrumentAny,
+    currency: Currency,
+) -> Result<(), OptionValuationError> {
+    let reference_id = reference.id();
+    if reference.instrument_class() != InstrumentClass::Future {
+        return Err(OptionValuationError::UnsupportedConvention(
+            reference_id,
+            "reference instrument is not a futures contract",
+        ));
+    }
+
+    check_price_currency(reference_id, reference.quote_currency(), currency)
+}
+
+fn check_price_currency(
+    instrument_id: InstrumentId,
+    price_currency: Currency,
+    strike_currency: Currency,
+) -> Result<(), OptionValuationError> {
+    if price_currency != strike_currency {
+        return Err(OptionValuationError::UnsupportedConvention(
+            instrument_id,
+            "price currency differs from option strike currency",
+        ));
+    }
+
+    Ok(())
 }
 
 fn price_as_f64(price: Price, instrument_id: InstrumentId, field: &str) -> anyhow::Result<f64> {
@@ -1563,7 +1716,7 @@ mod tests {
         instruments::{
             Equity, FuturesContract, OptionContract,
             any::InstrumentAny,
-            stubs::{crypto_option_spread_btc_deribit, option_spread},
+            stubs::{crypto_option_btc_deribit, crypto_option_spread_btc_deribit, option_spread},
         },
         types::{Currency, Price, Quantity},
     };
@@ -2319,18 +2472,25 @@ mod tests {
     }
 
     #[rstest]
-    fn test_instrument_greeks_prices_underlying_on_another_venue() {
+    #[case::legacy_unique_match(false, &[])]
+    #[case::explicit_ambiguous_symbol(true, &["AAPL.ARCX"])]
+    #[case::explicit_over_same_venue(true, &["AAPL.OPRA"])]
+    fn test_instrument_greeks_prices_underlying_on_another_venue(
+        #[case] explicit: bool,
+        #[case] competing_equities: &[&str],
+    ) {
         let now = utc_timestamp(2025, 3, 8, 12, 0, 0);
         let expiry = now + jiff::SignedDuration::from_hours(24 * 30);
         let now_ns = UnixNanos::from(now);
         let expiry_ns = UnixNanos::from(expiry);
-        let option = option_with_expiration("AAPL250417C00150000.OPRA", expiry_ns);
+        let mut option = option_with_expiration("AAPL250417C00150000.OPRA", expiry_ns);
         let option_id = option.id();
         let same_venue_cache = setup_cache_with_option_and_quotes(
             option.clone(),
             InstrumentId::from("AAPL.OPRA"),
             now_ns,
         );
+        option.underlying_instrument_id = explicit.then(|| InstrumentId::from("AAPL.XNAS"));
         let cross_venue_cache = Rc::new(RefCell::new(Cache::new(None, None)));
         cross_venue_cache
             .borrow_mut()
@@ -2340,6 +2500,13 @@ mod tests {
             .borrow_mut()
             .add_instrument(InstrumentAny::Equity(equity_with_id("AAPL.XNAS")))
             .unwrap();
+
+        for &id in competing_equities {
+            cross_venue_cache
+                .borrow_mut()
+                .add_instrument(InstrumentAny::Equity(equity_with_id(id)))
+                .unwrap();
+        }
 
         for (instrument_id, bid, ask) in [
             (option_id, "10.50", "10.60"),
@@ -2392,6 +2559,101 @@ mod tests {
         assert_eq!(greeks.vol, expected.vol);
         assert_eq!(greeks.price, expected.price);
         assert_eq!(greeks.greeks, expected.greeks);
+    }
+
+    #[rstest]
+    #[case::unknown_currency(
+        None,
+        "underlying price currency is unknown without an instrument definition"
+    )]
+    #[case::foreign_currency(
+        Some(Currency::EUR()),
+        "price currency differs from option strike currency"
+    )]
+    fn test_instrument_greeks_rejects_unverified_underlying_currency(
+        #[case] quote_currency: Option<Currency>,
+        #[case] reason: &'static str,
+    ) {
+        let now = spread_now_ns();
+        let underlying_id = InstrumentId::from("AAPL.XNAS");
+        let mut option = option_with_expiration("AAPL240315C00149000.OPRA", spread_expiry_ns());
+        option.underlying_instrument_id = Some(underlying_id);
+        let id = option.id();
+        let mut instruments = vec![InstrumentAny::OptionContract(option)];
+
+        if let Some(currency) = quote_currency {
+            let mut equity = equity_with_id("AAPL.XNAS");
+            equity.currency = currency;
+            instruments.push(InstrumentAny::Equity(equity));
+        }
+
+        let quotes = vec![
+            spread_quote(id, "10.50"),
+            spread_quote(underlying_id, "150.00"),
+        ];
+        let calculator = spread_calculator(instruments, quotes);
+
+        let error = InstrumentGreeksParams::builder()
+            .instrument_id(id)
+            .ts_event(now)
+            .build()
+            .calculate(&calculator)
+            .unwrap_err();
+
+        assert_eq!(
+            error.downcast_ref::<OptionValuationError>(),
+            Some(&OptionValuationError::UnsupportedConvention(
+                underlying_id,
+                reason
+            ))
+        );
+    }
+
+    #[rstest]
+    fn test_instrument_greeks_uses_crypto_options_explicit_underlying() {
+        msgbus::set_message_bus(Rc::new(RefCell::new(msgbus::MessageBus::default())));
+        let now = spread_now_ns();
+        let expiry = spread_expiry_ns();
+        let mut option =
+            crypto_option_btc_deribit(3, 1, Price::from("0.001"), Quantity::from("0.1"));
+        let underlying = future_with_expiration("BTCUSD.XCME", "BTC", expiry);
+        let first_decoy = future_with_expiration("BTC.XCME", "BTC", expiry);
+        let second_decoy = future_with_expiration("BTC.XNAS", "BTC", expiry);
+        option.underlying_instrument_id = Some(underlying.id());
+        option.settlement_currency = Currency::USD();
+        option.expiration_ns = expiry;
+        let id = option.id();
+        let quotes = vec![
+            spread_quote(id, "500.00"),
+            spread_quote(underlying.id(), "16000.00"),
+        ];
+        let calculator = spread_calculator(
+            vec![
+                option.into_any(),
+                underlying.into_any(),
+                first_decoy.into_any(),
+                second_decoy.into_any(),
+            ],
+            quotes,
+        );
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let captured = Rc::clone(&received);
+        calculator.subscribe_greeks(
+            "BTCUSD",
+            Some(move |data: &GreeksData| captured.borrow_mut().push(data.instrument_id)),
+        );
+
+        let greeks = InstrumentGreeksParams::builder()
+            .instrument_id(id)
+            .ts_event(now)
+            .publish_greeks(true)
+            .build()
+            .calculate(&calculator)
+            .unwrap();
+        msgbus::set_message_bus(Rc::new(RefCell::new(msgbus::MessageBus::default())));
+
+        assert_eq!(greeks.underlying_price, 16000.0);
+        assert_eq!(*received.borrow(), vec![id]);
     }
 
     fn future_with_expiration(
@@ -4875,6 +5137,188 @@ mod tests {
     }
 
     #[rstest]
+    #[case::call_exact(Some(OptionKind::Call))]
+    #[case::put_exact(Some(OptionKind::Put))]
+    #[case::legacy_cross_venue(None)]
+    fn test_cache_futures_spread_resolves_cross_venue_underlying(
+        #[case] explicit_leg: Option<OptionKind>,
+    ) {
+        let underlying = future_with_expiration("ESH4.XCME", "ESH4", spread_expiry_ns());
+        let underlying_id = underlying.id();
+        let mut call = spread_call();
+        let mut put = spread_put();
+
+        match explicit_leg {
+            Some(OptionKind::Call) => call.underlying_instrument_id = Some(underlying_id),
+            Some(OptionKind::Put) => put.underlying_instrument_id = Some(underlying_id),
+            None => put.id = InstrumentId::from("ESH4P150.XCME"),
+        }
+
+        let call_id = call.id();
+        let put_id = put.id();
+        let reference = spread_reference_future();
+        let reference_id = reference.id();
+        let quotes = vec![
+            spread_quote(call_id, "8.50"),
+            spread_quote(put_id, "3.33"),
+            spread_quote(reference_id, "155.00"),
+        ];
+        let calculator = spread_calculator(
+            vec![
+                call.into_any(),
+                put.into_any(),
+                underlying.into_any(),
+                reference.into_any(),
+            ],
+            quotes,
+        );
+
+        let price = calculator
+            .cache_futures_spread(call_id, put_id, reference_id)
+            .unwrap();
+
+        assert_eq!(price, Price::from("155.19"));
+        assert_eq!(
+            calculator.get_cached_futures_spread_price(underlying_id),
+            Some(price)
+        );
+    }
+
+    #[rstest]
+    #[case::usd(Currency::USD(), 0.23)]
+    #[case::btc(Currency::BTC(), 0.61)]
+    fn test_greeks_and_implied_future_use_strike_currency_and_unit_prices(
+        #[case] currency: Currency,
+        #[case] rate: f64,
+    ) {
+        let now = spread_now_ns();
+        let underlying_id = InstrumentId::from("ESH4.XCME");
+        let mut call = spread_call();
+        let mut put = spread_put();
+        for option in [&mut call, &mut put] {
+            option.underlying_instrument_id = Some(underlying_id);
+            option.strike_currency = currency;
+            option.quote_currency = currency;
+            option.settlement_currency = currency;
+            option.multiplier = Quantity::from(25);
+        }
+
+        let mut reference = spread_reference_future();
+        reference.currency = currency;
+        let call_id = call.id();
+        let put_id = put.id();
+        let reference_id = reference.id();
+        let instruments = vec![call.into_any(), put.into_any(), reference.into_any()];
+        let mut quotes = spread_quotes();
+        quotes.push(spread_quote(underlying_id, "999.00"));
+        let calculator = spread_calculator(instruments, quotes);
+        for (name, value) in [("USD", 0.23), ("BTC", 0.61)] {
+            calculator
+                .cache
+                .borrow_mut()
+                .add_yield_curve(YieldCurve::new(
+                    name.to_string(),
+                    vec![0.0],
+                    vec![value],
+                    now,
+                    now,
+                ))
+                .unwrap();
+        }
+
+        let implied = calculator
+            .cache_futures_spread(call_id, put_id, reference_id)
+            .unwrap();
+        let greeks = InstrumentGreeksParams::builder()
+            .instrument_id(call_id)
+            .ts_event(now)
+            .flat_interest_rate(0.01)
+            .build()
+            .calculate(&calculator)
+            .unwrap();
+        let portfolio = greeks.to_portfolio_greeks();
+        let years = 30.0 / 365.25;
+        let expected = 150.0 + (rate * years).exp() * (8.50 - 3.33);
+        let expected = spread_reference_future().make_price(expected);
+        let unit = imply_vol_and_greeks_checked(
+            expected.as_f64(),
+            rate,
+            0.0,
+            true,
+            150.0,
+            years,
+            8.50,
+            0.0,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(implied, expected);
+        assert_eq!(
+            calculator.get_cached_futures_spread_price(underlying_id),
+            Some(expected)
+        );
+        assert_eq!(greeks.interest_rate, rate);
+        assert_eq!(greeks.underlying_price, expected.as_f64());
+        assert_eq!(greeks.multiplier, 25.0);
+        assert_eq!(greeks.price, unit.price);
+        assert_eq!(
+            greeks.greeks,
+            OptionGreekValues {
+                delta: unit.delta,
+                gamma: unit.gamma,
+                vega: unit.vega,
+                theta: unit.theta,
+                rho: unit.rho,
+            }
+        );
+        assert_eq!(portfolio.price, unit.price * 25.0);
+        assert_eq!(portfolio.greeks, greeks.greeks * 25.0);
+    }
+
+    #[rstest]
+    #[case::put_premium(true, "premium and strike currencies differ")]
+    #[case::reference_currency(false, "price currency differs from option strike currency")]
+    fn test_cache_futures_spread_rejects_incompatible_price_currencies(
+        #[case] put_premium: bool,
+        #[case] reason: &'static str,
+    ) {
+        let call = spread_call();
+        let mut put = spread_put();
+        let mut reference = spread_reference_future();
+
+        let offending_id = if put_premium {
+            put.quote_currency = Currency::BTC();
+            put.id()
+        } else {
+            reference.currency = Currency::BTC();
+            reference.id()
+        };
+
+        let calculator = spread_calculator(
+            vec![call.into_any(), put.into_any(), reference.into_any()],
+            spread_quotes(),
+        );
+
+        let error = calculator
+            .cache_futures_spread(
+                InstrumentId::from(SPREAD_CALL_ID),
+                InstrumentId::from(SPREAD_PUT_ID),
+                InstrumentId::from(SPREAD_REFERENCE_ID),
+            )
+            .unwrap_err();
+
+        assert_eq!(
+            error.downcast_ref::<OptionValuationError>(),
+            Some(&OptionValuationError::UnsupportedConvention(
+                offending_id,
+                reason
+            ))
+        );
+        assert!(calculator.cached_futures_spreads.borrow().is_empty());
+    }
+
+    #[rstest]
     fn test_cache_futures_spread_errors_when_call_instrument_missing() {
         let instruments = vec![
             InstrumentAny::OptionContract(spread_put()),
@@ -4953,18 +5397,22 @@ mod tests {
     }
 
     #[rstest]
-    fn test_cache_futures_spread_errors_when_underlyings_differ() {
-        let mismatched_put = future_option_with_expiration(
-            SPREAD_PUT_ID,
-            "ESM4P150",
-            "ESM4",
-            OptionKind::Put,
-            "150.00",
-            spread_expiry_ns(),
-        );
+    #[case::legacy_symbols(false)]
+    #[case::explicit_ids(true)]
+    fn test_cache_futures_spread_errors_when_underlyings_differ(#[case] explicit: bool) {
+        let mut call = spread_call();
+        let mut put = spread_put();
+
+        if explicit {
+            call.underlying_instrument_id = Some(InstrumentId::from("ESH4.XCME"));
+            put.underlying_instrument_id = Some(InstrumentId::from(SPREAD_UNDERLYING_ID));
+        } else {
+            put.underlying = Ustr::from("ESM4");
+        }
+
         let instruments = vec![
-            InstrumentAny::OptionContract(spread_call()),
-            InstrumentAny::OptionContract(mismatched_put),
+            call.into_any(),
+            put.into_any(),
             InstrumentAny::FuturesContract(spread_reference_future()),
         ];
 
@@ -4972,6 +5420,61 @@ mod tests {
             cache_spread_error(instruments, spread_quotes()),
             "Cannot cache futures spread: option underlyings differ \
              call_instrument_id=ESH4C150.GLBX put_instrument_id=ESH4P150.GLBX"
+        );
+    }
+
+    #[rstest]
+    #[case::different_currency_future(true, "price currency differs from option strike currency")]
+    #[case::same_currency_equity(false, "reference instrument is not a futures contract")]
+    fn test_cached_futures_spread_rejects_incompatible_reference(
+        #[case] is_future: bool,
+        #[case] reason: &'static str,
+    ) {
+        let call_id = InstrumentId::from(SPREAD_CALL_ID);
+        let put_id = InstrumentId::from(SPREAD_PUT_ID);
+        let reference_id = InstrumentId::from(SPREAD_REFERENCE_ID);
+        let underlying_id = InstrumentId::from(SPREAD_UNDERLYING_ID);
+        let calculator = spread_calculator(spread_instruments(), spread_quotes());
+        calculator
+            .cache_futures_spread(call_id, put_id, reference_id)
+            .unwrap();
+        let before = calculator.get_cached_futures_spread_price(underlying_id);
+
+        let reference = if is_future {
+            let mut future = spread_reference_future();
+            future.currency = Currency::BTC();
+            future.into_any()
+        } else {
+            equity_with_id(SPREAD_REFERENCE_ID).into_any()
+        };
+
+        calculator
+            .cache
+            .borrow_mut()
+            .add_instrument(reference)
+            .unwrap();
+
+        let after = calculator.get_cached_futures_spread_price(underlying_id);
+        let error = InstrumentGreeksParams::builder()
+            .instrument_id(call_id)
+            .ts_event(spread_now_ns())
+            .build()
+            .calculate(&calculator)
+            .unwrap_err();
+        let new_spread_error = calculator
+            .cache_futures_spread(call_id, put_id, reference_id)
+            .unwrap_err();
+        let expected_error = OptionValuationError::UnsupportedConvention(reference_id, reason);
+
+        assert_eq!(before, Some(Price::from("155.19")));
+        assert_eq!(after, None);
+        assert_eq!(
+            error.downcast_ref::<OptionValuationError>(),
+            Some(&expected_error)
+        );
+        assert_eq!(
+            new_spread_error.downcast_ref::<OptionValuationError>(),
+            Some(&expected_error)
         );
     }
 
@@ -5107,15 +5610,15 @@ mod tests {
     }
 
     #[rstest]
-    fn test_resolve_underlying_instrument_id_prefers_cached_futures_spread_over_cross_venue_match()
-    {
+    #[case::usable_spread(false)]
+    #[case::incompatible_spread(true)]
+    fn test_instrument_greeks_keeps_same_venue_spread_key(#[case] replace_reference: bool) {
+        let future = future_with_expiration("ESH4.XCME", "ESH4", spread_expiry_ns());
+        let mut quotes = spread_quotes();
+        quotes.push(spread_quote(future.id(), "157.00"));
         let mut instruments = spread_instruments();
-        instruments.push(InstrumentAny::FuturesContract(future_with_expiration(
-            "ESH4.XCME",
-            "ESH4",
-            spread_expiry_ns(),
-        )));
-        let calculator = spread_calculator(instruments, spread_quotes());
+        instruments.push(future.into_any());
+        let calculator = spread_calculator(instruments, quotes);
         calculator
             .cache_futures_spread(
                 InstrumentId::from(SPREAD_CALL_ID),
@@ -5124,14 +5627,69 @@ mod tests {
             )
             .unwrap();
 
-        let underlying_id = calculator
-            .resolve_underlying_instrument_id(
-                &InstrumentAny::OptionContract(spread_call()),
-                InstrumentId::from(SPREAD_CALL_ID),
-            )
+        if replace_reference {
+            calculator
+                .cache
+                .borrow_mut()
+                .add_instrument(equity_with_id(SPREAD_REFERENCE_ID).into_any())
+                .unwrap();
+        }
+
+        let result = InstrumentGreeksParams::builder()
+            .instrument_id(InstrumentId::from(SPREAD_CALL_ID))
+            .ts_event(spread_now_ns())
+            .build()
+            .calculate(&calculator);
+
+        if replace_reference {
+            assert_eq!(
+                result.unwrap_err().downcast_ref::<OptionValuationError>(),
+                Some(&OptionValuationError::UnsupportedConvention(
+                    InstrumentId::from(SPREAD_REFERENCE_ID),
+                    "reference instrument is not a futures contract",
+                ))
+            );
+        } else {
+            assert_eq!(result.unwrap().underlying_price, 155.19);
+        }
+    }
+
+    #[rstest]
+    fn test_cached_greeks_shock_works_after_spread_reference_is_purged() {
+        let mut instruments = spread_instruments();
+
+        for id in ["ESH4.XCME", "ESH4.XCBT"] {
+            let future = future_with_expiration(id, "ESH4", spread_expiry_ns());
+            instruments.push(future.into_any());
+        }
+
+        let calculator = spread_calculator(instruments, spread_quotes());
+        let call_id = InstrumentId::from(SPREAD_CALL_ID);
+        let reference_id = InstrumentId::from(SPREAD_REFERENCE_ID);
+        calculator
+            .cache_futures_spread(call_id, InstrumentId::from(SPREAD_PUT_ID), reference_id)
+            .unwrap();
+        let original = InstrumentGreeksParams::builder()
+            .instrument_id(call_id)
+            .ts_event(spread_now_ns())
+            .cache_greeks(true)
+            .build()
+            .calculate(&calculator)
+            .unwrap();
+        calculator.cache.borrow_mut().purge_instrument(reference_id);
+
+        let shocked = InstrumentGreeksParams::builder()
+            .instrument_id(call_id)
+            .ts_event(spread_now_ns())
+            .use_cached_greeks(true)
+            .spot_shock(1.0)
+            .build()
+            .calculate(&calculator)
             .unwrap();
 
-        assert_eq!(underlying_id, InstrumentId::from(SPREAD_UNDERLYING_ID));
+        assert_eq!(original.underlying_price, 155.19);
+        assert_eq!(shocked.underlying_price, 156.19);
+        assert_eq!(shocked.vol, original.vol);
     }
 
     #[rstest]
@@ -5142,6 +5700,43 @@ mod tests {
             calculator.get_cached_futures_spread_price(InstrumentId::from("CLZ4.NYMEX")),
             None
         );
+    }
+
+    #[rstest]
+    #[case::different_currency_future(true)]
+    #[case::same_currency_equity(false)]
+    fn test_get_cached_futures_spread_price_rejects_incompatible_underlying(
+        #[case] is_future: bool,
+    ) {
+        let underlying_id = InstrumentId::from(SPREAD_UNDERLYING_ID);
+        let calculator = spread_calculator(spread_instruments(), spread_quotes());
+        calculator
+            .cache_futures_spread(
+                InstrumentId::from(SPREAD_CALL_ID),
+                InstrumentId::from(SPREAD_PUT_ID),
+                InstrumentId::from(SPREAD_REFERENCE_ID),
+            )
+            .unwrap();
+        let before = calculator.get_cached_futures_spread_price(underlying_id);
+
+        let underlying = if is_future {
+            let mut future =
+                future_with_expiration(SPREAD_UNDERLYING_ID, "ESH4", spread_expiry_ns());
+            future.currency = Currency::EUR();
+            future.into_any()
+        } else {
+            equity_with_id(SPREAD_UNDERLYING_ID).into_any()
+        };
+
+        calculator
+            .cache
+            .borrow_mut()
+            .add_instrument(underlying)
+            .unwrap();
+        let after = calculator.get_cached_futures_spread_price(underlying_id);
+
+        assert_eq!(before, Some(Price::from("155.19")));
+        assert_eq!(after, None);
     }
 
     #[cfg(feature = "defi")]
@@ -5266,6 +5861,109 @@ mod tests {
         assert_eq!(
             result.downcast_ref::<OptionValuationError>(),
             Some(&OptionValuationError::UnsupportedSpread(id))
+        );
+    }
+
+    #[rstest]
+    #[case::coin_premium(
+        Currency::BTC(),
+        Currency::BTC(),
+        true,
+        false,
+        0.0,
+        "premium and strike currencies differ"
+    )]
+    #[case::cached_coin_premium(
+        Currency::BTC(),
+        Currency::BTC(),
+        true,
+        true,
+        0.0,
+        "premium and strike currencies differ"
+    )]
+    #[case::shocked_cached_coin_premium(
+        Currency::BTC(),
+        Currency::BTC(),
+        true,
+        true,
+        1.0,
+        "premium and strike currencies differ"
+    )]
+    #[case::coin_settlement(
+        Currency::USD(),
+        Currency::BTC(),
+        false,
+        false,
+        0.0,
+        "settlement and strike currencies differ"
+    )]
+    #[case::inverse(
+        Currency::USD(),
+        Currency::USD(),
+        true,
+        false,
+        0.0,
+        "inverse option pricing"
+    )]
+    #[case::stablecoin_premium(
+        Currency::USDC(),
+        Currency::USDC(),
+        false,
+        false,
+        0.0,
+        "premium and strike currencies differ"
+    )]
+    fn test_instrument_greeks_rejects_unsupported_option_convention(
+        #[case] quote_currency: Currency,
+        #[case] settlement_currency: Currency,
+        #[case] is_inverse: bool,
+        #[case] use_cached: bool,
+        #[case] spot_shock: f64,
+        #[case] reason: &'static str,
+    ) {
+        let now = spread_now_ns();
+        let underlying_id = InstrumentId::from("BTCUSD.XCME");
+        let mut option =
+            crypto_option_btc_deribit(3, 1, Price::from("0.001"), Quantity::from("0.1"));
+        option.underlying_instrument_id = Some(underlying_id);
+        option.quote_currency = quote_currency;
+        option.settlement_currency = settlement_currency;
+        option.is_inverse = is_inverse;
+        option.expiration_ns = spread_expiry_ns();
+        let id = option.id();
+        let underlying = future_with_expiration("BTCUSD.XCME", "BTC", spread_expiry_ns());
+        let calculator = spread_calculator(
+            vec![option.into_any(), underlying.into_any()],
+            vec![
+                spread_quote(id, "0.050"),
+                spread_quote(underlying_id, "16000.00"),
+            ],
+        );
+
+        if use_cached {
+            let mut cached = GreeksData::from_delta(id, -0.5, 1.0, now);
+            cached.is_call = false;
+            cached.price = 0.05;
+            cached.strike = 16000.0;
+            cached.underlying_price = 16000.0;
+            cached.vol = 0.2;
+            cached.expiry_in_days = 30;
+            cached.expiry_in_years = 30.0 / 365.25;
+            calculator.cache.borrow_mut().add_greeks(cached).unwrap();
+        }
+
+        let error = InstrumentGreeksParams::builder()
+            .instrument_id(id)
+            .ts_event(now)
+            .use_cached_greeks(use_cached)
+            .spot_shock(spot_shock)
+            .build()
+            .calculate(&calculator)
+            .unwrap_err();
+
+        assert_eq!(
+            error.downcast_ref::<OptionValuationError>(),
+            Some(&OptionValuationError::UnsupportedConvention(id, reason))
         );
     }
 

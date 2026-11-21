@@ -62,6 +62,8 @@ pub enum OptionValuationError {
     Expired(InstrumentId),
     #[error("Local valuation of option spread {0} is unsupported")]
     UnsupportedSpread(InstrumentId),
+    #[error("Unsupported local option valuation convention for {0}: {1}")]
+    UnsupportedConvention(InstrumentId, &'static str),
 }
 
 /// Core option Greek sensitivity values (the 5 standard sensitivities).

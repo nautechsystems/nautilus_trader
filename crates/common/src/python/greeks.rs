@@ -481,7 +481,6 @@ mod tests {
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
         let option = option_contract_appl();
         let option_id = option.id();
-        let underlying_id = InstrumentId::from("AAPL.OPRA");
         let vol_index_id = InstrumentId::from("VIX.XCBF");
 
         match case {
@@ -503,9 +502,15 @@ mod tests {
                 (make_calculator(cache), option_id, None)
             }
             MissingPriceCase::VolIndex => {
+                let equity = equity_aapl();
+                let underlying_id = equity.id();
                 cache
                     .borrow_mut()
                     .add_instrument(InstrumentAny::OptionContract(option))
+                    .unwrap();
+                cache
+                    .borrow_mut()
+                    .add_instrument(InstrumentAny::Equity(equity))
                     .unwrap();
                 add_quote(&cache, option_id, "10.50");
                 add_quote(&cache, underlying_id, "150.00");

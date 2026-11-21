@@ -172,27 +172,74 @@ greeks = calculator.instrument_greeks(
 # Returns GreeksData or None while market data is warming up.
 ```
 
-For option instruments, the calculator performs these steps:
+For a fresh option valuation, the calculator solves implied volatility from the market premium and
+returns checked `GreeksData`. For futures, equities, and other non-option instruments, it returns a
+delta of 1 or a beta-weighted delta, with zero gamma, vega, theta, and rho. Option-specific fields
+keep their default values.
 
-1. Look up the instrument and reject expired options or unsupported option spreads before using cached Greeks.
-1. Resolve the underlying when a fresh or shocked valuation needs it.
-1. Retrieve prices from the cache. Standard instruments prefer `MID` and fall back to `LAST`. True index
-   instruments prefer the cached index price.
-1. Look up yield curves from the cache, falling back to `flat_interest_rate`.
-1. Solve implied volatility from a valid market premium and compute checked Greeks.
-1. Return a `GreeksData` object with the computed values.
+##### Underlying and prices
 
-Missing prices return `None`, which lets strategies treat warm-up as a normal no-op path.
-Missing instrument definitions, expired options, option spreads, invalid shocked inputs or results,
-and failed implied-volatility solves raise `ValueError`. Expiration is checked before returning cached
-option Greeks.
+For a fresh valuation or a shock, the calculator resolves the underlying in this order.
 
-The calculator derives carry as `r - q` when a dividend yield or curve is available and holds carry fixed at
-zero otherwise. Shocked cached valuations keep their cached numeric inputs and choose carry rate sensitivity
-from the current call's dividend yield or available dividend curve.
+1. The option definition's `underlying_instrument_id`, when set.
+1. The underlying symbol on the option's venue, if the cache holds its definition or an implied futures spread.
+1. A cached cross-venue instrument with that symbol. Multiple matches on discovery raise an error.
 
-For non-option instruments such as futures and equities, the calculator returns `GreeksData` with `delta=1` or
-beta-weighted delta and zero gamma, vega, theta, and rho. Option-specific fields keep their default values.
+The calculator prefers `MID` prices and falls back to `LAST`. True index instruments prefer the
+cached index price.
+
+##### Pricing conventions
+
+The model takes the strike, market premium, and underlying price per unit of the underlying. It
+returns price and PnL per unit and carries the contract multiplier separately.
+
+The `strike_currency`, `quote_currency` (premium), and `settlement_currency` must match the currency
+of the underlying price. Load the underlying definition or use a cached implied futures spread to
+establish that currency.
+
+The calculator uses the strike-currency interest rate and the underlying's dividend yield. With
+a dividend yield or curve, carry is `r - q`. Otherwise, carry stays fixed at zero. See
+[Yield curves](#yield-curves).
+
+##### Missing data and errors
+
+Python returns `None` when a price is missing during warm-up. Rust returns an error.
+
+Expired options and option spreads raise `ValueError` in Python and return an error in Rust. The same
+applies to missing required definitions, invalid shocked inputs or results, and failed implied-volatility
+solves.
+
+Inverse pricing and mixed or unknown price currencies produce the Rust error
+`OptionValuationError::UnsupportedConvention`, which Python exposes as `ValueError`. This includes USD
+strikes with BTC or USDC premiums.
+
+The calculator checks expiration, instrument type, and pricing conventions before using cached Greeks.
+
+#### Implied futures prices
+
+`cache_futures_spread()` uses put-call parity to derive an implied futures price from a call/put pair.
+
+```text
+implied_price = strike + exp(rate * years) * (call_price - put_price)
+```
+
+The formula assumes European exercise. For American-style pairs, the result is an approximation.
+
+- Both legs must resolve to the same underlying ID. For a same-venue pair with both IDs absent, the
+  calculator uses each underlying symbol on that venue. Other pairs use the instrument Greeks lookup.
+- Use premiums per underlying unit and the same pricing conventions as for instrument Greeks.
+- Use the strike-currency yield curve. When it is missing, the calculation uses its own flat rate of `0.0425`.
+
+The cache stores the difference between the implied price and the reference futures price.
+`get_cached_futures_spread_price()` adds that difference to the latest reference price. The result
+can stand in for a future whose own price or definition is missing.
+
+At creation and reuse, the reference and any loaded underlying must be futures contracts quoted in
+the spread's strike currency.
+
+For an option without an explicit ID or a same-venue underlying definition, the cached spread key
+takes precedence over cross-venue lookup. If a fresh valuation cannot use the spread, refresh it or
+supply an explicit underlying ID.
 
 #### Shock scenarios
 
@@ -206,6 +253,10 @@ greeks = calculator.instrument_greeks(
     time_to_expiry_shock=1 / 365.25,  # roll forward one calendar day
 )
 ```
+
+Cached shocks reuse the saved numeric inputs. Carry rate sensitivity comes from the current call's
+dividend yield or the available dividend curve. After correcting an option's `underlying_instrument_id`,
+recompute and cache its Greeks before reusing them.
 
 #### Volatility update
 
@@ -284,9 +335,11 @@ partial portfolio result.
 
 `GreeksData` carries the context of a single instrument's Greeks computation and is exposed from
 `nautilus_trader.model`. Requested caching and publication use the unshocked option valuation only after
-validation succeeds. Cached valuations bypass those operations, including when shocks are applied. The Rust
-`GreeksCalculator` can publish to the `data.GreeksData.underlying={underlying}.instrument_id={instrument_id}` topic,
-keyed by the underlying symbol and the full option instrument ID. The Python surface does not expose that flag.
+validation succeeds. Cached valuations bypass those operations, including when shocks are applied.
+
+The calculator exposes `publish_greeks` only in Rust. It publishes to
+`data.GreeksData.underlying={underlying}.instrument_id={instrument_id}`, using the resolved underlying's symbol
+and the full option instrument ID.
 
 | Field              | Type           | Description                                                             |
 | ------------------ | -------------- | ----------------------------------------------------------------------- |
@@ -346,11 +399,14 @@ The Python `GreeksData` and `PortfolioGreeks` types support scalar-left multipli
 
 ### Yield curves
 
-`YieldCurve` holds interest rates or dividend yields by tenor in years. A curve with one rate is
-flat, and a curve with three or more points is interpolated. The calculator looks up cached curves by
-`curve_name`: the option's quote currency code (such as `USD`) for the interest rate, and the
-underlying instrument ID for the dividend yield. Without a matching curve, it uses
-`flat_interest_rate` and `flat_dividend_yield`.
+`YieldCurve` holds annual interest rates or dividend yields by tenor in years. Enter rates as decimals,
+such as `0.0425` for 4.25%. The pricing model uses continuous compounding. A one-rate curve is flat,
+and a curve with three or more points interpolates between tenors.
+
+`instrument_greeks()` looks up each curve by `curve_name`.
+
+- Use the strike currency code, such as `USD`, for the interest rate. The fallback is `flat_interest_rate`.
+- Use the resolved underlying ID for the dividend yield. The fallback is `flat_dividend_yield`.
 
 `YieldCurve` is custom data. Wrap each curve in `CustomData` to write it to the catalog, replay it
 in a backtest, or publish it to subscribed actors. The data engine does not cache curves, so the actor
@@ -426,7 +482,7 @@ Yield curves use the same custom-data path; see [Yield curves](#yield-curves).
 | --------------------- | ----------------------------------------------------- | ------------------------------------------------- |
 | Computation           | Done by the venue or broker                           | Local Black-Scholes                               |
 | Latency               | Arrives with market data                              | Computed on demand                                |
-| Venues                | Bybit, Deribit, Derive, Interactive Brokers, and OKX  | Any cached option with required prices            |
+| Venues                | Bybit, Deribit, Derive, Interactive Brokers, and OKX  | Any venue with supported cached pricing inputs    |
 | Shock scenarios       | Not supported                                         | Spot, vol, and time shocks                        |
 | Portfolio aggregation | Manual, such as iterating an `OptionChainSlice`       | Built-in through `portfolio_greeks()`             |
 | Beta weighting        | Not supported                                         | Built-in                                          |

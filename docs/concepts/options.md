@@ -67,9 +67,11 @@ each venue's contract specification. Tardis applies the Deribit, OKX, and Bybit 
 `None` for other source exchanges.
 
 Rust builders and Python constructors accept these fields. JSON, dictionaries, Arrow, and PostgreSQL
-preserve them. If an otherwise valid JSON or Arrow record omits any of these three optional fields, it loads
-that field as `None`. Equality and hashing use
-only the instrument ID. The matching engine and Greeks calculator do not read these optional fields.
+preserve them. An otherwise valid JSON or Arrow record loads each omitted field as `None`.
+
+The [Greeks calculator](greeks.md#instrument-greeks) uses `underlying_instrument_id` to find the pricing
+reference. Equality and hashing depend only on the instrument ID. The matching engine does not read
+these optional fields.
 
 ### Exercise style and settlement type
 
