@@ -42,82 +42,23 @@ use super::{
     resolve_client_order_id,
 };
 use crate::{
-    common::{
-        enums::{KrakenOrderSide, KrakenOrderType, KrakenTimeInForce},
-        lookup_instrument_in_snapshot,
-    },
+    common::lookup_instrument_in_snapshot,
     websocket::spot_v2::{
         enums::KrakenExecType,
-        messages::{KrakenWsExecutionData, KrakenWsExecutionTriggers},
-        parse::{parse_ws_fill_report, parse_ws_order_status_report},
+        messages::KrakenWsExecutionData,
+        parse::{
+            RetainedOrderFields, parse_ws_fill_report, parse_ws_order_status_report,
+            parse_ws_retained_order_status_report,
+        },
     },
 };
 
-/// Fields of a spot order this client does not track, kept from its `pending_new` frame.
-///
-/// Kraken states an order's side, type, quantity, limit and trigger on its `pending_new` frame and
-/// only some of them on later frames. Each frame overrides the fields it states, and the frame
-/// parser stays the only conversion to Nautilus types.
+/// What the dispatch keeps of a spot order this client does not track: the fields its frames
+/// stated, and whether one reported it triggered.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SpotOrderShape {
-    side: Option<KrakenOrderSide>,
-    order_type: Option<KrakenOrderType>,
-    order_qty: Option<Decimal>,
-    limit_price: Option<Decimal>,
-    time_in_force: Option<KrakenTimeInForce>,
-    post_only: Option<bool>,
-    reduce_only: Option<bool>,
-    triggers: KrakenWsExecutionTriggers,
-    cum_qty: Option<Decimal>,
-    avg_price: Option<Decimal>,
+    retained: RetainedOrderFields,
     triggered: bool,
-}
-
-impl SpotOrderShape {
-    fn merge(&mut self, exec: &KrakenWsExecutionData) {
-        self.side = exec.side.or(self.side);
-        self.order_type = exec.order_type.or(self.order_type);
-        self.time_in_force = exec.time_in_force.or(self.time_in_force);
-        self.post_only = exec.post_only.or(self.post_only);
-        self.reduce_only = exec.reduce_only.or(self.reduce_only);
-
-        // A market order states a zero limit
-        let positive = |value: Option<Decimal>| value.filter(|v| *v > Decimal::ZERO);
-        self.order_qty = positive(exec.order_qty).or(self.order_qty);
-        self.limit_price = positive(exec.limit_price).or(self.limit_price);
-
-        // A later frame can state only some trigger fields
-        if let Some(triggers) = &exec.triggers {
-            let kept = &mut self.triggers;
-            kept.reference = triggers.reference.clone().or(kept.reference.take());
-            kept.price = triggers.price.or(kept.price);
-            kept.price_type = triggers.price_type.clone().or(kept.price_type.take());
-        }
-
-        if exec.cum_qty.is_some() {
-            self.cum_qty = exec.cum_qty;
-            self.avg_price = exec.avg_price;
-        }
-    }
-
-    fn complete(&self, exec: &KrakenWsExecutionData) -> KrakenWsExecutionData {
-        let mut completed = exec.clone();
-        completed.side = self.side;
-        completed.order_type = self.order_type;
-        completed.order_qty = self.order_qty;
-        completed.limit_price = self.limit_price;
-        completed.time_in_force = self.time_in_force;
-        completed.post_only = self.post_only;
-        completed.reduce_only = self.reduce_only;
-        completed.triggers = Some(self.triggers.clone());
-
-        // A trade frame's cumulative includes its fill; the kept one precedes it
-        if exec.exec_id.is_none() && exec.cum_qty.is_none() {
-            completed.cum_qty = self.cum_qty;
-            completed.avg_price = self.avg_price;
-        }
-        completed
-    }
 }
 
 /// Dispatches a Kraken Spot v2 execution message.
@@ -360,24 +301,28 @@ fn shaped_execution(
         None => None,
     };
 
-    shape.merge(exec);
-    let completed = shape.complete(exec);
-    let status =
-        match parse_ws_order_status_report(&completed, instrument, account_id, cached_qty, ts_init)
-        {
-            Ok(mut report) => {
-                if let Some(cid) = resolved_id {
-                    report = report.with_client_order_id(cid);
-                }
-                report.order_status = untracked_order_status(&report, &shape);
-                shape.triggered |= report.order_status == OrderStatus::Triggered;
-                Some(report)
+    shape.retained.merge(exec);
+    let status = match parse_ws_retained_order_status_report(
+        exec,
+        Some(&shape.retained),
+        instrument,
+        account_id,
+        cached_qty,
+        ts_init,
+    ) {
+        Ok(mut report) => {
+            if let Some(cid) = resolved_id {
+                report = report.with_client_order_id(cid);
             }
-            Err(e) => {
-                log::error!("Failed to parse order status report: {e}");
-                None
-            }
-        };
+            report.order_status = untracked_order_status(&report, &shape);
+            shape.triggered |= report.order_status == OrderStatus::Triggered;
+            Some(report)
+        }
+        Err(e) => {
+            log::error!("Failed to parse order status report: {e}");
+            None
+        }
+    };
     state.store_spot_order_shape(&exec.order_id, shape);
 
     // The engine can create a shaped order from its `pending_new` report, so a trade's fill goes
@@ -404,11 +349,16 @@ fn seed_order_shape(
         return None;
     }
     let mut shape = SpotOrderShape::default();
-    shape.merge(exec);
-    let completed = shape.complete(exec);
-    let report =
-        parse_ws_order_status_report(&completed, instrument, account_id, cached_qty, ts_init)
-            .ok()?;
+    shape.retained.merge(exec);
+    let report = parse_ws_retained_order_status_report(
+        exec,
+        Some(&shape.retained),
+        instrument,
+        account_id,
+        cached_qty,
+        ts_init,
+    )
+    .ok()?;
     can_create_order(&report).then_some(shape)
 }
 
