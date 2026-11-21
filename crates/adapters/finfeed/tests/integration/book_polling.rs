@@ -21,7 +21,7 @@ use nautilus_common::{
     clients::DataClient,
     messages::{DataEvent, data::*},
 };
-use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_finfeed::{common::symbol::to_instrument_id, data::FinFeedDataClient};
 use nautilus_model::{
     data::{BookOrder, Data, NULL_ORDER, OrderBookDeltas, OrderBookDepth},
@@ -36,8 +36,8 @@ use serde_json::Value;
 
 use super::{
     dst::{
-        HttpPeer, next_request, start_peer, start_peer_gated, wait_for_condition,
-        wait_for_http_idle,
+        HttpPeer, next_request, start_peer, start_peer_gated, start_peer_waiting,
+        wait_for_condition, wait_for_http_idle,
     },
     polling::{capture_diagnostics, connected_selection, timed_peer, wait_for_retry_backoff},
 };
@@ -262,23 +262,34 @@ async fn unsupported_book_types_fail_before_io(#[case] deltas: bool, #[case] boo
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
 async fn default_depth_is_idempotent_after_publication_and_reconfiguration_bootstraps() {
-    let (peer, http, _) = timed_peer(vec![
-        (200, EXCHANGES, Duration::ZERO),
-        (200, MARKET, Duration::ZERO),
-        (200, BOOK, Duration::ZERO),
-        (200, BOOK, Duration::ZERO),
-    ])
+    let (peer, http, mut observed) = start_peer_waiting(
+        vec![
+            (200, "", EXCHANGES),
+            (200, "", MARKET),
+            (200, "", BOOK),
+            (200, "", BOOK),
+        ],
+        |_| std::future::ready(()),
+        true,
+    )
     .await;
     let (mut client, mut receiver) =
         connected_selection(http, vec![MARKET_ID.into()], 86_400_000).await;
     subscribe(&mut client, false, BookType::L2_MBP, None).unwrap();
     let first = event(&mut receiver).await;
+
+    for expected in 0..3 {
+        assert_eq!(next_request(&mut observed).await, expected);
+    }
+
     subscribe(&mut client, false, BookType::L2_MBP, Some(10)).unwrap();
     assert!(
-        time::timeout(Duration::from_millis(350), receiver.recv())
+        time::timeout(Duration::from_millis(350), observed.recv())
             .await
-            .is_err()
+            .is_err(),
+        "an equivalent depth subscription should not start a new poll"
     );
+    assert!(receiver.try_recv().is_err());
     subscribe(&mut client, false, BookType::L2_MBP, Some(1)).unwrap();
     let limited = event(&mut receiver).await;
     client.disconnect().await.unwrap();
@@ -498,26 +509,28 @@ async fn endpoint_churn_does_not_cancel_the_other_inflight_endpoint(#[case] book
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
 async fn activity_and_book_endpoints_poll_serially_by_independent_due_times() {
-    let (peer, http, _) = timed_peer(vec![
-        (200, EXCHANGES, Duration::ZERO),
-        (200, MARKET, Duration::ZERO),
-        (
-            200,
-            include_str!("../../test_data/poll-activity.json"),
-            Duration::ZERO,
-        ),
-        (200, BOOK, Duration::ZERO),
-        (
-            200,
-            include_str!("../../test_data/poll-older.json"),
-            Duration::ZERO,
-        ),
-        (200, REPLACEMENT, Duration::ZERO),
-    ])
+    let (peer, http, mut observed, release) = start_peer_gated(
+        vec![
+            (200, "", EXCHANGES),
+            (200, "", MARKET),
+            (200, "", include_str!("../../test_data/poll-activity.json")),
+            (200, "", BOOK),
+            (200, "", include_str!("../../test_data/poll-older.json")),
+            (200, "", REPLACEMENT),
+        ],
+        2,
+    )
     .await;
     let (mut client, mut receiver) = connected_selection(http, vec![MARKET_ID.into()], 250).await;
     super::polling::subscribe(&mut client, true, false);
+
+    for expected in 0..3 {
+        assert_eq!(next_request(&mut observed).await, expected);
+    }
+
     subscribe(&mut client, true, BookType::L2_MBP, None).unwrap();
+    release.send(()).unwrap();
+
     let events = [
         event(&mut receiver).await,
         event(&mut receiver).await,
@@ -733,7 +746,14 @@ async fn permanent_book_error_stays_suspended_through_partial_unsubscribe(#[case
     subscribe_shared(&mut client, &peer, Some(1)).await;
 
     for expected in 0..3 {
-        assert_eq!(observed.recv().await.unwrap().0, expected);
+        assert_eq!(
+            time::timeout(Duration::from_secs(5), observed.recv())
+                .await
+                .unwrap()
+                .unwrap()
+                .0,
+            expected,
+        );
     }
 
     let expected_error = format!(
@@ -794,36 +814,41 @@ async fn book_retries_obey_retry_after_and_shared_admission_pacing() {
     http.min_request_interval_ms = interval_ms;
     let (mut client, mut receiver) = connected_selection(http, vec![MARKET_ID.into()], 100).await;
     subscribe(&mut client, true, BookType::L2_MBP, None).unwrap();
+
+    let mut times = Vec::with_capacity(4);
+
+    for expected in 0..4 {
+        let (index, received_at) = time::timeout(Duration::from_secs(6), observed.recv())
+            .await
+            .expect("HTTP peer did not receive request")
+            .expect("HTTP peer closed before request");
+        assert_eq!(index, expected);
+        times.push(received_at);
+    }
+
     let data = event(&mut receiver).await;
     client.disconnect().await.unwrap();
     let requests = time::timeout(Duration::from_secs(5), peer)
         .await
         .unwrap()
         .unwrap();
-    let mut times = Vec::new();
-    while let Ok((_, time)) = observed.try_recv() {
-        times.push(time);
-    }
-
     assert_deltas(id(), data, BIDS, ASKS, (1, 2));
     assert_eq!(requests.len(), 4);
-    assert_eq!(times.len(), 4);
     assert!(times[3].duration_since(times[2]) >= Duration::from_secs(1));
 
-    let minimum: u64 = if cfg!(all(feature = "simulation", madsim)) {
+    // Native socket reads carry scheduling jitter that the simulation avoids
+    let minimum = if cfg!(all(feature = "simulation", madsim)) {
         interval_ms
     } else {
         100
     };
 
+    let minimum_spacing = Duration::from_millis(minimum);
+
     for pair in times.windows(2) {
         let spacing = pair[1].duration_since(pair[0]);
-        let nanos_per_ms = u128::from(NANOSECONDS_IN_MILLISECOND);
-
-        // Peer receipt includes transport scheduling jitter; compare at millisecond resolution
-        let millis = (spacing.as_nanos() + nanos_per_ms / 2) / nanos_per_ms;
         assert!(
-            millis >= u128::from(minimum),
+            spacing + Duration::from_micros(500) >= minimum_spacing,
             "peer spacing was {spacing:?}"
         );
     }
@@ -842,19 +867,27 @@ async fn two_book_instruments_poll_by_due_time_and_publish_only_their_requested_
     second_book["market_id"] = Value::String(second_id.into());
     let mut second_replacement: Value = serde_json::from_str(REPLACEMENT).unwrap();
     second_replacement["market_id"] = Value::String(second_id.into());
-    let (peer, http) = start_peer(vec![
-        (200, "", EXCHANGES.to_owned()),
-        (200, "", MARKET.to_owned()),
-        (200, "", second),
-        (200, "", BOOK.to_owned()),
-        (200, "", second_book.to_string()),
-        (200, "", REPLACEMENT.to_owned()),
-        (200, "", second_replacement.to_string()),
-    ])
+    let (peer, http, mut observed, release) = start_peer_gated(
+        vec![
+            (200, "", EXCHANGES.to_owned()),
+            (200, "", MARKET.to_owned()),
+            (200, "", second),
+            (200, "", BOOK.to_owned()),
+            (200, "", second_book.to_string()),
+            (200, "", REPLACEMENT.to_owned()),
+            (200, "", second_replacement.to_string()),
+        ],
+        3,
+    )
     .await;
     let (mut client, mut receiver) =
         connected_selection(http, vec![MARKET_ID.into(), second_id.into()], 250).await;
     subscribe(&mut client, true, BookType::L2_MBP, None).unwrap();
+
+    for expected in 0..4 {
+        assert_eq!(next_request(&mut observed).await, expected);
+    }
+
     let second_instrument = to_instrument_id("POLYMARKET", second_id).unwrap();
     client
         .subscribe_book_depth(SubscribeBookDepth::new(
@@ -870,6 +903,8 @@ async fn two_book_instruments_poll_by_due_time_and_publish_only_their_requested_
             None,
         ))
         .unwrap();
+    release.send(()).unwrap();
+
     let events = [
         event(&mut receiver).await,
         event(&mut receiver).await,
@@ -959,7 +994,14 @@ async fn unsubscribe_cancels_book_retry_backoff_without_a_second_attempt() {
     subscribe(&mut client, true, BookType::L2_MBP, None).unwrap();
 
     for expected in 0..3 {
-        assert_eq!(observed.recv().await.unwrap().0, expected);
+        assert_eq!(
+            time::timeout(Duration::from_secs(5), observed.recv())
+                .await
+                .unwrap()
+                .unwrap()
+                .0,
+            expected,
+        );
     }
 
     wait_for_retry_backoff(&client).await;

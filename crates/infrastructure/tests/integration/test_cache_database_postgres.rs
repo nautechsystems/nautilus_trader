@@ -37,7 +37,7 @@ mod serial_tests {
         clock::VirtualClock,
         live::get_runtime,
         signal::Signal,
-        testing::{wait_until, wait_until_async},
+        testing::wait_until_async,
     };
     use nautilus_core::{Params, UUID4, UnixNanos};
     use nautilus_execution::engine::ExecutionEngine;
@@ -92,6 +92,8 @@ mod serial_tests {
 
     use crate::position_reopen::{ReplayMode, check_netting_position_reopen};
 
+    const POSTGRES_SETUP_TIMEOUT: Duration = Duration::from_secs(10);
+
     pub(crate) fn assert_entirely_equal<T: Serialize>(a: T, b: T) {
         let a_serialized = serde_json::to_string(&a).unwrap();
         let b_serialized = serde_json::to_string(&b).unwrap();
@@ -100,20 +102,7 @@ mod serial_tests {
     }
 
     async fn get_test_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
-        match tokio::time::timeout(
-            Duration::from_secs(2),
-            get_pg_cache_database(TraderId::default()),
-        )
-        .await
-        {
-            Ok(result) => result.map_err(|e| {
-                anyhow::anyhow!("A running PostgreSQL service is required for this test: {e}")
-            }),
-            Err(e) => Err(anyhow::anyhow!(
-                "A running PostgreSQL service is required for this test: connection timed out: \
-                 {e}"
-            )),
-        }
+        get_test_pg_cache_database_for_trader(TraderId::default()).await
     }
 
     // Clears every table between tests. The cache's own `flush` only removes its trader's rows.
@@ -122,15 +111,12 @@ mod serial_tests {
     }
 
     async fn connect_test_pg(options: PgConnectOptions) -> anyhow::Result<PgPool> {
-        match tokio::time::timeout(Duration::from_secs(2), connect_pg(options)).await {
-            Ok(result) => result.map_err(|e| {
+        tokio::time::timeout(POSTGRES_SETUP_TIMEOUT, connect_pg(options))
+            .await
+            .map_err(|e| anyhow::anyhow!("PostgreSQL connection timed out: {e}"))?
+            .map_err(|e| {
                 anyhow::anyhow!("A running PostgreSQL service is required for this test: {e}")
-            }),
-            Err(e) => Err(anyhow::anyhow!(
-                "A running PostgreSQL service is required for this test: connection timed out: \
-                 {e}"
-            )),
-        }
+            })
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -174,9 +160,13 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_account_event_purge_preserves_incremental_replay() {
-        let mut adapter = get_test_pg_cache_database().await.unwrap();
-        reset_test_database(&adapter).await;
-        let mut account = AccountAny::from(cash_account_state_multi());
+        let trader_id = TraderId::from(format!("ACCOUNT-PURGE-{}", UUID4::new()));
+        let mut adapter = get_test_pg_cache_database_for_trader(trader_id)
+            .await
+            .unwrap();
+        let mut initial = cash_account_state_multi();
+        initial.event_id = UUID4::new();
+        let mut account = AccountAny::from(initial);
         let mut update = cash_account_state_multi_changed_btc();
         update
             .balances
@@ -190,7 +180,9 @@ mod serial_tests {
         account.apply(update.clone()).unwrap();
         adapter.update_account(&account).unwrap();
         adapter.close().unwrap();
-        let adapter = get_test_pg_cache_database().await.unwrap();
+        let adapter = get_test_pg_cache_database_for_trader(trader_id)
+            .await
+            .unwrap();
         let mut cache = Cache::default();
         cache.add_account(account.clone()).unwrap();
         cache.set_database(Box::new(adapter));
@@ -201,7 +193,9 @@ mod serial_tests {
         assert_eq!(cache.account(&account.id()).unwrap().events(), vec![update]);
         cache.dispose();
 
-        let mut restarted = get_test_pg_cache_database().await.unwrap();
+        let mut restarted = get_test_pg_cache_database_for_trader(trader_id)
+            .await
+            .unwrap();
         let loaded = restarted
             .load_account(&account.id())
             .await
@@ -863,18 +857,20 @@ mod serial_tests {
         let second = Bytes::from("second_value");
 
         pg_cache.add(key.clone(), first.clone()).unwrap();
-        wait_until(
-            || pg_cache.load().unwrap().get(&key) == Some(&first),
+        wait_until_async(
+            || async { pg_cache.load().unwrap().get(&key) == Some(&first) },
             Duration::from_secs(5),
-        );
+        )
+        .await;
 
         // Re-adding an existing key must update the stored value, matching the
         // in-memory cache's insert semantics, rather than fail on the primary key.
         pg_cache.add(key.clone(), second.clone()).unwrap();
-        wait_until(
-            || pg_cache.load().unwrap().get(&key) == Some(&second),
+        wait_until_async(
+            || async { pg_cache.load().unwrap().get(&key) == Some(&second) },
             Duration::from_secs(5),
-        );
+        )
+        .await;
 
         reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
@@ -888,13 +884,15 @@ mod serial_tests {
         pg_cache
             .add(String::from("test_id"), test_id_value.clone())
             .unwrap();
-        wait_until(
-            || {
+        wait_until_async(
+            || async {
                 let result = pg_cache.load().unwrap();
                 result.keys().len() > 0
             },
             Duration::from_secs(5),
-        );
+        )
+        .await;
+
         let result = pg_cache.load().unwrap();
         assert_eq!(result.keys().len(), 1);
         assert_eq!(
@@ -3205,10 +3203,11 @@ mod serial_tests {
         let signal = Signal::new(name, value, UnixNanos::from(1), UnixNanos::from(2));
         pg_cache.add_signal(&signal).unwrap();
 
-        wait_until(
-            || pg_cache.load_signals(name.as_str()).unwrap().len() == 1,
+        wait_until_async(
+            || async { pg_cache.load_signals(name.as_str()).unwrap().len() == 1 },
             Duration::from_secs(5),
-        );
+        )
+        .await;
 
         let signals = pg_cache.load_signals(name.as_str()).unwrap();
         assert_eq!(signals.len(), 1);
@@ -3247,10 +3246,11 @@ mod serial_tests {
 
         pg_cache.add_custom_data(&data).unwrap();
 
-        wait_until(
-            || pg_cache.load_custom_data(&data_type).unwrap().len() == 1,
+        wait_until_async(
+            || async { pg_cache.load_custom_data(&data_type).unwrap().len() == 1 },
             Duration::from_secs(5),
-        );
+        )
+        .await;
 
         let datas = pg_cache.load_custom_data(&data_type).unwrap();
         assert_eq!(datas.len(), 1);
@@ -3291,15 +3291,16 @@ mod serial_tests {
 
         pg_cache.snapshot_order_state(&order).unwrap();
 
-        wait_until(
-            || {
+        wait_until_async(
+            || async {
                 pg_cache
                     .load_order_snapshot(&client_order_id)
                     .unwrap()
                     .is_some()
             },
             Duration::from_secs(5),
-        );
+        )
+        .await;
 
         let loaded = pg_cache
             .load_order_snapshot(&client_order_id)
@@ -3338,15 +3339,16 @@ mod serial_tests {
 
         pg_cache.add_order_snapshot(&snapshot).unwrap();
 
-        wait_until(
-            || {
+        wait_until_async(
+            || async {
                 pg_cache
                     .load_order_snapshot(&client_order_id)
                     .unwrap()
                     .is_some()
             },
             Duration::from_secs(5),
-        );
+        )
+        .await;
 
         let loaded = pg_cache
             .load_order_snapshot(&client_order_id)
@@ -3892,15 +3894,12 @@ mod serial_tests {
     async fn get_test_pg_cache_database_for_trader(
         trader_id: TraderId,
     ) -> anyhow::Result<PostgresCacheDatabase> {
-        match tokio::time::timeout(Duration::from_secs(2), get_pg_cache_database(trader_id)).await {
-            Ok(result) => result.map_err(|e| {
+        tokio::time::timeout(POSTGRES_SETUP_TIMEOUT, get_pg_cache_database(trader_id))
+            .await
+            .map_err(|e| anyhow::anyhow!("PostgreSQL cache initialization timed out: {e}"))?
+            .map_err(|e| {
                 anyhow::anyhow!("A running PostgreSQL service is required for this test: {e}")
-            }),
-            Err(e) => Err(anyhow::anyhow!(
-                "A running PostgreSQL service is required for this test: connection timed out: \
-                 {e}"
-            )),
-        }
+            })
     }
 
     async fn add_test_instrument(pg_cache: &PostgresCacheDatabase, instrument: &InstrumentAny) {
@@ -4499,24 +4498,25 @@ mod serial_tests {
         let writer_pool = pool.clone();
 
         let replace = tokio::spawn(async move {
-            tokio::time::timeout(Duration::from_secs(5), async {
-                loop {
-                    let waiting: bool = sqlx::query_scalar(
+            let deadline = Duration::from_secs(5);
+
+            let wait_for_lock = wait_until_async(
+                || async {
+                    sqlx::query_scalar::<_, bool>(
                         "SELECT EXISTS (SELECT 1 FROM pg_locks
                          WHERE relation = 'position'::regclass
                          AND mode = 'AccessShareLock' AND NOT granted)",
                     )
                     .fetch_one(&writer_pool)
                     .await
-                    .unwrap();
+                    .unwrap()
+                },
+                deadline,
+            );
 
-                    if waiting {
-                        break;
-                    }
-                }
-            })
-            .await
-            .expect("reload waits for position replay read");
+            tokio::time::timeout(deadline, wait_for_lock)
+                .await
+                .expect("reload waits for position replay read");
 
             sqlx::query("UPDATE position_event SET last_qty = '2.0'")
                 .execute(&mut *transaction)

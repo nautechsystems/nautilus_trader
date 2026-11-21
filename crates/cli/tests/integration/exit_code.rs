@@ -20,9 +20,10 @@
 
 #![warn(clippy::clone_on_ref_ptr)]
 
-use std::process::Command;
+use std::{fs, process::Command};
 
 use rstest::rstest;
+use tempfile::TempDir;
 
 // `analyze-pools` exits non-zero when a pool fails, so batch jobs detect partial failures.
 //
@@ -33,7 +34,8 @@ use rstest::rstest;
 // deterministic regardless of the host environment or a repository `.env`.
 #[rstest]
 fn analyze_pools_exits_non_zero_on_pool_failure() {
-    let output = Command::new(env!("CARGO_BIN_EXE_nautilus"))
+    let directory = TempDir::new().unwrap();
+    let output = blockchain_command(&directory)
         .args([
             "blockchain",
             "analyze-pools",
@@ -46,9 +48,6 @@ fn analyze_pools_exits_non_zero_on_pool_failure() {
             "--to-block",
             "100",
         ])
-        .current_dir(std::env::temp_dir())
-        .env_remove("INFURA_API_KEY")
-        .env_remove("RPC_HTTP_URL")
         .output()
         .expect("failed to spawn nautilus binary");
 
@@ -63,7 +62,8 @@ fn analyze_pools_exits_non_zero_on_pool_failure() {
 // panicking inside the command.
 #[rstest]
 fn sync_dex_exits_non_zero_without_panicking() {
-    let output = Command::new(env!("CARGO_BIN_EXE_nautilus"))
+    let directory = TempDir::new().unwrap();
+    let output = blockchain_command(&directory)
         .args([
             "blockchain",
             "sync-dex",
@@ -72,9 +72,6 @@ fn sync_dex_exits_non_zero_without_panicking() {
             "--dex",
             "UniswapV3",
         ])
-        .current_dir(std::env::temp_dir())
-        .env_remove("INFURA_API_KEY")
-        .env_remove("RPC_HTTP_URL")
         .output()
         .expect("failed to spawn nautilus binary");
     let output_text = format!(
@@ -83,6 +80,20 @@ fn sync_dex_exits_non_zero_without_panicking() {
         String::from_utf8_lossy(&output.stderr),
     );
 
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.status.code(), Some(1), "{output_text}");
+    assert!(output_text.contains("No RPC URL provided"), "{output_text}");
     assert!(!output_text.contains("panicked at"));
+}
+
+fn blockchain_command(directory: &TempDir) -> Command {
+    // Stop dotenv from loading credentials or settings from a parent directory
+    fs::write(directory.path().join(".env"), "").unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_nautilus"));
+    command
+        .current_dir(directory.path())
+        .env_remove("INFURA_API_KEY")
+        .env_remove("POSTGRES_PORT")
+        .env_remove("RPC_HTTP_URL")
+        .env("NAUTILUS_LOG", "stdout=Error;fileout=Off");
+    command
 }

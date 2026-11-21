@@ -631,8 +631,6 @@ mod tests {
             }
         });
 
-        sleep(Duration::from_millis(100)).await;
-
         addr
     }
 
@@ -820,7 +818,6 @@ mod tests {
         task::spawn(async move {
             let _ = server.await;
         });
-        sleep(Duration::from_millis(100)).await;
 
         let url = format!("http://{addr}/testfile.txt");
 
@@ -873,7 +870,6 @@ mod tests {
         task::spawn(async move {
             let _ = server.await;
         });
-        sleep(Duration::from_millis(100)).await;
 
         let url = format!("http://{addr}/testfile.txt");
 
@@ -922,7 +918,6 @@ mod tests {
         task::spawn(async move {
             let _ = server.await;
         });
-        sleep(Duration::from_millis(100)).await;
 
         let url = format!("http://{addr}/testfile.txt");
 
@@ -985,7 +980,6 @@ mod tests {
         task::spawn(async move {
             let _ = server.await;
         });
-        sleep(Duration::from_millis(100)).await;
 
         let url = format!("http://{addr}/testfile.txt");
 
@@ -1043,7 +1037,6 @@ mod tests {
         task::spawn(async move {
             let _ = server.await;
         });
-        sleep(Duration::from_millis(100)).await;
 
         let url = format!("http://{addr}/testfile.txt");
 
@@ -1109,7 +1102,6 @@ mod tests {
             }
         });
 
-        sleep(Duration::from_millis(100)).await;
         (addr, counter)
     }
 
@@ -1125,7 +1117,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case::operation(false, "Retryable error: Timed out after 40ms")]
+    #[case::operation(false, "Retryable error: Timed out after 1000ms")]
     #[case::elapsed(true, "Retryable error: Retry budget exceeded (1/1)")]
     #[tokio::test]
     async fn test_download_retry_deadline_cleans_partial(
@@ -1154,21 +1146,23 @@ mod tests {
                     .unwrap();
             }
 
-            std::future::pending::<()>().await;
+            assert_eq!(socket.read(&mut [0]).await.unwrap(), 0);
         });
 
         let result = tokio::task::spawn_blocking(move || {
+            let deadline_ms = 1_000;
+
             let config = RetryConfig {
                 max_retries: 0,
-                operation_timeout_ms: if elapsed_budget { None } else { Some(40) },
-                max_elapsed_ms: if elapsed_budget { Some(40) } else { None },
+                operation_timeout_ms: (!elapsed_budget).then_some(deadline_ms),
+                max_elapsed_ms: elapsed_budget.then_some(deadline_ms),
                 ..test_retry_config()
             };
 
             download_file(
                 &destination,
                 &format!("http://{addr}/deadline"),
-                1,
+                5,
                 Some(config),
             )
             .map_err(|e| e.to_string())
@@ -1176,8 +1170,10 @@ mod tests {
         .await
         .unwrap();
 
-        peer.abort();
-        let _ = peer.await;
+        tokio::time::timeout(Duration::from_secs(2), peer)
+            .await
+            .expect("the downloader should close the stalled connection")
+            .unwrap();
 
         assert_eq!(result, Err(expected_error.to_string()));
         assert!(!filepath.exists());
@@ -1204,13 +1200,16 @@ mod tests {
         let server = tokio::spawn(async move { serve(listener, app).await.unwrap() });
 
         let result = tokio::task::spawn_blocking(move || {
+            // Leave time for the first TCP exchange while keeping backoff beyond the budget
+            let retry_delay_ms = 2_000;
+
             let config = RetryConfig {
                 max_retries: 2,
-                initial_delay_ms: 100,
-                max_delay_ms: 100,
+                initial_delay_ms: retry_delay_ms,
+                max_delay_ms: retry_delay_ms,
                 jitter_ms: 0,
                 operation_timeout_ms: None,
-                max_elapsed_ms: Some(40),
+                max_elapsed_ms: Some(1_000),
                 ..test_retry_config()
             };
 
@@ -1242,12 +1241,15 @@ mod tests {
         let directory = TempDir::new().unwrap();
         let filepath = directory.path().join("immediate.txt");
         let destination = filepath.clone();
-        let requests = Arc::new(AtomicUsize::new(0));
-        let counter = requests.clone();
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let observed = Arc::clone(&requests);
         let app = Router::new().route(
             "/immediate",
             get(move || {
-                let attempt = counter.fetch_add(1, Ordering::SeqCst);
+                let mut requests = observed.lock();
+                let attempt = requests.len();
+                requests.push(std::time::Instant::now());
+
                 async move {
                     if attempt < 2 {
                         (StatusCode::INTERNAL_SERVER_ERROR, "retry")
@@ -1262,11 +1264,13 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         let server = tokio::spawn(async move { serve(listener, app).await.unwrap() });
 
-        let (result, elapsed) = tokio::task::spawn_blocking(move || {
+        let retry_delay_ms = 100;
+
+        let result = tokio::task::spawn_blocking(move || {
             let config = RetryConfig {
                 max_retries: 2,
-                initial_delay_ms: 100,
-                max_delay_ms: 100,
+                initial_delay_ms: retry_delay_ms,
+                max_delay_ms: retry_delay_ms,
                 jitter_ms: 0,
                 immediate_first: true,
                 operation_timeout_ms: None,
@@ -1274,14 +1278,12 @@ mod tests {
                 ..test_retry_config()
             };
 
-            let start = std::time::Instant::now();
-            let result = download_file(
+            download_file(
                 &destination,
                 &format!("http://{addr}/immediate"),
                 1,
                 Some(config),
-            );
-            (result, start.elapsed())
+            )
         })
         .await
         .unwrap();
@@ -1290,8 +1292,9 @@ mod tests {
         let _ = server.await;
 
         result.unwrap();
-        assert_eq!(requests.load(Ordering::SeqCst), 3);
-        assert!(elapsed >= Duration::from_millis(100));
+        let requests = requests.lock();
+        assert_eq!(requests.len(), 3);
+        assert!(requests[2].duration_since(requests[1]) >= Duration::from_millis(retry_delay_ms));
         assert_eq!(fs::read_to_string(&filepath).unwrap(), "complete");
         assert_eq!(count_partial_siblings(&filepath), 0);
     }
@@ -1434,7 +1437,6 @@ mod tests {
             }
         });
 
-        sleep(Duration::from_millis(100)).await;
         let url = format!("http://{addr}/testfile.txt");
 
         let result = tokio::task::spawn_blocking(move || {
