@@ -416,7 +416,9 @@ pub struct SpotTrade {
     pub time: f64,
     #[serde(rename = "type")]
     pub trade_type: KrakenOrderSide,
-    pub ordertype: KrakenOrderType,
+    /// Kraken documents this as free text, which can differ from the order's own type: a
+    /// stop-loss-limit order's trade reads `stop limit`.
+    pub ordertype: String,
     pub price: String,
     pub cost: String,
     pub fee: String,
