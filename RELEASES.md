@@ -105,6 +105,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed simulated realtime clock carryover for runs started with `block_on_simulation`
 - Fixed option-chain subscribers replacing each other's managers and releasing shared feeds early
 - Fixed data client removal leaving option-chain managers, timers, and pending requests active
 - Fixed retired option contracts rejoining chains on later definitions or subscriptions

@@ -33,6 +33,8 @@
 //!   however, we do not enforce strict global ordering for manual updates. If you need strong,
 //!   multi-threaded ordering in **static mode**, you must coordinate higher-level synchronization yourself.
 
+#[cfg(all(feature = "simulation", madsim))]
+use std::{cell::RefCell, future::Future};
 use std::{
     sync::{
         OnceLock,
@@ -40,6 +42,9 @@ use std::{
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+
+#[cfg(all(feature = "simulation", madsim))]
+use madsim::{runtime::Runtime, time::TimeHandle};
 
 use crate::{
     DurationNanos, UnixNanos,
@@ -49,7 +54,8 @@ use crate::{
 /// Global atomic time in **real-time mode** for use across the system.
 ///
 /// This clock operates in **real-time mode**, synchronizing with the system clock.
-/// It provides globally unique, strictly increasing timestamps across threads.
+/// It provides unique, strictly increasing timestamps across threads.
+/// Under madsim, `block_on_simulation` gives this clock per-scope state.
 pub static ATOMIC_CLOCK_REALTIME: OnceLock<AtomicTime> = OnceLock::new();
 
 /// Global atomic time in **static mode** for use across the system.
@@ -61,7 +67,7 @@ pub static ATOMIC_CLOCK_STATIC: OnceLock<AtomicTime> = OnceLock::new();
 /// Returns a static reference to the global atomic clock in **real-time mode**.
 ///
 /// This clock uses [`AtomicTime::time_since_epoch`] under the hood, ensuring strictly increasing
-/// timestamps across threads.
+/// timestamps across threads. Under madsim, `block_on_simulation` gives this clock per-scope state.
 pub fn get_atomic_clock_realtime() -> &'static AtomicTime {
     ATOMIC_CLOCK_REALTIME.get_or_init(AtomicTime::default)
 }
@@ -72,6 +78,34 @@ pub fn get_atomic_clock_realtime() -> &'static AtomicTime {
 /// and does not automatically sync with system time.
 pub fn get_atomic_clock_static() -> &'static AtomicTime {
     ATOMIC_CLOCK_STATIC.get_or_init(|| AtomicTime::new(false, UnixNanos::default()))
+}
+
+#[cfg(all(feature = "simulation", madsim))]
+thread_local! {
+    static SIMULATION_CLOCK: RefCell<Option<AtomicTime>> = const { RefCell::new(None) };
+}
+
+/// Runs `future` on a madsim runtime with fresh state for the global realtime clock.
+///
+/// The clock starts in realtime mode. All tasks polled during the call share its state. The
+/// previous state is restored when the call returns or unwinds. Call `block_on_simulation`
+/// for each nested runtime because direct `Runtime::block_on` shares the active clock scope.
+///
+/// # Panics
+///
+/// Panics if the runtime or the future panics.
+#[cfg(all(feature = "simulation", madsim))]
+pub fn block_on_simulation<F: Future>(runtime: &Runtime, future: F) -> F::Output {
+    struct ClockScope(Option<AtomicTime>);
+
+    impl Drop for ClockScope {
+        fn drop(&mut self) {
+            SIMULATION_CLOCK.replace(self.0.take());
+        }
+    }
+
+    let _scope = ClockScope(SIMULATION_CLOCK.replace(Some(AtomicTime::default())));
+    runtime.block_on(future)
 }
 
 /// Returns the duration since the UNIX epoch based on [`SystemTime::now()`].
@@ -197,11 +231,13 @@ impl AtomicTime {
     /// not occur concurrently with time operations.
     #[must_use]
     pub fn get_time_ns(&self) -> UnixNanos {
-        if self.realtime.load(Ordering::Acquire) {
-            self.time_since_epoch()
-        } else {
-            UnixNanos::from(self.timestamp_ns.load(Ordering::Acquire))
-        }
+        self.with_clock(|clock| {
+            if clock.realtime.load(Ordering::Acquire) {
+                clock.realtime_timestamp()
+            } else {
+                UnixNanos::from(clock.timestamp_ns.load(Ordering::Acquire))
+            }
+        })
     }
 
     /// Returns the current time as microseconds.
@@ -248,17 +284,19 @@ impl AtomicTime {
     /// occur concurrently with time operations. Callers must ensure mode switches are
     /// complete before resuming time operations.
     pub fn set_time(&self, time: UnixNanos) {
-        assert!(
-            !self.realtime.load(Ordering::SeqCst),
-            "Cannot set time while clock is in realtime mode"
-        );
+        self.with_clock(|clock| {
+            assert!(
+                !clock.realtime.load(Ordering::SeqCst),
+                "Cannot set time while clock is in realtime mode"
+            );
 
-        self.timestamp_ns.store(time.into(), Ordering::Release);
+            clock.timestamp_ns.store(time.into(), Ordering::Release);
 
-        debug_assert!(
-            !self.realtime.load(Ordering::SeqCst),
-            "Invariant: clock must remain in static mode across `set_time`"
-        );
+            debug_assert!(
+                !clock.realtime.load(Ordering::SeqCst),
+                "Invariant: clock must remain in static mode across `set_time`"
+            );
+        });
     }
 
     /// Increments the current static-mode time by `delta` and returns the updated value.
@@ -279,27 +317,28 @@ impl AtomicTime {
     /// occur concurrently with time operations. Callers must ensure mode switches are
     /// complete before resuming time operations.
     pub fn increment_time(&self, delta: DurationNanos) -> anyhow::Result<UnixNanos> {
-        anyhow::ensure!(
-            !self.realtime.load(Ordering::SeqCst),
-            "Cannot increment time while clock is in realtime mode"
-        );
+        self.with_clock(|clock| {
+            anyhow::ensure!(
+                !clock.realtime.load(Ordering::SeqCst),
+                "Cannot increment time while clock is in realtime mode"
+            );
 
-        let previous =
-            match self
-                .timestamp_ns
-                .try_update(Ordering::AcqRel, Ordering::Acquire, |current| {
-                    current.checked_add(delta.as_u64())
-                }) {
+            let previous = match clock.timestamp_ns.try_update(
+                Ordering::AcqRel,
+                Ordering::Acquire,
+                |current| current.checked_add(delta.as_u64()),
+            ) {
                 Ok(prev) => prev,
                 Err(_) => anyhow::bail!("Cannot increment time beyond u64::MAX"),
             };
 
-        debug_assert!(
-            !self.realtime.load(Ordering::SeqCst),
-            "Invariant: clock must remain in static mode across `increment_time`"
-        );
+            debug_assert!(
+                !clock.realtime.load(Ordering::SeqCst),
+                "Invariant: clock must remain in static mode across `increment_time`"
+            );
 
-        Ok(UnixNanos::from(previous) + delta)
+            Ok(UnixNanos::from(previous) + delta)
+        })
     }
 
     /// Retrieves and updates the current "real-time" clock, returning a strictly increasing
@@ -324,6 +363,10 @@ impl AtomicTime {
     /// been running for longer than the representable range (~584 years) *or* the clock was
     /// manually corrupted.
     pub fn time_since_epoch(&self) -> UnixNanos {
+        self.with_clock(Self::realtime_timestamp)
+    }
+
+    fn realtime_timestamp(&self) -> UnixNanos {
         // This method guarantees strict consistency but may incur a performance cost under
         // high contention due to retries in the `compare_exchange` loop.
         let now = nanos_since_unix_epoch();
@@ -380,10 +423,13 @@ impl AtomicTime {
     /// the reset moves the clock backwards. Mode switching is a setup-time operation and
     /// must not run concurrently with time reads.
     pub fn make_realtime(&self) {
-        if !self.realtime.swap(true, Ordering::SeqCst) {
-            self.timestamp_ns
-                .store(nanos_since_unix_epoch(), Ordering::Release);
-        }
+        self.with_clock(|clock| {
+            if !clock.realtime.swap(true, Ordering::SeqCst) {
+                clock
+                    .timestamp_ns
+                    .store(nanos_since_unix_epoch(), Ordering::Release);
+            }
+        });
     }
 
     /// Switches the clock to **static mode** (`realtime = false`).
@@ -400,10 +446,27 @@ impl AtomicTime {
     /// [`AtomicTime::make_realtime`] for the race this implies. Mode switching is a
     /// setup-time operation and must not run concurrently with time reads.
     pub fn make_static(&self) {
-        if self.realtime.swap(false, Ordering::SeqCst) {
-            self.timestamp_ns
-                .store(nanos_since_unix_epoch(), Ordering::Release);
+        self.with_clock(|clock| {
+            if clock.realtime.swap(false, Ordering::SeqCst) {
+                clock
+                    .timestamp_ns
+                    .store(nanos_since_unix_epoch(), Ordering::Release);
+            }
+        });
+    }
+
+    #[inline]
+    fn with_clock<T>(&self, operation: impl FnOnce(&Self) -> T) -> T {
+        #[cfg(all(feature = "simulation", madsim))]
+        if ATOMIC_CLOCK_REALTIME
+            .get()
+            .is_some_and(|clock| std::ptr::eq(clock, self))
+            && TimeHandle::try_current().is_some()
+        {
+            return SIMULATION_CLOCK.with_borrow(|clock| operation(clock.as_ref().unwrap_or(self)));
         }
+
+        operation(self)
     }
 }
 
@@ -411,6 +474,8 @@ impl AtomicTime {
 mod tests {
     use std::sync::Arc;
 
+    #[cfg(all(feature = "simulation", madsim))]
+    use madsim::{Config, task, time};
     use rstest::*;
 
     use super::*;
@@ -880,6 +945,87 @@ mod tests {
 
         // Ensure the reader actually observed updates (not vacuously satisfied)
         assert!(max_observed > 0, "Reader must observe writer updates");
+    }
+
+    #[cfg(all(feature = "simulation", madsim))]
+    #[rstest]
+    fn test_atomic_clock_replays_virtual_timestamps() {
+        let clock = get_atomic_clock_realtime();
+
+        let run = |seed| {
+            let runtime = Runtime::with_seed_and_config(seed, Config::default());
+            block_on_simulation(&runtime, async {
+                let virtual_start = nanos_since_unix_epoch();
+                let first = clock.get_time_ns().as_u64();
+                let second = clock.time_since_epoch().as_u64();
+                time::sleep(Duration::from_millis(100)).await;
+                (virtual_start, first, second, clock.get_time_ns().as_u64())
+            })
+        };
+
+        let first = run(0x7649_ba94_44e7_aa10);
+        let host_timestamp = clock.get_time_ns().as_u64();
+        let other_seed = run(0);
+        let replay = run(0x7649_ba94_44e7_aa10);
+
+        assert_eq!(first.1, first.0);
+        assert_eq!(first.2, first.1 + 1);
+        assert_eq!(other_seed.1, other_seed.0);
+        assert_eq!(other_seed.2, other_seed.1 + 1);
+        assert!(host_timestamp > first.3);
+        assert_eq!(replay, first);
+    }
+
+    #[cfg(all(feature = "simulation", madsim))]
+    #[rstest]
+    fn test_virtual_time_clock_scope_includes_spawned_tasks() {
+        let runtime = Runtime::with_seed_and_config(7, Config::default());
+        let clock = get_atomic_clock_realtime();
+        let host_time = clock.get_time_ns();
+        let now = block_on_simulation(&runtime, async {
+            clock.make_static();
+            clock.set_time(UnixNanos::from(10));
+            task::spawn(async move { clock.increment_time(DurationNanos::new(2)).unwrap() })
+                .await
+                .unwrap();
+
+            clock.get_time_ns()
+        });
+
+        let raw_time = runtime.block_on(async { clock.get_time_ns() });
+
+        assert_eq!(now, 12);
+        assert!(raw_time > host_time);
+    }
+
+    #[cfg(all(feature = "simulation", madsim))]
+    #[rstest]
+    fn test_virtual_time_clock_scope_restores_outer_clock_after_panic() {
+        let outer = Runtime::with_seed_and_config(7, Config::default());
+        let inner = Runtime::with_seed_and_config(7, Config::default());
+        let clock = get_atomic_clock_realtime();
+        block_on_simulation(&outer, async {
+            clock.make_static();
+            clock.set_time(UnixNanos::from(10));
+
+            let error = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                block_on_simulation(&inner, async {
+                    assert_eq!(clock.get_time_ns(), nanos_since_unix_epoch());
+                    clock.make_static();
+                    clock.set_time(UnixNanos::from(20));
+                    std::panic::panic_any("inner simulation panic");
+                });
+            }))
+            .unwrap_err();
+
+            assert_eq!(
+                error.downcast_ref::<&str>(),
+                Some(&"inner simulation panic")
+            );
+            assert_eq!(clock.get_time_ns(), 10);
+            clock.make_realtime();
+            assert_eq!(clock.get_time_ns(), nanos_since_unix_epoch() + 1);
+        });
     }
 
     // The wall-clock seam (`wall_clock_now`) routes through madsim's virtual
