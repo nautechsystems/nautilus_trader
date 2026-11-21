@@ -55,14 +55,14 @@ from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.trading import OrderBookImbalanceConfig
 
 
-MARKET_ID = "BITCOIN-ABOVE-76K-ON-NOVEMBER-3-2026_YES"
+MARKET_ID = "BITCOIN-ABOVE-76K-ON-NOVEMBER-3-2026_NO"
 INSTRUMENT_ID = finfeed_instrument_id("POLYMARKET", MARKET_ID)
 START = datetime(2026, 11, 2, 20, 0, 5, tzinfo=UTC)
 END = datetime(2026, 11, 2, 20, 2, tzinfo=UTC)
 BOOK_TYPE = BookType.L2_MBP
 
 DATA_DIR = Path(os.environ.get("NAUTILUS_DATA_DIR", "~/Downloads/Data")).expanduser() / "FinFeed"
-CATALOG_PATH = DATA_DIR / "btc-above-76k-nov3-20261102-20"
+CATALOG_PATH = DATA_DIR / "btc-above-76k-nov3-no-20261102-20"
 
 
 async def download(api_key: str) -> tuple[BinaryOption, list[OrderBookDelta]]:
@@ -156,10 +156,11 @@ if __name__ == "__main__":
 
     print(results)
     print(orders["status"].value_counts().to_string())
+    print(executions.groupby(["order_type", "order_side"]).size().to_string())
     print(
-        executions[
-            ["ts_event", "order_side", "order_type", "last_qty", "last_px", "commission"]
-        ].to_string(),
+        executions[["ts_event", "order_side", "order_type", "last_qty", "last_px", "commission"]]
+        .tail(8)
+        .to_string(),
     )
     print(
         positions[

@@ -629,6 +629,8 @@ The loader does not provide historical book deltas through REST.
 CoinAPI [Flat Files](https://www.coinapi.io/products/flat-files?ref=nautilus) are daily or hourly `.csv.gz`
 exports served over an S3-compatible API. `CoinApiDataLoader` downloads selected objects and reads local
 files using registered instrument definitions. It does not list S3 objects.
+A registered definition can describe an exchange outside the [symbol mappings](#symbol-mappings),
+such as Lighter. See the [pre-IPO order book tutorial](../tutorials/backtest_orderbook_coinapi.md).
 Each `load_*` method returns a whole file, and each `stream_*` method yields chunks. Both accept a record
 `limit`.
 
@@ -731,6 +733,15 @@ hold one symbol under
 `T-{SCHEMA}/D-{YYYYMMDD|YYYYMMDDHH}/E-{EXCHANGE}/IDDI-{ID}+SC-{SYMBOL_ID}+S-{EXCHANGE_SYMBOL}.csv.gz`.
 Pass an explicit `instrument_id` for each file.
 
+| Key part              | Example                         | Meaning                                                         |
+| --------------------- | ------------------------------- | --------------------------------------------------------------- |
+| `T-{SCHEMA}`          | `T-LIMITBOOK_FULL`              | Full-book dataset: a snapshot followed by all recorded updates. |
+| `D-{YYYYMMDDHH}`      | `D-2026100100`                  | UTC date and hour: `[00:00, 01:00)` on 2026-10-01.              |
+| `E-{EXCHANGE}`        | `E-LIGHTER`                     | Exchange.                                                       |
+| `IDDI-{ID}`           | `IDDI-47534074`                 | CoinAPI numeric symbol ID.                                      |
+| `SC-{SYMBOL_ID}`      | `SC-LIGHTER_PERP_ANTHROPIC_USD` | CoinAPI symbol ID.                                              |
+| `S-{EXCHANGE_SYMBOL}` | `S-ANTHROPIC`                   | Exchange symbol.                                                |
+
 The loaders accept named book updates and numeric codes: `0=ADD`, `1=SUB`, `2=SET`, `3=DELETE`, and
 `4=MATCH`. Snapshots require the named `SNAPSHOT` update. CoinAPI also documents export variants with comma
 delimiters or full date-time book timestamps. These loaders require semicolon delimiters and time-of-day
@@ -762,9 +773,11 @@ deltas. For example, Coinbase spot files contain order IDs, while Binance spot f
 Use the corresponding `BookType` when applying the deltas.
 
 The initial snapshot emits a `Clear` followed by `Add` deltas, all flagged `F_SNAPSHOT`. Subsequent updates at
-one exchange timestamp form one event ending in `F_LAST`. Streaming chunks normally end at event boundaries
-and can exceed `chunk_size`. A record `limit` can cut the final event short. Its last delta still carries
-`F_LAST`, so a limited load can leave an incomplete book.
+one exchange timestamp form one event ending in `F_LAST`. Level updates can have separate timestamps,
+so `F_LAST` marks the end of a loader event, not an atomic venue update. Streaming chunks normally end at
+event boundaries and can exceed `chunk_size`, which defaults to 100,000 deltas in Python. A record `limit`
+can cut the final event short. Its last delta still carries `F_LAST`, so a limited load can leave an
+incomplete book.
 
 L3 fill updates reduce an order's remaining size and remove it at zero. A later add can reuse an
 order ID after deletion. Updates to unknown orders, other than deletes, are logged and skipped.

@@ -6,6 +6,10 @@ Run from the repository root with the tutorial dependencies and a Chrome-compati
     uv run --project python --no-sync --with pandas --with plotly --with kaleido \
         python docs/tutorials/assets/backtest_orderbook_coinapi/render_panels.py
 
+If Kaleido reports that Chrome is missing, install its browser once:
+
+    uv run --project python --no-sync --with plotly --with kaleido plotly_get_chrome -y
+
 The program reuses its cached catalog or performs its documented first download.
 
 """

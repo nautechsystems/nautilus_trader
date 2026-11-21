@@ -1,10 +1,14 @@
 """
-Render book, liquidity, and round-trip panels from the FinFeed tutorial program.
+Render book, liquidity, and position panels from the FinFeed tutorial program.
 
 Run from the repository root with the tutorial dependencies and a Chrome-compatible browser:
 
     uv run --project python --no-sync --with pandas --with plotly --with kaleido \
         python docs/tutorials/assets/backtest_orderbook_finfeed/render_panels.py
+
+If Kaleido reports that Chrome is missing, install its browser once:
+
+    uv run --project python --no-sync --with plotly --with kaleido plotly_get_chrome -y
 
 The program reuses its cached catalog or performs its documented first collection.
 
@@ -21,6 +25,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+from nautilus_trader.analysis.tearsheet import _hex_to_rgba
 from nautilus_trader.analysis.tearsheet import _write_figure
 from nautilus_trader.model import BookType
 from nautilus_trader.model import InstrumentId
@@ -42,7 +47,7 @@ PROGRAM = (
     / "finfeed_polymarket_book_imbalance.py"
 )
 OUT = Path(__file__).resolve().parent
-ROUND_TRIP_MARGIN = pd.Timedelta(seconds=4)
+POSITIVE_FILL = _hex_to_rgba(COLORS["positive"], 0.14)
 
 
 def main() -> None:
@@ -54,24 +59,17 @@ def main() -> None:
     print(f"Spread range: {book['spread'].min()} to {book['spread'].max()} pUSD")
     executions = run["executions"].sort_values("ts_event", kind="stable")
     account = run["account"]
-    fills = pd.to_datetime(executions["ts_event"], utc=True)
-    window = [run["START"], run["END"]]
-    round_trip_window = [fills.min() - ROUND_TRIP_MARGIN, fills.max() + ROUND_TRIP_MARGIN]
+    window = [run["START"], run["END"] + pd.Timedelta(seconds=1)]
 
     panels = [
-        ("panel_a_top_book.png", _book_figure(book, executions), window, 520),
-        ("panel_b_liquidity.png", _liquidity_figure(book), window, 720),
-        (
-            "panel_c_round_trip.png",
-            _round_trip_figure(book, executions, account),
-            round_trip_window,
-            640,
-        ),
+        ("panel_a_top_book.png", _book_figure(book, executions), 520),
+        ("panel_b_liquidity.png", _liquidity_figure(book), 720),
+        ("panel_c_position_pnl.png", _position_pnl_figure(book, executions, account), 640),
     ]
 
-    for filename, figure, x_range, height in panels:
+    for filename, figure, height in panels:
         apply_layout(figure, height=height)
-        figure.update_xaxes(tickformat="%H:%M:%S", range=x_range)
+        figure.update_xaxes(tickformat="%H:%M:%S", range=window)
         _write_figure(figure, str(OUT / filename))
 
 
@@ -116,10 +114,58 @@ def _top_of_book(
 
 def _book_figure(book: pd.DataFrame, executions: pd.DataFrame) -> go.Figure:
     figure = go.Figure()
-    _add_book_traces(figure, book, executions)
+    for column, label, color in [
+        ("bid", "Best bid", COLORS["positive"]),
+        ("ask", "Best ask", COLORS["negative"]),
+    ]:
+        figure.add_trace(
+            go.Scatter(
+                x=book.index,
+                y=book[column].map(float),
+                mode="lines",
+                name=label,
+                line={"color": color, "shape": "hv", "width": 1},
+            ),
+        )
+
+    limits = executions[executions["order_type"] == "LIMIT"]
+    closes = executions[executions["order_type"] == "MARKET"]
+
+    for fills, label, color, symbol, size in [
+        (
+            limits[limits["order_side"] == "BUY"],
+            "FOK buy fills",
+            COLORS["positive"],
+            "triangle-up",
+            6,
+        ),
+        (
+            limits[limits["order_side"] == "SELL"],
+            "FOK sell fill",
+            COLORS["negative"],
+            "triangle-down",
+            8,
+        ),
+        (closes, "Final market sell fills", "#fbbf24", "diamond", 8),
+    ]:
+        figure.add_trace(
+            go.Scatter(
+                x=pd.to_datetime(fills["ts_event"], utc=True),
+                y=fills["last_px"].map(float),
+                mode="markers",
+                name=label,
+                marker={
+                    "color": color,
+                    "symbol": symbol,
+                    "size": size,
+                    "line": {"color": COLORS["background"], "width": 0.7},
+                },
+            ),
+        )
+
     figure.update_layout(
         title={
-            "text": "Bitcoin daily threshold: Yes-share book and executions",
+            "text": "Bitcoin daily threshold: No-share book and executions",
             "subtitle": {
                 "text": (
                     f"Polymarket | {book.index[0]:%Y-%m-%d} | All book events and execution fills"
@@ -167,123 +213,95 @@ def _liquidity_figure(book: pd.DataFrame) -> go.Figure:
         title={
             "text": "Historical spread, depth, and imbalance",
             "subtitle": {
-                "text": f"Polymarket Bitcoin Yes shares | {book.index[0]:%Y-%m-%d}",
+                "text": f"Polymarket Bitcoin No shares | {book.index[0]:%Y-%m-%d}",
             },
         },
     )
     return figure
 
 
-def _round_trip_figure(
+def _position_pnl_figure(
     book: pd.DataFrame,
     executions: pd.DataFrame,
     account: pd.DataFrame,
 ) -> go.Figure:
-    sides = executions["order_side"].tolist()
-    if sides != ["BUY", "SELL"]:
-        msg = f"Round-trip panel expects one buy then one sell, was {sides}"
-        raise ValueError(msg)
+    position = _position_series(book, executions)
+    marked_pnl = _equity_series(book, executions, account)
 
     figure = make_subplots(
         rows=2,
         cols=1,
         shared_xaxes=True,
         vertical_spacing=0.14,
-        row_heights=[0.6, 0.4],
+        row_heights=[0.45, 0.55],
         subplot_titles=(
-            "Best bid and ask with the fills",
-            "Equity change: cash plus the held share at the midpoint",
+            "Shares held",
+            "PnL with the open position marked at the midpoint",
         ),
     )
-    _add_book_traces(figure, book, executions, row=1, labels=True)
-
-    equity = _equity_series(book, executions, account)
     figure.add_trace(
         go.Scatter(
-            x=equity.index,
-            y=equity.map(float),
+            x=position.index,
+            y=position.map(float),
             mode="lines",
-            name="Equity change",
-            line={"color": COLORS["primary"], "shape": "hv"},
+            name="Shares held",
+            line={"color": COLORS["positive"], "width": 2, "shape": "hv"},
+            fill="tozeroy",
+            fillcolor=POSITIVE_FILL,
+            showlegend=False,
+        ),
+        row=1,
+        col=1,
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=marked_pnl.index,
+            y=marked_pnl.map(float),
+            mode="lines",
+            name="PnL marked at the midpoint",
+            line={"color": COLORS["primary"], "width": 1.5, "shape": "hv"},
             showlegend=False,
         ),
         row=2,
         col=1,
     )
-
-    fills = pd.to_datetime(executions["ts_event"], utc=True)
-    figure.add_vrect(
-        x0=fills.min(),
-        x1=fills.max(),
-        fillcolor=COLORS["primary"],
-        opacity=0.12,
-        line_width=0,
-        row="all",
+    figure.add_trace(
+        go.Scatter(
+            x=marked_pnl.index[-1:],
+            y=marked_pnl.iloc[-1:].map(float),
+            mode="markers",
+            marker={"color": COLORS["negative"], "size": 8},
+            showlegend=False,
+        ),
+        row=2,
         col=1,
     )
-
-    buy = executions[executions["order_side"] == "BUY"].iloc[0]
-    sell = executions[executions["order_side"] == "SELL"].iloc[-1]
-    held = (fills.max() - fills.min()).total_seconds()
+    figure.add_annotation(
+        x=marked_pnl.index[-1],
+        y=float(marked_pnl.iloc[-1]),
+        text=f"Flat: {marked_pnl.iloc[-1]:.6f} pUSD realized",
+        ax=-150,
+        ay=-60,
+        arrowcolor=COLORS["muted"],
+        font={"color": COLORS["text"]},
+        row=2,
+        col=1,
+    )
     figure.update_layout(
         title={
-            "text": "One round trip: buy at the ask, sell at the bid",
+            "text": "Long position and mark-to-market PnL",
             "subtitle": {
                 "text": (
-                    f"Bought at {buy.last_px}, sold {held:.1f} s later at {sell.last_px} "
-                    f"(shaded) | Net PnL {equity.iloc[-1]:.6f} pUSD with zero fees"
+                    f"Peak long {position.max()} shares | Realized PnL {marked_pnl.iloc[-1]:.6f} "
+                    "pUSD with zero fees"
                 ),
             },
         },
     )
     figure.update_xaxes(title_text="Time (UTC)", row=2, col=1)
-    figure.update_yaxes(title_text="pUSD", row=1, col=1)
+    figure.update_yaxes(title_text="Shares", zeroline=True, row=1, col=1)
     figure.update_yaxes(title_text="pUSD", zeroline=True, row=2, col=1)
     return figure
-
-
-def _add_book_traces(
-    figure: go.Figure,
-    book: pd.DataFrame,
-    executions: pd.DataFrame,
-    *,
-    row: int | None = None,
-    labels: bool = False,
-) -> None:
-    for column, label, color in [
-        ("bid", "Best bid", COLORS["positive"]),
-        ("ask", "Best ask", COLORS["negative"]),
-    ]:
-        figure.add_trace(
-            go.Scatter(
-                x=book.index,
-                y=book[column].map(float),
-                mode="lines",
-                name=label,
-                line={"color": color, "shape": "hv", "width": 1},
-            ),
-            row=row,
-            col=None if row is None else 1,
-        )
-
-    for side, symbol, color, position in [
-        ("BUY", "triangle-up", COLORS["positive"], "top center"),
-        ("SELL", "triangle-down", COLORS["negative"], "bottom center"),
-    ]:
-        fills = executions[executions["order_side"] == side]
-        figure.add_trace(
-            go.Scatter(
-                x=pd.to_datetime(fills["ts_event"], utc=True),
-                y=fills["last_px"].map(float),
-                mode="markers+text" if labels else "markers",
-                text=[f"{side.title()} {price}" for price in fills["last_px"]] if labels else None,
-                textposition=position,
-                name=f"{side.title()} fills",
-                marker={"symbol": symbol, "color": color, "size": 10 if labels else 7},
-            ),
-            row=row,
-            col=None if row is None else 1,
-        )
 
 
 def _position_series(book: pd.DataFrame, executions: pd.DataFrame) -> pd.Series:

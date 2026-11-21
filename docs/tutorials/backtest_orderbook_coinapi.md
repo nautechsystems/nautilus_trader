@@ -10,24 +10,6 @@ perpetual does not give ownership of company shares. See Lighter's
 [market specifications](https://docs.lighter.xyz/trading/real-world-assets-rwas/market-specifications)
 and [pre-IPO market rules](https://docs.lighter.xyz/trading/real-world-assets-rwas/pre-ipo-markets).
 
-The tutorial has eight steps:
-
-1. [Choose the file and storage paths](#1-choose-the-file-and-storage-paths): select the CoinAPI
-   export and where to store it.
-1. [Download the full-book file](#2-download-the-full-book-file): fetch the export and verify its
-   checksum.
-1. [Define the Lighter contract](#3-define-the-lighter-contract): create the instrument the loader
-   uses to convert prices and sizes.
-1. [Write the data to a catalog](#4-write-the-data-to-a-catalog): convert the file to order book
-   deltas and save them with the instrument.
-1. [Rebuild the book to check the data](#5-rebuild-the-book-to-check-the-data): read the deltas
-   back, apply them, and check the book.
-1. [Configure the backtest](#6-configure-the-backtest): set up the venue, the margin account, and the
-   strategy.
-1. [Run the backtest from the catalog](#7-run-the-backtest-from-the-catalog): load the catalog into
-   `BacktestNode` and run the strategy.
-1. [Review the results](#8-review-the-results): compare orders, fills, and PnL with the reference run.
-
 Each step shows the Rust and Python code side by side. The complete programs are
 [`coinapi_lighter_book_imbalance.rs`][rust-program] and
 [`coinapi_lighter_book_imbalance.py`][python-program].
@@ -35,27 +17,13 @@ Each step shows the Rust and Python code side by side. The complete programs are
 ## How CoinAPI represents Lighter order book data
 
 CoinAPI [Flat Files](https://www.coinapi.io/products/flat-files?ref=nautilus) are `.csv.gz` exports
-served over an S3-compatible API. Each full-book file holds one symbol for one UTC partition, and
-its object key describes its contents:
-
-| Key part                        | Meaning                                                         |
-| ------------------------------- | --------------------------------------------------------------- |
-| `T-LIMITBOOK_FULL`              | Full-book dataset: a snapshot followed by all recorded updates. |
-| `D-2026100100`                  | UTC date and hour: `[00:00, 01:00)` on 2026-10-01.              |
-| `E-LIGHTER`                     | Exchange.                                                       |
-| `IDDI-47534074`                 | CoinAPI numeric symbol ID.                                      |
-| `SC-LIGHTER_PERP_ANTHROPIC_USD` | CoinAPI symbol ID.                                              |
-| `S-ANTHROPIC`                   | Exchange symbol.                                                |
-
-The catalog stores the instrument definition and the order book history for the hour:
-
-| Data                     | Source                  | Nautilus object                            |
-| ------------------------ | ----------------------- | ------------------------------------------ |
-| Instrument definition    | You define it (step 3). | `CryptoPerpetual` `ANTHROPIC-PERP.LIGHTER` |
-| Book history of the hour | The file's rows.        | List of `OrderBookDelta` values            |
+served over an S3-compatible API. Each full-book file holds one symbol for one UTC partition: a
+snapshot followed by all recorded updates. The object key names the dataset, the UTC hour, the
+exchange, and the symbol; see the [file layout](../integrations/coinapi.md#file-layout).
 
 The rows have empty order IDs, so they describe price levels: an L2 market-by-price (MBP) book. The
-loader groups the deltas into batches. Each batch is one book event:
+loader converts the rows to `OrderBookDelta` values and groups them into batches. Each batch is one
+book event:
 
 | Batch                  | Contents                                                                               |
 | ---------------------- | -------------------------------------------------------------------------------------- |
@@ -64,10 +32,7 @@ loader groups the deltas into batches. Each batch is one book event:
 | Last delta of each one | Carries the `F_LAST` flag. The book is complete only after this delta.                 |
 
 Each delta's `ts_event` is the exchange time (`time_exchange`) and its `ts_init` is the time CoinAPI
-received the update (`time_coinapi`). Book rows carry only a time of day, so the loader takes the UTC
-date from the `D-2026100100` directory in the file path. The integration guide's
-[timestamp rules](../integrations/coinapi.md#timestamps) cover rows near midnight. Level updates can
-have separate timestamps, so `F_LAST` marks the end of a loader event, not an atomic venue update.
+received the update (`time_coinapi`). See the [timestamp rules](../integrations/coinapi.md#timestamps).
 
 ```mermaid
 flowchart LR
@@ -81,14 +46,14 @@ flowchart LR
     catalog -->|"7. replay"| node["BacktestNode with OrderBookImbalance"]
 ```
 
-The catalog is the hand-off point: steps 5 to 8 read only from it. After the first run, the
-programs skip steps 2 to 4 and need no API key or network access.
+The catalog is the hand-off point: steps 5 to 8 read only from it. The programs run steps 2 to 4
+only when the catalog path does not exist, so later runs need no API key or network access.
 
 ## Prerequisites
 
-- A CoinAPI key with Flat Files access and enough usage credits for the first download. Listing and
-  downloading files incur charges, and a retried download starts again and can be charged again.
-  See [Flat Files access](https://www.coinapi.io/products/flat-files/docs?ref=nautilus).
+- A CoinAPI key with Flat Files access and usage credits. CoinAPI charges for listing and for
+  downloading files; the first run downloads one file of about 279 KB. See
+  [Flat Files access](https://www.coinapi.io/products/flat-files/docs?ref=nautilus).
 - **Rust**: A source checkout. To use the crates in your own project, see
   [Run a Backtest (Rust)](../how_to/run_rust_backtest.md) for setup and dependencies.
 - **Python**: Python 3.13, 3.14, or 3.15, NautilusTrader 2.x with the CoinAPI adapter
@@ -119,13 +84,8 @@ key, without echoing it, when the variable is unset.
 | Instrument ID  | `ANTHROPIC-PERP.LIGHTER`                      | Native Lighter adapter ID for the contract.                      |
 | Book type      | `L2_MBP`                                      | Price-level book, which matches the file's empty order IDs.      |
 | Data directory | `NAUTILUS_DATA_DIR/CoinAPI`                   | Storage root. The default is `~/Downloads/Data/CoinAPI`.         |
-| File path      | `<data directory>/<OBJECT_KEY>`               | Downloaded file. It keeps CoinAPI's partition directories.       |
+| File path      | `<data directory>/<OBJECT_KEY>`               | Downloaded file. Its `D-` directory gives the loader the date.   |
 | Catalog path   | `lighter-anthropic-20261001-00`               | Catalog for this file. Rename it for another hour.               |
-
-**Buckets**: The `coinapi-daily-tail` bucket retains only the previous day's daily files, so this
-hour comes from the historical `coinapi` bucket. See the
-[full-book file layout](https://www.coinapi.io/products/flat-files/docs/datasets/limitbook?ref=nautilus)
-when you select another partition.
 
 ```rust tab="Rust"
 const BUCKET: &str = "coinapi";
@@ -166,13 +126,8 @@ CATALOG_PATH = DATA_DIR / "lighter-anthropic-20261001-00"
 
 ## 2. Download the full-book file
 
-The programs run steps 2 to 4 only when the catalog path does not exist; later runs skip them and
-need no API key or network access.
-
-Create a `CoinApiDataLoader` and download the file when it is not already on disk. The loader handles
-authentication and streams the response to a temporary file, which it moves to the destination only
-after the complete download, so a failed download leaves no partial file at the destination. A file
-already on disk, such as one kept after a failed catalog write, is reused without another download.
+Create a `CoinApiDataLoader` and download the file when it is not already on disk. A failed download
+leaves no partial file at the destination.
 
 Then compare the file's SHA-256 with `FILE_SHA256`. The checksum pins the exact export behind the
 reference run. A mismatch stops the run before parsing; verify the file before you replace it.
@@ -234,7 +189,6 @@ the native Lighter adapter's model for this contract.
 | `min_notional`                          | 10 USDC                  | Minimum order value, checked separately from the quantity.             |
 | `margin_init`                           | 0.20                     | Initial margin: 20% of the order value.                                |
 | `margin_maint`                          | 0.12                     | Maintenance margin: 12% of the position value.                         |
-| `ts_event`, `ts_init`                   | 0                        | The definition has no event time.                                      |
 
 **Assumed terms**: The minimum order, minimum notional, and margin rates are assumptions based on
 native metadata, not a reconstruction of historical venue rules. Verify the terms for your research
@@ -297,15 +251,8 @@ finer than that precision fails the load instead of being rounded. In Rust, the 
 are the optional REST symbol ID and consolidated OHLCV file symbol ID, which book files do not need.
 Local loading requires no credentials.
 
-Load the entire file in its original order. Do not set a row `limit`: it can cut a snapshot or
-update event short, and the last delta it returns still carries `F_LAST`, so the book looks complete
-when it is not. To bound memory while you write a larger file to the catalog, `stream_book_deltas`
-yields chunks that end at event boundaries and can exceed `chunk_size` (100,000 deltas by default in
-Python). Streaming helps only this step: step 5 reads every delta back, and the replay loads all data
-at once unless `BacktestRunConfig` sets `chunk_size`.
-
-The loader reads the date from the `D-` directory that contains the file. If you move the file out
-of its original partition, pass `date` explicitly.
+Load the entire file. A row `limit` can cut a book event short and leave an incomplete book. See
+[order book data](../integrations/coinapi.md#order-book-data) for limits and chunked streaming.
 
 ```rust tab="Rust"
 let instrument = InstrumentAny::CryptoPerpetual(instrument);
@@ -330,12 +277,9 @@ catalog.write_instruments([instrument])
 catalog.write_order_book_deltas(deltas)
 ```
 
-The programs create the catalog folder only after a complete download and load, so a failed download
-or load leaves no catalog. If a write fails, delete the catalog path before the next run.
-
-Later runs read the instrument and deltas only from the catalog and skip steps 2 to 4, including the
-checksum. After you change `OBJECT_KEY`, `FILE_SHA256`, or a contract setting from step 3, delete the
-catalog path or choose a new one; otherwise the run uses the old data and definition.
+The programs create the catalog folder only after a complete download and load. Delete the catalog
+path if a write fails, and after you change `OBJECT_KEY`, `FILE_SHA256`, or a contract setting from
+step 3. Otherwise later runs reuse the old data and definition, and skip the checksum.
 
 ## 5. Rebuild the book to check the data
 
@@ -465,15 +409,11 @@ positive spread and closes its position when it stops.
 | Run setting             | Value                                   | Effect                                                                                           |
 | ----------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `data_type`             | `OrderBookDelta`                        | Reads the instrument's book deltas from the catalog path.                                        |
-| `emit_quotes_from_book` | `true`                                  | Gives the risk engine a price for the market order that closes the position.                     |
+| `emit_quotes_from_book` | `true`                                  | Without it, the risk engine denies the closing market order with `MARKET_PRICE_UNAVAILABLE`.     |
 | `raise_exception`       | `true`                                  | A failed run stops with its error instead of returning no results.                               |
 | `id`                    | `coinapi-lighter` (Rust only)           | Run ID. Rust uses it to find the engine for the strategy; Python uses the generated `config.id`. |
 | `dispose_on_completion` | `true` (Rust default), `False` (Python) | Python keeps the engine after the run to generate reports; Rust disposes it.                     |
 | Log level               | `ERROR` (Python only)                   | Keeps the printed reports readable; Rust keeps the default log output.                           |
-
-**Closing price**: `emit_quotes_from_book` makes the data engine cache top-of-book quotes derived
-from the deltas. Without them, the risk engine denies the closing market order with
-`MARKET_PRICE_UNAVAILABLE` and leaves the position open.
 
 **Simulation limits**: The run omits funding, network latency, transaction costs, and IPO conversion
 or settlement. L2 data cannot establish individual order queue positions, and simulated fills do not
@@ -602,14 +542,9 @@ finally:
 
 ## 8. Review the results
 
-Check order statuses, fills, positions, and balances together, and inspect commissions and the final
-position exposure as well as PnL. Order status counts include orders with no fills. The account
+The Rust program prints the run totals and PnL statistics. The Python program prints the order,
+fill, position, and account reports, then checks that the final position is flat. The account
 report records balance changes, and the position report holds the realized PnL of closed positions.
-
-The Rust program prints the run totals and PnL statistics. The Python program prints the run
-result, the order status counts, the fill counts by order type and side, the last eight fills, the
-position with its realized PnL and commissions, and the last balance changes. It then checks that
-the final position is flat.
 
 ```rust tab="Rust"
 for result in &results {
@@ -666,10 +601,8 @@ Compare the data counts first.
 | Realized PnL   | -1.157298 USDC, with zero fees                                |
 | Final balance  | 99,998.84270200 USDC                                          |
 
-The Python program prints the counts, statuses, position values, and final balance in this table.
-Its fill counts show the closing market buy as six fills, and it does not print the snapshot size.
-The Rust program prints the delta and batch counts, the order and position totals, and the PnL. A
-successful replay shows that the data pipeline works, not that this strategy is profitable.
+The Python fill counts show the closing market buy as six fills. A successful replay shows that the
+data pipeline works, not that this strategy is profitable.
 
 The FOK orders build the short position. The final market buy closes it at 00:59:58.300495500 UTC
 and fills against six ask levels at the same simulated timestamp:
@@ -688,10 +621,9 @@ several levels, so most of it fills above the best ask of 2120.5.
 
 ### Figures
 
-The figures use the same pinned export, complete hour, configuration, and reports as the Python
-program. The renderer records the best bid and ask with their sizes after each completed batch, and
-skips books with an empty side or without a positive spread. Lines step from one book state to the
-next; markers show individual fills.
+The figures use the same data and reports as the Python program. They show the best bid and ask
+after each completed batch, and skip books with an empty side or without a positive spread. Lines
+step from one book state to the next; markers show individual fills.
 
 ![ANTHROPIC best bid and ask with the FOK fills and the closing market fills](./assets/backtest_orderbook_coinapi/panel_a_top_book.png)
 
@@ -725,25 +657,15 @@ units, not company shares.
 
 ## Regenerate the figures
 
-The figure renderer uses Plotly and Kaleido, and Kaleido needs a Chrome-compatible browser. From a
-source checkout, run:
+From a source checkout, with a Chrome-compatible browser for Kaleido:
 
 ```bash
 uv run --project python --no-sync --with pandas --with plotly --with kaleido \
     python docs/tutorials/assets/backtest_orderbook_coinapi/render_panels.py
 ```
 
-If Kaleido reports that Chrome is missing, install its browser once with:
-
-```bash
-uv run --project python --no-sync --with plotly --with kaleido plotly_get_chrome -y
-```
-
 The renderer runs the Python program, so it reuses the catalog or downloads the file as in step 2.
-It prints the spread ranges and the short-interval count from Figure 2, writes PNG files to
-`docs/tutorials/assets/backtest_orderbook_coinapi/`, and keeps exact decimals until it converts
-values to plot coordinates. If the marked PnL after the close differs from the account's balance
-change, the renderer stops with an error before it writes any files.
+Its docstring gives the command that installs a browser for Kaleido.
 
 ## Use another hour
 
@@ -752,7 +674,7 @@ objects with CoinAPI's [S3 SDK guide](https://www.coinapi.io/products/flat-files
 and select the ANTHROPIC file. Update `OBJECT_KEY` and `FILE_SHA256` together after you verify the
 new file, and change the catalog path. Check the file schema, the opening snapshot, and the
 instrument precision before you load it. The [CoinAPI integration guide](../integrations/coinapi.md#flat-files)
-describes the accepted CSV layout and timestamp rules.
+describes the buckets, the accepted CSV layout, and the timestamp rules.
 
 [rust-program]: https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/tutorials/src/bin/coinapi_lighter_book_imbalance.rs
 [python-program]: https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/backtest/coinapi_lighter_book_imbalance.py

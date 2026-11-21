@@ -47,7 +47,7 @@ use nautilus_persistence::{
 use nautilus_trading::examples::strategies::{OrderBookImbalance, OrderBookImbalanceConfig};
 use rust_decimal_macros::dec;
 
-const MARKET_ID: &str = "BITCOIN-ABOVE-76K-ON-NOVEMBER-3-2026_YES";
+const MARKET_ID: &str = "BITCOIN-ABOVE-76K-ON-NOVEMBER-3-2026_NO";
 const RUN_ID: &str = "finfeed-polymarket";
 
 #[tokio::main]
@@ -67,7 +67,7 @@ async fn main() -> anyhow::Result<()> {
 
     let catalog_path = data_dir
         .join("FinFeed")
-        .join("btc-above-76k-nov3-20261102-20");
+        .join("btc-above-76k-nov3-no-20261102-20");
 
     if !catalog_path.exists() {
         let loader = FinFeedDataLoader::new(None); // Reads FINFEED_API_KEY

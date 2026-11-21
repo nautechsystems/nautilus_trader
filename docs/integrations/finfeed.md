@@ -524,9 +524,11 @@ For a historical point, use an offset-bearing RFC 3339 timestamp in
 
 **Ordering and bounds**:
 
-- Preserve source order and original `ts_event`, including backward exchange clocks. A group's `ts_init`
-  is the cumulative maximum of all its rows' processing clocks (`time_coinapi`, otherwise `time_exchange`)
-  and the preceding group. Every delta shares that value; **it is not measured receipt time**.
+- Preserve source order and original `ts_event`, including backward exchange clocks. An `OrderBook` logs an
+  `Out-of-order update` or `Out-of-order snapshot` warning when it applies a record with an earlier
+  `ts_event`. A group's `ts_init` is the cumulative maximum of all its rows' processing clocks
+  (`time_coinapi`, otherwise `time_exchange`) and the preceding group. Every delta shares that value;
+  **it is not measured receipt time**.
 - Groups at or before `start` build the seed; groups in `(start, end]` publish. Bounds use this derived clock,
   so an in-window exchange timestamp can be excluded and an earlier one emitted. The generated seed uses
   `start` for both clocks; point snapshots use the requested time as `ts_last`.
