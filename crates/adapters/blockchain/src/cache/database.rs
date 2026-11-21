@@ -1990,6 +1990,67 @@ impl BlockchainCacheDatabase {
         pool_identifier: &PoolIdentifier,
         snapshot: &PoolSnapshot,
     ) -> anyhow::Result<()> {
+        Self::insert_pool_snapshot(&self.pool, chain_id, dex_name, pool_identifier, snapshot).await
+    }
+
+    pub(crate) async fn add_pool_snapshot_atomic(
+        &self,
+        chain_id: u32,
+        dex_name: &DexType,
+        pool_identifier: &PoolIdentifier,
+        snapshot: &PoolSnapshot,
+    ) -> anyhow::Result<()> {
+        let mut transaction = self.pool.begin().await?;
+        Self::insert_pool_snapshot(
+            &mut *transaction,
+            chain_id,
+            dex_name,
+            pool_identifier,
+            snapshot,
+        )
+        .await?;
+
+        let positions: Vec<(PoolIdentifier, PoolPosition)> = snapshot
+            .positions
+            .iter()
+            .map(|position| (*pool_identifier, position.clone()))
+            .collect();
+        Self::insert_pool_positions_batch(
+            &mut *transaction,
+            chain_id,
+            snapshot.block_position.number,
+            snapshot.block_position.transaction_index,
+            snapshot.block_position.log_index,
+            &positions,
+        )
+        .await?;
+
+        let ticks: Vec<(PoolIdentifier, &PoolTick)> = snapshot
+            .ticks
+            .iter()
+            .map(|tick| (*pool_identifier, tick))
+            .collect();
+        Self::insert_pool_ticks_batch(
+            &mut *transaction,
+            chain_id,
+            snapshot.block_position.number,
+            snapshot.block_position.transaction_index,
+            snapshot.block_position.log_index,
+            &ticks,
+        )
+        .await?;
+
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    async fn insert_pool_snapshot<'e>(
+        executor: impl sqlx::Executor<'e, Database = Postgres>,
+        chain_id: u32,
+        dex_name: &DexType,
+        pool_identifier: &PoolIdentifier,
+        snapshot: &PoolSnapshot,
+    ) -> anyhow::Result<()> {
         sqlx::query(
             "
             INSERT INTO pool_snapshot (
@@ -2061,7 +2122,7 @@ impl BlockchainCacheDatabase {
         .bind(snapshot.analytics.total_fee_collects as i32)
         .bind(snapshot.analytics.total_flashes as i32)
         .bind(snapshot.analytics.liquidity_utilization_rate)
-        .execute(&self.pool)
+        .execute(executor)
         .await
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("Failed to insert into pool_snapshot table: {e}"))
@@ -2074,6 +2135,25 @@ impl BlockchainCacheDatabase {
     /// Returns an error if the database operation fails.
     pub async fn add_pool_positions_batch(
         &self,
+        chain_id: u32,
+        snapshot_block: u64,
+        snapshot_transaction_index: u32,
+        snapshot_log_index: u32,
+        positions: &[(PoolIdentifier, PoolPosition)],
+    ) -> anyhow::Result<()> {
+        Self::insert_pool_positions_batch(
+            &self.pool,
+            chain_id,
+            snapshot_block,
+            snapshot_transaction_index,
+            snapshot_log_index,
+            positions,
+        )
+        .await
+    }
+
+    async fn insert_pool_positions_batch<'e>(
+        executor: impl sqlx::Executor<'e, Database = Postgres>,
         chain_id: u32,
         snapshot_block: u64,
         snapshot_transaction_index: u32,
@@ -2174,7 +2254,7 @@ impl BlockchainCacheDatabase {
         .bind(&total_amount1_depositeds as &[Option<String>])
         .bind(&total_amount0_collecteds as &[Option<String>])
         .bind(&total_amount1_collecteds as &[Option<String>])
-        .execute(&self.pool)
+        .execute(executor)
         .await
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("Failed to batch insert into pool_position table: {e}"))
@@ -2187,6 +2267,25 @@ impl BlockchainCacheDatabase {
     /// Returns an error if the database operation fails.
     pub async fn add_pool_ticks_batch(
         &self,
+        chain_id: u32,
+        snapshot_block: u64,
+        snapshot_transaction_index: u32,
+        snapshot_log_index: u32,
+        ticks: &[(PoolIdentifier, &PoolTick)],
+    ) -> anyhow::Result<()> {
+        Self::insert_pool_ticks_batch(
+            &self.pool,
+            chain_id,
+            snapshot_block,
+            snapshot_transaction_index,
+            snapshot_log_index,
+            ticks,
+        )
+        .await
+    }
+
+    async fn insert_pool_ticks_batch<'e>(
+        executor: impl sqlx::Executor<'e, Database = Postgres>,
         chain_id: u32,
         snapshot_block: u64,
         snapshot_transaction_index: u32,
@@ -2259,7 +2358,7 @@ impl BlockchainCacheDatabase {
         .bind(&fee_growth_outside_1s[..])
         .bind(&initializeds[..])
         .bind(&last_updated_blocks[..])
-        .execute(&self.pool)
+        .execute(executor)
         .await
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("Failed to batch insert into pool_tick table: {e}"))

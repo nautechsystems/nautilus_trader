@@ -99,6 +99,7 @@ Released on TBD (UTC).
 ### Security
 
 - Fixed cross-origin HTTP redirects leaking venue API keys and other custom credential headers
+- Fixed failed blockchain pool snapshot writes leaving inconsistent snapshots that pool profiler restores could load
 - Fixed Coinbase authentication errors exposing private key data from malformed PEM credentials
 - Hardened Lighter signing with uniform nonzero OS nonces; no specific NautilusTrader vulnerability was fixed
 - Hardened the Lighter signing API to reject zero and non-canonical caller-supplied Schnorr nonces
