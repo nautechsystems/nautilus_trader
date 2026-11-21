@@ -29,6 +29,7 @@ use nautilus_model::{
     types::{
         Currency, Money,
         fixed::{MAX_FLOAT_PRECISION, check_float_precision, fixed_i128_to_f64, raw_scales_match},
+        money::MoneyRaw,
     },
 };
 use rust_decimal::prelude::ToPrimitive;
@@ -245,8 +246,8 @@ impl PortfolioAnalyzer {
     /// Portfolio returns use daily mark-to-market equity when at least two UTC dates are
     /// available and every account resolves to one common currency. Otherwise the primary
     /// returns source falls back to position returns.
-    /// Retains exact balances. Logs and omits balances that cannot be summed at their stored
-    /// scale and equity series that exceed the supported float precision.
+    /// Retains exact balances. Logs and omits balances that cannot be summed into representable
+    /// totals at their stored scale and equity series that exceed the supported float precision.
     #[must_use]
     pub fn from_accounts_with_snapshots<'a>(
         accounts: &[AccountAny],
@@ -269,8 +270,9 @@ impl PortfolioAnalyzer {
     ///
     /// # Errors
     ///
-    /// Returns an error if balances cannot be summed at their stored scale or if a balance,
-    /// daily equity value, or realized PnL exceeds the supported float precision.
+    /// Returns an error if balances cannot be summed into representable totals at their stored
+    /// scale or if a balance, daily equity value, or realized PnL exceeds the supported float
+    /// precision.
     pub fn try_from_accounts_with_snapshots<'a>(
         accounts: &[AccountAny],
         positions: &[Position],
@@ -308,6 +310,8 @@ impl PortfolioAnalyzer {
     ) -> (Self, Vec<AccountId>, CorrectnessResult<()>) {
         let mut analyzer = Self::default();
         let mut account_ids = Vec::with_capacity(accounts.len());
+        let mut starting_totals = IndexMap::new();
+        let mut current_totals = IndexMap::new();
         let mut balance_error = None;
         let mut invalid_totals = IndexSet::new();
 
@@ -323,11 +327,8 @@ impl PortfolioAnalyzer {
             account_ids.push(account_id);
 
             for (balances, totals) in [
-                (
-                    account_ref.starting_balances(),
-                    &mut analyzer.account_balances_starting,
-                ),
-                (account_ref.balances_total(), &mut analyzer.account_balances),
+                (account_ref.starting_balances(), &mut starting_totals),
+                (account_ref.balances_total(), &mut current_totals),
             ] {
                 Self::sum_account_balances(
                     account_id,
@@ -336,6 +337,19 @@ impl PortfolioAnalyzer {
                     &mut invalid_totals,
                     &mut balance_error,
                 );
+            }
+        }
+
+        for (totals, balances) in [
+            (starting_totals, &mut analyzer.account_balances_starting),
+            (current_totals, &mut analyzer.account_balances),
+        ] {
+            for (currency, (raw, amount_currency)) in totals {
+                if let Ok(total) = Money::from_raw_checked(raw, amount_currency) {
+                    balances.insert(currency, total);
+                } else {
+                    invalid_totals.insert(currency);
+                }
             }
         }
 
@@ -357,7 +371,7 @@ impl PortfolioAnalyzer {
     fn sum_account_balances(
         account_id: AccountId,
         balances: impl IntoIterator<Item = (Currency, Money)>,
-        totals: &mut IndexMap<Currency, Money>,
+        totals: &mut IndexMap<Currency, (MoneyRaw, Currency)>,
         invalid_totals: &mut IndexSet<Currency>,
         balance_error: &mut Option<CorrectnessError>,
     ) {
@@ -371,17 +385,17 @@ impl PortfolioAnalyzer {
 
             totals
                 .entry(currency)
-                .and_modify(|existing| {
-                    // Opposite balances can cancel after an intermediate sum crosses Money bounds.
-                    if raw_scales_match(existing.currency.precision, money.currency.precision)
-                        && existing.raw().checked_add(money.raw()).is_some()
+                .and_modify(|(raw, amount_currency)| {
+                    if *amount_currency == money.currency
+                        && raw_scales_match(amount_currency.precision, money.currency.precision)
+                        && let Some(sum) = raw.checked_add(money.raw())
                     {
-                        *existing = *existing + money;
+                        *raw = sum;
                     } else {
                         invalid_totals.insert(currency);
                     }
                 })
-                .or_insert(money);
+                .or_insert((money.raw(), money.currency));
         }
     }
 
@@ -1217,7 +1231,9 @@ mod tests {
         position::PositionReplayEvents,
         stubs::TestDefault,
         types::{
-            AccountBalance, Money, Price, Quantity, fixed::FIXED_PRECISION, money::MONEY_RAW_MAX,
+            AccountBalance, Money, Price, Quantity,
+            fixed::FIXED_PRECISION,
+            money::{MONEY_RAW_MAX, MONEY_RAW_MIN},
         },
     };
     use rstest::rstest;
@@ -2654,7 +2670,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_accounts_preserves_balance_after_large_intermediate_sum() {
+    #[case::in_range(true)]
+    #[case::out_of_range(false)]
+    fn test_from_accounts_checks_final_balance_bounds(#[case] include_offset: bool) {
         let mut currency = Currency::USD();
         currency.precision = FIXED_PRECISION;
         let expected = Money::from_raw(MONEY_RAW_MAX / 2 + 1, currency);
@@ -2681,6 +2699,58 @@ mod tests {
             AccountAny::Margin(MarginAccount::new(event, true))
         });
 
+        let accounts = if include_offset {
+            &accounts[..]
+        } else {
+            &accounts[..2]
+        };
+
+        let exact = PortfolioAnalyzer::from_accounts(accounts, &[], &[], AHashMap::new());
+        let checked = PortfolioAnalyzer::try_from_accounts_with_snapshots(
+            accounts,
+            &[],
+            &[],
+            &[],
+            AHashMap::new(),
+        );
+
+        if include_offset {
+            for analyzer in [exact, checked.unwrap()] {
+                assert_eq!(analyzer.account_balances[&currency], expected);
+                assert_eq!(analyzer.account_balances_starting[&currency], expected);
+            }
+        } else {
+            assert!(exact.account_balances.is_empty());
+            assert!(exact.account_balances_starting.is_empty());
+            assert_eq!(
+                checked.unwrap_err().to_string(),
+                "Cannot sum portfolio balances for USD"
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_from_accounts_omits_currency_with_out_of_range_current_total() {
+        let usd = Currency::USD();
+        let eur = Currency::EUR();
+        let min = Money::from_raw(MONEY_RAW_MIN, usd);
+        let minus_unit = Money::from_raw(-1, usd);
+        let zero = Money::zero(usd);
+
+        let mut initial = create_account_state(10.0, eur, 1);
+        initial.balances.push(AccountBalance::new(min, zero, min));
+        let first = CashAccount::new(initial, true, true);
+
+        let second_id = AccountId::new("test-account-2");
+        let mut initial = create_account_state(0.0, usd, 1);
+        initial.account_id = second_id;
+        let mut second = CashAccount::new(initial, true, true);
+        let mut update = create_account_state(0.0, usd, 2);
+        update.account_id = second_id;
+        update.balances = vec![AccountBalance::new(minus_unit, zero, minus_unit)];
+        second.apply(update).unwrap();
+
+        let accounts = [AccountAny::Cash(first), AccountAny::Cash(second)];
         let exact = PortfolioAnalyzer::from_accounts(&accounts, &[], &[], AHashMap::new());
         let checked = PortfolioAnalyzer::try_from_accounts_with_snapshots(
             &accounts,
@@ -2688,13 +2758,15 @@ mod tests {
             &[],
             &[],
             AHashMap::new(),
-        )
-        .unwrap();
+        );
 
-        for analyzer in [exact, checked] {
-            assert_eq!(analyzer.account_balances[&currency], expected);
-            assert_eq!(analyzer.account_balances_starting[&currency], expected);
-        }
+        let valid_totals = IndexMap::from([(eur, Money::from("10 EUR"))]);
+        assert_eq!(exact.account_balances, valid_totals);
+        assert_eq!(exact.account_balances_starting, valid_totals);
+        assert_eq!(
+            checked.unwrap_err().to_string(),
+            "Cannot sum portfolio balances for USD"
+        );
     }
 
     #[rstest]

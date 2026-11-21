@@ -23,6 +23,9 @@
 //!
 //! Adding or subtracting two `Quantity` values requires matching effective fixed-point scales.
 //! These operations panic on a scale mismatch.
+//! An intermediate result can exceed the domain bounds if it fits the backing integer.
+//! Use [`Quantity::from_raw_checked`] to validate a completed result.
+//! The constructor also accepts [`QUANTITY_UNDEF`] at precision 0.
 //! Comparisons and hashes account for scale differences without rounding.
 //! Without the `defi` feature, constructors restrict values to a single storage scale.
 //!
@@ -1775,6 +1778,18 @@ mod tests {
         let quantity2 = Quantity::new(b, 0);
         let quantity3 = quantity1 - quantity2;
         assert_eq!(quantity3.raw, Quantity::new(a - b, 0).raw);
+    }
+
+    #[rstest]
+    fn test_arithmetic_allows_raw_intermediates() {
+        let one_unit = Quantity::from_raw(1, FIXED_PRECISION);
+        let max = Quantity::from_raw(QUANTITY_RAW_MAX, FIXED_PRECISION);
+        let above_max = max + one_unit + one_unit;
+        let remainder = above_max - one_unit;
+
+        assert_eq!(above_max.raw(), QUANTITY_RAW_MAX + 2);
+        assert_eq!(remainder.raw(), QUANTITY_RAW_MAX + 1);
+        assert_eq!(remainder - one_unit, max);
     }
 
     #[rstest]

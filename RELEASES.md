@@ -145,6 +145,7 @@ Released on TBD (UTC).
 - Fixed reopened NETTING positions appearing under their previous account in cache queries
 - Fixed own order books retaining stale orders after cache reload
 - Fixed historical book delta events splitting across response envelopes and time-range windows, thanks @faysou
+- Fixed portfolio balance aggregation retaining totals outside `Money` bounds
 - Fixed Architect AX funding subscriptions publishing the oldest rate in the lookback window
 - Fixed Architect AX order history requests failing on an empty page with a continuation cursor
 - Fixed blockchain sync leaving pooled PostgreSQL connections with asynchronous commit enabled

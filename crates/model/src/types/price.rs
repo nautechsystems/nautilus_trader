@@ -23,6 +23,9 @@
 //!
 //! Adding or subtracting two `Price` values requires matching effective fixed-point scales.
 //! These operations panic on a scale mismatch.
+//! An intermediate result can exceed the domain bounds if it fits the backing integer.
+//! Use [`Price::from_raw_checked`] to validate a completed result. The constructor also
+//! accepts price sentinels.
 //! Comparisons and hashes account for scale differences without rounding.
 //! Without the `defi` feature, constructors restrict values to a single storage scale.
 //!
@@ -1702,6 +1705,20 @@ mod tests {
             near_min.checked_sub(one_unit),
             Some(Price::from_raw(PRICE_RAW_MIN, FIXED_PRECISION)),
         );
+    }
+
+    #[rstest]
+    fn test_arithmetic_allows_raw_intermediates() {
+        let one_unit = Price::from_raw(1, FIXED_PRECISION);
+        let max = Price::from_raw(PRICE_RAW_MAX, FIXED_PRECISION);
+        let min = Price::from_raw(PRICE_RAW_MIN, FIXED_PRECISION);
+        let above_max = max + one_unit;
+        let below_min = min - one_unit;
+
+        assert_eq!(above_max.raw(), PRICE_RAW_MAX + 1);
+        assert_eq!(below_min.raw(), PRICE_RAW_MIN - 1);
+        assert_eq!(above_max - one_unit, max);
+        assert_eq!(below_min + one_unit, min);
     }
 
     #[rstest]
