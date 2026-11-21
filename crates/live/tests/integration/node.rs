@@ -39,10 +39,13 @@ use nautilus_common::{
     component::Component,
     enums::Environment,
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
-    live::{LiveClock, dst, runner::get_exec_event_sender},
+    live::{
+        LiveClock, dst,
+        runner::{get_data_event_sender, get_exec_event_sender},
+    },
     logging::{logger::LoggerConfig, logging_sync_to_disk, writer::FileWriterConfig},
     messages::{
-        ExecutionEvent,
+        DataEvent, ExecutionEvent,
         execution::{
             GenerateFillReports, GenerateOrderStatusReport, GenerateOrderStatusReports,
             GeneratePositionStatusReports, QueryOrder, TradingCommand,
@@ -70,7 +73,10 @@ use nautilus_model::{
         AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId,
         StrategyId, TradeId, TraderId, Venue, VenueOrderId,
     },
-    instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
+    instruments::{
+        Instrument, InstrumentAny,
+        stubs::{crypto_perpetual_ethusdt, currency_pair_btcusdt},
+    },
     orders::{
         Order, OrderAny, OrderTestBuilder,
         stubs::{OrderFilledTestBuilder, TestOrderEventStubs},
@@ -3299,6 +3305,162 @@ pub(crate) mod serial_tests {
         assert_eq!(state.instrument_updates.load(Ordering::Relaxed), 1);
         assert!(state.mass_status_requested.load(Ordering::Relaxed));
         node.stop().await.unwrap();
+        node.dispose();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_start_reconciles_order_for_instrument_sent_during_exec_connect() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecutionEngineConfig {
+                reconciliation: true,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+
+        let (mut node, state) = live_node_with_startup_mass_status_client(
+            "ExecConnectInstrumentStartup",
+            config,
+            StartupMassStatusBehavior::Available,
+        );
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        let client_id = ClientId::from(StartupMassStatusExecutionClient::CLIENT_ID);
+        let account_id = AccountId::from("STARTUP-MASS-STATUS-001");
+        let client_order_id = ClientOrderId::from("O-EXEC-CONNECT");
+        let venue_order_id = VenueOrderId::from("V-EXEC-CONNECT");
+        let report = test_order_report(
+            account_id,
+            client_order_id,
+            venue_order_id,
+            OrderStatus::Accepted,
+        );
+
+        let mut mass_status = ExecutionMassStatus::new(
+            client_id,
+            account_id,
+            instrument_id.venue,
+            UnixNanos::default(),
+            None,
+        );
+
+        mass_status.add_order_reports(vec![report]);
+        *state.mass_status.lock() = Some(mass_status);
+        *state.connect_instrument.lock() = Some(instrument.clone());
+
+        node.start().await.unwrap();
+
+        {
+            let cache = node.kernel().cache();
+            let cache = cache.borrow();
+            assert_eq!(cache.instrument(&instrument_id), Some(&instrument));
+            assert_eq!(
+                cache.order(&client_order_id).map(|order| order.status()),
+                Some(OrderStatus::Accepted)
+            );
+            assert_eq!(
+                *state.registered_external_orders.lock(),
+                vec![client_order_id]
+            );
+        }
+
+        node.stop().await.unwrap();
+        node.dispose();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_start_stop_request_during_exec_connect_flush_skips_reconciliation() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecutionEngineConfig {
+                reconciliation: true,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+
+        let (mut node, state) = live_node_with_startup_mass_status_client(
+            "ExecConnectFlushStop",
+            config,
+            StartupMassStatusBehavior::Unavailable,
+        );
+        let handle = node.handle();
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let topic = switchboard::get_instrument_topic(instrument.id());
+
+        let handler = msgbus::TypedHandler::from({
+            let handle = handle.clone();
+            move |_: &InstrumentAny| handle.stop()
+        });
+
+        msgbus::subscribe_instruments(topic.into(), handler, None);
+        *state.connect_instrument.lock() = Some(instrument);
+
+        node.start().await.unwrap();
+
+        assert!(!state.mass_status_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!state.connected.load(Ordering::Relaxed));
+
+        node.dispose();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_start_leaves_data_sent_during_exec_connect_flush_queued() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecutionEngineConfig {
+                reconciliation: true,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+
+        let (mut node, state) = live_node_with_startup_mass_status_client(
+            "ExecConnectFlushBound",
+            config,
+            StartupMassStatusBehavior::Unavailable,
+        );
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        let follow_up = InstrumentAny::CurrencyPair(currency_pair_btcusdt());
+        let follow_up_id = follow_up.id();
+        let topic = switchboard::get_instrument_topic(instrument_id);
+
+        let handler = msgbus::TypedHandler::from({
+            let follow_up = follow_up.clone();
+            move |_: &InstrumentAny| {
+                let event = DataEvent::Data(follow_up.clone().into());
+                get_data_event_sender().send(event).unwrap();
+            }
+        });
+
+        msgbus::subscribe_instruments(topic.into(), handler, None);
+        *state.connect_instrument.lock() = Some(instrument.clone());
+
+        node.start().await.unwrap();
+
+        {
+            let cache = node.kernel().cache();
+            let cache = cache.borrow();
+            assert_eq!(cache.instrument(&instrument_id), Some(&instrument));
+            assert_eq!(cache.instrument(&follow_up_id), None);
+        }
+
+        node.stop().await.unwrap();
+
+        assert_eq!(
+            node.kernel().cache().borrow().instrument(&follow_up_id),
+            Some(&follow_up)
+        );
+
         node.dispose();
     }
 

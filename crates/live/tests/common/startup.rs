@@ -29,7 +29,8 @@ use nautilus_common::{
     clients::ExecutionClient,
     clock::Clock,
     factories::{ClientConfig, ExecutionClientFactory},
-    messages::execution::CancelOrder,
+    live::runner::get_data_event_sender,
+    messages::{DataEvent, execution::CancelOrder},
     msgbus::{self, MessagingSwitchboard},
     nautilus_actor,
 };
@@ -71,6 +72,7 @@ pub(crate) struct StartupMassStatusClientState {
     pub(crate) factory_trader_id: Arc<Mutex<Option<TraderId>>>,
     pub(crate) factory_clock_id: Arc<Mutex<Option<usize>>>,
     pub(crate) mass_status_requested: Arc<AtomicBool>,
+    pub(crate) connect_instrument: Arc<Mutex<Option<InstrumentAny>>>,
     pub(crate) recovered_instrument: Arc<Mutex<Option<InstrumentAny>>>,
     pub(crate) instrument_updates: Arc<AtomicUsize>,
     pub(crate) mass_status: Arc<Mutex<Option<ExecutionMassStatus>>>,
@@ -281,6 +283,12 @@ impl ExecutionClient for StartupMassStatusExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
+        let instrument = self.state.connect_instrument.lock().take();
+        if let Some(instrument) = instrument {
+            let event = DataEvent::Data(instrument.into());
+            get_data_event_sender().send(event)?;
+        }
+
         self.state.connected.store(true, Ordering::Relaxed);
         Ok(())
     }

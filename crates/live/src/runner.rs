@@ -410,6 +410,29 @@ impl AsyncRunner {
         }
     }
 
+    // Single pass over the entry snapshot, items enqueued during dispatch stay queued
+    #[cfg(feature = "node")]
+    pub(crate) fn flush_pending_data_once(&mut self) {
+        let events = self.channels.data_evt_rx.len();
+        let commands = self.channels.data_cmd_rx.len();
+
+        for _ in 0..events {
+            let Ok(evt) = self.channels.data_evt_rx.try_recv() else {
+                break;
+            };
+
+            Self::dispatch_data_event(evt);
+        }
+
+        for _ in 0..commands {
+            let Ok(cmd) = self.channels.data_cmd_rx.try_recv() else {
+                break;
+            };
+
+            Self::handle_data_command(cmd);
+        }
+    }
+
     #[cfg(feature = "node")]
     pub(crate) fn drain_pending_system_events(&mut self) -> Vec<DispatchMessage<SystemEvent>> {
         let mut events = Vec::new();
@@ -1042,6 +1065,19 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "node")]
+    fn test_data_command() -> DataCommand {
+        DataCommand::Subscribe(SubscribeCommand::Data(SubscribeCustomData {
+            client_id: Some(ClientId::from("FLUSH")),
+            venue: None,
+            data_type: DataType::new("QuoteTick", None, None),
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::from(4),
+            correlation_id: None,
+            params: None,
+        }))
+    }
+
     fn test_system_event() -> SystemEvent {
         SystemEvent::SocketState(SocketStateChange::new(
             ClientId::from("BINANCE"),
@@ -1058,6 +1094,55 @@ mod tests {
             Ustr::from("polymarket-market-streams"),
             UnixNanos::from(3),
         ))
+    }
+
+    #[cfg(feature = "node")]
+    #[rstest]
+    fn test_flush_pending_data_once_processes_entry_snapshot_events_first() {
+        let mut runner = AsyncRunner::new();
+        let data_evt_tx = runner.data_evt_tx.clone();
+        let data_cmd_tx = runner.data_cmd_tx.clone();
+        let processed = Rc::new(RefCell::new(Vec::new()));
+
+        msgbus::register_data_endpoint(
+            MessagingSwitchboard::data_engine_process_data(),
+            TypedIntoHandler::from({
+                let processed = processed.clone();
+                let data_evt_tx = data_evt_tx.clone();
+                let data_cmd_tx = data_cmd_tx.clone();
+
+                move |_: Data| {
+                    let first = processed.borrow().is_empty();
+                    processed.borrow_mut().push("data_event");
+
+                    if first {
+                        data_evt_tx
+                            .send((DataEvent::Data(Data::Quote(test_quote()))).into())
+                            .unwrap();
+                        data_cmd_tx.send(test_data_command().into()).unwrap();
+                    }
+                }
+            }),
+        );
+
+        msgbus::register_data_command_endpoint(
+            MessagingSwitchboard::data_engine_execute(),
+            TypedIntoHandler::from({
+                let processed = processed.clone();
+                move |_: DataCommand| processed.borrow_mut().push("data_command")
+            }),
+        );
+
+        data_evt_tx
+            .send((DataEvent::Data(Data::Quote(test_quote()))).into())
+            .unwrap();
+        data_cmd_tx.send(test_data_command().into()).unwrap();
+
+        runner.flush_pending_data_once();
+
+        assert_eq!(*processed.borrow(), ["data_event", "data_command"]);
+        assert_eq!(runner.channels.data_evt_rx.len(), 1);
+        assert_eq!(runner.channels.data_cmd_rx.len(), 1);
     }
 
     #[cfg(feature = "node")]

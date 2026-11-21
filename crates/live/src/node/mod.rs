@@ -43,7 +43,8 @@
 //!    until no items remain.
 //! 3. Connect execution clients (`load_instruments_from_cache` now finds
 //!    populated instruments).
-//! 4. Drain remaining events, then run reconciliation.
+//! 4. Drain remaining events, then run reconciliation. `run()` drains every
+//!    channel; `start()` drains only data events and data commands.
 //!
 //! Both `run()` (integrated event loop) and `start()` (manual lifecycle)
 //! follow this sequence.
@@ -467,10 +468,7 @@ impl LiveNode {
                 "Event-store replay loaded; skipping live client connection and reconciliation",
             );
 
-            if !self.finish_startup_replay().await? {
-                return Ok(());
-            }
-
+            self.finish_startup_replay().await?;
             return Ok(());
         }
 
@@ -490,17 +488,14 @@ impl LiveNode {
             }
         };
 
-        let (startup_system_events, startup_system_commands) =
-            if let Some(runner) = self.runner.as_mut() {
-                runner.flush_pending_data();
+        let mut startup_system_events = Vec::new();
+        let mut startup_system_commands = Vec::new();
 
-                (
-                    runner.drain_pending_system_events(),
-                    runner.drain_pending_system_commands(),
-                )
-            } else {
-                (Vec::new(), Vec::new())
-            };
+        if let Some(runner) = self.runner.as_mut() {
+            runner.flush_pending_data();
+            startup_system_events = runner.drain_pending_system_events();
+            startup_system_commands = runner.drain_pending_system_commands();
+        }
 
         match self.connect_exec_phase(connection_deadline).await {
             Err(e) => {
@@ -527,6 +522,14 @@ impl LiveNode {
                     .await?;
                 return Ok(());
             }
+        }
+
+        // Reconciliation needs the instruments that execution clients send during connect
+        self.flush_runner_data();
+
+        if let Some(reason) = self.startup_abort_reason() {
+            self.abort_startup(reason).await?;
+            return Ok(());
         }
 
         if let Err(e) = self.perform_startup_reconciliation().await {
@@ -556,10 +559,7 @@ impl LiveNode {
         self.process_system_events(startup_system_events);
         self.process_system_commands(startup_system_commands);
 
-        if !self.finish_startup_trader(None).await? {
-            return Ok(());
-        }
-
+        self.finish_startup_trader(None).await?;
         Ok(())
     }
 
@@ -652,6 +652,12 @@ impl LiveNode {
 
         self.runner = Some(runner);
         processed
+    }
+
+    fn flush_runner_data(&mut self) {
+        if let Some(runner) = self.runner.as_mut() {
+            runner.flush_pending_data_once();
+        }
     }
 
     fn drain_runner_pending(&mut self) -> usize {
