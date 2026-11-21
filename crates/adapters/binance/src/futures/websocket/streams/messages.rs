@@ -1084,14 +1084,14 @@ mod tests {
         include_str!("../../../../test_data/futures/user_data_json/account_update_funding_fee_usdm.json"),
         "BTCUSDT",
         "USDT",
-        [1786060800001, 1786060800000],
+        [1_786_060_800_001, 1_786_060_800_000],
         [dec!(1024.12345678), dec!(1010.87654321), dec!(-0.01234567)]
     )]
     #[case(
         include_str!("../../../../test_data/futures/user_data_json/account_update_funding_fee_coinm.json"),
         "BTCUSD_PERP",
         "BTC",
-        [1786089600002, 1786089600000],
+        [1_786_089_600_002, 1_786_089_600_000],
         [dec!(1.23456789), dec!(1.12345678), dec!(0.00001234)]
     )]
     fn test_account_update_funding_fee_symbol(

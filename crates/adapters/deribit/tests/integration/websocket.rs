@@ -301,8 +301,8 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                 "id": id,
                                 "result": subscribed_channels,
                                 "testnet": true,
-                                "usIn": 1699999999000000_u64,
-                                "usOut": 1699999999001000_u64,
+                                "usIn": 1_699_999_999_000_000_u64,
+                                "usOut": 1_699_999_999_001_000_u64,
                                 "usDiff": 1000
                             });
 
@@ -512,8 +512,8 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                 "enabled_features": []
                             },
                             "testnet": true,
-                            "usIn": 1699999999000000_u64,
-                            "usOut": 1699999999001000_u64,
+                            "usIn": 1_699_999_999_000_000_u64,
+                            "usOut": 1_699_999_999_001_000_u64,
                             "usDiff": 1000
                         });
 
@@ -602,8 +602,8 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                 "id": id,
                                 "result": subscribed_channels,
                                 "testnet": true,
-                                "usIn": 1699999999000000_u64,
-                                "usOut": 1699999999001000_u64,
+                                "usIn": 1_699_999_999_000_000_u64,
+                                "usOut": 1_699_999_999_001_000_u64,
                                 "usDiff": 1000
                             });
 
@@ -1995,9 +1995,9 @@ async fn test_subscription_batches_cover_initial_burst_and_reconnect(
     let channels: Vec<String> = (0..1500)
         .map(|i| {
             if authenticated {
-                format!("user.changes.BTC-27DEC30-{}-C.100ms", 100000 + i)
+                format!("user.changes.BTC-27DEC30-{}-C.100ms", 100_000 + i)
             } else {
-                format!("ticker.BTC-27DEC30-{}-C.100ms", 100000 + i)
+                format!("ticker.BTC-27DEC30-{}-C.100ms", 100_000 + i)
             }
         })
         .collect();
@@ -2197,7 +2197,7 @@ async fn test_adjacent_subscription_burst_reduces_wire_requests() {
     );
     cmd_tx.send(HandlerCommand::SetClient(ws_client)).unwrap();
     let channels: Vec<String> = (0..1500)
-        .map(|i| format!("ticker.BTC-27DEC30-{}-C.100ms", 100000 + i))
+        .map(|i| format!("ticker.BTC-27DEC30-{}-C.100ms", 100_000 + i))
         .collect();
 
     for channel in &channels {
@@ -2303,7 +2303,7 @@ async fn test_close_during_subscription_batches_sends_close_frame() {
     );
     cmd_tx.send(HandlerCommand::SetClient(ws_client)).unwrap();
     let channels: Vec<String> = (0..15000)
-        .map(|i| format!("user.changes.BTC-27DEC30-{}-C.100ms", 100000 + i))
+        .map(|i| format!("user.changes.BTC-27DEC30-{}-C.100ms", 100_000 + i))
         .collect();
     cmd_tx.send(HandlerCommand::Subscribe { channels }).unwrap();
 
@@ -2386,9 +2386,9 @@ async fn test_subscription_batches_exhaust_named_quota(
     let channels: Vec<String> = (0..11000)
         .map(|i| {
             if private {
-                format!("user.changes.BTC-27DEC30-{}-C.100ms", 100000 + i)
+                format!("user.changes.BTC-27DEC30-{}-C.100ms", 100_000 + i)
             } else {
-                format!("ticker.BTC-27DEC30-{}-C.100ms", 100000 + i)
+                format!("ticker.BTC-27DEC30-{}-C.100ms", 100_000 + i)
             }
         })
         .collect();

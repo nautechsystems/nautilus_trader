@@ -922,8 +922,8 @@ mod tests {
             open_interest: dec!(1000),
             atomic_resolution: -10,
             quantum_conversion_exponent: -9,
-            subticks_per_tick: 1000000,
-            step_base_quantums: 1000000,
+            subticks_per_tick: 1_000_000,
+            step_base_quantums: 1_000_000,
             is_reduce_only: false,
         }
     }
@@ -954,9 +954,9 @@ mod tests {
                 .size_increment(Quantity::new(0.001, 8))
                 .multiplier(Quantity::new(1.0, 0))
                 .lot_size(Quantity::new(0.001, 8))
-                .max_quantity(Quantity::new(100000.0, 8))
+                .max_quantity(Quantity::new(100_000.0, 8))
                 .min_quantity(Quantity::new(0.001, 8))
-                .max_price(Price::new(1000000.0, 2))
+                .max_price(Price::new(1_000_000.0, 2))
                 .min_price(Price::new(0.01, 2))
                 .margin_init(rust_decimal_macros::dec!(0.05))
                 .margin_maint(rust_decimal_macros::dec!(0.03))

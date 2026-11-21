@@ -193,7 +193,7 @@ mod tests {
         );
         assert_eq!(
             event.amount0,
-            I256::try_from(2291588381489685660_i128).unwrap()
+            I256::try_from(2_291_588_381_489_685_660_i128).unwrap()
         );
         let expected_amount1 = I256::from_raw(
             U256::from_str_radix(
@@ -208,7 +208,7 @@ mod tests {
         let expected_liquidity = u128::from_str_radix("310fdcabce7b0096dfc84", 16).unwrap();
         assert_eq!(event.liquidity, expected_liquidity);
         assert_eq!(event.tick, -63769);
-        assert_eq!(event.block_number, 105495649);
+        assert_eq!(event.block_number, 105_495_649);
     }
 
     #[rstest]
@@ -227,7 +227,7 @@ mod tests {
         );
         assert_eq!(
             event.amount0,
-            I256::try_from(2291588381489685660_i128).unwrap()
+            I256::try_from(2_291_588_381_489_685_660_i128).unwrap()
         );
         let expected_amount1 = I256::from_raw(
             U256::from_str_radix(
@@ -238,7 +238,7 @@ mod tests {
         );
         assert_eq!(event.amount1, expected_amount1);
         assert_eq!(event.tick, -63769);
-        assert_eq!(event.block_number, 105495649);
+        assert_eq!(event.block_number, 105_495_649);
     }
 
     #[rstest]

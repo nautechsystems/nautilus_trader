@@ -1079,7 +1079,7 @@ mod tests {
         assert_eq!(msg.low_price, "16456.51000000");
         assert_eq!(msg.volume, "122474.816");
         assert_eq!(msg.quote_volume, "2036102085.69746400");
-        assert_eq!(msg.num_trades, 142853);
+        assert_eq!(msg.num_trades, 142_853);
     }
 
     #[rstest]

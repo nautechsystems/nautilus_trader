@@ -33,7 +33,7 @@ pub static AERODROME_SLIPSTREAM: LazyLock<DexExtended> = LazyLock::new(|| {
         chains::BASE.clone(),
         DexType::AerodromeSlipstream,
         "0x420DD381b31aEf6683db6B902084cB0FFECe40Da",
-        3200559,
+        3_200_559,
         AmmType::CLAMM,
         "",
         "Swap(address,address,int256,int256,uint160,uint128,int24)",

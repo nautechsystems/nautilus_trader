@@ -1119,7 +1119,7 @@ fn test_decode_bbo_1s_msg() {
     assert_eq!(quote.bid_size, quantity_from_str("18"));
     assert_eq!(quote.ask_size, quantity_from_str("13"));
     assert_eq!(quote.ts_event, msg.ts_recv);
-    assert_eq!(quote.ts_event, 1609113600000000000);
+    assert_eq!(quote.ts_event, 1_609_113_600_000_000_000);
     assert_eq!(quote.ts_init, 0);
 }
 
@@ -1141,7 +1141,7 @@ fn test_decode_bbo_1m_msg() {
     assert_eq!(quote.bid_size, quantity_from_str("18"));
     assert_eq!(quote.ask_size, quantity_from_str("13"));
     assert_eq!(quote.ts_event, msg.ts_recv);
-    assert_eq!(quote.ts_event, 1609113600000000000);
+    assert_eq!(quote.ts_event, 1_609_113_600_000_000_000);
     assert_eq!(quote.ts_init, 0);
 }
 

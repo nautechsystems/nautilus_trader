@@ -1125,8 +1125,8 @@ mod tests {
             first_balances,
             vec![
                 AccountBalance::from_total_and_free(
-                    Decimal::new(100050, 2),
-                    Decimal::new(100050, 2),
+                    Decimal::new(100_050, 2),
+                    Decimal::new(100_050, 2),
                     Currency::USD()
                 )
                 .unwrap()
@@ -1137,8 +1137,8 @@ mod tests {
             second_balances,
             vec![
                 AccountBalance::from_total_and_free(
-                    Decimal::new(110025, 2),
-                    Decimal::new(110025, 2),
+                    Decimal::new(110_025, 2),
+                    Decimal::new(110_025, 2),
                     Currency::USD()
                 )
                 .unwrap()
@@ -1172,8 +1172,8 @@ mod tests {
             balances,
             vec![
                 AccountBalance::from_total_and_free(
-                    Decimal::new(110025, 2),
-                    Decimal::new(110025, 2),
+                    Decimal::new(110_025, 2),
+                    Decimal::new(110_025, 2),
                     Currency::USD()
                 )
                 .unwrap()
@@ -1416,7 +1416,10 @@ mod tests {
         )
         .await;
 
-        assert_eq!(seen, vec![Decimal::new(100050, 2), Decimal::new(110025, 2)]);
+        assert_eq!(
+            seen,
+            vec![Decimal::new(100_050, 2), Decimal::new(110_025, 2)]
+        );
         assert_eq!(open_calls, 2);
     }
 

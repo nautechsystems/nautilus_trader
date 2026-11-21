@@ -125,9 +125,9 @@ mod tests {
                 "max_delay_ms": 10000,
                 "backoff_factor": 2.0,
                 "jitter_ms": 0,
-                "operation_timeout_ms": 330000,
+                "operation_timeout_ms": 330_000,
                 "immediate_first": false,
-                "max_elapsed_ms": 600000,
+                "max_elapsed_ms": 600_000,
             })
         );
     }

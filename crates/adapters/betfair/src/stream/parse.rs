@@ -1633,7 +1633,7 @@ mod tests {
 
     #[rstest]
     fn test_make_trade_tick() {
-        let instrument_id = make_instrument_id("1.180737206", 19248890, Decimal::ZERO);
+        let instrument_id = make_instrument_id("1.180737206", 19_248_890, Decimal::ZERO);
         let tick = make_trade_tick(
             instrument_id,
             Price::new(2.42, BETFAIR_PRICE_PRECISION),
@@ -2014,7 +2014,7 @@ mod tests {
             status: StreamingOrderStatus::ExecutionComplete,
             pt: Some(StreamingPersistenceType::MarketOnClose),
             ot: StreamingOrderType::MarketOnClose,
-            pd: 1789423573000,
+            pd: 1_789_423_573_000,
             bsp: Some(Decimal::new(2, 0)),
             rfo: None,
             rfs: None,
@@ -2141,7 +2141,7 @@ mod tests {
 
     #[rstest]
     fn test_make_fill_report() {
-        let instrument_id = make_instrument_id("1.180604981", 1209555, Decimal::ZERO);
+        let instrument_id = make_instrument_id("1.180604981", 1_209_555, Decimal::ZERO);
         let fill = make_fill_report(
             AccountId::from("BETFAIR-001"),
             instrument_id,
@@ -2460,7 +2460,7 @@ mod tests {
 
         assert_eq!(runner.race_id, "28587288.1650");
         assert_eq!(runner.market_id, "1.1234567");
-        assert_eq!(runner.selection_id, 7390417);
+        assert_eq!(runner.selection_id, 7_390_417);
         assert!((runner.latitude - 51.4189543).abs() < 1e-6);
         assert!((runner.longitude - (-0.4058491)).abs() < 1e-6);
         assert!((runner.speed - 17.8).abs() < 1e-6);
@@ -2498,7 +2498,10 @@ mod tests {
         assert!((progress.progress - 87.5).abs() < 1e-6);
 
         let order: Vec<i64> = serde_json::from_str(&progress.order).unwrap();
-        assert_eq!(order, vec![7390417, 5600338, 11527189, 6395118, 8706072]);
+        assert_eq!(
+            order,
+            vec![7_390_417, 5_600_338, 11_527_189, 6_395_118, 8_706_072]
+        );
 
         let jumps: Vec<serde_json::Value> = serde_json::from_str(&progress.jumps).unwrap();
         assert_eq!(jumps.len(), 2);
@@ -2569,8 +2572,8 @@ mod tests {
             .collect();
 
         assert_eq!(runners.len(), 5);
-        assert_eq!(runners[0].selection_id, 35467839);
-        assert_eq!(runners[4].selection_id, 41694785);
+        assert_eq!(runners[0].selection_id, 35_467_839);
+        assert_eq!(runners[4].selection_id, 41_694_785);
         assert!((runners[0].speed - 16.33).abs() < 1e-6);
         assert!((runners[4].speed - 17.11).abs() < 1e-6);
     }
@@ -2661,20 +2664,20 @@ mod tests {
     #[rstest]
     fn test_parse_betfair_ticker_all_fields() {
         let rc = runner_change_with_ticker(
-            9249757,
+            9_249_757,
             Some(Decimal::new(55, 1)),
-            Some(Decimal::new(189032, 2)),
+            Some(Decimal::new(189_032, 2)),
             Some(Decimal::new(568, 2)),
             Some(Decimal::new(573, 2)),
         );
         let ts = UnixNanos::from(1_000_000_000u64);
-        let instrument_id = make_instrument_id("1.185781465", 9249757, Decimal::ZERO);
+        let instrument_id = make_instrument_id("1.185781465", 9_249_757, Decimal::ZERO);
 
         let ticker = parse_betfair_ticker(instrument_id, &rc, ts, ts).unwrap();
 
         assert_eq!(ticker.instrument_id, instrument_id);
         assert_decimal_option_eq(ticker.last_traded_price, Decimal::new(55, 1));
-        assert_decimal_option_eq(ticker.traded_volume, Decimal::new(189032, 2));
+        assert_decimal_option_eq(ticker.traded_volume, Decimal::new(189_032, 2));
         assert_decimal_option_eq(ticker.starting_price_near, Decimal::new(568, 2));
         assert_decimal_option_eq(ticker.starting_price_far, Decimal::new(573, 2));
     }
@@ -2682,28 +2685,28 @@ mod tests {
     #[rstest]
     fn test_parse_betfair_ticker_partial_fields() {
         let rc = runner_change_with_ticker(
-            9249757,
+            9_249_757,
             Some(Decimal::new(55, 1)),
-            Some(Decimal::new(189032, 2)),
+            Some(Decimal::new(189_032, 2)),
             None,
             None,
         );
         let ts = UnixNanos::from(1_000_000_000u64);
-        let instrument_id = make_instrument_id("1.185781465", 9249757, Decimal::ZERO);
+        let instrument_id = make_instrument_id("1.185781465", 9_249_757, Decimal::ZERO);
 
         let ticker = parse_betfair_ticker(instrument_id, &rc, ts, ts).unwrap();
 
         assert_decimal_option_eq(ticker.last_traded_price, Decimal::new(55, 1));
-        assert_decimal_option_eq(ticker.traded_volume, Decimal::new(189032, 2));
+        assert_decimal_option_eq(ticker.traded_volume, Decimal::new(189_032, 2));
         assert!(ticker.starting_price_near.is_none());
         assert!(ticker.starting_price_far.is_none());
     }
 
     #[rstest]
     fn test_parse_betfair_ticker_no_fields_returns_none() {
-        let rc = runner_change_with_ticker(9249757, None, None, None, None);
+        let rc = runner_change_with_ticker(9_249_757, None, None, None, None);
         let ts = UnixNanos::from(1_000_000_000u64);
-        let instrument_id = make_instrument_id("1.185781465", 9249757, Decimal::ZERO);
+        let instrument_id = make_instrument_id("1.185781465", 9_249_757, Decimal::ZERO);
 
         assert!(parse_betfair_ticker(instrument_id, &rc, ts, ts).is_none());
     }
@@ -2711,14 +2714,14 @@ mod tests {
     #[rstest]
     fn test_parse_betfair_ticker_only_tv() {
         let rc =
-            runner_change_with_ticker(40273293, None, Some(Decimal::new(320115, 2)), None, None);
+            runner_change_with_ticker(40_273_293, None, Some(Decimal::new(320_115, 2)), None, None);
         let ts = UnixNanos::from(1_000_000_000u64);
-        let instrument_id = make_instrument_id("1.185781465", 40273293, Decimal::ZERO);
+        let instrument_id = make_instrument_id("1.185781465", 40_273_293, Decimal::ZERO);
 
         let ticker = parse_betfair_ticker(instrument_id, &rc, ts, ts).unwrap();
 
         assert!(ticker.last_traded_price.is_none());
-        assert_decimal_option_eq(ticker.traded_volume, Decimal::new(320115, 2));
+        assert_decimal_option_eq(ticker.traded_volume, Decimal::new(320_115, 2));
         assert!(ticker.starting_price_near.is_none());
         assert!(ticker.starting_price_far.is_none());
     }
@@ -2734,29 +2737,29 @@ mod tests {
             let rc_list = change.rc.as_ref().unwrap();
 
             // Runner 9249757 has ltp=5.5, tv=1890.32, spn=5.68, spf=5.73
-            let rc = rc_list.iter().find(|r| r.id == 9249757).unwrap();
+            let rc = rc_list.iter().find(|r| r.id == 9_249_757).unwrap();
             let instrument_id = make_instrument_id(&change.id, rc.id, Decimal::ZERO);
             let ts = parse_millis_timestamp(mcm.pt);
 
             let ticker = parse_betfair_ticker(instrument_id, rc, ts, ts).unwrap();
 
             assert_decimal_option_eq(ticker.last_traded_price, Decimal::new(55, 1));
-            assert_decimal_option_eq(ticker.traded_volume, Decimal::new(189032, 2));
+            assert_decimal_option_eq(ticker.traded_volume, Decimal::new(189_032, 2));
             assert_decimal_option_eq(ticker.starting_price_near, Decimal::new(568, 2));
             assert_decimal_option_eq(ticker.starting_price_far, Decimal::new(573, 2));
 
             // Runner 40273293 has ltp=2.1, tv=3201.15 but no spn/spf
-            let rc2 = rc_list.iter().find(|r| r.id == 40273293).unwrap();
+            let rc2 = rc_list.iter().find(|r| r.id == 40_273_293).unwrap();
             let instrument_id2 = make_instrument_id(&change.id, rc2.id, Decimal::ZERO);
             let ticker2 = parse_betfair_ticker(instrument_id2, rc2, ts, ts).unwrap();
 
             assert_decimal_option_eq(ticker2.last_traded_price, Decimal::new(21, 1));
-            assert_decimal_option_eq(ticker2.traded_volume, Decimal::new(320115, 2));
+            assert_decimal_option_eq(ticker2.traded_volume, Decimal::new(320_115, 2));
             assert!(ticker2.starting_price_near.is_none());
             assert!(ticker2.starting_price_far.is_none());
 
             // Runner 23678734 has only tv=0, no ltp
-            let rc3 = rc_list.iter().find(|r| r.id == 23678734).unwrap();
+            let rc3 = rc_list.iter().find(|r| r.id == 23_678_734).unwrap();
             let instrument_id3 = make_instrument_id(&change.id, rc3.id, Decimal::ZERO);
             let ticker3 = parse_betfair_ticker(instrument_id3, rc3, ts, ts).unwrap();
 
@@ -2787,9 +2790,10 @@ mod tests {
                 .map(|p| (p.instrument_id.to_string(), p.bsp))
                 .collect();
 
-            let id_winner = make_instrument_id("1.185781465", 9249757, Decimal::ZERO).to_string();
-            let id_placed = make_instrument_id("1.185781465", 40273293, Decimal::ZERO).to_string();
-            let id_loser = make_instrument_id("1.185781465", 11120000, Decimal::ZERO).to_string();
+            let id_winner = make_instrument_id("1.185781465", 9_249_757, Decimal::ZERO).to_string();
+            let id_placed =
+                make_instrument_id("1.185781465", 40_273_293, Decimal::ZERO).to_string();
+            let id_loser = make_instrument_id("1.185781465", 11_120_000, Decimal::ZERO).to_string();
 
             assert_eq!(bsp_map[&id_winner], Decimal::new(573, 2));
             assert_eq!(bsp_map[&id_placed], Decimal::new(214, 2));
@@ -2877,7 +2881,7 @@ mod tests {
         let rc_list = change.rc.as_ref().unwrap();
 
         // Runner 9249757 has spb and spl arrays
-        let rc = rc_list.iter().find(|r| r.id == 9249757).unwrap();
+        let rc = rc_list.iter().find(|r| r.id == 9_249_757).unwrap();
         let instrument_id = make_instrument_id(&change.id, rc.id, Decimal::ZERO);
         let ts = parse_millis_timestamp(mcm.pt);
 
@@ -2964,10 +2968,12 @@ mod tests {
                 .map(|c| (c.instrument_id.to_string(), c.close_price))
                 .collect();
 
-            let id_winner = make_instrument_id("1.185781465", 9249757, Decimal::ZERO).to_string();
-            let id_placed = make_instrument_id("1.185781465", 40273293, Decimal::ZERO).to_string();
-            let id_loser = make_instrument_id("1.185781465", 11120000, Decimal::ZERO).to_string();
-            let id_removed = make_instrument_id("1.185781465", 37433527, Decimal::ZERO).to_string();
+            let id_winner = make_instrument_id("1.185781465", 9_249_757, Decimal::ZERO).to_string();
+            let id_placed =
+                make_instrument_id("1.185781465", 40_273_293, Decimal::ZERO).to_string();
+            let id_loser = make_instrument_id("1.185781465", 11_120_000, Decimal::ZERO).to_string();
+            let id_removed =
+                make_instrument_id("1.185781465", 37_433_527, Decimal::ZERO).to_string();
 
             assert_eq!(close_map[&id_winner], Price::from("1.00"));
             assert_eq!(close_map[&id_placed], Price::from("1.00"));
@@ -3025,7 +3031,7 @@ mod tests {
             status: StreamingOrderStatus::Executable,
             pt: Some(StreamingPersistenceType::Lapse),
             ot: StreamingOrderType::Limit,
-            pd: 1616568581000,
+            pd: 1_616_568_581_000,
             bsp: None,
             rfo: None,
             rfs: None,

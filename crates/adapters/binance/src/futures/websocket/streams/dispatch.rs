@@ -3574,7 +3574,7 @@ mod tests {
             (0, "0.001", "0.001", BinanceOrderStatus::PartiallyFilled),
             (1, "0.003", "0.004", BinanceOrderStatus::Filled),
         ] {
-            trade.order.trade_id = 12345678 + index;
+            trade.order.trade_id = 12_345_678 + index;
             trade.order.last_filled_qty = last_qty.to_owned();
             trade.order.cumulative_filled_qty = cumulative_qty.to_owned();
             trade.order.order_status = status;
@@ -3600,7 +3600,10 @@ mod tests {
                 panic!("Expected each actual fill exactly once");
             };
 
-            assert_eq!(fill.trade_id, TradeId::from((12345678 + index).to_string()));
+            assert_eq!(
+                fill.trade_id,
+                TradeId::from((12_345_678 + index).to_string())
+            );
             assert_eq!(fill.last_qty, Quantity::from(last_qty));
             let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
             let event = reconcile_fill_report(&order, fill, &instrument, ts_init, false).unwrap();
@@ -4620,7 +4623,7 @@ mod tests {
             Currency::USDT(),
             LiquiditySide::Taker,
             event.event_id,
-            UnixNanos::from_millis(1568879465651),
+            UnixNanos::from_millis(1_568_879_465_651),
             event.ts_init,
             false,
             None,
@@ -5389,7 +5392,7 @@ mod tests {
             &seen_trade_ids,
         );
         assert!(rx.try_recv().is_err());
-        msg.trade_id = 12345679;
+        msg.trade_id = 12_345_679;
         dispatch_trade_lite(
             &msg,
             &emitter,
@@ -5422,7 +5425,7 @@ mod tests {
             Currency::USDT(),
             LiquiditySide::Maker,
             event.event_id,
-            UnixNanos::from_millis(1568879465651),
+            UnixNanos::from_millis(1_568_879_465_651),
             event.ts_init,
             false,
             position_id,
@@ -5916,7 +5919,7 @@ mod tests {
             fill.commission,
             Some(Money::from_decimal(Decimal::new(1, 2), Currency::BTC()).unwrap())
         );
-        assert_eq!(fill.last_px.as_decimal(), Decimal::new(710050, 2));
+        assert_eq!(fill.last_px.as_decimal(), Decimal::new(710_050, 2));
         assert_eq!(fill.last_qty, Quantity::from("1"));
         assert_eq!(fill.instrument_id, InstrumentId::from(instrument_id));
         assert_eq!(fill.trade_id, TradeId::from("12345678"));

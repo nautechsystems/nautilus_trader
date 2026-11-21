@@ -2093,7 +2093,7 @@ mod tests {
     fn test_deserialize_initial_margin_requirement_response() {
         let json = include_str!("../../test_data/http_initial_margin_requirement.json");
         let response: AxInitialMarginRequirementResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(response.im, Decimal::new(125050, 2));
+        assert_eq!(response.im, Decimal::new(125_050, 2));
     }
 
     #[rstest]

@@ -4960,7 +4960,7 @@ async fn test_fill_report_task_finishes_after_stream_fill_without_replay() {
     let mut stream_fill = load_json_fixture("stream/ocm_harness_fill.json");
     stream_fill["id"] = Value::from(2);
     stream_fill["oc"][0]["id"] = Value::from("1.180575118");
-    stream_fill["oc"][0]["orc"][0]["id"] = Value::from(217709);
+    stream_fill["oc"][0]["orc"][0]["id"] = Value::from(217_709);
     let unmatched = &mut stream_fill["oc"][0]["orc"][0]["uo"][0];
     unmatched["id"] = Value::from(bet_id);
     unmatched["p"] = Value::from(1.9);

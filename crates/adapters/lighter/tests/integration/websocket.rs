@@ -483,7 +483,7 @@ fn book_snapshot_frame_for_market(market_index: i64) -> Value {
 fn book_update_frame_for_market(market_index: i64) -> Value {
     let mut frame = json!({
         "channel": "order_book:0",
-        "last_updated_at": 1778138389656150_u64,
+        "last_updated_at": 1_778_138_389_656_150_u64,
         "offset": 2165,
         "order_book": {
             "code": 0,
@@ -496,11 +496,11 @@ fn book_update_frame_for_market(market_index: i64) -> Value {
                 {"price": "1999.00", "size": "0.0100"}
             ],
             "offset": 2165,
-            "nonce": 904846,
-            "last_updated_at": 1778138389656150_u64,
-            "begin_nonce": 904845
+            "nonce": 904_846,
+            "last_updated_at": 1_778_138_389_656_150_u64,
+            "begin_nonce": 904_845
         },
-        "timestamp": 1778138583602_u64,
+        "timestamp": 1_778_138_583_602_u64,
         "type": "update/order_book"
     });
     frame["channel"] = json!(format!("order_book:{market_index}"));
@@ -512,7 +512,7 @@ fn book_update_frame_with_cached_changes() -> Value {
 }
 
 fn assert_depth_matches_cached_changes(depth: &OrderBookDepth) {
-    assert_eq!(depth.sequence, 904846);
+    assert_eq!(depth.sequence, 904_846);
     assert_eq!(depth.bids[0].price, Price::from("2000.00"));
     assert_eq!(depth.bids[0].size, Quantity::from("0.0500"));
     assert_eq!(depth.bids[1].price, Price::from("1999.00"));
@@ -1403,7 +1403,7 @@ async fn test_order_book_depth_nonce_gap_drops_update_and_resubscribes() {
         panic!("expected snapshot Depth, was {snapshot_event:?}");
     };
     assert_eq!(depth.instrument_id, id);
-    assert_eq!(depth.sequence, 904845);
+    assert_eq!(depth.sequence, 904_845);
 
     state
         .enqueue_push(load_json("ws_order_book_update.json"))
@@ -1428,7 +1428,7 @@ async fn test_order_book_depth_nonce_gap_drops_update_and_resubscribes() {
     };
 
     assert_eq!(depth.instrument_id, id);
-    assert_eq!(depth.sequence, 904845);
+    assert_eq!(depth.sequence, 904_845);
 
     let order_book_subs = state
         .subscribes()

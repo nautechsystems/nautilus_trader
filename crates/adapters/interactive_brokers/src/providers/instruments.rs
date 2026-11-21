@@ -3210,7 +3210,7 @@ mod tests {
         let instrument = create_test_instrument(instrument_id);
 
         let contract = Contract {
-            contract_id: 265598,
+            contract_id: 265_598,
             symbol: ibapi::contracts::Symbol::from("AAPL"),
             security_type: SecurityType::Stock,
             exchange: Exchange::from("SMART"),
@@ -3244,7 +3244,7 @@ mod tests {
                 .resolve_contract_for_instrument(instrument_id)
                 .unwrap()
                 .contract_id,
-            265598
+            265_598
         );
         assert_eq!(
             new_provider
@@ -3252,7 +3252,7 @@ mod tests {
                 .unwrap()
                 .contract
                 .contract_id,
-            265598
+            265_598
         );
     }
 
@@ -3277,7 +3277,7 @@ mod tests {
             InstrumentId::new(Symbol::from("BTCUSDT"), Venue::from("BINANCE"));
 
         let contract = Contract {
-            contract_id: 265598,
+            contract_id: 265_598,
             symbol: ibapi::contracts::Symbol::from("AAPL"),
             security_type: SecurityType::Stock,
             exchange: Exchange::from("SMART"),
@@ -3303,14 +3303,14 @@ mod tests {
                 .resolve_contract_for_instrument(ib_instrument_id)
                 .unwrap()
                 .contract_id,
-            265598
+            265_598
         );
         assert_eq!(provider.get_price_magnifier(&ib_instrument_id), 100);
     }
 
     fn create_future_contract_with_expiry_time() -> Contract {
         Contract {
-            contract_id: 515416632,
+            contract_id: 515_416_632,
             symbol: ibapi::contracts::Symbol::from("ES"),
             security_type: SecurityType::Future,
             exchange: Exchange::from("CME"),
@@ -3454,7 +3454,7 @@ mod tests {
         let instrument_id = InstrumentId::from("AAPL.NASDAQ");
 
         let contract = Contract {
-            contract_id: 265598,
+            contract_id: 265_598,
             symbol: ibapi::contracts::Symbol::from("AAPL"),
             security_type: SecurityType::Stock,
             exchange: Exchange::from("SMART"),
@@ -3489,7 +3489,7 @@ mod tests {
         let instrument_id = InstrumentId::from("AAPL.NASDAQ");
 
         let contract = Contract {
-            contract_id: 265598,
+            contract_id: 265_598,
             ..Default::default()
         };
 
@@ -3534,7 +3534,7 @@ mod tests {
         );
 
         let contract = Contract {
-            contract_id: 815824252,
+            contract_id: 815_824_252,
             symbol: ibapi::contracts::Symbol::from("ZC"),
             security_type: SecurityType::Future,
             exchange: Exchange::from("CBOT"),
@@ -3647,7 +3647,7 @@ mod tests {
     #[rstest]
     fn test_provider_rejects_duplicate_contracts_before_loading() {
         let config = serde_json::from_value(serde_json::json!({
-            "load_contracts": [{"conId": 265598}, {"conId": 265598}]
+            "load_contracts": [{"conId": 265_598}, {"conId": 265_598}]
         }))
         .unwrap();
         let error = InteractiveBrokersInstrumentProvider::new(config).unwrap_err();

@@ -28,7 +28,7 @@ pub static UNISWAP_V4: LazyLock<DexExtended> = LazyLock::new(|| {
         chains::BASE.clone(),
         DexType::UniswapV4,
         "0x498581fF718922c3f8e6A244956aF099B2652b2b",
-        25350988,
+        25_350_988,
         AmmType::CLAMEnhanced,
         "Initialize(bytes32,address,address,uint24,int24,address,uint160,int24)",
         "",

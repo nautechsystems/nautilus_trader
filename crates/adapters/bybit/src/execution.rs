@@ -3391,6 +3391,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(clippy::unreadable_literal, reason = "Bybit error codes")]
     fn test_cancel_http_failure_classification_matches_policy() {
         let venue_reject = anyhow::Error::from(BybitHttpError::BybitError {
             error_code: 110001,
@@ -3470,6 +3471,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(clippy::unreadable_literal, reason = "Bybit error codes")]
     fn test_modify_http_failure_classification_matches_policy() {
         let venue_reject = anyhow::Error::from(BybitHttpError::BybitError {
             error_code: 110003,
@@ -4346,7 +4348,7 @@ mod tests {
                             "retMsg": "fee rate request failed",
                             "result": {},
                             "retExtInfo": {},
-                            "time": 1697673900000i64
+                            "time": 1_697_673_900_000_i64
                         }))
                     } else {
                         Json(response)
@@ -4723,6 +4725,8 @@ mod tests {
             drop(task.finish);
         }
 
+        #[allow(clippy::unreadable_literal, reason = "Bybit error codes")]
+        let ret_code = 110001;
         let json = crate::common::testing::load_test_json("ws_order_response.json");
         let mut response: serde_json::Value = serde_json::from_str(&json).unwrap();
         response["op"] = serde_json::json!(match operation {
@@ -4730,7 +4734,7 @@ mod tests {
             PendingOperation::Amend => "order.amend",
             PendingOperation::Place => unreachable!(),
         });
-        response["retCode"] = serde_json::json!(110001);
+        response["retCode"] = serde_json::json!(ret_code);
         response["retMsg"] = serde_json::json!("Order does not exist.");
         response["reqId"] = serde_json::json!("late-command");
         response["data"]["orderLinkId"] = serde_json::json!(client_order_id.as_str());
@@ -4876,7 +4880,7 @@ mod tests {
     async fn test_order_report_collection_error_preserves_identity(#[case] single: bool) {
         let response = serde_json::json!({
             "retCode": 10001, "retMsg": "report collection failure", "result": {"list": []},
-            "retExtInfo": {}, "time": 1761355905610u64,
+            "retExtInfo": {}, "time": 1_761_355_905_610_u64,
         });
         let (client, _, server) = order_report_client(response).await;
         let client_order_id = ClientOrderId::from("client-open-1");
@@ -5228,8 +5232,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case::in_window(1761355905606, false)]
-    #[case::before_window(1761355905605, true)]
+    #[case::in_window(1_761_355_905_606, false)]
+    #[case::before_window(1_761_355_905_605, true)]
     #[tokio::test]
     async fn test_mass_status_historical_order_completeness(
         #[case] updated_ms: u64,
@@ -5250,7 +5254,7 @@ mod tests {
         fills["result"]["list"] = serde_json::json!([]);
         fills["result"]["nextPageCursor"] = serde_json::json!("");
         let (mut client, _, server) = mass_status_client(fills, false, Some(orders)).await;
-        let cutoff = UnixNanos::from(1761355905606 * NANOSECONDS_IN_MILLISECOND);
+        let cutoff = UnixNanos::from(1_761_355_905_606 * NANOSECONDS_IN_MILLISECOND);
         let now = cutoff + DurationNanos::try_from_mins(5).unwrap();
         client.clock = Box::leak(Box::new(AtomicTime::new(
             false,
@@ -5342,17 +5346,32 @@ mod tests {
     }
 
     #[rstest]
-    #[case::bounded_miss(Some(5), None, 1672282722429, false)]
-    #[case::bounded_excluded(Some(5), Some("ETHUSDT-LINEAR.BYBIT"), 1672282722429, true)]
-    #[case::before_window(Some(5), None, 1672282722428, true)]
-    #[case::unbounded_miss(None, None, 1672282722429, false)]
-    #[case::before_retention_limit(Some(1_439), Some("ETHUSDT-LINEAR.BYBIT"), 1672282722429, true)]
-    #[case::retention_limit(Some(1_440), Some("ETHUSDT-LINEAR.BYBIT"), 1672282722429, false)]
-    #[case::after_retention_limit(Some(1_441), Some("ETHUSDT-LINEAR.BYBIT"), 1672282722429, false)]
-    #[case::two_days(Some(2_880), Some("ETHUSDT-LINEAR.BYBIT"), 1672282722429, false)]
-    #[case::before_venue_limit(Some(10_079), Some("ETHUSDT-LINEAR.BYBIT"), 1672282722429, false)]
-    #[case::venue_limit(Some(10_080), Some("ETHUSDT-LINEAR.BYBIT"), 1672282722429, false)]
-    #[case::venue_window(Some(10_081), Some("ETHUSDT-LINEAR.BYBIT"), 1672282722429, false)]
+    #[case::bounded_miss(Some(5), None, 1_672_282_722_429, false)]
+    #[case::bounded_excluded(Some(5), Some("ETHUSDT-LINEAR.BYBIT"), 1_672_282_722_429, true)]
+    #[case::before_window(Some(5), None, 1_672_282_722_428, true)]
+    #[case::unbounded_miss(None, None, 1_672_282_722_429, false)]
+    #[case::before_retention_limit(
+        Some(1_439),
+        Some("ETHUSDT-LINEAR.BYBIT"),
+        1_672_282_722_429,
+        true
+    )]
+    #[case::retention_limit(Some(1_440), Some("ETHUSDT-LINEAR.BYBIT"), 1_672_282_722_429, false)]
+    #[case::after_retention_limit(
+        Some(1_441),
+        Some("ETHUSDT-LINEAR.BYBIT"),
+        1_672_282_722_429,
+        false
+    )]
+    #[case::two_days(Some(2_880), Some("ETHUSDT-LINEAR.BYBIT"), 1_672_282_722_429, false)]
+    #[case::before_venue_limit(
+        Some(10_079),
+        Some("ETHUSDT-LINEAR.BYBIT"),
+        1_672_282_722_429,
+        false
+    )]
+    #[case::venue_limit(Some(10_080), Some("ETHUSDT-LINEAR.BYBIT"), 1_672_282_722_429, false)]
+    #[case::venue_window(Some(10_081), Some("ETHUSDT-LINEAR.BYBIT"), 1_672_282_722_429, false)]
     #[tokio::test]
     async fn test_mass_status_historical_fill_completeness(
         #[case] lookback: Option<u64>,
@@ -5369,7 +5388,7 @@ mod tests {
         fills["result"]["list"][0]["execTime"] = serde_json::json!(exec_ms.to_string());
         fills["result"]["nextPageCursor"] = serde_json::json!("");
         let (mut client, _, server) = mass_status_client(fills, false, None).await;
-        let cutoff = UnixNanos::from(1672282722429 * NANOSECONDS_IN_MILLISECOND);
+        let cutoff = UnixNanos::from(1_672_282_722_429 * NANOSECONDS_IN_MILLISECOND);
         client.clock = Box::leak(Box::new(AtomicTime::new(
             false,
             cutoff + DurationNanos::try_from_mins(lookback.unwrap_or(5)).unwrap(),
@@ -5414,7 +5433,7 @@ mod tests {
         fills["result"]["list"] = serde_json::json!([]);
         fills["result"]["nextPageCursor"] = serde_json::json!("");
         let (mut client, _, server) = mass_status_client(fills, false, None).await;
-        let cutoff = UnixNanos::from(1672282722429 * NANOSECONDS_IN_MILLISECOND);
+        let cutoff = UnixNanos::from(1_672_282_722_429 * NANOSECONDS_IN_MILLISECOND);
         client.clock = Box::leak(Box::new(AtomicTime::new(
             false,
             cutoff + DurationNanos::try_from_mins(5).unwrap(),
@@ -5463,7 +5482,7 @@ mod tests {
         });
 
         let (mut client, cache, server) = mass_status_client(fills, false, orders).await;
-        let cutoff = UnixNanos::from(1672282722429 * NANOSECONDS_IN_MILLISECOND);
+        let cutoff = UnixNanos::from(1_672_282_722_429 * NANOSECONDS_IN_MILLISECOND);
         client.clock = Box::leak(Box::new(AtomicTime::new(
             false,
             cutoff + DurationNanos::try_from_mins(5).unwrap(),
@@ -5543,7 +5562,7 @@ mod tests {
         fills["result"]["list"].as_array_mut().unwrap().truncate(1);
         fills["result"]["list"][0]["symbol"] = serde_json::json!("ETHUSDT");
         fills["result"]["list"][0]["execFee"] = serde_json::json!("9999999999999999999999999999");
-        let cutoff = UnixNanos::from(1672282722429 * NANOSECONDS_IN_MILLISECOND);
+        let cutoff = UnixNanos::from(1_672_282_722_429 * NANOSECONDS_IN_MILLISECOND);
 
         let orders = if order_failure {
             fills["result"]["list"] = serde_json::json!([]);
@@ -5585,7 +5604,7 @@ mod tests {
         fills["result"]["list"] = serde_json::json!([]);
         fills["result"]["nextPageCursor"] = serde_json::json!("");
         let (mut client, cache, server) = mass_status_client(fills, false, Some(orders)).await;
-        let cutoff = UnixNanos::from(1761356000000 * NANOSECONDS_IN_MILLISECOND);
+        let cutoff = UnixNanos::from(1_761_356_000_000 * NANOSECONDS_IN_MILLISECOND);
         client.clock = Box::leak(Box::new(AtomicTime::new(
             false,
             cutoff + DurationNanos::try_from_mins(5).unwrap(),
@@ -5617,7 +5636,7 @@ mod tests {
             (
                 instrument_id,
                 OrderStatus::Accepted,
-                UnixNanos::from(1761355905606 * NANOSECONDS_IN_MILLISECOND)
+                UnixNanos::from(1_761_355_905_606 * NANOSECONDS_IN_MILLISECOND)
             )
         );
         let identity = client
@@ -5690,9 +5709,9 @@ mod tests {
 
     #[rstest]
     #[case::unbounded(None, None, vec!["open-order-1", "open-order-2"])]
-    #[case::after_first(Some(1761355905607), None, vec!["open-order-2"])]
-    #[case::before_second(None, Some(1761355905608), vec!["open-order-1"])]
-    #[case::inclusive_bounds(Some(1761355905606), Some(1761355905606), vec!["open-order-1"])]
+    #[case::after_first(Some(1_761_355_905_607), None, vec!["open-order-2"])]
+    #[case::before_second(None, Some(1_761_355_905_608), vec!["open-order-1"])]
+    #[case::inclusive_bounds(Some(1_761_355_905_606), Some(1_761_355_905_606), vec!["open-order-1"])]
     #[tokio::test]
     async fn test_bulk_report_task_preserves_window_and_fused_parity(
         #[case] start_ms: Option<u64>,
@@ -6048,7 +6067,7 @@ mod tests {
             "retMsg": "OK",
             "result": {"list": [], "nextPageCursor": ""},
             "retExtInfo": {},
-            "time": 1761355906606i64
+            "time": 1_761_355_906_606_i64
         });
 
         let position_response = if position_fails {
@@ -6057,7 +6076,7 @@ mod tests {
                 "retMsg": "position request failed",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1761355906606i64
+                "time": 1_761_355_906_606_i64
             })
         } else {
             empty.clone()
@@ -6494,6 +6513,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(clippy::unreadable_literal, reason = "Bybit error codes")]
     fn test_submit_rejection_reason_ignores_post_submit_lookup_failure() {
         let err = anyhow::Error::from(BybitSubmitOrderError::PostSubmitLookup {
             source: anyhow::Error::from(BybitHttpError::BybitError {
@@ -6514,6 +6534,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(clippy::unreadable_literal, reason = "Bybit error codes")]
     fn test_submit_rejection_reason_matches_venue_http_error() {
         let err = anyhow::Error::from(BybitHttpError::BybitError {
             error_code: 110017,

@@ -33,7 +33,7 @@ pub static PANCAKESWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
         chains::ETHEREUM.clone(),
         DexType::PancakeSwapV3,
         "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865",
-        16950707,
+        16_950_707,
         AmmType::CLAMM,
         "PoolCreated(address,address,uint24,int24,address)",
         "Swap(address,address,int256,int256,uint160,uint128,int24,uint128,uint128)",

@@ -135,11 +135,11 @@ impl Default for DataTestServerState {
             depth_requests: Arc::new(AtomicUsize::new(0)),
             depth_request_times: Arc::default(),
             depth_response_delay: Duration::ZERO,
-            depth_snapshot_last_update_ids: vec![1027024],
+            depth_snapshot_last_update_ids: vec![1_027_024],
             depth_update_delay: Duration::from_millis(50),
-            depth_update_first_update_id: 1027024,
-            depth_update_final_update_id: 1027025,
-            depth_update_prev_final_update_id: 1027023,
+            depth_update_first_update_id: 1_027_024,
+            depth_update_final_update_id: 1_027_025,
+            depth_update_prev_final_update_id: 1_027_023,
             second_depth_update_prev_final_update_id: None,
             empty_depth_update_index: None,
             depth_update_repetitions: 1,
@@ -176,8 +176,8 @@ struct StaleUnsubscribe {
 fn stale_depth_update(state: &DataTestServerState, stream: &str) -> serde_json::Value {
     let mut update = json!({
         "e": "depthUpdate",
-        "E": 1700000000000_i64,
-        "T": 1700000000000_i64,
+        "E": 1_700_000_000_000_i64,
+        "T": 1_700_000_000_000_i64,
         "s": "BTCUSDT",
         "U": state.depth_update_first_update_id,
         "u": state.depth_update_final_update_id,
@@ -369,14 +369,14 @@ async fn handle_ws_connection(mut socket: WebSocket, state: DataTestServerState)
                     if stream.contains("@aggTrade") {
                         let trade = json!({
                             "e": "aggTrade",
-                            "E": 1700000000000_i64,
+                            "E": 1_700_000_000_000_i64,
                             "s": symbol,
                             "a": 1,
                             "p": "50000.00",
                             "q": "0.001",
                             "f": 1,
                             "l": 1,
-                            "T": 1700000000000_i64,
+                            "T": 1_700_000_000_000_i64,
                             "m": false
                         });
                         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -392,8 +392,8 @@ async fn handle_ws_connection(mut socket: WebSocket, state: DataTestServerState)
                         let quote = json!({
                             "e": "bookTicker",
                             "u": 12345,
-                            "E": 1700000000000_i64,
-                            "T": 1700000000000_i64,
+                            "E": 1_700_000_000_000_i64,
+                            "T": 1_700_000_000_000_i64,
                             "s": symbol,
                             "b": "50000.00",
                             "B": "1.000",
@@ -409,11 +409,11 @@ async fn handle_ws_connection(mut socket: WebSocket, state: DataTestServerState)
                     } else if stream.contains("@kline_") {
                         let kline = json!({
                             "e": "kline",
-                            "E": 1700000059999_i64,
+                            "E": 1_700_000_059_999_i64,
                             "s": symbol,
                             "k": {
-                                "t": 1700000000000_i64,
-                                "T": 1700000059999_i64,
+                                "t": 1_700_000_000_000_i64,
+                                "T": 1_700_000_059_999_i64,
                                 "s": "BTCUSDT",
                                 "i": "1m",
                                 "f": 201,
@@ -444,13 +444,13 @@ async fn handle_ws_connection(mut socket: WebSocket, state: DataTestServerState)
                     } else if stream.contains("@markPrice") {
                         let mark_price = json!({
                             "e": "markPriceUpdate",
-                            "E": 1700000000000_i64,
+                            "E": 1_700_000_000_000_i64,
                             "s": "BTCUSDT",
                             "p": "50000.50",
                             "i": "50000.25",
                             "P": "50000.75",
                             "r": "0.00010000",
-                            "T": 1700028800000_i64
+                            "T": 1_700_028_800_000_i64
                         });
                         tokio::time::sleep(Duration::from_millis(50)).await;
                         let _result = socket
@@ -464,7 +464,7 @@ async fn handle_ws_connection(mut socket: WebSocket, state: DataTestServerState)
                         };
                         let liquidation = json!({
                             "e": "forceOrder",
-                            "E": 1700000000000_i64,
+                            "E": 1_700_000_000_000_i64,
                             "o": {
                                 "s": "BTCUSDT",
                                 "S": "SELL",
@@ -476,7 +476,7 @@ async fn handle_ws_connection(mut socket: WebSocket, state: DataTestServerState)
                                 "X": "FILLED",
                                 "l": last_filled_qty,
                                 "z": "0.003",
-                                "T": 1700000000000_i64
+                                "T": 1_700_000_000_000_i64
                             }
                         });
                         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -554,8 +554,8 @@ fn depth_update_message(
 
     let mut depth_update = json!({
         "e": "depthUpdate",
-        "E": 1700000000000_i64,
-        "T": 1700000000000_i64,
+        "E": 1_700_000_000_000_i64,
+        "T": 1_700_000_000_000_i64,
         "s": "BTCUSDT",
         "U": first_update_id,
         "u": state.depth_update_final_update_id + update_offset,
@@ -615,14 +615,14 @@ async fn handle_depth(
         .get(successful_request)
         .copied()
         .or_else(|| state.depth_snapshot_last_update_ids.last().copied())
-        .unwrap_or(1027024);
+        .unwrap_or(1_027_024);
 
     tokio::time::sleep(state.depth_response_delay).await;
 
     json_response(&json!({
         "lastUpdateId": last_update_id,
-        "E": 1700000000000_i64,
-        "T": 1700000000000_i64,
+        "E": 1_700_000_000_000_i64,
+        "T": 1_700_000_000_000_i64,
         "bids": [["50000.00", "1.000"], ["49999.00", "2.000"]],
         "asks": [["50001.00", if coin_m { "1" } else { "0.500" }], ["50002.00", if coin_m { "2" } else { "1.500" }]]
     }))
@@ -632,7 +632,7 @@ async fn handle_open_interest() -> Response {
     json_response(&json!({
         "symbol": "BTCUSDT",
         "openInterest": "12345.678",
-        "time": 1700000000000_i64
+        "time": 1_700_000_000_000_i64
     }))
 }
 
@@ -640,7 +640,7 @@ async fn handle_open_interest_coinm() -> Response {
     json_response(&json!({
         "symbol": "BTCUSD_PERP",
         "openInterest": "987.654",
-        "time": 1700000005000_i64
+        "time": 1_700_000_005_000_i64
     }))
 }
 
@@ -658,14 +658,14 @@ async fn handle_open_interest_hist(raw_query: RawQuery) -> Response {
                 "symbol": "BTCUSDT",
                 "sumOpenInterest": "100.0",
                 "sumOpenInterestValue": "1000.0",
-                "timestamp": 1700000000000_i64,
+                "timestamp": 1_700_000_000_000_i64,
                 "CMCCirculatingSupply": "123"
             },
             {
                 "symbol": "BTCUSDT",
                 "sumOpenInterest": "101.0",
                 "sumOpenInterestValue": "1005.0",
-                "timestamp": 1700000300000_i64,
+                "timestamp": 1_700_000_300_000_i64,
                 "CMCCirculatingSupply": "123"
             }
         ]));
@@ -683,14 +683,14 @@ async fn handle_open_interest_hist(raw_query: RawQuery) -> Response {
                 "contractType": "PERPETUAL",
                 "sumOpenInterest": "200.0",
                 "sumOpenInterestValue": "1500.0",
-                "timestamp": 1700000600000_i64
+                "timestamp": 1_700_000_600_000_i64
             },
             {
                 "pair": "BTCUSD",
                 "contractType": "PERPETUAL",
                 "sumOpenInterest": "201.0",
                 "sumOpenInterestValue": "1510.0",
-                "timestamp": 1700000900000_i64
+                "timestamp": 1_700_000_900_000_i64
             }
         ]));
     }
@@ -707,7 +707,7 @@ async fn handle_open_interest_hist(raw_query: RawQuery) -> Response {
                 "contractType": "CURRENT_QUARTER",
                 "sumOpenInterest": "300.0",
                 "sumOpenInterestValue": "2500.0",
-                "timestamp": 1700001200000_i64
+                "timestamp": 1_700_001_200_000_i64
             }
         ]));
     }
@@ -733,13 +733,13 @@ async fn handle_funding_rate(raw_query: RawQuery) -> Response {
             {
                 "symbol": "BTCUSDT",
                 "fundingRate": "0.00010000",
-                "fundingTime": 1700000000000_i64,
+                "fundingTime": 1_700_000_000_000_i64,
                 "markPrice": "50000.00"
             },
             {
                 "symbol": "BTCUSDT",
                 "fundingRate": "-0.00007500",
-                "fundingTime": 1700028800000_i64,
+                "fundingTime": 1_700_028_800_000_i64,
                 "markPrice": "50100.00"
             }
         ]));
@@ -1286,7 +1286,7 @@ async fn test_request_open_interest_usdm_emits_custom_data_response() {
                         payload.instrument_id == instrument_id
                             && payload.open_interest == Decimal::from_str("12345.678").unwrap()
                             && payload.ts_event.as_u64()
-                                == UnixNanos::from_millis(1700000000000).as_u64()
+                                == UnixNanos::from_millis(1_700_000_000_000).as_u64()
                             && custom.data_type == data_type
                     })
             });
@@ -1344,7 +1344,8 @@ async fn test_request_open_interest_hist_usdm_emits_batch_custom_data_response()
                     && payload.points[0].sum_open_interest == Decimal::from_str("100.0").unwrap()
                     && payload.points[1].sum_open_interest_value
                         == Decimal::from_str("1005.0").unwrap()
-                    && payload.ts_event.as_u64() == UnixNanos::from_millis(1700000300000).as_u64()
+                    && payload.ts_event.as_u64()
+                        == UnixNanos::from_millis(1_700_000_300_000).as_u64()
                     && custom.data_type == data_type
             });
             async move { found }
@@ -1589,8 +1590,8 @@ async fn test_request_funding_rates_emits_response() {
     client
         .request_funding_rates(RequestFundingRates::new(
             instrument_id,
-            Some(Timestamp::from_millisecond(1700000000000).unwrap()),
-            Some(Timestamp::from_millisecond(1700028800000).unwrap()),
+            Some(Timestamp::from_millisecond(1_700_000_000_000).unwrap()),
+            Some(Timestamp::from_millisecond(1_700_028_800_000).unwrap()),
             Some(NonZeroUsize::new(2).unwrap()),
             None,
             UUID4::new(),
@@ -1615,10 +1616,10 @@ async fn test_request_funding_rates_emits_response() {
                 resp.instrument_id == instrument_id
                     && resp.data.len() == 2
                     && resp.data[0].rate == dec!(0.0001)
-                    && resp.data[0].ts_event == UnixNanos::from_millis(1700000000000)
+                    && resp.data[0].ts_event == UnixNanos::from_millis(1_700_000_000_000)
                     && resp.data[0].ts_init == resp.data[0].ts_event
                     && resp.data[1].rate == dec!(-0.000075)
-                    && resp.data[1].ts_event == UnixNanos::from_millis(1700028800000)
+                    && resp.data[1].ts_event == UnixNanos::from_millis(1_700_028_800_000)
                     && resp.data[1].ts_init == resp.data[1].ts_event
             });
             async move { found }
@@ -2597,7 +2598,7 @@ async fn test_subscribe_partial_book_deltas(#[case] depth: usize) {
             assert_eq!(snapshot.deltas.len(), depth * 2 + 1);
             assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
             assert_eq!(snapshot.deltas[1].action, BookAction::Add);
-            assert_eq!(snapshot.sequence, 1027025 + index as u64);
+            assert_eq!(snapshot.sequence, 1_027_025 + index as u64);
             assert_eq!(
                 snapshot.deltas.last().unwrap().flags,
                 RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
@@ -3709,7 +3710,7 @@ async fn test_subscribe_book_deltas() {
         panic!("expected order book deltas");
     };
 
-    assert_eq!(snapshot.sequence, 1027024);
+    assert_eq!(snapshot.sequence, 1_027_024);
     assert_eq!(snapshot.deltas.len(), 5);
     assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
     assert_eq!(snapshot.deltas[1].action, BookAction::Add);
@@ -3726,7 +3727,7 @@ async fn test_subscribe_book_deltas() {
         RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
     );
 
-    assert_eq!(replayed.sequence, 1027025);
+    assert_eq!(replayed.sequence, 1_027_025);
     assert_eq!(replayed.deltas.len(), 4);
     assert_eq!(replayed.deltas[0].action, BookAction::Update);
     assert_eq!(replayed.deltas[0].order.side, Some(OrderSide::Buy));
@@ -3908,9 +3909,9 @@ async fn test_request_book_snapshot_returns_exact_futures_book() {
 #[tokio::test]
 async fn test_subscribe_book_deltas_accepts_first_overlapping_diff_with_older_pu() {
     let state = DataTestServerState {
-        depth_update_first_update_id: 1027020,
-        depth_update_final_update_id: 1027025,
-        depth_update_prev_final_update_id: 1027019,
+        depth_update_first_update_id: 1_027_020,
+        depth_update_final_update_id: 1_027_025,
+        depth_update_prev_final_update_id: 1_027_019,
         ..Default::default()
     };
     let addr = start_data_test_server_with_state(state).await;
@@ -3964,9 +3965,9 @@ async fn test_subscribe_book_deltas_accepts_first_overlapping_diff_with_older_pu
         panic!("expected order book deltas");
     };
 
-    assert_eq!(snapshot.sequence, 1027024);
+    assert_eq!(snapshot.sequence, 1_027_024);
     assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
-    assert_eq!(replayed.sequence, 1027025);
+    assert_eq!(replayed.sequence, 1_027_025);
     assert_eq!(replayed.deltas[0].action, BookAction::Update);
 }
 
@@ -3974,10 +3975,10 @@ async fn test_subscribe_book_deltas_accepts_first_overlapping_diff_with_older_pu
 #[tokio::test]
 async fn test_subscribe_book_deltas_rejects_gap_after_snapshot_seam_update() {
     let state = DataTestServerState {
-        depth_update_first_update_id: 1027024,
-        depth_update_final_update_id: 1027024,
-        depth_update_prev_final_update_id: 1027023,
-        second_depth_update_prev_final_update_id: Some(1027020),
+        depth_update_first_update_id: 1_027_024,
+        depth_update_final_update_id: 1_027_024,
+        depth_update_prev_final_update_id: 1_027_023,
+        second_depth_update_prev_final_update_id: Some(1_027_020),
         depth_update_repetitions: 2,
         depth_response_delay: Duration::from_millis(150),
         ..Default::default()
@@ -4107,9 +4108,9 @@ async fn test_subscribe_book_deltas_waits_for_first_depth_update_before_snapshot
         panic!("expected order book deltas");
     };
 
-    assert_eq!(snapshot.sequence, 1027024);
+    assert_eq!(snapshot.sequence, 1_027_024);
     assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
-    assert_eq!(replayed.sequence, 1027025);
+    assert_eq!(replayed.sequence, 1_027_025);
     assert_eq!(replayed.deltas[0].action, BookAction::Update);
 }
 
@@ -4117,7 +4118,7 @@ async fn test_subscribe_book_deltas_waits_for_first_depth_update_before_snapshot
 #[tokio::test]
 async fn test_subscribe_book_deltas_keeps_buffered_diffs_across_overlap_retry() {
     let state = DataTestServerState {
-        depth_snapshot_last_update_ids: vec![1027023, 1027024],
+        depth_snapshot_last_update_ids: vec![1_027_023, 1_027_024],
         depth_update_repetitions: 2,
         ..Default::default()
     };
@@ -4182,8 +4183,8 @@ async fn test_subscribe_book_deltas_keeps_buffered_diffs_across_overlap_retry() 
         panic!("expected order book deltas");
     };
 
-    assert_eq!(snapshot.sequence, 1027024);
-    assert_eq!(replayed.sequence, 1027025);
+    assert_eq!(snapshot.sequence, 1_027_024);
+    assert_eq!(replayed.sequence, 1_027_025);
     assert_eq!(replayed.deltas[0].action, BookAction::Update);
     assert_eq!(depth_requests.load(Ordering::Relaxed), 2);
 }
@@ -4192,10 +4193,10 @@ async fn test_subscribe_book_deltas_keeps_buffered_diffs_across_overlap_retry() 
 #[tokio::test]
 async fn test_subscribe_book_deltas_recovers_live_sequence_gap() {
     let state = DataTestServerState {
-        depth_snapshot_last_update_ids: vec![1027024, 1027026],
+        depth_snapshot_last_update_ids: vec![1_027_024, 1_027_026],
         depth_update_delay: Duration::from_millis(300),
         depth_update_repetitions: 2,
-        second_depth_update_prev_final_update_id: Some(1027020),
+        second_depth_update_prev_final_update_id: Some(1_027_020),
         ..Default::default()
     };
 
@@ -4247,7 +4248,7 @@ async fn test_subscribe_book_deltas_recovers_live_sequence_gap() {
 
     assert_eq!(
         received.iter().map(|d| d.sequence).collect::<Vec<_>>(),
-        vec![1027024, 1027025, 1027026]
+        vec![1_027_024, 1_027_025, 1_027_026]
     );
     assert_eq!(received[0].deltas[0].action, BookAction::Clear);
     assert_eq!(received[1].deltas[0].action, BookAction::Update);
@@ -4316,7 +4317,7 @@ async fn test_subscribe_book_deltas_empty_diff_advances_sequence() {
         sequences.push(deltas.sequence);
     }
 
-    assert_eq!(sequences, vec![1027024, 1027025, 1027027]);
+    assert_eq!(sequences, vec![1_027_024, 1_027_025, 1_027_027]);
     assert!(
         recv_data(&mut rx, Duration::from_millis(200))
             .await
@@ -4395,9 +4396,9 @@ async fn test_subscribe_book_deltas_retries_transient_depth_snapshot_failure() {
         panic!("expected order book deltas");
     };
 
-    assert_eq!(snapshot.sequence, 1027024);
+    assert_eq!(snapshot.sequence, 1_027_024);
     assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
-    assert_eq!(replayed.sequence, 1027025);
+    assert_eq!(replayed.sequence, 1_027_025);
     assert_eq!(replayed.deltas[0].action, BookAction::Update);
     assert_eq!(depth_requests.load(Ordering::Relaxed), 2);
 }
@@ -4458,7 +4459,7 @@ async fn test_subscribe_mark_prices() {
                             && update.estimated_settle_price.as_decimal() == dec!(50000.75)
                             && update.funding_rate == dec!(0.00010000)
                             && update.next_funding_time
-                                == Some(UnixNanos::from_millis(1700028800000));
+                                == Some(UnixNanos::from_millis(1_700_028_800_000));
                     }
                     Ok(_) => {}
                     Err(_) => break false,
@@ -5278,7 +5279,7 @@ fn recorded_stream_count(records: &Arc<Mutex<Vec<Vec<String>>>>, stream: &str) -
 fn ticker_stream_payload() -> serde_json::Value {
     json!({
         "e": "24hrTicker",
-        "E": 1700000000000_i64,
+        "E": 1_700_000_000_000_i64,
         "s": "BTCUSDT",
         "p": "-100.10000000",
         "P": "-0.200",
@@ -5290,8 +5291,8 @@ fn ticker_stream_payload() -> serde_json::Value {
         "l": "49900.40000000",
         "v": "1234.567",
         "q": "61734567.89000000",
-        "O": 1699913600000_i64,
-        "C": 1700000000000_i64,
+        "O": 1_699_913_600_000_i64,
+        "C": 1_700_000_000_000_i64,
         "F": 100,
         "L": 200,
         "n": 101
@@ -5816,8 +5817,8 @@ async fn test_subscribe_book_depth_shares_stream_with_deltas(#[case] depth_first
         depth.flags,
         RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
     );
-    assert_eq!(depth.sequence, 1027025);
-    assert_eq!(depth.ts_event, UnixNanos::from_millis(1700000000000));
+    assert_eq!(depth.sequence, 1_027_025);
+    assert_eq!(depth.ts_event, UnixNanos::from_millis(1_700_000_000_000));
     assert_eq!(depth.ts_init, deltas.ts_init);
     assert_eq!(
         *subscriptions.lock(),

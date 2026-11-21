@@ -516,7 +516,7 @@ mod tests {
     #[rstest]
     fn test_parse_book_l1_quote() {
         let book = AxMdBookL1 {
-            ts: 1700000000,
+            ts: 1_700_000_000,
             tn: 12345,
             s: Ustr::from("BTC-PERP"),
             b: vec![AxBookLevel {
@@ -543,7 +543,7 @@ mod tests {
     #[rstest]
     fn test_parse_book_quotes_select_best_unsorted_levels() {
         let l2 = AxMdBookL2 {
-            ts: 1700000000,
+            ts: 1_700_000_000,
             tn: 12345,
             s: Ustr::from("BTC-PERP"),
             b: vec![
@@ -569,7 +569,7 @@ mod tests {
             st: true,
         };
         let l3 = AxMdBookL3 {
-            ts: 1700000000,
+            ts: 1_700_000_000,
             tn: 12345,
             s: Ustr::from("BTC-PERP"),
             b: vec![
@@ -617,7 +617,7 @@ mod tests {
     #[rstest]
     fn test_parse_book_l2_deltas() {
         let book = AxMdBookL2 {
-            ts: 1700000000,
+            ts: 1_700_000_000,
             tn: 12345,
             s: Ustr::from("BTC-PERP"),
             b: vec![
@@ -672,7 +672,7 @@ mod tests {
     #[rstest]
     fn test_parse_book_l3_deltas() {
         let book = AxMdBookL3 {
-            ts: 1700000000,
+            ts: 1_700_000_000,
             tn: 12345,
             s: Ustr::from("BTC-PERP"),
             b: vec![AxBookLevelL3 {
@@ -712,7 +712,7 @@ mod tests {
     #[case(AxOrderSide::Sell, AggressorSide::Sell)]
     fn test_parse_trade_tick(#[case] side: AxOrderSide, #[case] expected_side: AggressorSide) {
         let trade = AxMdTrade {
-            ts: 1700000000,
+            ts: 1_700_000_000,
             tn: 12345,
             s: Ustr::from("BTC-PERP"),
             p: dec!(50000.50),
@@ -721,7 +721,7 @@ mod tests {
         };
 
         let instrument = create_test_instrument();
-        let ts_init = UnixNanos::from(1700000001000000000);
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000);
 
         let tick = parse_trade_tick(&trade, &instrument, ts_init).unwrap();
 
@@ -729,7 +729,7 @@ mod tests {
         assert_eq!(tick.price.as_decimal(), dec!(50000.50));
         assert_eq!(tick.size.as_decimal(), dec!(100));
         assert_eq!(tick.aggressor_side, expected_side);
-        assert_eq!(tick.ts_event, UnixNanos::from(1700000000000012345));
+        assert_eq!(tick.ts_event, UnixNanos::from(1_700_000_000_000_012_345));
         assert_eq!(tick.ts_init, ts_init);
     }
 
@@ -880,7 +880,7 @@ mod tests {
     #[rstest]
     fn test_parse_book_l1_empty_sides() {
         let book = AxMdBookL1 {
-            ts: 1700000000,
+            ts: 1_700_000_000,
             tn: 12345,
             s: Ustr::from("TEST-PERP"),
             b: vec![],
@@ -901,7 +901,7 @@ mod tests {
     #[rstest]
     fn test_parse_book_l2_empty_book() {
         let book = AxMdBookL2 {
-            ts: 1700000000,
+            ts: 1_700_000_000,
             tn: 12345,
             s: Ustr::from("TEST-PERP"),
             b: vec![],
@@ -926,7 +926,7 @@ mod tests {
 
         let candle = AxMdCandle {
             symbol: Ustr::from("BTC-PERP"),
-            ts: 1700000000,
+            ts: 1_700_000_000,
             open: dec!(50000.00),
             high: dec!(51000.00),
             low: dec!(49500.00),

@@ -670,7 +670,7 @@ mod tests {
 
     #[rstest]
     fn test_parse_timestamp() {
-        let input_timestamp: u64 = 1583020803145000;
+        let input_timestamp: u64 = 1_583_020_803_145_000;
         let expected_nanos: UnixNanos =
             UnixNanos::from(input_timestamp * NANOSECONDS_IN_MICROSECOND);
 
@@ -695,7 +695,7 @@ mod tests {
     #[case("trade_bar_5m", 5, BarAggregation::Minute)]
     #[case("trade_bar_60m", 1, BarAggregation::Hour)]
     #[case("trade_bar_100ticks", 100, BarAggregation::Tick)]
-    #[case("trade_bar_100000vol", 100000, BarAggregation::Volume)]
+    #[case("trade_bar_100000vol", 100_000, BarAggregation::Volume)]
     fn test_parse_bar_spec(
         #[case] value: &str,
         #[case] expected_step: usize,

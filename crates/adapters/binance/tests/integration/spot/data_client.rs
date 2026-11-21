@@ -526,11 +526,11 @@ fn build_json_kline_stream_event(symbol: &str) -> String {
         "stream": format!("{}@kline_1s", symbol.to_lowercase()),
         "data": {
             "e": "kline",
-            "E": 1700000000999_i64,
+            "E": 1_700_000_000_999_i64,
             "s": symbol,
             "k": {
-                "t": 1700000000000_i64,
-                "T": 1700000000999_i64,
+                "t": 1_700_000_000_000_i64,
+                "T": 1_700_000_000_999_i64,
                 "s": symbol,
                 "i": "1s",
                 "f": 201,
@@ -556,7 +556,7 @@ fn build_json_ticker_stream_event(symbol: &str) -> String {
         "stream": format!("{}@ticker", symbol.to_lowercase()),
         "data": {
             "e": "24hrTicker",
-            "E": 1700000000999_i64,
+            "E": 1_700_000_000_999_i64,
             "s": symbol,
             "p": "100.01",
             "P": "0.25",
@@ -573,8 +573,8 @@ fn build_json_ticker_stream_event(symbol: &str) -> String {
             "l": "41500.00",
             "v": "1234.50000",
             "q": "51777172.50",
-            "O": 1699913600999_i64,
-            "C": 1700000000998_i64,
+            "O": 1_699_913_600_999_i64,
+            "C": 1_700_000_000_998_i64,
             "F": 301,
             "L": 399,
             "n": 99

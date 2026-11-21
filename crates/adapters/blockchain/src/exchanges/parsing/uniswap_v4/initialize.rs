@@ -275,7 +275,7 @@ mod tests {
         let event =
             parse_initialize_event_hypersync(hypersync_log_weth_usdc).expect("Failed to parse");
 
-        assert_eq!(event.block_number, 298076243);
+        assert_eq!(event.block_number, 298_076_243);
         assert_eq!(
             event.token0.to_string().to_lowercase(),
             "0x82af49447d8a07e3bd95bd0d56f35241523fbab1"
@@ -296,7 +296,7 @@ mod tests {
     fn test_parse_initialize_rpc(rpc_log_weth_usdc: RpcLog) {
         let event = parse_initialize_event_rpc(&rpc_log_weth_usdc).expect("Failed to parse");
 
-        assert_eq!(event.block_number, 298076243);
+        assert_eq!(event.block_number, 298_076_243);
         assert_eq!(
             event.token0.to_string().to_lowercase(),
             "0x82af49447d8a07e3bd95bd0d56f35241523fbab1"
@@ -333,7 +333,7 @@ mod tests {
             error.to_string(),
             format!("Topic must be 32 bytes, was {byte_len}")
         );
-        assert_eq!(event.block_number, 298076243);
+        assert_eq!(event.block_number, 298_076_243);
     }
 
     #[rstest]
@@ -348,7 +348,7 @@ mod tests {
             error.to_string(),
             "Invalid contract address length: expected 20 bytes, was 19"
         );
-        assert_eq!(event.block_number, 298076243);
+        assert_eq!(event.block_number, 298_076_243);
     }
 
     #[rstest]

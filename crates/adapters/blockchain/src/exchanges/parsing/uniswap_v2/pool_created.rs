@@ -168,7 +168,7 @@ mod tests {
         let event =
             parse_pool_created_event_hypersync(hypersync_log_weth_usdt).expect("Failed to parse");
 
-        assert_eq!(event.block_number, 150778518);
+        assert_eq!(event.block_number, 150_778_518);
         assert_eq!(
             event.token0.to_string().to_lowercase(),
             "0x82af49447d8a07e3bd95bd0d56f35241523fbab1"
@@ -189,7 +189,7 @@ mod tests {
     fn test_parse_pair_created_rpc(rpc_log_weth_usdt: RpcLog) {
         let event = parse_pool_created_event_rpc(&rpc_log_weth_usdt).expect("Failed to parse");
 
-        assert_eq!(event.block_number, 150778518);
+        assert_eq!(event.block_number, 150_778_518);
         assert_eq!(
             event.token0.to_string().to_lowercase(),
             "0x82af49447d8a07e3bd95bd0d56f35241523fbab1"

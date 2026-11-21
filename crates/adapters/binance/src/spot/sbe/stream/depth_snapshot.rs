@@ -137,7 +137,7 @@ mod tests {
 
         // Body
         let body = &mut buf[8..];
-        body[0..8].copy_from_slice(&1000000i64.to_le_bytes()); // event_time_us
+        body[0..8].copy_from_slice(&1_000_000_i64.to_le_bytes()); // event_time_us
         body[8..16].copy_from_slice(&12345i64.to_le_bytes()); // book_update_id
         body[16] = (-2i8) as u8; // price_exponent
         body[17] = (-8i8) as u8; // qty_exponent
@@ -151,8 +151,9 @@ mod tests {
 
         // Bids
         for i in 0..num_bids {
-            body[offset..offset + 8].copy_from_slice(&(4200000i64 - i as i64 * 100).to_le_bytes());
-            body[offset + 8..offset + 16].copy_from_slice(&100000000i64.to_le_bytes());
+            body[offset..offset + 8]
+                .copy_from_slice(&(4_200_000_i64 - i as i64 * 100).to_le_bytes());
+            body[offset + 8..offset + 16].copy_from_slice(&100_000_000_i64.to_le_bytes());
             offset += level_block_len as usize;
         }
 
@@ -163,8 +164,9 @@ mod tests {
 
         // Asks
         for i in 0..num_asks {
-            body[offset..offset + 8].copy_from_slice(&(4200100i64 + i as i64 * 100).to_le_bytes());
-            body[offset + 8..offset + 16].copy_from_slice(&200000000i64.to_le_bytes());
+            body[offset..offset + 8]
+                .copy_from_slice(&(4_200_100_i64 + i as i64 * 100).to_le_bytes());
+            body[offset + 8..offset + 16].copy_from_slice(&200_000_000_i64.to_le_bytes());
             offset += level_block_len as usize;
         }
 
@@ -180,7 +182,7 @@ mod tests {
         let buf = make_valid_buffer(5, 5);
         let event = DepthSnapshotStreamEvent::decode(&buf).unwrap();
 
-        assert_eq!(event.event_time_us, 1000000);
+        assert_eq!(event.event_time_us, 1_000_000);
         assert_eq!(event.book_update_id, 12345);
         assert_eq!(event.bids.len(), 5);
         assert_eq!(event.asks.len(), 5);

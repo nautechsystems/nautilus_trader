@@ -697,7 +697,7 @@ mod tests {
 
     fn test_order() -> PolymarketOrder {
         PolymarketOrder {
-            salt: 123456789,
+            salt: 123_456_789,
             maker: "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266".to_string(),
             signer: "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266".to_string(),
             token_id: Ustr::from(
@@ -909,16 +909,16 @@ mod tests {
         let order = test_order();
         let eip712 = build_eip712_order(&order).unwrap();
 
-        assert_eq!(eip712.salt, U256::from(123456789u64));
+        assert_eq!(eip712.salt, U256::from(123_456_789_u64));
         assert_eq!(
             eip712.maker,
             Address::from_str("0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266").unwrap()
         );
-        assert_eq!(eip712.makerAmount, U256::from(100000000u128));
-        assert_eq!(eip712.takerAmount, U256::from(50000000u128));
+        assert_eq!(eip712.makerAmount, U256::from(100_000_000_u128));
+        assert_eq!(eip712.takerAmount, U256::from(50_000_000_u128));
         assert_eq!(eip712.side, 0); // BUY
         assert_eq!(eip712.signatureType, 0); // EOA
-        assert_eq!(eip712.timestamp, U256::from(1713398400000u128));
+        assert_eq!(eip712.timestamp, U256::from(1_713_398_400_000_u128));
         assert_eq!(eip712.metadata, FixedBytes::<32>::ZERO);
         assert_eq!(eip712.builder, FixedBytes::<32>::ZERO);
     }
@@ -938,7 +938,7 @@ mod tests {
     #[rstest]
     fn test_decimal_to_u256_integer() {
         let result = decimal_to_u256(dec!(100000000), "test").unwrap();
-        assert_eq!(result, U256::from(100000000u128));
+        assert_eq!(result, U256::from(100_000_000_u128));
     }
 
     #[rstest]
@@ -1134,7 +1134,7 @@ mod tests {
     #[rstest]
     #[case::buy_standard_eoa(
         parity_order(
-            123456789,
+            123_456_789,
             PolymarketOrderSide::Buy,
             PolymarketSignatureType::Eoa,
             dec!(100000000),
@@ -1148,7 +1148,7 @@ mod tests {
     )]
     #[case::sell_neg_risk_eoa(
         parity_order(
-            987654321,
+            987_654_321,
             PolymarketOrderSide::Sell,
             PolymarketSignatureType::Eoa,
             dec!(50000000),

@@ -1248,11 +1248,11 @@ mod tests {
         // Verify timestamps
         assert_eq!(
             future.activation_ns(),
-            Some(UnixNanos::from(1719561600000_u64 * 1_000_000))
+            Some(UnixNanos::from(1_719_561_600_000_u64 * 1_000_000))
         );
         assert_eq!(
             future.expiration_ns(),
-            Some(UnixNanos::from(1735300800000_u64 * 1_000_000))
+            Some(UnixNanos::from(1_735_300_800_000_u64 * 1_000_000))
         );
         assert_eq!(future.price_precision(), 1);
         assert_eq!(future.size_precision(), 0);
@@ -1300,11 +1300,11 @@ mod tests {
         assert_eq!(option.strike_currency, Currency::USD());
         assert_eq!(
             option.activation_ns,
-            UnixNanos::from(1719561600000_u64 * 1_000_000)
+            UnixNanos::from(1_719_561_600_000_u64 * 1_000_000)
         );
         assert_eq!(
             option.expiration_ns,
-            UnixNanos::from(1735300800000_u64 * 1_000_000)
+            UnixNanos::from(1_735_300_800_000_u64 * 1_000_000)
         );
         assert_eq!(option.price_precision, 4);
         assert_eq!(option.price_increment, Price::from("0.0005"));
@@ -1384,7 +1384,8 @@ mod tests {
         assert!(account_state.is_reported);
 
         // Verify ts_event matches server timestamp (us_out = 1687352432005000 microseconds)
-        let expected_ts_event = UnixNanos::from(1687352432005000_u64 * NANOSECONDS_IN_MICROSECOND);
+        let expected_ts_event =
+            UnixNanos::from(1_687_352_432_005_000_u64 * NANOSECONDS_IN_MICROSECOND);
         assert_eq!(
             account_state.ts_event, expected_ts_event,
             "ts_event should match server timestamp from response"
@@ -1473,7 +1474,7 @@ mod tests {
 
         let raw_trade = &result.trades[0];
         let instrument_id = InstrumentId::from("ETH-PERPETUAL.DERIBIT");
-        let ts_init = UnixNanos::from(1766335632425576_u64 * 1000); // from usOut
+        let ts_init = UnixNanos::from(1_766_335_632_425_576_u64 * 1000); // from usOut
 
         let trade = parse_trade_tick(raw_trade, instrument_id, 1, 0, ts_init)
             .expect("Should parse trade tick");
@@ -1486,7 +1487,7 @@ mod tests {
         // timestamp 1766332040636 ms -> ns
         assert_eq!(
             trade.ts_event,
-            UnixNanos::from(1766332040636_u64 * 1_000_000)
+            UnixNanos::from(1_766_332_040_636_u64 * 1_000_000)
         );
         assert_eq!(trade.ts_init, ts_init);
     }
@@ -1611,7 +1612,7 @@ mod tests {
         let chart_data = response.result.expect("Test data must have result");
 
         let bar_type = BarType::from("BTC-PERPETUAL.DERIBIT-1-MINUTE-LAST-EXTERNAL");
-        let ts_init = UnixNanos::from(1766487086146245_u64 * NANOSECONDS_IN_MICROSECOND);
+        let ts_init = UnixNanos::from(1_766_487_086_146_245_u64 * NANOSECONDS_IN_MICROSECOND);
 
         let bars =
             parse_bars(&chart_data, bar_type, 1, 8, false, ts_init).expect("Should parse bars");
@@ -1628,7 +1629,7 @@ mod tests {
         assert_eq!(first_bar.volume, Quantity::from("2.94375216"));
         assert_eq!(
             first_bar.ts_event,
-            UnixNanos::from(1766483460000_u64 * NANOSECONDS_IN_MILLISECOND)
+            UnixNanos::from(1_766_483_460_000_u64 * NANOSECONDS_IN_MILLISECOND)
         );
         assert_eq!(first_bar.ts_init, ts_init);
 
@@ -1641,7 +1642,7 @@ mod tests {
         assert_eq!(last_bar.volume, Quantity::from("0.1018798"));
         assert_eq!(
             last_bar.ts_event,
-            UnixNanos::from(1766483700000_u64 * NANOSECONDS_IN_MILLISECOND)
+            UnixNanos::from(1_766_483_700_000_u64 * NANOSECONDS_IN_MILLISECOND)
         );
     }
 
@@ -1653,7 +1654,7 @@ mod tests {
         let chart_data = response.result.expect("Test data must have result");
 
         let bar_type = BarType::from("BTC-PERPETUAL.DERIBIT-1-MINUTE-LAST-EXTERNAL");
-        let ts_init = UnixNanos::from(1766487086146245_u64 * NANOSECONDS_IN_MICROSECOND);
+        let ts_init = UnixNanos::from(1_766_487_086_146_245_u64 * NANOSECONDS_IN_MICROSECOND);
 
         // Cost path picks `cost` (USD), matching trade `amount` on inverse perps/futures.
         let bars =
@@ -1705,7 +1706,7 @@ mod tests {
         let order_book_data = response.result.expect("Test data must have result");
 
         let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
-        let ts_init = UnixNanos::from(1766554855146274_u64 * NANOSECONDS_IN_MICROSECOND);
+        let ts_init = UnixNanos::from(1_766_554_855_146_274_u64 * NANOSECONDS_IN_MICROSECOND);
 
         let book = parse_order_book(&order_book_data, instrument_id, 1, 0, ts_init)
             .expect("Should parse order book");
@@ -1919,11 +1920,11 @@ mod tests {
         assert_eq!(spread.lot_size, Quantity::from("0.1"));
         assert_eq!(
             spread.expiration_ns,
-            UnixNanos::from(1779177600000_u64 * 1_000_000)
+            UnixNanos::from(1_779_177_600_000_u64 * 1_000_000)
         );
         assert_eq!(
             spread.activation_ns,
-            UnixNanos::from(1779100724000_u64 * 1_000_000)
+            UnixNanos::from(1_779_100_724_000_u64 * 1_000_000)
         );
     }
 
@@ -2135,7 +2136,7 @@ mod tests {
         assert_eq!(spread.lot_size, Quantity::from("10"));
         assert_eq!(
             spread.expiration_ns,
-            UnixNanos::from(1779177600000_u64 * 1_000_000)
+            UnixNanos::from(1_779_177_600_000_u64 * 1_000_000)
         );
     }
 
@@ -2232,7 +2233,7 @@ mod tests {
 
         // Test parsing to AccountState
         let account_id = AccountId::new("DERIBIT-master");
-        let ts_init = UnixNanos::from(1700000000000000000_u64);
+        let ts_init = UnixNanos::from(1_700_000_000_000_000_000_u64);
 
         let account_state =
             parse_portfolio_to_account_state(&portfolio, account_id, ts_init).unwrap();

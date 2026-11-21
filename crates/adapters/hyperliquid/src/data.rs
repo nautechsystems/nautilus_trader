@@ -3359,7 +3359,7 @@ mod tests {
             coin: Ustr::from("BTC"),
             funding_rate: dec!(0.0000125),
             premium: Some(dec!(0.00029005)),
-            time: 1769908800000,
+            time: 1_769_908_800_000,
         };
         let instrument_id = btc_perp_id();
 
@@ -3369,7 +3369,10 @@ mod tests {
         assert_eq!(update.rate, dec!(0.0000125));
         assert_eq!(update.interval, Some(60));
         assert!(update.next_funding_ns.is_none());
-        assert_eq!(update.ts_event, UnixNanos::from(1769908800000 * 1_000_000));
+        assert_eq!(
+            update.ts_event,
+            UnixNanos::from(1_769_908_800_000 * 1_000_000)
+        );
         assert_eq!(update.ts_init, update.ts_event);
     }
 
@@ -3379,7 +3382,7 @@ mod tests {
             coin: Ustr::from("BTC"),
             funding_rate: dec!(-0.0000081),
             premium: None,
-            time: 1769912400000,
+            time: 1_769_912_400_000,
         };
         let update = funding_entry_to_update(&entry, btc_perp_id());
         assert_eq!(update.rate, dec!(-0.0000081));
@@ -3469,7 +3472,7 @@ mod tests {
                     level("98453.00", "0.5"),
                 ],
             ],
-            time: 1769908800000,
+            time: 1_769_908_800_000,
         }
     }
 
@@ -3503,7 +3506,7 @@ mod tests {
     fn test_parse_l2_book_snapshot_uses_venue_time_as_ts_event() {
         let book_data = sample_l2_book();
         let book = parse_l2_book_snapshot(&book_data, btc_perp_id(), 2, 4, None);
-        let expected_ts = UnixNanos::from(1769908800000_u64 * 1_000_000);
+        let expected_ts = UnixNanos::from(1_769_908_800_000_u64 * 1_000_000);
 
         // ts_last reflects the last applied delta; every added order
         // carries the venue time after the ms->ns conversion.
@@ -3518,7 +3521,7 @@ mod tests {
                 vec![level("98450.50", "2.5"), level("98449.00", "0")],
                 vec![level("98451.00", "0"), level("98452.00", "1.5")],
             ],
-            time: 1769908800000,
+            time: 1_769_908_800_000,
         };
         let book = parse_l2_book_snapshot(&book_data, btc_perp_id(), 2, 4, None);
 
@@ -3535,7 +3538,7 @@ mod tests {
                 vec![level("98448.00", "0.0"), level("98449.00", "1.2")],
                 vec![level("98451.00", "0.0"), level("98452.00", "1.5")],
             ],
-            time: 1769908800000,
+            time: 1_769_908_800_000,
         };
         let book = parse_l2_book_snapshot(&book_data, btc_perp_id(), 2, 4, None);
 
@@ -3550,7 +3553,7 @@ mod tests {
         let book_data = HyperliquidL2Book {
             coin: Ustr::from("BTC"),
             levels: vec![],
-            time: 1769908800000,
+            time: 1_769_908_800_000,
         };
         let book = parse_l2_book_snapshot(&book_data, btc_perp_id(), 2, 4, None);
 
@@ -3583,7 +3586,7 @@ mod tests {
             load_test_data("http_recent_trades_btc.json");
         assert_eq!(raw.len(), 3);
         // Fixture is newest-first as the venue returns it.
-        assert_eq!(raw[0].tid, 300003);
+        assert_eq!(raw[0].tid, 300_003);
 
         let meta: crate::http::models::PerpMeta = load_test_data("http_meta_perp_sample.json");
         let defs = crate::http::parse::parse_perp_instruments(&meta, 0).unwrap();

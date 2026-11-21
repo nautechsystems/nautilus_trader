@@ -771,7 +771,7 @@ mod tests {
     fn test_limit_order_decimal_routes(#[case] size: &str, #[case] expected: &str) {
         let value = serde_json::json!({
             "size": size,
-            "price": 9007199254740993u64,
+            "price": 9_007_199_254_740_993_u64,
             "minFillSize": "2.375",
             "betTargetSize": null
         });

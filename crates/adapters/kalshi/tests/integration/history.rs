@@ -61,12 +61,12 @@ async fn trades_collect_live_then_full_archive_with_one_fixed_cutoff(#[case] arc
         replies.push((200, f["trades"].clone()));
         let (config, peer) = serve(replies).await;
         let http = KalshiHttpClient::new(&config).unwrap();
-        let query = trade_query(1700000100);
+        let query = trade_query(1_700_000_100);
         let trades = http.get_trades_range(query, 2).await.unwrap();
         assert_eq!(trades, vec![serde_json::from_value(f["trade"].clone()).unwrap()]);
         let requests = peer.await.unwrap();
         let mut expected = vec!["GET /trade-api/v2/historical/cutoff HTTP/1.1".to_owned()];
-        let query = format!("limit=1000&ticker=KXBTC15M-26OCT162345-45&min_ts=1700000000&max_ts={}&is_block_trade=false", 1700000100);
+        let query = format!("limit=1000&ticker=KXBTC15M-26OCT162345-45&min_ts=1700000000&max_ts={}&is_block_trade=false", 1_700_000_100);
 
         if !archived_only { expected.push(format!("GET /trade-api/v2/markets/trades?{query} HTTP/1.1")); }
         expected.push(format!("GET /trade-api/v2/historical/trades?{query} HTTP/1.1"));
@@ -124,7 +124,7 @@ async fn incomplete_trade_collections_fail(#[case] scenario: &str) {
         let http = KalshiHttpClient::new(&config).unwrap();
         let error = http
             .get_trades_range(
-                trade_query(1700000100),
+                trade_query(1_700_000_100),
                 if scenario == "budget" { 1 } else { 2 },
             )
             .await
@@ -170,8 +170,8 @@ async fn candles_route_by_market_settlement_and_normalize_archive(#[case] scenar
         let http = KalshiHttpClient::new(&config).unwrap();
 
         let query = CandlesticksQuery {
-            start_ts: 1700000040,
-            end_ts: 1700000100,
+            start_ts: 1_700_000_040,
+            end_ts: 1_700_000_100,
             period_interval: CandlestickInterval::Minute,
         };
 
@@ -263,13 +263,13 @@ async fn trade_requests_preserve_exact_window_limit_correlation_and_fresh_contex
             DataClient::request_trades(&client,request).unwrap();
             let DataEvent::Response(DataResponse::Trades(response))=events.recv().await.unwrap() else {panic!("expected trades response")};
             assert_eq!(response.correlation_id,correlation);assert_eq!(response.client_id,ClientId::from("ROUTED"));assert_eq!(response.instrument_ids,vec![id]);assert_eq!(response.params,Some(params));
-            assert_eq!(response.start,Some(UnixNanos::from(1700000040123456789)));assert_eq!(response.end,Some(UnixNanos::from(1700000040123456791)));
+            assert_eq!(response.start,Some(UnixNanos::from(1_700_000_040_123_456_789)));assert_eq!(response.end,Some(UnixNanos::from(1_700_000_040_123_456_791)));
             assert_eq!(response.data.len(),if limit.is_some() {2} else {3});
 
             for (index,tick) in response.data.iter().enumerate() {
                 assert_eq!(tick.instrument_id,id);assert_eq!(tick.price.as_decimal(),"0.123456".parse().unwrap());assert_eq!(tick.price.precision,6);assert_eq!(tick.size.as_decimal(),"2.75".parse().unwrap());assert_eq!(tick.size.precision,2);
                 assert_eq!(tick.aggressor_side,if index==1 {AggressorSide::Buy} else {AggressorSide::Sell});
-                assert_eq!(tick.trade_id.as_str(),["trade-a","newer","end-boundary"][index]);assert_eq!(tick.ts_event,UnixNanos::from(1700000040123456789+index as u64));assert_eq!(tick.ts_init,tick.ts_event);
+                assert_eq!(tick.trade_id.as_str(),["trade-a","newer","end-boundary"][index]);assert_eq!(tick.ts_event,UnixNanos::from(1_700_000_040_123_456_789+index as u64));assert_eq!(tick.ts_init,tick.ts_event);
             }
         }
 
@@ -299,9 +299,9 @@ async fn bar_requests_map_each_series_exactly_and_keep_zero_volume(
         let f = fixtures();
         let mut candles = f["candles"].clone();
         let mut before = candles["candlesticks"][0].clone();
-        before["end_period_ts"] = 1699999980_i64.into();
+        before["end_period_ts"] = 1_699_999_980_i64.into();
         let mut after = candles["candlesticks"][0].clone();
-        after["end_period_ts"] = 1700000100_i64.into();
+        after["end_period_ts"] = 1_700_000_100_i64.into();
         candles["candlesticks"]
             .as_array_mut()
             .unwrap()
@@ -349,8 +349,14 @@ async fn bar_requests_map_each_series_exactly_and_keep_zero_volume(
         assert_eq!(response.client_id, ClientId::from("ROUTED"));
         assert_eq!(response.bar_type, bar_type);
         assert_eq!(response.params, None);
-        assert_eq!(response.start, Some(UnixNanos::from(1700000040000000000)));
-        assert_eq!(response.end, Some(UnixNanos::from(1700000099999999999)));
+        assert_eq!(
+            response.start,
+            Some(UnixNanos::from(1_700_000_040_000_000_000))
+        );
+        assert_eq!(
+            response.end,
+            Some(UnixNanos::from(1_700_000_099_999_999_999))
+        );
         assert_eq!(response.data.len(), 1);
         let bar = &response.data[0];
         assert_eq!(bar.bar_type, bar_type);
@@ -365,7 +371,7 @@ async fn bar_requests_map_each_series_exactly_and_keep_zero_volume(
         );
         assert_eq!(bar.volume.as_decimal(), rust_decimal::Decimal::ZERO);
         assert_eq!(bar.volume.precision, 2);
-        assert_eq!(bar.ts_event, UnixNanos::from(1700000040000000000));
+        assert_eq!(bar.ts_event, UnixNanos::from(1_700_000_040_000_000_000));
         assert_eq!(bar.ts_init, bar.ts_event);
         client.disconnect().await.unwrap();
         let requests = peer.await.unwrap();
@@ -383,7 +389,7 @@ fn fixtures() -> Value {
 fn trade_query(end: i64) -> TradesQuery {
     TradesQuery {
         ticker: Some("KXBTC15M-26OCT162345-45".into()),
-        min_ts: Some(1700000000),
+        min_ts: Some(1_700_000_000),
         max_ts: Some(end),
         limit: Some(1000),
         is_block_trade: Some(false),
@@ -432,7 +438,7 @@ async fn trade_pagination_and_empty_history_cover_moving_handoff(#[case] empty: 
 
         let replies=if empty {vec![(200,cutoff),(200,f["empty_trades"].clone()),(200,f["empty_trades"].clone())]} else {vec![(200,cutoff),(200,page),(200,second),(200,f["trades"].clone())]};
         let (config,peer)=serve(replies).await;
-        let result=KalshiHttpClient::new(&config).unwrap().get_trades_range(trade_query(1700000100),2).await.unwrap();
+        let result=KalshiHttpClient::new(&config).unwrap().get_trades_range(trade_query(1_700_000_100),2).await.unwrap();
 
         let expected=if empty {Vec::new()}else{let a=serde_json::from_value(f["trade"].clone()).unwrap();let mut b=f["trade"].clone();b["trade_id"]="trade-b".into();vec![a,serde_json::from_value(b).unwrap()]};
         assert_eq!(result,expected);
@@ -463,8 +469,8 @@ async fn candle_handoff_and_malformed_sources_are_explicit(#[case] scenario: &st
             "conflict" => archive["candlesticks"][0]["volume"] = "1.00".into(),
             "identity" => live["ticker"] = "WRONG".into(),
             "daily_offset" => {
-                live["candlesticks"][0]["end_period_ts"] = 1786852800_i64.into();
-                archive["candlesticks"][0]["end_period_ts"] = 1786852800_i64.into();
+                live["candlesticks"][0]["end_period_ts"] = 1_786_852_800_i64.into();
+                archive["candlesticks"][0]["end_period_ts"] = 1_786_852_800_i64.into();
             }
             "missing_settlement" => market["settlement_ts"] = Value::Null,
             _ => {}
@@ -484,14 +490,14 @@ async fn candle_handoff_and_malformed_sources_are_explicit(#[case] scenario: &st
 
         let query = if scenario == "daily_offset" {
             CandlesticksQuery {
-                start_ts: 1786852800,
-                end_ts: 1786939200,
+                start_ts: 1_786_852_800,
+                end_ts: 1_786_939_200,
                 period_interval: CandlestickInterval::Day,
             }
         } else {
             CandlesticksQuery {
-                start_ts: 1700000040,
-                end_ts: 1700000100,
+                start_ts: 1_700_000_040,
+                end_ts: 1_700_000_100,
                 period_interval: CandlestickInterval::Minute,
             }
         };
@@ -521,9 +527,9 @@ async fn candle_handoff_and_malformed_sources_are_explicit(#[case] scenario: &st
             assert_eq!(
                 candles[0].end_period_ts,
                 if scenario == "daily_offset" {
-                    1786852800
+                    1_786_852_800
                 } else {
-                    1700000040
+                    1_700_000_040
                 }
             );
         }
@@ -569,7 +575,7 @@ async fn bar_requests_cover_archive_limit_params_and_future_partial(#[case] part
             market["market"]["settlement_ts"] = "2023-11-14T22:14:00Z".into();
             market["market"]["status"] = "finalized".into();
             let mut newer = candles["candlesticks"][0].clone();
-            newer["end_period_ts"] = 1700000100_i64.into();
+            newer["end_period_ts"] = 1_700_000_100_i64.into();
             candles["candlesticks"]
                 .as_array_mut()
                 .unwrap()
@@ -640,7 +646,7 @@ async fn bar_requests_cover_archive_limit_params_and_future_partial(#[case] part
             assert_eq!(response.data.len(), 1);
             assert_eq!(
                 response.data[0].ts_event,
-                UnixNanos::from(1700000040000000000)
+                UnixNanos::from(1_700_000_040_000_000_000)
             );
             assert_eq!(
                 response.data[0].open.as_decimal(),
@@ -837,8 +843,8 @@ async fn settled_empty_window_distinguishes_live_success_from_missing_sources(
                 &serde_json::from_value(market).unwrap(),
                 "KXBTC15M",
                 &CandlesticksQuery {
-                    start_ts: 1700000040,
-                    end_ts: 1700000100,
+                    start_ts: 1_700_000_040,
+                    end_ts: 1_700_000_100,
                     period_interval: CandlestickInterval::Minute,
                 },
             )

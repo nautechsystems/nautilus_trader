@@ -603,7 +603,7 @@ async fn test_get_instrument_success() {
     let instrument = response.result.expect("Response should have result");
 
     assert_eq!(instrument.instrument_name, "BTC-PERPETUAL");
-    assert_eq!(instrument.instrument_id, 124972);
+    assert_eq!(instrument.instrument_id, 124_972);
     assert_eq!(instrument.base_currency, "BTC");
     assert_eq!(instrument.quote_currency, "USD");
     assert_eq!(instrument.contract_size, dec!(10.0));
@@ -730,7 +730,7 @@ async fn test_get_instruments_success() {
     let future = &instruments[1];
     assert_eq!(future.instrument_name, "BTC-27DEC24");
     assert_eq!(future.kind, DeribitProductType::Future);
-    assert_eq!(future.expiration_timestamp, Some(1735300800000));
+    assert_eq!(future.expiration_timestamp, Some(1_735_300_800_000));
 
     let option = &instruments[2];
     assert_eq!(option.instrument_name, "BTC-27DEC24-100000-C");
@@ -958,9 +958,9 @@ async fn test_get_last_trades_success() {
 
     let params = GetLastTradesByInstrumentAndTimeParams::new(
         "ETH-PERPETUAL",
-        1766332000000, // start_timestamp
-        1766332100000, // end_timestamp
-        Some(10),      // count
+        1_766_332_000_000, // start_timestamp
+        1_766_332_100_000, // end_timestamp
+        Some(10),          // count
         Some("asc".to_string()),
     );
     let result = client.get_last_trades_by_instrument_and_time(params).await;
@@ -979,7 +979,7 @@ async fn test_get_last_trades_success() {
     assert_eq!(first_trade.price, dec!(2968.3));
     assert_eq!(first_trade.amount, dec!(1.0));
     assert_eq!(first_trade.trade_id, "ETH-284830839");
-    assert_eq!(first_trade.trade_seq, 203024587);
+    assert_eq!(first_trade.trade_seq, 203_024_587);
     assert_eq!(first_trade.tick_direction, 0);
     assert_eq!(first_trade.index_price, Some(dec!(2967.73)));
     assert_eq!(first_trade.mark_price, Some(dec!(2968.01)));
@@ -1010,11 +1010,11 @@ async fn test_get_last_trades_success() {
     );
     assert_eq!(
         captured_params.get("start_timestamp").unwrap().as_i64(),
-        Some(1766332000000)
+        Some(1_766_332_000_000)
     );
     assert_eq!(
         captured_params.get("end_timestamp").unwrap().as_i64(),
-        Some(1766332100000)
+        Some(1_766_332_100_000)
     );
 }
 
@@ -1038,8 +1038,8 @@ async fn test_get_last_trades_invalid_params() {
 
     let params = GetLastTradesByInstrumentAndTimeParams::new(
         "INVALID",
-        1766332000000,
-        1766332100000,
+        1_766_332_000_000,
+        1_766_332_100_000,
         None,
         None,
     );
@@ -1077,8 +1077,8 @@ async fn test_get_last_trades_instrument_not_found() {
 
     let params = GetLastTradesByInstrumentAndTimeParams::new(
         "NONEXISTENT",
-        1766332000000,
-        1766332100000,
+        1_766_332_000_000,
+        1_766_332_100_000,
         None,
         None,
     );
@@ -1119,9 +1119,9 @@ async fn test_get_tradingview_chart_data_success() {
 
     let params = GetTradingViewChartDataParams::new(
         "BTC-PERPETUAL".to_string(),
-        1766483460000,   // start_timestamp
-        1766483700000,   // end_timestamp
-        "1".to_string(), // resolution (1 minute)
+        1_766_483_460_000, // start_timestamp
+        1_766_483_700_000, // end_timestamp
+        "1".to_string(),   // resolution (1 minute)
     );
     let result = client.get_tradingview_chart_data(params).await;
 
@@ -1138,7 +1138,7 @@ async fn test_get_tradingview_chart_data_success() {
     assert_eq!(chart_data.volume.len(), 5);
 
     // Verify first bar data
-    assert_eq!(chart_data.ticks[0], 1766483460000);
+    assert_eq!(chart_data.ticks[0], 1_766_483_460_000);
     assert_eq!(chart_data.open[0], dec!(87451.0));
     assert_eq!(chart_data.high[0], dec!(87456.5));
     assert_eq!(chart_data.low[0], dec!(87451.0));
@@ -1146,7 +1146,7 @@ async fn test_get_tradingview_chart_data_success() {
     assert_eq!(chart_data.volume[0], dec!(2.94375216));
 
     // Verify last bar data
-    assert_eq!(chart_data.ticks[4], 1766483700000);
+    assert_eq!(chart_data.ticks[4], 1_766_483_700_000);
     assert_eq!(chart_data.open[4], dec!(87456.0));
     assert_eq!(chart_data.high[4], dec!(87456.5));
     assert_eq!(chart_data.low[4], dec!(87456.0));
@@ -1173,11 +1173,11 @@ async fn test_get_tradingview_chart_data_success() {
     );
     assert_eq!(
         captured_params.get("start_timestamp").unwrap().as_i64(),
-        Some(1766483460000)
+        Some(1_766_483_460_000)
     );
     assert_eq!(
         captured_params.get("end_timestamp").unwrap().as_i64(),
-        Some(1766483700000)
+        Some(1_766_483_700_000)
     );
     assert_eq!(
         captured_params.get("resolution").unwrap().as_str(),
@@ -1205,8 +1205,8 @@ async fn test_get_tradingview_chart_data_instrument_not_found() {
 
     let params = GetTradingViewChartDataParams::new(
         "NONEXISTENT".to_string(),
-        1766483460000,
-        1766483700000,
+        1_766_483_460_000,
+        1_766_483_700_000,
         "1".to_string(),
     );
     let result = client.get_tradingview_chart_data(params).await;
@@ -1273,7 +1273,7 @@ async fn test_get_order_book_success() {
     assert_eq!(order_book.asks[0][1], dec!(125090.0)); // amount
 
     // Verify timestamp
-    assert_eq!(order_book.timestamp, 1766554855140);
+    assert_eq!(order_book.timestamp, 1_766_554_855_140);
 
     // Verify request was tracked
     assert_eq!(

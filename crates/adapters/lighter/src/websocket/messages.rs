@@ -991,7 +991,7 @@ mod tests {
             "type": kind,
             "channel": "account_all_positions:7",
             "positions": {},
-            "last_funding_round": {"1": 9007199254740993u64, "3": 1.25},
+            "last_funding_round": {"1": 9_007_199_254_740_993_u64, "3": 1.25},
             "last_funding_discount": {
                 "2": "0.1234567890123456789012345678",
                 "4": "0.12345678901234567890123456789"
@@ -1618,7 +1618,7 @@ mod tests {
         let payload = serde_json::json!({
             "type": "subscribed/account_all_assets",
             "channel": "account_all_assets:1234",
-            "timestamp": 1778751230509u64,
+            "timestamp": 1_778_751_230_509_u64,
             "assets": {
                 "3": {
                     "asset_id": 3,

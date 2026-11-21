@@ -10396,7 +10396,7 @@ fn test_batch_modify_orders_error_paths(
         Some(Rc::new(RefCell::new(cache))),
         Some(RiskEngineConfig {
             bypass: scenario == "bypass",
-            max_order_modify: RateLimit::new(1, DurationNanos::new(1000000000)),
+            max_order_modify: RateLimit::new(1, DurationNanos::new(1_000_000_000)),
             ..RiskEngineConfig::default()
         }),
         None,
@@ -10598,7 +10598,7 @@ fn test_batch_modify_rejection_tolerates_cache_reset_in_callback(
     let mut risk = get_risk_engine(
         Some(Rc::clone(&cache)),
         Some(RiskEngineConfig {
-            max_order_modify: RateLimit::new(1, DurationNanos::new(1000000000)),
+            max_order_modify: RateLimit::new(1, DurationNanos::new(1_000_000_000)),
             ..RiskEngineConfig::default()
         }),
         None,

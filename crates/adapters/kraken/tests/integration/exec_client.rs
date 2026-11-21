@@ -4389,7 +4389,7 @@ async fn test_futures_mass_status_skips_an_unsized_trigger_only_on_a_flat_contra
                 "PI_XBTUSD",
                 "0",
                 "0",
-                1680877245500,
+                1_680_877_245_500,
             )]));
     }
 
@@ -4577,7 +4577,7 @@ async fn test_futures_order_status_reports_resolve_the_history_tradeable(
             tradeable,
             "2",
             "0",
-            1680877245500,
+            1_680_877_245_500,
         )]));
 
     let reports = client
@@ -4605,7 +4605,7 @@ async fn test_futures_order_status_reports_fold_history_events_per_order() {
             "PI_XBTUSD",
             "2",
             "0",
-            1680877245500,
+            1_680_877_245_500,
         ),
         futures_history_element(
             "OrderUpdated",
@@ -4614,7 +4614,7 @@ async fn test_futures_order_status_reports_fold_history_events_per_order() {
             "PI_XBTUSD",
             "3",
             "0",
-            1680877245600,
+            1_680_877_245_600,
         ),
         futures_history_element(
             "OrderUpdated",
@@ -4623,7 +4623,7 @@ async fn test_futures_order_status_reports_fold_history_events_per_order() {
             "PI_XBTUSD",
             "3",
             "2",
-            1680877245700,
+            1_680_877_245_700,
         ),
     ]));
 
@@ -4657,7 +4657,7 @@ async fn test_futures_order_status_reports_keep_the_open_snapshot_over_history()
             "PI_XBTUSD",
             "1000",
             "500",
-            1680877245500,
+            1_680_877_245_500,
         )]));
 
     let reports = client
@@ -4700,7 +4700,7 @@ fn filled_history_json(order_uid: &str, order_type: &str) -> String {
         "PI_XBTUSD",
         "1000",
         "1000",
-        1680877245500,
+        1_680_877_245_500,
     )
     .replace(
         r#""orderType":"Limit""#,
@@ -4805,7 +4805,7 @@ async fn test_futures_history_canceled_partial_report_is_priced_from_its_fills(
             "PI_XBTUSD",
             "1000",
             "600",
-            1680877245500,
+            1_680_877_245_500,
         )]));
     *state.fills_response.lock().await = Some(futures_fills_json(&[
         ("f-1", "H-CANCELED-1", "200", "27000.0"),
@@ -4880,7 +4880,7 @@ async fn test_futures_history_filled_report_is_withheld_when_the_fills_read_fail
             "PI_XBTUSD",
             "1000",
             "1000",
-            1680877245600,
+            1_680_877_245_600,
         ),
         futures_history_element(
             "OrderPlaced",
@@ -4889,7 +4889,7 @@ async fn test_futures_history_filled_report_is_withheld_when_the_fills_read_fail
             "PI_XBTUSD",
             "500",
             "0",
-            1680877245500,
+            1_680_877_245_500,
         ),
     ]));
     *state.fills_response.lock().await =
@@ -5130,7 +5130,7 @@ fn executed_history_json(order_uid: &str) -> String {
         "PI_XBTUSD",
         "1000",
         "1000",
-        1680877245500,
+        1_680_877_245_500,
     )])
 }
 
@@ -5300,7 +5300,7 @@ async fn test_futures_mass_status_withholds_a_canceled_partial_with_no_fill() {
             "PI_XBTUSD",
             "1000",
             "400",
-            1680877245500,
+            1_680_877_245_500,
         )]));
 
     let snapshot = client
@@ -5440,7 +5440,7 @@ fn flat_round_trip_history_json() -> String {
             "Sell",
             "1000",
             "1000",
-            1680879600000,
+            1_680_879_600_000,
         ),
         futures_history_element_sided(
             "OrderUpdated",
@@ -5450,7 +5450,7 @@ fn flat_round_trip_history_json() -> String {
             "Buy",
             "1000",
             "1000",
-            1680876000000,
+            1_680_876_000_000,
         ),
     ])
 }
@@ -5490,9 +5490,9 @@ async fn test_futures_mass_status_withholds_a_closing_order_on_a_flat_instrument
 /// unreadable row is too old to withhold. A sibling keeps its report and fills either way, and the
 /// set is incomplete.
 #[rstest]
-#[case::uncached(false, 1680877245500, false, false)]
-#[case::cached(true, 1680877245500, false, true)]
-#[case::uncached_reported_from_a_newer_state(false, 1680877244000, true, true)]
+#[case::uncached(false, 1_680_877_245_500, false, false)]
+#[case::cached(true, 1_680_877_245_500, false, true)]
+#[case::uncached_reported_from_a_newer_state(false, 1_680_877_244_000, true, true)]
 #[tokio::test]
 async fn test_futures_mass_status_withholds_the_fills_of_an_uncached_order_the_read_withholds(
     #[case] order_cached: bool,
@@ -5534,7 +5534,7 @@ async fn test_futures_mass_status_withholds_the_fills_of_an_uncached_order_the_r
             "PI_XBTUSD",
             "1000",
             "0",
-            1680877245000,
+            1_680_877_245_000,
         ),
         futures_history_element(
             "OrderPlaced",
@@ -5543,7 +5543,7 @@ async fn test_futures_mass_status_withholds_the_fills_of_an_uncached_order_the_r
             "PI_XBTUSD",
             "1000",
             "0",
-            1680877245000,
+            1_680_877_245_000,
         ),
     ]));
     *state.fills_response.lock().await = Some(futures_recent_fills_json(&[
@@ -5604,7 +5604,7 @@ async fn test_futures_mass_status_keeps_a_withheld_order_fill_echoing_a_cached_o
             "PI_XBTUSD",
             "oops",
             "0",
-            1680877245500,
+            1_680_877_245_500,
         ),
         futures_history_element(
             "OrderPlaced",
@@ -5613,7 +5613,7 @@ async fn test_futures_mass_status_keeps_a_withheld_order_fill_echoing_a_cached_o
             "PI_XBTUSD",
             "1000",
             "0",
-            1680877245000,
+            1_680_877_245_000,
         ),
     ]));
     *state.fills_response.lock().await = Some(recent_fills_body(&[(
@@ -5677,7 +5677,7 @@ async fn test_futures_mass_status_withholds_a_lone_closing_order_on_a_flat_instr
             "Sell",
             "1000",
             "1000",
-            1680879600000,
+            1_680_879_600_000,
         ),
     ]));
     *state.fills_response.lock().await = Some(futures_recent_fills_json(&[(
@@ -5725,7 +5725,7 @@ async fn test_futures_mass_status_nets_an_open_order_fill_against_a_terminal_one
             "Sell",
             "500",
             "500",
-            1680879600000,
+            1_680_879_600_000,
         ),
     ]));
     *state.fills_response.lock().await = Some(futures_recent_fills_json(&[
@@ -5765,7 +5765,7 @@ async fn test_futures_mass_status_keeps_an_open_order_beside_a_withheld_terminal
             "Sell",
             "1000",
             "1000",
-            1680879600000,
+            1_680_879_600_000,
         ),
     ]));
     *state.fills_response.lock().await = Some(futures_recent_fills_json(&[
@@ -6050,7 +6050,7 @@ async fn test_futures_scoped_order_reads_reject_rows_of_another_held_instrument(
             "PI_XBTUSD",
             "1000",
             "0",
-            1680877245500,
+            1_680_877_245_500,
         ),
         futures_history_element(
             "OrderPlaced",
@@ -6059,7 +6059,7 @@ async fn test_futures_scoped_order_reads_reject_rows_of_another_held_instrument(
             "PF_ETHUSD",
             "1000",
             "0",
-            1680877245500,
+            1_680_877_245_500,
         ),
     ]));
 

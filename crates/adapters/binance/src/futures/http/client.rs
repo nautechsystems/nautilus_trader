@@ -4991,7 +4991,7 @@ mod tests {
             client
                 .cancel_order(&BinanceCancelOrderParams {
                     symbol: "BTCUSDT".into(),
-                    order_id: Some(12345678),
+                    order_id: Some(12_345_678),
                     orig_client_order_id: None,
                     recv_window: None,
                 })
@@ -5007,7 +5007,7 @@ mod tests {
             blocked,
             Err(BinanceFuturesHttpError::RateLimitBlocked)
         ));
-        assert_eq!(cancel.unwrap().order_id, 12345678);
+        assert_eq!(cancel.unwrap().order_id, 12_345_678);
         assert_eq!(*requests.lock(), [Method::POST, Method::DELETE]);
     }
 

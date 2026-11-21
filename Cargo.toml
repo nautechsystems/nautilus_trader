@@ -661,6 +661,7 @@ manual_assert = "warn"
 items_after_statements = "warn"
 ignored_unit_patterns = "warn"
 if_not_else = "warn"
+unreadable_literal = "warn"
 
 # Security and robustness
 disallowed_methods = "warn"

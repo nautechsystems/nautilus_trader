@@ -374,7 +374,7 @@ pub(crate) fn crypto_twap_data_type(symbol: &str, window_seconds: u64) -> DataTy
 }
 
 pub(crate) fn price_timestamp_ms(sequence: u64, point: usize) -> u64 {
-    1791355667000 + sequence * 10 + point as u64
+    1_791_355_667_000 + sequence * 10 + point as u64
 }
 
 pub(crate) fn fixture_json(fixture: &str) -> Value {

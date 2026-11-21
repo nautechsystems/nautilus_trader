@@ -28,7 +28,7 @@ pub static UNISWAP_V4: LazyLock<DexExtended> = LazyLock::new(|| {
         chains::ARBITRUM.clone(),
         DexType::UniswapV4,
         "0x360E68faCcca8cA495c1B759Fd9EEe466db9FB32", // Pool Manager
-        304081360,
+        304_081_360,
         AmmType::CLAMEnhanced,
         "Initialize(bytes32,address,address,uint24,int24,address,uint160,int24)", // Pool discovery via Initialize
         "",

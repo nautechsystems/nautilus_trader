@@ -1709,7 +1709,7 @@ async fn test_get_orders_auto_paginates_multiple_pages() {
             "asset_id": "71321045679252212594626385532706912750332728571942532289631379312455583992563",
             "expiration": null,
             "order_type": "GTC",
-            "created_at": 1703875200001u64
+            "created_at": 1_703_875_200_001_u64
         }],
         "next_cursor": "cGFnZTI="
     });
@@ -1730,7 +1730,7 @@ async fn test_get_orders_auto_paginates_multiple_pages() {
             "asset_id": "52114319501245915516055106046884209969926127482827954674443846427813813222426",
             "expiration": null,
             "order_type": "GTC",
-            "created_at": 1703875200002u64
+            "created_at": 1_703_875_200_002_u64
         }],
         "next_cursor": "LTE="
     });
@@ -5295,12 +5295,20 @@ async fn test_request_trades_paginates_multiple_pages() {
         newest.push(make_data_api_trade(
             token,
             0.50 + (i as f64) * 0.01,
-            1710000008 - i as i64,
+            1_710_000_008 - i as i64,
             &format!("aaa{i}"),
         ));
     }
+
     let oldest = (0..4u32)
-        .map(|i| make_data_api_trade(token, 0.40, 1710000000 - i as i64, &format!("aaa_old{i}")))
+        .map(|i| {
+            make_data_api_trade(
+                token,
+                0.40,
+                1_710_000_000 - i as i64,
+                &format!("aaa_old{i}"),
+            )
+        })
         .collect::<Vec<_>>();
     state
         .data_api_trade_pages
@@ -5461,9 +5469,9 @@ async fn test_request_trades_limit_truncation() {
     let condition_id = "0xcondition_test";
 
     state.data_api_trade_pages.lock().await.extend([json!([
-        make_data_api_trade(token, 0.60, 1710000003, "bbb3"),
-        make_data_api_trade(token, 0.59, 1710000002, "bbb2"),
-        make_data_api_trade(token, 0.58, 1710000001, "bbb1"),
+        make_data_api_trade(token, 0.60, 1_710_000_003, "bbb3"),
+        make_data_api_trade(token, 0.59, 1_710_000_002, "bbb2"),
+        make_data_api_trade(token, 0.58, 1_710_000_001, "bbb1"),
     ])]);
 
     let addr = start_mock_server(state.clone()).await;
@@ -5583,7 +5591,10 @@ async fn test_request_trades_single_page_partial() {
         .lock()
         .await
         .extend([json!([make_data_api_trade(
-            token, 0.70, 1710000001, "ccc1"
+            token,
+            0.70,
+            1_710_000_001,
+            "ccc1"
         ),])]);
 
     let addr = start_mock_server(state.clone()).await;
@@ -5637,12 +5648,12 @@ async fn test_request_trades_honors_start_end_and_limit_after_token_filtering() 
     let state = TestServerState::default();
     let token = "token_window";
     state.data_api_trade_pages.lock().await.extend([json!([
-        make_data_api_trade(token, 0.55, 1710000005, "window5"),
-        make_data_api_trade("other_token", 0.54, 1710000004, "other4"),
-        make_data_api_trade(token, 0.53, 1710000004, "window4"),
-        make_data_api_trade(token, 0.52, 1710000003, "window3"),
-        make_data_api_trade(token, 0.51, 1710000002, "window2"),
-        make_data_api_trade(token, 0.50, 1710000001, "window1"),
+        make_data_api_trade(token, 0.55, 1_710_000_005, "window5"),
+        make_data_api_trade("other_token", 0.54, 1_710_000_004, "other4"),
+        make_data_api_trade(token, 0.53, 1_710_000_004, "window4"),
+        make_data_api_trade(token, 0.52, 1_710_000_003, "window3"),
+        make_data_api_trade(token, 0.51, 1_710_000_002, "window2"),
+        make_data_api_trade(token, 0.50, 1_710_000_001, "window1"),
     ])]);
 
     let addr = start_mock_server(state.clone()).await;

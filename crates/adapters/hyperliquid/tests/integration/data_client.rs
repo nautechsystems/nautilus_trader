@@ -328,8 +328,8 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
         }
         "candleSnapshot" => Json(json!([
             {
-                "t": 1703875200000u64,
-                "T": 1703875259999u64,
+                "t": 1_703_875_200_000_u64,
+                "T": 1_703_875_259_999_u64,
                 "s": "BTC",
                 "i": "1m",
                 "o": "98450.00",
@@ -652,8 +652,8 @@ async fn handle_ws_socket(mut socket: WebSocket, state: TestServerState) {
                                             "px": "98450.00",
                                             "sz": "0.5",
                                             "hash": "0xabc123",
-                                            "time": 1703875200000u64,
-                                            "tid": 100001u64,
+                                            "time": 1_703_875_200_000_u64,
+                                            "tid": 100_001_u64,
                                             "users": ["0xbuyer", "0xseller"]
                                         }]
                                     })),
@@ -808,7 +808,7 @@ fn compact_snapshot(coin: &str) -> Value {
         })
         .collect();
     json!({"channel":"l2", "data":{"s":{
-        "coin":coin,"time":1703875200000_u64,"levels":[bids,asks],
+        "coin":coin,"time":1_703_875_200_000_u64,"levels":[bids,asks],
     }}})
 }
 
@@ -870,7 +870,7 @@ fn bbo_message() -> Value {
         "channel": "bbo",
         "data": {
             "coin": "BTC",
-            "time": 1703875200000u64,
+            "time": 1_703_875_200_000_u64,
             "bbo": [
                 {"px": "98450.00", "sz": "1.5", "n": 3},
                 {"px": "98451.00", "sz": "2.0", "n": 2}
@@ -2269,7 +2269,7 @@ async fn compact_l2_reconstructs_snapshots_through_the_data_client(
     // Same timestamp: match the web reducer instead of deduplicating by time
     let update = compact_update(
         coin,
-        1703875200000,
+        1_703_875_200_000,
         &json!([[0, 2], [0]]),
         &json!([
             [{"p":"100","s":"2"},{"p":"80","s":"4"}],
@@ -2296,7 +2296,7 @@ async fn compact_l2_reconstructs_snapshots_through_the_data_client(
         .extend(["3", "4", "4"].map(|size| {
             compact_update(
                 coin,
-                1703875200000,
+                1_703_875_200_000,
                 &json!([[], []]),
                 &json!([[{"p":"100","s":size}], []]),
             )
@@ -2358,10 +2358,15 @@ async fn compact_l2_keeps_multiple_instrument_baselines_independent() {
     }
 
     state.compact_messages.lock().await.extend([
-        compact_update("BTC", 1703875200100, &json!([[], [0]]), &json!([[], []])),
+        compact_update(
+            "BTC",
+            1_703_875_200_100,
+            &json!([[], [0]]),
+            &json!([[], []]),
+        ),
         compact_update(
             "xyz:NVDA",
-            1703875200100,
+            1_703_875_200_100,
             &json!([[], [0, 1]]),
             &json!([[], []]),
         ),
@@ -2424,7 +2429,7 @@ async fn compact_l2_invalid_index_recovers_with_the_same_feed_and_precision(
     }
     state.compact_messages.lock().await.push(compact_update(
         "BTC",
-        1703875200100,
+        1_703_875_200_100,
         &json!([[20], []]),
         &json!([[], []]),
     ));
@@ -2566,7 +2571,7 @@ async fn compact_l2_depth_keeps_the_baseline_after_delta_unsubscribe() {
 
     state.compact_messages.lock().await.push(compact_update(
         "BTC",
-        1703875200100,
+        1_703_875_200_100,
         &json!([[], [0]]),
         &json!([[],[{"p":"121","s":"3"}]]),
     ));
@@ -2657,7 +2662,7 @@ async fn compact_l2_delta_unsubscribe_during_recovery(#[case] keep_depth: bool) 
         // Establish that the retained consumer has received depth on the shared stream
         state.compact_messages.lock().await.push(compact_update(
             "BTC",
-            1703875200100,
+            1_703_875_200_100,
             &json!([[], []]),
             &json!([[], []]),
         ));
@@ -2699,11 +2704,16 @@ async fn compact_l2_delta_unsubscribe_during_recovery(#[case] keep_depth: bool) 
         state.compact_messages.lock().await.extend([
             compact_update(
                 "BTC",
-                1703875200160,
+                1_703_875_200_160,
                 &json!([[], []]),
                 &json!([[{"p":"100","s":"2"}], []]),
             ),
-            compact_update("BTC", 1703875200200, &json!([[20], []]), &json!([[], []])),
+            compact_update(
+                "BTC",
+                1_703_875_200_200,
+                &json!([[20], []]),
+                &json!([[], []]),
+            ),
             bbo_message(),
         ]);
         state.compact_updates.notify_one();
@@ -2741,7 +2751,7 @@ async fn compact_l2_delta_unsubscribe_during_recovery(#[case] keep_depth: bool) 
 
         state.compact_messages.lock().await.push(compact_update(
             "BTC",
-            1703875200300,
+            1_703_875_200_300,
             &json!([[], [0]]),
             &json!([[{"p":"100","s":"3"}], []]),
         ));

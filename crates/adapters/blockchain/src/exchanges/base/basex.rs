@@ -28,7 +28,7 @@ pub static BASEX: LazyLock<DexExtended> = LazyLock::new(|| {
         chains::BASE.clone(),
         DexType::BaseX,
         "0x38015D05f4fEC8AFe15D7cc0386a126574e8077B",
-        3608198,
+        3_608_198,
         AmmType::CLAMM,
         "",
         "",

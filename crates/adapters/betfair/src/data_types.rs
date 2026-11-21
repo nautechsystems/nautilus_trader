@@ -470,7 +470,7 @@ mod tests {
         let data = BetfairRaceRunnerData::new(
             "28587288.1650".to_string(),
             "1.1234567".to_string(),
-            7390417,
+            7_390_417,
             51.4189543,
             -0.4058491,
             17.8,
@@ -489,7 +489,7 @@ mod tests {
         assert!(parsed.progress.is_nan());
         assert!(parsed.stride_frequency.is_nan());
         assert_eq!(parsed.latitude, 51.4189543);
-        assert_eq!(parsed.selection_id, 7390417);
+        assert_eq!(parsed.selection_id, 7_390_417);
     }
 
     #[rstest]

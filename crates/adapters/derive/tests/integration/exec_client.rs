@@ -1019,7 +1019,7 @@ fn sample_instrument_json() -> Value {
         },
         "quote_currency": "USDC",
         "scheduled_activation": 0,
-        "scheduled_deactivation": 32503680000000_i64,
+        "scheduled_deactivation": 32_503_680_000_000_i64,
         "taker_fee_rate": "0.0005",
         "tick_size": "0.01",
     })
@@ -1089,7 +1089,7 @@ fn spot_instrument_json(instrument_name: &str) -> Value {
         "perp_details": null,
         "quote_currency": "USDC",
         "scheduled_activation": 0,
-        "scheduled_deactivation": 32503680000000_i64,
+        "scheduled_deactivation": 32_503_680_000_000_i64,
         "taker_fee_rate": "0",
         "tick_size": "0.1",
     })

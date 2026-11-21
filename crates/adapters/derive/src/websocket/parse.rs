@@ -670,7 +670,7 @@ pub fn bar_spec_to_derive_period(aggregation: BarAggregation, step: u64) -> anyh
                 anyhow::bail!("Derive only supports 1 WEEK interval bars");
             }
 
-            Ok(604800)
+            Ok(604_800)
         }
         _ => anyhow::bail!("Derive does not support {aggregation:?} bars"),
     }
@@ -2201,7 +2201,7 @@ mod tests {
     #[case(BarAggregation::Hour, 4, 14400)]
     #[case(BarAggregation::Hour, 8, 28800)]
     #[case(BarAggregation::Day, 1, 86400)]
-    #[case(BarAggregation::Week, 1, 604800)]
+    #[case(BarAggregation::Week, 1, 604_800)]
     fn test_bar_spec_to_derive_period_maps_supported_intervals(
         #[case] aggregation: BarAggregation,
         #[case] step: u64,

@@ -4753,9 +4753,9 @@ mod tests {
         // placement at T0.
         let page = format!(
             r#"{{"elements":[{{"uid":"e3","timestamp":1680877400000,"event":{{"OrderEditRejected":{{"oldOrder":{},"reason":"order_for_edit_not_found"}}}}}},{{"uid":"e2","timestamp":1680877300000,"event":{{"OrderCancelled":{{"order":{},"reason":"cancelled_by_user"}}}}}},{{"uid":"e1","timestamp":1680876930250,"event":{{"OrderPlaced":{{"order":{},"reason":"new_user_order"}}}}}}]}}"#,
-            order(1680876930250),
-            order(1680877300000),
-            order(1680876930250),
+            order(1_680_876_930_250),
+            order(1_680_877_300_000),
+            order(1_680_876_930_250),
         );
         let client = history_test_client(Arc::new(RwLock::new(page)), None).await;
         cache_test_futures_instrument(&client);

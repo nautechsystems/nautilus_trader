@@ -395,7 +395,7 @@ mod tests {
         assert!(is_available(
             &info,
             None,
-            Some(UnixNanos::from(1000000)),
+            Some(UnixNanos::from(1_000_000)),
             None,
             None
         ));
@@ -470,15 +470,15 @@ mod tests {
         // April 24, 2023 00:00:00 UTC = 1682294400000
         // April 2, 2024 12:10:00 UTC = 1712061000000
 
-        let info = create_test_instrument(1682294400000, Some(1712061000000));
+        let info = create_test_instrument(1_682_294_400_000, Some(1_712_061_000_000));
 
         // Test effective date is within range
-        let mid_date = UnixNanos::from(1695000000000); // Sept 2023
+        let mid_date = UnixNanos::from(1_695_000_000_000); // Sept 2023
         assert!(is_available(&info, None, None, None, Some(mid_date)));
 
         // Test with start/end constraints
-        let start = UnixNanos::from(1690000000000); // July 2023
-        let end = UnixNanos::from(1700000000000); // Nov 2023
+        let start = UnixNanos::from(1_690_000_000_000); // July 2023
+        let end = UnixNanos::from(1_700_000_000_000); // Nov 2023
         assert!(is_available(
             &info,
             Some(start),
@@ -498,11 +498,11 @@ mod tests {
             Some(offset_boundary)
         ));
 
-        let start_date = UnixNanos::from(1682294400000);
+        let start_date = UnixNanos::from(1_682_294_400_000);
         assert!(is_available(&info, None, None, None, Some(start_date)));
 
         // Effective date at exactly the end should fail
-        let end_date = UnixNanos::from(1712061000000);
+        let end_date = UnixNanos::from(1_712_061_000_000);
         assert!(!is_available(&info, None, None, None, Some(end_date)));
     }
 

@@ -698,7 +698,7 @@ fn civil_to_epoch(year: u32, month: u32, day: u32, hour: u32, min: u32, sec: u32
     let m = if month > 2 { month - 3 } else { month + 9 } as u64;
     let doy = (153 * m + 2) / 5 + day as u64 - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146097 + doe as i64 - 719468;
+    let days = era * 146_097 + doe as i64 - 719_468;
     Some(days * 86400 + hour as i64 * 3600 + min as i64 * 60 + sec as i64)
 }
 
@@ -715,10 +715,10 @@ fn epoch_to_civil(timestamp: i64) -> Option<(u32, u32, u32, u32, u32, u32)> {
     let second = secs_of_day % 60;
 
     // Civil date from day count using Howard Hinnant's algorithm
-    let z = days + 719468;
-    let era = z.div_euclid(146097);
-    let doe = z.rem_euclid(146097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
     let y = yoe as i64 + era * 400;
     let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
     let mp = (5 * doy + 2) / 153;

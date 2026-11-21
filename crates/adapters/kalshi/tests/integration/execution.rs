@@ -281,7 +281,7 @@ async fn old_open_order_ignores_history_window_and_current_flat_is_retained() {
         let mut f = fixtures();
         f["fills"] = f["empty_fills"].clone();
         f["positions"]["market_positions"][0]["position_fp"] = "0.00".into();
-        let start = UnixNanos::from(1792200000000000000u64);
+        let start = UnixNanos::from(1_792_200_000_000_000_000_u64);
         let replies = snapshot_replies(&f);
         let (listener, address) = http::bind_peer(0).await;
         let peer = tokio::spawn(async move {

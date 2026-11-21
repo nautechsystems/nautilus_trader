@@ -242,14 +242,14 @@ mod tests {
             event.owner.to_string().to_lowercase(),
             "0xc36442b4a4522e871399cd717abdd847ab11fe88"
         );
-        assert_eq!(event.tick_lower, -139767);
-        assert_eq!(event.tick_upper, -139764);
+        assert_eq!(event.tick_lower, -139_767);
+        assert_eq!(event.tick_upper, -139_764);
         let expected_amount = u128::from_str_radix("2bc997c8ea58d3a8521ec", 16).unwrap();
         assert_eq!(event.amount, expected_amount);
         assert_eq!(event.amount0, U256::ZERO);
         let expected_amount1 = U256::from_str_radix("65b33ff853688eb", 16).unwrap();
         assert_eq!(event.amount1, expected_amount1);
-        assert_eq!(event.block_number, 391799940);
+        assert_eq!(event.block_number, 391_799_940);
     }
 
     #[rstest]
@@ -270,14 +270,14 @@ mod tests {
             event.owner.to_string().to_lowercase(),
             "0xc36442b4a4522e871399cd717abdd847ab11fe88"
         );
-        assert_eq!(event.tick_lower, -139767);
-        assert_eq!(event.tick_upper, -139764);
+        assert_eq!(event.tick_lower, -139_767);
+        assert_eq!(event.tick_upper, -139_764);
         let expected_amount = u128::from_str_radix("2bc997c8ea58d3a8521ec", 16).unwrap();
         assert_eq!(event.amount, expected_amount);
         assert_eq!(event.amount0, U256::ZERO);
         let expected_amount1 = U256::from_str_radix("65b33ff853688eb", 16).unwrap();
         assert_eq!(event.amount1, expected_amount1);
-        assert_eq!(event.block_number, 391799940);
+        assert_eq!(event.block_number, 391_799_940);
     }
 
     #[rstest]
@@ -301,7 +301,7 @@ mod tests {
             error.to_string(),
             format!("Topic must be 32 bytes, was {byte_len}")
         );
-        assert_eq!(event.block_number, 391799940);
+        assert_eq!(event.block_number, 391_799_940);
     }
 
     #[rstest]

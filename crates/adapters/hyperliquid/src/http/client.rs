@@ -5350,7 +5350,7 @@ mod tests {
                 "type": "order",
                 "data": {
                     "statuses": [{
-                        "filled": {"totalSz": "0.5", "avgPx": "1.2345", "oid": 778899}
+                        "filled": {"totalSz": "0.5", "avgPx": "1.2345", "oid": 778_899}
                     }]
                 }
             }
@@ -6281,7 +6281,7 @@ mod tests {
             json!({
                 "order": {
                     "coin": "BTC", "side": "A", "limitPx": "58800.0", "sz": "0.0",
-                    "oid": 900000001_u64, "timestamp": 1700000000000_u64,
+                    "oid": 900_000_001_u64, "timestamp": 1_700_000_000_000_u64,
                     "triggerCondition": "Price below 59500", "isTrigger": true,
                     "triggerPx": "59500.0", "children": [], "isPositionTpsl": true,
                     "reduceOnly": true, "orderType": "Stop Market", "origSz": "0.0", "tif": null,
@@ -6293,8 +6293,8 @@ mod tests {
         };
         json!([
             filled_stop_row(),
-            trigger_row("triggered", 1700000600000),
-            trigger_row("open", 1700000000000),
+            trigger_row("triggered", 1_700_000_600_000),
+            trigger_row("open", 1_700_000_000_000),
         ])
     }
 
@@ -6302,14 +6302,14 @@ mod tests {
         json!({
             "order": {
                 "coin": "BTC", "side": "A", "limitPx": "58200.0", "sz": "0.0",
-                "oid": 900000001_u64, "timestamp": 1700000600000_u64,
+                "oid": 900_000_001_u64, "timestamp": 1_700_000_600_000_u64,
                 "triggerCondition": "Triggered", "isTrigger": false, "triggerPx": "0.0",
                 "children": [], "isPositionTpsl": true, "reduceOnly": true,
                 "orderType": "Stop Market", "origSz": "0.02", "tif": "Gtc",
                 "cloid": "0x00000000000000000000000000000a01"
             },
             "status": "filled",
-            "statusTimestamp": 1700000600000_u64
+            "statusTimestamp": 1_700_000_600_000_u64
         })
     }
 
@@ -6446,14 +6446,14 @@ mod tests {
             json!({
                 "order": {
                     "coin": "BTC", "side": "A", "limitPx": "60100.0", "sz": sz,
-                    "oid": 900000002_u64, "timestamp": 1700001000000_u64,
+                    "oid": 900_000_002_u64, "timestamp": 1_700_001_000_000_u64,
                     "triggerCondition": "N/A", "isTrigger": false, "triggerPx": "0.0",
                     "children": [], "isPositionTpsl": false, "reduceOnly": false,
                     "orderType": "Limit", "origSz": "0.015", "tif": "Ioc",
                     "cloid": "0x00000000000000000000000000000a02"
                 },
                 "status": status,
-                "statusTimestamp": 1700001000000_u64
+                "statusTimestamp": 1_700_001_000_000_u64
             })
         };
 

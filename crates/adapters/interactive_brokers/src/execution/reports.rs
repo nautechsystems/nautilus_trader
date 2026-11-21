@@ -794,7 +794,7 @@ mod tests {
         let config = InteractiveBrokersInstrumentProviderConfig::default();
         let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
         let provider = Arc::new(provider);
-        provider.insert_test_instrument(equity_aapl().into(), 265598, 1);
+        provider.insert_test_instrument(equity_aapl().into(), 265_598, 1);
         let command = GenerateOrderStatusReportsBuilder::default()
             .ts_init(UnixNanos::new(1))
             .open_only(open_only)
@@ -918,7 +918,7 @@ mod tests {
         let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
         let instrument = equity_aapl();
         let instrument_id = instrument.id;
-        provider.insert_test_instrument(instrument.into(), 265598, 1);
+        provider.insert_test_instrument(instrument.into(), 265_598, 1);
         let context = IbReportContext::new(Arc::new(provider), AccountId::from("IB-DU123"));
 
         let (reports_first, orders_first, reports_second, orders_second) =

@@ -1330,15 +1330,15 @@ mod tests {
     #[rstest]
     fn test_bar_end_time_ms_non_monthly_adds_duration() {
         let interval = BybitKlineInterval::Minute1;
-        let start_ms = 1704067200000i64;
+        let start_ms = 1_704_067_200_000_i64;
         assert_eq!(interval.bar_end_time_ms(start_ms), start_ms + 60_000);
     }
 
     #[rstest]
-    #[case::jan_31_days(1704067200000i64, 1706745600000i64)]
-    #[case::feb_leap_year_29_days(1706745600000i64, 1709251200000i64)]
-    #[case::apr_30_days(1711929600000i64, 1714521600000i64)]
-    #[case::dec_to_next_year(1733011200000i64, 1735689600000i64)]
+    #[case::jan_31_days(1_704_067_200_000_i64, 1_706_745_600_000_i64)]
+    #[case::feb_leap_year_29_days(1_706_745_600_000_i64, 1_709_251_200_000_i64)]
+    #[case::apr_30_days(1_711_929_600_000_i64, 1_714_521_600_000_i64)]
+    #[case::dec_to_next_year(1_733_011_200_000_i64, 1_735_689_600_000_i64)]
     fn test_bar_end_time_ms_monthly_variable_lengths(
         #[case] start_ms: i64,
         #[case] expected_end_ms: i64,

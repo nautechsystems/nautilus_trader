@@ -824,7 +824,7 @@ mod serial_tests {
             InstrumentId::from("SPY:CALL.OPRA"),
             true,
             500.0,
-            20270315,
+            20_270_315,
             40,
             0.125,
             100.0,

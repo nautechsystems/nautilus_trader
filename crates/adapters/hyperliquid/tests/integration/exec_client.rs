@@ -1127,7 +1127,7 @@ impl TestExchangeClient {
 
         let request = json!({
             "action": action,
-            "nonce": 1234567890000u64,
+            "nonce": 1_234_567_890_000_u64,
             "signature": {
                 "r": "0x1234567890abcdef",
                 "s": "0xfedcba0987654321",
@@ -1530,7 +1530,7 @@ async fn test_http_modify_order_uses_numeric_venue_order_id_without_cached_cloid
     );
     assert_eq!(
         modify_action.get("oid").and_then(|v| v.as_u64()),
-        Some(876543),
+        Some(876_543),
     );
     assert_eq!(
         modify_action["order"].get("c").and_then(|v| v.as_str()),
@@ -5737,7 +5737,7 @@ async fn test_modify_order_falls_back_to_cached_oid_without_cached_cloid() {
         .expect("modify action should have been sent");
 
     assert_eq!(action.get("type").and_then(|v| v.as_str()), Some("modify"));
-    assert_eq!(action.get("oid").and_then(|v| v.as_u64()), Some(765432));
+    assert_eq!(action.get("oid").and_then(|v| v.as_u64()), Some(765_432));
 
     client.disconnect().await.unwrap();
 }
@@ -6090,8 +6090,8 @@ async fn test_generate_order_status_report_returns_open_order_by_cloid(
         "side": "B",
         "limitPx": "95000.0",
         "sz": "0.1",
-        "oid": 111111,
-        "timestamp": 1700000000000u64,
+        "oid": 111_111,
+        "timestamp": 1_700_000_000_000_u64,
         "origSz": "0.1",
         "cloid": cloid_hex,
     }]));
@@ -6135,13 +6135,13 @@ async fn test_generate_order_status_report_terminal_oid_fallback_returns_report(
                 "side": "B",
                 "limitPx": "95000.0",
                 "sz": "0.0",
-                "oid": 222222,
-                "timestamp": 1700000000000u64,
+                "oid": 222_222,
+                "timestamp": 1_700_000_000_000_u64,
                 "origSz": "0.1",
                 "cloid": cloid_hex,
             },
             "status": "canceled",
-            "statusTimestamp": 1700001000000u64,
+            "statusTimestamp": 1_700_001_000_000_u64,
         }
     }));
 
@@ -6180,7 +6180,7 @@ async fn test_generate_order_status_report_without_oid_returns_closed_order_by_c
 
     let state = TestServerState::default();
     *state.frontend_open_orders_response.lock().await = Some(json!([]));
-    let mut closed = historical_order("BTC", 222227);
+    let mut closed = historical_order("BTC", 222_227);
     closed["order"]["cloid"] = json!(cloid);
     closed["order"]["tif"] = json!("Ioc");
     *state.order_status_response.lock().await = Some(json!({"status": "order", "order": closed}));
@@ -6291,13 +6291,13 @@ async fn test_generate_order_status_report_terminal_mismatched_cloid_still_retur
                 "side": "B",
                 "limitPx": "95000.0",
                 "sz": "0.0",
-                "oid": 333333,
-                "timestamp": 1700000000000u64,
+                "oid": 333_333,
+                "timestamp": 1_700_000_000_000_u64,
                 "origSz": "0.1",
                 "cloid": other_coid_hex,
             },
             "status": "canceled",
-            "statusTimestamp": 1700001000000u64,
+            "statusTimestamp": 1_700_001_000_000_u64,
         }
     }));
 
@@ -6338,12 +6338,12 @@ async fn test_generate_order_status_report_terminal_missing_cloid_trusts_oid(
                 "side": "B",
                 "limitPx": "95000.0",
                 "sz": "0.0",
-                "oid": 444444,
-                "timestamp": 1700000000000u64,
+                "oid": 444_444,
+                "timestamp": 1_700_000_000_000_u64,
                 "origSz": "0.1",
             },
             "status": "filled",
-            "statusTimestamp": 1700001000000u64,
+            "statusTimestamp": 1_700_001_000_000_u64,
         }
     }));
 
@@ -6379,12 +6379,12 @@ async fn test_generate_order_status_report_oid_only_returns_terminal(
                 "side": "B",
                 "limitPx": "95000.0",
                 "sz": "0.0",
-                "oid": 555555,
-                "timestamp": 1700000000000u64,
+                "oid": 555_555,
+                "timestamp": 1_700_000_000_000_u64,
                 "origSz": "0.1",
             },
             "status": "canceled",
-            "statusTimestamp": 1700001000000u64,
+            "statusTimestamp": 1_700_001_000_000_u64,
         }
     }));
 
@@ -6421,12 +6421,12 @@ async fn test_generate_order_status_report_suppresses_old_leg_cancel_during_modi
                 "side": "B",
                 "limitPx": "95000.0",
                 "sz": "0.0",
-                "oid": 770001,
-                "timestamp": 1700000000000u64,
+                "oid": 770_001,
+                "timestamp": 1_700_000_000_000_u64,
                 "origSz": "0.001",
             },
             "status": "canceled",
-            "statusTimestamp": 1700001000000u64,
+            "statusTimestamp": 1_700_001_000_000_u64,
         }
     }));
 
@@ -6500,12 +6500,12 @@ async fn test_generate_order_status_report_forwards_old_leg_fill_during_modify(
                 "side": "B",
                 "limitPx": "95000.0",
                 "sz": "0.0",
-                "oid": 770002,
-                "timestamp": 1700000000000u64,
+                "oid": 770_002,
+                "timestamp": 1_700_000_000_000_u64,
                 "origSz": "0.001",
             },
             "status": "filled",
-            "statusTimestamp": 1700001000000u64,
+            "statusTimestamp": 1_700_001_000_000_u64,
         }
     }));
 
@@ -7568,8 +7568,8 @@ async fn query_recovery_state() -> TestServerState {
     *state.order_status_response.lock().await = Some(json!({
         "status": "order", "order": {
             "order": {"coin": "BTC", "side": "B", "limitPx": "92000", "sz": "0",
-                "origSz": "0.001", "oid": 900029, "timestamp": 1700000000000u64},
-            "status": "filled", "statusTimestamp": 1700000002000u64
+                "origSz": "0.001", "oid": 900_029, "timestamp": 1_700_000_000_000_u64},
+            "status": "filled", "statusTimestamp": 1_700_000_002_000_u64
         }
     }));
     *state.user_fills_response.lock().await = Some(query_recovery_fills());
@@ -7900,7 +7900,7 @@ async fn test_query_order_fill_during_history_collection_books_once(#[case] trac
             .unwrap();
         client.ws_dispatch_state().cleanup_terminal(&coid);
         *state.order_response_override.lock().await = Some(json!({
-            "status": "ok", "response": {"type": "order", "data": {"statuses": [{"resting": {"oid": 900029}}]}}
+            "status": "ok", "response": {"type": "order", "data": {"statuses": [{"resting": {"oid": 900_029}}]}}
         }));
         client.submit_order(make_submit_cmd(&initialized)).unwrap();
         wait_until_async(
@@ -7909,7 +7909,7 @@ async fn test_query_order_fill_during_history_collection_books_once(#[case] trac
         )
         .await;
         apply_query_events(&mut engine, &mut rx);
-        let mut accepted = historical_order("BTC", 900029);
+        let mut accepted = historical_order("BTC", 900_029);
         accepted["status"] = json!("open");
         accepted["order"]["cloid"] = json!(Cloid::from_client_order_id(coid).to_hex());
         accepted["order"]["origSz"] = json!("0.001");
@@ -8114,7 +8114,7 @@ fn change_query_recovery_evidence(fills: &mut Value, failure: &str) {
         "unresolved" => fills[1]["coin"] = json!("UNKNOWN"),
         "instrument" => fills[1]["coin"] = json!("ETH"),
         "side" => fills[1]["side"] = json!("A"),
-        "venue" => fills[1]["oid"] = json!(900030),
+        "venue" => fills[1]["oid"] = json!(900_030),
         "zero_qty" => fills[1]["sz"] = json!("0"),
         "negative_qty" => fills[1]["sz"] = json!("-0.0006"),
         "zero_price" => fills[1]["px"] = json!("0"),
@@ -8220,7 +8220,7 @@ async fn test_query_order_recovery_discards_changed_binding(#[case] transition: 
             coid,
             Quantity::from("0.00200"),
             UUID4::new(),
-            UnixNanos::from(1700000003000000000u64),
+            UnixNanos::from(1_700_000_003_000_000_000_u64),
             UnixNanos::default(),
             false,
             Some(VenueOrderId::from("900030")),
@@ -8373,7 +8373,7 @@ async fn test_query_order_without_oid_recovers_filled_order_by_cloid_in_engine()
         .collect();
     assert_eq!(status_requests.len(), 2);
     assert_eq!(status_requests[0]["oid"], json!(cloid));
-    assert_eq!(status_requests[1]["oid"], json!(900029));
+    assert_eq!(status_requests[1]["oid"], json!(900_029));
     assert_eq!(
         requests.iter().filter(|r| r["type"] == "userFills").count(),
         1
@@ -8431,7 +8431,7 @@ async fn test_query_order_without_oid_stream_events_during_history_collection_bo
     tokio::time::timeout(Duration::from_secs(5), state.info_started.notified())
         .await
         .unwrap();
-    let mut accepted = historical_order("BTC", 900029);
+    let mut accepted = historical_order("BTC", 900_029);
     accepted["status"] = json!("open");
     accepted["order"]["cloid"] = json!(cloid);
     accepted["order"]["origSz"] = json!("0.001");
@@ -8485,7 +8485,7 @@ async fn test_query_order_without_oid_queries_status_by_cloid(
     let state = TestServerState::default();
     *state.frontend_open_orders_response.lock().await = Some(json!([]));
     *state.order_status_response.lock().await = Some(if expected.is_some() {
-        let mut closed = historical_order("BTC", 900006);
+        let mut closed = historical_order("BTC", 900_006);
         closed["order"]["cloid"] = json!(cloid);
         closed["order"]["tif"] = json!("Ioc");
         closed["status"] = json!(status);
@@ -8709,7 +8709,7 @@ fn query_recovery_update(order: &OrderAny, oid: &str) -> OrderUpdated {
         order.client_order_id(),
         order.quantity(),
         UUID4::new(),
-        UnixNanos::from(1700000003000000000u64),
+        UnixNanos::from(1_700_000_003_000_000_000_u64),
         UnixNanos::default(),
         false,
         Some(VenueOrderId::from(oid)),
@@ -8766,8 +8766,8 @@ async fn test_query_order_emits_report_from_cloid_open_match() {
         "side": "B",
         "limitPx": "95000.0",
         "sz": "0.001",
-        "oid": 900001,
-        "timestamp": 1700000000000u64,
+        "oid": 900_001,
+        "timestamp": 1_700_000_000_000_u64,
         "origSz": "0.001",
         "cloid": cloid_hex,
     }]));
@@ -8820,12 +8820,12 @@ async fn test_query_order_falls_back_to_oid_when_cloid_misses() {
                 "side": "B",
                 "limitPx": "95000.0",
                 "sz": "0.0",
-                "oid": 900002,
-                "timestamp": 1700000000000u64,
+                "oid": 900_002,
+                "timestamp": 1_700_000_000_000_u64,
                 "origSz": "0.001",
             },
             "status": "canceled",
-            "statusTimestamp": 1700001000000u64,
+            "statusTimestamp": 1_700_001_000_000_u64,
         }
     }));
 
@@ -8883,12 +8883,12 @@ async fn test_query_order_suppresses_old_leg_cancel_during_modify() {
                 "side": "B",
                 "limitPx": "95000.0",
                 "sz": "0.0",
-                "oid": 900002,
-                "timestamp": 1700000000000u64,
+                "oid": 900_002,
+                "timestamp": 1_700_000_000_000_u64,
                 "origSz": "0.001",
             },
             "status": "canceled",
-            "statusTimestamp": 1700001000000u64,
+            "statusTimestamp": 1_700_001_000_000_u64,
         }
     }));
 
@@ -8978,12 +8978,12 @@ async fn test_query_order_forwards_old_leg_fill_during_modify() {
                 "side": "B",
                 "limitPx": "95000.0",
                 "sz": "0.0",
-                "oid": 900002,
-                "timestamp": 1700000000000u64,
+                "oid": 900_002,
+                "timestamp": 1_700_000_000_000_u64,
                 "origSz": "0.001",
             },
             "status": "filled",
-            "statusTimestamp": 1700001000000u64,
+            "statusTimestamp": 1_700_001_000_000_u64,
         }
     }));
 
@@ -9072,12 +9072,12 @@ async fn test_query_order_oid_fallback_runs_when_cloid_request_errors() {
                 "side": "B",
                 "limitPx": "95000.0",
                 "sz": "0.0",
-                "oid": 900003,
-                "timestamp": 1700000000000u64,
+                "oid": 900_003,
+                "timestamp": 1_700_000_000_000_u64,
                 "origSz": "0.001",
             },
             "status": "filled",
-            "statusTimestamp": 1700001000000u64,
+            "statusTimestamp": 1_700_001_000_000_u64,
         }
     }));
 
@@ -9125,8 +9125,8 @@ async fn test_query_order_cloid_only_without_cached_voi() {
         "side": "B",
         "limitPx": "95000.0",
         "sz": "0.001",
-        "oid": 900004,
-        "timestamp": 1700000000000u64,
+        "oid": 900_004,
+        "timestamp": 1_700_000_000_000_u64,
         "origSz": "0.001",
         "cloid": cloid_hex,
     }]));
@@ -11606,15 +11606,15 @@ async fn test_generate_order_status_reports_retains_open_reports_outside_time_ra
     *state.frontend_open_orders_response.lock().await = Some(json!([
         {
             "coin": "BTC", "side": "B", "limitPx": "95000.0", "sz": "0.001",
-            "oid": 100001u64, "timestamp": 1700000000000u64, "origSz": "0.001",
+            "oid": 100_001_u64, "timestamp": 1_700_000_000_000_u64, "origSz": "0.001",
         },
         {
             "coin": "BTC", "side": "B", "limitPx": "95100.0", "sz": "0.002",
-            "oid": 100002u64, "timestamp": 1700000010000u64, "origSz": "0.002",
+            "oid": 100_002_u64, "timestamp": 1_700_000_010_000_u64, "origSz": "0.002",
         },
         {
             "coin": "BTC", "side": "B", "limitPx": "95200.0", "sz": "0.003",
-            "oid": 100003u64, "timestamp": 1700000020000u64, "origSz": "0.003",
+            "oid": 100_003_u64, "timestamp": 1_700_000_020_000_u64, "origSz": "0.003",
         },
     ]));
 
@@ -11959,7 +11959,7 @@ async fn test_generate_mass_status_reconciles_fill_cloid(
     }
 
     *state.user_fills_response.lock().await = Some(fills);
-    let mut historical = historical_order("BTC", 900029);
+    let mut historical = historical_order("BTC", 900_029);
     historical["order"]["cloid"] = json!(cloid);
     historical["order"]["limitPx"] = json!("92000");
     historical["order"]["origSz"] = json!("0.001");
@@ -12576,7 +12576,7 @@ async fn test_generate_mass_status_lookback_filters_only_fills(
     *state.frontend_open_orders_response.lock().await = Some(json!([
         {
             "coin": "BTC", "side": "B", "limitPx": "95000.0", "sz": "0.001",
-            "oid": 200001u64, "timestamp": 1u64, "origSz": "0.001",
+            "oid": 200_001_u64, "timestamp": 1u64, "origSz": "0.001",
         },
     ]));
     let fills = json!([
@@ -12584,7 +12584,7 @@ async fn test_generate_mass_status_lookback_filters_only_fills(
             "coin": "BTC", "px": "50000.0", "sz": "0.001", "side": "B",
             "time": 1u64, "startPosition": "0",
             "dir": "Open Long", "closedPnl": "0", "hash": "0xaaaa",
-            "oid": 200001u64, "crossed": true, "fee": "0.01", "tid": 1u64,
+            "oid": 200_001_u64, "crossed": true, "fee": "0.01", "tid": 1u64,
             "feeToken": "USDC",
         },
     ]);
@@ -12633,14 +12633,14 @@ async fn test_generate_mass_status_reconstructs_filled_order_for_retained_fill()
             "coin": "BTC", "px": "50000.0", "sz": "0.001", "side": "B",
             "time": 1_754_000_000_000u64, "startPosition": "0",
             "dir": "Open Long", "closedPnl": "0", "hash": "0xbbbb",
-            "oid": 200002u64, "crossed": true, "fee": "0.01", "tid": 2u64,
+            "oid": 200_002_u64, "crossed": true, "fee": "0.01", "tid": 2u64,
             "feeToken": "USDC",
         },
         {
             "coin": "BTC", "px": "49940.0", "sz": "0.001", "side": "A",
             "time": 1_754_000_001_000u64, "startPosition": "0.001",
             "dir": "Close Long", "closedPnl": "-0.06", "hash": "0xcccc",
-            "oid": 200003u64, "crossed": true, "fee": "0.01", "tid": 3u64,
+            "oid": 200_003_u64, "crossed": true, "fee": "0.01", "tid": 3u64,
             "feeToken": "USDC",
         }
     ]));
@@ -12648,7 +12648,7 @@ async fn test_generate_mass_status_reconstructs_filled_order_for_retained_fill()
         {
             "order": {
                 "coin": "BTC", "side": "B", "limitPx": "50000.0", "sz": "0",
-                "oid": 200002u64, "timestamp": 1_754_000_000_000u64,
+                "oid": 200_002_u64, "timestamp": 1_754_000_000_000u64,
                 "origSz": "0.001", "reduceOnly": false, "orderType": "Limit",
                 "tif": "Ioc", "cloid": "0x00000000000000000000000000000002"
             },
@@ -12658,7 +12658,7 @@ async fn test_generate_mass_status_reconstructs_filled_order_for_retained_fill()
         {
             "order": {
                 "coin": "BTC", "side": "B", "limitPx": "50000.0", "sz": "0.001",
-                "oid": 200002u64, "timestamp": 1_754_000_000_000u64,
+                "oid": 200_002_u64, "timestamp": 1_754_000_000_000u64,
                 "origSz": "0.001", "reduceOnly": false, "orderType": "Limit",
                 "tif": "Ioc", "cloid": "0x00000000000000000000000000000002"
             },
@@ -12668,7 +12668,7 @@ async fn test_generate_mass_status_reconstructs_filled_order_for_retained_fill()
         {
             "order": {
                 "coin": "BTC", "side": "A", "limitPx": "49940.0", "sz": "0",
-                "oid": 200003u64, "timestamp": 1_754_000_001_000u64,
+                "oid": 200_003_u64, "timestamp": 1_754_000_001_000u64,
                 "origSz": "0.001", "reduceOnly": true, "orderType": "Stop Market",
                 "triggerPx": "0.0", "isTrigger": false,
                 "tif": null, "cloid": "0x00000000000000000000000000000003"
@@ -12679,7 +12679,7 @@ async fn test_generate_mass_status_reconstructs_filled_order_for_retained_fill()
         {
             "order": {
                 "coin": "BTC", "side": "A", "limitPx": "49940.0", "sz": "0.001",
-                "oid": 200003u64, "timestamp": 1_754_000_001_000u64,
+                "oid": 200_003_u64, "timestamp": 1_754_000_001_000u64,
                 "origSz": "0.001", "reduceOnly": true, "orderType": "Stop Market",
                 "triggerPx": "49950.0", "isTrigger": true,
                 "tif": null, "cloid": "0x00000000000000000000000000000003"
@@ -12729,7 +12729,7 @@ fn capped_stop_fill(sz: &str, time_ms: u64, tid: u64) -> Value {
         "coin": "BTC", "px": "49900.0", "sz": sz, "side": "A",
         "time": time_ms, "startPosition": "0.0015",
         "dir": "Close Long", "closedPnl": "-0.05", "hash": "0xdddd",
-        "oid": 200004u64, "crossed": true, "fee": "0.01", "tid": tid,
+        "oid": 200_004_u64, "crossed": true, "fee": "0.01", "tid": tid,
         "feeToken": "USDC",
     })
 }
@@ -12739,7 +12739,7 @@ fn capped_stop_history(status: &str, sz: &str, reduce_only: bool) -> Value {
         {
             "order": {
                 "coin": "BTC", "side": "A", "limitPx": "49400.0", "sz": sz,
-                "oid": 200004u64, "timestamp": 1_754_000_001_000u64,
+                "oid": 200_004_u64, "timestamp": 1_754_000_001_000u64,
                 "origSz": "0.002", "reduceOnly": reduce_only, "orderType": "Stop Market",
                 "triggerPx": "0.0", "isTrigger": false, "triggerCondition": "Triggered",
                 "tif": "Gtc", "cloid": "0x00000000000000000000000000000004"
@@ -12750,7 +12750,7 @@ fn capped_stop_history(status: &str, sz: &str, reduce_only: bool) -> Value {
         {
             "order": {
                 "coin": "BTC", "side": "A", "limitPx": "49500.0", "sz": "0.002",
-                "oid": 200004u64, "timestamp": 1_754_000_000_000u64,
+                "oid": 200_004_u64, "timestamp": 1_754_000_000_000u64,
                 "origSz": "0.002", "reduceOnly": reduce_only, "orderType": "Stop Market",
                 "triggerPx": "49950.0", "isTrigger": true,
                 "triggerCondition": "Price below 49950",
@@ -13193,8 +13193,8 @@ async fn test_generate_order_status_report_fails_closed_when_cloid_row_unusable(
         "side": "B",
         "limitPx": "100.0",
         "sz": "1.0",
-        "oid": 333333,
-        "timestamp": 1700000000000u64,
+        "oid": 333_333,
+        "timestamp": 1_700_000_000_000_u64,
         "origSz": "1.0",
         "cloid": cloid_hex,
     }]));
@@ -14623,7 +14623,7 @@ async fn test_execution_product_scope_mass_status(
     *state.perp_clearinghouse_response.lock().await = Some(clearinghouse_position("BTC"));
     *state.spot_clearinghouse_response.lock().await = Some(json!({"balances": [
         {"coin": "vntls:TOKEN", "token": 1, "total": "2", "hold": "0", "entryNtl": "1"},
-        {"coin": "+200", "token": 100000200, "total": "2", "hold": "0", "entryNtl": "1"},
+        {"coin": "+200", "token": 100_000_200, "total": "2", "hold": "0", "entryNtl": "1"},
     ]}));
     let addr = start_mock_server(state.clone()).await;
     let mut config = create_test_exec_config(addr);
@@ -15142,7 +15142,7 @@ async fn test_execution_product_scope_batch_cancel_keeps_allowed_entries() {
     let action = state.last_exchange_action.lock().await.clone().unwrap();
     assert_eq!(action["type"], "cancel");
     assert_eq!(action["cancels"].as_array().unwrap().len(), 1);
-    assert_eq!(action["cancels"][0]["o"], 900029);
+    assert_eq!(action["cancels"][0]["o"], 900_029);
     client.disconnect().await.unwrap();
 }
 
@@ -15458,7 +15458,7 @@ async fn test_execution_product_scope_outcome_settlement_poll(
     }]);
     *state.outcome_meta_response.lock().await = Some(meta);
     *state.spot_clearinghouse_response.lock().await = Some(json!({"balances": [
-        {"coin": "+10", "token": 100000010, "total": "2", "hold": "0", "entryNtl": "1"},
+        {"coin": "+10", "token": 100_000_010, "total": "2", "hold": "0", "entryNtl": "1"},
     ]}));
     let addr = start_mock_server(state.clone()).await;
     let mut config = create_test_exec_config(addr);
@@ -15606,7 +15606,7 @@ async fn test_execution_product_scope_hip3_commands_and_reports(
 
     if allowed {
         let action = state.last_exchange_action.lock().await.clone().unwrap();
-        assert_eq!(action["orders"][0]["a"], 110000);
+        assert_eq!(action["orders"][0]["a"], 110_000);
     }
     let mut cmd = make_status_report_cmd(None, Some(VenueOrderId::from("8001")));
     cmd.instrument_id = None;

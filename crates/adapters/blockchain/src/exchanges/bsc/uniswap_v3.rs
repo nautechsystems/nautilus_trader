@@ -29,7 +29,7 @@ pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
         chains::BSC.clone(),
         DexType::UniswapV3,
         "0xdB1d10011AD0Ff90774D0C6Bb92e5C5c8b4461F7",
-        26324014,
+        26_324_014,
         AmmType::CLAMM,
         "PoolCreated(address,address,uint24,int24,address)",
         "Swap(address,address,int256,int256,uint160,uint128,int24)",

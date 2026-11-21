@@ -1175,7 +1175,7 @@ mod tests {
             panic!("expected compressed compact update");
         };
         assert_eq!(update.coin, Ustr::from("BTC"));
-        assert_eq!(update.time, 1793945698742);
+        assert_eq!(update.time, 1_793_945_698_742);
         assert!(!update.levels[0].is_empty());
     }
 
@@ -1630,7 +1630,7 @@ mod tests {
         assert_eq!(data.oid, 12345);
         assert_eq!(data.trigger_px, dec!(50000.0));
         assert_eq!(data.tpsl, HyperliquidTpSl::Sl);
-        assert_eq!(data.time, 1704470400000);
+        assert_eq!(data.time, 1_704_470_400_000);
     }
 
     #[rstest]
@@ -1680,7 +1680,7 @@ mod tests {
         assert_eq!(fill.px, dec!(31.737));
         assert_eq!(fill.sz, dec!(0.31));
         assert_eq!(fill.side, HyperliquidSide::Buy);
-        assert_eq!(fill.oid, 308086083674);
+        assert_eq!(fill.oid, 308_086_083_674);
         assert!(fill.crossed);
         assert_eq!(fill.fee, dec!(0.00021699));
         assert_eq!(fill.fee_token, "HYPE");

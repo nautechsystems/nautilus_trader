@@ -1513,7 +1513,7 @@ mod tests {
             report.trade_id,
             make_fill_trade_id(
                 "0xquery-fill-a",
-                900029,
+                900_029,
                 dec!(90000),
                 dec!(0.0004),
                 1_700_000_001_000,

@@ -1947,7 +1947,7 @@ mod tests {
 
     #[rstest]
     fn test_parse_millis_timestamp() {
-        let timestamp = 1762795433.9717445;
+        let timestamp = 1_762_795_433.971_744_5;
         let result = parse_millis_timestamp(timestamp, "test").unwrap();
         assert!(result.as_u64() > 0);
     }

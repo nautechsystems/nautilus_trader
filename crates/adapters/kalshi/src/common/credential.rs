@@ -372,7 +372,7 @@ mod tests {
         for _ in 0..2 {
             let headers = credential
                 .headers(
-                    1703123456789,
+                    1_703_123_456_789,
                     "get",
                     "/trade-api/v2/portfolio/balance?limit=4",
                 )

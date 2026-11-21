@@ -372,8 +372,8 @@ mod tests {
             open_interest: dec!(1000),
             atomic_resolution: -10,
             quantum_conversion_exponent: -9,
-            subticks_per_tick: 1000000,
-            step_base_quantums: 1000000,
+            subticks_per_tick: 1_000_000,
+            step_base_quantums: 1_000_000,
             is_reduce_only: false,
         }
     }

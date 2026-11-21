@@ -47,7 +47,7 @@ use thiserror::Error;
 
 /// Base epoch for timestamp encoding: 2020-01-01 00:00:00 UTC.
 /// This gives us ~136 years of range with 32-bit seconds.
-pub const DYDX_BASE_EPOCH: i64 = 1577836800;
+pub const DYDX_BASE_EPOCH: i64 = 1_577_836_800;
 
 /// Value used to identify legacy/numeric client IDs.
 /// When `client_metadata == 4`, the client_id is treated as a literal numeric ID.

@@ -4053,6 +4053,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(clippy::unreadable_literal, reason = "Bybit error codes")]
     fn test_dispatch_single_cancel_rejection_emits_cancel_rejected() {
         let mut ctx = DispatchTestContext::new();
         let cause = UUID4::new();
@@ -4095,6 +4096,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(clippy::unreadable_literal, reason = "Bybit error codes")]
     fn test_dispatch_single_modify_rejection_emits_modify_rejected() {
         let mut ctx = DispatchTestContext::new();
         let cause = UUID4::new();
@@ -4137,6 +4139,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(clippy::unreadable_literal, reason = "Bybit error codes")]
     fn test_dispatch_single_place_rejection_emits_order_rejected() {
         let mut ctx = DispatchTestContext::new();
         let cid = ClientOrderId::from("place-reject-1");
@@ -4397,6 +4400,7 @@ mod tests {
             ),
         );
 
+        #[allow(clippy::unreadable_literal, reason = "Bybit error codes")]
         let response = order_response(
             BYBIT_OP_ORDER_CANCEL_BATCH,
             0,

@@ -670,7 +670,7 @@ mod tests {
         );
         assert_eq!(trades[0].price, dec!(0.55));
         assert_eq!(trades[0].size, dec!(100.0));
-        assert_eq!(trades[0].timestamp, 1710000000);
+        assert_eq!(trades[0].timestamp, 1_710_000_000);
         assert_eq!(
             trades[0].transaction_hash,
             "0xabc123def456789012345678901234567890abcdef1234567890abcdef123456"
@@ -816,10 +816,38 @@ mod tests {
     #[rstest]
     fn test_data_api_trade_sort_key_orders_pages_deterministically() {
         let mut trades = [
-            make_trade(1729000005, "0xZ", "T", PolymarketOrderSide::Buy, 0.5, 1.0),
-            make_trade(1729000000, "0xC", "T", PolymarketOrderSide::Buy, 0.5, 1.0),
-            make_trade(1729000000, "0xA", "T", PolymarketOrderSide::Sell, 0.5, 1.0),
-            make_trade(1729000000, "0xB", "T", PolymarketOrderSide::Buy, 0.5, 1.0),
+            make_trade(
+                1_729_000_005,
+                "0xZ",
+                "T",
+                PolymarketOrderSide::Buy,
+                0.5,
+                1.0,
+            ),
+            make_trade(
+                1_729_000_000,
+                "0xC",
+                "T",
+                PolymarketOrderSide::Buy,
+                0.5,
+                1.0,
+            ),
+            make_trade(
+                1_729_000_000,
+                "0xA",
+                "T",
+                PolymarketOrderSide::Sell,
+                0.5,
+                1.0,
+            ),
+            make_trade(
+                1_729_000_000,
+                "0xB",
+                "T",
+                PolymarketOrderSide::Buy,
+                0.5,
+                1.0,
+            ),
         ];
 
         trades.sort_by(|a, b| data_api_trade_sort_key(a).cmp(&data_api_trade_sort_key(b)));
@@ -865,7 +893,7 @@ mod tests {
         let token_id = "T_KEEP";
         let trades = vec![
             make_trade(
-                1729000000,
+                1_729_000_000,
                 "0xa",
                 token_id,
                 PolymarketOrderSide::Buy,
@@ -873,7 +901,7 @@ mod tests {
                 1.0,
             ),
             make_trade(
-                1729000000,
+                1_729_000_000,
                 "0xb",
                 "T_DROP",
                 PolymarketOrderSide::Sell,
@@ -895,7 +923,7 @@ mod tests {
         let same_hash = "0x000000000000000000000000000000000000000000000000000000000000abcdef";
         let trades = vec![
             make_trade(
-                1729000000,
+                1_729_000_000,
                 same_hash,
                 token_id,
                 PolymarketOrderSide::Buy,
@@ -903,7 +931,7 @@ mod tests {
                 1.0,
             ),
             make_trade(
-                1729000000,
+                1_729_000_000,
                 same_hash,
                 token_id,
                 PolymarketOrderSide::Sell,
@@ -934,7 +962,7 @@ mod tests {
         let token_id = "T";
         let trades = vec![
             make_trade(
-                1729000000,
+                1_729_000_000,
                 "0xtx1",
                 token_id,
                 PolymarketOrderSide::Buy,
@@ -942,7 +970,7 @@ mod tests {
                 1.0,
             ),
             make_trade(
-                1729000000,
+                1_729_000_000,
                 "0xtx2",
                 token_id,
                 PolymarketOrderSide::Buy,
@@ -950,7 +978,7 @@ mod tests {
                 1.0,
             ),
             make_trade(
-                1729000000,
+                1_729_000_000,
                 "0xtx3",
                 token_id,
                 PolymarketOrderSide::Buy,
@@ -981,7 +1009,7 @@ mod tests {
         for i in 0..3 {
             let hash = format!("0x{i:064x}");
             trades.push(make_trade(
-                1729000000,
+                1_729_000_000,
                 &hash,
                 token_id,
                 PolymarketOrderSide::Buy,
@@ -1008,7 +1036,7 @@ mod tests {
         let token_id = "T";
         let trades = vec![
             make_trade(
-                1729000005,
+                1_729_000_005,
                 "0xZ",
                 token_id,
                 PolymarketOrderSide::Buy,
@@ -1016,7 +1044,7 @@ mod tests {
                 1.0,
             ),
             make_trade(
-                1729000000,
+                1_729_000_000,
                 "0xC",
                 token_id,
                 PolymarketOrderSide::Buy,
@@ -1024,7 +1052,7 @@ mod tests {
                 1.0,
             ),
             make_trade(
-                1729000000,
+                1_729_000_000,
                 "0xA",
                 token_id,
                 PolymarketOrderSide::Sell,
@@ -1032,7 +1060,7 @@ mod tests {
                 1.0,
             ),
             make_trade(
-                1729000000,
+                1_729_000_000,
                 "0xB",
                 token_id,
                 PolymarketOrderSide::Buy,
@@ -1062,7 +1090,7 @@ mod tests {
     fn test_parse_trades_propagates_invalid_price() {
         let token_id = "T";
         let mut trade = make_trade(
-            1729000000,
+            1_729_000_000,
             "0xtx",
             token_id,
             PolymarketOrderSide::Buy,
@@ -1085,7 +1113,7 @@ mod tests {
     fn test_parse_trades_propagates_invalid_size() {
         let token_id = "T";
         let trade = make_trade(
-            1729000000,
+            1_729_000_000,
             "0xtx",
             token_id,
             PolymarketOrderSide::Buy,

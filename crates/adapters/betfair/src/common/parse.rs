@@ -526,25 +526,25 @@ mod tests {
 
     #[rstest]
     fn test_make_instrument_id_no_handicap() {
-        let id = make_instrument_id("1.180737206", 19248890, Decimal::ZERO);
+        let id = make_instrument_id("1.180737206", 19_248_890, Decimal::ZERO);
         assert_eq!(id.to_string(), "1.180737206-19248890.BETFAIR");
     }
 
     #[rstest]
     fn test_make_instrument_id_with_handicap() {
-        let id = make_instrument_id("1.180737206", 19248890, Decimal::new(15, 1));
+        let id = make_instrument_id("1.180737206", 19_248_890, Decimal::new(15, 1));
         assert_eq!(id.to_string(), "1.180737206-19248890-1.5.BETFAIR");
     }
 
     #[rstest]
     fn test_make_symbol_no_handicap() {
-        let sym = make_symbol("1.180737206", 19248890, Decimal::ZERO);
+        let sym = make_symbol("1.180737206", 19_248_890, Decimal::ZERO);
         assert_eq!(sym.to_string(), "1.180737206-19248890");
     }
 
     #[rstest]
     fn test_make_symbol_with_handicap() {
-        let sym = make_symbol("1.180737206", 19248890, Decimal::new(-5, 1));
+        let sym = make_symbol("1.180737206", 19_248_890, Decimal::new(-5, 1));
         assert_eq!(sym.to_string(), "1.180737206-19248890--0.5");
     }
 
@@ -646,7 +646,7 @@ mod tests {
         // Verify first instrument
         if let InstrumentAny::Betting(inst) = &instruments[0] {
             assert_eq!(inst.market_id, "1.221718403");
-            assert_eq!(inst.selection_id, 20075720);
+            assert_eq!(inst.selection_id, 20_075_720);
             assert_eq!(inst.selection_name, "1. Searover");
             assert_eq!(inst.event_type_name, "Horse Racing");
             assert_eq!(inst.event_name, "Globe Derby (AUS) 27th Nov");
@@ -791,31 +791,31 @@ mod tests {
 
     #[rstest]
     fn test_extract_market_id_no_handicap() {
-        let instrument_id = make_instrument_id("1.180737206", 19248890, Decimal::ZERO);
+        let instrument_id = make_instrument_id("1.180737206", 19_248_890, Decimal::ZERO);
         let market_id = extract_market_id(&instrument_id).unwrap();
         assert_eq!(market_id, "1.180737206");
     }
 
     #[rstest]
     fn test_extract_market_id_with_handicap() {
-        let instrument_id = make_instrument_id("1.180737206", 19248890, Decimal::new(15, 1));
+        let instrument_id = make_instrument_id("1.180737206", 19_248_890, Decimal::new(15, 1));
         let market_id = extract_market_id(&instrument_id).unwrap();
         assert_eq!(market_id, "1.180737206");
     }
 
     #[rstest]
     fn test_extract_selection_id_no_handicap() {
-        let instrument_id = make_instrument_id("1.180737206", 19248890, Decimal::ZERO);
+        let instrument_id = make_instrument_id("1.180737206", 19_248_890, Decimal::ZERO);
         let (selection_id, handicap) = extract_selection_id(&instrument_id).unwrap();
-        assert_eq!(selection_id, 19248890);
+        assert_eq!(selection_id, 19_248_890);
         assert_eq!(handicap, Decimal::ZERO);
     }
 
     #[rstest]
     fn test_extract_selection_id_with_handicap() {
-        let instrument_id = make_instrument_id("1.180737206", 19248890, Decimal::new(15, 1));
+        let instrument_id = make_instrument_id("1.180737206", 19_248_890, Decimal::new(15, 1));
         let (selection_id, handicap) = extract_selection_id(&instrument_id).unwrap();
-        assert_eq!(selection_id, 19248890);
+        assert_eq!(selection_id, 19_248_890);
         assert_eq!(handicap, Decimal::new(15, 1));
     }
 

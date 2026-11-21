@@ -381,7 +381,7 @@ mod tests {
                 price_low: Some("0.01".parse().unwrap()),
                 price_close: Some("0.5".parse().unwrap()),
                 volume_traded: "9007199254740993.125".parse().unwrap(),
-                trades_count: 9223372036854775807,
+                trades_count: 9_223_372_036_854_775_807,
                 time_period_start: "2026-10-11T00:00:00.0000001Z".parse().unwrap(),
                 time_period_end: "2026-10-11T00:01:00.0000002Z".parse().unwrap(),
                 time_open: Some("2026-10-11T00:00:02.0000003Z".parse().unwrap()),

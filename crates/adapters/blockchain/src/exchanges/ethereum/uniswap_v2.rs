@@ -28,7 +28,7 @@ pub static UNISWAP_V2: LazyLock<DexExtended> = LazyLock::new(|| {
         chains::ETHEREUM.clone(),
         DexType::UniswapV2,
         "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f",
-        10000835,
+        10_000_835,
         AmmType::CPAMM,
         "PairCreated(address,address,address,uint256)",
         "",

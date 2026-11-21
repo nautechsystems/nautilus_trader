@@ -1426,8 +1426,8 @@ mod tests {
         assert_eq!(first_quote.ask_price, Price::from("3720.50"));
         assert_eq!(first_quote.bid_size, Quantity::from(24));
         assert_eq!(first_quote.ask_size, Quantity::from(11));
-        assert_eq!(first_quote.ts_event, 1609160400006136329);
-        assert_eq!(first_quote.ts_init, 1609160400006136329);
+        assert_eq!(first_quote.ts_event, 1_609_160_400_006_136_329);
+        assert_eq!(first_quote.ts_init, 1_609_160_400_006_136_329);
     }
 
     #[rstest]
@@ -1449,8 +1449,8 @@ mod tests {
         assert_eq!(first_quote.ask_price, Price::from("3720.50"));
         assert_eq!(first_quote.bid_size, Quantity::from(24));
         assert_eq!(first_quote.ask_size, Quantity::from(11));
-        assert_eq!(first_quote.ts_event, 1609160400006136329);
-        assert_eq!(first_quote.ts_init, 1609160400006136329);
+        assert_eq!(first_quote.ts_event, 1_609_160_400_006_136_329);
+        assert_eq!(first_quote.ts_init, 1_609_160_400_006_136_329);
     }
 
     #[rstest]
@@ -1472,8 +1472,8 @@ mod tests {
         assert_eq!(quotes[0].ask_price, Price::from("3720.50"));
         assert_eq!(quotes[0].bid_size, Quantity::from(24));
         assert_eq!(quotes[0].ask_size, Quantity::from(11));
-        assert_eq!(quotes[0].ts_event, 1609160400006136329);
-        assert_eq!(quotes[0].ts_init, 1609160400006136329);
+        assert_eq!(quotes[0].ts_event, 1_609_160_400_006_136_329);
+        assert_eq!(quotes[0].ts_init, 1_609_160_400_006_136_329);
     }
 
     #[rstest]
@@ -1631,8 +1631,8 @@ mod tests {
         // Assert first record fields match Python test expectations
         let first = &statuses[0];
         assert_eq!(first.instrument_id, instrument_id);
-        assert_eq!(first.ts_event.as_u64(), 1609110000000000000);
-        assert_eq!(first.ts_init.as_u64(), 1609113600000000000);
+        assert_eq!(first.ts_event.as_u64(), 1_609_110_000_000_000_000);
+        assert_eq!(first.ts_init.as_u64(), 1_609_113_600_000_000_000);
     }
 
     #[rstest]

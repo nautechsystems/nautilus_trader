@@ -720,7 +720,7 @@ fn stall_execution_row(exec_id: &str) -> Value {
         "underlyingPrice": "",
         "blockTradeId": "",
         "closedSize": "0.000",
-        "seq": 4688002127i64
+        "seq": 4_688_002_127_i64
     })
 }
 
@@ -734,7 +734,7 @@ fn stall_page(rows: &[Value], next_cursor: &str) -> Json<Value> {
             "nextPageCursor": next_cursor
         },
         "retExtInfo": {},
-        "time": 1789221005855i64
+        "time": 1_789_221_005_855_i64
     }))
 }
 
@@ -1126,7 +1126,7 @@ async fn mock_instruments_info_cycling(
             "list": [linear_instrument_definition(symbol, base_coin)]
         },
         "retExtInfo": {},
-        "time": 1789221005855i64
+        "time": 1_789_221_005_855_i64
     }))
 }
 

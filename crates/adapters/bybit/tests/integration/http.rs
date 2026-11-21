@@ -334,7 +334,7 @@ async fn handle_get_server_time() -> impl IntoResponse {
             "timeNano": "1704470400123456789"
         },
         "retExtInfo": {},
-        "time": 1704470400123i64
+        "time": 1_704_470_400_123_i64
     }))
 }
 
@@ -355,7 +355,7 @@ async fn handle_get_instruments(query: Query<HashMap<String, String>>) -> impl I
                     "retMsg": "Invalid category parameter",
                     "result": {},
                     "retExtInfo": {},
-                    "time": 1704470400123i64
+                    "time": 1_704_470_400_123_i64
                 })),
             )
                 .into_response();
@@ -376,7 +376,7 @@ async fn handle_get_klines(query: Query<HashMap<String, String>>) -> impl IntoRe
                 "retMsg": "Missing required parameters",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -396,7 +396,7 @@ async fn handle_get_trades(query: Query<HashMap<String, String>>) -> impl IntoRe
                 "retMsg": "Missing required parameters",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -445,7 +445,7 @@ async fn handle_get_orders(
                 "retMsg": "Invalid API key",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -463,7 +463,7 @@ async fn handle_get_orders(
                 "retMsg": "Too many requests. Please retry after 1 second.",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -487,7 +487,7 @@ async fn handle_post_order(headers: axum::http::HeaderMap, body: axum::body::Byt
                 "retMsg": "Invalid API key",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -502,7 +502,7 @@ async fn handle_post_order(headers: axum::http::HeaderMap, body: axum::body::Byt
                 "retMsg": "Invalid JSON body",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -522,7 +522,7 @@ async fn handle_post_order(headers: axum::http::HeaderMap, body: axum::body::Byt
                 "retMsg": "Missing required order parameters",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -537,7 +537,7 @@ async fn handle_post_order(headers: axum::http::HeaderMap, body: axum::body::Byt
             "orderLinkId": order_req.get("orderLinkId").and_then(|v| v.as_str()).unwrap_or("")
         },
         "retExtInfo": {},
-        "time": 1704470400123i64
+        "time": 1_704_470_400_123_i64
     }))
     .into_response()
 }
@@ -560,7 +560,7 @@ async fn handle_post_order_with_capture(
                 "retMsg": "Invalid API key",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -574,7 +574,7 @@ async fn handle_post_order_with_capture(
                 "retMsg": "Invalid JSON body",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -593,7 +593,7 @@ async fn handle_post_order_with_capture(
                 "retMsg": "Missing required order parameters",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -682,7 +682,7 @@ async fn handle_post_order_with_capture(
             "orderLinkId": order_req.get("orderLinkId").and_then(|v| v.as_str()).unwrap_or("")
         },
         "retExtInfo": {},
-        "time": 1704470400123i64
+        "time": 1_704_470_400_123_i64
     }))
     .into_response()
 }
@@ -704,7 +704,7 @@ async fn handle_get_wallet_balance(
                 "retMsg": "Invalid API key",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -730,7 +730,7 @@ async fn handle_get_account_info(headers: axum::http::HeaderMap) -> Response {
                 "retMsg": "Invalid API key",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -777,7 +777,7 @@ async fn handle_cancel_order(headers: axum::http::HeaderMap, body: axum::body::B
                 "retMsg": "Invalid API key",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -792,7 +792,7 @@ async fn handle_cancel_order(headers: axum::http::HeaderMap, body: axum::body::B
                 "retMsg": "Invalid JSON body",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -807,7 +807,7 @@ async fn handle_cancel_order(headers: axum::http::HeaderMap, body: axum::body::B
                 "retMsg": "Missing required parameters",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -822,7 +822,7 @@ async fn handle_cancel_order(headers: axum::http::HeaderMap, body: axum::body::B
             "orderLinkId": cancel_req.get("orderLinkId").and_then(|v| v.as_str()).unwrap_or("")
         },
         "retExtInfo": {},
-        "time": 1704470400123i64
+        "time": 1_704_470_400_123_i64
     }))
     .into_response()
 }
@@ -842,7 +842,7 @@ async fn handle_batch_cancel_orders(
             "orderLinkId": null
         },
         "retExtInfo": {},
-        "time": 1704470400123i64
+        "time": 1_704_470_400_123_i64
     }))
     .into_response()
 }
@@ -861,7 +861,7 @@ async fn handle_get_positions(headers: axum::http::HeaderMap) -> Response {
                 "retMsg": "Invalid API key",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -885,7 +885,7 @@ async fn handle_get_fee_rate(headers: axum::http::HeaderMap) -> Response {
                 "retMsg": "Invalid API key",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -912,7 +912,7 @@ async fn handle_no_convert_repay(
                 "retMsg": "Invalid API key",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -927,7 +927,7 @@ async fn handle_no_convert_repay(
                 "retMsg": "Invalid JSON body",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -942,7 +942,7 @@ async fn handle_no_convert_repay(
                 "retMsg": "Missing required parameter: coin",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -961,7 +961,7 @@ async fn handle_no_convert_repay(
             "resultStatus": result_status
         },
         "retExtInfo": {},
-        "time": 1704470400123i64
+        "time": 1_704_470_400_123_i64
     }))
     .into_response()
 }
@@ -980,7 +980,7 @@ async fn handle_repay(headers: axum::http::HeaderMap, body: axum::body::Bytes) -
                 "retMsg": "Invalid API key",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -995,7 +995,7 @@ async fn handle_repay(headers: axum::http::HeaderMap, body: axum::body::Bytes) -
                 "retMsg": "Invalid JSON body",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -1014,7 +1014,7 @@ async fn handle_repay(headers: axum::http::HeaderMap, body: axum::body::Bytes) -
             "resultStatus": result_status
         },
         "retExtInfo": {},
-        "time": 1704470400123i64
+        "time": 1_704_470_400_123_i64
     }))
     .into_response()
 }
@@ -1037,7 +1037,7 @@ async fn handle_get_orders_realtime(
                 "retMsg": "Invalid API key",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -1052,7 +1052,7 @@ async fn handle_get_orders_realtime(
                 "retMsg": "Missing required parameter: category",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -1071,7 +1071,7 @@ async fn handle_get_orders_realtime(
                 "retMsg": "Missing some parameters that must be filled in, symbol or settleCoin or baseCoin",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -1140,7 +1140,7 @@ async fn handle_get_orders_history_reconciliation(
                 "retMsg": "Invalid API key",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -1155,7 +1155,7 @@ async fn handle_get_orders_history_reconciliation(
                 "retMsg": "Missing required parameter: category",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -1174,7 +1174,7 @@ async fn handle_get_orders_history_reconciliation(
                 "retMsg": "Missing some parameters that must be filled in, symbol or settleCoin or baseCoin",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -2240,7 +2240,7 @@ async fn handle_get_orders_realtime_retry(State(state): State<TestServerState>) 
                 "retMsg": "Too many requests. Please retry after 1 second.",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -3215,7 +3215,7 @@ async fn handle_get_orders_realtime_open_only(
                 "retMsg": "Invalid API key",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -3232,7 +3232,7 @@ async fn handle_get_orders_realtime_open_only(
             "retMsg": "OK",
             "result": { "list": [], "nextPageCursor": "" },
             "retExtInfo": {},
-            "time": 1704470400123i64
+            "time": 1_704_470_400_123_i64
         }))
         .into_response();
     }
@@ -3250,7 +3250,7 @@ async fn handle_get_orders_realtime_open_only(
                 "retMsg": "OK",
                 "result": { "list": [], "nextPageCursor": "" },
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             }))
             .into_response();
         }
@@ -3778,7 +3778,7 @@ async fn handle_get_klines_partial_first_page(
                 "retMsg": "Missing required parameters",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -4953,7 +4953,7 @@ async fn handle_empty_orders(headers: axum::http::HeaderMap) -> Response {
                 "retMsg": "Invalid API key",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -4967,7 +4967,7 @@ async fn handle_empty_orders(headers: axum::http::HeaderMap) -> Response {
             "nextPageCursor": ""
         },
         "retExtInfo": {},
-        "time": 1704470400123i64
+        "time": 1_704_470_400_123_i64
     }))
     .into_response()
 }
@@ -5060,7 +5060,7 @@ async fn handle_get_orders_realtime_tp_sl(
                 "retMsg": "Invalid API key",
                 "result": {},
                 "retExtInfo": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -5076,7 +5076,7 @@ async fn handle_get_orders_realtime_tp_sl(
             "retMsg": "OK",
             "result": { "list": [], "nextPageCursor": "" },
             "retExtInfo": {},
-            "time": 1704470400123i64
+            "time": 1_704_470_400_123_i64
         }))
         .into_response()
     }
@@ -5209,7 +5209,7 @@ fn require_bybit_auth(headers: &axum::http::HeaderMap) -> Option<Response> {
                     "retMsg": "Invalid API key",
                     "result": {},
                     "retExtInfo": {},
-                    "time": 1700000000000i64
+                    "time": 1_700_000_000_000_i64
                 })),
             )
                 .into_response(),
@@ -5637,7 +5637,7 @@ async fn paged_sub_members_handler(
                 "nextCursor": "0"
             },
             "retExtInfo": {},
-            "time": 1760388041006i64
+            "time": 1_760_388_041_006_i64
         })
     } else {
         json!({
@@ -5651,7 +5651,7 @@ async fn paged_sub_members_handler(
                 "nextCursor": "page-2"
             },
             "retExtInfo": {},
-            "time": 1760388041006i64
+            "time": 1_760_388_041_006_i64
         })
     };
     Json(body).into_response()
@@ -5719,7 +5719,7 @@ async fn paged_escrow_sub_members_handler(
                 "nextCursor": "0"
             },
             "retExtInfo": {},
-            "time": 1760388041006i64
+            "time": 1_760_388_041_006_i64
         })
     } else {
         json!({
@@ -5733,7 +5733,7 @@ async fn paged_escrow_sub_members_handler(
                 "nextCursor": "escrow-2"
             },
             "retExtInfo": {},
-            "time": 1760388041006i64
+            "time": 1_760_388_041_006_i64
         })
     };
     Json(body).into_response()
@@ -5800,7 +5800,7 @@ async fn paged_sub_apikeys_handler(
                 "nextPageCursor": ""
             },
             "retExtInfo": {},
-            "time": 1699515251698i64
+            "time": 1_699_515_251_698_i64
         })
     } else {
         json!({
@@ -5814,7 +5814,7 @@ async fn paged_sub_apikeys_handler(
                 "nextPageCursor": "keys-2"
             },
             "retExtInfo": {},
-            "time": 1699515251698i64
+            "time": 1_699_515_251_698_i64
         })
     };
     Json(body).into_response()
@@ -5902,7 +5902,7 @@ async fn handle_withdraw_create(
         "retMsg": "success",
         "result": {"id": "10195"},
         "retExtInfo": {},
-        "time": 1672196571239i64
+        "time": 1_672_196_571_239_i64
     }))
     .into_response();
 
@@ -5949,7 +5949,7 @@ async fn handle_withdraw_query_record(
             "nextPageCursor": ""
         },
         "retExtInfo": {},
-        "time": 1750777316807i64
+        "time": 1_750_777_316_807_i64
     }))
     .into_response()
 }

@@ -28,7 +28,7 @@ pub static FLUID_DEX: LazyLock<DexExtended> = LazyLock::new(|| {
         chains::ETHEREUM.clone(),
         DexType::FluidDEX,
         "0x91716C4EDA1Fb55e84Bf8b4c7085f84285c19085",
-        21015648,
+        21_015_648,
         AmmType::CLAMM,
         "",
         "",

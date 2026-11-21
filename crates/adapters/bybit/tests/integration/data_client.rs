@@ -155,7 +155,7 @@ async fn handle_get_instruments(
                     "retCode": 10001,
                     "retMsg": "Invalid category",
                     "result": {},
-                    "time": 1704470400123i64
+                    "time": 1_704_470_400_123_i64
                 })),
             )
                 .into_response();
@@ -180,7 +180,7 @@ async fn handle_get_server_time() -> impl IntoResponse {
             "timeNano": "1704470400123456789"
         },
         "retExtInfo": {},
-        "time": 1704470400123i64
+        "time": 1_704_470_400_123_i64
     }))
 }
 
@@ -653,7 +653,7 @@ async fn test_option_chain_reference_price_response(
             }]
         },
         "retExtInfo": {},
-        "time": 1704470400123_i64
+        "time": 1_704_470_400_123_i64
     }));
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(tx);

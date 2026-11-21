@@ -482,7 +482,7 @@ mod tests {
         let instrument_id = create_test_instrument_id();
         let result = parse_index_price(
             instrument_id,
-            452525.0,
+            452_525.0,
             IbPriceConverter::new(2).with_price_magnifier(100),
             UnixNanos::new(0),
             UnixNanos::new(0),

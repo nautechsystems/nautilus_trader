@@ -923,7 +923,7 @@ mod tests {
             id,
             sid: 7,
             seq: Some(seq),
-            sending_ts_ms: Some(1700000000001),
+            sending_ts_ms: Some(1_700_000_000_001),
             msg: payload,
         }
     }
@@ -2487,7 +2487,9 @@ mod tests {
 
         let replacement = batch(&mut output);
         assert_eq!(replacement.sequence, 2);
-        let mut clear = OrderBookDelta::clear(id, 2, UnixNanos::from(1700000000001000000), now);
+        let mut clear =
+            OrderBookDelta::clear(id, 2, UnixNanos::from(1_700_000_000_001_000_000), now);
+
         if shape <= 1 {
             clear.flags |= RecordFlag::F_LAST as u8;
         }

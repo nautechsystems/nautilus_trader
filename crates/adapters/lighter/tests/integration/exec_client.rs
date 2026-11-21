@@ -9042,7 +9042,7 @@ async fn test_account_all_positions_empty_update_retains_cached_position(
     );
     assert_eq!(
         positions[0].avg_px_open,
-        Some(rust_decimal::Decimal::new(235010, 2)),
+        Some(rust_decimal::Decimal::new(235_010, 2)),
     );
     assert_eq!(positions[0].venue_position_id, None);
     assert_eq!(

@@ -2091,7 +2091,7 @@ mod tests {
             "high" => row.price_high = Some(Decimal::new(2, 1)),
             "low" => row.price_low = Some(Decimal::new(4, 1)),
             "price_precision" => row.price_open = Some(Decimal::new(20001, 5)),
-            "volume_precision" => row.volume_traded = Decimal::new(123456789, 7),
+            "volume_precision" => row.volume_traded = Decimal::new(123_456_789, 7),
             "volume_negative" => row.volume_traded = Decimal::NEGATIVE_ONE,
             "volume_overflow" => row.volume_traded = Decimal::MAX,
             "trades_negative" => row.trades_count = -1,

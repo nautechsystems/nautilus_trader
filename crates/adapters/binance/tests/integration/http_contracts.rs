@@ -675,7 +675,7 @@ async fn test_algo_cancel_success_status_preserves_venue_error(
     #[values(-2011, -2013, -2015)] code: i64,
 ) {
     let app = Router::new().fallback(any(move || async move {
-        axum::Json(serde_json::json!({"algoId": 123456789_i64, "clientAlgoId": "algo-test", "code": code.to_string(), "msg": "cancel rejected"}))
+        axum::Json(serde_json::json!({"algoId": 123_456_789_i64, "clientAlgoId": "algo-test", "code": code.to_string(), "msg": "cancel rejected"}))
     }));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

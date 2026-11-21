@@ -2963,7 +2963,7 @@ mod tests {
         let action = process_index_price_tick_result(
             Ok::<_, &'static str>(TickTypes::Price(TickPrice {
                 tick_type: TickType::Last,
-                price: 452525.0,
+                price: 452_525.0,
                 attributes: TickAttribute::default(),
             })),
             instrument_id,

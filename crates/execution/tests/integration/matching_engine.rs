@@ -418,7 +418,7 @@ fn test_process_order_when_instrument_already_expired(
     // Set current timestamp ns to be higher than es instrument activation (1.1.2024)
     test_clock
         .borrow_mut()
-        .set_time(UnixNanos::from(1704067200000000000));
+        .set_time(UnixNanos::from(1_704_067_200_000_000_000));
 
     let mut engine = get_order_matching_engine(instrument, Some(test_clock), None, None, None);
 
@@ -629,7 +629,7 @@ fn test_process_order_when_invalid_price_precision(
     // Set current timestamp ns to be higher than es instrument activation (1.1.2024)
     test_clock
         .borrow_mut()
-        .set_time(UnixNanos::from(1704067200000000000));
+        .set_time(UnixNanos::from(1_704_067_200_000_000_000));
     let mut engine =
         get_order_matching_engine(instrument_es.clone(), Some(test_clock), None, None, None);
 
@@ -667,7 +667,7 @@ fn test_process_order_when_invalid_trigger_price_precision(
     // Set current timestamp ns to be higher than es instrument activation (1.1.2024)
     test_clock
         .borrow_mut()
-        .set_time(UnixNanos::from(1704067200000000000));
+        .set_time(UnixNanos::from(1_704_067_200_000_000_000));
     let mut engine =
         get_order_matching_engine(instrument_es.clone(), Some(test_clock), None, None, None);
     let mut stop_order = OrderTestBuilder::new(OrderType::StopMarket)
@@ -1193,7 +1193,7 @@ fn test_process_order_when_invalid_contingent_orders(
     // Set current timestamp ns to be higher than es instrument activation (1.1.2024)
     test_clock
         .borrow_mut()
-        .set_time(UnixNanos::from(1704067200000000000));
+        .set_time(UnixNanos::from(1_704_067_200_000_000_000));
     let mut engine = get_order_matching_engine(
         instrument_es.clone(),
         Some(test_clock),
@@ -1267,7 +1267,7 @@ fn test_process_order_when_closed_linked_order(
     // Set current timestamp ns to be higher than es instrument activation (1.1.2024)
     test_clock
         .borrow_mut()
-        .set_time(UnixNanos::from(1704067200000000000));
+        .set_time(UnixNanos::from(1_704_067_200_000_000_000));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let mut engine = get_order_matching_engine(
         instrument_es.clone(),

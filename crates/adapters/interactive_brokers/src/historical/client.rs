@@ -943,7 +943,7 @@ mod tests {
     async fn test_historical_connect_rejects_duplicates_before_connection(#[case] supplied: bool) {
         let duplicate_provider: InteractiveBrokersInstrumentProviderConfig =
             serde_json::from_value(serde_json::json!({
-                "load_contracts": [{"conId": 265598}, {"conId": 265598}]
+                "load_contracts": [{"conId": 265_598}, {"conId": 265_598}]
             }))
             .unwrap();
 

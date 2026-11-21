@@ -606,9 +606,9 @@ async fn test_subscribe_reference_price_authenticates_sends_exact_channel_and_em
             assert_eq!(payload.symbol, "btcusd");
             assert_eq!(payload.source, "chainlink");
             assert_eq!(payload.value, dec!(84290.833784311415570432));
-            assert_eq!(payload.price_timestamp_ms, 1791355667000);
-            assert_eq!(payload.message_timestamp_ms, 1791355667111);
-            assert_eq!(payload.ts_event, UnixNanos::from(1791355667000000000));
+            assert_eq!(payload.price_timestamp_ms, 1_791_355_667_000);
+            assert_eq!(payload.message_timestamp_ms, 1_791_355_667_111);
+            assert_eq!(payload.ts_event, UnixNanos::from(1_791_355_667_000_000_000));
         }
         "PolymarketCryptoTwap" => {
             let payload = custom
@@ -620,9 +620,9 @@ async fn test_subscribe_reference_price_authenticates_sends_exact_channel_and_em
             assert_eq!(payload.source, "chainlink");
             assert_eq!(payload.window_seconds, 60);
             assert_eq!(payload.value, dec!(84291.577380840025358336));
-            assert_eq!(payload.observation_timestamp_ms, 1791355667000);
-            assert_eq!(payload.message_timestamp_ms, 1791355667111);
-            assert_eq!(payload.ts_event, UnixNanos::from(1791355667000000000));
+            assert_eq!(payload.observation_timestamp_ms, 1_791_355_667_000);
+            assert_eq!(payload.message_timestamp_ms, 1_791_355_667_111);
+            assert_eq!(payload.ts_event, UnixNanos::from(1_791_355_667_000_000_000));
         }
         "PolymarketEquityPrice" => {
             let payload = custom
@@ -633,11 +633,11 @@ async fn test_subscribe_reference_price_authenticates_sends_exact_channel_and_em
             assert_eq!(payload.symbol, "aapl");
             assert_eq!(payload.source, "pyth");
             assert_eq!(payload.value, dec!(333.81));
-            assert_eq!(payload.price_timestamp_ms, 1791355668000);
-            assert_eq!(payload.message_timestamp_ms, 1791355668111);
-            assert_eq!(payload.received_at_ms, Some(1791355668222));
+            assert_eq!(payload.price_timestamp_ms, 1_791_355_668_000);
+            assert_eq!(payload.message_timestamp_ms, 1_791_355_668_111);
+            assert_eq!(payload.received_at_ms, Some(1_791_355_668_222));
             assert!(payload.is_carried_forward);
-            assert_eq!(payload.ts_event, UnixNanos::from(1791355668000000000));
+            assert_eq!(payload.ts_event, UnixNanos::from(1_791_355_668_000_000_000));
         }
         _ => panic!("unexpected test type {type_name}"),
     }

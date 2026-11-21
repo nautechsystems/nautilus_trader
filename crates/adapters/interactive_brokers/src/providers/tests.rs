@@ -75,7 +75,7 @@ fn create_test_option_spread(instrument_id: InstrumentId) -> OptionSpread {
 #[rstest]
 fn test_get_instrument_id_by_contract_id() {
     let provider = create_test_provider();
-    let contract_id = 265598;
+    let contract_id = 265_598;
 
     // Before loading, should return None
     assert!(
@@ -90,10 +90,10 @@ fn test_resolve_instrument_id_for_contract_uses_cached_contract_id() {
     let provider = create_test_provider();
     let instrument = equity_aapl();
     let expected_id = instrument.id();
-    provider.insert_test_instrument(InstrumentAny::from(instrument), 265598, 1);
+    provider.insert_test_instrument(InstrumentAny::from(instrument), 265_598, 1);
 
     let contract = Contract {
-        contract_id: 265598,
+        contract_id: 265_598,
         symbol: Symbol::from("AAPL"),
         security_type: SecurityType::Stock,
         exchange: Exchange::from("SMART"),
@@ -113,7 +113,7 @@ fn test_resolve_instrument_id_for_contract_reuses_cached_stock_venue() {
     let provider = create_test_provider();
     let instrument = equity_aapl();
     let expected_id = instrument.id();
-    provider.insert_test_instrument(InstrumentAny::from(instrument), 265598, 1);
+    provider.insert_test_instrument(InstrumentAny::from(instrument), 265_598, 1);
 
     let contract = Contract {
         contract_id: 0,
@@ -282,7 +282,7 @@ fn test_determine_stock_venue_reuses_compatible_cached_mic_venue() {
     };
 
     let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
-    provider.insert_test_instrument(InstrumentAny::from(equity_aapl()), 265598, 1);
+    provider.insert_test_instrument(InstrumentAny::from(equity_aapl()), 265_598, 1);
 
     let contract = Contract {
         contract_id: 0,
@@ -302,7 +302,7 @@ fn test_determine_stock_venue_reuses_compatible_cached_mic_venue() {
 #[rstest]
 fn test_determine_stock_smart_venue_reuses_cached_symbol_venue() {
     let provider = create_test_provider();
-    provider.insert_test_instrument(InstrumentAny::from(equity_aapl()), 265598, 1);
+    provider.insert_test_instrument(InstrumentAny::from(equity_aapl()), 265_598, 1);
 
     let contract = Contract {
         contract_id: 0,
@@ -355,7 +355,7 @@ fn test_determine_stock_venue_symbol_mapping_wins_over_cached_venue() {
     };
 
     let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
-    provider.insert_test_instrument(InstrumentAny::from(equity_aapl()), 265598, 1);
+    provider.insert_test_instrument(InstrumentAny::from(equity_aapl()), 265_598, 1);
 
     let contract = Contract {
         contract_id: 0,
@@ -384,7 +384,7 @@ fn test_get_price_magnifier_defaults_zero_to_one() {
     let instrument = equity_aapl();
     let instrument_id = instrument.id();
 
-    provider.insert_test_instrument(InstrumentAny::from(instrument), 265598, 0);
+    provider.insert_test_instrument(InstrumentAny::from(instrument), 265_598, 0);
 
     assert_eq!(provider.get_price_magnifier(&instrument_id), 1);
 }

@@ -611,8 +611,8 @@ mod tests {
     fn test_parse_futures_ws_order_status_report_new_order() {
         let order = KrakenFuturesOpenOrder {
             instrument: ustr::Ustr::from("PI_XBTUSD"),
-            time: 1700000000000,
-            last_update_time: 1700000000100,
+            time: 1_700_000_000_000,
+            last_update_time: 1_700_000_000_100,
             qty: dec!(1000),
             filled: Decimal::ZERO,
             limit_price: Some(dec!(35000)),
@@ -643,8 +643,8 @@ mod tests {
     fn test_parse_futures_ws_order_status_report_fails_on_an_invalid_order_id() {
         let order = KrakenFuturesOpenOrder {
             instrument: ustr::Ustr::from("PI_XBTUSD"),
-            time: 1700000000000,
-            last_update_time: 1700000000100,
+            time: 1_700_000_000_000,
+            last_update_time: 1_700_000_000_100,
             qty: dec!(1000),
             filled: Decimal::ZERO,
             limit_price: Some(dec!(35000)),
@@ -703,8 +703,8 @@ mod tests {
     fn test_parse_futures_ws_order_status_report_canceled() {
         let order = KrakenFuturesOpenOrder {
             instrument: ustr::Ustr::from("PI_XBTUSD"),
-            time: 1700000000000,
-            last_update_time: 1700000001000,
+            time: 1_700_000_000_000,
+            last_update_time: 1_700_000_001_000,
             qty: dec!(1000),
             filled: Decimal::ZERO,
             limit_price: Some(dec!(35000)),
@@ -749,8 +749,8 @@ mod tests {
     ) {
         let order = KrakenFuturesOpenOrder {
             instrument: ustr::Ustr::from("PI_XBTUSD"),
-            time: 1700000000000,
-            last_update_time: 1700000000100,
+            time: 1_700_000_000_000,
+            last_update_time: 1_700_000_000_100,
             qty: dec!(1000),
             filled: Decimal::ZERO,
             limit_price: Some(dec!(35000)),
@@ -781,8 +781,8 @@ mod tests {
     fn test_parse_futures_ws_order_status_report_market_if_touched() {
         let order = KrakenFuturesOpenOrder {
             instrument: ustr::Ustr::from("PI_XBTUSD"),
-            time: 1700000000000,
-            last_update_time: 1700000000100,
+            time: 1_700_000_000_000,
+            last_update_time: 1_700_000_000_100,
             qty: dec!(500),
             filled: Decimal::ZERO,
             limit_price: None,
@@ -811,8 +811,8 @@ mod tests {
     fn test_parse_futures_ws_order_status_report_limit_if_touched() {
         let order = KrakenFuturesOpenOrder {
             instrument: ustr::Ustr::from("PI_XBTUSD"),
-            time: 1700000000000,
-            last_update_time: 1700000000100,
+            time: 1_700_000_000_000,
+            last_update_time: 1_700_000_000_100,
             qty: dec!(500),
             filled: Decimal::ZERO,
             limit_price: Some(dec!(35500)),
@@ -841,8 +841,8 @@ mod tests {
     fn test_parse_futures_ws_order_status_report_spot_trigger_signal() {
         let order = KrakenFuturesOpenOrder {
             instrument: ustr::Ustr::from("PI_XBTUSD"),
-            time: 1700000000000,
-            last_update_time: 1700000000100,
+            time: 1_700_000_000_000,
+            last_update_time: 1_700_000_000_100,
             qty: dec!(500),
             filled: Decimal::ZERO,
             limit_price: None,

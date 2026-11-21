@@ -6415,7 +6415,7 @@ mod tests {
             book.bids_as_map(None).into_iter().collect::<Vec<_>>(),
             vec![
                 (Decimal::from(42500), Decimal::from(10)),
-                (Decimal::new(424995, 1), Decimal::from(10)),
+                (Decimal::new(424_995, 1), Decimal::from(10)),
             ]
         );
         assert!(handler.book_sync.work.is_empty());
@@ -7817,7 +7817,7 @@ mod tests {
     #[case(DeribitWsMethod::PrivateUnsubscribe)]
     fn subscription_batches_bound_serialized_bytes(#[case] method: DeribitWsMethod) {
         let mut channels: Vec<String> = (0..1500)
-            .map(|i| format!("book.BTC-27DEC30-{}-C.none.20.100ms", 100000 + i))
+            .map(|i| format!("book.BTC-27DEC30-{}-C.none.20.100ms", 100_000 + i))
             .collect();
         channels.push("quoted.\"\\\n.é".repeat(100));
         let batches = subscription_batches(channels.clone(), &method).unwrap();
@@ -7871,7 +7871,7 @@ mod tests {
     async fn subscription_batches_correlate_rejections_and_reconnect() {
         let mut handler = routing_test_handler();
         let channels: Vec<String> = (0..1500)
-            .map(|i| format!("book.BTC-27DEC30-{}-C.none.20.100ms", 100000 + i))
+            .map(|i| format!("book.BTC-27DEC30-{}-C.none.20.100ms", 100_000 + i))
             .collect();
 
         for channel in &channels {
@@ -7936,7 +7936,7 @@ mod tests {
     ) {
         let mut handler = routing_test_handler();
         let channels: Vec<String> = (0..1500)
-            .map(|i| format!("book.BTC-27DEC30-{}-C.none.20.100ms", 100000 + i))
+            .map(|i| format!("book.BTC-27DEC30-{}-C.none.20.100ms", 100_000 + i))
             .collect();
 
         for channel in &channels {
@@ -8539,7 +8539,7 @@ mod tests {
     ) {
         let mut handler = routing_test_handler();
         let mut channels: Vec<String> = (0..1500)
-            .map(|i| format!("ticker.BTC-27DEC30-{}-C.100ms", 100000 + i))
+            .map(|i| format!("ticker.BTC-27DEC30-{}-C.100ms", 100_000 + i))
             .collect();
         channels.push("user.orders.any.any.raw".into());
         handler

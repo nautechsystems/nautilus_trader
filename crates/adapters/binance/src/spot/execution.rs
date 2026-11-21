@@ -6304,7 +6304,7 @@ mod tests {
                 false,
                 &state,
                 &seen_trade_ids,
-                UnixNanos::from(1709654402000000000),
+                UnixNanos::from(1_709_654_402_000_000_000),
             );
         };
 
@@ -6727,7 +6727,7 @@ mod tests {
         .unwrap();
 
         assert!(cancel_id.len() <= 36);
-        assert_eq!(params.cancel_order_id, Some(12345678));
+        assert_eq!(params.cancel_order_id, Some(12_345_678));
         assert_eq!(
             params.cancel_new_client_order_id.as_deref(),
             Some(cancel_id.as_str())

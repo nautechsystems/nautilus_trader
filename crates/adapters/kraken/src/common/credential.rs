@@ -319,7 +319,7 @@ mod tests {
         let cred = KrakenCredential::new("test_key", secret);
 
         let endpoint = "/derivatives/api/v3/sendorder";
-        let nonce = 1234567890u64;
+        let nonce = 1_234_567_890_u64;
 
         // Create params and URL-encode them (same format as HTTP client)
         let mut params = HashMap::new();
@@ -359,7 +359,7 @@ mod tests {
         // Verify that /derivatives prefix is stripped before signing
         let secret = STANDARD.encode(b"test_secret_key_24bytes!");
         let cred = KrakenCredential::new("test_key", secret);
-        let nonce = 1234567890u64;
+        let nonce = 1_234_567_890_u64;
 
         // Signing with /derivatives prefix should produce same result as without
         let with_prefix = cred

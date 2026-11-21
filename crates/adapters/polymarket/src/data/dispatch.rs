@@ -14569,7 +14569,7 @@ mod tests {
         assert_eq!(book.asks_as_map(None), baseline.asks_as_map(None));
         assert_eq!(
             book.asks_as_map(None)[&rust_decimal::Decimal::new(7, 2)],
-            rust_decimal::Decimal::new(6991471, 1),
+            rust_decimal::Decimal::new(6_991_471, 1),
         );
     }
 

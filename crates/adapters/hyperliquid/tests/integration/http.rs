@@ -316,8 +316,8 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
         }
         "candleSnapshot" => Json(json!([
             {
-                "t": 1703875200000u64,
-                "T": 1703875260000u64,
+                "t": 1_703_875_200_000_u64,
+                "T": 1_703_875_260_000_u64,
                 "s": "BTC",
                 "i": "1m",
                 "o": "98450.00",
@@ -2532,7 +2532,7 @@ async fn test_request_order_status_report_open_order() {
         "limitPx": "95000.0",
         "sz": "0.05",
         "oid": 12345,
-        "timestamp": 1700000000000u64,
+        "timestamp": 1_700_000_000_000_u64,
         "origSz": "0.1",
         "cloid": "0xaabbccdd00112233aabbccdd00112233",
         "isTrigger": false,
@@ -2579,7 +2579,7 @@ async fn test_request_order_status_report_triggered_order() {
         "limitPx": "90000.0",
         "sz": "0.1",
         "oid": 99999,
-        "timestamp": 1700000000000u64,
+        "timestamp": 1_700_000_000_000_u64,
         "origSz": "0.1",
         "triggerPx": "91000.0",
         "isMarket": true,
@@ -2612,7 +2612,7 @@ async fn test_request_order_status_report_frontend_trigger_label() {
         "limitPx": "90000.0",
         "sz": "0.1",
         "oid": 77777,
-        "timestamp": 1700000000000u64,
+        "timestamp": 1_700_000_000_000_u64,
         "triggerCondition": "Price below 91000",
         "isTrigger": true,
         "triggerPx": "91000.0",
@@ -2655,11 +2655,11 @@ async fn test_request_order_status_report_closed_order_fallback() {
                 "limitPx": "95000.0",
                 "sz": "0.0",
                 "oid": 55555,
-                "timestamp": 1700000000000u64,
+                "timestamp": 1_700_000_000_000_u64,
                 "origSz": "0.1"
             },
             "status": "filled",
-            "statusTimestamp": 1700001000000u64
+            "statusTimestamp": 1_700_001_000_000_u64
         }
     }));
 
@@ -2676,7 +2676,7 @@ async fn test_request_order_status_report_closed_order_fallback() {
     assert_eq!(report.order_status, OrderStatus::Filled);
     assert_eq!(
         report.ts_last.as_u64(),
-        1700001000000u64 * 1_000_000,
+        1_700_001_000_000_u64 * 1_000_000,
         "ts_last should use statusTimestamp"
     );
 }
@@ -2696,12 +2696,12 @@ async fn test_request_order_status_report_filled_with_remainder_is_canceled() {
                 "limitPx": "95000.0",
                 "sz": "0.02",
                 "oid": 55557,
-                "timestamp": 1700000000000u64,
+                "timestamp": 1_700_000_000_000_u64,
                 "origSz": "0.1",
                 "tif": "Ioc"
             },
             "status": "filled",
-            "statusTimestamp": 1700001000000u64
+            "statusTimestamp": 1_700_001_000_000_u64
         }
     }));
 
@@ -2741,12 +2741,12 @@ async fn test_request_order_status_report_closed_order_fallback_propagates_cloid
                 "limitPx": "95000.0",
                 "sz": "0.0",
                 "oid": 55556,
-                "timestamp": 1700000000000u64,
+                "timestamp": 1_700_000_000_000_u64,
                 "origSz": "0.1",
                 "cloid": cloid_hex,
             },
             "status": "canceled",
-            "statusTimestamp": 1700001000000u64
+            "statusTimestamp": 1_700_001_000_000_u64
         }
     }));
 
@@ -2801,7 +2801,7 @@ async fn test_request_order_status_report_by_client_order_id_matches_cloid() {
         "limitPx": "95000.0",
         "sz": "0.1",
         "oid": 77777,
-        "timestamp": 1700000000000u64,
+        "timestamp": 1_700_000_000_000_u64,
         "origSz": "0.1",
         "cloid": cloid_hex
     }]));
@@ -2835,7 +2835,7 @@ async fn test_request_order_status_report_by_client_order_id_no_match() {
         "limitPx": "95000.0",
         "sz": "0.1",
         "oid": 88888,
-        "timestamp": 1700000000000u64,
+        "timestamp": 1_700_000_000_000_u64,
         "origSz": "0.1",
         "cloid": "0x0000000000000000000000000000dead"
     }]));
@@ -3235,7 +3235,7 @@ async fn test_request_order_status_report_by_client_order_id_fails_closed_on_unk
         "limitPx": "100.0",
         "sz": "1.0",
         "oid": 77778,
-        "timestamp": 1700000000000u64,
+        "timestamp": 1_700_000_000_000_u64,
         "origSz": "1.0",
         "cloid": cloid_hex
     }]));
@@ -3316,11 +3316,11 @@ async fn test_request_order_status_report_fails_closed_on_unknown_instrument_clo
                 "limitPx": "95000.0",
                 "sz": "0.0",
                 "oid": 55555,
-                "timestamp": 1700000000000u64,
+                "timestamp": 1_700_000_000_000_u64,
                 "origSz": "0.1"
             },
             "status": "filled",
-            "statusTimestamp": 1700001000000u64
+            "statusTimestamp": 1_700_001_000_000_u64
         }
     }));
 
@@ -3350,7 +3350,7 @@ async fn test_request_order_status_report_fails_closed_on_unconvertible_open_ord
         "limitPx": "95000.0",
         "sz": "2.0",
         "oid": 12345,
-        "timestamp": 1700000000000u64,
+        "timestamp": 1_700_000_000_000_u64,
         "origSz": "1.0"
     }]));
 
@@ -3382,7 +3382,7 @@ async fn test_request_order_status_report_by_client_order_id_fails_closed_on_unc
         "limitPx": "95000.0",
         "sz": "2.0",
         "oid": 77779,
-        "timestamp": 1700000000000u64,
+        "timestamp": 1_700_000_000_000_u64,
         "origSz": "1.0",
         "cloid": cloid_hex
     }]));
@@ -3416,11 +3416,11 @@ async fn test_request_order_status_report_fails_closed_on_unconvertible_closed_o
                 "limitPx": "95000.0",
                 "sz": "0.2",
                 "oid": 55555,
-                "timestamp": 1700000000000u64,
+                "timestamp": 1_700_000_000_000_u64,
                 "origSz": "0.1"
             },
             "status": "filled",
-            "statusTimestamp": 1700001000000u64
+            "statusTimestamp": 1_700_001_000_000_u64
         }
     }));
 

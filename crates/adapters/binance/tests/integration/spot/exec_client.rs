@@ -267,7 +267,7 @@ fn build_account_response(balances: &[(&str, i64, i64)]) -> Vec<u8> {
     buf.push(0); // brokered
     buf.push(0); // require_self_trade_prevention
     buf.push(0); // prevent_sor
-    buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // update_time
+    buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // update_time
     buf.push(1); // account_type (SPOT)
 
     while buf.len() < 8 + ACCOUNT_BLOCK_LENGTH as usize {
@@ -306,7 +306,7 @@ fn build_new_order_response(
     buf.push((-8i8) as u8); // qty_exponent
     buf.extend_from_slice(&order_id.to_le_bytes());
     buf.extend_from_slice(&i64::MIN.to_le_bytes()); // order_list_id (None)
-    buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // transact_time
+    buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // transact_time
     buf.extend_from_slice(&price.to_le_bytes());
     buf.extend_from_slice(&qty.to_le_bytes());
     buf.extend_from_slice(&executed_qty.to_le_bytes());
@@ -317,7 +317,7 @@ fn build_new_order_response(
     buf.push(1); // side (BUY)
     buf.extend_from_slice(&i64::MIN.to_le_bytes()); // stop_price (None)
     buf.extend_from_slice(&[0u8; 16]); // trailing_delta + trailing_time
-    buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // working_time
+    buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // working_time
     buf.extend_from_slice(&[0u8; 22]); // iceberg_qty to working_floor
     buf.push(3); // self_trade_prevention_mode (EXPIRE_MAKER)
     buf.extend_from_slice(&[0u8; 36]); // trade_group_id to pegged_price
@@ -352,7 +352,7 @@ fn build_cancel_order_response(
     buf.push((-8i8) as u8); // qty_exponent
     buf.extend_from_slice(&order_id.to_le_bytes());
     buf.extend_from_slice(&i64::MIN.to_le_bytes()); // order_list_id (None)
-    buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // transact_time
+    buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // transact_time
     buf.extend_from_slice(&price.to_le_bytes());
     buf.extend_from_slice(&qty.to_le_bytes());
     buf.extend_from_slice(&executed_qty.to_le_bytes());
@@ -506,7 +506,7 @@ fn build_orders_response_with_execution(
         buf.extend_from_slice(&time_micros.to_le_bytes());
         buf.extend_from_slice(&time_micros.to_le_bytes());
         buf.push(1); // is_working
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // working_time
+        buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // working_time
         buf.extend_from_slice(&0i64.to_le_bytes()); // orig_quote_order_qty
 
         while buf.len() - order_start < ORDERS_GROUP_BLOCK_LENGTH as usize {
@@ -1213,7 +1213,7 @@ async fn handle_order_submit(
             "orderId": 99999,
             "orderListId": -1,
             "clientOrderId": client_order_id,
-            "transactTime": 1710485608839_i64,
+            "transactTime": 1_710_485_608_839_i64,
             "price": "50000.00",
             "origQty": "0.001",
             "executedQty": "0.000",
@@ -1223,7 +1223,7 @@ async fn handle_order_submit(
             "timeInForce": "GTC",
             "type": "LIMIT",
             "side": "BUY",
-            "workingTime": 1710485608839_i64,
+            "workingTime": 1_710_485_608_839_i64,
             "selfTradePreventionMode": "NONE",
             "fills": [],
         }))
@@ -1383,7 +1383,7 @@ async fn handle_oco_order_list_submit(
             "listStatusType": "EXEC_STARTED",
             "listOrderStatus": "EXECUTING",
             "listClientOrderId": list_client_order_id,
-            "transactionTime": 1710485608839_i64,
+            "transactionTime": 1_710_485_608_839_i64,
             "symbol": "BTCUSDT",
             "orders": [
                 {
@@ -2019,7 +2019,7 @@ async fn test_connect_restores_active_order_ownership(
     report["l"] = json!("0.00100000");
     report["z"] = json!("0.00100000");
     report["L"] = json!("51000.00000000");
-    report["t"] = json!(98765432);
+    report["t"] = json!(98_765_432);
     state.execution_reports.push(report.clone());
     report["x"] = json!("CANCELED");
     report["X"] = json!("CANCELED");
@@ -2067,7 +2067,7 @@ async fn test_connect_restores_active_order_ownership(
         let OrderEventAny::Accepted(mut accepted) = TestOrderEventStubs::accepted(
             &order,
             account_id,
-            VenueOrderId::from((12345678 + index).to_string()),
+            VenueOrderId::from((12_345_678 + index).to_string()),
         ) else {
             panic!("Expected acceptance stub")
         };
@@ -2129,7 +2129,7 @@ async fn test_connect_restores_active_order_ownership(
                     cid,
                     Quantity::from("0.00400000"),
                     event.event_id,
-                    UnixNanos::from_millis(1709654400000),
+                    UnixNanos::from_millis(1_709_654_400_000),
                     event.ts_init,
                     false,
                     Some(VenueOrderId::from("12345678")),
@@ -2157,7 +2157,7 @@ async fn test_connect_restores_active_order_ownership(
                     Currency::USDT(),
                     LiquiditySide::Taker,
                     event.event_id,
-                    UnixNanos::from_millis(1709654400000),
+                    UnixNanos::from_millis(1_709_654_400_000),
                     event.ts_init,
                     false,
                     None,
@@ -2173,7 +2173,7 @@ async fn test_connect_restores_active_order_ownership(
                     test_instrument_id(),
                     cid,
                     event.event_id,
-                    UnixNanos::from_millis(1709654400000),
+                    UnixNanos::from_millis(1_709_654_400_000),
                     event.ts_init,
                     false,
                     Some(VenueOrderId::from("12345678")),
@@ -2283,7 +2283,7 @@ async fn test_connect_restores_order_canceled_after_offline_replacement(
         test_instrument_id(),
         cid,
         event.event_id,
-        UnixNanos::from_millis(1709654402000),
+        UnixNanos::from_millis(1_709_654_402_000),
         event.ts_init,
         false,
         Some(current_id),
@@ -2318,7 +2318,7 @@ async fn test_connect_restores_replacement_history(
     report["q"] = json!("0.00300000");
     report["p"] = json!("50000.00000000");
     state.execution_reports.push(report.clone());
-    report["i"] = json!(12345677);
+    report["i"] = json!(12_345_677);
     report["q"] = json!("0.00400000");
     report["p"] = json!("49000.00000000");
     state.execution_reports.push(report.clone());
@@ -2327,13 +2327,13 @@ async fn test_connect_restores_replacement_history(
     report["l"] = json!("0.00100000");
     report["z"] = json!("0.00100000");
     report["L"] = json!("49000.00000000");
-    report["t"] = json!(98765432);
+    report["t"] = json!(98_765_432);
     state.execution_reports.push(report.clone());
     report["x"] = json!("CANCELED");
     report["X"] = json!("CANCELED");
     report["C"] = report["c"].clone();
     state.execution_reports.push(report.clone());
-    report["i"] = json!(12345678);
+    report["i"] = json!(12_345_678);
     state.execution_reports.push(report);
     let ws_addr = start_ws_setup_server(state).await;
     let (mut client, mut rx, cache) = create_test_execution_client_with_ws_trading(
@@ -2426,7 +2426,7 @@ async fn test_connect_restores_replacement_history(
                     cid,
                     quantity,
                     event.event_id,
-                    UnixNanos::from_millis(1709654400000),
+                    UnixNanos::from_millis(1_709_654_400_000),
                     event.ts_init,
                     false,
                     Some(current_id),
@@ -2452,7 +2452,7 @@ async fn test_connect_restores_replacement_history(
                 Currency::USDT(),
                 LiquiditySide::Taker,
                 event.event_id,
-                UnixNanos::from_millis(1709654400000),
+                UnixNanos::from_millis(1_709_654_400_000),
                 event.ts_init,
                 false,
                 None,
@@ -2466,7 +2466,7 @@ async fn test_connect_restores_replacement_history(
                     test_instrument_id(),
                     cid,
                     event.event_id,
-                    UnixNanos::from_millis(1709654400000),
+                    UnixNanos::from_millis(1_709_654_400_000),
                     event.ts_init,
                     false,
                     Some(current_id),
@@ -2544,7 +2544,7 @@ async fn test_connect_restores_replacement_from_trade(
     state
         .execution_reports
         .extend([report.clone(), report.clone()]);
-    report["i"] = json!(12345677);
+    report["i"] = json!(12_345_677);
     report["q"] = json!("0.00300000");
     report["p"] = json!("50000.00");
     report["x"] = json!("NEW");
@@ -2555,13 +2555,13 @@ async fn test_connect_restores_replacement_from_trade(
     report["l"] = json!("0.00010000");
     report["z"] = json!((retained_qty + historical_qty).to_string());
     report["L"] = json!("50000.00");
-    report["t"] = json!(98765433);
+    report["t"] = json!(98_765_433);
     state.execution_reports.push(report.clone());
     report["x"] = json!("CANCELED");
     report["X"] = json!("CANCELED");
     report["C"] = report["c"].clone();
     state.execution_reports.push(report.clone());
-    report["i"] = json!(12345678);
+    report["i"] = json!(12_345_678);
     report["q"] = json!(venue_qty);
     report["p"] = json!(venue_price);
     state.execution_reports.push(report);
@@ -2636,7 +2636,7 @@ async fn test_connect_restores_replacement_from_trade(
                     cid,
                     quantity,
                     event.event_id,
-                    UnixNanos::from_millis(1709654401000),
+                    UnixNanos::from_millis(1_709_654_401_000),
                     event.ts_init,
                     false,
                     Some(current_id),
@@ -2663,7 +2663,7 @@ async fn test_connect_restores_replacement_from_trade(
                     Currency::USDT(),
                     LiquiditySide::Taker,
                     event.event_id,
-                    UnixNanos::from_millis(1709654401000),
+                    UnixNanos::from_millis(1_709_654_401_000),
                     event.ts_init,
                     false,
                     None,
@@ -2687,7 +2687,7 @@ async fn test_connect_restores_replacement_from_trade(
                     Currency::USDT(),
                     LiquiditySide::Taker,
                     event.event_id,
-                    UnixNanos::from_millis(1709654401000),
+                    UnixNanos::from_millis(1_709_654_401_000),
                     event.ts_init,
                     false,
                     None,
@@ -2702,7 +2702,7 @@ async fn test_connect_restores_replacement_from_trade(
                     test_instrument_id(),
                     cid,
                     event.event_id,
-                    UnixNanos::from_millis(1709654401000),
+                    UnixNanos::from_millis(1_709_654_401_000),
                     event.ts_init,
                     false,
                     Some(current_id),
@@ -2804,7 +2804,7 @@ async fn test_connect_restores_quote_qty_normalization(#[case] quote_qty: &str) 
         cid,
         quantity,
         event.event_id,
-        UnixNanos::from_millis(1709654401000),
+        UnixNanos::from_millis(1_709_654_401_000),
         event.ts_init,
         false,
         Some(venue_order_id),
@@ -2846,7 +2846,7 @@ async fn test_connect_restores_quote_qty_normalization(#[case] quote_qty: &str) 
         Currency::USDT(),
         LiquiditySide::Taker,
         event.event_id,
-        UnixNanos::from_millis(1709654401000),
+        UnixNanos::from_millis(1_709_654_401_000),
         event.ts_init,
         false,
         None,

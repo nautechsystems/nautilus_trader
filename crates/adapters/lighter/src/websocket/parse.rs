@@ -1428,10 +1428,10 @@ mod tests {
                 price: Decimal::from_str("2064.30").unwrap(),
                 size: Decimal::from_str("1.0392").unwrap(),
             }],
-            offset: 1558300,
-            nonce: 9182390020,
-            last_updated_at: 1774884082309144,
-            begin_nonce: 9182389998,
+            offset: 1_558_300,
+            nonce: 9_182_390_020,
+            last_updated_at: 1_774_884_082_309_144,
+            begin_nonce: 9_182_389_998,
         }
     }
 
@@ -1479,7 +1479,7 @@ mod tests {
         let ts_init = UnixNanos::from(1);
 
         let deltas =
-            parse_ws_order_book_deltas(&stub_book(), &instrument, 1774884082326, true, ts_init)
+            parse_ws_order_book_deltas(&stub_book(), &instrument, 1_774_884_082_326, true, ts_init)
                 .unwrap();
 
         assert_eq!(deltas.deltas.len(), 3);
@@ -1510,7 +1510,7 @@ mod tests {
         let deltas = parse_ws_order_book_deltas(
             &book,
             &instrument,
-            1774884082326,
+            1_774_884_082_326,
             false,
             UnixNanos::from(1),
         )
@@ -1534,7 +1534,7 @@ mod tests {
         let err = parse_ws_order_book_deltas(
             &book,
             &instrument,
-            1774884082326,
+            1_774_884_082_326,
             false,
             UnixNanos::from(1),
         )
@@ -1553,7 +1553,7 @@ mod tests {
         let err = parse_ws_order_book_deltas(
             &book,
             &instrument,
-            1774884082326,
+            1_774_884_082_326,
             false,
             UnixNanos::from(1),
         )
@@ -1571,9 +1571,14 @@ mod tests {
         let mut book = stub_book();
         book.bids[0].size = Decimal::ZERO;
 
-        let err =
-            parse_ws_order_book_deltas(&book, &instrument, 1774884082326, true, UnixNanos::from(1))
-                .unwrap_err();
+        let err = parse_ws_order_book_deltas(
+            &book,
+            &instrument,
+            1_774_884_082_326,
+            true,
+            UnixNanos::from(1),
+        )
+        .unwrap_err();
 
         assert!(
             err.to_string()
@@ -1594,12 +1599,13 @@ mod tests {
                 price: Decimal::from_str("2064.30").unwrap(),
                 size: Decimal::from_str("1.0392").unwrap(),
             },
-            last_updated_at: 1774883844921166,
+            last_updated_at: 1_774_883_844_921_166,
         };
 
-        let quote = parse_ws_quote_tick(&ticker, &instrument, 1774883844933, UnixNanos::from(1))
-            .unwrap()
-            .expect("two-sided ticker yields a quote");
+        let quote =
+            parse_ws_quote_tick(&ticker, &instrument, 1_774_883_844_933, UnixNanos::from(1))
+                .unwrap()
+                .expect("two-sided ticker yields a quote");
 
         assert_eq!(quote.instrument_id, instrument.id());
         assert_eq!(quote.bid_price, Price::from("2064.30"));
@@ -1624,11 +1630,12 @@ mod tests {
                 price: Decimal::ZERO,
                 size: Decimal::ZERO,
             },
-            last_updated_at: 1774883844921166,
+            last_updated_at: 1_774_883_844_921_166,
         };
 
         let result =
-            parse_ws_quote_tick(&ticker, &instrument, 1774883844933, UnixNanos::from(1)).unwrap();
+            parse_ws_quote_tick(&ticker, &instrument, 1_774_883_844_933, UnixNanos::from(1))
+                .unwrap();
 
         assert!(result.is_none());
     }
@@ -1642,7 +1649,7 @@ mod tests {
             "s": "ETH",
             "a": {"price": "not-a-price", "size": "0.4950"},
             "b": {"price": "2064.30", "size": "1.0392"},
-            "last_updated_at": 1774883844921166u64,
+            "last_updated_at": 1_774_883_844_921_166_u64,
         });
 
         let err = serde_json::from_value::<LighterTicker>(payload).unwrap_err();
@@ -1808,9 +1815,13 @@ mod tests {
     #[rstest]
     fn test_parse_ws_order_book_depth_preserves_sparse_levels() {
         let instrument = create_test_instrument();
-        let depth =
-            parse_ws_order_book_depth(&stub_book(), &instrument, 1774884082326, UnixNanos::from(1))
-                .unwrap();
+        let depth = parse_ws_order_book_depth(
+            &stub_book(),
+            &instrument,
+            1_774_884_082_326,
+            UnixNanos::from(1),
+        )
+        .unwrap();
 
         assert_eq!(depth.instrument_id, instrument.id());
         assert_eq!(depth.bids.len(), 1);
@@ -1835,7 +1846,7 @@ mod tests {
     fn test_parse_ws_trade_tick_delegates_trade_parser() {
         let instrument = create_test_instrument();
         let trade = LighterTrade {
-            trade_id: 16164557907,
+            trade_id: 16_164_557_907,
             trade_id_str: Some("16164557907".to_string()),
             tx_hash: "019f2b9c".to_string(),
             trade_type: LighterTradeType::Trade,
@@ -1843,19 +1854,19 @@ mod tests {
             size: Decimal::from_str("0.1336").unwrap(),
             price: Decimal::from_str("2181.83").unwrap(),
             usd_amount: Decimal::from_str("291.492488").unwrap(),
-            ask_id: 281476612587355,
+            ask_id: 281_476_612_587_355,
             ask_id_str: Some("281476612587355".to_string()),
-            bid_id: 562948334068259,
+            bid_id: 562_948_334_068_259,
             bid_id_str: Some("562948334068259".to_string()),
-            ask_client_id: 363283,
+            ask_client_id: 363_283,
             ask_client_id_str: Some("363283".to_string()),
-            bid_client_id: 23004521241,
+            bid_client_id: 23_004_521_241,
             bid_client_id_str: Some("23004521241".to_string()),
             ask_account_id: 57890,
-            bid_account_id: 317068,
+            bid_account_id: 317_068,
             is_maker_ask: false,
-            block_height: 198321831,
-            timestamp: 1773854156654,
+            block_height: 198_321_831,
+            timestamp: 1_773_854_156_654,
             taker_fee: Some(196),
             taker_position_size_before: None,
             taker_entry_quote_before: None,
@@ -1866,7 +1877,7 @@ mod tests {
             maker_entry_quote_before: None,
             maker_initial_margin_fraction_before: None,
             maker_position_sign_changed: None,
-            transaction_time: 1773854156686065,
+            transaction_time: 1_773_854_156_686_065,
             ask_account_pnl: None,
             bid_account_pnl: None,
         };
@@ -1883,7 +1894,7 @@ mod tests {
 
     fn stub_order(status: LighterOrderStatus) -> LighterOrder {
         LighterOrder {
-            order_index: 281476929510110,
+            order_index: 281_476_929_510_110,
             client_order_index: 42,
             order_id: "281476929510110".to_string(),
             client_order_id: "42".to_string(),
@@ -1891,11 +1902,11 @@ mod tests {
             owner_account_index: 1234,
             initial_base_amount: Decimal::from_str("0.0050").unwrap(),
             price: Decimal::from_str("2352.74").unwrap(),
-            nonce: 9182390020,
+            nonce: 9_182_390_020,
             remaining_base_amount: Decimal::from_str("0.0030").unwrap(),
             is_ask: true,
             base_size: 50,
-            base_price: 235274,
+            base_price: 235_274,
             filled_base_amount: Decimal::from_str("0.0020").unwrap(),
             filled_quote_amount: Decimal::from_str("4.705480").unwrap(),
             side: Some(LighterOrderSide::Sell),
@@ -2630,7 +2641,7 @@ mod tests {
         assert_eq!(report.position_side, PositionSide::Long);
         assert_eq!(report.quantity, Quantity::from("1.5000"));
         assert_eq!(report.signed_decimal_qty, Decimal::new(15, 1));
-        assert_eq!(report.avg_px_open, Some(Decimal::new(235010, 2)));
+        assert_eq!(report.avg_px_open, Some(Decimal::new(235_010, 2)));
         assert_eq!(report.account_id, account_id());
         assert_eq!(report.instrument_id, instrument.id());
         assert_eq!(report.ts_last, UnixNanos::from(50));
@@ -2687,13 +2698,13 @@ mod tests {
         assert_eq!(report.ts_last, UnixNanos::default());
         assert_eq!(report.ts_init, UnixNanos::default());
         assert_eq!(report.venue_position_id, None);
-        assert_eq!(report.avg_px_open, Some(Decimal::new(240000, 2)));
+        assert_eq!(report.avg_px_open, Some(Decimal::new(240_000, 2)));
         assert_eq!(
             report.avg_px_open_reconciliation,
             AvgPxReconciliation::Match
         );
         assert_eq!(report.avg_px_open_precision, None);
-        assert_eq!(report.liquidation_price, Some(Decimal::new(300000, 2)));
+        assert_eq!(report.liquidation_price, Some(Decimal::new(300_000, 2)));
     }
 
     #[rstest]

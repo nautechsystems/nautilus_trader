@@ -28,7 +28,7 @@ pub static AERODROME_V1: LazyLock<DexExtended> = LazyLock::new(|| {
         chains::BASE.clone(),
         DexType::AerodromeV1,
         "0x420DD381b31aEf6683db6B902084cB0FFECe40Da",
-        3200559,
+        3_200_559,
         AmmType::CPAMM,
         "",
         "",

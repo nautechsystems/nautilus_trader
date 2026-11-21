@@ -1232,7 +1232,7 @@ mod tests {
         let clob = PolymarketClobPublicClient::new(None, 20).unwrap();
         let data = PolymarketDataApiHttpClient::new(None, 20).unwrap();
 
-        for (id, version) in [(5931597, "v2"), (1557558, "v1")] {
+        for (id, version) in [(5_931_597, "v2"), (1_557_558, "v1")] {
             let markets = gamma
                 .request_markets_by_params(GetGammaMarketsParams {
                     id: Some(vec![id]),

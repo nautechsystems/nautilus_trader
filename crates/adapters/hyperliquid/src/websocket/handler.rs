@@ -2246,7 +2246,7 @@ pub(super) mod tests {
         handler.confirm_compact_request(&sub, "unsubscribe");
         handler.confirm_compact_request(&sub, "subscribe");
         let update: WsCompactBookUpdate = serde_json::from_value(json!({
-            "c":"BTC","t":1700000000000_u64,"r":[[],[]],
+            "c":"BTC","t":1_700_000_000_000_u64,"r":[[],[]],
             "l":[[{"p":"100","s":"2"}],[]],
         }))
         .unwrap();
@@ -2316,7 +2316,7 @@ pub(super) mod tests {
             .unwrap();
         handler.send(old).unwrap();
         let invalid = serde_json::from_value(json!({
-            "c":"BTC","t":1700000000001_u64,"r":[[9],[]],"l":[[],[]],
+            "c":"BTC","t":1_700_000_000_001_u64,"r":[[9],[]],"l":[[],[]],
         }))
         .unwrap();
         let error = handler

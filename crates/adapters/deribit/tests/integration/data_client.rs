@@ -385,21 +385,21 @@ async fn handle_get_combo_instrument(id: u64) -> Response {
             "maker_commission": 0.0,
             "taker_commission": 0.0,
             "instrument_type": "reversed",
-            "creation_timestamp": 1719561600000_i64,
+            "creation_timestamp": 1_719_561_600_000_i64,
             "is_active": true,
             "tick_size": 0.01,
             "contract_size": 1.0,
-            "instrument_id": 456789,
+            "instrument_id": 456_789,
             "min_trade_amount": 1.0,
             "settlement_currency": "BTC",
             "base_currency": "BTC",
             "counter_currency": "USD",
             "quote_currency": "USD",
-            "expiration_timestamp": 1767225600000_i64,
+            "expiration_timestamp": 1_767_225_600_000_i64,
             "tick_size_steps": []
         },
-        "usIn": 1765308000000000_u64,
-        "usOut": 1765308000000500_u64,
+        "usIn": 1_765_308_000_000_000_u64,
+        "usOut": 1_765_308_000_000_500_u64,
         "usDiff": 500,
         "testnet": true
     }))
@@ -434,13 +434,13 @@ async fn handle_get_combos(state: &TestServerState, id: u64) -> Response {
                         "instrument_name": "BTC-27DEC24"
                     }
                 ],
-                "creation_timestamp": 1719561600000_i64,
-                "instrument_id": 456789,
-                "state_timestamp": 1719561600000_i64
+                "creation_timestamp": 1_719_561_600_000_i64,
+                "instrument_id": 456_789,
+                "state_timestamp": 1_719_561_600_000_i64
             }
         ],
-        "usIn": 1765308000000000_u64,
-        "usOut": 1765308000000500_u64,
+        "usIn": 1_765_308_000_000_000_u64,
+        "usOut": 1_765_308_000_000_500_u64,
         "usDiff": 500,
         "testnet": true
     }))
@@ -595,8 +595,8 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                 "id": id,
                                 "result": subscribed_channels,
                                 "testnet": true,
-                                "usIn": 1699999999000000_u64,
-                                "usOut": 1699999999001000_u64,
+                                "usIn": 1_699_999_999_000_000_u64,
+                                "usOut": 1_699_999_999_001_000_u64,
                                 "usDiff": 1000
                             });
 
@@ -717,8 +717,8 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                 "enabled_features": []
                             },
                             "testnet": true,
-                            "usIn": 1699999999000000_u64,
-                            "usOut": 1699999999001000_u64,
+                            "usIn": 1_699_999_999_000_000_u64,
+                            "usOut": 1_699_999_999_001_000_u64,
                             "usDiff": 1000
                         });
 

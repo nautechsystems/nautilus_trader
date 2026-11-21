@@ -1041,7 +1041,7 @@ mod tests {
     #[case(serde_json::json!(""), None)]
     #[case(serde_json::Value::Null, None)]
     #[case(serde_json::json!("0.1234567890123456789012345678"), Some(Decimal::from_str_exact("0.1234567890123456789012345678").unwrap()))]
-    #[case(serde_json::json!(9007199254740993u64), Some(Decimal::from(9_007_199_254_740_993u64)))]
+    #[case(serde_json::json!(9_007_199_254_740_993_u64), Some(Decimal::from(9_007_199_254_740_993u64)))]
     fn test_order_price_routes(
         #[case] price: serde_json::Value,
         #[case] expected: Option<Decimal>,
@@ -1095,16 +1095,16 @@ mod tests {
         let portfolio: DeribitPortfolioMsg = serde_json::from_str(&data.to_string()).unwrap();
         assert_eq!(portfolio.currency, "USDT");
         assert_eq!(portfolio.equity, Decimal::from_str_exact(expected).unwrap());
-        assert_eq!(portfolio.balance, Decimal::new(5500055, 5));
-        assert_eq!(portfolio.available_funds, Decimal::new(53868247, 6));
-        assert_eq!(portfolio.margin_balance, Decimal::new(54968258, 6));
-        assert_eq!(portfolio.initial_margin, Decimal::new(1100011, 6));
+        assert_eq!(portfolio.balance, Decimal::new(5_500_055, 5));
+        assert_eq!(portfolio.available_funds, Decimal::new(53_868_247, 6));
+        assert_eq!(portfolio.margin_balance, Decimal::new(54_968_258, 6));
+        assert_eq!(portfolio.initial_margin, Decimal::new(1_100_011, 6));
         assert_eq!(portfolio.maintenance_margin, Decimal::ZERO);
         assert_eq!(portfolio.margin_model.as_deref(), Some("cross_sm"));
         assert_eq!(portfolio.cross_collateral_enabled, Some(true));
         assert_eq!(
             portfolio.available_withdrawal_funds,
-            Some(Decimal::new(54968257, 6))
+            Some(Decimal::new(54_968_257, 6))
         );
 
         for invalid in [
@@ -1281,7 +1281,7 @@ mod tests {
     #[rstest]
     fn test_parse_volatility_index_payload() {
         let value = serde_json::json!({
-            "timestamp": 1619777946007_u64,
+            "timestamp": 1_619_777_946_007_u64,
             "volatility": 129.36_f64,
             "index_name": "btc_usd",
         });
@@ -1289,6 +1289,6 @@ mod tests {
         let payload: DeribitVolatilityIndexMsg = serde_json::from_value(value).unwrap();
         assert_eq!(payload.index_name, "btc_usd");
         assert_eq!(payload.volatility, 129.36);
-        assert_eq!(payload.timestamp, 1619777946007_u64);
+        assert_eq!(payload.timestamp, 1_619_777_946_007_u64);
     }
 }

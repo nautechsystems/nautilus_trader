@@ -544,14 +544,14 @@ mod tests {
                     "secType": "STK",
                     "symbol": "AAPL",
                     "exchange": "SMART",
-                    "conId": 265598
+                    "conId": 265_598
                 }],
                 "filter_sec_types": ["opt"]
             }))
             .unwrap();
 
         assert_eq!(config.load_contracts.len(), 1);
-        assert_eq!(config.load_contracts[0].contract.contract_id, 265598);
+        assert_eq!(config.load_contracts[0].contract.contract_id, 265_598);
         assert_eq!(
             config.load_contracts[0].contract.security_type,
             ibapi::contracts::SecurityType::Stock
@@ -621,11 +621,11 @@ mod tests {
     fn test_instrument_provider_config_accepts_con_id_only_contract() {
         let config: InteractiveBrokersInstrumentProviderConfig =
             serde_json::from_value(serde_json::json!({
-                "load_contracts": [{"conId": 265598}]
+                "load_contracts": [{"conId": 265_598}]
             }))
             .unwrap();
 
-        assert_eq!(config.load_contracts[0].contract.contract_id, 265598);
+        assert_eq!(config.load_contracts[0].contract.contract_id, 265_598);
         assert_eq!(
             config.load_contracts[0].contract.security_type,
             ibapi::contracts::SecurityType::Stock
@@ -668,7 +668,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case("load_contracts", serde_json::json!([{"secType": "STK", "conId": 265598}, {"secType": "STK", "conId": 756733}]))]
+    #[case("load_contracts", serde_json::json!([{"secType": "STK", "conId": 265_598}, {"secType": "STK", "conId": 756_733}]))]
     fn test_instrument_provider_selection_uniqueness(
         #[case] field: &str,
         #[case] mut values: serde_json::Value,
@@ -701,7 +701,7 @@ mod tests {
     #[rstest]
     fn test_client_configs_reject_duplicate_provider_selections() {
         let provider: InteractiveBrokersInstrumentProviderConfig = serde_json::from_value(serde_json::json!({
-            "load_contracts": [{"secType": "STK", "conId": 265598}, {"secType": "STK", "conId": 265598}]
+            "load_contracts": [{"secType": "STK", "conId": 265_598}, {"secType": "STK", "conId": 265_598}]
         })).unwrap();
 
         let data = super::InteractiveBrokersDataClientConfig {
@@ -744,7 +744,7 @@ mod tests {
 
         let duplicate_config: InteractiveBrokersInstrumentProviderConfig =
             serde_json::from_value(serde_json::json!({
-                "load_contracts": [{"conId": 265598}, {"conId": 265598}]
+                "load_contracts": [{"conId": 265_598}, {"conId": 265_598}]
             }))
             .unwrap();
         let provider =
@@ -791,7 +791,7 @@ mod tests {
     #[rstest]
     fn test_provider_constructor_rejects_duplicate_config() {
         let config = serde_json::from_value(serde_json::json!({
-            "load_contracts": [{"conId": 265598}, {"conId": 265598}]
+            "load_contracts": [{"conId": 265_598}, {"conId": 265_598}]
         }))
         .unwrap();
 

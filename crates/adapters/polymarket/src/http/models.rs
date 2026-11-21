@@ -855,7 +855,7 @@ mod tests {
         assert_eq!(order.original_size, dec!(100.0000));
         assert_eq!(order.price, dec!(0.5000));
         assert_eq!(order.size_matched, dec!(25.0000));
-        assert_eq!(order.created_at, 1703875200);
+        assert_eq!(order.created_at, 1_703_875_200);
         assert!(order.expiration.is_none());
         assert_eq!(order.associate_trades, Some(vec!["0xabc001".to_string()]));
     }
@@ -979,7 +979,7 @@ mod tests {
         let order: PolymarketOrder = load("http_signed_order.json");
         let debug = format!("{order:?}");
 
-        assert_eq!(order.salt, 123456789);
+        assert_eq!(order.salt, 123_456_789);
         assert_eq!(order.maker, "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266");
         assert_eq!(order.maker_amount, dec!(100000000));
         assert_eq!(order.taker_amount, dec!(50000000));
@@ -1704,7 +1704,7 @@ mod tests {
         assert_eq!(trades[0].side, PolymarketOrderSide::Sell);
         assert_eq!(trades[0].price, dec!(0.7));
         assert_eq!(trades[0].size, dec!(92.59));
-        assert_eq!(trades[0].timestamp, 1786179735);
+        assert_eq!(trades[0].timestamp, 1_786_179_735);
         assert_eq!(
             trades[0].transaction_hash,
             "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -1715,7 +1715,7 @@ mod tests {
         assert_eq!(trades[1].side, PolymarketOrderSide::Buy);
         assert_eq!(trades[1].price, dec!(0.709999959));
         assert_eq!(trades[1].size, dec!(1.464786));
-        assert_eq!(trades[1].timestamp, 1786179730);
+        assert_eq!(trades[1].timestamp, 1_786_179_730);
         assert_eq!(
             trades[1].transaction_hash,
             "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -1728,7 +1728,7 @@ mod tests {
         assert_eq!(trades[2].side, PolymarketOrderSide::Buy);
         assert_eq!(trades[2].price, dec!(0.2972581967));
         assert_eq!(trades[2].size, dec!(244));
-        assert_eq!(trades[2].timestamp, 1786179726);
+        assert_eq!(trades[2].timestamp, 1_786_179_726);
         assert_eq!(
             trades[2].transaction_hash,
             "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"

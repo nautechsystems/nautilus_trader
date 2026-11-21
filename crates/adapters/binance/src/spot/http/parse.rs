@@ -1478,7 +1478,7 @@ mod tests {
             SBE_SCHEMA_ID,
             SBE_SCHEMA_VERSION,
         );
-        let timestamp: i64 = 1734300000000; // Example timestamp
+        let timestamp: i64 = 1_734_300_000_000; // Example timestamp
 
         let mut buf = Vec::with_capacity(16);
         buf.extend_from_slice(&header);
@@ -1707,7 +1707,7 @@ mod tests {
         buf.extend_from_slice(&header);
 
         // Block: last_update_id (8) + price_exponent (1) + qty_exponent (1)
-        let last_update_id: i64 = 123456789;
+        let last_update_id: i64 = 123_456_789;
         let price_exponent: i8 = -8;
         let qty_exponent: i8 = -8;
         buf.extend_from_slice(&last_update_id.to_le_bytes());
@@ -1731,7 +1731,7 @@ mod tests {
 
         let depth = decode_depth(&buf).unwrap();
 
-        assert_eq!(depth.last_update_id, 123456789);
+        assert_eq!(depth.last_update_id, 123_456_789);
         assert_eq!(depth.price_exponent, -8);
         assert_eq!(depth.qty_exponent, -8);
         assert_eq!(depth.bids.len(), 2);
@@ -1784,7 +1784,7 @@ mod tests {
         let price: i64 = 100_000_000_000;
         let qty: i64 = 10_000_000;
         let quote_qty: i64 = 1_000_000_000_000;
-        let time: i64 = 1734300000000;
+        let time: i64 = 1_734_300_000_000;
         let is_buyer_maker: u8 = 1; // true
         let is_best_match: u8 = 1; // true
 
@@ -2096,10 +2096,10 @@ mod tests {
         buf.extend_from_slice(&i64::MIN.to_le_bytes()); // stop_price (None)
         buf.extend_from_slice(&[0u8; 16]); // trailing_delta + trailing_time
         buf.extend_from_slice(&i64::MIN.to_le_bytes()); // iceberg_qty (None)
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // time
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // update_time
+        buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // time
+        buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // update_time
         buf.push(1); // is_working
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // working_time
+        buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // working_time
         buf.extend_from_slice(&0i64.to_le_bytes()); // orig_quote_order_qty
 
         // Pad to 162 bytes from order start
@@ -2126,10 +2126,10 @@ mod tests {
         buf.extend_from_slice(&i64::MIN.to_le_bytes()); // stop_price (None)
         buf.extend_from_slice(&[0u8; 16]); // trailing_delta + trailing_time
         buf.extend_from_slice(&i64::MIN.to_le_bytes()); // iceberg_qty (None)
-        buf.extend_from_slice(&1734300001000i64.to_le_bytes()); // time
-        buf.extend_from_slice(&1734300001000i64.to_le_bytes()); // update_time
+        buf.extend_from_slice(&1_734_300_001_000_i64.to_le_bytes()); // time
+        buf.extend_from_slice(&1_734_300_001_000_i64.to_le_bytes()); // update_time
         buf.push(1); // is_working
-        buf.extend_from_slice(&1734300001000i64.to_le_bytes()); // working_time
+        buf.extend_from_slice(&1_734_300_001_000_i64.to_le_bytes()); // working_time
         buf.extend_from_slice(&0i64.to_le_bytes()); // orig_quote_order_qty
 
         while buf.len() - order2_start < ORDER_MIN_BLOCK_LENGTH as usize {
@@ -2320,7 +2320,7 @@ mod tests {
         buf.push(0); // brokered
         buf.push(0); // require_self_trade_prevention
         buf.push(0); // prevent_sor
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // update_time
+        buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // update_time
         buf.push(1); // account_type (SPOT)
 
         // Pad to 64 bytes
@@ -2405,7 +2405,7 @@ mod tests {
         buf.extend_from_slice(&10_000_000i64.to_le_bytes()); // qty
         buf.extend_from_slice(&1_000_000_000_000i64.to_le_bytes()); // quote_qty
         buf.extend_from_slice(&100_000i64.to_le_bytes()); // commission
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // time
+        buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // time
         buf.push(1); // is_buyer
         buf.push(0); // is_maker
         buf.push(1); // is_best_match
@@ -2423,7 +2423,7 @@ mod tests {
         buf.extend_from_slice(&5_000_000i64.to_le_bytes());
         buf.extend_from_slice(&1_000_000_000_000i64.to_le_bytes());
         buf.extend_from_slice(&50_000i64.to_le_bytes());
-        buf.extend_from_slice(&1734300001000i64.to_le_bytes());
+        buf.extend_from_slice(&1_734_300_001_000_i64.to_le_bytes());
         buf.push(0); // is_buyer (false = seller)
         buf.push(1); // is_maker
         buf.push(1); // is_best_match

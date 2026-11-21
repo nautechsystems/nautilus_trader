@@ -385,16 +385,16 @@ async fn test_server_disconnect_reconnects_and_resumes_multi_symbol_updates() {
         .send_text_to_all(build_crypto_update(
             "btcusd",
             "61035.860000000000000000",
-            1791355670000,
-            1791355670142,
+            1_791_355_670_000,
+            1_791_355_670_142,
         ))
         .await;
     state
         .send_text_to_all(build_crypto_update(
             "ethusd",
             "2450.110000000000000000",
-            1791355671000,
-            1791355671142,
+            1_791_355_671_000,
+            1_791_355_671_142,
         ))
         .await;
 
@@ -422,16 +422,16 @@ async fn test_server_disconnect_reconnects_and_resumes_multi_symbol_updates() {
         .send_text_to_all(build_crypto_update(
             "btcusd",
             "61040.120000000000000000",
-            1791355672000,
-            1791355672142,
+            1_791_355_672_000,
+            1_791_355_672_142,
         ))
         .await;
     state
         .send_text_to_all(build_crypto_update(
             "ethusd",
             "2455.550000000000000000",
-            1791355673000,
-            1791355673142,
+            1_791_355_673_000,
+            1_791_355_673_142,
         ))
         .await;
 
@@ -488,16 +488,16 @@ async fn test_server_disconnect_does_not_restore_unsubscribed_symbol() {
         .send_text_to_all(build_crypto_update(
             "btcusd",
             "61050.010000000000000000",
-            1791355674000,
-            1791355674142,
+            1_791_355_674_000,
+            1_791_355_674_142,
         ))
         .await;
     state
         .send_text_to_all(build_crypto_update(
             "ethusd",
             "2460.010000000000000000",
-            1791355675000,
-            1791355675142,
+            1_791_355_675_000,
+            1_791_355_675_142,
         ))
         .await;
 
@@ -660,7 +660,7 @@ async fn test_background_auth_rejection_stops_auth_retries() {
     .await;
 
     let mut update = fixture_json(CRYPTO_UPDATE_FIXTURE);
-    update["payload"]["timestamp"] = json!(1791355667001_u64);
+    update["payload"]["timestamp"] = json!(1_791_355_667_001_u64);
     state.send_text_to_all(update.to_string()).await;
     let custom = next_custom(&mut rx).await;
     let payload = custom
@@ -668,7 +668,7 @@ async fn test_background_auth_rejection_stops_auth_retries() {
         .as_any()
         .downcast_ref::<PolymarketCryptoPrice>()
         .unwrap();
-    assert_eq!(payload.price_timestamp_ms, 1791355667001);
+    assert_eq!(payload.price_timestamp_ms, 1_791_355_667_001);
     assert!(
         tokio::time::timeout(
             Duration::from_millis(300),
@@ -744,7 +744,7 @@ async fn test_server_disconnect_preserves_twap_replay_fingerprint() {
         .downcast_ref::<PolymarketCryptoTwap>()
         .unwrap();
     assert_eq!(initial.value, dec!(84291.577380840025358336));
-    assert_eq!(initial.observation_timestamp_ms, 1791355667000);
+    assert_eq!(initial.observation_timestamp_ms, 1_791_355_667_000);
     state.clear_received_payloads().await;
     state.close_all_connections().await;
     wait_for_op(&state, "subscribe").await;
@@ -755,7 +755,7 @@ async fn test_server_disconnect_preserves_twap_replay_fingerprint() {
         .send_text_to_all(TWAP_UPDATE_FIXTURE.to_string())
         .await;
     let mut next = fixture_json(TWAP_UPDATE_FIXTURE);
-    next["payload"]["timestamp"] = json!(1791355667001_u64);
+    next["payload"]["timestamp"] = json!(1_791_355_667_001_u64);
     state.send_text_to_all(next.to_string()).await;
     let custom = next_custom(&mut rx).await;
     let payload = custom
@@ -765,7 +765,7 @@ async fn test_server_disconnect_preserves_twap_replay_fingerprint() {
         .unwrap();
     assert_eq!(payload.symbol, "btcusd");
     assert_eq!(payload.value, dec!(84291.577380840025358336));
-    assert_eq!(payload.observation_timestamp_ms, 1791355667001);
+    assert_eq!(payload.observation_timestamp_ms, 1_791_355_667_001);
     assert!(rx.try_recv().is_err());
     assert_eq!(state.connection_count().await, 2);
     assert_eq!(ops(&state.payloads().await), vec!["auth", "subscribe"]);

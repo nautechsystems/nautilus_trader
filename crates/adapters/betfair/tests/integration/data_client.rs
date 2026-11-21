@@ -379,7 +379,7 @@ async fn test_data_client_publishes_socket_state_and_registers_reconnect() {
 
     let instrument_id = nautilus_betfair::common::parse::make_instrument_id(
         "1.180294978",
-        6146434,
+        6_146_434,
         rust_decimal::Decimal::ZERO,
     );
     client
@@ -615,7 +615,7 @@ async fn test_data_client_subscribe_sends_market_subscription() {
 
     let instrument_id = nautilus_betfair::common::parse::make_instrument_id(
         "1.180294978",
-        6146434,
+        6_146_434,
         rust_decimal::Decimal::ZERO,
     );
 
@@ -688,12 +688,12 @@ async fn test_data_client_deduplicates_same_market_subscription() {
 
     let first_instrument_id = nautilus_betfair::common::parse::make_instrument_id(
         "1.180294978",
-        6146434,
+        6_146_434,
         rust_decimal::Decimal::ZERO,
     );
     let second_instrument_id = nautilus_betfair::common::parse::make_instrument_id(
         "1.180294978",
-        40273293,
+        40_273_293,
         rust_decimal::Decimal::ZERO,
     );
 

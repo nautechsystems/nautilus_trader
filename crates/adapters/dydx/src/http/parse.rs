@@ -835,8 +835,8 @@ mod tests {
                     "quantumConversionExponent": -9,
                     "tickSize": "0.01",
                     "stepSize": "0.1",
-                    "stepBaseQuantums": 1000000,
-                    "subticksPerTick": 1000000
+                    "stepBaseQuantums": 1_000_000,
+                    "subticksPerTick": 1_000_000
                 }
             }
         });
@@ -865,8 +865,8 @@ mod tests {
                     "quantumConversionExponent": -9,
                     "tickSize": "0.01",
                     "stepSize": "0.1",
-                    "stepBaseQuantums": 1000000,
-                    "subticksPerTick": 1000000
+                    "stepBaseQuantums": 1_000_000,
+                    "subticksPerTick": 1_000_000
                 }
             }
         });
@@ -1711,9 +1711,9 @@ mod reconciliation_tests {
                 .size_increment(Quantity::new(0.001, 8))
                 .multiplier(Quantity::new(1.0, 0))
                 .lot_size(Quantity::new(0.001, 8))
-                .max_quantity(Quantity::new(100000.0, 8))
+                .max_quantity(Quantity::new(100_000.0, 8))
                 .min_quantity(Quantity::new(0.001, 8))
-                .max_price(Price::new(1000000.0, 2))
+                .max_price(Price::new(1_000_000.0, 2))
                 .min_price(Price::new(0.01, 2))
                 .margin_init(dec!(0.05))
                 .margin_maint(dec!(0.03))
@@ -1825,7 +1825,7 @@ mod reconciliation_tests {
             client_metadata: 0,
             trigger_price: Some(dec!(49000.0)),
             condition_type: Some(DydxConditionType::StopLoss),
-            conditional_order_trigger_subticks: Some(490000),
+            conditional_order_trigger_subticks: Some(490_000),
             execution: None,
             updated_at: Some(Timestamp::now()),
             updated_at_height: Some(1001),

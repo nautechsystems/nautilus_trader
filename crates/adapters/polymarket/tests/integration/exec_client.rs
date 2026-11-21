@@ -2939,7 +2939,7 @@ async fn test_generate_mass_status_recovers_distinct_maker_legs_once(#[case] bou
         assert_eq!(fill.last_px, Price::from(price));
         assert_eq!(fill.commission, Money::zero(Currency::pUSD()));
         assert_eq!(fill.liquidity_side, LiquiditySide::Maker);
-        assert_eq!(fill.ts_event, UnixNanos::from(1704067200000000000));
+        assert_eq!(fill.ts_event, UnixNanos::from(1_704_067_200_000_000_000));
         assert_eq!(
             mass.order_reports()[&venue_order_id].filled_qty,
             Quantity::from(quantity)

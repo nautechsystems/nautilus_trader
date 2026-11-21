@@ -207,7 +207,7 @@ fn build_trades_response(trades: &[(i64, i64, i64, i64, bool)]) -> Vec<u8> {
         buf.extend_from_slice(&price.to_le_bytes()); // price
         buf.extend_from_slice(&qty.to_le_bytes()); // qty
         buf.extend_from_slice(&quote_qty.to_le_bytes()); // quoteQty
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // time
+        buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // time
         buf.push(u8::from(*is_buyer_maker)); // isBuyerMaker
         buf.push(1); // isBestMatch
     }
@@ -272,10 +272,10 @@ fn build_single_order_response(
     buf.extend_from_slice(&i64::MIN.to_le_bytes()); // stop_price (None)
     buf.extend_from_slice(&[0u8; 16]); // trailing_delta + trailing_time
     buf.extend_from_slice(&i64::MIN.to_le_bytes()); // iceberg_qty (None)
-    buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // time
-    buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // update_time
+    buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // time
+    buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // update_time
     buf.push(1); // is_working
-    buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // working_time
+    buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // working_time
     buf.extend_from_slice(&0i64.to_le_bytes()); // orig_quote_order_qty
 
     // Pad to block length
@@ -367,7 +367,7 @@ fn build_account_response(balances: &[(&str, i64, i64)]) -> Vec<u8> {
     buf.push(0); // brokered
     buf.push(0); // require_self_trade_prevention
     buf.push(0); // prevent_sor
-    buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // update_time
+    buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // update_time
     buf.push(1); // account_type (SPOT)
 
     // Pad to 64 bytes
@@ -420,10 +420,10 @@ fn build_orders_response(orders: &[(i64, &str, &str, i64, i64)]) -> Vec<u8> {
         buf.extend_from_slice(&i64::MIN.to_le_bytes()); // stop_price (None)
         buf.extend_from_slice(&[0u8; 16]); // trailing_delta + trailing_time
         buf.extend_from_slice(&i64::MIN.to_le_bytes()); // iceberg_qty (None)
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // time
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // update_time
+        buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // time
+        buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // update_time
         buf.push(1); // is_working
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // working_time
+        buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // working_time
         buf.extend_from_slice(&0i64.to_le_bytes()); // orig_quote_order_qty
 
         // Pad to block length
@@ -465,7 +465,7 @@ fn build_account_trades_response(
         buf.extend_from_slice(&qty.to_le_bytes()); // qty
         buf.extend_from_slice(&(price * qty / 100_000_000).to_le_bytes()); // quote_qty
         buf.extend_from_slice(&commission.to_le_bytes()); // commission
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // time
+        buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // time
         buf.push(u8::from(*is_buyer)); // is_buyer
         buf.push(u8::from(*is_maker)); // is_maker
         buf.push(1); // is_best_match
@@ -494,7 +494,7 @@ fn build_new_order_response(
     buf.push((-8i8) as u8); // qty_exponent
     buf.extend_from_slice(&order_id.to_le_bytes()); // order_id
     buf.extend_from_slice(&i64::MIN.to_le_bytes()); // order_list_id (None)
-    buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // transact_time
+    buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // transact_time
     buf.extend_from_slice(&price.to_le_bytes()); // price_mantissa
     buf.extend_from_slice(&qty.to_le_bytes()); // orig_qty_mantissa
     buf.extend_from_slice(&executed_qty.to_le_bytes()); // executed_qty_mantissa
@@ -505,7 +505,7 @@ fn build_new_order_response(
     buf.push(1); // side (BUY)
     buf.extend_from_slice(&i64::MIN.to_le_bytes()); // stop_price (None)
     buf.extend_from_slice(&[0u8; 16]); // trailing_delta + trailing_time
-    buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // working_time
+    buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // working_time
     buf.extend_from_slice(&[0u8; 22]); // iceberg_qty to working_floor
     buf.push(3); // self_trade_prevention_mode (EXPIRE_MAKER)
     buf.extend_from_slice(&[0u8; 36]); // trade_group_id to pegged_price
@@ -542,7 +542,7 @@ fn build_cancel_order_response(
     buf.push((-8i8) as u8); // qty_exponent
     buf.extend_from_slice(&order_id.to_le_bytes()); // order_id
     buf.extend_from_slice(&i64::MIN.to_le_bytes()); // order_list_id (None)
-    buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // transact_time
+    buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // transact_time
     buf.extend_from_slice(&price.to_le_bytes()); // price_mantissa
     buf.extend_from_slice(&qty.to_le_bytes()); // orig_qty_mantissa
     buf.extend_from_slice(&executed_qty.to_le_bytes()); // executed_qty_mantissa
@@ -840,22 +840,22 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                     // Two 1-minute bars: open_time, open, high, low, close, volume, close_time
                     let klines = vec![
                         (
-                            1734300000000i64,   // open_time
-                            100_000_000_000i64, // open
-                            101_000_000_000i64, // high
-                            99_000_000_000i64,  // low
-                            100_500_000_000i64, // close
-                            1_000_000_000i64,   // volume
-                            1734300059999i64,   // close_time
+                            1_734_300_000_000_i64, // open_time
+                            100_000_000_000i64,    // open
+                            101_000_000_000i64,    // high
+                            99_000_000_000i64,     // low
+                            100_500_000_000i64,    // close
+                            1_000_000_000i64,      // volume
+                            1_734_300_059_999_i64, // close_time
                         ),
                         (
-                            1734300060000i64,
+                            1_734_300_060_000_i64,
                             100_500_000_000i64,
                             102_000_000_000i64,
                             100_000_000_000i64,
                             101_500_000_000i64,
                             1_500_000_000i64,
-                            1734300119999i64,
+                            1_734_300_119_999_i64,
                         ),
                     ];
                     sbe_response(build_klines_response(&klines)).into_response()

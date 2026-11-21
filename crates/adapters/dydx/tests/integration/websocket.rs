@@ -532,8 +532,8 @@ fn create_btc_instrument() -> InstrumentAny {
         open_interest: dec!(500000000),
         atomic_resolution: -10,
         quantum_conversion_exponent: -9,
-        subticks_per_tick: 100000,
-        step_base_quantums: 1000000,
+        subticks_per_tick: 100_000,
+        step_base_quantums: 1_000_000,
         is_reduce_only: false,
     };
 
@@ -3133,7 +3133,7 @@ async fn test_block_height_parsing() {
 
     assert_eq!(
         block_msg.contents.block_height.parse::<u64>().unwrap(),
-        12345678_u64,
+        12_345_678_u64,
         "Block height string should parse to correct u64"
     );
 }
@@ -3184,7 +3184,7 @@ async fn test_block_height_subscribed_parsing() {
 
     assert_eq!(
         subscribed_msg.contents.height.parse::<u64>().unwrap(),
-        98765432_u64,
+        98_765_432_u64,
         "Subscribed message height field should parse correctly"
     );
 }

@@ -467,12 +467,12 @@ mod tests {
         };
 
         assert_eq!(trade.event_type, "trade");
-        assert_eq!(trade.event_time, 1672515782138);
+        assert_eq!(trade.event_time, 1_672_515_782_138);
         assert_eq!(trade.symbol, Ustr::from("BTCUSDT"));
         assert_eq!(trade.trade_id, 12345);
         assert_eq!(trade.price, "42000.12000000");
         assert_eq!(trade.quantity, "0.00510000");
-        assert_eq!(trade.trade_time, 1672515782136);
+        assert_eq!(trade.trade_time, 1_672_515_782_136);
         assert!(trade.is_buyer_maker);
     }
 
@@ -779,7 +779,7 @@ mod tests {
         let payload = json!({
             "stream": "btcusdt@bookTicker",
             "data": {
-                "u": 94528182161_u64,
+                "u": 94_528_182_161_u64,
                 "s": "BTCUSDT",
                 "b": "73650.51000000",
                 "B": "2.95126000",
@@ -798,7 +798,7 @@ mod tests {
             panic!("expected book ticker");
         };
 
-        assert_eq!(out.book_update_id, 94528182161);
+        assert_eq!(out.book_update_id, 94_528_182_161);
         assert_eq!(out.symbol, "BTCUSDT");
         assert_eq!(out.best_bid_price, "73650.51000000");
         assert_eq!(out.best_bid_qty, "2.95126000");

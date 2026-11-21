@@ -979,7 +979,7 @@ mod tests {
         assert_eq!(entry.coin, "BTC");
         assert_eq!(entry.funding_rate, dec!(0.0000125));
         assert_eq!(entry.premium, Some(dec!(0.00029005)));
-        assert_eq!(entry.time, 1769908800000);
+        assert_eq!(entry.time, 1_769_908_800_000);
     }
 
     #[rstest]
@@ -1018,8 +1018,8 @@ mod tests {
         assert_eq!(trade.side, HyperliquidSide::Buy);
         assert_eq!(trade.px, dec!(104250.0));
         assert_eq!(trade.sz, dec!(0.0123));
-        assert_eq!(trade.time, 1769916000000);
-        assert_eq!(trade.tid, 987654321);
+        assert_eq!(trade.time, 1_769_916_000_000);
+        assert_eq!(trade.tid, 987_654_321);
     }
 
     #[rstest]
@@ -1163,7 +1163,7 @@ mod tests {
 
         assert_eq!(book.coin, "BTC");
         assert_eq!(book.levels.len(), 2);
-        assert_eq!(book.time, 1234567890);
+        assert_eq!(book.time, 1_234_567_890);
     }
 
     #[rstest]
@@ -1327,7 +1327,7 @@ mod tests {
 
         assert!(matches!(
             data.statuses[0],
-            HyperliquidExchangeOrderStatus::Resting { ref resting } if resting.oid == 446050656712
+            HyperliquidExchangeOrderStatus::Resting { ref resting } if resting.oid == 446_050_656_712
         ));
         assert!(matches!(
             data.statuses[1],

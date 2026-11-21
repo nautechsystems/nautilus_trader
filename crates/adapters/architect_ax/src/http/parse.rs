@@ -2105,7 +2105,10 @@ mod tests {
         assert_eq!(update.instrument_id, instrument_id);
         assert_eq!(update.rate, dec!(0.003558290026));
         assert_eq!(update.next_funding_ns, None);
-        assert_eq!(update.ts_event, UnixNanos::from(1770393600000000000u64));
+        assert_eq!(
+            update.ts_event,
+            UnixNanos::from(1_770_393_600_000_000_000_u64)
+        );
         assert_eq!(update.ts_init, ts_init);
     }
 
@@ -2121,8 +2124,8 @@ mod tests {
         .unwrap();
         let mut detail = create_order_detail(AxOrderStatus::Accepted, None, None);
         detail.po = post_only;
-        detail.ts = 1700000000;
-        detail.tn = 123456789;
+        detail.ts = 1_700_000_000;
+        detail.tn = 123_456_789;
         let open: AxOpenOrder =
             serde_json::from_value(serde_json::to_value(&detail).unwrap()).unwrap();
         let reports = [
@@ -2146,8 +2149,11 @@ mod tests {
 
         for report in reports {
             assert_eq!(report.post_only, post_only);
-            assert_eq!(report.ts_last, UnixNanos::from(1700000000123456789));
-            assert_eq!(report.ts_accepted, UnixNanos::from(1700000000123456789));
+            assert_eq!(report.ts_last, UnixNanos::from(1_700_000_000_123_456_789));
+            assert_eq!(
+                report.ts_accepted,
+                UnixNanos::from(1_700_000_000_123_456_789)
+            );
             assert_eq!(report.quantity.as_decimal(), Decimal::from(detail.q));
             assert_eq!(report.filled_qty.as_decimal(), Decimal::from(detail.xq));
         }

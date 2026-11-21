@@ -175,8 +175,8 @@ mod tests {
 
         // Body
         let body = &mut buf[8..];
-        body[0..8].copy_from_slice(&1000000i64.to_le_bytes()); // event_time_us
-        body[8..16].copy_from_slice(&1000001i64.to_le_bytes()); // transact_time_us
+        body[0..8].copy_from_slice(&1_000_000_i64.to_le_bytes()); // event_time_us
+        body[8..16].copy_from_slice(&1_000_001_i64.to_le_bytes()); // transact_time_us
         body[16] = (-2i8) as u8; // price_exponent
         body[17] = (-8i8) as u8; // qty_exponent
 
@@ -188,8 +188,8 @@ mod tests {
         let mut offset = 24;
         for i in 0..num_trades {
             body[offset..offset + 8].copy_from_slice(&(i as i64 + 1).to_le_bytes()); // id
-            body[offset + 8..offset + 16].copy_from_slice(&4200000i64.to_le_bytes()); // price
-            body[offset + 16..offset + 24].copy_from_slice(&100000000i64.to_le_bytes()); // qty
+            body[offset + 8..offset + 16].copy_from_slice(&4_200_000_i64.to_le_bytes()); // price
+            body[offset + 16..offset + 24].copy_from_slice(&100_000_000_i64.to_le_bytes()); // qty
             body[offset + 24] = u8::from(i % 2 == 0); // is_buyer_maker
             offset += trade_block_len as usize;
         }
@@ -206,8 +206,8 @@ mod tests {
         let buf = make_valid_buffer(1);
         let event = TradesStreamEvent::decode(&buf).unwrap();
 
-        assert_eq!(event.event_time_us, 1000000);
-        assert_eq!(event.transact_time_us, 1000001);
+        assert_eq!(event.event_time_us, 1_000_000);
+        assert_eq!(event.transact_time_us, 1_000_001);
         assert_eq!(event.trades.len(), 1);
         assert_eq!(event.trades[0].id, 1);
         assert!(event.trades[0].is_buyer_maker);

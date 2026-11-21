@@ -180,10 +180,10 @@ pub fn create_architect_trade_id(
 /// Cached hasher state for deterministic client order ID to cid conversion
 static CID_HASHER: LazyLock<RandomState> = LazyLock::new(|| {
     RandomState::with_seeds(
-        0x517cc1b727220a95,
-        0x9b5c18c90c3c314d,
-        0x5851f42d4c957f2d,
-        0x14057b7ef767814f,
+        0x517c_c1b7_2722_0a95,
+        0x9b5c_18c9_0c3c_314d,
+        0x5851_f42d_4c95_7f2d,
+        0x1405_7b7e_f767_814f,
     )
 });
 

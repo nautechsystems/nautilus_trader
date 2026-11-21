@@ -162,7 +162,7 @@ impl Peer {
         f["order"]["order"]["subaccount_number"] = subaccount.into();
         let mut initial = f["balance"].clone();
         initial["balance_dollars"] = "1.0001".into();
-        initial["updated_ts"] = 1792800000.into();
+        initial["updated_ts"] = 1_792_800_000.into();
         let balance = Arc::new(Mutex::new(initial));
         let current = Arc::clone(&balance);
         let history_position_reads = Arc::new(AtomicUsize::new(0));
@@ -3175,7 +3175,7 @@ fn assert_bootstrap_economics(
     );
     assert_eq!(position.quantity, Quantity::from("0.75"));
     assert_eq!(position.avg_px_open, Decimal::new(6003, 4));
-    assert_eq!(position.cost_open, Decimal::new(450225, 6));
+    assert_eq!(position.cost_open, Decimal::new(450_225, 6));
     assert_eq!(
         position.commissions(),
         vec![Money::from_decimal_exact(fees[0] + fees[1], Currency::USD()).unwrap()]

@@ -27,6 +27,7 @@
 
 pub mod cursor;
 pub mod error;
+#[allow(clippy::unreadable_literal)]
 #[path = "generated/mod.rs"]
 pub mod generated;
 pub mod stream;

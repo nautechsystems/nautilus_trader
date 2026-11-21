@@ -368,14 +368,14 @@ mod tests {
 
         // Body
         let body = &mut buf[8..];
-        body[0..8].copy_from_slice(&1000000i64.to_le_bytes()); // event_time_us
+        body[0..8].copy_from_slice(&1_000_000_i64.to_le_bytes()); // event_time_us
         body[8..16].copy_from_slice(&12345i64.to_le_bytes()); // book_update_id
         body[16] = (-2i8) as u8; // price_exponent
         body[17] = (-8i8) as u8; // qty_exponent
-        body[18..26].copy_from_slice(&4200000i64.to_le_bytes()); // bid_price
-        body[26..34].copy_from_slice(&100000000i64.to_le_bytes()); // bid_qty
-        body[34..42].copy_from_slice(&4200100i64.to_le_bytes()); // ask_price
-        body[42..50].copy_from_slice(&200000000i64.to_le_bytes()); // ask_qty
+        body[18..26].copy_from_slice(&4_200_000_i64.to_le_bytes()); // bid_price
+        body[26..34].copy_from_slice(&100_000_000_i64.to_le_bytes()); // bid_qty
+        body[34..42].copy_from_slice(&4_200_100_i64.to_le_bytes()); // ask_price
+        body[42..50].copy_from_slice(&200_000_000_i64.to_le_bytes()); // ask_qty
 
         // Symbol: "BTCUSDT" (7 bytes)
         body[50] = 7;

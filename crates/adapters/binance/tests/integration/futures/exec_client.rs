@@ -676,7 +676,7 @@ async fn handle_open_algo_orders_query(
         ReportFixtureMode::ClosePosition => {
             let template = load_fixture("open_algo_orders.json")[0].clone();
             let mut close_long = template.clone();
-            close_long["algoId"] = json!(123456790);
+            close_long["algoId"] = json!(123_456_790);
             close_long["clientAlgoId"] = json!("close-long");
             close_long["side"] = json!("SELL");
             close_long["positionSide"] = json!("LONG");
@@ -685,7 +685,7 @@ async fn handle_open_algo_orders_query(
             close_long.as_object_mut().unwrap().remove("quantity");
 
             let mut close_short = template.clone();
-            close_short["algoId"] = json!(123456791);
+            close_short["algoId"] = json!(123_456_791);
             close_short["clientAlgoId"] = json!("close-short");
             close_short["side"] = json!("BUY");
             close_short["positionSide"] = json!("SHORT");
@@ -694,7 +694,7 @@ async fn handle_open_algo_orders_query(
             close_short.as_object_mut().unwrap().remove("quantity");
 
             let mut ordinary = template.clone();
-            ordinary["algoId"] = json!(123456792);
+            ordinary["algoId"] = json!(123_456_792);
             ordinary["clientAlgoId"] = json!("ordinary-zero");
             ordinary["side"] = json!("SELL");
             ordinary["positionSide"] = json!("LONG");
@@ -703,7 +703,7 @@ async fn handle_open_algo_orders_query(
             ordinary.as_object_mut().unwrap().remove("quantity");
 
             let mut venue_zero = template.clone();
-            venue_zero["algoId"] = json!(123456793);
+            venue_zero["algoId"] = json!(123_456_793);
             venue_zero["clientAlgoId"] = json!("close-venue-zero");
             venue_zero["side"] = json!("SELL");
             venue_zero["positionSide"] = json!("LONG");
@@ -712,7 +712,7 @@ async fn handle_open_algo_orders_query(
             venue_zero["quantity"] = json!("0.0000");
 
             let mut invalid_side = template;
-            invalid_side["algoId"] = json!(123456794);
+            invalid_side["algoId"] = json!(123_456_794);
             invalid_side["clientAlgoId"] = json!("close-invalid-side");
             invalid_side["side"] = json!("BUY");
             invalid_side["positionSide"] = json!("LONG");
@@ -761,7 +761,7 @@ async fn handle_algo_order_query(
     record_query(&state, "algoOrder", query.clone());
     if state.responses.algo_order_query {
         let mut order = load_fixture("algo_order_response.json");
-        order["algoId"] = json!(22542179_i64);
+        order["algoId"] = json!(22_542_179_i64);
         order["clientAlgoId"] = json!(query.get("clientAlgoId").cloned().unwrap_or_default());
         order["algoStatus"] = json!(
             state
@@ -774,7 +774,7 @@ async fn handle_algo_order_query(
 
     if matches!(state.report_fixture_mode, ReportFixtureMode::DirectAlgo) {
         let mut orders = load_fixture("open_algo_orders.json");
-        orders[0]["actualOrderId"] = json!(22542179_i64.to_string());
+        orders[0]["actualOrderId"] = json!(22_542_179_i64.to_string());
         orders[0]["actualQty"] = json!("0.001");
         orders[0]["actualPrice"] = json!("50000.00");
         orders[0]["algoStatus"] = json!("FINISHED");
@@ -804,7 +804,7 @@ async fn handle_algo_order_cancel(
     command_response(
         state.responses.algo_cancel,
         &json!({
-            "algoId": 123456789_i64,
+            "algoId": 123_456_789_i64,
             "clientAlgoId": client_algo_id,
             "code": "200",
             "msg": "success",
@@ -904,7 +904,7 @@ async fn handle_all_algo_orders_query(
             } else {
                 requested_algo_id
             });
-            orders[0]["actualOrderId"] = json!(22542179_i64.to_string());
+            orders[0]["actualOrderId"] = json!(22_542_179_i64.to_string());
             orders[0]["actualQty"] = json!("0.001");
             orders[0]["actualPrice"] = json!("50000.00");
             orders[0]["algoStatus"] = json!("FINISHED");
@@ -945,7 +945,7 @@ async fn handle_all_orders_query(
             .unwrap()
             .as_millis() as i64
             - 30_000;
-        order["orderId"] = json!(8886774);
+        order["orderId"] = json!(8_886_774);
         order["clientOrderId"] = json!(encode_broker_id(
             &ClientOrderId::from(SEED_CLIENT_ORDER_ID),
             BINANCE_NAUTILUS_FUTURES_BROKER_ID
@@ -1019,8 +1019,8 @@ async fn handle_user_trades_query(
             long["time"] = json!(trade_time);
 
             let mut short = long.clone();
-            short["id"] = json!(12345679);
-            short["orderId"] = json!(8886775);
+            short["id"] = json!(12_345_679);
+            short["orderId"] = json!(8_886_775);
             short["price"] = json!("52000.0");
             short["qty"] = json!(if partial { "0.001" } else { "0.002" });
             short["quoteQty"] = json!(if partial { "52.0" } else { "104.0" });
@@ -1130,7 +1130,7 @@ async fn handle_order_query(
 
     if is_actual_order {
         let mut order = load_fixture("order_response.json");
-        order["orderId"] = json!(22542179_i64);
+        order["orderId"] = json!(22_542_179_i64);
         order["status"] = json!(state.responses.actual_order_status);
         if let Some(client_order_id) = state.responses.actual_order_client_id {
             order["clientOrderId"] = json!(client_order_id);
@@ -1205,7 +1205,7 @@ async fn handle_batch_submit(
     let responses = (0..count)
         .map(|index| {
             let mut response = load_fixture("order_response.json");
-            response["orderId"] = json!(22542179 + index as i64);
+            response["orderId"] = json!(22_542_179 + index as i64);
             response
         })
         .collect::<Vec<_>>();
@@ -1473,7 +1473,7 @@ async fn start_exec_test_server_with_batch_submit_gate(
                 let client_id = &query["origClientOrderId"];
                 let mut response = load_fixture("order_response.json");
                 response["clientOrderId"] = json!(client_id);
-                response["orderId"] = json!(22542179_i64 + i64::from(client_id.ends_with("002")));
+                response["orderId"] = json!(22_542_179_i64 + i64::from(client_id.ends_with("002")));
                 response["status"] = json!(status);
                 response["symbol"] = json!(query["symbol"]);
                 response["executedQty"] = json!("0");
@@ -3852,7 +3852,7 @@ async fn test_modify_order_http_and_stream_emit_once(#[case] stream_first: bool)
     update["o"]["sp"] = json!("0");
     update["o"]["ps"] = json!("BOTH");
     update["o"]["x"] = json!("AMENDMENT");
-    update["o"]["i"] = json!(12345678);
+    update["o"]["i"] = json!(12_345_678);
     update["o"]["q"] = json!("0.002");
     update["o"]["p"] = json!("51000.00");
     let mut command = modify_order_command(cid);
@@ -4933,7 +4933,7 @@ async fn test_shutdown_reports_ambiguous_ws_cancel_until_terminal_evidence(
     }
 
     assert!(!client.is_connected());
-    assert_eq!(message["params"]["orderId"], json!(22542179_i64));
+    assert_eq!(message["params"]["orderId"], json!(22_542_179_i64));
     assert_eq!(
         message["params"]["origClientOrderId"],
         json!(encode_broker_id(
@@ -10571,7 +10571,7 @@ async fn test_connect_restores_active_order_ownership(
         let OrderEventAny::Accepted(mut accepted) = TestOrderEventStubs::accepted(
             &order,
             owner_account,
-            VenueOrderId::from((8886774 + index).to_string()),
+            VenueOrderId::from((8_886_774 + index).to_string()),
         ) else {
             panic!("Expected acceptance stub")
         };
@@ -10637,7 +10637,7 @@ async fn test_connect_restores_active_order_ownership(
     update["o"]["l"] = json!("1");
     update["o"]["z"] = json!("1");
     update["o"]["L"] = json!("51000");
-    update["o"]["t"] = json!(98765432);
+    update["o"]["t"] = json!(98_765_432);
     injector.send(update.to_string()).unwrap();
     update["o"]["x"] = json!("CANCELED");
     update["o"]["X"] = json!("CANCELED");
@@ -10678,7 +10678,7 @@ async fn test_connect_restores_active_order_ownership(
                     cid,
                     Quantity::from("4"),
                     event.event_id,
-                    UnixNanos::from_millis(1568879465651),
+                    UnixNanos::from_millis(1_568_879_465_651),
                     event.ts_init,
                     false,
                     Some(VenueOrderId::from("8886774")),
@@ -10706,7 +10706,7 @@ async fn test_connect_restores_active_order_ownership(
                     quote_currency,
                     LiquiditySide::Taker,
                     event.event_id,
-                    UnixNanos::from_millis(1568879465651),
+                    UnixNanos::from_millis(1_568_879_465_651),
                     event.ts_init,
                     false,
                     Some(PositionId::from(format!("{instrument}-LONG"))),
@@ -10723,7 +10723,7 @@ async fn test_connect_restores_active_order_ownership(
                     instrument_id,
                     cid,
                     event.event_id,
-                    UnixNanos::from_millis(1568879465651),
+                    UnixNanos::from_millis(1_568_879_465_651),
                     event.ts_init,
                     false,
                     Some(VenueOrderId::from("8886774")),
@@ -10847,8 +10847,8 @@ async fn test_order_trade_update_rejects_missing_precision_metadata() {
 
     let order_update = json!({
         "e": "ORDER_TRADE_UPDATE",
-        "T": 1568879465651_i64,
-        "E": 1568879465651_i64,
+        "T": 1_568_879_465_651_i64,
+        "E": 1_568_879_465_651_i64,
         "o": {
             "s": "BTCUSDT",
             "c": "test-cache-miss",
@@ -10861,14 +10861,14 @@ async fn test_order_trade_update_rejects_missing_precision_metadata() {
             "sp": "0",
             "x": "TRADE",
             "X": "PARTIALLY_FILLED",
-            "i": 9999999,
+            "i": 9_999_999,
             "l": "0.001",
             "z": "0.001",
             "L": "50000.00",
             "N": "USDT",
             "n": "0.01000000",
-            "T": 1568879465651_i64,
-            "t": 12345678,
+            "T": 1_568_879_465_651_i64,
+            "t": 12_345_678,
             "b": "0",
             "a": "0",
             "m": true,
@@ -10889,8 +10889,8 @@ async fn test_order_trade_update_rejects_missing_precision_metadata() {
     ws_injector.send(order_update.to_string()).unwrap();
     let account_update = json!({
         "e": "ACCOUNT_UPDATE",
-        "E": 1568879465652_i64,
-        "T": 1568879465652_i64,
+        "E": 1_568_879_465_652_i64,
+        "T": 1_568_879_465_652_i64,
         "a": {
             "m": "ORDER",
             "B": [{

@@ -2136,7 +2136,7 @@ mod tests {
         let order: BinanceFuturesOrder =
             serde_json::from_str(&json).expect("Failed to parse order");
 
-        assert_eq!(order.order_id, 12345678);
+        assert_eq!(order.order_id, 12_345_678);
         assert_eq!(order.symbol.as_str(), "BTCUSDT");
         assert_eq!(order.status, BinanceOrderStatus::New);
         assert_eq!(order.time_in_force, BinanceTimeInForce::Gtc);
@@ -2480,7 +2480,7 @@ mod tests {
         let order: BinanceFuturesAlgoOrder =
             serde_json::from_str(json).expect("Failed to parse algo order");
 
-        assert_eq!(order.algo_id, 123456789);
+        assert_eq!(order.algo_id, 123_456_789);
         assert_eq!(order.client_algo_id, "test-algo-order-1");
         assert_eq!(order.algo_type, BinanceAlgoType::Conditional);
         assert_eq!(order.order_type, BinanceFuturesOrderType::StopMarket);
@@ -2520,7 +2520,7 @@ mod tests {
         let response: BinanceFuturesAlgoOrderCancelResponse =
             serde_json::from_str(json).expect("Failed to parse algo cancel response");
 
-        assert_eq!(response.algo_id, 123456789);
+        assert_eq!(response.algo_id, 123_456_789);
         assert_eq!(response.client_algo_id, "test-algo-order-1");
         assert_eq!(response.code, "200");
         assert_eq!(response.msg, "success");
@@ -2676,7 +2676,7 @@ mod tests {
         algo.update_time = Some(1_625_474_305_500);
 
         let mut actual = order_with_price("0");
-        actual.order_id = 987654321;
+        actual.order_id = 987_654_321;
         actual.orig_qty = "0.002".to_string();
         actual.executed_qty = "0.001".to_string();
         actual.avg_price = Some("50000.00".to_string());
@@ -3006,7 +3006,7 @@ mod tests {
     fn order_with_price(price: &str) -> BinanceFuturesOrder {
         BinanceFuturesOrder {
             symbol: Ustr::from("BTCUSDT"),
-            order_id: 12345678,
+            order_id: 12_345_678,
             client_order_id: "external-order".to_string(),
             orig_qty: "0.001".to_string(),
             executed_qty: "0.000".to_string(),
@@ -3038,7 +3038,7 @@ mod tests {
 
     fn algo_order_with_price(price: Option<&str>) -> BinanceFuturesAlgoOrder {
         BinanceFuturesAlgoOrder {
-            algo_id: 123456789,
+            algo_id: 123_456_789,
             client_algo_id: "x-aHRE4BCj-Rmy-algo-order-1".to_string(),
             algo_type: BinanceAlgoType::Conditional,
             order_type: BinanceFuturesOrderType::TakeProfit,
@@ -3162,7 +3162,7 @@ mod tests {
         #[case] expected_venue_order_id: &str,
     ) {
         let order = BinanceFuturesAlgoOrder {
-            algo_id: 123456789,
+            algo_id: 123_456_789,
             client_algo_id: "x-aHRE4BCj-Rmy-algo-order-1".to_string(),
             algo_type: BinanceAlgoType::Conditional,
             order_type: BinanceFuturesOrderType::StopMarket,

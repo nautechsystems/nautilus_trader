@@ -66,7 +66,8 @@ pub(crate) fn make_initialized_pool_and_swap() -> (Pool, PoolSwap) {
         Some(10u32),
         UnixNanos::from(1),
     );
-    let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
+
+    let initial_price = U160::from(79_228_162_514_264_337_593_543_950_336_u128); // sqrt(1) * 2^96
     pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
 
     let swap = PoolSwap::new(
@@ -84,8 +85,8 @@ pub(crate) fn make_initialized_pool_and_swap() -> (Pool, PoolSwap) {
         Address::from([0x12; 20]),
         I256::from_str("1000000000000000000").unwrap(),
         I256::from_str("400000000000000").unwrap(),
-        U160::from(59000000000000u128),
-        1000000,
+        U160::from(59_000_000_000_000_u128),
+        1_000_000,
         100,
     );
     (pool, swap)

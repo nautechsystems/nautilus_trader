@@ -193,7 +193,7 @@ mod tests {
         let conditions_json = serde_json::json!([
             {
                 "type": "price",
-                "conId": 265598,
+                "conId": 265_598,
                 "exchange": "SMART",
                 "isMore": true,
                 "price": 250.0,

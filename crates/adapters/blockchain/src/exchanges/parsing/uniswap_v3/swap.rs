@@ -239,8 +239,8 @@ mod tests {
         assert_eq!(event.sqrt_price_x96, expected_sqrt_price);
         let expected_liquidity = u128::from_str_radix("74009aac72ba0a9b1c", 16).unwrap();
         assert_eq!(event.liquidity, expected_liquidity);
-        assert_eq!(event.tick, -139475);
-        assert_eq!(event.block_number, 391197764);
+        assert_eq!(event.tick, -139_475);
+        assert_eq!(event.block_number, 391_197_764);
     }
 
     #[rstest]
@@ -279,8 +279,8 @@ mod tests {
         assert_eq!(event.sqrt_price_x96, expected_sqrt_price);
         let expected_liquidity = u128::from_str_radix("74009aac72ba0a9b1c", 16).unwrap();
         assert_eq!(event.liquidity, expected_liquidity);
-        assert_eq!(event.tick, -139475);
-        assert_eq!(event.block_number, 391197764);
+        assert_eq!(event.tick, -139_475);
+        assert_eq!(event.block_number, 391_197_764);
     }
 
     #[rstest]
@@ -291,7 +291,7 @@ mod tests {
         let event = parse_swap_event_rpc(dex, &rpc_log).unwrap();
 
         assert_eq!(event.block_hash, None);
-        assert_eq!(event.block_number, 391197764);
+        assert_eq!(event.block_number, 391_197_764);
     }
 
     #[rstest]

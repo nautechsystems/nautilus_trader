@@ -537,7 +537,7 @@ async fn published_examples_preserve_discovery_and_raw_response_fields() {
                 period_id: Some("10DAY".into()),
                 unit_name: Some("day".into()),
                 unit_count: Some(10),
-                length_seconds: 864000,
+                length_seconds: 864_000,
                 length_months: 0,
                 display_name: Some("10 Days".into()),
             },

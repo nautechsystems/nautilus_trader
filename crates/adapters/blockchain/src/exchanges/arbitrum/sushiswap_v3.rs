@@ -28,7 +28,7 @@ pub static SUSHISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
         chains::ARBITRUM.clone(),
         DexType::SushiSwapV3,
         "0x1af415a1EbA07a4986a52B6f2e7dE7003D82231e",
-        76082155,
+        76_082_155,
         AmmType::CLAMM,
         "",
         "",

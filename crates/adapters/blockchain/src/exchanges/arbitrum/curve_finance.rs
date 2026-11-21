@@ -28,7 +28,7 @@ pub static CURVE_FINANCE: LazyLock<DexExtended> = LazyLock::new(|| {
         chains::ARBITRUM.clone(),
         DexType::CurveFinance,
         "0xb17b674D9c5CB2e441F8e196a2f048A81355d031",
-        1413161,
+        1_413_161,
         AmmType::StableSwap,
         "",
         "",

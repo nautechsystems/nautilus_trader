@@ -3472,7 +3472,7 @@ async fn test_generate_order_status_reports_filters() {
         "orders": [
             {
                 "tn": 0,
-                "ts": 1704067200,
+                "ts": 1_704_067_200,
                 "d": "B",
                 "o": "ACCEPTED",
                 "oid": "OID-ACCEPTED",
@@ -3488,7 +3488,7 @@ async fn test_generate_order_status_reports_filters() {
             },
             {
                 "tn": 0,
-                "ts": 1704067201,
+                "ts": 1_704_067_201,
                 "d": "S",
                 "o": "FILLED",
                 "oid": "OID-FILLED",
@@ -3504,7 +3504,7 @@ async fn test_generate_order_status_reports_filters() {
             },
             {
                 "tn": 0,
-                "ts": 1704067203,
+                "ts": 1_704_067_203,
                 "d": "B",
                 "o": "PENDING",
                 "oid": "OID-PENDING",
@@ -3520,7 +3520,7 @@ async fn test_generate_order_status_reports_filters() {
             },
             {
                 "tn": 0,
-                "ts": 1704067202,
+                "ts": 1_704_067_202,
                 "d": "B",
                 "o": "ACCEPTED",
                 "oid": "OID-ACCEPTED-2",

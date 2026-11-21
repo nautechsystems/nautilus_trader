@@ -1182,7 +1182,7 @@ mod tests {
             po: false,
             st: None,
             tag: Some("Nautilus".to_string()),
-            cid: Some(1234567890),
+            cid: Some(1_234_567_890),
         };
 
         let json = serde_json::to_string(&msg).unwrap();
@@ -1197,7 +1197,7 @@ mod tests {
         assert_eq!(parsed["tif"], "GTC");
         assert_eq!(parsed["po"], false);
         assert_eq!(parsed["tag"], "Nautilus");
-        assert_eq!(parsed["cid"], 1234567890);
+        assert_eq!(parsed["cid"], 1_234_567_890);
         assert!(parsed.get("order_type").is_none());
         assert!(parsed.get("trigger_price").is_none());
         assert!(parsed.get("st").is_none());
@@ -1398,7 +1398,7 @@ mod tests {
     fn test_load_order_heartbeat_from_file() {
         let json = include_str!("../../test_data/ws_order_heartbeat.json");
         let msg: AxWsHeartbeat = serde_json::from_str(json).unwrap();
-        assert_eq!(msg.ts, 1609459200);
+        assert_eq!(msg.ts, 1_609_459_200);
     }
 
     #[rstest]
