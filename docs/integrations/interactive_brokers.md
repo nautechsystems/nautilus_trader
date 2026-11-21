@@ -425,6 +425,10 @@ For individual contracts, including spread legs loaded from IB, `instrument.info
 contains a comma-separated list of the order types IB reports. `ALGO` is a hint that the contract
 may support algo orders. Adaptive eligibility also depends on the specific order.
 
+Instruments restored from a provider cache written before this update lack `orderTypes`.
+To populate the field after upgrading, move the existing cache file (`cache_path`) aside and
+reload the instruments from IB.
+
 The adapter maps `DAY`, `GTC`, `IOC`, `FOK`, `GTD`, and `AT_THE_OPEN` time in force values. A market
 or limit order with `AT_THE_CLOSE` becomes the corresponding market-on-close or limit-on-close IB
 order. GTD orders include their Nautilus expiry time in the IB order.
