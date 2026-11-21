@@ -35,7 +35,7 @@ use super::{
     promotion::{
         PromotionDriver, PromotionResult, PromotionSchedule, PromotionScope, PromotionSink,
         PromotionTimer, PromotionWork, StagedPromotionBackend, list_session_feather_files,
-        schedule_new_paths,
+        list_session_files, schedule_new_paths,
     },
     run::FeatherSessionSource,
 };
@@ -362,6 +362,22 @@ where
         recover_partial_feather_files(&directory);
         let files =
             list_session_feather_files(&source.storage, source.environment, &source.instance_id)?;
+        let refused = list_session_files(
+            &source.storage,
+            source.environment,
+            &source.instance_id,
+            FEATHER_REFUSED_EXTENSION,
+        )?;
+
+        // Promotion skips refused files, so each new session names them until resolved
+        if !refused.is_empty() {
+            log::warn!(
+                "{} found refused Feather file(s) under run session '{}', which promotion skips \
+                 until restored: {refused:?}",
+                B::NAME,
+                storage.original_uri
+            );
+        }
 
         let writer = FeatherWriter::new(
             directory,
@@ -379,7 +395,7 @@ where
 
             staging: StagingWorker::spawn(writer)?,
             clock,
-            promotion_driver: PromotionDriver::new(last_promotion_ns, files),
+            promotion_driver: PromotionDriver::new(last_promotion_ns, files, !refused.is_empty()),
             promotion_timer: None,
             pending_errors,
             error_tx,
@@ -548,20 +564,6 @@ where
                     log::warn!(
                         "{writer_name} found {sealed} orphan Feather file(s) and {partial} \
                          unsealed Feather file(s) under run session '{}'",
-                        self.storage.original_uri
-                    );
-                }
-
-                // Promotion skips refused files, so each new session names them until resolved
-                let refused = files
-                    .iter()
-                    .filter(|file| file.ends_with(&format!(".{FEATHER_REFUSED_EXTENSION}")))
-                    .collect::<Vec<_>>();
-
-                if !refused.is_empty() {
-                    log::warn!(
-                        "{writer_name} found refused Feather file(s) under run session '{}', \
-                         which promotion skips until restored: {refused:?}",
                         self.storage.original_uri
                     );
                 }
@@ -897,7 +899,7 @@ mod tests {
                     .is_ok()
             );
         });
-        let driver = PromotionDriver::<RecordingBackend>::new(0_u64.into(), Vec::new());
+        let driver = PromotionDriver::<RecordingBackend>::new(0_u64.into(), Vec::new(), false);
         let staging_uri = directory.path().join("live/run-paths");
         let files = prepare_promotion_paths(
             &staging,
