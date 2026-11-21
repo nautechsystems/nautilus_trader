@@ -24,15 +24,25 @@
 use std::sync::Arc;
 
 use nautilus_common::messages::ExecutionEvent;
-use nautilus_core::{AtomicMap, time::get_atomic_clock_realtime};
-use nautilus_kraken::websocket::dispatch::OrderIdentity;
+use nautilus_core::{AtomicMap, UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_kraken::websocket::{
+    dispatch::{self, OrderIdentity, WsDispatchState},
+    spot_v2::messages::KrakenWsExecutionData,
+};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{AccountType, OrderSide, OrderType},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
-    types::Quantity,
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId},
+    instruments::{Instrument, InstrumentAny, currency_pair::CurrencyPair},
+    types::{Currency, Price, Quantity},
 };
 use rust_decimal::Decimal;
+
+/// Venue order ID of the stop-loss-limit buy in `ws_executions_external_orders.json`.
+pub(crate) const CAPTURED_STOP_ORDER_ID: &str = "OCAP14-STLMT-000014";
+
+/// Venue order ID of the market sell in `ws_executions_external_orders.json`.
+pub(crate) const CAPTURED_MARKET_ORDER_ID: &str = "OCAP15-MARKT-000015";
 
 pub(crate) fn test_emitter() -> (
     ExecutionEventEmitter,
@@ -93,4 +103,66 @@ pub(crate) fn empty_quantity_map() -> Arc<AtomicMap<String, Quantity>> {
 
 pub(crate) fn empty_decimal_map() -> Arc<AtomicMap<String, Decimal>> {
     Arc::new(AtomicMap::new())
+}
+
+/// The executions frames of one order in `ws_executions_external_orders.json`, in arrival order.
+pub(crate) fn captured_spot_frames(order_id: &str) -> Vec<KrakenWsExecutionData> {
+    let envelopes: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+        "../../../test_data/ws_executions_external_orders.json"
+    ))
+    .unwrap();
+    envelopes
+        .iter()
+        .map(|envelope| serde_json::from_value(envelope["data"][0].clone()).unwrap())
+        .filter(|exec: &KrakenWsExecutionData| exec.order_id == order_id)
+        .collect()
+}
+
+/// The USDC/EUR pair the captured frames trade.
+pub(crate) fn usdc_eur_pair() -> InstrumentAny {
+    InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("USDC/EUR.KRAKEN"))
+            .raw_symbol(Symbol::from("USDCEUR"))
+            .base_currency(Currency::USDC())
+            .quote_currency(Currency::EUR())
+            .price_precision(4)
+            .size_precision(8)
+            .price_increment(Price::from("0.0001"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    )
+}
+
+/// Dispatches each frame through the spot execution dispatch and returns the events each emits.
+pub(crate) fn dispatch_spot_frames(
+    frames: &[KrakenWsExecutionData],
+    state: &WsDispatchState,
+    instrument: &InstrumentAny,
+) -> Vec<Vec<ExecutionEvent>> {
+    let (emitter, mut rx) = test_emitter();
+    let instruments = Arc::new(AtomicMap::new());
+    instruments.insert(instrument.id(), instrument.clone());
+    let truncated_id_map = empty_string_map();
+    let order_qty_cache = empty_decimal_map();
+
+    frames
+        .iter()
+        .map(|exec| {
+            dispatch::spot::execution(
+                exec,
+                state,
+                &emitter,
+                &instruments,
+                &truncated_id_map,
+                &order_qty_cache,
+                account_id(),
+                UnixNanos::default(),
+            );
+            drain_events(&mut rx)
+        })
+        .collect()
 }

@@ -43,6 +43,7 @@ use std::sync::{
 
 use dashmap::{DashMap, DashSet};
 use indexmap::IndexSet;
+use nautilus_common::cache::fifo::FifoCacheMap;
 use nautilus_core::{AtomicMap, UUID4, UnixNanos};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
@@ -56,6 +57,7 @@ use nautilus_model::{
 };
 use parking_lot::Mutex;
 use rust_decimal::Decimal;
+use spot::SpotOrderShape;
 
 const DEDUP_CAPACITY: usize = 10_000;
 
@@ -214,6 +216,12 @@ pub struct WsDispatchState {
     /// or replay immediately after the rollover could re-emit duplicate
     /// `OrderFilled` events.
     pub emitted_trades: Mutex<IndexSet<TradeId>>,
+    /// Shapes of spot orders this client does not track, keyed by venue `order_id`.
+    ///
+    /// An entry starts at the order's `pending_new` frame and ends at its `filled`, `canceled` or
+    /// `expired` frame. Beyond `DEDUP_CAPACITY` the oldest entry is evicted, and that order's later
+    /// frames are reported from what they state.
+    spot_order_shapes: Mutex<FifoCacheMap<String, SpotOrderShape, DEDUP_CAPACITY>>,
     clearing: AtomicBool,
 }
 
@@ -229,6 +237,7 @@ impl Default for WsDispatchState {
             order_filled_qty: DashMap::new(),
             pending_removals: DashMap::new(),
             emitted_trades: Mutex::new(IndexSet::with_capacity(DEDUP_CAPACITY)),
+            spot_order_shapes: Mutex::new(FifoCacheMap::new()),
             clearing: AtomicBool::new(false),
         }
     }
@@ -407,6 +416,26 @@ impl WsDispatchState {
         client_order_id: &ClientOrderId,
     ) -> Option<DeltaSnapshot> {
         self.delta_snapshots.get(client_order_id).map(|r| *r)
+    }
+
+    /// Returns the shape kept for an untracked spot order, if any.
+    pub(crate) fn spot_order_shape(&self, order_id: &str) -> Option<SpotOrderShape> {
+        self.spot_order_shapes
+            .lock()
+            .get(&order_id.to_string())
+            .cloned()
+    }
+
+    /// Keeps the shape of an untracked spot order.
+    pub(crate) fn store_spot_order_shape(&self, order_id: &str, shape: SpotOrderShape) {
+        self.spot_order_shapes
+            .lock()
+            .insert(order_id.to_string(), shape);
+    }
+
+    /// Removes the shape kept for a spot order, if any.
+    pub(crate) fn forget_spot_order_shape(&self, order_id: &str) {
+        self.spot_order_shapes.lock().remove(&order_id.to_string());
     }
 
     /// Updates the tracked `quantity` for an order following a successful
@@ -677,6 +706,28 @@ mod tests {
         assert!(
             set.contains(&overflow),
             "the overflow entry was inserted after eviction",
+        );
+    }
+
+    /// Beyond capacity the shape cache evicts only its oldest entry, not every shape it holds.
+    #[rstest]
+    fn test_spot_order_shapes_evict_oldest_beyond_capacity() {
+        let state = WsDispatchState::new();
+        for i in 0..=DEDUP_CAPACITY {
+            state.store_spot_order_shape(&format!("v-order-{i}"), SpotOrderShape::default());
+        }
+
+        assert!(state.spot_order_shape("v-order-0").is_none());
+        assert!(state.spot_order_shape("v-order-1").is_some());
+        assert!(
+            state
+                .spot_order_shape(&format!("v-order-{}", DEDUP_CAPACITY / 2))
+                .is_some()
+        );
+        assert!(
+            state
+                .spot_order_shape(&format!("v-order-{DEDUP_CAPACITY}"))
+                .is_some()
         );
     }
 

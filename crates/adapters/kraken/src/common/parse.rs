@@ -160,7 +160,7 @@ pub fn parse_decimal_opt(value: Option<&str>) -> anyhow::Result<Option<Decimal>>
 }
 
 /// Parse Kraken spot trigger to Nautilus TriggerType.
-fn parse_trigger_type(
+pub(crate) fn parse_trigger_type(
     order_type: OrderType,
     trigger: Option<KrakenSpotTrigger>,
 ) -> Option<TriggerType> {
