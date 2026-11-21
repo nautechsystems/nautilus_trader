@@ -545,6 +545,7 @@ impl DatabaseQueries {
             if previous.base_currency() != incoming.base_currency()
                 || previous.quote_currency() != incoming.quote_currency()
                 || previous.settlement_currency() != incoming.settlement_currency()
+                || previous.strike_currency() != incoming.strike_currency()
             {
                 return Err(integrity_error(
                     "Cannot change a persisted token instrument's currency identities",

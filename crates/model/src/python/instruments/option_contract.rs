@@ -39,7 +39,7 @@ impl OptionContract {
     /// Represents a generic option contract instrument.
     #[expect(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (instrument_id, raw_symbol, asset_class, underlying, option_kind, strike_price, currency, activation_ns, expiration_ns, price_precision, price_increment, multiplier, lot_size, ts_event, ts_init,  max_quantity=None, min_quantity=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, exchange=None, tick_scheme=None, info=None, underlying_instrument_id=None, exercise_style=None, settlement_type=None))]
+    #[pyo3(signature = (instrument_id, raw_symbol, asset_class, underlying, option_kind, strike_price, strike_currency, quote_currency, settlement_currency, activation_ns, expiration_ns, price_precision, price_increment, multiplier, lot_size, ts_event, ts_init, exchange=None, underlying_instrument_id=None, exercise_style=None, settlement_type=None, max_quantity=None, min_quantity=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, tick_scheme=None, info=None))]
     fn py_new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -47,7 +47,9 @@ impl OptionContract {
         underlying: String,
         option_kind: OptionKind,
         strike_price: Price,
-        currency: Currency,
+        strike_currency: Currency,
+        quote_currency: Currency,
+        settlement_currency: Currency,
         activation_ns: u64,
         expiration_ns: u64,
         price_precision: u8,
@@ -56,18 +58,18 @@ impl OptionContract {
         lot_size: Quantity,
         ts_event: u64,
         ts_init: u64,
+        exchange: Option<String>,
+        underlying_instrument_id: Option<InstrumentId>,
+        exercise_style: Option<ExerciseStyle>,
+        settlement_type: Option<SettlementType>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_price: Option<Price>,
         min_price: Option<Price>,
         margin_init: Option<Decimal>,
         margin_maint: Option<Decimal>,
-        exchange: Option<String>,
         tick_scheme: Option<String>,
         info: Option<Py<PyDict>>,
-        underlying_instrument_id: Option<InstrumentId>,
-        exercise_style: Option<ExerciseStyle>,
-        settlement_type: Option<SettlementType>,
     ) -> PyResult<Self> {
         // Convert Python dict to Params
         let info_map = if let Some(info_dict) = info {
@@ -82,9 +84,14 @@ impl OptionContract {
             .asset_class(asset_class)
             .maybe_exchange(exchange.map(|x| Ustr::from(&x)))
             .underlying(underlying.into())
+            .maybe_underlying_instrument_id(underlying_instrument_id)
             .option_kind(option_kind)
             .strike_price(strike_price)
-            .currency(currency)
+            .strike_currency(strike_currency)
+            .quote_currency(quote_currency)
+            .settlement_currency(settlement_currency)
+            .maybe_exercise_style(exercise_style)
+            .maybe_settlement_type(settlement_type)
             .activation_ns(activation_ns.into())
             .expiration_ns(expiration_ns.into())
             .price_precision(price_precision)
@@ -99,9 +106,6 @@ impl OptionContract {
             .maybe_margin_maint(margin_maint)
             .maybe_tick_scheme(tick_scheme.map(|name| ustr::Ustr::from(name.as_str())))
             .maybe_info(info_map)
-            .maybe_underlying_instrument_id(underlying_instrument_id)
-            .maybe_exercise_style(exercise_style)
-            .maybe_settlement_type(settlement_type)
             .ts_event(ts_event.into())
             .ts_init(ts_init.into())
             .build()
@@ -164,6 +168,30 @@ impl OptionContract {
     }
 
     #[getter]
+    #[pyo3(name = "option_kind")]
+    fn py_option_kind(&self) -> OptionKind {
+        self.option_kind
+    }
+
+    #[getter]
+    #[pyo3(name = "strike_price")]
+    fn py_strike_price(&self) -> Price {
+        self.strike_price
+    }
+
+    #[getter]
+    #[pyo3(name = "strike_currency")]
+    fn py_strike_currency(&self) -> Currency {
+        self.strike_currency
+    }
+
+    #[getter]
+    #[pyo3(name = "settlement_currency")]
+    fn py_settlement_currency(&self) -> Currency {
+        self.settlement_currency
+    }
+
+    #[getter]
     #[pyo3(name = "exercise_style")]
     fn py_exercise_style(&self) -> Option<ExerciseStyle> {
         self.exercise_style
@@ -173,12 +201,6 @@ impl OptionContract {
     #[pyo3(name = "settlement_type")]
     fn py_settlement_type(&self) -> Option<SettlementType> {
         self.settlement_type
-    }
-
-    #[getter]
-    #[pyo3(name = "option_kind")]
-    fn py_option_kind(&self) -> OptionKind {
-        self.option_kind
     }
 
     #[getter]
@@ -194,21 +216,15 @@ impl OptionContract {
     }
 
     #[getter]
-    #[pyo3(name = "strike_price")]
-    fn py_strike_price(&self) -> Price {
-        self.strike_price
-    }
-
-    #[getter]
-    #[pyo3(name = "currency")]
-    fn py_currency(&self) -> Currency {
-        self.currency
-    }
-
-    #[getter]
     #[pyo3(name = "price_precision")]
     fn py_price_precision(&self) -> u8 {
         self.price_precision
+    }
+
+    #[getter]
+    #[pyo3(name = "size_precision")]
+    fn py_size_precision(&self) -> u8 {
+        self.size_precision
     }
 
     #[getter]
@@ -221,12 +237,6 @@ impl OptionContract {
     #[pyo3(name = "size_increment")]
     fn py_size_increment(&self) -> Quantity {
         self.size_increment
-    }
-
-    #[getter]
-    #[pyo3(name = "size_precision")]
-    fn py_size_precision(&self) -> u8 {
-        self.size_precision
     }
 
     #[getter]
@@ -322,11 +332,23 @@ impl OptionContract {
         dict.set_item("id", self.id.to_string())?;
         dict.set_item("raw_symbol", self.raw_symbol.to_string())?;
         dict.set_item("asset_class", self.asset_class.to_string())?;
+        match self.exchange {
+            Some(value) => dict.set_item("exchange", value.to_string())?,
+            None => dict.set_item("exchange", py.None())?,
+        }
+
         dict.set_item("underlying", self.underlying.to_string())?;
-        dict.set_item("option_kind", self.option_kind.to_string())?;
         dict.set_item(
             "underlying_instrument_id",
             self.underlying_instrument_id.map(|id| id.to_string()),
+        )?;
+        dict.set_item("option_kind", self.option_kind.to_string())?;
+        dict.set_item("strike_price", self.strike_price.to_string())?;
+        dict.set_item("strike_currency", self.strike_currency.code.to_string())?;
+        dict.set_item("quote_currency", self.quote_currency.code.to_string())?;
+        dict.set_item(
+            "settlement_currency",
+            self.settlement_currency.code.to_string(),
         )?;
         dict.set_item(
             "exercise_style",
@@ -338,32 +360,12 @@ impl OptionContract {
         )?;
         dict.set_item("activation_ns", self.activation_ns.as_u64())?;
         dict.set_item("expiration_ns", self.expiration_ns.as_u64())?;
-        dict.set_item("strike_price", self.strike_price.to_string())?;
-        dict.set_item("currency", self.currency.code.to_string())?;
         dict.set_item("price_precision", self.price_precision)?;
+        dict.set_item("size_precision", self.size_precision)?;
         dict.set_item("price_increment", self.price_increment.to_string())?;
         dict.set_item("size_increment", self.size_increment.to_string())?;
-        dict.set_item("size_precision", self.size_precision)?;
         dict.set_item("multiplier", self.multiplier.to_string())?;
         dict.set_item("lot_size", self.lot_size.to_string())?;
-        dict.set_item("margin_init", self.margin_init.to_string())?;
-        dict.set_item("margin_maint", self.margin_maint.to_string())?;
-        // Serialize info dict
-        if let Some(ref info_map) = self.info {
-            let info_dict = PyDict::new(py);
-
-            for (key, value) in info_map {
-                let json_str = serde_json::to_string(value).map_err(to_pyvalue_err)?;
-                let py_value =
-                    PyModule::import(py, "json")?.call_method("loads", (json_str,), None)?;
-                info_dict.set_item(key, py_value)?;
-            }
-            dict.set_item("info", info_dict)?;
-        } else {
-            dict.set_item("info", PyDict::new(py))?;
-        }
-        dict.set_item("ts_event", self.ts_event.as_u64())?;
-        dict.set_item("ts_init", self.ts_init.as_u64())?;
         match self.max_quantity {
             Some(value) => dict.set_item("max_quantity", value.to_string())?,
             None => dict.set_item("max_quantity", py.None())?,
@@ -384,14 +386,30 @@ impl OptionContract {
             None => dict.set_item("min_price", py.None())?,
         }
 
-        match self.exchange {
-            Some(value) => dict.set_item("exchange", value.to_string())?,
-            None => dict.set_item("exchange", py.None())?,
-        }
+        dict.set_item("margin_init", self.margin_init.to_string())?;
+        dict.set_item("margin_maint", self.margin_maint.to_string())?;
         dict.set_item(
             "tick_scheme",
             crate::python::instruments::tick_scheme_to_py(self),
         )?;
+
+        if let Some(ref info_map) = self.info {
+            let info_dict = PyDict::new(py);
+
+            for (key, value) in info_map {
+                let json_str = serde_json::to_string(value).map_err(to_pyvalue_err)?;
+                let py_value =
+                    PyModule::import(py, "json")?.call_method("loads", (json_str,), None)?;
+                info_dict.set_item(key, py_value)?;
+            }
+
+            dict.set_item("info", info_dict)?;
+        } else {
+            dict.set_item("info", PyDict::new(py))?;
+        }
+
+        dict.set_item("ts_event", self.ts_event.as_u64())?;
+        dict.set_item("ts_init", self.ts_init.as_u64())?;
         Ok(dict.into())
     }
 }

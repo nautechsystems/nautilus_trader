@@ -60,12 +60,13 @@ pub fn instrument_schema() -> Schema {
         utf8_field("instrument_class", false),
         utf8_field("underlying", true),
         utf8_field("base_currency", true),
-        utf8_field("quote_currency", false),
-        utf8_field("settlement_currency", false),
         utf8_field("isin", true),
         utf8_field("option_kind", true),
         utf8_field("exchange", true),
         float64_field("strike_price", true),
+        utf8_field("strike_currency", true),
+        utf8_field("quote_currency", false),
+        utf8_field("settlement_currency", false),
         timestamp_field("activation_ns", true),
         timestamp_field("expiration_ns", true),
         bool_field("is_inverse", false),
@@ -141,12 +142,13 @@ pub fn encode_instruments(data: &[InstrumentAny]) -> Result<RecordBatch, ArrowEr
     let mut instrument_class = StringBuilder::new();
     let mut underlying = StringBuilder::new();
     let mut base_currency = StringBuilder::new();
-    let mut quote_currency = StringBuilder::new();
-    let mut settlement_currency = StringBuilder::new();
     let mut isin = StringBuilder::new();
     let mut option_kind = StringBuilder::new();
     let mut exchange = StringBuilder::new();
     let mut strike_price = Float64Builder::with_capacity(data.len());
+    let mut strike_currency = StringBuilder::new();
+    let mut quote_currency = StringBuilder::new();
+    let mut settlement_currency = StringBuilder::new();
     let mut activation_ns =
         TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
     let mut expiration_ns =
@@ -184,12 +186,13 @@ pub fn encode_instruments(data: &[InstrumentAny]) -> Result<RecordBatch, ArrowEr
         instrument_class.append_value(format!("{}", instrument.instrument_class()));
         underlying.append_option(instrument.underlying().map(|v| v.to_string()));
         base_currency.append_option(instrument.base_currency().map(|v| v.to_string()));
-        quote_currency.append_value(instrument.quote_currency().to_string());
-        settlement_currency.append_value(instrument.settlement_currency().to_string());
         isin.append_option(instrument.isin().map(|v| v.to_string()));
         option_kind.append_option(instrument.option_kind().map(|v| format!("{v}")));
         exchange.append_option(instrument.exchange().map(|v| v.to_string()));
         strike_price.append_option(instrument.strike_price().map(|v| price_to_f64(&v)));
+        strike_currency.append_option(instrument.strike_currency().map(|v| v.to_string()));
+        quote_currency.append_value(instrument.quote_currency().to_string());
+        settlement_currency.append_value(instrument.settlement_currency().to_string());
         activation_ns.append_option(
             instrument
                 .activation_ns()
@@ -236,12 +239,13 @@ pub fn encode_instruments(data: &[InstrumentAny]) -> Result<RecordBatch, ArrowEr
             Arc::new(instrument_class.finish()),
             Arc::new(underlying.finish()),
             Arc::new(base_currency.finish()),
-            Arc::new(quote_currency.finish()),
-            Arc::new(settlement_currency.finish()),
             Arc::new(isin.finish()),
             Arc::new(option_kind.finish()),
             Arc::new(exchange.finish()),
             Arc::new(strike_price.finish()),
+            Arc::new(strike_currency.finish()),
+            Arc::new(quote_currency.finish()),
+            Arc::new(settlement_currency.finish()),
             Arc::new(activation_ns.finish()),
             Arc::new(expiration_ns.finish()),
             Arc::new(is_inverse.finish()),
@@ -361,20 +365,23 @@ mod tests {
         let batch = encode_instruments(&[]).unwrap();
         let schema = batch.schema();
         let fields = schema.fields();
-        assert_eq!(fields.len(), 37);
+        assert_eq!(fields.len(), 38);
         assert_eq!(fields[0].name(), "instrument_id");
         assert_eq!(fields[0].data_type(), &DataType::Utf8);
-        assert_eq!(fields[14].name(), "strike_price");
-        assert_eq!(fields[14].data_type(), &DataType::Float64);
-        assert_eq!(fields[17].name(), "is_inverse");
-        assert_eq!(fields[17].data_type(), &DataType::Boolean);
-        assert_eq!(fields[19].name(), "price_precision");
-        assert_eq!(fields[19].data_type(), &DataType::UInt8);
-        assert_eq!(fields[33].name(), "margin_init");
-        assert_eq!(fields[33].data_type(), &DataType::Float64);
-        assert_eq!(fields[35].name(), "ts_event");
+        assert_eq!(fields[12].name(), "strike_price");
+        assert_eq!(fields[12].data_type(), &DataType::Float64);
+        assert_eq!(fields[13].name(), "strike_currency");
+        assert_eq!(fields[14].name(), "quote_currency");
+        assert_eq!(fields[15].name(), "settlement_currency");
+        assert_eq!(fields[18].name(), "is_inverse");
+        assert_eq!(fields[18].data_type(), &DataType::Boolean);
+        assert_eq!(fields[20].name(), "price_precision");
+        assert_eq!(fields[20].data_type(), &DataType::UInt8);
+        assert_eq!(fields[34].name(), "margin_init");
+        assert_eq!(fields[34].data_type(), &DataType::Float64);
+        assert_eq!(fields[36].name(), "ts_event");
         assert_eq!(
-            fields[35].data_type(),
+            fields[36].data_type(),
             &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
         );
     }
@@ -383,7 +390,7 @@ mod tests {
     fn test_encode_instruments_empty() {
         let batch = encode_instruments(&[]).unwrap();
         assert_eq!(batch.num_rows(), 0);
-        assert_eq!(batch.schema().fields().len(), 37);
+        assert_eq!(batch.schema().fields().len(), 38);
     }
 
     #[rstest]
@@ -399,27 +406,27 @@ mod tests {
             .downcast_ref::<StringArray>()
             .unwrap();
         let strike_price_col = batch
-            .column(14)
+            .column(12)
             .as_any()
             .downcast_ref::<Float64Array>()
             .unwrap();
         let activation_col = batch
-            .column(15)
-            .as_any()
-            .downcast_ref::<TimestampNanosecondArray>()
-            .unwrap();
-        let expiration_col = batch
             .column(16)
             .as_any()
             .downcast_ref::<TimestampNanosecondArray>()
             .unwrap();
-        let is_inverse_col = batch
+        let expiration_col = batch
             .column(17)
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .unwrap();
+        let is_inverse_col = batch
+            .column(18)
             .as_any()
             .downcast_ref::<BooleanArray>()
             .unwrap();
         let price_increment_col = batch
-            .column(21)
+            .column(22)
             .as_any()
             .downcast_ref::<Float64Array>()
             .unwrap();
@@ -449,12 +456,17 @@ mod tests {
             .downcast_ref::<StringArray>()
             .unwrap();
         let strike_price_col = batch
-            .column(14)
+            .column(12)
             .as_any()
             .downcast_ref::<Float64Array>()
             .unwrap();
+        let strike_currency_col = batch
+            .column(13)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
         let expiration_col = batch
-            .column(16)
+            .column(17)
             .as_any()
             .downcast_ref::<TimestampNanosecondArray>()
             .unwrap();
@@ -467,6 +479,11 @@ mod tests {
         assert_eq!(instrument_type_col.value(0), "CurrencyPair");
         assert_eq!(instrument_type_col.value(1), "Equity");
         assert_eq!(instrument_type_col.value(2), "OptionContract");
+
+        assert_eq!(
+            strike_currency_col.iter().collect::<Vec<_>>(),
+            [None, None, Some("USD")]
+        );
 
         // Only the option carries a strike + expiration
         assert!(strike_price_col.is_null(0));
@@ -517,32 +534,32 @@ mod tests {
             .downcast_ref::<StringArray>()
             .unwrap();
         let settlement_currency_col = batch
-            .column(10)
+            .column(15)
             .as_any()
             .downcast_ref::<StringArray>()
             .unwrap();
         let is_inverse_col = batch
-            .column(17)
+            .column(18)
             .as_any()
             .downcast_ref::<BooleanArray>()
             .unwrap();
         let max_notional_amount_col = batch
-            .column(27)
+            .column(28)
             .as_any()
             .downcast_ref::<Float64Array>()
             .unwrap();
         let max_notional_currency_col = batch
-            .column(28)
+            .column(29)
             .as_any()
             .downcast_ref::<StringArray>()
             .unwrap();
         let min_notional_amount_col = batch
-            .column(29)
+            .column(30)
             .as_any()
             .downcast_ref::<Float64Array>()
             .unwrap();
         let min_notional_currency_col = batch
-            .column(30)
+            .column(31)
             .as_any()
             .downcast_ref::<StringArray>()
             .unwrap();
@@ -556,12 +573,12 @@ mod tests {
         assert_eq!(min_notional_currency_col.value(0), "USD");
 
         let margin_init_col = batch
-            .column(33)
+            .column(34)
             .as_any()
             .downcast_ref::<Float64Array>()
             .unwrap();
         let margin_maint_col = batch
-            .column(34)
+            .column(35)
             .as_any()
             .downcast_ref::<Float64Array>()
             .unwrap();

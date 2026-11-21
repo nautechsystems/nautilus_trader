@@ -50,6 +50,7 @@ fn make_btc_option(strike: &str, kind: OptionKind) -> InstrumentAny {
             .raw_symbol(Symbol::from(raw_symbol_str))
             .underlying(Currency::from("BTC"))
             .quote_currency(Currency::USD())
+            .strike_currency(Currency::USD())
             .settlement_currency(Currency::from("BTC"))
             .is_inverse(false)
             .option_kind(kind)

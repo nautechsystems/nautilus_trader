@@ -483,15 +483,15 @@ impl DatabaseQueries {
                 id, kind, raw_symbol, base_currency, underlying, quote_currency, settlement_currency, isin, asset_class, exchange,
                 strategy_type, multiplier, option_kind, is_inverse, strike_price, activation_ns, expiration_ns, price_precision, size_precision,
                 price_increment, size_increment, margin_init, margin_maint, lot_size, max_quantity, min_quantity, max_notional,
-                min_notional, max_price, min_price, ts_init, ts_event, info, underlying_instrument_id, exercise_style, settlement_type, tick_scheme, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::asset_class, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33::json, $34, $35, $36, $37, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                min_notional, max_price, min_price, ts_init, ts_event, info, underlying_instrument_id, exercise_style, settlement_type, tick_scheme, strike_currency, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::asset_class, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33::json, $34, $35, $36, $37, $38, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON CONFLICT (id)
             DO UPDATE
             SET
                 kind = $2, raw_symbol = $3, base_currency= $4, underlying = $5, quote_currency = $6, settlement_currency = $7, isin = $8, asset_class = $9, exchange = $10,
                  strategy_type = $11, multiplier = $12, option_kind = $13, is_inverse = $14, strike_price = $15, activation_ns = $16, expiration_ns = $17 , price_precision = $18, size_precision = $19,
                  price_increment = $20, size_increment = $21, margin_init = $22, margin_maint = $23, lot_size = $24, max_quantity = $25,
-                 min_quantity = $26, max_notional = $27, min_notional = $28, max_price = $29, min_price = $30, ts_init = $31,  ts_event = $32, info = $33::json, underlying_instrument_id = $34, exercise_style = $35, settlement_type = $36, tick_scheme = $37, updated_at = CURRENT_TIMESTAMP
+                 min_quantity = $26, max_notional = $27, min_notional = $28, max_price = $29, min_price = $30, ts_init = $31,  ts_event = $32, info = $33::json, underlying_instrument_id = $34, exercise_style = $35, settlement_type = $36, tick_scheme = $37, strike_currency = $38, updated_at = CURRENT_TIMESTAMP
             "#)
             .bind(instrument.id().to_string())
             .bind(kind)
@@ -530,6 +530,7 @@ impl DatabaseQueries {
             .bind(exercise_style.map(|style| style.to_string()))
             .bind(settlement_type.map(|kind| kind.to_string()))
             .bind(instrument.tick_scheme().map(|scheme| scheme.to_string()))
+            .bind(instrument.strike_currency().map(|currency| currency.code.as_str()))
             .execute(executor)
             .await
             .map(|_| ())
@@ -617,7 +618,12 @@ impl DatabaseQueries {
         let mut expected = Vec::new();
         let mut references = Vec::new();
 
-        for field in ["base_currency", "quote_currency", "settlement_currency"] {
+        for field in [
+            "base_currency",
+            "quote_currency",
+            "settlement_currency",
+            "strike_currency",
+        ] {
             if let Some(code) = row
                 .try_get::<Option<String>, _>(field)
                 .map_err(integrity_error)?
@@ -952,6 +958,10 @@ impl DatabaseQueries {
                     != instrument
                         .base_currency()
                         .map(|currency| currency.code.to_string())
+                    || row
+                        .try_get::<Option<String>, _>("strike_currency")
+                        .map_err(integrity_error)?
+                        != instrument.strike_currency().map(|c| c.code.to_string())
                     || quote != instrument.quote_currency().code.as_str()
                     || settlement != Some(instrument.settlement_currency().code.to_string())
                 {

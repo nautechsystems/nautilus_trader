@@ -1,41 +1,46 @@
 # Option Contract
 
-`OptionContract` represents a listed put or call option on a non-crypto underlying. It
-defines the option kind, strike price, activation time, expiration time, currency,
-multiplier, and lot size.
+`OptionContract` represents a listed put or call option on a non-crypto underlying. It defines the option kind,
+strike price, activation and expiration times, multiplier, and lot size. It records the strike, quote, and
+settlement currencies.
 
 Examples include equity options, index options, and futures options.
 
 ## Fields
 
-| Field             | Rust type          | Python type        | Required/default | Notes                                    |
-| ----------------- | ------------------ | ------------------ | ---------------- | ---------------------------------------- |
-| `instrument_id`   | `InstrumentId`     | `InstrumentId`     | Required         | Stored as `id` in Rust.                  |
-| `raw_symbol`      | `Symbol`           | `Symbol`           | Required         | Native venue symbol.                     |
-| `asset_class`     | `AssetClass`       | `AssetClass`       | Required         | Asset class of the underlying.           |
-| `exchange`        | `Option<Ustr>`     | `str \| None`      | `None`           | Exchange MIC or venue code when known.   |
-| `underlying`      | `Ustr`             | `str`              | Required         | Underlying asset, future, or index.      |
-| `option_kind`     | `OptionKind`       | `OptionKind`       | Required         | Put or call.                             |
-| `strike_price`    | `Price`            | `Price`            | Required         | Option strike price.                     |
-| `activation_ns`   | `UnixNanos`        | `int`              | Required         | Contract activation timestamp.           |
-| `expiration_ns`   | `UnixNanos`        | `int`              | Required         | Contract expiration timestamp.           |
-| `currency`        | `Currency`         | `Currency`         | Required         | Premium quote and settlement currency.   |
-| `price_precision` | `u8`               | `int`              | Required         | Decimal places allowed for prices.       |
-| `price_increment` | `Price`            | `Price`            | Required         | Smallest valid price step.               |
-| `size_precision`  | `u8`               | `int`              | Fixed `0`        | Options trade in whole contracts.        |
-| `size_increment`  | `Quantity`         | `Quantity`         | Fixed `1`        | Minimum contract size step.              |
-| `multiplier`      | `Quantity`         | `Quantity`         | Required         | Contract multiplier.                     |
-| `lot_size`        | `Quantity`         | `Quantity`         | Required         | Rounded lot or contract lot size.        |
-| `margin_init`     | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Initial margin rate.                     |
-| `margin_maint`    | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maintenance margin rate.                 |
-| `max_quantity`    | `Option<Quantity>` | `Quantity \| None` | `None`           | Maximum order quantity.                  |
-| `min_quantity`    | `Option<Quantity>` | `Quantity \| None` | `1`              | Minimum order quantity.                  |
-| `max_price`       | `Option<Price>`    | `Price \| None`    | `None`           | Maximum valid quote or order price.      |
-| `min_price`       | `Option<Price>`    | `Price \| None`    | `None`           | Minimum valid quote or order price.      |
-| `tick_scheme`     | `Option<Ustr>`     | `str \| None`      | `None`           | Registered variable tick scheme name.    |
-| `info`            | `Option<Params>`   | `dict \| None`     | `None`           | Adapter metadata.                        |
-| `ts_event`        | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.          |
-| `ts_init`         | `UnixNanos`        | `int`              | Required         | Initialization timestamp in nanoseconds. |
+| Field                      | Rust type                | Python type              | Required/default | Notes                                    |
+| -------------------------- | ------------------------ | ------------------------ | ---------------- | ---------------------------------------- |
+| `instrument_id`            | `InstrumentId`           | `InstrumentId`           | Required         | Stored as `id` in Rust.                  |
+| `raw_symbol`               | `Symbol`                 | `Symbol`                 | Required         | Native venue symbol.                     |
+| `asset_class`              | `AssetClass`             | `AssetClass`             | Required         | Asset class of the underlying.           |
+| `exchange`                 | `Option<Ustr>`           | `str \| None`            | `None`           | Exchange MIC or venue code when known.   |
+| `underlying`               | `Ustr`                   | `str`                    | Required         | Underlying asset, future, or index.      |
+| `underlying_instrument_id` | `Option<InstrumentId>`   | `InstrumentId \| None`   | `None`           | Underlying instrument ID when known.     |
+| `option_kind`              | `OptionKind`             | `OptionKind`             | Required         | Put or call.                             |
+| `strike_price`             | `Price`                  | `Price`                  | Required         | Option strike price.                     |
+| `strike_currency`          | `Currency`               | `Currency`               | Required         | Denomination of the strike price.        |
+| `quote_currency`           | `Currency`               | `Currency`               | Required         | Currency used to quote the premium.      |
+| `settlement_currency`      | `Currency`               | `Currency`               | Required         | Currency used to settle the option.      |
+| `exercise_style`           | `Option<ExerciseStyle>`  | `ExerciseStyle \| None`  | `None`           | Contractual exercise style.              |
+| `settlement_type`          | `Option<SettlementType>` | `SettlementType \| None` | `None`           | What the option delivers on exercise.    |
+| `activation_ns`            | `UnixNanos`              | `int`                    | Required         | Contract activation timestamp.           |
+| `expiration_ns`            | `UnixNanos`              | `int`                    | Required         | Contract expiration timestamp.           |
+| `price_precision`          | `u8`                     | `int`                    | Required         | Decimal places allowed for prices.       |
+| `size_precision`           | `u8`                     | `int`                    | Fixed `0`        | Options trade in whole contracts.        |
+| `price_increment`          | `Price`                  | `Price`                  | Required         | Smallest valid price step.               |
+| `size_increment`           | `Quantity`               | `Quantity`               | Fixed `1`        | Minimum contract size step.              |
+| `multiplier`               | `Quantity`               | `Quantity`               | Required         | Contract multiplier.                     |
+| `lot_size`                 | `Quantity`               | `Quantity`               | Required         | Rounded lot or contract lot size.        |
+| `max_quantity`             | `Option<Quantity>`       | `Quantity \| None`       | `None`           | Maximum order quantity.                  |
+| `min_quantity`             | `Option<Quantity>`       | `Quantity \| None`       | `1`              | Minimum order quantity.                  |
+| `max_price`                | `Option<Price>`          | `Price \| None`          | `None`           | Maximum valid quote or order price.      |
+| `min_price`                | `Option<Price>`          | `Price \| None`          | `None`           | Minimum valid quote or order price.      |
+| `margin_init`              | `Option<Decimal>`        | `Decimal \| None`        | `0`              | Initial margin rate.                     |
+| `margin_maint`             | `Option<Decimal>`        | `Decimal \| None`        | `0`              | Maintenance margin rate.                 |
+| `tick_scheme`              | `Option<Ustr>`           | `str \| None`            | `None`           | Registered variable tick scheme name.    |
+| `info`                     | `Option<Params>`         | `dict \| None`           | `None`           | Adapter metadata.                        |
+| `ts_event`                 | `UnixNanos`              | `int`                    | Required         | Event timestamp in nanoseconds.          |
+| `ts_init`                  | `UnixNanos`              | `int`                    | Required         | Initialization timestamp in nanoseconds. |
 
 **Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
@@ -70,7 +75,9 @@ let aapl_call = OptionContract::builder()
     .underlying(Ustr::from("AAPL"))
     .option_kind(OptionKind::Call)
     .strike_price(Price::from("150.00"))
-    .currency(Currency::from("USD"))
+    .strike_currency(Currency::from("USD"))
+    .quote_currency(Currency::from("USD"))
+    .settlement_currency(Currency::from("USD"))
     .activation_ns(UnixNanos::from(activation))
     .expiration_ns(UnixNanos::from(expiration))
     .price_precision(2)
@@ -102,7 +109,9 @@ aapl_call = OptionContract(
     underlying="AAPL",
     option_kind=OptionKind.CALL,
     strike_price=Price.from_str("150.00"),
-    currency=Currency.from_str("USD"),
+    strike_currency=Currency.from_str("USD"),
+    quote_currency=Currency.from_str("USD"),
+    settlement_currency=Currency.from_str("USD"),
     activation_ns=pd.Timestamp("2021-09-17", tz="UTC").value,
     expiration_ns=pd.Timestamp("2021-12-17", tz="UTC").value,
     price_precision=2,

@@ -1126,7 +1126,9 @@ mod tests {
             .underlying(Ustr::from("AAPL"))
             .option_kind(OptionKind::Call)
             .strike_price(Price::from("100.00"))
-            .currency(Currency::from("USD"))
+            .quote_currency(Currency::from("USD"))
+            .settlement_currency(Currency::from("USD"))
+            .strike_currency(Currency::from("USD"))
             .activation_ns(1.into())
             .expiration_ns(2.into())
             .price_precision(2)
@@ -1930,6 +1932,44 @@ mod tests {
     }
 
     #[rstest]
+    fn test_option_schemas_order_shared_fields_consistently() {
+        let listed = OptionContract::get_schema(None);
+        let crypto = CryptoOption::get_schema(None);
+        let listed_fields: Vec<_> = listed
+            .fields()
+            .iter()
+            .map(|field| field.name().as_str())
+            .filter(|name| !matches!(*name, "asset_class" | "exchange"))
+            .collect();
+        let crypto_fields: Vec<_> = crypto
+            .fields()
+            .iter()
+            .map(|field| field.name().as_str())
+            .filter(|name| !matches!(*name, "is_inverse" | "max_notional" | "min_notional"))
+            .collect();
+
+        assert_eq!(listed_fields, crypto_fields);
+    }
+
+    #[rstest]
+    #[case::option_contract(InstrumentAny::OptionContract(
+        nautilus_model::instruments::stubs::option_contract_appl()
+    ))]
+    #[case::crypto_option(InstrumentAny::CryptoOption(crypto_option_btc_deribit(
+        3,
+        1,
+        Price::from("0.001"),
+        Quantity::from("0.1")
+    )))]
+    fn test_option_requires_strike_currency_in_arrow(#[case] instrument: InstrumentAny) {
+        let metadata = instrument.metadata();
+        let batch = InstrumentAny::encode_batch(&metadata, &[instrument]).unwrap();
+        let missing = batch_without_column(&batch, "strike_currency");
+        let error = decode_instrument_any_batch(&metadata, &missing).unwrap_err();
+        assert!(error.to_string().contains("strike_currency"));
+    }
+
+    #[rstest]
     #[case::option_contract(InstrumentAny::OptionContract(
         nautilus_model::instruments::stubs::option_contract_appl()
     ))]
@@ -1961,6 +2001,8 @@ mod tests {
                 .values_mut()
                 .next()
                 .unwrap();
+            fields["strike_currency"] = serde_json::json!("JPY");
+            fields["settlement_currency"] = serde_json::json!("EUR");
             fields["underlying_instrument_id"] =
                 serde_json::to_value(known.then_some(underlying_id)).unwrap();
             fields["exercise_style"] = serde_json::to_value(style).unwrap();

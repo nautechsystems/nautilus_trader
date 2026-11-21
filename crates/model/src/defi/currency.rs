@@ -178,10 +178,15 @@ pub fn check(currency: Currency) -> CorrectnessResult<Option<TokenCurrency>> {
 pub fn instrument_codes(instrument: &dyn Instrument) -> CorrectnessResult<Vec<String>> {
     let mut codes = Vec::new();
 
-    for currency in instrument.base_currency().into_iter().chain([
-        instrument.quote_currency(),
-        instrument.settlement_currency(),
-    ]) {
+    for currency in instrument
+        .base_currency()
+        .into_iter()
+        .chain(instrument.strike_currency())
+        .chain([
+            instrument.quote_currency(),
+            instrument.settlement_currency(),
+        ])
+    {
         if check(currency)?.is_some() {
             codes.push(currency.code.to_string());
         }

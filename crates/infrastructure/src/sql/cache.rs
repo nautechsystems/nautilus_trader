@@ -611,7 +611,10 @@ async fn check_schema_migrated(pool: &PgPool) -> Result<(), sqlx::Error> {
     }
 
     check_trader_keys(pool).await?;
+    check_required_columns(pool).await
+}
 
+async fn check_required_columns(pool: &PgPool) -> Result<(), sqlx::Error> {
     let missing: Vec<String> = sqlx::query_scalar(
         "SELECT required.table_name || '.' || required.column_name
         FROM (VALUES
@@ -623,6 +626,7 @@ async fn check_schema_migrated(pool: &PgPool) -> Result<(), sqlx::Error> {
             ('instrument', 'tick_scheme'),
             ('instrument', 'underlying_instrument_id'),
             ('instrument', 'exercise_style'),
+            ('instrument', 'strike_currency'),
             ('instrument', 'settlement_type'),
             ('account_event', 'info'),
             ('account_event', 'trader_id'),

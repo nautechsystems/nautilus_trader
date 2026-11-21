@@ -113,6 +113,7 @@ impl Cache {
             previous.base_currency() != instrument.base_currency()
                 || previous.quote_currency() != instrument.quote_currency()
                 || previous.settlement_currency() != instrument.settlement_currency()
+                || previous.strike_currency() != instrument.strike_currency()
         });
 
         if let Some(previous) = previous

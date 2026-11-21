@@ -515,6 +515,7 @@ pub(super) fn make_crypto_option(
             .raw_symbol(raw_symbol)
             .underlying(underlying)
             .quote_currency(quote)
+            .strike_currency(quote)
             .settlement_currency(settlement)
             .is_inverse(false)
             .option_kind(kind)

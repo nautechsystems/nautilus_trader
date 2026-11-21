@@ -295,8 +295,22 @@ pub fn decode_option_contract(
     decode_config: Option<&DatabentoDecodeConfig>,
 ) -> anyhow::Result<OptionContract> {
     let raw_symbol = Symbol::new_checked(msg.raw_symbol()?)?;
-    let currency = parse_currency_or_usd_default(msg.currency());
-    let strike_price_currency = parse_currency_or_usd_default(msg.strike_price_currency());
+    let dataset = msg.hd.publisher().ok().map(|p| p.dataset());
+    let quote_currency = match msg.currency()? {
+        "" if dataset == Some(dbn::Dataset::OpraPillar) => Currency::USD(),
+        code => code.parse()?,
+    };
+
+    let strike_currency = match msg.strike_price_currency()? {
+        "" if dataset == Some(dbn::Dataset::OpraPillar) => Currency::USD(),
+        code => code.parse()?,
+    };
+
+    let settlement_currency = match msg.settl_currency()? {
+        "" => quote_currency,
+        code => code.parse()?,
+    };
+
     let exchange = Ustr::from(msg.exchange()?);
     let mut underlying = decode_underlying(msg.underlying()?, &instrument_id.symbol);
     if instrument_id
@@ -325,11 +339,10 @@ pub fn decode_option_contract(
         asset_class
     };
     let option_kind = parse_option_kind(msg.instrument_class)?;
-    let strike_precision =
-        precision_from_raw(msg.strike_price).max(strike_price_currency.precision);
+    let strike_precision = precision_from_raw(msg.strike_price).max(strike_currency.precision);
     let strike_price = decode_price(msg.strike_price, strike_precision, "strike_price")
         .map_err(|e| anyhow::anyhow!("{instrument_id}: {e}"))?;
-    let dataset = msg.hd.publisher().ok().map(|p| p.dataset());
+
     let (exercise_style, settlement_type) = match parse_cfi_option_terms(msg.cfi()?) {
         (None, None) if dataset == Some(dbn::Dataset::OpraPillar) => {
             opra_option_terms(underlying.as_str()).unzip()
@@ -337,7 +350,7 @@ pub fn decode_option_contract(
         terms => terms,
     };
 
-    let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
+    let price_increment = decode_price_increment(msg.min_price_increment, quote_currency.precision);
     let multiplier =
         decode_option_multiplier(dataset, msg.contract_multiplier, msg.unit_of_measure_qty)?;
     let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
@@ -358,7 +371,9 @@ pub fn decode_option_contract(
         .underlying(underlying)
         .option_kind(option_kind)
         .strike_price(strike_price)
-        .currency(currency)
+        .quote_currency(quote_currency)
+        .settlement_currency(settlement_currency)
+        .strike_currency(strike_currency)
         .activation_ns(decode_optional_timestamp(msg.activation).unwrap_or_default())
         .expiration_ns(expiration)
         .price_precision(price_increment.precision)

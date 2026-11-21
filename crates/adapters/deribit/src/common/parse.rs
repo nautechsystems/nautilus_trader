@@ -385,12 +385,18 @@ fn parse_option_instrument(
 
     let multiplier = deribit_amount_quantity_multiplier();
     let min_trade_amount = parse_min_trade_amount(instrument)?;
+    let strike_currency = match instrument.counter_currency {
+        Some(code) => code.as_str().parse()?,
+        None if is_inverse || quote_currency == underlying => Currency::USD(),
+        None => quote_currency,
+    };
 
     let option = CryptoOption::builder()
         .instrument_id(instrument_id)
         .raw_symbol(instrument.instrument_name.into())
         .underlying(underlying)
         .quote_currency(quote_currency)
+        .strike_currency(strike_currency)
         .settlement_currency(settlement_currency)
         .is_inverse(is_inverse)
         .option_kind(option_kind)
@@ -1291,6 +1297,7 @@ mod tests {
         assert!(option.is_inverse);
         assert_eq!(option.option_kind, OptionKind::Call);
         assert_eq!(option.strike_price, Price::from("100000"));
+        assert_eq!(option.strike_currency, Currency::USD());
         assert_eq!(
             option.activation_ns,
             UnixNanos::from(1719561600000_u64 * 1_000_000)

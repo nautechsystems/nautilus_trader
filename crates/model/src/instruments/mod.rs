@@ -300,6 +300,11 @@ pub trait Instrument: Any + Send {
     fn option_kind(&self) -> Option<OptionKind>;
     fn exchange(&self) -> Option<Ustr>;
     fn strike_price(&self) -> Option<Price>;
+
+    fn strike_currency(&self) -> Option<Currency> {
+        None
+    }
+
     fn strategy_type(&self) -> Option<Ustr> {
         None
     }

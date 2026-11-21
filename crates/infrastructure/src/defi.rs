@@ -68,6 +68,7 @@ pub(crate) fn validate_marker(instrument: &dyn Instrument, codes: &[String]) -> 
 pub(crate) fn currency_references(instrument: &dyn Instrument) -> Vec<String> {
     let mut references = [
         instrument.base_currency(),
+        instrument.strike_currency(),
         Some(instrument.quote_currency()),
         Some(instrument.settlement_currency()),
     ]

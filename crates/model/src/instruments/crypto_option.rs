@@ -53,21 +53,32 @@ pub struct CryptoOption {
     pub raw_symbol: Symbol,
     /// The underlying asset.
     pub underlying: Currency,
+    /// The actual underlying instrument, which may trade on another venue; absent when unknown.
+    #[serde(default)]
+    pub underlying_instrument_id: Option<InstrumentId>,
+    /// The kind of option (PUT | CALL).
+    pub option_kind: OptionKind,
+    /// The option strike price.
+    pub strike_price: Price,
+    /// The currency in which the strike price is denominated.
+    pub strike_currency: Currency,
     /// The contract quote currency.
     pub quote_currency: Currency,
     /// The settlement currency.
     pub settlement_currency: Currency,
     /// If the instrument costing is inverse (quantity expressed in quote currency units).
     pub is_inverse: bool,
-    /// The kind of option (PUT | CALL).
-    pub option_kind: OptionKind,
-    /// The option strike price.
-    pub strike_price: Price,
+    /// The exercise style; absent when unknown.
+    #[serde(default)]
+    pub exercise_style: Option<ExerciseStyle>,
+    /// The contractual settlement type; absent when unknown or not represented by a single type.
+    #[serde(default)]
+    pub settlement_type: Option<SettlementType>,
     /// UNIX timestamp (nanoseconds) for contract activation.
     pub activation_ns: UnixNanos,
     /// UNIX timestamp (nanoseconds) for contract expiration.
     pub expiration_ns: UnixNanos,
-    /// The option contract currency.
+    /// The price decimal precision.
     pub price_precision: u8,
     /// The trading size decimal precision.
     pub size_precision: u8,
@@ -79,10 +90,6 @@ pub struct CryptoOption {
     pub multiplier: Quantity,
     /// The rounded lot unit size (standard/board).
     pub lot_size: Quantity,
-    /// The initial (order) margin requirement in percentage of order value.
-    pub margin_init: Decimal,
-    /// The maintenance (position) margin in percentage of position value.
-    pub margin_maint: Decimal,
     /// The maximum allowable order quantity.
     pub max_quantity: Option<Quantity>,
     /// The minimum allowable order quantity.
@@ -95,6 +102,10 @@ pub struct CryptoOption {
     pub max_price: Option<Price>,
     /// The minimum allowable quoted price.
     pub min_price: Option<Price>,
+    /// The initial (order) margin requirement in percentage of order value.
+    pub margin_init: Decimal,
+    /// The maintenance (position) margin in percentage of position value.
+    pub margin_maint: Decimal,
     /// The registered variable tick scheme name.
     pub tick_scheme: Option<Ustr>,
     /// Additional instrument metadata as a JSON-serializable dictionary.
@@ -103,15 +114,6 @@ pub struct CryptoOption {
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the data object was initialized.
     pub ts_init: UnixNanos,
-    /// The actual underlying instrument, which may trade on another venue; absent when unknown.
-    #[serde(default)]
-    pub underlying_instrument_id: Option<InstrumentId>,
-    /// The exercise style; absent when unknown.
-    #[serde(default)]
-    pub exercise_style: Option<ExerciseStyle>,
-    /// The contractual settlement type; absent when unknown or not represented by a single type.
-    #[serde(default)]
-    pub settlement_type: Option<SettlementType>,
 }
 
 #[bon::bon]
@@ -121,11 +123,15 @@ impl CryptoOption {
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
         underlying: Currency,
+        underlying_instrument_id: Option<InstrumentId>,
+        option_kind: OptionKind,
+        strike_price: Price,
+        strike_currency: Currency,
         quote_currency: Currency,
         settlement_currency: Currency,
         is_inverse: bool,
-        option_kind: OptionKind,
-        strike_price: Price,
+        exercise_style: Option<ExerciseStyle>,
+        settlement_type: Option<SettlementType>,
         activation_ns: UnixNanos,
         expiration_ns: UnixNanos,
         price_precision: u8,
@@ -146,9 +152,6 @@ impl CryptoOption {
         info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-        underlying_instrument_id: Option<InstrumentId>,
-        exercise_style: Option<ExerciseStyle>,
-        settlement_type: Option<SettlementType>,
     ) -> CorrectnessResult<Self> {
         check_equal_u8(
             price_precision,
@@ -179,11 +182,15 @@ impl CryptoOption {
             id: instrument_id,
             raw_symbol,
             underlying,
+            underlying_instrument_id,
+            option_kind,
+            strike_price,
+            strike_currency,
             quote_currency,
             settlement_currency,
             is_inverse,
-            option_kind,
-            strike_price,
+            exercise_style,
+            settlement_type,
             activation_ns,
             expiration_ns,
             price_precision,
@@ -192,21 +199,18 @@ impl CryptoOption {
             size_increment,
             multiplier: multiplier.unwrap_or(Quantity::from(1)),
             lot_size: lot_size.unwrap_or(Quantity::from(1)),
-            margin_init: margin_init.unwrap_or_default(),
-            margin_maint: margin_maint.unwrap_or_default(),
-            max_notional,
-            min_notional,
             max_quantity,
             min_quantity,
+            max_notional,
+            min_notional,
             max_price,
             min_price,
+            margin_init: margin_init.unwrap_or_default(),
+            margin_maint: margin_maint.unwrap_or_default(),
             tick_scheme,
             info,
             ts_event,
             ts_init,
-            underlying_instrument_id,
-            exercise_style,
-            settlement_type,
         })
     }
 
@@ -223,11 +227,15 @@ impl CryptoOption {
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
         underlying: Currency,
+        underlying_instrument_id: Option<InstrumentId>,
+        option_kind: OptionKind,
+        strike_price: Price,
+        strike_currency: Currency,
         quote_currency: Currency,
         settlement_currency: Currency,
         is_inverse: bool,
-        option_kind: OptionKind,
-        strike_price: Price,
+        exercise_style: Option<ExerciseStyle>,
+        settlement_type: Option<SettlementType>,
         activation_ns: UnixNanos,
         expiration_ns: UnixNanos,
         price_precision: u8,
@@ -248,19 +256,20 @@ impl CryptoOption {
         info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-        underlying_instrument_id: Option<InstrumentId>,
-        exercise_style: Option<ExerciseStyle>,
-        settlement_type: Option<SettlementType>,
     ) -> CorrectnessResult<Self> {
         Self::new_checked(
             instrument_id,
             raw_symbol,
             underlying,
+            underlying_instrument_id,
+            option_kind,
+            strike_price,
+            strike_currency,
             quote_currency,
             settlement_currency,
             is_inverse,
-            option_kind,
-            strike_price,
+            exercise_style,
+            settlement_type,
             activation_ns,
             expiration_ns,
             price_precision,
@@ -281,9 +290,6 @@ impl CryptoOption {
             info,
             ts_event,
             ts_init,
-            underlying_instrument_id,
-            exercise_style,
-            settlement_type,
         )
     }
 }
@@ -349,6 +355,10 @@ impl Instrument for CryptoOption {
 
     fn option_kind(&self) -> Option<OptionKind> {
         Some(self.option_kind)
+    }
+
+    fn strike_currency(&self) -> Option<Currency> {
+        Some(self.strike_currency)
     }
 
     fn strike_price(&self) -> Option<Price> {
@@ -494,11 +504,12 @@ mod tests {
             .instrument_id(InstrumentId::from("BTC-13JAN23-16000-P.DERIBIT"))
             .raw_symbol(Symbol::from("BTC-13JAN23-16000-P"))
             .underlying(Currency::BTC())
+            .option_kind(OptionKind::Put)
+            .strike_price(Price::from("16000"))
+            .strike_currency(Currency::USD())
             .quote_currency(Currency::USD())
             .settlement_currency(Currency::BTC())
             .is_inverse(false)
-            .option_kind(OptionKind::Put)
-            .strike_price(Price::from("16000"))
             .activation_ns(1.into())
             .expiration_ns(2.into())
             .price_precision(1)
@@ -520,11 +531,15 @@ mod tests {
             InstrumentId::from("TEST.DERIBIT"),
             Symbol::from("TEST"),
             Currency::BTC(),
+            None,
+            OptionKind::Call,
+            Price::from("50000.0"),
+            Currency::USD(),
             Currency::USD(),
             Currency::BTC(),
             false,
-            OptionKind::Call,
-            Price::from("50000.0"),
+            None,
+            None,
             0.into(),
             0.into(),
             4, // mismatch
@@ -545,9 +560,6 @@ mod tests {
             None,
             0.into(),
             0.into(),
-            None,
-            None,
-            None,
         );
         assert!(result.is_err());
     }
@@ -558,11 +570,15 @@ mod tests {
             InstrumentId::from("TEST.DERIBIT"),
             Symbol::from("TEST"),
             Currency::BTC(),
+            None,
+            OptionKind::Call,
+            Price::from("50000.0"),
+            Currency::USD(),
             Currency::USD(),
             Currency::BTC(),
             false,
-            OptionKind::Call,
-            Price::from("50000.0"),
+            None,
+            None,
             0.into(),
             0.into(),
             1,
@@ -583,9 +599,6 @@ mod tests {
             None,
             0.into(),
             0.into(),
-            None,
-            None,
-            None,
         );
         assert!(result.is_err());
     }
@@ -598,11 +611,15 @@ mod tests {
             InstrumentId::from("TEST.DERIBIT"),
             Symbol::from("TEST"),
             Currency::BTC(),
+            None,
+            OptionKind::Call,
+            strike_price,
+            Currency::USD(),
             Currency::USD(),
             Currency::BTC(),
             false,
-            OptionKind::Call,
-            strike_price,
+            None,
+            None,
             0.into(),
             0.into(),
             1,
@@ -623,9 +640,6 @@ mod tests {
             None,
             0.into(),
             0.into(),
-            None,
-            None,
-            None,
         );
 
         // Assert on the parameter name, not merely `is_err`: this constructor validates a
@@ -651,11 +665,15 @@ mod tests {
             InstrumentId::from("BTC-13JAN23-16000-P.DERIBIT"),
             Symbol::from("BTC-13JAN23-16000-P"),
             Currency::BTC(),
+            Some(InstrumentId::from("BTCUSDT.BINANCE")),
+            OptionKind::Put,
+            Price::from("16000.000"),
+            Currency::USD(),
             Currency::USDC(),
             Currency::USDT(),
             false,
-            OptionKind::Put,
-            Price::from("16000.000"),
+            Some(ExerciseStyle::European),
+            Some(SettlementType::Cash),
             1.into(),
             2.into(),
             3,
@@ -676,9 +694,6 @@ mod tests {
             None,
             1.into(),
             2.into(),
-            Some(InstrumentId::from("BTCUSDT.BINANCE")),
-            Some(ExerciseStyle::European),
-            Some(SettlementType::Cash),
         )
         .unwrap();
 
@@ -686,11 +701,15 @@ mod tests {
             .instrument_id(InstrumentId::from("BTC-13JAN23-16000-P.DERIBIT"))
             .raw_symbol(Symbol::from("BTC-13JAN23-16000-P"))
             .underlying(Currency::BTC())
+            .underlying_instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .option_kind(OptionKind::Put)
+            .strike_price(Price::from("16000.000"))
+            .strike_currency(Currency::USD())
             .quote_currency(Currency::USDC())
             .settlement_currency(Currency::USDT())
             .is_inverse(false)
-            .option_kind(OptionKind::Put)
-            .strike_price(Price::from("16000.000"))
+            .exercise_style(ExerciseStyle::European)
+            .settlement_type(SettlementType::Cash)
             .activation_ns(1.into())
             .expiration_ns(2.into())
             .price_precision(3)
@@ -709,9 +728,6 @@ mod tests {
             .margin_maint(dec!(0.02))
             .ts_event(1.into())
             .ts_init(2.into())
-            .underlying_instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
-            .exercise_style(ExerciseStyle::European)
-            .settlement_type(SettlementType::Cash)
             .build()
             .unwrap();
 

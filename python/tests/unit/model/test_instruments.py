@@ -499,7 +499,9 @@ def test_option_contract_construction() -> None:
         underlying="AAPL",
         asset_class=AssetClass.EQUITY,
         exchange="OPRA",
-        currency=Currency.from_str("USD"),
+        quote_currency=Currency.from_str("USD"),
+        settlement_currency=Currency.from_str("USD"),
+        strike_currency=Currency.from_str("USD"),
         price_precision=2,
         price_increment=Price.from_str("0.01"),
         multiplier=Quantity.from_int(100),
@@ -542,7 +544,9 @@ def test_option_contract_to_dict_and_from_dict_roundtrip(
         underlying="AAPL",
         asset_class=AssetClass.EQUITY,
         exchange="OPRA",
-        currency=Currency.from_str("USD"),
+        quote_currency=Currency.from_str("USD"),
+        settlement_currency=Currency.from_str("EUR"),
+        strike_currency=Currency.from_str("JPY"),
         price_precision=2,
         price_increment=Price.from_str("0.01"),
         multiplier=Quantity.from_int(100),
@@ -567,6 +571,9 @@ def test_option_contract_to_dict_and_from_dict_roundtrip(
     d = oc.to_dict()
     restored = OptionContract.from_dict(d)
 
+    assert restored.quote_currency == Currency.from_str("USD")
+    assert restored.strike_currency == Currency.from_str("JPY")
+    assert restored.settlement_currency == Currency.from_str("EUR")
     assert restored.id == oc.id
     assert restored.option_kind == oc.option_kind
     assert restored.strike_price == oc.strike_price
@@ -1039,6 +1046,7 @@ def test_crypto_option_construction() -> None:
         settlement_currency=Currency.from_str("BTC"),
         is_inverse=False,
         option_kind=OptionKind.CALL,
+        strike_currency=Currency.from_str("USD"),
         strike_price=Price.from_str("50000.0"),
         activation_ns=1640390400000000000,
         expiration_ns=1711670400000000000,
@@ -1083,6 +1091,7 @@ def test_crypto_option_to_dict_and_from_dict_roundtrip(
         settlement_currency=Currency.from_str("BTC"),
         is_inverse=False,
         option_kind=OptionKind.CALL,
+        strike_currency=Currency.from_str("JPY"),
         strike_price=Price.from_str("50000.0"),
         activation_ns=1640390400000000000,
         expiration_ns=1711670400000000000,
@@ -1106,6 +1115,9 @@ def test_crypto_option_to_dict_and_from_dict_roundtrip(
     d = co.to_dict()
     restored = CryptoOption.from_dict(d)
 
+    assert restored.quote_currency == Currency.from_str("USD")
+    assert restored.strike_currency == Currency.from_str("JPY")
+    assert restored.settlement_currency == Currency.from_str("BTC")
     assert restored.id == co.id
     assert restored.option_kind == co.option_kind
     assert restored.strike_price == co.strike_price
@@ -1369,6 +1381,7 @@ def _make_derivative(
             **common,
             underlying=Currency.from_str("ETH"),
             option_kind=OptionKind.CALL,
+            strike_currency=Currency.from_str("USD"),
             strike_price=Price.from_str("100.00"),
             activation_ns=3,
             expiration_ns=4,

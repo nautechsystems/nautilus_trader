@@ -2459,13 +2459,18 @@ pub fn parse_option_instrument(
     validate_underlying(definition.inst_id, definition.uly)?;
 
     let context = format!("OPTION instrument {}", definition.inst_id);
-    let (underlying_str, quote_ccy_str) = definition.uly.split_once('-').ok_or_else(|| {
-        anyhow::anyhow!(
-            "Invalid underlying '{}' for {}: expected format 'BASE-QUOTE'",
-            definition.uly,
-            definition.inst_id
-        )
-    })?;
+
+    let (underlying_str, quote_ccy_str) = definition
+        .uly
+        .split_once('-')
+        .filter(|(base, quote)| !base.trim().is_empty() && !quote.trim().is_empty())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Invalid underlying '{}' for {}: expected format 'BASE-QUOTE'",
+                definition.uly,
+                definition.inst_id
+            )
+        })?;
 
     let instrument_id = parse_instrument_id(definition.inst_id);
     let raw_symbol = Symbol::from_ustr_unchecked(definition.inst_id);
@@ -2483,7 +2488,9 @@ pub fn parse_option_instrument(
             definition.inst_id
         )
     })?;
-    let quote_currency = Currency::get_or_create_crypto_with_context(quote_ccy_str, Some(&context));
+
+    let strike_currency =
+        Currency::get_or_create_crypto_with_context(quote_ccy_str, Some(&context));
     let settlement_currency =
         Currency::get_or_create_crypto_with_context(definition.settle_ccy, Some(&context));
 
@@ -2557,7 +2564,12 @@ pub fn parse_option_instrument(
         .instrument_id(instrument_id)
         .raw_symbol(raw_symbol)
         .underlying(underlying)
-        .quote_currency(quote_currency)
+        .quote_currency(if is_inverse {
+            settlement_currency
+        } else {
+            strike_currency
+        })
+        .strike_currency(strike_currency)
         .settlement_currency(settlement_currency)
         .is_inverse(is_inverse)
         .option_kind(option_kind)
@@ -3989,7 +4001,8 @@ mod tests {
             Symbol::from("BTC-USD-241217-92000-C")
         );
         assert_eq!(instrument.base_currency(), Some(Currency::BTC()));
-        assert_eq!(instrument.quote_currency(), Currency::USD());
+        assert_eq!(instrument.quote_currency(), Currency::BTC());
+        assert_eq!(option.strike_currency, Currency::USD());
         assert_eq!(instrument.settlement_currency(), Currency::BTC());
         assert!(instrument.is_inverse());
         assert_eq!(instrument.price_precision(), 4);
@@ -5568,6 +5581,28 @@ mod tests {
         assert!(
             err_msg.contains("Unsupported") && err_msg.contains("optType"),
             "expected Unsupported optType error, was: {err_msg}"
+        );
+    }
+
+    #[rstest]
+    #[case("BTC-")]
+    #[case("BTC- ")]
+    #[case("-USD")]
+    fn test_parse_option_instrument_incomplete_underlying(#[case] underlying: &str) {
+        let json = load_test_json("http_get_instruments_option.json");
+        let mut response: OKXResponse<OKXInstrument> = serde_json::from_str(&json).unwrap();
+        let definition = &mut response.data[0];
+        definition.uly = Ustr::from(underlying);
+
+        let error =
+            parse_option_instrument(definition, None, None, UnixNanos::default()).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Invalid underlying '{underlying}' for {}: expected format 'BASE-QUOTE'",
+                definition.inst_id
+            )
         );
     }
 

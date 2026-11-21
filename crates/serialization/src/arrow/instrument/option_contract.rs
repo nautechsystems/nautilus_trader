@@ -36,7 +36,7 @@ use ustr::Ustr;
 use super::{optional_parsed_value, validate_required_instrument_columns};
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
-    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, extract_column, extract_column_by_name,
+    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, extract_column_by_name,
     extract_optional_string_column_by_name, json_string_field, metadata_with_type_name,
     optional_ustr_value, record_batch_with_timestamps, record_batch_with_u64_timestamps,
     timestamp_data_type,
@@ -47,12 +47,17 @@ impl ArrowSchemaProvider for OptionContract {
         let fields = vec![
             Field::new("id", DataType::Utf8, false),
             Field::new("raw_symbol", DataType::Utf8, false),
-            Field::new("underlying", DataType::Utf8, false),
             Field::new("asset_class", DataType::Utf8, false),
             Field::new("exchange", DataType::Utf8, true), // nullable
+            Field::new("underlying", DataType::Utf8, false),
+            Field::new("underlying_instrument_id", DataType::Utf8, true),
             Field::new("option_kind", DataType::Utf8, false),
             Field::new("strike_price", DataType::Utf8, false),
-            Field::new("currency", DataType::Utf8, false),
+            Field::new("strike_currency", DataType::Utf8, false),
+            Field::new("quote_currency", DataType::Utf8, false),
+            Field::new("settlement_currency", DataType::Utf8, false),
+            Field::new("exercise_style", DataType::Utf8, true),
+            Field::new("settlement_type", DataType::Utf8, true),
             Field::new("activation_ns", timestamp_data_type(), false),
             Field::new("expiration_ns", timestamp_data_type(), false),
             Field::new("price_precision", DataType::UInt8, false),
@@ -71,9 +76,6 @@ impl ArrowSchemaProvider for OptionContract {
             json_string_field("info", true),
             Field::new("ts_event", timestamp_data_type(), false),
             Field::new("ts_init", timestamp_data_type(), false),
-            Field::new("underlying_instrument_id", DataType::Utf8, true),
-            Field::new("exercise_style", DataType::Utf8, true),
-            Field::new("settlement_type", DataType::Utf8, true),
         ];
 
         Schema::new_with_metadata(fields, metadata_with_type_name("OptionContract", metadata))
@@ -90,12 +92,17 @@ impl EncodeToRecordBatch for OptionContract {
     {
         let mut id_builder = StringBuilder::new();
         let mut raw_symbol_builder = StringBuilder::new();
-        let mut underlying_builder = StringBuilder::new();
         let mut asset_class_builder = StringBuilder::new();
         let mut exchange_builder = StringBuilder::new();
+        let mut underlying_builder = StringBuilder::new();
+        let mut underlying_instrument_id_builder = StringBuilder::new();
         let mut option_kind_builder = StringBuilder::new();
         let mut strike_price_builder = StringBuilder::new();
-        let mut currency_builder = StringBuilder::new();
+        let mut strike_currency_builder = StringBuilder::new();
+        let mut quote_currency_builder = StringBuilder::new();
+        let mut settlement_currency_builder = StringBuilder::new();
+        let mut exercise_style_builder = StringBuilder::new();
+        let mut settlement_type_builder = StringBuilder::new();
         let mut activation_ns_builder = UInt64Array::builder(data.len());
         let mut expiration_ns_builder = UInt64Array::builder(data.len());
         let mut price_precision_builder = UInt8Array::builder(data.len());
@@ -114,25 +121,26 @@ impl EncodeToRecordBatch for OptionContract {
         let mut info_builder = StringBuilder::new();
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
-        let mut underlying_instrument_id_builder = StringBuilder::new();
-        let mut exercise_style_builder = StringBuilder::new();
-        let mut settlement_type_builder = StringBuilder::new();
-
         for oc in data.iter().map(Borrow::borrow) {
             id_builder.append_value(oc.id.to_string());
             raw_symbol_builder.append_value(oc.raw_symbol);
-            underlying_builder.append_value(oc.underlying);
             asset_class_builder.append_value(oc.asset_class);
-
             if let Some(exchange) = oc.exchange {
                 exchange_builder.append_value(exchange);
             } else {
                 exchange_builder.append_null();
             }
 
+            underlying_builder.append_value(oc.underlying);
+            underlying_instrument_id_builder
+                .append_option(oc.underlying_instrument_id.map(|id| id.to_string()));
             option_kind_builder.append_value(oc.option_kind);
             strike_price_builder.append_value(oc.strike_price.to_string());
-            currency_builder.append_value(oc.currency.to_string());
+            strike_currency_builder.append_value(oc.strike_currency.to_string());
+            quote_currency_builder.append_value(oc.quote_currency.to_string());
+            settlement_currency_builder.append_value(oc.settlement_currency.to_string());
+            exercise_style_builder.append_option(oc.exercise_style.map(|style| style.to_string()));
+            settlement_type_builder.append_option(oc.settlement_type.map(|kind| kind.to_string()));
             activation_ns_builder.append_value(oc.activation_ns.as_u64());
             expiration_ns_builder.append_value(oc.expiration_ns.as_u64());
             price_precision_builder.append_value(oc.price_precision);
@@ -192,10 +200,6 @@ impl EncodeToRecordBatch for OptionContract {
 
             ts_event_builder.append_value(oc.ts_event.as_u64());
             ts_init_builder.append_value(oc.ts_init.as_u64());
-            underlying_instrument_id_builder
-                .append_option(oc.underlying_instrument_id.map(|id| id.to_string()));
-            exercise_style_builder.append_option(oc.exercise_style.map(|style| style.to_string()));
-            settlement_type_builder.append_option(oc.settlement_type.map(|kind| kind.to_string()));
         }
 
         record_batch_with_timestamps(
@@ -203,12 +207,17 @@ impl EncodeToRecordBatch for OptionContract {
             vec![
                 Arc::new(id_builder.finish()),
                 Arc::new(raw_symbol_builder.finish()),
-                Arc::new(underlying_builder.finish()),
                 Arc::new(asset_class_builder.finish()),
                 Arc::new(exchange_builder.finish()),
+                Arc::new(underlying_builder.finish()),
+                Arc::new(underlying_instrument_id_builder.finish()),
                 Arc::new(option_kind_builder.finish()),
                 Arc::new(strike_price_builder.finish()),
-                Arc::new(currency_builder.finish()),
+                Arc::new(strike_currency_builder.finish()),
+                Arc::new(quote_currency_builder.finish()),
+                Arc::new(settlement_currency_builder.finish()),
+                Arc::new(exercise_style_builder.finish()),
+                Arc::new(settlement_type_builder.finish()),
                 Arc::new(activation_ns_builder.finish()),
                 Arc::new(expiration_ns_builder.finish()),
                 Arc::new(price_precision_builder.finish()),
@@ -227,9 +236,6 @@ impl EncodeToRecordBatch for OptionContract {
                 Arc::new(info_builder.finish()),
                 Arc::new(ts_event_builder.finish()),
                 Arc::new(ts_init_builder.finish()),
-                Arc::new(underlying_instrument_id_builder.finish()),
-                Arc::new(exercise_style_builder.finish()),
-                Arc::new(settlement_type_builder.finish()),
             ],
         )
     }
@@ -265,42 +271,57 @@ pub fn decode_option_contract_batch(
     validate_required_instrument_columns::<OptionContract>(metadata, record_batch)?;
     let record_batch = record_batch_with_u64_timestamps(record_batch)?;
     let record_batch = &record_batch;
-    let cols = record_batch.columns();
     let num_rows = record_batch.num_rows();
 
-    let id_values = extract_column::<StringArray>(cols, "id", 0, DataType::Utf8)?;
-    let raw_symbol_values = extract_column::<StringArray>(cols, "raw_symbol", 1, DataType::Utf8)?;
-    let underlying_values = extract_column::<StringArray>(cols, "underlying", 2, DataType::Utf8)?;
-    let asset_class_values = extract_column::<StringArray>(cols, "asset_class", 3, DataType::Utf8)?;
-    let exchange_values = cols
-        .get(4)
-        .ok_or_else(|| EncodingError::MissingColumn("exchange", 4))?;
-    let option_kind_values = extract_column::<StringArray>(cols, "option_kind", 5, DataType::Utf8)?;
+    let id_values = extract_column_by_name::<StringArray>(record_batch, "id", DataType::Utf8)?;
+    let raw_symbol_values =
+        extract_column_by_name::<StringArray>(record_batch, "raw_symbol", DataType::Utf8)?;
+    let asset_class_values =
+        extract_column_by_name::<StringArray>(record_batch, "asset_class", DataType::Utf8)?;
+    let exchange_values =
+        extract_column_by_name::<StringArray>(record_batch, "exchange", DataType::Utf8)?;
+    let underlying_values =
+        extract_column_by_name::<StringArray>(record_batch, "underlying", DataType::Utf8)?;
+    let underlying_instrument_id_values =
+        extract_optional_string_column_by_name(record_batch, "underlying_instrument_id")?;
+    let option_kind_values =
+        extract_column_by_name::<StringArray>(record_batch, "option_kind", DataType::Utf8)?;
     let strike_price_values =
-        extract_column::<StringArray>(cols, "strike_price", 6, DataType::Utf8)?;
-    let currency_values = extract_column::<StringArray>(cols, "currency", 7, DataType::Utf8)?;
+        extract_column_by_name::<StringArray>(record_batch, "strike_price", DataType::Utf8)?;
+    let strike_currency_values =
+        extract_column_by_name::<StringArray>(record_batch, "strike_currency", DataType::Utf8)?;
+    let quote_currency_values =
+        extract_column_by_name::<StringArray>(record_batch, "quote_currency", DataType::Utf8)?;
+    let settlement_currency_values =
+        extract_column_by_name::<StringArray>(record_batch, "settlement_currency", DataType::Utf8)?;
+    let exercise_style_values =
+        extract_optional_string_column_by_name(record_batch, "exercise_style")?;
+    let settlement_type_values =
+        extract_optional_string_column_by_name(record_batch, "settlement_type")?;
     let activation_ns_values =
-        extract_column::<UInt64Array>(cols, "activation_ns", 8, DataType::UInt64)?;
+        extract_column_by_name::<UInt64Array>(record_batch, "activation_ns", DataType::UInt64)?;
     let expiration_ns_values =
-        extract_column::<UInt64Array>(cols, "expiration_ns", 9, DataType::UInt64)?;
+        extract_column_by_name::<UInt64Array>(record_batch, "expiration_ns", DataType::UInt64)?;
     let price_precision_values =
-        extract_column::<UInt8Array>(cols, "price_precision", 10, DataType::UInt8)?;
+        extract_column_by_name::<UInt8Array>(record_batch, "price_precision", DataType::UInt8)?;
     let size_precision_values =
-        extract_column::<UInt8Array>(cols, "size_precision", 11, DataType::UInt8)?;
+        extract_column_by_name::<UInt8Array>(record_batch, "size_precision", DataType::UInt8)?;
     let price_increment_values =
-        extract_column::<StringArray>(cols, "price_increment", 12, DataType::Utf8)?;
+        extract_column_by_name::<StringArray>(record_batch, "price_increment", DataType::Utf8)?;
     let size_increment_values =
-        extract_column::<StringArray>(cols, "size_increment", 13, DataType::Utf8)?;
-    let multiplier_values = extract_column::<StringArray>(cols, "multiplier", 14, DataType::Utf8)?;
-    let lot_size_values = extract_column::<StringArray>(cols, "lot_size", 15, DataType::Utf8)?;
+        extract_column_by_name::<StringArray>(record_batch, "size_increment", DataType::Utf8)?;
+    let multiplier_values =
+        extract_column_by_name::<StringArray>(record_batch, "multiplier", DataType::Utf8)?;
+    let lot_size_values =
+        extract_column_by_name::<StringArray>(record_batch, "lot_size", DataType::Utf8)?;
     let max_quantity_values = extract_optional_string_column_by_name(record_batch, "max_quantity")?;
     let min_quantity_values = extract_optional_string_column_by_name(record_batch, "min_quantity")?;
     let max_price_values = extract_optional_string_column_by_name(record_batch, "max_price")?;
     let min_price_values = extract_optional_string_column_by_name(record_batch, "min_price")?;
     let margin_init_values =
-        extract_column::<StringArray>(cols, "margin_init", 20, DataType::Utf8)?;
+        extract_column_by_name::<StringArray>(record_batch, "margin_init", DataType::Utf8)?;
     let margin_maint_values =
-        extract_column::<StringArray>(cols, "margin_maint", 21, DataType::Utf8)?;
+        extract_column_by_name::<StringArray>(record_batch, "margin_maint", DataType::Utf8)?;
     let tick_scheme_values = extract_optional_string_column_by_name(record_batch, "tick_scheme")?;
     let info_values = extract_column_by_name::<StringArray>(record_batch, "info", DataType::Utf8)?;
     let ts_event_values =
@@ -308,15 +329,7 @@ pub fn decode_option_contract_batch(
     let ts_init_values =
         extract_column_by_name::<UInt64Array>(record_batch, "ts_init", DataType::UInt64)?;
 
-    let underlying_instrument_id_values =
-        extract_optional_string_column_by_name(record_batch, "underlying_instrument_id")?;
-    let exercise_style_values =
-        extract_optional_string_column_by_name(record_batch, "exercise_style")?;
-    let settlement_type_values =
-        extract_optional_string_column_by_name(record_batch, "settlement_type")?;
-
     let mut result = Vec::with_capacity(num_rows);
-
     for i in 0..num_rows {
         let id = InstrumentId::from_str(id_values.value(i))
             .map_err(|e| EncodingError::ParseError("id", format!("row {i}: {e}")))?;
@@ -325,18 +338,7 @@ pub fn decode_option_contract_batch(
         let asset_class = AssetClass::from_str(asset_class_values.value(i))
             .map_err(|e| EncodingError::ParseError("asset_class", format!("row {i}: {e}")))?;
 
-        let exchange = if exchange_values.is_null(i) {
-            None
-        } else {
-            let exchange_str = exchange_values
-                .as_any()
-                .downcast_ref::<StringArray>()
-                .ok_or_else(|| {
-                    EncodingError::ParseError("exchange", format!("row {i}: invalid type"))
-                })?
-                .value(i);
-            Some(Ustr::from(exchange_str))
-        };
+        let exchange = optional_ustr_value(Some(exchange_values), i);
 
         let underlying_instrument_id = optional_parsed_value(
             underlying_instrument_id_values,
@@ -352,10 +354,22 @@ pub fn decode_option_contract_batch(
             .map_err(|e| EncodingError::ParseError("option_kind", format!("row {i}: {e}")))?;
         let strike_price = Price::from_str(strike_price_values.value(i))
             .map_err(|e| EncodingError::ParseError("strike_price", format!("row {i}: {e}")))?;
-        let currency = super::decode_currency(
-            currency_values.value(i),
-            "currency",
-            "option_contract.currency",
+        let quote_currency = super::decode_currency(
+            quote_currency_values.value(i),
+            "quote_currency",
+            "option_contract.quote_currency",
+            i,
+        )?;
+        let strike_currency = super::decode_currency(
+            strike_currency_values.value(i),
+            "strike_currency",
+            "option_contract.strike_currency",
+            i,
+        )?;
+        let settlement_currency = super::decode_currency(
+            settlement_currency_values.value(i),
+            "settlement_currency",
+            "option_contract.settlement_currency",
             i,
         )?;
         let activation_ns = nautilus_core::UnixNanos::from(activation_ns_values.value(i));
@@ -407,12 +421,14 @@ pub fn decode_option_contract_batch(
             .asset_class(asset_class)
             .maybe_exchange(exchange)
             .underlying(underlying)
-            .option_kind(option_kind)
             .maybe_underlying_instrument_id(underlying_instrument_id)
+            .option_kind(option_kind)
+            .strike_price(strike_price)
+            .strike_currency(strike_currency)
+            .quote_currency(quote_currency)
+            .settlement_currency(settlement_currency)
             .maybe_exercise_style(exercise_style)
             .maybe_settlement_type(settlement_type)
-            .strike_price(strike_price)
-            .currency(currency)
             .activation_ns(activation_ns)
             .expiration_ns(expiration_ns)
             .price_precision(price_prec)

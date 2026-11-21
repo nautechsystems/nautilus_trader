@@ -22,7 +22,10 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 
 use super::{models::TardisInstrumentInfo, parse::parse_settlement_currency};
-use crate::common::parse::{option_terms, parse_option_kind};
+use crate::common::{
+    enums::TardisExchange,
+    parse::{option_terms, parse_option_kind},
+};
 
 /// Returns a currency from the internal map or creates a new crypto currency.
 ///
@@ -231,17 +234,25 @@ pub fn create_crypto_option(
         )
     })?;
 
+    let underlying = get_currency(info.base_currency.to_uppercase().as_str());
+    let quote = get_currency(info.quote_currency.to_uppercase().as_str());
+    let settlement_currency = get_currency(&parse_settlement_currency(info, is_inverse));
+    let (strike_currency, quote_currency) = match info.exchange {
+        TardisExchange::BybitOptions => (quote, settlement_currency),
+        _ if quote == underlying => (Currency::USD(), quote),
+        _ => (quote, quote),
+    };
+
     let (exercise_style, settlement_type) = option_terms(info.exchange);
 
     Ok(InstrumentAny::CryptoOption(
         CryptoOption::builder()
             .instrument_id(instrument_id)
             .raw_symbol(raw_symbol)
-            .underlying(get_currency(info.base_currency.to_uppercase().as_str()))
-            .quote_currency(get_currency(info.quote_currency.to_uppercase().as_str()))
-            .settlement_currency(get_currency(
-                parse_settlement_currency(info, is_inverse).as_str(),
-            ))
+            .underlying(underlying)
+            .strike_currency(strike_currency)
+            .quote_currency(quote_currency)
+            .settlement_currency(settlement_currency)
             .is_inverse(is_inverse)
             .option_kind(parse_option_kind(option_type))
             .strike_price(Price::new(strike_price, price_increment.precision))

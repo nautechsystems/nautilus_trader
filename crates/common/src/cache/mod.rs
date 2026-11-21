@@ -3220,6 +3220,9 @@ impl Cache {
         }
         self.add_currency(instrument.quote_currency())?;
         self.add_currency(instrument.settlement_currency())?;
+        if let Some(currency) = instrument.strike_currency() {
+            self.add_currency(currency)?;
+        }
 
         if let Some(database) = &mut self.database {
             #[cfg(feature = "defi")]

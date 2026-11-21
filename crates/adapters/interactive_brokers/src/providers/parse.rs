@@ -498,6 +498,7 @@ fn parse_option_contract(
             details.under_symbol.clone()
         };
 
+    let currency = Currency::from(details.contract.currency.to_string());
     let instrument = OptionContract::builder()
         .instrument_id(instrument_id)
         .raw_symbol(Symbol::from(details.contract.local_symbol.as_str()))
@@ -505,7 +506,9 @@ fn parse_option_contract(
         .underlying(Ustr::from(underlying.as_str()))
         .option_kind(option_kind)
         .strike_price(Price::new(strike, price_precision))
-        .currency(Currency::from(details.contract.currency.to_string()))
+        .quote_currency(currency)
+        .settlement_currency(currency)
+        .strike_currency(currency)
         .activation_ns(activation_ns)
         .expiration_ns(expiration_ns)
         .price_precision(price_precision)

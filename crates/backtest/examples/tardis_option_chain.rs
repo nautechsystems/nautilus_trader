@@ -407,7 +407,7 @@ fn option_metadata(instrument: &InstrumentAny) -> Option<OptionMetadata> {
         InstrumentAny::OptionContract(option) => Some(OptionMetadata {
             instrument_id: option.id,
             underlying: option.underlying,
-            settlement_currency: option.currency.code,
+            settlement_currency: option.settlement_currency.code,
             expiration_ns: option.expiration_ns.as_u64(),
             strike: option.strike_price,
         }),

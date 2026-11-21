@@ -417,7 +417,7 @@ def option_metadata(instrument: Any) -> OptionMetadata | None:
         return OptionMetadata(
             instrument_id=instrument.id,
             underlying=instrument.underlying,
-            settlement_currency=instrument.currency.code,
+            settlement_currency=instrument.settlement_currency.code,
             expiration_ns=instrument.expiration_ns,
             strike=instrument.strike_price,
         )

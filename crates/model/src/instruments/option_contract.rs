@@ -60,32 +60,41 @@ pub struct OptionContract {
     pub exchange: Option<Ustr>,
     /// The underlying asset.
     pub underlying: Ustr,
+    /// The actual underlying instrument, which may trade on another venue; absent when unknown.
+    #[serde(default)]
+    pub underlying_instrument_id: Option<InstrumentId>,
     /// The kind of option (PUT | CALL).
     pub option_kind: OptionKind,
     /// The option strike price.
     pub strike_price: Price,
+    /// The currency in which the strike price is denominated.
+    pub strike_currency: Currency,
+    /// The currency used to quote the option premium.
+    pub quote_currency: Currency,
+    /// The currency used to settle the contract.
+    pub settlement_currency: Currency,
+    /// The exercise style; absent when unknown.
+    #[serde(default)]
+    pub exercise_style: Option<ExerciseStyle>,
+    /// The contractual settlement type; absent when unknown or not represented by a single type.
+    #[serde(default)]
+    pub settlement_type: Option<SettlementType>,
     /// UNIX timestamp (nanoseconds) for contract activation.
     pub activation_ns: UnixNanos,
     /// UNIX timestamp (nanoseconds) for contract expiration.
     pub expiration_ns: UnixNanos,
-    /// The option contract currency.
-    pub currency: Currency,
     /// The price decimal precision.
     pub price_precision: u8,
+    /// The trading size decimal precision.
+    pub size_precision: u8,
     /// The minimum price increment (tick size).
     pub price_increment: Price,
     /// The minimum size increment.
     pub size_increment: Quantity,
-    /// The trading size decimal precision.
-    pub size_precision: u8,
     /// The option multiplier.
     pub multiplier: Quantity,
     /// The rounded lot unit size (standard/board).
     pub lot_size: Quantity,
-    /// The initial (order) margin requirement in percentage of order value.
-    pub margin_init: Decimal,
-    /// The maintenance (position) margin in percentage of position value.
-    pub margin_maint: Decimal,
     /// The maximum allowable order quantity.
     pub max_quantity: Option<Quantity>,
     /// The minimum allowable order quantity.
@@ -94,6 +103,10 @@ pub struct OptionContract {
     pub max_price: Option<Price>,
     /// The minimum allowable quoted price.
     pub min_price: Option<Price>,
+    /// The initial (order) margin requirement in percentage of order value.
+    pub margin_init: Decimal,
+    /// The maintenance (position) margin in percentage of position value.
+    pub margin_maint: Decimal,
     /// The registered variable tick scheme name.
     pub tick_scheme: Option<Ustr>,
     /// Additional instrument metadata as a JSON-serializable dictionary.
@@ -102,15 +115,6 @@ pub struct OptionContract {
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the data object was initialized.
     pub ts_init: UnixNanos,
-    /// The actual underlying instrument, which may trade on another venue; absent when unknown.
-    #[serde(default)]
-    pub underlying_instrument_id: Option<InstrumentId>,
-    /// The exercise style; absent when unknown.
-    #[serde(default)]
-    pub exercise_style: Option<ExerciseStyle>,
-    /// The contractual settlement type; absent when unknown or not represented by a single type.
-    #[serde(default)]
-    pub settlement_type: Option<SettlementType>,
 }
 
 #[bon::bon]
@@ -122,9 +126,14 @@ impl OptionContract {
         asset_class: AssetClass,
         exchange: Option<Ustr>,
         underlying: Ustr,
+        underlying_instrument_id: Option<InstrumentId>,
         option_kind: OptionKind,
         strike_price: Price,
-        currency: Currency,
+        strike_currency: Currency,
+        quote_currency: Currency,
+        settlement_currency: Currency,
+        exercise_style: Option<ExerciseStyle>,
+        settlement_type: Option<SettlementType>,
         activation_ns: UnixNanos,
         expiration_ns: UnixNanos,
         price_precision: u8,
@@ -141,9 +150,6 @@ impl OptionContract {
         info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-        underlying_instrument_id: Option<InstrumentId>,
-        exercise_style: Option<ExerciseStyle>,
-        settlement_type: Option<SettlementType>,
     ) -> CorrectnessResult<Self> {
         check_valid_string_ascii_optional(exchange, stringify!(exchange))?;
         check_valid_string_ascii(underlying, stringify!(underlying))?;
@@ -165,30 +171,32 @@ impl OptionContract {
             asset_class,
             exchange,
             underlying,
+            underlying_instrument_id,
             option_kind,
+            strike_price,
+            strike_currency,
+            quote_currency,
+            settlement_currency,
+            exercise_style,
+            settlement_type,
             activation_ns,
             expiration_ns,
-            strike_price,
-            currency,
             price_precision,
-            price_increment,
             size_precision: 0,
+            price_increment,
             size_increment: Quantity::from(1),
             multiplier,
             lot_size,
-            margin_init: margin_init.unwrap_or_default(),
-            margin_maint: margin_maint.unwrap_or_default(),
-            tick_scheme,
-            info,
             max_quantity,
             min_quantity: Some(min_quantity.unwrap_or(1.into())),
             max_price,
             min_price,
+            margin_init: margin_init.unwrap_or_default(),
+            margin_maint: margin_maint.unwrap_or_default(),
+            tick_scheme,
+            info,
             ts_event,
             ts_init,
-            underlying_instrument_id,
-            exercise_style,
-            settlement_type,
         })
     }
 
@@ -207,9 +215,14 @@ impl OptionContract {
         asset_class: AssetClass,
         exchange: Option<Ustr>,
         underlying: Ustr,
+        underlying_instrument_id: Option<InstrumentId>,
         option_kind: OptionKind,
         strike_price: Price,
-        currency: Currency,
+        strike_currency: Currency,
+        quote_currency: Currency,
+        settlement_currency: Currency,
+        exercise_style: Option<ExerciseStyle>,
+        settlement_type: Option<SettlementType>,
         activation_ns: UnixNanos,
         expiration_ns: UnixNanos,
         price_precision: u8,
@@ -226,9 +239,6 @@ impl OptionContract {
         info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-        underlying_instrument_id: Option<InstrumentId>,
-        exercise_style: Option<ExerciseStyle>,
-        settlement_type: Option<SettlementType>,
     ) -> CorrectnessResult<Self> {
         Self::new_checked(
             instrument_id,
@@ -236,9 +246,14 @@ impl OptionContract {
             asset_class,
             exchange,
             underlying,
+            underlying_instrument_id,
             option_kind,
             strike_price,
-            currency,
+            strike_currency,
+            quote_currency,
+            settlement_currency,
+            exercise_style,
+            settlement_type,
             activation_ns,
             expiration_ns,
             price_precision,
@@ -255,9 +270,6 @@ impl OptionContract {
             info,
             ts_event,
             ts_init,
-            underlying_instrument_id,
-            exercise_style,
-            settlement_type,
         )
     }
 }
@@ -305,11 +317,11 @@ impl Instrument for OptionContract {
     }
 
     fn quote_currency(&self) -> Currency {
-        self.currency
+        self.quote_currency
     }
 
     fn settlement_currency(&self) -> Currency {
-        self.currency
+        self.settlement_currency
     }
 
     fn isin(&self) -> Option<Ustr> {
@@ -322,6 +334,10 @@ impl Instrument for OptionContract {
 
     fn exchange(&self) -> Option<Ustr> {
         self.exchange
+    }
+
+    fn strike_currency(&self) -> Option<Currency> {
+        Some(self.strike_currency)
     }
 
     fn strike_price(&self) -> Option<Price> {
@@ -464,9 +480,14 @@ mod tests {
             AssetClass::Equity,
             Some(Ustr::from("GMNI")),
             Ustr::from("AAPL"),
+            None,
             OptionKind::Call,
             Price::from("150.0"),
             Currency::USD(),
+            Currency::USD(),
+            Currency::USD(),
+            None,
+            None,
             0.into(),
             0.into(),
             4, // mismatch
@@ -483,9 +504,6 @@ mod tests {
             None,
             0.into(),
             0.into(),
-            None,
-            None,
-            None,
         );
         assert!(result.is_err());
     }
@@ -498,9 +516,14 @@ mod tests {
             AssetClass::Equity,
             Some(Ustr::from("GMNI")),
             Ustr::from("AAPL"),
+            None,
             OptionKind::Call,
             Price::from("150.0"),
             Currency::USD(),
+            Currency::USD(),
+            Currency::USD(),
+            None,
+            None,
             0.into(),
             0.into(),
             2,
@@ -517,9 +540,6 @@ mod tests {
             None,
             0.into(),
             0.into(),
-            None,
-            None,
-            None,
         );
         assert!(result.is_err());
     }
@@ -534,9 +554,14 @@ mod tests {
             AssetClass::Equity,
             Some(Ustr::from("GMNI")),
             Ustr::from("AAPL"),
+            None,
             OptionKind::Call,
             strike_price,
             Currency::USD(),
+            Currency::USD(),
+            Currency::USD(),
+            None,
+            None,
             0.into(),
             0.into(),
             2,
@@ -553,9 +578,6 @@ mod tests {
             None,
             0.into(),
             0.into(),
-            None,
-            None,
-            None,
         );
 
         // Assert on the parameter name, not merely `is_err`: this constructor validates a
@@ -583,9 +605,14 @@ mod tests {
             AssetClass::Equity,
             Some(Ustr::from("GMNI")),
             Ustr::from("AAPL"),
+            Some(InstrumentId::from("AAPL.NASDAQ")),
             OptionKind::Call,
             Price::from("149.0"),
+            Currency::JPY(),
             Currency::USD(),
+            Currency::EUR(),
+            Some(ExerciseStyle::American),
+            Some(SettlementType::Physical),
             1.into(),
             2.into(),
             2,
@@ -602,9 +629,6 @@ mod tests {
             None,
             3.into(),
             4.into(),
-            Some(InstrumentId::from("AAPL.NASDAQ")),
-            Some(ExerciseStyle::American),
-            Some(SettlementType::Physical),
         )
         .unwrap();
 
@@ -614,9 +638,14 @@ mod tests {
             .asset_class(AssetClass::Equity)
             .exchange(Ustr::from("GMNI"))
             .underlying(Ustr::from("AAPL"))
+            .underlying_instrument_id(InstrumentId::from("AAPL.NASDAQ"))
             .option_kind(OptionKind::Call)
             .strike_price(Price::from("149.0"))
-            .currency(Currency::USD())
+            .strike_currency(Currency::JPY())
+            .quote_currency(Currency::USD())
+            .settlement_currency(Currency::EUR())
+            .exercise_style(ExerciseStyle::American)
+            .settlement_type(SettlementType::Physical)
             .activation_ns(1.into())
             .expiration_ns(2.into())
             .price_precision(2)
@@ -631,9 +660,6 @@ mod tests {
             .margin_maint(dec!(0.02))
             .ts_event(3.into())
             .ts_init(4.into())
-            .underlying_instrument_id(InstrumentId::from("AAPL.NASDAQ"))
-            .exercise_style(ExerciseStyle::American)
-            .settlement_type(SettlementType::Physical)
             .build()
             .unwrap();
 

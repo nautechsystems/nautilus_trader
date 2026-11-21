@@ -1354,7 +1354,9 @@ fn test_decode_definition_msg_option_contract(
     assert_eq!(call.option_kind, OptionKind::Call);
     assert_eq!(call.strike_price, Price::from("9600.00"));
     assert_eq!(call.underlying, underlying);
-    assert_eq!(call.currency, Currency::from("USD"));
+    assert_eq!(call.quote_currency, Currency::USD());
+    assert_eq!(call.settlement_currency, Currency::USD());
+    assert_eq!(call.strike_currency, Currency::USD());
     assert_eq!(call.multiplier, quantity(50));
     assert_eq!(call.exercise_style, Some(ExerciseStyle::American));
     assert_eq!(call.settlement_type, Some(SettlementType::Physical));
@@ -1440,6 +1442,7 @@ fn test_option_strikes_use_sufficient_precision(
     let mut msg = decoder.next().unwrap().unwrap().clone();
     msg.strike_price = raw;
     msg.strike_price_currency = cstr(strike_currency);
+    msg.settl_currency = cstr("EUR");
 
     let option =
         decode_option_contract(&msg, InstrumentId::from("ESU6 C9600.GLBX"), None, None).unwrap();
@@ -1447,7 +1450,9 @@ fn test_option_strikes_use_sufficient_precision(
     assert_eq!(option.strike_price.raw(), Price::from(expected).raw());
     assert_eq!(option.strike_price.precision, precision);
     assert_eq!(option.strike_price.as_decimal(), expected.parse().unwrap());
-    assert_eq!(option.currency, Currency::USD());
+    assert_eq!(option.quote_currency, Currency::USD());
+    assert_eq!(option.strike_currency, Currency::from(strike_currency));
+    assert_eq!(option.settlement_currency, Currency::EUR());
 }
 
 #[rstest]
@@ -1670,6 +1675,7 @@ fn option_definition_msg(
         exchange: cstr::<5>(exchange),
         cfi: cstr::<7>("OCXXXX"),
         currency: cstr::<4>("USD"),
+        strike_price_currency: cstr::<4>("USD"),
         strike_price: 5_000_000_000_000,
         min_price_increment: 10_000_000,
         unit_of_measure_qty,

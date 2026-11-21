@@ -1242,6 +1242,7 @@ mod serial_tests {
     #[rstest]
     #[case("underlying_instrument_id")]
     #[case("exercise_style")]
+    #[case("strike_currency")]
     #[case("settlement_type")]
     #[case("tick_scheme")]
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1252,14 +1253,14 @@ mod serial_tests {
         let options = get_postgres_connect_options(None, None, None, None, None);
         let pool = connect_test_pg(options.into()).await.unwrap();
         sqlx::query(AssertSqlSafe(format!(
-            "ALTER TABLE instrument DROP COLUMN {column}"
+            "ALTER TABLE instrument RENAME COLUMN {column} TO hidden_test_column"
         )))
         .execute(&pool)
         .await
         .unwrap();
         let blocked = get_test_pg_cache_database().await;
         sqlx::query(AssertSqlSafe(format!(
-            "ALTER TABLE instrument ADD COLUMN {column} TEXT"
+            "ALTER TABLE instrument RENAME COLUMN hidden_test_column TO {column}"
         )))
         .execute(&pool)
         .await
@@ -1461,7 +1462,8 @@ mod serial_tests {
         for currency in [
             instrument.base_currency(),
             Some(instrument.quote_currency()),
-            Some(instrument.settlement_currency()),
+            Some(Currency::JPY()),
+            Some(Currency::EUR()),
         ]
         .into_iter()
         .flatten()
@@ -1493,6 +1495,8 @@ mod serial_tests {
                 .values_mut()
                 .next()
                 .unwrap();
+            fields["strike_currency"] = serde_json::json!(if known { "JPY" } else { "EUR" });
+            fields["settlement_currency"] = serde_json::json!(if known { "EUR" } else { "JPY" });
             fields["underlying_instrument_id"] =
                 serde_json::to_value(known.then_some(underlying_id)).unwrap();
             fields["exercise_style"] = serde_json::to_value(style).unwrap();
@@ -3485,9 +3489,12 @@ mod serial_tests {
     fn order_numeric_migration_sql() -> String {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../schema/sql/tables.sql");
         let schema = std::fs::read_to_string(path).unwrap();
-        let start = schema
-            .find("DO $$")
-            .expect("no DO block in tables.sql; the order-column migration moved");
+        let marker = schema
+            .find("ALTER COLUMN avg_px TYPE NUMERIC")
+            .expect("no order-column migration in tables.sql");
+        let start = schema[..marker]
+            .rfind("DO $$")
+            .expect("missing order-column migration guard");
         let end = schema[start..]
             .find("END $$;")
             .expect("unterminated DO block in tables.sql")
@@ -3496,7 +3503,7 @@ mod serial_tests {
         let block = schema[start..end].to_string();
         assert!(
             block.contains("avg_px TYPE NUMERIC") && block.contains("slippage TYPE NUMERIC"),
-            "first DO block in tables.sql is no longer the order-column migration"
+            "incomplete order-column migration in tables.sql"
         );
         block
     }

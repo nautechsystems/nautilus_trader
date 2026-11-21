@@ -1133,7 +1133,9 @@ fn spread_instruments(
 
     if options {
         let mut leg_a = option_contract_appl();
-        leg_a.currency = currency;
+        leg_a.quote_currency = currency;
+        leg_a.strike_currency = currency;
+        leg_a.settlement_currency = currency;
         leg_a.id = leg_a_id;
         leg_a.raw_symbol = leg_a_id.symbol;
         leg_a.activation_ns = activation;

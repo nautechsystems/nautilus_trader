@@ -526,12 +526,9 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionRow {
         let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
         let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
         let underlying = row.try_get::<String, _>("underlying").map(Currency::from)?;
-        let quote_currency = row
-            .try_get::<String, _>("quote_currency")
-            .map(Currency::from)?;
-        let settlement_currency = row
-            .try_get::<String, _>("settlement_currency")
-            .map(Currency::from)?;
+        let quote_currency = read_parsed(row, "quote_currency")?;
+        let strike_currency = read_parsed(row, "strike_currency")?;
+        let settlement_currency = read_parsed(row, "settlement_currency")?;
         let is_inverse = row.try_get::<bool, _>("is_inverse")?;
         let option_kind = row
             .try_get::<String, _>("option_kind")
@@ -607,6 +604,7 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionRow {
             .raw_symbol(raw_symbol)
             .underlying(underlying)
             .quote_currency(quote_currency)
+            .strike_currency(strike_currency)
             .settlement_currency(settlement_currency)
             .is_inverse(is_inverse)
             .option_kind(option_kind)
@@ -1011,9 +1009,9 @@ impl<'r> FromRow<'r, PgRow> for OptionContractRow {
         let strike_price = row
             .try_get::<String, _>("strike_price")
             .map(|res| Price::from_str(res.as_str()).unwrap())?;
-        let currency = row
-            .try_get::<String, _>("quote_currency")
-            .map(Currency::from)?;
+        let quote_currency = read_parsed(row, "quote_currency")?;
+        let strike_currency = read_parsed(row, "strike_currency")?;
+        let settlement_currency = read_parsed(row, "settlement_currency")?;
         let price_precision = read_u8(row, "price_precision")?;
         let price_increment = row
             .try_get::<String, _>("price_increment")
@@ -1067,7 +1065,9 @@ impl<'r> FromRow<'r, PgRow> for OptionContractRow {
             .maybe_exercise_style(exercise_style)
             .maybe_settlement_type(settlement_type)
             .strike_price(strike_price)
-            .currency(currency)
+            .quote_currency(quote_currency)
+            .settlement_currency(settlement_currency)
+            .strike_currency(strike_currency)
             .activation_ns(activation_ns)
             .expiration_ns(expiration_ns)
             .price_precision(price_precision)

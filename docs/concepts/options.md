@@ -28,6 +28,16 @@ Greeks-relevant metadata varies by instrument type:
 - `BinaryOption`: has `expiration_ns` and `outcome`/`description`, but no
   `strike_price`, `option_kind`, or `underlying`.
 
+Both vanilla option types require `strike_currency` for the strike price, `quote_currency` for the premium,
+and `settlement_currency` for settlement. For example, a Deribit inverse BTC option has a USD strike,
+a BTC premium, and BTC settlement.
+
+When upgrading, update positional Python calls to match each constructor signature. For stored definitions
+that lack `strike_currency`, recover the currency terms from the venue or data provider. Rewrite affected
+JSON, MessagePack, and Arrow records. Apply the updated PostgreSQL schema before rewriting affected rows.
+PostgreSQL appends `strike_currency` to existing tables. Select the currency columns by name when
+exporting data from both fresh and upgraded databases.
+
 Vanilla `OptionContract` and `CryptoOption` also carry three optional contract fields:
 
 - `underlying_instrument_id`: the actual underlying instrument. It is independent of
@@ -57,8 +67,9 @@ each venue's contract specification. Tardis applies the Deribit, OKX, and Bybit 
 `None` for other source exchanges.
 
 Rust builders and Python constructors accept these fields. JSON, dictionaries, Arrow, and PostgreSQL
-preserve them; missing fields in older JSON and Arrow records load as `None`. Equality and hashing use
-only the instrument ID. The matching engine and Greeks calculator do not read these fields.
+preserve them. If an otherwise valid JSON or Arrow record omits any of these three optional fields, it loads
+that field as `None`. Equality and hashing use
+only the instrument ID. The matching engine and Greeks calculator do not read these optional fields.
 
 ### Exercise style and settlement type
 

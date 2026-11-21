@@ -836,7 +836,7 @@ pub fn parse_option_instrument(
     let instrument_id = symbol.to_instrument_id();
     let raw_symbol = Symbol::new(symbol.raw_symbol());
     let underlying = get_currency(definition.base_coin.as_str());
-    let quote_currency = get_currency(definition.quote_coin.as_str());
+    let strike_currency = get_currency(definition.quote_coin.as_str());
     let settlement_currency = get_currency(definition.settle_coin.as_str());
     // Bybit Options are linear contracts - they are margined and settled in stablecoins
     let is_inverse = false;
@@ -876,7 +876,8 @@ pub fn parse_option_instrument(
         .instrument_id(instrument_id)
         .raw_symbol(raw_symbol)
         .underlying(underlying)
-        .quote_currency(quote_currency)
+        .strike_currency(strike_currency)
+        .quote_currency(settlement_currency)
         .settlement_currency(settlement_currency)
         .is_inverse(is_inverse)
         .option_kind(option_kind)
@@ -2736,6 +2737,7 @@ mod tests {
             InstrumentAny::CryptoOption(option) => {
                 assert_eq!(option.id.to_string(), "ETH-26JUN26-16000-P-OPTION.BYBIT");
                 assert_eq!(option.underlying.code, "ETH");
+                assert_eq!(option.strike_currency.code, "USDC");
                 assert_eq!(option.quote_currency.code, "USDC");
                 assert_eq!(option.settlement_currency.code, "USDC");
                 assert!(!option.is_inverse);
@@ -2750,6 +2752,18 @@ mod tests {
             }
             other => panic!("unexpected instrument variant: {other:?}"),
         }
+    }
+
+    #[rstest]
+    fn parse_usdc_option_with_usd_strike() {
+        let json = load_test_json("http_get_instruments_option_symbol_id.json");
+        let response: BybitInstrumentOptionResponse = serde_json::from_str(&json).unwrap();
+
+        let parsed = parse_option_instrument(&response.result.list[0], TS, TS).unwrap();
+
+        assert_eq!(parsed.strike_currency(), Some(Currency::USD()));
+        assert_eq!(parsed.quote_currency(), Currency::USDC());
+        assert_eq!(parsed.settlement_currency(), Currency::USDC());
     }
 
     #[rstest]

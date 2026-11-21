@@ -382,9 +382,30 @@ fn create_crypto_option_from_options_chain_record(
         .split_once('-')
         .map(|(underlying, _)| underlying)
         .context("options_chain symbol missing underlying prefix")?;
-    let underlying_currency = Currency::get_or_create_crypto(underlying);
-    let (quote_currency, settlement_currency, is_inverse) =
-        option_currency_mapping(record.exchange, underlying_currency)?;
+    anyhow::ensure!(
+        record.exchange == TardisExchange::Deribit,
+        "options_chain instrument derivation supports Deribit only, received {}",
+        record.exchange,
+    );
+
+    let (base, linear_quote) = underlying
+        .split_once('_')
+        .map_or((underlying, None), |(base, quote)| (base, Some(quote)));
+    anyhow::ensure!(
+        !base.is_empty(),
+        "Missing option base currency in {}",
+        record.symbol
+    );
+    let underlying_currency = Currency::get_or_create_crypto(base);
+
+    let (quote_currency, strike_currency, is_inverse) = match linear_quote {
+        Some(code) => {
+            let quote: Currency = code.parse()?;
+            (quote, quote, false)
+        }
+        None => (underlying_currency, Currency::USD(), true),
+    };
+
     let instrument_price_precision = precision
         .price
         .max(infer_precision(record.strike_price).min(FIXED_PRECISION));
@@ -404,7 +425,8 @@ fn create_crypto_option_from_options_chain_record(
             .raw_symbol(Symbol::from_ustr_unchecked(record.symbol))
             .underlying(underlying_currency)
             .quote_currency(quote_currency)
-            .settlement_currency(settlement_currency)
+            .strike_currency(strike_currency)
+            .settlement_currency(quote_currency)
             .is_inverse(is_inverse)
             .option_kind(option_kind)
             .strike_price(strike_price)
@@ -422,18 +444,6 @@ fn create_crypto_option_from_options_chain_record(
             .ts_init(parse_timestamp(record.local_timestamp))
             .build()?,
     ))
-}
-
-fn option_currency_mapping(
-    exchange: TardisExchange,
-    underlying_currency: Currency,
-) -> anyhow::Result<(Currency, Currency, bool)> {
-    match exchange {
-        TardisExchange::Deribit => Ok((underlying_currency, underlying_currency, true)),
-        exchange => anyhow::bail!(
-            "options_chain instrument derivation supports Deribit only, received {exchange}"
-        ),
-    }
 }
 
 fn decimal_increment_price(precision: u8) -> anyhow::Result<Price> {
@@ -575,7 +585,28 @@ mod tests {
         assert_eq!(option.size_increment, Quantity::from("0.1"));
         assert!(option.is_inverse);
         assert_eq!(option.quote_currency, Currency::from("BTC"));
+        assert_eq!(option.strike_currency, Currency::USD());
         assert_eq!(option.settlement_currency, Currency::from("BTC"));
+    }
+
+    #[rstest]
+    fn test_linear_deribit_option_currencies() {
+        let mut reader = create_csv_reader(get_test_data_path("options_chain.csv")).unwrap();
+        let mut record: TardisOptionsChainRecord = reader.deserialize().next().unwrap().unwrap();
+        record.symbol = Ustr::from("BTC_USDC-25DEC26-100000-C");
+        let id = parse_instrument_id(&record.exchange, record.symbol);
+        let instrument = create_crypto_option_from_options_chain_record(
+            &record,
+            id,
+            UnixNanos::default(),
+            OptionsChainPrecision::new(None, None),
+        )
+        .unwrap();
+        assert_eq!(instrument.base_currency(), Some(Currency::BTC()));
+        assert_eq!(instrument.quote_currency(), Currency::USDC());
+        assert_eq!(instrument.strike_currency(), Some(Currency::USDC()));
+        assert_eq!(instrument.settlement_currency(), Currency::USDC());
+        assert!(!instrument.is_inverse());
     }
 
     #[rstest]

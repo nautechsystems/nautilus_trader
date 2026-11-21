@@ -153,7 +153,7 @@ pub struct DeriveOptionPublicDetails {
     /// Final settlement price, populated after expiry.
     #[serde(default, deserialize_with = "deserialize_optional_decimal")]
     pub settlement_price: Option<Decimal>,
-    /// Strike price in quote currency.
+    /// Strike price in the underlying index currency.
     #[serde(deserialize_with = "deserialize_decimal")]
     pub strike: Decimal,
 }
