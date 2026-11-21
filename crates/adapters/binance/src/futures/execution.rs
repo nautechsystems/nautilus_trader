@@ -17,6 +17,7 @@
 
 use std::{
     future::Future,
+    iter,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -109,7 +110,9 @@ use crate::{
             BINANCE_NAUTILUS_FUTURES_BROKER_ID, BINANCE_VENUE, BINANCE_WS_HEARTBEAT_SECS,
         },
         credential::resolve_credentials,
-        dispatch::{OrderIdentity, PendingOperation, PendingRequest, WsDispatchState},
+        dispatch::{
+            CancelTarget, OrderIdentity, PendingOperation, PendingRequest, WsDispatchState,
+        },
         encoder::{encode_broker_id, legacy_client_order_id},
         enums::{
             BinanceEnvironment, BinanceFuturesOrderType, BinancePositionSide, BinancePriceMatch,
@@ -819,9 +822,6 @@ impl BinanceFuturesExecutionClient {
 
     fn cancel_order_internal(&self, cmd: &CancelOrder) {
         let command = cmd.clone();
-        self.dispatch_state
-            .cancels_unresolved
-            .insert(command.client_order_id);
 
         // Non-triggered algo orders use algo cancel endpoint, triggered use regular
         let is_algo = self
@@ -847,6 +847,14 @@ impl BinanceFuturesExecutionClient {
         let venue_order_id =
             cancel_venue_order_id(is_algo, command.venue_order_id, promoted_venue_order_id);
         let client_order_id = command.client_order_id;
+
+        let target = CancelTarget {
+            client_order_id,
+            instrument_id,
+            venue_order_id: venue_order_id.or(command.venue_order_id),
+        };
+
+        self.dispatch_state.register_cancels(iter::once(target));
 
         // Non-algo cancels can route through WS trading API when active
         if self.ws_trading_active() && !use_algo_cancel {
@@ -3816,7 +3824,6 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
         let http_client = self.http_client.clone();
         let instrument_id = cmd.instrument_id;
-        let cancels_unresolved = self.dispatch_state.cancels_unresolved.clone();
 
         let orders: Vec<_> = self
             .core
@@ -3830,10 +3837,10 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             )
             .into_iter()
             .filter(|order| self.owns_order(order) && (order.is_open() || order.is_inflight()))
-            .map(|order| order.client_order_id())
+            .map(|order| CancelTarget::from(&*order))
             .collect();
 
-        cancels_unresolved.rcu(|ids| ids.extend(orders.iter().copied()));
+        self.dispatch_state.register_cancels(orders.iter().copied());
 
         // USD-M Futures WS Trading API does not expose an openOrders.cancelAll
         // method, so regular and algo cancel-all both go through HTTP.
@@ -3878,9 +3885,12 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let clock = self.clock;
         let cancels_unresolved = self.dispatch_state.cancels_unresolved.clone();
 
-        cancels_unresolved.rcu(|ids| {
-            ids.extend(command.cancels.iter().map(|cancel| cancel.client_order_id));
-        });
+        self.dispatch_state
+            .register_cancels(command.cancels.iter().map(|cancel| CancelTarget {
+                client_order_id: cancel.client_order_id,
+                instrument_id: command.instrument_id,
+                venue_order_id: cancel.venue_order_id,
+            }));
 
         self.spawn_task("batch_cancel_orders", async move {
             let symbol = format_binance_symbol(&command.instrument_id);
@@ -4587,7 +4597,9 @@ mod tests {
     use nautilus_model::{
         enums::{AccountType, OmsType, OrderSide, OrderType},
         events::OrderEventAny,
-        identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
+        identifiers::{
+            AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
+        },
         instruments::stubs::{
             btcusd_bybit, crypto_future_btcusdt, crypto_perpetual_ethusdt, currency_pair_btcusdt,
             perpetual_contract_eurusd,
@@ -4604,10 +4616,16 @@ mod tests {
                 BINANCE_CLIENT_ID, BINANCE_STATUS_UNKNOWN_CODE, BINANCE_UNEXPECTED_RESPONSE_CODE,
                 BINANCE_VENUE,
             },
-            enums::BinanceProductType,
+            enums::{BinanceOrderStatus, BinanceProductType},
             testing::load_fixture_string,
         },
         config::BinanceExecutionClientConfig,
+        futures::{
+            http::models::BinanceFuturesUsdExchangeInfo,
+            websocket::streams::{
+                dispatch::dispatch_order_update, messages::BinanceFuturesOrderUpdateMsg,
+            },
+        },
     };
 
     fn http_error(code: i64) -> anyhow::Error {
@@ -5270,6 +5288,239 @@ mod tests {
         }
 
         order
+    }
+
+    #[derive(Clone, Copy)]
+    enum CancelRoute {
+        Single,
+        Batch,
+        All,
+        AllBySide,
+    }
+
+    fn add_cancel_race_order(cache: &Rc<RefCell<Cache>>, account_id: AccountId) -> OrderAny {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(TraderId::from("RACE-079"))
+            .strategy_id(StrategyId::from("CANCEL-RACE-079"))
+            .instrument_id(InstrumentId::from("XAUUSDT-PERP.BINANCE"))
+            .client_order_id(ClientOrderId::from("O-TERMINAL-079"))
+            .quantity(Quantity::from("2.75"))
+            .price(Price::from("2301.70"))
+            .build();
+        let venue_id = VenueOrderId::from("703247");
+        let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_id);
+        cache
+            .borrow_mut()
+            .add_order(order, None, Some(*BINANCE_CLIENT_ID), false)
+            .unwrap();
+        cache.borrow_mut().update_order(&accepted).unwrap()
+    }
+
+    #[rstest]
+    #[case::single(CancelRoute::Single, true)]
+    #[case::single_by_client_id(CancelRoute::Single, false)]
+    #[case::batch(CancelRoute::Batch, true)]
+    #[case::batch_by_client_id(CancelRoute::Batch, false)]
+    #[case::all(CancelRoute::All, true)]
+    #[case::all_by_side(CancelRoute::AllBySide, true)]
+    #[tokio::test]
+    async fn test_cancel_tracking_resolves_on_full_fill(
+        #[case] route: CancelRoute,
+        #[case] has_venue_id: bool,
+        #[values(false, true)] fill_first: bool,
+    ) {
+        let (base_url, hits) = start_batch_reject_server().await;
+        let (mut client, cache) = test_execution_client(base_url);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+
+        let exchange_info: BinanceFuturesUsdExchangeInfo = serde_json::from_str(
+            &load_fixture_string("futures/http_json/exchange_info_usdm.json"),
+        )
+        .unwrap();
+        let raw_symbol = ustr::Ustr::from("XAUUSDT");
+        let symbol = exchange_info
+            .symbols
+            .into_iter()
+            .find(|symbol| symbol.symbol == raw_symbol)
+            .unwrap();
+        client
+            .http_client
+            .instruments_cache()
+            .insert(symbol.symbol, BinanceFuturesInstrument::UsdM(symbol));
+
+        let account_id = client.core.account_id;
+        let order = add_cancel_race_order(&cache, account_id);
+        let instrument_id = order.instrument_id();
+        let cid = order.client_order_id();
+        let venue_order_id = order.venue_order_id().unwrap();
+        let state = &client.dispatch_state;
+        state.restore_order(&order, None, 2);
+
+        let command = CancelOrder::new(
+            order.trader_id(),
+            Some(*BINANCE_CLIENT_ID),
+            order.strategy_id(),
+            instrument_id,
+            cid,
+            has_venue_id.then_some(venue_order_id),
+            UUID4::new(),
+            UnixNanos::from(79105),
+            None,
+            None,
+        );
+
+        let cancel = || {
+            match route {
+                CancelRoute::Single => client.cancel_order(command.clone()),
+                CancelRoute::Batch => client.batch_cancel_orders(BatchCancelOrders::new(
+                    command.trader_id,
+                    command.client_id,
+                    command.strategy_id,
+                    instrument_id,
+                    vec![command.clone()],
+                    command.command_id,
+                    command.ts_init,
+                    None,
+                    None,
+                )),
+                CancelRoute::All | CancelRoute::AllBySide => {
+                    client.cancel_all_orders(CancelAllOrders::new(
+                        command.trader_id,
+                        command.client_id,
+                        command.strategy_id,
+                        instrument_id,
+                        matches!(route, CancelRoute::AllBySide).then_some(OrderSide::Buy),
+                        command.command_id,
+                        command.ts_init,
+                        None,
+                        None,
+                    ))
+                }
+            }
+            .unwrap();
+        };
+
+        let mut update: BinanceFuturesOrderUpdateMsg = serde_json::from_str(&load_fixture_string(
+            "futures/user_data_json/order_update_trade_partial.json",
+        ))
+        .unwrap();
+        update.order.symbol = raw_symbol;
+        update.order.client_order_id = encode_broker_id(&cid, BINANCE_NAUTILUS_FUTURES_BROKER_ID);
+        update.order.order_id = venue_order_id.as_str().parse().unwrap();
+        update.order.original_qty = order.quantity().to_string();
+        update.order.original_price = order.price().unwrap().to_string();
+        update.order.last_filled_qty = "0.375".to_string();
+        update.order.cumulative_filled_qty = "0.375".to_string();
+        update.order.last_filled_price = "2297.60".to_string();
+        update.order.trade_id = 770_318;
+
+        let dispatch_fill = |msg: &BinanceFuturesOrderUpdateMsg| {
+            dispatch_order_update(
+                msg,
+                &client.emitter,
+                &client.http_client,
+                account_id,
+                client.product_type,
+                client.clock,
+                state,
+                false,
+                Decimal::new(4, 4),
+                Currency::USDT(),
+                false,
+                false,
+                &state.seen_trade_ids(),
+            );
+        };
+
+        if !fill_first {
+            cancel();
+        }
+
+        dispatch_fill(&update);
+        assert_eq!(state.cancels_unresolved.contains(&cid), !fill_first);
+        assert!(!state.is_terminal(&cid));
+
+        update.order.order_status = BinanceOrderStatus::Filled;
+        update.order.last_filled_qty = "2.375".to_string();
+        update.order.cumulative_filled_qty = "2.750".to_string();
+        update.order.last_filled_price = "2301.10".to_string();
+        update.order.trade_id = 770_344;
+        dispatch_fill(&update);
+
+        if fill_first {
+            // The fill is still queued, so cancel-all also sees an open order in the cache
+            assert_eq!(
+                cache.borrow().order(&cid).unwrap().status(),
+                OrderStatus::Accepted
+            );
+            cancel();
+        }
+
+        wait_for_spawned_tasks(&client).await;
+
+        assert!(state.is_terminal(&cid));
+        assert!(!state.cancels_unresolved.contains(&cid));
+        assert_eq!(
+            hits.batch.load(Ordering::Relaxed),
+            usize::from(matches!(route, CancelRoute::Batch | CancelRoute::AllBySide))
+        );
+        assert_eq!(
+            hits.cancel_all.load(Ordering::Relaxed),
+            usize::from(matches!(route, CancelRoute::All))
+        );
+
+        let mut fills = Vec::new();
+        let mut rejections = Vec::new();
+
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                ExecutionEvent::Order(OrderEventAny::Filled(fill)) => fills.push((
+                    fill.client_order_id,
+                    fill.venue_order_id,
+                    fill.trade_id,
+                    fill.last_qty,
+                    fill.last_px,
+                )),
+                ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) => {
+                    rejections.push((
+                        rejected.client_order_id,
+                        rejected.venue_order_id,
+                        rejected.causation_id,
+                    ));
+                }
+                event => panic!("unexpected execution event: {event:?}"),
+            }
+        }
+
+        assert_eq!(
+            fills,
+            [
+                (
+                    cid,
+                    venue_order_id,
+                    TradeId::from("770318"),
+                    Quantity::from("0.375"),
+                    Price::from("2297.60"),
+                ),
+                (
+                    cid,
+                    venue_order_id,
+                    TradeId::from("770344"),
+                    Quantity::from("2.375"),
+                    Price::from("2301.10"),
+                ),
+            ],
+        );
+
+        if matches!(route, CancelRoute::All) {
+            assert!(rejections.is_empty());
+        } else {
+            assert_eq!(
+                rejections,
+                [(cid, command.venue_order_id, Some(command.command_id))]
+            );
+        }
     }
 
     #[rstest]

@@ -59,7 +59,7 @@ use crate::{
         consts::BINANCE_NAUTILUS_FUTURES_BROKER_ID,
         dispatch::{DEDUP_CAPACITY, OrderIdentity, WsDispatchState, ensure_accepted_emitted},
         encoder::decode_client_order_id,
-        enums::{BinanceOrderStatus, BinancePositionSide, BinanceProductType},
+        enums::{BinanceAlgoStatus, BinanceOrderStatus, BinancePositionSide, BinanceProductType},
         parse::{
             parse_millis_or_init, parse_price_at_precision, parse_quantity_at_precision,
             parse_required_decimal, parse_required_price_at_precision,
@@ -517,7 +517,11 @@ pub(crate) fn dispatch_order_update(
                 match parse_order_terminal_quantities(order) {
                     Ok((orig_qty, cum_qty)) => {
                         if orig_qty <= cum_qty {
-                            dispatch_state.cleanup_terminal(client_order_id);
+                            dispatch_state.cleanup_terminal_with_venue_order(
+                                client_order_id,
+                                instrument_id,
+                                venue_order_id,
+                            );
                         }
                     }
                     Err(e) => log::error!("Failed to parse order terminal quantities: {e}"),
@@ -533,7 +537,11 @@ pub(crate) fn dispatch_order_update(
                     dispatch_state,
                     ts_init,
                 );
-                dispatch_state.cleanup_terminal(client_order_id);
+                dispatch_state.cleanup_terminal_with_venue_order(
+                    client_order_id,
+                    instrument_id,
+                    venue_order_id,
+                );
                 emit_order_canceled_or_expired(
                     emitter,
                     identity.strategy_id,
@@ -556,7 +564,11 @@ pub(crate) fn dispatch_order_update(
                     dispatch_state,
                     ts_init,
                 );
-                dispatch_state.cleanup_terminal(client_order_id);
+                dispatch_state.cleanup_terminal_with_venue_order(
+                    client_order_id,
+                    instrument_id,
+                    venue_order_id,
+                );
 
                 emit_order_canceled_or_expired(
                     emitter,
@@ -1527,8 +1539,6 @@ pub(crate) fn dispatch_algo_update(
     triggered_algo_ids: &Arc<AtomicSet<ClientOrderId>>,
     use_position_ids: bool,
 ) {
-    use crate::common::enums::BinanceAlgoStatus;
-
     let algo_data = &msg.algo_order;
     let ts_init = clock.get_time_ns();
     let ts_event =
@@ -1555,6 +1565,7 @@ pub(crate) fn dispatch_algo_update(
         .map(|r| r.clone());
 
     if identity.is_none() && dispatch_state.is_terminal(&client_order_id) {
+        record_finished_algo_parent(dispatch_state, algo_data, instrument_id, client_order_id);
         triggered_algo_ids.remove(&client_order_id);
         return;
     }
@@ -1643,7 +1654,7 @@ pub(crate) fn dispatch_algo_update(
         }
         BinanceAlgoStatus::Canceled | BinanceAlgoStatus::Expired => {
             triggered_algo_ids.remove(&client_order_id);
-            dispatch_state.cleanup_terminal(client_order_id);
+            cleanup_terminal_algo_order(dispatch_state, algo_data, instrument_id, client_order_id);
 
             if let Some(identity) = identity {
                 emit_algo_canceled(
@@ -1676,7 +1687,7 @@ pub(crate) fn dispatch_algo_update(
         }
         BinanceAlgoStatus::Rejected => {
             triggered_algo_ids.remove(&client_order_id);
-            dispatch_state.cleanup_terminal(client_order_id);
+            cleanup_terminal_algo_order(dispatch_state, algo_data, instrument_id, client_order_id);
 
             if let Some(identity) = identity {
                 emitter.emit_order_rejected_event(
@@ -1713,6 +1724,7 @@ pub(crate) fn dispatch_algo_update(
                 identity.as_ref(),
                 emitter,
                 account_id,
+                instrument_id,
                 client_order_id,
                 size_precision,
                 ts_event,
@@ -1730,12 +1742,32 @@ pub(crate) fn dispatch_algo_update(
     }
 }
 
+fn record_finished_algo_parent(
+    dispatch_state: &WsDispatchState,
+    algo_data: &AlgoOrderUpdateData,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+) {
+    if algo_data.algo_status == BinanceAlgoStatus::Finished
+        && let Some(actual_order_id) = algo_actual_order_id(algo_data)
+    {
+        let algo_order_id = VenueOrderId::new(algo_data.algo_id.to_string());
+        dispatch_state.record_terminal_algo_parent(
+            client_order_id,
+            instrument_id,
+            algo_order_id,
+            actual_order_id,
+        );
+    }
+}
+
 #[expect(clippy::too_many_arguments)]
 fn dispatch_algo_finished(
     algo_data: &AlgoOrderUpdateData,
     identity: Option<&OrderIdentity>,
     emitter: &ExecutionEventEmitter,
     account_id: AccountId,
+    instrument_id: InstrumentId,
     client_order_id: ClientOrderId,
     size_precision: u8,
     ts_event: UnixNanos,
@@ -1770,14 +1802,8 @@ fn dispatch_algo_finished(
     if let Some(identity) = identity {
         let qty_changed =
             quantity.is_positive() && executed_qty.is_positive() && quantity != identity.quantity;
-        let venue_order_id = algo_data
-            .actual_order_id
-            .as_ref()
-            .filter(|id| !id.is_empty())
-            .map_or_else(
-                || VenueOrderId::new(algo_data.algo_id.to_string()),
-                |id| VenueOrderId::new(id.clone()),
-            );
+        let venue_order_id = algo_actual_order_id(algo_data)
+            .unwrap_or_else(|| VenueOrderId::new(algo_data.algo_id.to_string()));
 
         if qty_changed || status_pending {
             ensure_accepted_emitted(
@@ -1815,11 +1841,27 @@ fn dispatch_algo_finished(
         }
     }
 
-    dispatch_state.cleanup_terminal(client_order_id);
+    cleanup_terminal_algo_order(dispatch_state, algo_data, instrument_id, client_order_id);
 
     log::debug!(
         "Algo order finished: client_order_id={}, executed_qty={executed_qty}",
         algo_data.client_algo_id
+    );
+}
+
+fn cleanup_terminal_algo_order(
+    dispatch_state: &WsDispatchState,
+    algo_data: &AlgoOrderUpdateData,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+) {
+    let algo_order_id = VenueOrderId::new(algo_data.algo_id.to_string());
+    let actual_order_id = algo_actual_order_id(algo_data);
+    dispatch_state.cleanup_terminal_with_algo_order(
+        client_order_id,
+        instrument_id,
+        algo_order_id,
+        actual_order_id,
     );
 }
 
@@ -1832,11 +1874,7 @@ fn emit_algo_canceled(
     ts_init: UnixNanos,
     emitter: &ExecutionEventEmitter,
 ) {
-    let venue_order_id = algo_data
-        .actual_order_id
-        .as_ref()
-        .filter(|id| !id.is_empty())
-        .map(|id| VenueOrderId::new(id.clone()));
+    let venue_order_id = algo_actual_order_id(algo_data);
 
     emit_order_canceled_or_expired(
         emitter,
@@ -1849,6 +1887,13 @@ fn emit_algo_canceled(
         ts_init,
         false,
     );
+}
+
+fn algo_actual_order_id(algo_data: &AlgoOrderUpdateData) -> Option<VenueOrderId> {
+    algo_data
+        .actual_order_id
+        .as_deref()
+        .and_then(|id| VenueOrderId::new_checked(id).ok())
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -2012,10 +2057,8 @@ mod tests {
     use super::*;
     use crate::{
         common::{
-            dispatch::OrderIdentity,
-            enums::{
-                BinanceAlgoStatus, BinanceContractStatus, BinanceEnvironment, BinanceTradingStatus,
-            },
+            dispatch::{CancelTarget, OrderIdentity},
+            enums::{BinanceContractStatus, BinanceEnvironment, BinanceTradingStatus},
             testing::load_fixture_string,
         },
         futures::http::{
@@ -2691,12 +2734,28 @@ mod tests {
         let (emitter, mut rx) = create_test_emitter(clock);
         let client = create_test_http_client(clock);
         let cid = ClientOrderId::from("TEST");
-        let state = create_tracked_dispatch_state(cid, InstrumentId::from("BTCUSDT-PERP.BINANCE"));
+        let instrument_id = InstrumentId::from("BNBUSDT-PERP.BINANCE");
+        let state = create_tracked_dispatch_state(cid, instrument_id);
         let triggered = Arc::new(AtomicSet::new());
         let mut algo: BinanceFuturesAlgoUpdateMsg =
             load_user_data_fixture("algo_update_canceled.json");
         algo.algo_order.client_algo_id = "TEST".to_owned();
         algo.algo_order.algo_status = status;
+        algo.algo_order.algo_id = 632_791;
+        let algo_id = VenueOrderId::from("632791");
+        let actual_id = VenueOrderId::from("681925");
+        algo.algo_order.actual_order_id = Some(actual_id.to_string());
+        state.insert_algo_order_id(cid, algo_id);
+        state.promote_algo_order_id(cid, actual_id);
+
+        let cancel = CancelTarget {
+            client_order_id: cid,
+            instrument_id,
+            venue_order_id: Some(algo_id),
+        };
+
+        state.register_cancels(std::iter::once(cancel));
+        assert!(state.cancels_unresolved.contains(&cid));
 
         let dispatch_algo = || {
             dispatch_algo_update(
@@ -2718,10 +2777,21 @@ mod tests {
         assert_eq!(initial.len(), 1);
         assert!(matches!(initial[0], ExecutionEvent::Order(_)));
         assert!(state.is_terminal(&cid));
+        assert!(!state.cancels_unresolved.contains(&cid));
+
+        let promoted_cancel = CancelTarget {
+            venue_order_id: Some(actual_id),
+            ..cancel
+        };
+
+        state.register_cancels([cancel, promoted_cancel].into_iter());
+        assert!(!state.cancels_unresolved.contains(&cid));
 
         let mut order: BinanceFuturesOrderUpdateMsg =
             load_user_data_fixture("order_update_trade.json");
         order.order.execution_type = BinanceExecutionType::Canceled;
+        order.order.symbol = algo.algo_order.symbol;
+        order.order.order_id = 681_925;
         dispatch_order_update(
             &order,
             &emitter,
@@ -2795,6 +2865,7 @@ mod tests {
         algo.algo_order.client_algo_id = "TEST".to_owned();
         algo.algo_order.symbol = ustr::Ustr::from("BTCUSDT");
         algo.algo_order.algo_status = BinanceAlgoStatus::Finished;
+        algo.algo_order.algo_id = 539_289;
         algo.algo_order.quantity = "0.003".to_owned();
         algo.algo_order.executed_qty = Some(executed_qty.to_owned());
         algo.algo_order.actual_order_id = Some("8886774".to_owned());
@@ -2818,6 +2889,17 @@ mod tests {
         assert!(state.has_emitted_accepted(&other_cid));
         assert!(triggered.is_empty());
         assert!(events.is_empty());
+
+        for (venue_id, unresolved) in [("539289", false), ("8886774", false), ("915627", true)] {
+            let target = CancelTarget {
+                client_order_id: cid,
+                instrument_id,
+                venue_order_id: Some(VenueOrderId::from(venue_id)),
+            };
+
+            state.register_cancels(std::iter::once(target));
+            assert_eq!(state.cancels_unresolved.contains(&cid), unresolved);
+        }
 
         if canceled {
             let mut child: BinanceFuturesOrderUpdateMsg =
@@ -3898,6 +3980,98 @@ mod tests {
         );
         assert!(triggered.is_empty());
         assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[case::matching_child("642506", false)]
+    #[case::different_child("642507", true)]
+    fn test_finished_algo_replay_links_restored_child_cancel(
+        #[case] actual_id: &str,
+        #[case] parent_unresolved: bool,
+    ) {
+        let clock = get_atomic_clock_realtime();
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let client = create_test_http_client(clock);
+        let cid = ClientOrderId::from("O-ALGO-RESTORED-316");
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let account_id = AccountId::from("BINANCE-001");
+        let parent_id = VenueOrderId::from("538624");
+        let child_id = VenueOrderId::from("642506");
+        let mut order = OrderTestBuilder::new(OrderType::StopMarket)
+            .client_order_id(cid)
+            .instrument_id(instrument_id)
+            .quantity(Quantity::from("0.001"))
+            .trigger_price(Price::from("7087.50"))
+            .build();
+        order
+            .apply(TestOrderEventStubs::accepted(&order, account_id, parent_id))
+            .unwrap();
+        let state = WsDispatchState::default();
+        state.restore_order(&order, None, 2);
+
+        let mut child: BinanceFuturesOrderUpdateMsg =
+            load_user_data_fixture("order_update_trade.json");
+        child.order.client_order_id = cid.to_string();
+        child.order.order_id = 642_506;
+        child.order.order_status = BinanceOrderStatus::Filled;
+        dispatch_order_update(
+            &child,
+            &emitter,
+            &client,
+            account_id,
+            BinanceProductType::UsdM,
+            clock,
+            &state,
+            false,
+            Decimal::new(4, 4),
+            Currency::USDT(),
+            false,
+            false,
+            &state.seen_trade_ids(),
+        );
+        let events = collect_events(&mut rx);
+        assert!(matches!(
+            events.last(),
+            Some(ExecutionEvent::Order(OrderEventAny::Filled(fill)))
+                if fill.client_order_id == cid && fill.venue_order_id == child_id
+        ));
+        assert!(state.is_terminal(&cid));
+
+        let mut algo: BinanceFuturesAlgoUpdateMsg =
+            load_user_data_fixture("algo_update_canceled.json");
+        algo.algo_order.client_algo_id = cid.to_string();
+        algo.algo_order.symbol = child.order.symbol;
+        algo.algo_order.algo_id = 538_624;
+        algo.algo_order.actual_order_id = Some(actual_id.to_owned());
+        algo.algo_order.algo_status = BinanceAlgoStatus::Finished;
+        let triggered = Arc::new(AtomicSet::new());
+        dispatch_algo_update(
+            &algo,
+            &emitter,
+            &client,
+            account_id,
+            BinanceProductType::UsdM,
+            clock,
+            &state,
+            &triggered,
+            false,
+        );
+        assert!(rx.try_recv().is_err());
+
+        for (venue_id, unresolved) in [
+            (child_id, false),
+            (parent_id, parent_unresolved),
+            (VenueOrderId::from("481935"), true),
+        ] {
+            let target = CancelTarget {
+                client_order_id: cid,
+                instrument_id,
+                venue_order_id: Some(venue_id),
+            };
+
+            state.register_cancels(std::iter::once(target));
+            assert_eq!(state.cancels_unresolved.contains(&cid), unresolved);
+        }
     }
 
     #[rstest]

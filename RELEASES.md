@@ -159,6 +159,7 @@ Released on TBD (UTC).
 - Fixed Architect AX funding subscriptions publishing the oldest rate in the lookback window
 - Fixed Architect AX order history requests failing on an empty page with a continuation cursor
 - Fixed Betfair instrument loading failures when a runner name is missing (#5718), thanks for reporting @nstkhv
+- Fixed Binance Futures flagging filled orders as unresolved at shutdown (#5679), thanks for reporting @AlphaTraderK
 - Fixed blockchain sync leaving pooled PostgreSQL connections with asynchronous commit enabled
 - Fixed Bybit account margins and minimum notionals losing precision or mishandling invalid values
 - Fixed Bybit TP/SL limit and trigger prices passing validation after floating-point underflow
