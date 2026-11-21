@@ -57,7 +57,7 @@ use crate::{
         parse::{
             bybit_rejection_due_post_only, get_currency, make_hedge_venue_position_id,
             parse_book_level, parse_bybit_order_type, parse_millis_timestamp,
-            parse_price_with_precision, parse_quantity_with_precision,
+            parse_order_report_quantity, parse_price_with_precision, parse_quantity_with_precision,
         },
     },
     data_types::BybitLiquidation,
@@ -770,13 +770,17 @@ pub fn parse_ws_order_status_report(
         BybitTimeInForce::PostOnly | BybitTimeInForce::Rpi => TimeInForce::Gtc,
     };
 
-    let quantity =
-        parse_quantity_with_precision(&order.qty, instrument.size_precision(), "order.qty")?;
-
     let filled_qty = parse_quantity_with_precision(
         &order.cum_exec_qty,
         instrument.size_precision(),
         "order.cumExecQty",
+    )?;
+    let quantity = parse_order_report_quantity(
+        &order.qty,
+        instrument.size_precision(),
+        order.market_unit,
+        order.order_status,
+        filled_qty,
     )?;
 
     // Map Bybit order status to Nautilus order status

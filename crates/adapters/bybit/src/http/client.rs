@@ -4756,6 +4756,7 @@ impl BybitHttpClient {
             account_id,
             product_type,
             instrument_id,
+            None,
             start,
             end,
             limit,
@@ -4771,6 +4772,7 @@ impl BybitHttpClient {
         account_id: AccountId,
         product_type: BybitProductType,
         instrument_id: Option<InstrumentId>,
+        venue_order_id: Option<VenueOrderId>,
         start: Option<i64>,
         end: Option<i64>,
         limit: Option<u32>,
@@ -4814,7 +4816,7 @@ impl BybitHttpClient {
                 category: product_type,
                 symbol: symbol.clone(),
                 base_coin: None,
-                order_id: None,
+                order_id: venue_order_id.map(|id| id.to_string()),
                 order_link_id: None,
                 start_time: start,
                 end_time: end,
@@ -4849,6 +4851,10 @@ impl BybitHttpClient {
 
         for execution in all_executions {
             anyhow::ensure!(!execution.symbol.is_empty(), "execution symbol is empty");
+            anyhow::ensure!(
+                venue_order_id.is_none_or(|id| id.as_str() == execution.order_id.as_str()),
+                "execution does not match requested order",
+            );
             let symbol =
                 Symbol::from_ustr_unchecked(make_bybit_symbol(execution.symbol, product_type));
             let id = InstrumentId::new(symbol, *BYBIT_VENUE);

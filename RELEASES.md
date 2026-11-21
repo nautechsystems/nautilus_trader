@@ -167,6 +167,7 @@ Released on TBD (UTC).
 - Fixed Bybit fast-execution fills recording zero commission when it cannot be derived; they are now skipped
 - Fixed Bybit fast-execution Linear commissions rounding below the venue fee
 - Fixed Bybit fast-execution fee rates loading after the private stream connects
+- Fixed Bybit Spot quote-quantity market orders staying partially filled or rejecting fills as overfills
 - Fixed Bybit WebSocket holding replay messages indefinitely when re-authentication gets no reply
 - Fixed Bybit WebSocket authentication failures dropping the venue's rejection reason
 - Fixed Derive reconnect ignoring the startup reconciliation lookback (#5709), thanks for reporting @Aviksaikat

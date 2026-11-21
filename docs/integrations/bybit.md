@@ -832,6 +832,9 @@ on Spot instruments. This feature is disabled by default, so set
    result status is logged as processing, not complete.
 1. The execution client defers queued repayments during Bybit's UTC blackout window.
 
+Automatic repayment for a quote-quantity market order applies only in the execution client that
+submits it. After restoring such an order, check the outstanding borrow before repaying it manually.
+
 **Example**:
 
 ```python
