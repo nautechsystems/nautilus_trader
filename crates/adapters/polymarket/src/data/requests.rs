@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
@@ -39,6 +39,7 @@ use super::{
         preserve_expiry,
     },
     runtime::is_instrument_expired_and_not_reported_open,
+    spawn_task,
 };
 use crate::{
     common::consts::POLYMARKET_VENUE,
@@ -194,14 +195,18 @@ pub(super) fn request_data(client: &PolymarketDataClient, request: RequestCustom
 }
 
 pub(super) fn request_instruments(client: &PolymarketDataClient, request: RequestInstruments) {
+    let Ok(tasks) = client.tasks.spawner() else {
+        log::debug!("Skipping Polymarket data task after shutdown began");
+        return;
+    };
+    let recovery_tasks = tasks.clone();
+    let snapshot_timeout = Duration::from_secs(client.config.book_snapshot_timeout_secs);
     let sender = client.data_sender.clone();
     let http = client.provider.http_client().clone();
     let filters = client.provider.filters();
     let instrument_config = client.provider.config().clone();
-    let instruments_cache = client.instruments.clone();
+    let subscriptions = client.subscriptions.clone();
     let instrument_update_state = client.instrument_update_state.clone();
-    let token_meta = client.subscriptions.token_meta.clone();
-    let closed_condition_ids = client.subscriptions.closed_condition_ids.clone();
     let request_id = request.request_id;
     let client_id = request.client_id.unwrap_or(client.client_id);
     let venue = *POLYMARKET_VENUE;
@@ -211,6 +216,7 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
     let clock = client.clock;
 
     let future = async move {
+        let instruments_cache = &subscriptions.instruments;
         let snapshot = Arc::clone(&instruments_cache.load());
 
         let instruments = if instrument_config.should_load_all() || instrument_config.has_load_ids()
@@ -229,7 +235,7 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
         };
 
         let update_state = instrument_update_state.lock();
-        let terminal = closed_condition_ids.lock();
+        let terminal = subscriptions.closed_condition_ids.lock();
         let cached = instruments_cache.load();
         let mut effective_instruments = Vec::with_capacity(instruments.len());
         let now_ns = clock.get_time_ns();
@@ -251,8 +257,8 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
             effective_instruments.push(instrument);
         }
 
-        let cached_count = if update_state.retired {
-            0
+        let live = if update_state.retired {
+            Vec::new()
         } else {
             let live: Vec<_> = effective_instruments
                 .iter()
@@ -264,11 +270,11 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
                 .cloned()
                 .collect();
 
-            cache_instruments_unchecked(&instruments_cache, &token_meta, &live);
-            live.len()
+            cache_instruments_unchecked(instruments_cache, &subscriptions.token_meta, &live);
+            live
         };
 
-        let skipped_count = effective_instruments.len() - cached_count;
+        let skipped_count = effective_instruments.len() - live.len();
         if skipped_count > 0 {
             log::debug!(
                 "Skipped {skipped_count} instruments during request_instruments cache update"
@@ -289,11 +295,18 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
         if let Err(e) = sender.send(DataEvent::Response(response)) {
             log::error!("Failed to send instruments response: {e}");
         }
+
+        for instrument in live {
+            subscriptions.reconcile_book_availability(
+                instrument.id(),
+                snapshot_timeout,
+                &recovery_tasks,
+                &terminal,
+            );
+        }
     };
 
-    if let Err(e) = client.tasks.spawn(future) {
-        log::debug!("Skipping Polymarket data task after shutdown began: {e}");
-    }
+    spawn_task(&tasks, future);
 }
 
 pub(super) fn request_instrument(
@@ -301,12 +314,16 @@ pub(super) fn request_instrument(
     request: RequestInstrument,
 ) -> anyhow::Result<()> {
     let instrument_id = request.single_instrument_id()?;
+    let Ok(tasks) = client.tasks.spawner() else {
+        log::debug!("Skipping Polymarket data task after shutdown began");
+        return Ok(());
+    };
+    let recovery_tasks = tasks.clone();
+    let snapshot_timeout = Duration::from_secs(client.config.book_snapshot_timeout_secs);
     let http = client.provider.http_client().clone();
     let sender = client.data_sender.clone();
-    let instruments_cache = client.instruments.clone();
+    let subscriptions = client.subscriptions.clone();
     let instrument_update_state = client.instrument_update_state.clone();
-    let token_meta = client.subscriptions.token_meta.clone();
-    let closed_condition_ids = client.subscriptions.closed_condition_ids.clone();
     let client_id = request.client_id.unwrap_or(client.client_id);
     let request_id = request.request_id;
     let start = request.start;
@@ -314,6 +331,8 @@ pub(super) fn request_instrument(
     let params = request.params;
     let clock = client.clock;
     let future = async move {
+        let instruments_cache = &subscriptions.instruments;
+        let closed_condition_ids = &subscriptions.closed_condition_ids;
         let condition_id = match extract_condition_id(&instrument_id) {
             Ok(cid) => cid,
             Err(e) => {
@@ -354,16 +373,18 @@ pub(super) fn request_instrument(
                 }
             };
 
-            if is_instrument_expired_and_not_reported_open(&inst, clock.get_time_ns()) {
+            let cached = if is_instrument_expired_and_not_reported_open(&inst, clock.get_time_ns())
+            {
                 log::debug!(
                     "Skipping expired instrument {instrument_id} during request_instrument cache update"
                 );
+                false
             } else {
                 apply_live_instrument_locked(
-                    &closed_condition_ids,
+                    closed_condition_ids,
                     &update_state,
-                    &instruments_cache,
-                    &token_meta,
+                    instruments_cache,
+                    &subscriptions.token_meta,
                     &inst,
                     |instrument| {
                         // Publish onto the data bus so other clients (e.g. the exec
@@ -372,8 +393,8 @@ pub(super) fn request_instrument(
                             log::warn!("Failed to publish instrument {instrument_id}: {e}");
                         }
                     },
-                );
-            }
+                )
+            };
 
             let terminal = closed_condition_ids.lock();
             let inst = instrument_response_definition(
@@ -396,14 +417,21 @@ pub(super) fn request_instrument(
             if let Err(e) = sender.send(DataEvent::Response(response)) {
                 log::error!("Failed to send instrument response: {e}");
             }
+
+            if cached {
+                subscriptions.reconcile_book_availability(
+                    instrument_id,
+                    snapshot_timeout,
+                    &recovery_tasks,
+                    &terminal,
+                );
+            }
         } else {
             log::error!("Instrument {instrument_id} not found on Polymarket");
         }
     };
 
-    if let Err(e) = client.tasks.spawn(future) {
-        log::debug!("Skipping Polymarket data task after shutdown began: {e}");
-    }
+    spawn_task(&tasks, future);
 
     Ok(())
 }

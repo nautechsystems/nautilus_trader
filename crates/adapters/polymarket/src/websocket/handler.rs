@@ -16,6 +16,7 @@
 //! WebSocket message handler for the Polymarket CLOB API.
 
 use std::{
+    collections::BTreeSet,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -49,6 +50,7 @@ use super::{
 use crate::{common::credential::Credential, http::error::sanitize_error_text};
 
 const INITIAL_DUMP: bool = true;
+const MARKET_SUBSCRIBE_RETRY_DELAY: Duration = Duration::from_secs(1);
 
 /// Commands sent from the outer client to the inner message handler.
 #[derive(Debug)]
@@ -80,12 +82,18 @@ pub enum CycleMarketOutcome {
     Completed,
     /// The connection changed mid-cycle; reconnect replay owns restoration.
     ConnectionChanged,
-    /// The attempt was abandoned; a written unsubscribe leg was restored.
+    /// The attempt was abandoned and any written unsubscribe leg is being restored.
     Cancelled,
     /// A genuine unsubscribe won; nothing was sent or restored.
     NotDesired,
-    /// A wire write failed; a written unsubscribe leg was restored.
+    /// A wire write failed during the cycle.
     SendFailed(SendError),
+}
+
+struct MarketSubscribeRetry {
+    deadline: tokio::time::Instant,
+    epoch: u64,
+    asset_ids: BTreeSet<String>,
 }
 
 pub(super) struct FeedHandler {
@@ -103,6 +111,7 @@ pub(super) struct FeedHandler {
     // True once SubscribeUser has been explicitly requested by the caller
     user_subscribed: bool,
     market_heartbeat_next: Option<(tokio::time::Instant, u64)>,
+    market_subscribe_retry: Option<MarketSubscribeRetry>,
     // Assets awaiting first authoritative data, keyed by the connection that wrote the subscribe.
     market_subscription_epochs: AHashMap<String, u64>,
     // Overflow buffer for batched frames, drained before reading the next raw message
@@ -142,6 +151,7 @@ impl FeedHandler {
             auth_tracker,
             user_subscribed,
             market_heartbeat_next: None,
+            market_subscribe_retry: None,
             market_subscription_epochs: AHashMap::new(),
             message_buffer: Vec::new(),
             subscribe_new_markets,
@@ -180,6 +190,9 @@ impl FeedHandler {
         let connection_epoch = connection_epoch.unwrap_or_else(|| client.connection_epoch());
 
         for id in asset_ids {
+            if let Some(retry) = &mut self.market_subscribe_retry {
+                retry.asset_ids.remove(id);
+            }
             self.market_subscription_epochs.remove(id);
             self.subscriptions.mark_subscribe(id);
         }
@@ -236,8 +249,54 @@ impl FeedHandler {
                     self.subscriptions.mark_failure(id);
                 }
 
+                // BufferFull rejects the frame before writing on a potentially healthy connection.
+                if matches!(e, SendError::BufferFull)
+                    && !asset_ids.is_empty()
+                    && client.connection_epoch() == connection_epoch
+                {
+                    self.queue_market_subscribe_retry(asset_ids, connection_epoch);
+                }
+
                 Err(e)
             }
+        }
+    }
+
+    fn queue_market_subscribe_retry(&mut self, asset_ids: &[String], epoch: u64) {
+        let mut retry = self
+            .market_subscribe_retry
+            .take()
+            .filter(|retry| retry.epoch == epoch)
+            .unwrap_or_else(|| MarketSubscribeRetry {
+                deadline: tokio::time::Instant::now() + MARKET_SUBSCRIBE_RETRY_DELAY,
+                epoch,
+                asset_ids: BTreeSet::new(),
+            });
+        retry.asset_ids.extend(asset_ids.iter().cloned());
+        self.market_subscribe_retry = Some(retry);
+    }
+
+    async fn retry_market_subscriptions(&mut self) {
+        let Some(mut retry) = self.market_subscribe_retry.take() else {
+            return;
+        };
+
+        if self
+            .client
+            .as_ref()
+            .is_none_or(|client| client.connection_epoch() != retry.epoch)
+        {
+            return;
+        }
+
+        retry
+            .asset_ids
+            .retain(|id| self.market_subscription_desired(id));
+
+        if !retry.asset_ids.is_empty() {
+            let asset_ids: Vec<_> = retry.asset_ids.into_iter().collect();
+            self.send_subscribe_market(&asset_ids, Some(retry.epoch))
+                .await;
         }
     }
 
@@ -353,8 +412,6 @@ impl FeedHandler {
     }
 
     async fn restore_market_subscription(&mut self, asset_ids: &[String], epoch: u64) {
-        // Best effort: on failure the next recovery attempt or reconnect
-        // replay owns restoration from the retained desired state.
         if let Err(e) = self.try_send_subscribe_market(asset_ids, Some(epoch)).await {
             log::warn!("Failed to restore market subscription after cycle abort: {e}");
         }
@@ -411,6 +468,7 @@ impl FeedHandler {
     async fn resubscribe_all(&mut self, connection_epoch: u64) {
         match self.channel {
             WsChannel::Market => {
+                self.market_subscribe_retry = None;
                 let ids = self.subscriptions.reset_after_reconnect();
                 if ids.is_empty() && !self.discovery_subscribed.load(Ordering::Relaxed) {
                     return;
@@ -504,6 +562,7 @@ impl FeedHandler {
 
         loop {
             let market_heartbeat_next = self.market_heartbeat_next;
+            let market_subscribe_retry = &self.market_subscribe_retry;
 
             tokio::select! {
                 connection_epoch = async move {
@@ -517,6 +576,12 @@ impl FeedHandler {
                     self.send_market_heartbeat(connection_epoch).await;
                     self.schedule_market_heartbeat(connection_epoch);
                 }
+                () = async move {
+                    match market_subscribe_retry {
+                        Some(retry) => tokio::time::sleep_until(retry.deadline).await,
+                        None => std::future::pending().await,
+                    }
+                } => self.retry_market_subscriptions().await,
                 Some(cmd) = self.cmd_rx.recv() => {
                     match cmd {
                         HandlerCommand::SetClient(client) => {
@@ -752,6 +817,10 @@ mod tests {
             .backend(TransportBackend::Tungstenite)
             .build()
             .expect("valid websocket config");
+        recording_client_with_config(config).await
+    }
+
+    async fn recording_client_with_config(config: WebSocketConfig) -> WebSocketClient {
         let (message_handler, _message_rx) = channel_message_handler();
         WebSocketClient::builder()
             .config(config)
@@ -1625,6 +1694,53 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert!(messages.lock().is_empty());
         assert_desired(&handler, &subscriptions);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn rejected_market_restore_retries_on_the_same_connection() {
+        let (url, messages) = recording_server().await;
+        let config = WebSocketConfig::builder()
+            .url(url)
+            .backend(TransportBackend::Tungstenite)
+            .writer_capacity(1)
+            .build()
+            .unwrap();
+        let client = recording_client_with_config(config).await;
+        let epoch = client.connection_epoch();
+        let (mut handler, cmd_tx, _raw_tx, _) = market_handler_with_cmd_tx(client);
+        let asset_ids = cycle_asset_ids();
+        handler
+            .try_send_subscribe_market(&asset_ids, Some(epoch))
+            .await
+            .unwrap();
+        handler
+            .try_send_unsubscribe_market(&asset_ids, epoch)
+            .await
+            .unwrap();
+
+        // Fill the single control slot before a restore can enqueue its write.
+        let client = handler.client.as_ref().unwrap();
+        client.send_pong(Vec::new()).await.unwrap();
+        handler.restore_market_subscription(&asset_ids, epoch).await;
+        assert!(
+            !handler
+                .market_subscription_epochs
+                .contains_key(MARKET_ASSET_ID)
+        );
+
+        let task = tokio::spawn(async move { handler.next().await });
+        wait_until_async(
+            || async { messages.lock().len() == 3 },
+            Duration::from_secs(3),
+        )
+        .await;
+        let frames = messages.lock().clone();
+        assert_eq!(frame_kind(&frames[1]), "unsubscribe");
+        assert_eq!(frame_kind(&frames[2]), "subscribe");
+        assert_eq!(frame_assets(&frames[2]), asset_ids);
+        cmd_tx.send(HandlerCommand::Disconnect).unwrap();
+        assert!(task.await.unwrap().is_none());
     }
 
     #[rstest]

@@ -106,6 +106,21 @@ impl<E: Clone, P> BookSync<E, P> {
         self.pending.is_some()
     }
 
+    /// Clears snapshot deadlines and cancels idle recovery while preserving guarded writes.
+    pub fn pause_snapshot_recovery(&mut self) {
+        if !self.has_initial_wait() {
+            self.pending = None;
+        }
+
+        if let Some(recovery) = self.recovery.current() {
+            let gate = recovery.gate.lock();
+
+            if !gate.is_closed() {
+                recovery.cancellation.cancel();
+            }
+        }
+    }
+
     /// Returns whether a guarded subscription write is still in flight.
     #[must_use]
     pub fn is_send_pending(&self) -> bool {
