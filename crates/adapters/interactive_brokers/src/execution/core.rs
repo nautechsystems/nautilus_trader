@@ -110,7 +110,11 @@ pub(super) use super::{
     reports::{IbReportClient, IbReportContext},
     transform::nautilus_order_to_ib_order,
 };
-use super::{incarnations::OrderIncarnationGroup, parse::parse_order_data_to_report};
+use super::{
+    incarnations::OrderIncarnationGroup,
+    parse::{FillEvidence, parse_order_data_to_report},
+    reports::OrderStatusCollection,
+};
 pub(super) use crate::{
     common::shared_client::{SharedClientHandle, get_or_connect},
     config::InteractiveBrokersExecutionClientConfig,
@@ -1452,43 +1456,19 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         let report_client = self.report_client()?;
-        let (mut order_reports, fill_evidence, mut position_reports) = tokio::try_join!(
-            self.generate_order_status_reports(&order_cmd),
+        let (order_collection, fill_evidence, position_reports) = tokio::try_join!(
+            report_client.collect_order_status_reports(&order_cmd),
             report_client.generate_fill_evidence(fill_cmd),
             self.generate_position_status_reports(&position_cmd),
         )?;
 
-        tracing::info!(
-            "generate_mass_status: {} order reports, {} fill reports, {} position reports",
-            order_reports.len(),
-            fill_evidence.reports.len(),
-            position_reports.len()
-        );
-
-        let mut mass_status = ExecutionMassStatus::new(
-            self.core.client_id,
-            self.core.account_id,
-            self.core.venue,
+        Ok(Some(self.assemble_mass_status(
             ts_now,
-            Some(UUID4::new()),
-        );
-        // IB `reqExecutions` and completed orders are session-scoped, so without a
-        // configured lookback the actual venue bound is unknown and the report set
-        // cannot be claimed complete.
-        mass_status.set_report_window(start, start.is_some());
-
-        parse::fill_missing_avg_px(&mut order_reports, &fill_evidence.reports);
-        parse::fill_position_avg_px_from_fills(
-            &mut position_reports,
-            &fill_evidence,
-            &self.instrument_provider,
-        );
-        let fill_reports = fill_evidence.reports;
-        mass_status.add_order_reports(order_reports);
-        mass_status.add_fill_reports(fill_reports);
-        mass_status.add_position_reports(position_reports);
-
-        Ok(Some(mass_status))
+            start,
+            order_collection,
+            fill_evidence,
+            position_reports,
+        )))
     }
 
     fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
@@ -2253,6 +2233,53 @@ impl InteractiveBrokersExecutionClient {
             self.ib_account,
             Duration::from_secs(self.config.request_timeout),
         ))
+    }
+
+    pub(super) fn assemble_mass_status(
+        &self,
+        ts_now: UnixNanos,
+        start: Option<UnixNanos>,
+        order_collection: OrderStatusCollection,
+        fill_evidence: FillEvidence,
+        mut position_reports: Vec<PositionStatusReport>,
+    ) -> ExecutionMassStatus {
+        let mut order_reports = order_collection.reports;
+
+        tracing::info!(
+            "generate_mass_status: {} order reports, {} fill reports, {} position reports",
+            order_reports.len(),
+            fill_evidence.reports.len(),
+            position_reports.len()
+        );
+
+        let mut mass_status = ExecutionMassStatus::new(
+            self.core.client_id,
+            self.core.account_id,
+            self.core.venue,
+            ts_now,
+            Some(UUID4::new()),
+        );
+        // IB `reqExecutions` and completed orders are session-scoped, so without a
+        // configured lookback the actual venue bound is unknown and the report set
+        // cannot be claimed complete. Nor can it when a completed order was left out
+        // because its contract did not resolve.
+        mass_status.set_report_window(
+            start,
+            start.is_some() && order_collection.unresolved.is_empty(),
+        );
+
+        parse::fill_missing_avg_px(&mut order_reports, &fill_evidence.reports);
+        parse::fill_position_avg_px_from_fills(
+            &mut position_reports,
+            &fill_evidence,
+            &self.instrument_provider,
+        );
+        let fill_reports = fill_evidence.reports;
+        mass_status.add_order_reports(order_reports);
+        mass_status.add_fill_reports(fill_reports);
+        mass_status.add_position_reports(position_reports);
+
+        mass_status
     }
 
     pub(super) fn execution_filter(ib_account: Ustr, start: Option<UnixNanos>) -> ExecutionFilter {
