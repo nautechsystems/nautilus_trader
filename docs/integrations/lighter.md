@@ -927,6 +927,11 @@ transaction's receipt identifies the order, the adapter emits `OrderAccepted` wi
 For post-only creates, the receipt supplies the venue order ID and the usual order updates determine
 acceptance. Grouped creates, subsequent order status, and fills recover through the usual execution paths.
 
+While the WebSocket stays connected, `query_order` checks the signed transaction hash of an unanswered
+market or IOC limit order without a venue order ID. It uses the receipt to find the exact terminal
+order and recover its outcome. If the terminal row or a fully filled order's trade history is still
+incomplete, the order stays in `SUBMITTED` for a later query.
+
 Resolved or superseded cancels stop their probes, including requests waiting for REST quota.
 When a cancel transaction executes, recovery retries missing or nonterminal order status within the same three lookups.
 

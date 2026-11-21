@@ -573,6 +573,19 @@ pub(crate) enum PendingSendTxKind {
 }
 
 impl PendingSendTxKind {
+    pub(crate) fn is_ioc_create_for(
+        &self,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+    ) -> bool {
+        matches!(self, Self::Create { order, .. }
+            if order.instrument_id() == instrument_id
+                && order.client_order_id() == client_order_id
+                && !order.is_post_only()
+                && (order.order_type() == OrderType::Market
+                    || (order.order_type() == OrderType::Limit && order.time_in_force() == TimeInForce::Ioc)))
+    }
+
     pub(crate) fn creates(&self) -> impl Iterator<Item = (&OrderAny, i64)> {
         let (single, grouped) = match self {
             Self::Create {
@@ -2693,6 +2706,7 @@ pub(crate) struct OrderReportLookup {
     target_venue_index: Option<i64>,
     target_client_index: Option<i64>,
     supplied_cloid: Option<ClientOrderId>,
+    terminal_only: bool,
 }
 
 impl OrderReportLookup {
@@ -2717,6 +2731,17 @@ impl OrderReportLookup {
                     .and_then(|voi| voi.as_str().parse::<i64>().ok())
             });
 
+        if target_venue_index.is_none()
+            && let Some(cloid) = client_order_id
+            && dispatch
+                .pending_sendtx
+                .lock()
+                .iter()
+                .any(|pending| pending.kind.is_ioc_create_for(instrument_id, *cloid))
+        {
+            anyhow::bail!("Lighter order report deferred pending the unanswered IOC receipt");
+        }
+
         let target_client_index: Option<i64> = client_order_id.map(|cloid| {
             dispatch
                 .client_order_index(cloid)
@@ -2732,7 +2757,23 @@ impl OrderReportLookup {
             target_venue_index,
             target_client_index,
             supplied_cloid: client_order_id.copied(),
+            terminal_only: false,
         })
+    }
+
+    pub(crate) fn with_terminal_only(mut self) -> Self {
+        self.terminal_only = true;
+        self
+    }
+
+    fn matches_order(&self, order: &LighterOrder) -> bool {
+        (!self.terminal_only || order.status.is_terminal())
+            && order_matches_lookup(
+                order.order_index,
+                order.client_order_index,
+                self.target_venue_index,
+                self.target_client_index,
+            )
     }
 
     pub(crate) fn parse(
@@ -2814,15 +2855,6 @@ pub(crate) async fn collect_order_while_pending(
             )
         })?;
 
-    let matches_order = |o: &LighterOrder| {
-        order_matches_lookup(
-            o.order_index,
-            o.client_order_index,
-            lookup.target_venue_index,
-            lookup.target_client_index,
-        )
-    };
-
     let auth = mint_auth_token(credential)?;
 
     if let Some(order) = collect_account_order(
@@ -2842,34 +2874,18 @@ pub(crate) async fn collect_order_while_pending(
         return Ok(None);
     }
 
-    let query = Zeroizing::new(LighterAccountActiveOrdersQuery {
-        authorization: None,
-        auth: Some(auth.clone()),
-        account_index: credential.account_index(),
-        market_id: market_index,
-    });
-    let active = http_client
-        .get_account_active_orders(&query)
-        .await
-        .context("failed to fetch Lighter active orders")?;
-
-    if !is_pending() {
-        return Ok(None);
-    }
-
-    let mut active_matches = active.orders.iter().filter(|order| matches_order(order));
-    let active_match = active_matches.next();
-
-    if lookup.target_venue_index.is_none() {
-        anyhow::ensure!(
-            active_matches.next().is_none(),
-            "ambiguous Lighter active-order lookup for client_order_index {}",
-            lookup.target_client_index.unwrap_or_default(),
-        );
-    }
-
-    if let Some(order) = active_match {
-        return Ok(Some(order.clone()));
+    if !lookup.terminal_only
+        && let Some(order) = collect_active_order(
+            http_client,
+            credential,
+            lookup,
+            market_index,
+            &auth,
+            &is_pending,
+        )
+        .await?
+    {
+        return Ok(Some(order));
     }
 
     if lookup.target_venue_index.is_none() {
@@ -2915,7 +2931,7 @@ pub(crate) async fn collect_order_while_pending(
         }
 
         for order in &inactive.orders {
-            if matches_order(order) {
+            if lookup.matches_order(order) {
                 return Ok(Some(order.clone()));
             }
         }
@@ -2933,6 +2949,47 @@ pub(crate) async fn collect_order_while_pending(
     }
 
     Ok(None)
+}
+
+async fn collect_active_order(
+    http_client: &LighterHttpClient,
+    credential: &Credential,
+    lookup: &OrderReportLookup,
+    market_index: i64,
+    auth: &SecretString,
+    is_pending: impl Fn() -> bool,
+) -> anyhow::Result<Option<LighterOrder>> {
+    let query = Zeroizing::new(LighterAccountActiveOrdersQuery {
+        authorization: None,
+        auth: Some(auth.clone()),
+        account_index: credential.account_index(),
+        market_id: market_index,
+    });
+
+    let active = http_client
+        .get_account_active_orders(&query)
+        .await
+        .context("failed to fetch Lighter active orders")?;
+
+    if !is_pending() {
+        return Ok(None);
+    }
+
+    let mut active_matches = active
+        .orders
+        .iter()
+        .filter(|order| lookup.matches_order(order));
+    let active_match = active_matches.next();
+
+    if lookup.target_venue_index.is_none() {
+        anyhow::ensure!(
+            active_matches.next().is_none(),
+            "ambiguous Lighter active-order lookup for client_order_index {}",
+            lookup.target_client_index.unwrap_or_default(),
+        );
+    }
+
+    Ok(active_match.cloned())
 }
 
 async fn collect_account_order(
@@ -2977,12 +3034,7 @@ async fn collect_account_order(
             return false;
         }
 
-        order_matches_lookup(
-            order.order_index,
-            order.client_order_index,
-            lookup.target_venue_index,
-            lookup.target_client_index,
-        )
+        lookup.matches_order(order)
     });
 
     let account_match = matches.next();
