@@ -514,7 +514,9 @@ list includes every instrument. Bulk-load their currencies through data-client `
 
 1. **Load the portfolio.** The execution client publishes account state and loads the instrument definitions
    required by the in-scope native portfolio and this client's cached active orders, including owned orders
-   outside `load_ids`. It waits for the engine cache to observe those definitions before private streaming starts.
+   outside `load_ids`. It emits each definition the engine cache lacks before private streaming starts, without
+   waiting for the cache. `LiveNode::run()` applies emitted definitions after every execution client connects
+   and before startup reconciliation.
 1. **Restore active orders.** The client restores owned order context from cached order events, including known
    venue IDs and processed trade IDs. It then verifies those orders against native open orders and history for
    their instruments. Historical metadata gaps do not prevent this binding check.

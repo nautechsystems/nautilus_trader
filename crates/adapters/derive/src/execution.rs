@@ -430,7 +430,11 @@ impl DeriveExecutionClient {
         Ok(())
     }
 
-    async fn initialize_portfolio(&self) -> anyhow::Result<()> {
+    // LiveNode caches emitted instruments only after connect returns, so do not wait for them here
+    async fn initialize_portfolio(
+        &self,
+        emitted: &mut AHashSet<InstrumentId>,
+    ) -> anyhow::Result<()> {
         let snapshot = self
             .http_client
             .get_subaccount(&DeriveGetSubaccountParams::new(self.subaccount_id()))
@@ -473,11 +477,9 @@ impl DeriveExecutionClient {
 
         let mut names: Vec<_> = names.into_iter().collect();
         names.sort_unstable();
-        let mut required = Vec::with_capacity(names.len());
         for name in names {
             let id = format_instrument_id(name)?;
-            required.push(id);
-            if self.core.cache().instrument(&id).is_some() {
+            if emitted.contains(&id) || self.core.cache().instrument(&id).is_some() {
                 continue;
             }
 
@@ -498,32 +500,13 @@ impl DeriveExecutionClient {
                 .map_err(|e| {
                     anyhow::anyhow!("Failed to publish required Derive instrument {id}: {e}")
                 })?;
+
+            emitted.insert(id);
         }
 
-        self.await_instruments_registered(&required).await?;
         self.await_account_registered(DERIVE_ACCOUNT_REGISTRATION_TIMEOUT_SECS)
             .await?;
         Ok(())
-    }
-
-    async fn await_instruments_registered(&self, required: &[InstrumentId]) -> anyhow::Result<()> {
-        let started = Instant::now();
-        let timeout = Duration::from_secs_f64(DERIVE_ACCOUNT_REGISTRATION_TIMEOUT_SECS);
-
-        loop {
-            if required
-                .iter()
-                .all(|id| self.core.cache().instrument(id).is_some())
-            {
-                return Ok(());
-            }
-
-            anyhow::ensure!(
-                started.elapsed() < timeout,
-                "Timeout waiting for required Derive instruments to be registered"
-            );
-            time::sleep(Duration::from_millis(10)).await;
-        }
     }
 
     fn cache_native_instrument(&self, instrument: &InstrumentAny) -> anyhow::Result<()> {
@@ -1178,7 +1161,8 @@ impl ExecutionClient for DeriveExecutionClient {
         self.ensure_instruments_initialized()
             .await
             .context("failed to initialize Derive instruments")?;
-        self.initialize_portfolio()
+        let mut emitted_instruments = AHashSet::new();
+        self.initialize_portfolio(&mut emitted_instruments)
             .await
             .context("failed initial Derive account state refresh")?;
         self.restore_active_orders();
@@ -1234,7 +1218,7 @@ impl ExecutionClient for DeriveExecutionClient {
             return Err(anyhow::Error::new(e).context("failed Derive private WS subscriptions"));
         }
 
-        self.initialize_portfolio()
+        self.initialize_portfolio(&mut emitted_instruments)
             .await
             .context("failed subscribed Derive portfolio refresh")?;
 

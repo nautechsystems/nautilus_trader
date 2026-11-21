@@ -1703,38 +1703,97 @@ async fn test_connect_observes_native_portfolio_instruments_before_private_strea
 
     let (data_tx, mut data_rx) = tokio::sync::mpsc::unbounded_channel();
     replace_data_event_sender(data_tx);
-    let cache = tc.cache.clone();
 
+    // Hold the definition out of the cache, as LiveNode does until connect returns
     let observed = tokio::time::timeout(Duration::from_secs(2), async {
         tokio::join!(tc.client.connect(), async {
             let event = data_rx.recv().await.unwrap();
-            let DataEvent::Data(Data::Instrument(instrument)) = event else {
-                panic!("Expected required instrument definition");
-            };
             let before_stream = ws_state.login_frames.lock().await.is_empty();
-            let raw = instrument.info().unwrap().clone();
-            let id = instrument.id();
-            let precision = (instrument.price_precision(), instrument.size_precision());
-            cache.borrow_mut().add_instrument(*instrument).unwrap();
-            (before_stream, id, precision, raw)
+            (event, before_stream)
         })
     })
     .await;
 
     tc.client.disconnect().await.unwrap();
-    let (connected, (before_stream, id, precision, raw)) =
-        observed.expect("bootstrap must publish its required definition");
+    let (connected, (event, before_stream)) =
+        observed.expect("connect must not wait for the held definition");
     connected.unwrap();
+
+    let DataEvent::Data(Data::Instrument(instrument)) = event else {
+        panic!("Expected required instrument definition");
+    };
+
     assert!(before_stream);
-    assert_eq!(id, InstrumentId::from("ETH-PERP.DERIVE"));
-    assert_eq!(precision, (2, 3));
-    assert_eq!(raw.get_str("instrument_name"), Some("ETH-PERP"));
-    assert!(cache.borrow().instrument(&id).is_some());
+    assert_eq!(instrument.id(), InstrumentId::from("ETH-PERP.DERIVE"));
+    assert_eq!(
+        (instrument.price_precision(), instrument.size_precision()),
+        (2, 3)
+    );
+    assert_eq!(
+        instrument.info().unwrap().get_str("instrument_name"),
+        Some("ETH-PERP")
+    );
     let definitions = rest_state.get_instrument_calls.lock().await.clone();
     assert_eq!(definitions, vec![json!({"instrument_name": "ETH-PERP"})]);
     assert_eq!(rest_state.get_subaccount_calls.lock().await.len(), 2);
     assert_eq!(rest_state.trigger_orders_calls.lock().await.len(), 2);
     assert!(data_rx.try_recv().is_err());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_connect_emits_portfolio_instruments_found_after_private_subscription() {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    let mut snapshot = sample_subaccount_json();
+    snapshot["positions"] = json!([sample_position_json("ETH-PERP", "0.75")]);
+    *rest_state.subaccount_response.lock().await = snapshot.clone();
+    let mut tc = build_client(rest_state.clone(), ws_state.clone()).await;
+    let (data_tx, mut data_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_data_event_sender(data_tx);
+    let subscription = ws_state.subscribe_status.lock().await;
+
+    let (connected, ()) = tokio::join!(tc.client.connect(), async {
+        wait_until(
+            || async { ws_state.subscribe_frames.lock().await.len() == 1 },
+            "private subscription awaiting confirmation",
+        )
+        .await;
+        snapshot["positions"]
+            .as_array_mut()
+            .unwrap()
+            .push(sample_position_json("BTC-PERP", "0.5"));
+        *rest_state.subaccount_response.lock().await = snapshot;
+        drop(subscription);
+    });
+    connected.unwrap();
+    tc.client.disconnect().await.unwrap();
+
+    let mut emitted = Vec::new();
+
+    while let Ok(event) = data_rx.try_recv() {
+        let DataEvent::Data(Data::Instrument(instrument)) = event else {
+            panic!("Expected required instrument definition");
+        };
+
+        emitted.push(instrument.id());
+    }
+
+    assert_eq!(
+        emitted,
+        vec![
+            InstrumentId::from("ETH-PERP.DERIVE"),
+            InstrumentId::from("BTC-PERP.DERIVE"),
+        ]
+    );
+    let definitions = rest_state.get_instrument_calls.lock().await.clone();
+    assert_eq!(
+        definitions,
+        vec![
+            json!({"instrument_name": "ETH-PERP"}),
+            json!({"instrument_name": "BTC-PERP"}),
+        ]
+    );
 }
 
 #[rstest]
