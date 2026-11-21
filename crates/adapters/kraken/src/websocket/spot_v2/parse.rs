@@ -35,7 +35,8 @@ use super::{
     enums::{KrakenExecType, KrakenLiquidityInd, KrakenWsOrderStatus},
     messages::{
         KrakenSpotWsMessage, KrakenWsBookData, KrakenWsBookLevel, KrakenWsExecutionData,
-        KrakenWsOhlcData, KrakenWsOrderResponse, KrakenWsTickerData, KrakenWsTradeData,
+        KrakenWsExecutionTriggers, KrakenWsOhlcData, KrakenWsOrderResponse, KrakenWsTickerData,
+        KrakenWsTradeData,
     },
 };
 use crate::common::{
@@ -407,6 +408,53 @@ fn parse_liquidity_side(liquidity_ind: Option<KrakenLiquidityInd>) -> LiquidityS
     liquidity_ind.map_or(LiquiditySide::NoLiquiditySide, Into::into)
 }
 
+/// Fields of a spot order the client does not track, retained from its executions frames.
+///
+/// Kraken states an order's side, type, quantity, limit and trigger on its `pending_new` frame and
+/// only some of them on later frames. Each frame overrides the fields it states.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct RetainedOrderFields {
+    side: Option<KrakenOrderSide>,
+    order_type: Option<KrakenOrderType>,
+    order_qty: Option<Decimal>,
+    limit_price: Option<Decimal>,
+    time_in_force: Option<KrakenTimeInForce>,
+    post_only: Option<bool>,
+    reduce_only: Option<bool>,
+    triggers: KrakenWsExecutionTriggers,
+    cum_qty: Option<Decimal>,
+    avg_price: Option<Decimal>,
+}
+
+impl RetainedOrderFields {
+    /// Retains the fields `exec` states.
+    pub(crate) fn merge(&mut self, exec: &KrakenWsExecutionData) {
+        self.side = exec.side.or(self.side);
+        self.order_type = exec.order_type.or(self.order_type);
+        self.time_in_force = exec.time_in_force.or(self.time_in_force);
+        self.post_only = exec.post_only.or(self.post_only);
+        self.reduce_only = exec.reduce_only.or(self.reduce_only);
+
+        // A market order states a zero limit
+        let positive = |value: Option<Decimal>| value.filter(|v| *v > Decimal::ZERO);
+        self.order_qty = positive(exec.order_qty).or(self.order_qty);
+        self.limit_price = positive(exec.limit_price).or(self.limit_price);
+
+        // A later frame can state only some trigger fields
+        if let Some(triggers) = &exec.triggers {
+            let kept = &mut self.triggers;
+            kept.reference = triggers.reference.clone().or(kept.reference.take());
+            kept.price = triggers.price.or(kept.price);
+            kept.price_type = triggers.price_type.clone().or(kept.price_type.take());
+        }
+
+        if exec.cum_qty.is_some() {
+            self.cum_qty = exec.cum_qty;
+            self.avg_price = exec.avg_price;
+        }
+    }
+}
+
 /// Parses a Kraken WebSocket execution message into an [`OrderStatusReport`].
 ///
 /// # Errors
@@ -419,14 +467,55 @@ pub fn parse_ws_order_status_report(
     cached_order_qty: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
+    parse_ws_retained_order_status_report(
+        exec,
+        None,
+        instrument,
+        account_id,
+        cached_order_qty,
+        ts_init,
+    )
+}
+
+/// Parses a Kraken WebSocket execution message into an [`OrderStatusReport`], taking the order's
+/// fields from `retained` when given.
+///
+/// `retained` holds the order's fields with those of `exec` merged in. A trade frame's cumulative
+/// quantity and average price include its fill, so the report takes the retained ones only for
+/// another frame that states none.
+///
+/// # Errors
+///
+/// Returns an error if required fields are missing or cannot be parsed.
+pub(crate) fn parse_ws_retained_order_status_report(
+    exec: &KrakenWsExecutionData,
+    retained: Option<&RetainedOrderFields>,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    cached_order_qty: Option<Decimal>,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderStatusReport> {
+    let side = retained.map_or(exec.side, |r| r.side);
+    let kraken_order_type = retained.map_or(exec.order_type, |r| r.order_type);
+    let order_qty = retained.map_or(exec.order_qty, |r| r.order_qty);
+    let limit_price = retained.map_or(exec.limit_price, |r| r.limit_price);
+    let kraken_time_in_force = retained.map_or(exec.time_in_force, |r| r.time_in_force);
+    let post_only = retained.map_or(exec.post_only, |r| r.post_only);
+    let reduce_only = retained.map_or(exec.reduce_only, |r| r.reduce_only);
+    let triggers = retained.map_or(exec.triggers.as_ref(), |r| Some(&r.triggers));
+    let (cum_qty, avg_price) = match retained {
+        Some(r) if exec.exec_id.is_none() && exec.cum_qty.is_none() => (r.cum_qty, r.avg_price),
+        _ => (exec.cum_qty, exec.avg_price),
+    };
+
     let instrument_id = instrument.id();
     let venue_order_id = parse_venue_order_id(
         &exec.order_id,
         format_args!("execution, cl_ord_id={:?}", exec.cl_ord_id),
     )?;
-    let order_side = exec.side.map(Into::into);
-    let order_type = parse_order_type(exec.order_type);
-    let time_in_force = parse_time_in_force(exec.time_in_force, exec.post_only);
+    let order_side = side.map(Into::into);
+    let order_type = parse_order_type(kraken_order_type);
+    let time_in_force = parse_time_in_force(kraken_time_in_force, post_only);
     let order_status = parse_order_status(exec.exec_type, exec.order_status);
 
     let price_precision = instrument.price_precision();
@@ -439,16 +528,14 @@ pub fn parse_ws_order_status_report(
         .transpose()
         .context("Failed to parse last_qty")?;
 
-    let filled_qty = exec
-        .cum_qty
+    let filled_qty = cum_qty
         .map(|qty| Quantity::from_decimal_dp(qty, size_precision))
         .transpose()
         .context("Failed to parse cum_qty")?
         .or(last_qty)
         .unwrap_or_else(|| Quantity::zero(size_precision));
 
-    let quantity = exec
-        .order_qty
+    let quantity = order_qty
         .or(cached_order_qty)
         .map(|qty| Quantity::from_decimal_dp(qty, size_precision))
         .transpose()
@@ -482,17 +569,16 @@ pub fn parse_ws_order_status_report(
 
     // The order's price is its limit alone: a fill price is `avg_px`, and a frame without the
     // limit states no price
-    if let Some(px) = exec.limit_price.filter(|p| *p > Decimal::ZERO) {
+    if let Some(px) = limit_price.filter(|p| *p > Decimal::ZERO) {
         let price =
             Price::from_decimal_dp(px, price_precision).context("Failed to parse order price")?;
         report = report.with_price(price);
     }
 
     // avg_px fallback: avg_price -> cum_cost / cum_qty -> last_price (for single trades/snapshots)
-    let avg_px = exec
-        .avg_price
+    let avg_px = avg_price
         .filter(|p| *p > Decimal::ZERO)
-        .or_else(|| match (exec.cum_cost, exec.cum_qty) {
+        .or_else(|| match (exec.cum_cost, cum_qty) {
             (Some(cost), Some(qty)) if qty > Decimal::ZERO => Some(cost / qty),
             _ => None,
         })
@@ -502,11 +588,11 @@ pub fn parse_ws_order_status_report(
         report.avg_px = Some(avg_price);
     }
 
-    if exec.post_only == Some(true) {
+    if post_only == Some(true) {
         report = report.with_post_only(true);
     }
 
-    if exec.reduce_only == Some(true) {
+    if reduce_only == Some(true) {
         report = report.with_reduce_only(true);
     }
 
@@ -516,7 +602,6 @@ pub fn parse_ws_order_status_report(
         report = report.with_cancel_reason(reason.clone());
     }
 
-    let triggers = exec.triggers.as_ref();
     let reference = triggers
         .and_then(|t| t.reference.as_deref())
         .and_then(|r| r.parse::<KrakenSpotTrigger>().ok());
@@ -528,7 +613,7 @@ pub fn parse_ws_order_status_report(
     // Kraken's trigger price is absolute only when `price_type` is `static`: `pct` and `quote` are
     // offsets from the reference price, and a trailing order's price is always one.
     let is_fixed_trigger = matches!(
-        exec.order_type,
+        kraken_order_type,
         Some(
             KrakenOrderType::StopLoss
                 | KrakenOrderType::StopLossLimit
@@ -1083,6 +1168,55 @@ mod tests {
                 expected_trigger_price.map(Price::from),
                 expected_trigger_type
             )
+        );
+    }
+
+    /// A trade frame's report reads its cumulative quantity and average price from the frame, which
+    /// include its fill, even when the frame omits them; another frame that states none takes the
+    /// retained ones.
+    #[rstest]
+    #[case::trade(3, false, "5.00000000", dec!(0.9122))]
+    #[case::trade_without_cumulative(3, true, "5.00000000", dec!(0.9122))]
+    #[case::open(2, false, "2.00000000", dec!(0.9))]
+    fn test_parse_ws_retained_order_status_report_takes_a_trade_cumulative_from_the_frame(
+        #[case] frame: usize,
+        #[case] omit_cumulative: bool,
+        #[case] expected_filled_qty: &str,
+        #[case] expected_avg_px: Decimal,
+    ) {
+        let messages: Vec<KrakenWsRawMessage> =
+            serde_json::from_str(&load_test_json("ws_executions_external_orders.json")).unwrap();
+        let execution = |index: usize| -> KrakenWsExecutionData {
+            serde_json::from_str(messages[index].data[0].get()).unwrap()
+        };
+        let mut earlier_fill = execution(3);
+        earlier_fill.last_qty = Some(dec!(2.0));
+        earlier_fill.cum_qty = Some(dec!(2.0));
+        earlier_fill.avg_price = Some(dec!(0.9));
+        let mut exec = execution(frame);
+        if omit_cumulative {
+            exec.cum_qty = None;
+            exec.avg_price = None;
+            exec.cum_cost = None;
+        }
+        let mut retained = RetainedOrderFields::default();
+        retained.merge(&execution(0));
+        retained.merge(&earlier_fill);
+        retained.merge(&exec);
+
+        let report = parse_ws_retained_order_status_report(
+            &exec,
+            Some(&retained),
+            &create_usdc_eur_instrument(),
+            AccountId::from("KRAKEN-001"),
+            None,
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(
+            (report.filled_qty, report.avg_px),
+            (Quantity::from(expected_filled_qty), Some(expected_avg_px))
         );
     }
 
