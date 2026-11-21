@@ -376,19 +376,16 @@ where
         self
     }
 
-    pub(crate) fn execute(self) -> PromotionResult {
-        let files = self.files.clone();
-        let schedule = self.schedule.clone();
-
-        let result = match panic::catch_unwind(AssertUnwindSafe(|| self.execute_inner())) {
+    pub(crate) fn execute(mut self) -> PromotionResult {
+        let mut result = match panic::catch_unwind(AssertUnwindSafe(|| self.execute_inner())) {
             Ok(result) => result,
             Err(payload) => PromotionResult {
-                files,
+                files: std::mem::take(&mut self.files),
                 committed_paths: Vec::new(),
                 deleted_paths: Vec::new(),
                 refused_paths: Vec::new(),
                 partial_converted: Vec::new(),
-                recorded_status: None,
+                run_state_recorded: false,
                 converted: Err(anyhow::anyhow!(
                     "{} promotion worker panicked: {}",
                     B::NAME,
@@ -397,7 +394,28 @@ where
             },
         };
 
-        if let Some(schedule) = schedule {
+        if !result.run_state_recorded
+            && let Err(error) = &mut result.converted
+        {
+            let message = format!("{error:#}");
+            match self.backend.record_run_state(
+                &self.source,
+                &self.staging_uri,
+                RunStatus::Failed,
+                false,
+                Some(&message),
+            ) {
+                Ok(()) => result.run_state_recorded = true,
+                Err(e) => {
+                    *error = anyhow::anyhow!(
+                        "{message}; {} failed to record failed run state: {e}",
+                        B::NAME,
+                    );
+                }
+            }
+        }
+
+        if let Some(schedule) = self.schedule {
             schedule
                 .lock()
                 .expect("promotion schedule lock poisoned")
@@ -415,7 +433,7 @@ where
         clippy::too_many_lines,
         reason = "the promotion loop keeps conversion, promoted-record fallback, and deletion accounting together"
     )]
-    fn execute_inner(mut self) -> PromotionResult {
+    fn execute_inner(&mut self) -> PromotionResult {
         let mut converted = Vec::new();
         let mut committed_paths = Vec::new();
         let mut deleted_paths = Vec::new();
@@ -510,15 +528,6 @@ where
                     if e.downcast_ref::<CatalogOverlapError>().is_some() {
                         match self.backend.set_aside_file(&self.source, file) {
                             Ok(refused) => {
-                                // Set before this promotion records the run failed, so a status
-                                // written meanwhile cannot miss it.
-                                if let Some(schedule) = &self.schedule {
-                                    schedule
-                                        .lock()
-                                        .expect("promotion schedule lock poisoned")
-                                        .has_refused_files = true;
-                                }
-
                                 refused_paths.push(file.clone());
                                 context = format!("{context}, set aside as '{refused}'");
                             }
@@ -539,12 +548,12 @@ where
 
         if let Some(e) = record_error {
             return PromotionResult {
-                files: self.files,
+                files: std::mem::take(&mut self.files),
                 committed_paths,
                 deleted_paths,
                 refused_paths,
                 partial_converted: converted,
-                recorded_status: None,
+                run_state_recorded: false,
                 converted: Err(
                     e.context(format!("{} failed to record promoted run state", B::NAME))
                 ),
@@ -572,65 +581,47 @@ where
             };
 
             return PromotionResult {
-                files: self.files,
+                files: std::mem::take(&mut self.files),
                 committed_paths,
                 deleted_paths,
                 refused_paths,
                 partial_converted: converted,
-                recorded_status: run_state_recorded.then_some(RunStatus::Failed),
+                run_state_recorded,
                 converted: Err(anyhow::anyhow!(errors.join("; "))),
             };
         }
 
-        // A refused file holds run data the catalog lacks, so the run stays failed while one
-        // remains.
-        let status = if self.schedule.as_ref().is_some_and(|schedule| {
-            schedule
-                .lock()
-                .expect("promotion schedule lock poisoned")
-                .has_refused_files
-        }) {
-            RunStatus::Failed
-        } else {
-            RunStatus::Promoted
-        };
-
-        let record_status = status == RunStatus::Failed
-            || (!converted.is_empty() && !B::RECORDS_PROMOTED_ATOMICALLY);
+        let record_status = !converted.is_empty() && !B::RECORDS_PROMOTED_ATOMICALLY;
 
         if record_status
-            && let Err(e) =
-                self.backend
-                    .record_run_state(&self.source, &self.staging_uri, status, false, None)
+            && let Err(e) = self.backend.record_run_state(
+                &self.source,
+                &self.staging_uri,
+                RunStatus::Promoted,
+                false,
+                None,
+            )
         {
             return PromotionResult {
-                files: self.files,
+                files: std::mem::take(&mut self.files),
                 committed_paths,
                 deleted_paths,
                 refused_paths,
                 partial_converted: converted,
-                recorded_status: None,
-                converted: Err(e.context(format!(
-                    "{} failed to record {} run state",
-                    B::NAME,
-                    status.as_str(),
-                ))),
+                run_state_recorded: false,
+                converted: Err(
+                    e.context(format!("{} failed to record promoted run state", B::NAME))
+                ),
             };
         }
 
-        let recorded_status = if record_status {
-            Some(status)
-        } else {
-            promoted_recorded.then_some(RunStatus::Promoted)
-        };
-
         PromotionResult {
-            files: self.files,
+            files: std::mem::take(&mut self.files),
             committed_paths,
             deleted_paths,
             refused_paths,
             partial_converted: Vec::new(),
-            recorded_status,
+            run_state_recorded: record_status || promoted_recorded,
             converted: Ok(converted),
         }
     }
@@ -646,7 +637,7 @@ pub struct PromotionResult {
     pub(crate) deleted_paths: Vec<String>,
     pub(crate) refused_paths: Vec<String>,
     pub(crate) partial_converted: Vec<FeatherConversionSummary>,
-    pub(crate) recorded_status: Option<RunStatus>,
+    pub(crate) run_state_recorded: bool,
     pub(crate) converted: anyhow::Result<Vec<FeatherConversionSummary>>,
 }
 
@@ -866,17 +857,12 @@ impl<B> PromotionDriver<B>
 where
     B: StagedPromotionBackend,
 {
-    pub(crate) fn new(
-        last_commit_time_ns: UnixNanos,
-        files: Vec<String>,
-        has_refused_files: bool,
-    ) -> Self {
+    pub(crate) fn new(last_commit_time_ns: UnixNanos, files: Vec<String>) -> Self {
         Self {
             worker: None,
             schedule: Arc::new(Mutex::new(PromotionSchedule {
                 pending_paths: files.into_iter().collect(),
                 scheduled_paths: AHashSet::new(),
-                has_refused_files,
             })),
             last_commit_time_ns,
         }
@@ -964,21 +950,11 @@ where
             .expect("promotion schedule lock poisoned")
             .unschedule(files);
     }
-
-    pub(crate) fn has_refused_files(&self) -> bool {
-        self.schedule
-            .lock()
-            .expect("promotion schedule lock poisoned")
-            .has_refused_files
-    }
 }
 
 pub(crate) struct PromotionSchedule {
     pending_paths: AHashSet<String>,
     scheduled_paths: AHashSet<String>,
-    // Set from the refused files a writer finds at startup and by each set-aside, so promotion
-    // never lists them, and a file restored meanwhile counts until the next writer starts.
-    has_refused_files: bool,
 }
 
 impl PromotionSchedule {
@@ -1207,7 +1183,7 @@ pub(crate) mod tests {
             ],
         );
         assert_eq!(state.recorded_states, vec![RunStatus::Promoted]);
-        assert_eq!(result.recorded_status, Some(RunStatus::Promoted));
+        assert!(result.run_state_recorded);
     }
 
     #[derive(Debug)]

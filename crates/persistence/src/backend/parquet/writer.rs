@@ -11,15 +11,19 @@
 
 use std::{
     fmt::Debug,
+    fs::{self, OpenOptions, canonicalize},
+    io::ErrorKind,
+    path::Path,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
 };
 
 use nautilus_common::live::block_on_nautilus_with;
 use object_store::{
-    Error as ObjectStoreError, ObjectStoreExt, PutMode, PutOptions, path::Path as ObjectPath,
+    Error as ObjectStoreError, ObjectStoreExt, PutMode, PutOptions, local::LocalFileSystem,
+    path::Path as ObjectPath,
 };
 use serde::{Deserialize, Serialize};
 
@@ -31,9 +35,9 @@ use crate::{
         datafusion::identifiers_from_record_batches,
         paths::{
             catalog_data_type_from_session_feather_path, create_local_directory,
-            identifier_from_session_feather_path,
+            environment_directory, identifier_from_session_feather_path, local_writer_directory,
         },
-        storage::create_storage_backend_from_path,
+        storage::{StorageBackend, create_storage_backend_from_path},
     },
     writer::{
         factory::{PARQUET_WRITER_FACTORY_NAME, WriterConnectConfig, WriterFactoryRegistry},
@@ -41,7 +45,7 @@ use crate::{
         materializer::read_feather_record_batches_with_identity,
         promotion::{
             PromotionBackend, PromotionResult, PromotionSession, PromotionWork,
-            StagedPromotionBackend, join_results,
+            StagedPromotionBackend, join_results, list_session_files,
         },
         run::{FeatherSessionSource, RunStatus},
         staged::{StagedFeatherWriter, StagedWriter},
@@ -69,7 +73,6 @@ fn parquet_writer_factory(
 )]
 struct ParquetWriter {
     core: StagedFeatherWriter<ParquetPromotionBackend>,
-    session: PromotionSession,
     source: FeatherSessionSource,
     catalog: CatalogConnectConfig,
     interval_ms: Option<u64>,
@@ -77,8 +80,8 @@ struct ParquetWriter {
     delete_feather_after_commit: bool,
     use_ts_event_for_ts_init: bool,
     legacy_manifest_missing: Arc<AtomicBool>,
-    has_data: bool,
-    run_status: RunStatus,
+    run_state: Arc<Mutex<ParquetRunState>>,
+    first_write_recorded: bool,
 }
 
 impl Debug for ParquetWriter {
@@ -101,13 +104,10 @@ impl ParquetWriter {
             &storage.original_uri,
             "Parquet writer URI",
         )?;
-        let source_storage = create_storage_backend_from_path(&session.root_uri, None)?;
-
-        let source = FeatherSessionSource::new(
-            source_storage,
-            session.environment,
-            session.instance_id.clone(),
-        );
+        let source_root = Self::promotion_root(&storage.original_uri, &session)?;
+        let source_storage = create_storage_backend_from_path(&source_root, None)?;
+        let source =
+            FeatherSessionSource::new(source_storage, session.environment, session.instance_id);
 
         // A Parquet catalog opens only an existing local directory, so the writer creates the one
         // it promotes into, then opens it now rather than failing at the first promotion
@@ -115,7 +115,7 @@ impl ParquetWriter {
 
         let legacy_manifest_missing = Arc::new(AtomicBool::new(false));
 
-        ParquetPromotionBackend::new(&catalog, Arc::clone(&legacy_manifest_missing))?;
+        super::open_catalog(&catalog)?;
 
         let mut core = StagedFeatherWriter::new(
             storage.clone(),
@@ -127,17 +127,26 @@ impl ParquetWriter {
             config.record_filter.clone(),
         )?;
 
-        let run_status = Self::failed_if_refused(&core, RunStatus::InProgress);
+        let refused = list_session_files(
+            &source.storage,
+            source.environment,
+            &source.instance_id,
+            FEATHER_REFUSED_EXTENSION,
+        )?;
+        let has_refused_files = !refused.is_empty();
 
-        block_on_nautilus_with(|| {
-            storage.write_current_run_manifest(
-                session.environment,
-                &session.instance_id,
-                run_status,
-                true,
-            )
-        })?;
+        if has_refused_files {
+            log::warn!(
+                "Parquet found refused Feather file(s) under run session '{}', which promotion \
+                 skips until restored: {refused:?}",
+                storage.original_uri
+            );
+        }
 
+        let mut run_state = ParquetRunState::new(storage, has_refused_files);
+        run_state.publish(&source, RunStatus::InProgress, has_refused_files)?;
+        let run_state = Arc::new(Mutex::new(run_state));
+        let timer_run_state = Arc::clone(&run_state);
         let timer_catalog = catalog.clone();
         core.warn_if_orphan_feather_present("Parquet");
         let timer_legacy_manifest_missing = Arc::clone(&legacy_manifest_missing);
@@ -149,6 +158,7 @@ impl ParquetWriter {
                 ParquetPromotionBackend::new(
                     &timer_catalog,
                     Arc::clone(&timer_legacy_manifest_missing),
+                    Arc::clone(&timer_run_state),
                 )
             },
             config.use_ts_event_for_ts_init,
@@ -158,66 +168,57 @@ impl ParquetWriter {
         Ok(Self {
             core,
             catalog,
-            session,
             source,
             interval_ms: config.promotion_interval_ms,
             promote_on_close: config.promote_on_close,
             delete_feather_after_commit: config.delete_feather_after_promotion,
             use_ts_event_for_ts_init: config.use_ts_event_for_ts_init,
             legacy_manifest_missing,
-            has_data: false,
-            run_status,
+            run_state,
+            first_write_recorded: has_refused_files,
         })
     }
 
-    // A refused file holds run data the catalog lacks, so the run stays failed while one remains
-    fn failed_if_refused(
-        core: &StagedFeatherWriter<ParquetPromotionBackend>,
-        status: RunStatus,
-    ) -> RunStatus {
-        if core.promotion_driver.has_refused_files() {
-            RunStatus::Failed
-        } else {
-            status
-        }
-    }
+    fn promotion_root(uri: &str, session: &PromotionSession) -> anyhow::Result<String> {
+        let run = local_writer_directory(uri)?;
+        let resolved_run = canonicalize(&run)?;
+        let environment = environment_directory(session.environment);
+        let parsed_root = local_writer_directory(&session.root_uri)?;
+        let parsed_run = parsed_root.join(environment).join(&session.instance_id);
 
-    fn record_status(&mut self, status: RunStatus) -> anyhow::Result<()> {
-        if self.run_status == status {
-            return Ok(());
+        // Keep the replay identity when the parsed and native run paths point to the same directory
+        if canonicalize(parsed_run).is_ok_and(|path| path == resolved_run) {
+            return Ok(session.root_uri.clone());
         }
 
-        block_on_nautilus_with(|| {
-            self.core.storage.write_current_run_manifest(
-                self.session.environment,
-                &self.session.instance_id,
-                status,
-                !self.has_data,
-            )
-        })?;
+        for run in [&run, &resolved_run] {
+            if let Some(root) = run.parent().and_then(Path::parent) {
+                let candidate = root.join(environment).join(&session.instance_id);
+                if canonicalize(candidate).is_ok_and(|path| path == resolved_run) {
+                    return Ok(root.to_string_lossy().into_owned());
+                }
+            }
+        }
 
-        self.run_status = status;
-        Ok(())
+        anyhow::bail!("Cannot locate the Parquet staging root for '{uri}'")
     }
 
     fn mark_non_empty(&mut self) -> anyhow::Result<()> {
-        if self.has_data {
+        if self.first_write_recorded {
             return Ok(());
         }
 
-        let status = Self::failed_if_refused(&self.core, RunStatus::InProgress);
+        let mut state = self
+            .run_state
+            .lock()
+            .expect("Parquet run state lock poisoned");
 
-        block_on_nautilus_with(|| {
-            self.core.storage.write_current_run_manifest(
-                self.session.environment,
-                &self.session.instance_id,
-                status,
-                false,
-            )
-        })?;
+        if !state.has_data || state.needs_publication {
+            let status = state.status;
+            state.publish(&self.source, status, true)?;
+        }
 
-        self.has_data = true;
-        self.run_status = status;
+        self.first_write_recorded = true;
         Ok(())
     }
 
@@ -233,6 +234,7 @@ impl ParquetWriter {
                 ParquetPromotionBackend::new(
                     &self.catalog,
                     Arc::clone(&self.legacy_manifest_missing),
+                    Arc::clone(&self.run_state),
                 )
             },
             self.source.clone(),
@@ -241,47 +243,26 @@ impl ParquetWriter {
         )
     }
 
-    fn finalize(
-        &mut self,
-        result: PromotionResult,
-    ) -> anyhow::Result<Vec<FeatherConversionSummary>> {
-        // Promotions and the writer's first write can land in either order, so the writer records
-        // each promotion's status again, failed while a file is refused, and keeps it in memory
-        // when that write fails, so a later write cannot record the run completed.
-        let status = result
-            .recorded_status
-            .or(result.converted.is_err().then_some(RunStatus::Failed))
-            .map(|status| Self::failed_if_refused(&self.core, status));
-
-        if let Some(status) = status {
-            // The promoted files hold run data, as a reopened run's do before it writes any
-            self.has_data = true;
-
-            if let Err(e) = self.record_status(status) {
-                log::warn!(
-                    "Failed to record Parquet run {} state: {e}",
-                    status.as_str()
-                );
-                self.run_status = status;
-            }
-        }
-
-        self.core.finalize_promotion(result)
-    }
-
     // Finalizes every result, so one failed promotion does not hide the files another refused
     fn finalize_all(
         &mut self,
-        results: Vec<PromotionResult>,
+        results: impl IntoIterator<Item = PromotionResult>,
     ) -> anyhow::Result<Vec<FeatherConversionSummary>> {
         let mut converted = Vec::new();
+        let mut retry_manifest = false;
         let outcomes = results
             .into_iter()
             .map(|result| {
-                self.finalize(result)
+                retry_manifest |= result.converted.is_err() && !result.run_state_recorded;
+                self.core
+                    .finalize_promotion(result)
                     .map(|summaries| converted.extend(summaries))
             })
             .collect::<Vec<_>>();
+
+        if retry_manifest {
+            self.retry_manifest();
+        }
 
         join_results(outcomes)?;
         Ok(converted)
@@ -294,13 +275,28 @@ impl ParquetWriter {
 
     fn wait(&mut self) -> anyhow::Result<Vec<FeatherConversionSummary>> {
         let results = self.core.promotion_driver.wait()?;
-        self.finalize_all(results)
+        let outcome = self.finalize_all(results);
+        self.retry_manifest();
+        outcome
+    }
+
+    fn retry_manifest(&self) {
+        let mut state = self
+            .run_state
+            .lock()
+            .expect("Parquet run state lock poisoned");
+        if let Err(e) = state.publish_pending(&self.source) {
+            log::warn!(
+                "Failed to record Parquet run {} state: {e}",
+                state.status.as_str()
+            );
+        }
     }
 
     fn promote_now(&mut self) -> anyhow::Result<Vec<FeatherConversionSummary>> {
         let mut converted = self.wait()?;
         if let Some(work) = self.prepare_promotion()? {
-            converted.extend(self.finalize(work.execute())?);
+            converted.extend(self.finalize_all([work.execute()])?);
         }
 
         Ok(converted)
@@ -364,8 +360,14 @@ impl StagedWriter for ParquetWriter {
     }
 
     fn record_completed(&mut self) {
-        if self.run_status == RunStatus::InProgress
-            && let Err(e) = self.record_status(RunStatus::Completed)
+        let mut state = self
+            .run_state
+            .lock()
+            .expect("Parquet run state lock poisoned");
+        let has_data = state.has_data;
+
+        if state.status == RunStatus::InProgress
+            && let Err(e) = state.publish(&self.source, RunStatus::Completed, has_data)
         {
             log::warn!("Failed to complete Parquet run manifest: {e}");
         }
@@ -383,14 +385,20 @@ impl Drop for ParquetWriter {
             false
         };
 
-        if self.run_status == RunStatus::InProgress {
+        let mut state = self
+            .run_state
+            .lock()
+            .expect("Parquet run state lock poisoned");
+        let has_data = state.has_data;
+
+        if state.status == RunStatus::InProgress {
             let status = if promotion_failed || !self.core.is_closed().unwrap_or(false) {
                 RunStatus::Failed
             } else {
                 RunStatus::Completed
             };
 
-            if let Err(e) = self.record_status(status) {
+            if let Err(e) = state.publish(&self.source, status, has_data) {
                 log::warn!(
                     "Failed to record Parquet run {} state during drop: {e}",
                     status.as_str()
@@ -400,22 +408,79 @@ impl Drop for ParquetWriter {
     }
 }
 
+struct ParquetRunState {
+    storage: StorageBackend,
+    status: RunStatus,
+    has_data: bool,
+    has_refused_files: bool,
+    needs_publication: bool,
+}
+
+impl ParquetRunState {
+    fn new(storage: StorageBackend, has_refused_files: bool) -> Self {
+        Self {
+            storage,
+            status: RunStatus::InProgress,
+            has_data: has_refused_files,
+            has_refused_files,
+            needs_publication: false,
+        }
+    }
+
+    fn publish(
+        &mut self,
+        source: &FeatherSessionSource,
+        status: RunStatus,
+        has_data: bool,
+    ) -> anyhow::Result<()> {
+        self.status = if self.has_refused_files {
+            RunStatus::Failed
+        } else {
+            status
+        };
+        self.has_data = has_data;
+        self.needs_publication = true;
+        self.publish_pending(source)
+    }
+
+    fn publish_pending(&mut self, source: &FeatherSessionSource) -> anyhow::Result<()> {
+        if !self.needs_publication {
+            return Ok(());
+        }
+
+        // The writer and promotion workers hold this run's state lock through publication
+        block_on_nautilus_with(|| {
+            self.storage.write_current_run_manifest(
+                source.environment,
+                &source.instance_id,
+                self.status,
+                !self.has_data,
+            )
+        })?;
+        self.needs_publication = false;
+        Ok(())
+    }
+}
+
 const PROMOTION_MANIFEST: &str = "_nautilus_promotions.json";
 const PROMOTION_MARKERS: &str = "_nautilus_promotions";
 
 struct ParquetPromotionBackend {
     catalog: ParquetDataCatalog,
     legacy_manifest_missing: Arc<AtomicBool>,
+    run_state: Arc<Mutex<ParquetRunState>>,
 }
 
 impl ParquetPromotionBackend {
     fn new(
         catalog: &CatalogConnectConfig,
         legacy_manifest_missing: Arc<AtomicBool>,
+        run_state: Arc<Mutex<ParquetRunState>>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             catalog: super::open_catalog(catalog)?,
             legacy_manifest_missing,
+            run_state,
         })
     }
 
@@ -582,31 +647,49 @@ impl PromotionBackend for ParquetPromotionBackend {
         let stem = file
             .strip_suffix(FEATHER_EXTENSION)
             .ok_or_else(|| anyhow::anyhow!("Staged file '{file}' is not a Feather file"))?;
-        let from = ObjectPath::parse(file)?;
+        let root = local_writer_directory(&source.storage.original_uri)?;
+        let staging = LocalFileSystem::new_with_prefix(&root)?;
+        let from = staging.path_to_filesystem(&ObjectPath::parse(file)?)?;
+        let run = root
+            .join(environment_directory(source.environment))
+            .join(&source.instance_id);
+        let lock = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(run.join("_nautilus_feather_refusal.lock"))?;
 
-        block_on_nautilus_with(|| async {
-            // An earlier refused file can hold the name, so a numbered name keeps both
-            let mut attempt = 0_u64;
+        // Separate writers can choose the same numbered name for a run
+        lock.lock()?;
+        let mut state = self
+            .run_state
+            .lock()
+            .expect("Parquet run state lock poisoned");
+        let mut attempt = 0_u64;
+        let refused = loop {
+            let refused = if attempt == 0 {
+                format!("{stem}{FEATHER_REFUSED_EXTENSION}")
+            } else {
+                format!("{stem}{attempt}.{FEATHER_REFUSED_EXTENSION}")
+            };
+            let to = staging.path_to_filesystem(&ObjectPath::parse(&refused)?)?;
 
-            loop {
-                let refused = if attempt == 0 {
-                    format!("{stem}{FEATHER_REFUSED_EXTENSION}")
-                } else {
-                    format!("{stem}{attempt}.{FEATHER_REFUSED_EXTENSION}")
-                };
-
-                match source
-                    .storage
-                    .object_store
-                    .rename_if_not_exists(&from, &ObjectPath::parse(&refused)?)
-                    .await
-                {
-                    Ok(()) => return Ok(refused),
-                    Err(ObjectStoreError::AlreadyExists { .. }) => attempt += 1,
-                    Err(e) => return Err(e.into()),
+            match fs::symlink_metadata(&to) {
+                Ok(_) => attempt += 1,
+                Err(e) if e.kind() == ErrorKind::NotFound => {
+                    fs::rename(&from, &to)?;
+                    break refused;
                 }
+                Err(e) => return Err(e.into()),
             }
-        })
+        };
+
+        state.has_refused_files = true;
+        state.status = RunStatus::Failed;
+        state.has_data = true;
+        state.needs_publication = true;
+        Ok(refused)
     }
 }
 
@@ -621,14 +704,11 @@ impl StagedPromotionBackend for ParquetPromotionBackend {
         empty: bool,
         _error: Option<&str>,
     ) -> anyhow::Result<()> {
-        block_on_nautilus_with(|| {
-            source.storage.write_run_manifest(
-                source.environment,
-                &source.instance_id,
-                status,
-                empty,
-            )
-        })
+        let mut state = self
+            .run_state
+            .lock()
+            .expect("Parquet run state lock poisoned");
+        state.publish(source, status, !empty)
     }
 }
 
@@ -883,6 +963,7 @@ mod tests {
         let mut backend = ParquetPromotionBackend {
             catalog,
             legacy_manifest_missing: Arc::default(),
+            run_state: test_run_state(&directory),
         };
 
         let files =
@@ -1096,7 +1177,8 @@ mod tests {
             .unwrap()
             .connect_config();
         let backend =
-            ParquetPromotionBackend::new(&catalog, Arc::new(AtomicBool::new(false))).unwrap();
+            ParquetPromotionBackend::new(&catalog, Arc::default(), test_run_state(&directory))
+                .unwrap();
 
         let config = WriterConnectConfig::new(staging.to_string_lossy(), Some(catalog));
         let mut sink =
@@ -2754,7 +2836,7 @@ mod tests {
         writer.core.write_data(Data::Bar(next)).unwrap();
         let work = writer.prepare_promotion().unwrap().unwrap();
         let files = work.files().to_vec();
-        let error = writer.finalize(work.execute()).unwrap_err();
+        let error = writer.core.finalize_promotion(work.execute()).unwrap_err();
         let mut catalog = ParquetDataCatalog::builder()
             .uri(directory.path())
             .build()
@@ -2818,7 +2900,7 @@ mod tests {
         writer.core.write_data(Data::Quote(quote_at(20))).unwrap();
         let work = writer.prepare_promotion().unwrap().unwrap();
         let files = work.files().to_vec();
-        let error = writer.finalize(work.execute()).unwrap_err();
+        let error = writer.core.finalize_promotion(work.execute()).unwrap_err();
         let retry = writer.prepare_promotion().unwrap();
         writer.core.write_data(Data::Quote(quote_at(40))).unwrap();
         writer.promote_now().unwrap();
@@ -2856,11 +2938,14 @@ mod tests {
             [10, 20, 30, 40].map(|timestamp| Data::Quote(quote_at(timestamp)))
         );
         assert_eq!(manifest["status"], "failed");
-        assert_eq!(writer.run_status, RunStatus::Failed);
+        assert_eq!(writer.run_state.lock().unwrap().status, RunStatus::Failed);
     }
 
     #[rstest]
-    fn reopened_run_with_refused_file_closes_failed(#[values(false, true)] promote_on_close: bool) {
+    fn reopened_run_with_refused_file_closes_failed(
+        #[values(false, true)] promote_on_close: bool,
+        #[values(false, true)] write_new_data: bool,
+    ) {
         let directory = TempDir::new().unwrap();
         let run = directory.path().join("live/run-reopen");
         fs::create_dir_all(run.join("quotes")).unwrap();
@@ -2869,38 +2954,45 @@ mod tests {
             WriterConnectConfig::new(run.to_string_lossy(), Some(local_catalog(&directory)));
         config.promote_on_close = promote_on_close;
 
-        let status = || {
-            serde_json::from_slice::<serde_json::Value>(
-                &fs::read(run.join(RUN_MANIFEST_FILENAME)).unwrap(),
-            )
-            .unwrap()["status"]
-                .clone()
+        let manifest_fields = || {
+            let manifest: serde_json::Value =
+                serde_json::from_slice(&fs::read(run.join(RUN_MANIFEST_FILENAME)).unwrap())
+                    .unwrap();
+            (manifest["status"].clone(), manifest["empty"].clone())
         };
 
         let mut writer =
             ParquetWriter::new(&config, WriterClock::Test(Arc::new(AtomicU64::new(1)))).unwrap();
-        let opened = status();
-        StreamingSink::write_data(&mut writer, Data::Quote(sample_quote())).unwrap();
-        let written = status();
+        let opened = manifest_fields();
+
+        if write_new_data {
+            StreamingSink::write_data(&mut writer, Data::Quote(sample_quote())).unwrap();
+        }
+
+        let before_close = manifest_fields();
         StreamingSink::close(&mut writer).unwrap();
         drop(writer);
 
-        assert_eq!([opened, written, status()], ["failed", "failed", "failed"]);
+        let expected = (serde_json::json!("failed"), serde_json::json!(false));
+        assert_eq!(
+            [opened, before_close, manifest_fields()],
+            [expected.clone(), expected.clone(), expected]
+        );
     }
 
     #[rstest]
     #[case::promoted(&[], "promoted")]
     #[case::refused(&[10, 30], "failed")]
-    fn promotion_status_wins_over_earlier_in_progress_write(
+    fn promotion_status_wins_in_either_order_with_first_write(
         #[case] catalog: &[u64],
         #[case] expected: &str,
+        #[values(false, true)] first_write_before_promotion: bool,
     ) {
         let directory = TempDir::new().unwrap();
         let run = directory.path().join("live/run-race");
-        let config =
+        let mut config =
             WriterConnectConfig::new(run.to_string_lossy(), Some(local_catalog(&directory)));
-        let mut writer =
-            ParquetWriter::new(&config, WriterClock::Test(Arc::new(AtomicU64::new(1)))).unwrap();
+        config.delete_feather_after_promotion = true;
 
         let quote_at = |timestamp: u64| QuoteTick {
             ts_event: UnixNanos::from(timestamp),
@@ -2908,33 +3000,40 @@ mod tests {
             ..sample_quote()
         };
 
+        let clock = WriterClock::Test(Arc::new(AtomicU64::new(1)));
+        let mut seed = ParquetWriter::new(&config, clock.clone()).unwrap();
         for &timestamp in catalog {
-            StreamingSink::write_data(&mut writer, Data::Quote(quote_at(timestamp))).unwrap();
+            StreamingSink::write_data(&mut seed, Data::Quote(quote_at(timestamp))).unwrap();
         }
-        writer.promote_now().unwrap();
-        StreamingSink::write_data(&mut writer, Data::Quote(quote_at(20))).unwrap();
-        let result = writer.prepare_promotion().unwrap().unwrap().execute();
+        StreamingSink::close(&mut seed).unwrap();
+        drop(seed);
 
-        // The in-progress write of a writer that read the refusal flag before the set-aside
-        block_on_nautilus_with(|| {
-            writer.core.storage.write_current_run_manifest(
-                writer.session.environment,
-                &writer.session.instance_id,
-                RunStatus::InProgress,
-                false,
-            )
-        })
-        .unwrap();
-        let _ = writer.finalize(result);
-        StreamingSink::close(&mut writer).unwrap();
+        let mut writer = ParquetWriter::new(&config, clock).unwrap();
+        writer.core.write_data(Data::Quote(quote_at(20))).unwrap();
+        let work = writer.prepare_promotion().unwrap().unwrap();
+
+        if first_write_before_promotion {
+            writer.mark_non_empty().unwrap();
+        }
+
+        let result = work.execute();
+
+        if !first_write_before_promotion {
+            writer.mark_non_empty().unwrap();
+        }
+
         let manifest: serde_json::Value =
             serde_json::from_slice(&fs::read(run.join(RUN_MANIFEST_FILENAME)).unwrap()).unwrap();
+        let finalized = writer.core.finalize_promotion(result);
+        StreamingSink::close(&mut writer).unwrap();
 
+        assert_eq!(finalized.is_err(), expected == "failed");
         assert_eq!(manifest["status"], expected);
+        assert_eq!(manifest["empty"], false);
     }
 
     #[rstest]
-    fn refused_promotion_keeps_run_failed_over_promotion_finalized_later() {
+    fn finalizing_older_promotion_does_not_republish_manifest() {
         let directory = TempDir::new().unwrap();
         let run = directory.path().join("live/run-overlap");
         let config =
@@ -2951,18 +3050,108 @@ mod tests {
         StreamingSink::write_data(&mut writer, Data::Quote(quote_at(10))).unwrap();
         StreamingSink::write_data(&mut writer, Data::Quote(quote_at(30))).unwrap();
         writer.promote_now().unwrap();
-        StreamingSink::write_data(&mut writer, Data::Quote(quote_at(20))).unwrap();
-        let refused = writer.prepare_promotion().unwrap().unwrap();
         StreamingSink::write_data(&mut writer, Data::Quote(quote_at(40))).unwrap();
         let promoted = writer.prepare_promotion().unwrap().unwrap().execute();
-        let refused = refused.execute();
-        writer.finalize(refused).unwrap_err();
-        writer.finalize(promoted).unwrap();
-        let manifest: serde_json::Value =
-            serde_json::from_slice(&fs::read(run.join(RUN_MANIFEST_FILENAME)).unwrap()).unwrap();
-        writer.core.close().unwrap();
+        StreamingSink::write_data(&mut writer, Data::Quote(quote_at(20))).unwrap();
+        let refused = writer.prepare_promotion().unwrap().unwrap().execute();
+        let path = run.join(RUN_MANIFEST_FILENAME);
+        let failed_manifest = fs::read(&path).unwrap();
 
+        writer.core.finalize_promotion(promoted).unwrap();
+        let after = fs::read(&path).unwrap();
+        writer.core.finalize_promotion(refused).unwrap_err();
+        StreamingSink::close(&mut writer).unwrap();
+
+        assert_eq!(after, failed_manifest);
+        let manifest: serde_json::Value = serde_json::from_slice(&after).unwrap();
         assert_eq!(manifest["status"], "failed");
+    }
+
+    #[rstest]
+    fn refused_manifest_is_republished_after_storage_recovers() {
+        let directory = TempDir::new().unwrap();
+        let run = directory.path().join("live/run-retry-manifest");
+        let config =
+            WriterConnectConfig::new(run.to_string_lossy(), Some(local_catalog(&directory)));
+        let mut writer =
+            ParquetWriter::new(&config, WriterClock::Test(Arc::new(AtomicU64::new(1)))).unwrap();
+        let quote = sample_quote();
+        StreamingSink::write_data(&mut writer, Data::Quote(quote)).unwrap();
+        writer.promote_now().unwrap();
+        StreamingSink::write_data(&mut writer, Data::Quote(quote)).unwrap();
+        let work = writer.prepare_promotion().unwrap().unwrap();
+
+        let path = run.join(RUN_MANIFEST_FILENAME);
+        let promoted_manifest = fs::read(&path).unwrap();
+        fs::remove_file(&path).unwrap();
+        fs::create_dir(&path).unwrap();
+        let result = work.execute();
+        fs::remove_dir(&path).unwrap();
+        fs::write(&path, promoted_manifest).unwrap();
+
+        let error = writer.finalize_all(vec![result]).unwrap_err();
+        StreamingSink::close(&mut writer).unwrap();
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+
+        assert!(
+            error
+                .to_string()
+                .contains("failed to record failed run state")
+        );
+        assert_eq!(manifest["status"], "failed");
+        assert_eq!(manifest["empty"], false);
+    }
+
+    #[cfg(unix)]
+    #[rstest]
+    #[case::symlink(true)]
+    #[case::parent_inside_environment(false)]
+    fn promotion_and_manifest_use_resolved_run_directory(#[case] symlink: bool) {
+        let directory = TempDir::new().unwrap();
+        let base = directory.path().join("base");
+        let (run, physical_run, unrelated_run) = if symlink {
+            let other = directory.path().join("other");
+            let target = other.join("subdir");
+            fs::create_dir(&base).unwrap();
+            fs::create_dir_all(&target).unwrap();
+            std::os::unix::fs::symlink(target, base.join("link")).unwrap();
+            (
+                base.join("link/../live/run-resolved"),
+                other.join("live/run-resolved"),
+                base.join("live/run-resolved"),
+            )
+        } else {
+            fs::create_dir_all(base.join("live/extra")).unwrap();
+            (
+                base.join("live/extra/../run-resolved"),
+                base.join("live/run-resolved"),
+                base.join("live/extra/live/run-resolved"),
+            )
+        };
+        let config =
+            WriterConnectConfig::new(run.to_string_lossy(), Some(local_catalog(&directory)));
+        let mut writer =
+            ParquetWriter::new(&config, WriterClock::Test(Arc::new(AtomicU64::new(1)))).unwrap();
+        let quote = sample_quote();
+        StreamingSink::write_data(&mut writer, Data::Quote(quote)).unwrap();
+        StreamingSink::close(&mut writer).unwrap();
+        drop(writer);
+
+        let path = physical_run.join(RUN_MANIFEST_FILENAME);
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
+        let quotes = catalog.query::<QuoteTick>().execute().unwrap();
+
+        assert_eq!(quotes, vec![quote]);
+        assert_eq!(manifest["status"], "promoted");
+        assert_eq!(manifest["empty"], false);
+        assert!(!unrelated_run.join(RUN_MANIFEST_FILENAME).exists());
     }
 
     #[rstest]
@@ -3021,7 +3210,7 @@ mod tests {
         writer.core.write_data(Data::Quote(quote_at(40))).unwrap();
         let work = writer.prepare_promotion().unwrap().unwrap();
         let files = work.files().to_vec();
-        let error = writer.finalize(work.execute()).unwrap_err();
+        let error = writer.core.finalize_promotion(work.execute()).unwrap_err();
         let retry = writer.prepare_promotion().unwrap();
         writer.core.close().unwrap();
 
@@ -3054,7 +3243,7 @@ mod tests {
             deleted_paths: Vec::new(),
             refused_paths: Vec::new(),
             partial_converted: Vec::new(),
-            recorded_status: Some(RunStatus::Failed),
+            run_state_recorded: true,
             converted: Err(anyhow::anyhow!("{file} refused")),
         };
         schedule_new_paths(&schedule, vec!["a.feather".into(), "b.feather".into()]).unwrap();
@@ -3065,14 +3254,17 @@ mod tests {
 
         assert_eq!(error.to_string(), "a.feather refused; b.feather refused");
         assert_scheduled_count(&schedule, 0);
-        assert_eq!(writer.run_status, RunStatus::Failed);
     }
 
     #[rstest]
     fn set_aside_keeps_earlier_refused_file_with_same_name() {
         let directory = TempDir::new().unwrap();
-        let mut backend =
-            ParquetPromotionBackend::new(&local_catalog(&directory), Arc::default()).unwrap();
+        let mut backend = ParquetPromotionBackend::new(
+            &local_catalog(&directory),
+            Arc::default(),
+            test_run_state(&directory),
+        )
+        .unwrap();
         let source = FeatherSessionSource::new(
             create_storage_backend_from_path(directory.path().to_str().unwrap(), None).unwrap(),
             Environment::Live,
@@ -3096,6 +3288,89 @@ mod tests {
         assert_eq!(
             fs::read(quotes.join("quotes_1.1.feather.refused")).unwrap(),
             b"revised"
+        );
+    }
+
+    #[cfg(unix)]
+    #[rstest]
+    fn set_aside_keeps_occupied_name_when_its_target_is_missing() {
+        let directory = TempDir::new().unwrap();
+        let mut backend = ParquetPromotionBackend::new(
+            &local_catalog(&directory),
+            Arc::default(),
+            test_run_state(&directory),
+        )
+        .unwrap();
+        let source = FeatherSessionSource::new(
+            create_storage_backend_from_path(directory.path().to_str().unwrap(), None).unwrap(),
+            Environment::Live,
+            "run-1",
+        );
+        let quotes = directory.path().join("live/run-1/quotes");
+        fs::create_dir_all(&quotes).unwrap();
+        let occupied = quotes.join("quotes_1.feather.refused");
+        std::os::unix::fs::symlink("missing.feather", &occupied).unwrap();
+        fs::write(quotes.join("quotes_1.feather"), b"revised").unwrap();
+
+        let refused = backend
+            .set_aside_file(&source, "live/run-1/quotes/quotes_1.feather")
+            .unwrap();
+
+        assert_eq!(refused, "live/run-1/quotes/quotes_1.1.feather.refused");
+        assert_eq!(
+            fs::read_link(occupied).unwrap(),
+            Path::new("missing.feather")
+        );
+        assert_eq!(
+            fs::read(directory.path().join(refused)).unwrap(),
+            b"revised"
+        );
+    }
+
+    #[rstest]
+    fn concurrent_writers_keep_refusals_with_colliding_numbered_names() {
+        let directory = TempDir::new().unwrap();
+        let catalog = local_catalog(&directory);
+        let source = FeatherSessionSource::new(
+            create_storage_backend_from_path(directory.path().to_str().unwrap(), None).unwrap(),
+            Environment::Live,
+            "run-1",
+        );
+        let quotes = directory.path().join("live/run-1/quotes");
+        fs::create_dir_all(&quotes).unwrap();
+        fs::write(quotes.join("quotes_1.feather.refused"), b"earlier").unwrap();
+        fs::write(quotes.join("quotes_1.feather"), b"first").unwrap();
+        fs::write(quotes.join("quotes_1.1.feather"), b"second").unwrap();
+
+        let start = std::sync::Barrier::new(2);
+        let [first, second] = std::thread::scope(|scope| {
+            [
+                "live/run-1/quotes/quotes_1.feather",
+                "live/run-1/quotes/quotes_1.1.feather",
+            ]
+            .map(|file| {
+                let mut backend = ParquetPromotionBackend::new(
+                    &catalog,
+                    Arc::default(),
+                    test_run_state(&directory),
+                )
+                .unwrap();
+                let source = &source;
+                let start = &start;
+                scope.spawn(move || {
+                    start.wait();
+                    backend.set_aside_file(source, file).unwrap()
+                })
+            })
+            .map(|thread| thread.join().unwrap())
+        });
+
+        assert_ne!(first, second);
+        assert_eq!(fs::read(directory.path().join(first)).unwrap(), b"first");
+        assert_eq!(fs::read(directory.path().join(second)).unwrap(), b"second");
+        assert_eq!(
+            fs::read(quotes.join("quotes_1.feather.refused")).unwrap(),
+            b"earlier"
         );
     }
 
@@ -3201,7 +3476,7 @@ mod tests {
                 .unwrap();
             let work = writer.prepare_promotion().unwrap().unwrap();
             assert_eq!(work.files().len(), 1);
-            writer.finalize(work.execute()).unwrap();
+            writer.core.finalize_promotion(work.execute()).unwrap();
             assert_scheduled_count(&writer.core.promotion_driver.schedule(), 0);
             assert!(writer.prepare_promotion().unwrap().is_none());
         }
@@ -3251,7 +3526,10 @@ mod tests {
         let result = work.execute();
         assert_scheduled_count(&writer.core.promotion_driver.schedule(), 0);
         assert_eq!(result.committed_paths, files);
-        assert_eq!(writer.finalize(result).unwrap().len(), expected_files);
+        assert_eq!(
+            writer.core.finalize_promotion(result).unwrap().len(),
+            expected_files
+        );
         assert!(writer.prepare_promotion().unwrap().is_none());
 
         let mut catalog = ParquetDataCatalog::builder()
@@ -3292,7 +3570,7 @@ mod tests {
         writer.core.write_data(Data::Quote(quote)).unwrap();
         let work = writer.prepare_promotion().unwrap().unwrap();
         assert_eq!(work.files(), &["live/run-root/quotes/quotes_0.feather"]);
-        let promoted = writer.finalize(work.execute()).unwrap();
+        let promoted = writer.core.finalize_promotion(work.execute()).unwrap();
         assert_eq!(promoted.len(), 1);
         assert!(writer.prepare_promotion().unwrap().is_none());
         drop(writer);
@@ -3300,7 +3578,10 @@ mod tests {
         let mut restarted = ParquetWriter::new(&config, clock).unwrap();
         let work = restarted.prepare_promotion().unwrap().unwrap();
         assert_eq!(work.files(), &["live/run-root/quotes/quotes_0.feather"]);
-        assert_eq!(restarted.finalize(work.execute()).unwrap(), promoted);
+        assert_eq!(
+            restarted.core.finalize_promotion(work.execute()).unwrap(),
+            promoted
+        );
         assert!(restarted.prepare_promotion().unwrap().is_none());
 
         let mut catalog = ParquetDataCatalog::builder()
@@ -3333,7 +3614,7 @@ mod tests {
         writer.core.write_data(Data::Quote(quote)).unwrap();
         let work = writer.prepare_promotion().unwrap().unwrap();
         assert_eq!(work.files(), &["live/run-relative/quotes/quotes_0.feather"]);
-        let promoted = writer.finalize(work.execute()).unwrap();
+        let promoted = writer.core.finalize_promotion(work.execute()).unwrap();
         assert_eq!(promoted.len(), 1);
         assert!(writer.prepare_promotion().unwrap().is_none());
         drop(writer);
@@ -3341,7 +3622,10 @@ mod tests {
         let mut restarted = ParquetWriter::new(&config, clock).unwrap();
         let work = restarted.prepare_promotion().unwrap().unwrap();
         assert_eq!(work.files(), &["live/run-relative/quotes/quotes_0.feather"]);
-        assert_eq!(restarted.finalize(work.execute()).unwrap(), promoted);
+        assert_eq!(
+            restarted.core.finalize_promotion(work.execute()).unwrap(),
+            promoted
+        );
         assert!(restarted.prepare_promotion().unwrap().is_none());
 
         let mut catalog = ParquetDataCatalog::builder()
@@ -3396,7 +3680,7 @@ mod tests {
             work.files(),
             &["backtest/run-restart/quotes/quotes_0.feather".to_string()]
         );
-        let promoted = writer.finalize(work.execute()).unwrap();
+        let promoted = writer.core.finalize_promotion(work.execute()).unwrap();
         assert_eq!(promoted.len(), 1);
         assert!(writer.prepare_promotion().unwrap().is_none());
         drop(writer);
@@ -3417,7 +3701,7 @@ mod tests {
             result.deleted_paths,
             if delete_source { files } else { Vec::new() }
         );
-        assert_eq!(restarted.finalize(result).unwrap(), promoted);
+        assert_eq!(restarted.core.finalize_promotion(result).unwrap(), promoted);
         assert!(restarted.prepare_promotion().unwrap().is_none());
         assert_scheduled_count(&restarted.core.promotion_driver.schedule(), 0);
         assert_eq!(sealed.exists(), !delete_source);
@@ -3453,6 +3737,7 @@ mod tests {
         let backend = ParquetPromotionBackend {
             catalog,
             legacy_manifest_missing: Arc::default(),
+            run_state: test_run_state(&directory),
         };
 
         assert_eq!(
@@ -3488,5 +3773,10 @@ mod tests {
         assert_eq!(identity(Some(&unordered)), expected);
         assert_eq!(identity(Some(&ordered)), expected);
         assert_ne!(identity(None), expected);
+    }
+    fn test_run_state(directory: &TempDir) -> Arc<Mutex<ParquetRunState>> {
+        let storage =
+            create_storage_backend_from_path(directory.path().to_str().unwrap(), None).unwrap();
+        Arc::new(Mutex::new(ParquetRunState::new(storage, false)))
     }
 }
