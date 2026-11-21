@@ -98,10 +98,12 @@ pub fn open_orders_delta(
 
     // Cache instrument and qty by venue order id so cancel-only messages
     // (which arrive without the order body) can be reconstructed for the
-    // external fallback path.
+    // external fallback path. Kraken Futures reports the open remainder in `qty`
+    // and cumulative filled in `filled`, so total order size is `qty + filled`.
     order_instrument_map.insert(delta.order.order_id.clone(), instrument.id());
-    let Ok(qty) = Quantity::from_decimal_dp(delta.order.qty, instrument.size_precision()) else {
-        log::error!("Failed to parse order quantity: {}", delta.order.qty);
+    let total_qty = delta.order.qty + delta.order.filled;
+    let Ok(qty) = Quantity::from_decimal_dp(total_qty, instrument.size_precision()) else {
+        log::error!("Failed to parse order quantity: {total_qty}");
         return;
     };
     venue_order_qty.insert(delta.order.order_id.clone(), qty);
@@ -218,8 +220,13 @@ fn delta_tracked(
         ts_init,
     );
 
-    let Ok(qty) = Quantity::from_decimal_dp(delta.order.qty, instrument.size_precision()) else {
-        log::error!("Failed to parse order quantity: {}", delta.order.qty);
+    // Kraken Futures reports open remainder in `qty` and cumulative filled in `filled`.
+    // The order size is `qty + filled`. Measuring size against open remainder alone causes
+    // partial fills to look like size amends, emitting spurious `OrderUpdated` events and
+    // shrinking the order in the execution engine.
+    let total_qty = delta.order.qty + delta.order.filled;
+    let Ok(qty) = Quantity::from_decimal_dp(total_qty, instrument.size_precision()) else {
+        log::error!("Failed to parse order quantity: {total_qty}");
         return;
     };
     let snapshot = DeltaSnapshot::new(

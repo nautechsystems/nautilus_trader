@@ -234,10 +234,10 @@ fn parse_ws_direction(direction: i32) -> OrderSide {
 }
 
 fn infer_order_status(order: &KrakenFuturesOpenOrder, is_cancel: bool) -> OrderStatus {
-    if order.filled >= order.qty && order.qty > Decimal::ZERO {
-        OrderStatus::Filled
-    } else if is_cancel {
+    if is_cancel {
         OrderStatus::Canceled
+    } else if order.qty == Decimal::ZERO && order.filled > Decimal::ZERO {
+        OrderStatus::Filled
     } else if order.filled > Decimal::ZERO {
         OrderStatus::PartiallyFilled
     } else {
@@ -267,10 +267,11 @@ pub fn parse_futures_ws_order_status_report(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let quantity = Quantity::from_decimal_dp(order.qty, size_precision)
+    let remaining_qty = Quantity::from_decimal_dp(order.qty, size_precision)
         .context("Failed to parse order qty")?;
     let filled_qty = Quantity::from_decimal_dp(order.filled, size_precision)
         .context("Failed to parse order filled")?;
+    let quantity = remaining_qty + filled_qty;
 
     let ts_accepted = millis_to_nanos(order.time);
     let ts_last = millis_to_nanos(order.last_update_time);
@@ -863,6 +864,64 @@ mod tests {
                 .unwrap();
 
         assert_eq!(report.trigger_type, Some(TriggerType::IndexPrice));
+    }
+
+    #[rstest]
+    fn test_parse_futures_ws_order_status_report_partially_filled() {
+        let order = KrakenFuturesOpenOrder {
+            instrument: ustr::Ustr::from("PF_ETHUSD"),
+            time: 1700000000000,
+            last_update_time: 1700000000100,
+            qty: dec!(27),
+            filled: dec!(26),
+            limit_price: Some(dec!(3500)),
+            stop_price: None,
+            order_type: KrakenFuturesOrderType::Limit,
+            order_id: "order-part-fill-001".to_string(),
+            cli_ord_id: Some("client-part-fill-1".to_string()),
+            direction: 0,
+            reduce_only: false,
+            trigger_signal: None,
+        };
+        let instrument = create_mock_perp();
+        let account_id = AccountId::from("KRAKEN-001");
+
+        let report =
+            parse_futures_ws_order_status_report(&order, false, None, &instrument, account_id, TS)
+                .unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
+        assert_eq!(report.quantity.as_decimal(), dec!(53));
+        assert_eq!(report.filled_qty.as_decimal(), dec!(26));
+    }
+
+    #[rstest]
+    fn test_parse_futures_ws_order_status_report_filled() {
+        let order = KrakenFuturesOpenOrder {
+            instrument: ustr::Ustr::from("PF_ETHUSD"),
+            time: 1700000000000,
+            last_update_time: 1700000000200,
+            qty: Decimal::ZERO,
+            filled: dec!(53),
+            limit_price: Some(dec!(3500)),
+            stop_price: None,
+            order_type: KrakenFuturesOrderType::Limit,
+            order_id: "order-fill-001".to_string(),
+            cli_ord_id: Some("client-fill-1".to_string()),
+            direction: 0,
+            reduce_only: false,
+            trigger_signal: None,
+        };
+        let instrument = create_mock_perp();
+        let account_id = AccountId::from("KRAKEN-001");
+
+        let report =
+            parse_futures_ws_order_status_report(&order, false, None, &instrument, account_id, TS)
+                .unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::Filled);
+        assert_eq!(report.quantity.as_decimal(), dec!(53));
+        assert_eq!(report.filled_qty.as_decimal(), dec!(53));
     }
 
     #[rstest]
