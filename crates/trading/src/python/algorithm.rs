@@ -1450,10 +1450,10 @@ impl PyExecutionAlgorithm {
             self.set_log_commands(log_commands);
         }
 
-        if let Ok(use_hyphens) = config.getattr("use_hyphens_in_client_order_ids") {
-            if let Ok(use_hyphens) = use_hyphens.extract::<Option<bool>>() {
-                self.set_use_hyphens_in_client_order_ids(use_hyphens);
-            }
+        if let Ok(use_hyphens) = config.getattr("use_hyphens_in_client_order_ids")
+            && let Ok(use_hyphens) = use_hyphens.extract::<Option<bool>>()
+        {
+            self.set_use_hyphens_in_client_order_ids(use_hyphens);
         }
 
         Ok(has_id)
@@ -1621,10 +1621,10 @@ fn py_config_to_json(config: &Bound<'_, PyAny>) -> PyResult<HashMap<String, serd
         }
     }
 
-    if let Ok(value) = config.getattr("use_hyphens_in_client_order_ids") {
-        if !value.is_none() {
-            config_dict.set_item("use_hyphens_in_client_order_ids", value)?;
-        }
+    if let Ok(value) = config.getattr("use_hyphens_in_client_order_ids")
+        && !value.is_none()
+    {
+        config_dict.set_item("use_hyphens_in_client_order_ids", value)?;
     }
 
     py_dict_to_json(&config_dict)
