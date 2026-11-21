@@ -1131,7 +1131,8 @@ impl DatabaseQueries {
         encoding: SerializationEncoding,
     ) -> anyhow::Result<AHashMap<InstrumentId, SyntheticInstrument>> {
         let mut synthetics = AHashMap::new();
-        let pattern = format!("{trader_key}{REDIS_DELIMITER}{SYNTHETICS}*");
+        let prefix = format!("{trader_key}{REDIS_DELIMITER}{SYNTHETICS}{REDIS_DELIMITER}");
+        let pattern = format!("{prefix}*");
         log::debug!("Loading {pattern}");
 
         let mut con = con.clone();
@@ -1141,24 +1142,14 @@ impl DatabaseQueries {
             .iter()
             .map(|key| {
                 let con = con.clone();
+                let prefix = &prefix;
                 async move {
-                    let instrument_id = key
-                        .as_str()
-                        .rsplit(':')
-                        .next()
-                        .ok_or_else(|| {
-                            log::error!("Invalid key format: {key}");
-                            "Invalid key format"
-                        })
-                        .and_then(|code| {
-                            InstrumentId::from_str(code).map_err(|e| {
-                                log::error!("Failed to parse InstrumentId for {key}: {e}");
-                                "Invalid instrument ID"
-                            })
-                        });
-
-                    let Ok(instrument_id) = instrument_id else {
-                        return None;
+                    let instrument_id = match parse_instrument_key(key, prefix) {
+                        Ok(id) => id,
+                        Err(e) => {
+                            log::error!("Failed to parse InstrumentId from Redis key: {e}");
+                            return None;
+                        }
                     };
 
                     match Self::load_synthetic(&con, trader_key, &instrument_id, encoding).await {
@@ -1188,18 +1179,14 @@ impl DatabaseQueries {
     /// # Errors
     ///
     /// Returns an error if scanning keys or reading account data fails.
-    /// Loads all accounts for `trader_key` using the specified `encoding`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if scanning keys or reading account data fails.
     pub async fn load_accounts(
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
     ) -> anyhow::Result<AHashMap<AccountId, AccountAny>> {
         let mut accounts = AHashMap::new();
-        let pattern = format!("{trader_key}{REDIS_DELIMITER}{ACCOUNTS}*");
+        let prefix = format!("{trader_key}{REDIS_DELIMITER}{ACCOUNTS}{REDIS_DELIMITER}");
+        let pattern = format!("{prefix}*");
         log::debug!("Loading {pattern}");
 
         let mut con = con.clone();
@@ -1209,12 +1196,14 @@ impl DatabaseQueries {
             .iter()
             .map(|key| {
                 let con = con.clone();
+                let prefix = &prefix;
                 async move {
-                    let account_id = if let Some(code) = key.as_str().rsplit(':').next() {
-                        AccountId::from(code)
-                    } else {
-                        log::error!("Invalid key format: {key}");
-                        return None;
+                    let account_id = match parse_account_key(key, prefix) {
+                        Ok(id) => id,
+                        Err(e) => {
+                            log::error!("Failed to parse AccountId from Redis key: {e}");
+                            return None;
+                        }
                     };
 
                     match Self::load_account(&con, trader_key, &account_id, encoding).await {
@@ -1244,18 +1233,14 @@ impl DatabaseQueries {
     /// # Errors
     ///
     /// Returns an error if scanning keys or reading order data fails.
-    /// Loads all orders for `trader_key` using the specified `encoding`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if scanning keys or reading order data fails.
     pub async fn load_orders(
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
     ) -> anyhow::Result<AHashMap<ClientOrderId, OrderAny>> {
         let mut orders = AHashMap::new();
-        let pattern = format!("{trader_key}{REDIS_DELIMITER}{ORDERS}*");
+        let prefix = format!("{trader_key}{REDIS_DELIMITER}{ORDERS}{REDIS_DELIMITER}");
+        let pattern = format!("{prefix}*");
         log::debug!("Loading {pattern}");
 
         let mut con = con.clone();
@@ -1265,12 +1250,14 @@ impl DatabaseQueries {
             .iter()
             .map(|key| {
                 let con = con.clone();
+                let prefix = &prefix;
                 async move {
-                    let client_order_id = if let Some(code) = key.as_str().rsplit(':').next() {
-                        ClientOrderId::from(code)
-                    } else {
-                        log::error!("Invalid key format: {key}");
-                        return None;
+                    let client_order_id = match parse_order_key(key, prefix) {
+                        Ok(id) => id,
+                        Err(e) => {
+                            log::error!("Failed to parse ClientOrderId from Redis key: {e}");
+                            return None;
+                        }
                     };
 
                     match Self::load_order(&con, trader_key, &client_order_id, encoding).await {
@@ -1300,18 +1287,14 @@ impl DatabaseQueries {
     /// # Errors
     ///
     /// Returns an error if scanning keys or reading position data fails.
-    /// Loads all positions for `trader_key` using the specified `encoding`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if scanning keys or reading position data fails.
     pub async fn load_positions(
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
     ) -> anyhow::Result<AHashMap<PositionId, Position>> {
         let mut positions = AHashMap::new();
-        let pattern = format!("{trader_key}{REDIS_DELIMITER}{POSITIONS}*");
+        let prefix = format!("{trader_key}{REDIS_DELIMITER}{POSITIONS}{REDIS_DELIMITER}");
+        let pattern = format!("{prefix}*");
         log::debug!("Loading {pattern}");
 
         let mut con = con.clone();
@@ -1321,12 +1304,14 @@ impl DatabaseQueries {
             .iter()
             .map(|key| {
                 let con = con.clone();
+                let prefix = &prefix;
                 async move {
-                    let position_id = if let Some(code) = key.as_str().rsplit(':').next() {
-                        PositionId::from(code)
-                    } else {
-                        log::error!("Invalid key format: {key}");
-                        return None;
+                    let position_id = match parse_position_key(key, prefix) {
+                        Ok(id) => id,
+                        Err(e) => {
+                            log::error!("Failed to parse PositionId from Redis key: {e}");
+                            return None;
+                        }
                     };
 
                     match Self::load_position(&con, trader_key, &position_id, encoding).await {
@@ -2006,6 +1991,33 @@ fn parse_instrument_key(key: &str, prefix: &str) -> anyhow::Result<InstrumentId>
         .map_err(|e| anyhow::anyhow!("Failed to parse instrument ID from key '{key}': {e}"))
 }
 
+fn parse_account_key(key: &str, prefix: &str) -> anyhow::Result<AccountId> {
+    let value = key
+        .strip_prefix(prefix)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("Invalid account key '{key}'"))?;
+    AccountId::new_checked(value)
+        .map_err(|e| anyhow::anyhow!("Failed to parse account ID from key '{key}': {e}"))
+}
+
+fn parse_order_key(key: &str, prefix: &str) -> anyhow::Result<ClientOrderId> {
+    let value = key
+        .strip_prefix(prefix)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("Invalid order key '{key}'"))?;
+    ClientOrderId::new_checked(value)
+        .map_err(|e| anyhow::anyhow!("Failed to parse client order ID from key '{key}': {e}"))
+}
+
+fn parse_position_key(key: &str, prefix: &str) -> anyhow::Result<PositionId> {
+    let value = key
+        .strip_prefix(prefix)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("Invalid position key '{key}'"))?;
+    PositionId::new_checked(value)
+        .map_err(|e| anyhow::anyhow!("Failed to parse position ID from key '{key}': {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use std::{hint::black_box, str::FromStr, time::Instant};
@@ -2020,7 +2032,7 @@ mod tests {
             AccountState, OrderEventAny, OrderInitialized,
             order::spec::{OrderFillVoidedSpec, OrderFilledSpec},
         },
-        identifiers::{AccountId, InstrumentId, PositionId, TradeId},
+        identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId},
         instruments::{Instrument, InstrumentAny, stubs::currency_pair_btcusdt},
         orders::{Order, OrderError},
         position::Position,
@@ -2030,7 +2042,10 @@ mod tests {
     use serde::{Deserialize, Serialize, de::DeserializeOwned};
     use ustr::Ustr;
 
-    use super::{CurrencyDecode, CurrencyRecord, DatabaseQueries, parse_instrument_key};
+    use super::{
+        CurrencyDecode, CurrencyRecord, DatabaseQueries, parse_account_key, parse_instrument_key,
+        parse_order_key, parse_position_key,
+    };
 
     #[rstest]
     #[case(SerializationEncoding::Json)]
@@ -2699,5 +2714,53 @@ mod tests {
         let result = parse_instrument_key(&key, prefix).unwrap();
 
         assert_eq!(result, InstrumentId::from_str(value).unwrap());
+    }
+
+    #[rstest]
+    #[case("xyz:ABC-USDC-PERP.SIM-FIXTURE-001")]
+    #[case("SIM-BTC-USDT-001")]
+    #[case("Arbitrum:UniswapV3:0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443-STRAT1")]
+    fn test_parse_position_key_preserves_colons(#[case] value: &str) {
+        let prefix = "TRADER-001:positions:";
+        let key = format!("{prefix}{value}");
+
+        let result = parse_position_key(&key, prefix).unwrap();
+
+        assert_eq!(result, PositionId::new(value));
+    }
+
+    #[rstest]
+    #[case("ORD:2026-11-19:0001")]
+    #[case("O-12345")]
+    fn test_parse_order_key_preserves_colons(#[case] value: &str) {
+        let prefix = "TRADER-001:orders:";
+        let key = format!("{prefix}{value}");
+
+        let result = parse_order_key(&key, prefix).unwrap();
+
+        assert_eq!(result, ClientOrderId::new(value));
+    }
+
+    #[rstest]
+    #[case("SIM:SUB-001-ACCOUNT")]
+    #[case("SIM-001")]
+    fn test_parse_account_key_preserves_colons(#[case] value: &str) {
+        let prefix = "TRADER-001:accounts:";
+        let key = format!("{prefix}{value}");
+
+        let result = parse_account_key(&key, prefix).unwrap();
+
+        assert_eq!(result, AccountId::new(value));
+    }
+
+    #[rstest]
+    fn test_parse_key_helpers_reject_invalid_prefix_or_empty_id() {
+        assert!(parse_position_key("OTHER:positions:POS-1", "TRADER-001:positions:").is_err());
+        assert!(parse_position_key("TRADER-001:positions:", "TRADER-001:positions:").is_err());
+        assert!(parse_order_key("TRADER-001:orders:", "TRADER-001:orders:").is_err());
+        assert!(parse_account_key("TRADER-001:accounts:", "TRADER-001:accounts:").is_err());
+        assert!(
+            parse_instrument_key("TRADER-001:instruments:", "TRADER-001:instruments:").is_err()
+        );
     }
 }
