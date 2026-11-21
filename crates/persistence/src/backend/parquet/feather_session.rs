@@ -2420,6 +2420,23 @@ mod read_run_tests {
     }
 
     #[rstest]
+    #[case::type_directory("quotes/quotes_0.feather.refused")]
+    #[case::flat("quotes_0.feather.refused")]
+    fn read_backtest_returns_refused_rows(#[case] refused: &str) {
+        let temp_dir = TempDir::new().unwrap();
+        let mut writer = run_writer(&temp_dir);
+        writer.write_data(Data::Quote(quote_aud(1_000))).unwrap();
+        writer.close().unwrap();
+        let run = temp_dir.path().join("backtest/run-001");
+        fs::rename(run.join("quotes/quotes_0.feather"), run.join(refused)).unwrap();
+
+        assert_eq!(
+            read_backtest(&temp_dir),
+            vec![Data::Quote(quote_aud(1_000))]
+        );
+    }
+
+    #[rstest]
     fn read_backtest_skips_open_partial_files() {
         let temp_dir = TempDir::new().unwrap();
         let mut writer = run_writer(&temp_dir);

@@ -45,7 +45,7 @@ use crate::{
     },
     errors::CatalogOverlapError,
     writer::{
-        feather::{FEATHER_EXTENSION, FEATHER_REFUSED_EXTENSION},
+        feather::FEATHER_EXTENSION,
         run::{FeatherSessionSource, RunStatus},
         traits::StreamingSink,
     },
@@ -59,7 +59,7 @@ pub(crate) fn list_session_feather_files(
     list_session_files(storage, environment, instance_id, FEATHER_EXTENSION)
 }
 
-fn list_session_files(
+pub(crate) fn list_session_files(
     storage: &StorageBackend,
     environment: Environment,
     instance_id: &str,
@@ -510,6 +510,15 @@ where
                     if e.downcast_ref::<CatalogOverlapError>().is_some() {
                         match self.backend.set_aside_file(&self.source, file) {
                             Ok(refused) => {
+                                // Set before this promotion records the run failed, so a status
+                                // written meanwhile cannot miss it
+                                if let Some(schedule) = &self.schedule {
+                                    schedule
+                                        .lock()
+                                        .expect("promotion schedule lock poisoned")
+                                        .has_refused_files = true;
+                                }
+
                                 refused_paths.push(file.clone());
                                 context = format!("{context}, set aside as '{refused}'");
                             }
@@ -575,27 +584,15 @@ where
 
         // A refused file holds run data the catalog lacks, so the run stays failed while one
         // remains.
-        let status = match list_session_files(
-            &self.source.storage,
-            self.source.environment,
-            &self.source.instance_id,
-            FEATHER_REFUSED_EXTENSION,
-        ) {
-            Ok(refused) if refused.is_empty() => RunStatus::Promoted,
-            Ok(_) => RunStatus::Failed,
-            Err(e) => {
-                return PromotionResult {
-                    files: self.files,
-                    committed_paths,
-                    deleted_paths,
-                    refused_paths,
-                    partial_converted: converted,
-                    recorded_status: None,
-                    converted: Err(
-                        e.context(format!("{} failed to list refused Feather files", B::NAME))
-                    ),
-                };
-            }
+        let status = if self.schedule.as_ref().is_some_and(|schedule| {
+            schedule
+                .lock()
+                .expect("promotion schedule lock poisoned")
+                .has_refused_files
+        }) {
+            RunStatus::Failed
+        } else {
+            RunStatus::Promoted
         };
 
         let record_status = status == RunStatus::Failed
@@ -869,12 +866,17 @@ impl<B> PromotionDriver<B>
 where
     B: StagedPromotionBackend,
 {
-    pub(crate) fn new(last_commit_time_ns: UnixNanos, files: Vec<String>) -> Self {
+    pub(crate) fn new(
+        last_commit_time_ns: UnixNanos,
+        files: Vec<String>,
+        has_refused_files: bool,
+    ) -> Self {
         Self {
             worker: None,
             schedule: Arc::new(Mutex::new(PromotionSchedule {
                 pending_paths: files.into_iter().collect(),
                 scheduled_paths: AHashSet::new(),
+                has_refused_files,
             })),
             last_commit_time_ns,
         }
@@ -962,11 +964,21 @@ where
             .expect("promotion schedule lock poisoned")
             .unschedule(files);
     }
+
+    pub(crate) fn has_refused_files(&self) -> bool {
+        self.schedule
+            .lock()
+            .expect("promotion schedule lock poisoned")
+            .has_refused_files
+    }
 }
 
 pub(crate) struct PromotionSchedule {
     pending_paths: AHashSet<String>,
     scheduled_paths: AHashSet<String>,
+    // Set from the refused files a writer finds at startup and by each set-aside, so promotion
+    // never lists them. A file restored meanwhile counts until the next writer starts.
+    has_refused_files: bool,
 }
 
 impl PromotionSchedule {

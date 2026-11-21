@@ -127,11 +127,13 @@ impl ParquetWriter {
             config.record_filter.clone(),
         )?;
 
+        let run_status = Self::open_status(&core);
+
         block_on_nautilus_with(|| {
             storage.write_current_run_manifest(
                 session.environment,
                 &session.instance_id,
-                RunStatus::InProgress,
+                run_status,
                 true,
             )
         })?;
@@ -164,8 +166,17 @@ impl ParquetWriter {
             use_ts_event_for_ts_init: config.use_ts_event_for_ts_init,
             legacy_manifest_missing,
             has_data: false,
-            run_status: RunStatus::InProgress,
+            run_status,
         })
+    }
+
+    // A refused file holds run data the catalog lacks, so the run stays failed while one remains
+    fn open_status(core: &StagedFeatherWriter<ParquetPromotionBackend>) -> RunStatus {
+        if core.promotion_driver.has_refused_files() {
+            RunStatus::Failed
+        } else {
+            RunStatus::InProgress
+        }
     }
 
     fn record_status(&mut self, status: RunStatus) -> anyhow::Result<()> {
@@ -191,16 +202,19 @@ impl ParquetWriter {
             return Ok(());
         }
 
+        let status = Self::open_status(&self.core);
+
         block_on_nautilus_with(|| {
             self.core.storage.write_current_run_manifest(
                 self.session.environment,
                 &self.session.instance_id,
-                RunStatus::InProgress,
+                status,
                 false,
             )
         })?;
 
         self.has_data = true;
+        self.run_status = status;
         Ok(())
     }
 
@@ -2858,6 +2872,35 @@ mod tests {
         );
         assert_eq!(manifest["status"], "failed");
         assert_eq!(writer.run_status, RunStatus::Failed);
+    }
+
+    #[rstest]
+    fn reopened_run_with_refused_file_closes_failed(#[values(false, true)] promote_on_close: bool) {
+        let directory = TempDir::new().unwrap();
+        let run = directory.path().join("live/run-reopen");
+        fs::create_dir_all(run.join("quotes")).unwrap();
+        fs::write(run.join("quotes/quotes_1.feather.refused"), b"refused").unwrap();
+        let mut config =
+            WriterConnectConfig::new(run.to_string_lossy(), Some(local_catalog(&directory)));
+        config.promote_on_close = promote_on_close;
+
+        let status = || {
+            serde_json::from_slice::<serde_json::Value>(
+                &fs::read(run.join(RUN_MANIFEST_FILENAME)).unwrap(),
+            )
+            .unwrap()["status"]
+                .clone()
+        };
+
+        let mut writer =
+            ParquetWriter::new(&config, WriterClock::Test(Arc::new(AtomicU64::new(1)))).unwrap();
+        let opened = status();
+        StreamingSink::write_data(&mut writer, Data::Quote(sample_quote())).unwrap();
+        let written = status();
+        StreamingSink::close(&mut writer).unwrap();
+        drop(writer);
+
+        assert_eq!([opened, written, status()], ["failed", "failed", "failed"]);
     }
 
     #[rstest]

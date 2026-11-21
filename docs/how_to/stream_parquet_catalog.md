@@ -133,13 +133,14 @@ folder.
 
 Promotion sets aside a staged file whose rows overlap intervals already in the catalog: it renames
 the file to `.feather.refused`, numbering the name when an earlier refused file holds it, and later
-promotions skip it. The promotion that refuses a file fails and names it, a writer starting on the
-run warns with every refused file, and each later promotion records the run as `failed` in its
-manifest while a refused file remains. `read_live_run()` and
+promotions skip it. The promotion that refuses a file fails and names it, and a writer starting on
+the run warns with every refused file. While a refused file remains, the run manifest records the
+run as `failed`, including when a writer reopens and closes the run. `read_live_run()` and
 `read_backtest()` still return the refused rows. When only the catalog's own files overlap, the
 staged file stays queued, so it promotes after the catalog is repaired. After resolving the overlap,
-rename the refused file back to `.feather`. A running writer does not pick it up: it converts when
-a writer restarts on the run or through `ParquetDataCatalog.convert_stream_to_data()`.
+remove the refused file's `.refused` suffix and restart the writer on the run, which promotes it. A
+running writer does not pick it up, and `ParquetDataCatalog.convert_stream_to_data()` stops at an
+earlier retained file the catalog already holds.
 
 A writer holds an exclusive lock on each `.feather.partial` file until it seals the file, so a
 crashed process leaves its open files unlocked. Recovery seals each unlocked regular partial file: it keeps
