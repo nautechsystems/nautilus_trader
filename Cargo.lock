@@ -7118,6 +7118,7 @@ dependencies = [
  "nautilus-execution",
  "nautilus-live",
  "nautilus-model",
+ "nautilus-portfolio",
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
