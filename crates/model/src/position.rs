@@ -799,21 +799,9 @@ impl Position {
             return false;
         }
 
-        let mut latest = None;
-
-        for event in &self.replay_events {
-            let PositionReplayEvent::Filled(existing) = event else {
-                continue;
-            };
-
-            if existing.trade_id == fill.trade_id
-                && existing.client_order_id == fill.client_order_id
-            {
-                latest = Some(existing.last_px);
-            }
-        }
-
-        latest.is_some_and(|price| price != fill.last_px)
+        self.replay_fills_for_trade(fill.client_order_id, fill.trade_id)
+            .next_back()
+            .is_some_and(|existing| existing.last_px != fill.last_px)
     }
 
     fn matches_recorded_fill(&self, fill: &OrderFilled) -> bool {
@@ -833,27 +821,27 @@ impl Position {
             return false;
         }
 
-        let mut latest = None;
+        self.replay_fills_for_trade(fill.client_order_id, fill.trade_id)
+            .take_while(|existing| existing.event_id != fill.event_id)
+            .last()
+            .is_some_and(|existing| existing.last_px != fill.last_px)
+    }
 
-        for event in &self.replay_events {
-            let PositionReplayEvent::Filled(existing) = event else {
-                continue;
-            };
-
-            if existing.trade_id != fill.trade_id
-                || existing.client_order_id != fill.client_order_id
-            {
-                continue;
-            }
-
-            if existing.event_id == fill.event_id {
-                return latest.is_some_and(|price| price != fill.last_px);
-            }
-
-            latest = Some(existing.last_px);
-        }
-
-        latest.is_some_and(|price| price != fill.last_px)
+    fn replay_fills_for_trade(
+        &self,
+        client_order_id: ClientOrderId,
+        trade_id: TradeId,
+    ) -> impl DoubleEndedIterator<Item = &OrderFilled> {
+        self.replay_events
+            .iter()
+            .filter_map(move |event| match event {
+                PositionReplayEvent::Filled(fill)
+                    if fill.client_order_id == client_order_id && fill.trade_id == trade_id =>
+                {
+                    Some(fill)
+                }
+                _ => None,
+            })
     }
 
     fn apply_price_restatement(
@@ -1178,7 +1166,19 @@ impl Position {
                 .instrument_class
                 .divides_notional_by_price(self.is_inverse)
         {
-            self.avg_px_open = inverse_avg_px(prior_qty, self.avg_px_open, last_qty, last_px)?;
+            let avg_px = self.avg_px_open;
+            check_predicate_true(
+                avg_px > Decimal::ZERO && last_px > Decimal::ZERO,
+                "inverse prices must be positive",
+            )?;
+
+            // Cross-multiply the harmonic mean to avoid rounding reciprocal prices
+            let numerator = mul_rounded(mul_rounded(open_qty, avg_px)?, last_px)?;
+            let denominator = add_rounded(
+                mul_rounded(prior_qty, last_px)?,
+                mul_rounded(last_qty, avg_px)?,
+            )?;
+            self.avg_px_open = div(numerator, denominator)?;
             self.cost_open = mul_rounded(self.avg_px_open, open_qty)?;
         } else {
             self.cost_open = add_rounded(self.cost_open, mul_rounded(last_px, last_qty)?)?;
@@ -2556,26 +2556,6 @@ fn decimal_quotient(dividend: U512, divisor: U512, scale: u32, negative: bool) -
     from_raw(if negative { -mantissa } else { mantissa }, scale).ok()
 }
 
-/// Returns the inverse average price after `qty` at `px` adds to `prior_qty` at `avg_px`.
-///
-/// Inverse contracts are worth `qty / px` in base currency, so the average is the harmonic mean
-/// `(prior_qty + qty) / (prior_qty / avg_px + qty / px)`, evaluated without reciprocals so an
-/// average with an exact decimal form stays exact.
-fn inverse_avg_px(
-    prior_qty: Decimal,
-    avg_px: Decimal,
-    qty: Decimal,
-    px: Decimal,
-) -> CorrectnessResult<Decimal> {
-    check_predicate_true(
-        avg_px > Decimal::ZERO && px > Decimal::ZERO,
-        "inverse prices must be positive",
-    )?;
-    let numerator = mul_rounded(mul_rounded(add(prior_qty, qty)?, avg_px)?, px)?;
-    let denominator = add_rounded(mul_rounded(prior_qty, px)?, mul_rounded(qty, avg_px)?)?;
-    div(numerator, denominator)
-}
-
 /// Returns the inverse average price after `qty` of `open_qty` at `avg_px` moves from
 /// `previous_px` to `px`.
 ///
@@ -3342,7 +3322,8 @@ mod tests {
         let instrument = InstrumentAny::CryptoPerpetual(btcusd_bybit);
         let fill =
             |trade_id, side, qty, px| inverse_fill(&instrument, "P-1", trade_id, side, qty, px);
-        let mut position = Position::new(&instrument, fill("T-1", OrderSide::Buy, "50", "10000.0"));
+        let opening = fill("T-1", OrderSide::Buy, "50", "10000.0");
+        let mut position = Position::new(&instrument, opening.clone());
 
         position
             .apply_adjustment(PositionAdjusted::new(
@@ -3365,6 +3346,9 @@ mod tests {
 
         assert!(position.accepts_price_restatement(&restatement));
         position.try_apply(&restatement).unwrap();
+        assert!(!position.accepts_price_restatement(&restatement));
+        assert!(!position.is_price_restatement(&opening));
+        assert!(position.is_price_restatement(&restatement));
 
         let restatement_with_wrong_side = fill("T-1", OrderSide::Sell, "50", "60000.0");
         let replay_len = position.replay_events.len();
