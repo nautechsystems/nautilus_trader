@@ -395,9 +395,10 @@ where
         };
 
         if !result.run_state_recorded
-            && let Err(error) = &mut result.converted
+            && let Err(conversion_error) = &mut result.converted
         {
-            let message = format!("{error:#}");
+            let message = format!("{conversion_error:#}");
+
             match self.backend.record_run_state(
                 &self.source,
                 &self.staging_uri,
@@ -407,7 +408,7 @@ where
             ) {
                 Ok(()) => result.run_state_recorded = true,
                 Err(e) => {
-                    *error = anyhow::anyhow!(
+                    *conversion_error = anyhow::anyhow!(
                         "{message}; {} failed to record failed run state: {e}",
                         B::NAME,
                     );

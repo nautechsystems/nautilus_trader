@@ -285,6 +285,7 @@ impl ParquetWriter {
             .run_state
             .lock()
             .expect("Parquet run state lock poisoned");
+
         if let Err(e) = state.publish_pending(&self.source) {
             log::warn!(
                 "Failed to record Parquet run {} state: {e}",
