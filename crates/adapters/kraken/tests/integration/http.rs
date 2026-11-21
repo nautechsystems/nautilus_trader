@@ -4657,6 +4657,31 @@ async fn test_spot_fill_reports_resolve_altname_spelled_pair() {
     );
 }
 
+/// A trade row's `ordertype` is free text, so a page holding a stop-loss-limit fill beside a limit
+/// fill yields both fill reports.
+#[rstest]
+#[tokio::test]
+async fn test_spot_fill_reports_read_a_page_with_a_stop_limit_trade() {
+    let (addr, state) = start_test_server().await;
+    let mut page: Value =
+        serde_json::from_str(&spot_trades_history_json(&["XBTUSDT", "XBTUSDT"])).unwrap();
+    let stop_limit = &mut page["result"]["trades"]["TTRADE-0"];
+    stop_limit["ordertype"] = Value::from("stop limit");
+    stop_limit["tradeordertype"] = Value::from("stop_loss_limit");
+    *state.trades_history_json.lock().await = Some(page.to_string());
+
+    let client = legacy_pair_spot_client(addr).await;
+
+    let reports = client
+        .request_fill_reports(AccountId::new("KRAKEN-001"), None, None, None)
+        .await
+        .expect("a stop-loss-limit fill must not fail its page");
+
+    let mut trade_ids: Vec<_> = reports.iter().map(|r| r.trade_id.as_str()).collect();
+    trade_ids.sort_unstable();
+    assert_eq!(trade_ids, ["TTRADE-0", "TTRADE-1"]);
+}
+
 /// A report the adapter cannot resolve must fail rather than vanish from a successful return.
 ///
 /// A silently shorter list reads to reconciliation as "the order does not exist", which is a
