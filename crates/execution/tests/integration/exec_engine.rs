@@ -20009,11 +20009,15 @@ fn test_snapshot_reopen_keeps_prior_reconciliation_fill_correctable() {
 }
 
 #[rstest]
-#[case::private(false, dec!(200_000), true)]
-#[case::reconciliation(true, dec!(100_000), false)]
+#[case::private(false, false, 1_000_000, dec!(200_000), true)]
+#[case::covered_reconciliation(true, false, 1_000_000, dec!(100_000), false)]
+#[case::uncovered_reconciliation(true, false, 10_000_000, dec!(200_000), true)]
+#[case::order_only_projection(true, true, 1_000_000, dec!(100_000), false)]
 fn test_process_fill_after_snapshot_respects_reconciliation_flag(
     mut execution_engine: ExecutionEngine,
     #[case] reconciliation: bool,
+    #[case] project_order_only: bool,
+    #[case] fill_ts: u64,
     #[case] expected_qty: Decimal,
     #[case] expected_trade_on_position: bool,
 ) {
@@ -20025,19 +20029,38 @@ fn test_process_fill_after_snapshot_respects_reconciliation_flag(
     let account_id = AccountId::test_default();
     let venue_order_id = VenueOrderId::from("PERM-2");
     let trade_id = TradeId::from("T-AFTER-SNAPSHOT");
+    let parent_id = ClientOrderId::from("O-AFTER-SNAPSHOT");
+    let child_id = ClientOrderId::from("O-SNAPSHOT-EXIT");
     let order = OrderTestBuilder::new(OrderType::Market)
         .trader_id(TraderId::test_default())
         .strategy_id(StrategyId::external())
         .instrument_id(instrument.id())
-        .client_order_id(ClientOrderId::from("O-AFTER-SNAPSHOT"))
+        .client_order_id(parent_id)
         .side(OrderSide::Buy)
         .quantity(Quantity::from(100_000))
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![child_id])
         .build();
-    execution_engine
-        .cache()
-        .borrow_mut()
-        .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
-        .unwrap();
+    let child = OrderTestBuilder::new(OrderType::StopMarket)
+        .trader_id(order.trader_id())
+        .strategy_id(order.strategy_id())
+        .instrument_id(instrument.id())
+        .client_order_id(child_id)
+        .parent_order_id(parent_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(100_000))
+        .trigger_price(Price::from("0.90000"))
+        .emulation_trigger(TriggerType::BidAsk)
+        .build();
+
+    {
+        let mut cache = execution_engine.cache().borrow_mut();
+        cache
+            .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+            .unwrap();
+        cache.add_order(child, None, None, false).unwrap();
+    }
+
     execution_engine.process(&TestOrderEventStubs::submitted(&order, account_id));
     execution_engine.process(&TestOrderEventStubs::accepted(
         &order,
@@ -20062,8 +20085,12 @@ fn test_process_fill_after_snapshot_respects_reconciliation_flag(
         None,
     );
     fill.reconciliation = reconciliation;
-    fill.ts_event = UnixNanos::from(1_000_000);
-    execution_engine.process(&OrderEventAny::Filled(fill));
+    fill.ts_event = UnixNanos::from(fill_ts);
+    if project_order_only {
+        execution_engine.project_reconciliation_fill(&fill);
+    } else {
+        execution_engine.process(&OrderEventAny::Filled(fill));
+    }
 
     let cache = execution_engine.cache().borrow();
     let recovered = cache.order(&order.client_order_id()).unwrap();
@@ -20077,6 +20104,25 @@ fn test_process_fill_after_snapshot_respects_reconciliation_flag(
         positions[0].trade_ids.contains(&trade_id),
         expected_trade_on_position
     );
+
+    let OrderEventAny::Filled(fill) = recovered.last_event() else {
+        unreachable!()
+    };
+
+    let covering_fill_id = fill
+        .info
+        .as_ref()
+        .and_then(|info| info.get(&Ustr::from("nautilus.snapshot_covering_fill_id")));
+
+    let expected_covering_fill_id = match (reconciliation, expected_trade_on_position) {
+        (true, false) if !project_order_only => {
+            Some(Ustr::from(positions[0].events[0].event_id.as_str()))
+        }
+        (true, _) => Some(Ustr::from("")),
+        (false, _) => None,
+    };
+
+    assert_eq!(covering_fill_id.copied(), expected_covering_fill_id);
 }
 
 #[rstest]

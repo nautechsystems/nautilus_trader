@@ -54,7 +54,9 @@ use nautilus_common::{
 use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos};
 use nautilus_execution::{
     engine::ExecutionEngine,
+    order_emulator::emulator::OrderEmulator,
     reconciliation::{
+        RECONCILIATION_ORDER_TAG, create_inferred_reconciliation_trade_id,
         create_position_reconciliation_venue_order_id, generate_external_order_status_events,
         process_mass_status_for_reconciliation,
         process_mass_status_for_reconciliation_without_synthetic_reports,
@@ -73,7 +75,7 @@ use nautilus_model::{
         OrderStatus, OrderType, PositionSide, TimeInForce, TriggerType,
     },
     events::{
-        OrderEventAny, OrderFilled, PositionEvent,
+        OrderEmulated, OrderEventAny, OrderFilled, PositionEvent,
         account::state::AccountState,
         order::spec::{
             OrderAcceptedSpec, OrderCancelRejectedSpec, OrderFillVoidedSpec,
@@ -7855,6 +7857,311 @@ fn withheld_fill_warnings(needle: &str) -> Vec<String> {
         .filter(|message| message.contains("to order state only") && message.contains(needle))
         .cloned()
         .collect()
+}
+
+#[derive(Clone, Copy)]
+enum OtoRecoverySource {
+    RetainedSnapshot { inferred: bool },
+    LateStandalone,
+    ReplacementSnapshot(ReplacementParentFill),
+}
+
+#[derive(Clone, Copy)]
+enum ReplacementParentFill {
+    WithOrderReport,
+    CacheLinked,
+    PriorLifecycle,
+    DelayedPriorLifecycle,
+}
+
+#[rstest]
+#[case::retained_snapshot(
+    OtoRecoverySource::RetainedSnapshot { inferred: false },
+    OrderStatus::Emulated
+)]
+#[case::retained_snapshot_inferred_fill(
+    OtoRecoverySource::RetainedSnapshot { inferred: true },
+    OrderStatus::Emulated
+)]
+#[case::late_standalone(OtoRecoverySource::LateStandalone, OrderStatus::Canceled)]
+#[case::replacement_snapshot(
+    OtoRecoverySource::ReplacementSnapshot(ReplacementParentFill::WithOrderReport),
+    OrderStatus::Emulated
+)]
+#[case::cache_linked_replacement_fill(
+    OtoRecoverySource::ReplacementSnapshot(ReplacementParentFill::CacheLinked),
+    OrderStatus::Emulated
+)]
+#[case::before_replacement_snapshot(
+    OtoRecoverySource::ReplacementSnapshot(ReplacementParentFill::PriorLifecycle),
+    OrderStatus::Canceled
+)]
+#[case::late_fill_before_replacement_snapshot(
+    OtoRecoverySource::ReplacementSnapshot(ReplacementParentFill::DelayedPriorLifecycle),
+    OrderStatus::Canceled
+)]
+#[tokio::test]
+async fn test_reconciled_oto_parent_exit_recovers_only_in_its_position_lifecycle(
+    #[case] source: OtoRecoverySource,
+    #[case] expected_status: OrderStatus,
+) {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let strategy_id = StrategyId::from("STRATEGY-001");
+    let position_id = PositionId::new(format!("{instrument_id}-{strategy_id}"));
+    let parent_id = ClientOrderId::from("O-OTO-PARENT");
+    let parent_venue_order_id = VenueOrderId::from("V-OTO-PARENT");
+    let child_id = ClientOrderId::from("O-OTO-EXIT");
+    let mut trade_id = TradeId::from("T-OTO-PARENT");
+    let qty = Quantity::from("1.000");
+    let price = Price::from("3000.00");
+    ctx.add_instrument(instrument.clone());
+    ctx.manager
+        .claim_external_orders(instrument_id, strategy_id)
+        .unwrap();
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(strategy_id, OmsType::Netting);
+
+    let mut parent = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(parent_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(qty)
+        .price(price)
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![child_id])
+        .build();
+    apply_submitted_and_accepted(&mut parent, parent_venue_order_id);
+    ctx.add_order(parent.clone());
+
+    let mut child = OrderTestBuilder::new(OrderType::StopMarket)
+        .client_order_id(child_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .parent_order_id(parent_id)
+        .side(OrderSide::Sell)
+        .quantity(qty)
+        .trigger_price(Price::from("2900.00"))
+        .emulation_trigger(TriggerType::BidAsk)
+        .reduce_only(true)
+        .build();
+    child
+        .apply(OrderEventAny::Emulated(OrderEmulated::new(
+            child.trader_id(),
+            strategy_id,
+            instrument_id,
+            child_id,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )))
+        .unwrap();
+    ctx.add_order(child);
+
+    let mut report = create_fill_report(
+        parent_id,
+        parent_venue_order_id,
+        instrument_id,
+        trade_id,
+        "1.000",
+    );
+    let order_report = create_order_report(
+        Some(parent_id),
+        parent_venue_order_id,
+        instrument_id,
+        OrderStatus::Filled,
+        qty,
+        qty,
+    )
+    .with_avg_px(dec!(3000));
+
+    let expected_qty = match source {
+        OtoRecoverySource::RetainedSnapshot { inferred } => {
+            cache_oto_recovery_snapshot(&ctx, &instrument, strategy_id, position_id, true);
+
+            let fills = if inferred {
+                trade_id = create_inferred_reconciliation_trade_id(
+                    test_account_id(),
+                    instrument_id,
+                    parent_id,
+                    Some(parent_venue_order_id),
+                    OrderSide::Buy,
+                    OrderType::Limit,
+                    qty,
+                    qty,
+                    price,
+                    PositionId::new(format!("{instrument_id}-EXTERNAL")),
+                    order_report.ts_last,
+                );
+                vec![]
+            } else {
+                vec![report]
+            };
+
+            ctx.manager.reconcile_execution_mass_status(
+                &create_mass_status(vec![order_report], fills),
+                &ctx.exec_engine,
+            );
+            dec!(1)
+        }
+        OtoRecoverySource::LateStandalone => {
+            cache_oto_recovery_snapshot(&ctx, &instrument, strategy_id, position_id, false);
+            ctx.exec_engine
+                .borrow_mut()
+                .reconcile_execution_report(&ExecutionReport::Fill(Box::new(report)));
+            dec!(2)
+        }
+        OtoRecoverySource::ReplacementSnapshot(source) => {
+            let earlier = |id: &str, side, ts| {
+                FillReport::new(
+                    test_account_id(),
+                    instrument_id,
+                    VenueOrderId::from(id),
+                    TradeId::from(id),
+                    side,
+                    qty,
+                    price,
+                    Money::from("0.00 USDT"),
+                    LiquiditySide::Maker,
+                    None,
+                    None,
+                    UnixNanos::from(ts),
+                    UnixNanos::from(ts),
+                    None,
+                )
+            };
+
+            let delayed = matches!(source, ReplacementParentFill::DelayedPriorLifecycle);
+
+            let other_buy = if matches!(
+                source,
+                ReplacementParentFill::PriorLifecycle
+                    | ReplacementParentFill::DelayedPriorLifecycle
+            ) {
+                earlier("V-OTHER-NEW-BUY", OrderSide::Buy, 3_000_000u64)
+            } else {
+                report.ts_event = 3_000_000.into();
+                report.ts_init = report.ts_event;
+                earlier("V-OTHER-OLD-BUY", OrderSide::Buy, 1_000_000u64)
+            };
+
+            let flat = earlier("V-FLAT", OrderSide::Sell, 2_000_000u64);
+
+            let order_reports = match source {
+                ReplacementParentFill::WithOrderReport | ReplacementParentFill::PriorLifecycle => {
+                    vec![order_report]
+                }
+                ReplacementParentFill::CacheLinked
+                | ReplacementParentFill::DelayedPriorLifecycle => {
+                    vec![]
+                }
+            };
+
+            let batch_fill = if delayed {
+                earlier("V-OTHER-OLD-BUY", OrderSide::Buy, 1_000_000u64)
+            } else {
+                report.clone()
+            };
+
+            let mut mass = create_mass_status(order_reports, vec![batch_fill, other_buy, flat]);
+            mass.add_position_reports(vec![PositionStatusReport::new(
+                test_account_id(),
+                instrument_id,
+                PositionSide::Long,
+                Quantity::from("2.000"),
+                4_000_000.into(),
+                4_000_000.into(),
+                None,
+                None,
+                Some(dec!(3000)),
+            )]);
+            let result = ctx
+                .manager
+                .reconcile_execution_mass_status(&mass, &ctx.exec_engine);
+            assert!(result.unresolved_positions.is_empty());
+
+            if delayed {
+                ctx.exec_engine
+                    .borrow_mut()
+                    .reconcile_execution_report(&ExecutionReport::Fill(Box::new(report)));
+            }
+
+            dec!(2)
+        }
+    };
+
+    let mut emulator = OrderEmulator::new(ctx.clock.clone(), ctx.cache.clone());
+    emulator.on_start().unwrap();
+
+    let cache = ctx.cache.borrow();
+    let recovered_parent = cache.order(&parent_id).unwrap();
+    assert_eq!(recovered_parent.status(), OrderStatus::Filled);
+    assert_eq!(recovered_parent.trade_ids(), vec![&trade_id]);
+    let position = cache.position_ref(&position_id).unwrap();
+    assert_eq!(position.signed_decimal_qty(), expected_qty);
+    assert!(!position.trade_ids.contains(&trade_id));
+    assert_eq!(cache.order(&child_id).unwrap().status(), expected_status);
+    assert_eq!(
+        emulator
+            .get_matching_core(&instrument_id)
+            .is_some_and(|core| core.order_exists(child_id)),
+        expected_status == OrderStatus::Emulated
+    );
+}
+
+fn cache_oto_recovery_snapshot(
+    ctx: &TestContext,
+    instrument: &InstrumentAny,
+    strategy_id: StrategyId,
+    position_id: PositionId,
+    snapshot_opened: bool,
+) {
+    let qty = Quantity::from("1.000");
+    let price = Price::from("3000.00");
+    let snapshot_order = OrderTestBuilder::new(OrderType::Market)
+        .client_order_id(ClientOrderId::from("O-SNAPSHOT"))
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(qty)
+        .tags(vec![Ustr::from(RECONCILIATION_ORDER_TAG)])
+        .build();
+    let mut snapshot_fill = OrderFilledTestBuilder::new(&snapshot_order, instrument)
+        .position_id(position_id)
+        .account_id(test_account_id())
+        .trade_id(TradeId::from("T-SNAPSHOT"))
+        .last_qty(qty)
+        .last_px(price)
+        .ts_event(3_000_000.into())
+        .build();
+
+    let OrderEventAny::Filled(fill) = &mut snapshot_fill else {
+        unreachable!()
+    };
+
+    fill.reconciliation = true;
+    let position = if snapshot_opened {
+        Position::new(instrument, fill.clone())
+    } else {
+        let mut opening = fill.clone();
+        opening.client_order_id = ClientOrderId::from("O-ORDINARY-REOPEN");
+        opening.trade_id = TradeId::from("T-ORDINARY-REOPEN");
+        opening.ts_event = 2_000_000.into();
+        opening.event_id = UUID4::new();
+        opening.reconciliation = false;
+        let mut position = Position::new(instrument, opening);
+        position.apply(fill);
+        position
+    };
+
+    ctx.add_order(snapshot_order);
+    ctx.cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
 }
 
 #[tokio::test]

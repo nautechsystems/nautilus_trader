@@ -255,6 +255,14 @@ pub(super) struct RetainedFillState {
     pub(super) netting_lifecycle_starts: IndexMap<AccountInstrumentStrategyKey, UnixNanos>,
 }
 
+impl RetainedFillState {
+    pub(super) fn fill_precedes_netting_lifecycle(&self, fill: &OrderFilled) -> bool {
+        self.netting_lifecycle_starts
+            .get(&(fill.account_id, fill.instrument_id, fill.strategy_id))
+            .is_some_and(|ts_opened| fill.ts_event < *ts_opened)
+    }
+}
+
 /// Tracks pending fill identities and their generated reconciliation events.
 #[derive(Default)]
 pub(super) struct ReconciliationFillQueue {
@@ -790,10 +798,7 @@ pub(super) fn should_project_fill(
         return true;
     }
 
-    retained_fill_state
-        .netting_lifecycle_starts
-        .get(&(fill.account_id, fill.instrument_id, fill.strategy_id))
-        .is_some_and(|ts_opened| fill.ts_event < *ts_opened)
+    retained_fill_state.fill_precedes_netting_lifecycle(fill)
 }
 
 /// Sorts reconciliation events by event time while keeping each venue order's lifecycle events

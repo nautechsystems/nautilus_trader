@@ -68,7 +68,8 @@ use nautilus_execution::{
         generate_reconciliation_order_snapshot_events_with_commission,
         incremental_inferred_fill_price_and_liquidity, inferred_fill_price_and_liquidity,
         initialize_external_order_price, inverse_reconciliation_price_ceiling,
-        position_prices_match, preserve_order_amendment, process_mass_status_for_reconciliation,
+        mark_lifecycle_replacement_fill, position_prices_match, preserve_order_amendment,
+        process_mass_status_for_reconciliation,
         process_mass_status_for_reconciliation_without_synthetic_reports,
         reconcile_order_report_with_commission, should_reconciliation_update,
     },
@@ -841,6 +842,7 @@ impl ExecutionManager {
             .get_client(&mass_status.client_id)
             .and_then(|client| client.venue_order_ids(mass_status));
         let mut adjusted_reports = self.adjust_mass_status_fills(mass_status);
+        self.preserve_cached_replacement_fills(mass_status, &mut adjusted_reports);
         Self::preserve_external_order_history(
             mass_status,
             order_venue_ids.as_ref(),
@@ -851,10 +853,11 @@ impl ExecutionManager {
             fills: adjusted_fill_reports,
             order_only_ids,
             order_only_fill_keys,
-        } = adjusted_reports;
+            ..
+        } = &adjusted_reports;
 
         let bounded_order_only_ids =
-            self.order_only_ids(mass_status, &adjusted_order_reports, &adjusted_fill_reports);
+            self.order_only_ids(mass_status, adjusted_order_reports, adjusted_fill_reports);
 
         let mut events = Vec::new();
         let mut external_orders = Vec::new();
@@ -866,7 +869,7 @@ impl ExecutionManager {
         let mut fills_applied = 0usize;
         let mut fill_queue = ReconciliationFillQueue::default();
 
-        let fill_reports = &adjusted_fill_reports;
+        let fill_reports = adjusted_fill_reports;
         let mut seen_fill_keys: IndexSet<FillKey> = IndexSet::new();
 
         for fills in fill_reports.values() {
@@ -882,7 +885,7 @@ impl ExecutionManager {
             }
         }
 
-        let order_reports = &adjusted_order_reports;
+        let order_reports = adjusted_order_reports;
         let mut orders_skipped_filtered = 0usize;
         let mut orders_projected: IndexMap<ClientOrderId, OrderAny> = IndexMap::new();
 
@@ -1121,11 +1124,7 @@ impl ExecutionManager {
                 continue;
             }
 
-            let order = first_fill
-                .client_order_id
-                .as_ref()
-                .and_then(|id| self.get_order(*id))
-                .or_else(|| self.get_order_by_venue_order_id(*venue_order_id));
+            let order = self.cached_order_for_fill(first_fill);
 
             // Skip if resolved order's client_order_id is filtered (venue_order_id lookup path)
             if let Some(ref order) = order
@@ -1227,6 +1226,7 @@ impl ExecutionManager {
             }
         }
 
+        Self::mark_lifecycle_replacements(&mut events, &adjusted_reports.lifecycle_replacements);
         sort_reconciliation_events(&mut events);
 
         let recover_closing_fills = mass_status.lookback_start().is_some()
@@ -1248,8 +1248,8 @@ impl ExecutionManager {
                 fill,
                 &retained_fill_state,
                 &reported_fill_keys,
-                &order_only_ids,
-                &order_only_fill_keys,
+                order_only_ids,
+                order_only_fill_keys,
             );
             let bounded = !historical && bounded_order_only_ids.contains(&fill.venue_order_id);
 
@@ -1275,8 +1275,16 @@ impl ExecutionManager {
             let withheld_position_id =
                 (uncovered && !recovered && self.applied_fill_key(fill) != Some(fill_key))
                     .then(|| exec_engine.borrow().reconciliation_position_id(fill));
+
             if historical || bounded && !recovered {
-                exec_engine.borrow_mut().project_reconciliation_fill(fill);
+                Self::project_mass_reconciliation_fill(
+                    &mut exec_engine.borrow_mut(),
+                    fill,
+                    historical,
+                    &reported_fill_keys,
+                    &retained_fill_state,
+                    &adjusted_reports,
+                );
             } else {
                 exec_engine.borrow_mut().process(event);
             }
@@ -1412,6 +1420,108 @@ impl ExecutionManager {
             external_orders,
             unresolved_positions: self.unresolved_mass_status_positions(mass_status),
         }
+    }
+
+    fn project_mass_reconciliation_fill(
+        engine: &mut ExecutionEngine,
+        fill: &OrderFilled,
+        historical: bool,
+        reported_fill_keys: &IndexSet<FillKey>,
+        retained_fill_state: &RetainedFillState,
+        adjusted_reports: &AdjustedReports,
+    ) {
+        let fill_key = (fill.account_id, fill.instrument_id, fill.trade_id);
+        if !historical
+            || retained_fill_state.fill_keys.contains(&fill_key)
+            || adjusted_reports.order_only_fill_keys.contains(&fill_key)
+        {
+            engine.project_reconciliation_fill(fill);
+            return;
+        }
+
+        let replacement = adjusted_reports
+            .lifecycle_replacements
+            .get(&fill.instrument_id)
+            .copied()
+            .filter(|_| {
+                adjusted_reports
+                    .order_only_ids
+                    .contains(&fill.venue_order_id)
+            });
+
+        let can_check_snapshot = if replacement.is_some() {
+            reported_fill_keys.contains(&fill_key)
+        } else {
+            retained_fill_state.fill_precedes_netting_lifecycle(fill)
+        };
+
+        if can_check_snapshot {
+            engine.project_reconciliation_fill_with_snapshot(fill, replacement);
+        } else {
+            engine.project_reconciliation_fill(fill);
+        }
+    }
+
+    fn mark_lifecycle_replacements(
+        events: &mut [OrderEventAny],
+        replacements: &IndexMap<InstrumentId, VenueOrderId>,
+    ) {
+        if replacements.is_empty() {
+            return;
+        }
+
+        for event in events {
+            if let OrderEventAny::Filled(fill) = event
+                && replacements.get(&fill.instrument_id) == Some(&fill.venue_order_id)
+            {
+                mark_lifecycle_replacement_fill(fill);
+            }
+        }
+    }
+
+    fn preserve_cached_replacement_fills(
+        &self,
+        mass_status: &ExecutionMassStatus,
+        adjusted: &mut AdjustedReports,
+    ) {
+        if adjusted.lifecycle_replacements.is_empty() {
+            return;
+        }
+
+        for (venue_order_id, mut fills) in mass_status.fill_reports() {
+            let Some(first) = fills.first() else {
+                continue;
+            };
+
+            if !adjusted
+                .lifecycle_replacements
+                .contains_key(&first.instrument_id)
+                || adjusted.fills.contains_key(&venue_order_id)
+            {
+                continue;
+            }
+
+            let Some(order) = self.cached_order_for_fill(first) else {
+                continue;
+            };
+
+            fills.retain(|fill| {
+                !fill.last_qty.is_zero()
+                    && fill.instrument_id == order.instrument_id()
+                    && Some(fill.account_id) == order.account_id()
+            });
+
+            if !fills.is_empty() {
+                adjusted.order_only_ids.insert(venue_order_id);
+                adjusted.fills.insert(venue_order_id, fills);
+            }
+        }
+    }
+
+    fn cached_order_for_fill(&self, fill: &FillReport) -> Option<OrderAny> {
+        fill.client_order_id
+            .and_then(|id| self.get_order(id))
+            .or_else(|| self.get_order_by_venue_order_id(fill.venue_order_id))
     }
 
     fn preserve_external_order_history(
@@ -5089,6 +5199,7 @@ impl ExecutionManager {
         let mut final_fills: IndexMap<VenueOrderId, Vec<FillReport>> = mass_status.fill_reports();
         let mut order_only_ids = IndexSet::new();
         let mut order_only_fill_keys = IndexSet::new();
+        let mut lifecycle_replacements = IndexMap::new();
 
         final_fills.retain(|_, fills| {
             fills.retain(|fill| {
@@ -5109,6 +5220,7 @@ impl ExecutionManager {
                 fills: final_fills,
                 order_only_ids,
                 order_only_fill_keys,
+                lifecycle_replacements,
             };
         }
 
@@ -5170,6 +5282,7 @@ impl ExecutionManager {
                 fills: final_fills,
                 order_only_ids,
                 order_only_fill_keys,
+                lifecycle_replacements,
             };
         }
 
@@ -5195,6 +5308,7 @@ impl ExecutionManager {
                 Ok(result) => {
                     order_only_ids.extend(result.order_only_ids);
                     order_only_fill_keys.extend(result.order_only_fill_keys);
+                    lifecycle_replacements.extend(result.lifecycle_replacements);
                     final_orders.retain(|_, order| order.instrument_id != instrument_id);
                     final_fills.retain(|_, fills| {
                         fills
@@ -5223,6 +5337,7 @@ impl ExecutionManager {
             fills: final_fills,
             order_only_ids,
             order_only_fill_keys,
+            lifecycle_replacements,
         }
     }
 

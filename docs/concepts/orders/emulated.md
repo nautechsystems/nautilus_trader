@@ -170,8 +170,23 @@ when the emulated order is *released*. Use the `Cache` instead.
 
 ## Persistence and recovery
 
-On startup, the `OrderEmulator` reactivates emulated orders that the configured cache database
-restored into the cache. This preserves their state across restarts.
+On startup, the `OrderEmulator` recovers emulated orders that the configured cache database restored into
+the cache. It cancels an OTO child when its parent:
+
+- Is missing from the cache.
+- Is closed and has no position ID.
+- Is closed and its position has closed, been purged, or reopened as a NETTING position that does
+  not include a fill from the parent.
+
+For a reconciled NETTING fill, startup can use the recorded covering fill in the current position
+even after the synthetic order is purged. Older reconciled fills without coverage records retain
+their recovery behavior when their position ID still resolves to an open position.
+
+Order purging can remove a closed parent while its position remains open. At the next startup, the
+emulator cancels its child before strategy order-event callbacks are active.
+
+Spread fills do not create positions. A child of a filled spread order can resume when the parent
+instrument definition remains cached.
 
 ## Best practices
 

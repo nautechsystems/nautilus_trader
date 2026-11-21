@@ -13303,6 +13303,89 @@ fn test_purge_closed_orders_also_purges_order_lists() {
 }
 
 #[rstest]
+#[case::targeted(false)]
+#[case::bulk(true)]
+fn test_purge_order_removes_order_list_after_last_member(
+    audusd_sim: CurrencyPair,
+    #[case] bulk: bool,
+) {
+    let mut cache = Cache::default();
+    let order_list_id = OrderListId::new("OL-001");
+    let first_id = ClientOrderId::new("O-001");
+    let second_id = ClientOrderId::new("O-002");
+    let account_id = AccountId::new("SIM-001");
+
+    for client_order_id in [first_id, second_id] {
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(audusd_sim.id())
+            .client_order_id(client_order_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("1.00000"))
+            .quantity(Quantity::from(100_000))
+            .submit(true)
+            .build();
+
+        if client_order_id == first_id {
+            order.set_order_list_id(order_list_id);
+        }
+
+        let venue_order_id = VenueOrderId::new(format!("V-{client_order_id}"));
+        let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+        cache.add_order(order, None, None, false).unwrap();
+        cache.update_order(&accepted).unwrap();
+    }
+
+    let strategy_id = cache.order_ref(&first_id).unwrap().strategy_id();
+
+    let order_list = OrderList::new(
+        order_list_id,
+        audusd_sim.id(),
+        strategy_id,
+        vec![first_id, second_id],
+        UnixNanos::default(),
+    );
+
+    cache.add_order_list(order_list.clone()).unwrap();
+
+    cache.purge_order(first_id, false).unwrap();
+
+    assert_eq!(
+        cache.order_ref(&first_id).unwrap().status(),
+        OrderStatus::Accepted
+    );
+    assert_eq!(cache.order_list(&order_list_id), Some(&order_list));
+
+    for client_order_id in [first_id, second_id] {
+        let canceled = {
+            let order = cache.order_ref(&client_order_id).unwrap();
+            TestOrderEventStubs::canceled(&order, account_id, order.venue_order_id())
+        };
+
+        cache.update_order(&canceled).unwrap();
+    }
+
+    cache.purge_order(first_id, false).unwrap();
+
+    assert!(!cache.order_exists(&first_id));
+    assert_eq!(
+        cache.order_ref(&second_id).unwrap().status(),
+        OrderStatus::Canceled
+    );
+    assert_eq!(cache.order_list(&order_list_id), Some(&order_list));
+
+    if bulk {
+        cache
+            .purge_closed_orders(UnixNanos::from(u64::MAX), 0, false)
+            .unwrap();
+    } else {
+        cache.purge_order(second_id, false).unwrap();
+    }
+
+    assert!(!cache.order_exists(&second_id));
+    assert_eq!(cache.order_list(&order_list_id), None);
+}
+
+#[rstest]
 fn test_purge_closed_orders_does_not_purge_order_list_with_open_orders() {
     let mut cache = Cache::default();
     let audusd_sim = audusd_sim();

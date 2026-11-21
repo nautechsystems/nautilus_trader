@@ -40,14 +40,17 @@ use nautilus_common::{
 use nautilus_core::{UUID4, WeakCell};
 use nautilus_model::{
     data::{OrderBookDeltas, QuoteTick, TradeTick},
-    enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
+    enums::{
+        ContingencyType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
+    },
     events::{
         OrderCancelDenied, OrderCanceled, OrderEmulated, OrderEventAny, OrderInitialized,
         OrderModifyDenied, OrderReleased, OrderUpdated,
     },
     identifiers::{ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId},
-    instruments::Instrument,
+    instruments::{Instrument, InstrumentAny},
     orders::{LimitOrder, MarketOrder, Order, OrderAny},
+    position::Position,
     types::{Price, Quantity},
 };
 use ustr::Ustr;
@@ -56,6 +59,7 @@ use super::{PendingMessage, handlers::OrderEmulatorOnEventHandler};
 use crate::{
     matching::{MatchAction, OrderMatchingCore, RestingOrder},
     order_manager::{OrderManagerAction, manager::OrderManager},
+    reconciliation::SNAPSHOT_COVERING_FILL_ID,
     trailing::{store_trailing_stop_activation, trailing_stop_calculate},
 };
 
@@ -278,11 +282,13 @@ impl OrderEmulator {
         log::info!("Disposed");
     }
 
-    /// Reactivates emulated orders from cache on start.
+    /// Recovers emulated orders from the cache on start.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if processing fails.
+    /// Handles recovery errors locally and returns `Ok(())`.
+    #[allow(
+        clippy::missing_errors_doc,
+        reason = "startup handles recovery errors locally"
+    )]
     pub fn on_start(&mut self) -> anyhow::Result<()> {
         let emulated_orders: Vec<ClientOrderId> = self
             .cache
@@ -318,43 +324,39 @@ impl OrderEmulator {
             return; // No longer emulated
         }
 
-        if let Some(parent_order_id) = &order.parent_order_id() {
-            let parent_order = if let Some(order) = self.cache.borrow().order_owned(parent_order_id)
-            {
-                order
-            } else {
-                log::error!("Cannot handle order: parent {parent_order_id} not found");
-                return;
-            };
-
-            let is_position_closed = parent_order
-                .position_id()
-                .is_none_or(|id| self.cache.borrow().is_position_closed(&id));
-
-            if parent_order.is_closed() && is_position_closed {
-                let actions = self.manager.cancel_order(&order);
-                self.dispatch_manager_actions(actions);
-                return; // Parent already closed
+        if let Some(parent_order_id) = order.parent_order_id() {
+            let parent_order = self.cache.borrow().order_owned(&parent_order_id);
+            if parent_order.is_none() {
+                log::warn!(
+                    "Parent {parent_order_id} missing during reactivation of {client_order_id}"
+                );
             }
 
-            if parent_order.contingency_type() == Some(ContingencyType::Oto)
-                && (parent_order.is_active_local()
-                    || parent_order.filled_qty() == Quantity::zero(0))
+            if parent_order
+                .as_ref()
+                .is_none_or(|parent| self.should_cancel_reactivated_child(parent))
             {
+                let actions = self.manager.cancel_order(&order);
+                self.dispatch_manager_actions(actions);
+                return;
+            }
+
+            if parent_order.is_some_and(|parent| {
+                parent.contingency_type() == Some(ContingencyType::Oto)
+                    && (parent.is_active_local() || parent.filled_qty() == Quantity::zero(0))
+            }) {
                 return; // Process contingency order later once parent triggered
             }
         }
 
-        let position_id = self
-            .cache
-            .borrow()
-            .position_id(&order.client_order_id())
-            .copied();
-        let client_id = self
-            .cache
-            .borrow()
-            .client_id(&order.client_order_id())
-            .copied();
+        let (position_id, client_id) = {
+            let cache = self.cache.borrow();
+
+            (
+                cache.position_id(&client_order_id).copied(),
+                cache.client_id(&client_order_id).copied(),
+            )
+        };
 
         let command = SubmitOrder::new(
             order.trader_id(),
@@ -373,6 +375,67 @@ impl OrderEmulator {
 
         self.manager.cache_submit_order_command(command.clone());
         self.handle_submit_order(&command);
+    }
+
+    fn should_cancel_reactivated_child(&self, parent: &OrderAny) -> bool {
+        parent.is_closed()
+            && parent.position_id().is_none_or(|id| {
+                let cache = self.cache.borrow();
+                if let Some(position) = cache.position_ref(&id) {
+                    // A reopened NETTING position can reuse the ID without the parent's fills
+                    return position.is_closed()
+                        || (cache.oms_type(&id) == Some(OmsType::Netting)
+                            && parent.filled_qty().is_positive()
+                            && !Self::parent_matches_position(&position, parent));
+                }
+
+                // Spread fills carry a position ID without creating a position
+                !cache
+                    .instrument(&parent.instrument_id())
+                    .is_some_and(InstrumentAny::is_spread)
+            })
+    }
+
+    fn parent_matches_position(position: &Position, parent: &OrderAny) -> bool {
+        let parent_id = parent.client_order_id();
+
+        if position
+            .events
+            .iter()
+            .any(|fill| fill.client_order_id == parent_id)
+        {
+            return true;
+        }
+
+        let key = Ustr::from(SNAPSHOT_COVERING_FILL_ID);
+        let active_trades = parent.trade_ids();
+        let mut has_coverage_record = false;
+        let mut has_legacy_fill = false;
+
+        for event in parent.events() {
+            if let OrderEventAny::Filled(fill) = event
+                && fill.reconciliation
+                && fill.position_id == Some(position.id)
+                && fill.account_id == position.account_id
+                && fill.instrument_id == position.instrument_id
+                && active_trades.contains(&&fill.trade_id)
+            {
+                if let Some(covering_id) = fill.info.as_ref().and_then(|info| info.get(&key)) {
+                    has_coverage_record = true;
+
+                    if position.events.iter().any(|position_fill| {
+                        position_fill.event_id.as_str() == covering_id.as_str()
+                    }) {
+                        return true;
+                    }
+                } else {
+                    has_legacy_fill = true;
+                }
+            }
+        }
+
+        // Older projected fills carry no cover ID, so preserve recovery for an open position
+        !has_coverage_record && has_legacy_fill
     }
 
     pub fn on_event(&mut self, event: &OrderEventAny) {
@@ -1960,17 +2023,23 @@ mod tests {
     use nautilus_model::{
         data::{QuoteTick, TradeTick},
         enums::{
-            AggressorSide, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType,
+            AggressorSide, OmsType, OrderSide, OrderType, TimeInForce, TrailingOffsetType,
+            TriggerType,
         },
+        events::OrderFilled,
         identifiers::{
             AccountId, ClientId, ClientOrderId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
             VenueOrderId,
         },
         instruments::{
             CryptoPerpetual, Instrument, InstrumentAny, SyntheticInstrument,
-            stubs::{btcusd_bybit, crypto_perpetual_ethusdt},
+            stubs::{btcusd_bybit, crypto_perpetual_ethusdt, futures_spread_es},
         },
-        orders::{OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
+        orders::{
+            OrderList, OrderTestBuilder,
+            stubs::{OrderFilledTestBuilder, TestOrderEventStubs},
+        },
+        position::Position,
         types::{Price, Quantity},
     };
     use rstest::{fixture, rstest};
@@ -1978,6 +2047,7 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
+    use crate::reconciliation::RECONCILIATION_ORDER_TAG;
 
     #[fixture]
     fn instrument() -> CryptoPerpetual {
@@ -6474,13 +6544,425 @@ mod tests {
 
         emulator.borrow_mut().on_start().unwrap();
 
-        assert!(
+        assert_eq!(
             cache
                 .borrow()
                 .order(&child.client_order_id())
                 .unwrap()
-                .is_closed(),
-            "emulated child of a closed position-less parent must be canceled on reactivation"
+                .status(),
+            OrderStatus::Canceled
+        );
+    }
+
+    enum StartupPurge {
+        None,
+        ParentOrder,
+        ClosedOrders,
+        Position,
+    }
+
+    #[rstest]
+    #[case::targeted_parent(StartupPurge::ParentOrder, true, OrderStatus::Canceled)]
+    #[case::bulk_parent(StartupPurge::ClosedOrders, true, OrderStatus::Canceled)]
+    #[case::position(StartupPurge::Position, true, OrderStatus::Canceled)]
+    #[case::orphan_open_position(StartupPurge::ParentOrder, false, OrderStatus::Canceled)]
+    #[case::parent_and_closed_position(StartupPurge::None, true, OrderStatus::Canceled)]
+    #[case::parent_and_open_position(StartupPurge::None, false, OrderStatus::Emulated)]
+    fn test_on_start_recovers_oto_child_after_purge(
+        instrument: CryptoPerpetual,
+        #[case] purge: StartupPurge,
+        #[case] close_position: bool,
+        #[case] expected_status: OrderStatus,
+    ) {
+        let (_clock, cache, emulator) = create_emulator();
+        let instrument = InstrumentAny::CryptoPerpetual(instrument);
+        let position_id = PositionId::from("P-OTO");
+        let (parent_id, child_id) = cache_emulated_oto_pair(
+            &mut cache.borrow_mut(),
+            &instrument,
+            position_id,
+            ParentFill::Applied,
+        );
+        let parent_fill = cache
+            .borrow()
+            .order_ref(&parent_id)
+            .unwrap()
+            .last_event()
+            .clone();
+        let mut position = Position::new(&instrument, parent_fill.into());
+        cache
+            .borrow_mut()
+            .add_position(&position, OmsType::Hedging)
+            .unwrap();
+
+        if close_position {
+            let closing_order = OrderTestBuilder::new(OrderType::Market)
+                .instrument_id(instrument.id())
+                .client_order_id(ClientOrderId::from("O-CLOSE"))
+                .side(OrderSide::Sell)
+                .quantity(Quantity::from(1))
+                .build();
+            let fill = OrderFilledTestBuilder::new(&closing_order, &instrument)
+                .trade_id(TradeId::from("T-CLOSE"))
+                .position_id(position_id)
+                .last_px(Price::from("5001.00"))
+                .build();
+            position.apply(&fill.into());
+            cache.borrow_mut().update_position(&position).unwrap();
+            assert!(cache.borrow().is_position_closed(&position_id));
+        }
+
+        match purge {
+            StartupPurge::None => {}
+            StartupPurge::ParentOrder => cache.borrow_mut().purge_order(parent_id, false).unwrap(),
+            StartupPurge::ClosedOrders => cache
+                .borrow_mut()
+                .purge_closed_orders(UnixNanos::from(u64::MAX), 0, false)
+                .unwrap(),
+            StartupPurge::Position => cache
+                .borrow_mut()
+                .purge_position(position_id, false)
+                .unwrap(),
+        }
+
+        {
+            let cache = cache.borrow();
+            assert_eq!(
+                cache.order_exists(&parent_id),
+                matches!(purge, StartupPurge::None | StartupPurge::Position)
+            );
+            assert_eq!(
+                cache.position_exists(&position_id),
+                !matches!(purge, StartupPurge::Position)
+            );
+        }
+
+        emulator.borrow_mut().on_start().unwrap();
+
+        assert_emulated_oto_recovery(
+            &cache,
+            &emulator,
+            instrument.id(),
+            child_id,
+            expected_status,
+        );
+    }
+
+    #[rstest]
+    #[case::fill(false)]
+    #[case::snapshot(true)]
+    fn test_on_start_cancels_oto_child_after_netting_position_reopens(
+        instrument: CryptoPerpetual,
+        #[case] reconciled: bool,
+    ) {
+        let (_clock, cache, emulator) = create_emulator();
+        let instrument = InstrumentAny::CryptoPerpetual(instrument);
+        let position_id = PositionId::from("P-OTO");
+        let covering_fill_id = UUID4::new();
+        let parent_fill = if reconciled {
+            ParentFill::Reconciled(Some(covering_fill_id))
+        } else {
+            ParentFill::Applied
+        };
+
+        let (parent_id, child_id) = cache_emulated_oto_pair(
+            &mut cache.borrow_mut(),
+            &instrument,
+            position_id,
+            parent_fill,
+        );
+        let opening_fill = cache
+            .borrow()
+            .order_ref(&parent_id)
+            .unwrap()
+            .last_event()
+            .clone();
+        let mut opening_fill: OrderFilled = opening_fill.into();
+        if reconciled {
+            opening_fill.client_order_id = ClientOrderId::from("O-ORIGINAL-SNAPSHOT");
+            opening_fill.trade_id = TradeId::from("T-ORIGINAL-SNAPSHOT");
+            opening_fill.event_id = covering_fill_id;
+        }
+
+        let mut position = Position::new(&instrument, opening_fill);
+
+        let closing_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-CLOSE"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(1))
+            .build();
+        let closing_fill = OrderFilledTestBuilder::new(&closing_order, &instrument)
+            .trade_id(TradeId::from("T-CLOSE"))
+            .position_id(position_id)
+            .last_px(Price::from("5001.00"))
+            .ts_event(2.into())
+            .build();
+        position.apply(&closing_fill.into());
+
+        let mut builder = OrderTestBuilder::new(OrderType::Market);
+        builder
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-REOPEN"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(1))
+            .submit(true);
+
+        if reconciled {
+            builder.tags(vec![Ustr::from(RECONCILIATION_ORDER_TAG)]);
+        }
+
+        let mut reopening_order = builder.build();
+
+        let OrderEventAny::Filled(mut reopening_fill) =
+            OrderFilledTestBuilder::new(&reopening_order, &instrument)
+                .trade_id(TradeId::from("T-REOPEN"))
+                .position_id(position_id)
+                .last_px(Price::from("5002.00"))
+                .ts_event(3.into())
+                .build()
+        else {
+            unreachable!()
+        };
+
+        reopening_fill.reconciliation = reconciled;
+        reopening_fill.venue_order_id = VenueOrderId::from("V-REOPEN");
+        let reopened_position = Position::new(&instrument, reopening_fill.clone());
+        reopening_order
+            .apply(OrderEventAny::Filled(reopening_fill))
+            .unwrap();
+
+        {
+            let mut cache = cache.borrow_mut();
+            cache.add_position(&position, OmsType::Netting).unwrap();
+            cache.purge_position(position_id, false).unwrap();
+            assert!(!cache.position_exists(&position_id));
+
+            let reopening_order_id = reopening_order.client_order_id();
+            cache
+                .add_order(reopening_order, Some(position_id), None, false)
+                .unwrap();
+            cache
+                .add_position(&reopened_position, OmsType::Netting)
+                .unwrap();
+            cache.build_index();
+
+            let reopened = cache.position_ref(&position_id).unwrap();
+            assert!(reopened.is_open());
+            assert_eq!(reopened.opening_order_id, reopening_order_id);
+            assert_eq!(cache.position_id(&parent_id), Some(&position_id));
+        }
+
+        emulator.borrow_mut().on_start().unwrap();
+
+        assert_emulated_oto_recovery(
+            &cache,
+            &emulator,
+            instrument.id(),
+            child_id,
+            OrderStatus::Canceled,
+        );
+    }
+
+    #[rstest]
+    fn test_on_start_reactivates_emulated_oto_child_of_spread() {
+        let (_clock, cache, emulator) = create_emulator();
+        let instrument = InstrumentAny::FuturesSpread(futures_spread_es());
+        let position_id = PositionId::from("P-OTO");
+        let (parent_id, child_id) = cache_emulated_oto_pair(
+            &mut cache.borrow_mut(),
+            &instrument,
+            position_id,
+            ParentFill::Applied,
+        );
+        assert_eq!(
+            cache.borrow().order_ref(&parent_id).unwrap().position_id(),
+            Some(position_id)
+        );
+        assert!(!cache.borrow().position_exists(&position_id));
+
+        emulator.borrow_mut().on_start().unwrap();
+
+        assert_emulated_oto_recovery(
+            &cache,
+            &emulator,
+            instrument.id(),
+            child_id,
+            OrderStatus::Emulated,
+        );
+    }
+
+    #[rstest]
+    #[case::cached(false, true)]
+    #[case::purged(true, true)]
+    #[case::legacy_purged(true, false)]
+    fn test_on_start_reactivates_oto_child_of_snapshot_reconciled_position(
+        instrument: CryptoPerpetual,
+        #[case] purge_snapshot: bool,
+        #[case] record_coverage: bool,
+    ) {
+        let (_clock, cache, emulator) = create_emulator();
+        let instrument = InstrumentAny::CryptoPerpetual(instrument);
+        let position_id = PositionId::from("P-OTO");
+        let snapshot_order_id = ClientOrderId::from("O-SNAPSHOT");
+
+        let child_id = {
+            let mut cache = cache.borrow_mut();
+            let covering_fill_id = UUID4::new();
+            let parent_fill = ParentFill::Reconciled(record_coverage.then_some(covering_fill_id));
+            let (parent_id, child_id) =
+                cache_emulated_oto_pair(&mut cache, &instrument, position_id, parent_fill);
+            let account_id = cache.order_ref(&parent_id).unwrap().account_id().unwrap();
+            let mut snapshot_order = OrderTestBuilder::new(OrderType::Market)
+                .instrument_id(instrument.id())
+                .client_order_id(snapshot_order_id)
+                .side(OrderSide::Buy)
+                .quantity(Quantity::from(1))
+                .tags(vec![Ustr::from(RECONCILIATION_ORDER_TAG)])
+                .submit(true)
+                .build();
+
+            let OrderEventAny::Filled(mut snapshot_fill) =
+                OrderFilledTestBuilder::new(&snapshot_order, &instrument)
+                    .trade_id(TradeId::from("T-SNAPSHOT"))
+                    .position_id(position_id)
+                    .account_id(account_id)
+                    .last_px(Price::from("5000.00"))
+                    .ts_event(2.into())
+                    .build()
+            else {
+                unreachable!()
+            };
+
+            snapshot_fill.reconciliation = true;
+            snapshot_fill.event_id = covering_fill_id;
+            snapshot_fill.venue_order_id = VenueOrderId::from("V-SNAPSHOT");
+            let position = Position::new(&instrument, snapshot_fill.clone());
+            snapshot_order
+                .apply(OrderEventAny::Filled(snapshot_fill))
+                .unwrap();
+            cache
+                .add_order(snapshot_order, Some(position_id), None, false)
+                .unwrap();
+            cache.add_position(&position, OmsType::Netting).unwrap();
+            if purge_snapshot {
+                cache.purge_order(snapshot_order_id, false).unwrap();
+            }
+
+            assert_eq!(cache.order_exists(&snapshot_order_id), !purge_snapshot);
+            assert_eq!(cache.position_id(&parent_id), Some(&position_id));
+            assert_eq!(
+                cache.position_ref(&position_id).unwrap().client_order_ids(),
+                vec![snapshot_order_id],
+            );
+            child_id
+        };
+
+        emulator.borrow_mut().on_start().unwrap();
+
+        assert_emulated_oto_recovery(
+            &cache,
+            &emulator,
+            instrument.id(),
+            child_id,
+            OrderStatus::Emulated,
+        );
+    }
+
+    #[derive(Clone, Copy)]
+    enum ParentFill {
+        Applied,
+        Reconciled(Option<UUID4>),
+    }
+
+    fn cache_emulated_oto_pair(
+        cache: &mut Cache,
+        instrument: &InstrumentAny,
+        position_id: PositionId,
+        parent_fill: ParentFill,
+    ) -> (ClientOrderId, ClientOrderId) {
+        let parent_id = ClientOrderId::from("O-PARENT");
+        let child_id = ClientOrderId::from("O-CHILD");
+        let mut parent = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(parent_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("5000.00"))
+            .quantity(Quantity::from(1))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .submit(true)
+            .build();
+
+        let OrderEventAny::Filled(mut fill) = OrderFilledTestBuilder::new(&parent, instrument)
+            .trade_id(TradeId::from("T-OPEN"))
+            .position_id(position_id)
+            .last_px(Price::from("5000.00"))
+            .ts_event(1.into())
+            .build()
+        else {
+            unreachable!()
+        };
+
+        if let ParentFill::Reconciled(covering_fill_id) = parent_fill {
+            fill.reconciliation = true;
+            if let Some(covering_fill_id) = covering_fill_id {
+                fill.info.get_or_insert_with(Default::default).insert(
+                    Ustr::from(SNAPSHOT_COVERING_FILL_ID),
+                    Ustr::from(covering_fill_id.as_str()),
+                );
+            }
+        }
+
+        parent.apply(OrderEventAny::Filled(fill)).unwrap();
+        let mut child = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(child_id)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("4900.00"))
+            .quantity(Quantity::from(1))
+            .emulation_trigger(TriggerType::BidAsk)
+            .parent_order_id(parent_id)
+            .reduce_only(true)
+            .build();
+
+        let emulated = OrderEmulated::new(
+            child.trader_id(),
+            child.strategy_id(),
+            child.instrument_id(),
+            child_id,
+            UUID4::new(),
+            0.into(),
+            0.into(),
+        );
+
+        child.apply(OrderEventAny::Emulated(emulated)).unwrap();
+        let position_id = (!instrument.is_spread()).then_some(position_id);
+        cache.add_instrument(instrument.clone()).unwrap();
+        cache.add_order(parent, position_id, None, false).unwrap();
+        cache.add_order(child, position_id, None, false).unwrap();
+        (parent_id, child_id)
+    }
+
+    fn assert_emulated_oto_recovery(
+        cache: &Rc<RefCell<Cache>>,
+        emulator: &Rc<RefCell<OrderEmulator>>,
+        instrument_id: InstrumentId,
+        child_id: ClientOrderId,
+        expected_status: OrderStatus,
+    ) {
+        let cache = cache.borrow();
+        let child = cache.order_ref(&child_id).unwrap();
+        assert_eq!(child.status(), expected_status);
+
+        let is_emulated = expected_status == OrderStatus::Emulated;
+        assert_eq!(cache.is_order_emulated(&child_id), is_emulated);
+        assert_eq!(
+            emulator
+                .borrow()
+                .get_matching_core(&instrument_id)
+                .is_some_and(|core| core.order_exists(child_id)),
+            is_emulated,
         );
     }
 }

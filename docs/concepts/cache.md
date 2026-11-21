@@ -730,6 +730,8 @@ so a successful return does not confirm queue admission or database deletion. En
 used to replay corrections remain persisted as general data.
 Instrument purges change memory only.
 
+Order purges remove an affected order list when none of its member orders remain cached.
+
 #### Targeted purges
 
 Use these to drop a single entity. Order and position guards use in-memory state; direct purges can

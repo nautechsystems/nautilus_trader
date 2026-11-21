@@ -1710,7 +1710,6 @@ impl Cache {
         };
         let purge_cutoff = ts_now.checked_sub(buffer_ns);
 
-        let mut affected_order_list_ids: AHashSet<OrderListId> = AHashSet::new();
         let mut purged_client_order_ids: AHashSet<ClientOrderId> = AHashSet::new();
         let mut spawns_without_oto = AHashSet::new();
         let mut result = Ok(());
@@ -1722,15 +1721,13 @@ impl Cache {
                     && let Some(ts_closed) = order.ts_closed()
                     && purge_cutoff.is_some_and(|cutoff| ts_closed <= cutoff)
                 {
-                    let linked = order.linked_order_ids().map(<[_]>::to_vec);
-                    let order_list_id = order.order_list_id();
-                    Some((linked, order_list_id))
+                    Some(order.linked_order_ids().map(<[_]>::to_vec))
                 } else {
                     None
                 }
             });
 
-            let Some((linked, order_list_id)) = purge_target else {
+            let Some(linked) = purge_target else {
                 continue;
             };
 
@@ -1746,16 +1743,12 @@ impl Cache {
                 }
             }
 
-            if let Some(order_list_id) = order_list_id {
-                affected_order_list_ids.insert(order_list_id);
-            }
-
             match self.purge_order_entry(
                 client_order_id,
                 purge_from_database,
                 Some(&mut spawns_without_oto),
             ) {
-                Ok(OrderPurgeCleanup::SweepIndexes) => {
+                Ok(OrderPurgeCleanup::SweepIndexes { .. }) => {
                     purged_client_order_ids.insert(client_order_id);
                 }
                 Ok(OrderPurgeCleanup::None) => {}
@@ -1767,19 +1760,8 @@ impl Cache {
         }
 
         self.purge_order_indexes_batch(&purged_client_order_ids);
-
-        for order_list_id in affected_order_list_ids {
-            if let Some(order_list) = self.order_lists.get(&order_list_id) {
-                let all_purged = order_list
-                    .client_order_ids
-                    .iter()
-                    .all(|id| !self.orders.contains_key(id));
-
-                if all_purged {
-                    self.order_lists.remove(&order_list_id);
-                    log::info!("Purged {order_list_id}");
-                }
-            }
+        if !purged_client_order_ids.is_empty() {
+            self.purge_empty_order_lists(|id| purged_client_order_ids.contains(id));
         }
 
         result
@@ -1804,15 +1786,18 @@ impl Cache {
         client_order_id: ClientOrderId,
         purge_from_database: bool,
     ) -> anyhow::Result<()> {
-        if matches!(
-            self.purge_order_entry(client_order_id, purge_from_database, None)?,
-            OrderPurgeCleanup::SweepIndexes
-        ) {
+        if let OrderPurgeCleanup::SweepIndexes { removed_order } =
+            self.purge_order_entry(client_order_id, purge_from_database, None)?
+        {
             self.index
                 .venue_order_ids
                 .retain(|_, owner| owner != &client_order_id);
             for orders in self.index.position_orders.values_mut() {
                 orders.remove(&client_order_id);
+            }
+
+            if removed_order {
+                self.purge_empty_order_lists(|id| *id == client_order_id);
             }
         }
 
@@ -1844,8 +1829,25 @@ impl Cache {
             )?;
         }
 
-        self.purge_order_in_memory(client_order_id);
-        Ok(OrderPurgeCleanup::SweepIndexes)
+        let removed_order = self.purge_order_in_memory(client_order_id);
+        Ok(OrderPurgeCleanup::SweepIndexes { removed_order })
+    }
+
+    fn purge_empty_order_lists(&mut self, was_purged: impl Fn(&ClientOrderId) -> bool) {
+        let orders = &self.orders;
+        self.order_lists.retain(|order_list_id, list| {
+            let remove = list.client_order_ids.iter().any(&was_purged)
+                && list
+                    .client_order_ids
+                    .iter()
+                    .all(|id| !orders.contains_key(id));
+
+            if remove {
+                log::info!("Purged {order_list_id}");
+            }
+
+            !remove
+        });
     }
 
     fn spawn_order_needed_for_oto(
@@ -1896,7 +1898,7 @@ impl Cache {
     }
 
     // The caller sweeps venue aliases and historical position memberships once per purge batch
-    fn purge_order_in_memory(&mut self, client_order_id: ClientOrderId) {
+    fn purge_order_in_memory(&mut self, client_order_id: ClientOrderId) -> bool {
         struct OrderDetails {
             instrument: InstrumentId,
             strategy: StrategyId,
@@ -2082,6 +2084,8 @@ impl Cache {
         if order_details.is_some() {
             log::info!("Purged order {client_order_id}");
         }
+
+        order_details.is_some()
     }
 
     fn remove_spawn_member(
@@ -8539,7 +8543,7 @@ impl Cache {
 
 enum OrderPurgeCleanup {
     None,
-    SweepIndexes,
+    SweepIndexes { removed_order: bool },
 }
 
 enum PositionPurgeCleanup {

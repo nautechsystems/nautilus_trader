@@ -97,12 +97,14 @@ use ustr::Ustr;
 use crate::{
     client::ExecutionClientAdapter,
     reconciliation::{
-        check_position_reconciliation, fill_precedes_reconciled_position,
-        fill_precedes_snapshot_reconciled_position, generate_external_order_status_events,
-        generate_reconciliation_order_events, generate_reconciliation_order_pre_fill_events,
+        SNAPSHOT_COVERING_FILL_ID, check_position_reconciliation,
+        fill_precedes_reconciled_position, fill_precedes_snapshot_reconciled_position,
+        generate_external_order_status_events, generate_reconciliation_order_events,
+        generate_reconciliation_order_pre_fill_events,
         generate_reconciliation_order_snapshot_events, initialize_external_order_price,
+        is_lifecycle_replacement_fill, is_synthetic_position_fill,
         needs_external_order_price_placeholder, preserve_order_amendment,
-        reconcile_fill_report as reconcile_fill,
+        reconcile_fill_report as reconcile_fill, snapshot_covering_fill,
     },
 };
 
@@ -1650,9 +1652,14 @@ impl ExecutionEngine {
             ts_now,
             self.config.allow_overfills,
         ) {
-            let apply_position =
-                !fill_precedes_snapshot_reconciled_position(&self.cache.borrow(), report);
-            self.handle_event_with_position_application(&event, apply_position);
+            let application =
+                if fill_precedes_snapshot_reconciled_position(&self.cache.borrow(), report) {
+                    PositionApplication::SnapshotCovered { replacement: None }
+                } else {
+                    PositionApplication::Apply
+                };
+
+            self.handle_event_with_position_application(&event, application);
         }
     }
 
@@ -2100,7 +2107,25 @@ impl ExecutionEngine {
 
     /// Projects a reconciled fill onto its order without applying position or portfolio economics.
     pub fn project_reconciliation_fill(&mut self, fill: &OrderFilled) {
-        self.handle_event_with_position_application(&OrderEventAny::Filled(fill.clone()), false);
+        self.handle_event_with_position_application(
+            &OrderEventAny::Filled(fill.clone()),
+            PositionApplication::Project,
+        );
+    }
+
+    /// Projects a reconciliation fill onto its order and records snapshot coverage for OTO recovery.
+    ///
+    /// When reconciliation replaces the lifecycle in the same batch, pass the replacement venue
+    /// order ID. Its opening fill must already be applied to the position.
+    pub fn project_reconciliation_fill_with_snapshot(
+        &mut self,
+        fill: &OrderFilled,
+        replacement: Option<VenueOrderId>,
+    ) {
+        self.handle_event_with_position_application(
+            &OrderEventAny::Filled(fill.clone()),
+            PositionApplication::SnapshotCovered { replacement },
+        );
     }
 
     /// Returns a cached position ID for a reconciliation fill without changing routing state.
@@ -3158,14 +3183,16 @@ impl ExecutionEngine {
     }
 
     fn handle_event(&mut self, event: &OrderEventAny) {
-        let covered = match event {
-            OrderEventAny::Filled(fill) if fill.reconciliation => {
-                self.fill_precedes_reconciliation_snapshot(fill)
+        let application = match event {
+            OrderEventAny::Filled(fill)
+                if fill.reconciliation && self.fill_precedes_reconciliation_snapshot(fill) =>
+            {
+                PositionApplication::SnapshotCovered { replacement: None }
             }
-            _ => false,
+            _ => PositionApplication::Apply,
         };
 
-        self.handle_event_with_position_application(event, !covered);
+        self.handle_event_with_position_application(event, application);
     }
 
     fn fill_precedes_reconciliation_snapshot(&self, fill: &OrderFilled) -> bool {
@@ -3219,13 +3246,13 @@ impl ExecutionEngine {
     fn handle_event_with_position_application(
         &mut self,
         event: &OrderEventAny,
-        apply_position: bool,
+        application: PositionApplication,
     ) {
-        let applied = self.apply_order_event(event, apply_position);
+        let applied = self.apply_order_event(event, application);
 
         // Negative acknowledgment for clients awaiting application of an enqueued fill or void.
         // The declined event itself is the acknowledgment; each drop site logs its reason.
-        if apply_position
+        if matches!(application, PositionApplication::Apply)
             && !applied
             && matches!(
                 event,
@@ -3238,7 +3265,13 @@ impl ExecutionEngine {
     }
 
     /// Applies an order event, returning whether it was applied and published.
-    fn apply_order_event(&mut self, event: &OrderEventAny, apply_position: bool) -> bool {
+    fn apply_order_event(
+        &mut self,
+        event: &OrderEventAny,
+        application: PositionApplication,
+    ) -> bool {
+        let apply_position = matches!(application, PositionApplication::Apply);
+
         if let OrderEventAny::Filled(fill) = event
             && fill.last_qty.is_zero()
         {
@@ -3393,6 +3426,8 @@ impl ExecutionEngine {
                     return false;
                 }
 
+                self.record_oto_fill_coverage(&order_before_fill, &mut fill, oms_type, application);
+
                 let event = OrderEventAny::Filled(fill.clone());
 
                 let Some(order) = self.update_cached_order(client_order_id, &event, false) else {
@@ -3500,6 +3535,62 @@ impl ExecutionEngine {
         }
 
         true
+    }
+
+    fn record_oto_fill_coverage(
+        &self,
+        order: &OrderAny,
+        fill: &mut OrderFilled,
+        oms_type: OmsType,
+        application: PositionApplication,
+    ) {
+        if !fill.reconciliation
+            || oms_type == OmsType::Hedging
+            || order.contingency_type() != Some(ContingencyType::Oto)
+        {
+            return;
+        }
+
+        let covering_fill_id =
+            if let PositionApplication::SnapshotCovered { replacement } = application {
+                let cache = self.cache.borrow();
+                fill.position_id
+                    .as_ref()
+                    .and_then(|id| cache.position_ref(id))
+                    .filter(|position| {
+                        position.is_open()
+                            && position.account_id == fill.account_id
+                            && position.instrument_id == fill.instrument_id
+                    })
+                    .and_then(|position| {
+                        let opening = position.events.first()?;
+
+                        if let Some(replacement) = replacement {
+                            // The replacement timestamp immediately precedes the first fill it covers
+                            return (opening.venue_order_id == replacement
+                                && opening.ts_event < fill.ts_event)
+                                .then_some(opening.event_id);
+                        }
+
+                        if fill.ts_event < position.ts_opened
+                            && (is_lifecycle_replacement_fill(opening)
+                                || !is_synthetic_position_fill(&cache, opening))
+                        {
+                            return None;
+                        }
+
+                        snapshot_covering_fill(&cache, &position, fill.trade_id, fill.ts_event)
+                            .map(|snapshot| snapshot.event_id)
+                    })
+            } else {
+                None
+            };
+
+        let covering_fill_id = covering_fill_id.as_ref().map_or("", UUID4::as_str);
+        fill.info.get_or_insert_with(Default::default).insert(
+            Ustr::from(SNAPSHOT_COVERING_FILL_ID),
+            Ustr::from(covering_fill_id),
+        );
     }
 
     fn apply_order_fill_void_positions(
@@ -5479,6 +5570,13 @@ impl ExecutionEngine {
 fn rescale_fill_void_qty(qty: Quantity, precision: u8) -> anyhow::Result<Quantity> {
     qty.checked_rescale(precision)
         .ok_or_else(|| anyhow::anyhow!("fill void quantity rescaling overflow or precision loss"))
+}
+
+#[derive(Clone, Copy)]
+enum PositionApplication {
+    Apply,
+    Project,
+    SnapshotCovered { replacement: Option<VenueOrderId> },
 }
 
 enum SubmissionValidationResult {

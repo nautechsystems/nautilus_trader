@@ -28,6 +28,7 @@ use nautilus_model::{
         AvgPxReconciliation, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
         TimeInForce,
     },
+    events::OrderFilled,
     identifiers::{AccountId, InstrumentId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::Order,
@@ -36,6 +37,7 @@ use nautilus_model::{
     types::{Money, Price, Quantity},
 };
 use rust_decimal::{Decimal, RoundingStrategy};
+use ustr::Ustr;
 
 use super::{
     RECONCILIATION_ORDER_TAG,
@@ -45,6 +47,7 @@ use super::{
 };
 
 const DEFAULT_TOLERANCE: Decimal = Decimal::from_parts(1, 0, 0, false, 4); // 0.0001
+const LIFECYCLE_REPLACEMENT: &str = "nautilus.reconciliation_lifecycle_replacement";
 
 /// Process fill reports from a mass status for position reconciliation.
 ///
@@ -109,6 +112,7 @@ fn process_mass_status_for_reconciliation_inner(
     let mut fill_map = extracted.fills;
     let mut order_only_ids = IndexSet::new();
     let mut order_only_fill_keys = IndexSet::new();
+    let mut lifecycle_replacements = IndexMap::new();
 
     if fill_snapshots.is_empty() {
         return Ok(ReconciliationResult {
@@ -116,6 +120,7 @@ fn process_mass_status_for_reconciliation_inner(
             fills: fill_map,
             order_only_ids,
             order_only_fill_keys,
+            lifecycle_replacements,
         });
     }
 
@@ -200,6 +205,7 @@ fn process_mass_status_for_reconciliation_inner(
             // must not add exposure on top of the synthetic fill.
             order_only_ids.extend(order_map.keys().copied());
             fill_map.retain(|id, _| order_only_ids.contains(id));
+            lifecycle_replacements.insert(instrument_id, venue_order_id);
             order_map.insert(venue_order_id, order);
             fill_map.insert(venue_order_id, vec![fill]);
         }
@@ -249,6 +255,7 @@ fn process_mass_status_for_reconciliation_inner(
         fills: fill_map,
         order_only_ids,
         order_only_fill_keys,
+        lifecycle_replacements,
     })
 }
 
@@ -574,16 +581,46 @@ pub(crate) fn fill_precedes_reconciled_position(
     trade_id: TradeId,
     ts_event: UnixNanos,
 ) -> bool {
-    !position.trade_ids.contains(&trade_id)
-        && position.events.iter().rev().any(|fill| {
-            ts_event < fill.ts_event
-                && cache.order(&fill.client_order_id).is_some_and(|order| {
-                    order.tags().is_some_and(|tags| {
-                        tags.iter()
-                            .any(|tag| tag.as_str() == RECONCILIATION_ORDER_TAG)
-                    })
-                })
+    snapshot_covering_fill(cache, position, trade_id, ts_event).is_some()
+}
+
+pub(crate) fn snapshot_covering_fill<'a>(
+    cache: &Cache,
+    position: &'a Position,
+    trade_id: TradeId,
+    ts_event: UnixNanos,
+) -> Option<&'a OrderFilled> {
+    if position.trade_ids.contains(&trade_id) {
+        return None;
+    }
+
+    position
+        .events
+        .iter()
+        .rev()
+        .find(|fill| ts_event < fill.ts_event && is_synthetic_position_fill(cache, fill))
+}
+
+pub(crate) fn is_synthetic_position_fill(cache: &Cache, fill: &OrderFilled) -> bool {
+    cache.order(&fill.client_order_id).is_some_and(|order| {
+        order.tags().is_some_and(|tags| {
+            tags.iter()
+                .any(|tag| tag.as_str() == RECONCILIATION_ORDER_TAG)
         })
+    })
+}
+
+/// Records that this synthetic opening starts a replacement lifecycle.
+pub fn mark_lifecycle_replacement_fill(fill: &mut OrderFilled) {
+    fill.info
+        .get_or_insert_with(Default::default)
+        .insert(Ustr::from(LIFECYCLE_REPLACEMENT), Ustr::from("true"));
+}
+
+pub(crate) fn is_lifecycle_replacement_fill(fill: &OrderFilled) -> bool {
+    fill.info
+        .as_ref()
+        .is_some_and(|info| info.contains_key(&Ustr::from(LIFECYCLE_REPLACEMENT)))
 }
 
 /// Caps a price at the instrument's maximum price.
@@ -785,6 +822,7 @@ fn extract_instrument_reports(
         fills,
         order_only_ids: IndexSet::new(),
         order_only_fill_keys: IndexSet::new(),
+        lifecycle_replacements: IndexMap::new(),
     }
 }
 
