@@ -327,6 +327,10 @@ pub enum OrderDeniedReason {
         instrument_id: InstrumentId,
     },
 
+    /// Market exit permits only reduce-only orders and orders tagged `MARKET_EXIT`.
+    #[error("MARKET_EXIT_IN_PROGRESS")]
+    MarketExitInProgress,
+
     /// The order submission rate limit was exceeded.
     #[error("RATE_LIMIT_EXCEEDED")]
     RateLimitExceeded,
@@ -511,6 +515,7 @@ impl OrderDeniedCode {
             Self::OrderListDenied => "The order was denied because its order list failed risk checks.",
             Self::TradingHalted => "Trading is halted; new submissions and modifications are denied.",
             Self::TradingStateReducing => "Trading is reducing; only eligible reduce-only submissions are permitted.",
+            Self::MarketExitInProgress => "Market exit permits only reduce-only orders and orders tagged `MARKET_EXIT`.",
             Self::RateLimitExceeded => "The order submission rate limit was exceeded.",
             Self::StreamReconciling => "The execution stream is unavailable or recovering; retry after recovery.",
             Self::NoExecutionClient => "No execution client was found for the routed command.",
@@ -741,6 +746,14 @@ mod tests {
         assert_eq!(
             OrderDeniedReason::TradingHalted.to_string(),
             "TRADING_HALTED"
+        );
+        assert_eq!(
+            OrderDeniedReason::MarketExitInProgress.to_string(),
+            "MARKET_EXIT_IN_PROGRESS"
+        );
+        assert_eq!(
+            "MARKET_EXIT_IN_PROGRESS".parse(),
+            Ok(OrderDeniedCode::MarketExitInProgress)
         );
         assert_eq!(
             OrderDeniedReason::RateLimitExceeded.to_string(),
@@ -1000,6 +1013,7 @@ mod tests {
                 order_side: OrderSide::Buy,
                 instrument_id: InstrumentId::from("AUD/USD.SIM"),
             },
+            OrderDeniedReason::MarketExitInProgress,
             OrderDeniedReason::RateLimitExceeded,
             OrderDeniedReason::StreamReconciling,
             OrderDeniedReason::NoExecutionClient {

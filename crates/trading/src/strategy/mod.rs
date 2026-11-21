@@ -44,10 +44,11 @@ use nautilus_model::{
     enums::{OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
     events::{
         OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled, OrderDenied,
-        OrderEmulated, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
-        OrderModifyDenied, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
-        OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered, OrderUpdated,
-        PositionChanged, PositionClosed, PositionEvent, PositionOpened,
+        OrderDeniedCode, OrderDeniedReason, OrderEmulated, OrderEventAny, OrderExpired,
+        OrderFillVoided, OrderFilled, OrderInitialized, OrderModifyDenied, OrderModifyRejected,
+        OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted,
+        OrderTriggered, OrderUpdated, PositionChanged, PositionClosed, PositionEvent,
+        PositionOpened,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId,
@@ -242,7 +243,8 @@ pub trait Strategy: DataActor {
         };
 
         if should_deny {
-            self.deny_order_list(&orders, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
+            let code = OrderDeniedCode::from(&OrderDeniedReason::MarketExitInProgress);
+            self.deny_order_list(&orders, Ustr::from(code.as_ref()));
             return Ok(());
         }
 
@@ -2442,7 +2444,8 @@ where
     }
 
     if should_deny_for_market_exit {
-        strategy.deny_order(order, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
+        let code = OrderDeniedCode::from(&OrderDeniedReason::MarketExitInProgress);
+        strategy.deny_order(order, Ustr::from(code.as_ref()));
         return Ok(());
     }
 
@@ -8440,7 +8443,11 @@ mod tests {
         let OrderEventAny::Denied(denied) = &event_messages[1] else {
             panic!("expected OrderDenied event");
         };
-        assert_eq!(denied.reason, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
+
+        assert_eq!(
+            denied.reason,
+            Ustr::from(&OrderDeniedReason::MarketExitInProgress.to_string())
+        );
     }
 
     #[rstest]
@@ -8449,6 +8456,7 @@ mod tests {
         register_strategy(&mut strategy);
         start_strategy(&mut strategy);
         strategy.core.is_exiting = true;
+        let reason = Ustr::from(&OrderDeniedReason::MarketExitInProgress.to_string());
 
         let orders = vec![
             make_initialized_market_order("O-20250208-LIST-DENY-001"),
@@ -8474,14 +8482,14 @@ mod tests {
                         timeline.borrow_mut().push("init2");
                     }
                     OrderEventAny::Denied(e) if e.client_order_id == client_order_id1 => {
-                        assert_eq!(e.reason, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
+                        assert_eq!(e.reason, reason);
                         let cache = cache_rc.borrow();
                         let cached_order = cache.order(&client_order_id1).unwrap();
                         assert_eq!(cached_order.status(), OrderStatus::Denied);
                         timeline.borrow_mut().push("denied1");
                     }
                     OrderEventAny::Denied(e) if e.client_order_id == client_order_id2 => {
-                        assert_eq!(e.reason, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
+                        assert_eq!(e.reason, reason);
                         let cache = cache_rc.borrow();
                         let cached_order = cache.order(&client_order_id2).unwrap();
                         assert_eq!(cached_order.status(), OrderStatus::Denied);
@@ -8529,8 +8537,7 @@ mod tests {
         assert!(matches!(
             &event_messages[1],
             OrderEventAny::Denied(e)
-                if e.client_order_id == client_order_id1
-                    && e.reason == Ustr::from("MARKET_EXIT_IN_PROGRESS")
+                if e.client_order_id == client_order_id1 && e.reason == reason
         ));
         assert_eq!(
             event_messages[2],
@@ -8539,8 +8546,7 @@ mod tests {
         assert!(matches!(
             &event_messages[3],
             OrderEventAny::Denied(e)
-                if e.client_order_id == client_order_id2
-                    && e.reason == Ustr::from("MARKET_EXIT_IN_PROGRESS")
+                if e.client_order_id == client_order_id2 && e.reason == reason
         ));
         assert_eq!(
             timeline.borrow().as_slice(),

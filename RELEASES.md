@@ -52,6 +52,7 @@ Released on TBD (UTC).
 - Changed `Cache::add_order` to reject venue order ID conflicts on insert. Handle `VenueOrderIdOwnershipError`
 - Changed `BinaryOption` Parquet writes to require registered tick schemes; register custom schemes before saving
 - Changed `TickSchemeError` with `TicksNotIncreasing`; update exhaustive matches
+- Changed `OrderDeniedReason` and `OrderDeniedCode` with `MarketExitInProgress`; update exhaustive matches
 - Changed `SimulatedExchange::process_liquidations` to return `anyhow::Result<()>` for callers to handle
 - Changed Python `PortfolioAnalyzer.add_positions` to raise `ValueError` for realized PnL at precision 17 or 18
 - Changed Python backtest reporting to raise on unsupported float precision. `BacktestNode` skips failed runs by default

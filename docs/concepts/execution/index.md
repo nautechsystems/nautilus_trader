@@ -415,8 +415,8 @@ include a diagnostic suffix. Only the leading code is canonical. Messages use th
 - `CODE: key=value, key=value` when multiple typed values need disambiguation.
 - `CODE: value; free text` when one typed value precedes a free-text diagnostic.
 
-The table covers local denials emitted by execution algorithms and clients as well as the risk and
-execution engines. These codes are the source of truth for locally denied orders.
+The table covers local denials emitted by strategies, execution algorithms, execution clients,
+and the risk and execution engines. These codes are the source of truth for locally denied orders.
 
 `OrderRejected` reasons depend on their source:
 
@@ -478,6 +478,7 @@ cross or immediately match. Other venue rejections leave it `false`.
 | `ORDER_LIST_DENIED`                              | The order was denied because its order list failed risk checks.                       |
 | `TRADING_HALTED`                                 | Trading is halted; new submissions and modifications are denied.                      |
 | `TRADING_STATE_REDUCING`                         | Trading is reducing; only eligible reduce-only submissions are permitted.             |
+| `MARKET_EXIT_IN_PROGRESS`                        | Market exit permits only reduce-only orders and orders tagged `MARKET_EXIT`.          |
 | `RATE_LIMIT_EXCEEDED`                            | The order submission rate limit was exceeded.                                         |
 | `STREAM_RECONCILING`                             | The execution stream is unavailable or recovering; retry after recovery.              |
 | `NO_EXECUTION_CLIENT`                            | No execution client was found for the routed command.                                 |
