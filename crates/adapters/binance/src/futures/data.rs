@@ -96,7 +96,7 @@ use crate::{
             parse_required_price_at_precision, parse_required_quantity_at_precision,
             quote_to_l1_deltas,
         },
-        status::diff_and_emit_statuses,
+        status::{diff_and_emit_statuses, emit_status},
         symbol::{format_binance_stream_symbol, format_binance_symbol},
         urls::{get_usdm_ws_route_base_url, get_ws_public_base_url},
         websocket::{chain_command, send_book_snapshot},
@@ -1894,6 +1894,12 @@ impl DataClient for BinanceFuturesDataClient {
             log::debug!(
                 "subscribe_instrument_status: {instrument_id} (status changes detected via periodic exchange info polling)",
             );
+
+            if let Some(action) = self.status_cache.load().get(&instrument_id).copied() {
+                let ts = self.clock.get_time_ns();
+                emit_status(&self.data_sender, instrument_id, action, ts, ts);
+            }
+
             Ok(())
         })
     }

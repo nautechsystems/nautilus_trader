@@ -90,7 +90,7 @@ use crate::{
         enums::{BinanceEnvironment, BinanceProductType},
         http_weights::depth_weight_spot as depth_request_weight,
         parse::{bar_spec_to_binance_interval, quote_to_l1_deltas},
-        status::diff_and_emit_statuses,
+        status::{diff_and_emit_statuses, emit_status},
         urls::{get_http_base_url_with_us, get_ws_base_url_with_us},
         websocket::{chain_command, send_book_snapshot},
     },
@@ -1403,6 +1403,12 @@ impl DataClient for BinanceSpotDataClient {
             log::debug!(
                 "subscribe_instrument_status: {instrument_id} (status changes detected via periodic exchange info polling)",
             );
+
+            if let Some(action) = self.status_cache.load().get(&instrument_id).copied() {
+                let ts = self.clock.get_time_ns();
+                emit_status(&self.data_sender, instrument_id, action, ts, ts);
+            }
+
             Ok(())
         })
     }

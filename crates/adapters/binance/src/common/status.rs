@@ -24,7 +24,39 @@ use nautilus_model::{
     identifiers::InstrumentId,
 };
 
-use crate::spot::sbe::generated::symbol_status::SymbolStatus;
+use crate::{
+    common::parse::{CONTRACT_TYPE_PERPETUAL, CONTRACT_TYPE_TRADIFI_PERPETUAL},
+    spot::sbe::generated::symbol_status::SymbolStatus,
+};
+
+/// The `deliveryDate` Binance gives a perpetual with no scheduled delisting (2100-01-01 UTC).
+const PERPETUAL_DELIVERY_DATE_MS: i64 = 4_133_404_800_000;
+
+/// Returns the status of a Futures symbol from its venue status, contract type, and delivery date.
+///
+/// Binance sets a perpetual's `deliveryDate` to its delisting time once the delisting is
+/// announced, while its status stays `TRADING` until settlement. Such a perpetual is reported as
+/// `PreClose`.
+#[must_use]
+pub(crate) fn futures_symbol_status(
+    action: MarketStatusAction,
+    contract_type: &str,
+    delivery_date: i64,
+) -> MarketStatusAction {
+    let perpetual = matches!(
+        contract_type,
+        CONTRACT_TYPE_PERPETUAL | CONTRACT_TYPE_TRADIFI_PERPETUAL
+    );
+
+    if action == MarketStatusAction::Trading
+        && perpetual
+        && delivery_date != PERPETUAL_DELIVERY_DATE_MS
+    {
+        MarketStatusAction::PreClose
+    } else {
+        action
+    }
+}
 
 impl From<SymbolStatus> for MarketStatusAction {
     fn from(status: SymbolStatus) -> Self {
@@ -81,7 +113,7 @@ pub fn diff_and_emit_statuses(
     }
 }
 
-fn emit_status(
+pub(crate) fn emit_status(
     sender: &EventSender<DataEvent>,
     instrument_id: InstrumentId,
     action: MarketStatusAction,
@@ -188,6 +220,49 @@ mod tests {
         #[case] expected: MarketStatusAction,
     ) {
         assert_eq!(MarketStatusAction::from(input), expected);
+    }
+
+    #[rstest]
+    #[case::perpetual_scheduled(
+        MarketStatusAction::Trading,
+        "PERPETUAL",
+        1_793_178_000_000,
+        MarketStatusAction::PreClose
+    )]
+    #[case::tradfi_perpetual_scheduled(
+        MarketStatusAction::Trading,
+        "TRADIFI_PERPETUAL",
+        1_793_178_000_000,
+        MarketStatusAction::PreClose
+    )]
+    #[case::perpetual_unscheduled(
+        MarketStatusAction::Trading,
+        "PERPETUAL",
+        PERPETUAL_DELIVERY_DATE_MS,
+        MarketStatusAction::Trading
+    )]
+    #[case::perpetual_settling(
+        MarketStatusAction::Close,
+        "PERPETUAL",
+        1_793_178_000_000,
+        MarketStatusAction::Close
+    )]
+    #[case::delivery_contract(
+        MarketStatusAction::Trading,
+        "CURRENT_QUARTER",
+        1_793_178_000_000,
+        MarketStatusAction::Trading
+    )]
+    fn test_futures_symbol_status(
+        #[case] action: MarketStatusAction,
+        #[case] contract_type: &str,
+        #[case] delivery_date: i64,
+        #[case] expected: MarketStatusAction,
+    ) {
+        assert_eq!(
+            futures_symbol_status(action, contract_type, delivery_date),
+            expected
+        );
     }
 
     #[rstest]
