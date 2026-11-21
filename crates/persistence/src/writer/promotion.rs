@@ -511,7 +511,7 @@ where
                         match self.backend.set_aside_file(&self.source, file) {
                             Ok(refused) => {
                                 // Set before this promotion records the run failed, so a status
-                                // written meanwhile cannot miss it
+                                // written meanwhile cannot miss it.
                                 if let Some(schedule) = &self.schedule {
                                     schedule
                                         .lock()
@@ -977,7 +977,7 @@ pub(crate) struct PromotionSchedule {
     pending_paths: AHashSet<String>,
     scheduled_paths: AHashSet<String>,
     // Set from the refused files a writer finds at startup and by each set-aside, so promotion
-    // never lists them. A file restored meanwhile counts until the next writer starts.
+    // never lists them, and a file restored meanwhile counts until the next writer starts.
     has_refused_files: bool,
 }
 
