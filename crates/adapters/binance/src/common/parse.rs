@@ -308,6 +308,14 @@ pub(crate) fn parse_usdm_instrument_with_fees(
         Delivery,
     }
 
+    if symbol.status != BinanceTradingStatus::Trading {
+        anyhow::bail!(
+            "Symbol '{}' is not trading (status: {:?})",
+            symbol.symbol,
+            symbol.status
+        );
+    }
+
     let contract_kind = match symbol.contract_type.as_str() {
         CONTRACT_TYPE_PERPETUAL => ContractKind::CryptoPerpetual,
         CONTRACT_TYPE_TRADIFI_PERPETUAL => ContractKind::TradFi(parse_tradifi_asset_class(symbol)?),
@@ -323,14 +331,6 @@ pub(crate) fn parse_usdm_instrument_with_fees(
             symbol.symbol,
         ),
     };
-
-    if symbol.status != BinanceTradingStatus::Trading {
-        anyhow::bail!(
-            "Symbol '{}' is not trading (status: {:?})",
-            symbol.symbol,
-            symbol.status
-        );
-    }
 
     let quote_currency = get_currency(symbol.quote_asset.as_str());
     let settlement_currency = get_currency(symbol.margin_asset.as_str());
@@ -2448,6 +2448,33 @@ mod tests {
 
         assert!(is_not_trading_error(&error));
         assert!(!should_warn_on_instrument_parse_error(true, false, &error));
+        assert!(should_warn_on_instrument_parse_error(true, true, &error));
+    }
+
+    #[rstest]
+    #[case::delivering(BinanceTradingStatus::Delivering, "CURRENT_QUARTER DELIVERING", None)]
+    #[case::pending_tradifi(
+        BinanceTradingStatus::PendingTrading,
+        "TRADIFI_PERPETUAL",
+        Some("COIN")
+    )]
+    fn test_usdm_non_trading_skips_warn_only_for_explicit_symbols(
+        #[case] status: BinanceTradingStatus,
+        #[case] contract_type: &str,
+        #[case] underlying_type: Option<&str>,
+    ) {
+        let mut symbol = sample_usdm_symbol();
+        symbol.status = status;
+        symbol.contract_type = contract_type.to_string();
+        symbol.underlying_type = underlying_type.map(str::to_string);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+
+        let error = parse_usdm_instrument(&symbol, ts, ts).unwrap_err();
+
+        assert!(
+            !should_warn_on_instrument_parse_error(true, false, &error),
+            "Unexpected warning in bulk load: {error}"
+        );
         assert!(should_warn_on_instrument_parse_error(true, true, &error));
     }
 
