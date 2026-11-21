@@ -1456,7 +1456,8 @@ impl BacktestEngine {
 
     /// Return the backtest result from the last run.
     ///
-    /// Logs and omits portfolio analysis inputs that exceed the supported float precision.
+    /// Logs and omits portfolio analysis inputs with unrepresentable balance totals or
+    /// unsupported float precision.
     /// Use [`Self::try_get_result`] to receive these errors.
     #[must_use]
     pub fn get_result(&self) -> BacktestResult {
@@ -1468,7 +1469,7 @@ impl BacktestEngine {
     ///
     /// # Errors
     ///
-    /// Returns an error if portfolio statistics require unsupported float precision.
+    /// Returns an error if [`nautilus_portfolio::Portfolio::try_analyzer`] fails.
     pub fn try_get_result(&self) -> anyhow::Result<BacktestResult> {
         let analyzer = self.kernel.portfolio.borrow().try_analyzer()?;
         Ok(self.build_result(analyzer.statistics()))

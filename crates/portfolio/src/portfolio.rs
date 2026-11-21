@@ -2225,7 +2225,8 @@ impl Portfolio {
     /// merges close-time PnLs recorded during processing. Recomputes on each call; callers on hot paths
     /// should invoke it sparingly.
     ///
-    /// Logs and omits PnL statistics and equity series that need unsupported float precision.
+    /// Logs and omits PnL statistics for currencies with unrepresentable balance totals.
+    /// Also logs and omits PnL statistics and equity series that need unsupported float precision.
     /// Use [`Self::try_analyzer`] to receive an error.
     #[must_use]
     pub fn statistics(&self) -> PortfolioStatistics {
@@ -2240,8 +2241,8 @@ impl Portfolio {
     /// new caller cannot omit the registrations. Recomputes on each call; callers on hot paths
     /// should invoke it sparingly.
     ///
-    /// Retains exact balances when they can be summed at their stored scale. Logs and omits
-    /// unsupported equity series. Use [`Self::try_analyzer`] to receive an error.
+    /// Aggregates balances and handles unsupported inputs as described in
+    /// [`PortfolioAnalyzer::from_accounts_with_snapshots`]. Use [`Self::try_analyzer`] to receive an error.
     #[must_use]
     pub fn analyzer(&self) -> PortfolioAnalyzer {
         let mut analyzer = self.build_analyzer(|accounts, positions, history, snapshots, pnls| {
@@ -2258,8 +2259,7 @@ impl Portfolio {
     ///
     /// # Errors
     ///
-    /// Returns an error if balances cannot be summed at their stored scale or if a balance,
-    /// daily equity value, or realized PnL exceeds the supported float precision.
+    /// Returns an error if [`PortfolioAnalyzer::try_from_accounts_with_snapshots`] fails.
     pub fn try_analyzer(&self) -> anyhow::Result<PortfolioAnalyzer> {
         let mut analyzer =
             self.build_analyzer(|accounts, positions, history, snapshots, pnls| {

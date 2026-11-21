@@ -296,6 +296,10 @@ changing it does not affect the Portfolio. Call `account()` again to get the lat
 position snapshots, recorded close-time PnLs, and portfolio snapshots. It recomputes the statistics on each
 call, so invoke it sparingly on hot paths.
 
+`Portfolio.statistics()` raises `ValueError` if a currency's starting or current balance total
+falls outside the `Money` range. See [float conversion limits](value_types.md#converting-to-other-types)
+for precision-related errors.
+
 The result contains:
 
 - PnL statistics for each currency.

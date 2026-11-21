@@ -246,8 +246,10 @@ impl PortfolioAnalyzer {
     /// Portfolio returns use daily mark-to-market equity when at least two UTC dates are
     /// available and every account resolves to one common currency. Otherwise the primary
     /// returns source falls back to position returns.
-    /// Retains exact balances. Logs and omits balances that cannot be summed into representable
-    /// totals at their stored scale and equity series that exceed the supported float precision.
+    ///
+    /// Aggregates balances exactly. Logs and omits balances for a currency if its starting or
+    /// current total falls outside the [`Money`] range or its balances use incompatible scales.
+    /// Logs and omits equity series that exceed the supported float precision.
     #[must_use]
     pub fn from_accounts_with_snapshots<'a>(
         accounts: &[AccountAny],
@@ -256,12 +258,17 @@ impl PortfolioAnalyzer {
         portfolio_snapshots: impl IntoIterator<Item = &'a PortfolioSnapshot>,
         recorded_realized_pnls: AHashMap<Currency, Vec<(PositionId, UnixNanos, f64)>>,
     ) -> Self {
-        let (mut analyzer, account_ids, _) = Self::build_from_accounts(
+        let (mut analyzer, account_ids, _, invalid_totals) = Self::build_from_accounts(
             accounts,
             positions,
             position_snapshots,
             recorded_realized_pnls,
         );
+
+        for currency in invalid_totals {
+            log::warn!("Cannot sum portfolio balances for {currency}");
+        }
+
         analyzer.set_portfolio_returns_from_snapshots(&account_ids, portfolio_snapshots);
         analyzer
     }
@@ -270,9 +277,11 @@ impl PortfolioAnalyzer {
     ///
     /// # Errors
     ///
-    /// Returns an error if balances cannot be summed into representable totals at their stored
-    /// scale or if a balance, daily equity value, or realized PnL exceeds the supported float
-    /// precision.
+    /// Returns an error if the analyzer cannot represent its inputs or balance totals.
+    ///
+    /// Starting and current totals must fit in [`Money`] and combine balances at compatible
+    /// fixed-point scales. Balances, daily equity values, and realized PnL must use supported
+    /// float precision.
     pub fn try_from_accounts_with_snapshots<'a>(
         accounts: &[AccountAny],
         positions: &[Position],
@@ -290,7 +299,7 @@ impl PortfolioAnalyzer {
             })?;
         }
 
-        let (mut analyzer, account_ids, balance_result) = Self::build_from_accounts(
+        let (mut analyzer, account_ids, balance_result, _) = Self::build_from_accounts(
             accounts,
             positions,
             position_snapshots,
@@ -307,12 +316,17 @@ impl PortfolioAnalyzer {
         positions: &[Position],
         position_snapshots: &[Position],
         recorded_realized_pnls: AHashMap<Currency, Vec<(PositionId, UnixNanos, f64)>>,
-    ) -> (Self, Vec<AccountId>, CorrectnessResult<()>) {
+    ) -> (
+        Self,
+        Vec<AccountId>,
+        CorrectnessResult<()>,
+        IndexSet<Currency>,
+    ) {
         let mut analyzer = Self::default();
         let mut account_ids = Vec::with_capacity(accounts.len());
+        let mut balance_error = None;
         let mut starting_totals = IndexMap::new();
         let mut current_totals = IndexMap::new();
-        let mut balance_error = None;
         let mut invalid_totals = IndexSet::new();
 
         for account in accounts {
@@ -340,23 +354,13 @@ impl PortfolioAnalyzer {
             }
         }
 
-        for (totals, balances) in [
-            (starting_totals, &mut analyzer.account_balances_starting),
-            (current_totals, &mut analyzer.account_balances),
-        ] {
-            for (currency, (raw, amount_currency)) in totals {
-                if let Ok(total) = Money::from_raw_checked(raw, amount_currency) {
-                    balances.insert(currency, total);
-                } else {
-                    invalid_totals.insert(currency);
-                }
-            }
-        }
-
-        for currency in invalid_totals {
-            log::warn!("Cannot sum portfolio balances for {currency}");
-            analyzer.account_balances_starting.shift_remove(&currency);
-            analyzer.account_balances.shift_remove(&currency);
+        analyzer.account_balances_starting =
+            Self::finish_account_balances(starting_totals, &mut invalid_totals);
+        analyzer.account_balances =
+            Self::finish_account_balances(current_totals, &mut invalid_totals);
+        for currency in &invalid_totals {
+            analyzer.account_balances_starting.shift_remove(currency);
+            analyzer.account_balances.shift_remove(currency);
             balance_error.get_or_insert_with(|| CorrectnessError::PredicateViolation {
                 message: format!("Cannot sum portfolio balances for {currency}"),
             });
@@ -365,13 +369,19 @@ impl PortfolioAnalyzer {
         analyzer.add_positions(positions);
         analyzer.add_positions(position_snapshots);
         analyzer.recorded_realized_pnls = recorded_realized_pnls;
-        (analyzer, account_ids, balance_error.map_or(Ok(()), Err))
+
+        (
+            analyzer,
+            account_ids,
+            balance_error.map_or(Ok(()), Err),
+            invalid_totals,
+        )
     }
 
     fn sum_account_balances(
         account_id: AccountId,
         balances: impl IntoIterator<Item = (Currency, Money)>,
-        totals: &mut IndexMap<Currency, (MoneyRaw, Currency)>,
+        totals: &mut IndexMap<Currency, BalanceTotal>,
         invalid_totals: &mut IndexSet<Currency>,
         balance_error: &mut Option<CorrectnessError>,
     ) {
@@ -385,18 +395,30 @@ impl PortfolioAnalyzer {
 
             totals
                 .entry(currency)
-                .and_modify(|(raw, amount_currency)| {
-                    if *amount_currency == money.currency
-                        && raw_scales_match(amount_currency.precision, money.currency.precision)
-                        && let Some(sum) = raw.checked_add(money.raw())
-                    {
-                        *raw = sum;
-                    } else {
+                .and_modify(|existing| {
+                    if !existing.add(money) {
                         invalid_totals.insert(currency);
                     }
                 })
-                .or_insert((money.raw(), money.currency));
+                .or_insert_with(|| BalanceTotal::new(money));
         }
+    }
+
+    fn finish_account_balances(
+        totals: IndexMap<Currency, BalanceTotal>,
+        invalid_totals: &mut IndexSet<Currency>,
+    ) -> IndexMap<Currency, Money> {
+        totals
+            .into_iter()
+            .filter_map(|(currency, total)| {
+                if let Some(balance) = total.into_money() {
+                    Some((currency, balance))
+                } else {
+                    invalid_totals.insert(currency);
+                    None
+                }
+            })
+            .collect()
     }
 
     /// Replaces the primary returns source with snapshot-backed portfolio returns when resolvable.
@@ -1126,6 +1148,48 @@ impl PortfolioAnalyzer {
         }
 
         output
+    }
+}
+
+struct BalanceTotal {
+    currency: Currency,
+    raw: MoneyRaw,
+    wraps: isize,
+}
+
+impl BalanceTotal {
+    fn new(balance: Money) -> Self {
+        Self {
+            currency: balance.currency,
+            raw: balance.raw(),
+            wraps: 0,
+        }
+    }
+
+    fn add(&mut self, balance: Money) -> bool {
+        if self.currency != balance.currency
+            || !raw_scales_match(self.currency.precision, balance.currency.precision)
+        {
+            return false;
+        }
+
+        let (raw, wrapped) = self.raw.overflowing_add(balance.raw());
+        self.raw = raw;
+
+        // Track signed wraps so opposite balances can bring the final sum back into range
+        if wrapped {
+            self.wraps += if balance.is_negative() { -1 } else { 1 };
+        }
+
+        true
+    }
+
+    fn into_money(self) -> Option<Money> {
+        if self.wraps != 0 {
+            return None;
+        }
+
+        Money::from_raw_checked(self.raw, self.currency).ok()
     }
 }
 
@@ -2670,12 +2734,17 @@ mod tests {
     }
 
     #[rstest]
-    #[case::in_range(true)]
-    #[case::out_of_range(false)]
-    fn test_from_accounts_checks_final_balance_bounds(#[case] include_offset: bool) {
+    #[case::in_range(MONEY_RAW_MAX / 2 + 1, true)]
+    #[case::out_of_range(MONEY_RAW_MAX / 2 + 1, false)]
+    #[case::positive_overflow(MONEY_RAW_MAX, true)]
+    #[case::negative_overflow(MONEY_RAW_MIN, true)]
+    fn test_from_accounts_checks_final_balance_bounds(
+        #[case] raw: MoneyRaw,
+        #[case] include_offset: bool,
+    ) {
         let mut currency = Currency::USD();
         currency.precision = FIXED_PRECISION;
-        let expected = Money::from_raw(MONEY_RAW_MAX / 2 + 1, currency);
+        let expected = Money::from_raw(raw, currency);
         let ts = UnixNanos::from(1);
 
         let accounts = [

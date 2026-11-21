@@ -66,7 +66,7 @@ use nautilus_model::{
     stubs::TestDefault,
     types::{
         AccountBalance, Currency, MarginBalance, Money, Price, Quantity,
-        money::{MONEY_MAX, MONEY_RAW_MAX},
+        money::{MONEY_MAX, MONEY_RAW_MAX, MoneyRaw},
     },
 };
 use nautilus_portfolio::{Portfolio, config::PortfolioConfig};
@@ -13042,6 +13042,92 @@ fn test_portfolio_statistics_returns_snapshot(
             .values()
             .all(|m| m.contains_key("PnL (total)"))
     );
+}
+
+#[rstest]
+#[case::starting_money_range(true, MONEY_RAW_MAX / 2 + 1)]
+#[case::current_money_range(false, MONEY_RAW_MAX / 2 + 1)]
+#[case::starting_large_balance(true, MONEY_RAW_MAX / 4 * 3)]
+#[case::current_large_balance(false, MONEY_RAW_MAX / 4 * 3)]
+#[case::negative_current_balance(false, -(MONEY_RAW_MAX / 4 * 3))]
+fn test_portfolio_statistics_handles_balance_overflow(
+    simple_cache: Cache,
+    clock: VirtualClock,
+    #[case] overflow_starting: bool,
+    #[case] raw: MoneyRaw,
+) {
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        None,
+    );
+
+    let usd = Currency::USD();
+    let eur = Currency::EUR();
+
+    let large_balance = Money::from_raw(raw, usd);
+    let small = Money::from("10 USD");
+    let (starting, current) = if overflow_starting {
+        (large_balance, small)
+    } else {
+        (small, large_balance)
+    };
+
+    for account_id in [AccountId::new("SIM1-001"), AccountId::new("SIM2-001")] {
+        for (ts, usd_amount, eur_amount) in [
+            (UnixNanos::from(1), starting, Money::from("10 EUR")),
+            (UnixNanos::from(2), current, Money::from("11 EUR")),
+        ] {
+            portfolio.update_account(&AccountState::new(
+                account_id,
+                AccountType::Margin,
+                vec![
+                    AccountBalance::new(usd_amount, Money::zero(usd), usd_amount),
+                    AccountBalance::new(eur_amount, Money::zero(eur), eur_amount),
+                ],
+                vec![],
+                true,
+                UUID4::new(),
+                ts,
+                ts,
+                None,
+            ));
+        }
+    }
+
+    let error = portfolio.try_analyzer().unwrap_err();
+    let analyzer = portfolio.analyzer();
+    let statistics = portfolio.statistics();
+
+    assert_eq!(error.to_string(), "Cannot sum portfolio balances for USD");
+    assert_eq!(
+        analyzer.account_balances_starting,
+        IndexMap::from([(eur, Money::from("20 EUR"))])
+    );
+    assert_eq!(
+        analyzer.account_balances,
+        IndexMap::from([(eur, Money::from("22 EUR"))])
+    );
+    assert_eq!(statistics.pnls.len(), 1);
+    assert_eq!(statistics.pnls["EUR"]["PnL (total)"], 2.0);
+    assert_eq!(statistics.pnls["EUR"]["PnL% (total)"], 10.0);
+
+    #[cfg(feature = "python")]
+    {
+        use nautilus_portfolio::python::PyPortfolio;
+        use pyo3::{Py, Python, prelude::PyAnyMethods};
+
+        Python::initialize();
+        Python::attach(|py| {
+            let portfolio = PyPortfolio::from_rc(Rc::new(RefCell::new(portfolio)));
+            let portfolio = Py::new(py, portfolio).unwrap();
+            let error = portfolio.bind(py).call_method0("statistics").unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "ValueError: Cannot sum portfolio balances for USD"
+            );
+        });
+    }
 }
 
 /// Counts the inputs of each category so a missing or empty feed is distinguishable.
