@@ -21,4 +21,5 @@ pub mod fuzzy;
 pub mod kc;
 pub mod kp;
 pub mod rvi;
+pub mod vpin;
 pub mod vr;

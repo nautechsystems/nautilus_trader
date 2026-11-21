@@ -101,6 +101,11 @@ BOUNDED_CONSTRUCTORS = [
     ),
     ("AverageTrueRange", {"period": 2}, {"period": (1, MAX_PERIOD)}),
     ("VolatilityRatio", {"period": 2}, {"period": (1, MAX_PERIOD)}),
+    (
+        "Vpin",
+        {"bucket_volume": 10.0, "window": 2, "sigma_window": 3},
+        {"window": (1, MAX_PERIOD), "sigma_window": (2, MAX_PERIOD)},
+    ),
     ("DonchianChannel", {"period": 2}, {"period": (1, MAX_PERIOD)}),
     ("RelativeVolatilityIndex", {"period": 2}, {"period": (2, MAX_PERIOD)}),
     (
@@ -136,7 +141,9 @@ def test_bounded_constructor_rejects_invalid_sizes(
     Reject invalid sizes through ordinary Python exceptions.
     """
     expected = OverflowError if name == "ZScore" and invalid > sys.maxsize else ValueError
-    pattern = r"too (?:large|big)" if expected is OverflowError else r"period|displacement|slowing"
+    pattern = (
+        r"too (?:large|big)" if expected is OverflowError else r"period|displacement|slowing|window"
+    )
     with pytest.raises(expected, match=pattern):
         getattr(indicators, name)(**(kwargs | {field: invalid}))
 

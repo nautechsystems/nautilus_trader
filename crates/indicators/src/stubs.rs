@@ -41,7 +41,7 @@ use crate::{
     ratio::{efficiency_ratio::EfficiencyRatio, spread_analyzer::SpreadAnalyzer},
     volatility::{
         dc::DonchianChannel, fuzzy::FuzzyCandlesticks, kc::KeltnerChannel, kp::KeltnerPosition,
-        rvi::RelativeVolatilityIndex, vr::VolatilityRatio,
+        rvi::RelativeVolatilityIndex, vpin::Vpin, vr::VolatilityRatio,
     },
 };
 
@@ -263,6 +263,11 @@ pub fn obv() -> OnBalanceVolume {
 #[fixture]
 pub fn vr_10() -> VolatilityRatio {
     VolatilityRatio::new(10)
+}
+
+#[fixture]
+pub fn vpin_10_2() -> Vpin {
+    Vpin::new(10.0, 2, None)
 }
 
 #[fixture]

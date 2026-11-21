@@ -57,6 +57,7 @@ from nautilus_trader.indicators import VariableIndexDynamicAverage
 from nautilus_trader.indicators import VerticalHorizontalFilter
 from nautilus_trader.indicators import VolatilityRatio
 from nautilus_trader.indicators import VolumeWeightedAveragePrice
+from nautilus_trader.indicators import Vpin
 from nautilus_trader.indicators import WeightedMovingAverage
 from nautilus_trader.indicators import WilderMovingAverage
 from nautilus_trader.indicators import ZScore
@@ -190,6 +191,7 @@ VOLUME_BAR_INDICATORS = [
     ("kvo", lambda: KlingerVolumeOscillator(3, 10)),
     ("obv", OnBalanceVolume),
     ("pressure", lambda: Pressure(10)),
+    ("vpin", lambda: Vpin(1.0, 2)),
 ]
 
 HANDLER_CASES = [
@@ -212,6 +214,7 @@ HANDLER_CASES = [
         id="spread-analyzer-quote",
     ),
     pytest.param(BookImbalanceRatio, "handle_book", _book, id="book-imbalance-book"),
+    pytest.param(lambda: Vpin(1.0, 2), "handle_trade_tick", _trade, id="vpin-trade"),
 ]
 
 

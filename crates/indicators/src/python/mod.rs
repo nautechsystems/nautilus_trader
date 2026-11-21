@@ -90,6 +90,7 @@ pub fn indicators(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Volatility
     m.add_class::<crate::volatility::atr::AverageTrueRange>()?;
+    m.add_class::<crate::volatility::vpin::Vpin>()?;
     m.add_class::<crate::volatility::vr::VolatilityRatio>()?;
     m.add_class::<crate::volatility::dc::DonchianChannel>()?;
     m.add_class::<crate::volatility::rvi::RelativeVolatilityIndex>()?;
