@@ -668,7 +668,17 @@ impl AsyncRunner {
 
 #[cfg(feature = "node")]
 impl AsyncRunner {
-    pub(crate) fn poll_pending(&mut self, mut process: impl FnMut(PendingRunnerEvent)) -> usize {
+    pub(crate) fn exec_events_mut(
+        &mut self,
+    ) -> &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<ExecutionEvent>> {
+        &mut self.channels.exec_evt_rx
+    }
+
+    pub(crate) fn poll_pending(
+        &mut self,
+        deferred_exec_events: impl ExactSizeIterator<Item = DispatchMessage<ExecutionEvent>>,
+        mut process: impl FnMut(PendingRunnerEvent),
+    ) -> usize {
         self.bind_senders();
 
         let pending = (
@@ -681,8 +691,14 @@ impl AsyncRunner {
             self.channels.data_cmd_rx.len(),
         );
 
-        let total =
-            pending.0 + pending.1 + pending.2 + pending.3 + pending.4 + pending.5 + pending.6;
+        let total = pending.0
+            + pending.1
+            + pending.2
+            + pending.3
+            + pending.4
+            + pending.5
+            + pending.6
+            + deferred_exec_events.len();
         log::debug!("Draining shutdown queues ({total} events initially pending)");
         let mut progress = 0usize;
 
@@ -713,6 +729,12 @@ impl AsyncRunner {
             PendingRunnerEvent::SystemCommand,
             &mut process,
         );
+
+        for event in deferred_exec_events {
+            process(PendingRunnerEvent::ExecEvent(event));
+            processed += 1;
+        }
+
         processed += poll_channel(
             &mut self.channels.exec_evt_rx,
             pending.3,
@@ -741,7 +763,10 @@ impl AsyncRunner {
         processed
     }
 
-    pub(crate) async fn recv(&mut self) -> Option<PendingRunnerEvent> {
+    pub(crate) async fn recv(
+        &mut self,
+        mut next_deferred: impl FnMut() -> Option<DispatchMessage<ExecutionEvent>>,
+    ) -> Option<PendingRunnerEvent> {
         let commands_empty = self.channels.data_cmd_rx.is_empty();
         let poll_time = !self.skip_time || (self.channels.data_evt_rx.is_empty() && commands_empty);
         let poll_data = !self.skip_data || commands_empty;
@@ -760,7 +785,12 @@ impl AsyncRunner {
                 self.skip_time = false;
                 Some(PendingRunnerEvent::SystemCommand(command))
             }
-            Some(event) = self.channels.exec_evt_rx.recv() => {
+            Some(event) = async {
+                match next_deferred() {
+                    Some(event) => Some(event),
+                    None => self.channels.exec_evt_rx.recv().await,
+                }
+            } => {
                 self.skip_time = false;
                 Some(PendingRunnerEvent::ExecEvent(event))
             }
@@ -1147,6 +1177,61 @@ mod tests {
 
     #[cfg(feature = "node")]
     #[rstest]
+    #[case::recv(true)]
+    #[case::poll_pending(false)]
+    #[tokio::test]
+    async fn test_startup_deferred_execution_events_drain_in_order(#[case] recv: bool) {
+        let mut runner = AsyncRunner::new();
+        let expected = ["O-DURING-CONNECT", "O-AFTER-CONNECT"].map(ClientOrderId::from);
+
+        let [deferred, queued] = expected.map(|id| {
+            let submitted = OrderSubmittedSpec::builder().client_order_id(id).build();
+            DispatchMessage::from(ExecutionEvent::Order(OrderEventAny::Submitted(submitted)))
+        });
+
+        runner.exec_evt_tx.send(queued).unwrap();
+
+        let mut received = Vec::new();
+
+        let mut record = |event| {
+            let PendingRunnerEvent::ExecEvent(event) = event else {
+                panic!("Expected an execution event");
+            };
+
+            event.dispatch(|event| {
+                let ExecutionEvent::Order(OrderEventAny::Submitted(submitted)) = event else {
+                    panic!("Expected an order submission");
+                };
+
+                received.push(submitted.client_order_id);
+            });
+        };
+
+        if recv {
+            let mut deferred = Some(deferred);
+
+            for _ in expected {
+                let event =
+                    tokio::time::timeout(Duration::from_secs(1), runner.recv(|| deferred.take()))
+                        .await
+                        .unwrap()
+                        .unwrap();
+                record(event);
+            }
+
+            assert_eq!(runner.poll_pending(std::iter::empty(), record), 0);
+        } else {
+            assert_eq!(
+                runner.poll_pending(std::iter::once(deferred), record),
+                expected.len()
+            );
+        }
+
+        assert_eq!(received, expected);
+    }
+
+    #[cfg(feature = "node")]
+    #[rstest]
     fn test_poll_pending_processes_entry_snapshot_across_channels() {
         let mut runner = AsyncRunner::new();
         let time_evt_tx = runner.time_evt_tx.clone();
@@ -1224,7 +1309,7 @@ mod tests {
         let mut processed_by_channel = [0; 7];
         let mut processed_order = Vec::new();
 
-        let first = runner.poll_pending(|event| match event {
+        let first = runner.poll_pending(std::iter::empty(), |event| match event {
             PendingRunnerEvent::TimeEvent(_) => {
                 processed_by_channel[0] += 1;
                 processed_order.push("time");
@@ -1258,7 +1343,7 @@ mod tests {
             }
         });
 
-        let second = runner.poll_pending(|event| match event {
+        let second = runner.poll_pending(std::iter::empty(), |event| match event {
             PendingRunnerEvent::DataEvent(_) => {
                 processed_by_channel[5] += 1;
                 processed_order.push("data_event");
@@ -1300,11 +1385,11 @@ mod tests {
             .unwrap();
 
         assert!(matches!(
-            runner.recv().await,
+            runner.recv(|| None).await,
             Some(PendingRunnerEvent::SystemEvent(_))
         ));
         assert!(matches!(
-            runner.recv().await,
+            runner.recv(|| None).await,
             Some(PendingRunnerEvent::SystemCommand(_))
         ));
     }
@@ -1398,7 +1483,7 @@ mod tests {
 
         if receive {
             while runner.signal_rx.try_recv().is_err() {
-                match runner.recv().await.unwrap() {
+                match runner.recv(|| None).await.unwrap() {
                     PendingRunnerEvent::TimeEvent(event) => {
                         let _ = AsyncRunner::handle_time_event(event);
                     }

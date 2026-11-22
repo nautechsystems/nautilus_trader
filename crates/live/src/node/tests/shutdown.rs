@@ -25,6 +25,7 @@ use nautilus_common::{
     msgbus::stubs::get_any_saving_handler,
 };
 use nautilus_data::DataClientAdapter;
+use nautilus_model::events::order::spec::OrderSubmittedSpec;
 #[cfg(feature = "python")]
 use pyo3::{prelude::*, types::PyDict};
 
@@ -269,6 +270,104 @@ async fn test_client_connect_failure_aborts_startup(
                 .is_connected()
         );
     }
+}
+
+#[tokio::test]
+async fn test_run_drains_execution_events_from_cancelled_start_on_ingress_failure() {
+    let config = LiveNodeConfig {
+        delay_post_stop: Duration::ZERO,
+        ..Default::default()
+    };
+
+    let mut node = LiveNodeBuilder::from_config(config)
+        .unwrap()
+        .with_external_ingress(Box::new(FailingExternalIngress::new(Rc::default())))
+        .build()
+        .unwrap();
+    node.kernel
+        .exec_engine
+        .borrow_mut()
+        .register_client(Box::new(ShutdownClient {
+            connected: false,
+            connect_error: None,
+            connect_count: Rc::default(),
+            connect_delay: Duration::from_secs(30),
+            retain: false,
+            disconnect_event: Rc::default(),
+            submitted: Rc::default(),
+            queries: Rc::default(),
+            report_task: RefCell::default(),
+            disconnect_delay: Duration::ZERO,
+        }))
+        .unwrap();
+
+    let (account_tx, account_rx) = tokio::sync::oneshot::channel();
+    let account_tx = Cell::new(Some(account_tx));
+    let handler = TypedHandler::from(move |_: &AccountState| {
+        account_tx.take().unwrap().send(()).unwrap();
+    });
+
+    msgbus::register_account_state_endpoint(
+        MessagingSwitchboard::portfolio_update_account(),
+        handler,
+    );
+
+    let deferred_id = ClientOrderId::from("O-FROM-START");
+    let queued_id = ClientOrderId::from("O-FROM-RUN");
+    let sender = get_exec_event_sender();
+
+    let send_order = |id| {
+        let submitted = OrderSubmittedSpec::builder().client_order_id(id).build();
+        sender
+            .send(ExecutionEvent::Order(OrderEventAny::Submitted(submitted)))
+            .unwrap();
+    };
+
+    send_order(deferred_id);
+    sender.send(stub_account_event()).unwrap();
+
+    tokio::time::timeout(Duration::from_secs(2), async {
+        let mut start = Box::pin(node.start());
+        tokio::select! {
+            result = &mut start => panic!("Startup ended before cancellation: {result:?}"),
+            account = account_rx => account.unwrap(),
+        }
+    })
+    .await
+    .unwrap();
+
+    let received = Rc::new(RefCell::new(Vec::new()));
+
+    let data_handler = TypedIntoHandler::from({
+        let received = received.clone();
+        move |_| received.borrow_mut().push(None)
+    });
+
+    msgbus::register_data_endpoint(
+        MessagingSwitchboard::data_engine_process_data(),
+        data_handler,
+    );
+
+    let order_handler = TypedIntoHandler::from({
+        let received = received.clone();
+        move |event: OrderEventAny| received.borrow_mut().push(Some(event.client_order_id()))
+    });
+
+    msgbus::register_order_event_endpoint(
+        MessagingSwitchboard::exec_engine_process(),
+        order_handler,
+    );
+
+    get_data_event_sender().send(stub_data_event()).unwrap();
+    send_order(queued_id);
+
+    let error = node.run().await.unwrap_err();
+    assert_eq!(error.to_string(), "external ingress receiver unavailable");
+    assert_eq!(node.state(), NodeState::Stopped);
+    assert_eq!(
+        *received.borrow(),
+        [None, Some(deferred_id), Some(queued_id)]
+    );
 }
 
 #[rstest]

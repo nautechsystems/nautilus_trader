@@ -139,6 +139,7 @@ Released on TBD (UTC).
 - Fixed consecutive simulated maker fills leaking synthetic last prices into later matching
 - Fixed live startup connecting execution clients after a stop request during data connection
 - Fixed `LiveNode::start` skipping reconciliation for instruments sent during execution connect
+- Fixed `LiveNode::start` timing out when execution clients wait for account registration
 - Fixed live node panics on excessive `timeout_connection`, `timeout_disconnection`, or `delay_post_stop` values
 - Fixed panics when analytics, backtests, or data aggregation convert values at precision 17 or 18
 - Fixed custom tick-scheme persistence for `BinaryOption` Parquet catalogs

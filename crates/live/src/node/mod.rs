@@ -41,8 +41,8 @@
 //! 2. Flush all pending data events and commands into the cache via
 //!    `flush_pending_data`, which loops `try_recv` on the channel receivers
 //!    until no items remain.
-//! 3. Connect execution clients (`load_instruments_from_cache` now finds
-//!    populated instruments).
+//! 3. Connect execution clients using the cached instruments. `run()` and `start()`
+//!    apply account events while the clients connect.
 //! 4. Drain remaining events, then run reconciliation. `run()` drains every
 //!    channel; `start()` drains only data events and data commands.
 //!
@@ -200,6 +200,7 @@ impl Debug for StreamProcessor {
 pub struct LiveNode {
     kernel: NautilusKernel,
     runner: Option<AsyncRunner>,
+    deferred_exec_events: VecDeque<DispatchMessage<ExecutionEvent>>,
     config: LiveNodeConfig,
     handle: LiveNodeHandle,
     exec_manager: ExecutionManager,
@@ -242,6 +243,7 @@ impl LiveNode {
         Self {
             kernel,
             runner: Some(runner),
+            deferred_exec_events: VecDeque::new(),
             config,
             handle,
             exec_manager,
@@ -322,6 +324,7 @@ impl LiveNode {
         let node = Self {
             kernel,
             runner: Some(runner),
+            deferred_exec_events: VecDeque::new(),
             config,
             handle,
             exec_manager,
@@ -433,10 +436,11 @@ impl LiveNode {
 
     /// Starts the live node without entering a select loop.
     ///
-    /// Connects clients, runs reconciliation, and starts the trader, but does
-    /// not consume the runner or drive channel receivers, so channel traffic arriving after
-    /// startup is never serviced. This is a building block for tests and embedding, not a
-    /// lifecycle: use [`run`](Self::run) or [`run_with_mode`](Self::run_with_mode) to run a node.
+    /// Connects clients, applies account events during execution connection, runs reconciliation,
+    /// and starts the trader. The runner stays available for [`stop`](Self::stop).
+    ///
+    /// This method is a building block for tests and embedding. Use [`run`](Self::run) or
+    /// [`run_with_mode`](Self::run_with_mode) to service channels between startup and shutdown.
     ///
     /// # Errors
     ///
@@ -614,6 +618,7 @@ impl LiveNode {
         self.handle.set_stopped();
         self.kernel.dispose();
         drop(self.runner.take());
+        self.deferred_exec_events = VecDeque::new();
 
         if let Some(e) = actor::callback_failure() {
             log::error!("Callback dispatch failed before disposal cleanup: {e}");
@@ -631,6 +636,7 @@ impl LiveNode {
         };
 
         runner.bind_senders_for_node(self.handle.clone());
+        let mut deferred_exec_events = std::mem::take(&mut self.deferred_exec_events);
         let mut processed = 0;
 
         loop {
@@ -638,7 +644,7 @@ impl LiveNode {
                 biased;
 
                 () = dst::time::sleep_until(deadline) => break,
-                event = runner.recv() => {
+                event = runner.recv(|| deferred_exec_events.pop_front()) => {
                     let Some(event) = event else {
                         dst::time::sleep_until(deadline).await;
                         break;
@@ -651,6 +657,7 @@ impl LiveNode {
         }
 
         self.runner = Some(runner);
+        self.deferred_exec_events = deferred_exec_events;
         processed
     }
 
@@ -665,7 +672,12 @@ impl LiveNode {
             return 0;
         };
 
-        let processed = runner.poll_pending(|event| self.process_runner_event(event));
+        let deferred_exec_events = std::mem::take(&mut self.deferred_exec_events);
+
+        let processed = runner.poll_pending(deferred_exec_events.into_iter(), |event| {
+            self.process_runner_event(event);
+        });
+
         self.runner = Some(runner);
         processed
     }
@@ -1111,6 +1123,7 @@ impl LiveNode {
         };
 
         runner.bind_senders_for_node(self.handle.clone());
+        let deferred_exec_events = std::mem::take(&mut self.deferred_exec_events);
 
         let AsyncRunnerChannels {
             mut time_evt_rx,
@@ -1152,15 +1165,18 @@ impl LiveNode {
                 let result = self
                     .abort_startup("External message bus ingress failed to start")
                     .await;
-                Self::drain_channels(
-                    &mut time_evt_rx,
-                    &mut system_evt_rx,
-                    &mut system_cmd_rx,
-                    &mut exec_evt_rx,
-                    &mut exec_cmd_rx,
-                    &mut data_evt_rx,
-                    &mut data_cmd_rx,
-                );
+
+                let mut receivers = RunnerReceivers {
+                    time_evt: &mut time_evt_rx,
+                    system_evt: &mut system_evt_rx,
+                    system_cmd: &mut system_cmd_rx,
+                    exec_evt: &mut exec_evt_rx,
+                    exec_cmd: &mut exec_cmd_rx,
+                    data_evt: &mut data_evt_rx,
+                    data_cmd: &mut data_cmd_rx,
+                };
+
+                Self::drain_receivers(&mut receivers, deferred_exec_events.into_iter());
                 log::info!("Event loop stopped");
 
                 if let Err(finalize_err) = result {
@@ -1174,7 +1190,7 @@ impl LiveNode {
         };
 
         let stop_handle = self.handle.clone();
-        let mut pending = PendingEvents::default();
+        let mut pending = PendingEvents::from_exec_events(deferred_exec_events);
         let mut startup_system_events = Vec::new();
         let mut startup_system_commands = Vec::new();
 
@@ -2299,9 +2315,21 @@ impl LiveNode {
     }
 
     async fn connect_exec_clients(&mut self, deadline: dst::time::Instant) -> anyhow::Result<()> {
-        live_timeout_at(deadline, self.kernel.connect_exec_clients())
-            .await
-            .map_err(|_| anyhow::anyhow!("exec-connect timeout"))?
+        let connect = live_timeout_at(deadline, self.kernel.connect_exec_clients());
+
+        let result = match self.runner.as_mut() {
+            Some(runner) => {
+                drive_with_account_events(
+                    connect,
+                    runner.exec_events_mut(),
+                    &mut self.deferred_exec_events,
+                )
+                .await
+            }
+            None => connect.await,
+        };
+
+        result.map_err(|_| anyhow::anyhow!("exec-connect timeout"))?
     }
 
     /// Connects execution clients and checks all engines are connected.
@@ -2648,13 +2676,31 @@ impl LiveNode {
         data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<DataEvent>>,
         data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<DataCommand>>,
     ) {
-        let pending = time_evt_rx.len()
-            + system_evt_rx.len()
-            + system_cmd_rx.len()
-            + exec_evt_rx.len()
-            + exec_cmd_rx.len()
-            + data_evt_rx.len()
-            + data_cmd_rx.len();
+        let mut receivers = RunnerReceivers {
+            time_evt: time_evt_rx,
+            system_evt: system_evt_rx,
+            system_cmd: system_cmd_rx,
+            exec_evt: exec_evt_rx,
+            exec_cmd: exec_cmd_rx,
+            data_evt: data_evt_rx,
+            data_cmd: data_cmd_rx,
+        };
+
+        Self::drain_receivers(&mut receivers, std::iter::empty());
+    }
+
+    fn drain_receivers(
+        receivers: &mut RunnerReceivers<'_>,
+        deferred_exec_events: impl ExactSizeIterator<Item = DispatchMessage<ExecutionEvent>>,
+    ) {
+        let pending = receivers.time_evt.len()
+            + receivers.system_evt.len()
+            + receivers.system_cmd.len()
+            + deferred_exec_events.len()
+            + receivers.exec_evt.len()
+            + receivers.exec_cmd.len()
+            + receivers.data_evt.len()
+            + receivers.data_cmd.len();
         log::debug!("Draining shutdown queues ({pending} events initially pending)");
 
         let mut drained = 0;
@@ -2665,41 +2711,42 @@ impl LiveNode {
             }
         };
 
-        while let Ok(handler) = time_evt_rx.try_recv() {
+        while let Ok(handler) = receivers.time_evt.try_recv() {
             let _ = AsyncRunner::handle_time_event(handler);
             drained += 1;
             log_progress(drained);
         }
 
-        while system_evt_rx.try_recv().is_ok() {
+        while receivers.system_evt.try_recv().is_ok() {
             drained += 1;
             log_progress(drained);
         }
 
-        while system_cmd_rx.try_recv().is_ok() {
+        while receivers.system_cmd.try_recv().is_ok() {
             drained += 1;
             log_progress(drained);
         }
 
-        while let Ok(evt) = data_evt_rx.try_recv() {
+        while let Ok(evt) = receivers.data_evt.try_recv() {
             AsyncRunner::dispatch_data_event(evt);
             drained += 1;
             log_progress(drained);
         }
 
-        while let Ok(cmd) = data_cmd_rx.try_recv() {
+        while let Ok(cmd) = receivers.data_cmd.try_recv() {
             AsyncRunner::handle_data_command(cmd);
             drained += 1;
             log_progress(drained);
         }
 
-        while let Ok(evt) = exec_evt_rx.try_recv() {
+        let queued_exec_events = std::iter::from_fn(|| receivers.exec_evt.try_recv().ok());
+        for evt in deferred_exec_events.chain(queued_exec_events) {
             AsyncRunner::dispatch_exec_event(evt);
             drained += 1;
             log_progress(drained);
         }
 
-        while let Ok(cmd) = exec_cmd_rx.try_recv() {
+        while let Ok(cmd) = receivers.exec_cmd.try_recv() {
             AsyncRunner::handle_trading_command(cmd);
             drained += 1;
             log_progress(drained);
@@ -3381,6 +3428,37 @@ fn flush_all_pending(
     pending.drain();
 }
 
+async fn drive_with_account_events<F: std::future::Future>(
+    future: F,
+    exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DispatchMessage<ExecutionEvent>>,
+    deferred_exec_events: &mut VecDeque<DispatchMessage<ExecutionEvent>>,
+) -> F::Output {
+    tokio::pin!(future);
+
+    loop {
+        tokio::select! {
+            biased;
+
+            result = &mut future => return result,
+            Some(event) = exec_evt_rx.recv() => {
+                let rooted = event.is_rooted();
+                event.dispatch(|event| {
+                    if matches!(&event, ExecutionEvent::Account(_)) {
+                        AsyncRunner::handle_exec_event(event);
+                    } else {
+                        let event = if rooted {
+                            DispatchMessage::new(event, std::thread::current().id())
+                        } else {
+                            event.into()
+                        };
+                        deferred_exec_events.push_back(event);
+                    }
+                });
+            }
+        }
+    }
+}
+
 /// Drives a future to completion while buffering channel events.
 ///
 /// Time events are handled immediately. Account events are forwarded directly.
@@ -3446,6 +3524,15 @@ struct PendingEvents {
 }
 
 impl PendingEvents {
+    fn from_exec_events(events: VecDeque<DispatchMessage<ExecutionEvent>>) -> Self {
+        let mut pending = Self::default();
+        for event in events {
+            pending.push_exec_event(event);
+        }
+
+        pending
+    }
+
     fn is_empty(&self) -> bool {
         self.system_events.is_empty()
             && self.system_commands.is_empty()
@@ -9684,7 +9771,7 @@ mod tests {
                 &mut channels.data_cmd_rx,
             );
         } else {
-            assert_eq!(runner.poll_pending(|_| {}), pending);
+            assert_eq!(runner.poll_pending(std::iter::empty(), |_| {}), pending);
         }
 
         let mut expected = vec![format!(

@@ -67,8 +67,11 @@ use nautilus_live::{
 };
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
-    events::OrderEventAny,
+    enums::{
+        AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce,
+    },
+    events::{OrderEventAny, account::state::AccountState},
     identifiers::{
         AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId,
         StrategyId, TradeId, TraderId, Venue, VenueOrderId,
@@ -3304,6 +3307,57 @@ pub(crate) mod serial_tests {
         );
         assert_eq!(state.instrument_updates.load(Ordering::Relaxed), 1);
         assert!(state.mass_status_requested.load(Ordering::Relaxed));
+        node.stop().await.unwrap();
+        node.dispose();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_start_registers_account_while_execution_client_connects() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecutionEngineConfig {
+                reconciliation: true,
+                ..Default::default()
+            },
+            timeout_connection: Duration::from_millis(250),
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+
+        let (mut node, state) = live_node_with_startup_mass_status_client(
+            "ExecConnectAccountStartup",
+            config,
+            StartupMassStatusBehavior::Unavailable,
+        );
+        let account_id = AccountId::from("STARTUP-MASS-STATUS-001");
+
+        let account = AccountState::new(
+            account_id,
+            AccountType::Margin,
+            Vec::new(),
+            Vec::new(),
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            Some(Currency::USDT()),
+        );
+
+        *state.connect_account.lock() = Some(account.clone());
+
+        node.start().await.unwrap();
+
+        assert_eq!(node.state(), NodeState::Running);
+        assert_eq!(
+            node.kernel()
+                .cache()
+                .borrow()
+                .account(&account_id)
+                .and_then(|account| account.last_event()),
+            Some(account),
+        );
+        assert!(state.mass_status_requested.load(Ordering::Relaxed));
+
         node.stop().await.unwrap();
         node.dispose();
     }
