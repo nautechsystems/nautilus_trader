@@ -121,14 +121,26 @@ pub trait PortfolioStatistic: Debug {
     /// daily returns observe no behavior change.
     fn downsample_to_daily_bins(&self, returns: &Returns) -> Returns {
         let day = DurationNanos::from_days(1);
-        let mut daily_bins = BTreeMap::new();
+        let mut daily_bins: Returns = BTreeMap::new();
 
         for (&timestamp, &value) in returns {
             let day_start = timestamp.floor(day);
 
-            // Geometrically compound returns within each day
-            let entry = daily_bins.entry(day_start).or_insert(0.0_f64);
-            *entry = (1.0_f64 + *entry).mul_add(1.0_f64 + value, -1.0_f64);
+            daily_bins
+                .entry(day_start)
+                .and_modify(|entry| {
+                    let previous = *entry;
+                    *entry = if previous.abs() <= 0.5 && value.abs() <= 0.5 {
+                        // Evaluate a + b + ab directly so adding 1 to small returns
+                        // cannot erase a near-canceling net return.
+                        previous.mul_add(value, previous + value)
+                    } else {
+                        // Retain the gross-factor form for large or nonfinite returns,
+                        // including the absorbing -100% return.
+                        (1.0 + previous).mul_add(1.0 + value, -1.0)
+                    };
+                })
+                .or_insert(value);
         }
 
         daily_bins
@@ -155,6 +167,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::statistics::value_at_risk::ValueAtRisk;
 
     #[derive(Debug)]
     struct DummyStat;
@@ -222,5 +235,66 @@ mod tests {
         let value = *daily.values().next().unwrap();
         let expected = 1.01_f64 * 1.02 * 0.99 - 1.0;
         assert!(approx_eq!(f64, value, expected, epsilon = 1e-12));
+    }
+
+    #[rstest]
+    fn test_daily_bins_preserve_single_observation_without_rounding() {
+        let day = DurationNanos::from_days(1).as_u64();
+        let input = Returns::from([
+            (UnixNanos::new(1), 2.0_f64.powi(-60)),
+            (UnixNanos::new(day + 2), -2.0_f64.powi(-61)),
+            (UnixNanos::new(2 * day + 3), 0.03),
+            (UnixNanos::new(3 * day + 4), -0.0),
+        ]);
+
+        let actual = DummyStat.downsample_to_daily_bins(&input);
+        let expected = [
+            (UnixNanos::new(0), 2.0_f64.powi(-60)),
+            (UnixNanos::new(day), -2.0_f64.powi(-61)),
+            (UnixNanos::new(2 * day), 0.03),
+            (UnixNanos::new(3 * day), -0.0),
+        ];
+
+        assert_eq!(actual.len(), expected.len());
+        for (timestamp, value) in expected {
+            assert_eq!(actual[&timestamp].to_bits(), value.to_bits());
+        }
+    }
+
+    #[rstest]
+    fn test_daily_bins_keep_sign_of_nearly_offsetting_returns() {
+        let small = 2.0_f64.powi(-30);
+        let residual = 2.0_f64.powi(-53);
+        let first = small + residual;
+        // These binary powers give the exact compound return in binary64.
+        let expected = residual - first * small;
+        let input = Returns::from([(UnixNanos::new(1), first), (UnixNanos::new(2), -small)]);
+        let actual = DummyStat.downsample_to_daily_bins(&input);
+
+        assert!(expected > 0.0);
+        let var = ValueAtRisk::new(None)
+            .calculate_from_returns(&input)
+            .unwrap();
+        assert_eq!(var.to_bits(), expected.to_bits());
+        assert_eq!(actual[&UnixNanos::new(0)].to_bits(), expected.to_bits());
+    }
+
+    #[rstest]
+    fn test_daily_bins_preserve_utc_boundary_and_total_loss() {
+        let day = DurationNanos::from_days(1).as_u64();
+        let input = Returns::from([
+            (UnixNanos::new(day - 2), 0.125),
+            (UnixNanos::new(day - 1), -0.25),
+            (UnixNanos::new(day), -1.0),
+            (UnixNanos::new(day + 1), 1.0e20),
+        ]);
+        let actual = DummyStat.downsample_to_daily_bins(&input);
+
+        assert_eq!(actual.len(), 2);
+        assert_eq!(
+            actual[&UnixNanos::new(0)].to_bits(),
+            (-0.15625_f64).to_bits()
+        );
+        assert_eq!(actual[&UnixNanos::new(day)].to_bits(), (-1.0_f64).to_bits());
     }
 }
