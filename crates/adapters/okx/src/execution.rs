@@ -83,10 +83,10 @@ use crate::{
     common::{
         consts::{
             OKX_CONDITIONAL_ORDER_TYPES, OKX_RECONCILIATION_LOOKBACK_DEFAULT_MINS,
-            OKX_RECONCILIATION_LOOKBACK_MAX_MINS, OKX_SUCCESS_CODE, OKX_VENUE,
-            OKX_WS_HEARTBEAT_SECS, contract_filter_with_config_types, okx_algo_target_currency,
-            okx_reduce_only_wire_value, resolve_instrument_families, validate_algo_trigger_type,
-            validate_okx_client_order_id, validate_order_time_in_force,
+            OKX_RECONCILIATION_LOOKBACK_MAX_MINS, OKX_SUCCESS_CODE, OKX_SUPPORTED_ORDER_TYPES,
+            OKX_VENUE, OKX_WS_HEARTBEAT_SECS, contract_filter_with_config_types,
+            okx_algo_target_currency, okx_reduce_only_wire_value, resolve_instrument_families,
+            validate_algo_trigger_type, validate_okx_client_order_id, validate_order_time_in_force,
             validate_regular_order_params,
         },
         enums::{
@@ -3000,6 +3000,12 @@ impl OKXExecutionClient {
             return Err(OrderDeniedReason::InvalidClientOrderId { detail });
         }
 
+        if !OKX_SUPPORTED_ORDER_TYPES.contains(&order.order_type()) {
+            return Err(OrderDeniedReason::UnsupportedOrderType {
+                order_type: order.order_type(),
+            });
+        }
+
         let is_spread = self.http_client.is_spread(order.instrument_id());
         if is_spread && order.is_reduce_only() {
             return Err(OrderDeniedReason::UnsupportedReduceOnly);
@@ -5008,6 +5014,34 @@ mod tests {
             ),
             Err(OrderDeniedReason::UnsupportedOrderList {
                 detail: "order OIOCLIST has unsupported time in force IOC".to_string(),
+            })
+        );
+    }
+
+    #[rstest]
+    fn test_validate_order_denies_trailing_stop_limit() {
+        let order = OrderTestBuilder::new(OrderType::TrailingStopLimit)
+            .instrument_id(InstrumentId::from("ETH-USDT-SWAP.OKX"))
+            .client_order_id(ClientOrderId::from("OTRAILINGSTOPLIMIT"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1"))
+            .price(Price::from("2000.00"))
+            .trigger_price(Price::from("2010.00"))
+            .trigger_type(TriggerType::LastPrice)
+            .limit_offset(rust_decimal::Decimal::ONE)
+            .trailing_offset(rust_decimal::Decimal::ONE)
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .build();
+
+        assert_eq!(
+            build_test_exec_client().validate_order(
+                &order,
+                OKXTradeMode::Cross,
+                OrderSubmission::Single,
+                None,
+            ),
+            Err(OrderDeniedReason::UnsupportedOrderType {
+                order_type: OrderType::TrailingStopLimit,
             })
         );
     }

@@ -216,6 +216,7 @@ Released on TBD (UTC).
 - Fixed Lighter recovery of unacknowledged order creates on reconnect (#5696), thanks @aaurix
 - Fixed Lighter IOC recovery after a lost acknowledgement (#5701), thanks for reporting @AlphaTraderK
 - Fixed OKX balances not refreshing after a WebSocket reconnect
+- Fixed OKX denying `TRAILING_STOP_LIMIT` orders only after `OrderSubmitted`
 - Fixed OKX execution clients not subscribing to venue position updates
 - Fixed OKX fills for untracked orders arriving without their order terms
 - Fixed OKX post-only rejections reporting as canceled in bulk order status reports
