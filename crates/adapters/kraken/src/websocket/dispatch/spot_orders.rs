@@ -160,8 +160,9 @@ impl OrderRequestState {
     ///
     /// # Errors
     ///
-    /// Returns an error if the order or its conditional close order is an iceberg order, if the
-    /// JSON envelope fails to serialize or if the handler command channel is closed.
+    /// Returns an error if the order is an iceberg order, if its conditional close order has a type
+    /// Kraken does not support for one, if the JSON envelope fails to serialize or if the handler
+    /// command channel is closed.
     pub fn submit(
         self: &Arc<Self>,
         params: KrakenWsAddOrderParams,
@@ -173,13 +174,25 @@ impl OrderRequestState {
             anyhow::bail!("Iceberg orders are not supported on the Kraken WS path; use REST");
         }
 
-        // Kraken's conditional close order types do not include iceberg
-        if params
-            .conditional
-            .as_ref()
-            .is_some_and(|close| close.order_type == KrakenOrderType::Iceberg)
-        {
-            anyhow::bail!("Iceberg conditional close orders are not supported by Kraken");
+        // The first arm is Kraken's documented `conditional.order_type` enum
+        if let Some(close) = &params.conditional {
+            match close.order_type {
+                KrakenOrderType::Limit
+                | KrakenOrderType::StopLoss
+                | KrakenOrderType::StopLossLimit
+                | KrakenOrderType::TakeProfit
+                | KrakenOrderType::TakeProfitLimit
+                | KrakenOrderType::TrailingStop
+                | KrakenOrderType::TrailingStopLimit => {}
+                KrakenOrderType::Market
+                | KrakenOrderType::SettlePosition
+                | KrakenOrderType::Iceberg => {
+                    anyhow::bail!(
+                        "Kraken does not support {} conditional close orders",
+                        close.order_type
+                    );
+                }
+            }
         }
 
         self.send(
@@ -857,6 +870,7 @@ mod tests {
         types::{Price, Quantity},
     };
     use rstest::rstest;
+    use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
     use super::*;
@@ -1066,15 +1080,21 @@ mod tests {
         assert!(rx.try_recv().is_err());
     }
 
-    /// Kraken accepts no iceberg conditional close order, so a limit order carrying one fails
-    /// before it is sent or awaits a response.
+    /// A limit order carrying a close order of a type Kraken does not support for one fails before
+    /// it is sent or awaits a response.
     #[rstest]
-    fn test_submit_rejects_an_iceberg_conditional_close_order() {
+    #[case::market(KrakenOrderType::Market, None)]
+    #[case::settle_position(KrakenOrderType::SettlePosition, None)]
+    #[case::iceberg(KrakenOrderType::Iceberg, Some(dec!(51000)))]
+    fn test_submit_rejects_an_unsupported_conditional_close_order_type(
+        #[case] order_type: KrakenOrderType,
+        #[case] limit_price: Option<Decimal>,
+    ) {
         let (state, mut rx) = make_state(60_000);
         let params = KrakenWsAddOrderParams {
             conditional: Some(KrakenWsConditionalParams {
-                order_type: KrakenOrderType::Iceberg,
-                limit_price: Some(dec!(51000)),
+                order_type,
+                limit_price,
                 trigger_price: None,
             }),
             ..make_add_order_params("TKN")
@@ -1082,41 +1102,90 @@ mod tests {
 
         let error = state
             .submit(params, make_identity(PendingOperation::Submit), 1)
-            .expect_err("an iceberg close order must not be sent");
+            .expect_err("the close order must not be sent");
 
         assert!(
-            error.to_string().contains("conditional close"),
+            error
+                .to_string()
+                .contains(&format!("{order_type} conditional close")),
             "unexpected error: {error}"
         );
         assert_eq!(state.pending_len(), 0);
         assert!(rx.try_recv().is_err());
     }
 
-    /// A conditional close order of a type Kraken accepts is sent with its parent.
+    /// A conditional close order of each type Kraken supports for one is sent with its parent and
+    /// its prices.
     #[rstest]
-    fn test_submit_sends_a_stop_loss_limit_conditional_close_order() {
+    #[case::limit(
+        KrakenOrderType::Limit,
+        Some(dec!(49000)),
+        None,
+        r#"{"order_type":"limit","limit_price":49000}"#
+    )]
+    #[case::stop_loss(
+        KrakenOrderType::StopLoss,
+        None,
+        Some(dec!(49100)),
+        r#"{"order_type":"stop-loss","trigger_price":49100}"#
+    )]
+    #[case::stop_loss_limit(
+        KrakenOrderType::StopLossLimit,
+        Some(dec!(49000)),
+        Some(dec!(49100)),
+        r#"{"order_type":"stop-loss-limit","limit_price":49000,"trigger_price":49100}"#
+    )]
+    #[case::take_profit(
+        KrakenOrderType::TakeProfit,
+        None,
+        Some(dec!(50900)),
+        r#"{"order_type":"take-profit","trigger_price":50900}"#
+    )]
+    #[case::take_profit_limit(
+        KrakenOrderType::TakeProfitLimit,
+        Some(dec!(51000)),
+        Some(dec!(50900)),
+        r#"{"order_type":"take-profit-limit","limit_price":51000,"trigger_price":50900}"#
+    )]
+    #[case::trailing_stop(
+        KrakenOrderType::TrailingStop,
+        None,
+        Some(dec!(100)),
+        r#"{"order_type":"trailing-stop","trigger_price":100}"#
+    )]
+    #[case::trailing_stop_limit(
+        KrakenOrderType::TrailingStopLimit,
+        Some(dec!(10)),
+        Some(dec!(100)),
+        r#"{"order_type":"trailing-stop-limit","limit_price":10,"trigger_price":100}"#
+    )]
+    fn test_submit_sends_a_supported_conditional_close_order_type(
+        #[case] order_type: KrakenOrderType,
+        #[case] limit_price: Option<Decimal>,
+        #[case] trigger_price: Option<Decimal>,
+        #[case] expected_conditional: &str,
+    ) {
         let (state, mut rx) = make_state(60_000);
         let params = KrakenWsAddOrderParams {
             conditional: Some(KrakenWsConditionalParams {
-                order_type: KrakenOrderType::StopLossLimit,
-                limit_price: Some(dec!(49000)),
-                trigger_price: Some(dec!(49100)),
+                order_type,
+                limit_price,
+                trigger_price,
             }),
             ..make_add_order_params("TKN")
         };
 
         state
             .submit(params, make_identity(PendingOperation::Submit), 1)
-            .expect("a stop-loss-limit close order must be sent");
+            .expect("the close order must be sent");
 
         assert_eq!(state.pending_len(), 1);
 
         match rx.try_recv().expect("cmd queued") {
             SpotHandlerCommand::SendOrderRequest { payload, .. } => {
+                let expected = format!("\"conditional\":{expected_conditional}");
                 assert!(
-                    payload
-                        .expose_secret()
-                        .contains("\"conditional\":{\"order_type\":\"stop-loss-limit\""),
+                    payload.expose_secret().contains(&expected),
                     "unexpected payload: {}",
                     payload.expose_secret()
                 );
