@@ -870,8 +870,8 @@ mod tests {
     fn test_parse_futures_ws_order_status_report_partially_filled() {
         let order = KrakenFuturesOpenOrder {
             instrument: ustr::Ustr::from("PF_ETHUSD"),
-            time: 1700000000000,
-            last_update_time: 1700000000100,
+            time: 1_700_000_000_000,
+            last_update_time: 1_700_000_000_100,
             qty: dec!(27),
             filled: dec!(26),
             limit_price: Some(dec!(3500)),
@@ -899,8 +899,8 @@ mod tests {
     fn test_parse_futures_ws_order_status_report_filled() {
         let order = KrakenFuturesOpenOrder {
             instrument: ustr::Ustr::from("PF_ETHUSD"),
-            time: 1700000000000,
-            last_update_time: 1700000000200,
+            time: 1_700_000_000_000,
+            last_update_time: 1_700_000_000_200,
             qty: Decimal::ZERO,
             filled: dec!(53),
             limit_price: Some(dec!(3500)),
