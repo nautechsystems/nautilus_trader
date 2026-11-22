@@ -36,11 +36,12 @@ mod serial_tests {
         },
         clock::VirtualClock,
         live::get_runtime,
+        messages::execution::SubmitOrder,
         signal::Signal,
         testing::wait_until_async,
     };
     use nautilus_core::{Params, UUID4, UnixNanos};
-    use nautilus_execution::engine::ExecutionEngine;
+    use nautilus_execution::{engine::ExecutionEngine, order_emulator::emulator::OrderEmulator};
     use nautilus_infrastructure::sql::{
         cache::{PostgresCacheConfig, PostgresCacheDatabase, get_pg_cache_database},
         models::instruments::{InstrumentAnyRow, OptionSpreadRow},
@@ -50,13 +51,17 @@ mod serial_tests {
     use nautilus_model::{
         accounts::{AccountAny, CashAccount},
         data::{
-            CustomData, DataType, InstrumentClose,
+            CustomData, DataType, InstrumentClose, QuoteTick,
             greeks::{GreeksData, OptionGreekValues, YieldCurve},
             stubs::{quote_ethusdt_binance, stub_bar, stub_trade_ethusdt_buy},
         },
-        enums::{CurrencyType, InstrumentCloseType, OmsType, OrderSide, OrderStatus, OrderType},
+        enums::{
+            CurrencyType, InstrumentCloseType, OmsType, OrderSide, OrderStatus, OrderType,
+            TriggerType,
+        },
         events::{
-            OrderEventAny, OrderFilled, OrderSnapshot, PositionSnapshot,
+            OrderCanceled, OrderEmulated, OrderEventAny, OrderFilled, OrderSnapshot,
+            PositionSnapshot,
             account::stubs::{
                 cash_account_state_million_usd, cash_account_state_multi,
                 cash_account_state_multi_changed_btc, wallet_account_state,
@@ -3940,6 +3945,447 @@ mod serial_tests {
             .quantity(Quantity::from(quantity))
             .client_order_id(ClientOrderId::new(SHARED_CLIENT_ORDER_ID))
             .build()
+    }
+
+    #[rstest]
+    #[case::market(OrderType::StopMarket, OrderType::Market, false)]
+    #[case::limit(OrderType::StopLimit, OrderType::Limit, false)]
+    #[case::legacy_market(OrderType::StopMarket, OrderType::Market, true)]
+    #[case::legacy_limit(OrderType::StopLimit, OrderType::Limit, true)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_released_emulated_order_survives_postgres_restart(
+        #[case] original_type: OrderType,
+        #[case] released_type: OrderType,
+        #[case] legacy: bool,
+    ) {
+        let trader_id = TraderId::from("TRADER-001");
+        let other_trader_id = TraderId::from("TRADER-002");
+        let client_order_id = ClientOrderId::new(SHARED_CLIENT_ORDER_ID);
+        let client_id = ClientId::new("CLIENT-A");
+        let other_client_id = ClientId::new("CLIENT-B");
+        let position_id = PositionId::new("POSITION-A");
+        let other_position_id = PositionId::new("POSITION-B");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let mut database = get_test_pg_cache_database_for_trader(trader_id)
+            .await
+            .unwrap();
+        reset_test_database(&database).await;
+        add_test_instrument(&database, &instrument).await;
+
+        let unrelated = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(trader_id)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::new("O-PG-UNRELATED"))
+            .quantity(Quantity::from("3.0"))
+            .build();
+        let foreign = shared_order(&instrument, other_trader_id, "2.0");
+        DatabaseQueries::add_order(&database.pool, unrelated.init_event().clone(), None)
+            .await
+            .unwrap();
+        DatabaseQueries::add_order(
+            &database.pool,
+            foreign.init_event().clone(),
+            Some(other_client_id),
+        )
+        .await
+        .unwrap();
+        DatabaseQueries::index_order_position(
+            &database.pool,
+            &other_trader_id,
+            client_order_id,
+            other_position_id,
+        )
+        .await
+        .unwrap();
+
+        let backing = if legacy {
+            None
+        } else {
+            let writer = get_test_pg_cache_database_for_trader(trader_id)
+                .await
+                .unwrap();
+            Some(Box::new(writer) as Box<dyn CacheDatabaseAdapter>)
+        };
+
+        let released = release_pg_test_order(
+            backing,
+            &instrument,
+            trader_id,
+            client_order_id,
+            client_id,
+            position_id,
+            original_type,
+        );
+
+        if legacy {
+            for (index, event) in released.events().into_iter().enumerate() {
+                let event_client_id = (index == 0).then_some(client_id);
+                DatabaseQueries::add_order_event(
+                    &database.pool,
+                    event.clone().into_boxed(),
+                    event_client_id,
+                )
+                .await
+                .unwrap();
+            }
+
+            DatabaseQueries::index_order_position(
+                &database.pool,
+                &trader_id,
+                client_order_id,
+                position_id,
+            )
+            .await
+            .unwrap();
+        }
+
+        database.close().unwrap();
+
+        let reader = get_test_pg_cache_database_for_trader(trader_id)
+            .await
+            .unwrap();
+        let restored = DatabaseQueries::load_order(&reader.pool, &client_order_id, &trader_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(restored.order_type(), released_type);
+        assert_eq!(restored.status(), OrderStatus::Released);
+        assert_eq!(restored.events(), released.events());
+
+        let other_orders = DatabaseQueries::load_orders(&reader.pool, &other_trader_id)
+            .await
+            .unwrap();
+        assert_entirely_equal(other_orders.as_slice(), std::slice::from_ref(&foreign));
+        let other_clients =
+            DatabaseQueries::load_distinct_order_event_client_ids(&reader.pool, &other_trader_id)
+                .await
+                .unwrap();
+        assert_eq!(
+            other_clients,
+            AHashMap::from([(client_order_id, other_client_id)])
+        );
+        let other_positions =
+            DatabaseQueries::load_index_order_position(&reader.pool, &other_trader_id)
+                .await
+                .unwrap();
+        assert_eq!(
+            other_positions,
+            AHashMap::from([(client_order_id, other_position_id)])
+        );
+        let recovery_pool = reader.pool.clone();
+        let mut restarted = Cache::new(None, Some(Box::new(reader)));
+        restarted.cache_all().await.unwrap();
+        restarted.build_index();
+        assert_entirely_equal(&restarted.order_owned(&client_order_id).unwrap(), &released);
+        assert_entirely_equal(
+            &restarted.order_owned(&unrelated.client_order_id()).unwrap(),
+            &unrelated,
+        );
+        assert_eq!(restarted.client_id(&client_order_id), Some(&client_id));
+        assert_eq!(restarted.position_id(&client_order_id), Some(&position_id));
+
+        DatabaseQueries::truncate(&recovery_pool).await.unwrap();
+        restarted.dispose();
+    }
+
+    fn release_pg_test_order(
+        backing: Option<Box<dyn CacheDatabaseAdapter>>,
+        instrument: &InstrumentAny,
+        trader_id: TraderId,
+        client_order_id: ClientOrderId,
+        client_id: ClientId,
+        position_id: PositionId,
+        original_type: OrderType,
+    ) -> OrderAny {
+        let cache = Rc::new(RefCell::new(Cache::new(None, backing)));
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let emulator_clock = Rc::clone(&clock);
+        let mut emulator = OrderEmulator::new(emulator_clock, Rc::clone(&cache));
+
+        let mut builder = OrderTestBuilder::new(original_type);
+        builder
+            .trader_id(trader_id)
+            .instrument_id(instrument.id())
+            .client_order_id(client_order_id)
+            .quantity(Quantity::from("1.0"))
+            .emulation_trigger(TriggerType::BidAsk)
+            .trigger_price(Price::from("5100.00"))
+            .ts_init(1.into());
+
+        if original_type == OrderType::StopLimit {
+            builder.price(Price::from("5105.00"));
+        }
+
+        let order = builder.build();
+        let command = SubmitOrder::from_order(
+            &order,
+            trader_id,
+            Some(client_id),
+            Some(position_id),
+            UUID4::new(),
+            1.into(),
+        );
+        cache
+            .borrow_mut()
+            .add_order(order, Some(position_id), Some(client_id), false)
+            .unwrap();
+
+        let quote = QuoteTick::new(
+            instrument.id(),
+            Price::from("5099.00"),
+            Price::from("5101.00"),
+            Quantity::from("10.0"),
+            Quantity::from("10.0"),
+            3.into(),
+            3.into(),
+        );
+
+        if original_type == OrderType::StopMarket {
+            cache.borrow_mut().add_quote(quote).unwrap();
+            clock.borrow_mut().advance_time(3.into(), true);
+            emulator.handle_submit_order(&command);
+        } else {
+            clock.borrow_mut().advance_time(2.into(), true);
+            emulator.handle_submit_order(&command);
+            assert_eq!(
+                cache.borrow().order(&client_order_id).unwrap().status(),
+                OrderStatus::Emulated
+            );
+            clock.borrow_mut().advance_time(3.into(), true);
+            emulator.on_quote_tick(quote);
+        }
+
+        let released = cache.borrow().order_owned(&client_order_id).unwrap();
+        assert_eq!(released.status(), OrderStatus::Released);
+        cache.borrow_mut().dispose();
+        released
+    }
+
+    #[rstest]
+    #[case::pending(None)]
+    #[case::rolled_back(Some(false))]
+    #[case::canceled(Some(true))]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_postgres_order_replacement_commits_with_first_update(
+        #[case] commit: Option<bool>,
+    ) {
+        let trader_id = TraderId::from("TRADER-001");
+        let strategy_id = StrategyId::new(SHARED_STRATEGY_ID);
+        let client_order_id = ClientOrderId::new(SHARED_CLIENT_ORDER_ID);
+        let original_client_id = ClientId::new("CLIENT-ORIGINAL");
+        let replacement_client_id = ClientId::new("CLIENT-REPLACEMENT");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let mut writer = get_test_pg_cache_database_for_trader(trader_id)
+            .await
+            .unwrap();
+        reset_test_database(&writer).await;
+        add_test_instrument(&writer, &instrument).await;
+
+        let (original, mut replacement) = pending_replacement_orders(&instrument, trader_id);
+        writer
+            .add_order(&original, Some(original_client_id))
+            .unwrap();
+        writer.update_order(original.last_event()).unwrap();
+        writer
+            .add_order(&replacement, Some(replacement_client_id))
+            .unwrap();
+
+        if let Some(commit) = commit {
+            let instrument_id = if commit {
+                instrument.id()
+            } else {
+                InstrumentId::from("MISSING.SIM")
+            };
+
+            let canceled = OrderCanceled::new(
+                trader_id,
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                UUID4::new(),
+                2.into(),
+                2.into(),
+                false,
+                None,
+                None,
+                None,
+            );
+
+            let canceled = OrderEventAny::Canceled(canceled);
+            writer.update_order(&canceled).unwrap();
+            if commit {
+                replacement.apply(canceled).unwrap();
+            } else {
+                writer
+                    .add_order(&replacement, Some(replacement_client_id))
+                    .unwrap();
+                let submitted = TestOrderEventStubs::submitted(&replacement, account_id());
+                writer.update_order(&submitted).unwrap();
+            }
+        }
+
+        writer.close().unwrap();
+
+        let mut reader = get_test_pg_cache_database_for_trader(trader_id)
+            .await
+            .unwrap();
+        let restored = DatabaseQueries::load_order(&reader.pool, &client_order_id, &trader_id)
+            .await
+            .unwrap()
+            .unwrap();
+        let clients = reader.load_index_order_client().unwrap();
+
+        let (expected, expected_client_id) = if commit == Some(true) {
+            (replacement, replacement_client_id)
+        } else {
+            (original, original_client_id)
+        };
+
+        assert_entirely_equal(restored, expected);
+        assert_eq!(
+            clients,
+            AHashMap::from([(client_order_id, expected_client_id)])
+        );
+        DatabaseQueries::index_order_clients(
+            &reader.pool,
+            &trader_id,
+            &[(client_order_id, expected_client_id)],
+        )
+        .await
+        .unwrap();
+
+        reset_test_database(&reader).await;
+        reader.close().unwrap();
+    }
+
+    #[rstest]
+    #[case::reload(true, OrderType::StopMarket)]
+    #[case::requeue(false, OrderType::Market)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_postgres_pending_order_replacement_route(
+        #[case] reload: bool,
+        #[case] order_type: OrderType,
+    ) {
+        let trader_id = TraderId::from("TRADER-001");
+        let client_order_id = ClientOrderId::new(SHARED_CLIENT_ORDER_ID);
+        let original_client_id = ClientId::new("CLIENT-ORIGINAL");
+        let replacement_client_id = ClientId::new("CLIENT-REPLACEMENT");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let writer = get_test_pg_cache_database_for_trader(trader_id)
+            .await
+            .unwrap();
+        reset_test_database(&writer).await;
+        add_test_instrument(&writer, &instrument).await;
+
+        let (original, replacement) = pending_replacement_orders(&instrument, trader_id);
+        writer
+            .add_order(&original, Some(original_client_id))
+            .unwrap();
+        writer.update_order(original.last_event()).unwrap();
+        wait_until_async(
+            || async {
+                DatabaseQueries::load_order(&writer.pool, &client_order_id, &trader_id)
+                    .await
+                    .unwrap()
+                    .is_some_and(|order| order.status() == OrderStatus::Emulated)
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        DatabaseQueries::index_order_clients(
+            &writer.pool,
+            &trader_id,
+            &[(client_order_id, original_client_id)],
+        )
+        .await
+        .unwrap();
+
+        let mut cache = Cache::new(None, Some(Box::new(writer)));
+        cache.cache_all().await.unwrap();
+        cache.build_index();
+        cache
+            .add_order(replacement.clone(), None, Some(replacement_client_id), true)
+            .unwrap();
+
+        let expected_client_id = if reload {
+            cache.reload().await.unwrap();
+            cache.build_index();
+            original_client_id
+        } else {
+            cache.add_order(replacement, None, None, true).unwrap();
+            replacement_client_id
+        };
+
+        let active = cache.order_owned(&client_order_id).unwrap();
+        let canceled = TestOrderEventStubs::canceled(&active, account_id(), None);
+        let expected = cache.update_order(&canceled).unwrap();
+        assert_eq!(expected.order_type(), order_type);
+        assert_eq!(cache.client_id(&client_order_id), Some(&expected_client_id));
+        cache.dispose();
+
+        let mut reader = get_test_pg_cache_database_for_trader(trader_id)
+            .await
+            .unwrap();
+        let restored = DatabaseQueries::load_order(&reader.pool, &client_order_id, &trader_id)
+            .await
+            .unwrap()
+            .unwrap();
+        let clients = reader.load_index_order_client().unwrap();
+        assert_entirely_equal(restored, expected);
+        assert_eq!(
+            clients,
+            AHashMap::from([(client_order_id, expected_client_id)])
+        );
+        DatabaseQueries::index_order_clients(
+            &reader.pool,
+            &trader_id,
+            &[(client_order_id, expected_client_id)],
+        )
+        .await
+        .unwrap();
+        reset_test_database(&reader).await;
+        reader.close().unwrap();
+    }
+
+    fn pending_replacement_orders(
+        instrument: &InstrumentAny,
+        trader_id: TraderId,
+    ) -> (OrderAny, OrderAny) {
+        let strategy_id = StrategyId::new(SHARED_STRATEGY_ID);
+        let client_order_id = ClientOrderId::new(SHARED_CLIENT_ORDER_ID);
+        let mut original = OrderTestBuilder::new(OrderType::StopMarket)
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument.id())
+            .client_order_id(client_order_id)
+            .quantity(Quantity::from("2.0"))
+            .trigger_price(Price::from("5100.00"))
+            .emulation_trigger(TriggerType::BidAsk)
+            .build();
+
+        let emulated = OrderEmulated::new(
+            trader_id,
+            strategy_id,
+            instrument.id(),
+            client_order_id,
+            UUID4::new(),
+            1.into(),
+            1.into(),
+        );
+
+        original.apply(OrderEventAny::Emulated(emulated)).unwrap();
+
+        let OrderAny::Market(mut replacement) = shared_order(instrument, trader_id, "2.0") else {
+            unreachable!();
+        };
+
+        replacement.prepend_events(original.events().into_iter().cloned());
+        (original, OrderAny::Market(replacement))
     }
 
     fn shared_position(instrument: &InstrumentAny, order: &OrderAny, quantity: &str) -> Position {

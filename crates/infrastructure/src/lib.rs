@@ -84,3 +84,6 @@ pub mod sql;
 
 #[cfg(all(feature = "defi", any(feature = "redis", feature = "postgres")))]
 mod defi;
+
+#[cfg(any(feature = "postgres", feature = "redis"))]
+mod order_replay;

@@ -4626,7 +4626,7 @@ impl Cache {
         if let Some(database) = &mut self.database {
             handle_persistence_result(
                 format_args!("persist order {}", order.client_order_id()),
-                database.update_order(order.last_event()),
+                database.update_order_from_state(order),
             )?;
             // TODO: Implement order snapshots
             // if self.snapshot_orders {

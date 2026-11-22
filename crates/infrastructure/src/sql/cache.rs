@@ -394,7 +394,7 @@ impl PostgresCacheDatabase {
         let pool = connect_pg(pg_connect_options).await.unwrap();
 
         // Buffering
-        let mut buffer = VecDeque::new();
+        let mut buffer = WriteBuffer::default();
 
         // TODO: expose this via configuration once tests are fixed
         let buffer_interval = Duration::from_millis(0);
@@ -435,7 +435,7 @@ impl PostgresCacheDatabase {
             }
         }
 
-        if !buffer.is_empty() {
+        if !buffer.commands.is_empty() {
             drain_buffer(&pool, &trader_id, &mut buffer).await;
         }
 
@@ -538,6 +538,8 @@ impl DatabaseWriter {
 #[derive(Debug)]
 enum WriteCommand {
     Query(DatabaseQuery),
+    OrderReplacement(OrderReplacement),
+    OrderUpdate(OrderEventAny, UUID4),
     Position {
         id: PositionId,
         event: OrderFilled,
@@ -545,6 +547,22 @@ enum WriteCommand {
         oms_type: OmsType,
     },
     Flush(tokio::sync::oneshot::Sender<anyhow::Result<()>>),
+}
+
+#[derive(Default)]
+struct WriteBuffer {
+    commands: VecDeque<WriteCommand>,
+    order_replacements: OrderReplacements,
+}
+
+type OrderReplacements = AHashMap<(TraderId, ClientOrderId), OrderReplacement>;
+
+#[derive(Debug)]
+struct OrderReplacement {
+    init: OrderInitialized,
+    client_id: Option<ClientId>,
+    prior_event_ids: Vec<String>,
+    first_update_id: Option<UUID4>,
 }
 
 impl From<DatabaseQuery> for WriteCommand {
@@ -740,7 +758,7 @@ async fn check_account_ownership(pool: &PgPool) -> Result<(), sqlx::Error> {
 
 async fn handle_query(
     maybe_msg: Option<WriteCommand>,
-    buffer: &mut VecDeque<WriteCommand>,
+    buffer: &mut WriteBuffer,
     buffer_interval: Duration,
     pool: &PgPool,
     trader_id: &TraderId,
@@ -753,7 +771,7 @@ async fn handle_query(
     let msg = match msg {
         #[cfg(feature = "defi")]
         WriteCommand::Query(DatabaseQuery::DefiCurrency(currency, reply)) => {
-            if !buffer.is_empty() {
+            if !buffer.commands.is_empty() {
                 drain_buffer(pool, trader_id, buffer).await;
             }
 
@@ -763,7 +781,7 @@ async fn handle_query(
         }
         #[cfg(feature = "defi")]
         WriteCommand::Query(DatabaseQuery::DefiInstrument(instrument, migration, reply)) => {
-            if !buffer.is_empty() {
+            if !buffer.commands.is_empty() {
                 drain_buffer(pool, trader_id, buffer).await;
             }
 
@@ -773,7 +791,14 @@ async fn handle_query(
         }
         WriteCommand::Flush(reply) => {
             drain_buffer(pool, trader_id, buffer).await;
-            let _ = reply.send(DatabaseQueries::delete_trader(pool, trader_id).await);
+            let result = DatabaseQueries::delete_trader(pool, trader_id).await;
+            if result.is_ok() {
+                buffer
+                    .order_replacements
+                    .retain(|(owner, _), _| owner != trader_id);
+            }
+
+            let _ = reply.send(result);
             return ControlFlow::Continue(());
         }
         WriteCommand::Query(DatabaseQuery::Close) => {
@@ -783,8 +808,7 @@ async fn handle_query(
         other => other,
     };
 
-    buffer.push_back(msg);
-
+    buffer.commands.push_back(msg);
     if buffer_interval.is_zero() {
         drain_buffer(pool, trader_id, buffer).await;
     }
@@ -793,13 +817,13 @@ async fn handle_query(
 }
 
 async fn flush_buffer(
-    buffer: &mut VecDeque<WriteCommand>,
+    buffer: &mut WriteBuffer,
     pool: &PgPool,
     trader_id: &TraderId,
     flush_timer: &mut Pin<&mut tokio::time::Sleep>,
     buffer_interval: Duration,
 ) {
-    if !buffer.is_empty() {
+    if !buffer.commands.is_empty() {
         drain_buffer(pool, trader_id, buffer).await;
     }
     flush_timer.as_mut().reset(Instant::now() + buffer_interval);
@@ -1278,8 +1302,27 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn add_order(&self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()> {
-        let query = DatabaseQuery::AddOrder(order_initialized_event(order), client_id);
-        self.tx.send(query).map_err(|e| {
+        let original = order.init_event();
+        let command = match order.last_event() {
+            OrderEventAny::Initialized(init) if init.event_id != original.event_id => {
+                let prior_event_ids = order
+                    .events()
+                    .into_iter()
+                    .rev()
+                    .skip(1)
+                    .map(|event| event.clone().into_boxed().id().to_string())
+                    .collect();
+                WriteCommand::OrderReplacement(OrderReplacement {
+                    init: init.clone(),
+                    client_id,
+                    prior_event_ids,
+                    first_update_id: None,
+                })
+            }
+            _ => DatabaseQuery::AddOrder(original.clone(), client_id).into(),
+        };
+
+        self.tx.send(command).map_err(|e| {
             anyhow::anyhow!("Failed to send query add_order to database message handler: {e}")
         })
     }
@@ -1690,6 +1733,13 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         })
     }
 
+    fn update_order_from_state(&self, order: &OrderAny) -> anyhow::Result<()> {
+        let command = WriteCommand::OrderUpdate(order.last_event().clone(), order.init_id());
+        self.tx.send(command).map_err(|e| {
+            anyhow::anyhow!("Failed to send query update_order to database message handler: {e}")
+        })
+    }
+
     fn update_position(&self, position: &Position) -> anyhow::Result<()> {
         let query = if position.requires_replay_state() {
             DatabaseQuery::AddPositionSnapshot(PositionSnapshot::from_replay_state(position, None))
@@ -1748,10 +1798,6 @@ fn account_last_event(account: &AccountAny) -> anyhow::Result<AccountState> {
         .ok_or_else(|| anyhow::anyhow!("Cannot persist account with no events: {}", account.id()))
 }
 
-fn order_initialized_event(order: &OrderAny) -> OrderInitialized {
-    order.init_event().clone()
-}
-
 fn position_last_event(position: &Position) -> anyhow::Result<OrderFilled> {
     position
         .last_event()
@@ -1764,10 +1810,28 @@ fn position_replay_snapshot(position: &Position) -> Option<Box<PositionSnapshot>
         .then(|| Box::new(PositionSnapshot::from_replay_state(position, None)))
 }
 
-async fn drain_buffer(pool: &PgPool, trader_id: &TraderId, buffer: &mut VecDeque<WriteCommand>) {
-    for command in buffer.drain(..) {
+async fn drain_buffer(pool: &PgPool, trader_id: &TraderId, buffer: &mut WriteBuffer) {
+    for command in buffer.commands.drain(..) {
         let result = match command {
-            WriteCommand::Query(query) => execute_query(pool, trader_id, query).await,
+            WriteCommand::OrderReplacement(replacement) => {
+                // Expose the replacement only once a later event can commit with it.
+                let key = (replacement.init.trader_id, replacement.init.client_order_id);
+                if let Some(pending) = buffer.order_replacements.get_mut(&key)
+                    && pending.init.event_id == replacement.init.event_id
+                {
+                    pending.client_id = replacement.client_id.or(pending.client_id);
+                } else {
+                    buffer.order_replacements.insert(key, replacement);
+                }
+
+                Ok(())
+            }
+            WriteCommand::OrderUpdate(event, init_id) => {
+                write_order_update(pool, &mut buffer.order_replacements, event, Some(init_id)).await
+            }
+            WriteCommand::Query(query) => {
+                execute_query(pool, trader_id, &mut buffer.order_replacements, query).await
+            }
             WriteCommand::Position {
                 id,
                 event,
@@ -1795,6 +1859,7 @@ async fn drain_buffer(pool: &PgPool, trader_id: &TraderId, buffer: &mut VecDeque
 async fn execute_query(
     pool: &PgPool,
     trader_id: &TraderId,
+    order_replacements: &mut OrderReplacements,
     query: DatabaseQuery,
 ) -> anyhow::Result<()> {
     match query {
@@ -1805,7 +1870,11 @@ async fn execute_query(
         DatabaseQuery::Close => Ok(()),
         DatabaseQuery::Add(key, value) => DatabaseQueries::add(pool, key, value).await,
         DatabaseQuery::Delete(key) => DatabaseQueries::delete(pool, &key).await,
-        DatabaseQuery::DeleteOrder(id) => DatabaseQueries::delete_order(pool, *trader_id, id).await,
+        DatabaseQuery::DeleteOrder(id) => {
+            DatabaseQueries::delete_order(pool, *trader_id, id).await?;
+            order_replacements.remove(&(*trader_id, id));
+            Ok(())
+        }
         DatabaseQuery::DeletePosition(id) => {
             DatabaseQueries::delete_position(pool, *trader_id, id).await
         }
@@ -1843,7 +1912,7 @@ async fn execute_query(
         DatabaseQuery::AddGreeks(greeks) => DatabaseQueries::add_greeks(pool, &greeks).await,
         DatabaseQuery::AddYieldCurve(curve) => DatabaseQueries::add_yield_curve(pool, &curve).await,
         DatabaseQuery::UpdateOrder(event) => {
-            DatabaseQueries::add_order_event(pool, event.into_boxed(), None).await
+            write_order_update(pool, order_replacements, event, None).await
         }
         DatabaseQuery::UpdatePosition(event) => {
             DatabaseQueries::update_position(pool, &event).await
@@ -1856,4 +1925,43 @@ async fn execute_query(
             DatabaseQueries::index_order_clients(pool, trader_id, &claims).await
         }
     }
+}
+
+async fn write_order_update(
+    pool: &PgPool,
+    order_replacements: &mut OrderReplacements,
+    event: OrderEventAny,
+    init_id: Option<UUID4>,
+) -> anyhow::Result<()> {
+    let key = (event.trader_id(), event.client_order_id());
+    let event = event.into_boxed();
+
+    let Some(replacement) = order_replacements.get_mut(&key) else {
+        return DatabaseQueries::add_order_event(pool, event, None).await;
+    };
+
+    // Reload can restore the original order while this replacement is pending
+    if init_id.is_some_and(|id| id != replacement.init.event_id) {
+        order_replacements.remove(&key);
+        return DatabaseQueries::add_order_event(pool, event, None).await;
+    }
+
+    let event_id = event.id();
+    let first_update_id = replacement.first_update_id.get_or_insert(event_id);
+    let client_order_id = key.1;
+    anyhow::ensure!(
+        *first_update_id == event_id,
+        "Cannot persist order {client_order_id} event {event_id} before replacement event {first_update_id}"
+    );
+
+    DatabaseQueries::add_order_replacement(
+        pool,
+        replacement.init.clone(),
+        replacement.client_id,
+        &replacement.prior_event_ids,
+        event,
+    )
+    .await?;
+    order_replacements.remove(&key);
+    Ok(())
 }

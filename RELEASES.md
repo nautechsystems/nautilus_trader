@@ -130,6 +130,7 @@ Released on TBD (UTC).
 - Fixed delta option chains missing matching strikes outside the ATM fallback
 - Fixed PostgreSQL cache restoring another trader's OMS type when position IDs overlap
 - Fixed PostgreSQL `OptionSpread` reloads panicking and dropping `tick_scheme`
+- Fixed PostgreSQL persistence of emulated order releases and recovery when both initializations are stored
 - Fixed local catalog paths with `#`, `%`, or `?` in queries, migration, and run manifests
 - Fixed `ParquetDataCatalog::new` converting non-UTF-8 paths lossily, which could open another catalog
 - Fixed Windows Parquet catalog listing for instrument IDs containing colons (#5605), thanks @viliamgonda

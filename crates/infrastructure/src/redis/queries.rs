@@ -29,7 +29,7 @@ use nautilus_model::{
     accounts::AccountAny,
     data::{CustomData, DataType, HasTsInit, InstrumentClose},
     enums::CurrencyType,
-    events::{AccountState, OrderEventAny, OrderFilled, PositionSnapshot},
+    events::{AccountState, OrderFilled, PositionSnapshot},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId},
     instruments::{InstrumentAny, SyntheticInstrument},
     orders::{Order, OrderAny},
@@ -50,6 +50,7 @@ use ustr::Ustr;
 use super::get_index_key;
 #[cfg(feature = "defi")]
 use crate::defi::{contract_conflict, integrity_error, redis_read_error, validate_marker};
+use crate::order_replay::transform_order;
 
 /// Persisted representation of a [`Currency`].
 ///
@@ -1631,7 +1632,7 @@ impl DatabaseQueries {
             let legacy_init = value.get("type").and_then(Value::as_str) == Some("OrderInitialized");
             let event = deserialize_payload_value(value)?;
             if legacy_init {
-                order = transform_order(&order, event)?;
+                order = transform_order(&order, event, order.ts_init())?;
             } else {
                 order.apply(event)?;
             }
@@ -1819,45 +1820,6 @@ impl DatabaseQueries {
         let result: Vec<Bytes> = conn.lrange(key, 0, -1).await?;
         Ok(result)
     }
-}
-
-fn transform_order(order: &OrderAny, event: OrderEventAny) -> anyhow::Result<OrderAny> {
-    let history = order.events();
-    anyhow::ensure!(
-        !history.contains(&&event),
-        "Duplicate initialization in legacy order history"
-    );
-    let mut transformed = OrderAny::from_events(vec![event])?;
-    anyhow::ensure!(
-        (
-            transformed.trader_id(),
-            transformed.strategy_id(),
-            transformed.instrument_id(),
-            transformed.client_order_id()
-        ) == (
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id()
-        ),
-        "Legacy order transformation changes the order identity"
-    );
-    let history = history.into_iter().cloned();
-
-    match &mut transformed {
-        OrderAny::Market(target) => {
-            target.ts_init = order.ts_init();
-            target.prepend_events(history);
-        }
-        OrderAny::Limit(target) => {
-            target.ts_init = order.ts_init();
-            target.liquidity_side = order.liquidity_side();
-            target.prepend_events(history);
-        }
-        _ => anyhow::bail!("Legacy order transformation must produce a market or limit order"),
-    }
-
-    Ok(transformed)
 }
 
 fn deserialize_payload_value<T: DeserializeOwned>(mut value: Value) -> anyhow::Result<T> {

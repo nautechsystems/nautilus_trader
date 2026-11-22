@@ -255,7 +255,7 @@ fn purged_instrument_retains_order_guard() {
 fn replacement_failure(mode: &str) -> &'static str {
     match mode {
         "history" | "archive" | "scoped_archive" | "unrelated_archive" => "position history",
-        "orders" | "order_snapshot" => "nonterminal order",
+        "orders" | "order_snapshot" | "released_order_open" => "nonterminal order",
         "intents" => "active swap intents",
         _ => "No authoritative execution-store check",
     }
@@ -1012,6 +1012,10 @@ mod postgres_tests {
     use nautilus_infrastructure::sql::{
         cache::PostgresCacheDatabase, pg::get_postgres_connect_options, queries::DatabaseQueries,
     };
+    use nautilus_model::{
+        enums::TriggerType,
+        events::{OrderCanceled, OrderReleased},
+    };
     use rstest::rstest;
     use sqlx::{AssertSqlSafe, PgPool, postgres::PgPoolOptions};
 
@@ -1581,7 +1585,10 @@ mod postgres_tests {
             cache.dispose();
             pool.close().await;
 
-            if mode == "clear" || mode == "unrelated_archive" {
+            if matches!(
+                mode.as_str(),
+                "clear" | "unrelated_archive" | "released_order_closed"
+            ) {
                 result.unwrap();
                 assert_instrument(&restored, &pair, 823_121);
                 assert_instrument(&cached.unwrap(), &pair, 823_121);
@@ -1608,6 +1615,8 @@ mod postgres_tests {
             "scoped_archive",
             "unrelated_archive",
             "orders",
+            "released_order_open",
+            "released_order_closed",
             "intents",
             "unavailable",
         ] {
@@ -1686,6 +1695,83 @@ mod postgres_tests {
                 .await
                 .unwrap();
             DatabaseQueries::add_order(pool, order.init_event().clone(), None)
+                .await
+                .unwrap();
+        }
+
+        if matches!(mode, "released_order_open" | "released_order_closed") {
+            store_released_order(pool, legacy.id(), mode == "released_order_closed").await;
+        }
+    }
+
+    async fn store_released_order(pool: &PgPool, instrument_id: InstrumentId, closed: bool) {
+        let original = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument_id)
+            .quantity(Quantity::from("1.0"))
+            .trigger_price(Price::from("100.00"))
+            .emulation_trigger(TriggerType::BidAsk)
+            .build();
+        let mut replacement = original.init_event().clone();
+
+        let release = OrderReleased::new(
+            replacement.trader_id,
+            replacement.strategy_id,
+            instrument_id,
+            replacement.client_order_id,
+            Price::from("101.00"),
+            UUID4::new(),
+            1.into(),
+            1.into(),
+        );
+
+        let release_id = release.event_id.to_string();
+
+        DatabaseQueries::add_order(pool, replacement.clone(), None)
+            .await
+            .unwrap();
+        DatabaseQueries::add_order_event(pool, Box::new(release), None)
+            .await
+            .unwrap();
+
+        replacement.order_type = OrderType::Market;
+        replacement.trigger_type = None;
+        replacement.trigger_price = None;
+        replacement.emulation_trigger = None;
+        replacement.event_id = UUID4::new();
+        replacement.ts_event = 1.into();
+        replacement.ts_init = 1.into();
+        let replacement_id = replacement.event_id.to_string();
+        DatabaseQueries::add_order(pool, replacement, None)
+            .await
+            .unwrap();
+
+        // Reproduce the shared transaction timestamp independently of row insertion order
+        sqlx::query(
+            "UPDATE order_event SET created_at = (SELECT created_at FROM order_event WHERE id = $1)
+             WHERE id = $2",
+        )
+        .bind(release_id)
+        .bind(replacement_id)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        if closed {
+            let canceled = OrderCanceled::new(
+                original.trader_id(),
+                original.strategy_id(),
+                instrument_id,
+                original.client_order_id(),
+                UUID4::new(),
+                2.into(),
+                2.into(),
+                false,
+                None,
+                None,
+                None,
+            );
+
+            DatabaseQueries::add_order_event(pool, Box::new(canceled), None)
                 .await
                 .unwrap();
         }

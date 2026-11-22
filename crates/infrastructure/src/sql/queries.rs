@@ -36,7 +36,7 @@ use nautilus_model::{
     },
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, TraderId},
     instruments::{CryptoOption, Instrument, InstrumentAny, OptionContract, SyntheticInstrument},
-    orders::OrderAny,
+    orders::{Order, OrderAny},
     position::Position,
     types::Currency,
 };
@@ -47,7 +47,6 @@ use nautilus_model::{
         currency::{self, TokenCurrency},
     },
     enums::OrderStatus,
-    orders::Order,
 };
 use sqlx::{FromRow, PgConnection, PgExecutor, PgPool, Postgres, Row, Transaction};
 #[cfg(feature = "defi")]
@@ -56,22 +55,32 @@ use ustr::Ustr;
 use super::models::{orders::OrderSnapshotRow, positions::PositionSnapshotRow, types::SignalRow};
 #[cfg(feature = "defi")]
 use crate::defi::{contract_conflict, currency_references, integrity_error, validate_marker};
-use crate::sql::models::{
-    accounts::AccountEventRow,
-    data::{BarRow, InstrumentCloseRow, QuoteTickRow, TradeTickRow},
-    enums::{
-        AggregationSourcePg, AggressorSidePg, AssetClassPg, BarAggregationPg, CurrencyTypePg,
-        PriceTypePg, TrailingOffsetTypePg,
+use crate::{
+    order_replay::transform_order,
+    sql::models::{
+        accounts::AccountEventRow,
+        data::{BarRow, InstrumentCloseRow, QuoteTickRow, TradeTickRow},
+        enums::{
+            AggregationSourcePg, AggressorSidePg, AssetClassPg, BarAggregationPg, CurrencyTypePg,
+            PriceTypePg, TrailingOffsetTypePg,
+        },
+        general::{GeneralRow, OrderEventOrderClientIdCombination, OrderPositionIndexRow},
+        instruments::InstrumentAnyRow,
+        orders::{OrderEventAnyRow, OrderFilledRow},
+        types::CurrencyRow,
     },
-    general::{GeneralRow, OrderEventOrderClientIdCombination, OrderPositionIndexRow},
-    instruments::InstrumentAnyRow,
-    orders::{OrderEventAnyRow, OrderFilledRow},
-    types::CurrencyRow,
 };
 
 pub(super) const CACHE_DATABASE_KEY_PREFIX: &str = "cache-database:";
 const TRADER_KEY_PREFIX: &str = "trader:";
 const GENERAL_KEY_PREFIX: &str = "general:";
+
+// A replacement initialization and its first update share a transaction timestamp
+macro_rules! order_event_replay_order {
+    () => {
+        "created_at ASC, (kind <> 'OrderInitialized') ASC"
+    };
+}
 
 #[derive(Debug)]
 pub struct DatabaseQueries;
@@ -855,8 +864,14 @@ impl DatabaseQueries {
             )));
         }
 
-        let rows = sqlx::query("SELECT * FROM order_event WHERE instrument_id = $1 ORDER BY trader_id, client_order_id, created_at ASC")
-            .bind(id).fetch_all(&mut **transaction).await?;
+        let rows = sqlx::query(concat!(
+            "SELECT * FROM order_event WHERE instrument_id = $1
+             ORDER BY trader_id, client_order_id, ",
+            order_event_replay_order!()
+        ))
+        .bind(id)
+        .fetch_all(&mut **transaction)
+        .await?;
         let mut events: AHashMap<(String, String), Vec<OrderEventAny>> = AHashMap::new();
 
         for row in rows {
@@ -869,8 +884,10 @@ impl DatabaseQueries {
         }
 
         for events in events.values() {
-            let order = OrderAny::from_events(events.clone()).map_err(integrity_error)?;
-            if !order.is_closed() {
+            if Self::replay_order(events.clone())
+                .map_err(integrity_error)?
+                .is_some_and(|order| !order.is_closed())
+            {
                 return Err(integrity_error(format!(
                     "Instrument {id} has nonterminal orders"
                 )));
@@ -1538,17 +1555,65 @@ impl DatabaseQueries {
     ///
     /// Returns an error if the SQL INSERT or UPDATE operation fails, if serialization of
     /// `exec_algorithm_params` fails, or if the event is already persisted for another trader.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "order event persistence maps the full database schema in one transaction"
-    )]
     pub async fn add_order_event(
         pool: &PgPool,
         order_event: Box<dyn OrderEvent>,
         client_id: Option<ClientId>,
     ) -> anyhow::Result<()> {
         let mut transaction = pool.begin().await?;
+        Self::insert_order_event(&mut transaction, order_event, client_id).await?;
+        transaction
+            .commit()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to commit transaction: {e}"))
+    }
 
+    pub(super) async fn add_order_replacement(
+        pool: &PgPool,
+        init: OrderInitialized,
+        client_id: Option<ClientId>,
+        prior_event_ids: &[String],
+        next_event: Box<dyn OrderEvent>,
+    ) -> anyhow::Result<()> {
+        let trader_id = init.trader_id;
+        let client_order_id = init.client_order_id;
+        let mut transaction = pool.begin().await?;
+        Self::insert_order_event(&mut transaction, Box::new(init), client_id).await?;
+        Self::insert_order_event(&mut transaction, next_event, None).await?;
+
+        if let Some(client_id) = client_id {
+            sqlx::query(
+                r#"
+                UPDATE "order_event"
+                SET client_id = $3
+                WHERE trader_id = $1 AND client_order_id = $2 AND client_id <> $3
+                  AND id = ANY($4)
+                "#,
+            )
+            .bind(trader_id.to_string())
+            .bind(client_order_id.to_string())
+            .bind(client_id.to_string())
+            .bind(prior_event_ids)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to update order client origin after replacement")?;
+        }
+
+        transaction
+            .commit()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to commit transaction: {e}"))
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one statement maps the full order event schema"
+    )]
+    async fn insert_order_event(
+        transaction: &mut Transaction<'_, Postgres>,
+        order_event: Box<dyn OrderEvent>,
+        client_id: Option<ClientId>,
+    ) -> anyhow::Result<()> {
         // Insert trader if it does not exist
         // TODO remove this when node and trader initialization is implemented
         sqlx::query(
@@ -1557,7 +1622,7 @@ impl DatabaseQueries {
         "#,
         )
         .bind(order_event.trader_id().to_string())
-        .execute(&mut *transaction)
+        .execute(&mut **transaction)
         .await
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("Failed to insert into trader table: {e}"))?;
@@ -1571,7 +1636,7 @@ impl DatabaseQueries {
             "#,
             )
             .bind(client_id.to_string())
-            .execute(&mut *transaction)
+            .execute(&mut **transaction)
             .await
             .map(|_| ())
             .map_err(|e| anyhow::anyhow!("Failed to insert into client table: {e}"))?;
@@ -1678,7 +1743,7 @@ impl DatabaseQueries {
             .bind(order_event.is_reopened())
             .bind(info)
             .bind(order_event.causation_id().map(|x| x.to_string()))
-            .execute(&mut *transaction)
+            .execute(&mut **transaction)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to insert into order_event table: {e}"))?;
 
@@ -1692,10 +1757,7 @@ impl DatabaseQueries {
             );
         }
 
-        transaction
-            .commit()
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to commit transaction: {e}"))
+        Ok(())
     }
 
     /// Loads all order events for a `client_order_id` via the provided `pool`.
@@ -1708,13 +1770,13 @@ impl DatabaseQueries {
         client_order_id: &ClientOrderId,
         trader_id: &TraderId,
     ) -> anyhow::Result<Vec<OrderEventAny>> {
-        sqlx::query_as::<_, OrderEventAnyRow>(
+        sqlx::query_as::<_, OrderEventAnyRow>(concat!(
             r#"
             SELECT * FROM "order_event" event
             WHERE event.client_order_id = $1 AND event.trader_id = $2
-            ORDER BY created_at ASC
-        "#,
-        )
+            ORDER BY "#,
+            order_event_replay_order!()
+        ))
         .bind(client_order_id.to_string())
         .bind(trader_id.to_string())
         .fetch_all(pool)
@@ -1733,20 +1795,10 @@ impl DatabaseQueries {
         client_order_id: &ClientOrderId,
         trader_id: &TraderId,
     ) -> anyhow::Result<Option<OrderAny>> {
-        let order_events = Self::load_order_events(pool, client_order_id, trader_id).await;
-
-        match order_events {
-            Ok(order_events) => {
-                if order_events.is_empty() {
-                    return Ok(None);
-                }
-                let order = OrderAny::from_events(order_events).map_err(|e| {
-                    anyhow::anyhow!("Failed to assemble order {client_order_id} from events: {e}")
-                })?;
-                Ok(Some(order))
-            }
-            Err(e) => anyhow::bail!("Failed to load order events: {e}"),
-        }
+        let events = Self::load_order_events(pool, client_order_id, trader_id).await?;
+        Self::replay_order(events).map_err(|e| {
+            anyhow::anyhow!("Failed to assemble order {client_order_id} from events: {e}")
+        })
     }
 
     /// Loads and assembles all `OrderAny` entries via the provided `pool`.
@@ -1781,6 +1833,32 @@ impl DatabaseQueries {
             }
         }
         Ok(orders)
+    }
+
+    fn replay_order(events: Vec<OrderEventAny>) -> anyhow::Result<Option<OrderAny>> {
+        let mut events = events.into_iter();
+
+        let Some(initial) = events.next() else {
+            return Ok(None);
+        };
+
+        let mut order = OrderAny::from_events(vec![initial])?;
+
+        for event in events {
+            if let OrderEventAny::Initialized(init) = &event
+                && order.is_active_local()
+                && order.emulation_trigger().is_some()
+                && init.emulation_trigger.is_none()
+                && init.order_side == order.order_side()
+            {
+                let ts_init = init.ts_event;
+                order = transform_order(&order, event, ts_init)?;
+            } else {
+                order.apply(event)?;
+            }
+        }
+
+        Ok(Some(order))
     }
 
     /// Replaces the fill event log for a `position_id` via the provided `pool`.
