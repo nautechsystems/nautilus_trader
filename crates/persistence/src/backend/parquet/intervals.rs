@@ -17,7 +17,7 @@
 
 use nautilus_core::ClosedInterval;
 
-use crate::common::coverage::missing_intervals;
+use crate::{common::coverage::missing_intervals, errors::CatalogOverlapError};
 
 /// Checks if a list of closed integer intervals are all mutually disjoint.
 ///
@@ -33,6 +33,37 @@ pub fn are_intervals_disjoint(intervals: &[(u64, u64)]) -> bool {
     sorted_intervals
         .array_windows()
         .all(|&[(_, end), (start, _)]| end < start)
+}
+
+/// Checks that `new` intervals are disjoint from each other and from `existing` ones.
+///
+/// # Errors
+///
+/// Returns an error if any intervals overlap, with `message`, and as a [`CatalogOverlapError`]
+/// if a `new` interval overlaps an `existing` one.
+pub(crate) fn check_new_intervals_disjoint(
+    existing: &[(u64, u64)],
+    new: &[(u64, u64)],
+    message: impl FnOnce() -> String,
+) -> anyhow::Result<()> {
+    let mut intervals = existing.to_vec();
+    intervals.extend_from_slice(new);
+
+    if are_intervals_disjoint(&intervals) {
+        return Ok(());
+    }
+
+    let overlaps_existing = new.iter().any(|&(start, end)| {
+        existing
+            .iter()
+            .any(|&(existing_start, existing_end)| start <= existing_end && existing_start <= end)
+    });
+
+    if overlaps_existing {
+        anyhow::bail!(CatalogOverlapError(message()));
+    }
+
+    anyhow::bail!(message())
 }
 
 /// Checks if intervals are contiguous (adjacent with no gaps).
@@ -79,7 +110,8 @@ pub(crate) fn query_interval_diff(
 mod tests {
     use rstest::rstest;
 
-    use super::{are_intervals_contiguous, are_intervals_disjoint};
+    use super::{are_intervals_contiguous, are_intervals_disjoint, check_new_intervals_disjoint};
+    use crate::errors::CatalogOverlapError;
 
     #[rstest]
     #[case::empty(&[], true)]
@@ -91,6 +123,23 @@ mod tests {
     #[case::unsorted_overlapping(&[(4, 6), (1, 4)], false)]
     fn are_intervals_disjoint_cases(#[case] intervals: &[(u64, u64)], #[case] expected: bool) {
         assert_eq!(are_intervals_disjoint(intervals), expected);
+    }
+
+    #[rstest]
+    #[case::disjoint(&[(1, 2)], &[(3, 4)], None)]
+    #[case::new_overlaps_existing(&[(1, 5)], &[(5, 6)], Some(true))]
+    #[case::existing_overlap_each_other(&[(1, 5), (4, 6)], &[(7, 8)], Some(false))]
+    #[case::new_overlap_each_other(&[(1, 2)], &[(3, 5), (5, 6)], Some(false))]
+    fn check_new_intervals_disjoint_cases(
+        #[case] existing: &[(u64, u64)],
+        #[case] new: &[(u64, u64)],
+        #[case] expected_overlap: Option<bool>,
+    ) {
+        let overlap = check_new_intervals_disjoint(existing, new, || "overlap".to_string())
+            .err()
+            .map(|e| e.downcast_ref::<CatalogOverlapError>().is_some());
+
+        assert_eq!(overlap, expected_overlap);
     }
 
     #[rstest]

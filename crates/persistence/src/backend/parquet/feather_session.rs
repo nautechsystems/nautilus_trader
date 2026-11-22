@@ -59,7 +59,7 @@ use object_store::path::Path as ObjectPath;
 use crate::{
     backend::parquet::{
         catalog::ParquetDataCatalog,
-        intervals::are_intervals_disjoint,
+        intervals::check_new_intervals_disjoint,
         io::read_parquet_from_object_store,
         paths::{
             catalog_filename, make_object_store_path, query_intersects_filename,
@@ -79,7 +79,7 @@ use crate::{
         },
     },
     writer::{
-        feather::recover_partial_feather_files,
+        feather::{FEATHER_EXTENSION, FEATHER_REFUSED_EXTENSION, recover_partial_feather_files},
         materializer::{
             StreamConversionOptions, apply_stream_conversion_transform,
             coalesce_stream_conversion_batches, read_feather_record_batches,
@@ -243,14 +243,21 @@ impl ParquetDataCatalog {
         self.read_run(Environment::Backtest, instance_id)
     }
 
-    /// Reads the sealed Feather files of a run instance (backtest or live).
+    /// Reads the sealed Feather files of a run instance (backtest or live), including files
+    /// promotion refused.
     ///
     /// Abandoned `.feather.partial` files are recovered first, and files a writer still holds
     /// open are not read. Families that do not decode to `Data`, such as order events, are
     /// skipped.
     fn read_run(&self, environment: Environment, instance_id: &str) -> anyhow::Result<Vec<Data>> {
         self.recover_partial_run_files(environment, instance_id)?;
-        let feather_files = self.list_feather_files(environment, instance_id, None, None)?;
+        let feather_files = self.list_feather_files(
+            environment,
+            instance_id,
+            &[FEATHER_EXTENSION, FEATHER_REFUSED_EXTENSION],
+            None,
+            None,
+        )?;
         let mut all_data: Vec<Data> = Vec::new();
 
         for file_path in feather_files {
@@ -397,12 +404,13 @@ impl ParquetDataCatalog {
         Ok(())
     }
 
-    /// Lists the feather files of a run, for one data type or every type when `data_type` is
-    /// `None`.
+    /// Lists the feather files of a run with one of `extensions`, for one data type or every
+    /// type when `data_type` is `None`.
     fn list_feather_files(
         &self,
         environment: Environment,
         instance_id: &str,
+        extensions: &[&str],
         data_type: Option<&CatalogDataType>,
         identifiers: Option<&[String]>,
     ) -> anyhow::Result<Vec<String>> {
@@ -420,7 +428,10 @@ impl ParquetDataCatalog {
                 let object = object?;
                 let path_str = object.location.to_string();
 
-                if !path_str.ends_with(".feather") {
+                if !extensions
+                    .iter()
+                    .any(|extension| path_str.ends_with(&format!(".{extension}")))
+                {
                     continue;
                 }
 
@@ -636,8 +647,13 @@ impl ParquetDataCatalog {
     ) -> anyhow::Result<()> {
         Self::ensure_stream_data_type(data_type)?;
         self.recover_partial_run_files(environment, instance_id)?;
-        let feather_files =
-            self.list_feather_files(environment, instance_id, Some(data_type), identifiers)?;
+        let feather_files = self.list_feather_files(
+            environment,
+            instance_id,
+            &[FEATHER_EXTENSION],
+            Some(data_type),
+            identifiers,
+        )?;
 
         // Each file is planned before it is written; a file holds every identifier of its type,
         // and each restored batch carries its own identifier
@@ -901,15 +917,16 @@ impl ParquetDataCatalog {
             remaining = filtered;
         }
 
-        let mut intervals = existing.clone();
-        intervals.extend(remaining.iter().map(|plan| (plan.start_ts, plan.end_ts)));
-
-        if !are_intervals_disjoint(&intervals) {
-            anyhow::bail!(
+        let intervals = remaining
+            .iter()
+            .map(|plan| (plan.start_ts, plan.end_ts))
+            .collect::<Vec<_>>();
+        check_new_intervals_disjoint(&existing, &intervals, || {
+            format!(
                 "Writing promoted groups for {directory} would create non-disjoint intervals. \
                  Existing intervals: {existing:?}"
-            );
-        }
+            )
+        })?;
 
         Ok(remaining)
     }
@@ -2435,6 +2452,23 @@ mod read_run_tests {
         assert_eq!(
             catalog.query::<QuoteTick>().execute().unwrap(),
             vec![quote_aud(1_000), quote_eth(2_000)],
+        );
+    }
+
+    #[rstest]
+    #[case::type_directory("quotes/quotes_0.feather.refused")]
+    #[case::flat("quotes_0.feather.refused")]
+    fn read_backtest_returns_refused_rows(#[case] refused: &str) {
+        let temp_dir = TempDir::new().unwrap();
+        let mut writer = run_writer(&temp_dir);
+        writer.write_data(Data::Quote(quote_aud(1_000))).unwrap();
+        writer.close().unwrap();
+        let run = temp_dir.path().join("backtest/run-001");
+        fs::rename(run.join("quotes/quotes_0.feather"), run.join(refused)).unwrap();
+
+        assert_eq!(
+            read_backtest(&temp_dir),
+            vec![Data::Quote(quote_aud(1_000))]
         );
     }
 

@@ -753,6 +753,14 @@ mod tests {
         fn delete_file(&mut self, _source: &Self::Source, _file: &str) -> anyhow::Result<()> {
             unreachable!("tests keep promoted files")
         }
+
+        fn set_aside_file(
+            &mut self,
+            _source: &Self::Source,
+            _file: &str,
+        ) -> anyhow::Result<String> {
+            unreachable!("tests refuse no files")
+        }
     }
 
     impl StagedPromotionBackend for RecordingBackend {}

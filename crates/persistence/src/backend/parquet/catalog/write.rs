@@ -33,7 +33,10 @@ use super::{
     write_catalog_batch,
 };
 use crate::{
-    backend::parquet::{io::write_batches_to_object_store_create, paths::catalog_filename},
+    backend::parquet::{
+        intervals::check_new_intervals_disjoint, io::write_batches_to_object_store_create,
+        paths::catalog_filename,
+    },
     common::metadata::record_batch_ts_init_range,
 };
 
@@ -550,15 +553,16 @@ impl ParquetDataCatalog {
 
         if !skip_disjoint_check {
             let current_intervals = self.get_directory_intervals(directory)?;
-            let new_interval = (start_ts.as_u64(), end_ts.as_u64());
-            let mut new_intervals = current_intervals.clone();
-            new_intervals.push(new_interval);
-
-            anyhow::ensure!(
-                are_intervals_disjoint(&new_intervals),
-                "Writing file {filename} with interval ({start_ts}, {end_ts}) would create \
-                non-disjoint intervals. Existing intervals: {current_intervals:?}"
-            );
+            check_new_intervals_disjoint(
+                &current_intervals,
+                &[(start_ts.as_u64(), end_ts.as_u64())],
+                || {
+                    format!(
+                        "Writing file {filename} with interval ({start_ts}, {end_ts}) would \
+                         create non-disjoint intervals. Existing intervals: {current_intervals:?}"
+                    )
+                },
+            )?;
         }
 
         if let Some(data_description) = data_description {
