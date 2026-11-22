@@ -160,8 +160,8 @@ impl OrderRequestState {
     ///
     /// # Errors
     ///
-    /// Returns an error if the order is an iceberg order, if the JSON envelope fails to serialize
-    /// or if the handler command channel is closed.
+    /// Returns an error if the order or its conditional close order is an iceberg order, if the
+    /// JSON envelope fails to serialize or if the handler command channel is closed.
     pub fn submit(
         self: &Arc<Self>,
         params: KrakenWsAddOrderParams,
@@ -171,6 +171,15 @@ impl OrderRequestState {
         // The request has no `display_qty`, which Kraken requires of an iceberg order
         if params.order_type == KrakenOrderType::Iceberg {
             anyhow::bail!("Iceberg orders are not supported on the Kraken WS path; use REST");
+        }
+
+        // Kraken's conditional close order types do not include iceberg
+        if params
+            .conditional
+            .as_ref()
+            .is_some_and(|close| close.order_type == KrakenOrderType::Iceberg)
+        {
+            anyhow::bail!("Iceberg conditional close orders are not supported by Kraken");
         }
 
         self.send(
@@ -858,7 +867,7 @@ mod tests {
             spot_v2::messages::{
                 KrakenWsAddOrderParams, KrakenWsAmendOrderParams, KrakenWsBatchAddOrder,
                 KrakenWsBatchAddParams, KrakenWsBatchOrderResult, KrakenWsCancelOrderParams,
-                KrakenWsOrderResponse, KrakenWsOrderResult,
+                KrakenWsConditionalParams, KrakenWsOrderResponse, KrakenWsOrderResult,
             },
         },
     };
@@ -1055,6 +1064,65 @@ mod tests {
         );
         assert_eq!(state.pending_len(), 0);
         assert!(rx.try_recv().is_err());
+    }
+
+    /// Kraken accepts no iceberg conditional close order, so a limit order carrying one fails
+    /// before it is sent or awaits a response.
+    #[rstest]
+    fn test_submit_rejects_an_iceberg_conditional_close_order() {
+        let (state, mut rx) = make_state(60_000);
+        let params = KrakenWsAddOrderParams {
+            conditional: Some(KrakenWsConditionalParams {
+                order_type: KrakenOrderType::Iceberg,
+                limit_price: Some(dec!(51000)),
+                trigger_price: None,
+            }),
+            ..make_add_order_params("TKN")
+        };
+
+        let error = state
+            .submit(params, make_identity(PendingOperation::Submit), 1)
+            .expect_err("an iceberg close order must not be sent");
+
+        assert!(
+            error.to_string().contains("conditional close"),
+            "unexpected error: {error}"
+        );
+        assert_eq!(state.pending_len(), 0);
+        assert!(rx.try_recv().is_err());
+    }
+
+    /// A conditional close order of a type Kraken accepts is sent with its parent.
+    #[rstest]
+    fn test_submit_sends_a_stop_loss_limit_conditional_close_order() {
+        let (state, mut rx) = make_state(60_000);
+        let params = KrakenWsAddOrderParams {
+            conditional: Some(KrakenWsConditionalParams {
+                order_type: KrakenOrderType::StopLossLimit,
+                limit_price: Some(dec!(49000)),
+                trigger_price: Some(dec!(49100)),
+            }),
+            ..make_add_order_params("TKN")
+        };
+
+        state
+            .submit(params, make_identity(PendingOperation::Submit), 1)
+            .expect("a stop-loss-limit close order must be sent");
+
+        assert_eq!(state.pending_len(), 1);
+
+        match rx.try_recv().expect("cmd queued") {
+            SpotHandlerCommand::SendOrderRequest { payload, .. } => {
+                assert!(
+                    payload
+                        .expose_secret()
+                        .contains("\"conditional\":{\"order_type\":\"stop-loss-limit\""),
+                    "unexpected payload: {}",
+                    payload.expose_secret()
+                );
+            }
+            _ => panic!("wrong cmd variant"),
+        }
     }
 
     #[tokio::test]
