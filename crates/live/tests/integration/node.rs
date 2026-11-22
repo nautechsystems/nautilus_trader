@@ -52,7 +52,10 @@ use nautilus_common::{
         },
         system::{QueueStateChanged, ShutdownSystem},
     },
-    msgbus::{self, MessagingSwitchboard, ShareableMessageHandler, switchboard},
+    msgbus::{
+        self, BusMessage, MessageBusExternalIngress, MessagingSwitchboard, ShareableMessageHandler,
+        switchboard,
+    },
     nautilus_actor,
     runner::{TimeEventMessage, TimeEventSender, get_time_event_sender},
     testing::{wait_until, wait_until_async},
@@ -358,6 +361,26 @@ pub(crate) mod serial_tests {
     mod reconciliation_bench;
 
     mod report_acceptance;
+    mod startup;
+
+    #[derive(Default)]
+    struct FailingIngress {
+        closed: bool,
+    }
+
+    impl MessageBusExternalIngress for FailingIngress {
+        fn is_closed(&self) -> bool {
+            self.closed
+        }
+
+        fn take_receiver(&mut self) -> anyhow::Result<tokio::sync::mpsc::Receiver<BusMessage>> {
+            anyhow::bail!("external ingress receiver unavailable")
+        }
+
+        fn close(&mut self) {
+            self.closed = true;
+        }
+    }
 
     #[derive(Clone, Debug, Default)]
     struct FailingDisconnectDataClientState {
@@ -374,6 +397,7 @@ pub(crate) mod serial_tests {
     #[derive(Clone, Copy, Debug)]
     enum LifecycleClientBehavior {
         Connects,
+        ConnectFails(&'static str),
         ConnectPending,
         ReadinessPending,
         ConnectDelayedReadinessPending,
@@ -388,6 +412,7 @@ pub(crate) mod serial_tests {
     struct LifecycleDataClient {
         state: LifecycleClientState,
         behavior: LifecycleClientBehavior,
+        stop_on_connect: Option<LiveNodeHandle>,
     }
 
     struct LifecycleExecutionClient {
@@ -498,6 +523,7 @@ pub(crate) mod serial_tests {
             Ok(Box::new(LifecycleDataClient {
                 state: self.state.clone(),
                 behavior: self.behavior,
+                stop_on_connect: None,
             }))
         }
 
@@ -614,6 +640,7 @@ pub(crate) mod serial_tests {
             self.state.connect_attempted.store(true, Ordering::Relaxed);
 
             match self.behavior {
+                LifecycleClientBehavior::ConnectFails(error) => anyhow::bail!("{error}"),
                 LifecycleClientBehavior::ConnectPending => {
                     std::future::pending::<anyhow::Result<()>>().await
                 }
@@ -626,6 +653,11 @@ pub(crate) mod serial_tests {
                 | LifecycleClientBehavior::DisconnectPending
                 | LifecycleClientBehavior::DisconnectKeepsConnected => {
                     self.state.connected.store(true, Ordering::Relaxed);
+
+                    if let Some(handle) = &self.stop_on_connect {
+                        handle.stop();
+                    }
+
                     Ok(())
                 }
             }
@@ -746,6 +778,7 @@ pub(crate) mod serial_tests {
             self.state.connect_attempted.store(true, Ordering::Relaxed);
 
             match self.behavior {
+                LifecycleClientBehavior::ConnectFails(error) => anyhow::bail!("{error}"),
                 LifecycleClientBehavior::ConnectPending => {
                     std::future::pending::<anyhow::Result<()>>().await
                 }
