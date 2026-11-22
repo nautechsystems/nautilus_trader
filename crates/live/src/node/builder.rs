@@ -35,7 +35,7 @@ use nautilus_common::{
 use nautilus_core::UUID4;
 use nautilus_data::client::DataClientAdapter;
 use nautilus_execution::engine::ExecutionEngine;
-use nautilus_model::identifiers::{TraderId, Venue};
+use nautilus_model::identifiers::{ClientId, TraderId, Venue};
 use nautilus_portfolio::config::PortfolioConfig;
 #[cfg(feature = "streaming")]
 use nautilus_system::config::StreamingConfig;
@@ -635,147 +635,8 @@ impl LiveNodeBuilder {
                 .set_external_egress_config(external_egress, &config)?;
         }
 
-        for (name, factory) in &self.data_client_factories {
-            if let Some(config) = self.data_client_configs.get(name) {
-                log::debug!("Creating data client {name}");
-
-                let client = socket_registry.scope(|| {
-                    factory.create(name, config.as_ref(), kernel.cache().into(), kernel.clock())
-                })?;
-
-                let client_id = client.client_id();
-                let venue = client.venue();
-                socket_registry.register_client(client_id);
-
-                let adapter = DataClientAdapter::new(
-                    client_id, venue, true, // handles_order_book_deltas
-                    true, // handles_order_book_snapshots
-                    client,
-                );
-
-                let routing = self
-                    .data_client_routing
-                    .get(name)
-                    .cloned()
-                    .unwrap_or_default();
-
-                {
-                    let mut data_engine = kernel.data_engine.borrow_mut();
-                    data_engine.register_client(adapter, venue);
-                    if routing.default {
-                        data_engine.set_default_client(client_id)?;
-                    }
-
-                    if let Some(venues) = &routing.venues {
-                        for venue_str in venues {
-                            data_engine.register_venue_routing(
-                                client_id,
-                                Venue::new(venue_str.as_str()),
-                            )?;
-                        }
-                    }
-                }
-
-                log::info!("Registered DataClient-{client_id}");
-            } else {
-                log::warn!("No config found for data client factory {name}");
-            }
-        }
-
-        let mut exec_clients = Vec::new();
-        let mut venue_candidates = AHashMap::<Venue, Vec<_>>::new();
-        let mut venues_explicit = AHashSet::new();
-        let mut has_default_client = false;
-        let mut instrument_venues = AHashSet::new();
-        let mut self_settling_venues = AHashSet::new();
-
-        for (name, factory) in &self.exec_client_factories {
-            if let Some(config) = self.exec_client_configs.get(name) {
-                log::debug!("Creating execution client {name}");
-
-                let client = socket_registry.scope(|| match factory {
-                    ExecutionClientFactoryEntry::Adapter(factory) => factory.create(
-                        self.config.trader_id,
-                        name,
-                        config.as_ref(),
-                        kernel.cache().into(),
-                        kernel.clock(),
-                    ),
-                    ExecutionClientFactoryEntry::Simulated(factory) => {
-                        factory.create(self.config.trader_id, name, config.as_ref(), kernel.cache())
-                    }
-                })?;
-
-                let client = LiveExecutionClient::new(client);
-                let client_id = client.client_id();
-                let venue = client.venue();
-                socket_registry.register_client(client_id);
-
-                let routing = self
-                    .exec_client_routing
-                    .get(name)
-                    .cloned()
-                    .unwrap_or_default();
-
-                {
-                    let mut exec_engine = kernel.exec_engine.borrow_mut();
-                    exec_engine.register_client(Box::new(client.clone()))?;
-                    if routing.default {
-                        exec_engine.set_default_client(client_id)?;
-                        has_default_client = true;
-                    }
-
-                    if let Some(venues) = &routing.venues {
-                        for venue_str in venues {
-                            let route_venue = Venue::new(venue_str.as_str());
-                            exec_engine.register_venue_routing(client_id, route_venue)?;
-                            venues_explicit.insert(route_venue);
-                            instrument_venues.insert(route_venue);
-                            if client.settles_contract_expirations() {
-                                self_settling_venues.insert(route_venue);
-                            }
-                        }
-                    }
-                }
-
-                venue_candidates.entry(venue).or_default().push(client_id);
-                instrument_venues.insert(venue);
-                if client.settles_contract_expirations() {
-                    self_settling_venues.insert(venue);
-                }
-
-                exec_clients.push(client);
-
-                log::info!("Registered ExecutionClient-{client_id}");
-            } else {
-                log::warn!("No config found for execution client factory {name}");
-            }
-        }
-
-        {
-            let mut exec_engine = kernel.exec_engine.borrow_mut();
-
-            for (venue, candidates) in venue_candidates {
-                if venues_explicit.contains(&venue) {
-                    continue;
-                }
-
-                if let [client_id] = candidates.as_slice() {
-                    exec_engine.register_venue_routing(*client_id, venue)?;
-                } else if !has_default_client {
-                    anyhow::bail!(
-                        "Multiple execution clients for venue {venue}: configure an explicit venue route or default client"
-                    );
-                }
-            }
-        }
-
-        for venue in instrument_venues {
-            ExecutionEngine::subscribe_venue_instruments(&kernel.exec_engine, venue);
-            if !self_settling_venues.contains(&venue) {
-                ExecutionEngine::subscribe_venue_instrument_closes(&kernel.exec_engine, venue);
-            }
-        }
+        self.register_data_clients(&kernel, &socket_registry)?;
+        let exec_clients = self.register_exec_clients(&kernel, &socket_registry)?;
 
         let exec_manager_config = ExecutionManagerConfig::from(&self.config.exec_engine)
             .with_trader_id(self.config.trader_id);
@@ -813,6 +674,164 @@ impl LiveNodeBuilder {
         Ok(node)
     }
 
+    fn register_data_clients(
+        &self,
+        kernel: &NautilusKernel,
+        socket_registry: &SocketReconnectRegistry,
+    ) -> anyhow::Result<()> {
+        for (name, factory) in &self.data_client_factories {
+            let Some(config) = self.data_client_configs.get(name) else {
+                log::warn!("No config found for data client factory {name}");
+                continue;
+            };
+
+            log::debug!("Creating data client {name}");
+
+            let client = socket_registry.scope(|| {
+                factory.create(name, config.as_ref(), kernel.cache().into(), kernel.clock())
+            })?;
+
+            let client_id = client.client_id();
+            let venue = client.venue();
+            socket_registry.register_client(client_id);
+
+            let adapter = DataClientAdapter::new(
+                client_id, venue, true, // handles_order_book_deltas
+                true, // handles_order_book_snapshots
+                client,
+            );
+
+            let routing = self
+                .data_client_routing
+                .get(name)
+                .cloned()
+                .unwrap_or_default();
+
+            {
+                let mut data_engine = kernel.data_engine.borrow_mut();
+                data_engine.register_client(adapter, venue);
+                if routing.default {
+                    data_engine.set_default_client(client_id)?;
+                }
+
+                for venue_str in routing.venues.iter().flatten() {
+                    data_engine
+                        .register_venue_routing(client_id, Venue::new(venue_str.as_str()))?;
+                }
+            }
+
+            log::info!("Registered DataClient-{client_id}");
+        }
+
+        Ok(())
+    }
+
+    fn register_exec_clients(
+        &self,
+        kernel: &NautilusKernel,
+        socket_registry: &SocketReconnectRegistry,
+    ) -> anyhow::Result<Vec<LiveExecutionClient>> {
+        let mut exec_clients = Vec::new();
+        let mut venue_candidates = AHashMap::<Venue, Vec<_>>::new();
+        let mut venues_explicit = AHashSet::new();
+        let mut has_default_client = false;
+        let mut instrument_venues = AHashSet::new();
+        let mut self_settling_venues = AHashSet::new();
+
+        for (name, factory) in &self.exec_client_factories {
+            let Some(config) = self.exec_client_configs.get(name) else {
+                log::warn!("No config found for execution client factory {name}");
+                continue;
+            };
+
+            log::debug!("Creating execution client {name}");
+
+            let client = socket_registry
+                .scope(|| factory.create(self.config.trader_id, name, config.as_ref(), kernel))?;
+
+            let client = LiveExecutionClient::new(client);
+            let client_id = client.client_id();
+            let venue = client.venue();
+            socket_registry.register_client(client_id);
+
+            let routing = self
+                .exec_client_routing
+                .get(name)
+                .cloned()
+                .unwrap_or_default();
+
+            {
+                let mut exec_engine = kernel.exec_engine.borrow_mut();
+                exec_engine.register_client(Box::new(client.clone()))?;
+                if routing.default {
+                    exec_engine.set_default_client(client_id)?;
+                    has_default_client = true;
+                }
+
+                for venue_str in routing.venues.iter().flatten() {
+                    let route_venue = Venue::new(venue_str.as_str());
+                    exec_engine.register_venue_routing(client_id, route_venue)?;
+                    venues_explicit.insert(route_venue);
+                    instrument_venues.insert(route_venue);
+                    if client.settles_contract_expirations() {
+                        self_settling_venues.insert(route_venue);
+                    }
+                }
+            }
+
+            venue_candidates.entry(venue).or_default().push(client_id);
+            instrument_venues.insert(venue);
+            if client.settles_contract_expirations() {
+                self_settling_venues.insert(venue);
+            }
+
+            exec_clients.push(client);
+
+            log::info!("Registered ExecutionClient-{client_id}");
+        }
+
+        Self::register_inferred_exec_routes(
+            kernel,
+            venue_candidates,
+            &venues_explicit,
+            has_default_client,
+        )?;
+
+        for venue in instrument_venues {
+            ExecutionEngine::subscribe_venue_instruments(&kernel.exec_engine, venue);
+            if !self_settling_venues.contains(&venue) {
+                ExecutionEngine::subscribe_venue_instrument_closes(&kernel.exec_engine, venue);
+            }
+        }
+
+        Ok(exec_clients)
+    }
+
+    fn register_inferred_exec_routes(
+        kernel: &NautilusKernel,
+        venue_candidates: AHashMap<Venue, Vec<ClientId>>,
+        venues_explicit: &AHashSet<Venue>,
+        has_default_client: bool,
+    ) -> anyhow::Result<()> {
+        let mut exec_engine = kernel.exec_engine.borrow_mut();
+
+        for (venue, candidates) in venue_candidates {
+            if venues_explicit.contains(&venue) {
+                continue;
+            }
+
+            if let [client_id] = candidates.as_slice() {
+                exec_engine.register_venue_routing(*client_id, venue)?;
+            } else if !has_default_client {
+                anyhow::bail!(
+                    "Multiple execution clients for venue {venue}: configure an explicit venue route or default client"
+                );
+            }
+        }
+
+        Ok(())
+    }
+
     #[expect(
         clippy::type_complexity,
         reason = "external backing returns its paired egress and ingress"
@@ -846,6 +865,27 @@ impl LiveNodeBuilder {
             ))
         } else {
             Ok((Some(external_egress_from_backing(backing)), None))
+        }
+    }
+}
+
+impl ExecutionClientFactoryEntry {
+    fn create(
+        &self,
+        trader_id: TraderId,
+        name: &str,
+        config: &dyn ClientConfig,
+        kernel: &NautilusKernel,
+    ) -> anyhow::Result<Box<dyn ExecutionClient>> {
+        match self {
+            Self::Adapter(factory) => factory.create(
+                trader_id,
+                name,
+                config,
+                kernel.cache().into(),
+                kernel.clock(),
+            ),
+            Self::Simulated(factory) => factory.create(trader_id, name, config, kernel.cache()),
         }
     }
 }
