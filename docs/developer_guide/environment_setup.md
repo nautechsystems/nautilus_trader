@@ -1,6 +1,7 @@
 # Environment Setup
 
 Use an editor with current Rust and Python language support, such as PyCharm or Visual Studio Code.
+For VS Code, see [Python editor settings](#python-editor-settings).
 
 [uv](https://docs.astral.sh/uv) is the preferred tool for handling all Python virtual environments and dependencies.
 
@@ -714,6 +715,53 @@ for a disposable database or after confirming that the data can be deleted.
 :::
 
 Run `nautilus database --help` for the complete command syntax.
+
+## Python editor settings
+
+The repository does not ship shared editor settings; `.gitignore` excludes `.vscode/`, so each
+contributor keeps their own. For VS Code, install the
+[Ruff](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff) and
+[Python](https://marketplace.visualstudio.com/items?itemName=ms-python.python) (with Pylance)
+extensions. [Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml)
+is optional and formats TOML with taplo, like the pre-commit hook. For Rust, see
+[Rust analyzer settings](#rust-analyzer-settings).
+
+Add these settings to the workspace `.vscode/settings.json`:
+
+```json tab="VSCode"
+{
+    "python.defaultInterpreterPath": "${workspaceFolder}/python/.venv/bin/python",
+    "ruff.importStrategy": "fromEnvironment",
+    "ruff.configuration": "${workspaceFolder}/python/pyproject.toml",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/docs/tutorials"
+    ],
+    "[python]": {
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.formatOnSave": true
+    }
+}
+```
+
+- `python.defaultInterpreterPath` points to the uv-managed environment at `python/.venv`. On Windows,
+  use `${workspaceFolder}/python/.venv/Scripts/python.exe`. VS Code reads this setting only until an
+  interpreter is selected for the workspace, so in an existing workspace run
+  **Python: Select Interpreter** once and choose `python/.venv`.
+- `ruff.importStrategy` makes the extension use the Ruff version pinned in `python/.venv` instead of
+  its bundled version, which may lint and format differently.
+- `ruff.configuration` points to the Ruff configuration in `python/pyproject.toml`. There is no Ruff
+  configuration at the repository root, so without this setting the extension falls back to Ruff
+  defaults and reports false import-sorting (`I001`) errors.
+- `python.analysis.extraPaths` lets Pylance resolve the tutorial strategy imports, such as
+  `ema_cross`, that examples load from `docs/tutorials` by changing `sys.path` at runtime. Add other
+  directories that examples insert into `sys.path` the same way.
+
+:::note
+Format-on-save is close to the project style but not identical. `make format` also runs
+`scripts/format-python.py --fix` and `cargo +nightly fmt`, and the pre-commit hooks run further
+Python formatters, so `make format` and `make pre-commit` remain the source of truth. VS Code skips
+format-on-save when `files.autoSave` is `afterDelay`.
+:::
 
 ## Rust analyzer settings
 
