@@ -158,7 +158,7 @@ pub struct KrakenWsAddOrderParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reduce_only: Option<bool>,
     /// Trigger parameters for stop/take-profit orders.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "triggers", skip_serializing_if = "Option::is_none")]
     pub trigger: Option<KrakenWsTriggerParams>,
     /// Leverage multiplier for margin orders; omit for non-margin (cash) orders.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -263,7 +263,7 @@ pub struct KrakenWsBatchAddOrder {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub leverage: Option<u16>,
     /// Trigger parameters for stop-loss and take-profit order types.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "triggers", skip_serializing_if = "Option::is_none")]
     pub trigger: Option<KrakenWsTriggerParams>,
 }
 
@@ -275,7 +275,7 @@ pub struct KrakenWsTriggerParams {
     /// Trigger price level.
     #[serde(with = "decimal")]
     pub price: Decimal,
-    /// Price direction for the trigger (above or below).
+    /// Units of the trigger price (`static`, `pct` or `quote`); Kraken defaults to `static`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub price_type: Option<String>,
 }
@@ -1081,11 +1081,15 @@ mod tests {
             "leverage must be serialized for margin batch legs",
         );
         assert!(
-            value.get("trigger").is_some(),
-            "trigger must be serialized for conditional batch legs",
+            value.get("triggers").is_some(),
+            "triggers must be serialized for conditional batch legs",
         );
-        assert_eq!(value["trigger"]["reference"], "last");
-        assert_eq!(value["trigger"]["price"].to_string(), "30500.0");
+        assert_eq!(value["triggers"]["reference"], "last");
+        assert_eq!(value["triggers"]["price"].to_string(), "30500.0");
+        assert!(
+            value.get("trigger").is_none(),
+            "the deprecated trigger field must not be serialized",
+        );
     }
 
     #[rstest]
@@ -1111,8 +1115,12 @@ mod tests {
             "leverage must be omitted when None"
         );
         assert!(
+            value.get("triggers").is_none(),
+            "triggers must be omitted when None"
+        );
+        assert!(
             value.get("trigger").is_none(),
-            "trigger must be omitted when None"
+            "the deprecated trigger field must not be serialized",
         );
     }
 

@@ -263,6 +263,24 @@ mod tests {
         }
     }
 
+    fn make_submit_order(order: &OrderAny) -> SubmitOrder {
+        SubmitOrder {
+            trader_id: order.trader_id(),
+            client_id: None,
+            strategy_id: order.strategy_id(),
+            instrument_id: order.instrument_id(),
+            client_order_id: order.client_order_id(),
+            order_init: order.init_event().clone(),
+            exec_algorithm_id: None,
+            position_id: None,
+            params: None,
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            correlation_id: None,
+            causation_id: None,
+        }
+    }
+
     #[rstest]
     fn test_format_expire_time_rfc3339() {
         let ts = UnixNanos::from(1_767_225_599_000_000_000_u64);
@@ -475,6 +493,115 @@ mod tests {
         assert!(
             msg.contains("trigger type") && msg.contains("LastPrice"),
             "unexpected error: {msg}",
+        );
+    }
+
+    /// A triggered order's `add_order` request carries its trigger in Kraken's `triggers` object,
+    /// not in the deprecated `trigger` field, which names only the reference price.
+    #[rstest]
+    #[case::stop_market(
+        OrderType::StopMarket,
+        None,
+        TriggerType::LastPrice,
+        "stop-loss",
+        "last"
+    )]
+    #[case::stop_limit(
+        OrderType::StopLimit,
+        Some("49000.0"),
+        TriggerType::LastPrice,
+        "stop-loss-limit",
+        "last"
+    )]
+    #[case::market_if_touched(
+        OrderType::MarketIfTouched,
+        None,
+        TriggerType::IndexPrice,
+        "take-profit",
+        "index"
+    )]
+    #[case::limit_if_touched(
+        OrderType::LimitIfTouched,
+        Some("49000.0"),
+        TriggerType::Default,
+        "take-profit-limit",
+        "last"
+    )]
+    fn test_build_add_order_params_sends_trigger_in_triggers_object(
+        #[case] order_type: OrderType,
+        #[case] price: Option<&str>,
+        #[case] trigger_type: TriggerType,
+        #[case] expected_order_type: &str,
+        #[case] expected_reference: &str,
+    ) {
+        use nautilus_model::{
+            orders::OrderTestBuilder,
+            types::{Price, Quantity},
+        };
+
+        let mut builder = OrderTestBuilder::new(order_type);
+        builder
+            .instrument_id(InstrumentId::from("BTC/USD.KRAKEN"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("0.01"))
+            .trigger_price(Price::from("49100.0"))
+            .trigger_type(trigger_type);
+
+        if let Some(price) = price {
+            builder.price(Price::from(price));
+        }
+        let order = builder.build();
+
+        let params = build_add_order_params(
+            &make_submit_order(&order),
+            &order,
+            SecretString::from("TKN"),
+            None,
+        )
+        .expect("a triggered order must build");
+        let value = serde_json::to_value(&params).expect("serialize");
+
+        assert_eq!(value["order_type"], expected_order_type);
+        assert_eq!(value["triggers"]["reference"], expected_reference);
+        assert_eq!(value["triggers"]["price"].to_string(), "49100.0");
+        assert!(
+            value.get("trigger").is_none(),
+            "the deprecated trigger field must not be serialized: {value}",
+        );
+    }
+
+    /// An order without a trigger sends neither the `triggers` object nor the deprecated `trigger`
+    /// field.
+    #[rstest]
+    fn test_build_add_order_params_omits_triggers_for_limit_order() {
+        use nautilus_model::{
+            orders::OrderTestBuilder,
+            types::{Price, Quantity},
+        };
+
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("BTC/USD.KRAKEN"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("0.01"))
+            .price(Price::from("49000.0"))
+            .build();
+
+        let params = build_add_order_params(
+            &make_submit_order(&order),
+            &order,
+            SecretString::from("TKN"),
+            None,
+        )
+        .expect("a limit order must build");
+        let value = serde_json::to_value(&params).expect("serialize");
+
+        assert!(
+            value.get("triggers").is_none(),
+            "triggers must be omitted: {value}"
+        );
+        assert!(
+            value.get("trigger").is_none(),
+            "the deprecated trigger field must not be serialized: {value}",
         );
     }
 

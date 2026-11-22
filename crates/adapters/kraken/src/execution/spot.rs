@@ -2081,10 +2081,12 @@ mod tests {
     use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
     use nautilus_live::ExecutionEventEmitter;
     use nautilus_model::{
+        enums::{OrderSide, OrderType, TriggerType},
         identifiers::{
             AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, VenueOrderId,
         },
         instruments::{CurrencyPair, InstrumentAny},
+        orders::OrderTestBuilder,
         types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
@@ -2092,8 +2094,8 @@ mod tests {
 
     use super::{
         AccountType, ClientId, CommandFailure, ExecutionClientCore, KrakenSpotExecutionClient,
-        OmsType, batch_cancel_item_for_spot, cancel_order_for_spot, handle_cancel_failure,
-        resolve_leverage, resolve_use_ws_trade,
+        OmsType, batch_cancel_item_for_spot, build_batch_order, cancel_order_for_spot,
+        handle_cancel_failure, resolve_leverage, resolve_use_ws_trade,
     };
     use crate::{
         common::{consts::KRAKEN_VENUE, enums::KrakenProductType},
@@ -2386,6 +2388,69 @@ mod tests {
         let p = params_with("leverage", json!(65539_u64));
         let err = resolve_leverage(Some(&p), None).unwrap_err();
         assert!(err.contains("exceeds maximum"), "unexpected: {err}");
+    }
+
+    /// A triggered order's `batch_add` entry carries its trigger in Kraken's `triggers` object, not
+    /// in the deprecated `trigger` field, which names only the reference price.
+    #[rstest]
+    #[case::stop_market(
+        OrderType::StopMarket,
+        None,
+        TriggerType::LastPrice,
+        "stop-loss",
+        "last"
+    )]
+    #[case::stop_limit(
+        OrderType::StopLimit,
+        Some("49000.0"),
+        TriggerType::LastPrice,
+        "stop-loss-limit",
+        "last"
+    )]
+    #[case::market_if_touched(
+        OrderType::MarketIfTouched,
+        None,
+        TriggerType::IndexPrice,
+        "take-profit",
+        "index"
+    )]
+    #[case::limit_if_touched(
+        OrderType::LimitIfTouched,
+        Some("49000.0"),
+        TriggerType::Default,
+        "take-profit-limit",
+        "last"
+    )]
+    fn test_build_batch_order_sends_trigger_in_triggers_object(
+        #[case] order_type: OrderType,
+        #[case] price: Option<&str>,
+        #[case] trigger_type: TriggerType,
+        #[case] expected_order_type: &str,
+        #[case] expected_reference: &str,
+    ) {
+        let mut builder = OrderTestBuilder::new(order_type);
+        builder
+            .instrument_id(InstrumentId::from(TEST_INSTRUMENT_ID))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("0.01"))
+            .trigger_price(Price::from("49100.0"))
+            .trigger_type(trigger_type);
+
+        if let Some(price) = price {
+            builder.price(Price::from(price));
+        }
+        let order = builder.build();
+
+        let entry = build_batch_order(&order, None).expect("a triggered order must build");
+        let value = serde_json::to_value(&entry).expect("serialize");
+
+        assert_eq!(value["order_type"], expected_order_type);
+        assert_eq!(value["triggers"]["reference"], expected_reference);
+        assert_eq!(value["triggers"]["price"].to_string(), "49100.0");
+        assert!(
+            value.get("trigger").is_none(),
+            "the deprecated trigger field must not be serialized: {value}",
+        );
     }
 
     #[rstest]
