@@ -29,8 +29,15 @@ fn test_expiration_settles_final_tick_fills(
     #[values(OmsType::Netting, OmsType::Hedging)] oms_type: OmsType,
 ) {
     let expiry = UnixNanos::from(2_000_000_000_000_000_000_u64);
+
     let instrument = if option {
-        InstrumentAny::OptionContract(option_contract("SPX", "OPRA", expiry, OptionKind::Call))
+        InstrumentAny::OptionContract(option_contract(
+            InstrumentId::from("SPX.OPRA"),
+            "OPRA",
+            expiry,
+            OptionKind::Call,
+            SettlementType::Cash,
+        ))
     } else {
         InstrumentAny::FuturesContract(futures_contract_es(Some(0.into()), Some(expiry)))
     };
@@ -313,8 +320,15 @@ fn test_expiration_waits_for_position_after_order_acknowledgement(
     #[values(1, 2)] fill_qty: u64,
 ) {
     let expiry = UnixNanos::from(2_000_000_000_000_000_000_u64);
+
     let instrument = if option {
-        InstrumentAny::OptionContract(option_contract("SPX", "OPRA", expiry, OptionKind::Call))
+        InstrumentAny::OptionContract(option_contract(
+            InstrumentId::from("SPX.OPRA"),
+            "OPRA",
+            expiry,
+            OptionKind::Call,
+            SettlementType::Cash,
+        ))
     } else {
         InstrumentAny::FuturesContract(futures_contract_es(Some(0.into()), Some(expiry)))
     };

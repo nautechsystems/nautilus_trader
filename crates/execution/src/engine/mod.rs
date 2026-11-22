@@ -136,7 +136,6 @@ pub struct ExecutionEngine {
     routing_map: AHashMap<Venue, ClientId>,
     instrument_venues: AHashSet<Venue>,
     instrument_close_venues: AHashSet<Venue>,
-    oms_overrides: AHashMap<StrategyId, OmsType>,
     external_clients: HashSet<ClientId>,
     pos_id_generator: PositionIdGenerator,
     config: ExecutionEngineConfig,
@@ -198,7 +197,6 @@ impl ExecutionEngine {
             routing_map: AHashMap::new(),
             instrument_venues: AHashSet::new(),
             instrument_close_venues: AHashSet::new(),
-            oms_overrides: AHashMap::new(),
             external_clients,
             pos_id_generator: PositionIdGenerator::new(trader_id, clock),
             config: config.unwrap_or_default(),
@@ -437,9 +435,12 @@ impl ExecutionEngine {
         }
 
         let adapter = ExecutionClientAdapter::new(client);
-        self.cache
-            .borrow_mut()
-            .add_client_account(client_id, adapter.account_id);
+
+        {
+            let mut cache = self.cache.borrow_mut();
+            cache.add_client_account(client_id, adapter.account_id);
+            cache.add_client_execution_settings(client_id, adapter.venue, adapter.oms_type);
+        }
 
         log::debug!("Registered client {client_id}");
         self.clients.insert(client_id, adapter);
@@ -453,6 +454,7 @@ impl ExecutionEngine {
         {
             let mut cache = self.cache.borrow_mut();
             cache.add_client_account(client_id, adapter.account_id);
+            cache.add_client_execution_settings(client_id, adapter.venue, adapter.oms_type);
             cache.set_default_client(client_id);
         }
 
@@ -648,7 +650,9 @@ impl ExecutionEngine {
     ///
     /// If an OMS type is already registered for this strategy, it will be overridden.
     pub fn register_oms_type(&mut self, strategy_id: StrategyId, oms_type: OmsType) {
-        self.oms_overrides.insert(strategy_id, oms_type);
+        self.cache
+            .borrow_mut()
+            .set_strategy_oms_type(strategy_id, oms_type);
         log::info!("Registered OMS::{oms_type:?} for {strategy_id}");
     }
 
@@ -3769,27 +3773,14 @@ impl ExecutionEngine {
             .client_id(&fill.client_order_id)
             .copied();
 
-        let client = client_id.and_then(|id| self.get_client(&id)).or_else(|| {
-            self.source_client_id_for_account(fill.account_id, &fill.instrument_id)
-                .and_then(|id| self.get_client(&id))
-        });
-
-        self.resolve_oms_type_for_client(fill.strategy_id, client)
-    }
-
-    fn resolve_oms_type_for_client(
-        &self,
-        strategy_id: StrategyId,
-        client: Option<&dyn ExecutionClient>,
-    ) -> OmsType {
-        if let Some(oms_type) = self.oms_overrides.get(&strategy_id)
-            && *oms_type != OmsType::Unspecified
-        {
-            return *oms_type;
-        }
+        let client_id = client_id
+            .filter(|id| self.clients.contains_key(id))
+            .or_else(|| self.source_client_id_for_account(fill.account_id, &fill.instrument_id));
 
         // Missing or ambiguous ownership retains the origin-free NETTING fallback
-        client.map_or(OmsType::Netting, ExecutionClient::oms_type)
+        self.cache
+            .borrow()
+            .resolve_oms_type(fill.strategy_id, client_id)
     }
 
     fn check_position_id_against_oms(
@@ -3801,12 +3792,17 @@ impl ExecutionEngine {
     ) -> Option<OrderDeniedReason> {
         let position_id = position_id?;
 
-        if self.resolve_oms_type_for_client(strategy_id, Some(client)) != OmsType::Netting {
+        if self
+            .cache
+            .borrow()
+            .resolve_oms_type(strategy_id, Some(client.client_id()))
+            != OmsType::Netting
+        {
             return None;
         }
 
-        let expected = format!("{instrument_id}-{strategy_id}");
-        if position_id.as_str() == expected {
+        let expected = netting_position_id(instrument_id, strategy_id);
+        if position_id == expected {
             return None;
         }
 
@@ -4106,7 +4102,7 @@ impl ExecutionEngine {
         fill: &OrderFilled,
         order: Option<&OrderAny>,
     ) -> PositionId {
-        let position_id = PositionId::new(format!("{}-{}", fill.instrument_id, fill.strategy_id));
+        let position_id = netting_position_id(fill.instrument_id, fill.strategy_id);
         let cache = self.cache.borrow();
 
         if order.is_none_or(|order| !order.is_reduce_only())
@@ -5565,6 +5561,13 @@ impl ExecutionEngine {
                 .expect("own order book was ensured above")
         })
     }
+}
+
+pub(crate) fn netting_position_id(
+    instrument_id: InstrumentId,
+    strategy_id: StrategyId,
+) -> PositionId {
+    PositionId::new(format!("{instrument_id}-{strategy_id}"))
 }
 
 fn rescale_fill_void_qty(qty: Quantity, precision: u8) -> anyhow::Result<Quantity> {

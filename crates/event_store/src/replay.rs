@@ -2505,6 +2505,18 @@ mod tests {
             &[],
         ),
         cache_mutation(
+            // Reapplied by execution client registration on every node start
+            "add_client_execution_settings",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            // Reapplied by strategy OMS registration on every node start
+            "set_strategy_oms_type",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
             // Reapplied by execution client routing setup on every node start
             "add_client_route",
             CacheMutationRecoveryClass::SnapshotOwned,

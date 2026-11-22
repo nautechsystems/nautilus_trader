@@ -42,6 +42,7 @@ from nautilus_trader.model import Currency
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Money
 from nautilus_trader.model import OmsType
+from nautilus_trader.model import OptionContract
 from nautilus_trader.model import OrderSide
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
@@ -165,7 +166,12 @@ if __name__ == "__main__":
         ),
     )
 
-    for instrument in futures + options:
+    for definition in futures + options:
+        instrument = definition
+        if isinstance(definition, OptionContract) and definition.id == option_id:
+            values = definition.to_dict()
+            values["underlying_instrument_id"] = str(future_id)
+            instrument = OptionContract.from_dict(values)
         engine.add_instrument(instrument)
     engine.add_data(quotes + bars + trades)
     engine.add_strategy(

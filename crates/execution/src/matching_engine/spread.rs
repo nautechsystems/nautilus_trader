@@ -201,7 +201,7 @@ impl OrderMatchingEngine {
         let fill_px = match self.fill_price_with_slippage(context, fill_px) {
             Ok(price) => price,
             Err(e) => {
-                self.cancel_spread_fill_on_error(context);
+                self.cancel_spread_fill_on_error(context, &e);
                 return Err(e);
             }
         };
@@ -313,12 +313,12 @@ impl OrderMatchingEngine {
         )
     }
 
-    fn cancel_spread_fill_on_error(&mut self, context: &FillContext<'_>) {
+    fn cancel_spread_fill_on_error(&mut self, context: &FillContext<'_>, e: &anyhow::Error) {
         if context.order.time_in_force() == TimeInForce::Fok
             || (context.initial_market_to_limit
                 && context.total_filled == context.initial_total_filled)
         {
-            self.cancel_order(context.order, None);
+            self.terminate_failed_spread_fill(context.order, e);
         }
     }
 
@@ -343,6 +343,16 @@ impl OrderMatchingEngine {
         } && !matches!(order.time_in_force(), TimeInForce::Ioc | TimeInForce::Fok);
 
         if !can_rest {
+            self.terminate_failed_spread_fill(order, e);
+        }
+    }
+
+    fn terminate_failed_spread_fill(&mut self, order: &OrderAny, e: &anyhow::Error) {
+        if order.status() == OrderStatus::Initialized
+            && order.order_type() == OrderType::MarketToLimit
+        {
+            self.generate_order_rejected(order, e.to_string().into());
+        } else {
             self.cancel_order(order, None);
         }
     }

@@ -788,8 +788,10 @@ Rust models compose at compile time; v1 provided no runtime native model plugins
 subclasses are also accepted; see [behavioral models](docs/concepts/behavioral_models.md#supplying-implementations).
 
 - Backtest venues no longer accept `settlement_prices`. Add `InstrumentClose` data with
-  `close_type=InstrumentCloseType.CONTRACT_EXPIRED`; its exact `close_price` settles futures, binary
-  contracts, and option close legs at expiry.
+  `close_type=InstrumentCloseType.CONTRACT_EXPIRED` to supply the expiry close price.
+- Simulated vanilla option expiry requires `underlying_instrument_id` and `settlement_type`.
+  Populate those fields if the loaded definitions omit them. See
+  [simulated expiry settlement](docs/concepts/options.md#simulated-expiry-settlement).
 - An omitted backtest `default_leverage` now selects 10x for margin accounts and 1x for cash
   accounts. Set `default_leverage=Decimal(1)` to retain v1's unleveraged behavior.
 - Adding an instrument that is already registered no longer replaces its matching engine. An

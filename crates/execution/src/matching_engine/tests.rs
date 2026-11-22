@@ -25,23 +25,24 @@ use nautilus_core::{UUID4, UnixNanos, correctness::CorrectnessError};
 use nautilus_model::orderbook::BookLevel;
 use nautilus_model::{
     data::{
-        Bar, BarType, DEPTH10_LEN, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
-        OrderBookDepth, QuoteTick, TradeTick,
+        Bar, BarType, DEPTH10_LEN, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta,
+        OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
         option_chain::OptionGreeks,
         order::{BookOrder, OrderId},
     },
     enums::{
         AccountType, AggressorSide, BookAction, BookType, ContingencyType, LiquiditySide,
-        MarketStatus, MarketStatusAction, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
-        RecordFlag, TimeInForce, TrailingOffsetType, TriggerType,
+        MarketStatus, MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
+        PositionSide, RecordFlag, SettlementType, TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{OrderEventAny, OrderEventType, OrderReleased},
-    identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     instruments::{
         Instrument, InstrumentAny,
         stubs::{
             crypto_option_btc_deribit, crypto_perpetual_ethusdt, currency_pair_ethusdt,
-            futures_contract_es, futures_spread_es, tokenized_asset_aaplx,
+            equity_aapl, futures_contract_es, futures_spread_es, index_instrument_spx,
+            option_contract_appl, tokenized_asset_aaplx,
         },
     },
     orderbook::OrderBook,
@@ -744,6 +745,7 @@ fn test_position_sync_resizes_mixed_ouo_sibling(
                 Some(position_id),
                 Some(&position),
                 None,
+                None,
                 false,
             )
             .unwrap();
@@ -1015,6 +1017,7 @@ fn test_position_sync_handles_unacknowledged_sibling_acceptance(
             LiquiditySide::Taker,
             Some(position_id),
             Some(&position),
+            None,
             None,
             false,
         )
@@ -1491,6 +1494,7 @@ fn test_position_sync_includes_newly_activated_oto_child(#[values(false, true)] 
             LiquiditySide::Taker,
             Some(position_id),
             Some(&position),
+            None,
             None,
             false,
         )
@@ -2080,9 +2084,9 @@ fn test_fill_order_calculates_commission_from_fill_liquidity_side() {
     engine
         .fill_order(
             &order,
-            Price::from("1500.00"),
-            Quantity::from("1.000"),
+            (Price::from("1500.00"), Quantity::from("1.000")),
             LiquiditySide::Taker,
+            None,
             None,
             None,
         )
@@ -2140,9 +2144,9 @@ fn test_fill_order_does_not_cache_filled_qty_when_fee_model_fails() {
 
     let result = engine.fill_order(
         &order,
-        Price::from("1500.00"),
-        Quantity::from("1.000"),
+        (Price::from("1500.00"), Quantity::from("1.000")),
         LiquiditySide::Taker,
+        None,
         None,
         None,
     );
@@ -2766,6 +2770,300 @@ fn test_canceled_fok_reverts_only_crossed_consumption_levels(
     assert_eq!(levels_after, levels_before);
     assert!(engine.bid_consumption.is_empty());
     assert_eq!(engine.trade_consumption, 0);
+}
+
+#[rstest]
+#[case::strike_currency("EUR", "USD", "USD", "has a EUR strike")]
+#[case::settlement_currency("USD", "USD", "EUR", "Currency conversion is required")]
+#[case::intrinsic_currency("USD", "EUR", "EUR", "without converting its strike currency")]
+fn test_option_cash_settlement_rejects_incompatible_currencies(
+    #[case] strike_currency: &str,
+    #[case] quote_currency: &str,
+    #[case] settlement_currency: &str,
+    #[case] expected_error: &str,
+) {
+    let underlying = InstrumentAny::Equity(equity_aapl());
+    let mut option = option_contract_appl();
+    option.underlying_instrument_id = Some(underlying.id());
+    option.option_kind = OptionKind::Call;
+    option.strike_price = Price::from("149.00");
+    option.strike_currency = Currency::from(strike_currency);
+    option.quote_currency = Currency::from(quote_currency);
+    option.settlement_currency = Currency::from(settlement_currency);
+    option.settlement_type = Some(SettlementType::Cash);
+    let mut engine =
+        option_settlement_engine(InstrumentAny::OptionContract(option), underlying, "2");
+
+    assert_option_settlement_error(&mut engine, expected_error, "2");
+}
+
+#[rstest]
+#[case::another_currency(
+    InstrumentAny::CurrencyPair(currency_pair_ethusdt()),
+    "underlying base currency ETH"
+)]
+#[case::equity(
+    InstrumentAny::Equity(equity_aapl()),
+    "has no base currency for inverse settlement"
+)]
+fn test_inverse_option_cash_settlement_rejects_incompatible_reference(
+    #[case] underlying: InstrumentAny,
+    #[case] expected_error: &str,
+) {
+    let mut option = crypto_option_btc_deribit(2, 0, Price::from("0.01"), Quantity::from(1));
+    option.underlying_instrument_id = Some(underlying.id());
+    option.option_kind = OptionKind::Call;
+    option.strike_price = Price::from("149.00");
+    option.strike_currency = underlying.quote_currency();
+    option.quote_currency = Currency::BTC();
+    option.settlement_currency = Currency::BTC();
+    option.settlement_type = Some(SettlementType::Cash);
+    option.is_inverse = true;
+    let mut engine = option_settlement_engine(InstrumentAny::CryptoOption(option), underlying, "2");
+
+    assert_option_settlement_error(&mut engine, expected_error, "2");
+}
+
+#[rstest]
+fn test_option_expiry_rejects_its_own_instrument_as_underlying() {
+    let mut option = option_contract_appl();
+    option.underlying_instrument_id = Some(option.id);
+    option.option_kind = OptionKind::Put;
+    option.strike_price = Price::from("170.00");
+    option.settlement_type = Some(SettlementType::Physical);
+    let instrument = InstrumentAny::OptionContract(option);
+    let mut engine = option_settlement_engine(instrument.clone(), instrument, "2");
+
+    assert_option_settlement_error(&mut engine, "cannot be its own underlying", "2");
+    assert_eq!(
+        engine.fee_underlying_price(&engine.instrument).unwrap(),
+        None
+    );
+}
+
+#[rstest]
+#[case::reference_index(
+    InstrumentAny::IndexInstrument(index_instrument_spx()),
+    "149.00",
+    None,
+    "reference index"
+)]
+#[case::reference_index_otm(
+    InstrumentAny::IndexInstrument(index_instrument_spx()),
+    "170.00",
+    None,
+    "reference index"
+)]
+#[case::spread(
+    InstrumentAny::FuturesSpread(futures_spread_es()),
+    "149.00",
+    None,
+    "spread underlying"
+)]
+#[case::spread_otm(
+    InstrumentAny::FuturesSpread(futures_spread_es()),
+    "170.00",
+    None,
+    "spread underlying"
+)]
+#[case::expired_underlying(
+    InstrumentAny::FuturesContract(futures_contract_es(Some(0.into()), Some(1.into()))),
+    "149.00", None, "underlying expired at 1"
+)]
+#[case::other_account(
+    InstrumentAny::Equity(equity_aapl()),
+    "149.00",
+    Some(AccountId::from("IB-001")),
+    "belongs to account IB-001"
+)]
+fn test_option_physical_settlement_rejects_invalid_delivery(
+    #[case] underlying: InstrumentAny,
+    #[case] strike: &str,
+    #[case] other_account: Option<AccountId>,
+    #[case] expected_error: &str,
+) {
+    let mut option = option_contract_appl();
+    option.id = InstrumentId::from("AAPL-C149.OPRA");
+    option.underlying_instrument_id = Some(underlying.id());
+    option.option_kind = OptionKind::Call;
+    option.strike_price = Price::from(strike);
+    option.settlement_type = Some(SettlementType::Physical);
+    let mut engine = option_settlement_engine(
+        InstrumentAny::OptionContract(option),
+        underlying.clone(),
+        "2",
+    );
+    let mut cache = engine.cache.borrow_mut();
+    let option_position = cache
+        .position_ref(&PositionId::from("OPTION-POSITION"))
+        .unwrap();
+
+    let other_position_id = PositionId::new(format!(
+        "{}-{}",
+        underlying.id(),
+        option_position.strategy_id
+    ));
+
+    let strategy_id = option_position.strategy_id;
+    drop(option_position);
+
+    if let Some(account_id) = other_account {
+        let (_, mut fill) = pending_position_fill(
+            &underlying,
+            other_position_id,
+            "EXISTING",
+            OrderSide::Buy,
+            "7",
+        );
+        fill.account_id = account_id;
+        fill.strategy_id = strategy_id;
+        cache
+            .add_position(&Position::new(&underlying, fill), OmsType::Netting)
+            .unwrap();
+    }
+
+    drop(cache);
+
+    assert_option_settlement_error(&mut engine, expected_error, "2");
+    if let Some(account_id) = other_account {
+        let cache = engine.cache.borrow();
+        let existing = cache.position_ref(&other_position_id).unwrap();
+        assert_eq!(existing.account_id, account_id);
+        assert_eq!(existing.quantity, Quantity::from(7));
+    }
+}
+
+#[cfg(feature = "high-precision")]
+#[rstest]
+fn test_option_physical_settlement_rejects_rounding_before_quantity_validation() {
+    let underlying = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
+    let mut option = crypto_option_btc_deribit(
+        2,
+        16,
+        Price::from("0.01"),
+        Quantity::from("0.0000000000000001"),
+    );
+    option.underlying = Currency::ETH();
+    option.underlying_instrument_id = Some(underlying.id());
+    option.option_kind = OptionKind::Call;
+    option.strike_price = Price::from("149.00");
+    option.strike_currency = underlying.quote_currency();
+    option.quote_currency = underlying.quote_currency();
+    option.settlement_currency = underlying.quote_currency();
+    option.settlement_type = Some(SettlementType::Physical);
+    option.multiplier = Quantity::from("0.9999999999999999");
+    option.is_inverse = false;
+    let quantity = "1.0000000000000001";
+    let mut engine =
+        option_settlement_engine(InstrumentAny::CryptoOption(option), underlying, quantity);
+
+    assert_option_settlement_error(&mut engine, "cannot deliver", quantity);
+}
+
+fn option_settlement_engine(
+    instrument: InstrumentAny,
+    underlying: InstrumentAny,
+    quantity: &str,
+) -> OrderMatchingEngine {
+    let position_id = PositionId::from("OPTION-POSITION");
+    let (_, fill) =
+        pending_position_fill(&instrument, position_id, "OPEN", OrderSide::Buy, quantity);
+    let position = Position::new(&instrument, fill);
+    let underlying_id = underlying.id();
+    let mut cache = Cache::default();
+    cache.add_instrument(instrument.clone()).unwrap();
+    cache.add_position(&position, OmsType::Netting).unwrap();
+    let spot = Price::from("160.00");
+
+    if matches!(underlying, InstrumentAny::IndexInstrument(_)) {
+        cache
+            .add_index_price(IndexPriceUpdate::new(
+                underlying_id,
+                spot,
+                1.into(),
+                1.into(),
+            ))
+            .unwrap();
+    } else {
+        cache
+            .add_trade(TradeTick::new(
+                underlying_id,
+                spot,
+                Quantity::from(1),
+                AggressorSide::NoAggressor,
+                TradeId::from("UNDERLYING"),
+                1.into(),
+                1.into(),
+            ))
+            .unwrap();
+    }
+
+    cache.add_instrument(underlying).unwrap();
+
+    OrderMatchingEngine::new(
+        instrument,
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
+        BookType::L1_MBP,
+        OmsType::Netting,
+        AccountType::Margin,
+        Rc::new(RefCell::new(VirtualClock::new())),
+        Rc::new(RefCell::new(cache)),
+        Default::default(),
+    )
+}
+
+fn assert_option_settlement_error(
+    engine: &mut OrderMatchingEngine,
+    expected_error: &str,
+    quantity: &str,
+) {
+    let result = engine.process_option_expiry(2.into());
+
+    let error = result.expect_err("Invalid option settlement inputs must fail");
+    assert!(
+        error.to_string().contains(expected_error),
+        "Unexpected error: {error}"
+    );
+    let cache = engine.cache.borrow();
+    assert!(cache.orders(None, None, None, None, None).is_empty());
+    assert_eq!(
+        cache
+            .position_ref(&PositionId::from("OPTION-POSITION"))
+            .unwrap()
+            .quantity,
+        Quantity::from(quantity),
+    );
+}
+
+#[rstest]
+fn test_option_fee_rejects_an_underlying_price_in_another_currency(
+    #[values(false, true)] underlying_cached: bool,
+) {
+    let mut underlying = equity_aapl();
+    underlying.id = InstrumentId::from("AAPL.XETR");
+    underlying.currency = Currency::EUR();
+    let mut option = option_contract_appl();
+    option.underlying_instrument_id = Some(underlying.id);
+    option.strike_currency = underlying.currency;
+    let engine = option_settlement_engine(option.into(), underlying.into(), "2");
+    if !underlying_cached {
+        engine
+            .cache
+            .borrow_mut()
+            .purge_instrument(InstrumentId::from("AAPL.XETR"));
+    }
+
+    engine.cache.borrow_mut().add_option_greeks(OptionGreeks {
+        instrument_id: engine.instrument.id(),
+        underlying_price: Some(160.0),
+        ..Default::default()
+    });
+
+    let price = engine.fee_underlying_price(&engine.instrument).unwrap();
+
+    assert_eq!(price, None);
 }
 
 #[rstest]
@@ -7966,7 +8264,16 @@ fn test_market_to_limit_fok_ignores_nonexecutable_fills(
         (Price::from("1502.00"), Quantity::from("10.000")),
     ];
     engine
-        .apply_fills(&order, &fills, LiquiditySide::Taker, None, None, None, true)
+        .apply_fills(
+            &order,
+            &fills,
+            LiquiditySide::Taker,
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
         .unwrap();
     let cached = engine
         .cache
@@ -8212,7 +8519,16 @@ fn test_market_to_limit_ioc_zero_fill_candidates(#[case] has_valid_fill: bool) {
     }
 
     engine
-        .apply_fills(&order, &fills, LiquiditySide::Taker, None, None, None, true)
+        .apply_fills(
+            &order,
+            &fills,
+            LiquiditySide::Taker,
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
         .unwrap();
     let expected_events = if has_valid_fill {
         vec![OrderEventType::Updated, OrderEventType::Filled]

@@ -491,14 +491,7 @@ impl SimulatedExchange {
             return Ok(());
         }
 
-        if self.account_type == AccountType::Cash
-            && (matches!(instrument, InstrumentAny::CryptoPerpetual(_))
-                || matches!(instrument, InstrumentAny::CryptoFuture(_))
-                || matches!(instrument, InstrumentAny::FuturesContract(_))
-                || matches!(instrument, InstrumentAny::PerpetualContract(_)))
-        {
-            anyhow::bail!("Cash account cannot trade futures or perpetuals")
-        }
+        OrderMatchingEngine::validate_account_instrument(self.account_type, &instrument)?;
 
         let price_protection = if self.price_protection_points == 0 {
             None

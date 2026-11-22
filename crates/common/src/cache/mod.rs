@@ -155,8 +155,10 @@ pub struct Cache {
     yield_curves: AHashMap<String, YieldCurve>,
     external_order_claims: AHashMap<InstrumentId, StrategyId>,
     client_accounts: AHashMap<ClientId, AccountId>,
+    client_execution_settings: AHashMap<ClientId, (Venue, OmsType)>,
     client_routes: AHashMap<Venue, ClientId>,
     default_client_id: Option<ClientId>,
+    strategy_oms_types: AHashMap<StrategyId, OmsType>,
     external_data_clients: AHashSet<ClientId>,
     external_exec_clients: AHashSet<ClientId>,
     accounts: AHashMap<AccountId, SharedCell<AccountAny>>,
@@ -196,7 +198,9 @@ impl Debug for Cache {
             .field("yield_curves", &self.yield_curves)
             .field("external_order_claims", &self.external_order_claims)
             .field("client_accounts", &self.client_accounts)
+            .field("client_execution_settings", &self.client_execution_settings)
             .field("client_routes", &self.client_routes)
+            .field("strategy_oms_types", &self.strategy_oms_types)
             .field("default_client_id", &self.default_client_id)
             .field("external_data_clients", &self.external_data_clients)
             .field("external_exec_clients", &self.external_exec_clients)
@@ -271,8 +275,10 @@ impl Cache {
             yield_curves: AHashMap::new(),
             external_order_claims: AHashMap::new(),
             client_accounts: AHashMap::new(),
+            client_execution_settings: AHashMap::new(),
             client_routes: AHashMap::new(),
             default_client_id: None,
+            strategy_oms_types: AHashMap::new(),
             external_data_clients: AHashSet::new(),
             external_exec_clients: AHashSet::new(),
             accounts: AHashMap::new(),
@@ -407,6 +413,26 @@ impl Cache {
         self.client_accounts.get(client_id)
     }
 
+    /// Returns the sole registered execution client for the account and optional venue.
+    #[must_use]
+    pub fn unique_client_id_for_account(
+        &self,
+        account_id: AccountId,
+        venue: Option<Venue>,
+    ) -> Option<ClientId> {
+        let mut clients = self.client_accounts.iter().filter(|(client_id, account)| {
+            **account == account_id
+                && venue.is_none_or(|venue| {
+                    self.client_execution_settings
+                        .get(client_id)
+                        .is_some_and(|(registered, _)| *registered == venue)
+                })
+        });
+
+        let (&client_id, _) = clients.next()?;
+        clients.next().is_none().then_some(client_id)
+    }
+
     /// Registers `account_id` as the account of the execution client `client_id`, replacing any
     /// previous registration for the client.
     ///
@@ -418,6 +444,49 @@ impl Cache {
     /// Removes the account registration of the execution client `client_id`.
     pub fn remove_client_account(&mut self, client_id: &ClientId) {
         self.client_accounts.remove(client_id);
+        self.client_execution_settings.remove(client_id);
+    }
+
+    /// Registers an execution client's venue and OMS type.
+    pub fn add_client_execution_settings(
+        &mut self,
+        client_id: ClientId,
+        venue: Venue,
+        oms_type: OmsType,
+    ) {
+        self.client_execution_settings
+            .insert(client_id, (venue, oms_type));
+    }
+
+    /// Sets the OMS override for a strategy. `Unspecified` clears the override.
+    pub fn set_strategy_oms_type(&mut self, strategy_id: StrategyId, oms_type: OmsType) {
+        if oms_type == OmsType::Unspecified {
+            self.strategy_oms_types.remove(&strategy_id);
+        } else {
+            self.strategy_oms_types.insert(strategy_id, oms_type);
+        }
+    }
+
+    /// Resolves the strategy's current OMS type for the supplied execution client.
+    ///
+    /// A strategy override takes precedence. Without an override or a registered client,
+    /// execution defaults to netting.
+    #[must_use]
+    pub fn resolve_oms_type(
+        &self,
+        strategy_id: StrategyId,
+        client_id: Option<ClientId>,
+    ) -> OmsType {
+        self.strategy_oms_types
+            .get(&strategy_id)
+            .or_else(|| {
+                client_id
+                    .as_ref()
+                    .and_then(|id| self.client_execution_settings.get(id))
+                    .map(|(_, oms_type)| oms_type)
+            })
+            .copied()
+            .unwrap_or(OmsType::Netting)
     }
 
     /// Returns the execution client registered as the route for `venue`, else the default client.
@@ -2562,8 +2631,8 @@ impl Cache {
     /// All stateful fields are reset to their initial value. Instruments,
     /// currencies, and synthetics are retained when `drop_instruments_on_reset`
     /// is `false` so that repeated backtest runs can reuse the same dataset. External order claims
-    /// and execution client account, route, and external client registrations are retained so
-    /// registered strategy and client routing remain configured across resets.
+    /// and execution client account, route, external client, and OMS registrations are retained
+    /// along with strategy OMS overrides.
     pub fn reset(&mut self) {
         log::debug!("Resetting cache");
 

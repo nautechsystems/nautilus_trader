@@ -52,6 +52,9 @@ Released on TBD (UTC).
 - Changed option-chain Greeks feeds to use the data client's default convention coverage
 - Changed delta chains to keep up to 42 discovery contracts and use their updates in raw mode
 - Changed `OptionContract` and `CryptoOption` literals and `build_checked` calls; pass `None` for the new fields
+- Changed simulated option expiry. Set `underlying_instrument_id` and `settlement_type` on option definitions
+- Changed option fee pricing. Set `underlying_instrument_id` for market prices or supply option Greeks
+- Changed capped linear option fees to require the declared underlying's quote currency to match the premium currency
 - Changed PostgreSQL option underlying, exercise, settlement, and spread tick columns; run `nautilus database init`
 - Changed PostgreSQL OMS recovery to restore `UNSPECIFIED` for legacy positions whose OMS metadata has no trader ID
 - Changed PostgreSQL `Cache::add` to persist per trader and skip legacy shared user entries on restore

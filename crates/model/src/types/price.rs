@@ -377,8 +377,10 @@ impl Price {
         })
     }
 
+    /// Returns whether this price is an undefined or error sentinel.
+    #[must_use]
     #[inline]
-    fn is_sentinel(self) -> bool {
+    pub fn is_sentinel(self) -> bool {
         // ERROR_PRICE uses precision == u8::MAX as its sentinel marker, distinct from
         // valid high-precision values (e.g. defi `from_wei` uses precision 18 which is
         // > FIXED_PRECISION but is not a sentinel).

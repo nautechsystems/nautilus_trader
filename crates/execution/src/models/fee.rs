@@ -58,6 +58,19 @@ pub trait FeeModel {
     ) -> anyhow::Result<Money> {
         self.get_commission(order, fill_quantity, fill_px, instrument)
     }
+
+    /// Checks the underlying price requirements before matching an option order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the model requires an underlying price and the supplied context is invalid.
+    fn validate_commission_context(
+        &self,
+        _instrument: &InstrumentAny,
+        _underlying_px: Option<Price>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
 /// Shared runtime handle for a fee model.
@@ -111,6 +124,15 @@ impl FeeModel for FeeModelHandle {
     ) -> anyhow::Result<Money> {
         self.0
             .get_commission_with_context(order, fill_quantity, fill_px, instrument, underlying_px)
+    }
+
+    fn validate_commission_context(
+        &self,
+        instrument: &InstrumentAny,
+        underlying_px: Option<Price>,
+    ) -> anyhow::Result<()> {
+        self.0
+            .validate_commission_context(instrument, underlying_px)
     }
 }
 
@@ -171,6 +193,19 @@ impl FeeModel for FeeModelAny {
             Self::TieredNotionalOption(model) => model.get_commission_with_context(order, fill_quantity, fill_px, instrument, underlying_px),
             #[cfg(feature = "python")]
             Self::Python(model) => model.get_commission_with_context(order, fill_quantity, fill_px, instrument, underlying_px),
+        }
+    }
+
+    fn validate_commission_context(
+        &self,
+        instrument: &InstrumentAny,
+        underlying_px: Option<Price>,
+    ) -> anyhow::Result<()> {
+        match self {
+            Self::CappedOption(model) => {
+                model.validate_commission_context(instrument, underlying_px)
+            }
+            _ => Ok(()),
         }
     }
 }
@@ -543,15 +578,38 @@ impl FeeModel for CappedOptionFeeModel {
         let rate_fee = if instrument.is_inverse() {
             rate
         } else {
-            let underlying_px =
-                underlying_px.ok_or_else(|| anyhow::anyhow!("Underlying price is required"))?;
-            mul_checked(rate, underlying_px.as_decimal())?
+            mul_checked(
+                rate,
+                capped_option_underlying_price(underlying_px)?.as_decimal(),
+            )?
         };
         let cap_fee = mul_checked(self.cap, fill_px.as_decimal())?;
         let fee_per_contract = mul_checked(rate_fee.min(cap_fee), multiplier)?;
         let total = mul_checked(fee_per_contract, fill_quantity.as_decimal())?;
         Money::from_decimal(total, commission_currency(instrument)).map_err(Into::into)
     }
+
+    fn validate_commission_context(
+        &self,
+        instrument: &InstrumentAny,
+        underlying_px: Option<Price>,
+    ) -> anyhow::Result<()> {
+        if !instrument.is_inverse() {
+            capped_option_underlying_price(underlying_px)?;
+        }
+
+        Ok(())
+    }
+}
+
+fn capped_option_underlying_price(underlying_px: Option<Price>) -> anyhow::Result<Price> {
+    let price = underlying_px.ok_or_else(|| anyhow::anyhow!("Underlying price is required"))?;
+    anyhow::ensure!(!price.is_sentinel(), "Underlying price must be defined");
+    anyhow::ensure!(
+        !price.is_negative(),
+        "Underlying price must be non-negative"
+    );
+    Ok(price)
 }
 
 #[derive(Debug, Clone)]
@@ -678,7 +736,10 @@ mod tests {
             builder::OrderTestBuilder,
             stubs::{TestOrderEventStubs, TestOrderStubs},
         },
-        types::{Currency, Money, Price, Quantity},
+        types::{
+            Currency, ERROR_PRICE, Money, Price, Quantity,
+            price::{PRICE_ERROR, PRICE_UNDEF},
+        },
     };
     use rstest::rstest;
     use rust_decimal::Decimal;
@@ -1441,8 +1502,12 @@ mod tests {
     }
 
     #[rstest]
+    #[case::positive(Price::from("50000.00"), dec!(10.00))]
+    #[case::zero(Price::zero(2), dec!(0))]
     fn test_capped_option_fee_model_maker_commission_rate_bound(
         crypto_option_btc_deribit: CryptoOption,
+        #[case] underlying_price: Price,
+        #[case] expected: Decimal,
     ) {
         let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
         let fill = option_fill_order(&instrument, LiquiditySide::Maker);
@@ -1456,12 +1521,12 @@ mod tests {
                 Quantity::from("2.0"),
                 Price::from("100.00"),
                 &instrument,
-                Some(Price::from("50000.00")),
+                Some(underlying_price),
             )
             .unwrap();
 
         assert_eq!(commission.currency, Currency::USD());
-        assert_eq!(commission.as_decimal(), dec!(10.00));
+        assert_eq!(commission.as_decimal(), expected);
     }
 
     #[rstest]
@@ -1614,24 +1679,35 @@ mod tests {
     }
 
     #[rstest]
-    fn test_capped_option_fee_model_requires_underlying_price(
+    #[case::missing(None, "Underlying price is required")]
+    #[case::negative(Some(Price::from("-20.00")), "Underlying price must be non-negative")]
+    #[case::undefined(
+        Some(Price::from_raw(PRICE_UNDEF, 0)),
+        "Underlying price must be defined"
+    )]
+    #[case::raw_error(
+        Some(Price::from_raw(PRICE_ERROR, 0)),
+        "Underlying price must be defined"
+    )]
+    #[case::error_price(Some(ERROR_PRICE), "Underlying price must be defined")]
+    fn test_capped_option_fee_model_rejects_invalid_underlying_price(
         crypto_option_btc_deribit: CryptoOption,
+        #[case] underlying_px: Option<Price>,
+        #[case] error: &str,
     ) {
         let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
         let fill = option_fill_order(&instrument, LiquiditySide::Taker);
         let fee_model = CappedOptionFeeModel::new(dec!(0.0001), dec!(0.0003), None).unwrap();
 
-        let result = fee_model.get_commission(
+        let result = fee_model.get_commission_with_context(
             &fill,
             Quantity::from("1.0"),
             Price::from("10.00"),
             &instrument,
+            underlying_px,
         );
 
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Underlying price is required"
-        );
+        assert_eq!(result.unwrap_err().to_string(), error);
     }
 
     #[rstest]

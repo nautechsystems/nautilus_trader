@@ -31,7 +31,7 @@ use std::{
     cmp::min,
     fmt::Debug,
     mem,
-    ops::{Add, Sub},
+    ops::{Add, ControlFlow, Sub},
     rc::Rc,
 };
 
@@ -265,6 +265,30 @@ impl OrderMatchingEngine {
             option_settlement_failed: false,
             option_settlement_warning: None,
         }
+    }
+
+    /// Checks whether a simulated account can trade an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a cash account would trade a future or perpetual.
+    pub fn validate_account_instrument(
+        account_type: AccountType,
+        instrument: &InstrumentAny,
+    ) -> anyhow::Result<()> {
+        if account_type == AccountType::Cash
+            && matches!(
+                instrument,
+                InstrumentAny::CryptoPerpetual(_)
+                    | InstrumentAny::CryptoFuture(_)
+                    | InstrumentAny::FuturesContract(_)
+                    | InstrumentAny::PerpetualContract(_)
+            )
+        {
+            anyhow::bail!("Cash account cannot trade futures or perpetuals");
+        }
+
+        Ok(())
     }
 
     /// Sets the event handler for dispatching order events.
@@ -3082,6 +3106,7 @@ impl OrderMatchingEngine {
                     Some(position_id),
                     None,
                     None,
+                    None,
                     false,
                 ) {
                     log::error!("Cannot fill expiration order {client_order_id}: {e}");
@@ -4369,12 +4394,7 @@ impl OrderMatchingEngine {
             return;
         }
 
-        if self.config.use_market_order_acks {
-            let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
-            self.generate_order_accepted(order, venue_order_id);
-        }
-
-        self.fill_market_order(order.client_order_id());
+        let _ = self.fill_submitted_market_order(order);
     }
 
     fn process_limit_order(&mut self, order: &mut OrderAny) {
@@ -4460,14 +4480,11 @@ impl OrderMatchingEngine {
             return;
         }
 
-        if self.config.use_market_order_acks {
-            let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
-            self.generate_order_accepted(order, venue_order_id);
-        }
-
-        // Immediately fill marketable order
+        // Fee validation can close the order before its terminal event reaches the cache
         let client_order_id = order.client_order_id();
-        self.fill_market_order(client_order_id);
+        if self.fill_submitted_market_order(order).is_break() {
+            return;
+        }
 
         // Check for remaining quantity to rest as limit order
         let filled_qty = self
@@ -4486,9 +4503,22 @@ impl OrderMatchingEngine {
             return;
         }
 
-        if let Some(mut updated_order) = self.order_snapshot(client_order_id) {
+        if let Some(mut updated_order) = self.order_snapshot(client_order_id)
+            && updated_order.price().is_some()
+        {
             self.accept_order(&mut updated_order);
         }
+    }
+
+    fn fill_submitted_market_order(&mut self, order: &OrderAny) -> ControlFlow<()> {
+        let acknowledgement = self.config.use_market_order_acks.then(|| {
+            let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
+            let event = self.create_order_accepted(order, venue_order_id);
+            self.dispatch_order_event(event.clone());
+            event
+        });
+
+        self.fill_market_order_with_acknowledgement(order.client_order_id(), acknowledgement)
     }
 
     fn process_stop_market_order(&mut self, order: &mut OrderAny) {
@@ -5320,16 +5350,36 @@ impl OrderMatchingEngine {
     /// The order is filled as a taker against available liquidity.
     /// Reduce-only orders are canceled if no position exists.
     pub fn fill_market_order(&mut self, client_order_id: ClientOrderId) {
-        let mut order = match self.order_snapshot(client_order_id) {
-            Some(order) => order,
-            None => {
-                log::error!("Cannot fill market order: order {client_order_id} not found in cache");
-                return;
-            }
+        let _ = self.fill_market_order_with_acknowledgement(client_order_id, None);
+    }
+
+    fn fill_market_order_with_acknowledgement(
+        &mut self,
+        client_order_id: ClientOrderId,
+        acknowledgement: Option<OrderEventAny>,
+    ) -> ControlFlow<()> {
+        let Some(mut order) = self.order_snapshot(client_order_id) else {
+            log::error!("Cannot fill market order: order {client_order_id} not found in cache");
+            return ControlFlow::Continue(());
         };
 
+        // Deferred dispatch leaves the venue acknowledgement out of the cached snapshot
+        if let Some(event) = acknowledgement
+            && matches!(
+                order.status(),
+                OrderStatus::Initialized | OrderStatus::Submitted
+            )
+            && let Err(e) = order.apply(event)
+        {
+            log::warn!("Skipping local apply of accepted event for {client_order_id}: {e}");
+        }
+
+        self.fill_market_order_with_snapshot(order)
+    }
+
+    fn fill_market_order_with_snapshot(&mut self, mut order: OrderAny) -> ControlFlow<()> {
         if !self.prepare_order_fill(&mut order) {
-            return;
+            return ControlFlow::Continue(());
         }
 
         // Convert quote-denominated quantity at fill time for trigger-style market
@@ -5339,7 +5389,7 @@ impl OrderMatchingEngine {
             && !self.instrument.is_inverse()
             && !self.convert_quote_to_base_quantity(&mut order)
         {
-            return;
+            return ControlFlow::Continue(());
         }
 
         if let Some(filled_qty) = self
@@ -5357,13 +5407,21 @@ impl OrderMatchingEngine {
                 order.filled_qty(),
                 order.quantity()
             );
-            return;
+            return ControlFlow::Continue(());
         }
 
         let (venue_position_id, position) = self.fill_position_for_order(&order, Some(true));
 
         let Some(leaves_qty) = self.fill_leaves_qty(&order, position.as_ref()) else {
-            return;
+            return ControlFlow::Continue(());
+        };
+
+        let underlying_px = match self.validated_fee_underlying_price() {
+            Ok(price) => price,
+            Err(e) => {
+                self.reject_market_fill_for_fee(&order, &e);
+                return ControlFlow::Break(());
+            }
         };
 
         order.set_liquidity_side(LiquiditySide::Taker);
@@ -5376,61 +5434,16 @@ impl OrderMatchingEngine {
                         "Cannot fill market order {}: fill model failed: {e}",
                         order.client_order_id()
                     );
-                    return;
+                    return ControlFlow::Continue(());
                 }
             };
 
-        // Apply protection price filtering at fill time (trigger-time semantics for stops)
-        let protection_price: Option<Price> = if let Some(protection_points) =
-            self.config.price_protection_points
-            && matches!(
-                order.order_type(),
-                OrderType::Market | OrderType::StopMarket
-            ) {
-            protection_price_calculate(
-                self.instrument.price_increment(),
-                &order,
-                protection_points,
-                self.core.bid,
-                self.core.ask,
-            )
-            .ok()
-        } else {
-            None
-        };
-
+        let protection_price = self.market_protection_price(&order);
         if let Some(protection_price) = protection_price {
             fills = self.filter_fills_by_protection(fills, &order, protection_price);
         }
 
-        // Skip consumption for synthetic fill-model books (prices may not exist
-        // in the real book) and trigger price fills (gap price may not exist)
-        let is_trigger_price_fill = !self.fill_at_market
-            && order.trigger_type() != Some(TriggerType::MarkPrice)
-            && self.book_type == BookType::L1_MBP
-            && matches!(
-                order.order_type(),
-                OrderType::StopMarket | OrderType::TrailingStopMarket | OrderType::MarketIfTouched
-            )
-            && order.trigger_price().is_some();
-        if !from_synthetic && !is_trigger_price_fill {
-            let mut journal = self.fok_consumption_journal(&order);
-
-            fills = self.apply_liquidity_consumption(
-                fills,
-                &order,
-                leaves_qty,
-                None,
-                None,
-                journal.as_mut(),
-            );
-
-            if let Some(journal) = journal
-                && self.is_fok_unfillable(&order, &fills, leaves_qty)
-            {
-                self.revert_consumption_journal(journal);
-            }
-        }
+        let fills = self.consume_market_fill_liquidity(fills, &order, leaves_qty, from_synthetic);
 
         if let Err(e) = self.apply_fills(
             &order,
@@ -5442,11 +5455,91 @@ impl OrderMatchingEngine {
                 None
             },
             position.as_ref(),
+            underlying_px,
             protection_price,
             from_synthetic,
         ) {
             log::error!("Cannot fill market order {}: {e}", order.client_order_id());
         }
+
+        ControlFlow::Continue(())
+    }
+
+    fn consume_market_fill_liquidity(
+        &mut self,
+        fills: Vec<(Price, Quantity)>,
+        order: &OrderAny,
+        leaves_qty: Quantity,
+        from_synthetic: bool,
+    ) -> Vec<(Price, Quantity)> {
+        // Skip consumption for synthetic fill-model books (prices may not exist
+        // in the real book) and trigger price fills (gap price may not exist)
+        let is_trigger_price_fill = !self.fill_at_market
+            && order.trigger_type() != Some(TriggerType::MarkPrice)
+            && self.book_type == BookType::L1_MBP
+            && matches!(
+                order.order_type(),
+                OrderType::StopMarket | OrderType::TrailingStopMarket | OrderType::MarketIfTouched
+            )
+            && order.trigger_price().is_some();
+
+        if from_synthetic || is_trigger_price_fill {
+            return fills;
+        }
+
+        let mut journal = self.fok_consumption_journal(order);
+        let fills = self.apply_liquidity_consumption(
+            fills,
+            order,
+            leaves_qty,
+            None,
+            None,
+            journal.as_mut(),
+        );
+
+        if let Some(journal) = journal
+            && self.is_fok_unfillable(order, &fills, leaves_qty)
+        {
+            self.revert_consumption_journal(journal);
+        }
+
+        fills
+    }
+
+    fn reject_market_fill_for_fee(&mut self, order: &OrderAny, error: &anyhow::Error) {
+        if matches!(
+            order.status(),
+            OrderStatus::Initialized | OrderStatus::Submitted
+        ) && !self.core.order_exists(order.client_order_id())
+        {
+            self.generate_order_rejected(order, error.to_string().into());
+        } else {
+            log::warn!(
+                "Canceling market order {}: {error}",
+                order.client_order_id()
+            );
+            self.cancel_order(order, None);
+        }
+    }
+
+    fn market_protection_price(&self, order: &OrderAny) -> Option<Price> {
+        let protection_points = self.config.price_protection_points?;
+
+        if !matches!(
+            order.order_type(),
+            OrderType::Market | OrderType::StopMarket
+        ) {
+            return None;
+        }
+
+        protection_price_calculate(
+            self.instrument.price_increment(),
+            order,
+            protection_points,
+            self.core.bid,
+            self.core.ask,
+        )
+        .ok()
     }
 
     fn filter_fills_by_protection(
@@ -5504,101 +5597,46 @@ impl OrderMatchingEngine {
             return;
         }
 
-        match order.price() {
-            Some(order_price) => {
-                let cached_filled_qty = self
-                    .orders
-                    .cached_filled_qty
-                    .borrow()
-                    .get(&order.client_order_id())
-                    .copied();
+        let order_price = order.price().expect("Limit order must have a price");
 
-                if let Some(qty) = cached_filled_qty
-                    && qty >= order.quantity()
-                {
-                    log::debug!(
-                        "Ignoring fill as already filled pending application of events: {}, {}, {}, {}",
-                        qty,
-                        order.quantity(),
-                        order.filled_qty(),
-                        order.leaves_qty(),
-                    );
-                    return;
-                }
+        let cached_filled_qty = self
+            .orders
+            .cached_filled_qty
+            .borrow()
+            .get(&order.client_order_id())
+            .copied();
 
-                // Check fill model for MAKER orders at the limit price
-                if order
-                    .liquidity_side()
-                    .is_some_and(|liquidity_side| liquidity_side == LiquiditySide::Maker)
-                {
-                    // For trade execution: check if trade price equals order price
-                    // For quote updates: check if bid/ask equals order price
-                    let at_limit = if self.last_trade_size.is_some() && self.core.last.is_some() {
-                        self.core.last.is_some_and(|last| last == order_price)
-                    } else if order.order_side() == OrderSide::Buy {
-                        self.core.bid.is_some_and(|bid| bid == order_price)
-                    } else {
-                        self.core.ask.is_some_and(|ask| ask == order_price)
-                    };
+        if let Some(qty) = cached_filled_qty
+            && qty >= order.quantity()
+        {
+            log::debug!(
+                "Ignoring fill as already filled pending application of events: {}, {}, {}, {}",
+                qty,
+                order.quantity(),
+                order.filled_qty(),
+                order.leaves_qty(),
+            );
+            return;
+        }
 
-                    if at_limit {
-                        let is_limit_filled = match self.fill_model.is_limit_filled() {
-                            Ok(value) => value,
-                            Err(e) => {
-                                log::error!(
-                                    "Cannot fill limit order {}: fill model failed: {e}",
-                                    order.client_order_id()
-                                );
-                                return;
-                            }
-                        };
+        // Check fill model for MAKER orders at the limit price
+        if order
+            .liquidity_side()
+            .is_some_and(|liquidity_side| liquidity_side == LiquiditySide::Maker)
+        {
+            // For trade execution: check if trade price equals order price
+            // For quote updates: check if bid/ask equals order price
+            let at_limit = if self.last_trade_size.is_some() && self.core.last.is_some() {
+                self.core.last.is_some_and(|last| last == order_price)
+            } else if order.order_side() == OrderSide::Buy {
+                self.core.bid.is_some_and(|bid| bid == order_price)
+            } else {
+                self.core.ask.is_some_and(|ask| ask == order_price)
+            };
 
-                        if !is_limit_filled {
-                            return; // Not filled (simulates queue position)
-                        }
-                    }
-                }
-
-                let queue_allowed_raw = if self.config.queue_position {
-                    match self.determine_trade_fill_qty(&order) {
-                        None | Some(0) => {
-                            if matches!(order.time_in_force(), TimeInForce::Fok | TimeInForce::Ioc)
-                            {
-                                self.cancel_order(&order, None);
-                            }
-
-                            return;
-                        }
-                        Some(allowed) => Some(allowed),
-                    }
-                } else {
-                    None
-                };
-
-                let (venue_position_id, position) = self.fill_position_for_order(&order, None);
-
-                let Some(leaves_qty) = self.fill_leaves_qty(&order, position.as_ref()) else {
-                    return;
-                };
-
-                let required_qty = leaves_qty;
-
-                let leaves_qty = queue_allowed_raw.map_or(leaves_qty, |allowed| {
-                    Quantity::from_raw(
-                        leaves_qty.raw().min(allowed),
-                        self.instrument.size_precision(),
-                    )
-                });
-
-                let mut journal = self.fok_consumption_journal(&order);
-                let tc_before = self.trade_consumption;
-
-                let mut fills = match self.determine_limit_fill_model_price_and_volume(
-                    &order,
-                    leaves_qty,
-                    journal.as_mut(),
-                ) {
-                    Ok(fills) => fills,
+            if at_limit {
+                let is_limit_filled = match self.fill_model.is_limit_filled() {
+                    Ok(value) => value,
                     Err(e) => {
                         log::error!(
                             "Cannot fill limit order {}: fill model failed: {e}",
@@ -5608,65 +5646,130 @@ impl OrderMatchingEngine {
                     }
                 };
 
-                if let Some(allowed_raw) = queue_allowed_raw {
-                    let size_prec = self.instrument.size_precision();
-                    let mut remaining = allowed_raw;
-                    fills = fills
-                        .into_iter()
-                        .filter_map(|(price, qty)| {
-                            if remaining == 0 {
-                                return None;
-                            }
-
-                            let capped = qty.raw().min(remaining);
-                            remaining -= capped;
-                            Some((price, Quantity::from_raw(capped, size_prec)))
-                        })
-                        .collect();
-
-                    // Consume excess and reconcile trade budget after capping
-                    let consumed: QuantityRaw = fills.iter().map(|(_, qty)| qty.raw()).sum();
-                    if let Some(excess) = self.queue_excess.get_mut(&order.client_order_id()) {
-                        *excess = excess.saturating_sub(consumed);
-                    }
-
-                    self.trade_consumption = tc_before + consumed;
+                if !is_limit_filled {
+                    return; // Not filled (simulates queue position)
                 }
+            }
+        }
 
-                if let Some(journal) = journal
-                    && self.is_fok_unfillable(&order, &fills, required_qty)
-                {
-                    self.revert_consumption_journal(journal);
-                }
-
-                if fills.is_empty() {
-                    log::debug!(
-                        "Skipping fill for {}: no liquidity available",
-                        order.client_order_id()
-                    );
-
+        let queue_allowed_raw = if self.config.queue_position {
+            match self.determine_trade_fill_qty(&order) {
+                None | Some(0) => {
                     if matches!(order.time_in_force(), TimeInForce::Fok | TimeInForce::Ioc) {
                         self.cancel_order(&order, None);
                     }
 
                     return;
                 }
-
-                let liquidity_side = order.liquidity_side().unwrap();
-
-                if let Err(e) = self.apply_fills(
-                    &order,
-                    &fills,
-                    liquidity_side,
-                    venue_position_id,
-                    position.as_ref(),
-                    None,
-                    false,
-                ) {
-                    log::error!("Cannot fill limit order {}: {e}", order.client_order_id());
-                }
+                Some(allowed) => Some(allowed),
             }
-            None => panic!("Limit order must have a price"),
+        } else {
+            None
+        };
+
+        let (venue_position_id, position) = self.fill_position_for_order(&order, None);
+
+        let Some(leaves_qty) = self.fill_leaves_qty(&order, position.as_ref()) else {
+            return;
+        };
+
+        let required_qty = leaves_qty;
+
+        let leaves_qty = queue_allowed_raw.map_or(leaves_qty, |allowed| {
+            Quantity::from_raw(
+                leaves_qty.raw().min(allowed),
+                self.instrument.size_precision(),
+            )
+        });
+
+        let underlying_px = match self.validated_fee_underlying_price() {
+            Ok(price) => price,
+            Err(e) => {
+                log::warn!("Cannot fill limit order {}: {e}", order.client_order_id());
+
+                if matches!(order.time_in_force(), TimeInForce::Fok | TimeInForce::Ioc) {
+                    self.cancel_order(&order, None);
+                }
+
+                return;
+            }
+        };
+
+        let mut journal = self.fok_consumption_journal(&order);
+        let tc_before = self.trade_consumption;
+
+        let mut fills = match self.determine_limit_fill_model_price_and_volume(
+            &order,
+            leaves_qty,
+            journal.as_mut(),
+        ) {
+            Ok(fills) => fills,
+            Err(e) => {
+                log::error!(
+                    "Cannot fill limit order {}: fill model failed: {e}",
+                    order.client_order_id()
+                );
+                return;
+            }
+        };
+
+        if let Some(allowed_raw) = queue_allowed_raw {
+            let size_prec = self.instrument.size_precision();
+            let mut remaining = allowed_raw;
+            fills = fills
+                .into_iter()
+                .filter_map(|(price, qty)| {
+                    if remaining == 0 {
+                        return None;
+                    }
+
+                    let capped = qty.raw().min(remaining);
+                    remaining -= capped;
+                    Some((price, Quantity::from_raw(capped, size_prec)))
+                })
+                .collect();
+
+            // Consume excess and reconcile trade budget after capping
+            let consumed: QuantityRaw = fills.iter().map(|(_, qty)| qty.raw()).sum();
+            if let Some(excess) = self.queue_excess.get_mut(&order.client_order_id()) {
+                *excess = excess.saturating_sub(consumed);
+            }
+
+            self.trade_consumption = tc_before + consumed;
+        }
+
+        if let Some(journal) = journal
+            && self.is_fok_unfillable(&order, &fills, required_qty)
+        {
+            self.revert_consumption_journal(journal);
+        }
+
+        if fills.is_empty() {
+            log::debug!(
+                "Skipping fill for {}: no liquidity available",
+                order.client_order_id()
+            );
+
+            if matches!(order.time_in_force(), TimeInForce::Fok | TimeInForce::Ioc) {
+                self.cancel_order(&order, None);
+            }
+
+            return;
+        }
+
+        let liquidity_side = order.liquidity_side().unwrap();
+
+        if let Err(e) = self.apply_fills(
+            &order,
+            &fills,
+            liquidity_side,
+            venue_position_id,
+            position.as_ref(),
+            underlying_px,
+            None,
+            false,
+        ) {
+            log::error!("Cannot fill limit order {}: {e}", order.client_order_id());
         }
     }
 
@@ -5849,6 +5952,7 @@ impl OrderMatchingEngine {
         liquidity_side: LiquiditySide,
         venue_position_id: Option<PositionId>,
         position: Option<&Position>,
+        underlying_px: Option<Price>,
         protection_price: Option<Price>,
         from_synthetic: bool,
     ) -> anyhow::Result<()> {
@@ -5870,6 +5974,7 @@ impl OrderMatchingEngine {
             liquidity_side,
             venue_position_id,
             position,
+            underlying_px,
             protection_price,
             from_synthetic,
         )
@@ -5886,6 +5991,7 @@ impl OrderMatchingEngine {
         liquidity_side: LiquiditySide,
         venue_position_id: Option<PositionId>,
         position: Option<&Position>,
+        underlying_px: Option<Price>,
         protection_price: Option<Price>,
         from_synthetic: bool,
     ) -> anyhow::Result<()> {
@@ -6045,11 +6151,11 @@ impl OrderMatchingEngine {
 
             self.fill_order(
                 order,
-                fill_px,
-                effective_fill_qty,
+                (fill_px, effective_fill_qty),
                 liquidity_side,
                 venue_position_id,
                 position,
+                underlying_px,
             )?;
             last_fill_px = Some(fill_px);
 
@@ -6151,11 +6257,11 @@ impl OrderMatchingEngine {
 
             self.fill_order(
                 order,
-                slip_fill_px,
-                leaves_qty,
+                (slip_fill_px, leaves_qty),
                 liquidity_side,
                 venue_position_id,
                 position,
+                underlying_px,
             )?;
             self.purge_cached_filled_qty_if_closed(order.client_order_id());
         }
@@ -6372,11 +6478,11 @@ impl OrderMatchingEngine {
     fn fill_order(
         &mut self,
         order: &OrderAny,
-        last_px: Price,
-        last_qty: Quantity,
+        (last_px, last_qty): (Price, Quantity),
         liquidity_side: LiquiditySide,
         venue_position_id: Option<PositionId>,
         position: Option<&Position>,
+        underlying_px: Option<Price>,
     ) -> anyhow::Result<()> {
         self.check_size_precision(last_qty.precision, "fill quantity")?;
 
@@ -6411,7 +6517,6 @@ impl OrderMatchingEngine {
             commission_order.set_liquidity_side(liquidity_side);
         }
 
-        let underlying_px = self.fee_underlying_price(&self.instrument)?;
         let commission = self.fee_model.get_commission_with_context(
             &commission_order,
             last_qty,
@@ -6957,28 +7062,62 @@ impl OrderMatchingEngine {
         true
     }
 
-    fn fee_underlying_price(&self, instrument: &InstrumentAny) -> CorrectnessResult<Option<Price>> {
+    fn validated_fee_underlying_price(&self) -> anyhow::Result<Option<Price>> {
         if !matches!(
-            instrument,
-            InstrumentAny::CryptoOption(_) | InstrumentAny::OptionContract(_)
+            self.instrument,
+            InstrumentAny::OptionContract(_) | InstrumentAny::CryptoOption(_)
         ) {
             return Ok(None);
         }
 
-        let Some(underlying) = instrument.underlying() else {
-            return Ok(None);
+        let underlying_px = self.fee_underlying_price(&self.instrument)?;
+        self.fee_model
+            .validate_commission_context(&self.instrument, underlying_px)?;
+        Ok(underlying_px)
+    }
+
+    fn fee_underlying_price(&self, instrument: &InstrumentAny) -> CorrectnessResult<Option<Price>> {
+        let underlying_id = match instrument {
+            InstrumentAny::CryptoOption(option) => option.underlying_instrument_id,
+            InstrumentAny::OptionContract(option) => option.underlying_instrument_id,
+            _ => return Ok(None),
         };
 
-        let underlying_id = InstrumentId::from(format!("{underlying}.{}", self.venue).as_str());
         let instrument_id = instrument.id();
+        if underlying_id == Some(instrument_id) {
+            return Ok(None);
+        }
 
         let cache = self.cache.borrow();
-        if let Some(price) = cache
-            .price(&underlying_id, PriceType::Last)
-            .or_else(|| cache.price(&underlying_id, PriceType::Mark))
-            .or_else(|| cache.price(&underlying_id, PriceType::Mid))
+
+        if let Some(underlying) = underlying_id.and_then(|id| cache.instrument(&id)) {
+            let expected_currency = if instrument.is_inverse() {
+                instrument
+                    .strike_currency()
+                    .expect("Option must have strike currency")
+            } else {
+                instrument.quote_currency()
+            };
+
+            if underlying.quote_currency() != expected_currency {
+                return Ok(None);
+            }
+
+            let id = underlying.id();
+
+            if let Some(price) = cache
+                .price(&id, PriceType::Last)
+                .or_else(|| cache.price(&id, PriceType::Mark))
+                .or_else(|| cache.price(&id, PriceType::Mid))
+            {
+                return Ok(Some(price));
+            }
+        }
+
+        if !instrument.is_inverse()
+            && instrument.strike_currency() != Some(instrument.quote_currency())
         {
-            return Ok(Some(price));
+            return Ok(None);
         }
 
         cache
@@ -7491,7 +7630,9 @@ impl OrderMatchingEngine {
             return;
         }
 
+        let is_resting = self.core.order_exists(order.client_order_id());
         if order.is_active_local()
+            && !is_resting
             && !matches!(
                 (order.status(), order.order_type()),
                 (
@@ -7508,7 +7649,7 @@ impl OrderMatchingEngine {
         }
 
         // Check if order exists in OrderMatching core, and delete it if it does
-        if self.core.order_exists(order.client_order_id()) {
+        if is_resting {
             self.delete_core_order(order.client_order_id());
         }
 
@@ -8632,6 +8773,9 @@ impl OrderMatchingEngine {
 
     fn generate_order_canceled(&self, order: &OrderAny, venue_order_id: VenueOrderId) {
         let ts_now = self.clock.borrow().timestamp_ns();
+        let account_id = order
+            .account_id()
+            .or_else(|| self.account_ids.get(&order.trader_id()).copied());
         let event = OrderEventAny::Canceled(OrderCanceled::new(
             order.trader_id(),
             order.strategy_id(),
@@ -8642,7 +8786,7 @@ impl OrderMatchingEngine {
             ts_now,
             false,
             Some(venue_order_id),
-            order.account_id(),
+            account_id,
             None,
         ));
         self.dispatch_oto_terminal(order, event);
