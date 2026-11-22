@@ -136,7 +136,7 @@ class SubclassInitExecutionAlgorithmConfig(ExecutionAlgorithmConfig):
 
 class SubclassInitExecutionAlgorithm(ExecutionAlgorithm):
     """
-    Subclass algorithm that constructs its own config in __init__ and passes to super().__init__.
+    Subclass algorithm that constructs its config in __init__.
     """
 
     received_config: SubclassInitExecutionAlgorithmConfig | None = None
@@ -601,9 +601,7 @@ def test_execution_algorithm_to_importable_config_round_trips_custom_config() ->
 
 def test_execution_algorithm_subclass_config_in_init_survives_round_trip() -> None:
     """
-    Test that an explicit True for use_hyphens_in_client_order_ids takes effect
-    when a Python subclass creates its config inside __init__ and passes it to
-    super().__init__(config), and survives a to_importable_config() round trip.
+    Test execution algorithm subclass config in init survives round trip.
     """
     SubclassInitExecutionAlgorithm.received_config = None
 
