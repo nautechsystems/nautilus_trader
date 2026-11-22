@@ -50,7 +50,7 @@ use nautilus_model::{
         AccountType, OmsType, OrderSide, OrderType, PositionSide, TimeInForce, TrailingOffsetType,
         TriggerType,
     },
-    events::OrderDeniedReason,
+    events::{OrderDeniedReason, OrderEventAny},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
@@ -258,6 +258,27 @@ impl KrakenSpotExecutionClient {
                 quantity: order.quantity(),
             },
         );
+    }
+
+    /// Restores dispatch context for the active orders this client submitted, so their stream
+    /// updates after a restart dispatch as tracked orders rather than as reports.
+    fn restore_active_orders(&self) {
+        for order in active_orders(&self.core) {
+            let client_order_id = order.client_order_id();
+            let kraken_cl_ord_id = truncate_cl_ord_id(&client_order_id);
+
+            if kraken_cl_ord_id != client_order_id.as_str() {
+                self.truncated_id_map
+                    .insert(kraken_cl_ord_id, client_order_id);
+            }
+
+            // Untracked as at submission, see `register_order_identity`
+            if order.is_quote_quantity() {
+                continue;
+            }
+
+            self.ws_dispatch_state.restore_order(&order);
+        }
     }
 
     /// Returns a reference to the clock.
@@ -1259,6 +1280,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
             self.emitter.send_account_state(account_state);
             self.await_account_registered(30.0).await?;
 
+            self.restore_active_orders();
             self.spawn_message_handler()?;
 
             self.instruments.rcu(|m| {
@@ -2011,6 +2033,28 @@ fn handle_cancel_failure(
             );
         }
     }
+}
+
+/// Returns the open or in-flight cached orders that this client submitted on its account.
+///
+/// An order the engine rebuilt from reports has no submission and only a reconciliation
+/// acceptance, so it is excluded.
+fn active_orders(core: &ExecutionClientCore) -> Vec<OrderAny> {
+    let cache = core.cache();
+    cache
+        .orders_refs(Some(&core.venue), None, None, Some(&core.account_id), None)
+        .into_iter()
+        .filter(|order| {
+            (order.is_open() || order.is_inflight())
+                && !order.strategy_id().is_external()
+                && cache.client_id(&order.client_order_id()) == Some(&core.client_id)
+                && (order.ts_submitted().is_some()
+                    || order.events().iter().any(|event| {
+                        matches!(event, OrderEventAny::Accepted(accepted) if !accepted.reconciliation)
+                    }))
+        })
+        .map(|order| order.cloned())
+        .collect()
 }
 
 fn resolve_leverage(params: Option<&Params>, default: Option<u16>) -> Result<Option<u16>, String> {

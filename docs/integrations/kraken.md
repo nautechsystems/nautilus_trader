@@ -865,6 +865,25 @@ page, with a cap of 500 pages per read. Reaching the cap logs a warning:
 - Time-bounded queries: Supports filtering by start/end timestamps.
 - All fill types: Market, limit, and conditional order fills.
 
+#### Orders open across a restart
+
+Before subscribing to executions, the Spot execution client restores the orders it submitted that the
+cache holds open or in flight. Their stream updates then apply as order events, and a fill carries the
+venue trade ID and fee. The restore seeds no symbol, so a frame that omits `symbol` is dropped until a
+frame for the order names it.
+
+Stream updates for other orders reach the engine as reports. A report takes its order quantity from the
+frame's `order_qty`, which Kraken's documented `trade` frame omits. Without it, the report can carry the
+filled quantity instead, so reconciliation can reduce the order to what has filled. These orders are not
+restored:
+
+- Quote-quantity orders.
+- Orders of the `EXTERNAL` strategy or of another execution client.
+- Orders the engine rebuilt from reports.
+
+An order not yet accepted at the restart has no venue order ID, so its frames that omit `cl_ord_id` are
+reported until one that carries it arrives. Kraken Futures does not restore orders.
+
 #### Pair spelling
 
 - Kraken spells a pair two ways: the `AssetPairs` key (`XXBTZEUR`), used as the instrument

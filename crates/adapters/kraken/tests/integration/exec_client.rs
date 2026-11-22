@@ -59,7 +59,7 @@ use nautilus_kraken::{
     common::{
         consts::{KRAKEN_CLIENT_ID, KRAKEN_VENUE},
         enums::{KrakenEnvironment, KrakenProductType},
-        parse::{parse_spot_instrument, parse_tokenized_instrument},
+        parse::{parse_spot_instrument, parse_tokenized_instrument, truncate_cl_ord_id},
     },
     config::KrakenExecutionClientConfig,
     execution::{KrakenFuturesExecutionClient, KrakenSpotExecutionClient},
@@ -68,7 +68,10 @@ use nautilus_kraken::{
 use nautilus_live::{
     ExecutionClientCore,
     manager::{ExecutionManager, ExecutionManagerConfig},
-    testing::ExecutionHarness,
+    testing::{
+        ExecutionHarness, RoutedKind,
+        invariants::{assert_filled_qty, assert_order_status, assert_tracked_used_events},
+    },
 };
 use nautilus_model::{
     accounts::{AccountAny, CashAccount, MarginAccount},
@@ -81,8 +84,8 @@ use nautilus_model::{
         OrderRejected, OrderSubmitted,
     },
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, Symbol,
-        TradeId, TraderId, VenueOrderId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
+        Symbol, TradeId, TraderId, VenueOrderId,
     },
     instruments::{CurrencyPair, Instrument, InstrumentAny},
     orders::{
@@ -311,6 +314,20 @@ fn ws_reply(payload: &Value) -> Option<Value> {
         return Some(json!({
             "event": "challenge",
             "message": "server-challenge",
+        }));
+    }
+
+    if payload.get("method").and_then(Value::as_str) == Some("amend_order") {
+        return Some(json!({
+            "method": "amend_order",
+            "req_id": payload["req_id"],
+            "success": true,
+            "result": {
+                "amend_id": "TTW6PD-RC36L-ZZSWNU",
+                "order_id": payload["params"]["order_id"],
+            },
+            "time_in": "2026-05-05T10:00:00.123Z",
+            "time_out": "2026-05-05T10:00:00.125Z",
         }));
     }
 
@@ -3146,6 +3163,430 @@ async fn test_spot_startup_closes_cached_position_with_a_fill_before_the_lookbac
             inferred_px: "30000.0",
         },
     );
+}
+
+const RESTORED_CLIENT_ORDER_ID: &str = "O-RESTORED";
+const RESTORED_VENUE_ORDER_ID: &str = "ORESTO-AAAAA-AAAAAA";
+
+/// The `exec_id` of Kraken's documented `trade` frame.
+const RESTORED_TRADE_ID: &str = "TGBB7L-HT5LX-J3BZ4A";
+
+/// How a restarted node's cache holds the SELL that Kraken rests as `RESTORED_VENUE_ORDER_ID`.
+#[derive(Clone, Copy, Debug)]
+enum CachedSpotOrder {
+    /// Submitted by this client and accepted.
+    Accepted,
+    /// Submitted by this client and not yet accepted, so without a venue order ID.
+    InFlight,
+    /// As `Accepted`, for a quote quantity.
+    QuoteQuantity,
+    /// As `InFlight`, for a quote quantity.
+    QuoteQuantityInFlight,
+    /// As `Accepted`, routed to another execution client.
+    OtherClient,
+    /// As `Accepted`, on another account.
+    OtherAccount,
+    /// As `Accepted`, owned by the `EXTERNAL` strategy.
+    External,
+    /// Built by reconciliation: never submitted, and accepted by a reconciliation event only.
+    Reconciled,
+    /// As `Accepted`, then canceled.
+    Closed,
+}
+
+/// Caches `client_order_id`, a SELL limit of 1.0 at 26599.9 on `instrument` that Kraken holds as
+/// `RESTORED_VENUE_ORDER_ID`, in the state `kind` names.
+fn add_cached_spot_order(
+    cache: &Rc<RefCell<Cache>>,
+    instrument: &InstrumentAny,
+    kind: CachedSpotOrder,
+    client_order_id: ClientOrderId,
+) -> OrderAny {
+    let strategy_id = match kind {
+        CachedSpotOrder::External => StrategyId::from("EXTERNAL"),
+        _ => test_strategy_id(),
+    };
+    let client_id = match kind {
+        CachedSpotOrder::OtherClient => ClientId::from("KRAKEN-OTHER"),
+        _ => *KRAKEN_CLIENT_ID,
+    };
+    let account_id = match kind {
+        CachedSpotOrder::OtherAccount => AccountId::from("KRAKEN-002"),
+        _ => test_account_id(),
+    };
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(test_trader_id())
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from_decimal_dp(dec!(1.0), instrument.size_precision()).unwrap())
+        .price(Price::from_decimal_dp(dec!(26599.9), instrument.price_precision()).unwrap())
+        .time_in_force(TimeInForce::Gtc)
+        .quote_quantity(matches!(
+            kind,
+            CachedSpotOrder::QuoteQuantity | CachedSpotOrder::QuoteQuantityInFlight
+        ))
+        .build();
+    let venue_order_id = VenueOrderId::from(RESTORED_VENUE_ORDER_ID);
+    let OrderEventAny::Accepted(mut accepted) =
+        TestOrderEventStubs::accepted(&order, account_id, venue_order_id)
+    else {
+        panic!("expected an acceptance stub");
+    };
+    accepted.reconciliation = matches!(kind, CachedSpotOrder::Reconciled);
+
+    let mut events = Vec::new();
+
+    if !matches!(kind, CachedSpotOrder::Reconciled) {
+        events.push(TestOrderEventStubs::submitted(&order, account_id));
+    }
+
+    if !matches!(
+        kind,
+        CachedSpotOrder::InFlight | CachedSpotOrder::QuoteQuantityInFlight
+    ) {
+        events.push(OrderEventAny::Accepted(accepted));
+    }
+
+    if matches!(kind, CachedSpotOrder::Closed) {
+        events.push(TestOrderEventStubs::canceled(
+            &order,
+            account_id,
+            Some(venue_order_id),
+        ));
+    }
+
+    let mut cache = cache.borrow_mut();
+    cache
+        .add_order(order.clone(), None, Some(client_id), false)
+        .unwrap();
+
+    for event in &events {
+        cache.update_order(event).unwrap();
+    }
+    order
+}
+
+/// Connects a spot client over the harness cache, as a restarted node does, and registers it with
+/// the harness engine.
+async fn connect_restarted_spot_client(
+    harness: &ExecutionHarness,
+    addr: SocketAddr,
+    use_ws_trade: bool,
+) {
+    let core = ExecutionClientCore::new(
+        test_trader_id(),
+        *KRAKEN_CLIENT_ID,
+        *KRAKEN_VENUE,
+        OmsType::Netting,
+        test_account_id(),
+        AccountType::Cash,
+        None,
+        harness.cache().clone(),
+    );
+    let config = KrakenExecutionClientConfig {
+        use_ws_trade,
+        ..create_test_spot_exec_config(addr)
+    };
+    let mut client = KrakenSpotExecutionClient::new(core, config).unwrap();
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    harness.register_client(Box::new(client)).unwrap();
+}
+
+/// Kraken's documented `trade` frame as a 0.4 fill of `RESTORED_VENUE_ORDER_ID` on `instrument`.
+/// Like the documented frame, it carries no `order_qty`, and it carries `cl_ord_id` only when
+/// given one.
+fn restored_order_trade_frame(instrument: &InstrumentAny, cl_ord_id: Option<&str>) -> String {
+    let mut frame: Value =
+        serde_json::from_str(&load_test_data("ws_executions_trade_doc_example.json")).unwrap();
+    let exec = &mut frame["data"][0];
+    exec["order_id"] = json!(RESTORED_VENUE_ORDER_ID);
+    exec["symbol"] = json!(instrument.id().symbol.as_str());
+    exec["last_qty"] = json!(0.4);
+    exec["cum_qty"] = json!(0.4);
+    exec["cost"] = json!(10639.96);
+    exec["cum_cost"] = json!(10639.96);
+    exec["fees"][0]["asset"] = json!("USDT");
+    assert_eq!(exec["exec_id"], json!(RESTORED_TRADE_ID));
+    assert!(exec.get("order_qty").is_none() && exec.get("cl_ord_id").is_none());
+
+    if let Some(cl_ord_id) = cl_ord_id {
+        exec["cl_ord_id"] = json!(cl_ord_id);
+    }
+    frame.to_string()
+}
+
+/// Sends `frame` and routes the client's events until the order's fill lands, then briefly longer
+/// so that any later event lands too.
+async fn fill_restored_order(
+    harness: &mut ExecutionHarness,
+    state: &TestServerState,
+    frame: String,
+    client_order_id: ClientOrderId,
+) {
+    state.ws_message_tx.send(frame).unwrap();
+    let filled = harness
+        .pump_until(Duration::from_secs(5), |cache| {
+            cache
+                .order(&client_order_id)
+                .is_some_and(|order| order.filled_qty().is_positive())
+        })
+        .await;
+    assert!(filled, "no fill applied: {:?}", harness.routed());
+    harness.pump_for(Duration::from_millis(300)).await;
+}
+
+/// An order the client submitted before a restart keeps its quantity when the stream reports its
+/// next fill without `order_qty`, and the fill applies once with the venue trade ID, whether the
+/// frame names the order by its venue order ID alone or also echoes its shortened `cl_ord_id`.
+#[rstest]
+#[case::venue_order_id_only(RESTORED_CLIENT_ORDER_ID, false)]
+#[case::echoed_shortened_cl_ord_id("O-20260515-120000-001-001-1", true)]
+#[tokio::test]
+async fn test_spot_restored_order_trade_frame_applies_as_its_fill(
+    #[case] client_order_id: &str,
+    #[case] echo_cl_ord_id: bool,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let instrument = btcusdt_spot_instrument();
+    let mut harness = spot_harness(&instrument);
+    let client_order_id = ClientOrderId::from(client_order_id);
+    let cl_ord_id = truncate_cl_ord_id(&client_order_id);
+    add_cached_spot_order(
+        harness.cache(),
+        &instrument,
+        CachedSpotOrder::Accepted,
+        client_order_id,
+    );
+    connect_restarted_spot_client(&harness, addr, false).await;
+    let frame = restored_order_trade_frame(&instrument, echo_cl_ord_id.then_some(&*cl_ord_id));
+
+    fill_restored_order(&mut harness, &state, frame, client_order_id).await;
+
+    let cache = harness.cache().borrow();
+    let cached = cache.order(&client_order_id).unwrap();
+    assert_order_status(&cache, &client_order_id, OrderStatus::PartiallyFilled);
+    assert_eq!(cached.quantity().as_decimal(), dec!(1.0));
+    assert_filled_qty(&cache, &client_order_id, dec!(0.4));
+    assert_eq!(cached.trade_ids(), vec![&TradeId::from(RESTORED_TRADE_ID)]);
+    assert!(
+        !cached
+            .events()
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Updated(_))),
+        "{:?}",
+        cached.events(),
+    );
+    assert_tracked_used_events(harness.routed());
+}
+
+/// An order pending cancel at the restart stays pending cancel through its next fill, which
+/// applies once.
+#[rstest]
+#[tokio::test]
+async fn test_spot_restored_pending_cancel_order_trade_frame_keeps_pending_cancel() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let instrument = btcusdt_spot_instrument();
+    let mut harness = spot_harness(&instrument);
+    let order = add_cached_spot_order(
+        harness.cache(),
+        &instrument,
+        CachedSpotOrder::Accepted,
+        ClientOrderId::from(RESTORED_CLIENT_ORDER_ID),
+    );
+    let client_order_id = order.client_order_id();
+    harness.mark_pending_cancel(&order, None);
+    connect_restarted_spot_client(&harness, addr, false).await;
+    let frame = restored_order_trade_frame(&instrument, None);
+
+    fill_restored_order(&mut harness, &state, frame, client_order_id).await;
+
+    let cache = harness.cache().borrow();
+    assert_order_status(&cache, &client_order_id, OrderStatus::PendingCancel);
+    assert_filled_qty(&cache, &client_order_id, dec!(0.4));
+    assert_tracked_used_events(harness.routed());
+}
+
+/// The client restores only the open or in-flight orders it submitted itself on its account, with
+/// a base quantity: a frame for any other cached order still reaches the engine as reports.
+#[rstest]
+#[case::quote_quantity(CachedSpotOrder::QuoteQuantity)]
+#[case::other_client(CachedSpotOrder::OtherClient)]
+#[case::other_account(CachedSpotOrder::OtherAccount)]
+#[case::external(CachedSpotOrder::External)]
+#[case::reconciled(CachedSpotOrder::Reconciled)]
+#[case::closed(CachedSpotOrder::Closed)]
+#[tokio::test]
+async fn test_spot_unrestored_order_trade_frame_reaches_engine_as_reports(
+    #[case] kind: CachedSpotOrder,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let instrument = btcusdt_spot_instrument();
+    let mut harness = spot_harness(&instrument);
+    add_cached_spot_order(
+        harness.cache(),
+        &instrument,
+        kind,
+        ClientOrderId::from(RESTORED_CLIENT_ORDER_ID),
+    );
+    connect_restarted_spot_client(&harness, addr, false).await;
+
+    state
+        .ws_message_tx
+        .send(restored_order_trade_frame(&instrument, None))
+        .unwrap();
+    let reported = harness
+        .pump_until_routed(Duration::from_secs(3), RoutedKind::Report)
+        .await;
+    harness.pump_for(Duration::from_millis(300)).await;
+
+    let routed: Vec<RoutedKind> = harness
+        .routed()
+        .iter()
+        .copied()
+        .filter(|kind| *kind != RoutedKind::Account)
+        .collect();
+    assert!(reported, "frame reached no report route: {routed:?}");
+    assert_eq!(routed, [RoutedKind::Report, RoutedKind::Report]);
+}
+
+/// Kraken's documented `pending_new` frame, echoing `cl_ord_id`, then its `new` frame, for the
+/// placement of `RESTORED_VENUE_ORDER_ID` on `instrument`.
+fn restored_order_placement_frames(instrument: &InstrumentAny, cl_ord_id: &str) -> [String; 2] {
+    let mut pending: Value = serde_json::from_str(&load_test_data(
+        "ws_executions_pending_new_doc_example.json",
+    ))
+    .unwrap();
+    let exec = &mut pending["data"][0];
+    exec["order_id"] = json!(RESTORED_VENUE_ORDER_ID);
+    exec["symbol"] = json!(instrument.id().symbol.as_str());
+    exec["order_qty"] = json!(1.0);
+    exec["limit_price"] = json!(26599.9);
+    exec["cl_ord_id"] = json!(cl_ord_id);
+    let new = json!({
+        "channel": "executions",
+        "type": "update",
+        "data": [{
+            "timestamp": "2023-09-22T10:33:05.709982Z",
+            "order_status": "new",
+            "exec_type": "new",
+            "order_userref": 3,
+            "order_id": RESTORED_VENUE_ORDER_ID,
+        }],
+        "sequence": 9,
+    });
+    [pending.to_string(), new.to_string()]
+}
+
+/// Caches `O-20260515-120000-001-001-1`, a Nautilus ID longer than Kraken's free-text limit, in
+/// the state `kind` names, connects, and streams the placement frames echoing its shortened
+/// `cl_ord_id`. Returns once the order leaves `SUBMITTED`, or the wait expires.
+async fn accept_in_flight_order(kind: CachedSpotOrder) -> (ExecutionHarness, ClientOrderId) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let instrument = btcusdt_spot_instrument();
+    let mut harness = spot_harness(&instrument);
+    let client_order_id = ClientOrderId::from("O-20260515-120000-001-001-1");
+    let cl_ord_id = truncate_cl_ord_id(&client_order_id);
+    assert_ne!(cl_ord_id, client_order_id.as_str());
+    add_cached_spot_order(harness.cache(), &instrument, kind, client_order_id);
+    connect_restarted_spot_client(&harness, addr, false).await;
+
+    for frame in restored_order_placement_frames(&instrument, &cl_ord_id) {
+        state.ws_message_tx.send(frame).unwrap();
+    }
+    harness
+        .pump_until(Duration::from_secs(3), |cache| {
+            cache
+                .order(&client_order_id)
+                .is_some_and(|order| order.status() != OrderStatus::Submitted)
+        })
+        .await;
+    harness.pump_for(Duration::from_millis(300)).await;
+    (harness, client_order_id)
+}
+
+/// The venue order ID the cached order's acceptance carries, and whether reconciliation applied it.
+fn acceptance(order: &OrderAny) -> Option<(VenueOrderId, bool)> {
+    order.events().iter().find_map(|event| match event {
+        OrderEventAny::Accepted(accepted) => {
+            Some((accepted.venue_order_id, accepted.reconciliation))
+        }
+        _ => None,
+    })
+}
+
+/// An order submitted before a restart and not yet accepted is accepted through the order event
+/// path when the stream echoes its shortened `cl_ord_id`.
+#[rstest]
+#[tokio::test]
+async fn test_spot_restored_in_flight_order_accepts_from_echoed_cl_ord_id() {
+    let (harness, client_order_id) = accept_in_flight_order(CachedSpotOrder::InFlight).await;
+
+    let cache = harness.cache().borrow();
+    let cached = cache.order(&client_order_id).unwrap();
+    assert_order_status(&cache, &client_order_id, OrderStatus::Accepted);
+    assert_eq!(
+        acceptance(&cached),
+        Some((VenueOrderId::from(RESTORED_VENUE_ORDER_ID), false)),
+    );
+    assert_tracked_used_events(harness.routed());
+}
+
+/// A quote-quantity order submitted before a restart stays on the report path, and its reports
+/// name its full client order ID, so reconciliation applies them to the cached order.
+#[rstest]
+#[tokio::test]
+async fn test_spot_in_flight_quote_quantity_order_reports_name_its_full_client_order_id() {
+    let (harness, client_order_id) =
+        accept_in_flight_order(CachedSpotOrder::QuoteQuantityInFlight).await;
+
+    let cache = harness.cache().borrow();
+    let cached = cache.order(&client_order_id).unwrap();
+    assert_order_status(&cache, &client_order_id, OrderStatus::Accepted);
+    assert_eq!(
+        acceptance(&cached),
+        Some((VenueOrderId::from(RESTORED_VENUE_ORDER_ID), true)),
+    );
+    assert_eq!(cache.orders(None, None, None, None, None).len(), 1);
+    assert!(!harness.routed().contains(&RoutedKind::Order));
+}
+
+/// A WebSocket amend acknowledgement for an order the client submitted before a restart updates
+/// the order.
+#[rstest]
+#[tokio::test]
+async fn test_spot_restored_order_ws_amend_ack_updates_order() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let instrument = btcusdt_spot_instrument();
+    let mut harness = spot_harness(&instrument);
+    let order = add_cached_spot_order(
+        harness.cache(),
+        &instrument,
+        CachedSpotOrder::Accepted,
+        ClientOrderId::from(RESTORED_CLIENT_ORDER_ID),
+    );
+    let client_order_id = order.client_order_id();
+    connect_restarted_spot_client(&harness, addr, true).await;
+    let quantity = Quantity::from_decimal_dp(dec!(0.8), instrument.size_precision()).unwrap();
+    let price = Price::from_decimal_dp(dec!(26700.0), instrument.price_precision()).unwrap();
+
+    harness.modify_via_risk(&order, Some(price), Some(quantity));
+    let updated = harness
+        .pump_until(Duration::from_secs(5), |cache| {
+            cache
+                .order(&client_order_id)
+                .is_some_and(|order| order.status() != OrderStatus::PendingUpdate)
+        })
+        .await;
+
+    let cache = harness.cache().borrow();
+    let cached = cache.order(&client_order_id).unwrap();
+    assert!(updated, "amend left the order {:?}", cached.status());
+    assert_order_status(&cache, &client_order_id, OrderStatus::Accepted);
+    assert_eq!(cached.quantity(), quantity);
+    assert_eq!(cached.price(), Some(price));
 }
 
 fn futures_open_positions_json(symbol: &str) -> String {

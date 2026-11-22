@@ -19,7 +19,8 @@
 //! `docs/developer_guide/adapters.md#tracked-and-external-execution-updates`:
 //!
 //! 1. The execution client registers an [`OrderIdentity`] in [`WsDispatchState`]
-//!    when it submits an order.
+//!    when it submits an order. The Spot client also restores one at connect
+//!    for each active order it submitted that the cache holds.
 //! 2. WebSocket execution messages are routed through the per-product dispatch
 //!    functions in [`futures`] and [`spot`]. For tracked orders the dispatch
 //!    builds typed [`OrderEventAny`] events and emits them directly via
@@ -28,9 +29,9 @@
 //!    so the engine can reconcile.
 //!
 //! The dispatch state lives in an `Arc<WsDispatchState>` shared between the
-//! main client thread (which registers identities at submission time) and the
-//! spawned WebSocket consumer task. `DashMap`/`DashSet` provide lock-free
-//! concurrent access.
+//! main client thread (which registers identities at submission and, on Spot,
+//! restores them at connect) and the spawned WebSocket consumer task.
+//! `DashMap`/`DashSet` provide lock-free concurrent access.
 
 pub mod futures;
 pub mod spot;
@@ -41,7 +42,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use dashmap::{DashMap, DashSet};
+use dashmap::{DashMap, DashSet, mapref::entry::Entry};
 use indexmap::IndexSet;
 use nautilus_core::{AtomicMap, UUID4, UnixNanos};
 use nautilus_live::ExecutionEventEmitter;
@@ -51,6 +52,7 @@ use nautilus_model::{
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
     },
+    orders::{Order, OrderAny},
     reports::FillReport,
     types::{Currency, Quantity},
 };
@@ -109,7 +111,8 @@ impl DeltaSnapshot {
     }
 }
 
-/// Identity metadata captured when an order is submitted through this client.
+/// Identity metadata of an order submitted through this client, captured at
+/// submission or, on Spot, restored from the cache at connect.
 ///
 /// Stored in [`WsDispatchState::order_identities`] keyed by the full Nautilus
 /// [`ClientOrderId`]. The dispatch functions use the identity to build typed
@@ -121,26 +124,28 @@ pub struct OrderIdentity {
     pub strategy_id: StrategyId,
     /// Instrument the order targets.
     pub instrument_id: InstrumentId,
-    /// Order side captured at submission.
+    /// Order side.
     pub order_side: OrderSide,
-    /// Order type captured at submission.
+    /// Order type.
     pub order_type: OrderType,
-    /// Order quantity captured at submission. Used to detect terminal fills.
+    /// Order quantity. Used to detect terminal fills.
     pub quantity: Quantity,
 }
 
 /// Per-client dispatch state shared between order submission and the
 /// WebSocket consumer task.
 ///
-/// Tracks which orders were submitted through this client (so we can route
+/// Tracks which orders were submitted through this client, including active
+/// orders the Spot client restores from the cache at connect (so we can route
 /// venue events to typed [`OrderEventAny`] emissions for tracked orders, and
-/// fall back to reports for external orders), and provides cross-stream
-/// dedup for `OrderAccepted` and `OrderFilled` emissions.
+/// fall back to reports for external orders), and provides cross-stream dedup
+/// for `OrderAccepted` and `OrderFilled` emissions.
 #[derive(Debug)]
 pub struct WsDispatchState {
     /// Tracked orders keyed by full Nautilus [`ClientOrderId`].
     pub order_identities: DashMap<ClientOrderId, OrderIdentity>,
-    /// Client order IDs for which an `OrderAccepted` event has been emitted.
+    /// Client order IDs for which an `OrderAccepted` event has been emitted,
+    /// including restored orders the cache holds as accepted.
     pub emitted_accepted: DashSet<ClientOrderId>,
     /// Client order IDs that have reached the filled terminal state.
     pub filled_orders: DashSet<ClientOrderId>,
@@ -178,10 +183,10 @@ pub struct WsDispatchState {
     /// which loses the typed `OrderAccepted` event - the symptom behind
     /// issue #4051.
     ///
-    /// Populated whenever a frame resolves a `cl_ord_id` (first writer
-    /// wins, keyed by venue `order_id`). Consulted when `exec.cl_ord_id`
-    /// is `None`. Mirrors the `venue_client_map` used by the futures
-    /// dispatch path.
+    /// Populated whenever a frame resolves a `cl_ord_id`, and for a restored
+    /// order whose venue order id the cache holds (first writer wins, keyed
+    /// by venue `order_id`). Consulted when `exec.cl_ord_id` is `None`.
+    /// Mirrors the `venue_client_map` used by the futures dispatch path.
     ///
     /// Eviction policy matches `order_symbol_cache`: cleared on terminal
     /// exec types and bounded by `DEDUP_CAPACITY` as a safety net.
@@ -197,7 +202,7 @@ pub struct WsDispatchState {
     /// double-counted.
     pub delta_snapshots: DashMap<ClientOrderId, DeltaSnapshot>,
     /// Cumulative filled quantity per tracked client order id, populated by
-    /// the fill side of dispatch.
+    /// the fill side of dispatch and seeded from the cache for a restored order.
     ///
     /// Compared against `OrderIdentity::quantity` to decide when to clean up
     /// tracked state on a terminal fill.
@@ -245,6 +250,40 @@ impl WsDispatchState {
     /// submission time, before any WebSocket events for the order can arrive.
     pub fn register_identity(&self, client_order_id: ClientOrderId, identity: OrderIdentity) {
         self.order_identities.insert(client_order_id, identity);
+    }
+
+    /// Restores the dispatch context of an active cached order, so its stream
+    /// updates dispatch as a tracked order.
+    ///
+    /// Leaves an identity already registered in this session in place, and
+    /// skips an order this dispatch has already filled.
+    pub(crate) fn restore_order(&self, order: &OrderAny) {
+        let client_order_id = order.client_order_id();
+
+        if self.filled_orders.contains(&client_order_id) {
+            return;
+        }
+
+        let Entry::Vacant(entry) = self.order_identities.entry(client_order_id) else {
+            return;
+        };
+
+        if order.ts_accepted().is_some() {
+            self.insert_accepted(client_order_id);
+        }
+        self.record_filled_qty(client_order_id, order.filled_qty());
+
+        if let Some(venue_order_id) = order.venue_order_id() {
+            self.cache_order_client_id(venue_order_id.as_str(), client_order_id);
+        }
+
+        entry.insert(OrderIdentity {
+            strategy_id: order.strategy_id(),
+            instrument_id: order.instrument_id(),
+            order_side: order.order_side(),
+            order_type: order.order_type(),
+            quantity: order.quantity(),
+        });
     }
 
     /// Returns a clone of the identity for the given client order id, if any.
@@ -364,7 +403,7 @@ impl WsDispatchState {
     }
 
     /// Records cumulative filled quantity for a tracked order. Used by the
-    /// fill side of dispatch only.
+    /// fill side of dispatch and by `restore_order`.
     pub fn record_filled_qty(&self, client_order_id: ClientOrderId, qty: Quantity) {
         self.order_filled_qty.insert(client_order_id, qty);
     }
@@ -536,11 +575,19 @@ pub(crate) fn fill_report_to_order_filled(
 mod tests {
     use nautilus_model::{
         enums::{OrderSide, OrderType},
-        identifiers::{ClientOrderId, InstrumentId, StrategyId, TradeId},
+        identifiers::{ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId},
+        instruments::{CurrencyPair, Instrument, InstrumentAny},
+        orders::{
+            OrderTestBuilder,
+            stubs::{OrderFilledTestBuilder, TestOrderEventStubs},
+        },
+        types::Price,
     };
     use rstest::rstest;
 
     use super::*;
+
+    const RESTORED_VENUE_ORDER_ID: &str = "ORESTO-AAAAA-AAAAAA";
 
     fn make_identity() -> OrderIdentity {
         OrderIdentity {
@@ -706,6 +753,139 @@ mod tests {
         assert!(!state.emitted_accepted.contains(&cid));
         assert!(state.previous_filled_qty(&cid).is_none());
         assert!(state.pending_removal(&cid).is_none());
+    }
+
+    fn btc_usdt() -> InstrumentAny {
+        InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(InstrumentId::from("BTC/USDT.KRAKEN"))
+                .raw_symbol(Symbol::new("XBTUSDT"))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USDT())
+                .price_precision(1)
+                .size_precision(1)
+                .price_increment(Price::from("0.1"))
+                .size_increment(Quantity::from("0.1"))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
+    }
+
+    /// A SELL limit of 1.0 the cache holds as submitted, then accepted as
+    /// `RESTORED_VENUE_ORDER_ID` when `accepted`, then filled `filled_qty`.
+    fn cached_order(accepted: bool, filled_qty: Option<&str>) -> OrderAny {
+        let instrument = btc_usdt();
+        let account_id = AccountId::from("KRAKEN-001");
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.0"))
+            .price(Price::from("26599.9"))
+            .build();
+        order
+            .apply(TestOrderEventStubs::submitted(&order, account_id))
+            .unwrap();
+
+        if accepted {
+            let accepted = TestOrderEventStubs::accepted(
+                &order,
+                account_id,
+                VenueOrderId::from(RESTORED_VENUE_ORDER_ID),
+            );
+            order.apply(accepted).unwrap();
+        }
+
+        if let Some(filled_qty) = filled_qty {
+            let fill = OrderFilledTestBuilder::new(&order, &instrument)
+                .last_qty(Quantity::from(filled_qty))
+                .build();
+            order.apply(fill).unwrap();
+        }
+        order
+    }
+
+    #[rstest]
+    #[case::submitted(false, None)]
+    #[case::accepted(true, None)]
+    #[case::partially_filled(true, Some("0.4"))]
+    fn test_restore_order_seeds_context_from_cached_order(
+        #[case] accepted: bool,
+        #[case] filled_qty: Option<&str>,
+    ) {
+        let state = WsDispatchState::new();
+        let order = cached_order(accepted, filled_qty);
+        let cid = order.client_order_id();
+
+        state.restore_order(&order);
+
+        let identity = state.lookup_identity(&cid).expect("restored identity");
+        assert_eq!(identity.strategy_id, order.strategy_id());
+        assert_eq!(identity.instrument_id, order.instrument_id());
+        assert_eq!(identity.order_side, OrderSide::Sell);
+        assert_eq!(identity.order_type, OrderType::Limit);
+        assert_eq!(identity.quantity, Quantity::from("1.0"));
+        assert_eq!(
+            state.emitted_accepted.contains(&cid),
+            accepted,
+            "accepted is seeded exactly when the cached order is accepted",
+        );
+        assert_eq!(
+            state.previous_filled_qty(&cid),
+            Some(Quantity::from(filled_qty.unwrap_or("0.0"))),
+        );
+        assert_eq!(
+            state.lookup_order_client_id(RESTORED_VENUE_ORDER_ID),
+            accepted.then_some(cid),
+        );
+    }
+
+    #[rstest]
+    fn test_restore_order_keeps_identity_registered_in_session() {
+        let state = WsDispatchState::new();
+        let order = cached_order(true, None);
+        let cid = order.client_order_id();
+        state.register_identity(
+            cid,
+            OrderIdentity {
+                strategy_id: order.strategy_id(),
+                instrument_id: order.instrument_id(),
+                order_side: order.order_side(),
+                order_type: order.order_type(),
+                quantity: order.quantity(),
+            },
+        );
+        state.update_identity_quantity(&cid, Quantity::from("0.5"));
+        state.record_filled_qty(cid, Quantity::from("0.2"));
+
+        state.restore_order(&order);
+
+        assert_eq!(
+            state.lookup_identity(&cid).unwrap().quantity,
+            Quantity::from("0.5"),
+        );
+        assert_eq!(state.previous_filled_qty(&cid), Some(Quantity::from("0.2")));
+        assert!(!state.emitted_accepted.contains(&cid));
+    }
+
+    #[rstest]
+    fn test_restore_order_skips_order_this_dispatch_filled() {
+        let state = WsDispatchState::new();
+        let order = cached_order(true, Some("0.4"));
+        let cid = order.client_order_id();
+        state.insert_filled(cid);
+
+        state.restore_order(&order);
+
+        assert!(state.lookup_identity(&cid).is_none());
+        assert!(!state.emitted_accepted.contains(&cid));
+        assert!(state.previous_filled_qty(&cid).is_none());
+        assert!(
+            state
+                .lookup_order_client_id(RESTORED_VENUE_ORDER_ID)
+                .is_none()
+        );
     }
 
     #[rstest]
