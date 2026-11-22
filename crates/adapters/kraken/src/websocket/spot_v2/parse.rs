@@ -1150,6 +1150,34 @@ mod tests {
         }
     }
 
+    /// Kraken's documented `batch_add` response carries its per-order results as an array, and
+    /// no result states a `success` of its own.
+    #[rstest]
+    fn test_parse_order_response_decodes_documented_batch_add_result() {
+        use crate::websocket::spot_v2::enums::KrakenWsMethod;
+
+        let raw = load_test_json("ws_batch_add_response_doc_example.json");
+        let parsed = parse_order_response(&raw).expect("parse ok");
+        match parsed {
+            Some(KrakenSpotWsMessage::OrderResponse(resp)) => {
+                assert_eq!(resp.method, KrakenWsMethod::BatchAdd);
+                assert_eq!(resp.req_id, Some(1_234_567_890));
+                assert!(resp.success);
+                let orders = resp
+                    .result
+                    .and_then(|r| r.orders)
+                    .expect("per-order results");
+                let order_ids: Vec<_> = orders.iter().map(|o| o.order_id.as_deref()).collect();
+                assert_eq!(
+                    order_ids,
+                    [Some("ORDERX-IDXXX-XXXXX1"), Some("ORDERX-IDXXX-XXXXX2")]
+                );
+                assert!(orders.iter().all(|o| o.success.is_none()));
+            }
+            other => panic!("expected OrderResponse, was {other:?}"),
+        }
+    }
+
     #[rstest]
     fn test_parse_order_response_returns_none_for_non_order_method() {
         let json = r#"{"method":"subscribe","req_id":1,"success":true}"#;

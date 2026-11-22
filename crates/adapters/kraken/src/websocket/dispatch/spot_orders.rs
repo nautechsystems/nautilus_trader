@@ -403,7 +403,7 @@ impl OrderRequestState {
                 self.emit_order_cancel_rejected(&pending, response, ts_event_ns);
             }
             (PendingOperation::BatchAdd, _) => {
-                self.handle_batch_add_response(&pending, response, ts_event_ns);
+                self.handle_batch_add_response(req_id, &pending, response, ts_event_ns);
             }
         }
     }
@@ -736,6 +736,7 @@ impl OrderRequestState {
 
     fn handle_batch_add_response(
         &self,
+        req_id: u64,
         pending: &PendingRequest,
         response: &KrakenWsOrderResponse,
         ts_event_ns: u64,
@@ -745,6 +746,10 @@ impl OrderRequestState {
             .as_ref()
             .and_then(|r| r.orders.as_ref())
             .map_or(&[][..], Vec::as_slice);
+        let legs_sent = pending.client_order_ids.len();
+
+        // Kraken's documented result items carry no per-order `success`, only the envelope does
+        let documented = !per_order.is_empty() && per_order.iter().all(|r| r.success.is_none());
 
         // Match per-leg results by the cl_ord_id Kraken echoes back rather than
         // relying purely on positional alignment with the legs we sent. Echoed
@@ -760,35 +765,72 @@ impl OrderRequestState {
         for (idx, client_order_id) in pending.client_order_ids.iter().copied().enumerate() {
             let leg_venue = pending.venue_order_ids.get(idx).copied().flatten();
             let truncated = truncate_cl_ord_id(&client_order_id);
-            let leg_result = echo_index
+            let echoed = echo_index
                 .get(truncated.as_str())
-                .and_then(|&i| per_order.get(i))
-                .or_else(|| per_order.get(idx));
+                .and_then(|&i| per_order.get(i));
+            let leg_result = if documented {
+                // Kraken returns results in request order, so a position names a leg only when
+                // every leg has a result and the item echoes no other leg
+                echoed.or_else(|| {
+                    per_order
+                        .get(idx)
+                        .filter(|r| per_order.len() == legs_sent && r.cl_ord_id.is_none())
+                })
+            } else {
+                echoed.or_else(|| per_order.get(idx))
+            };
 
-            if leg_result.is_none() {
-                log::error!(
-                    "Kraken WS batch_add response missing per-leg result for client_order_id={client_order_id} idx={idx} \
-                     legs_sent={legs_sent} legs_received={legs_received}; treating as rejection",
-                    legs_sent = pending.client_order_ids.len(),
-                    legs_received = per_order.len(),
-                );
-            }
-
-            let leg_success = leg_result.is_some_and(|r| r.success);
-            let leg_order_id = leg_result
-                .and_then(|r| r.order_id.clone())
-                .or_else(|| leg_venue.map(|v| v.to_string()));
-            let leg_error = leg_result.and_then(|r| r.error.clone()).or_else(|| {
-                if leg_result.is_none() {
-                    Some(format!(
-                        "batch_add response missing per-leg result (legs_sent={}, legs_received={})",
-                        pending.client_order_ids.len(),
-                        per_order.len(),
-                    ))
-                } else {
-                    response.error.clone()
+            let (leg_success, leg_order_id, leg_error) = match leg_result {
+                Some(result) => match result.success {
+                    Some(success) => (
+                        success,
+                        result
+                            .order_id
+                            .clone()
+                            .or_else(|| leg_venue.map(|v| v.to_string())),
+                        result.error.clone().or_else(|| response.error.clone()),
+                    ),
+                    None if response.success
+                        && result.order_id.is_some()
+                        && result.error.is_none() =>
+                    {
+                        (true, result.order_id.clone(), None)
+                    }
+                    None => {
+                        log::warn!(
+                            "Kraken WS batch_add response gives no definitive outcome for \
+                             client_order_id={client_order_id} req_id={req_id}; awaiting venue evidence",
+                        );
+                        continue;
+                    }
+                },
+                // The batch failed as a whole and returned no results, so each leg takes Kraken's error
+                None if !response.success && !documented => (false, None, response.error.clone()),
+                None if documented => {
+                    log::warn!(
+                        "Kraken WS batch_add response has no result for client_order_id={client_order_id} \
+                         idx={idx} legs_sent={legs_sent} legs_received={legs_received} req_id={req_id}; \
+                         awaiting venue evidence",
+                        legs_received = per_order.len(),
+                    );
+                    continue;
                 }
-            });
+                None => {
+                    log::error!(
+                        "Kraken WS batch_add response missing per-leg result for client_order_id={client_order_id} idx={idx} \
+                         legs_sent={legs_sent} legs_received={legs_received}; treating as rejection",
+                        legs_received = per_order.len(),
+                    );
+                    (
+                        false,
+                        leg_venue.map(|v| v.to_string()),
+                        Some(format!(
+                            "batch_add response missing per-leg result (legs_sent={legs_sent}, legs_received={})",
+                            per_order.len(),
+                        )),
+                    )
+                }
+            };
 
             let leg_response = KrakenWsOrderResponse {
                 method: KrakenWsMethod::AddOrder,
@@ -1489,19 +1531,19 @@ mod tests {
                 warning: None,
                 orders: Some(vec![
                     KrakenWsBatchOrderResult {
-                        success: true,
+                        success: Some(true),
                         order_id: Some(String::new()),
                         cl_ord_id: Some("O-A".to_string()),
                         error: None,
                     },
                     KrakenWsBatchOrderResult {
-                        success: false,
+                        success: Some(false),
                         order_id: Some(String::new()),
                         cl_ord_id: Some("O-B".to_string()),
                         error: Some("Bad price".to_string()),
                     },
                     KrakenWsBatchOrderResult {
-                        success: true,
+                        success: Some(true),
                         order_id: Some("V-C".to_string()),
                         cl_ord_id: Some("O-C".to_string()),
                         error: None,
@@ -1942,6 +1984,203 @@ mod tests {
         assert_eq!(harness.state.pending_len(), 0);
     }
 
+    /// Registers legs O-A and O-B as one pending `batch_add` request.
+    fn insert_pending_batch(harness: &Harness, req_id: u64) -> (ClientOrderId, ClientOrderId) {
+        let cl_a = ClientOrderId::from("O-A");
+        let cl_b = ClientOrderId::from("O-B");
+        register_default_identity(&harness.dispatch_state, cl_a);
+        register_default_identity(&harness.dispatch_state, cl_b);
+        harness.state.pending.insert(
+            req_id,
+            PendingRequest {
+                operation: PendingOperation::BatchAdd,
+                client_order_ids: vec![cl_a, cl_b],
+                venue_order_ids: vec![None, None],
+                ts_sent_ns: 0,
+                new_quantity: None,
+                new_price: None,
+                new_trigger_price: None,
+            },
+        );
+        (cl_a, cl_b)
+    }
+
+    fn decode_batch_add_response(response: serde_json::Value) -> KrakenWsOrderResponse {
+        serde_json::from_value(response).expect("batch_add response decodes")
+    }
+
+    fn assert_accepted(event: OrderEventAny, client_order_id: ClientOrderId, venue_order_id: &str) {
+        match event {
+            OrderEventAny::Accepted(e) => {
+                assert_eq!(e.client_order_id, client_order_id);
+                assert_eq!(e.venue_order_id.as_str(), venue_order_id);
+            }
+            other => panic!("expected Accepted for {client_order_id}, was {other:?}"),
+        }
+    }
+
+    /// Kraken returns `batch_add` results in request order without a per-order `success`, so a
+    /// documented response accepts each leg with the venue order ID at its position.
+    #[rstest]
+    fn test_handle_response_batch_add_accepts_documented_legs() {
+        let mut harness = make_harness(60_000);
+        let (cl_a, cl_b) = insert_pending_batch(&harness, 1_234_567_890);
+        let raw = std::fs::read_to_string("test_data/ws_batch_add_response_doc_example.json")
+            .expect("fixture");
+        let response: KrakenWsOrderResponse =
+            serde_json::from_str(&raw).expect("documented response decodes");
+
+        harness.state.handle_response(&response, 9_000);
+
+        assert_accepted(
+            harness.event_rx.try_recv().expect("first"),
+            cl_a,
+            "ORDERX-IDXXX-XXXXX1",
+        );
+        assert_accepted(
+            harness.event_rx.try_recv().expect("second"),
+            cl_b,
+            "ORDERX-IDXXX-XXXXX2",
+        );
+        assert!(harness.event_rx.try_recv().is_err());
+        assert_eq!(harness.state.pending_len(), 0);
+    }
+
+    /// Kraken documents no per-order failure in a `batch_add` result, so a documented result without
+    /// a venue order ID, or with an error, decides nothing: the leg stays in flight for the
+    /// executions stream or reconciliation, with no event.
+    #[rstest]
+    #[case::no_order_id(serde_json::json!({"cl_ord_id": "O-B"}))]
+    #[case::order_id_and_error(
+        serde_json::json!({"order_id": "V-B", "error": "EOrder:Insufficient funds", "cl_ord_id": "O-B"})
+    )]
+    #[case::error_only(serde_json::json!({"error": "EOrder:Insufficient funds", "cl_ord_id": "O-B"}))]
+    #[case::empty_order_id(serde_json::json!({"order_id": "", "cl_ord_id": "O-B"}))]
+    fn test_handle_response_batch_add_documented_leg_without_definitive_outcome_emits_nothing(
+        #[case] leg_b: serde_json::Value,
+    ) {
+        let mut harness = make_harness(60_000);
+        let (cl_a, cl_b) = insert_pending_batch(&harness, 70);
+        let response = decode_batch_add_response(serde_json::json!({
+            "method": "batch_add",
+            "req_id": 70,
+            "success": true,
+            "result": [{"order_id": "V-A", "cl_ord_id": "O-A"}, leg_b],
+        }));
+
+        harness.state.handle_response(&response, 9_000);
+
+        assert_accepted(harness.event_rx.try_recv().expect("leg A"), cl_a, "V-A");
+        assert!(harness.event_rx.try_recv().is_err());
+        assert!(!harness.dispatch_state.emitted_accepted.contains(&cl_b));
+        assert!(harness.dispatch_state.lookup_identity(&cl_b).is_some());
+        assert_eq!(harness.state.pending_len(), 0);
+    }
+
+    /// A position names a leg only when the documented response holds one result per leg and that
+    /// result echoes no other leg; otherwise only echoed legs resolve and the rest stay in flight.
+    #[rstest]
+    #[case::one_unechoed_result(serde_json::json!([{"order_id": "V-1"}]), &[])]
+    #[case::one_result_echoing_b(
+        serde_json::json!([{"order_id": "V-B", "cl_ord_id": "O-B"}]),
+        &[("O-B", "V-B")]
+    )]
+    #[case::first_of_two_echoing_b(
+        serde_json::json!([{"order_id": "V-B", "cl_ord_id": "O-B"}, {"order_id": "V-2"}]),
+        &[("O-B", "V-B")]
+    )]
+    #[case::three_unechoed_results(
+        serde_json::json!([{"order_id": "V-1"}, {"order_id": "V-2"}, {"order_id": "V-3"}]),
+        &[]
+    )]
+    fn test_handle_response_batch_add_documented_results_resolve_only_identified_legs(
+        #[case] result: serde_json::Value,
+        #[case] expected: &[(&str, &str)],
+    ) {
+        let mut harness = make_harness(60_000);
+        insert_pending_batch(&harness, 71);
+        let response = decode_batch_add_response(serde_json::json!({
+            "method": "batch_add",
+            "req_id": 71,
+            "success": true,
+            "result": result,
+        }));
+
+        harness.state.handle_response(&response, 9_000);
+
+        for (client_order_id, venue_order_id) in expected {
+            assert_accepted(
+                harness.event_rx.try_recv().expect("accepted leg"),
+                ClientOrderId::from(*client_order_id),
+                venue_order_id,
+            );
+        }
+        assert!(harness.event_rx.try_recv().is_err());
+        assert_eq!(harness.state.pending_len(), 0);
+    }
+
+    /// Kraken documents a `batch_add` result only on success, so documented results under a failed
+    /// response decide nothing, and every leg stays in flight whether or not a result names it.
+    #[rstest]
+    #[case::one_result_per_leg(serde_json::json!([{"order_id": "V-A"}, {"order_id": "V-B"}]))]
+    #[case::fewer_results_than_legs(serde_json::json!([{"order_id": "V-A"}]))]
+    #[case::first_result_echoing_b(
+        serde_json::json!([{"order_id": "V-B", "cl_ord_id": "O-B"}, {"order_id": "V-2"}])
+    )]
+    fn test_handle_response_batch_add_failed_response_with_documented_results_emits_nothing(
+        #[case] result: serde_json::Value,
+    ) {
+        let mut harness = make_harness(60_000);
+        let (cl_a, cl_b) = insert_pending_batch(&harness, 73);
+        let response = decode_batch_add_response(serde_json::json!({
+            "method": "batch_add",
+            "req_id": 73,
+            "success": false,
+            "error": "EGeneral:Internal error",
+            "result": result,
+        }));
+
+        harness.state.handle_response(&response, 9_000);
+
+        assert!(harness.event_rx.try_recv().is_err());
+        assert!(!harness.dispatch_state.emitted_accepted.contains(&cl_a));
+        assert!(!harness.dispatch_state.emitted_accepted.contains(&cl_b));
+        assert_eq!(harness.state.pending_len(), 0);
+    }
+
+    /// Kraken rejects a `batch_add` whose validation fails as a whole, so each leg is rejected
+    /// with Kraken's error, or `UNKNOWN` when the response carries none.
+    #[rstest]
+    #[case::with_error(Some("EOrder:Insufficient funds"), "EOrder:Insufficient funds")]
+    #[case::without_error(None, "UNKNOWN")]
+    fn test_handle_response_batch_add_failure_rejects_each_leg_with_venue_error(
+        #[case] error: Option<&str>,
+        #[case] expected_reason: &str,
+    ) {
+        let mut harness = make_harness(60_000);
+        let (cl_a, cl_b) = insert_pending_batch(&harness, 72);
+        let response = decode_batch_add_response(serde_json::json!({
+            "method": "batch_add",
+            "req_id": 72,
+            "success": false,
+            "error": error,
+        }));
+
+        harness.state.handle_response(&response, 9_000);
+
+        for client_order_id in [cl_a, cl_b] {
+            match harness.event_rx.try_recv().expect("rejected leg") {
+                OrderEventAny::Rejected(e) => {
+                    assert_eq!(e.client_order_id, client_order_id);
+                    assert_eq!(e.reason, expected_reason);
+                }
+                other => panic!("expected Rejected for {client_order_id}, was {other:?}"),
+            }
+        }
+        assert!(harness.event_rx.try_recv().is_err());
+        assert_eq!(harness.state.pending_len(), 0);
+    }
+
     #[rstest]
     fn test_handle_response_batch_add_emits_per_leg_events() {
         let mut harness = make_harness(60_000);
@@ -1976,13 +2215,13 @@ mod tests {
                 warning: None,
                 orders: Some(vec![
                     KrakenWsBatchOrderResult {
-                        success: true,
+                        success: Some(true),
                         order_id: Some("V-A".to_string()),
                         cl_ord_id: Some("O-A".to_string()),
                         error: None,
                     },
                     KrakenWsBatchOrderResult {
-                        success: false,
+                        success: Some(false),
                         order_id: None,
                         cl_ord_id: Some("O-B".to_string()),
                         error: Some("Bad price".to_string()),
@@ -2049,13 +2288,13 @@ mod tests {
                 warning: None,
                 orders: Some(vec![
                     KrakenWsBatchOrderResult {
-                        success: true,
+                        success: Some(true),
                         order_id: Some("V-B".to_string()),
                         cl_ord_id: Some("O-B".to_string()),
                         error: None,
                     },
                     KrakenWsBatchOrderResult {
-                        success: true,
+                        success: Some(true),
                         order_id: Some("V-A".to_string()),
                         cl_ord_id: Some("O-A".to_string()),
                         error: None,
@@ -2125,7 +2364,7 @@ mod tests {
                 order_userref: None,
                 warning: None,
                 orders: Some(vec![KrakenWsBatchOrderResult {
-                    success: true,
+                    success: Some(true),
                     order_id: Some("V-A".to_string()),
                     cl_ord_id: Some("O-A".to_string()),
                     error: None,
@@ -2359,13 +2598,13 @@ mod tests {
                 warning: None,
                 orders: Some(vec![
                     KrakenWsBatchOrderResult {
-                        success: false,
+                        success: Some(false),
                         order_id: None,
                         cl_ord_id: Some("O-B".to_string()),
                         error: Some("Bad price".to_string()),
                     },
                     KrakenWsBatchOrderResult {
-                        success: true,
+                        success: Some(true),
                         order_id: Some("V-A".to_string()),
                         cl_ord_id: Some("O-A".to_string()),
                         error: None,
@@ -2576,7 +2815,7 @@ mod property_tests {
                             .iter()
                             .enumerate()
                             .map(|(i, cid)| KrakenWsBatchOrderResult {
-                                success,
+                                success: Some(success),
                                 order_id: success.then(|| format!("V-{req_id}-{i}")),
                                 cl_ord_id: Some(cid.as_str().to_string()),
                                 error: (!success).then(|| "test-error".to_string()),
