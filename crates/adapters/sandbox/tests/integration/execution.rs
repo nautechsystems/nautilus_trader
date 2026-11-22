@@ -2974,12 +2974,15 @@ async fn test_client_query_account_keeps_cached_margins(
 }
 
 #[rstest]
+#[case::disconnected(true)]
+#[case::connected(false)]
 #[tokio::test]
 async fn test_client_reset_reconnects_with_starting_balances(
     trader_id: TraderId,
     account_id: AccountId,
     venue: Venue,
     instrument: InstrumentAny,
+    #[case] disconnect_before_reset: bool,
 ) {
     *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
     let context = create_test_context(trader_id, account_id, venue);
@@ -2993,15 +2996,19 @@ async fn test_client_reset_reconnects_with_starting_balances(
 
     let mut client = context.client;
     client.connect().await.unwrap();
-    client.disconnect().await.unwrap();
+    if disconnect_before_reset {
+        client.disconnect().await.unwrap();
+    }
+
     client.reset();
+    assert!(!client.is_connected());
     client.connect().await.unwrap();
 
     let usd = Currency::USD();
     let starting = AccountBalance::new(
-        Money::new(100_000.0, usd),
+        Money::from("100000 USD"),
         Money::zero(usd),
-        Money::new(100_000.0, usd),
+        Money::from("100000 USD"),
     );
     let account = context.cache.borrow().account(&account_id).unwrap().clone();
     let events = account.events();
@@ -3033,6 +3040,63 @@ async fn test_client_reset_reconnects_with_starting_balances(
     let last = account.last_event().unwrap();
     assert_eq!(last.balances, later.balances);
     assert_eq!(last.margins, later.margins);
+}
+
+#[rstest]
+#[case::instrument_margin(true)]
+#[case::account_wide_margin(false)]
+#[tokio::test]
+async fn test_client_reset_clears_margin_without_balances(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+    #[case] instrument_scoped: bool,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let context = create_test_context_with(trader_id, account_id, venue, |config| {
+        config.starting_balances.clear();
+    });
+
+    let mut restored = restored_margin_account_state(account_id, instrument.id());
+    restored.balances.clear();
+    restored
+        .margins
+        .retain(|margin| margin.instrument_id.is_some() == instrument_scoped);
+    context
+        .cache
+        .borrow_mut()
+        .add_account(MarginAccount::new(restored, false).into())
+        .unwrap();
+    setup_account_state_handler(context.cache.clone());
+
+    let mut client = context.client;
+    client.reset();
+    client.connect().await.unwrap();
+    query_sandbox_account(&client, trader_id, account_id);
+
+    let account = context.cache.borrow().account_owned(&account_id).unwrap();
+    let events = account.events();
+    let zero = Money::zero(Currency::USD());
+    let starting = AccountBalance::new(zero, zero, zero);
+    assert_eq!(
+        events.len(),
+        3,
+        "connect and query should each emit a state"
+    );
+    assert_eq!(events[1].balances, vec![starting]);
+    assert_eq!(events[2].balances, vec![starting]);
+    assert!(events[1].margins.is_empty());
+    assert!(events[2].margins.is_empty());
+    assert_eq!(account.balances()[&Currency::USD()], starting);
+
+    let AccountAny::Margin(margin) = account else {
+        panic!("expected margin account");
+    };
+
+    assert!(margin.margins.is_empty());
+    assert!(margin.account_margins.is_empty());
 }
 
 #[rstest]

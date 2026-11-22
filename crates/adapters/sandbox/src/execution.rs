@@ -594,7 +594,12 @@ impl SandboxExecutionClient {
         Ok(())
     }
 
-    /// Resets the sandbox to its initial state.
+    /// Resets the matching engines and marks the client disconnected.
+    ///
+    /// The next connection restores the configured starting balances and clears margins.
+    /// Cancel open orders before resetting this client in isolation. If open orders remain
+    /// in this account's cache, reconnecting fails. Resetting the execution engine clears
+    /// cached orders for all clients.
     pub fn reset(&self) {
         let mut inner = self.inner.borrow_mut();
         for engine in inner.matching_engines.values_mut() {
@@ -611,6 +616,7 @@ impl SandboxExecutionClient {
         inner.clear_inbound_queue();
         self.cancel_inbound_alert();
         self.reset_pending.set(true);
+        self.core.borrow().set_disconnected();
 
         log::info!(
             "Sandbox execution client reset: venue={}",
@@ -647,8 +653,35 @@ impl SandboxExecutionClient {
                     .flatten()
                     .map(|(_, currency)| *currency);
 
+                let cached_balances = account.balances();
+
+                // A balance-less snapshot with no margins preserves the existing margins
+                let margin_currencies = match &*account {
+                    AccountAny::Margin(margin)
+                        if balances.is_empty() && cached_balances.is_empty() =>
+                    {
+                        Some(
+                            margin
+                                .margins
+                                .values()
+                                .chain(margin.account_margins.values()),
+                        )
+                    }
+                    _ => None,
+                };
+
+                let margin_currencies = margin_currencies
+                    .into_iter()
+                    .flatten()
+                    .map(|margin| margin.currency);
+
                 // A reset can rewind the clock, so explicitly zero omitted currencies
-                for currency in account.balances().into_keys().chain(reserved_currencies) {
+                let currencies_to_reset = cached_balances
+                    .into_keys()
+                    .chain(reserved_currencies)
+                    .chain(margin_currencies);
+
+                for currency in currencies_to_reset {
                     if currencies.insert(currency) {
                         let zero = Money::zero(currency);
                         balances.push(AccountBalance::new(zero, zero, zero));
