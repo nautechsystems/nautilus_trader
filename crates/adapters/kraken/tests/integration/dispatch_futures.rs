@@ -809,6 +809,64 @@ fn test_futures_delta_modify_ack_emits_order_updated() {
     ));
 }
 
+/// A tracked stop's open-orders delta with a new `stop_price` acknowledges a trigger edit: it
+/// emits `OrderUpdated` with that trigger and no limit price.
+#[rstest]
+fn test_futures_delta_stop_price_change_emits_updated_trigger() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("uuid-modify-stop");
+    state.register_identity(
+        cid,
+        make_identity(
+            FUTURES_INSTRUMENT_ID,
+            OrderSide::Sell,
+            OrderType::StopMarket,
+        ),
+    );
+    let instruments = instruments_with(make_futures_perpetual());
+    let stop_delta = |stop_price| {
+        let mut delta = make_open_orders_delta(
+            false,
+            None,
+            dec!(0.0001),
+            dec!(0.0),
+            Some("uuid-modify-stop"),
+            "v-modify-stop",
+        );
+        delta.order.order_type = KrakenFuturesOrderType::Stop;
+        delta.order.limit_price = None;
+        delta.order.stop_price = Some(stop_price);
+        delta
+    };
+
+    for delta in [stop_delta(dec!(48000)), stop_delta(dec!(48500))] {
+        dispatch::futures::open_orders_delta(
+            &delta,
+            &state,
+            &emitter,
+            &instruments,
+            &empty_string_map(),
+            &empty_instrument_id_map(),
+            &empty_string_map(),
+            &empty_quantity_map(),
+            account_id(),
+            UnixNanos::default(),
+        );
+    }
+
+    let updated: Vec<_> = drain_events(&mut rx)
+        .into_iter()
+        .filter_map(|event| match event {
+            ExecutionEvent::Order(OrderEventAny::Updated(updated)) => Some(updated),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(updated.len(), 1);
+    assert_eq!(updated[0].trigger_price, Some(Price::from("48500.0")));
+    assert_eq!(updated[0].price, None);
+}
+
 #[rstest]
 fn test_futures_delta_no_op_repeat_does_not_emit_updated() {
     // Two identical deltas - nothing changed - must not emit OrderUpdated.

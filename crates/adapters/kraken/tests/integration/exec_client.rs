@@ -8663,6 +8663,117 @@ async fn test_futures_query_order_names_the_report_by_the_cached_order() {
     );
 }
 
+/// The form fields of the first recorded command request to `path`, sorted, without the nonce.
+async fn recorded_command_fields(state: &TestServerState, path: &str) -> Vec<(String, String)> {
+    let requests = state.command_requests.lock().await;
+    let request = requests
+        .iter()
+        .find(|request| request.starts_with(path))
+        .expect("the command request is recorded");
+
+    let mut fields: Vec<(String, String)> = request
+        .split_whitespace()
+        .skip(1)
+        .flat_map(|part| part.split('&'))
+        .filter_map(|pair| pair.split_once('='))
+        .filter(|(key, _)| *key != "nonce")
+        .map(|(key, value)| (key.to_string(), value.to_string()))
+        .collect();
+    fields.sort();
+    fields
+}
+
+fn stop_limit_modify_command(
+    order: &OrderAny,
+    quantity: Option<&str>,
+    price: Option<&str>,
+    trigger_price: Option<&str>,
+) -> ModifyOrder {
+    ModifyOrder::new(
+        test_trader_id(),
+        Some(*KRAKEN_CLIENT_ID),
+        test_strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        Some(VenueOrderId::from("V-1")),
+        quantity.map(Quantity::from),
+        price.map(Price::from),
+        trigger_price.map(Price::from),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+fn add_stop_limit_order_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: ClientOrderId,
+) -> OrderAny {
+    let order = OrderTestBuilder::new(OrderType::StopLimit)
+        .trader_id(test_trader_id())
+        .strategy_id(test_strategy_id())
+        .instrument_id(test_instrument_id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1"))
+        .price(Price::from("47500"))
+        .trigger_price(Price::from("47600"))
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    order
+}
+
+/// A modify's new trigger price reaches Kraken Futures as the edit's `stopPrice`, beside any new
+/// size or limit price, and a modify without one sends none.
+#[rstest]
+#[case::trigger_only(None, None, Some("48000"), &[("orderId", "V-1"), ("stopPrice", "48000")])]
+#[case::price_and_trigger(
+    None,
+    Some("47900"),
+    Some("48000"),
+    &[("limitPrice", "47900"), ("orderId", "V-1"), ("stopPrice", "48000")]
+)]
+#[case::quantity_and_trigger(
+    Some("2"),
+    None,
+    Some("48000"),
+    &[("orderId", "V-1"), ("qtyMode", "ABSOLUTE"), ("size", "2"), ("stopPrice", "48000")]
+)]
+#[case::price_only(None, Some("47900"), None, &[("limitPrice", "47900"), ("orderId", "V-1")])]
+#[tokio::test]
+async fn test_futures_modify_sends_trigger_price_as_stop_price(
+    #[case] quantity: Option<&str>,
+    #[case] price: Option<&str>,
+    #[case] trigger_price: Option<&str>,
+    #[case] expected: &[(&str, &str)],
+) {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let order =
+        add_stop_limit_order_to_cache(&cache, ClientOrderId::new("futures-modify-trigger-001"));
+
+    client
+        .modify_order(stop_limit_modify_command(
+            &order,
+            quantity,
+            price,
+            trigger_price,
+        ))
+        .unwrap();
+
+    wait_for_count(&state.modify_request_count, 1).await;
+    let fields = recorded_command_fields(&state, "/derivatives/api/v3/editorder").await;
+    let expected: Vec<(String, String)> = expected
+        .iter()
+        .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+        .collect();
+    assert_eq!(fields, expected);
+}
+
 /// A cancel or edit names the order by one identifier: its venue order ID when known, else its
 /// full client order ID. An order sent with a shortened client order ID is held under that form,
 /// so its full ID beside the venue order ID could name no order.
