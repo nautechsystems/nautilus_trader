@@ -158,7 +158,11 @@ pub struct KrakenWsAddOrderParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reduce_only: Option<bool>,
     /// Trigger parameters for stop/take-profit orders.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "triggers",
+        alias = "trigger",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub trigger: Option<KrakenWsTriggerParams>,
     /// Leverage multiplier for margin orders; omit for non-margin (cash) orders.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -263,7 +267,11 @@ pub struct KrakenWsBatchAddOrder {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub leverage: Option<u16>,
     /// Trigger parameters for stop-loss and take-profit order types.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "triggers",
+        alias = "trigger",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub trigger: Option<KrakenWsTriggerParams>,
 }
 
@@ -1081,11 +1089,15 @@ mod tests {
             "leverage must be serialized for margin batch legs",
         );
         assert!(
-            value.get("trigger").is_some(),
-            "trigger must be serialized for conditional batch legs",
+            value.get("triggers").is_some(),
+            "triggers must be serialized for conditional batch legs",
         );
-        assert_eq!(value["trigger"]["reference"], "last");
-        assert_eq!(value["trigger"]["price"].to_string(), "30500.0");
+        assert!(
+            value.get("trigger").is_none(),
+            "deprecated trigger field must not be serialized",
+        );
+        assert_eq!(value["triggers"]["reference"], "last");
+        assert_eq!(value["triggers"]["price"].to_string(), "30500.0");
     }
 
     #[rstest]
@@ -1111,9 +1123,82 @@ mod tests {
             "leverage must be omitted when None"
         );
         assert!(
+            value.get("triggers").is_none(),
+            "triggers must be omitted when None"
+        );
+        assert!(
             value.get("trigger").is_none(),
             "trigger must be omitted when None"
         );
+    }
+
+    #[rstest]
+    fn test_add_order_serializes_triggers_for_stop_order() {
+        let params = KrakenWsAddOrderParams {
+            order_type: KrakenOrderType::StopLossLimit,
+            side: KrakenOrderSide::Buy,
+            order_qty: dec!(1.5),
+            symbol: "USDC/EUR".to_string(),
+            token: SecretString::from("token123"),
+            limit_price: Some(dec!(0.9132)),
+            time_in_force: None,
+            expire_time: None,
+            cl_ord_id: Some("client-order-id".to_string()),
+            post_only: None,
+            reduce_only: None,
+            trigger: Some(KrakenWsTriggerParams {
+                reference: KrakenSpotTrigger::Last,
+                price: dec!(0.9121),
+                price_type: None,
+            }),
+            leverage: None,
+            conditional: None,
+        };
+        let value: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string(&params).expect("serialize"))
+                .expect("json");
+
+        assert!(
+            value.get("triggers").is_some(),
+            "triggers object must be serialized for single stop order",
+        );
+        assert!(
+            value.get("trigger").is_none(),
+            "deprecated trigger field must not be serialized",
+        );
+        assert_eq!(value["triggers"]["reference"], "last");
+        assert_eq!(value["triggers"]["price"].to_string(), "0.9121");
+    }
+
+    #[rstest]
+    fn test_batch_add_order_deserializes_triggers_and_legacy_trigger_alias() {
+        let json_with_triggers = r#"{
+            "order_type": "stop-loss-limit",
+            "side": "buy",
+            "order_qty": "0.01",
+            "triggers": {
+                "reference": "last",
+                "price": "30500.0"
+            }
+        }"#;
+        let parsed: KrakenWsBatchAddOrder =
+            serde_json::from_str(json_with_triggers).expect("parse triggers");
+        assert!(parsed.trigger.is_some());
+        assert_eq!(parsed.trigger.as_ref().unwrap().price, dec!(30500.0));
+
+        let json_with_legacy_trigger = r#"{
+            "order_type": "stop-loss-limit",
+            "side": "buy",
+            "order_qty": "0.01",
+            "trigger": {
+                "reference": "last",
+                "price": "30500.0"
+            }
+        }"#;
+        let parsed_legacy: KrakenWsBatchAddOrder =
+            serde_json::from_str(json_with_legacy_trigger).expect("parse legacy trigger");
+        assert!(parsed_legacy.trigger.is_some());
+        assert_eq!(parsed_legacy.trigger.as_ref().unwrap().price, dec!(30500.0));
     }
 
     #[rstest]
