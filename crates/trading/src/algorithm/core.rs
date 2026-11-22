@@ -237,7 +237,7 @@ impl ExecutionAlgorithmCore {
                 primary_str.to_string()
             };
             let base = base.replace('-', "");
-            let max_base_len = 32usize.saturating_sub(suffix.len());
+            let max_base_len = 32_usize.saturating_sub(suffix.len());
             let trimmed_base = if base.len() > max_base_len {
                 &base[..max_base_len]
             } else {
