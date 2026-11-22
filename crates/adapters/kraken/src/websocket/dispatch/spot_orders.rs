@@ -2368,16 +2368,16 @@ mod property_tests {
         fn no_pending_leak_on_random_response_interleaving(
             ops in proptest::collection::vec(
                 prop_oneof![
-                    Just((PendingOperation::Submit, true, 1usize)),
-                    Just((PendingOperation::Submit, false, 1usize)),
-                    Just((PendingOperation::Amend, true, 1usize)),
-                    Just((PendingOperation::Amend, false, 1usize)),
-                    Just((PendingOperation::Cancel, true, 1usize)),
-                    Just((PendingOperation::Cancel, false, 1usize)),
-                    (2usize..=4usize).prop_map(|n| (PendingOperation::BatchAdd, true, n)),
-                    (2usize..=4usize).prop_map(|n| (PendingOperation::BatchAdd, false, n)),
+                    Just((PendingOperation::Submit, true, 1_usize)),
+                    Just((PendingOperation::Submit, false, 1_usize)),
+                    Just((PendingOperation::Amend, true, 1_usize)),
+                    Just((PendingOperation::Amend, false, 1_usize)),
+                    Just((PendingOperation::Cancel, true, 1_usize)),
+                    Just((PendingOperation::Cancel, false, 1_usize)),
+                    (2_usize..=4_usize).prop_map(|n| (PendingOperation::BatchAdd, true, n)),
+                    (2_usize..=4_usize).prop_map(|n| (PendingOperation::BatchAdd, false, n)),
                 ],
-                1..50usize,
+                1..50_usize,
             )
         ) {
             let h = make_harness(60_000);

@@ -575,7 +575,7 @@ mod tests {
     #[rstest]
     fn test_parse_order_update_to_order_status_new() {
         let msg: BinanceFuturesOrderUpdateMsg = load_user_data_fixture("order_update_new.json");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = parse_futures_order_update_to_order_status(
             &msg,
@@ -611,7 +611,7 @@ mod tests {
             SIZE_PRECISION,
             account_id(),
             false,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         )
         .unwrap();
 
@@ -649,7 +649,7 @@ mod tests {
     fn test_parse_order_update_to_order_status_captures_activation_price() {
         let mut msg: BinanceFuturesOrderUpdateMsg = load_user_data_fixture("order_update_new.json");
         msg.order.activation_price = Some("1650.50".to_string());
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = parse_futures_order_update_to_order_status(
             &msg,
@@ -670,7 +670,7 @@ mod tests {
         let mut msg: BinanceFuturesOrderUpdateMsg = load_user_data_fixture("order_update_new.json");
         msg.order.time_in_force = BinanceTimeInForce::Gtd;
         msg.order.good_till_date = Some(1_700_000_601_000);
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = parse_futures_order_update_to_order_status(
             &msg,
@@ -694,7 +694,7 @@ mod tests {
     fn test_parse_order_update_to_order_status_rejects_invalid_quantity() {
         let mut msg: BinanceFuturesOrderUpdateMsg = load_user_data_fixture("order_update_new.json");
         msg.order.original_qty = "not-a-number".to_string();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let result = parse_futures_order_update_to_order_status(
             &msg,
@@ -714,7 +714,7 @@ mod tests {
     fn test_parse_order_update_to_order_status_rejects_invalid_filled_quantity() {
         let mut msg: BinanceFuturesOrderUpdateMsg = load_user_data_fixture("order_update_new.json");
         msg.order.cumulative_filled_qty = "not-a-number".to_string();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let result = parse_futures_order_update_to_order_status(
             &msg,
@@ -734,7 +734,7 @@ mod tests {
     fn test_parse_order_update_to_order_status_rejects_invalid_price() {
         let mut msg: BinanceFuturesOrderUpdateMsg = load_user_data_fixture("order_update_new.json");
         msg.order.original_price = "not-a-number".to_string();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let result = parse_futures_order_update_to_order_status(
             &msg,
@@ -757,7 +757,7 @@ mod tests {
         msg.order.average_price = "not-a-number".to_string();
         msg.order.stop_price = "not-a-number".to_string();
         msg.order.callback_rate = Some("not-a-number".to_string());
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = parse_futures_order_update_to_order_status(
             &msg,
@@ -778,7 +778,7 @@ mod tests {
     #[rstest]
     fn test_parse_order_update_to_fill_report() {
         let msg: BinanceFuturesOrderUpdateMsg = load_user_data_fixture("order_update_trade.json");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         assert_eq!(
             msg.order.stp_mode,
@@ -814,7 +814,7 @@ mod tests {
         let mut msg: BinanceFuturesOrderUpdateMsg =
             load_user_data_fixture("order_update_trade.json");
         msg.order.last_filled_price = "not-a-number".to_string();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let result = parse_futures_order_update_to_fill(
             &msg,
@@ -838,7 +838,7 @@ mod tests {
         let mut msg: BinanceFuturesOrderUpdateMsg =
             load_user_data_fixture("order_update_trade.json");
         msg.order.last_filled_qty = "not-a-number".to_string();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let result = parse_futures_order_update_to_fill(
             &msg,
@@ -862,7 +862,7 @@ mod tests {
         let mut msg: BinanceFuturesOrderUpdateMsg =
             load_user_data_fixture("order_update_trade.json");
         msg.order.commission = Some("not-a-number".to_string());
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let result = parse_futures_order_update_to_fill(
             &msg,
@@ -884,7 +884,7 @@ mod tests {
     #[rstest]
     fn test_parse_account_update() {
         let msg: BinanceFuturesAccountUpdateMsg = load_user_data_fixture("account_update.json");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let state =
             parse_futures_account_update(&msg, account_id(), Currency::USDT(), ts_init).unwrap();
@@ -906,7 +906,7 @@ mod tests {
     ) {
         let msg: BinanceFuturesAccountUpdateMsg =
             load_user_data_fixture("account_update_bnfcr.json");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let state =
             parse_futures_account_update(&msg, account_id(), bnfcr_currency, ts_init).unwrap();
@@ -939,7 +939,7 @@ mod tests {
             }
         }"#;
         let msg: BinanceFuturesAccountUpdateMsg = serde_json::from_str(json).unwrap();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let state =
             parse_futures_account_update(&msg, account_id(), Currency::USDT(), ts_init).unwrap();
@@ -952,7 +952,7 @@ mod tests {
     #[rstest]
     fn test_parse_algo_update_to_order_status_canceled() {
         let msg: BinanceFuturesAlgoUpdateMsg = load_user_data_fixture("algo_update_canceled.json");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         assert_eq!(
             msg.algo_order.stp_mode,
@@ -990,11 +990,11 @@ mod tests {
         assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
         assert_eq!(
             report.ts_accepted,
-            UnixNanos::from(1_750_515_742_303_000_000u64)
+            UnixNanos::from(1_750_515_742_303_000_000_u64)
         );
         assert_eq!(
             report.ts_last,
-            UnixNanos::from(1_750_515_742_303_000_000u64)
+            UnixNanos::from(1_750_515_742_303_000_000_u64)
         );
         assert_eq!(report.ts_init, ts_init);
     }
@@ -1005,7 +1005,7 @@ mod tests {
             load_user_data_fixture("algo_update_canceled.json");
         msg.algo_order.time_in_force = BinanceTimeInForce::Gtd;
         msg.algo_order.good_till_date = Some(1_700_000_601_000);
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = parse_futures_algo_update_to_order_status(
             &msg.algo_order,
@@ -1181,7 +1181,7 @@ mod tests {
     fn test_parse_liquidation_fill() {
         let msg: BinanceFuturesOrderUpdateMsg =
             load_user_data_fixture("order_update_calculated.json");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         assert!(msg.order.is_liquidation());
         assert!(msg.order.is_exchange_generated());
@@ -1222,7 +1222,7 @@ mod tests {
     fn test_parse_liquidation_status_report() {
         let msg: BinanceFuturesOrderUpdateMsg =
             load_user_data_fixture("order_update_calculated.json");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let status = parse_futures_order_update_to_order_status(
             &msg,
@@ -1251,7 +1251,7 @@ mod tests {
     #[rstest]
     fn test_parse_adl_fill_with_new_adl_status() {
         let msg: BinanceFuturesOrderUpdateMsg = load_user_data_fixture("order_update_adl.json");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         assert!(msg.order.is_adl());
         assert!(msg.order.is_exchange_generated());
@@ -1285,7 +1285,7 @@ mod tests {
     #[rstest]
     fn test_parse_adl_status_report_maps_new_adl_to_filled() {
         let msg: BinanceFuturesOrderUpdateMsg = load_user_data_fixture("order_update_adl.json");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let status = parse_futures_order_update_to_order_status(
             &msg,
@@ -1306,7 +1306,7 @@ mod tests {
     fn test_parse_settlement_fill_with_trade_exec_type() {
         let msg: BinanceFuturesOrderUpdateMsg =
             load_user_data_fixture("order_update_settlement.json");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         assert!(msg.order.is_settlement());
         assert!(msg.order.is_exchange_generated());
@@ -1424,7 +1424,7 @@ mod tests {
             None,
             Currency::USDT(),
             None,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         )
         .unwrap();
 
@@ -1449,7 +1449,7 @@ mod tests {
             SIZE_PRECISION,
             account_id(),
             false,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         )
         .unwrap();
 
@@ -1468,7 +1468,7 @@ mod tests {
             SIZE_PRECISION,
             account_id(),
             false,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         )
         .unwrap();
 
@@ -1558,7 +1558,7 @@ mod tests {
     ) {
         let msg: BinanceFuturesOrderUpdateMsg =
             load_user_data_fixture("order_update_calculated.json");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let fill = parse_futures_order_update_to_fill(
             &msg,

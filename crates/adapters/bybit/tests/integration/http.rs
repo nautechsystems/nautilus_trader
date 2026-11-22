@@ -3793,7 +3793,7 @@ async fn handle_get_klines_partial_first_page(
         .unwrap()
         .as_millis() as i64;
 
-    let bar_duration_ms = 60_000i64;
+    let bar_duration_ms = 60_000_i64;
     let partial_bar_start = (now_ms / bar_duration_ms) * bar_duration_ms;
 
     if page == 1 {
@@ -5373,7 +5373,7 @@ async fn test_get_sub_members_paged_sends_cursor_and_size() {
     let client = user_test_client(format!("http://{addr}"));
 
     let params = BybitSubMembersPageParamsBuilder::default()
-        .page_size(50u32)
+        .page_size(50_u32)
         .next_cursor("page-token-xyz".to_string())
         .build()
         .unwrap();
@@ -5402,7 +5402,7 @@ async fn test_get_escrow_sub_members_hits_escrow_route() {
     let client = user_test_client(format!("http://{addr}"));
 
     let params = BybitSubMembersPageParamsBuilder::default()
-        .page_size(20u32)
+        .page_size(20_u32)
         .build()
         .unwrap();
 
@@ -5432,7 +5432,7 @@ async fn test_get_sub_api_keys_sends_required_params() {
 
     let params = BybitSubApiKeysParamsBuilder::default()
         .sub_member_id("533285".to_string())
-        .limit(10u32)
+        .limit(10_u32)
         .cursor("next-token".to_string())
         .build()
         .unwrap();

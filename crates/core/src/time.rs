@@ -802,7 +802,7 @@ mod tests {
         let writer_done = Arc::clone(&done);
 
         let writer = std::thread::spawn(move || {
-            for i in 1..=1_000u64 {
+            for i in 1..=1_000_u64 {
                 writer_aux.store(i, Ordering::Relaxed);
 
                 // Release store via set_time creates a release fence - all prior writes (including aux_data)
@@ -822,8 +822,8 @@ mod tests {
         let reader_done = Arc::clone(&done);
 
         let reader = std::thread::spawn(move || {
-            let mut last_time = 0u64;
-            let mut max_aux_seen = 0u64;
+            let mut last_time = 0_u64;
+            let mut max_aux_seen = 0_u64;
 
             // Poll until writer is done, with no iteration limit
             while !reader_done.load(Ordering::Acquire) {
@@ -884,7 +884,7 @@ mod tests {
         let writer_done = Arc::clone(&done);
 
         let writer = std::thread::spawn(move || {
-            for i in 1..=1_000u64 {
+            for i in 1..=1_000_u64 {
                 writer_aux.store(i, Ordering::Relaxed);
                 let _ = writer_clock
                     .increment_time(DurationNanos::new(1000))
@@ -900,8 +900,8 @@ mod tests {
         let reader_done = Arc::clone(&done);
 
         let reader = std::thread::spawn(move || {
-            let mut last_time = 0u64;
-            let mut max_aux = 0u64;
+            let mut last_time = 0_u64;
+            let mut max_aux = 0_u64;
 
             // Poll until writer is done, with no iteration limit
             while !reader_done.load(Ordering::Acquire) {

@@ -150,7 +150,7 @@ impl L2TxAttributes {
     /// [`NB_ATTRIBUTES_PER_TX`] entries.
     pub(super) fn normalized_pairs(&self) -> anyhow::Result<[(u8, u64); NB_ATTRIBUTES_PER_TX]> {
         self.validate()?;
-        let mut filled = [(0u8, 0u64); NB_ATTRIBUTES_PER_TX];
+        let mut filled = [(0_u8, 0_u64); NB_ATTRIBUTES_PER_TX];
         let mut i = 0;
         let mut push = |ty: u8, val: u64| {
             if val != 0 {

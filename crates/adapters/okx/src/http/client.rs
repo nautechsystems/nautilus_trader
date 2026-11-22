@@ -689,7 +689,7 @@ mod tests {
     async fn test_request_bars_paged_is_truncated_at_the_page_cap() {
         // A day of minute candles, a window ten days long: two history pages of 100 cannot reach the start
         let first: Timestamp = "2026-09-01T00:00:00Z".parse().unwrap();
-        let candles: Vec<serde_json::Value> = (0..1_440i64)
+        let candles: Vec<serde_json::Value> = (0..1_440_i64)
             .rev()
             .map(|index| {
                 let ts = first.as_millisecond() + index * 60_000;
@@ -3900,13 +3900,13 @@ impl OKXHttpClient {
         // standalone `before` requests (type=2)
         if matches!(mode, Mode::Backward | Mode::Range) {
             let mut before_trade_id: Option<String> = None;
-            let mut pages = 0usize;
+            let mut pages = 0_usize;
             let mut page_results: Vec<Vec<TradeTick>> = Vec::new();
             let mut seen_trades: AHashSet<(String, i64)> = AHashSet::new();
-            let mut unique_count = 0usize;
-            let mut consecutive_empty_pages = 0usize;
+            let mut unique_count = 0_usize;
+            let mut consecutive_empty_pages = 0_usize;
             let mut coverage = OKXHistoryCoverage::Unverified;
-            let mut parse_failures = 0usize;
+            let mut parse_failures = 0_usize;
 
             // Only apply default limit when there's no start boundary
             // (start provides a natural stopping point, end alone allows infinite backward pagination)
@@ -3981,8 +3981,8 @@ impl OKXHttpClient {
 
                 let mut page_trades: Vec<TradeTick> = Vec::with_capacity(raw.len());
                 let mut hit_start_boundary = false;
-                let mut filtered_out = 0usize;
-                let mut duplicates = 0usize;
+                let mut filtered_out = 0_usize;
+                let mut duplicates = 0_usize;
 
                 for r in &raw {
                     // Historical trades use their own time as ts_init: the data engine trims
@@ -4370,7 +4370,7 @@ impl OKXHttpClient {
         let inst = self.instrument_from_cache_by_id(instrument_id)?;
 
         let mut out: Vec<Bar> = Vec::new();
-        let mut pages = 0usize;
+        let mut pages = 0_usize;
 
         // IMPORTANT: OKX API has COUNTER-INTUITIVE semantics (same for bars and trades):
         // - after=X returns records with timestamp < X (upper bound, despite the name!)
@@ -4406,7 +4406,7 @@ impl OKXHttpClient {
         }
 
         let mut have_latest_first_page = false;
-        let mut progressless_loops = 0u8;
+        let mut progressless_loops = 0_u8;
         let mut truncated = false;
         // Open times of candles OKX has not confirmed yet; they rule out a covered window
         let mut unconfirmed: Vec<UnixNanos> = Vec::new();

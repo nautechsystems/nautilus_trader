@@ -72,7 +72,7 @@ pub(crate) fn compute_checksum(open_orders: &AHashMap<u64, CachedL3Order>) -> u3
 
 /// Appends the top-10 price levels (all orders per level, in queue order) to `s`.
 fn append_top_10_levels(sorted: &[CheckedOrder], s: &mut String) {
-    let mut level_count = 0u32;
+    let mut level_count = 0_u32;
     let mut last_price: Option<Decimal> = None;
 
     for &(price, _, price_raw, size_raw) in sorted {
@@ -142,7 +142,7 @@ mod tests {
         // BID side - 10 levels, 21 orders total, descending price
         // Level 1: 44939.4 × 8 orders
         for (key, (size_raw, seq)) in [
-            ("0.88968699", 1u64),
+            ("0.88968699", 1_u64),
             ("0.45210000", 2),
             ("0.10000000", 3),
             ("0.14296323", 4),
@@ -194,9 +194,10 @@ mod tests {
                 seq: 10,
             },
         );
+
         // Level 4: 44930.2 × 5
         for (size_raw, seq) in [
-            ("0.22734299", 11u64),
+            ("0.22734299", 11_u64),
             ("0.1000000", 12),
             ("0.5550000", 13),
             ("0.70000000", 14),
@@ -297,7 +298,7 @@ mod tests {
         // ASK side - 10 levels, 14 orders total, ascending price
         // Level 1: 44939.5 × 4 orders
         for (size_raw, seq) in [
-            ("4.52308393", 22u64),
+            ("4.52308393", 22_u64),
             ("0.00111261", 23),
             ("0.00100000", 24),
             ("0.01000000", 25),
@@ -453,7 +454,7 @@ mod tests {
             format!("{expected_asks}{expected_bids}"),
             "checksum string mismatch\ngot:      {result}\nexpected: {expected_asks}{expected_bids}",
         );
-        assert_eq!(compute_checksum(&orders), 1_063_832_831u32);
+        assert_eq!(compute_checksum(&orders), 1_063_832_831_u32);
     }
 
     #[rstest]

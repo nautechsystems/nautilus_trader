@@ -91,7 +91,7 @@ fn interned_map(map: &IndexMap<Ustr, Ustr>) -> usize {
 pub(super) fn book(book: &OrderBook) -> usize {
     book.bids(None)
         .chain(book.asks(None))
-        .fold(0usize, |bytes, level| {
+        .fold(0_usize, |bytes, level| {
             bytes
                 .saturating_add(size_of::<BookLevel>())
                 .saturating_add(level.len().saturating_mul(size_of::<(u64, BookOrder)>()))

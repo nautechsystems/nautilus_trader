@@ -76,7 +76,7 @@ impl PortfolioStatistic for LongRatio {
 
         let value = long_count as f64 / positions.len() as f64;
 
-        let scale = 10f64.powi(self.precision as i32);
+        let scale = 10_f64.powi(self.precision as i32);
         Some((value * scale).round() / scale)
     }
     fn calculate_from_returns(&self, _returns: &Returns) -> Option<Self::Item> {

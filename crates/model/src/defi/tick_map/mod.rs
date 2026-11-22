@@ -421,8 +421,8 @@ mod tests {
             -2,
             0,
             0,
-            U256::MAX - U256::from(3u32), // MaxUint256 - 3
-            U256::MAX - U256::from(2u32), // MaxUint256 - 2
+            U256::MAX - U256::from(3_u32), // MaxUint256 - 3
+            U256::MAX - U256::from(2_u32), // MaxUint256 - 2
             true,
             0,
         ));
@@ -430,8 +430,8 @@ mod tests {
             2,
             0,
             0,
-            U256::from(3u32),
-            U256::from(5u32),
+            U256::from(3_u32),
+            U256::from(5_u32),
             true,
             0,
         ));
@@ -439,8 +439,8 @@ mod tests {
         let fee_growth_global_1 = U256::from(15);
         let (fee_growth_inside_0, fee_growth_inside_1) =
             tick_map.get_fee_growth_inside(-2, 2, 0, fee_growth_global_0, fee_growth_global_1);
-        assert_eq!(fee_growth_inside_0, U256::from(16u32));
-        assert_eq!(fee_growth_inside_1, U256::from(13u32));
+        assert_eq!(fee_growth_inside_0, U256::from(16_u32));
+        assert_eq!(fee_growth_inside_1, U256::from(13_u32));
     }
 
     #[rstest]
@@ -557,8 +557,8 @@ mod tests {
         let tick = tick_map.get_tick(1).unwrap();
 
         // Since tick <= current_tick, fee growth outside should be set to global values
-        assert_eq!(tick.fee_growth_outside_0, U256::from(15u32));
-        assert_eq!(tick.fee_growth_outside_1, U256::from(2u32));
+        assert_eq!(tick.fee_growth_outside_0, U256::from(15_u32));
+        assert_eq!(tick.fee_growth_outside_1, U256::from(2_u32));
         assert!(tick.initialized);
         assert_eq!(tick.liquidity_gross, 1);
         assert_eq!(tick.liquidity_net, 1);
@@ -580,8 +580,8 @@ mod tests {
         let tick = tick_map.get_tick(1).unwrap();
 
         // Fee growth outside should still be the original values from first initialization
-        assert_eq!(tick.fee_growth_outside_0, U256::from(1u32)); // Still 1, not 6
-        assert_eq!(tick.fee_growth_outside_1, U256::from(2u32)); // Still 2, not 7
+        assert_eq!(tick.fee_growth_outside_0, U256::from(1_u32)); // Still 1, not 6
+        assert_eq!(tick.fee_growth_outside_1, U256::from(2_u32)); // Still 2, not 7
         assert!(tick.initialized);
         assert_eq!(tick.liquidity_gross, 2); // Should be 1 + 1 = 2
         assert_eq!(tick.liquidity_net, 2); // Should be 1 + 1 = 2
@@ -591,7 +591,7 @@ mod tests {
     fn test_update_does_not_set_growth_fields_for_ticks_gt_current_tick() {
         let mut tick_map = TickMap::new(1);
         let fee_growth_global_0 = U256::from(1);
-        let fee_growth_global_1 = U256::from(2u32);
+        let fee_growth_global_1 = U256::from(2_u32);
         // Update tick 2 when current tick is 1 (tick > current_tick)
         tick_map.update(2, 1, 1, false, fee_growth_global_0, fee_growth_global_1);
 
@@ -612,16 +612,16 @@ mod tests {
             2,
             3,
             4,
-            U256::from(1u32),
-            U256::from(2u32),
+            U256::from(1_u32),
+            U256::from(2_u32),
             true,
             0,
         ));
 
         // Verify the tick exists with the set data
         let tick_before = tick_map.get_tick(2).unwrap();
-        assert_eq!(tick_before.fee_growth_outside_0, U256::from(1u32));
-        assert_eq!(tick_before.fee_growth_outside_1, U256::from(2u32));
+        assert_eq!(tick_before.fee_growth_outside_0, U256::from(1_u32));
+        assert_eq!(tick_before.fee_growth_outside_1, U256::from(2_u32));
         assert_eq!(tick_before.liquidity_gross, 3);
         assert_eq!(tick_before.liquidity_net, 4);
         assert!(tick_before.initialized);
@@ -640,8 +640,8 @@ mod tests {
             2,
             3,
             4,
-            U256::from(1u32),
-            U256::from(2u32),
+            U256::from(1_u32),
+            U256::from(2_u32),
             true,
             7,
         ));
@@ -652,15 +652,15 @@ mod tests {
         // fee_growth_outside_1: 9 - 2 = 7
         let liquidity_net = tick_map.cross_tick(
             2,
-            U256::from(7u32), // fee_growth_global_0
-            U256::from(9u32), // fee_growth_global_1
+            U256::from(7_u32), // fee_growth_global_0
+            U256::from(9_u32), // fee_growth_global_1
         );
 
         let tick = tick_map.get_tick(2).unwrap();
 
         // Verify fee growth variables were flipped (global - current)
-        assert_eq!(tick.fee_growth_outside_0, U256::from(6u32)); // 7 - 1 = 6
-        assert_eq!(tick.fee_growth_outside_1, U256::from(7u32)); // 9 - 2 = 7
+        assert_eq!(tick.fee_growth_outside_0, U256::from(6_u32)); // 7 - 1 = 6
+        assert_eq!(tick.fee_growth_outside_1, U256::from(7_u32)); // 9 - 2 = 7
 
         // Verify liquidity_net is returned
         assert_eq!(liquidity_net, 4);

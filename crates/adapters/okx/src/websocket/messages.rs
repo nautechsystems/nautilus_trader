@@ -2353,7 +2353,7 @@ mod tests {
         use crate::common::enums::{OKXOrderType, OKXSide, OKXTradeMode};
 
         let params = WsPostOrderParamsBuilder::default()
-            .inst_id_code(10459u64)
+            .inst_id_code(10459_u64)
             .td_mode(OKXTradeMode::Cross)
             .side(OKXSide::Buy)
             .ord_type(OKXOrderType::Limit)
@@ -2374,7 +2374,7 @@ mod tests {
         use crate::common::enums::{OKXOrderType, OKXSide, OKXTradeMode};
 
         let params = WsPostOrderParamsBuilder::default()
-            .inst_id_code(10459u64)
+            .inst_id_code(10459_u64)
             .td_mode(OKXTradeMode::Cross)
             .side(OKXSide::Buy)
             .ord_type(OKXOrderType::Market)
@@ -2393,7 +2393,7 @@ mod tests {
         use crate::common::enums::{OKXOrderType, OKXSide, OKXTradeMode};
 
         let params = WsPostOrderParamsBuilder::default()
-            .inst_id_code(10459u64)
+            .inst_id_code(10459_u64)
             .td_mode(OKXTradeMode::Cross)
             .side(OKXSide::Buy)
             .ord_type(OKXOrderType::Market)
@@ -2412,7 +2412,7 @@ mod tests {
         use crate::common::enums::{OKXOrderType, OKXSide, OKXTradeMode};
 
         let params = WsPostOrderParamsBuilder::default()
-            .inst_id_code(20459u64)
+            .inst_id_code(20459_u64)
             .td_mode(OKXTradeMode::Cash)
             .side(OKXSide::Buy)
             .ord_type(OKXOrderType::Limit)
@@ -2434,7 +2434,7 @@ mod tests {
         use crate::common::enums::{OKXOrderType, OKXSide, OKXTradeMode};
 
         let params = WsPostOrderParamsBuilder::default()
-            .inst_id_code(20459u64)
+            .inst_id_code(20459_u64)
             .td_mode(OKXTradeMode::Cash)
             .side(OKXSide::Buy)
             .ord_type(OKXOrderType::Limit)
@@ -2454,7 +2454,7 @@ mod tests {
         use crate::common::enums::{OKXOrderType, OKXSide, OKXTradeMode, OKXTriggerType};
 
         let params = WsPostOrderParamsBuilder::default()
-            .inst_id_code(10459u64)
+            .inst_id_code(10459_u64)
             .td_mode(OKXTradeMode::Cross)
             .side(OKXSide::Buy)
             .ord_type(OKXOrderType::Limit)
@@ -2495,7 +2495,7 @@ mod tests {
         use super::WsCancelOrderParamsBuilder;
 
         let params = WsCancelOrderParamsBuilder::default()
-            .inst_id_code(10461u64)
+            .inst_id_code(10461_u64)
             .ord_id("12345678".to_string())
             .build()
             .unwrap();
@@ -2512,7 +2512,7 @@ mod tests {
         use super::WsAmendOrderParamsBuilder;
 
         let params = WsAmendOrderParamsBuilder::default()
-            .inst_id_code(10459u64)
+            .inst_id_code(10459_u64)
             .cl_ord_id("client123".to_string())
             .new_px("51000".to_string())
             .build()
@@ -2531,7 +2531,7 @@ mod tests {
         use crate::common::enums::{OKXAlgoOrderType, OKXSide, OKXTradeMode, OKXTriggerType};
 
         let params = WsPostAlgoOrderParamsBuilder::default()
-            .inst_id_code(10459u64)
+            .inst_id_code(10459_u64)
             .td_mode(OKXTradeMode::Cross)
             .side(OKXSide::Buy)
             .ord_type(OKXAlgoOrderType::Trigger)
@@ -2568,7 +2568,7 @@ mod tests {
         use super::WsCancelAlgoOrderParamsBuilder;
 
         let by_cl_ord_id = WsCancelAlgoOrderParamsBuilder::default()
-            .inst_id_code(10459u64)
+            .inst_id_code(10459_u64)
             .algo_cl_ord_id("Odstalgocancel0000001".to_string())
             .build()
             .unwrap();
@@ -2577,7 +2577,7 @@ mod tests {
         assert!(json.get("algoId").is_none());
 
         let by_algo_id = WsCancelAlgoOrderParamsBuilder::default()
-            .inst_id_code(10459u64)
+            .inst_id_code(10459_u64)
             .algo_id("987654321".to_string())
             .build()
             .unwrap();
@@ -2592,7 +2592,7 @@ mod tests {
         use crate::common::enums::{OKXOrderType, OKXSide, OKXTradeMode};
 
         let params = WsPostOrderParamsBuilder::default()
-            .inst_id_code(10459u64)
+            .inst_id_code(10459_u64)
             .td_mode(OKXTradeMode::Cross)
             .side(OKXSide::Buy)
             .ord_type(OKXOrderType::Limit)
@@ -2613,7 +2613,7 @@ mod tests {
         use crate::common::enums::{OKXOrderType, OKXSide, OKXTradeMode};
 
         let params = WsPostOrderParamsBuilder::default()
-            .inst_id_code(10459u64)
+            .inst_id_code(10459_u64)
             .td_mode(OKXTradeMode::Cross)
             .side(OKXSide::Buy)
             .ord_type(OKXOrderType::Limit)
@@ -2633,7 +2633,7 @@ mod tests {
         use super::WsAmendOrderParamsBuilder;
 
         let params = WsAmendOrderParamsBuilder::default()
-            .inst_id_code(10459u64)
+            .inst_id_code(10459_u64)
             .cl_ord_id("client123".to_string())
             .new_px_usd("105.0".to_string())
             .build()
@@ -2650,7 +2650,7 @@ mod tests {
         use super::WsAmendOrderParamsBuilder;
 
         let params = WsAmendOrderParamsBuilder::default()
-            .inst_id_code(10459u64)
+            .inst_id_code(10459_u64)
             .cl_ord_id("client123".to_string())
             .new_px_vol("0.60".to_string())
             .build()
@@ -2677,7 +2677,7 @@ mod tests {
         use crate::common::enums::{OKXOrderType, OKXSide, OKXTradeMode};
 
         let params = WsPostOrderParamsBuilder::default()
-            .inst_id_code(10459u64)
+            .inst_id_code(10459_u64)
             .td_mode(OKXTradeMode::Cash)
             .side(OKXSide::Buy)
             .ord_type(OKXOrderType::Limit)
@@ -2698,7 +2698,7 @@ mod tests {
         use super::WsAmendOrderParamsBuilder;
 
         let params = WsAmendOrderParamsBuilder::default()
-            .inst_id_code(10459u64)
+            .inst_id_code(10459_u64)
             .cl_ord_id("event-1".to_string())
             .new_px("0.43".to_string())
             .build()

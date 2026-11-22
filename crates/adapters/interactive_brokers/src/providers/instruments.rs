@@ -2794,7 +2794,7 @@ mod tests {
 
         let config = InteractiveBrokersInstrumentProviderConfig::builder()
             .cache_path(cache_path)
-            .cache_validity_days(7u32)
+            .cache_validity_days(7_u32)
             .build();
 
         let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
@@ -3163,7 +3163,7 @@ mod tests {
         // Create a new provider and load the cache
         let new_config = InteractiveBrokersInstrumentProviderConfig::builder()
             .cache_path(cache_path.clone())
-            .cache_validity_days(7u32)
+            .cache_validity_days(7_u32)
             .build();
 
         let new_provider = InteractiveBrokersInstrumentProvider::new(new_config).unwrap();
@@ -3187,7 +3187,7 @@ mod tests {
     async fn test_load_cache_reads_chrono_timestamp() {
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::builder()
-                .cache_validity_days(7u32)
+                .cache_validity_days(7_u32)
                 .build(),
         )
         .unwrap();

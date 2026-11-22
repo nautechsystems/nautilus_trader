@@ -531,7 +531,7 @@ mod tests {
     }
 
     fn add_quote(cache: &Rc<RefCell<Cache>>, instrument_id: InstrumentId, price: &str) {
-        let ts = UnixNanos::from(1u64);
+        let ts = UnixNanos::from(1_u64);
         cache
             .borrow_mut()
             .add_quote(QuoteTick::new(

@@ -2217,7 +2217,7 @@ mod tests {
             WriterClock::Test(Arc::new(AtomicU64::new(0))),
             RotationConfig::ScheduledDates {
                 interval_ns: 86_400_000_000_000,
-                rotation_time: UnixNanos::from(36_000_000_000_000u64),
+                rotation_time: UnixNanos::from(36_000_000_000_000_u64),
                 rotation_timezone: jiff::tz::TimeZone::UTC,
             },
             None,
@@ -2228,14 +2228,14 @@ mod tests {
         writer.write(quote_at(1_767_258_000_000_000_000)).unwrap();
         assert_eq!(
             writer.get_next_rotation_time(&quotes),
-            Some(UnixNanos::from(1_767_261_600_000_000_000u64)),
+            Some(UnixNanos::from(1_767_261_600_000_000_000_u64)),
         );
 
         // The first row after it, at 10:30, opens the next file, which rotates at 10:00 tomorrow
         writer.write(quote_at(1_767_263_400_000_000_000)).unwrap();
         assert_eq!(
             writer.get_next_rotation_time(&quotes),
-            Some(UnixNanos::from(1_767_348_000_000_000_000u64)),
+            Some(UnixNanos::from(1_767_348_000_000_000_000_u64)),
         );
         assert_eq!(
             sealed_timestamps(temp_dir.path()),
@@ -2262,7 +2262,7 @@ mod tests {
         );
 
         // 2026-11-07 17:47:15 UTC, then two rows at 18:14:41.380125727 UTC
-        let (before, after) = (1_794_073_635_000_000_000u64, 1_794_075_281_380_125_727u64);
+        let (before, after) = (1_794_073_635_000_000_000_u64, 1_794_075_281_380_125_727_u64);
         writer.write(quote_at(before)).unwrap();
         writer.write(quote_at(after)).unwrap();
         writer.write(quote_at(after)).unwrap();

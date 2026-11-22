@@ -245,7 +245,7 @@ mod tests {
         // tuple field or deserialized from JSON could carry an invalid side
         // digit (2..=9); these must not classify as a valid outcome and the
         // accessors must not return them.
-        for side_digit in 2..=9u32 {
+        for side_digit in 2..=9_u32 {
             let raw = HyperliquidAssetId(100_000_000 + side_digit);
             assert!(!raw.is_outcome(), "side digit {side_digit} must reject");
             assert_eq!(raw.outcome_index(), None);

@@ -1307,7 +1307,7 @@ mod tests {
     #[rstest]
     fn test_two_throttlers_share_clock_without_timer_collision() {
         let clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
-        let interval = 10u64;
+        let interval = 10_u64;
 
         let mk = |base: &str| -> SharedThrottler {
             let clock: Rc<RefCell<dyn Clock>> = Rc::clone(&clock) as Rc<RefCell<dyn Clock>>;
@@ -1661,7 +1661,7 @@ mod tests {
         // Drain all buffered messages by repeatedly advancing the clock.
         // Each timer callback may send up to `limit` messages and schedule
         // a new timer for the next batch, so we must keep advancing.
-        for i in 1..=100u64 {
+        for i in 1..=100_u64 {
             if throttler.qsize() == 0 {
                 break;
             }
@@ -1706,7 +1706,7 @@ mod tests {
                 Box::new(move |_| *dropped.borrow_mut() += 1) as Box<dyn Fn(u64)>
             };
 
-            let interval = 10u64;
+            let interval = 10_u64;
             let throttler = Throttler::new(
                 RateLimit::new(5, DurationNanos::new(interval)),
                 Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
@@ -1775,8 +1775,8 @@ mod tests {
             let test_clock = test_throttler.clock.clone();
             let interval = test_throttler.interval;
             let throttler = test_throttler.get_throttler();
-            let mut attempted = 0usize;
-            let mut reserved = 0usize;
+            let mut attempted = 0_usize;
+            let mut reserved = 0_usize;
 
             for input in inputs {
                 match input {
@@ -1808,7 +1808,7 @@ mod tests {
                 assert_eq!(throttler.sent_count + throttler.qsize(), attempted + reserved);
             }
 
-            for i in 1..=100u64 {
+            for i in 1..=100_u64 {
                 if throttler.qsize() == 0 {
                     break;
                 }

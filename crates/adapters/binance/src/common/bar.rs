@@ -259,8 +259,8 @@ mod tests {
             100,
             taker_buy_base_volume,
             dec!(28.46694368),
-            UnixNanos::from(1_650_000_000_000_000_000u64),
-            UnixNanos::from(1_650_000_000_000_000_000u64),
+            UnixNanos::from(1_650_000_000_000_000_000_u64),
+            UnixNanos::from(1_650_000_000_000_000_000_u64),
         )
     }
 

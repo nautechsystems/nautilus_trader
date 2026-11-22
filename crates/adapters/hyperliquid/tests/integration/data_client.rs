@@ -340,8 +340,8 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
                 "n": 50
             },
             {
-                "t": 4_102_444_800_000u64,
-                "T": 4_102_444_859_999u64,
+                "t": 4_102_444_800_000_u64,
+                "T": 4_102_444_859_999_u64,
                 "s": "BTC",
                 "i": "1m",
                 "o": "98460.00",

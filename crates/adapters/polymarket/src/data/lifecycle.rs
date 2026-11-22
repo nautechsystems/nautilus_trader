@@ -2064,8 +2064,8 @@ mod tests {
         client.config.resolve_poll_enabled = false;
         client.config.resolve_poll_interval_secs = 1;
 
-        let watched_count = 8usize;
-        let unwatched_count = 5usize;
+        let watched_count = 8_usize;
+        let unwatched_count = 5_usize;
         let mut retired_ids = Vec::new();
 
         for index in 0..watched_count {

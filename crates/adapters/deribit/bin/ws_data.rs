@@ -111,10 +111,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut instruments = http_client
         .request_instruments(DeribitCurrency::BTC, None)
         .await?;
+
     let (future_combos, option_combos) =
         instruments
             .iter()
-            .fold((0usize, 0usize), |(f, o), inst| match inst {
+            .fold((0_usize, 0_usize), |(f, o), inst| match inst {
                 InstrumentAny::CryptoFuturesSpread(_) => (f + 1, o),
                 InstrumentAny::CryptoOptionSpread(_) => (f, o + 1),
                 _ => (f, o),

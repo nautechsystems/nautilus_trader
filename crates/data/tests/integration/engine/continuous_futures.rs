@@ -1524,7 +1524,7 @@ fn test_continuous_future_subscription_transition_swaps_source(
         register_continuous_future_subscription_engine(Rc::clone(&cache), 0);
 
     let target_bar_type = BarType::from("ES.GLBX-1-TICK-LAST-INTERNAL");
-    let transition_ns = 10u64;
+    let transition_ns = 10_u64;
     let params = continuous_future_transitions_params(transition_ns, pre_id, post_id);
 
     let sub = SubscribeBars::new(

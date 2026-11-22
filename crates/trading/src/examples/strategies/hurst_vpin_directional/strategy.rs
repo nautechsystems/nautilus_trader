@@ -163,10 +163,10 @@ impl HurstVpinDirectional {
                 let chunk = &returns[start..start + lag];
                 let mean = chunk.iter().sum::<f64>() / lag as f64;
 
-                let mut running = 0.0f64;
-                let mut cum_min = 0.0f64;
-                let mut cum_max = 0.0f64;
-                let mut var_sum = 0.0f64;
+                let mut running = 0.0_f64;
+                let mut cum_min = 0.0_f64;
+                let mut cum_max = 0.0_f64;
+                let mut var_sum = 0.0_f64;
 
                 for value in chunk {
                     let deviation = value - mean;

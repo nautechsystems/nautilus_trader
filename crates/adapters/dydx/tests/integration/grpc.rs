@@ -456,7 +456,7 @@ fn test_order_builder_missing_until_error() {
 #[rstest]
 fn test_order_good_until_block_range() {
     // Short-term orders can only go up to SHORT_TERM_ORDER_MAXIMUM_LIFETIME blocks ahead
-    let current_block = 1000u32;
+    let current_block = 1000_u32;
     let max_valid_block = current_block + SHORT_TERM_ORDER_MAXIMUM_LIFETIME;
 
     assert!(max_valid_block <= 1040);
@@ -524,9 +524,9 @@ fn sample_subaccount(owner: &str, number: u32) -> SubaccountId {
 
 #[rstest]
 fn test_cancel_order_short_term_message_construction() {
-    let client_id = 42u32;
-    let clob_pair_id = 0u32;
-    let block_height = 1000u32;
+    let client_id = 42_u32;
+    let clob_pair_id = 0_u32;
+    let block_height = 1000_u32;
     let good_til_block = block_height + SHORT_TERM_ORDER_MAXIMUM_LIFETIME;
 
     let msg = MsgCancelOrder {
@@ -558,8 +558,8 @@ fn test_cancel_order_short_term_message_construction() {
 
 #[rstest]
 fn test_cancel_order_long_term_message_construction() {
-    let client_id = 100u32;
-    let clob_pair_id = 1u32;
+    let client_id = 100_u32;
+    let clob_pair_id = 1_u32;
     let cancel_good_til =
         (Timestamp::now() + SignedDuration::from_hours(90 * 24)).as_second() as u32;
 
@@ -596,8 +596,8 @@ fn test_cancel_order_long_term_message_construction() {
 
 #[rstest]
 fn test_cancel_order_conditional_message_construction() {
-    let client_id = 200u32;
-    let clob_pair_id = 0u32;
+    let client_id = 200_u32;
+    let clob_pair_id = 0_u32;
     let cancel_good_til =
         (Timestamp::now() + SignedDuration::from_hours(90 * 24)).as_second() as u32;
 
@@ -622,7 +622,7 @@ fn test_cancel_order_conditional_message_construction() {
 
 #[rstest]
 fn test_batch_cancel_short_term_single_market() {
-    let block_height = 500u32;
+    let block_height = 500_u32;
     let good_til_block = block_height + SHORT_TERM_ORDER_MAXIMUM_LIFETIME;
 
     let msg = MsgBatchCancel {
@@ -646,7 +646,7 @@ fn test_batch_cancel_short_term_single_market() {
 
 #[rstest]
 fn test_batch_cancel_short_term_multiple_markets() {
-    let block_height = 1000u32;
+    let block_height = 1000_u32;
     let good_til_block = block_height + SHORT_TERM_ORDER_MAXIMUM_LIFETIME;
 
     // Simulate grouping orders by clob_pair_id (the logic in build_batch_cancel_short_term)

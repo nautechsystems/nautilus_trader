@@ -264,14 +264,14 @@ fn bench_memory_usage(c: &mut Criterion) {
 
     // Benchmark Arc operations
     group.bench_function("arc_creation", |b| {
-        let data = vec![1u8; 1024];
+        let data = vec![1_u8; 1024];
         b.iter(|| {
             black_box(Arc::new(data.clone()));
         });
     });
 
     group.bench_function("arc_clone", |b| {
-        let data = Arc::new(vec![1u8; 1024]);
+        let data = Arc::new(vec![1_u8; 1024]);
         b.iter(|| {
             black_box(data.clone());
         });
@@ -336,7 +336,7 @@ fn bench_runner_dispatch(c: &mut Criterion) {
 }
 
 fn bench_command_channels(c: &mut Criterion) {
-    let received = Rc::new(std::cell::Cell::new(0usize));
+    let received = Rc::new(std::cell::Cell::new(0_usize));
     let values = received.clone();
     msgbus::register_data_command_endpoint(
         MessagingSwitchboard::data_engine_execute(),
@@ -404,7 +404,7 @@ fn bench_command_channels(c: &mut Criterion) {
 }
 
 fn bench_event_channels(c: &mut Criterion) {
-    let received = Rc::new(std::cell::Cell::new(0usize));
+    let received = Rc::new(std::cell::Cell::new(0_usize));
     let observed = received.clone();
     msgbus::register_data_endpoint(
         MessagingSwitchboard::data_engine_process_data(),

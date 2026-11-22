@@ -106,11 +106,11 @@ fn write_bytes(hasher: &mut blake3::Hasher, value: &Bytes) {
 fn write_optional_uuid(hasher: &mut blake3::Hasher, value: Option<&UUID4>) {
     match value {
         Some(uuid) => {
-            hasher.update(&[1u8]);
+            hasher.update(&[1_u8]);
             hasher.update(&uuid.as_bytes());
         }
         None => {
-            hasher.update(&[0u8]);
+            hasher.update(&[0_u8]);
         }
     }
 }
@@ -252,7 +252,7 @@ mod tests {
         // Pinning EntryHash::to_hex's output: high nibble first, lowercase, fixed
         // 64 chars. Catches nibble-swap or uppercase regressions that the prior
         // length-and-charclass check let through.
-        let hash = EntryHash([0xabu8; 32]);
+        let hash = EntryHash([0xab_u8; 32]);
 
         assert_eq!(hash.to_hex(), "ab".repeat(32));
     }

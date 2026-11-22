@@ -372,8 +372,8 @@ mod tests {
     proptest! {
         #[rstest]
         fn prop_value_matches_fixed_point_reference(
-            period in 2usize..=64,
-            prices in prop::collection::vec(-1_000_000_000i64..=1_000_000_000, 257..=512),
+            period in 2_usize..=64,
+            prices in prop::collection::vec(-1_000_000_000_i64..=1_000_000_000, 257..=512),
         ) {
             let mut efficiency_ratio = EfficiencyRatio::new(period, None);
 

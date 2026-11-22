@@ -592,7 +592,7 @@ impl UserWsMessage {
         // `event_type`; `serde_json::Value` would silently keep the last occurrence.
         let elements: Vec<&RawValue> = serde_json::from_str(text)?;
         let mut messages = Vec::with_capacity(elements.len());
-        let mut skipped = 0usize;
+        let mut skipped = 0_usize;
 
         for element in elements {
             if Self::has_unrecognized_event_type(element.get()) {

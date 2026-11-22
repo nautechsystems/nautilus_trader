@@ -385,7 +385,8 @@ fn sign_approve_builder_fee(
 
     let r = format!("0x{:064x}", signature.r());
     let s = format!("0x{:064x}", signature.s());
-    let v = if signature.v() { 28u64 } else { 27u64 };
+
+    let v = if signature.v() { 28_u64 } else { 27_u64 };
 
     Ok(HyperliquidSignature::new(r, s, v))
 }
@@ -418,12 +419,12 @@ fn approval_signing_hash(is_testnet: bool, nonce: u64, fee_rate: &str) -> Result
     struct_data.extend_from_slice(fee_rate_hash.as_slice());
 
     // Address left-padded to 32 bytes
-    let mut addr_bytes = [0u8; 32];
+    let mut addr_bytes = [0_u8; 32];
     addr_bytes[12..].copy_from_slice(builder_addr.as_slice());
     struct_data.extend_from_slice(&addr_bytes);
 
     // Nonce as uint64, left-padded to 32 bytes
-    let mut nonce_bytes = [0u8; 32];
+    let mut nonce_bytes = [0_u8; 32];
     nonce_bytes[24..].copy_from_slice(&nonce.to_be_bytes());
     struct_data.extend_from_slice(&nonce_bytes);
 

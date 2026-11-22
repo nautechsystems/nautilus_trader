@@ -10884,11 +10884,11 @@ mod tests {
             None,
             None,
             None,
-            Some(UnixNanos::from(2_000u64)),
+            Some(UnixNanos::from(2_000_u64)),
             None,
         );
         let mut position = Position::new(&audusd_sim, fill1.into());
-        assert_eq!(position.ts_opened, UnixNanos::from(2_000u64));
+        assert_eq!(position.ts_opened, UnixNanos::from(2_000_u64));
 
         // Second fill at ts=1000 (earlier than position open)
         let fill2 = TestOrderEventStubs::filled(
@@ -10900,13 +10900,13 @@ mod tests {
             None,
             None,
             None,
-            Some(UnixNanos::from(1_000u64)),
+            Some(UnixNanos::from(1_000_u64)),
             None,
         );
 
         // Should not panic; ts_opened and opening_order_id stay unchanged
         position.apply(&fill2.into());
-        assert_eq!(position.ts_opened, UnixNanos::from(2_000u64));
+        assert_eq!(position.ts_opened, UnixNanos::from(2_000_u64));
         assert_eq!(position.opening_order_id, order1.client_order_id());
         assert_eq!(position.events.len(), 2);
     }
@@ -10933,7 +10933,7 @@ mod tests {
             None,
             None,
             None,
-            Some(UnixNanos::from(2_000u64)),
+            Some(UnixNanos::from(2_000_u64)),
             None,
         );
         let closing_fill = TestOrderEventStubs::filled(
@@ -10945,7 +10945,7 @@ mod tests {
             None,
             None,
             None,
-            Some(UnixNanos::from(1_000u64)),
+            Some(UnixNanos::from(1_000_u64)),
             None,
         );
         let mut position = Position::new(&audusd_sim, opening_fill.into());
@@ -10953,8 +10953,8 @@ mod tests {
         position.apply(&closing_fill.into());
 
         assert_eq!(position.side, PositionSide::Flat);
-        assert_eq!(position.ts_opened, UnixNanos::from(2_000u64));
-        assert_eq!(position.ts_closed, Some(UnixNanos::from(1_000u64)));
+        assert_eq!(position.ts_opened, UnixNanos::from(2_000_u64));
+        assert_eq!(position.ts_closed, Some(UnixNanos::from(1_000_u64)));
         assert_eq!(position.duration_ns, DurationNanos::default());
         assert_eq!(
             position.closing_order_id,
@@ -11052,7 +11052,7 @@ mod tests {
 
     #[rstest]
     fn test_fold_net_position_single_long() {
-        let legs = [(dec!(100), dec!(1.5), 1u64)];
+        let legs = [(dec!(100), dec!(1.5), 1_u64)];
         let (net_qty, net_px) = fold_net_position(&legs);
         assert_eq!(net_qty, dec!(100));
         assert_eq!(net_px, dec!(1.5));
@@ -11060,7 +11060,7 @@ mod tests {
 
     #[rstest]
     fn test_fold_net_position_single_short() {
-        let legs = [(dec!(-100), dec!(1.5), 1u64)];
+        let legs = [(dec!(-100), dec!(1.5), 1_u64)];
         let (net_qty, net_px) = fold_net_position(&legs);
         assert_eq!(net_qty, dec!(-100));
         assert_eq!(net_px, dec!(1.5));
@@ -11069,7 +11069,7 @@ mod tests {
     #[rstest]
     fn test_fold_net_position_same_side_weighted_average() {
         // Long 100 @ 1.00, long 200 @ 0.50 -> net 300 @ 0.6667 (rounded weighted avg).
-        let legs = [(dec!(100), dec!(1.0), 1u64), (dec!(200), dec!(0.5), 2u64)];
+        let legs = [(dec!(100), dec!(1.0), 1_u64), (dec!(200), dec!(0.5), 2_u64)];
         let (net_qty, net_px) = fold_net_position(&legs);
         assert_eq!(net_qty, dec!(300));
         // (100 * 1.0 + 200 * 0.5) / 300 = 200/300 = 0.6666...
@@ -11080,8 +11080,8 @@ mod tests {
     fn test_fold_net_position_partial_close_preserves_avg() {
         // Long 300 @ 0.80, short 100 @ 1.00 -> net long 200 @ 0.80 (short closes part of long).
         let legs = [
-            (dec!(300), dec!(0.80), 1u64),
-            (dec!(-100), dec!(1.00), 2u64),
+            (dec!(300), dec!(0.80), 1_u64),
+            (dec!(-100), dec!(1.00), 2_u64),
         ];
         let (net_qty, net_px) = fold_net_position(&legs);
         assert_eq!(net_qty, dec!(200));
@@ -11090,7 +11090,11 @@ mod tests {
 
     #[rstest]
     fn test_fold_net_position_full_close() {
-        let legs = [(dec!(100), dec!(1.0), 1u64), (dec!(-100), dec!(2.0), 2u64)];
+        let legs = [
+            (dec!(100), dec!(1.0), 1_u64),
+            (dec!(-100), dec!(2.0), 2_u64),
+        ];
+
         let (net_qty, net_px) = fold_net_position(&legs);
         assert_eq!(net_qty, Decimal::ZERO);
         assert_eq!(net_px, Decimal::ZERO);
@@ -11100,9 +11104,9 @@ mod tests {
     fn test_fold_net_position_single_flip_uses_flipping_price() {
         // L100@1, S50@2 partial-closes to L50@1, S100@3 flips to S50 @ 3
         let legs = [
-            (dec!(100), dec!(1.00), 1u64),
-            (dec!(-50), dec!(2.00), 2u64),
-            (dec!(-100), dec!(3.00), 3u64),
+            (dec!(100), dec!(1.00), 1_u64),
+            (dec!(-50), dec!(2.00), 2_u64),
+            (dec!(-100), dec!(3.00), 3_u64),
         ];
         let (net_qty, net_px) = fold_net_position(&legs);
         assert_eq!(net_qty, dec!(-50));
@@ -11113,9 +11117,9 @@ mod tests {
     fn test_fold_net_position_double_flip() {
         // L50, S100 flips to S50@2, B100 flips to L50@3
         let legs = [
-            (dec!(50), dec!(1.00), 1u64),
-            (dec!(-100), dec!(2.00), 2u64),
-            (dec!(100), dec!(3.00), 3u64),
+            (dec!(50), dec!(1.00), 1_u64),
+            (dec!(-100), dec!(2.00), 2_u64),
+            (dec!(100), dec!(3.00), 3_u64),
         ];
         let (net_qty, net_px) = fold_net_position(&legs);
         assert_eq!(net_qty, dec!(50));
@@ -11126,9 +11130,9 @@ mod tests {
     fn test_fold_net_position_zero_quantity_legs_skipped() {
         // Zero-qty legs are filtered out (closed positions have signed_qty == 0)
         let legs = [
-            (dec!(100), dec!(1.0), 1u64),
-            (Decimal::ZERO, dec!(99.0), 2u64),
-            (dec!(50), dec!(2.0), 3u64),
+            (dec!(100), dec!(1.0), 1_u64),
+            (Decimal::ZERO, dec!(99.0), 2_u64),
+            (dec!(50), dec!(2.0), 3_u64),
         ];
         let (net_qty, net_px) = fold_net_position(&legs);
         assert_eq!(net_qty, dec!(150));
@@ -11139,8 +11143,8 @@ mod tests {
     #[rstest]
     fn test_fold_net_position_stable_sort_preserves_input_order_for_equal_ts() {
         // Caller owns tie-breaking; this pins the input-order contract for equal-ts legs
-        let leg_a = (dec!(100), dec!(1.00), 1u64);
-        let leg_b = (dec!(-100), dec!(2.00), 1u64);
+        let leg_a = (dec!(100), dec!(1.00), 1_u64);
+        let leg_b = (dec!(-100), dec!(2.00), 1_u64);
 
         let ab = [leg_a, leg_b];
         let ba = [leg_b, leg_a];
@@ -11151,8 +11155,8 @@ mod tests {
         assert_eq!(fold_net_position(&ba), (Decimal::ZERO, Decimal::ZERO));
 
         // Same-ts legs that do NOT fully cancel: input order picks the surviving avg
-        let leg_c = (dec!(150), dec!(1.00), 1u64);
-        let leg_d = (dec!(-100), dec!(2.00), 1u64);
+        let leg_c = (dec!(150), dec!(1.00), 1_u64);
+        let leg_d = (dec!(-100), dec!(2.00), 1_u64);
         let cd = [leg_c, leg_d];
         let dc = [leg_d, leg_c];
         // c-then-d: L150@1, S100@2 -> long 50 @ 1
@@ -11165,9 +11169,9 @@ mod tests {
     fn test_fold_net_position_close_then_reopen() {
         // A leg after a full close opens fresh (new net, new avg)
         let legs = [
-            (dec!(100), dec!(1.00), 1u64),
-            (dec!(-100), dec!(1.50), 2u64),
-            (dec!(50), dec!(3.00), 3u64),
+            (dec!(100), dec!(1.00), 1_u64),
+            (dec!(-100), dec!(1.50), 2_u64),
+            (dec!(50), dec!(3.00), 3_u64),
         ];
         let (net_qty, net_px) = fold_net_position(&legs);
         assert_eq!(net_qty, dec!(50));
@@ -11178,14 +11182,14 @@ mod tests {
     fn test_fold_net_position_orders_by_ts_opened() {
         // Sorted vs shuffled input must fold to the same result.
         let in_order = [
-            (dec!(100), dec!(1.00), 1u64),
-            (dec!(-50), dec!(2.00), 2u64),
-            (dec!(-100), dec!(3.00), 3u64),
+            (dec!(100), dec!(1.00), 1_u64),
+            (dec!(-50), dec!(2.00), 2_u64),
+            (dec!(-100), dec!(3.00), 3_u64),
         ];
         let shuffled = [
-            (dec!(-100), dec!(3.00), 3u64),
-            (dec!(100), dec!(1.00), 1u64),
-            (dec!(-50), dec!(2.00), 2u64),
+            (dec!(-100), dec!(3.00), 3_u64),
+            (dec!(100), dec!(1.00), 1_u64),
+            (dec!(-50), dec!(2.00), 2_u64),
         ];
         assert_eq!(fold_net_position(&in_order), fold_net_position(&shuffled));
     }
@@ -11256,9 +11260,9 @@ mod tests {
             fills in proptest::collection::vec(
                 (
                     prop_oneof![Just(OrderSide::Buy), Just(OrderSide::Sell)],
-                    1u32..1_000u32,
-                    1u32..100u32,
-                    0u64..1_000_000u64,
+                    1_u32..1_000_u32,
+                    1_u32..100_u32,
+                    0_u64..1_000_000_u64,
                 ),
                 1..6,
             )

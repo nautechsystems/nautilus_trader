@@ -1445,7 +1445,7 @@ fn test_run_with_empty_data_does_not_advance_recurring_timer() {
         .add_actor(RecurringTimerShutdownActor::new(Rc::clone(&fired)))
         .unwrap();
 
-    let start = UnixNanos::from(10_000_000_000u64);
+    let start = UnixNanos::from(10_000_000_000_u64);
     engine.run(Some(start), None, None, false).unwrap();
 
     assert_eq!(fired.get(), 0);
@@ -2776,7 +2776,7 @@ fn test_instrument_close_precedes_expiration_timer_at_same_timestamp(
     #[values(false, true)] quote_at_expiration: bool,
 ) {
     let venue = Venue::from("OPRA");
-    let expiration_ns = UnixNanos::from(2_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_u64);
     let underlying = option_underlying_equity(venue);
     let option = option_contract(venue, expiration_ns);
     let underlying_id = underlying.id();
@@ -2853,7 +2853,7 @@ fn test_option_expiry_uses_same_timestamp_index_price(
     #[values(false, true)] streaming: bool,
 ) {
     let venue = Venue::from("OPRA");
-    let expiration_ns = UnixNanos::from(2_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_u64);
     let entry_ns = expiration_ns.as_u64() - 2_000;
     let underlying_id = InstrumentId::from("SPXW.OPRA");
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
@@ -4542,7 +4542,7 @@ fn test_strategy_receives_only_subscribed_quotes(crypto_perpetual_ethusdt: Crypt
     let interval: u64 = 1_000_000_000;
 
     // Ramp up
-    for i in 0..10u64 {
+    for i in 0..10_u64 {
         let mid = 1000.0 + (i as f64 * 10.0);
         quotes.push(quote(
             instrument_id,
@@ -4553,7 +4553,7 @@ fn test_strategy_receives_only_subscribed_quotes(crypto_perpetual_ethusdt: Crypt
     }
 
     // Ramp down
-    for i in 0..10u64 {
+    for i in 0..10_u64 {
         let mid = 1090.0 - (i as f64 * 10.0);
         quotes.push(quote(
             instrument_id,
@@ -4627,7 +4627,7 @@ fn test_start_boundary_skips_earlier_data(crypto_perpetual_ethusdt: CryptoPerpet
 
     // Start at t=3, should skip first 2 quotes
     engine
-        .run(Some(3_000_000_000u64.into()), None, None, false)
+        .run(Some(3_000_000_000_u64.into()), None, None, false)
         .unwrap();
 
     let bt_result = engine.get_result();
@@ -4655,7 +4655,7 @@ fn test_end_boundary_stops_before_later_data(crypto_perpetual_ethusdt: CryptoPer
 
     // End at t=3, should process only first 3
     engine
-        .run(None, Some(3_000_000_000u64.into()), None, false)
+        .run(None, Some(3_000_000_000_u64.into()), None, false)
         .unwrap();
 
     let bt_result = engine.get_result();
@@ -4680,13 +4680,13 @@ fn test_ema_cross_with_batched_data(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let interval: u64 = 1_000_000_000;
 
     // Add flat data in one batch
-    let flat: Vec<Data> = (0..10u64)
+    let flat: Vec<Data> = (0..10_u64)
         .map(|i| quote(instrument_id, "1000.00", "1000.10", base_ts + i * interval))
         .collect();
     engine.add_data(flat, None, true, true).unwrap();
 
     // Add ramp-up in a separate batch
-    let ramp_up: Vec<Data> = (0..15u64)
+    let ramp_up: Vec<Data> = (0..15_u64)
         .map(|i| {
             let mid = 1000.0 + (i as f64 * 10.0);
             quote(
@@ -5963,7 +5963,7 @@ fn test_streaming_no_dummy_bars_past_batch_data(crypto_perpetual_ethusdt: Crypto
         .add_strategy(BarSubscriberStrategy::new(instrument_id, bar_type))
         .unwrap();
 
-    let batch1: Vec<Data> = (1..=10u64)
+    let batch1: Vec<Data> = (1..=10_u64)
         .map(|i| quote(instrument_id, "1000.00", "1000.10", i * 1_000_000_000))
         .collect();
     engine.add_data(batch1, None, true, true).unwrap();
@@ -5971,7 +5971,7 @@ fn test_streaming_no_dummy_bars_past_batch_data(crypto_perpetual_ethusdt: Crypto
     // Run with end far past data (100s), streaming=true.
     // Without the fix, timers fire from 10s to 100s producing ~18 dummy bars.
     // With the fix, only bars from the actual data period are built.
-    let end = Some(UnixNanos::from(100_000_000_000u64));
+    let end = Some(UnixNanos::from(100_000_000_000_u64));
     engine.run(None, end, None, true).unwrap();
 
     let cache = engine.kernel().cache.borrow();
@@ -5986,12 +5986,12 @@ fn test_streaming_no_dummy_bars_past_batch_data(crypto_perpetual_ethusdt: Crypto
     // Batch 2: continues from where batch 1 left off (20s to 30s).
     // Gap bars (10-20s) fire naturally when time advances to batch 2 data.
     engine.clear_data();
-    let batch2: Vec<Data> = (20..=30u64)
+    let batch2: Vec<Data> = (20..=30_u64)
         .map(|i| quote(instrument_id, "1001.00", "1001.10", i * 1_000_000_000))
         .collect();
     engine.add_data(batch2, None, true, true).unwrap();
     engine
-        .run(None, Some(UnixNanos::from(30_000_000_000u64)), None, false)
+        .run(None, Some(UnixNanos::from(30_000_000_000_u64)), None, false)
         .unwrap();
 
     // Batch 1 produced ~1 bar, batch 2 adds gap bars (10-20s) + data bars (20-30s)
@@ -6020,13 +6020,13 @@ fn test_streaming_end_flushes_tail_timers(crypto_perpetual_ethusdt: CryptoPerpet
         .add_strategy(BarSubscriberStrategy::new(instrument_id, bar_type))
         .unwrap();
 
-    let batch: Vec<Data> = (1..=10u64)
+    let batch: Vec<Data> = (1..=10_u64)
         .map(|i| quote(instrument_id, "1000.00", "1000.10", i * 1_000_000_000))
         .collect();
     engine.add_data(batch, None, true, true).unwrap();
 
     // Node-style workflow: all batches use streaming=true, finalize with end()
-    let end = Some(UnixNanos::from(20_000_000_000u64));
+    let end = Some(UnixNanos::from(20_000_000_000_u64));
     engine.run(None, end, None, true).unwrap();
 
     let cache = engine.kernel().cache.borrow();
@@ -6140,7 +6140,7 @@ fn test_iteration_advances_with_data(crypto_perpetual_ethusdt: CryptoPerpetual) 
 #[rstest]
 fn test_option_expiry_timer_closes_position_without_data_at_expiration() {
     let venue = Venue::from("OPRA");
-    let expiration_ns = UnixNanos::from(2_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_u64);
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
     engine
         .add_venue(
@@ -6208,7 +6208,7 @@ fn test_option_expiry_timer_closes_position_without_data_at_expiration() {
 #[rstest]
 fn test_itm_option_expiry_timer_exercises_without_data_at_expiration() {
     let (engine, option_id, underlying_id) =
-        run_call_option_expiry_timer("160.00", UnixNanos::from(2_000_001_000u64));
+        run_call_option_expiry_timer("160.00", UnixNanos::from(2_000_001_000_u64));
 
     let cache_rc = engine.kernel().cache();
     let cache = cache_rc.borrow();
@@ -6230,7 +6230,7 @@ fn test_itm_option_expiry_timer_exercises_without_data_at_expiration() {
 
 #[rstest]
 fn test_option_expiry_timer_runs_when_end_equals_expiration() {
-    let expiration_ns = UnixNanos::from(2_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_u64);
     let (engine, option_id, underlying_id) = run_call_option_expiry_timer("140.00", expiration_ns);
 
     let cache_rc = engine.kernel().cache();
@@ -6256,7 +6256,7 @@ fn test_option_expiry_timer_runs_when_end_equals_expiration() {
 #[rstest]
 fn test_instruments_with_same_expiration_share_expiry_timer() {
     let venue = Venue::from("OPRA");
-    let expiration_ns = UnixNanos::from(2_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_u64);
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
     engine
         .add_venue(
@@ -6302,8 +6302,8 @@ fn test_instruments_with_same_expiration_share_expiry_timer() {
 #[rstest]
 fn test_add_instrument_with_changed_expiration_is_rejected() {
     let venue = Venue::from("OPRA");
-    let original_expiration_ns = UnixNanos::from(2_000_000_000u64);
-    let updated_expiration_ns = UnixNanos::from(3_000_000_000u64);
+    let original_expiration_ns = UnixNanos::from(2_000_000_000_u64);
+    let updated_expiration_ns = UnixNanos::from(3_000_000_000_u64);
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
     engine
         .add_venue(
@@ -6363,7 +6363,7 @@ fn run_call_option_expiry_timer(
     end_ns: UnixNanos,
 ) -> (BacktestEngine, InstrumentId, InstrumentId) {
     let venue = Venue::from("OPRA");
-    let expiration_ns = UnixNanos::from(2_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_u64);
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
     engine
         .add_venue(

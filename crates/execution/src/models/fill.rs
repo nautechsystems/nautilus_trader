@@ -241,7 +241,7 @@ fn default_std_rng() -> StdRng {
         // host RNG. Production paths under simulation always run inside a
         // runtime, so they continue to consume seeded bytes.
         if madsim::runtime::Handle::try_current().is_ok() {
-            let mut seed = [0u8; 32];
+            let mut seed = [0_u8; 32];
             madsim::rand::thread_rng().fill_bytes(&mut seed);
             return StdRng::from_seed(seed);
         }

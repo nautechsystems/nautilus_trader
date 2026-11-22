@@ -2106,7 +2106,7 @@ mod tests {
     #[rstest]
     fn test_mbo_replay_buffers_until_past_start() {
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let start_ns = 5_000_000_000u64;
+        let start_ns = 5_000_000_000_u64;
         let mut buffering_start = Some(start_ns.into());
         let mut buffered = AHashMap::new();
 
@@ -2206,7 +2206,7 @@ mod tests {
         proptest! {
             #[rstest]
             fn mbo_buffering_conserves_deltas(
-                num_non_last in 0usize..=20,
+                num_non_last in 0_usize..=20,
             ) {
                 let instrument_id = InstrumentId::from("ESM4.GLBX");
                 let mut buffering_start = None;
@@ -2238,7 +2238,7 @@ mod tests {
 
             #[rstest]
             fn mbo_snapshots_never_emit(
-                num_snapshots in 1usize..=20,
+                num_snapshots in 1_usize..=20,
             ) {
                 let instrument_id = InstrumentId::from("ESM4.GLBX");
                 let mut buffering_start = None;
@@ -2259,11 +2259,11 @@ mod tests {
 
             #[rstest]
             fn mbo_replay_delays_emission(
-                start_offset in 1u64..=100,
-                num_before in 1usize..=10,
+                start_offset in 1_u64..=100,
+                num_before in 1_usize..=10,
             ) {
                 let instrument_id = InstrumentId::from("ESM4.GLBX");
-                let start_ns = 1_000_000_000u64 * start_offset;
+                let start_ns = 1_000_000_000_u64 * start_offset;
                 let mut buffering_start = Some(start_ns.into());
                 let mut buffered = AHashMap::new();
 

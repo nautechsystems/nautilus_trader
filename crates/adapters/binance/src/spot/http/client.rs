@@ -4421,7 +4421,7 @@ mod tests {
             InstrumentId::from("BTCUSDT.BINANCE"),
             &instrument,
             &snapshot,
-            UnixNanos::from(1_700_000_000_000_000_001u64),
+            UnixNanos::from(1_700_000_000_000_000_001_u64),
         )
         .unwrap_err();
 
@@ -4446,7 +4446,7 @@ mod tests {
             InstrumentId::from("BTCUSDT.BINANCE"),
             &instrument,
             &snapshot,
-            UnixNanos::from(1_700_000_000_000_000_001u64),
+            UnixNanos::from(1_700_000_000_000_000_001_u64),
         )
         .unwrap_err();
 

@@ -70,7 +70,7 @@ pub(crate) fn fixed_pk() -> PublicKey {
 }
 
 pub(crate) fn fixed_k() -> Scalar {
-    let mut bytes = [0u8; SCALAR_BYTES];
+    let mut bytes = [0_u8; SCALAR_BYTES];
     bytes[0] = 0x42;
     bytes[7] = 0x01;
     bytes[16] = 0x91;
@@ -199,8 +199,8 @@ pub(crate) fn btc_perp() -> InstrumentAny {
 fn perp_instrument(coin: &str, price_precision: u8, size_precision: u8) -> InstrumentAny {
     let raw_symbol = Symbol::new(coin);
     let instrument_id = InstrumentId::new(raw_symbol, *LIGHTER_VENUE);
-    let price_increment = Price::new(10f64.powi(-(price_precision as i32)), price_precision);
-    let size_increment = Quantity::new(10f64.powi(-(size_precision as i32)), size_precision);
+    let price_increment = Price::new(10_f64.powi(-(price_precision as i32)), price_precision);
+    let size_increment = Quantity::new(10_f64.powi(-(size_precision as i32)), size_precision);
     InstrumentAny::CryptoPerpetual(
         CryptoPerpetual::builder()
             .instrument_id(instrument_id)

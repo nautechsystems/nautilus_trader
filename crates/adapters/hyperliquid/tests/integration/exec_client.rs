@@ -269,7 +269,7 @@ fn frontend_order(coin: &str, oid: u64) -> Value {
         "limitPx": "100.0",
         "sz": "0.10000",
         "oid": oid,
-        "timestamp": 1_700_000_000_000u64,
+        "timestamp": 1_700_000_000_000_u64,
         "origSz": "0.10000",
     })
 }
@@ -305,7 +305,7 @@ fn user_fill(coin: &str, oid: u64) -> Value {
         "px": "100.0",
         "sz": "0.10000",
         "side": "B",
-        "time": 1_700_000_000_000u64,
+        "time": 1_700_000_000_000_u64,
         "startPosition": "0",
         "dir": "Open Long",
         "closedPnl": "0",
@@ -326,7 +326,7 @@ fn historical_order(coin: &str, oid: u64) -> Value {
             "limitPx": "100.0",
             "sz": "0",
             "oid": oid,
-            "timestamp": 1_700_000_000_000u64,
+            "timestamp": 1_700_000_000_000_u64,
             "origSz": "0.10000",
             "reduceOnly": false,
             "orderType": "Limit",
@@ -334,7 +334,7 @@ fn historical_order(coin: &str, oid: u64) -> Value {
             "cloid": null,
         },
         "status": "filled",
-        "statusTimestamp": 1_700_000_000_001u64,
+        "statusTimestamp": 1_700_000_000_001_u64,
     })
 }
 
@@ -10410,7 +10410,7 @@ async fn test_submit_market_order_uses_resolved_slippage_from_params() {
         .add_order(order.clone(), None, None, false)
         .unwrap();
 
-    let params = Params::new([("market_order_slippage_bps".to_string(), json!(2000u64))].into());
+    let params = Params::new([("market_order_slippage_bps".to_string(), json!(2000_u64))].into());
     client
         .submit_order(make_submit_cmd_with_params(&order, params))
         .unwrap();
@@ -10664,7 +10664,7 @@ async fn test_submit_order_list_per_order_inner_error_rejects_only_failing() {
             "type": "order",
             "data": {
                 "statuses": [
-                    {"resting": {"oid": 70001u64}},
+                    {"resting": {"oid": 70001_u64}},
                     {"error": "Order rejected: insufficient margin"},
                 ]
             }
@@ -11639,7 +11639,8 @@ async fn test_generate_order_status_reports_retains_open_reports_outside_time_ra
     assert_eq!(reports.len(), 3);
 
     // Set the cutoff between the first and second order.
-    let cutoff = UnixNanos::from(1_700_000_005_000_000_000u64);
+    let cutoff = UnixNanos::from(1_700_000_005_000_000_000_u64);
+
     let cmd_start = GenerateOrderStatusReports::new(
         UUID4::new(),
         UnixNanos::default(),
@@ -11656,7 +11657,8 @@ async fn test_generate_order_status_reports_retains_open_reports_outside_time_ra
     assert_eq!(reports.len(), 3);
 
     // Set the end before the third order.
-    let end = UnixNanos::from(1_700_000_015_000_000_000u64);
+    let end = UnixNanos::from(1_700_000_015_000_000_000_u64);
+
     let cmd_end = GenerateOrderStatusReports::new(
         UUID4::new(),
         UnixNanos::default(),
@@ -11709,23 +11711,23 @@ async fn test_generate_fill_reports_filters_time_range(#[values(false, true)] wo
     *state.user_fills_response.lock().await = Some(json!([
         {
             "coin": "BTC", "px": "50000.0", "sz": "0.001", "side": "B",
-            "time": 1_700_000_000_000u64, "startPosition": "0",
+            "time": 1_700_000_000_000_u64, "startPosition": "0",
             "dir": "Open Long", "closedPnl": "0", "hash": "0xaaaa",
-            "oid": 1u64, "crossed": true, "fee": "0.01", "tid": 1u64,
+            "oid": 1_u64, "crossed": true, "fee": "0.01", "tid": 1_u64,
             "feeToken": "USDC",
         },
         {
             "coin": "BTC", "px": "50100.0", "sz": "0.002", "side": "B",
-            "time": 1_700_000_010_000u64, "startPosition": "0",
+            "time": 1_700_000_010_000_u64, "startPosition": "0",
             "dir": "Open Long", "closedPnl": "0", "hash": "0xbbbb",
-            "oid": 2u64, "crossed": true, "fee": "0.02", "tid": 2u64,
+            "oid": 2_u64, "crossed": true, "fee": "0.02", "tid": 2_u64,
             "feeToken": "USDC",
         },
         {
             "coin": "BTC", "px": "50200.0", "sz": "0.003", "side": "B",
-            "time": 1_700_000_020_000u64, "startPosition": "0",
+            "time": 1_700_000_020_000_u64, "startPosition": "0",
             "dir": "Open Long", "closedPnl": "0", "hash": "0xcccc",
-            "oid": 3u64, "crossed": true, "fee": "0.03", "tid": 3u64,
+            "oid": 3_u64, "crossed": true, "fee": "0.03", "tid": 3_u64,
             "feeToken": "USDC",
         },
     ]));
@@ -11735,8 +11737,8 @@ async fn test_generate_fill_reports_filters_time_range(#[values(false, true)] wo
     add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
     client.connect().await.unwrap();
 
-    let cutoff = UnixNanos::from(1_700_000_005_000_000_000u64);
-    let end = UnixNanos::from(1_700_000_015_000_000_000u64);
+    let cutoff = UnixNanos::from(1_700_000_005_000_000_000_u64);
+    let end = UnixNanos::from(1_700_000_015_000_000_000_u64);
 
     let cmd_none = GenerateFillReports::new(
         UUID4::new(),
@@ -11963,11 +11965,11 @@ async fn test_generate_mass_status_reconciles_fill_cloid(
     historical["order"]["cloid"] = json!(cloid);
     historical["order"]["limitPx"] = json!("92000");
     historical["order"]["origSz"] = json!("0.001");
-    historical["statusTimestamp"] = json!(1_700_000_002_000u64);
+    historical["statusTimestamp"] = json!(1_700_000_002_000_u64);
     let mut accepted = historical.clone();
     accepted["order"]["sz"] = json!("0.001");
     accepted["status"] = json!("open");
-    accepted["statusTimestamp"] = json!(1_700_000_000_000u64);
+    accepted["statusTimestamp"] = json!(1_700_000_000_000_u64);
     *state.historical_orders_response.lock().await = Some(if with_order_report {
         json!([historical, accepted])
     } else {
@@ -12334,7 +12336,7 @@ async fn test_generate_mass_status_declares_capped_history_window(
     #[values(false, true)] usable_edge: bool,
 ) {
     let state = TestServerState::default();
-    let edge_ms = 1_754_000_000_001u64;
+    let edge_ms = 1_754_000_000_001_u64;
 
     let fill_count = if saturate_historical_orders {
         4
@@ -12446,21 +12448,21 @@ async fn test_generate_mass_status_capped_history_projects_fills_order_only(
 
     let mut closing_fill = user_fill("BTC", 2);
     closing_fill["side"] = json!("A");
-    closing_fill["time"] = json!(1_700_000_001_000u64);
+    closing_fill["time"] = json!(1_700_000_001_000_u64);
     closing_fill["startPosition"] = json!("0.10000");
     closing_fill["dir"] = json!("Close Long");
     let mut closing_order = historical_order("BTC", 2);
     closing_order["order"]["side"] = json!("A");
     closing_order["order"]["orderType"] = json!("Market");
     closing_order["order"]["tif"] = json!("Ioc");
-    closing_order["statusTimestamp"] = json!(1_700_000_001_001u64);
+    closing_order["statusTimestamp"] = json!(1_700_000_001_001_u64);
     let mut fills = vec![closing_fill];
     let mut orders = vec![closing_order];
 
     if capped {
         fills.extend((3..2_002).map(|oid| {
             let mut fill = user_fill("ETH", oid);
-            fill["time"] = json!(1_700_000_002_000u64);
+            fill["time"] = json!(1_700_000_002_000_u64);
             fill
         }));
     } else {
@@ -12576,15 +12578,15 @@ async fn test_generate_mass_status_lookback_filters_only_fills(
     *state.frontend_open_orders_response.lock().await = Some(json!([
         {
             "coin": "BTC", "side": "B", "limitPx": "95000.0", "sz": "0.001",
-            "oid": 200_001_u64, "timestamp": 1u64, "origSz": "0.001",
+            "oid": 200_001_u64, "timestamp": 1_u64, "origSz": "0.001",
         },
     ]));
     let fills = json!([
         {
             "coin": "BTC", "px": "50000.0", "sz": "0.001", "side": "B",
-            "time": 1u64, "startPosition": "0",
+            "time": 1_u64, "startPosition": "0",
             "dir": "Open Long", "closedPnl": "0", "hash": "0xaaaa",
-            "oid": 200_001_u64, "crossed": true, "fee": "0.01", "tid": 1u64,
+            "oid": 200_001_u64, "crossed": true, "fee": "0.01", "tid": 1_u64,
             "feeToken": "USDC",
         },
     ]);
@@ -12631,16 +12633,16 @@ async fn test_generate_mass_status_reconstructs_filled_order_for_retained_fill()
     *state.user_fills_response.lock().await = Some(json!([
         {
             "coin": "BTC", "px": "50000.0", "sz": "0.001", "side": "B",
-            "time": 1_754_000_000_000u64, "startPosition": "0",
+            "time": 1_754_000_000_000_u64, "startPosition": "0",
             "dir": "Open Long", "closedPnl": "0", "hash": "0xbbbb",
-            "oid": 200_002_u64, "crossed": true, "fee": "0.01", "tid": 2u64,
+            "oid": 200_002_u64, "crossed": true, "fee": "0.01", "tid": 2_u64,
             "feeToken": "USDC",
         },
         {
             "coin": "BTC", "px": "49940.0", "sz": "0.001", "side": "A",
-            "time": 1_754_000_001_000u64, "startPosition": "0.001",
+            "time": 1_754_000_001_000_u64, "startPosition": "0.001",
             "dir": "Close Long", "closedPnl": "-0.06", "hash": "0xcccc",
-            "oid": 200_003_u64, "crossed": true, "fee": "0.01", "tid": 3u64,
+            "oid": 200_003_u64, "crossed": true, "fee": "0.01", "tid": 3_u64,
             "feeToken": "USDC",
         }
     ]));
@@ -12648,44 +12650,44 @@ async fn test_generate_mass_status_reconstructs_filled_order_for_retained_fill()
         {
             "order": {
                 "coin": "BTC", "side": "B", "limitPx": "50000.0", "sz": "0",
-                "oid": 200_002_u64, "timestamp": 1_754_000_000_000u64,
+                "oid": 200_002_u64, "timestamp": 1_754_000_000_000_u64,
                 "origSz": "0.001", "reduceOnly": false, "orderType": "Limit",
                 "tif": "Ioc", "cloid": "0x00000000000000000000000000000002"
             },
             "status": "filled",
-            "statusTimestamp": 1_754_000_000_001u64
+            "statusTimestamp": 1_754_000_000_001_u64
         },
         {
             "order": {
                 "coin": "BTC", "side": "B", "limitPx": "50000.0", "sz": "0.001",
-                "oid": 200_002_u64, "timestamp": 1_754_000_000_000u64,
+                "oid": 200_002_u64, "timestamp": 1_754_000_000_000_u64,
                 "origSz": "0.001", "reduceOnly": false, "orderType": "Limit",
                 "tif": "Ioc", "cloid": "0x00000000000000000000000000000002"
             },
             "status": "open",
-            "statusTimestamp": 1_754_000_000_000u64
+            "statusTimestamp": 1_754_000_000_000_u64
         },
         {
             "order": {
                 "coin": "BTC", "side": "A", "limitPx": "49940.0", "sz": "0",
-                "oid": 200_003_u64, "timestamp": 1_754_000_001_000u64,
+                "oid": 200_003_u64, "timestamp": 1_754_000_001_000_u64,
                 "origSz": "0.001", "reduceOnly": true, "orderType": "Stop Market",
                 "triggerPx": "0.0", "isTrigger": false,
                 "tif": null, "cloid": "0x00000000000000000000000000000003"
             },
             "status": "filled",
-            "statusTimestamp": 1_754_000_001_001u64
+            "statusTimestamp": 1_754_000_001_001_u64
         },
         {
             "order": {
                 "coin": "BTC", "side": "A", "limitPx": "49940.0", "sz": "0.001",
-                "oid": 200_003_u64, "timestamp": 1_754_000_001_000u64,
+                "oid": 200_003_u64, "timestamp": 1_754_000_001_000_u64,
                 "origSz": "0.001", "reduceOnly": true, "orderType": "Stop Market",
                 "triggerPx": "49950.0", "isTrigger": true,
                 "tif": null, "cloid": "0x00000000000000000000000000000003"
             },
             "status": "open",
-            "statusTimestamp": 1_754_000_001_000u64
+            "statusTimestamp": 1_754_000_001_000_u64
         }
     ]));
     let addr = start_mock_server(state).await;
@@ -12739,25 +12741,25 @@ fn capped_stop_history(status: &str, sz: &str, reduce_only: bool) -> Value {
         {
             "order": {
                 "coin": "BTC", "side": "A", "limitPx": "49400.0", "sz": sz,
-                "oid": 200_004_u64, "timestamp": 1_754_000_001_000u64,
+                "oid": 200_004_u64, "timestamp": 1_754_000_001_000_u64,
                 "origSz": "0.002", "reduceOnly": reduce_only, "orderType": "Stop Market",
                 "triggerPx": "0.0", "isTrigger": false, "triggerCondition": "Triggered",
                 "tif": "Gtc", "cloid": "0x00000000000000000000000000000004"
             },
             "status": status,
-            "statusTimestamp": 1_754_000_001_000u64
+            "statusTimestamp": 1_754_000_001_000_u64
         },
         {
             "order": {
                 "coin": "BTC", "side": "A", "limitPx": "49500.0", "sz": "0.002",
-                "oid": 200_004_u64, "timestamp": 1_754_000_000_000u64,
+                "oid": 200_004_u64, "timestamp": 1_754_000_000_000_u64,
                 "origSz": "0.002", "reduceOnly": reduce_only, "orderType": "Stop Market",
                 "triggerPx": "49950.0", "isTrigger": true,
                 "triggerCondition": "Price below 49950",
                 "tif": null, "cloid": "0x00000000000000000000000000000004"
             },
             "status": "open",
-            "statusTimestamp": 1_754_000_000_000u64
+            "statusTimestamp": 1_754_000_000_000_u64
         }
     ])
 }
@@ -12771,7 +12773,8 @@ fn pad_to_venue_cap(rows: &mut Value, template: &Value, oid_key: &[&str]) {
         for key in &oid_key[..oid_key.len() - 1] {
             target = &mut target[*key];
         }
-        target[oid_key[oid_key.len() - 1]] = json!(300_000u64 + rows.len() as u64);
+
+        target[oid_key[oid_key.len() - 1]] = json!(300_000_u64 + rows.len() as u64);
         rows.push(row);
     }
 }
@@ -12914,7 +12917,7 @@ async fn test_generate_mass_status_uses_instruments_before_connect() {
 
 #[rstest]
 #[case::unbounded(None)]
-#[case::bounded(Some(60u64))]
+#[case::bounded(Some(60_u64))]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_generate_mass_status_clean_empty_snapshot_is_authoritative(
     #[case] lookback_mins: Option<u64>,
@@ -13954,8 +13957,8 @@ async fn test_report_tasks_match_inline_fields() {
         UnixNanos::default(),
         instrument,
         None,
-        Some(UnixNanos::from(1_700_000_000_000_000_000u64)),
-        Some(UnixNanos::from(1_700_000_000_000_000_000u64)),
+        Some(UnixNanos::from(1_700_000_000_000_000_000_u64)),
+        Some(UnixNanos::from(1_700_000_000_000_000_000_u64)),
         None,
         None,
     );

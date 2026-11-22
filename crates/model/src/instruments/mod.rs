@@ -897,7 +897,7 @@ mod tests {
     }
 
     pub(super) fn default_price_increment(precision: u8) -> Price {
-        let step = 10f64.powi(-i32::from(precision));
+        let step = 10_f64.powi(-i32::from(precision));
         Price::new(step, precision)
     }
 
@@ -1685,7 +1685,7 @@ mod tests {
             currency_pair_btcusdt.price_precision(),
             currency_pair_btcusdt.min_price_increment_precision(),
         );
-        let step = 10f64.powi(-i32::from(rounding_precision));
+        let step = 10_f64.powi(-i32::from(rounding_precision));
         let base_even_multiple = 42.0;
         let base_value = step * base_even_multiple;
         let delta = step / 2000.0;
@@ -2003,7 +2003,7 @@ mod tests {
 
     proptest! {
         #[rstest]
-        fn make_price_qty_fuzz(input in 0.0001f64..1e8) {
+        fn make_price_qty_fuzz(input in 0.0001_f64..1e8) {
             let instrument = currency_pair_btcusdt();
             let price = instrument.make_price(input);
             prop_assert!(price.as_f64().is_finite());
@@ -2132,12 +2132,12 @@ mod tests {
     #[case::dp14(Decimal::new(100_000_000_000_000_000, 14), Decimal::new(2, 0), 500.0)]
     #[case::dp15(Decimal::new(1_000_000_000_000_000_000, 15), Decimal::new(2, 0), 500.0)]
     #[case::dp16(
-        Decimal::from_i128_with_scale(10_000_000_000_000_000_000i128, 16),
+        Decimal::from_i128_with_scale(10_000_000_000_000_000_000_i128, 16),
         Decimal::new(2, 0),
         500.0
     )]
     #[case::dp17(
-        Decimal::from_i128_with_scale(100_000_000_000_000_000_000i128, 17),
+        Decimal::from_i128_with_scale(100_000_000_000_000_000_000_i128, 17),
         Decimal::new(2, 0),
         500.0
     )]

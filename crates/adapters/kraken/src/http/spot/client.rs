@@ -3901,7 +3901,7 @@ mod tests {
     #[case::gtd_limit_with_expire(
         true,
         TimeInForce::Gtd,
-        Some(1_704_067_200_000_000_000u64),
+        Some(1_704_067_200_000_000_000_u64),
         Some("GTD"),
         Some("1704067200")
     )]

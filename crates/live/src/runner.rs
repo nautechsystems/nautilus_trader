@@ -700,7 +700,7 @@ impl AsyncRunner {
             + pending.6
             + deferred_exec_events.len();
         log::debug!("Draining shutdown queues ({total} events initially pending)");
-        let mut progress = 0usize;
+        let mut progress = 0_usize;
 
         let mut process = |event| {
             process(event);

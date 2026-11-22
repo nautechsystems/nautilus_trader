@@ -6594,7 +6594,7 @@ mod rust_tests {
         S: AsyncRead + Unpin,
     {
         let mut buf = Vec::new();
-        let mut chunk = [0u8; 256];
+        let mut chunk = [0_u8; 256];
         loop {
             let n = stream.read(&mut chunk).await.unwrap();
             assert!(n > 0, "HTTP request closed before headers completed");
@@ -12080,7 +12080,7 @@ mod property_tests {
         #[rstest]
         fn test_reconnect_buffer_releases_after_auth_success_once(
             payloads in proptest::collection::vec(any::<u8>(), 1..32),
-            extra_success_ticks in 0usize..16
+            extra_success_ticks in 0_usize..16
         ) {
             let auth_tracker = Arc::new(OnceLock::new());
             let reconnect_buffer_waits_for_auth = AtomicBool::new(true);
@@ -12179,7 +12179,7 @@ mod property_tests {
         fn test_reconnect_buffer_discards_after_auth_failure(
             before_failure_payloads in proptest::collection::vec(any::<u8>(), 0..16),
             after_failure_payloads in proptest::collection::vec(any::<u8>(), 1..16),
-            later_success_ticks in 0usize..16
+            later_success_ticks in 0_usize..16
         ) {
             let auth_tracker = Arc::new(OnceLock::new());
             let reconnect_buffer_waits_for_auth = AtomicBool::new(true);

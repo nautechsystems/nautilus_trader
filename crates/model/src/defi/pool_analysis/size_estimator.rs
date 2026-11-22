@@ -149,7 +149,7 @@ pub fn estimate_max_size_for_impact(
     }
 
     let sqrt_price = U256::from(profiler.state.price_sqrt_ratio_x96);
-    let q96 = U256::from(1u128) << 96;
+    let q96 = U256::from(1_u128) << 96;
     let liquidity_u256 = U256::from(liquidity);
     let impact_ratio = U256::from(impact_bps);
 
@@ -167,7 +167,7 @@ pub fn estimate_max_size_for_impact(
     // 2x safety factor, clamp to reasonable range
     let doubled = base * U256::from(2);
     let min_val = U256::from(1_000_000);
-    let max_val = U256::from(1_000_000_000_000_000_000_000_000_000_000u128);
+    let max_val = U256::from(1_000_000_000_000_000_000_000_000_000_000_u128);
 
     if doubled < min_val {
         min_val

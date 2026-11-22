@@ -1845,9 +1845,9 @@ struct TimerModel {
 fn clock_operation_strategy() -> impl Strategy<Value = ClockOperation> {
     prop_oneof![
         5 => (
-            0usize..CLOCK_TIMER_NAMES.len(),
-            1u64..=15,
-            prop::option::of(1u64..=60),
+            0_usize..CLOCK_TIMER_NAMES.len(),
+            1_u64..=15,
+            prop::option::of(1_u64..=60),
             prop::bool::ANY,
         )
             .prop_map(
@@ -1860,16 +1860,16 @@ fn clock_operation_strategy() -> impl Strategy<Value = ClockOperation> {
                     }
                 },
             ),
-        2 => (0usize..CLOCK_TIMER_NAMES.len()).prop_map(ClockOperation::Cancel),
-        5 => (0u64..=30, prop::bool::ANY)
+        2 => (0_usize..CLOCK_TIMER_NAMES.len()).prop_map(ClockOperation::Cancel),
+        5 => (0_u64..=30, prop::bool::ANY)
             .prop_map(|(delta_ns, set_time)| ClockOperation::Advance { delta_ns, set_time }),
     ]
 }
 
 fn clock_time_strategy() -> impl Strategy<Value = u64> {
     prop_oneof![
-        6 => 0u64..=u64::MAX - CLOCK_TIME_HEADROOM,
-        2 => 0u64..=1_000_000,
+        6 => 0_u64..=u64::MAX - CLOCK_TIME_HEADROOM,
+        2 => 0_u64..=1_000_000,
         1 => Just(1_700_000_000_000_000_000),
         1 => Just(u64::MAX - CLOCK_TIME_HEADROOM),
     ]

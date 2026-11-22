@@ -731,8 +731,8 @@ mod tests {
         let msg: CoinbaseWsMessage = serde_json::from_str(&json).unwrap();
         let instrument = test_instrument();
         let account_id = AccountId::new("COINBASE-001");
-        let ts_event = UnixNanos::from(1_705_314_600_000_000_000u64);
-        let ts_init = UnixNanos::from(1_705_314_700_000_000_000u64);
+        let ts_event = UnixNanos::from(1_705_314_600_000_000_000_u64);
+        let ts_init = UnixNanos::from(1_705_314_700_000_000_000_u64);
 
         let order = match msg {
             CoinbaseWsMessage::User { events, .. } => events[0].orders[0].clone(),

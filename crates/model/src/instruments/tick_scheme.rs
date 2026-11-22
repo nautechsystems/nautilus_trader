@@ -1082,8 +1082,8 @@ mod tests {
         #[case] adjustment: PriceRaw,
     ) {
         let grid = FixedTickScheme::new(Price::from("0.0000000000000003")).unwrap();
-        let decimal = Decimal::from(10_000_000_000_000i64);
-        let expected = 100_000_000_000_000_000_000_000_000_000i128 + adjustment;
+        let decimal = Decimal::from(10_000_000_000_000_i64);
+        let expected = 100_000_000_000_000_000_000_000_000_000_i128 + adjustment;
 
         let price = grid.next_price_from_decimal(side, decimal, 0, 16).unwrap();
 
@@ -2113,7 +2113,7 @@ mod tests {
     // Property: bid(value, 0) <= value for any value in range
     proptest! {
         #[rstest]
-        fn prop_tiered_bid_at_or_below_value(value in 0.1f64..100_000.0) {
+        fn prop_tiered_bid_at_or_below_value(value in 0.1_f64..100_000.0) {
             let scheme = TieredTickScheme::topix100();
             if let Some(bid) = scheme.next_bid_price(value, 0, 4) {
                 prop_assert!(bid.as_f64() <= value + 1e-9);
@@ -2124,7 +2124,7 @@ mod tests {
     // Property: ask(value, 0) >= value for any value in range
     proptest! {
         #[rstest]
-        fn prop_tiered_ask_at_or_above_value(value in 0.1f64..100_000.0) {
+        fn prop_tiered_ask_at_or_above_value(value in 0.1_f64..100_000.0) {
             let scheme = TieredTickScheme::topix100();
             if let Some(ask) = scheme.next_ask_price(value, 0, 4) {
                 prop_assert!(ask.as_f64() >= value - 1e-9);
@@ -2136,7 +2136,7 @@ mod tests {
         #[rstest]
         fn prop_tiered_bid_ask_match_adjacent_ticks(
             raw_index in any::<usize>(),
-            offset in 0usize..=4,
+            offset in 0_usize..=4,
         ) {
             let scheme = TieredTickScheme::topix100();
             let ticks = scheme.ticks();
@@ -2162,7 +2162,7 @@ mod tests {
     // Property: ask(value, n) is monotonically increasing in n
     proptest! {
         #[rstest]
-        fn prop_tiered_ask_monotonic_in_n(value in 1.0f64..10_000.0) {
+        fn prop_tiered_ask_monotonic_in_n(value in 1.0_f64..10_000.0) {
             let scheme = TieredTickScheme::topix100();
             let mut prev: Option<Price> = None;
 
@@ -2181,8 +2181,8 @@ mod tests {
     proptest! {
         #[rstest]
         fn prop_tiered_ticks_sorted(
-            start in 1.0f64..100.0,
-            step in 0.01f64..10.0,
+            start in 1.0_f64..100.0,
+            step in 0.01_f64..10.0,
         ) {
             let stop = start + step * 10.0;
             if let Ok(scheme) = TieredTickScheme::new(&[(start, stop, step)], 2, 100) {

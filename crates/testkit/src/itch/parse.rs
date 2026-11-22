@@ -807,7 +807,7 @@ mod tests {
         buf.extend_from_slice(&msg_len.to_be_bytes());
         buf.push(tag);
         buf.extend_from_slice(&stock_locate.to_be_bytes());
-        buf.extend_from_slice(&0u16.to_be_bytes()); // tracking_number
+        buf.extend_from_slice(&0_u16.to_be_bytes()); // tracking_number
         // 6-byte timestamp (big-endian u48)
         buf.push((timestamp >> 40) as u8);
         buf.push((timestamp >> 32) as u8);
@@ -824,7 +824,7 @@ mod tests {
         body.extend_from_slice(stock);
         body.push(b'Q'); // market_category
         body.push(b'N'); // financial_status
-        body.extend_from_slice(&100u32.to_be_bytes()); // round_lot_size
+        body.extend_from_slice(&100_u32.to_be_bytes()); // round_lot_size
         body.push(b'Y'); // round_lots_only
         body.push(b'C'); // issue_classification
         body.extend_from_slice(b"C "); // issue_subtype
@@ -833,7 +833,7 @@ mod tests {
         body.push(b'N'); // ipo_flag
         body.push(b'1'); // luld_ref_price_tier
         body.push(b'N'); // etp_flag
-        body.extend_from_slice(&0u32.to_be_bytes()); // etp_leverage_factor
+        body.extend_from_slice(&0_u32.to_be_bytes()); // etp_leverage_factor
         body.push(b'N'); // inverse_indicator
         build_msg(b'R', locate, 0, &body)
     }

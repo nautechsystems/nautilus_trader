@@ -400,7 +400,7 @@ where
     S: AsyncRead + Unpin,
 {
     let mut buf = Vec::with_capacity(512);
-    let mut byte = [0u8; 1];
+    let mut byte = [0_u8; 1];
     loop {
         let n = stream.read(&mut byte).await.map_err(TransportError::Io)?;
         if n == 0 {
@@ -688,7 +688,7 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
-            let mut buf = vec![0u8; 1024];
+            let mut buf = vec![0_u8; 1024];
 
             // Read until we see the CONNECT terminator.
             loop {
@@ -905,7 +905,7 @@ mod tests {
         stream.flush().await.unwrap();
         read_connect_response(&mut stream).await.unwrap();
 
-        let mut tail = [0u8; b"LEFTOVER".len()];
+        let mut tail = [0_u8; b"LEFTOVER".len()];
         AsyncReadExt::read_exact(&mut stream, &mut tail)
             .await
             .unwrap();

@@ -46,7 +46,7 @@ pub(crate) fn auto_load_retry_delay_with_jitter(
 ) -> Duration {
     let base = base_secs.max(0.0);
     let max = max_secs.max(base);
-    let raw = base * 2f64.powi(attempt.min(30) as i32);
+    let raw = base * 2_f64.powi(attempt.min(30) as i32);
     let capped = raw.min(max);
     let total = capped + capped * AUTO_LOAD_RETRY_JITTER_FRACTION * jitter_unit.clamp(0.0, 1.0);
     Duration::from_secs_f64(total.max(0.0))

@@ -741,8 +741,8 @@ mod tests {
         fn throttle_op_strategy() -> impl Strategy<Value = ThrottleOp> {
             prop_oneof![
                 3 => Just(ThrottleOp::Attempt),
-                2 => (0u64..=180_000).prop_map(ThrottleOp::AdvanceMs),
-                3 => (0u64..=10_000).prop_map(ThrottleOp::Gate),
+                2 => (0_u64..=180_000).prop_map(ThrottleOp::AdvanceMs),
+                3 => (0_u64..=10_000).prop_map(ThrottleOp::Gate),
             ]
         }
 
@@ -759,8 +759,8 @@ mod tests {
 
             #[rstest]
             fn test_throttle_threshold_boundary(
-                attempt_count in 0usize..=8,
-                input_ms in 0u64..=5_000,
+                attempt_count in 0_usize..=8,
+                input_ms in 0_u64..=5_000,
             ) {
                 let runtime = build_paused_runtime();
                 runtime.block_on(async move {
@@ -792,7 +792,7 @@ mod tests {
                 runtime.block_on(async move {
                     let mut throttle = ReconnectThrottle::default();
                     let mut attempt_times_ms: Vec<u64> = Vec::new();
-                    let mut now_ms = 0u64;
+                    let mut now_ms = 0_u64;
                     let window_ms = RECONNECT_MIN_DELAY_WINDOW.as_millis() as u64;
 
                     for op in ops {

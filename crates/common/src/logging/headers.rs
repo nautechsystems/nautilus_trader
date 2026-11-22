@@ -374,7 +374,7 @@ fn header_line(c: Ustr, s: &str) {
 }
 
 fn bytes_to_gib(b: u64) -> f64 {
-    b as f64 / (2u64.pow(30) as f64)
+    b as f64 / (2_u64.pow(30) as f64)
 }
 
 #[cfg(feature = "python")]

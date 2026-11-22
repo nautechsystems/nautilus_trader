@@ -5520,7 +5520,7 @@ class CapturingActor:
                 .unwrap(),
             I256::from_str("1000000000000000000").unwrap(),
             I256::from_str("400000000000000").unwrap(),
-            U160::from(59000000000000u128),
+            U160::from(59000000000000_u128),
             1000000,
             100,
         )
@@ -5548,8 +5548,8 @@ class CapturingActor:
                 .parse()
                 .unwrap(),
             1000,
-            U256::from(1_000u64),
-            U256::from(2_000u64),
+            U256::from(1_000_u64),
+            U256::from(2_000_u64),
             -10,
             10,
             UnixNanos::default(),
@@ -5601,10 +5601,10 @@ class CapturingActor:
             "0x742E4422b21FB8B4dF463F28689AC98bD56c39e0"
                 .parse()
                 .unwrap(),
-            U256::from(100u64),
-            U256::from(200u64),
-            U256::from(101u64),
-            U256::from(201u64),
+            U256::from(100_u64),
+            U256::from(200_u64),
+            U256::from(101_u64),
+            U256::from(201_u64),
         )
     }
 

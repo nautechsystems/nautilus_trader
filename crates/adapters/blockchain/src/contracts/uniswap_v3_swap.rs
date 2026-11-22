@@ -189,11 +189,11 @@ mod tests {
             params: UniswapV3SwapRouter::ExactInputSingleParams {
                 tokenIn: address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
                 tokenOut: address!("af88d065e77c8cC2239327C5EDb3A432268e5831"),
-                fee: U24::try_from(500u32).unwrap(),
+                fee: U24::try_from(500_u32).unwrap(),
                 recipient: address!("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266"),
-                deadline: U256::from(1_761_889_100u64),
-                amountIn: U256::from(1_000_000_000_000_000u64),
-                amountOutMinimum: U256::from(1_995_000u64),
+                deadline: U256::from(1_761_889_100_u64),
+                amountIn: U256::from(1_000_000_000_000_000_u64),
+                amountOutMinimum: U256::from(1_995_000_u64),
                 sqrtPriceLimitX96: U160::ZERO,
             },
         }
@@ -209,11 +209,11 @@ mod tests {
             params: UniswapV3SwapRouter::ExactInputSingleParams {
                 tokenIn: address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
                 tokenOut: address!("af88d065e77c8cC2239327C5EDb3A432268e5831"),
-                fee: U24::try_from(500u32).unwrap(),
+                fee: U24::try_from(500_u32).unwrap(),
                 recipient: address!("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266"),
-                deadline: U256::from(1_761_889_100u64),
-                amountIn: U256::from(1_000_000_000_000_000u64),
-                amountOutMinimum: U256::from(1_995_000u64),
+                deadline: U256::from(1_761_889_100_u64),
+                amountIn: U256::from(1_000_000_000_000_000_u64),
+                amountOutMinimum: U256::from(1_995_000_u64),
                 sqrtPriceLimitX96: U160::ZERO,
             },
         }
@@ -246,7 +246,7 @@ mod tests {
         let calldata = UniswapV3Factory::getPoolCall {
             tokenA: address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
             tokenB: address!("af88d065e77c8cC2239327C5EDb3A432268e5831"),
-            fee: U24::try_from(500u32).unwrap(),
+            fee: U24::try_from(500_u32).unwrap(),
         }
         .abi_encode();
         assert_eq!(hex::encode(&calldata[..4]), "1698ee82");

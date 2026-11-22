@@ -1732,8 +1732,8 @@ mod tests {
     fn test_inverted_time_range_rejected() {
         let result = data_builder!(NautilusDataType::QuoteTick, "/tmp/catalog".to_string())
             .instrument_id(InstrumentId::from("ETH/USDT.BINANCE"))
-            .start_time(UnixNanos::from(5_000_000_000u64))
-            .end_time(UnixNanos::from(1_000_000_000u64))
+            .start_time(UnixNanos::from(5_000_000_000_u64))
+            .end_time(UnixNanos::from(1_000_000_000_u64))
             .build();
         assert!(matches!(result, Err(ConfigError::Range { field, .. }) if field == "start_time"));
     }
@@ -1742,8 +1742,8 @@ mod tests {
     fn test_equal_time_range_accepted() {
         let result = data_builder!(NautilusDataType::QuoteTick, "/tmp/catalog".to_string())
             .instrument_id(InstrumentId::from("ETH/USDT.BINANCE"))
-            .start_time(UnixNanos::from(1_000_000_000u64))
-            .end_time(UnixNanos::from(1_000_000_000u64))
+            .start_time(UnixNanos::from(1_000_000_000_u64))
+            .end_time(UnixNanos::from(1_000_000_000_u64))
             .build();
         assert!(result.is_ok());
     }
@@ -1773,8 +1773,8 @@ mod tests {
     #[rstest]
     fn test_data_config_multiple_violations_collected() {
         let result = data_builder!(NautilusDataType::QuoteTick, String::new())
-            .start_time(UnixNanos::from(5_000_000_000u64))
-            .end_time(UnixNanos::from(1_000_000_000u64))
+            .start_time(UnixNanos::from(5_000_000_000_u64))
+            .end_time(UnixNanos::from(1_000_000_000_u64))
             .build();
         let ConfigError::Multiple { errors } = result.unwrap_err() else {
             panic!("expected ConfigError::Multiple");
@@ -1982,8 +1982,8 @@ mod tests {
         let result = BacktestRunConfig::builder()
             .venues(vec![minimal_venue()])
             .data(vec![])
-            .start(UnixNanos::from(5_000_000_000u64))
-            .end(UnixNanos::from(1_000_000_000u64))
+            .start(UnixNanos::from(5_000_000_000_u64))
+            .end(UnixNanos::from(1_000_000_000_u64))
             .build();
         assert!(matches!(result, Err(ConfigError::Range { field, .. }) if field == "start"));
     }
@@ -1993,8 +1993,8 @@ mod tests {
         let result = BacktestRunConfig::builder()
             .venues(vec![minimal_venue()])
             .data(vec![])
-            .start(UnixNanos::from(1_000_000_000u64))
-            .end(UnixNanos::from(1_000_000_000u64))
+            .start(UnixNanos::from(1_000_000_000_u64))
+            .end(UnixNanos::from(1_000_000_000_u64))
             .build();
         assert!(result.is_ok());
     }
@@ -2050,8 +2050,8 @@ mod tests {
         let result = BacktestRunConfig::builder()
             .venues(vec![])
             .data(vec![])
-            .start(UnixNanos::from(5_000_000_000u64))
-            .end(UnixNanos::from(1_000_000_000u64))
+            .start(UnixNanos::from(5_000_000_000_u64))
+            .end(UnixNanos::from(1_000_000_000_u64))
             .build();
         let ConfigError::Multiple { errors } = result.unwrap_err() else {
             panic!("expected ConfigError::Multiple");

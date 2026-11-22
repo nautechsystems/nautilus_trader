@@ -2889,19 +2889,19 @@ class Runtime:
                     output.call_method1(
                         py,
                         method,
-                        (py_order, explicit_venue, reason, 73u64, 79u64, cause),
+                        (py_order, explicit_venue, reason, 73_u64, 79_u64, cause),
                     )
                 } else {
                     output.call_method1(
                         py,
                         method,
-                        (py_order, explicit_venue, reason, 73u64, 79u64),
+                        (py_order, explicit_venue, reason, 73_u64, 79_u64),
                     )
                 }
             } else if with_cause {
-                output.call_method1(py, method, (py_order, reason, 73u64, 79u64, cause))
+                output.call_method1(py, method, (py_order, reason, 73_u64, 79_u64, cause))
             } else {
-                output.call_method1(py, method, (py_order, reason, 73u64, 79u64))
+                output.call_method1(py, method, (py_order, reason, 73_u64, 79_u64))
             };
 
             assert!(result.unwrap().is_none(py));

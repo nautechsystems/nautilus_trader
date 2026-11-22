@@ -1409,7 +1409,7 @@ async fn test_v2_trading_approvals_refuse_invalid_limits_before_submit(
 #[tokio::test]
 async fn test_v2_operations_use_router_and_asset_holder(
     #[case] operation: &str,
-    #[values(1u8, 2u8)] module: u8,
+    #[values(1_u8, 2_u8)] module: u8,
     #[values(false, true)] native: bool,
 ) {
     let state = TestServerState::default();
@@ -1530,7 +1530,7 @@ async fn test_v2_operations_use_router_and_asset_holder(
         })]
     } else {
         let outcomes = match operation {
-            "merge" => vec![0u8, 1],
+            "merge" => vec![0_u8, 1],
             "redeem_yes" => vec![0],
             _ => vec![1],
         };
@@ -1567,7 +1567,7 @@ async fn test_v2_operations_use_router_and_asset_holder(
         assert_eq!(payout["params"][0]["to"], format!("{POSITION_MANAGER:#x}"));
         assert_eq!(
             payout["params"][0]["data"],
-            format!("{prefix}{position:064x}{:064x}", 654_321u64)
+            format!("{prefix}{position:064x}{:064x}", 654_321_u64)
         );
     }
 }
@@ -1809,7 +1809,7 @@ fn market_v2_json(module: u8) -> Value {
     let yes = alloy_primitives::U256::from_str_radix(&condition[2..], 16).unwrap();
     json!({"version":"v2", "condition_id":condition, "closed":false, "neg_risk":module == 2,
     "tokens":[
-        {"token_id":(yes + alloy_primitives::U256::from(1u8)).to_string(),"outcome":"No","winner":false},
+        {"token_id":(yes + alloy_primitives::U256::from(1_u8)).to_string(),"outcome":"No","winner":false},
         {"token_id":yes.to_string(),"outcome":"Yes","winner":false}
     ]})
 }

@@ -69,7 +69,7 @@ impl Fp {
         let (a, e) = xl.overflowing_add(xl << 32);
         let b = a.wrapping_sub(a >> 32).wrapping_sub(e as u64);
         let (r, c) = xh.overflowing_sub(b);
-        r.wrapping_sub(0u32.wrapping_sub(c as u32) as u64)
+        r.wrapping_sub(0_u32.wrapping_sub(c as u32) as u64)
     }
 
     #[inline(always)]
@@ -139,14 +139,14 @@ impl Fp {
     #[inline(always)]
     const fn add_inner(self, rhs: Self) -> Self {
         let (x1, c1) = self.0.overflowing_sub(MODULUS - rhs.0);
-        let adj = 0u32.wrapping_sub(c1 as u32);
+        let adj = 0_u32.wrapping_sub(c1 as u32);
         Self(x1.wrapping_sub(adj as u64))
     }
 
     #[inline(always)]
     const fn sub_inner(self, rhs: Self) -> Self {
         let (x1, c1) = self.0.overflowing_sub(rhs.0);
-        let adj = 0u32.wrapping_sub(c1 as u32);
+        let adj = 0_u32.wrapping_sub(c1 as u32);
         Self(x1.wrapping_sub(adj as u64))
     }
 
@@ -238,7 +238,7 @@ impl Fp {
         }
         debug_assert_eq!(qr, Self::ONE);
 
-        let t: u64 = (1u64 << (64 - TWO_ADICITY)) - 1;
+        let t: u64 = (1_u64 << (64 - TWO_ADICITY)) - 1;
         let mut z = Self::from_u64_reduce(POWER_OF_TWO_GENERATOR);
         let mut w = self.pow((t - 1) >> 1);
         let mut x = self * w;
@@ -246,7 +246,7 @@ impl Fp {
         let mut v = TWO_ADICITY;
 
         while b != Self::ONE {
-            let mut k = 0u32;
+            let mut k = 0_u32;
             let mut b2k = b;
 
             while b2k != Self::ONE {
@@ -362,7 +362,7 @@ mod tests {
     fn decode_le8(hex: &str) -> [u8; 8] {
         let bytes = hex_to_bytes(hex);
         assert_eq!(bytes.len(), 8, "expected 8 bytes, was {}", bytes.len());
-        let mut out = [0u8; 8];
+        let mut out = [0_u8; 8];
         out.copy_from_slice(&bytes);
         out
     }
@@ -377,12 +377,12 @@ mod tests {
 
     #[rstest]
     fn modulus_constant_is_goldilocks_prime() {
-        assert_eq!(u128::from(MODULUS), (1u128 << 64) - (1u128 << 32) + 1);
+        assert_eq!(u128::from(MODULUS), (1_u128 << 64) - (1_u128 << 32) + 1);
     }
 
     #[rstest]
     fn round_trip_le_bytes_canonical() {
-        for v in [0u64, 1, 42, MODULUS - 1] {
+        for v in [0_u64, 1, 42, MODULUS - 1] {
             let f = Fp::from_u64_canonical(v).unwrap();
             assert_eq!(f.to_u64(), v);
             let bytes = f.to_le_bytes();
@@ -405,7 +405,7 @@ mod tests {
 
     #[rstest]
     fn sqrt_round_trip_for_known_squares() {
-        for v in [1u64, 2, 4, 9, 16, 100, 1_000_000] {
+        for v in [1_u64, 2, 4, 9, 16, 100, 1_000_000] {
             let x = Fp::from_u64_reduce(v);
             let xs = x.square();
             let s = xs.sqrt().expect("known squares are residues");
@@ -423,8 +423,7 @@ mod tests {
         // Construct a guaranteed non-residue by stepping through small candidates
         // until Euler's criterion fails. Fp has roughly half non-residues, so this
         // resolves on the first or second probe.
-        let mut v = 2u64;
-
+        let mut v = 2_u64;
         loop {
             let x = Fp::from_u64_reduce(v);
             if x.pow((MODULUS - 1) >> 1) == Fp::MINUS_ONE {
@@ -540,7 +539,7 @@ mod tests {
 
         /// `from_u64_canonical` accepts every value in `0..MODULUS`.
         #[rstest]
-        fn prop_from_u64_canonical_accepts_in_range(v in 0u64..MODULUS) {
+        fn prop_from_u64_canonical_accepts_in_range(v in 0_u64..MODULUS) {
             let f = Fp::from_u64_canonical(v).expect("in-range value");
             prop_assert_eq!(f.to_u64(), v);
         }
@@ -553,7 +552,7 @@ mod tests {
 
         /// `msquare(n)` matches `n` iterated `square` calls.
         #[rstest]
-        fn prop_msquare_matches_iterated_square(a in arb_fp(), n in 0u32..16) {
+        fn prop_msquare_matches_iterated_square(a in arb_fp(), n in 0_u32..16) {
             let mut iter = a;
             for _ in 0..n {
                 iter = iter.square();

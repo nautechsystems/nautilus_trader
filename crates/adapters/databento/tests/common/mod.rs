@@ -260,7 +260,7 @@ pub(crate) fn status_msg(instrument_id: u32) -> StatusMsg {
         is_trading: b'Y' as c_char,
         is_quoting: b'Y' as c_char,
         is_short_sell_restricted: b'~' as c_char,
-        _reserved: [0u8; 7],
+        _reserved: [0_u8; 7],
     }
 }
 

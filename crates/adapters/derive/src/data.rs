@@ -1728,7 +1728,7 @@ impl DataClient for DeriveDataClient {
             // `current_end` to one second before each page's earliest bucket.
             let mut seen_timestamps: AHashSet<i64> = AHashSet::new();
             let mut pages: Vec<Vec<Bar>> = Vec::new();
-            let mut total_bars = 0usize;
+            let mut total_bars = 0_usize;
             let mut current_end = end_ts;
             let mut page_count = 0;
             loop {

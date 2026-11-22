@@ -955,8 +955,8 @@ mod tests {
             miner: Some(
                 HypersyncAddress::from_str("0x0000000000000000000000000000000000000001").unwrap(),
             ),
-            gas_limit: Some(Quantity::from(21_000u64)),
-            gas_used: Some(Quantity::from(21_000u64)),
+            gas_limit: Some(Quantity::from(21_000_u64)),
+            gas_used: Some(Quantity::from(21_000_u64)),
             timestamp: Some(Quantity::from(timestamp_secs)),
             ..Default::default()
         }

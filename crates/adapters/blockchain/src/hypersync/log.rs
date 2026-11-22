@@ -363,7 +363,7 @@ mod tests {
 
         let result = extract_transaction_index(&log);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 5u32);
+        assert_eq!(result.unwrap(), 5_u32);
     }
 
     #[rstest]
@@ -408,7 +408,7 @@ mod tests {
 
         let result = extract_log_index(&log);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 10u32);
+        assert_eq!(result.unwrap(), 10_u32);
     }
 
     #[rstest]

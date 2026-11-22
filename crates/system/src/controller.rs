@@ -606,7 +606,7 @@ mod tests {
             .as_any_mut()
             .downcast_mut::<VirtualClock>()
             .expect("test default clock must be VirtualClock");
-        test_clock.set_time(1_000_000_000u64.into());
+        test_clock.set_time(1_000_000_000_u64.into());
         drop(clock_ref);
 
         let msgbus = Rc::new(RefCell::new(MessageBus::new(

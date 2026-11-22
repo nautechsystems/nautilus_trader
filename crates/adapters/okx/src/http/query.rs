@@ -831,7 +831,7 @@ mod tests {
     #[rstest]
     fn test_cursor_nanoseconds_rejected() {
         // 2025-07-01T00:00:00Z in *nanoseconds* on purpose.
-        let after_nanos = 1_725_307_200_000_000_000i64;
+        let after_nanos = 1_725_307_200_000_000_000_i64;
 
         let mut builder = GetCandlesticksParamsBuilder::default();
         builder.inst_id("BTC-USDT-SWAP");
@@ -864,7 +864,7 @@ mod tests {
         let mut builder = GetCandlesticksParamsBuilder::default();
         builder.inst_id("BTC-USDT-SWAP");
         builder.bar("1m");
-        builder.limit(301u32); // Exceeds maximum limit
+        builder.limit(301_u32); // Exceeds maximum limit
 
         // Limit should be rejected
         let result = builder.build();

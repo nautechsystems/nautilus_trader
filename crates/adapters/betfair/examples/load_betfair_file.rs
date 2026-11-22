@@ -58,18 +58,18 @@ fn main() -> anyhow::Result<()> {
     let mut loader = BetfairDataLoader::new(Currency::GBP(), None);
     let items = loader.load(&filepath)?;
 
-    let mut instruments = 0u64;
-    let mut statuses = 0u64;
-    let mut deltas = 0u64;
-    let mut trades = 0u64;
-    let mut tickers = 0u64;
-    let mut starting_prices = 0u64;
-    let mut bsp_deltas = 0u64;
-    let mut closes = 0u64;
-    let mut sequences = 0u64;
-    let mut race_runners = 0u64;
-    let mut race_progress = 0u64;
-    let mut cricket_matches = 0u64;
+    let mut instruments = 0_u64;
+    let mut statuses = 0_u64;
+    let mut deltas = 0_u64;
+    let mut trades = 0_u64;
+    let mut tickers = 0_u64;
+    let mut starting_prices = 0_u64;
+    let mut bsp_deltas = 0_u64;
+    let mut closes = 0_u64;
+    let mut sequences = 0_u64;
+    let mut race_runners = 0_u64;
+    let mut race_progress = 0_u64;
+    let mut cricket_matches = 0_u64;
 
     for item in &items {
         match item {

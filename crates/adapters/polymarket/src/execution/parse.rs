@@ -1521,7 +1521,7 @@ mod tests {
             amount,
             price,
             dec!(0),
-            Decimal::from(0u32),
+            Decimal::from(0_u32),
             builder_rate,
         )
         .unwrap();
@@ -1560,19 +1560,19 @@ mod tests {
     #[rstest]
     fn test_parse_timestamp_ms() {
         let ts = parse_timestamp("1703875200000").unwrap();
-        assert_eq!(ts, UnixNanos::from(1_703_875_200_000_000_000u64));
+        assert_eq!(ts, UnixNanos::from(1_703_875_200_000_000_000_u64));
     }
 
     #[rstest]
     fn test_parse_timestamp_secs() {
         let ts = parse_timestamp("1703875200").unwrap();
-        assert_eq!(ts, UnixNanos::from(1_703_875_200_000_000_000u64));
+        assert_eq!(ts, UnixNanos::from(1_703_875_200_000_000_000_u64));
     }
 
     #[rstest]
     fn test_parse_timestamp_rfc3339() {
         let ts = parse_timestamp("2024-01-01T00:00:00Z").unwrap();
-        assert_eq!(ts, UnixNanos::from(1_704_067_200_000_000_000u64));
+        assert_eq!(ts, UnixNanos::from(1_704_067_200_000_000_000_u64));
     }
 
     #[rstest]
@@ -1608,7 +1608,7 @@ mod tests {
             None,
             4,
             6,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         )
         .unwrap();
 
@@ -1633,13 +1633,13 @@ mod tests {
         assert_eq!(report.filled_qty.precision, 6);
         assert_eq!(
             report.ts_accepted,
-            UnixNanos::from(1_703_875_200_000_000_000u64)
+            UnixNanos::from(1_703_875_200_000_000_000_u64)
         );
         assert_eq!(
             report.ts_last,
-            UnixNanos::from(1_703_875_200_000_000_000u64)
+            UnixNanos::from(1_703_875_200_000_000_000_u64)
         );
-        assert_eq!(report.ts_init, UnixNanos::from(1_000_000_000u64));
+        assert_eq!(report.ts_init, UnixNanos::from(1_000_000_000_u64));
         // Fixture has expiration=null which must surface as no expire_time.
         assert_eq!(report.expire_time, None);
     }
@@ -1669,7 +1669,7 @@ mod tests {
             None,
             4,
             6,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         )
         .unwrap();
 
@@ -1721,7 +1721,7 @@ mod tests {
             None,
             3,
             6,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         )
         .unwrap();
 
@@ -1771,7 +1771,7 @@ mod tests {
             None,
             3,
             6,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         )
         .unwrap();
 
@@ -1813,7 +1813,7 @@ mod tests {
             None,
             3,
             6,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         )
         .unwrap();
 
@@ -1830,7 +1830,7 @@ mod tests {
     #[case::garbage(Some("not-a-number"), None)]
     #[case::positive_seconds(
         Some("1735689600"),
-        Some(UnixNanos::from(1_735_689_600_000_000_000u64))
+        Some(UnixNanos::from(1_735_689_600_000_000_000_u64))
     )]
     fn test_parse_order_status_report_expiration(
         #[case] raw: Option<&str>,
@@ -1861,7 +1861,7 @@ mod tests {
             None,
             4,
             6,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         )
         .unwrap();
 
@@ -1992,9 +1992,9 @@ mod tests {
             Currency::pUSD(),
             // Large enough that the commission exceeds Money's fixed-point range, while the
             // Decimal arithmetic itself stays well inside its own limits
-            Decimal::from_i128_with_scale(100_000_000_000_000_000_000_000_000i128, 0),
+            Decimal::from_i128_with_scale(100_000_000_000_000_000_000_000_000_i128, 0),
             Decimal::ONE,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         );
 
         assert!(
@@ -2024,7 +2024,7 @@ mod tests {
             currency,
             Decimal::ZERO,
             dec!(1),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         )
         .expect("fixture commission is representable");
 
@@ -2057,7 +2057,7 @@ mod tests {
             currency,
             dec!(0.03),
             dec!(2),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         )
         .expect("fixture commission is representable");
 
@@ -2109,7 +2109,7 @@ mod tests {
                 Currency::pUSD(),
                 field("fee_rate"),
                 dec!(1),
-                UnixNanos::from(1_000_000_000u64),
+                UnixNanos::from(1_000_000_000_u64),
             )
             .unwrap();
 
@@ -2131,7 +2131,7 @@ mod tests {
         let market = serde_json::from_str(&content).expect("Failed to parse test data");
         let defs = parse_gamma_market(&market).unwrap();
         let instrument =
-            create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap();
+            create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000_u64)).unwrap();
 
         assert_eq!(instrument_taker_fee(&instrument).unwrap(), dec!(0.03));
         assert_eq!(instrument_fee_exponent(&instrument).unwrap(), Decimal::ONE);
@@ -2505,12 +2505,12 @@ mod tests {
             // the same Result (Ok or Err) and equal Ok values.
             #[rstest]
             fn prop_adjust_market_buy_amount_is_deterministic(
-                amount_micros in 1u64..=1_000_000_000_000u64,
-                balance_micros in 1u64..=1_000_000_000_000u64,
-                price_milli in 1u32..=999u32,
-                fee_rate_bps in 0u32..=1_000u32,
-                exponent in 0u32..=3u32,
-                builder_bps in 0u32..=500u32,
+                amount_micros in 1_u64..=1_000_000_000_000_u64,
+                balance_micros in 1_u64..=1_000_000_000_000_u64,
+                price_milli in 1_u32..=999_u32,
+                fee_rate_bps in 0_u32..=1_000_u32,
+                exponent in 0_u32..=3_u32,
+                builder_bps in 0_u32..=500_u32,
             ) {
                 let amount = decimal_at_usdc_scale(amount_micros);
                 let balance = decimal_at_usdc_scale(balance_micros);
@@ -2533,11 +2533,11 @@ mod tests {
             // bails on valid inputs would fail this property.
             #[rstest]
             fn prop_adjust_market_buy_amount_non_binding_returns_amount(
-                amount_micros in 1u64..=1_000_000_000u64,
-                price_milli in 1u32..=999u32,
-                fee_rate_bps in 0u32..=1_000u32,
-                exponent in 0u32..=3u32,
-                builder_bps in 0u32..=500u32,
+                amount_micros in 1_u64..=1_000_000_000_u64,
+                price_milli in 1_u32..=999_u32,
+                fee_rate_bps in 0_u32..=1_000_u32,
+                exponent in 0_u32..=3_u32,
+                builder_bps in 0_u32..=500_u32,
             ) {
                 let amount = decimal_at_usdc_scale(amount_micros);
                 let price = Decimal::new(i64::from(price_milli), 3);
@@ -2568,12 +2568,12 @@ mod tests {
             // and total_cost(adjusted) MUST fit inside balance.
             #[rstest]
             fn prop_adjust_market_buy_amount_binding_shrinks_into_balance(
-                amount_micros in 1_000u64..=1_000_000_000u64,
-                price_milli in 10u32..=990u32,
-                fee_rate_bps in 0u32..=1_000u32,
-                exponent in 0u32..=3u32,
-                builder_bps in 0u32..=500u32,
-                fraction_thousandths in 100u32..=900u32,
+                amount_micros in 1_000_u64..=1_000_000_000_u64,
+                price_milli in 10_u32..=990_u32,
+                fee_rate_bps in 0_u32..=1_000_u32,
+                exponent in 0_u32..=3_u32,
+                builder_bps in 0_u32..=500_u32,
+                fraction_thousandths in 100_u32..=900_u32,
             ) {
                 let amount = decimal_at_usdc_scale(amount_micros);
                 let price = Decimal::new(i64::from(price_milli), 3);
@@ -2622,11 +2622,11 @@ mod tests {
             // pipeline), the result is rounded down to USDC scale, never up.
             #[rstest]
             fn prop_adjust_market_buy_amount_truncates_subusdc_precision(
-                amount_pico in 1_000_000u64..=1_000_000_000_000u64,
-                price_milli in 1u32..=999u32,
-                fee_rate_bps in 0u32..=1_000u32,
-                exponent in 0u32..=3u32,
-                builder_bps in 0u32..=500u32,
+                amount_pico in 1_000_000_u64..=1_000_000_000_000_u64,
+                price_milli in 1_u32..=999_u32,
+                fee_rate_bps in 0_u32..=1_000_u32,
+                exponent in 0_u32..=3_u32,
+                builder_bps in 0_u32..=500_u32,
             ) {
                 // Sample at 9 dp (pico-USDC) so amounts have 3 dp beyond the
                 // USDC on-chain scale.

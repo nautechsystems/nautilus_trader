@@ -1916,7 +1916,7 @@ mod tests {
             serde_json::from_str(&json).expect("Failed to parse account info");
 
         let account_id = AccountId::from("BINANCE-001");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
         let state = account.to_account_state(account_id, ts_init).unwrap();
 
         assert_eq!(state.account_id, account_id);
@@ -1945,7 +1945,7 @@ mod tests {
             serde_json::from_str(json).expect("Failed to parse account info");
 
         let account_id = AccountId::from("BINANCE-001");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
         let state = account.to_account_state(account_id, ts_init).unwrap();
 
         assert_eq!(state.margins.len(), 1);
@@ -1984,7 +1984,7 @@ mod tests {
             serde_json::from_str(json).expect("Failed to parse account info");
 
         let account_id = AccountId::from("BINANCE-001");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
         let state = account.to_account_state(account_id, ts_init).unwrap();
 
         assert_eq!(state.margins.len(), 2);
@@ -2024,7 +2024,7 @@ mod tests {
             serde_json::from_str(json).expect("Failed to parse account info");
 
         let account_id = AccountId::from("BINANCE-001");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
         let state = account.to_account_state(account_id, ts_init).unwrap();
 
         assert_eq!(state.balances.len(), 1);
@@ -2048,7 +2048,7 @@ mod tests {
             serde_json::from_str(json).expect("Failed to parse account info");
 
         let account_id = AccountId::from("BINANCE-001");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
         let state = account.to_account_state(account_id, ts_init).unwrap();
 
         assert_eq!(state.balances.len(), 1);
@@ -2069,7 +2069,7 @@ mod tests {
             serde_json::from_str(json).expect("Failed to parse account info");
 
         let account_id = AccountId::from("BINANCE-001");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
         let state = account.to_account_state(account_id, ts_init).unwrap();
 
         assert_eq!(state.balances.len(), 1);
@@ -2343,7 +2343,7 @@ mod tests {
                 2,
                 3,
                 false,
-                UnixNanos::from(1_000_000_000u64),
+                UnixNanos::from(1_000_000_000_u64),
             )
             .unwrap();
 
@@ -2558,7 +2558,7 @@ mod tests {
         let order: BinanceFuturesOrder = serde_json::from_str(json).unwrap();
         let account_id = AccountId::from("BINANCE-FUTURES-001");
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = order
             .to_order_status_report(account_id, instrument_id, 2, 3, false, ts_init)
@@ -2582,7 +2582,7 @@ mod tests {
             2,
             3,
             false,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         );
 
         assert_eq!(
@@ -2598,7 +2598,7 @@ mod tests {
         let order = order_with_price(price);
         let account_id = AccountId::from("BINANCE-FUTURES-001");
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = order
             .to_order_status_report(account_id, instrument_id, 2, 3, false, ts_init)
@@ -2616,7 +2616,7 @@ mod tests {
         order.avg_price = Some("50000.00".to_string());
         let account_id = AccountId::from("BINANCE-FUTURES-001");
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = order
             .to_order_status_report(account_id, instrument_id, 2, 3, false, ts_init)
@@ -2635,7 +2635,7 @@ mod tests {
         order.avg_price = Some("50000.00".to_string());
         let account_id = AccountId::from("BINANCE-FUTURES-001");
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = order
             .to_order_status_report(account_id, instrument_id, 2, 3, false, ts_init)
@@ -2651,7 +2651,7 @@ mod tests {
         order.avg_price = Some("not-a-number".to_string());
         let account_id = AccountId::from("BINANCE-FUTURES-001");
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let result = order.to_order_status_report(account_id, instrument_id, 2, 3, false, ts_init);
 
@@ -2688,7 +2688,7 @@ mod tests {
 
         let account_id = AccountId::from("BINANCE-FUTURES-001");
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
         let report = algo
             .to_order_status_report_with_actual(
                 &actual,
@@ -2755,7 +2755,7 @@ mod tests {
         let order = algo_order_with_price(Some("50000.00"));
         let account_id = AccountId::from("BINANCE-FUTURES-001");
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = order
             .to_order_status_report(account_id, instrument_id, 2, 3, ts_init)
@@ -2770,7 +2770,7 @@ mod tests {
         let order: BinanceFuturesAlgoOrder = serde_json::from_str(&json).unwrap();
         let account_id = AccountId::from("BINANCE-FUTURES-001");
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = order
             .to_order_status_report(account_id, instrument_id, 2, 3, ts_init)
@@ -2789,7 +2789,7 @@ mod tests {
         order.avg_price = Some("not-a-number".to_string());
         let account_id = AccountId::from("BINANCE-FUTURES-001");
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = order
             .to_order_status_report(account_id, instrument_id, 2, 3, ts_init)
@@ -2804,7 +2804,7 @@ mod tests {
         let order = algo_order_with_price(Some("44000.00"));
         let account_id = AccountId::from("BINANCE-FUTURES-001");
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = order
             .to_order_status_report(account_id, instrument_id, 2, 3, ts_init)
@@ -2823,7 +2823,7 @@ mod tests {
         order.callback_rate = Some("0.25".to_string());
         let account_id = AccountId::from("BINANCE-FUTURES-001");
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = order
             .to_order_status_report(account_id, instrument_id, 2, 3, ts_init)
@@ -2846,7 +2846,7 @@ mod tests {
         let order = algo_order_with_price(price);
         let account_id = AccountId::from("BINANCE-FUTURES-001");
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = order
             .to_order_status_report(account_id, instrument_id, 2, 3, ts_init)
@@ -2860,7 +2860,7 @@ mod tests {
         let order = order_with_price("not-a-number");
         let account_id = AccountId::from("BINANCE-FUTURES-001");
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let result = order.to_order_status_report(account_id, instrument_id, 2, 3, false, ts_init);
 
@@ -2874,7 +2874,7 @@ mod tests {
         order.trigger_price = Some("not-a-number".to_string());
         let account_id = AccountId::from("BINANCE-FUTURES-001");
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let result = order.to_order_status_report(account_id, instrument_id, 2, 3, ts_init);
 
@@ -2889,7 +2889,7 @@ mod tests {
         order.trigger_price = None;
         let account_id = AccountId::from("BINANCE-FUTURES-001");
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let result = order.to_order_status_report(account_id, instrument_id, 2, 3, ts_init);
 
@@ -2906,7 +2906,7 @@ mod tests {
         order.callback_rate = Some("not-a-number".to_string());
         let account_id = AccountId::from("BINANCE-FUTURES-001");
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let result = order.to_order_status_report(account_id, instrument_id, 2, 3, ts_init);
 
@@ -2919,7 +2919,7 @@ mod tests {
         let order = algo_order_with_price(Some("not-a-number"));
         let account_id = AccountId::from("BINANCE-FUTURES-001");
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let result = order.to_order_status_report(account_id, instrument_id, 2, 3, ts_init);
 
@@ -2934,7 +2934,7 @@ mod tests {
         order.good_till_date = Some(1_700_000_601_000);
         let account_id = AccountId::from("BINANCE-FUTURES-001");
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = order
             .to_order_status_report(account_id, instrument_id, 2, 3, false, ts_init)
@@ -2966,7 +2966,7 @@ mod tests {
                 InstrumentId::from("BTCUSDT-PERP.BINANCE"),
                 2,
                 3,
-                UnixNanos::from(1_000_000_000u64),
+                UnixNanos::from(1_000_000_000_u64),
             )
             .unwrap();
 
@@ -2990,7 +2990,7 @@ mod tests {
         order.good_till_date = Some(1_700_000_601_000);
         let account_id = AccountId::from("BINANCE-FUTURES-001");
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = order
             .to_order_status_report(account_id, instrument_id, 2, 3, ts_init)
@@ -3092,7 +3092,7 @@ mod tests {
             2,
             3,
             Currency::USDT(),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         );
 
         let error = result.unwrap_err().to_string();
@@ -3122,7 +3122,7 @@ mod tests {
         let order: BinanceFuturesAlgoOrder = serde_json::from_str(json).unwrap();
         let account_id = AccountId::from("BINANCE-FUTURES-001");
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = order
             .to_order_status_report(account_id, instrument_id, 2, 3, ts_init)
@@ -3144,7 +3144,7 @@ mod tests {
             InstrumentId::from("BTCUSDT-PERP.BINANCE"),
             2,
             3,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         );
 
         assert_eq!(
@@ -3190,7 +3190,7 @@ mod tests {
         };
         let account_id = AccountId::from("BINANCE-FUTURES-001");
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = order
             .to_order_status_report(account_id, instrument_id, 2, 3, ts_init)

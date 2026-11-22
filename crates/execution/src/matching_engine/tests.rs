@@ -4365,10 +4365,10 @@ enum QueueEvent {
 
 fn granular_queue_event() -> impl Strategy<Value = QueueEvent> {
     prop_oneof![
-        3 => (1u64..=6, 1u64..=9).prop_map(|(id, size)| QueueEvent::Add { id, size }),
-        3 => (1u64..=6, 1u64..=9).prop_map(|(id, size)| QueueEvent::Update { id, size }),
-        1 => (1u64..=6).prop_map(|id| QueueEvent::MoveAway { id }),
-        2 => (1u64..=6).prop_map(|id| QueueEvent::Delete { id }),
+        3 => (1_u64..=6, 1_u64..=9).prop_map(|(id, size)| QueueEvent::Add { id, size }),
+        3 => (1_u64..=6, 1_u64..=9).prop_map(|(id, size)| QueueEvent::Update { id, size }),
+        1 => (1_u64..=6).prop_map(|id| QueueEvent::MoveAway { id }),
+        2 => (1_u64..=6).prop_map(|id| QueueEvent::Delete { id }),
         2 => Just(QueueEvent::RestOrder),
     ]
 }
@@ -4376,11 +4376,11 @@ fn granular_queue_event() -> impl Strategy<Value = QueueEvent> {
 fn any_queue_event() -> impl Strategy<Value = QueueEvent> {
     prop_oneof![
         5 => granular_queue_event(),
-        3 => (1u64..=9, 0u8..3).prop_map(|(size, aggressor)| QueueEvent::Trade {
+        3 => (1_u64..=9, 0_u8..3).prop_map(|(size, aggressor)| QueueEvent::Trade {
             size,
             aggressor,
         }),
-        1 => (1u64..=9).prop_map(|size| QueueEvent::AggregateCap { size }),
+        1 => (1_u64..=9).prop_map(|size| QueueEvent::AggregateCap { size }),
         1 => Just(QueueEvent::AggregateDelete),
     ]
 }
@@ -4635,8 +4635,8 @@ fn test_l3_queue_position_replay_databento_mbo_stays_synced() {
     let (mut engine, cache) = get_l3_queue_engine(instrument);
     let account_id = AccountId::from("SIM-001");
 
-    let mut rested = 0usize;
-    let mut trades = 0usize;
+    let mut rested = 0_usize;
+    let mut trades = 0_usize;
 
     for (index, record) in records.iter().enumerate() {
         match record.get("type").and_then(serde_json::Value::as_str) {

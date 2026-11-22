@@ -69,7 +69,7 @@ impl Cloid {
     #[must_use]
     pub fn from_client_order_id(client_order_id: ClientOrderId) -> Self {
         let hash = keccak256(client_order_id.as_str().as_bytes());
-        let mut bytes = [0u8; 16];
+        let mut bytes = [0_u8; 16];
         bytes.copy_from_slice(&hash[..16]);
         Self(bytes)
     }

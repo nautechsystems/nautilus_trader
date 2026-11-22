@@ -1450,7 +1450,7 @@ mod tests {
             .unwrap();
         let id = "io:ANTH-USD-PERP.HYPERLIQUID";
 
-        let trades = [10_000u64, 20_000].map(|ts| {
+        let trades = [10_000_u64, 20_000].map(|ts| {
             TradeTick::new(
                 InstrumentId::from(id),
                 Price::from("12.34"),

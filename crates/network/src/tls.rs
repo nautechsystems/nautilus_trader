@@ -399,7 +399,7 @@ zhxL/14wqaVBwUW6/RNRr9hz6MkFFC8Uced5obScy8kOI0bMbeIC4ftNGG9pUdms
                 .accept(server_socket)
                 .await
                 .unwrap();
-            let mut request = [0u8; 4];
+            let mut request = [0_u8; 4];
             stream.read_exact(&mut request).await.unwrap();
             stream.write_all(b"pong").await.unwrap();
             request
@@ -415,7 +415,7 @@ zhxL/14wqaVBwUW6/RNRr9hz6MkFFC8Uced5obScy8kOI0bMbeIC4ftNGG9pUdms
         .unwrap();
         let is_tls = matches!(&stream, MaybeTlsStream::Rustls(_));
         stream.write_all(b"ping").await.unwrap();
-        let mut response = [0u8; 4];
+        let mut response = [0_u8; 4];
         stream.read_exact(&mut response).await.unwrap();
         let received = server_task.await.unwrap();
 

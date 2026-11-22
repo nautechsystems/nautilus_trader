@@ -216,7 +216,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 4) RAPID BURST: three modify-by-cloid actions back-to-back, no settle
     // between, each repricing; the venue processes them in order and the chain
     // must converge to one resting order at the last price under the same cloid
-    for (i, bump) in [3i64, 4, 5].into_iter().enumerate() {
+    for (i, bump) in [3_i64, 4, 5].into_iter().enumerate() {
         post_and_log(
             &client,
             &format!("burst-modify-{i}"),

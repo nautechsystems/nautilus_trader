@@ -383,8 +383,8 @@ pub fn load_depth_from_snapshot5<P: AsRef<Path>>(
         // Initialize empty arrays
         let mut bids = [NULL_ORDER; DEPTH10_LEN];
         let mut asks = [NULL_ORDER; DEPTH10_LEN];
-        let mut bid_counts = [0u32; DEPTH10_LEN];
-        let mut ask_counts = [0u32; DEPTH10_LEN];
+        let mut bid_counts = [0_u32; DEPTH10_LEN];
+        let mut ask_counts = [0_u32; DEPTH10_LEN];
 
         for i in 0..=4 {
             // Create bids
@@ -539,8 +539,8 @@ pub fn load_depth_from_snapshot25<P: AsRef<Path>>(
         // Initialize empty arrays for all 25 levels
         let mut bids = [NULL_ORDER; TardisOrderBookSnapshot25Record::LEVELS];
         let mut asks = [NULL_ORDER; TardisOrderBookSnapshot25Record::LEVELS];
-        let mut bid_counts = [0u32; TardisOrderBookSnapshot25Record::LEVELS];
-        let mut ask_counts = [0u32; TardisOrderBookSnapshot25Record::LEVELS];
+        let mut bid_counts = [0_u32; TardisOrderBookSnapshot25Record::LEVELS];
+        let mut ask_counts = [0_u32; TardisOrderBookSnapshot25Record::LEVELS];
 
         // Fill all 25 levels from the 25-level record
         for i in 0..TardisOrderBookSnapshot25Record::LEVELS {

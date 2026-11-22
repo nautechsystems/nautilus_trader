@@ -2193,10 +2193,10 @@ mod tests {
 
         let result = build_empty_response(
             &request,
-            UnixNanos::from(1u64),
-            UnixNanos::from(2u64),
+            UnixNanos::from(1_u64),
+            UnixNanos::from(2_u64),
             None,
-            UnixNanos::from(3u64),
+            UnixNanos::from(3_u64),
         );
 
         assert_eq!(

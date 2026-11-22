@@ -176,7 +176,7 @@ mod tests {
 
     #[rstest]
     fn test_decimal_scale_is_1e18() {
-        assert_eq!(DECIMAL_SCALE, 10u128.pow(18));
+        assert_eq!(DECIMAL_SCALE, 10_u128.pow(18));
     }
 
     #[rstest]

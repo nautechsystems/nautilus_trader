@@ -1902,7 +1902,7 @@ pub(super) async fn fetch_collateral_balance_pusd(
         .await
         .context("failed to fetch balance")?;
 
-    let usdc_scale = Decimal::from(1_000_000u32);
+    let usdc_scale = Decimal::from(1_000_000_u32);
     Ok(balance / usdc_scale)
 }
 

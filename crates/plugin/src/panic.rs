@@ -179,13 +179,13 @@ mod tests {
 
     #[rstest]
     fn guard_infallible_returns_inner_on_success() {
-        let v = guard_infallible("test", || 42u64);
+        let v = guard_infallible("test", || 42_u64);
         assert_eq!(v, 42);
     }
 
     #[rstest]
     fn guard_or_null_returns_inner_on_success() {
-        let boxed = Box::into_raw(Box::new(7u32));
+        let boxed = Box::into_raw(Box::new(7_u32));
         let v = guard_or_null("test", || boxed);
         assert_eq!(v, boxed);
         // SAFETY: pointer originates from Box::into_raw above.

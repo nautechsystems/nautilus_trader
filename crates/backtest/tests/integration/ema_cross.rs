@@ -146,7 +146,7 @@ fn test_from_config_with_custom_strategy_id(crypto_perpetual_ethusdt: CryptoPerp
     engine.add_strategy(EmaCross::from_config(config)).unwrap();
 
     // Flat data to verify startup and shutdown without panics
-    let quotes: Vec<Data> = (0..20u64)
+    let quotes: Vec<Data> = (0..20_u64)
         .map(|i| {
             quote(
                 instrument_id,

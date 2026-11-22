@@ -8041,14 +8041,14 @@ async fn test_reconciled_oto_parent_exit_recovers_only_in_its_position_lifecycle
                 ReplacementParentFill::PriorLifecycle
                     | ReplacementParentFill::DelayedPriorLifecycle
             ) {
-                earlier("V-OTHER-NEW-BUY", OrderSide::Buy, 3_000_000u64)
+                earlier("V-OTHER-NEW-BUY", OrderSide::Buy, 3_000_000_u64)
             } else {
                 report.ts_event = 3_000_000.into();
                 report.ts_init = report.ts_event;
-                earlier("V-OTHER-OLD-BUY", OrderSide::Buy, 1_000_000u64)
+                earlier("V-OTHER-OLD-BUY", OrderSide::Buy, 1_000_000_u64)
             };
 
-            let flat = earlier("V-FLAT", OrderSide::Sell, 2_000_000u64);
+            let flat = earlier("V-FLAT", OrderSide::Sell, 2_000_000_u64);
 
             let order_reports = match source {
                 ReplacementParentFill::WithOrderReport | ReplacementParentFill::PriorLifecycle => {
@@ -8061,7 +8061,7 @@ async fn test_reconciled_oto_parent_exit_recovers_only_in_its_position_lifecycle
             };
 
             let batch_fill = if delayed {
-                earlier("V-OTHER-OLD-BUY", OrderSide::Buy, 1_000_000u64)
+                earlier("V-OTHER-OLD-BUY", OrderSide::Buy, 1_000_000_u64)
             } else {
                 report.clone()
             };

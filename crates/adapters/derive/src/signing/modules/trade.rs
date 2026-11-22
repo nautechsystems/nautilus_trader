@@ -157,7 +157,7 @@ mod tests {
     fn test_encode_address_is_left_padded() {
         let bytes = sample().encode().unwrap();
         // First word: 12 zero bytes followed by the 20-byte address tail
-        assert_eq!(&bytes[0..12], &[0u8; 12]);
+        assert_eq!(&bytes[0..12], &[0_u8; 12]);
         assert_eq!(
             &bytes[12..32],
             &hex_literal(&[
@@ -172,7 +172,7 @@ mod tests {
         let bytes = sample().encode().unwrap();
         // sub_id = 42 sits in the second word; high-order bytes zero,
         // last byte 0x2a.
-        assert_eq!(&bytes[32..63], &[0u8; 31]);
+        assert_eq!(&bytes[32..63], &[0_u8; 31]);
         assert_eq!(bytes[63], 0x2a);
     }
 
@@ -209,7 +209,7 @@ mod tests {
         let bytes = sample().encode().unwrap();
         let word = &bytes[192..224];
         // bool encodes to 31 zero bytes + 0x01 for true
-        assert_eq!(&word[..31], &[0u8; 31]);
+        assert_eq!(&word[..31], &[0_u8; 31]);
         assert_eq!(word[31], 0x01);
     }
 
@@ -219,7 +219,7 @@ mod tests {
         data.is_bid = false;
         let bytes = data.encode().unwrap();
         let word = &bytes[192..224];
-        assert_eq!(word, &[0u8; 32]);
+        assert_eq!(word, &[0_u8; 32]);
     }
 
     #[rstest]
@@ -309,7 +309,7 @@ mod tests {
     }
 
     fn hex_literal(bytes: &[u8]) -> [u8; 20] {
-        let mut out = [0u8; 20];
+        let mut out = [0_u8; 20];
         out.copy_from_slice(bytes);
         out
     }

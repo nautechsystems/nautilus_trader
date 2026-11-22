@@ -1060,7 +1060,7 @@ mod tests {
                 runner.atb,
                 Some(vec![PV {
                     price: expected_price,
-                    volume: Decimal::from(9_007_199_254_740_993u64)
+                    volume: Decimal::from(9_007_199_254_740_993_u64)
                 }])
             );
             assert_eq!(
@@ -1110,7 +1110,7 @@ mod tests {
 
         let expected = MatchedOrder {
             price: Decimal::from_str_exact("0.1234567890123456789012345678").unwrap(),
-            size: Decimal::from(9_007_199_254_740_993u64),
+            size: Decimal::from(9_007_199_254_740_993_u64),
         };
 
         assert_eq!(

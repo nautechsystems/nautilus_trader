@@ -135,8 +135,8 @@ impl DeltaStreamIterator {
         record: &mut StringRecord,
         sample_size: usize,
     ) -> (u8, u8) {
-        let mut max_price_precision = 0u8;
-        let mut max_size_precision = 0u8;
+        let mut max_price_precision = 0_u8;
+        let mut max_size_precision = 0_u8;
         let mut records_scanned = 0;
 
         while records_scanned < sample_size {
@@ -468,8 +468,8 @@ impl BatchedDeltasStreamIterator {
         record: &mut StringRecord,
         sample_size: usize,
     ) -> (u8, u8) {
-        let mut max_price_precision = 0u8;
-        let mut max_size_precision = 0u8;
+        let mut max_price_precision = 0_u8;
+        let mut max_size_precision = 0_u8;
         let mut records_scanned = 0;
 
         while records_scanned < sample_size {
@@ -753,8 +753,8 @@ impl QuoteStreamIterator {
         record: &mut StringRecord,
         sample_size: usize,
     ) -> (u8, u8) {
-        let mut max_price_precision = 2u8;
-        let mut max_size_precision = 0u8;
+        let mut max_price_precision = 2_u8;
+        let mut max_size_precision = 0_u8;
         let mut records_scanned = 0;
 
         while records_scanned < sample_size {
@@ -1164,8 +1164,8 @@ impl TradeStreamIterator {
         record: &mut StringRecord,
         sample_size: usize,
     ) -> (u8, u8) {
-        let mut max_price_precision = 2u8;
-        let mut max_size_precision = 0u8;
+        let mut max_price_precision = 2_u8;
+        let mut max_size_precision = 0_u8;
         let mut records_scanned = 0;
 
         while records_scanned < sample_size {
@@ -1480,8 +1480,8 @@ impl DepthStreamIterator {
         record: &mut StringRecord,
         sample_size: usize,
     ) -> (u8, u8) {
-        let mut max_price_precision = 2u8;
-        let mut max_size_precision = 0u8;
+        let mut max_price_precision = 2_u8;
+        let mut max_size_precision = 0_u8;
         let mut records_scanned = 0;
 
         while records_scanned < sample_size {

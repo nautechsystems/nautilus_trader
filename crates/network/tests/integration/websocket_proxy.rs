@@ -140,7 +140,7 @@ async fn handle_connect(
 
     // Pipe both directions until either side closes
     let client_to_upstream = async {
-        let mut buf = vec![0u8; 8192];
+        let mut buf = vec![0_u8; 8192];
         loop {
             let n = client_read.read(&mut buf).await?;
             if n == 0 {
@@ -154,7 +154,7 @@ async fn handle_connect(
     };
 
     let upstream_to_client = async {
-        let mut buf = vec![0u8; 8192];
+        let mut buf = vec![0_u8; 8192];
         loop {
             let n = up_read.read(&mut buf).await?;
             if n == 0 {

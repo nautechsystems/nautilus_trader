@@ -74,7 +74,7 @@ impl TickBitmap {
         let word = self.words.entry(word_position).or_insert(U256::ZERO);
 
         // Toggle the bit using XOR
-        *word ^= U256::from(1u128) << bit_position;
+        *word ^= U256::from(1_u128) << bit_position;
 
         // Remove empty words to save storage
         if *word == U256::ZERO {
@@ -87,9 +87,8 @@ impl TickBitmap {
     pub fn is_initialized(&self, tick: i32) -> bool {
         let compressed_tick = self.compress_tick(tick);
         let (word_position, bit_position) = tick_position(compressed_tick);
-
         if let Some(&word) = self.words.get(&word_position) {
-            (word & (U256::from(1u128) << bit_position)) != U256::ZERO
+            (word & (U256::from(1_u128) << bit_position)) != U256::ZERO
         } else {
             false
         }
@@ -112,8 +111,8 @@ impl TickBitmap {
         if less_than_or_equal {
             let (word_pos, bit_pos) = tick_position(compressed_tick);
             // all the 1s at or to the right of the current bitPos
-            let mask =
-                (U256::from(1u128) << bit_pos) - U256::from(1u128) + (U256::from(1u128) << bit_pos);
+            let mask = (U256::from(1_u128) << bit_pos) - U256::from(1_u128)
+                + (U256::from(1_u128) << bit_pos);
             let word = self.words.get(&word_pos).copied().unwrap_or(U256::ZERO);
             let masked = word & mask;
 
@@ -131,7 +130,7 @@ impl TickBitmap {
             // start from the word of the next tick, since the current tick state doesn't matter
             let (word_pos, bit_pos) = tick_position(compressed_tick + 1);
             // all the 1s at or to the left of the bitPos
-            let mask = !((U256::from(1u128) << bit_pos) - U256::from(1u128));
+            let mask = !((U256::from(1_u128) << bit_pos) - U256::from(1_u128));
             let word = self.words.get(&word_pos).copied().unwrap_or(U256::ZERO);
             let masked = word & mask;
 
@@ -142,7 +141,7 @@ impl TickBitmap {
                 (compressed_tick + 1 + least_significant_bit(masked) - i32::from(bit_pos))
                     * self.tick_spacing
             } else {
-                (compressed_tick + 1 + (255i32) - i32::from(bit_pos)) * self.tick_spacing // type(uint8).max = 255
+                (compressed_tick + 1 + (255_i32) - i32::from(bit_pos)) * self.tick_spacing // type(uint8).max = 255
             };
             (next, initialized)
         }

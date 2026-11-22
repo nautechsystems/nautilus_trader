@@ -445,7 +445,7 @@ mod tests {
         let s = Slice::from_slice(&data);
         // SAFETY: storage lives for the duration of this test.
         let back = unsafe { s.as_slice() };
-        assert_eq!(back, &[1u32, 2, 3]);
+        assert_eq!(back, &[1_u32, 2, 3]);
     }
 
     #[rstest]
@@ -480,7 +480,7 @@ mod tests {
         }
 
         COUNTER.store(0, Ordering::SeqCst);
-        let (ptr, len, cap) = vec![1u8, 2, 3, 4].into_raw_parts();
+        let (ptr, len, cap) = vec![1_u8, 2, 3, 4].into_raw_parts();
 
         let owned = OwnedBytes {
             ptr,
@@ -586,7 +586,8 @@ mod tests {
 
     #[rstest]
     fn drop_owned_bytes_frees_vec_leaked_with_from_vec_layout() {
-        let (ptr, len, cap) = vec![1u8, 2, 3, 4, 5].into_raw_parts();
+        let (ptr, len, cap) = vec![1_u8, 2, 3, 4, 5].into_raw_parts();
+
         // SAFETY: pointer/len/cap originate from a `Vec<u8>` leaked above;
         // `drop_owned_bytes` reconstructs and drops it with the matching
         // layout.
@@ -618,7 +619,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case::ok(PluginErrorCode::Ok, 0u32)]
+    #[case::ok(PluginErrorCode::Ok, 0_u32)]
     #[case::generic(PluginErrorCode::Generic, 1)]
     #[case::panic(PluginErrorCode::Panic, 2)]
     #[case::invalid_argument(PluginErrorCode::InvalidArgument, 3)]

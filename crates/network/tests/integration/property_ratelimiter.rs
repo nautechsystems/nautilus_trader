@@ -80,8 +80,8 @@ impl GcraReference {
 
 fn rate_limit_op_strategy() -> impl Strategy<Value = RateLimitOp> {
     prop_oneof![
-        (0usize..5).prop_map(RateLimitOp::Check),
-        (0u64..=2_000).prop_map(RateLimitOp::Advance),
+        (0_usize..5).prop_map(RateLimitOp::Check),
+        (0_u64..=2_000).prop_map(RateLimitOp::Advance),
     ]
 }
 
@@ -101,8 +101,8 @@ proptest! {
     /// Property: exact GCRA decisions match a reference model under deterministic time.
     #[rstest]
     fn rate_limiter_matches_reference_trace(
-        rate in 1u32..=20u32,
-        key_count in 1usize..=5,
+        rate in 1_u32..=20_u32,
+        key_count in 1_usize..=5,
         ops in proptest::collection::vec(rate_limit_op_strategy(), 1..120)
     ) {
         let quota = Quota::per_second(NonZeroU32::new(rate).unwrap()).unwrap();
@@ -146,8 +146,8 @@ proptest! {
     /// the implementation and a mirrored model.
     #[rstest]
     fn rate_limiter_never_exceeds_window_budget(
-        period_ms in 1u64..=1_000,
-        burst in 1u32..=10,
+        period_ms in 1_u64..=1_000,
+        burst in 1_u32..=10,
         ops in proptest::collection::vec(rate_limit_op_strategy(), 1..200)
     ) {
         let quota = Quota::with_period(Duration::from_millis(period_ms))
@@ -175,7 +175,7 @@ proptest! {
         }
 
         let t_ns = u128::from(period_ms) * 1_000_000;
-        for window_cells in [1u128, u128::from(burst)] {
+        for window_cells in [1_u128, u128::from(burst)] {
             let window_ns = window_cells * t_ns;
             let budget = usize::try_from(u128::from(burst) + window_cells + 1).unwrap();
 
@@ -198,8 +198,8 @@ proptest! {
     /// Property: keyed quotas override the default quota under deterministic time.
     #[rstest]
     fn rate_limiter_keyed_quota_overrides_default_trace(
-        default_rate in 1u32..=20u32,
-        keyed_rate_offset in 1u32..20u32,
+        default_rate in 1_u32..=20_u32,
+        keyed_rate_offset in 1_u32..20_u32,
         ops in proptest::collection::vec(rate_limit_op_strategy(), 1..120)
     ) {
         let keyed_rate = 1 + ((default_rate + keyed_rate_offset - 1) % 20);
@@ -247,9 +247,9 @@ proptest! {
     /// Property: Rate limiter should never allow more requests than quota permits initially.
     #[rstest]
     fn rate_limiter_respects_quota_bounds(
-        rate in 1u32..=100u32,
+        rate in 1_u32..=100_u32,
         key in "[a-z]{1,10}",
-        request_count in 1usize..=200
+        request_count in 1_usize..=200
     ) {
         let rate_nonzero = NonZeroU32::new(rate).unwrap();
         let quota = Quota::per_second(rate_nonzero).unwrap();
@@ -285,7 +285,7 @@ proptest! {
     #[rstest]
     fn rate_limiter_consistent_across_keys(
         keys in prop::collection::hash_set("[a-z]{3,8}", 2..=10).prop_map(|s| s.into_iter().collect::<Vec<_>>()),
-        rate in 1u32..=20u32
+        rate in 1_u32..=20_u32
     ) {
         let rate_nonzero = NonZeroU32::new(rate).unwrap();
         let quota = Quota::per_second(rate_nonzero).unwrap();
@@ -332,7 +332,7 @@ proptest! {
     /// Property: Quota calculations should respect mathematical bounds and not overflow.
     #[rstest]
     fn quota_calculations_bounded(
-        rate in 1u32..=10000u32
+        rate in 1_u32..=10000_u32
     ) {
         let rate_nonzero = NonZeroU32::new(rate).unwrap();
 
@@ -345,9 +345,9 @@ proptest! {
         let replenish_minute = quota_minute.replenish_interval().as_nanos();
         let replenish_hour = quota_hour.replenish_interval().as_nanos();
 
-        prop_assert_eq!(replenish_second, 1_000_000_000u128 / u128::from(rate));
-        prop_assert_eq!(replenish_minute, 60_000_000_000u128 / u128::from(rate));
-        prop_assert_eq!(replenish_hour, 3_600_000_000_000u128 / u128::from(rate));
+        prop_assert_eq!(replenish_second, 1_000_000_000_u128 / u128::from(rate));
+        prop_assert_eq!(replenish_minute, 60_000_000_000_u128 / u128::from(rate));
+        prop_assert_eq!(replenish_hour, 3_600_000_000_000_u128 / u128::from(rate));
 
         // Verify burst capacity equals rate
         prop_assert_eq!(
@@ -387,8 +387,8 @@ proptest! {
     /// Property: Rate limiter should handle rapid sequential requests consistently.
     #[rstest]
     fn rate_limiter_handles_rapid_requests(
-        rate in 1u32..=50u32,
-        request_count in 1usize..=150
+        rate in 1_u32..=50_u32,
+        request_count in 1_usize..=150
     ) {
         let rate_nonzero = NonZeroU32::new(rate).unwrap();
         let quota = Quota::per_second(rate_nonzero).unwrap();
@@ -421,8 +421,8 @@ proptest! {
     /// Property: Default quota should work when no specific key quota is set.
     #[rstest]
     fn default_quota_behavior(
-        default_rate in 1u32..=20u32,
-        key_rate in 1u32..=20u32,
+        default_rate in 1_u32..=20_u32,
+        key_rate in 1_u32..=20_u32,
         key in "[a-z]{1,8}"
     ) {
         let default_quota = Quota::per_second(NonZeroU32::new(default_rate).unwrap()).unwrap();
@@ -455,8 +455,8 @@ proptest! {
     /// Property: Quota with custom period should work correctly.
     #[rstest]
     fn custom_period_quota_behavior(
-        period_ms in 1u64..=5000u64,
-        burst_size in 1u32..=10u32
+        period_ms in 1_u64..=5000_u64,
+        burst_size in 1_u32..=10_u32
     ) {
         let period = Duration::from_millis(period_ms);
         let burst_nonzero = NonZeroU32::new(burst_size).unwrap();
@@ -483,44 +483,44 @@ proptest! {
     /// and always produces a positive replenish interval.
     #[rstest]
     fn per_second_valid_range_invariants(
-        max_burst in 1u32..=1_000_000_000u32,
+        max_burst in 1_u32..=1_000_000_000_u32,
     ) {
         let quota = Quota::per_second(NonZeroU32::new(max_burst).unwrap())
             .expect("max_burst <= 1_000_000_000 should always succeed");
         prop_assert_eq!(
             quota.replenish_interval().as_nanos(),
-            1_000_000_000u128 / u128::from(max_burst)
+            1_000_000_000_u128 / u128::from(max_burst)
         );
     }
 
     /// Property: per_minute never panics for any NonZeroU32 value.
     #[rstest]
     fn per_minute_full_range_never_panics(
-        max_burst in 1u32..=u32::MAX,
+        max_burst in 1_u32..=u32::MAX,
     ) {
         let quota = Quota::per_minute(NonZeroU32::new(max_burst).unwrap());
         prop_assert_eq!(
             quota.replenish_interval().as_nanos(),
-            60_000_000_000u128 / u128::from(max_burst)
+            60_000_000_000_u128 / u128::from(max_burst)
         );
     }
 
     /// Property: per_hour never panics for any NonZeroU32 value.
     #[rstest]
     fn per_hour_full_range_never_panics(
-        max_burst in 1u32..=u32::MAX,
+        max_burst in 1_u32..=u32::MAX,
     ) {
         let quota = Quota::per_hour(NonZeroU32::new(max_burst).unwrap());
         prop_assert_eq!(
             quota.replenish_interval().as_nanos(),
-            3_600_000_000_000u128 / u128::from(max_burst)
+            3_600_000_000_000_u128 / u128::from(max_burst)
         );
     }
 
     /// Property: GCRA boundary edge case where t0 equals earliest_time exactly.
     #[rstest]
     fn gcra_boundary_exact_replenishment(
-        rate in 1u32..=20u32
+        rate in 1_u32..=20_u32
     ) {
         let rate_nonzero = NonZeroU32::new(rate).unwrap();
         let quota = Quota::per_second(rate_nonzero).unwrap();

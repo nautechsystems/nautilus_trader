@@ -621,7 +621,7 @@ mod tests {
     }
 
     fn sample_instrument() -> InstrumentAny {
-        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
         parse_usdm_instrument(&sample_futures_symbol(), ts, ts).unwrap()
     }
 
@@ -635,7 +635,7 @@ mod tests {
     fn test_parse_agg_trade() {
         let instrument = sample_instrument();
         let msg: BinanceFuturesAggTradeMsg = load_market_fixture("agg_trade_stream.json");
-        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000_u64);
 
         let trade = parse_agg_trade(&msg, &instrument, ts_init).unwrap();
 
@@ -644,7 +644,7 @@ mod tests {
         assert_eq!(trade.size, Quantity::new(100.0, SIZE_PRECISION));
         assert_eq!(trade.aggressor_side, AggressorSide::Sell);
         assert_eq!(trade.trade_id, TradeId::new("5933014"));
-        assert_eq!(trade.ts_event, UnixNanos::from(123_456_785_000_000u64));
+        assert_eq!(trade.ts_event, UnixNanos::from(123_456_785_000_000_u64));
         assert_eq!(trade.ts_init, ts_init);
     }
 
@@ -667,7 +667,7 @@ mod tests {
     fn test_parse_trade() {
         let instrument = sample_instrument();
         let msg: BinanceFuturesTradeMsg = load_market_fixture("trade_stream.json");
-        let ts_init = UnixNanos::from(1_794_270_806_238_000_000u64);
+        let ts_init = UnixNanos::from(1_794_270_806_238_000_000_u64);
 
         let trade = parse_trade(&msg, &instrument, ts_init).unwrap().unwrap();
 
@@ -678,7 +678,7 @@ mod tests {
         assert_eq!(trade.trade_id, TradeId::new("8251028467"));
         assert_eq!(
             trade.ts_event,
-            UnixNanos::from(1_794_270_806_233_000_000u64)
+            UnixNanos::from(1_794_270_806_233_000_000_u64)
         );
         assert_eq!(trade.ts_init, ts_init);
     }
@@ -743,7 +743,7 @@ mod tests {
     fn test_parse_book_ticker() {
         let instrument = sample_instrument();
         let msg: BinanceFuturesBookTickerMsg = load_market_fixture("book_ticker_stream.json");
-        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000_u64);
 
         let quote = parse_book_ticker(&msg, &instrument, ts_init).unwrap();
 
@@ -754,7 +754,7 @@ mod tests {
         assert_eq!(quote.ask_size, Quantity::new(40.66, SIZE_PRECISION));
         assert_eq!(
             quote.ts_event,
-            UnixNanos::from(1_568_014_460_891_000_000u64)
+            UnixNanos::from(1_568_014_460_891_000_000_u64)
         );
         assert_eq!(quote.ts_init, ts_init);
     }
@@ -763,14 +763,14 @@ mod tests {
     fn test_parse_depth_update() {
         let instrument = sample_instrument();
         let msg: BinanceFuturesDepthUpdateMsg = load_market_fixture("depth_update_stream.json");
-        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000_u64);
 
         let deltas = parse_depth_update(&msg, &instrument, ts_init).unwrap();
 
         assert_eq!(deltas.instrument_id, instrument.id());
         assert_eq!(deltas.deltas.len(), 2);
         assert_eq!(deltas.sequence, 160);
-        assert_eq!(deltas.ts_event, UnixNanos::from(123_456_788_000_000u64));
+        assert_eq!(deltas.ts_event, UnixNanos::from(123_456_788_000_000_u64));
         assert_eq!(deltas.ts_init, ts_init);
         assert_eq!(deltas.deltas[0].action, BookAction::Update);
         assert_eq!(deltas.deltas[0].order.side, OrderSide::Buy.into());
@@ -814,7 +814,7 @@ mod tests {
     fn test_parse_depth_snapshot_replaces_levels(#[case] depth: usize) {
         let instrument = sample_instrument();
         let mut msg: BinanceFuturesDepthUpdateMsg = load_market_fixture("depth_update_stream.json");
-        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000_u64);
         let mut book = OrderBook::new(instrument.id(), BookType::L2_MBP);
 
         for offset in [0, 100] {
@@ -845,7 +845,7 @@ mod tests {
                         ),
                         RecordFlag::F_SNAPSHOT as u8,
                         msg.final_update_id,
-                        UnixNanos::from(123_456_788_000_000u64),
+                        UnixNanos::from(123_456_788_000_000_u64),
                         ts_init,
                     ));
                 }
@@ -929,23 +929,26 @@ mod tests {
     fn test_parse_mark_price() {
         let instrument = sample_instrument();
         let msg: BinanceFuturesMarkPriceMsg = load_market_fixture("mark_price_stream.json");
-        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000_u64);
 
         let (mark, index, funding, custom) = parse_mark_price(&msg, &instrument, ts_init).unwrap();
 
         assert_eq!(mark.instrument_id, instrument.id());
         assert_eq!(mark.value, Price::new(11794.15, PRICE_PRECISION));
         assert_eq!(index.value, Price::new(11784.62659091, PRICE_PRECISION));
-        assert_eq!(mark.ts_event, UnixNanos::from(1_562_305_380_000_000_000u64));
+        assert_eq!(
+            mark.ts_event,
+            UnixNanos::from(1_562_305_380_000_000_000_u64)
+        );
         assert_eq!(funding.instrument_id, instrument.id());
         assert_eq!(funding.rate.to_string(), "0.00038167");
         assert_eq!(
             funding.next_funding_ns,
-            Some(UnixNanos::from(1_562_306_400_000_000_000u64))
+            Some(UnixNanos::from(1_562_306_400_000_000_000_u64))
         );
         assert_eq!(
             funding.ts_event,
-            UnixNanos::from(1_562_305_380_000_000_000u64)
+            UnixNanos::from(1_562_305_380_000_000_000_u64)
         );
         assert_eq!(funding.ts_init, ts_init);
         assert_eq!(custom.instrument_id, instrument.id());
@@ -977,7 +980,7 @@ mod tests {
     fn test_parse_kline_closed() {
         let instrument = sample_instrument();
         let msg: BinanceFuturesKlineMsg = load_market_fixture("kline_stream_closed.json");
-        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000_u64);
 
         let bar = parse_kline(&msg, &instrument, ts_init).unwrap().unwrap();
 
@@ -991,7 +994,7 @@ mod tests {
         assert_eq!(bar.count, 100);
         assert_eq!(bar.taker_buy_base_volume, dec!(500));
         assert_eq!(bar.taker_buy_quote_volume, dec!(0.500));
-        assert_eq!(bar.ts_event, UnixNanos::from(1_638_747_719_999_000_000u64));
+        assert_eq!(bar.ts_event, UnixNanos::from(1_638_747_719_999_000_000_u64));
         assert_eq!(bar.ts_init, ts_init);
     }
 
@@ -1030,7 +1033,7 @@ mod tests {
     fn test_parse_mark_price_funding_rate_fields() {
         let instrument = sample_instrument();
         let msg: BinanceFuturesMarkPriceMsg = load_market_fixture("mark_price_stream.json");
-        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000_u64);
 
         let (_mark, _index, funding, _custom) =
             parse_mark_price(&msg, &instrument, ts_init).unwrap();
@@ -1040,11 +1043,11 @@ mod tests {
         assert!(funding.interval.is_none());
         assert_eq!(
             funding.next_funding_ns,
-            Some(UnixNanos::from(1_562_306_400_000_000_000u64))
+            Some(UnixNanos::from(1_562_306_400_000_000_000_u64))
         );
         assert_eq!(
             funding.ts_event,
-            UnixNanos::from(1_562_305_380_000_000_000u64)
+            UnixNanos::from(1_562_305_380_000_000_000_u64)
         );
         assert_eq!(funding.ts_init, ts_init);
     }
@@ -1086,7 +1089,7 @@ mod tests {
     fn test_parse_ticker() {
         let instrument = sample_instrument();
         let msg: BinanceFuturesTickerMsg = load_market_fixture("ticker_stream.json");
-        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000_u64);
 
         let ticker = parse_ticker(&msg, &instrument, ts_init).unwrap();
 

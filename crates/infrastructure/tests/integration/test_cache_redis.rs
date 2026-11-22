@@ -217,7 +217,7 @@ mod serial_tests {
             .post_only(true)
             .price(Price::from("12345.67"))
             .maybe_expire_time(
-                (!no_expiry).then_some(UnixNanos::from(1_234_567_890_123_456_789u64)),
+                (!no_expiry).then_some(UnixNanos::from(1_234_567_890_123_456_789_u64)),
             )
             .display_qty(Quantity::from("0.123456"))
             .event_id(UUID4::from_str("11111111-1111-4111-8111-111111111111").unwrap())
@@ -467,7 +467,7 @@ mod serial_tests {
         ];
 
         let closes = [
-            ("BTCUSDT.BINANCE", "100.50", 100u64, 101u64),
+            ("BTCUSDT.BINANCE", "100.50", 100_u64, 101_u64),
             ("ETHUSDT.BINANCE", "200.75", 200, 201),
             ("SOLUSDT.BINANCE", "300.25", 300, 301),
         ]

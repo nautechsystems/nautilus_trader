@@ -71,8 +71,8 @@ fn perp_instrument(coin: &str, price_precision: u8, size_precision: u8) -> Instr
     let symbol_str = format!("{coin}-USD-PERP");
     let raw_symbol = Symbol::new(coin);
     let instrument_id = InstrumentId::new(Symbol::new(&symbol_str), *HYPERLIQUID_VENUE);
-    let price_increment = Price::new(10f64.powi(-(price_precision as i32)), price_precision);
-    let size_increment = Quantity::new(10f64.powi(-(size_precision as i32)), size_precision);
+    let price_increment = Price::new(10_f64.powi(-(price_precision as i32)), price_precision);
+    let size_increment = Quantity::new(10_f64.powi(-(size_precision as i32)), size_precision);
     InstrumentAny::CryptoPerpetual(
         CryptoPerpetual::builder()
             .instrument_id(instrument_id)

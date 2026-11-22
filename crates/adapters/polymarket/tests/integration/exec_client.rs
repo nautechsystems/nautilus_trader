@@ -2353,8 +2353,8 @@ async fn test_generate_order_status_reports_recovers_confirmed_rest_fill(
         ts_init: UnixNanos::default(),
         open_only: false,
         instrument_id: Some(instrument_id),
-        start: Some(UnixNanos::from(2_000_000_000_000_000_000u64)),
-        end: Some(UnixNanos::from(2_000_000_100_000_000_000u64)),
+        start: Some(UnixNanos::from(2_000_000_000_000_000_000_u64)),
+        end: Some(UnixNanos::from(2_000_000_100_000_000_000_u64)),
         params: None,
         log_receipt_level: LogLevel::Info,
         correlation_id: None,
@@ -7329,7 +7329,7 @@ async fn test_commission_failure_errors_direct_mass_and_targeted_rest_requests()
 
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
     let out_of_range_fee =
-        Decimal::from_i128_with_scale(100_000_000_000_000_000_000_000_000i128, 0);
+        Decimal::from_i128_with_scale(100_000_000_000_000_000_000_000_000_i128, 0);
     add_instrument_to_cache_with_tick_and_taker_fee(
         &cache,
         instrument_id,
@@ -14851,7 +14851,7 @@ fn make_limit_order_at_price_and_quantity(
     quantity: Quantity,
 ) -> OrderAny {
     let expire_time = if time_in_force == TimeInForce::Gtd {
-        Some(UnixNanos::from(2_000_000_000_000_000_000u64))
+        Some(UnixNanos::from(2_000_000_000_000_000_000_u64))
     } else {
         None
     };

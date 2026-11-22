@@ -1046,8 +1046,8 @@ mod tests {
     fn merge_streams_leaves_its_streams_undrained() {
         // Unbounded streams, so a merge that materialized its input would never return
         let ok_quote: fn(u64) -> anyhow::Result<Data> = |ts_init| Ok(quote(ts_init));
-        let evens = (0u64..).step_by(2).map(ok_quote);
-        let odds = (1u64..).step_by(2).map(ok_quote);
+        let evens = (0_u64..).step_by(2).map(ok_quote);
+        let odds = (1_u64..).step_by(2).map(ok_quote);
 
         let merged: Vec<u64> = merge_rows(vec![evens.peekable(), odds.peekable()])
             .take(4)

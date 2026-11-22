@@ -326,7 +326,7 @@ mod tests {
             .0
             .iter()
             .map(|chunk| {
-                let mut buf = [0u8; 8];
+                let mut buf = [0_u8; 8];
                 buf.copy_from_slice(chunk);
                 Fp::try_from_le_bytes(buf).expect("non-canonical Fp limb")
             })

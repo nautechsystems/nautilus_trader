@@ -4171,7 +4171,7 @@ fn test_unsubscribe_book_snapshots_during_publish_does_not_panic(
 
     let interval_ms = NonZeroUsize::new(100).unwrap();
     let topic = switchboard::get_book_snapshots_topic(audusd_sim.id, interval_ms);
-    let snapshot_count = Rc::new(RefCell::new(0usize));
+    let snapshot_count = Rc::new(RefCell::new(0_usize));
     let snapshot_count_clone = Rc::clone(&snapshot_count);
     let data_engine_clone = Rc::clone(&data_engine);
 
@@ -4867,7 +4867,7 @@ fn non_streamable_subscribe_cases(
         Venue::new("DERIBIT"),
         Ustr::from("BTC"),
         Ustr::from("BTC"),
-        UnixNanos::from(1_704_067_200_000_000_000u64),
+        UnixNanos::from(1_704_067_200_000_000_000_u64),
     );
 
     vec![

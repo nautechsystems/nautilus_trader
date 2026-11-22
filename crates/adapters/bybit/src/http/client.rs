@@ -3143,7 +3143,7 @@ impl BybitHttpClient {
         let mut query_params = BybitOrderHistoryParamsBuilder::default();
         query_params.category(product_type);
         query_params.symbol(bybit_symbol.raw_symbol().to_string());
-        query_params.limit(50u32);
+        query_params.limit(50_u32);
 
         let query_params = query_params.build().build_anyhow()?;
         let order_response: BybitOrderHistoryResponse = self
@@ -4127,7 +4127,7 @@ impl BybitHttpClient {
         //   Collected: [[T=2000..2999], [T=1000..1999]]
         //   After reverse + flatten: [T=1000..1999, T=2000..2999] ✓ chronological
         let mut pages: Vec<Vec<Bar>> = Vec::new();
-        let mut total_bars = 0usize;
+        let mut total_bars = 0_usize;
         let mut current_end = end.map(|dt| dt.as_millisecond());
         let mut page_count = 0;
 
@@ -4138,8 +4138,7 @@ impl BybitHttpClient {
             params_builder.category(product_type);
             params_builder.symbol(bybit_symbol.raw_symbol().to_string());
             params_builder.interval(interval);
-            params_builder.limit(1000u32); // Limit for data size per page (maximum for the Bybit API)
-
+            params_builder.limit(1000_u32); // Limit for data size per page (maximum for the Bybit API)
             if let Some(start_val) = start_ms {
                 params_builder.start(start_val);
             }

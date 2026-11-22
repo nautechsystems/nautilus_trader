@@ -495,7 +495,7 @@ fn test_spread_market_fill_emits_combo_and_leg_fills(
     cache.borrow_mut().add_instrument(leg_b.clone()).unwrap();
     cache.borrow_mut().add_instrument(spread.clone()).unwrap();
 
-    let ts = UnixNanos::from(1_715_248_800_000_000_000u64);
+    let ts = UnixNanos::from(1_715_248_800_000_000_000_u64);
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock.borrow_mut().set_time(ts);
     cache
@@ -629,7 +629,7 @@ fn test_spread_market_fill_sweeping_l2_levels_emits_leg_fills_per_fill(
     cache.borrow_mut().add_instrument(leg_b.clone()).unwrap();
     cache.borrow_mut().add_instrument(spread.clone()).unwrap();
 
-    let ts = UnixNanos::from(1_715_248_800_000_000_000u64);
+    let ts = UnixNanos::from(1_715_248_800_000_000_000_u64);
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock.borrow_mut().set_time(ts);
     cache
@@ -2111,7 +2111,7 @@ fn test_market_to_limit_slippage_error_preserves_conversion_boundary(
 
     if let InstrumentAny::FuturesContract(contract) = &mut instrument {
         contract.activation_ns = UnixNanos::default();
-        contract.expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+        contract.expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     }
 
     for definition in [&leg_a, &leg_b, &instrument] {
@@ -2457,7 +2457,7 @@ fn futures_spread_with_generic_id(instrument_id: &str, symbol: &str) -> Instrume
             Ustr::from("ES_NQ"),
             Ustr::from("SPREAD"),
             UnixNanos::default(),
-            UnixNanos::from(2_000_000_000_000_000_000u64),
+            UnixNanos::from(2_000_000_000_000_000_000_u64),
             Currency::USD(),
             2,
             Price::from("0.25"),

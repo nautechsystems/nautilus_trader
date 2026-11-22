@@ -1974,14 +1974,14 @@ mod proptest_tests {
     proptest! {
         #[rstest]
         fn test_retry_config_valid_ranges(
-            max_retries in 0u32..100,
-            initial_delay_ms in 1u64..10_000,
-            max_delay_ms in 1u64..60_000,
-            backoff_factor in 1.0f64..10.0,
-            jitter_ms in 0u64..1_000,
-            operation_timeout_ms in prop::option::of(1u64..120_000),
+            max_retries in 0_u32..100,
+            initial_delay_ms in 1_u64..10_000,
+            max_delay_ms in 1_u64..60_000,
+            backoff_factor in 1.0_f64..10.0,
+            jitter_ms in 0_u64..1_000,
+            operation_timeout_ms in prop::option::of(1_u64..120_000),
             immediate_first in any::<bool>(),
-            max_elapsed_ms in prop::option::of(1u64..300_000)
+            max_elapsed_ms in prop::option::of(1_u64..300_000)
         ) {
             // Ensure max_delay >= initial_delay for valid config
             let max_delay_ms = max_delay_ms.max(initial_delay_ms);
@@ -2003,9 +2003,9 @@ mod proptest_tests {
 
         #[rstest]
         fn test_retry_attempts_bounded(
-            max_retries in 0u32..5,
-            initial_delay_ms in 1u64..10,
-            backoff_factor in 1.0f64..2.0,
+            max_retries in 0_u32..5,
+            initial_delay_ms in 1_u64..10,
+            backoff_factor in 1.0_f64..2.0,
         ) {
             let rt = build_paused_runtime();
 
@@ -2044,9 +2044,9 @@ mod proptest_tests {
 
         #[rstest]
         fn test_error_retry_delay_obeys_selection_and_budget(
-            backoff_ms in 1u64..500,
-            minimum_ms in 0u64..1_000,
-            operation_timeout_ms in 1u64..50,
+            backoff_ms in 1_u64..500,
+            minimum_ms in 0_u64..1_000,
+            operation_timeout_ms in 1_u64..50,
             timeout in any::<bool>(),
         ) {
             let rt = build_paused_runtime();
@@ -2163,8 +2163,8 @@ mod proptest_tests {
 
         #[rstest]
         fn test_timeout_always_respected(
-            timeout_ms in 10u64..50,
-            operation_delay_ms in 60u64..100,
+            timeout_ms in 10_u64..50,
+            operation_delay_ms in 60_u64..100,
         ) {
             let rt = build_paused_runtime();
 
@@ -2204,9 +2204,9 @@ mod proptest_tests {
 
         #[rstest]
         fn test_max_elapsed_always_respected(
-            max_elapsed_ms in 20u64..50,
-            delay_per_retry in 15u64..30,
-            max_retries in 10u32..20,
+            max_elapsed_ms in 20_u64..50,
+            delay_per_retry in 15_u64..30,
+            max_retries in 10_u32..20,
         ) {
             let rt = build_paused_runtime();
 
@@ -2257,8 +2257,8 @@ mod proptest_tests {
 
         #[rstest]
         fn test_jitter_bounds(
-            jitter_ms in 0u64..20,
-            base_delay_ms in 10u64..30,
+            jitter_ms in 0_u64..20,
+            base_delay_ms in 10_u64..30,
         ) {
             let rt = build_paused_runtime();
 
@@ -2355,7 +2355,7 @@ mod proptest_tests {
         #[rstest]
         fn test_immediate_first_property(
             immediate_first in any::<bool>(),
-            initial_delay_ms in 10u64..30,
+            initial_delay_ms in 10_u64..30,
         ) {
             let rt = build_paused_runtime();
 
@@ -2431,8 +2431,8 @@ mod proptest_tests {
 
         #[rstest]
         fn test_non_retryable_stops_immediately(
-            attempt_before_non_retryable in 0usize..3,
-            max_retries in 3u32..5,
+            attempt_before_non_retryable in 0_usize..3,
+            max_retries in 3_u32..5,
         ) {
             let rt = build_paused_runtime();
 
@@ -2478,8 +2478,8 @@ mod proptest_tests {
 
         #[rstest]
         fn test_cancellation_stops_immediately(
-            cancel_after_ms in 10u64..100,
-            initial_delay_ms in 200u64..500,
+            cancel_after_ms in 10_u64..100,
+            initial_delay_ms in 200_u64..500,
         ) {
             use tokio_util::sync::CancellationToken;
 
@@ -2531,8 +2531,8 @@ mod proptest_tests {
 
         #[rstest]
         fn test_budget_clamp_prevents_overshoot(
-            max_elapsed_ms in 10u64..30,
-            delay_per_retry in 30u64..50,
+            max_elapsed_ms in 10_u64..30,
+            delay_per_retry in 30_u64..50,
         ) {
             let rt = build_paused_runtime();
 
@@ -2589,8 +2589,8 @@ mod proptest_tests {
 
         #[rstest]
         fn test_success_on_kth_attempt(
-            k in 1usize..5,
-            initial_delay_ms in 5u64..20,
+            k in 1_usize..5,
+            initial_delay_ms in 5_u64..20,
         ) {
             let rt = build_paused_runtime();
 

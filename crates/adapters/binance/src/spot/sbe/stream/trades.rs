@@ -163,22 +163,22 @@ mod tests {
     use crate::spot::sbe::stream::{STREAM_SCHEMA_ID, template_id};
 
     fn make_valid_buffer(num_trades: usize) -> Vec<u8> {
-        let trade_block_len = 25u16;
+        let trade_block_len = 25_u16;
         let body_size = 18 + 6 + (num_trades * trade_block_len as usize) + 8; // fixed + group header + trades + symbol
-        let mut buf = vec![0u8; 8 + body_size];
+        let mut buf = vec![0_u8; 8 + body_size];
 
         // Header
-        buf[0..2].copy_from_slice(&18u16.to_le_bytes()); // block_length
+        buf[0..2].copy_from_slice(&18_u16.to_le_bytes()); // block_length
         buf[2..4].copy_from_slice(&template_id::TRADES_STREAM_EVENT.to_le_bytes());
         buf[4..6].copy_from_slice(&STREAM_SCHEMA_ID.to_le_bytes());
-        buf[6..8].copy_from_slice(&0u16.to_le_bytes()); // version
+        buf[6..8].copy_from_slice(&0_u16.to_le_bytes()); // version
 
         // Body
         let body = &mut buf[8..];
         body[0..8].copy_from_slice(&1_000_000_i64.to_le_bytes()); // event_time_us
         body[8..16].copy_from_slice(&1_000_001_i64.to_le_bytes()); // transact_time_us
-        body[16] = (-2i8) as u8; // price_exponent
-        body[17] = (-8i8) as u8; // qty_exponent
+        body[16] = (-2_i8) as u8; // price_exponent
+        body[17] = (-8_i8) as u8; // qty_exponent
 
         // Group header
         body[18..20].copy_from_slice(&trade_block_len.to_le_bytes());
@@ -310,7 +310,7 @@ mod tests {
     #[rstest]
     fn test_decode_wrong_schema() {
         let mut buf = make_valid_buffer(1);
-        buf[4..6].copy_from_slice(&99u16.to_le_bytes());
+        buf[4..6].copy_from_slice(&99_u16.to_le_bytes());
         let err = TradesStreamEvent::decode(&buf).unwrap_err();
         assert!(matches!(err, StreamDecodeError::SchemaMismatch { .. }));
     }

@@ -1041,7 +1041,7 @@ mod tests {
     #[case(serde_json::json!(""), None)]
     #[case(serde_json::Value::Null, None)]
     #[case(serde_json::json!("0.1234567890123456789012345678"), Some(Decimal::from_str_exact("0.1234567890123456789012345678").unwrap()))]
-    #[case(serde_json::json!(9_007_199_254_740_993_u64), Some(Decimal::from(9_007_199_254_740_993u64)))]
+    #[case(serde_json::json!(9_007_199_254_740_993_u64), Some(Decimal::from(9_007_199_254_740_993_u64)))]
     fn test_order_price_routes(
         #[case] price: serde_json::Value,
         #[case] expected: Option<Decimal>,

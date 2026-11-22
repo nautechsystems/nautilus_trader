@@ -255,7 +255,8 @@ mod tests {
     #[rstest]
     fn contract_call_chunks_preserves_order_across_chunk_boundary() {
         let target = address!("25b76A90E389bD644a29db919b136Dc63B174Ec7");
-        let calls: Vec<ContractCall> = (0u8..5)
+
+        let calls: Vec<ContractCall> = (0_u8..5)
             .map(|value| ContractCall {
                 target,
                 allow_failure: true,
@@ -273,7 +274,8 @@ mod tests {
     #[rstest]
     fn contract_call_chunks_treats_zero_limit_as_one() {
         let target = address!("25b76A90E389bD644a29db919b136Dc63B174Ec7");
-        let calls: Vec<ContractCall> = (0u8..3)
+
+        let calls: Vec<ContractCall> = (0_u8..3)
             .map(|value| ContractCall {
                 target,
                 allow_failure: true,

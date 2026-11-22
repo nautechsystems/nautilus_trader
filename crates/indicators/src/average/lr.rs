@@ -564,7 +564,7 @@ mod tests {
         let mut lr = LinearRegression::new(P);
         for x in 1..=P {
             let noise = if x.is_multiple_of(2) { 0.5 } else { -0.5 };
-            lr.update_raw(3.0f64.mul_add(x as f64, noise));
+            lr.update_raw(3.0_f64.mul_add(x as f64, noise));
         }
         assert!(lr.r2 > 0.0 && lr.r2 < 1.0);
     }

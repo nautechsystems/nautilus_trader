@@ -476,8 +476,8 @@ mod tests {
             17.8,
             f64::NAN,
             f64::NAN,
-            UnixNanos::from(1_000_000_000u64),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
+            UnixNanos::from(1_000_000_000_u64),
         );
 
         let json = serde_json::to_string(&data).unwrap();
@@ -500,8 +500,8 @@ mod tests {
             Some(Decimal::new(100, 0)),
             None,
             None,
-            UnixNanos::from(1_000_000_000u64),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
+            UnixNanos::from(1_000_000_000_u64),
         );
 
         let json = serde_json::to_string(&ticker).unwrap();
@@ -568,8 +568,8 @@ mod tests {
         let starting_price = BetfairStartingPrice::new(
             InstrumentId::from("1.234-56789-0.0.BETFAIR"),
             Decimal::new(573, 2),
-            UnixNanos::from(1_000_000_000u64),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
+            UnixNanos::from(1_000_000_000_u64),
         );
 
         let json = serde_json::to_string(&starting_price).unwrap();
@@ -589,8 +589,8 @@ mod tests {
             OrderSide::Buy,
             Decimal::new(1000, 0),
             Decimal::new(3338, 2),
-            UnixNanos::from(1_000_000_000u64),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
+            UnixNanos::from(1_000_000_000_u64),
         );
 
         let json = serde_json::to_string(&delta).unwrap();
@@ -618,8 +618,8 @@ mod tests {
             Some(Decimal::new(25, 1)),
             Some(Decimal::new(60, 0)),
             "VAR".to_string(),
-            UnixNanos::from(1_000_000_000u64),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
+            UnixNanos::from(1_000_000_000_u64),
         );
 
         let json = serde_json::to_string(&voided).unwrap();

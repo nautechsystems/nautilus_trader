@@ -2938,7 +2938,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let positions = self.http_client.query_positions(&params).await?;
 
         let mut reports = Vec::new();
-        let mut position_reports_failed = 0usize;
+        let mut position_reports_failed = 0_usize;
 
         for position in positions {
             let instrument_id = format_instrument_id(&position.symbol, self.product_type);

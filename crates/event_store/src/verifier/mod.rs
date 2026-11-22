@@ -730,7 +730,7 @@ mod tests {
         // Confirms the verifier walks past hash mismatches instead of bailing on the
         // first hit: seq=2 and seq=4 are both tampered, and both must appear in the
         // report.
-        for seq in 1..=4u64 {
+        for seq in 1..=4_u64 {
             let mut entry = build_entry(seq, Headers::empty(), 10 + seq);
             if seq == 2 || seq == 4 {
                 entry.payload = Bytes::from_static(b"\xFF");

@@ -797,7 +797,7 @@ mod tests {
             Venue::new("DERIBIT"),
             ustr::Ustr::from("BTC"),
             ustr::Ustr::from("BTC"),
-            UnixNanos::from(1_700_000_000_000_000_000u64),
+            UnixNanos::from(1_700_000_000_000_000_000_u64),
         )
     }
 
@@ -849,8 +849,8 @@ mod tests {
             Price::from("101.00"),
             Quantity::from("1.0"),
             Quantity::from("1.0"),
-            UnixNanos::from(1u64),
-            UnixNanos::from(1u64),
+            UnixNanos::from(1_u64),
+            UnixNanos::from(1_u64),
         );
         manager.handle_quote(&quote);
     }
@@ -859,7 +859,7 @@ mod tests {
     fn test_manager_publish_slice_empty() {
         let (mut manager, _queue) = make_manager();
         // Should not panic - empty slice skips publish
-        manager.publish_slice(UnixNanos::from(100u64));
+        manager.publish_slice(UnixNanos::from(100_u64));
     }
 
     #[rstest]
@@ -943,7 +943,7 @@ mod tests {
         assert_eq!(queue.borrow().len(), 18);
 
         // publish_slice should still work normally after bootstrap
-        manager.publish_slice(UnixNanos::from(100u64));
+        manager.publish_slice(UnixNanos::from(100_u64));
         assert!(manager.aggregator.last_atm_strike().is_some());
     }
 
@@ -1107,8 +1107,8 @@ mod tests {
             Price::from("101.00"),
             Quantity::from("1.0"),
             Quantity::from("1.0"),
-            UnixNanos::from(1u64),
-            UnixNanos::from(1u64),
+            UnixNanos::from(1_u64),
+            UnixNanos::from(1_u64),
         );
         manager.handle_quote(&quote);
 
@@ -1124,7 +1124,7 @@ mod tests {
         };
         manager.handle_greeks(&greeks);
 
-        let slice = manager.aggregator.snapshot(UnixNanos::from(2u64));
+        let slice = manager.aggregator.snapshot(UnixNanos::from(2_u64));
         assert_eq!(
             manager.aggregator.atm_tracker().atm_price().unwrap(),
             Price::from("50000.00")
@@ -1249,7 +1249,7 @@ mod tests {
         let clock = Rc::new(RefCell::new(VirtualClock::new()));
         manager.clock = Rc::clone(&clock) as Rc<RefCell<dyn Clock>>;
 
-        clock.borrow().set_time(UnixNanos::from(10_000_000_000u64));
+        clock.borrow().set_time(UnixNanos::from(10_000_000_000_u64));
         let new_listing = InstrumentId::from("BTC-20240101-50000-P.DERIBIT");
         let manager_clock = Rc::clone(&manager.clock);
         assert!(manager.add_instrument(new_listing, strike, OptionKind::Put, None, &manager_clock));
@@ -1258,16 +1258,16 @@ mod tests {
         let greeks = OptionGreeks {
             instrument_id: InstrumentId::from("BTC-20240101-50000-C.DERIBIT"),
             underlying_price: Some(51000.0),
-            ts_event: UnixNanos::from(4_000_000_000u64),
+            ts_event: UnixNanos::from(4_000_000_000_u64),
             ..Default::default()
         };
 
         let candidate = InstrumentId::from("BTC-20240101-61000-C.DERIBIT");
-        clock.borrow().set_time(UnixNanos::from(14_999_999_999u64));
+        clock.borrow().set_time(UnixNanos::from(14_999_999_999_u64));
         manager.handle_greeks(&greeks);
         assert!(!manager.aggregator.active_ids().contains(&candidate));
 
-        clock.borrow().set_time(UnixNanos::from(15_000_000_000u64));
+        clock.borrow().set_time(UnixNanos::from(15_000_000_000_u64));
         manager.handle_greeks(&greeks);
         assert!(manager.aggregator.active_ids().contains(&candidate));
     }

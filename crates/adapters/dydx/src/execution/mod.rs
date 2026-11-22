@@ -2864,7 +2864,7 @@ impl ExecutionClient for DydxExecutionClient {
             .context("failed to fetch fills for mass status")?;
 
         let mut order_reports = Vec::new();
-        let mut orders_filtered = 0usize;
+        let mut orders_filtered = 0_usize;
 
         for order in orders_response {
             let instrument = match self.get_instrument_by_clob_pair_id(order.clob_pair_id) {
@@ -2928,7 +2928,7 @@ impl ExecutionClient for DydxExecutionClient {
         }
 
         let mut fill_reports = Vec::new();
-        let mut fills_filtered = 0usize;
+        let mut fills_filtered = 0_usize;
 
         for fill in fills_response.fills {
             let instrument = match self.get_instrument_by_market(&fill.market) {

@@ -1917,7 +1917,7 @@ fn test_market_order_with_protection_and_acks_generates_accepted_then_filled(
 ) {
     let config = OrderMatchingEngineConfig::builder()
         .use_market_order_acks(true)
-        .price_protection_points(600u32)
+        .price_protection_points(600_u32)
         .build();
 
     let mut engine =
@@ -3648,8 +3648,8 @@ fn test_passive_stop_limit_trigger_emits_triggered_before_fill(
         Quantity::from("1.000"),
         AggressorSide::Buy,
         TradeId::new("trigger-1"),
-        UnixNanos::from(2u64),
-        UnixNanos::from(2u64),
+        UnixNanos::from(2_u64),
+        UnixNanos::from(2_u64),
     );
     engine_l2.process_trade_tick(&trade);
 
@@ -3714,8 +3714,8 @@ fn test_passive_post_only_stop_limit_rejected_when_triggered_as_taker(
         Quantity::from("1.000"),
         AggressorSide::Buy,
         TradeId::new("trigger-1"),
-        UnixNanos::from(2u64),
-        UnixNanos::from(2u64),
+        UnixNanos::from(2_u64),
+        UnixNanos::from(2_u64),
     );
     engine_l2.process_trade_tick(&trade);
 
@@ -3852,8 +3852,8 @@ fn test_passive_stop_limit_rekeys_to_limit_after_trigger(
         Quantity::from("1.000"),
         AggressorSide::Buy,
         TradeId::new("trigger-1"),
-        UnixNanos::from(2u64),
-        UnixNanos::from(2u64),
+        UnixNanos::from(2_u64),
+        UnixNanos::from(2_u64),
     );
     engine_l2.process_trade_tick(&trade);
 
@@ -3874,7 +3874,7 @@ fn test_passive_stop_limit_rekeys_to_limit_after_trigger(
             Quantity::from("1.000"),
             2,
         ))
-        .ts_init(UnixNanos::from(3u64))
+        .ts_init(UnixNanos::from(3_u64))
         .build();
     engine_l2.process_order_book_delta(&bid).unwrap();
 
@@ -4991,8 +4991,8 @@ fn test_rejected_post_only_modify_preserves_queue_position(
         Quantity::from("10.000"),
         AggressorSide::Sell,
         TradeId::new("DRAIN"),
-        UnixNanos::from(1u64),
-        UnixNanos::from(1u64),
+        UnixNanos::from(1_u64),
+        UnixNanos::from(1_u64),
     );
     engine.process_trade_tick(&trade_drain);
     assert!(
@@ -5009,8 +5009,8 @@ fn test_rejected_post_only_modify_preserves_queue_position(
         Price::from("101.00"),
         Quantity::from("10.000"),
         Quantity::from("5.000"),
-        UnixNanos::from(2u64),
-        UnixNanos::from(2u64),
+        UnixNanos::from(2_u64),
+        UnixNanos::from(2_u64),
     );
     engine.process_quote_tick(&quote_replenish);
 
@@ -5027,7 +5027,7 @@ fn test_rejected_post_only_modify_preserves_queue_position(
         Some(Price::from("101.00")),
         None,
         UUID4::new(),
-        UnixNanos::from(3u64),
+        UnixNanos::from(3_u64),
         None,
         None, // correlation_id
     );
@@ -5049,8 +5049,8 @@ fn test_rejected_post_only_modify_preserves_queue_position(
         Quantity::from("1.000"),
         AggressorSide::Sell,
         TradeId::new("FILL"),
-        UnixNanos::from(4u64),
-        UnixNanos::from(4u64),
+        UnixNanos::from(4_u64),
+        UnixNanos::from(4_u64),
     );
     engine.process_trade_tick(&trade_fill);
 
@@ -8219,7 +8219,7 @@ fn test_process_market_orders_with_protection_rejeceted_and_valid(
 ) {
     let config = OrderMatchingEngineConfig::builder()
         .trade_execution(false)
-        .price_protection_points(600u32)
+        .price_protection_points(600_u32)
         .build();
 
     let mut engine_l2 =
@@ -8288,7 +8288,7 @@ fn test_process_stop_orders_with_protection_both_accepted(
     // Protection is computed when the stop triggers
     let config = OrderMatchingEngineConfig::builder()
         .trade_execution(false)
-        .price_protection_points(600u32)
+        .price_protection_points(600_u32)
         .build();
 
     let mut engine_l2 =
@@ -11312,8 +11312,8 @@ fn test_bar_execution_fills_stop_order(
         Price::from("1501.00"),
         Quantity::from("1.000"),
         Quantity::from("1.000"),
-        UnixNanos::from(1u64),
-        UnixNanos::from(1u64),
+        UnixNanos::from(1_u64),
+        UnixNanos::from(1_u64),
     );
     engine.process_quote_tick(&quote);
 
@@ -11340,8 +11340,8 @@ fn test_bar_execution_fills_stop_order(
         low: Price::from("1480.00"),
         close: Price::from("1495.00"),
         volume: Quantity::from("100.000"),
-        ts_event: UnixNanos::from(2u64),
-        ts_init: UnixNanos::from(2u64),
+        ts_event: UnixNanos::from(2_u64),
+        ts_init: UnixNanos::from(2_u64),
     };
     engine.process_bar(&bar);
 
@@ -11381,8 +11381,8 @@ fn test_bar_execution_triggers_last_price_stop_on_its_leg(
         low: Price::from("1500.00"),
         close: Price::from("1500.00"),
         volume: Quantity::from("100.000"),
-        ts_event: UnixNanos::from(1u64),
-        ts_init: UnixNanos::from(1u64),
+        ts_event: UnixNanos::from(1_u64),
+        ts_init: UnixNanos::from(1_u64),
     };
 
     engine.process_bar(&flat_bar);
@@ -11408,8 +11408,8 @@ fn test_bar_execution_triggers_last_price_stop_on_its_leg(
         low: Price::from("1480.00"),
         close: Price::from("1480.00"),
         volume: Quantity::from("100.000"),
-        ts_event: UnixNanos::from(2u64),
-        ts_init: UnixNanos::from(2u64),
+        ts_event: UnixNanos::from(2_u64),
+        ts_init: UnixNanos::from(2_u64),
     };
 
     engine.process_bar(&falling_bar);
@@ -11450,8 +11450,8 @@ fn test_bar_adaptive_ordering_fills_low_side_first(
         Price::from("1500.00"),
         Quantity::from("1.000"),
         Quantity::from("1.000"),
-        UnixNanos::from(1u64),
-        UnixNanos::from(1u64),
+        UnixNanos::from(1_u64),
+        UnixNanos::from(1_u64),
     );
     engine.process_quote_tick(&quote);
 
@@ -11489,8 +11489,8 @@ fn test_bar_adaptive_ordering_fills_low_side_first(
         low: Price::from("1480.00"),
         close: Price::from("1500.00"),
         volume: Quantity::from("100.000"),
-        ts_event: UnixNanos::from(2u64),
-        ts_init: UnixNanos::from(2u64),
+        ts_event: UnixNanos::from(2_u64),
+        ts_init: UnixNanos::from(2_u64),
     };
     engine.process_bar(&bar);
 
@@ -11535,8 +11535,8 @@ fn test_quote_bar_adaptive_ordering_fills_low_side_first(
         Price::from("1500.00"),
         Quantity::from("1.000"),
         Quantity::from("1.000"),
-        UnixNanos::from(1u64),
-        UnixNanos::from(1u64),
+        UnixNanos::from(1_u64),
+        UnixNanos::from(1_u64),
     );
     engine.process_quote_tick(&quote);
 
@@ -11572,8 +11572,8 @@ fn test_quote_bar_adaptive_ordering_fills_low_side_first(
         low: Price::from("1480.00"),
         close: Price::from("1500.00"),
         volume: Quantity::from("100.000"),
-        ts_event: UnixNanos::from(2u64),
-        ts_init: UnixNanos::from(2u64),
+        ts_event: UnixNanos::from(2_u64),
+        ts_init: UnixNanos::from(2_u64),
     };
     let ask_bar = Bar {
         bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-ASK-EXTERNAL"),
@@ -11582,8 +11582,8 @@ fn test_quote_bar_adaptive_ordering_fills_low_side_first(
         low: Price::from("1480.00"),
         close: Price::from("1500.00"),
         volume: Quantity::from("100.000"),
-        ts_event: UnixNanos::from(2u64),
-        ts_init: UnixNanos::from(2u64),
+        ts_event: UnixNanos::from(2_u64),
+        ts_init: UnixNanos::from(2_u64),
     };
     engine.process_bar(&bid_bar);
     engine.process_bar(&ask_bar);
@@ -11627,8 +11627,8 @@ fn test_reset_clears_cached_quote_bars(
         low: Price::from("1480.00"),
         close: Price::from("1500.00"),
         volume: Quantity::from("100.000"),
-        ts_event: UnixNanos::from(2u64),
-        ts_init: UnixNanos::from(2u64),
+        ts_event: UnixNanos::from(2_u64),
+        ts_init: UnixNanos::from(2_u64),
     };
     engine.process_bar(&bid_bar);
     engine.reset();
@@ -11642,8 +11642,8 @@ fn test_reset_clears_cached_quote_bars(
         low: Price::from("1481.00"),
         close: Price::from("1501.00"),
         volume: Quantity::from("100.000"),
-        ts_event: UnixNanos::from(2u64),
-        ts_init: UnixNanos::from(2u64),
+        ts_event: UnixNanos::from(2_u64),
+        ts_init: UnixNanos::from(2_u64),
     };
     engine.process_bar(&ask_bar);
 
@@ -11747,8 +11747,8 @@ fn test_trade_tick_without_trade_execution_maintains_trailing_stop_without_filli
         Quantity::from("1.000"),
         AggressorSide::Sell,
         TradeId::new("1"),
-        UnixNanos::from(1u64),
-        UnixNanos::from(1u64),
+        UnixNanos::from(1_u64),
+        UnixNanos::from(1_u64),
     );
     engine_l2.process_trade_tick(&favorable_trade);
 
@@ -11783,8 +11783,8 @@ fn test_trade_tick_without_trade_execution_maintains_trailing_stop_without_filli
         Quantity::from("1.000"),
         AggressorSide::Buy,
         TradeId::new("2"),
-        UnixNanos::from(2u64),
-        UnixNanos::from(2u64),
+        UnixNanos::from(2_u64),
+        UnixNanos::from(2_u64),
     );
     engine_l2.process_trade_tick(&triggering_trade);
 
@@ -12555,7 +12555,7 @@ fn test_price_protection_exact_boundary_fills(
     // Protection of 100 points on ETHUSDT (price_increment=0.01) means
     // max BUY price = ask + 100 * 0.01 = ask + 1.00
     let config = OrderMatchingEngineConfig::builder()
-        .price_protection_points(100u32)
+        .price_protection_points(100_u32)
         .build();
 
     let mut engine_l2 =
@@ -12684,8 +12684,8 @@ fn test_trade_tick_seeds_liquidity_consumption_for_stop_market_fill(
         Quantity::from("8.000"),
         AggressorSide::Buy,
         TradeId::new("1"),
-        UnixNanos::from(2u64),
-        UnixNanos::from(2u64),
+        UnixNanos::from(2_u64),
+        UnixNanos::from(2_u64),
     );
     engine.process_trade_tick(&trade);
 
@@ -12812,8 +12812,8 @@ fn test_trade_tick_seeds_consumption_with_stale_entry_reconciles(
         Quantity::from("6.000"),
         AggressorSide::Buy,
         TradeId::new("1"),
-        UnixNanos::from(2u64),
-        UnixNanos::from(2u64),
+        UnixNanos::from(2_u64),
+        UnixNanos::from(2_u64),
     );
     engine.process_trade_tick(&trade);
 
@@ -12916,8 +12916,8 @@ fn test_trade_tick_skips_seeding_when_book_already_updated(
         Quantity::from("8.000"),
         AggressorSide::Buy,
         TradeId::new("1"),
-        UnixNanos::from(2u64),
-        UnixNanos::from(2u64),
+        UnixNanos::from(2_u64),
+        UnixNanos::from(2_u64),
     );
     engine.process_trade_tick(&trade);
 
@@ -13025,8 +13025,8 @@ fn test_trade_tick_seeds_consumption_when_book_ts_equals_trade_ts(
         Quantity::from("8.000"),
         AggressorSide::Buy,
         TradeId::new("1"),
-        UnixNanos::from(1u64),
-        UnixNanos::from(1u64),
+        UnixNanos::from(1_u64),
+        UnixNanos::from(1_u64),
     );
     engine.process_trade_tick(&trade);
 
@@ -13129,8 +13129,8 @@ fn test_trade_tick_seeds_consumption_for_seller_side(
         Quantity::from("8.000"),
         AggressorSide::Sell,
         TradeId::new("1"),
-        UnixNanos::from(2u64),
-        UnixNanos::from(2u64),
+        UnixNanos::from(2_u64),
+        UnixNanos::from(2_u64),
     );
     engine.process_trade_tick(&trade);
 
@@ -15574,8 +15574,8 @@ fn test_triggered_stop_market_removed_from_matching_core_after_trade_trigger(
         Quantity::from("8.000"),
         AggressorSide::Buy,
         TradeId::new("repro-1"),
-        UnixNanos::from(2u64),
-        UnixNanos::from(2u64),
+        UnixNanos::from(2_u64),
+        UnixNanos::from(2_u64),
     );
     engine.process_trade_tick(&trade);
 
@@ -15813,8 +15813,8 @@ fn test_triggered_stop_limit_removed_from_core_after_fill(
         Quantity::from("10.000"),
         AggressorSide::Buy,
         TradeId::new("trigger-1"),
-        UnixNanos::from(2u64),
-        UnixNanos::from(2u64),
+        UnixNanos::from(2_u64),
+        UnixNanos::from(2_u64),
     );
     engine.process_trade_tick(&trade);
 
@@ -16820,8 +16820,8 @@ fn test_fallback_target_restore_preserves_core_last_after_maker_fill(
         Quantity::from("1.000"),
         AggressorSide::Buy,
         TradeId::from("seed"),
-        UnixNanos::from(1u64),
-        UnixNanos::from(1u64),
+        UnixNanos::from(1_u64),
+        UnixNanos::from(1_u64),
     );
     engine_l2.process_trade_tick(&seed_trade);
 
@@ -16916,8 +16916,8 @@ fn test_trailing_stop_recompute_after_maker_fill_uses_mutated_core(
         Quantity::from("1.000"),
         AggressorSide::Buy,
         TradeId::from("seed"),
-        UnixNanos::from(1u64),
-        UnixNanos::from(1u64),
+        UnixNanos::from(1_u64),
+        UnixNanos::from(1_u64),
     );
     engine_l2.process_trade_tick(&seed_trade);
 
@@ -17632,7 +17632,7 @@ fn test_option_cash_settlement_at_intrinsic_value(
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
     let venue = "OPRA";
-    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     let option = InstrumentAny::OptionContract(option_contract(
         "SPX",
         venue,
@@ -17769,7 +17769,7 @@ fn test_option_cash_settlement_at_intrinsic_value(
 fn test_deferred_option_expiry_cancels_orders_and_rejects_submissions(account_id: AccountId) {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let handler = order_event_handler_with_cache(cache.clone());
-    let expiration_ns = UnixNanos::from(2_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_u64);
     let option = InstrumentAny::OptionContract(option_contract(
         "SPX",
         "OPRA",
@@ -17878,7 +17878,7 @@ fn test_reset_restores_market_status_after_option_expiry(account_id: AccountId) 
     let _order_event_handler = order_event_handler_with_cache(cache.clone());
 
     let venue = "OPRA";
-    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     let option = InstrumentAny::OptionContract(option_contract(
         "SPX",
         venue,
@@ -17948,7 +17948,7 @@ fn test_option_physical_settlement_delivers_underlying(
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
     let venue = "OPRA";
-    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     let option = InstrumentAny::OptionContract(option_contract(
         "AAPL",
         venue,
@@ -18068,7 +18068,7 @@ fn test_option_physical_settlement_persistence_failure_still_dispatches(account_
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let venue = "OPRA";
-    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     let option = InstrumentAny::OptionContract(option_contract(
         "AAPL",
         venue,
@@ -18497,7 +18497,7 @@ fn run_otm_expiry_case(
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
     let venue = "OPRA";
-    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     let option = InstrumentAny::OptionContract(option_contract("AAPL", venue, expiration_ns, kind));
     let underlying = InstrumentAny::Equity(underlying_equity(venue));
 
@@ -18612,7 +18612,7 @@ fn test_option_cash_settlement_put_pays_strike_minus_spot(account_id: AccountId)
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
     let venue = "OPRA";
-    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     let option = InstrumentAny::OptionContract(option_contract(
         "SPX",
         venue,
@@ -18686,7 +18686,7 @@ fn test_option_physical_settlement_put_flips_underlying_side(account_id: Account
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
     let venue = "OPRA";
-    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     let option = InstrumentAny::OptionContract(option_contract(
         "AAPL",
         venue,
@@ -18909,7 +18909,7 @@ fn test_process_option_expiry_no_positions_is_noop(account_id: AccountId) {
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
     let venue = "OPRA";
-    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     let option = InstrumentAny::OptionContract(option_contract(
         "AAPL",
         venue,
@@ -18952,7 +18952,7 @@ fn test_process_option_expiry_missing_underlying_instrument_defers(account_id: A
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
     let venue = "OPRA";
-    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     let option = InstrumentAny::OptionContract(option_contract(
         "AAPL",
         venue,
@@ -19009,7 +19009,7 @@ fn test_process_option_expiry_prefers_same_venue_underlying_over_cross_venue(
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
     let option_venue = "OPRA";
-    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     let option = InstrumentAny::OptionContract(option_contract(
         "SPX",
         option_venue,
@@ -19094,7 +19094,7 @@ fn test_process_option_expiry_resolves_unique_cross_venue_underlying(account_id:
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
     let option_venue = "BFO";
-    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     let option = InstrumentAny::OptionContract(option_contract(
         "SPX",
         option_venue,
@@ -19165,7 +19165,7 @@ fn test_process_option_expiry_defers_when_cross_venue_underlying_is_ambiguous(
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
     let option_venue = "BFO";
-    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     let option = InstrumentAny::OptionContract(option_contract(
         "SPX",
         option_venue,
@@ -19225,7 +19225,7 @@ fn test_process_option_expiry_defers_when_no_symbol_match_in_populated_cache(
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
     let option_venue = "BFO";
-    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     let option = InstrumentAny::OptionContract(option_contract(
         "SPX",
         option_venue,
@@ -19283,7 +19283,7 @@ fn test_process_option_expiry_missing_underlying_price_retries_with_close_preser
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
     let venue = "OPRA";
-    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     let option = InstrumentAny::OptionContract(option_contract(
         "AAPL",
         venue,
@@ -19449,7 +19449,7 @@ fn test_option_expiration_cancellation_latched_across_deferred_retries(account_i
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let venue = "OPRA";
-    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     let option = InstrumentAny::OptionContract(option_contract(
         "AAPL",
         venue,
@@ -19543,7 +19543,7 @@ fn test_check_instrument_expiration_idempotent_after_processed(account_id: Accou
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
     let venue = "OPRA";
-    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     let option = InstrumentAny::OptionContract(option_contract(
         "SPX",
         venue,
@@ -19955,7 +19955,7 @@ fn test_check_instrument_expiration_restored_position_closes_without_prior_order
     let cache = Rc::new(RefCell::new(Cache::default()));
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
-    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     let instrument = InstrumentAny::FuturesContract(futures_contract_es(
         Some(UnixNanos::from(1)),
         Some(expiration_ns),
@@ -20285,7 +20285,7 @@ fn test_crypto_option_cash_settlement(account_id: AccountId) {
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
     let venue = "DERIBIT";
-    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     let strike = Price::from("50000.00");
     let option = InstrumentAny::CryptoOption(crypto_option_call_btc(venue, expiration_ns, strike));
     let underlying = InstrumentAny::IndexInstrument(underlying_index_btc(venue));
@@ -20361,7 +20361,7 @@ fn test_inverse_crypto_option_cash_settlement_in_premium_units(
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
     let venue = "DERIBIT";
-    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     let mut option = crypto_option_call_btc(venue, expiration_ns, Price::from("50000.00"));
     option.option_kind = option_kind;
     option.is_inverse = true;
@@ -20442,7 +20442,7 @@ fn test_inverse_crypto_option_settlement_defers_on_non_positive_spot(
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
     let venue = "DERIBIT";
-    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     let mut option = crypto_option_call_btc(venue, expiration_ns, Price::from("50000.00"));
     option.option_kind = OptionKind::Put;
     option.is_inverse = true;
@@ -20537,7 +20537,7 @@ fn test_capped_option_fee_uses_underlying_mid_quote(
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let venue = "DERIBIT";
-    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     let option = InstrumentAny::CryptoOption(crypto_option_call_btc(
         venue,
         expiration_ns,
@@ -20622,7 +20622,7 @@ fn test_capped_option_fee_uses_option_greeks_underlying_price(
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     let venue = "DERIBIT";
-    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     let option = InstrumentAny::CryptoOption(crypto_option_call_btc(
         venue,
         expiration_ns,
@@ -20700,7 +20700,7 @@ fn test_option_cash_settlement_uses_instrument_close_price(account_id: AccountId
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
     let venue = "OPRA";
-    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     let option = InstrumentAny::OptionContract(option_contract(
         "SPX",
         venue,
@@ -21067,7 +21067,7 @@ fn test_l1_market_order_slip_respects_protection_boundary(
 ) {
     // Protection points = 0 puts the boundary at top-of-book; the slipped tick exceeds it
     let config = OrderMatchingEngineConfig::builder()
-        .price_protection_points(0u32)
+        .price_protection_points(0_u32)
         .build();
     let mut engine =
         get_order_matching_engine(instrument_eth_usdt.clone(), None, None, None, Some(config));
@@ -21119,7 +21119,7 @@ fn test_l1_market_order_slip_allowed_at_protection_boundary(
     // Protection points = 1 puts the boundary exactly at the slipped tick;
     // the strict-inequality check must allow the fill at equality.
     let config = OrderMatchingEngineConfig::builder()
-        .price_protection_points(1u32)
+        .price_protection_points(1_u32)
         .build();
     let mut engine =
         get_order_matching_engine(instrument_eth_usdt.clone(), None, None, None, Some(config));
@@ -21630,7 +21630,7 @@ fn test_fixed_fee_model_charges_once_across_multiple_book_levels(
     );
     let mut engine = CachingEngine { engine, cache };
 
-    for (price, order_id) in [("1500.00", 1u64), ("1501.00", 2u64)] {
+    for (price, order_id) in [("1500.00", 1_u64), ("1501.00", 2_u64)] {
         let delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
             .book_action(BookAction::Add)
             .book_order(BookOrder::new(

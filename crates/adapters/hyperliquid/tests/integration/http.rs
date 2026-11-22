@@ -2241,7 +2241,7 @@ fn open_order(coin: &str, oid: u64, price: &str, size: &str) -> Value {
         "limitPx": price,
         "sz": size,
         "oid": oid,
-        "timestamp": 1_700_000_000_000u64,
+        "timestamp": 1_700_000_000_000_u64,
         "origSz": size
     })
 }
@@ -2860,7 +2860,7 @@ async fn test_request_order_status_reports_fails_closed_on_malformed_row() {
     let state = TestServerState::default();
     *state.frontend_open_orders_response.lock().await = Some(json!([
         open_order("BTC", 1001, "95000.0", "0.10000"),
-        { "coin": "BTC", "oid": 1002u64 }, // Missing side/limitPx/sz/timestamp/origSz
+        { "coin": "BTC", "oid": 1002_u64 }, // Missing side/limitPx/sz/timestamp/origSz
     ]));
     let addr = start_mock_server(state).await;
 
@@ -2926,16 +2926,16 @@ async fn test_request_fill_reports_fails_closed_on_unknown_instrument() {
     *state.user_fills_response.lock().await = Some(json!([
         {
             "coin": "BTC", "px": "50000.0", "sz": "0.001", "side": "B",
-            "time": 1_700_000_000_000u64, "startPosition": "0",
+            "time": 1_700_000_000_000_u64, "startPosition": "0",
             "dir": "Open Long", "closedPnl": "0", "hash": "0xaaaa",
-            "oid": 1001u64, "crossed": true, "fee": "0.01", "tid": 1u64,
+            "oid": 1001_u64, "crossed": true, "fee": "0.01", "tid": 1_u64,
             "feeToken": "USDC",
         },
         {
             "coin": "NOCOIN", "px": "100.0", "sz": "1.0", "side": "B",
-            "time": 1_700_000_000_001u64, "startPosition": "0",
+            "time": 1_700_000_000_001_u64, "startPosition": "0",
             "dir": "Open Long", "closedPnl": "0", "hash": "0xbbbb",
-            "oid": 1002u64, "crossed": true, "fee": "0.01", "tid": 2u64,
+            "oid": 1002_u64, "crossed": true, "fee": "0.01", "tid": 2_u64,
             "feeToken": "USDC",
         },
     ]));
@@ -2964,9 +2964,9 @@ async fn test_request_fill_reports_fails_closed_on_unconvertible_row() {
     *state.user_fills_response.lock().await = Some(json!([
         {
             "coin": "BTC", "px": "50000.0", "sz": "0.001", "side": "B",
-            "time": 1_700_000_000_000u64, "startPosition": "0",
+            "time": 1_700_000_000_000_u64, "startPosition": "0",
             "dir": "Open Long", "closedPnl": "0", "hash": "0xaaaa",
-            "oid": 1001u64, "crossed": true, "fee": "0.01", "tid": 1u64,
+            "oid": 1001_u64, "crossed": true, "fee": "0.01", "tid": 1_u64,
             "feeToken": "NOTACOIN",
         },
     ]));
@@ -3012,16 +3012,16 @@ async fn test_request_fill_reports_resolves_settled_outcome_absent_from_outcome_
     *state.user_fills_response.lock().await = Some(json!([
         {
             "coin": "#200", "px": "0.62", "sz": "15.00", "side": "B",
-            "time": 1_778_400_000_000u64, "startPosition": "0",
+            "time": 1_778_400_000_000_u64, "startPosition": "0",
             "dir": "Buy", "closedPnl": "0", "hash": "0xcccc",
-            "oid": 2001u64, "crossed": true, "fee": "0.0", "tid": 3u64,
+            "oid": 2001_u64, "crossed": true, "fee": "0.0", "tid": 3_u64,
             "feeToken": "+200",
         },
         {
             "coin": "#201", "px": "0.37", "sz": "8.00", "side": "A",
-            "time": 1_778_400_000_001u64, "startPosition": "8.00",
+            "time": 1_778_400_000_001_u64, "startPosition": "8.00",
             "dir": "Sell", "closedPnl": "0", "hash": "0xdddd",
-            "oid": 2002u64, "crossed": false, "fee": "0.0", "tid": 4u64,
+            "oid": 2002_u64, "crossed": false, "fee": "0.0", "tid": 4_u64,
             "feeToken": "+201",
         },
     ]));
@@ -3099,9 +3099,9 @@ async fn test_request_fill_reports_fails_closed_on_malformed_outcome_coin() {
     *state.user_fills_response.lock().await = Some(json!([
         {
             "coin": "#12", "px": "0.62", "sz": "15.00", "side": "B",
-            "time": 1_778_400_000_000u64, "startPosition": "0",
+            "time": 1_778_400_000_000_u64, "startPosition": "0",
             "dir": "Buy", "closedPnl": "0", "hash": "0xeeee",
-            "oid": 2003u64, "crossed": true, "fee": "0.0", "tid": 5u64,
+            "oid": 2003_u64, "crossed": true, "fee": "0.0", "tid": 5_u64,
             "feeToken": "+12",
         },
     ]));
@@ -3199,11 +3199,11 @@ async fn test_request_historical_order_status_reports_fails_closed_on_unknown_in
         {
             "order": {
                 "coin": "NOCOIN", "side": "B", "limitPx": "100.0", "sz": "0",
-                "oid": 1001u64, "timestamp": 1_700_000_000_000u64, "origSz": "0.10000",
+                "oid": 1001_u64, "timestamp": 1_700_000_000_000_u64, "origSz": "0.10000",
                 "reduceOnly": false, "orderType": "Limit", "tif": "Gtc", "cloid": null,
             },
             "status": "filled",
-            "statusTimestamp": 1_700_000_000_001u64,
+            "statusTimestamp": 1_700_000_000_001_u64,
         },
     ]));
     let addr = start_mock_server(state).await;

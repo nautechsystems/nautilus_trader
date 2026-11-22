@@ -457,7 +457,7 @@ mod tests {
             200_000_000,
             10_000_000,
             address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
-            U256::from(1_000_000_000_000_000u64),
+            U256::from(1_000_000_000_000_000_u64),
             Bytes::from(hex::decode("d0e30db0").unwrap()),
         )
     }
@@ -472,7 +472,7 @@ mod tests {
             row_chain_id: 42161,
             nonce: 7,
             to: address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
-            value: U256::from(1_000_000_000_000_000u64),
+            value: U256::from(1_000_000_000_000_000_u64),
             input: Bytes::from(hex::decode("d0e30db0").unwrap()),
             gas_limit: 1_000_000,
             max_fee_per_gas: 1_000_000_000,
@@ -555,7 +555,7 @@ mod tests {
             200_000_000,
             10_000_000,
             to,
-            U256::from(1_000_000_000_000_000u64),
+            U256::from(1_000_000_000_000_000_u64),
             input.clone(),
         );
 
@@ -565,7 +565,7 @@ mod tests {
         assert_eq!(tx.max_fee_per_gas, 200_000_000);
         assert_eq!(tx.max_priority_fee_per_gas, 10_000_000);
         assert_eq!(tx.to, TxKind::Call(to));
-        assert_eq!(tx.value, U256::from(1_000_000_000_000_000u64));
+        assert_eq!(tx.value, U256::from(1_000_000_000_000_000_u64));
         assert!(tx.access_list.is_empty());
         assert_eq!(tx.input, input);
     }
@@ -585,7 +585,7 @@ mod tests {
             200_000_000,
             10_000_000,
             address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
-            U256::from(1_000_000_000_000_000u64),
+            U256::from(1_000_000_000_000_000_u64),
             Bytes::from(hex::decode("d0e30db0").unwrap()),
         );
 
@@ -741,7 +741,7 @@ mod tests {
             InvalidSignedField::Nonce => transaction.nonce = 8,
             InvalidSignedField::CallType => transaction.to = TxKind::Create,
             InvalidSignedField::Destination => transaction.to = TxKind::Call(other),
-            InvalidSignedField::Value => transaction.value = U256::from(2u64),
+            InvalidSignedField::Value => transaction.value = U256::from(2_u64),
             InvalidSignedField::Input => transaction.input = Bytes::from(vec![0x01]),
             InvalidSignedField::GasLimit => transaction.gas_limit = 1_000_001,
             InvalidSignedField::MaxFee => transaction.max_fee_per_gas = 1_000_000_001,

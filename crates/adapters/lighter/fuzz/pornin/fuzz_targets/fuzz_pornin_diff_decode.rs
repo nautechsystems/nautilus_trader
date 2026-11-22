@@ -22,9 +22,9 @@ use nautilus_live::fuzz::fuzz_target;
 const INPUT_LEN: usize = 40;
 
 fn fp5_from_bytes(bytes: &[u8; INPUT_LEN]) -> Fp5 {
-    let mut limbs = [0u64; 5];
+    let mut limbs = [0_u64; 5];
     for (i, slot) in limbs.iter_mut().enumerate() {
-        let mut chunk = [0u8; 8];
+        let mut chunk = [0_u8; 8];
         chunk.copy_from_slice(&bytes[i * 8..(i + 1) * 8]);
         *slot = u64::from_le_bytes(chunk);
     }
@@ -35,7 +35,7 @@ fuzz_target!(|data: &[u8]| {
     if data.len() < INPUT_LEN {
         return;
     }
-    let mut buf = [0u8; INPUT_LEN];
+    let mut buf = [0_u8; INPUT_LEN];
     buf.copy_from_slice(&data[..INPUT_LEN]);
 
     let ours_w = fp5_from_bytes(&buf);

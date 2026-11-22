@@ -145,8 +145,8 @@ const BASE62_CHARS: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij
 /// Lookup table mapping ASCII byte values to base62 digit values.
 /// Invalid characters map to `0xFF`.
 const BASE62_DECODE: [u8; 128] = {
-    let mut table = [0xffu8; 128];
-    let mut i = 0u8;
+    let mut table = [0xff_u8; 128];
+    let mut i = 0_u8;
     while i < 62 {
         table[BASE62_CHARS[i as usize] as usize] = i;
         i += 1;
@@ -346,7 +346,7 @@ fn build_encoded(broker_id: &str, signal: u8, payload: &[u8]) -> String {
 
 fn encode_base62<const N: usize>(mut value: u128) -> [u8; N] {
     const DIGITS: usize = 10;
-    const RADIX: u128 = 62u128.pow(DIGITS as u32);
+    const RADIX: u128 = 62_u128.pow(DIGITS as u32);
     let mut buf = [b'0'; N];
     for chunk in buf.rchunks_mut(DIGITS) {
         let mut part = (value % RADIX) as u64;
@@ -642,7 +642,7 @@ fn format_uuid(value: u128, has_hyphens: bool) -> String {
     let bytes = value.to_be_bytes();
 
     if has_hyphens {
-        let mut buf = [0u8; 36];
+        let mut buf = [0_u8; 36];
         let mut pos = 0;
 
         for (i, &b) in bytes.iter().enumerate() {
@@ -658,7 +658,7 @@ fn format_uuid(value: u128, has_hyphens: bool) -> String {
             .expect("hex is valid UTF-8")
             .to_string()
     } else {
-        let mut buf = [0u8; 32];
+        let mut buf = [0_u8; 32];
         for (i, &b) in bytes.iter().enumerate() {
             buf[i * 2] = HEX[(b >> 4) as usize];
             buf[i * 2 + 1] = HEX[(b & 0x0f) as usize];
@@ -813,17 +813,24 @@ mod tests {
 
     #[rstest]
     fn test_base62_chunked_encoding_matches_digit_reference() {
-        let mut state = 0x1234_5678_90ab_cdef_2345_6789_abcd_ef01u128;
+        let mut state = 0x1234_5678_90ab_cdef_2345_6789_abcd_ef01_u128;
 
-        for value in [0, 1, 61, 62, 62u128.pow(10) - 1, 62u128.pow(10), u128::MAX]
-            .into_iter()
-            .chain((0..10_000).map(|_| {
-                state ^= state << 13;
-                state ^= state >> 7;
-                state ^= state << 17;
-                state
-            }))
-        {
+        for value in [
+            0,
+            1,
+            61,
+            62,
+            62_u128.pow(10) - 1,
+            62_u128.pow(10),
+            u128::MAX,
+        ]
+        .into_iter()
+        .chain((0..10_000).map(|_| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        })) {
             let mut expected = [b'0'; 22];
             let mut remaining = value;
 
@@ -856,7 +863,7 @@ mod tests {
 
     #[rstest]
     fn test_base62_roundtrip_max_72_bit() {
-        let value: u128 = (1u128 << 72) - 1;
+        let value: u128 = (1_u128 << 72) - 1;
         let encoded = encode_base62::<13>(value);
         let decoded = decode_base62(&encoded);
         assert_eq!(decoded, Some(value));

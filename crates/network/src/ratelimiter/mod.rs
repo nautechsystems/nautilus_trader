@@ -888,25 +888,25 @@ mod tests {
     #[rstest]
     #[should_panic(expected = "t cannot be zero")]
     fn test_from_gcra_parameters_panics_on_zero_t() {
-        let _ = Quota::from_gcra_parameters(Nanos::from(0u64), Nanos::from(100u64));
+        let _ = Quota::from_gcra_parameters(Nanos::from(0_u64), Nanos::from(100_u64));
     }
 
     #[rstest]
     #[should_panic(expected = "tau/t results in zero burst capacity")]
     fn test_from_gcra_parameters_panics_on_zero_division() {
         // tau=1, t=2 → integer division yields 0
-        let _ = Quota::from_gcra_parameters(Nanos::from(2u64), Nanos::from(1u64));
+        let _ = Quota::from_gcra_parameters(Nanos::from(2_u64), Nanos::from(1_u64));
     }
 
     #[rstest]
     #[should_panic(expected = "tau/t exceeds u32::MAX")]
     fn test_from_gcra_parameters_panics_on_overflow() {
-        let _ = Quota::from_gcra_parameters(Nanos::from(1u64), Nanos::from(u64::MAX));
+        let _ = Quota::from_gcra_parameters(Nanos::from(1_u64), Nanos::from(u64::MAX));
     }
 
     #[rstest]
     fn test_concurrent_check_key_respects_burst() {
-        let rate = 10u32;
+        let rate = 10_u32;
         let clock = FakeRelativeClock::default();
         let start = clock.now();
 

@@ -209,7 +209,7 @@ async fn reconciliation_latency(
 
     let origin = Instant::now();
     let latencies = Rc::new(RefCell::new(Vec::with_capacity(SAMPLES)));
-    let received = Rc::new(Cell::new(0usize));
+    let received = Rc::new(Cell::new(0_usize));
     let samples = latencies.clone();
     let count = received.clone();
     let handle = node.handle();

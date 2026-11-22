@@ -3913,7 +3913,7 @@ mod tests {
         let mut metadata = test_metadata(client_order_id, instrument_id);
         metadata.is_accepted = false;
         caches.orders_metadata.insert(client_order_id, metadata);
-        let cid_value = 7u64;
+        let cid_value = 7_u64;
         caches
             .cid_to_client_order_id
             .insert(cid_value, client_order_id);
@@ -3933,7 +3933,7 @@ mod tests {
         assert_eq!(event.strategy_id, StrategyId::from("S-001"));
         assert_eq!(
             event.ts_event,
-            UnixNanos::from(1_609_459_200_000_000_500u64)
+            UnixNanos::from(1_609_459_200_000_000_500_u64)
         );
 
         // Side effects on caches
@@ -4178,7 +4178,10 @@ mod tests {
             }))
         );
         assert_eq!(fill.liquidity_side, LiquiditySide::Maker);
-        assert_eq!(fill.ts_event, UnixNanos::from(1_609_459_200_123_456_789u64));
+        assert_eq!(
+            fill.ts_event,
+            UnixNanos::from(1_609_459_200_123_456_789_u64)
+        );
         assert_eq!(
             rx.try_recv().unwrap_err(),
             tokio::sync::mpsc::error::TryRecvError::Empty
@@ -4985,7 +4988,7 @@ mod tests {
         let instrument_id = InstrumentId::from("BTC-PERP.AX");
         let venue_order_id = VenueOrderId::new("OID-CLEAN");
         let stale_venue_order_id = VenueOrderId::new("OID-CLEAN-OLD");
-        let cid_value = 123u64;
+        let cid_value = 123_u64;
 
         caches.orders_metadata.insert(
             client_order_id,
@@ -5016,7 +5019,7 @@ mod tests {
         let caches = test_caches();
         let client_order_id = ClientOrderId::from("O-CLEAN-CID");
         let instrument_id = InstrumentId::from("BTC-PERP.AX");
-        let cid_value = 321u64;
+        let cid_value = 321_u64;
 
         caches.orders_metadata.insert(
             client_order_id,
@@ -5104,7 +5107,7 @@ mod tests {
         let client_order_id = ClientOrderId::from("O-RECON-CANCEL");
         let venue_order_id = VenueOrderId::new("OID-RECON-CANCEL");
         let stale_venue_order_id = VenueOrderId::new("OID-RECON-CANCEL-OLD");
-        let cid_value = 654u64;
+        let cid_value = 654_u64;
 
         seed_terminal_tracking(
             &caches,
@@ -5271,7 +5274,7 @@ mod tests {
             .quantity(Quantity::from("10"))
             .price(Price::from("1.10"))
             .time_in_force(TimeInForce::Gtd)
-            .expire_time(UnixNanos::from(2_000_000_000_000_000_000u64))
+            .expire_time(UnixNanos::from(2_000_000_000_000_000_000_u64))
             .build();
 
         let err = validate_order_for_ax_submit(&order).unwrap_err();

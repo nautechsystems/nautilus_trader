@@ -169,16 +169,15 @@ impl HyperliquidEip712Signer {
 
         let timestamp = request.time_nonce.as_millis() as u64;
         hasher.update(timestamp.to_be_bytes());
-
         if let Some(vault_addr) = request.vault_address {
-            hasher.update([1u8]);
+            hasher.update([1_u8]);
             hasher.update(vault_addr.as_bytes());
         } else {
-            hasher.update([0u8]);
+            hasher.update([0_u8]);
         }
 
         if let Some(expires_after) = request.expires_after {
-            hasher.update([0u8]);
+            hasher.update([0_u8]);
             hasher.update(expires_after.to_be_bytes());
         }
 
@@ -196,7 +195,7 @@ impl HyperliquidEip712Signer {
         let r = signature.r();
         let s = signature.s();
         let v = signature.v();
-        let v_byte = if v { 28u8 } else { 27u8 };
+        let v_byte = if v { 28_u8 } else { 27_u8 };
 
         Ok(HyperliquidSignature::new(
             format!("0x{r:064x}"),

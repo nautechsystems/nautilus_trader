@@ -290,7 +290,7 @@ mod tests {
 
     #[rstest]
     fn as_text_returns_none_for_non_text() {
-        assert!(Message::binary(vec![1u8]).as_text().is_none());
+        assert!(Message::binary(vec![1_u8]).as_text().is_none());
         assert!(Message::ping(Bytes::new()).as_text().is_none());
         assert!(Message::Close(None).as_text().is_none());
     }

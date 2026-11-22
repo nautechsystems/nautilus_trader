@@ -1777,7 +1777,7 @@ fn test_process_book_snapshot_publish(
         .process_data(Data::BookDeltas(deltas));
 
     // Advance clock past the interval to trigger snapshot timer
-    let advance_ns = 200_000_000u64; // 200ms in nanoseconds
+    let advance_ns = 200_000_000_u64; // 200ms in nanoseconds
     let events = clock.borrow_mut().advance_time(advance_ns.into(), true);
 
     // Process timer events (fire callbacks)
@@ -2627,7 +2627,7 @@ fn make_es_option(instrument_id: &str, symbol: &str, kind: OptionKind) -> Option
         .settlement_currency(Currency::USD())
         .strike_currency(Currency::USD())
         .activation_ns(UnixNanos::default())
-        .expiration_ns(UnixNanos::from(2_000_000_000_000_000_000u64))
+        .expiration_ns(UnixNanos::from(2_000_000_000_000_000_000_u64))
         .price_precision(2)
         .price_increment(Price::from("0.01"))
         .multiplier(Quantity::from(1))

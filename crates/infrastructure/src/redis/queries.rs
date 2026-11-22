@@ -708,7 +708,7 @@ impl DatabaseQueries {
         pattern: String,
     ) -> anyhow::Result<Vec<String>> {
         let mut result = Vec::new();
-        let mut cursor = 0u64;
+        let mut cursor = 0_u64;
 
         loop {
             let scan_result: (u64, Vec<String>) = redis::cmd("SCAN")

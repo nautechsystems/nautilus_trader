@@ -764,7 +764,7 @@ pub fn parse_fill_report(
                 fill.trade_id,
                 fill.timestamp
             );
-            UnixNanos::from(0u64)
+            UnixNanos::from(0_u64)
         }
     };
 
@@ -848,7 +848,7 @@ pub fn parse_position_status_report(
                 position.symbol,
                 position.timestamp
             );
-            UnixNanos::from(0u64)
+            UnixNanos::from(0_u64)
         }
     };
 
@@ -2030,7 +2030,7 @@ mod tests {
         .unwrap();
         let trade = create_rest_trade();
 
-        let tick = parse_trade_tick(&trade, &instrument, UnixNanos::from(7u64)).unwrap();
+        let tick = parse_trade_tick(&trade, &instrument, UnixNanos::from(7_u64)).unwrap();
 
         assert_eq!(tick.instrument_id, instrument.id());
         assert_eq!(
@@ -2040,8 +2040,11 @@ mod tests {
         assert_eq!(tick.price, Price::from("1.1719"));
         assert_eq!(tick.size, Quantity::from(400));
         assert_eq!(tick.aggressor_side, AggressorSide::Buy);
-        assert_eq!(tick.ts_event, UnixNanos::from(1_766_193_240_334_589_144u64));
-        assert_eq!(tick.ts_init, UnixNanos::from(7u64));
+        assert_eq!(
+            tick.ts_event,
+            UnixNanos::from(1_766_193_240_334_589_144_u64)
+        );
+        assert_eq!(tick.ts_init, UnixNanos::from(7_u64));
     }
 
     #[rstest]
@@ -2097,7 +2100,7 @@ mod tests {
         assert_eq!(response.funding_rates[0].funding_rate, dec!(0.001234560000));
 
         let instrument_id = InstrumentId::new(Symbol::new("JPYUSD-PERP"), *AX_VENUE);
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let update =
             parse_funding_rate(&response.funding_rates[1], instrument_id, ts_init).unwrap();

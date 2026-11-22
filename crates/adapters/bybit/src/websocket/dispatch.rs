@@ -4762,7 +4762,7 @@ mod tests {
             "rejected",
             &ctx.emitter,
             &ctx.state,
-            UnixNanos::from(1u64),
+            UnixNanos::from(1_u64),
             None,
         );
 
@@ -4804,7 +4804,7 @@ mod tests {
             "Order command was not written",
             &ctx.emitter,
             &ctx.state,
-            UnixNanos::from(1u64),
+            UnixNanos::from(1_u64),
         );
 
         let event = ctx.rx.try_recv().expect("expected OrderRejected event");
@@ -4912,7 +4912,7 @@ mod tests {
             None,
         );
 
-        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1_u64));
 
         let event = ctx.rx.try_recv().expect("expected CancelRejected event");
         assert!(
@@ -4955,7 +4955,7 @@ mod tests {
             None,
         );
 
-        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1_u64));
 
         let event = ctx.rx.try_recv().expect("expected ModifyRejected event");
         assert!(
@@ -4990,7 +4990,7 @@ mod tests {
             None,
         );
 
-        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1_u64));
 
         let event = ctx.rx.try_recv().expect("expected OrderRejected event");
         assert!(
@@ -5036,7 +5036,7 @@ mod tests {
             None,
         );
 
-        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1_u64));
 
         assert!(
             ctx.rx.try_recv().is_err(),
@@ -5074,7 +5074,7 @@ mod tests {
             None,
         );
 
-        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1_u64));
 
         assert!(
             ctx.rx.try_recv().is_err(),
@@ -5112,7 +5112,7 @@ mod tests {
             None,
         );
 
-        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1_u64));
 
         assert!(
             ctx.rx.try_recv().is_err(),
@@ -5146,7 +5146,7 @@ mod tests {
             None,
         );
 
-        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1_u64));
 
         assert!(
             ctx.rx.try_recv().is_err(),
@@ -5191,7 +5191,7 @@ mod tests {
             None,
         );
 
-        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1_u64));
 
         assert!(
             ctx.rx.try_recv().is_err(),
@@ -5250,7 +5250,7 @@ mod tests {
             })),
         );
 
-        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1_u64));
 
         let event = ctx.rx.try_recv().expect("expected CancelRejected event");
         assert!(
@@ -5298,7 +5298,7 @@ mod tests {
             })),
         );
 
-        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1_u64));
 
         assert!(
             ctx.rx.try_recv().is_err(),

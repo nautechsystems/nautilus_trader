@@ -1566,7 +1566,7 @@ impl LiveNode {
         stop_check_timer.set_missed_tick_behavior(dst::time::MissedTickBehavior::Skip);
 
         // Running phase: runs until shutdown deadline expires
-        let mut residual_events = 0usize;
+        let mut residual_events = 0_usize;
         let mut open_order_report_task: Option<OpenOrderReportTask> = None;
         let mut targeted_order_report_task: Option<TargetedOrderReportTask> = None;
         let mut position_report_task: Option<PositionReportTask> = None;
@@ -1601,7 +1601,7 @@ impl LiveNode {
             .queue_monitor
             .as_ref()
             .map(|config| QueueMonitor::new(config, metrics.snapshot()));
-        let mut dispatches_since_yield = 0usize;
+        let mut dispatches_since_yield = 0_usize;
         let mut skip_time = false;
         let mut skip_data = false;
 
@@ -4604,7 +4604,7 @@ mod tests {
                 Some(endpoint.as_str()),
             ),
             ShareableMessageHandler::from_typed(move |_: &SocketStateChanged| {
-                events.send(17u32).unwrap();
+                events.send(17_u32).unwrap();
             }),
             None,
         );
@@ -4613,7 +4613,7 @@ mod tests {
             SocketControl::with_registry(client_id, None, endpoint, &node.socket_registry);
         let _sink = control.sink();
         control.register(move || {
-            sender.send(23u32).unwrap();
+            sender.send(23_u32).unwrap();
             ReconnectRequestOutcome::Accepted
         });
 
@@ -7325,7 +7325,7 @@ mod tests {
 
     #[rstest]
     fn test_live_node_builder_clock_factory_drives_kernel_clock() {
-        let calls = Rc::new(Cell::new(0usize));
+        let calls = Rc::new(Cell::new(0_usize));
         let calls_in_factory = calls.clone();
         let sentinel = UnixNanos::from(123_456_789_u64);
 

@@ -1761,7 +1761,7 @@ pub(crate) mod tests {
             .estimate_gas(
                 &address!("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266"),
                 &address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
-                U256::from(1_000_000_000_000_000_000u64),
+                U256::from(1_000_000_000_000_000_000_u64),
                 &[0xd0, 0xe3, 0x0d, 0xb0],
             )
             .await

@@ -35,7 +35,7 @@ fn my_function(input: &[u8]) -> usize {
 }
 
 fn prepare_data() -> Vec<u8> {
-    (0u8..=255).collect()
+    (0_u8..=255).collect()
 }
 
 fn bench_my_function(c: &mut Criterion) {

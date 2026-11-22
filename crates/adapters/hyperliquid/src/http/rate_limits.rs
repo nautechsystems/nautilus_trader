@@ -151,7 +151,7 @@ pub fn backoff_full_jitter(attempt: u32, base: Duration, cap: Duration) -> Durat
     let hash = hasher.finish();
 
     let max = (base.as_millis() as u64)
-        .saturating_mul(1u64 << attempt.min(16))
+        .saturating_mul(1_u64 << attempt.min(16))
         .min(cap.as_millis() as u64);
 
     if max == 0 {
@@ -190,7 +190,7 @@ pub fn info_extra_weight(req: &InfoRequest, json: &Value) -> u32 {
     };
 
     let unit = match req.request_type {
-        HyperliquidInfoRequestType::CandleSnapshot => 60usize,
+        HyperliquidInfoRequestType::CandleSnapshot => 60_usize,
         HyperliquidInfoRequestType::RecentTrades
         | HyperliquidInfoRequestType::HistoricalOrders
         | HyperliquidInfoRequestType::UserFills
@@ -203,7 +203,7 @@ pub fn info_extra_weight(req: &InfoRequest, json: &Value) -> u32 {
         | HyperliquidInfoRequestType::UserTwapSliceFillsByTime
         | HyperliquidInfoRequestType::DelegatorHistory
         | HyperliquidInfoRequestType::DelegatorRewards
-        | HyperliquidInfoRequestType::ValidatorStats => 20usize,
+        | HyperliquidInfoRequestType::ValidatorStats => 20_usize,
         _ => return 0,
     };
     (items / unit) as u32

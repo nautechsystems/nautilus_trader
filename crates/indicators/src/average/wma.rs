@@ -440,7 +440,7 @@ mod tests {
         wma.update_raw(2.0);
         wma.update_raw(3.0);
 
-        let expected = 2.0f64.mul_add(3.0, 2.0f64.mul_add(2.0, -1.0)) / 3.0;
+        let expected = 2.0_f64.mul_add(3.0, 2.0_f64.mul_add(2.0, -1.0)) / 3.0;
         let tol = f64::EPSILON.sqrt();
         assert!((wma.value() - expected).abs() < tol);
     }

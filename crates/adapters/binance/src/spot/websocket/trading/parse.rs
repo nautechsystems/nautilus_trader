@@ -336,7 +336,7 @@ mod tests {
         let json = load_fixture_string("spot/user_data_json/execution_report_new.json");
         let msg: BinanceSpotExecutionReport = serde_json::from_str(&json).unwrap();
         let account_id = AccountId::from("BINANCE-001");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = parse_spot_exec_report_to_order_status(
             &msg,
@@ -368,11 +368,11 @@ mod tests {
         assert!(report.trigger_price.is_none());
         assert_eq!(
             report.ts_accepted,
-            UnixNanos::from(1_709_654_400_000_000_000u64)
+            UnixNanos::from(1_709_654_400_000_000_000_u64)
         );
         assert_eq!(
             report.ts_last,
-            UnixNanos::from(1_709_654_400_000_000_000u64)
+            UnixNanos::from(1_709_654_400_000_000_000_u64)
         );
         assert_eq!(report.ts_init, ts_init);
     }
@@ -383,7 +383,7 @@ mod tests {
         let mut msg: BinanceSpotExecutionReport = serde_json::from_str(&json).unwrap();
         msg.original_qty = "not-a-number".to_string();
         let account_id = AccountId::from("BINANCE-001");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let result = parse_spot_exec_report_to_order_status(
             &msg,
@@ -444,7 +444,7 @@ mod tests {
             SIZE_PRECISION,
             AccountId::from("BINANCE-001"),
             false,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         );
 
         assert_eq!(result.unwrap_err().to_string(), expected);
@@ -470,7 +470,7 @@ mod tests {
             SIZE_PRECISION,
             AccountId::from("BINANCE-001"),
             false,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         )
         .unwrap();
 
@@ -490,7 +490,7 @@ mod tests {
         }"#;
         let msg: BinanceSpotExecutionReport = serde_json::from_str(json).unwrap();
         let account_id = AccountId::from("BINANCE-001");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = parse_spot_exec_report_to_order_status(
             &msg,
@@ -520,7 +520,7 @@ mod tests {
         }"#;
         let msg: BinanceSpotExecutionReport = serde_json::from_str(json).unwrap();
         let account_id = AccountId::from("BINANCE-001");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = parse_spot_exec_report_to_order_status(
             &msg,
@@ -548,7 +548,7 @@ mod tests {
         msg.cumulative_quote_qty = Decimal::MAX.to_string();
         msg.cumulative_filled_qty = "0.00000001".to_string();
         let account_id = AccountId::from("BINANCE-001");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let result = parse_spot_exec_report_to_order_status(
             &msg,
@@ -570,7 +570,7 @@ mod tests {
         let json = load_fixture_string("spot/user_data_json/execution_report_stop_loss.json");
         let msg: BinanceSpotExecutionReport = serde_json::from_str(&json).unwrap();
         let account_id = AccountId::from("BINANCE-001");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = parse_spot_exec_report_to_order_status(
             &msg,
@@ -601,7 +601,7 @@ mod tests {
         let json = load_fixture_string("spot/user_data_json/execution_report_trade.json");
         let msg: BinanceSpotExecutionReport = serde_json::from_str(&json).unwrap();
         let account_id = AccountId::from("BINANCE-001");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let report = parse_spot_exec_report_to_fill(
             &msg,
@@ -630,7 +630,7 @@ mod tests {
         let mut msg: BinanceSpotExecutionReport = serde_json::from_str(&json).unwrap();
         msg.commission = "not-a-number".to_string();
         let account_id = AccountId::from("BINANCE-001");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let result = parse_spot_exec_report_to_fill(
             &msg,
@@ -657,7 +657,7 @@ mod tests {
             PRICE_PRECISION,
             SIZE_PRECISION,
             AccountId::from("BINANCE-001"),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         );
 
         assert_eq!(
@@ -671,7 +671,7 @@ mod tests {
         let json = load_fixture_string("spot/user_data_json/account_position.json");
         let msg: BinanceSpotAccountPositionMsg = serde_json::from_str(&json).unwrap();
         let account_id = AccountId::from("BINANCE-001");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let state = parse_spot_account_position(&msg, account_id, ts_init).unwrap();
 
@@ -701,7 +701,7 @@ mod tests {
         let err = parse_spot_account_position(
             &msg,
             AccountId::from("BINANCE-001"),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         )
         .unwrap_err();
 
@@ -725,7 +725,7 @@ mod tests {
         let err = parse_spot_account_position(
             &msg,
             AccountId::from("BINANCE-001"),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         )
         .unwrap_err();
 
@@ -750,7 +750,7 @@ mod tests {
         }"#;
         let msg: BinanceSpotAccountPositionMsg = serde_json::from_str(json).unwrap();
         let account_id = AccountId::from("BINANCE-001");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let state = parse_spot_account_position(&msg, account_id, ts_init).unwrap();
 

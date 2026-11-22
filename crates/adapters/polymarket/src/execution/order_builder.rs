@@ -667,7 +667,7 @@ pub(super) fn signed_base_quantity(
     taker_amount: Decimal,
     side: PolymarketOrderSide,
 ) -> Decimal {
-    let share_scale = Decimal::from(1_000_000u32);
+    let share_scale = Decimal::from(1_000_000_u32);
     match side {
         PolymarketOrderSide::Buy => taker_amount / share_scale,
         PolymarketOrderSide::Sell => maker_amount / share_scale,
@@ -722,7 +722,7 @@ fn compute_quote_buy_maker_taker_amounts(
 )]
 pub fn generate_salt() -> u64 {
     let bytes = uuid::Uuid::new_v4().into_bytes();
-    u64::from_le_bytes(bytes[..8].try_into().unwrap()) & ((1u64 << 53) - 1)
+    u64::from_le_bytes(bytes[..8].try_into().unwrap()) & ((1_u64 << 53) - 1)
 }
 
 #[cfg(test)]
@@ -788,7 +788,7 @@ mod tests {
         price: Price,
     ) -> OrderAny {
         let expire_time = if tif == TimeInForce::Gtd {
-            Some(UnixNanos::from(2_000_000_000_000_000_000u64))
+            Some(UnixNanos::from(2_000_000_000_000_000_000_u64))
         } else {
             None
         };
@@ -1007,7 +1007,7 @@ mod tests {
             make_limit(false, false, false, TimeInForce::Gtd),
             Some(UnixNanos::from(expire_ns)),
         );
-        let ts_now = UnixNanos::from(1_700_000_000_900_000_000u64);
+        let ts_now = UnixNanos::from(1_700_000_000_900_000_000_u64);
 
         let result = PolymarketOrderBuilder::validate_limit_expiration(&order, ts_now);
 
@@ -1033,7 +1033,7 @@ mod tests {
 
         let error = PolymarketOrderBuilder::validate_limit_expiration(
             &order,
-            UnixNanos::from(1_700_000_000_900_000_000u64),
+            UnixNanos::from(1_700_000_000_900_000_000_u64),
         )
         .unwrap_err();
 
@@ -1252,9 +1252,9 @@ mod tests {
 
     #[rstest]
     #[case::none(None, "0")]
-    #[case::zero(Some(UnixNanos::from(0u64)), "0")]
+    #[case::zero(Some(UnixNanos::from(0_u64)), "0")]
     #[case::one_second(Some(UnixNanos::from_seconds(1)), "1")]
-    #[case::subsecond_truncates(Some(UnixNanos::from(1_500_000_000u64)), "1")]
+    #[case::subsecond_truncates(Some(UnixNanos::from(1_500_000_000_u64)), "1")]
     #[case::typical(Some(UnixNanos::from_seconds(1_735_689_600)), "1735689600")]
     #[case::maximum(Some(UnixNanos::from(u64::MAX)), "18446744073")]
     fn test_build_limit_order_expiration(
@@ -1796,7 +1796,7 @@ mod tests {
     fn test_generate_salt_within_53_bits() {
         for _ in 0..100 {
             let s = generate_salt();
-            assert!(s < (1u64 << 53));
+            assert!(s < (1_u64 << 53));
         }
     }
 

@@ -11206,7 +11206,7 @@ fn test_colon_identifier_listing_get_intervals_and_consolidation() {
         .unwrap();
     let id = "io:ANTH-USD-PERP.HYPERLIQUID";
 
-    let trades = [10_000u64, 20_000].map(|ts| {
+    let trades = [10_000_u64, 20_000].map(|ts| {
         TradeTick::new(
             InstrumentId::from(id),
             Price::from("12.34"),

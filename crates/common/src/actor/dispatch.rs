@@ -2929,8 +2929,8 @@ bus.subscribe('dispatch.*', raw, priority=100)
 
         #[rstest]
         fn prop_data_command_drain_scheduling(
-            counts in prop::collection::vec(1usize..5, 1..9),
-            budgets in prop::collection::vec(0usize..8, 1..17),
+            counts in prop::collection::vec(1_usize..5, 1..9),
+            budgets in prop::collection::vec(0_usize..8, 1..17),
         ) {
             std::thread::spawn(move || {
                 let commands: Vec<_> = (1..=counts.len() as u8 * 2).map(data_command).collect();
@@ -3650,7 +3650,7 @@ bus.subscribe('dispatch.*', raw, priority=100)
         #[rstest]
         fn prop_trading_command_ancestry_and_order(
             nodes in prop::collection::vec((any::<u8>(), any::<bool>(), any::<bool>(), any::<bool>()), 1..24),
-            budgets in prop::collection::vec(0usize..8, 1..12),
+            budgets in prop::collection::vec(0_usize..8, 1..12),
             panic_at in prop::option::of(any::<u8>()),
         ) {
             std::thread::spawn(move || {
@@ -4043,11 +4043,11 @@ bus.subscribe('dispatch.*', raw, priority=100)
             if closed {
                 drop(rx);
                 storage.with_chain(|| {
-                    drop(tx.send(DispatchMessage::new(17u32, thread::current().id())));
+                    drop(tx.send(DispatchMessage::new(17_u32, thread::current().id())));
                 });
             } else {
                 storage.with_chain(|| {
-                    tx.send(DispatchMessage::new(17u32, thread::current().id()))
+                    tx.send(DispatchMessage::new(17_u32, thread::current().id()))
                         .unwrap();
                 });
 
@@ -4069,7 +4069,7 @@ bus.subscribe('dispatch.*', raw, priority=100)
 
             let message = thread::spawn(move || {
                 let storage = retain(0).unwrap();
-                let message = storage.with_chain(|| DispatchMessage::new(23u32, owner));
+                let message = storage.with_chain(|| DispatchMessage::new(23_u32, owner));
                 assert_eq!(storage.accounting.contexts.get(), 0);
                 message
             })
@@ -4096,7 +4096,7 @@ bus.subscribe('dispatch.*', raw, priority=100)
             let storage = retain(0).unwrap();
             let accounting = storage.accounting.clone();
             let message =
-                storage.with_chain(|| DispatchMessage::new(31u32, thread::current().id()));
+                storage.with_chain(|| DispatchMessage::new(31_u32, thread::current().id()));
             let called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             let observed = called.clone();
             let result = thread::spawn(move || {
@@ -4176,7 +4176,7 @@ bus.subscribe('dispatch.*', raw, priority=100)
                         state.current.as_ref().unwrap(),
                         &self.chain
                     )));
-                    let nested = DispatchMessage::new(17u32, thread::current().id());
+                    let nested = DispatchMessage::new(17_u32, thread::current().id());
                     drop(nested);
                     self.dropped.set(true);
                 }
@@ -4223,7 +4223,7 @@ bus.subscribe('dispatch.*', raw, priority=100)
                 }
 
                 let root = retain(0).unwrap();
-                root.with_chain(|| DispatchMessage::new(29u32, thread::current().id()))
+                root.with_chain(|| DispatchMessage::new(29_u32, thread::current().id()))
             })
             .join()
             .unwrap();
@@ -4237,7 +4237,7 @@ bus.subscribe('dispatch.*', raw, priority=100)
             impl Drop for Retained {
                 fn drop(&mut self) {
                     self.0.as_ref().unwrap().with_chain(|| {
-                        drop(DispatchMessage::new(41u32, thread::current().id()));
+                        drop(DispatchMessage::new(41_u32, thread::current().id()));
                     });
                 }
             }
@@ -4253,7 +4253,7 @@ bus.subscribe('dispatch.*', raw, priority=100)
                         .0
                         .as_ref()
                         .unwrap()
-                        .with_chain(|| drop(DispatchMessage::new(43u32, thread::current().id())));
+                        .with_chain(|| drop(DispatchMessage::new(43_u32, thread::current().id())));
                 });
             })
             .join()
@@ -4398,7 +4398,7 @@ bus.subscribe('dispatch.*', raw, priority=100)
                 MessagingSwitchboard::exec_engine_execute(),
                 TypedIntoHandler::from(move |command| {
                     assert_eq!(command, trading_command(1));
-                    sender.send(17u32).unwrap();
+                    sender.send(17_u32).unwrap();
                 }),
             );
 
@@ -4449,7 +4449,7 @@ bus.subscribe('dispatch.*', raw, priority=100)
 
             thread::spawn(move || {
                 let foreign = retain(0).unwrap();
-                foreign.with_chain(|| sender.send(23u32).unwrap());
+                foreign.with_chain(|| sender.send(23_u32).unwrap());
                 drop(foreign);
                 clear().unwrap();
             })
@@ -4480,7 +4480,7 @@ bus.subscribe('dispatch.*', raw, priority=100)
 
             if closed {
                 drop(rx);
-                let error = root.with_chain(|| sender.send(29u32).unwrap_err());
+                let error = root.with_chain(|| sender.send(29_u32).unwrap_err());
                 assert!(error.0.is_rooted());
                 assert_eq!(accounting.contexts.get(), 1);
                 error.0.dispatch(|event| {
@@ -4491,7 +4491,7 @@ bus.subscribe('dispatch.*', raw, priority=100)
                     )));
                 });
             } else {
-                root.with_chain(|| sender.send(29u32).unwrap());
+                root.with_chain(|| sender.send(29_u32).unwrap());
                 assert_eq!(accounting.contexts.get(), 1);
 
                 thread::spawn(move || drop(rx)).join().unwrap();
@@ -4514,7 +4514,7 @@ bus.subscribe('dispatch.*', raw, priority=100)
                 let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
                 let sender = EventSender::new(event_tx);
                 let owner = thread::current().id();
-                let mut message = root.with_chain(|| DispatchMessage::new(0usize, owner));
+                let mut message = root.with_chain(|| DispatchMessage::new(0_usize, owner));
                 drop(root);
 
                 for (index, event) in kinds.iter().enumerate() {
@@ -4542,7 +4542,7 @@ bus.subscribe('dispatch.*', raw, priority=100)
 
         proptest::proptest! {
             #[rstest]
-            fn channel_contexts_restore_and_release(actions in proptest::collection::vec(0usize..3, 0..64)) {
+            fn channel_contexts_restore_and_release(actions in proptest::collection::vec(0_usize..3, 0..64)) {
                 clear().unwrap();
                 let owner = thread::current().id();
                 let roots = [retain(0).unwrap(), retain(0).unwrap()];
@@ -4593,9 +4593,9 @@ bus.subscribe('dispatch.*', raw, priority=100)
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
             let message = if root < roots.len() {
-                roots[root].with_chain(|| DispatchMessage::new(17u32, owner))
+                roots[root].with_chain(|| DispatchMessage::new(17_u32, owner))
             } else {
-                DispatchMessage::from(17u32)
+                DispatchMessage::from(17_u32)
             };
 
             tx.send(message).unwrap();

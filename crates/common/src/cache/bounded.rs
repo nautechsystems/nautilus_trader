@@ -308,7 +308,7 @@ mod tests {
     proptest! {
         #[rstest]
         fn prop_len_never_exceeds_capacity(
-            capacity in 1usize..64,
+            capacity in 1_usize..64,
             items in proptest::collection::vec(any::<u16>(), 0..256),
         ) {
             let mut deque = BoundedVecDeque::new(capacity);
@@ -321,7 +321,7 @@ mod tests {
 
         #[rstest]
         fn prop_retains_latest_items_in_newest_first_order(
-            capacity in 1usize..64,
+            capacity in 1_usize..64,
             items in proptest::collection::vec(any::<u16>(), 0..256),
         ) {
             let mut deque = BoundedVecDeque::new(capacity);

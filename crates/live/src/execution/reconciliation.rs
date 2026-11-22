@@ -315,7 +315,7 @@ pub(crate) async fn request_targeted_order_reports(
     query_delay: Duration,
 ) -> Vec<TargetedOrderReportResult> {
     let mut results = Vec::with_capacity(queries.len());
-    let mut request_count = 0usize;
+    let mut request_count = 0_usize;
 
     for mut query in queries {
         let mut result = TargetedOrderReportResult {
@@ -396,7 +396,7 @@ pub(crate) async fn collect_targeted_order_reports(
     results: Rc<RefCell<Vec<TargetedOrderReportResult>>>,
 ) -> bool {
     let mut collectors = IndexMap::new();
-    let mut request_count = 0usize;
+    let mut request_count = 0_usize;
 
     for mut query in queries {
         collectors.clear();
@@ -2283,12 +2283,12 @@ pub(super) mod tests {
     proptest! {
         #[rstest]
         fn prop_position_quantities_match_tolerance_and_side_exposure(
-            long in 100i64..1_000_000,
-            short in 100i64..1_000_000,
-            long_delta in -10i64..=10,
-            short_delta in -10i64..=10,
-            tolerance in 0i64..=20,
-            scale in 0u32..=6,
+            long in 100_i64..1_000_000,
+            short in 100_i64..1_000_000,
+            long_delta in -10_i64..=10,
+            short_delta in -10_i64..=10,
+            tolerance in 0_i64..=20,
+            scale in 0_u32..=6,
             side_reports in any::<bool>(),
         ) {
             let venue_net = long + long_delta - short - short_delta;
@@ -2330,7 +2330,7 @@ pub(super) mod tests {
     proptest! {
         #[rstest]
         fn prop_position_qty_aggregates_preserves_sign_and_net(
-            values in proptest::collection::vec(-1_000_000i64..=1_000_000, 0..32),
+            values in proptest::collection::vec(-1_000_000_i64..=1_000_000, 0..32),
         ) {
             let quantities = values.iter().map(|v| Decimal::new(*v, 3)).collect::<Vec<_>>();
             let (net, long, short) = position_qty_aggregates(quantities.iter().copied());

@@ -1258,7 +1258,7 @@ mod tests {
             "asset": "eth",
             "duration": "15m",
             "twapEnabled": true,
-            "twapLookbackSeconds": 9_223_372_036_854_775_808u64,
+            "twapLookbackSeconds": 9_223_372_036_854_775_808_u64,
         });
 
         let result = serde_json::from_value::<CryptoMarketConfig>(crypto_market_config);

@@ -2005,7 +2005,7 @@ impl KrakenFuturesHttpClient {
             // trigger fired, which the snapshot misses too.
             let mut open_time_in_force: AHashMap<VenueOrderId, (i64, TimeInForce, bool)> =
                 AHashMap::new();
-            let mut skipped_in_scope = 0usize;
+            let mut skipped_in_scope = 0_usize;
 
             for row in &response.skipped_rows {
                 let snapshot_covers = row

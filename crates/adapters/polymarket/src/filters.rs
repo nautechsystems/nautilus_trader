@@ -482,27 +482,27 @@ mod tests {
 
     #[rstest]
     fn test_not_expired_accepts_future_expiration() {
-        let now = UnixNanos::from(1_000_000u64);
+        let now = UnixNanos::from(1_000_000_u64);
         let instrument =
-            stub_binary_option_with_expiration(Some("Yes"), UnixNanos::from(2_000_000u64));
+            stub_binary_option_with_expiration(Some("Yes"), UnixNanos::from(2_000_000_u64));
         let filter = PredicateFilter::not_expired(now);
         assert!(filter.accept(&instrument));
     }
 
     #[rstest]
     fn test_not_expired_rejects_past_expiration() {
-        let now = UnixNanos::from(2_000_000u64);
+        let now = UnixNanos::from(2_000_000_u64);
         let instrument =
-            stub_binary_option_with_expiration(Some("Yes"), UnixNanos::from(1_000_000u64));
+            stub_binary_option_with_expiration(Some("Yes"), UnixNanos::from(1_000_000_u64));
         let filter = PredicateFilter::not_expired(now);
         assert!(!filter.accept(&instrument));
     }
 
     #[rstest]
     fn test_not_expired_rejects_equal_expiration() {
-        let now = UnixNanos::from(1_000_000u64);
+        let now = UnixNanos::from(1_000_000_u64);
         let instrument =
-            stub_binary_option_with_expiration(Some("Yes"), UnixNanos::from(1_000_000u64));
+            stub_binary_option_with_expiration(Some("Yes"), UnixNanos::from(1_000_000_u64));
         let filter = PredicateFilter::not_expired(now);
         assert!(!filter.accept(&instrument));
     }
@@ -511,8 +511,8 @@ mod tests {
     fn test_not_expired_works_with_simulated_clock() {
         // Simulates a backtest scenario: clock is set to a historical time,
         // instrument expires in the "future" relative to the simulated clock
-        let simulated_now = UnixNanos::from(1_000_000_000_000_000_000u64); // ~2001
-        let expiration = UnixNanos::from(1_100_000_000_000_000_000u64); // ~2004
+        let simulated_now = UnixNanos::from(1_000_000_000_000_000_000_u64); // ~2001
+        let expiration = UnixNanos::from(1_100_000_000_000_000_000_u64); // ~2004
         let instrument = stub_binary_option_with_expiration(Some("Yes"), expiration);
         let filter = PredicateFilter::not_expired(simulated_now);
         assert!(filter.accept(&instrument));
@@ -521,8 +521,8 @@ mod tests {
     #[rstest]
     fn test_not_expired_accepts_zero_sentinel_expiration() {
         // A zero expiration is the "no expiration" sentinel, so it must be treated as not expired
-        let now = UnixNanos::from(1_000_000u64);
-        let instrument = stub_binary_option_with_expiration(Some("Yes"), UnixNanos::from(0u64));
+        let now = UnixNanos::from(1_000_000_u64);
+        let instrument = stub_binary_option_with_expiration(Some("Yes"), UnixNanos::from(0_u64));
         let filter = PredicateFilter::not_expired(now);
         assert!(filter.accept(&instrument));
     }

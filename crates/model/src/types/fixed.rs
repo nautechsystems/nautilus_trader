@@ -825,7 +825,7 @@ pub fn bankers_round(mantissa: i128, excess: u32) -> i128 {
         return 0;
     }
 
-    let divisor = 10i128.pow(excess);
+    let divisor = 10_i128.pow(excess);
     let quotient = mantissa / divisor;
     let remainder = mantissa % divisor;
     let half = divisor / 2;
@@ -880,9 +880,9 @@ pub fn mantissa_exponent_to_fixed_i128(
     }
 
     if scale_exp >= 0 {
-        mantissa.checked_mul(10i128.pow(u32::from(scale_exp.cast_unsigned())))
+        mantissa.checked_mul(10_i128.pow(u32::from(scale_exp.cast_unsigned())))
     } else {
-        Some(mantissa / 10i128.pow(u32::from((-scale_exp).cast_unsigned())))
+        Some(mantissa / 10_i128.pow(u32::from((-scale_exp).cast_unsigned())))
     }
     .ok_or_else(|| CorrectnessError::PredicateViolation {
         message: "Overflow when scaling mantissa to fixed precision".to_string(),
@@ -2333,7 +2333,7 @@ mod bankers_round_tests {
             let expected_mantissa = expected_dec.mantissa();
             let expected_scale = expected_dec.scale() as u8;
             let scale_diff = u32::from(target_precision.saturating_sub(expected_scale));
-            let normalized_expected = expected_mantissa * 10i128.pow(scale_diff);
+            let normalized_expected = expected_mantissa * 10_i128.pow(scale_diff);
 
             assert_eq!(
                 rounded, normalized_expected,

@@ -755,7 +755,7 @@ mod tests {
     fn assert_oracle_sig_verifies<T: LighterTx>(tx: &T, v: &OracleVector) {
         let sig_bytes = hex_to_bytes(&v.sig);
         assert_eq!(sig_bytes.len(), SIG_BYTES);
-        let mut buf = [0u8; SIG_BYTES];
+        let mut buf = [0_u8; SIG_BYTES];
         buf.copy_from_slice(&sig_bytes);
         let sig = Signature::from_le_bytes_reduce(buf);
 
@@ -1101,12 +1101,12 @@ mod tests {
 
     fn stub_signed() -> SignedTx {
         SignedTx {
-            tx_hash: [0u8; TX_HASH_BYTES],
+            tx_hash: [0_u8; TX_HASH_BYTES],
             sig: Signature {
-                s: Scalar::from_le_bytes_reduce([0u8; SCALAR_BYTES]),
-                e: Scalar::from_le_bytes_reduce([0u8; SCALAR_BYTES]),
+                s: Scalar::from_le_bytes_reduce([0_u8; SCALAR_BYTES]),
+                e: Scalar::from_le_bytes_reduce([0_u8; SCALAR_BYTES]),
             },
-            sig_bytes: [0u8; SIG_BYTES],
+            sig_bytes: [0_u8; SIG_BYTES],
         }
     }
 

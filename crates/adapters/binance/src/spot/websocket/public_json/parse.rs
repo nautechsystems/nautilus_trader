@@ -496,7 +496,7 @@ mod tests {
             permissions: vec![vec!["SPOT".to_string()]],
         };
 
-        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
         parse_spot_instrument_sbe(&symbol, ts, ts).unwrap()
     }
 

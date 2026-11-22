@@ -262,13 +262,13 @@ mod tests {
     fn test_get_sqrt_ratio_at_tick_zero() {
         let sqrt_ratio = get_sqrt_ratio_at_tick(0);
         // At tick 0, price is 1, sqrt_price is 1, sqrt_price_x96 is 1 * 2^96
-        let expected = U160::from(1u128) << 96;
+        let expected = U160::from(1_u128) << 96;
         assert_eq!(sqrt_ratio, expected);
     }
 
     #[rstest]
     fn test_get_tick_at_sqrt_ratio() {
-        let sqrt_ratio_u160 = U160::from(1u128 << 96); // sqrt price = 1, price = 1
+        let sqrt_ratio_u160 = U160::from(1_u128 << 96); // sqrt price = 1, price = 1
         let tick = get_tick_at_sqrt_ratio(sqrt_ratio_u160);
         assert_eq!(tick, 0);
     }
@@ -376,7 +376,7 @@ mod tests {
 
         // Test 1: Check that result is at most off by 1 from theoretical value
         let ratio_f64 = ratio.to_string().parse::<f64>().unwrap();
-        let price = (ratio_f64 / (1u128 << 96) as f64).powi(2);
+        let price = (ratio_f64 / (1_u128 << 96) as f64).powi(2);
         let theoretical_tick = (price.ln() / 1.0001_f64.ln()).floor() as i32;
         let diff = (tick - theoretical_tick).abs();
         assert!(
@@ -404,7 +404,7 @@ mod tests {
         // Test some specific known values
         let test_cases = vec![
             (MIN_SQRT_RATIO, PoolTick::MIN_TICK),
-            (U160::from(1u128 << 96), 0), // sqrt price = 1, price = 1, tick = 0
+            (U160::from(1_u128 << 96), 0), // sqrt price = 1, price = 1, tick = 0
         ];
 
         for (sqrt_ratio, expected_tick) in test_cases {

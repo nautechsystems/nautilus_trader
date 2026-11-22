@@ -931,7 +931,7 @@ async fn test_domain_http_request_book_snapshot_composes_event_timestamp() {
     let book = client.request_book_snapshot(symbol, None).await.unwrap();
 
     // Fixture carries ts=1704067200 and tn=500000000
-    assert_eq!(book.ts_last, UnixNanos::from(1_704_067_200_500_000_000u64));
+    assert_eq!(book.ts_last, UnixNanos::from(1_704_067_200_500_000_000_u64));
     assert_eq!(book.instrument_id, InstrumentId::from("EURUSD-PERP.AX"));
 }
 

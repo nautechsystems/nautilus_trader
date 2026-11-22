@@ -619,7 +619,7 @@ pub fn sign_clob_auth(
 
     let r = signature.r();
     let s = signature.s();
-    let v = if signature.v() { 28u8 } else { 27u8 };
+    let v = if signature.v() { 28_u8 } else { 27_u8 };
 
     Ok((
         format!("{address:#x}"),
@@ -821,8 +821,8 @@ mod tests {
         let sig = signer
             .sign_deposit_wallet_batch(
                 deposit_wallet,
-                U256::from(7u64),
-                U256::from(1_714_000_000u64),
+                U256::from(7_u64),
+                U256::from(1_714_000_000_u64),
                 &calls,
             )
             .unwrap();
@@ -832,8 +832,8 @@ mod tests {
 
         let batch = Batch {
             wallet: deposit_wallet,
-            nonce: U256::from(7u64),
-            deadline: U256::from(1_714_000_000u64),
+            nonce: U256::from(7_u64),
+            deadline: U256::from(1_714_000_000_u64),
             calls: vec![Call {
                 target: CTF_COLLATERAL_ADAPTER,
                 value: U256::ZERO,
@@ -861,8 +861,8 @@ mod tests {
         let err = signer
             .sign_deposit_wallet_batch(
                 address!("0x1111111111111111111111111111111111111111"),
-                U256::from(1u64),
-                U256::from(1_714_000_000u64),
+                U256::from(1_u64),
+                U256::from(1_714_000_000_u64),
                 &[],
             )
             .unwrap_err();
@@ -930,7 +930,7 @@ mod tests {
             "0x0000000000000000000000000000000000000000000000000000000000000001".to_string();
         let eip712 = build_eip712_order(&order).unwrap();
 
-        let mut expected = [0u8; 32];
+        let mut expected = [0_u8; 32];
         expected[31] = 1;
         assert_eq!(eip712.builder, FixedBytes::<32>::from(expected));
     }

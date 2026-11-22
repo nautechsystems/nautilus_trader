@@ -1226,8 +1226,8 @@ mod tests {
             liquidity_side: LiquiditySide::Taker,
             avg_px: None,
             report_id: UUID4::new(),
-            ts_event: UnixNanos::from(12_345_678u64),
-            ts_init: UnixNanos::from(93_456_789u64),
+            ts_event: UnixNanos::from(12_345_678_u64),
+            ts_init: UnixNanos::from(93_456_789_u64),
             client_order_id: None,
             venue_position_id: None,
         };

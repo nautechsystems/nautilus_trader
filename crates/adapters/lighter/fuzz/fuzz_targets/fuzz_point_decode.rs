@@ -15,9 +15,9 @@ use nautilus_lighter::signing::{curve::Point, field::Fp5};
 use nautilus_live::fuzz::fuzz_target;
 
 fn fp5_from_bytes(bytes: &[u8; 40]) -> Fp5 {
-    let mut limbs = [0u64; 5];
+    let mut limbs = [0_u64; 5];
     for (i, slot) in limbs.iter_mut().enumerate() {
-        let mut chunk = [0u8; 8];
+        let mut chunk = [0_u8; 8];
         chunk.copy_from_slice(&bytes[i * 8..(i + 1) * 8]);
         *slot = u64::from_le_bytes(chunk);
     }
@@ -28,7 +28,7 @@ fuzz_target!(|data: &[u8]| {
     if data.len() < 40 {
         return;
     }
-    let mut buf = [0u8; 40];
+    let mut buf = [0_u8; 40];
     buf.copy_from_slice(&data[..40]);
 
     let w = fp5_from_bytes(&buf);

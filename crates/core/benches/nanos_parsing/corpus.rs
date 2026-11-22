@@ -23,10 +23,10 @@ use nautilus_core::UnixNanos;
 pub(super) fn bench_integer_corpus(c: &mut Criterion) {
     let mut group = c.benchmark_group("nanos_corpus/integer");
 
-    for width in 16..=19usize {
-        let modulus = 10u64.pow(u32::try_from(width).unwrap());
+    for width in 16..=19_usize {
+        let modulus = 10_u64.pow(u32::try_from(width).unwrap());
 
-        let inputs: Vec<String> = (0..64u64)
+        let inputs: Vec<String> = (0..64_u64)
             .map(|seed| {
                 let value = if seed.is_multiple_of(8) {
                     seed

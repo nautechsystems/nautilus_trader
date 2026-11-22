@@ -668,7 +668,7 @@ impl HyperliquidRawHttpClient {
 
     async fn send_info_request(&self, request: &InfoRequest) -> Result<Value> {
         let base_w = info_base_weight(request);
-        let mut attempt = 0u32;
+        let mut attempt = 0_u32;
 
         loop {
             self.info_limiter.acquire(base_w).await;
@@ -4750,7 +4750,7 @@ mod tests {
                 assert_eq!(request["type"], "frontendOpenOrders");
                 Json(json!([{
                     "coin": "vntls:SCOPE", "side": "B", "limitPx": "1", "sz": "2",
-                    "oid": 101, "timestamp": 1_700_000_000_000u64, "origSz": "2",
+                    "oid": 101, "timestamp": 1_700_000_000_000_u64, "origSz": "2",
                     "cloid": cloid.to_hex(),
                 }]))
             }),

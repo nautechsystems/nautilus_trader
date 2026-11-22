@@ -1963,7 +1963,7 @@ mod tests {
         let (port, listener) = bind_test_server().await;
         let server_task = task::spawn(async move {
             let (socket, _) = listener.accept().await.unwrap();
-            let mut buf = [0u8; 1024];
+            let mut buf = [0_u8; 1024];
             let _ = socket.try_read(&mut buf);
 
             loop {
@@ -4560,7 +4560,7 @@ mod rust_tests {
         let port = listener.local_addr().unwrap().port();
         let server = task::spawn(async move {
             if let Ok((mut sock, _)) = listener.accept().await {
-                let mut buf = vec![0u8; 1024];
+                let mut buf = vec![0_u8; 1024];
                 if let Ok(n) = sock.read(&mut buf).await {
                     // Echo back
                     let _ = sock.write_all(&buf[..n]).await;
@@ -4622,7 +4622,7 @@ mod rust_tests {
             // Second connection - accept and keep alive
             if let Ok((mut sock, _)) = listener.accept().await {
                 // Echo messages
-                let mut buf = vec![0u8; 1024];
+                let mut buf = vec![0_u8; 1024];
                 while let Ok(n) = sock.read(&mut buf).await {
                     if n == 0 {
                         break;

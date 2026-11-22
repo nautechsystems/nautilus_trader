@@ -879,7 +879,7 @@ mod tests {
     ) -> Vec<u8> {
         let var_data_len = 6 + symbol.len() + client_order_id.len() + commission_asset.len();
         let total = 8 + execution_report_event_codec::SBE_BLOCK_LENGTH as usize + var_data_len;
-        let mut buf_vec = vec![0u8; total];
+        let mut buf_vec = vec![0_u8; total];
 
         let buf = WriteBuf::new(buf_vec.as_mut_slice());
         let enc = execution_report_event_codec::ExecutionReportEventEncoder::default()
@@ -1000,7 +1000,7 @@ mod tests {
     ) -> Vec<u8> {
         let var_data_len: usize = balances.iter().map(|(a, _, _, _)| 1 + a.len()).sum();
         let total = 8 + 18 + 6 + (balances.len() * 17) + var_data_len;
-        let mut buf_vec = vec![0u8; total];
+        let mut buf_vec = vec![0_u8; total];
 
         let buf = WriteBuf::new(buf_vec.as_mut_slice());
         let enc =
@@ -1096,7 +1096,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case::template(2, 607u16)]
+    #[case::template(2, 607_u16)]
     #[case::schema(4, 2)]
     #[case::version(6, 6)]
     #[case::block(0, 28)]
@@ -1112,7 +1112,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case::event_negative(8, -1i64)]
+    #[case::event_negative(8, -1_i64)]
     #[case::event_null(8, i64::MIN)]
     #[case::event_overflow(8, i64::MAX)]
     #[case::transaction_negative(16, -1)]
@@ -1208,7 +1208,7 @@ mod tests {
         );
         data[6..8].copy_from_slice(&version.to_le_bytes());
         if version == 0 {
-            data[0..2].copy_from_slice(&27u16.to_le_bytes());
+            data[0..2].copy_from_slice(&27_u16.to_le_bytes());
             data.drain(35..37);
         } else if subscription.is_none() {
             data[35..37].copy_from_slice(&u16::MAX.to_le_bytes());
@@ -1634,7 +1634,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_execution_report_truncated_header() {
-        let data = vec![0u8; 5];
+        let data = vec![0_u8; 5];
         let err = decode_execution_report(&data).unwrap_err();
         assert!(err.to_string().contains("too short for SBE header"));
     }
@@ -1785,7 +1785,7 @@ mod tests {
             expiry_reason::ExpiryReason::NullVal,
         );
         // Overwrite template_id to 50
-        data[2..4].copy_from_slice(&50u16.to_le_bytes());
+        data[2..4].copy_from_slice(&50_u16.to_le_bytes());
 
         let err = decode_execution_report(&data).unwrap_err();
         assert!(err.to_string().contains("Wrong template ID"));
@@ -1922,7 +1922,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_account_position_truncated_header() {
-        let data = vec![0u8; 5];
+        let data = vec![0_u8; 5];
         let err = decode_account_position(&data).unwrap_err();
         assert!(err.to_string().contains("too short for SBE header"));
     }
@@ -1930,7 +1930,7 @@ mod tests {
     #[rstest]
     fn test_decode_account_position_wrong_template() {
         let mut data = encode_account_position(0, 0, &[]);
-        data[2..4].copy_from_slice(&50u16.to_le_bytes());
+        data[2..4].copy_from_slice(&50_u16.to_le_bytes());
 
         let err = decode_account_position(&data).unwrap_err();
         assert!(err.to_string().contains("Wrong template ID"));
@@ -2117,7 +2117,7 @@ mod tests {
         asset: &str,
     ) -> Vec<u8> {
         let total = 8 + 27 + 1 + asset.len();
-        let mut buf_vec = vec![0u8; total];
+        let mut buf_vec = vec![0_u8; total];
 
         let buf = WriteBuf::new(buf_vec.as_mut_slice());
         let enc =
@@ -2168,7 +2168,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_balance_update_truncated_header() {
-        let data = vec![0u8; 5];
+        let data = vec![0_u8; 5];
         let err = decode_balance_update(&data).unwrap_err();
         assert!(err.to_string().contains("too short for SBE header"));
     }
@@ -2176,7 +2176,7 @@ mod tests {
     #[rstest]
     fn test_decode_balance_update_wrong_template() {
         let mut data = encode_balance_update(0, 0, -8, 0, "BTC");
-        data[2..4].copy_from_slice(&50u16.to_le_bytes());
+        data[2..4].copy_from_slice(&50_u16.to_le_bytes());
 
         let err = decode_balance_update(&data).unwrap_err();
         assert!(err.to_string().contains("Wrong template ID"));

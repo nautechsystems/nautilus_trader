@@ -889,7 +889,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 let snapshot = Arc::clone(&instruments.load());
 
                 let result = if let Some(condition_id) = fetch_condition_id {
-                    let mut attempt = 0usize;
+                    let mut attempt = 0_usize;
 
                     loop {
                         let params = GetGammaMarketsParams {
@@ -3427,7 +3427,7 @@ mod tests {
         ctx.subscriptions.subscribe_new_markets = true;
         ctx.new_market_fetch_semaphore = Arc::new(tokio::sync::Semaphore::new(1));
 
-        let slug_count = 6usize;
+        let slug_count = 6_usize;
         for idx in 0..slug_count {
             let slug = format!("asset-{idx}-updown-5m-1");
             handle_market_message(make_new_market(&slug, true), &ctx);
@@ -12375,7 +12375,7 @@ mod tests {
         assert_eq!(quote.ask_size, Quantity::from("300.00"));
         assert_eq!(
             quote.ts_event,
-            UnixNanos::from(1_700_000_003_000_000_000u64),
+            UnixNanos::from(1_700_000_003_000_000_000_u64),
         );
         assert_eq!(
             ctx.subscriptions
@@ -12399,7 +12399,7 @@ mod tests {
                 Price::from("0.51"),
                 Quantity::from("100.00"),
                 Quantity::from("75.00"),
-                UnixNanos::from(1_700_000_002_000_000_000u64),
+                UnixNanos::from(1_700_000_002_000_000_000_u64),
                 UnixNanos::default(),
             ),
         );
@@ -12416,7 +12416,7 @@ mod tests {
         assert_eq!(quote.ask_size, Quantity::from("0.00"));
         assert_eq!(
             quote.ts_event,
-            UnixNanos::from(1_700_000_003_000_000_000u64),
+            UnixNanos::from(1_700_000_003_000_000_000_u64),
         );
     }
 
@@ -12453,7 +12453,7 @@ mod tests {
                 Price::from("0.51"),
                 Quantity::from("12.00"),
                 Quantity::from("13.00"),
-                UnixNanos::from(1_700_000_002_000_000_000u64),
+                UnixNanos::from(1_700_000_002_000_000_000_u64),
                 UnixNanos::default(),
             ),
         );
@@ -12492,7 +12492,7 @@ mod tests {
             .order_books
             .get_mut(&instrument_id)
             .unwrap()
-            .ts_last = UnixNanos::from(1_700_000_004_000_000_000u64);
+            .ts_last = UnixNanos::from(1_700_000_004_000_000_000_u64);
 
         let last_quote = QuoteTick::new(
             instrument_id,
@@ -12500,7 +12500,7 @@ mod tests {
             Price::from("0.51"),
             Quantity::from("12.00"),
             Quantity::from("13.00"),
-            UnixNanos::from(1_700_000_002_000_000_000u64),
+            UnixNanos::from(1_700_000_002_000_000_000_u64),
             UnixNanos::default(),
         );
         ctx.subscriptions
@@ -12591,7 +12591,7 @@ mod tests {
         assert_eq!(book.best_bid_size(), Some(Quantity::from("50.00")));
         assert_eq!(book.best_ask_price(), Some(Price::from("0.52")));
         assert_eq!(book.best_ask_size(), Some(Quantity::from("300.00")));
-        assert_eq!(book.ts_last, UnixNanos::from(1_700_000_002_000_000_000u64),);
+        assert_eq!(book.ts_last, UnixNanos::from(1_700_000_002_000_000_000_u64),);
     }
 
     #[rstest]
@@ -12666,7 +12666,7 @@ mod tests {
         assert_eq!(book.best_bid_size(), Some(Quantity::from("50.00")));
         assert_eq!(book.best_ask_price(), Some(Price::from("0.52")));
         assert_eq!(book.best_ask_size(), Some(Quantity::from("300.00")));
-        assert_eq!(book.ts_last, UnixNanos::from(1_700_000_002_000_000_000u64),);
+        assert_eq!(book.ts_last, UnixNanos::from(1_700_000_002_000_000_000_u64),);
     }
 
     #[rstest]
@@ -12680,7 +12680,7 @@ mod tests {
             Price::from("0.51"),
             Quantity::from("100.00"),
             Quantity::from("75.00"),
-            UnixNanos::from(1_700_000_004_000_000_000u64),
+            UnixNanos::from(1_700_000_004_000_000_000_u64),
             UnixNanos::default(),
         );
         ctx.subscriptions.last_quotes.insert(instrument_id, latest);
@@ -12750,7 +12750,7 @@ mod tests {
         assert!(emitted_quotes(&mut data_rx).is_empty());
         assert_eq!(
             latest.ts_event,
-            UnixNanos::from(1_700_000_003_000_000_000u64)
+            UnixNanos::from(1_700_000_003_000_000_000_u64)
         );
         assert_eq!(latest.bid_price, first.bid_price);
         assert_eq!(latest.ask_price, first.ask_price);
@@ -12814,7 +12814,7 @@ mod tests {
                 Price::from("0.51"),
                 Quantity::from("100.00"),
                 Quantity::from("75.00"),
-                UnixNanos::from(1_700_000_002_000_000_000u64),
+                UnixNanos::from(1_700_000_002_000_000_000_u64),
                 UnixNanos::default(),
             ),
         );
@@ -12828,7 +12828,7 @@ mod tests {
                 .get(&instrument_id)
                 .unwrap()
                 .ts_event,
-            UnixNanos::from(1_700_000_002_000_000_000u64)
+            UnixNanos::from(1_700_000_002_000_000_000_u64)
         );
     }
 
@@ -12974,7 +12974,7 @@ mod tests {
         assert_eq!(updates[0].ask_size, Quantity::from("46394.26"));
         assert_eq!(
             updates[0].ts_event,
-            UnixNanos::from(1_786_179_143_001_000_000u64)
+            UnixNanos::from(1_786_179_143_001_000_000_u64)
         );
         assert_eq!(
             ctx.subscriptions
@@ -16371,7 +16371,7 @@ mod tests {
                 Price::from("0.54"),
                 Quantity::from("12.00"),
                 Quantity::from("13.00"),
-                UnixNanos::from(1_700_000_002_000_000_000u64),
+                UnixNanos::from(1_700_000_002_000_000_000_u64),
                 UnixNanos::default(),
             ),
         );

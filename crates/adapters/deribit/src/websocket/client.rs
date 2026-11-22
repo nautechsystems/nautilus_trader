@@ -793,7 +793,7 @@ impl DeribitWebSocketClient {
                         }
                         NautilusWsMessage::AuthenticationFailed(reason) => {
                             if pending_reauth && reauth_attempts < MAX_REAUTH_ATTEMPTS {
-                                let delay_secs = 1u64 << reauth_attempts; // 2s, 4s
+                                let delay_secs = 1_u64 << reauth_attempts; // 2s, 4s
                                 log::warn!(
                                     "Re-authentication attempt {reauth_attempts}/{MAX_REAUTH_ATTEMPTS} \
                                     failed: {reason} - retrying in {delay_secs}s",

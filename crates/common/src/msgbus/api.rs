@@ -4397,7 +4397,7 @@ mod tests {
         // Tests deeply nested re-entrant calls: order event -> trading command -> order event.
         // This simulates a complex scenario where handlers chain multiple calls.
         let _msgbus = get_message_bus();
-        let call_depth = Rc::new(RefCell::new(0u32));
+        let call_depth = Rc::new(RefCell::new(0_u32));
 
         let final_received = Rc::new(RefCell::new(false));
         let final_received_clone = final_received.clone();

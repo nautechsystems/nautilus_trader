@@ -19,13 +19,13 @@ use nautilus_live::fuzz::fuzz_target;
 const INPUT_LEN: usize = 90;
 
 fn read_u32(b: &[u8], off: usize) -> u32 {
-    let mut buf = [0u8; 4];
+    let mut buf = [0_u8; 4];
     buf.copy_from_slice(&b[off..off + 4]);
     u32::from_le_bytes(buf)
 }
 
 fn read_u64(b: &[u8], off: usize) -> u64 {
-    let mut buf = [0u8; 8];
+    let mut buf = [0_u8; 8];
     buf.copy_from_slice(&b[off..off + 8]);
     u64::from_le_bytes(buf)
 }

@@ -91,20 +91,20 @@ fn position_side_strategy() -> impl Strategy<Value = PositionSide> {
 }
 
 fn qty_decimal() -> impl Strategy<Value = Decimal> {
-    (1i64..=1_000i64).prop_map(Decimal::from)
+    (1_i64..=1_000_i64).prop_map(Decimal::from)
 }
 
 fn px_decimal() -> impl Strategy<Value = Decimal> {
-    (1i64..=100_000i64).prop_map(|v| Decimal::new(v, 2))
+    (1_i64..=100_000_i64).prop_map(|v| Decimal::new(v, 2))
 }
 
 fn venue_order_id_strategy() -> impl Strategy<Value = VenueOrderId> {
-    (1u32..=20u32).prop_map(|i| VenueOrderId::new(format!("V-{i:04}")))
+    (1_u32..=20_u32).prop_map(|i| VenueOrderId::new(format!("V-{i:04}")))
 }
 
 fn fill_snapshot_strategy() -> impl Strategy<Value = FillSnapshot> {
     (
-        1u64..=1_000_000u64,
+        1_u64..=1_000_000_u64,
         order_side_strategy(),
         qty_decimal(),
         px_decimal(),
@@ -239,8 +239,8 @@ proptest! {
 
     #[rstest]
     fn prop_check_position_match_reflexive(
-        qty in (-1_000_000i64..=1_000_000i64).prop_map(Decimal::from),
-        px in (1i64..=100_000i64).prop_map(|v| Decimal::new(v, 2)),
+        qty in (-1_000_000_i64..=1_000_000_i64).prop_map(Decimal::from),
+        px in (1_i64..=100_000_i64).prop_map(|v| Decimal::new(v, 2)),
     ) {
         let value = qty.abs() * px;
         prop_assert!(check_position_match(
@@ -253,8 +253,8 @@ proptest! {
 
     #[rstest]
     fn prop_check_position_match_qty_mismatch_false(
-        qty1 in (-1_000i64..=1_000i64).prop_map(Decimal::from),
-        qty2 in (-1_000i64..=1_000i64).prop_map(Decimal::from),
+        qty1 in (-1_000_i64..=1_000_i64).prop_map(Decimal::from),
+        qty2 in (-1_000_i64..=1_000_i64).prop_map(Decimal::from),
         px in px_decimal(),
     ) {
         prop_assume!(qty1 != qty2);
@@ -268,7 +268,7 @@ proptest! {
 
     #[rstest]
     fn prop_calculate_reconciliation_price_no_change(
-        qty in (1i64..=1_000i64).prop_map(Decimal::from),
+        qty in (1_i64..=1_000_i64).prop_map(Decimal::from),
         px in px_decimal(),
     ) {
         let result = calculate_reconciliation_price(qty, Some(px), qty, Some(px), AvgPxReconciliation::Match, None, false);
@@ -277,7 +277,7 @@ proptest! {
 
     #[rstest]
     fn prop_calculate_reconciliation_price_flat_to_target(
-        target_qty in (1i64..=1_000i64).prop_map(Decimal::from),
+        target_qty in (1_i64..=1_000_i64).prop_map(Decimal::from),
         target_px in px_decimal(),
     ) {
         let result = calculate_reconciliation_price(
@@ -294,7 +294,7 @@ proptest! {
 
     #[rstest]
     fn prop_calculate_reconciliation_price_close_to_flat_uses_current_px(
-        qty in (1i64..=1_000i64).prop_map(Decimal::from),
+        qty in (1_i64..=1_000_i64).prop_map(Decimal::from),
         px in px_decimal(),
     ) {
         let result = calculate_reconciliation_price(qty, Some(px), Decimal::ZERO, None, AvgPxReconciliation::Match, None, false);
@@ -303,10 +303,10 @@ proptest! {
 
     #[rstest]
     fn prop_calculate_reconciliation_price_same_side_roundtrip(
-        current_qty in (1i64..=100i64).prop_map(Decimal::from),
-        extra_qty in (1i64..=100i64).prop_map(Decimal::from),
-        current_px in (100i64..=10_000i64).prop_map(|v| Decimal::new(v, 2)),
-        target_px in (100i64..=10_000i64).prop_map(|v| Decimal::new(v, 2)),
+        current_qty in (1_i64..=100_i64).prop_map(Decimal::from),
+        extra_qty in (1_i64..=100_i64).prop_map(Decimal::from),
+        current_px in (100_i64..=10_000_i64).prop_map(|v| Decimal::new(v, 2)),
+        target_px in (100_i64..=10_000_i64).prop_map(|v| Decimal::new(v, 2)),
     ) {
         let target_qty = current_qty + extra_qty;
         let recon_px = calculate_reconciliation_price(
@@ -336,17 +336,17 @@ proptest! {
 
     #[rstest]
     fn prop_is_within_single_unit_tolerance_reflexive(
-        val in (-1_000_000i64..=1_000_000i64).prop_map(Decimal::from),
-        precision in 0u8..=8u8,
+        val in (-1_000_000_i64..=1_000_000_i64).prop_map(Decimal::from),
+        precision in 0_u8..=8_u8,
     ) {
         prop_assert!(is_within_single_unit_tolerance(val, val, precision));
     }
 
     #[rstest]
     fn prop_is_within_single_unit_tolerance_symmetric(
-        a in (-1_000i64..=1_000i64).prop_map(Decimal::from),
-        b in (-1_000i64..=1_000i64).prop_map(Decimal::from),
-        precision in 0u8..=8u8,
+        a in (-1_000_i64..=1_000_i64).prop_map(Decimal::from),
+        b in (-1_000_i64..=1_000_i64).prop_map(Decimal::from),
+        precision in 0_u8..=8_u8,
     ) {
         prop_assert_eq!(
             is_within_single_unit_tolerance(a, b, precision),
@@ -356,8 +356,8 @@ proptest! {
 
     #[rstest]
     fn prop_is_within_single_unit_tolerance_zero_precision_exact(
-        a in (-1_000i64..=1_000i64).prop_map(Decimal::from),
-        b in (-1_000i64..=1_000i64).prop_map(Decimal::from),
+        a in (-1_000_i64..=1_000_i64).prop_map(Decimal::from),
+        b in (-1_000_i64..=1_000_i64).prop_map(Decimal::from),
     ) {
         prop_assert_eq!(is_within_single_unit_tolerance(a, b, 0), a == b);
     }
@@ -429,11 +429,11 @@ proptest! {
     #[rstest]
     fn prop_adjust_fills_synthetic_opening_matches_venue(
         existing in proptest::collection::vec(
-            (1i64..=100i64, 100i64..=10_000i64, venue_order_id_strategy()),
+            (1_i64..=100_i64, 100_i64..=10_000_i64, venue_order_id_strategy()),
             1..=4,
         ),
-        opening_qty in 1i64..=100i64,
-        opening_px_units in 100i64..=10_000i64,
+        opening_qty in 1_i64..=100_i64,
+        opening_px_units in 100_i64..=10_000_i64,
     ) {
         let snapshots: Vec<FillSnapshot> = existing
             .iter()
@@ -485,10 +485,10 @@ proptest! {
     // should land on target_avg_px after simulation.
     #[rstest]
     fn prop_calculate_reconciliation_price_flip_roundtrip(
-        current_qty in 1i64..=100i64,
-        flipped_qty in 1i64..=100i64,
-        current_px_units in 100i64..=10_000i64,
-        target_px_units in 100i64..=10_000i64,
+        current_qty in 1_i64..=100_i64,
+        flipped_qty in 1_i64..=100_i64,
+        current_px_units in 100_i64..=10_000_i64,
+        target_px_units in 100_i64..=10_000_i64,
     ) {
         let current_qty = Decimal::from(current_qty);
         let target_qty = Decimal::from(-flipped_qty);
@@ -529,8 +529,8 @@ proptest! {
     // |a - b| > 10^-p is not.
     #[rstest]
     fn prop_is_within_single_unit_tolerance_boundary(
-        val in (-1_000i64..=1_000i64).prop_map(Decimal::from),
-        precision in 1u8..=8u8,
+        val in (-1_000_i64..=1_000_i64).prop_map(Decimal::from),
+        precision in 1_u8..=8_u8,
     ) {
         let unit = Decimal::new(1, u32::from(precision));
         prop_assert!(is_within_single_unit_tolerance(val, val + unit, precision));
@@ -560,7 +560,7 @@ proptest! {
     #[rstest]
     fn prop_simulate_position_zero_price_fills(
         fills in proptest::collection::vec(
-            (qty_decimal(), 0u32..=2u32, venue_order_id_strategy()),
+            (qty_decimal(), 0_u32..=2_u32, venue_order_id_strategy()),
             1..=8,
         ),
     ) {
@@ -641,8 +641,8 @@ fn status_report_for(
 proptest! {
     #[rstest]
     fn prop_reconcile_fill_report_deterministic(
-        order_qty in 10u64..=1_000u64,
-        fill_qty in 1u64..=10u64,
+        order_qty in 10_u64..=1_000_u64,
+        fill_qty in 1_u64..=10_u64,
     ) {
         let inst = instrument();
         let order = build_market_order(&inst, order_qty);
@@ -676,8 +676,8 @@ proptest! {
 
     #[rstest]
     fn prop_reconcile_fill_report_duplicate_returns_none(
-        order_qty in 10u64..=1_000u64,
-        fill_qty in 1u64..=10u64,
+        order_qty in 10_u64..=1_000_u64,
+        fill_qty in 1_u64..=10_u64,
     ) {
         let inst = instrument();
         let account_id = AccountId::from("SIM-001");
@@ -707,8 +707,8 @@ proptest! {
 
     #[rstest]
     fn prop_reconcile_fill_report_overfill_blocked_when_disallowed(
-        order_qty in 1u64..=100u64,
-        overfill in 1u64..=50u64,
+        order_qty in 1_u64..=100_u64,
+        overfill in 1_u64..=50_u64,
     ) {
         let inst = instrument();
         let order = build_market_order(&inst, order_qty);
@@ -733,7 +733,7 @@ proptest! {
 
     #[rstest]
     fn prop_should_reconciliation_update_same_state_false(
-        qty in 1u64..=1_000u64,
+        qty in 1_u64..=1_000_u64,
     ) {
         let inst = instrument();
         let mut order = build_market_order(&inst, qty);
@@ -755,8 +755,8 @@ proptest! {
 
     #[rstest]
     fn prop_should_reconciliation_update_quantity_below_filled_false(
-        order_qty in 10u64..=1_000u64,
-        fill_qty in 1u64..=10u64,
+        order_qty in 10_u64..=1_000_u64,
+        fill_qty in 1_u64..=10_u64,
     ) {
         let inst = instrument();
         let account_id = AccountId::from("SIM-001");
@@ -787,7 +787,7 @@ proptest! {
 
     #[rstest]
     fn prop_reconcile_order_report_in_sync_returns_none(
-        qty in 1u64..=1_000u64,
+        qty in 1_u64..=1_000_u64,
     ) {
         let inst = instrument();
         let account_id = AccountId::from("SIM-001");
@@ -817,8 +817,8 @@ proptest! {
 
     #[rstest]
     fn prop_create_incremental_inferred_fill_equal_qty_none(
-        order_qty in 10u64..=1_000u64,
-        filled in 1u64..=10u64,
+        order_qty in 10_u64..=1_000_u64,
+        filled in 1_u64..=10_u64,
     ) {
         let inst = instrument();
         let account_id = AccountId::from("SIM-001");
@@ -857,9 +857,9 @@ proptest! {
 
     #[rstest]
     fn prop_create_incremental_inferred_fill_produces_event_for_positive_diff(
-        order_qty in 10u64..=1_000u64,
-        filled in 1u64..=5u64,
-        incr in 1u64..=5u64,
+        order_qty in 10_u64..=1_000_u64,
+        filled in 1_u64..=5_u64,
+        incr in 1_u64..=5_u64,
     ) {
         let inst = instrument();
         let account_id = AccountId::from("SIM-001");
@@ -928,9 +928,9 @@ proptest! {
     #[rstest]
     fn prop_inferred_reconciliation_trade_id_deterministic(
         side in order_side_strategy(),
-        qty_units in 1i64..=1_000i64,
-        px_units in 1i64..=100_000i64,
-        ts in 1u64..=10_000_000u64,
+        qty_units in 1_i64..=1_000_i64,
+        px_units in 1_i64..=100_000_i64,
+        ts in 1_u64..=10_000_000_u64,
     ) {
         let account_id = AccountId::from("SIM-001");
         let inst_id = InstrumentId::from("AUD/USD.SIM");
@@ -975,9 +975,9 @@ proptest! {
     #[rstest]
     fn prop_position_reconciliation_venue_order_id_deterministic(
         side in order_side_strategy(),
-        qty_units in 1i64..=1_000i64,
-        px_units in 1i64..=100_000i64,
-        ts in 1u64..=10_000_000u64,
+        qty_units in 1_i64..=1_000_i64,
+        px_units in 1_i64..=100_000_i64,
+        ts in 1_u64..=10_000_000_u64,
     ) {
         let account_id = AccountId::from("SIM-001");
         let inst_id = InstrumentId::from("AUD/USD.SIM");
@@ -1013,7 +1013,7 @@ proptest! {
     #[rstest]
     fn prop_synthetic_trade_id_changes_with_ts(
         base in fill_snapshot_strategy(),
-        delta in 1u64..=1_000u64,
+        delta in 1_u64..=1_000_u64,
     ) {
         let mut other = base.clone();
         other.ts_event = base.ts_event.saturating_add(delta);
@@ -1039,11 +1039,11 @@ proptest! {
     // and a second call against the same snapshot must produce no events.
     #[rstest]
     fn prop_continuous_reconciliation_converges_in_one_pass(
-        local_qty in 1u64..=2_000u64,
-        venue_qty in 1u64..=2_000u64,
-        local_px in 1u64..=100_000u64,
-        venue_px in 1u64..=100_000u64,
-        venue_filled in 0u64..=2_000u64,
+        local_qty in 1_u64..=2_000_u64,
+        venue_qty in 1_u64..=2_000_u64,
+        local_px in 1_u64..=100_000_u64,
+        venue_px in 1_u64..=100_000_u64,
+        venue_filled in 0_u64..=2_000_u64,
     ) {
         let inst = instrument();
         prop_assume!(venue_filled <= venue_qty);
@@ -1113,11 +1113,11 @@ proptest! {
 
     #[rstest]
     fn prop_continuous_reconciliation_skips_pending_venue_states(
-        local_qty in 1u64..=2_000u64,
-        venue_qty in 1u64..=2_000u64,
-        local_px in 1u64..=100_000u64,
-        venue_px in 1u64..=100_000u64,
-        pending_kind in 0u8..2u8,
+        local_qty in 1_u64..=2_000_u64,
+        venue_qty in 1_u64..=2_000_u64,
+        local_px in 1_u64..=100_000_u64,
+        venue_px in 1_u64..=100_000_u64,
+        pending_kind in 0_u8..2_u8,
     ) {
         let inst = instrument();
         let account_id = AccountId::from("SIM-001");
@@ -1157,9 +1157,9 @@ proptest! {
 
     #[rstest]
     fn prop_inferred_fill_price_and_liquidity_matches_emitted_fill(
-        order_qty in 10u64..=1_000u64,
-        fill_qty in 1u64..=9u64,
-        avg_px_units in 1u64..=100_000u64,
+        order_qty in 10_u64..=1_000_u64,
+        fill_qty in 1_u64..=9_u64,
+        avg_px_units in 1_u64..=100_000_u64,
     ) {
         let inst = instrument();
         let account_id = AccountId::from("SIM-001");

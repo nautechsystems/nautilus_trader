@@ -837,12 +837,12 @@ impl ExecutionManager {
 
         let mut events = Vec::new();
         let mut external_orders = Vec::new();
-        let mut orders_reconciled = 0usize;
-        let mut external_orders_created = 0usize;
-        let mut open_orders_initialized = 0usize;
-        let mut orders_skipped_no_instrument = 0usize;
-        let mut orders_skipped_duplicate = 0usize;
-        let mut fills_applied = 0usize;
+        let mut orders_reconciled = 0_usize;
+        let mut external_orders_created = 0_usize;
+        let mut open_orders_initialized = 0_usize;
+        let mut orders_skipped_no_instrument = 0_usize;
+        let mut orders_skipped_duplicate = 0_usize;
+        let mut fills_applied = 0_usize;
         let mut fill_queue = ReconciliationFillQueue::default();
 
         let fill_reports = adjusted_fill_reports;
@@ -862,7 +862,7 @@ impl ExecutionManager {
         }
 
         let order_reports = adjusted_order_reports;
-        let mut orders_skipped_filtered = 0usize;
+        let mut orders_skipped_filtered = 0_usize;
         let mut orders_projected: IndexMap<ClientOrderId, OrderAny> = IndexMap::new();
 
         for report in order_reports.values().filter(|report| {
@@ -2663,8 +2663,8 @@ impl ExecutionManager {
         candidates.sort_by_key(|candidate| self.order_query_priority(&candidate.order));
 
         let query_limit = self.config.max_single_order_queries_per_cycle as usize;
-        let mut planned_queries = 0usize;
-        let mut cap_deferred_orders = 0usize;
+        let mut planned_queries = 0_usize;
+        let mut cap_deferred_orders = 0_usize;
         let mut targeted_queries = Vec::new();
 
         for TargetedOrderCandidate {

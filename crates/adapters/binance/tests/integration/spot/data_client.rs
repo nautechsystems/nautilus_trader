@@ -147,7 +147,7 @@ impl Default for DataTestServerConfig {
 }
 
 fn create_sbe_header(block_length: u16, template_id: u16) -> [u8; 8] {
-    let mut header = [0u8; 8];
+    let mut header = [0_u8; 8];
     header[0..2].copy_from_slice(&block_length.to_le_bytes());
     header[2..4].copy_from_slice(&template_id.to_le_bytes());
     header[4..6].copy_from_slice(&SBE_SCHEMA_ID.to_le_bytes());
@@ -156,7 +156,7 @@ fn create_sbe_header(block_length: u16, template_id: u16) -> [u8; 8] {
 }
 
 fn create_group_header(block_length: u16, count: u32) -> [u8; 6] {
-    let mut header = [0u8; 6];
+    let mut header = [0_u8; 6];
     header[0..2].copy_from_slice(&block_length.to_le_bytes());
     header[2..6].copy_from_slice(&count.to_le_bytes());
     header
@@ -181,8 +181,8 @@ fn build_depth_response(last_update_id: i64, bids: &[(i64, i64)], asks: &[(i64, 
     let mut buf = Vec::new();
     buf.extend_from_slice(&header);
     buf.extend_from_slice(&last_update_id.to_le_bytes());
-    buf.push((-2i8) as u8);
-    buf.push((-5i8) as u8);
+    buf.push((-2_i8) as u8);
+    buf.push((-5_i8) as u8);
 
     buf.extend_from_slice(&create_group_header(16, bids.len() as u32));
     for (price, qty) in bids {
@@ -244,7 +244,7 @@ fn build_klines_response(close_time_us: i64, span_us: i64) -> Vec<u8> {
 
 fn build_sbe_price_filter(exponent: i8, min_price: i64, max_price: i64, tick_size: i64) -> Vec<u8> {
     let mut buf = Vec::new();
-    buf.extend_from_slice(&25u16.to_le_bytes());
+    buf.extend_from_slice(&25_u16.to_le_bytes());
     buf.extend_from_slice(&PRICE_FILTER_TEMPLATE_ID.to_le_bytes());
     buf.extend_from_slice(&SBE_SCHEMA_ID.to_le_bytes());
     buf.extend_from_slice(&SBE_SCHEMA_VERSION.to_le_bytes());
@@ -257,7 +257,7 @@ fn build_sbe_price_filter(exponent: i8, min_price: i64, max_price: i64, tick_siz
 
 fn build_sbe_lot_size_filter(exponent: i8, min_qty: i64, max_qty: i64, step_size: i64) -> Vec<u8> {
     let mut buf = Vec::new();
-    buf.extend_from_slice(&25u16.to_le_bytes());
+    buf.extend_from_slice(&25_u16.to_le_bytes());
     buf.extend_from_slice(&LOT_SIZE_FILTER_TEMPLATE_ID.to_le_bytes());
     buf.extend_from_slice(&SBE_SCHEMA_ID.to_le_bytes());
     buf.extend_from_slice(&SBE_SCHEMA_VERSION.to_le_bytes());
@@ -291,7 +291,7 @@ fn build_exchange_info_response(symbols: &[(&str, &str, &str, SymbolStatus)]) ->
         buf.push(8); // quote_asset_precision
         buf.push(8); // base_commission_precision
         buf.push(8); // quote_commission_precision
-        buf.extend_from_slice(&0b0000_0111u16.to_le_bytes()); // order_types
+        buf.extend_from_slice(&0b0000_0111_u16.to_le_bytes()); // order_types
         buf.push(1); // iceberg_allowed
         buf.push(1); // oco_allowed
         buf.push(0); // oto_allowed
@@ -332,23 +332,23 @@ fn sbe_response(body: Vec<u8>) -> impl IntoResponse {
 }
 
 fn build_sbe_trades_stream_event(symbol: &str) -> Vec<u8> {
-    let trade_block_len = 25u16;
-    let num_trades = 1usize;
+    let trade_block_len = 25_u16;
+    let num_trades = 1_usize;
     let body_size = 18 + 6 + (num_trades * trade_block_len as usize) + 1 + symbol.len();
-    let mut buf = vec![0u8; 8 + body_size];
+    let mut buf = vec![0_u8; 8 + body_size];
 
     // Header (stream schema)
-    buf[0..2].copy_from_slice(&18u16.to_le_bytes()); // block_length
+    buf[0..2].copy_from_slice(&18_u16.to_le_bytes()); // block_length
     buf[2..4].copy_from_slice(&template_id::TRADES_STREAM_EVENT.to_le_bytes());
     buf[4..6].copy_from_slice(&STREAM_SCHEMA_ID.to_le_bytes());
-    buf[6..8].copy_from_slice(&0u16.to_le_bytes()); // version
+    buf[6..8].copy_from_slice(&0_u16.to_le_bytes()); // version
 
     // Body
     let body = &mut buf[8..];
-    body[0..8].copy_from_slice(&1_000_000i64.to_le_bytes()); // event_time_us
-    body[8..16].copy_from_slice(&1_000_001i64.to_le_bytes()); // transact_time_us
-    body[16] = (-2i8) as u8; // price_exponent
-    body[17] = (-8i8) as u8; // qty_exponent
+    body[0..8].copy_from_slice(&1_000_000_i64.to_le_bytes()); // event_time_us
+    body[8..16].copy_from_slice(&1_000_001_i64.to_le_bytes()); // transact_time_us
+    body[16] = (-2_i8) as u8; // price_exponent
+    body[17] = (-8_i8) as u8; // qty_exponent
 
     // Group header (trades)
     body[18..20].copy_from_slice(&trade_block_len.to_le_bytes());
@@ -356,9 +356,9 @@ fn build_sbe_trades_stream_event(symbol: &str) -> Vec<u8> {
 
     // Trade entry
     let offset = 24;
-    body[offset..offset + 8].copy_from_slice(&1i64.to_le_bytes()); // id
-    body[offset + 8..offset + 16].copy_from_slice(&4_200_000i64.to_le_bytes()); // price
-    body[offset + 16..offset + 24].copy_from_slice(&100_000_000i64.to_le_bytes()); // qty
+    body[offset..offset + 8].copy_from_slice(&1_i64.to_le_bytes()); // id
+    body[offset + 8..offset + 16].copy_from_slice(&4_200_000_i64.to_le_bytes()); // price
+    body[offset + 16..offset + 24].copy_from_slice(&100_000_000_i64.to_le_bytes()); // qty
     body[offset + 24] = 1; // is_buyer_maker
 
     // Symbol varString8
@@ -370,9 +370,9 @@ fn build_sbe_trades_stream_event(symbol: &str) -> Vec<u8> {
 }
 
 fn build_sbe_depth_snapshot_stream_event(symbol: &str) -> Vec<u8> {
-    let level_block_len = 16u16; // price i64 + qty i64
-    let num_bids = 2u16;
-    let num_asks = 2u16;
+    let level_block_len = 16_u16; // price i64 + qty i64
+    let num_bids = 2_u16;
+    let num_asks = 2_u16;
 
     // Body: 18 fixed + 2 group headers (4 bytes each, u16+u16) + levels + symbol var
     let body_size = 18
@@ -382,20 +382,20 @@ fn build_sbe_depth_snapshot_stream_event(symbol: &str) -> Vec<u8> {
         + (num_asks as usize * level_block_len as usize)
         + 1
         + symbol.len();
-    let mut buf = vec![0u8; 8 + body_size];
+    let mut buf = vec![0_u8; 8 + body_size];
 
     // Header (stream schema)
-    buf[0..2].copy_from_slice(&18u16.to_le_bytes()); // block_length
+    buf[0..2].copy_from_slice(&18_u16.to_le_bytes()); // block_length
     buf[2..4].copy_from_slice(&template_id::DEPTH_SNAPSHOT_STREAM_EVENT.to_le_bytes());
     buf[4..6].copy_from_slice(&STREAM_SCHEMA_ID.to_le_bytes());
-    buf[6..8].copy_from_slice(&0u16.to_le_bytes()); // version
+    buf[6..8].copy_from_slice(&0_u16.to_le_bytes()); // version
 
     // Body
     let body = &mut buf[8..];
-    body[0..8].copy_from_slice(&1_000_000i64.to_le_bytes()); // event_time_us
-    body[8..16].copy_from_slice(&99999i64.to_le_bytes()); // book_update_id
-    body[16] = (-2i8) as u8; // price_exponent
-    body[17] = (-8i8) as u8; // qty_exponent
+    body[0..8].copy_from_slice(&1_000_000_i64.to_le_bytes()); // event_time_us
+    body[8..16].copy_from_slice(&99999_i64.to_le_bytes()); // book_update_id
+    body[16] = (-2_i8) as u8; // price_exponent
+    body[17] = (-8_i8) as u8; // qty_exponent
 
     // Bids group header (u16 block_length + u16 num_in_group)
     let mut off = 18;
@@ -404,13 +404,13 @@ fn build_sbe_depth_snapshot_stream_event(symbol: &str) -> Vec<u8> {
     off += 4;
 
     // Bid 1: price 42000.00, qty 1.00000000
-    body[off..off + 8].copy_from_slice(&4_200_000i64.to_le_bytes());
-    body[off + 8..off + 16].copy_from_slice(&100_000_000i64.to_le_bytes());
+    body[off..off + 8].copy_from_slice(&4_200_000_i64.to_le_bytes());
+    body[off + 8..off + 16].copy_from_slice(&100_000_000_i64.to_le_bytes());
     off += level_block_len as usize;
 
     // Bid 2: price 41999.00, qty 2.00000000
-    body[off..off + 8].copy_from_slice(&4_199_900i64.to_le_bytes());
-    body[off + 8..off + 16].copy_from_slice(&200_000_000i64.to_le_bytes());
+    body[off..off + 8].copy_from_slice(&4_199_900_i64.to_le_bytes());
+    body[off + 8..off + 16].copy_from_slice(&200_000_000_i64.to_le_bytes());
     off += level_block_len as usize;
 
     // Asks group header
@@ -419,13 +419,13 @@ fn build_sbe_depth_snapshot_stream_event(symbol: &str) -> Vec<u8> {
     off += 4;
 
     // Ask 1: price 42001.00, qty 0.50000000
-    body[off..off + 8].copy_from_slice(&4_200_100i64.to_le_bytes());
-    body[off + 8..off + 16].copy_from_slice(&50_000_000i64.to_le_bytes());
+    body[off..off + 8].copy_from_slice(&4_200_100_i64.to_le_bytes());
+    body[off + 8..off + 16].copy_from_slice(&50_000_000_i64.to_le_bytes());
     off += level_block_len as usize;
 
     // Ask 2: price 42002.00, qty 1.50000000
-    body[off..off + 8].copy_from_slice(&4_200_200i64.to_le_bytes());
-    body[off + 8..off + 16].copy_from_slice(&150_000_000i64.to_le_bytes());
+    body[off..off + 8].copy_from_slice(&4_200_200_i64.to_le_bytes());
+    body[off + 8..off + 16].copy_from_slice(&150_000_000_i64.to_le_bytes());
     off += level_block_len as usize;
 
     // Symbol varString8
@@ -440,31 +440,31 @@ fn build_sbe_depth_diff_stream_event(
     first_update_id: i64,
     last_update_id: i64,
 ) -> Vec<u8> {
-    let level_block_len = 16u16;
-    let num_bids = 1u16;
-    let num_asks = 0u16;
+    let level_block_len = 16_u16;
+    let num_bids = 1_u16;
+    let num_asks = 0_u16;
     let body_size = 26 + 4 + (num_bids as usize * level_block_len as usize) + 4 + 1 + symbol.len();
-    let mut buf = vec![0u8; 8 + body_size];
+    let mut buf = vec![0_u8; 8 + body_size];
 
-    buf[0..2].copy_from_slice(&26u16.to_le_bytes());
+    buf[0..2].copy_from_slice(&26_u16.to_le_bytes());
     buf[2..4].copy_from_slice(&template_id::DEPTH_DIFF_STREAM_EVENT.to_le_bytes());
     buf[4..6].copy_from_slice(&STREAM_SCHEMA_ID.to_le_bytes());
-    buf[6..8].copy_from_slice(&0u16.to_le_bytes());
+    buf[6..8].copy_from_slice(&0_u16.to_le_bytes());
 
     let body = &mut buf[8..];
-    body[0..8].copy_from_slice(&1_000_100i64.to_le_bytes());
+    body[0..8].copy_from_slice(&1_000_100_i64.to_le_bytes());
     body[8..16].copy_from_slice(&first_update_id.to_le_bytes());
     body[16..24].copy_from_slice(&last_update_id.to_le_bytes());
-    body[24] = (-2i8) as u8;
-    body[25] = (-5i8) as u8;
+    body[24] = (-2_i8) as u8;
+    body[25] = (-5_i8) as u8;
 
     let mut off = 26;
     body[off..off + 2].copy_from_slice(&level_block_len.to_le_bytes());
     body[off + 2..off + 4].copy_from_slice(&num_bids.to_le_bytes());
     off += 4;
 
-    body[off..off + 8].copy_from_slice(&4_199_900i64.to_le_bytes());
-    body[off + 8..off + 16].copy_from_slice(&125_000i64.to_le_bytes());
+    body[off..off + 8].copy_from_slice(&4_199_900_i64.to_le_bytes());
+    body[off + 8..off + 16].copy_from_slice(&125_000_i64.to_le_bytes());
     off += level_block_len as usize;
 
     body[off..off + 2].copy_from_slice(&level_block_len.to_le_bytes());
@@ -585,24 +585,24 @@ fn build_json_ticker_stream_event(symbol: &str) -> String {
 
 fn build_sbe_best_bid_ask_stream_event(symbol: &str) -> Vec<u8> {
     let body_size = 50 + 1 + symbol.len();
-    let mut buf = vec![0u8; 8 + body_size];
+    let mut buf = vec![0_u8; 8 + body_size];
 
     // Header (stream schema)
-    buf[0..2].copy_from_slice(&50u16.to_le_bytes()); // block_length
+    buf[0..2].copy_from_slice(&50_u16.to_le_bytes()); // block_length
     buf[2..4].copy_from_slice(&template_id::BEST_BID_ASK_STREAM_EVENT.to_le_bytes());
     buf[4..6].copy_from_slice(&STREAM_SCHEMA_ID.to_le_bytes());
-    buf[6..8].copy_from_slice(&0u16.to_le_bytes()); // version
+    buf[6..8].copy_from_slice(&0_u16.to_le_bytes()); // version
 
     // Body
     let body = &mut buf[8..];
-    body[0..8].copy_from_slice(&1_000_000i64.to_le_bytes()); // event_time_us
-    body[8..16].copy_from_slice(&12345i64.to_le_bytes()); // book_update_id
-    body[16] = (-2i8) as u8; // price_exponent
-    body[17] = (-8i8) as u8; // qty_exponent
-    body[18..26].copy_from_slice(&4_200_000i64.to_le_bytes()); // bid_price
-    body[26..34].copy_from_slice(&100_000_000i64.to_le_bytes()); // bid_qty
-    body[34..42].copy_from_slice(&4_200_100i64.to_le_bytes()); // ask_price
-    body[42..50].copy_from_slice(&200_000_000i64.to_le_bytes()); // ask_qty
+    body[0..8].copy_from_slice(&1_000_000_i64.to_le_bytes()); // event_time_us
+    body[8..16].copy_from_slice(&12345_i64.to_le_bytes()); // book_update_id
+    body[16] = (-2_i8) as u8; // price_exponent
+    body[17] = (-8_i8) as u8; // qty_exponent
+    body[18..26].copy_from_slice(&4_200_000_i64.to_le_bytes()); // bid_price
+    body[26..34].copy_from_slice(&100_000_000_i64.to_le_bytes()); // bid_qty
+    body[34..42].copy_from_slice(&4_200_100_i64.to_le_bytes()); // ask_price
+    body[42..50].copy_from_slice(&200_000_000_i64.to_le_bytes()); // ask_qty
 
     // Symbol varString8
     body[50] = symbol.len() as u8;

@@ -2273,7 +2273,7 @@ fn test_seeded_fill_model_is_shared_across_instruments(
     setup_order_event_handler();
 
     // Seed 42's first two draws match; pick a seed where shared vs cloned From() diverge.
-    let seed = (0u64..64)
+    let seed = (0_u64..64)
         .find(|&seed| {
             first_two_shared_limit_fills(seed) != first_fills_from_independent_handles(seed)
         })

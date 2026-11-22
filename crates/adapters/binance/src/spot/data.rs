@@ -2281,7 +2281,7 @@ mod tests {
     #[case::snapshot("snapshot")]
     #[case::diff("diff")]
     fn handle_ws_message_rejects_invalid_sbe_then_processes_valid_bbo(#[case] kind: &str) {
-        let ts_init = UnixNanos::from(1_800_000_000_000_000_000u64);
+        let ts_init = UnixNanos::from(1_800_000_000_000_000_000_u64);
         let clock = Box::leak(Box::new(AtomicTime::new(false, ts_init)));
         let instrument = InstrumentAny::CurrencyPair(currency_pair_btcusdt());
         let instruments = Arc::new(AtomicMap::new());

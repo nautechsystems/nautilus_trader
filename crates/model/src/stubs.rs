@@ -65,7 +65,7 @@ pub fn test_uuid() -> UUID4 {
         let lo = splitmix64(&mut state).to_be_bytes();
         cell.set(state);
 
-        let mut bytes = [0u8; 16];
+        let mut bytes = [0_u8; 16];
         bytes[..8].copy_from_slice(&hi);
         bytes[8..].copy_from_slice(&lo);
         UUID4::from_bytes(bytes)

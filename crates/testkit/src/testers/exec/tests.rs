@@ -1349,7 +1349,7 @@ fn test_submit_limit_order_with_expire_time(
     assert_eq!(order.time_in_force(), TimeInForce::Gtd);
     assert_eq!(
         order.expire_time(),
-        Some(UnixNanos::from(180_000_000_000u64)),
+        Some(UnixNanos::from(180_000_000_000_u64)),
     );
 }
 

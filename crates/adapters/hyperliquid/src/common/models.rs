@@ -259,7 +259,7 @@ impl HyperliquidDataConverter {
             ts_init,
         ));
 
-        let mut order_id = 1u64; // Sequential order IDs for snapshot
+        let mut order_id = 1_u64; // Sequential order IDs for snapshot
 
         // Convert bid levels
         for level in &data.levels[0] {
@@ -319,7 +319,7 @@ impl HyperliquidDataConverter {
             ts_init,
         ));
 
-        let mut order_id = 1u64; // Sequential order IDs for snapshot
+        let mut order_id = 1_u64; // Sequential order IDs for snapshot
 
         // Convert bid levels
         for level in &data.levels[0] {

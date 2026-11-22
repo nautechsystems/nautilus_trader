@@ -295,7 +295,7 @@ pub(super) fn make_es_future(instrument_id: &str, symbol: &str) -> FuturesContra
         .exchange(Ustr::from("XCME"))
         .underlying(Ustr::from("ES"))
         .activation_ns(UnixNanos::default())
-        .expiration_ns(UnixNanos::from(2_000_000_000_000_000_000u64))
+        .expiration_ns(UnixNanos::from(2_000_000_000_000_000_000_u64))
         .currency(Currency::USD())
         .price_precision(2)
         .price_increment(Price::from("0.01"))
@@ -507,7 +507,7 @@ pub(super) fn make_crypto_option(
     let underlying = Currency::from(underlying_str);
     let quote = Currency::USD();
     let settlement = Currency::from(settlement_str);
-    let activation = UnixNanos::from(1_671_696_000_000_000_000u64);
+    let activation = UnixNanos::from(1_671_696_000_000_000_000_u64);
 
     InstrumentAny::CryptoOption(
         CryptoOption::builder()

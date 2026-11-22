@@ -231,7 +231,7 @@ fn is_complete_der(der: &[u8]) -> bool {
         return false;
     }
 
-    let length = rest[..count].iter().try_fold(0usize, |length, b| {
+    let length = rest[..count].iter().try_fold(0_usize, |length, b| {
         length.checked_mul(256)?.checked_add(usize::from(*b))
     });
 

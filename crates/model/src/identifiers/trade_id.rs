@@ -182,7 +182,7 @@ mod tests {
     #[rstest]
     #[should_panic(expected = "String is empty")]
     fn test_trade_id_single_null_byte() {
-        TradeId::from_bytes(&[0u8] as &[u8]).unwrap();
+        TradeId::from_bytes(&[0_u8] as &[u8]).unwrap();
     }
 
     #[rstest]

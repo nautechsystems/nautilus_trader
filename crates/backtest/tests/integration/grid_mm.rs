@@ -144,7 +144,7 @@ fn test_skips_requote_within_threshold(crypto_perpetual_ethusdt: CryptoPerpetual
     engine.add_strategy(GridMarketMaker::new(config)).unwrap();
 
     // All quotes within the 5.0 threshold - only the first triggers orders
-    let quotes: Vec<Data> = (0..10u64)
+    let quotes: Vec<Data> = (0..10_u64)
         .map(|i| {
             let mid = 1000.0 + (i as f64 * 0.1);
             quote(

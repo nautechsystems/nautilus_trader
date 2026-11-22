@@ -116,7 +116,7 @@ impl Credential {
         payload: Option<&str>,
     ) -> String {
         let recv_window = recv_window_ms.to_string();
-        let payload_len = payload.map_or(0usize, str::len);
+        let payload_len = payload.map_or(0_usize, str::len);
         let mut message = String::with_capacity(
             timestamp.len() + self.api_key.len() + recv_window.len() + payload_len,
         );

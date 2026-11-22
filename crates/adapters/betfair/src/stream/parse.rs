@@ -2543,7 +2543,8 @@ mod tests {
             match_stats: Some(serde_json::json!({"inningsStats": []})),
             incident_list_wrapper: None,
         };
-        let ts = UnixNanos::from(1_000_000_000u64);
+
+        let ts = UnixNanos::from(1_000_000_000_u64);
         let result = parse_cricket_match(&change, ts, ts);
 
         assert!(result.is_none());
@@ -2589,7 +2590,8 @@ mod tests {
             prg: Some(500.0),
             sfq: Some(2.0),
         };
-        let ts = UnixNanos::from(1_000_000_000u64);
+
+        let ts = UnixNanos::from(1_000_000_000_u64);
         let result = parse_race_runner_data("race1", "market1", &rrc, ts, ts);
         assert!(result.is_none());
     }
@@ -2605,7 +2607,8 @@ mod tests {
             prg: None,
             sfq: None,
         };
-        let ts = UnixNanos::from(1_000_000_000u64);
+
+        let ts = UnixNanos::from(1_000_000_000_u64);
         let runner = parse_race_runner_data("race1", "market1", &rrc, ts, ts).unwrap();
         assert!(runner.latitude.is_nan());
         assert!(runner.longitude.is_nan());
@@ -2626,7 +2629,8 @@ mod tests {
             ord: None,
             jumps: None,
         };
-        let ts = UnixNanos::from(1_000_000_000u64);
+
+        let ts = UnixNanos::from(1_000_000_000_u64);
         let progress = parse_race_progress("race1", "market1", &rpc, ts, ts);
         assert_eq!(progress.gate_name, "");
         assert!(progress.sectional_time.is_nan());
@@ -2670,7 +2674,7 @@ mod tests {
             Some(Decimal::new(568, 2)),
             Some(Decimal::new(573, 2)),
         );
-        let ts = UnixNanos::from(1_000_000_000u64);
+        let ts = UnixNanos::from(1_000_000_000_u64);
         let instrument_id = make_instrument_id("1.185781465", 9_249_757, Decimal::ZERO);
 
         let ticker = parse_betfair_ticker(instrument_id, &rc, ts, ts).unwrap();
@@ -2691,7 +2695,7 @@ mod tests {
             None,
             None,
         );
-        let ts = UnixNanos::from(1_000_000_000u64);
+        let ts = UnixNanos::from(1_000_000_000_u64);
         let instrument_id = make_instrument_id("1.185781465", 9_249_757, Decimal::ZERO);
 
         let ticker = parse_betfair_ticker(instrument_id, &rc, ts, ts).unwrap();
@@ -2705,7 +2709,7 @@ mod tests {
     #[rstest]
     fn test_parse_betfair_ticker_no_fields_returns_none() {
         let rc = runner_change_with_ticker(9_249_757, None, None, None, None);
-        let ts = UnixNanos::from(1_000_000_000u64);
+        let ts = UnixNanos::from(1_000_000_000_u64);
         let instrument_id = make_instrument_id("1.185781465", 9_249_757, Decimal::ZERO);
 
         assert!(parse_betfair_ticker(instrument_id, &rc, ts, ts).is_none());
@@ -2715,7 +2719,7 @@ mod tests {
     fn test_parse_betfair_ticker_only_tv() {
         let rc =
             runner_change_with_ticker(40_273_293, None, Some(Decimal::new(320_115, 2)), None, None);
-        let ts = UnixNanos::from(1_000_000_000u64);
+        let ts = UnixNanos::from(1_000_000_000_u64);
         let instrument_id = make_instrument_id("1.185781465", 40_273_293, Decimal::ZERO);
 
         let ticker = parse_betfair_ticker(instrument_id, &rc, ts, ts).unwrap();
@@ -2847,7 +2851,8 @@ mod tests {
             venue: None,
             version: None,
         };
-        let ts = UnixNanos::from(1_000_000_000u64);
+
+        let ts = UnixNanos::from(1_000_000_000_u64);
 
         let prices = parse_betfair_starting_prices("1.12345", &def, ts, ts);
 
@@ -2926,7 +2931,8 @@ mod tests {
             ltp: None,
             tv: None,
         };
-        let ts = UnixNanos::from(1_000_000_000u64);
+
+        let ts = UnixNanos::from(1_000_000_000_u64);
         let instrument_id = make_instrument_id("1.12345", 12345, Decimal::ZERO);
 
         let deltas = parse_bsp_book_deltas(instrument_id, &rc, ts, ts);
@@ -2940,7 +2946,7 @@ mod tests {
     #[rstest]
     fn test_parse_bsp_book_deltas_no_spb_spl_returns_empty() {
         let rc = runner_change_with_ticker(12345, None, None, None, None);
-        let ts = UnixNanos::from(1_000_000_000u64);
+        let ts = UnixNanos::from(1_000_000_000_u64);
         let instrument_id = make_instrument_id("1.12345", 12345, Decimal::ZERO);
 
         let deltas = parse_bsp_book_deltas(instrument_id, &rc, ts, ts);

@@ -69,13 +69,13 @@ fuzz_target!(|data: &[u8]| {
 });
 
 fn address(data: &[u8], offset: usize) -> Address {
-    let mut bytes = [0u8; 20];
+    let mut bytes = [0_u8; 20];
     bytes.copy_from_slice(&data[offset..offset + 20]);
     Address::from(bytes)
 }
 
 fn decimal(data: &[u8], offset: usize) -> Decimal {
-    let mut mantissa = [0u8; 16];
+    let mut mantissa = [0_u8; 16];
     mantissa[..12].copy_from_slice(&data[offset..offset + 12]);
     let mut value = i128::from_le_bytes(mantissa);
     if data[offset + 12] & 1 == 1 {
@@ -87,7 +87,7 @@ fn decimal(data: &[u8], offset: usize) -> Decimal {
 }
 
 fn read_u64(data: &[u8], offset: usize) -> u64 {
-    let mut buf = [0u8; 8];
+    let mut buf = [0_u8; 8];
     buf.copy_from_slice(&data[offset..offset + 8]);
     u64::from_le_bytes(buf)
 }

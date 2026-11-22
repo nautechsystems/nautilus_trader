@@ -3546,8 +3546,8 @@ mod tests {
         let status = InstrumentStatus::new(
             InstrumentId::from("USDG-SGD.OKX"),
             MarketStatusAction::Trading,
-            UnixNanos::from(1u64),
-            UnixNanos::from(2u64),
+            UnixNanos::from(1_u64),
+            UnixNanos::from(2_u64),
             None,
             None,
             Some(true),
@@ -4652,7 +4652,7 @@ mod tests {
             &okx_inst,
             None,
             None,
-            UnixNanos::from(1u64),
+            UnixNanos::from(1_u64),
         )
         .expect("parse events instrument");
         let matching = OKXDataClientConfig::builder()
@@ -4731,10 +4731,10 @@ mod tests {
     fn definitions_match_ignores_event_timestamps() {
         let okx_instrument: OKXInstrument =
             serde_json::from_value(swap_definition("0.1")).expect("valid OKXInstrument");
-        let first = parse_instrument_any(&okx_instrument, None, None, UnixNanos::from(1u64))
+        let first = parse_instrument_any(&okx_instrument, None, None, UnixNanos::from(1_u64))
             .expect("parse")
             .expect("instrument");
-        let second = parse_instrument_any(&okx_instrument, None, None, UnixNanos::from(2u64))
+        let second = parse_instrument_any(&okx_instrument, None, None, UnixNanos::from(2_u64))
             .expect("parse")
             .expect("instrument");
 
@@ -4746,8 +4746,8 @@ mod tests {
         let mut pair = currency_pair_btcusdt();
         let mut changed = pair.clone();
         changed.price_increment = Price::from("0.5");
-        pair.ts_event = UnixNanos::from(1u64);
-        changed.ts_event = UnixNanos::from(2u64);
+        pair.ts_event = UnixNanos::from(1_u64);
+        changed.ts_event = UnixNanos::from(2_u64);
 
         assert!(!instrument_definitions_match(
             &InstrumentAny::CurrencyPair(pair),
@@ -5398,7 +5398,7 @@ mod tests {
         let mut v2_item = test_payload("http_get_instruments_spot.json")["data"][0].clone();
         v2_item["tickSz"] = json!("0.5");
         let v2: OKXInstrument = serde_json::from_value(v2_item).expect("valid OKXInstrument");
-        let v2 = parse_instrument_any(&v2, None, None, UnixNanos::from(1u64))
+        let v2 = parse_instrument_any(&v2, None, None, UnixNanos::from(1_u64))
             .expect("parse")
             .expect("instrument");
         {

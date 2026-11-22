@@ -632,7 +632,7 @@ mod tests {
         let set = Arc::new(AtomicSet::new());
         let barrier = Arc::new(Barrier::new(4));
 
-        let handles: Vec<_> = (0..4u32)
+        let handles: Vec<_> = (0..4_u32)
             .map(|t| {
                 let set = Arc::clone(&set);
                 let barrier = Arc::clone(&barrier);
@@ -660,7 +660,7 @@ mod tests {
     #[rstest]
     fn test_atomic_set_concurrent_read_write() {
         let set = Arc::new(AtomicSet::new());
-        for i in 0u32..100 {
+        for i in 0_u32..100 {
             set.insert(i);
         }
 
@@ -672,7 +672,7 @@ mod tests {
             std::thread::spawn(move || {
                 barrier.wait();
 
-                for i in 100u32..200 {
+                for i in 100_u32..200 {
                     set.insert(i);
                 }
             })
@@ -693,7 +693,7 @@ mod tests {
                             "snapshot len {len} outside expected range"
                         );
 
-                        for i in 0u32..100 {
+                        for i in 0_u32..100 {
                             assert!(snapshot.contains(&i), "original key {i} missing");
                         }
                     }
@@ -721,7 +721,7 @@ mod tests {
             std::thread::spawn(move || {
                 barrier.wait();
 
-                for batch in 0u32..50 {
+                for batch in 0_u32..50 {
                     let start = batch * 10;
                     let new_set: AHashSet<u32> = (start..start + 10).collect();
                     set.store(new_set);
@@ -958,7 +958,7 @@ mod tests {
     #[rstest]
     fn test_atomic_map_concurrent_reads() {
         let map = Arc::new(AtomicMap::new());
-        for i in 0u32..100 {
+        for i in 0_u32..100 {
             map.insert(i, i * 10);
         }
 
@@ -971,7 +971,7 @@ mod tests {
                 std::thread::spawn(move || {
                     barrier.wait();
 
-                    for i in 0u32..100 {
+                    for i in 0_u32..100 {
                         assert_eq!(map.get_cloned(&i), Some(i * 10));
                     }
                 })
@@ -988,7 +988,7 @@ mod tests {
         let map = Arc::new(AtomicMap::new());
         let barrier = Arc::new(Barrier::new(4));
 
-        let handles: Vec<_> = (0..4u32)
+        let handles: Vec<_> = (0..4_u32)
             .map(|t| {
                 let map = Arc::clone(&map);
                 let barrier = Arc::clone(&barrier);
@@ -1009,7 +1009,7 @@ mod tests {
 
         assert_eq!(map.len(), 100);
 
-        for i in 0u32..100 {
+        for i in 0_u32..100 {
             assert_eq!(map.get_cloned(&i), Some(i * 10), "wrong value for {i}");
         }
     }
@@ -1017,7 +1017,7 @@ mod tests {
     #[rstest]
     fn test_atomic_map_concurrent_read_write() {
         let map = Arc::new(AtomicMap::new());
-        for i in 0u32..100 {
+        for i in 0_u32..100 {
             map.insert(i, i);
         }
 
@@ -1029,7 +1029,7 @@ mod tests {
             std::thread::spawn(move || {
                 barrier.wait();
 
-                for i in 100u32..200 {
+                for i in 100_u32..200 {
                     map.insert(i, i);
                 }
             })
@@ -1050,7 +1050,7 @@ mod tests {
                             "snapshot len {len} outside expected range"
                         );
 
-                        for i in 0u32..100 {
+                        for i in 0_u32..100 {
                             assert_eq!(
                                 snapshot.get(&i).copied(),
                                 Some(i),
@@ -1082,7 +1082,7 @@ mod tests {
             std::thread::spawn(move || {
                 barrier.wait();
 
-                for batch in 0u32..50 {
+                for batch in 0_u32..50 {
                     let start = batch * 10;
                     let new_map: AHashMap<u32, u32> =
                         (start..start + 10).map(|i| (i, batch)).collect();

@@ -127,7 +127,7 @@ mod tests {
     #[case(31)]
     #[case(33)]
     fn test_extract_topic_rejects_noncanonical_width(#[case] byte_len: usize) {
-        let bytes = vec![0xffu8; byte_len];
+        let bytes = vec![0xff_u8; byte_len];
         let expected = format!("Topic must be 32 bytes, was {byte_len}");
         let address_error = extract_address_from_bytes(&bytes).unwrap_err();
         let fee_error = extract_u32_from_bytes(&bytes).unwrap_err();

@@ -6373,8 +6373,8 @@ pub(crate) mod serial_tests {
 
         #[rstest]
         fn prop_terminal_fill_histories_match_unique_trade_ledger(
-            canonical in proptest::collection::vec((90u16..=110, 1u8..=5), 1..=3),
-            delivery in proptest::collection::vec(0u8..=11, 1..=10),
+            canonical in proptest::collection::vec((90_u16..=110, 1_u8..=5), 1..=3),
+            delivery in proptest::collection::vec(0_u8..=11, 1..=10),
             expired in any::<bool>(),
         ) {
             let client_order_id = ClientOrderId::from("O-PROP-TERMINAL");

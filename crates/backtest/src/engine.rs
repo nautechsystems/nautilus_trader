@@ -3052,9 +3052,9 @@ mod tests {
             .unwrap();
 
         let quotes = if tail {
-            vec![110u64]
+            vec![110_u64]
         } else {
-            vec![110u64, 160]
+            vec![110_u64, 160]
         };
 
         let data = quotes

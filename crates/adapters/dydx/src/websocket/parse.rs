@@ -1798,7 +1798,7 @@ mod tests {
                 .expect("Failed to parse orderbook snapshot contents");
 
         let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let deltas = parse_orderbook_snapshot(&instrument_id, &contents, 2, 8, ts_init)
             .expect("Failed to parse orderbook snapshot");
@@ -1875,7 +1875,7 @@ mod tests {
             },
         };
         let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let deltas = parse_orderbook_snapshot(&instrument_id, &contents, 2, 8, ts_init)
             .expect("Failed to parse orderbook snapshot");
@@ -1905,7 +1905,7 @@ mod tests {
             .expect("Failed to parse orderbook update contents");
 
         let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let deltas = parse_orderbook_deltas(&instrument_id, &contents, 2, 8, ts_init)
             .expect("Failed to parse orderbook deltas");
@@ -1934,7 +1934,7 @@ mod tests {
 
         let instrument = create_test_instrument();
         let instrument_id = instrument.id();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let ticks = parse_trades(instrument_id, &instrument, &contents, ts_init)
             .expect("Failed to parse trade ticks");
@@ -1963,7 +1963,7 @@ mod tests {
         let instrument = create_test_instrument();
         let bar_type = BarType::from_str("BTC-USD-PERP.DYDX-1-MINUTE-LAST-EXTERNAL")
             .expect("Failed to parse bar type");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let bar = parse_candle_bar(
             bar_type,
@@ -1982,8 +1982,8 @@ mod tests {
         assert_eq!(bar.volume.to_string(), "12.34500000");
 
         // 2024-01-01T00:00:00.000Z = 1_704_067_200_000_000_000 ns
-        let started_at_ns = 1_704_067_200_000_000_000u64;
-        let one_min_ns = 60_000_000_000u64;
+        let started_at_ns = 1_704_067_200_000_000_000_u64;
+        let one_min_ns = 60_000_000_000_u64;
 
         if timestamp_on_close {
             assert_eq!(bar.ts_event.as_u64(), started_at_ns + one_min_ns);

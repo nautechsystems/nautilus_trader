@@ -1156,16 +1156,16 @@ def callback(event):
 
     fn timer_operation_strategy() -> impl Strategy<Value = TimerOperation> {
         prop_oneof![
-            8 => (0u64..=1000).prop_map(TimerOperation::AdvanceTime),
+            8 => (0_u64..=1000).prop_map(TimerOperation::AdvanceTime),
             2 => Just(TimerOperation::Cancel),
         ]
     }
 
     fn timer_config_strategy() -> impl Strategy<Value = (u64, u64, Option<u64>, bool)> {
         (
-            1u64..=1000,
+            1_u64..=1000,
             timer_start_time_strategy(),
-            prop::option::of(0u64..=20_000),
+            prop::option::of(0_u64..=20_000),
             prop::bool::ANY,
         )
             .prop_map(
@@ -1182,8 +1182,8 @@ def callback(event):
 
     fn timer_start_time_strategy() -> impl Strategy<Value = u64> {
         prop_oneof![
-            6 => 0u64..=u64::MAX - TIMER_TIME_HEADROOM,
-            2 => 0u64..=1_000_000,
+            6 => 0_u64..=u64::MAX - TIMER_TIME_HEADROOM,
+            2 => 0_u64..=1_000_000,
             1 => Just(1_700_000_000_000_000_000),
             1 => Just(u64::MAX - TIMER_TIME_HEADROOM),
         ]
@@ -1320,10 +1320,10 @@ def callback(event):
 
         #[rstest]
         fn prop_timer_advance_batching_is_consistent(
-            interval_ns in 1u64..=1000,
+            interval_ns in 1_u64..=1000,
             start_time_ns in timer_start_time_strategy(),
             fire_immediately in prop::bool::ANY,
-            advance_count in 1u64..=20,
+            advance_count in 1_u64..=20,
         ) {
             let mut timer = VirtualTimer::new(
                 Ustr::from("CONSISTENCY_TEST"),
@@ -1411,6 +1411,6 @@ def callback(event):
     }
 
     fn terminal_time_strategy() -> impl Strategy<Value = (u64, u64)> {
-        (1u64..=1000).prop_flat_map(|interval_ns| (Just(interval_ns), 0u64..interval_ns))
+        (1_u64..=1000).prop_flat_map(|interval_ns| (Just(interval_ns), 0_u64..interval_ns))
     }
 }

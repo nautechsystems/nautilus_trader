@@ -1035,7 +1035,7 @@ mod tests {
             serde_json::from_value(json).expect("Failed to parse trades");
 
         let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let tick = parse_trade_tick(&response.trades[0], instrument_id, 0, 4, ts_init)
             .expect("Failed to parse trade tick");
@@ -1058,7 +1058,7 @@ mod tests {
 
         let bar_type = BarType::from_str("BTC-USD-PERP.DYDX-1-MINUTE-LAST-EXTERNAL")
             .expect("Failed to parse bar type");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let bar = parse_bar(
             &response.candles[0],
@@ -1078,8 +1078,8 @@ mod tests {
         assert_eq!(bar.volume.to_string(), "3.2767");
 
         // 2025-12-08T16:11:00.000Z
-        let started_at_ns = 1_765_210_260_000_000_000u64;
-        let one_min_ns = 60_000_000_000u64;
+        let started_at_ns = 1_765_210_260_000_000_000_u64;
+        let one_min_ns = 60_000_000_000_u64;
 
         if timestamp_on_close {
             assert_eq!(bar.ts_event.as_u64(), started_at_ns + one_min_ns);

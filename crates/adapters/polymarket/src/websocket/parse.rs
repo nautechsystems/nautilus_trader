@@ -591,19 +591,19 @@ mod tests {
     fn test_instrument() -> InstrumentAny {
         let market: crate::http::models::GammaMarket = load("gamma_market.json");
         let defs = parse_gamma_market(&market).unwrap();
-        create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap()
+        create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000_u64)).unwrap()
     }
 
     fn test_instrument_with_tick(tick_size: &str) -> InstrumentAny {
         let instrument = test_instrument();
-        let ts = UnixNanos::from(1_000_000_000u64);
+        let ts = UnixNanos::from(1_000_000_000_u64);
         rebuild_instrument_with_tick_size(&instrument, tick_size, ts, ts).unwrap()
     }
 
     #[rstest]
     fn test_parse_timestamp_ms() {
         let ns = parse_timestamp_ms("1703875200000").unwrap();
-        assert_eq!(ns, UnixNanos::from(1_703_875_200_000_000_000u64));
+        assert_eq!(ns, UnixNanos::from(1_703_875_200_000_000_000_u64));
     }
 
     #[rstest]
@@ -719,7 +719,7 @@ mod tests {
     fn test_parse_book_snapshot() {
         let snap: PolymarketBookSnapshot = load("ws_book_snapshot.json");
         let instrument = test_instrument();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let deltas = parse_book_snapshot(
             &snap,
@@ -778,8 +778,8 @@ mod tests {
         }
 
         let instrument_id = InstrumentId::from("test.POLYMARKET");
-        let ts_event = UnixNanos::from(1_703_875_200_000_000_000u64);
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_event = UnixNanos::from(1_703_875_200_000_000_000_u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
         let deltas = parse_book_snapshot(&snap, instrument_id, 2, 2, ts_init).unwrap();
         let order = BookOrder::new(side, Price::from(price), Quantity::from(size), 0);
         let last = OrderBookDelta::new_checked(
@@ -808,7 +808,7 @@ mod tests {
         snap.bids.clear();
         snap.asks.clear();
         let instrument = test_instrument();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let deltas = parse_book_snapshot(
             &snap,
@@ -830,7 +830,7 @@ mod tests {
         let quotes: PolymarketQuotes = load("ws_quotes.json");
         let instrument = test_instrument();
         let ts_event = parse_timestamp_ms(&quotes.timestamp).unwrap();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
         let changes = quotes.price_changes.iter().collect::<Vec<_>>();
 
         let deltas = parse_book_deltas(
@@ -862,7 +862,7 @@ mod tests {
         quotes.price_changes[0].size = "0".to_string();
         let instrument = test_instrument();
         let ts_event = parse_timestamp_ms(&quotes.timestamp).unwrap();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
         let changes = quotes.price_changes.iter().collect::<Vec<_>>();
 
         let deltas = parse_book_deltas(
@@ -884,7 +884,7 @@ mod tests {
     fn test_parse_trade_tick() {
         let trade: PolymarketTrade = load("ws_last_trade.json");
         let instrument = test_instrument();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let tick = parse_trade_tick(
             &trade,
@@ -897,14 +897,17 @@ mod tests {
 
         assert_eq!(tick.instrument_id, instrument.id());
         assert_eq!(tick.aggressor_side, AggressorSide::Buy);
-        assert_eq!(tick.ts_event, UnixNanos::from(1_703_875_202_000_000_000u64));
+        assert_eq!(
+            tick.ts_event,
+            UnixNanos::from(1_703_875_202_000_000_000_u64)
+        );
     }
 
     #[rstest]
     fn test_parse_trade_tick_deterministic_id() {
         let trade: PolymarketTrade = load("ws_last_trade.json");
         let instrument = test_instrument();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let tick1 = parse_trade_tick(
             &trade,
@@ -930,7 +933,7 @@ mod tests {
     fn test_parse_quote_from_snapshot() {
         let snap: PolymarketBookSnapshot = load("ws_book_snapshot.json");
         let instrument = test_instrument();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let quote = parse_quote_from_snapshot(
             &snap,
@@ -949,7 +952,7 @@ mod tests {
         assert_eq!(quote.ask_price, Price::from("0.51"));
         assert_eq!(
             quote.ts_event,
-            UnixNanos::from(1_703_875_200_000_000_000u64)
+            UnixNanos::from(1_703_875_200_000_000_000_u64)
         );
     }
 
@@ -958,7 +961,7 @@ mod tests {
         let mut snap: PolymarketBookSnapshot = load("ws_book_snapshot.json");
         snap.bids.clear();
         let instrument = test_instrument();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let result = parse_quote_from_snapshot(
             &snap,
@@ -979,7 +982,7 @@ mod tests {
         let mut snap: PolymarketBookSnapshot = load("ws_book_snapshot.json");
         snap.asks.clear();
         let instrument = test_instrument_with_tick("0.005");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let quote = parse_quote_from_snapshot(
             &snap,
@@ -1004,7 +1007,7 @@ mod tests {
         let mut snap: PolymarketBookSnapshot = load("ws_book_snapshot.json");
         snap.bids.clear();
         let instrument = test_instrument_with_tick("0.0025");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let quote = parse_quote_from_snapshot(
             &snap,
@@ -1029,7 +1032,7 @@ mod tests {
         let quotes: PolymarketQuotes = load("ws_quotes.json");
         let instrument = test_instrument();
         let ts_event = parse_timestamp_ms(&quotes.timestamp).unwrap();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let quote = parse_quote_from_price_change(
             &quotes.price_changes[0],
@@ -1074,8 +1077,8 @@ mod tests {
             Price::from("0.52"),
             Quantity::from("100.00"),
             Quantity::from("75.00"),
-            UnixNanos::from(1_000_000u64),
-            UnixNanos::from(2_000_000u64),
+            UnixNanos::from(1_000_000_u64),
+            UnixNanos::from(2_000_000_u64),
         );
 
         let change = PolymarketQuote {
@@ -1088,8 +1091,8 @@ mod tests {
             best_ask: Some(best_ask.to_string()),
         };
 
-        let ts_event = UnixNanos::from(3_000_000u64);
-        let ts_init = UnixNanos::from(4_000_000u64);
+        let ts_event = UnixNanos::from(3_000_000_u64);
+        let ts_init = UnixNanos::from(4_000_000_u64);
         let quote = parse_quote_from_price_change(
             &change,
             instrument_id,
@@ -1127,7 +1130,7 @@ mod tests {
         quotes.price_changes[0].best_ask = best_ask.map(str::to_string);
         let instrument = test_instrument();
         let ts_event = parse_timestamp_ms(&quotes.timestamp).unwrap();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let result = parse_quote_from_price_change(
             &quotes.price_changes[0],
@@ -1155,7 +1158,7 @@ mod tests {
         quotes.price_changes[0].best_ask = best_ask.map(str::to_string);
         let instrument = test_instrument_with_tick("0.005");
         let ts_event = parse_timestamp_ms(&quotes.timestamp).unwrap();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let quote = parse_quote_from_price_change(
             &quotes.price_changes[0],
@@ -1187,7 +1190,7 @@ mod tests {
         quotes.price_changes[0].best_ask = Some("0.52".to_string());
         let instrument = test_instrument_with_tick("0.0025");
         let ts_event = parse_timestamp_ms(&quotes.timestamp).unwrap();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let quote = parse_quote_from_price_change(
             &quotes.price_changes[0],
@@ -1216,7 +1219,7 @@ mod tests {
         quotes.price_changes[0].best_ask = Some("0.60".to_string());
         let instrument = test_instrument();
         let ts_event = parse_timestamp_ms(&quotes.timestamp).unwrap();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let result = parse_quote_from_price_change(
             &quotes.price_changes[0],
@@ -1253,8 +1256,8 @@ mod tests {
     fn test_parse_quote_from_best_bid_ask_sizes_only_matching_tops() {
         let instrument = test_instrument();
         let size_precision = instrument.size_precision();
-        let ts_event = UnixNanos::from(1_700_000_003_000_000_000u64);
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_event = UnixNanos::from(1_700_000_003_000_000_000_u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let quote = parse_quote_from_best_bid_ask(
             &best_bid_ask("0.50", "0.52"),

@@ -41,7 +41,7 @@ fn make_var_string8_buffer(count: usize, value: &str) -> Vec<u8> {
 
 fn make_group_buffer(count: u32) -> Vec<u8> {
     let mut buf = Vec::with_capacity(6 + count as usize * 16);
-    buf.extend_from_slice(&16u16.to_le_bytes()); // block_length
+    buf.extend_from_slice(&16_u16.to_le_bytes()); // block_length
     buf.extend_from_slice(&count.to_le_bytes()); // num_in_group
 
     for i in 0..count {
@@ -59,8 +59,7 @@ fn bench_read_i64(c: &mut Criterion) {
     c.bench_function("SbeCursor::read_i64_le x1024", |b| {
         b.iter(|| {
             let mut cursor = SbeCursor::new(&data);
-            let mut sum = 0i64;
-
+            let mut sum = 0_i64;
             for _ in 0..count {
                 sum += cursor.read_i64_le().unwrap();
             }
@@ -77,8 +76,7 @@ fn bench_read_var_string8_ref(c: &mut Criterion) {
     c.bench_function("SbeCursor::read_var_string8_ref x512", |b| {
         b.iter(|| {
             let mut cursor = SbeCursor::new(&data);
-            let mut total_len = 0usize;
-
+            let mut total_len = 0_usize;
             for _ in 0..count {
                 total_len += cursor.read_var_string8_ref().unwrap().len();
             }

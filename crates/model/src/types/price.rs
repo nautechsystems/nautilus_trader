@@ -1781,7 +1781,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_raw_price_i64() {
-        let raw_scaled_by_1e9 = 42_000_000_000i64; // 42.0 * 10^9
+        let raw_scaled_by_1e9 = 42_000_000_000_i64; // 42.0 * 10^9
         let decoded = decode_raw_price_i64(raw_scaled_by_1e9);
         let price = Price::from_raw(decoded, FIXED_PRECISION);
         assert!(
@@ -2027,12 +2027,12 @@ mod property_tests {
     /// Strategy to exercise both typical and extreme precision values.
     fn precision_strategy() -> impl Strategy<Value = u8> {
         let upper = float_precision_upper_bound();
-        prop_oneof![Just(0u8), 0u8..=upper, Just(FIXED_PRECISION),]
+        prop_oneof![Just(0_u8), 0_u8..=upper, Just(FIXED_PRECISION),]
     }
 
     fn precision_strategy_non_zero() -> impl Strategy<Value = u8> {
         let upper = float_precision_upper_bound().max(1);
-        prop_oneof![Just(upper), Just(FIXED_PRECISION.max(1)), 1u8..=upper,]
+        prop_oneof![Just(upper), Just(FIXED_PRECISION.max(1)), 1_u8..=upper,]
     }
 
     /// Strategy to generate a valid (precision, raw) pair where raw is properly scaled.
@@ -2161,12 +2161,12 @@ mod property_tests {
         /// Property: String parsing should be consistent with precision inference
         #[rstest]
         fn prop_price_string_parsing_precision(
-            integral in 0u32..1_000_000,
-            fractional in 0u32..1_000_000,
+            integral in 0_u32..1_000_000,
+            fractional in 0_u32..1_000_000,
             precision in precision_strategy_non_zero()
         ) {
             // Create a decimal string with exactly 'precision' decimal places
-            let pow = 10u128.pow(u32::from(precision));
+            let pow = 10_u128.pow(u32::from(precision));
             let fractional_mod = u128::from(fractional) % pow;
             let fractional_str = format!("{:0width$}", fractional_mod, width = precision as usize);
             let price_str = format!("{integral}.{fractional_str}");

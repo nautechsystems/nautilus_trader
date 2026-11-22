@@ -631,6 +631,7 @@ manual_map = "warn"
 bool_to_int_with_if = "warn"
 explicit_iter_loop = "warn"
 uninlined_format_args = "warn"
+unseparated_literal_suffix = "warn"
 
 # Pedantic (explicitness and clarity)
 borrow_as_ptr = "warn"

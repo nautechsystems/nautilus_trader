@@ -148,7 +148,7 @@ impl StackStr {
             });
         }
 
-        let mut value = [0u8; STACKSTR_BUFFER_SIZE];
+        let mut value = [0_u8; STACKSTR_BUFFER_SIZE];
         value[..s.len()].copy_from_slice(bytes);
         // Null terminator is already set (array initialized to 0)
 
@@ -369,7 +369,7 @@ impl Default for StackStr {
     /// an empty placeholder. Use [`is_empty`](StackStr::is_empty) to check for this state.
     fn default() -> Self {
         Self {
-            value: [0u8; STACKSTR_BUFFER_SIZE],
+            value: [0_u8; STACKSTR_BUFFER_SIZE],
             len: 0,
         }
     }

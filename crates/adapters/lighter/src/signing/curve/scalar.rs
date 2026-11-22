@@ -126,8 +126,7 @@ impl Scalar {
     /// Canonical 40-byte little-endian encoding (5 x 8-byte limbs).
     #[must_use]
     pub fn to_le_bytes(self) -> [u8; SCALAR_BYTES] {
-        let mut out = [0u8; SCALAR_BYTES];
-
+        let mut out = [0_u8; SCALAR_BYTES];
         for (i, limb) in self.0.iter().enumerate() {
             out[i * 8..(i + 1) * 8].copy_from_slice(&limb.to_le_bytes());
         }
@@ -138,10 +137,9 @@ impl Scalar {
     /// exceeds the canonical range. Mirrors the upstream Lighter routine.
     #[must_use]
     pub fn from_le_bytes_reduce(bytes: [u8; SCALAR_BYTES]) -> Self {
-        let mut limbs = [0u64; LIMBS];
-
+        let mut limbs = [0_u64; LIMBS];
         for (i, slot) in limbs.iter_mut().enumerate() {
-            let mut chunk = [0u8; 8];
+            let mut chunk = [0_u8; 8];
             chunk.copy_from_slice(&bytes[i * 8..(i + 1) * 8]);
             *slot = u64::from_le_bytes(chunk);
         }
@@ -177,7 +175,7 @@ impl Scalar {
     #[inline]
     #[must_use]
     pub fn add_inner(self, rhs: Self) -> Self {
-        let mut r = [0u64; LIMBS];
+        let mut r = [0_u64; LIMBS];
         let mut carry: u8 = 0;
 
         for (i, slot) in r.iter_mut().enumerate() {
@@ -195,7 +193,7 @@ impl Scalar {
     #[inline]
     #[must_use]
     pub fn sub_inner(self, rhs: Self) -> (Self, u64) {
-        let mut r = [0u64; LIMBS];
+        let mut r = [0_u64; LIMBS];
         let mut borrow: u8 = 0;
 
         for (i, slot) in r.iter_mut().enumerate() {
@@ -217,7 +215,7 @@ impl Scalar {
     pub fn monty_mul(self, rhs: Self) -> Self {
         debug_assert!(self.is_canonical(), "Scalar::monty_mul: lhs not canonical",);
 
-        let mut r = [0u64; LIMBS];
+        let mut r = [0_u64; LIMBS];
         for m in rhs.0 {
             let f = (self.0[0].wrapping_mul(m).wrapping_add(r[0])).wrapping_mul(N0I);
 
@@ -255,7 +253,7 @@ impl Scalar {
     /// Poseidon2 digest.
     #[must_use]
     pub fn from_fp5(e: Fp5) -> Self {
-        let mut bytes = [0u8; SCALAR_BYTES];
+        let mut bytes = [0_u8; SCALAR_BYTES];
         let encoded = e.to_le_bytes();
         bytes.copy_from_slice(&encoded);
         Self::from_le_bytes_reduce(bytes)
@@ -266,7 +264,7 @@ impl Scalar {
     /// Iteration order is least-significant nibble first.
     #[must_use]
     pub fn split_to_4_bit_limbs(self) -> [u8; 80] {
-        let mut out = [0u8; 80];
+        let mut out = [0_u8; 80];
 
         for i in 0..LIMBS {
             for j in 0..16 {
@@ -295,8 +293,8 @@ impl Scalar {
 pub fn recode_signed_from_limbs(limbs: &[u64], ss: &mut [i32], w: u32) {
     debug_assert!((2..=10).contains(&w), "window width must be in 2..=10");
 
-    let mw = (1u32 << w) - 1;
-    let hw = 1u32 << (w - 1);
+    let mw = (1_u32 << w) - 1;
+    let hw = 1_u32 << (w - 1);
 
     let mut acc: u64 = 0;
     let mut acc_len: i32 = 0;
@@ -539,7 +537,7 @@ mod tests {
     /// Reconstruct a 5-limb scalar by repacking 80 little-endian 4-bit nibbles
     /// back into 5 u64s.
     fn reconstruct_from_4_bit_nibbles(nibbles: [u8; 80]) -> [u64; LIMBS] {
-        let mut out = [0u64; LIMBS];
+        let mut out = [0_u64; LIMBS];
         for (i, slot) in out.iter_mut().enumerate() {
             let mut v: u64 = 0;
             for j in 0..16 {
@@ -556,7 +554,7 @@ mod tests {
     fn reconstruct_from_signed_digits(ss: &[i32], w: u32) -> [u64; LIMBS] {
         // 5 + 2 buffer limbs to absorb intermediate overflow before
         // propagating carries.
-        let mut limbs = [0i128; LIMBS + 2];
+        let mut limbs = [0_i128; LIMBS + 2];
 
         for (i, &d) in ss.iter().enumerate() {
             let shift = (i as u64) * u64::from(w);
@@ -568,13 +566,14 @@ mod tests {
             // Each digit lies in roughly `-(2^(w-1)+1) ..= 2^(w-1)+1` and
             // `bit_off <= 63`, so the shifted value fits in i128.
             let shifted = (d as i128) << bit_off;
-            let lo_mask: i128 = (1i128 << 64) - 1;
+            let lo_mask: i128 = (1_i128 << 64) - 1;
             limbs[limb_idx] += shifted & lo_mask;
             if limb_idx + 1 < limbs.len() {
                 limbs[limb_idx + 1] += shifted >> 64;
             }
         }
-        let mut out = [0u64; LIMBS];
+
+        let mut out = [0_u64; LIMBS];
         let mut carry: i128 = 0;
         for (i, slot) in out.iter_mut().enumerate() {
             let v = limbs[i] + carry;
@@ -593,7 +592,7 @@ mod tests {
         // any trailing carry.
         use crate::signing::field::MODULUS;
 
-        let mut ss = [0i32; 66];
+        let mut ss = [0_i32; 66];
         let scalar = Scalar([
             MODULUS - 1,
             MODULUS - 2,
@@ -719,11 +718,11 @@ mod tests {
         /// `recode_signed` reconstructs the canonical 5-limb value via
         /// `sum(ss[i] * 2^(w*i)) mod 2^320` for every supported window width.
         #[rstest]
-        fn prop_recode_signed_reconstructs(s in arb_scalar(), w in 2u32..=10) {
+        fn prop_recode_signed_reconstructs(s in arb_scalar(), w in 2_u32..=10) {
             // 320 bits divided by `w`, rounded up, plus 2 slack slots so the
             // final carry has somewhere to land regardless of window width.
-            let len = (320usize.div_ceil(w as usize)) + 2;
-            let mut ss = vec![0i32; len];
+            let len = (320_usize.div_ceil(w as usize)) + 2;
+            let mut ss = vec![0_i32; len];
             s.recode_signed(&mut ss, w);
             prop_assert_eq!(reconstruct_from_signed_digits(&ss, w), s.0);
 

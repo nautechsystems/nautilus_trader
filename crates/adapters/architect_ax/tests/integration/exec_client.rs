@@ -3622,7 +3622,7 @@ async fn test_generate_order_status_reports_filters() {
         UnixNanos::default(),
         false,
         None,
-        Some(UnixNanos::from(1_704_067_201_000_000_000u64)),
+        Some(UnixNanos::from(1_704_067_201_000_000_000_u64)),
         None,
         None,
         None,
@@ -3643,7 +3643,7 @@ async fn test_generate_order_status_reports_filters() {
         UnixNanos::default(),
         false,
         None,
-        Some(UnixNanos::from(1_704_067_202_000_000_000u64)),
+        Some(UnixNanos::from(1_704_067_202_000_000_000_u64)),
         None,
         None,
         None,
@@ -5830,7 +5830,7 @@ async fn test_submit_order_denies_gtd_time_in_force() {
         .price(Price::from("50000.00"))
         .quantity(Quantity::from("10"))
         .time_in_force(TimeInForce::Gtd)
-        .expire_time(UnixNanos::from(2_000_000_000_000_000_000u64))
+        .expire_time(UnixNanos::from(2_000_000_000_000_000_000_u64))
         .build();
 
     cache

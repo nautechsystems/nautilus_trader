@@ -565,7 +565,7 @@ fn test_execute_mint_equivalence() {
 
     let tick_lower = -240;
     let tick_upper = 0;
-    let liquidity = 10000u128;
+    let liquidity = 10000_u128;
     let recipient = lp_address();
     let block = create_block_position();
 
@@ -662,8 +662,8 @@ fn test_execute_burn_equivalence() {
 
     let tick_lower = -240;
     let tick_upper = 0;
-    let initial_liquidity = 20000u128;
-    let burn_liquidity = 10000u128;
+    let initial_liquidity = 20000_u128;
+    let burn_liquidity = 10000_u128;
     let recipient = lp_address();
     let block = create_block_position();
 
@@ -782,7 +782,7 @@ fn test_execute_swap_equivalence() {
     // Set up initial liquidity in both profilers
     let min_tick = PoolTick::get_min_tick(TICK_SPACING);
     let max_tick = PoolTick::get_max_tick(TICK_SPACING);
-    let initial_liquidity = 10000u128;
+    let initial_liquidity = 10000_u128;
     let mint_event = create_mint_event(lp_address(), min_tick, max_tick, initial_liquidity);
 
     profiler1
@@ -793,7 +793,7 @@ fn test_execute_swap_equivalence() {
         .unwrap();
 
     // Parameters for the swap
-    let amount0_in = U256::from(1000u32);
+    let amount0_in = U256::from(1000_u32);
 
     // Method 1: Use swap quoting to create a swap quote and then apply it
     let swap_quote = profiler1.swap_exact_in(amount0_in, true, None).unwrap();
@@ -863,7 +863,7 @@ fn test_process_swap_snaps_sqrt_price_to_event() {
         .unwrap();
 
     let swap_quote = profiler
-        .swap_exact_in(U256::from(1000u32), true, None)
+        .swap_exact_in(U256::from(1000_u32), true, None)
         .unwrap();
     let mut swap_event = swap_quote.to_swap_event(
         arbitrum(),
@@ -875,7 +875,7 @@ fn test_process_swap_snaps_sqrt_price_to_event() {
         user_address(),
         user_address(),
     );
-    let event_sqrt_price = swap_event.sqrt_price_x96 - U160::from(1u8);
+    let event_sqrt_price = swap_event.sqrt_price_x96 - U160::from(1_u8);
     assert_eq!(get_tick_at_sqrt_ratio(event_sqrt_price), swap_event.tick);
 
     swap_event.sqrt_price_x96 = event_sqrt_price;
@@ -1231,8 +1231,8 @@ fn test_set_fee_protocol_changes_flash_fee_split(mut profiler: PoolProfiler) {
     // With fee_protocol unset (0), a flash accrues no protocol fees.
     profiler
         .process(&DexPoolData::Flash(create_flash_event(
-            U256::from(100u32),
-            U256::from(100u32),
+            U256::from(100_u32),
+            U256::from(100_u32),
         )))
         .unwrap();
     assert_eq!(profiler.state.protocol_fees_token0, U256::ZERO);
@@ -1249,12 +1249,12 @@ fn test_set_fee_protocol_changes_flash_fee_split(mut profiler: PoolProfiler) {
     // An identical flash now accrues paid/4 to each protocol-fee balance.
     profiler
         .process(&DexPoolData::Flash(create_flash_event(
-            U256::from(100u32),
-            U256::from(100u32),
+            U256::from(100_u32),
+            U256::from(100_u32),
         )))
         .unwrap();
-    assert_eq!(profiler.state.protocol_fees_token0, U256::from(25u32));
-    assert_eq!(profiler.state.protocol_fees_token1, U256::from(25u32));
+    assert_eq!(profiler.state.protocol_fees_token0, U256::from(25_u32));
+    assert_eq!(profiler.state.protocol_fees_token1, U256::from(25_u32));
 }
 
 #[rstest]
@@ -1332,8 +1332,8 @@ fn test_pancakeswap_default_fee_protocol_changes_flash_fee_split() {
         .unwrap();
     profiler
         .process(&DexPoolData::Flash(create_flash_event(
-            U256::from(1_000u32),
-            U256::from(1_000u32),
+            U256::from(1_000_u32),
+            U256::from(1_000_u32),
         )))
         .unwrap();
 
@@ -1341,8 +1341,8 @@ fn test_pancakeswap_default_fee_protocol_changes_flash_fee_split() {
 
     assert_eq!(profiler.state.fee_protocol0_basis_points, Some(3_400));
     assert_eq!(profiler.state.fee_protocol1_basis_points, Some(3_400));
-    assert_eq!(profiler.state.protocol_fees_token0, U256::from(340u32));
-    assert_eq!(profiler.state.protocol_fees_token1, U256::from(340u32));
+    assert_eq!(profiler.state.protocol_fees_token0, U256::from(340_u32));
+    assert_eq!(profiler.state.protocol_fees_token1, U256::from(340_u32));
     assert_eq!(snapshot.state.fee_protocol0_basis_points, Some(3_400));
     assert_eq!(snapshot.state.fee_protocol1_basis_points, Some(3_400));
 }
@@ -1368,13 +1368,13 @@ fn test_pancakeswap_set_fee_protocol_changes_flash_fee_split(mut profiler: PoolP
 
     profiler
         .process(&DexPoolData::Flash(create_flash_event(
-            U256::from(1_000u32),
-            U256::from(1_000u32),
+            U256::from(1_000_u32),
+            U256::from(1_000_u32),
         )))
         .unwrap();
 
-    assert_eq!(profiler.state.protocol_fees_token0, U256::from(320u32));
-    assert_eq!(profiler.state.protocol_fees_token1, U256::from(400u32));
+    assert_eq!(profiler.state.protocol_fees_token0, U256::from(320_u32));
+    assert_eq!(profiler.state.protocol_fees_token1, U256::from(400_u32));
 }
 
 #[rstest]
@@ -1400,16 +1400,16 @@ fn test_pancakeswap_snapshot_restore_preserves_fee_model_for_replay(mut profiler
     restored.restore_from_snapshot(snapshot).unwrap();
     restored
         .process(&DexPoolData::Flash(create_flash_event(
-            U256::from(1_000u32),
-            U256::from(1_000u32),
+            U256::from(1_000_u32),
+            U256::from(1_000_u32),
         )))
         .unwrap();
 
     assert_eq!(restored.state.fee_protocol, 0);
     assert_eq!(restored.state.fee_protocol0_basis_points, Some(3_200));
     assert_eq!(restored.state.fee_protocol1_basis_points, Some(4_000));
-    assert_eq!(restored.state.protocol_fees_token0, U256::from(320u32));
-    assert_eq!(restored.state.protocol_fees_token1, U256::from(400u32));
+    assert_eq!(restored.state.protocol_fees_token0, U256::from(320_u32));
+    assert_eq!(restored.state.protocol_fees_token1, U256::from(400_u32));
 }
 
 #[rstest]
@@ -1433,12 +1433,12 @@ fn test_fee_protocol_collect_decrements_accrued_balances(mut profiler: PoolProfi
         .unwrap();
     profiler
         .process(&DexPoolData::Flash(create_flash_event(
-            U256::from(100u32),
-            U256::from(100u32),
+            U256::from(100_u32),
+            U256::from(100_u32),
         )))
         .unwrap();
-    assert_eq!(profiler.state.protocol_fees_token0, U256::from(25u32));
-    assert_eq!(profiler.state.protocol_fees_token1, U256::from(25u32));
+    assert_eq!(profiler.state.protocol_fees_token0, U256::from(25_u32));
+    assert_eq!(profiler.state.protocol_fees_token1, U256::from(25_u32));
 
     // A CollectProtocol withdrawal decrements each balance by the withdrawn amount, leaving the
     // on-chain remainder. Asymmetric amounts catch a token0/token1 swap.
@@ -1447,8 +1447,8 @@ fn test_fee_protocol_collect_decrements_accrued_balances(mut profiler: PoolProfi
             create_fee_protocol_collect(20, 24),
         ))
         .unwrap();
-    assert_eq!(profiler.state.protocol_fees_token0, U256::from(5u32));
-    assert_eq!(profiler.state.protocol_fees_token1, U256::from(1u32));
+    assert_eq!(profiler.state.protocol_fees_token0, U256::from(5_u32));
+    assert_eq!(profiler.state.protocol_fees_token1, U256::from(1_u32));
 
     // A withdrawal larger than the tracked balance saturates to zero rather than underflowing.
     profiler
@@ -1489,7 +1489,7 @@ fn test_compare_pool_profiler_reports_sqrt_only_mismatch(mut profiler: PoolProfi
         .unwrap();
 
     let mut snapshot = profiler.extract_snapshot().unwrap();
-    snapshot.state.price_sqrt_ratio_x96 += U160::from(1u8);
+    snapshot.state.price_sqrt_ratio_x96 += U160::from(1_u8);
     assert_eq!(
         get_tick_at_sqrt_ratio(snapshot.state.price_sqrt_ratio_x96),
         profiler.state.current_tick
@@ -1545,11 +1545,11 @@ fn test_compare_pool_profiler_reports_protocol_fees_only_mismatch(
     // rounding during replay accrual, while all structural state still matches.
     let mut snapshot = profiler.extract_snapshot().unwrap();
     if bump_token0 {
-        snapshot.state.protocol_fees_token0 += U256::from(1u8);
+        snapshot.state.protocol_fees_token0 += U256::from(1_u8);
     }
 
     if bump_token1 {
-        snapshot.state.protocol_fees_token1 += U256::from(1u8);
+        snapshot.state.protocol_fees_token1 += U256::from(1_u8);
     }
 
     assert_eq!(
@@ -1597,32 +1597,32 @@ fn test_compare_pool_profiler_reports_structural_mismatch(mut profiler: PoolProf
 )]
 #[case::sqrt_precedes_fees(
     |snapshot: &mut PoolSnapshot| {
-        snapshot.state.price_sqrt_ratio_x96 += U160::from(1u8);
+        snapshot.state.price_sqrt_ratio_x96 += U160::from(1_u8);
         snapshot.state.fee_protocol = 68;
-        snapshot.state.protocol_fees_token0 += U256::from(1u8);
+        snapshot.state.protocol_fees_token0 += U256::from(1_u8);
     },
     PoolProfilerComparison::SqrtPriceMismatch
 )]
 #[case::fee_protocol_precedes_balances(
     |snapshot: &mut PoolSnapshot| {
         snapshot.state.fee_protocol = 68;
-        snapshot.state.protocol_fees_token0 += U256::from(1u8);
+        snapshot.state.protocol_fees_token0 += U256::from(1_u8);
     },
     PoolProfilerComparison::FeeProtocolMismatch
 )]
 #[case::state_precedes_sqrt(
     |snapshot: &mut PoolSnapshot| {
         snapshot.state.current_tick += 1;
-        snapshot.state.price_sqrt_ratio_x96 += U160::from(1u8);
+        snapshot.state.price_sqrt_ratio_x96 += U160::from(1_u8);
     },
     PoolProfilerComparison::Mismatch
 )]
 #[case::ticks_precede_nonstructural_mismatches(
     |snapshot: &mut PoolSnapshot| {
         snapshot.ticks[0].liquidity_net += 1;
-        snapshot.state.price_sqrt_ratio_x96 += U160::from(1u8);
+        snapshot.state.price_sqrt_ratio_x96 += U160::from(1_u8);
         snapshot.state.fee_protocol = 68;
-        snapshot.state.protocol_fees_token0 += U256::from(1u8);
+        snapshot.state.protocol_fees_token0 += U256::from(1_u8);
     },
     PoolProfilerComparison::Mismatch
 )]
@@ -1839,8 +1839,8 @@ fn test_uni_pool_profiler_initial_state(uni_pool_profiler: PoolProfiler) {
         .get_position(&lp_address(), min_tick, max_tick)
         .expect("Position should exist");
     assert_eq!(position.liquidity, 3161);
-    assert_eq!(position.total_amount0_deposited, U256::from(9996u32));
-    assert_eq!(position.total_amount1_deposited, U256::from(1000u32));
+    assert_eq!(position.total_amount0_deposited, U256::from(9996_u32));
+    assert_eq!(position.total_amount1_deposited, U256::from(1000_u32));
     assert_eq!(uni_pool_profiler.get_active_liquidity(), 3161);
     assert_eq!(
         uni_pool_profiler.get_active_liquidity(),
@@ -1903,7 +1903,7 @@ fn test_max_tick_with_high_leverage(mut uni_pool_profiler: PoolProfiler) {
     let max_tick = PoolTick::get_max_tick(TICK_SPACING);
     let lower_tick = max_tick - (TICK_SPACING);
     let upper_tick = max_tick;
-    let liquidity = U256::from(2u128).pow(U256::from(102u128)).to::<u128>();
+    let liquidity = U256::from(2_u128).pow(U256::from(102_u128)).to::<u128>();
 
     let mint_event = create_mint_event(lp_address(), lower_tick, upper_tick, liquidity);
     uni_pool_profiler
@@ -1952,7 +1952,7 @@ fn test_minting_works_for_max_tick(mut uni_pool_profiler: PoolProfiler) {
     assert_eq!(position.liquidity, liquidity);
     assert_eq!(position.tick_lower, lower_tick);
     assert_eq!(position.tick_upper, upper_tick);
-    assert_eq!(position.total_amount0_deposited, U256::from(31549u32));
+    assert_eq!(position.total_amount0_deposited, U256::from(31549_u32));
     assert_eq!(position.total_amount1_deposited, U256::ZERO);
     // We touched max_tick once more, so it updated two times, but -22980 tick only once
     assert!(
@@ -2546,7 +2546,7 @@ fn test_mint_below_current_price_when_really_high_leverage(mut uni_pool_profiler
     // https://github.com/Uniswap/v3-core/blob/main/test/UniswapV3Pool.spec.ts#L435
     let lower_tick = PoolTick::get_min_tick(TICK_SPACING);
     let upper_tick = lower_tick + TICK_SPACING;
-    let liquidity = U256::from(2u128).pow(U256::from(102u128)).to::<u128>();
+    let liquidity = U256::from(2_u128).pow(U256::from(102_u128)).to::<u128>();
 
     let mint_event = create_mint_event(lp_address(), lower_tick, upper_tick, liquidity);
     uni_pool_profiler
@@ -3018,8 +3018,8 @@ fn test_flash_increases_fee_growth_by_expected_amount(mut medium_fee_pool_profil
             user_address(),
             other_address(),
             create_block_position(),
-            U256::from(1001u32),
-            U256::from(2002u32),
+            U256::from(1001_u32),
+            U256::from(2002_u32),
         )
         .unwrap();
 
@@ -3055,7 +3055,7 @@ fn test_swap_crossing_tick_down_activates_position(mut uni_pool_profiler: PoolPr
     // Tick spacing is 60, so ticks must be multiples of 60
     let upper_tick = -23040; // Just below current tick -23028
     let lower_tick = PoolTick::get_min_tick(TICK_SPACING);
-    let position_liquidity = 50000u128;
+    let position_liquidity = 50000_u128;
 
     let mint_event = create_mint_event(lp_address(), lower_tick, upper_tick, position_liquidity);
     uni_pool_profiler
@@ -3121,7 +3121,7 @@ fn test_swap_crossing_tick_up_activates_position(mut uni_pool_profiler: PoolProf
     // Tick spacing is 60, so ticks must be multiples of 60
     let lower_tick = -22980;
     let upper_tick = PoolTick::get_max_tick(TICK_SPACING);
-    let position_liquidity = 40000u128;
+    let position_liquidity = 40000_u128;
 
     let mint_event = create_mint_event(lp_address(), lower_tick, upper_tick, position_liquidity);
     uni_pool_profiler
@@ -3602,21 +3602,22 @@ fn format_price(sqrt_price_x96: U160) -> String {
     // Square the price and divide by 2^192
     // (sqrtPrice / 2^96)^2 = sqrtPrice^2 / 2^192
     let price_squared = sqrt_price * sqrt_price;
-    let divisor = U256::from(1u128) << 192;
+    let divisor = U256::from(1_u128) << 192;
 
     // Get integer and fractional parts
     let integer_part = price_squared / divisor;
     let remainder = price_squared % divisor;
 
     // Calculate 5 decimal places for rounding to 4
-    let decimal_part = (remainder * U256::from(100_000_u64) + divisor / U256::from(2u64)) / divisor;
+    let decimal_part =
+        (remainder * U256::from(100_000_u64) + divisor / U256::from(2_u64)) / divisor;
 
     // Round to 4 decimal places
-    let rounded_decimal = decimal_part / U256::from(10u64);
+    let rounded_decimal = decimal_part / U256::from(10_u64);
 
     // Handle carry from rounding
-    if rounded_decimal >= U256::from(10000u64) {
-        format!("{}.0000", integer_part + U256::from(1u64))
+    if rounded_decimal >= U256::from(10000_u64) {
+        format!("{}.0000", integer_part + U256::from(1_u64))
     } else {
         format!("{integer_part}.{rounded_decimal:04}")
     }
@@ -4511,7 +4512,7 @@ fn test_simulate_replays_min_boundary_swap_through_empty_range() {
     assert_eq!(profiler.state.current_tick, 61930);
     assert_eq!(profiler.get_active_liquidity(), 102_930_446);
 
-    let event_sqrt_price = U160::from(4_295_128_740u64); // MIN_SQRT_RATIO + 1
+    let event_sqrt_price = U160::from(4_295_128_740_u64); // MIN_SQRT_RATIO + 1
     let quote = profiler
         .simulate_swap_through_ticks(I256::from_str("27").unwrap(), true, event_sqrt_price, true)
         .unwrap();
@@ -4553,7 +4554,7 @@ fn test_simulate_replays_max_boundary_swap_through_empty_range() {
 fn test_simulate_forward_stops_at_empty_range_boundary() {
     // Forward simulation stops where the input is spent, not at the boundary price.
     let profiler = min_boundary_profiler();
-    let event_sqrt_price = U160::from(4_295_128_740u64);
+    let event_sqrt_price = U160::from(4_295_128_740_u64);
     let quote = profiler
         .simulate_swap_through_ticks(I256::from_str("27").unwrap(), true, event_sqrt_price, false)
         .unwrap();
@@ -4568,7 +4569,7 @@ fn test_simulate_forward_stops_at_empty_range_boundary() {
 fn test_simulate_traverse_is_noop_when_swap_stays_liquid(low_fee_pool_profiler: PoolProfiler) {
     // When liquidity never reaches zero at exhaustion, traversal is a no-op: replay equals forward.
     let amount = I256::from_str("1000").unwrap();
-    let far_limit = U160::from(4_295_128_740u64); // MIN_SQRT_RATIO + 1, far below the stop price
+    let far_limit = U160::from(4_295_128_740_u64); // MIN_SQRT_RATIO + 1, far below the stop price
 
     let forward = low_fee_pool_profiler
         .simulate_swap_through_ticks(amount, true, far_limit, false)
@@ -4632,7 +4633,7 @@ fn test_simulate_replay_charges_unconsumed_input_as_fee(
             create_block_position(),
             PoolTick::get_min_tick(10),
             PoolTick::get_max_tick(10),
-            10u128.pow(30),
+            10_u128.pow(30),
         )
         .unwrap();
     low_fee_pool_profiler
@@ -4641,7 +4642,7 @@ fn test_simulate_replay_charges_unconsumed_input_as_fee(
             create_block_position(),
             -10,
             0,
-            10u128.pow(30),
+            10_u128.pow(30),
         )
         .unwrap();
     low_fee_pool_profiler.state.fee_protocol = fee_protocol;
@@ -4681,7 +4682,7 @@ fn test_process_swap_replays_min_boundary_to_event_state() {
     // simulation already reaches these values, so the self-correction branches do not fire here.
     let mut profiler = min_boundary_profiler();
     let pool = Arc::clone(&profiler.pool);
-    let min_plus_1 = U160::from(4_295_128_740u64);
+    let min_plus_1 = U160::from(4_295_128_740_u64);
 
     let swap = PoolSwap::new(
         arbitrum(),
@@ -4735,7 +4736,7 @@ fn test_simulate_replay_stops_when_empty_walk_re_enters_liquidity() {
         .unwrap();
     assert_eq!(profiler.get_active_liquidity(), 102_930_446); // lower position inactive at start
 
-    let far_limit = U160::from(4_295_128_740u64); // MIN_SQRT_RATIO + 1, below the lower position
+    let far_limit = U160::from(4_295_128_740_u64); // MIN_SQRT_RATIO + 1, below the lower position
     let quote = profiler
         .simulate_swap_through_ticks(I256::from_str("27").unwrap(), true, far_limit, true)
         .unwrap();
@@ -4773,10 +4774,10 @@ fn test_swap_protocol_fee_split_matches_fee_protocol(mut medium_fee_pool_profile
         .quote_swap(amount, true, None)
         .unwrap();
 
-    assert_eq!(with_protocol.protocol_fee, total_fee / U256::from(4u8));
+    assert_eq!(with_protocol.protocol_fee, total_fee / U256::from(4_u8));
     assert_eq!(
         with_protocol.lp_fee,
-        total_fee - total_fee / U256::from(4u8)
+        total_fee - total_fee / U256::from(4_u8)
     );
     assert_eq!(with_protocol.protocol_fee + with_protocol.lp_fee, total_fee);
 }
@@ -4810,15 +4811,15 @@ fn test_swap_protocol_fee_uses_token1_nibble_for_one_for_zero(
     medium_fee_pool_profiler.apply_swap_quote(&one_for_zero);
 
     assert_eq!(medium_fee_pool_profiler.state.fee_protocol, 0x54);
-    assert_eq!(zero_for_one.protocol_fee, total_fee_0 / U256::from(4u8));
-    assert_eq!(one_for_zero.protocol_fee, total_fee_1 / U256::from(5u8));
+    assert_eq!(zero_for_one.protocol_fee, total_fee_0 / U256::from(4_u8));
+    assert_eq!(one_for_zero.protocol_fee, total_fee_1 / U256::from(5_u8));
     assert_eq!(
         one_for_zero.lp_fee,
-        total_fee_1 - total_fee_1 / U256::from(5u8)
+        total_fee_1 - total_fee_1 / U256::from(5_u8)
     );
     assert_eq!(
         medium_fee_pool_profiler.state.protocol_fees_token1,
-        total_fee_1 / U256::from(5u8)
+        total_fee_1 / U256::from(5_u8)
     );
     assert_eq!(
         medium_fee_pool_profiler.state.protocol_fees_token0,
@@ -4847,7 +4848,7 @@ fn test_pancakeswap_swap_protocol_fee_split_uses_basis_points(
     let with_protocol = medium_fee_pool_profiler
         .quote_swap(amount, true, None)
         .unwrap();
-    let expected_protocol_fee = total_fee * U256::from(3_200u32) / U256::from(10_000u32);
+    let expected_protocol_fee = total_fee * U256::from(3_200_u32) / U256::from(10_000_u32);
 
     assert_eq!(with_protocol.protocol_fee, expected_protocol_fee);
     assert_eq!(with_protocol.lp_fee, total_fee - expected_protocol_fee);
@@ -4884,7 +4885,7 @@ fn test_fee_replay_sequence_accrues_then_collects(mut profiler: PoolProfiler) {
             create_block_position(),
             true,
             I256::from_str("100000000").unwrap(),
-            U160::from(4_295_128_740u64),
+            U160::from(4_295_128_740_u64),
         )
         .unwrap();
     let accrued = profiler.state.protocol_fees_token0;
@@ -4892,13 +4893,13 @@ fn test_fee_replay_sequence_accrues_then_collects(mut profiler: PoolProfiler) {
     assert!(swap.amount0.is_positive());
 
     // CollectProtocol withdraws all but one wei (Uniswap V3 leaves a remainder).
-    let withdraw = u128::try_from(accrued - U256::from(1u8)).unwrap();
+    let withdraw = u128::try_from(accrued - U256::from(1_u8)).unwrap();
     profiler
         .process(&DexPoolData::FeeProtocolCollect(
             create_fee_protocol_collect(withdraw, 0),
         ))
         .unwrap();
-    assert_eq!(profiler.state.protocol_fees_token0, U256::from(1u8));
+    assert_eq!(profiler.state.protocol_fees_token0, U256::from(1_u8));
     assert_eq!(profiler.state.protocol_fees_token1, U256::ZERO);
 }
 
@@ -4914,7 +4915,7 @@ fn test_profilers_replay_independently_across_threads() {
         p.initialize(start).unwrap();
         let min_tick = PoolTick::get_min_tick(10);
         let max_tick = PoolTick::get_max_tick(10);
-        let liquidity = 1_000_000_000u128 * u128::from(idx + 1);
+        let liquidity = 1_000_000_000_u128 * u128::from(idx + 1);
         p.execute_mint(
             lp_address(),
             create_block_position(),
@@ -4923,7 +4924,7 @@ fn test_profilers_replay_independently_across_threads() {
             liquidity,
         )
         .unwrap();
-        let amount = U256::from(50_000_000u64 * u64::from(idx + 1));
+        let amount = U256::from(50_000_000_u64 * u64::from(idx + 1));
         let quote = p.swap_exact_in(amount, false, None).unwrap();
         p.apply_swap_quote(&quote);
         (
@@ -4933,11 +4934,10 @@ fn test_profilers_replay_independently_across_threads() {
         )
     }
 
-    let sequential: Vec<_> = (0u8..4).map(replay).collect();
+    let sequential: Vec<_> = (0_u8..4).map(replay).collect();
     // Spawn all threads before joining so they run concurrently.
     let mut handles = Vec::new();
-
-    for i in 0u8..4 {
+    for i in 0_u8..4 {
         handles.push(std::thread::spawn(move || replay(i)));
     }
 

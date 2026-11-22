@@ -55,7 +55,7 @@ fn make_btc_option(strike: &str, kind: OptionKind) -> InstrumentAny {
             .is_inverse(false)
             .option_kind(kind)
             .strike_price(Price::from(strike))
-            .activation_ns(UnixNanos::from(1_671_696_000_000_000_000u64))
+            .activation_ns(UnixNanos::from(1_671_696_000_000_000_000_u64))
             .expiration_ns(UnixNanos::from(EXPIRATION_NS))
             .price_precision(3)
             .size_precision(1)

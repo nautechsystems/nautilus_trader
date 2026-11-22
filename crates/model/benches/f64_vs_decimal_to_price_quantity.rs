@@ -67,7 +67,7 @@ fn bench_json_to_price(c: &mut Criterion) {
     let mut group = c.benchmark_group("json_to_price");
     let json_num = r#"{"p":50000.12345678,"q":1.5}"#;
     let json_str = r#"{"p":"50000.12345678","q":"1.5"}"#;
-    let precision = 8u8;
+    let precision = 8_u8;
 
     group.bench_function("via_f64", |b| {
         b.iter(|| {

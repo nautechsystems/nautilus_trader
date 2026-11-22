@@ -8225,7 +8225,7 @@ fn test_netting_cycles_with_equal_pnl_each_count_in_realized_pnls(
     portfolio.update_account(&get_margin_account(Some(account_id.as_str())));
     let mut position: Option<Position> = None;
 
-    for cycle in 0..2u64 {
+    for cycle in 0..2_u64 {
         let ts_offset = if same_timestamps { 0 } else { cycle * 10 };
         let mut opening_fill = make_fill_for_account(
             &instrument_audusd,
@@ -12867,7 +12867,7 @@ fn test_emit_snapshot_publishes_and_appends_to_ring(instrument_audusd: Instrumen
     // Advance VirtualClock past the 1s interval and invoke the matched handler
     let events = test_clock
         .borrow_mut()
-        .advance_time(UnixNanos::from(1_500_000_000u64), true);
+        .advance_time(UnixNanos::from(1_500_000_000_u64), true);
     let handlers = test_clock.borrow().match_handlers(events);
     assert_eq!(handlers.len(), 1, "exactly one timer fire expected");
     for h in handlers {

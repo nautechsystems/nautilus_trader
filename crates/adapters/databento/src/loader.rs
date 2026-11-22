@@ -1301,7 +1301,7 @@ mod tests {
         let count = loader
             .read_order_book_deltas(&path, Some(instrument_id), None)
             .unwrap()
-            .map(|result| result.map(|_| 1usize))
+            .map(|result| result.map(|_| 1_usize))
             .sum::<anyhow::Result<usize>>()
             .unwrap();
 

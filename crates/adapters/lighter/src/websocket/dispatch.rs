@@ -4805,7 +4805,8 @@ mod tests {
         // window. A mask widening regression would fail here even with
         // a single value out of bounds.
         let state = WsDispatchState::new();
-        for n in 0..512u32 {
+
+        for n in 0..512_u32 {
             let cid = ClientOrderId::new(format!("ORDER-{n}").as_str());
             let derived = state.derive_client_order_index(&cid);
             assert!(derived >= 0, "negative derived index: {derived}");

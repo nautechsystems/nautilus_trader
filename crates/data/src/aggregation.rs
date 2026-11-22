@@ -9674,9 +9674,9 @@ mod property_tests {
 
     fn time_bar_spec_strategy() -> impl Strategy<Value = (BarAggregation, usize)> {
         prop_oneof![
-            (Just(BarAggregation::Second), 1usize..=5),
-            (Just(BarAggregation::Minute), 1usize..=5),
-            (Just(BarAggregation::Hour), 1usize..=4),
+            (Just(BarAggregation::Second), 1_usize..=5),
+            (Just(BarAggregation::Minute), 1_usize..=5),
+            (Just(BarAggregation::Hour), 1_usize..=4),
         ]
     }
 
@@ -9825,7 +9825,7 @@ mod property_tests {
 
         #[rstest]
         fn prop_bar_builder_ohlc_invariants(
-            updates in prop::collection::vec((1i64..=100_000i64, 1u64..=1_000u64), 1..=50),
+            updates in prop::collection::vec((1_i64..=100_000_i64, 1_u64..=1_000_u64), 1..=50),
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
             let bar_spec = BarSpecification::new(1, BarAggregation::Tick, PriceType::Last);
@@ -9853,8 +9853,8 @@ mod property_tests {
 
         #[rstest]
         fn prop_tick_bar_aggregator_volume_conservation(
-            ticks in prop::collection::vec((1i64..=1_000i64, 1u64..=100u64), 3..=60),
-            step in 1usize..=5,
+            ticks in prop::collection::vec((1_i64..=1_000_i64, 1_u64..=100_u64), 3..=60),
+            step in 1_usize..=5,
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
             let bar_spec = BarSpecification::new(step, BarAggregation::Tick, PriceType::Last);
@@ -9901,8 +9901,8 @@ mod property_tests {
 
         #[rstest]
         fn prop_volume_bar_aggregator_conservation(
-            sizes in prop::collection::vec(1u64..=50u64, 3..=40),
-            step in 2u64..=10u64,
+            sizes in prop::collection::vec(1_u64..=50_u64, 3..=40),
+            step in 2_u64..=10_u64,
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
             let bar_spec = BarSpecification::new(step as usize, BarAggregation::Volume, PriceType::Last);
@@ -9946,8 +9946,8 @@ mod property_tests {
 
         #[rstest]
         fn prop_volume_bar_matches_unit_trade_reference(
-            updates in prop::collection::vec((1i64..=100_000i64, 1u64..=8u64, 0u64..=30u64), 1..=30),
-            step in 1usize..=5,
+            updates in prop::collection::vec((1_i64..=100_000_i64, 1_u64..=8_u64, 0_u64..=30_u64), 1..=30),
+            step in 1_usize..=5,
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
             let bar_spec = BarSpecification::new(step, BarAggregation::Volume, PriceType::Last);
@@ -10032,8 +10032,8 @@ mod property_tests {
 
         #[rstest]
         fn prop_bar_builder_spread_adjustment_is_additive(
-            updates in prop::collection::vec((10_000i64..=100_000i64, 1u64..=100u64), 1..=20),
-            spread_cents in -10_000i64..=10_000i64,
+            updates in prop::collection::vec((10_000_i64..=100_000_i64, 1_u64..=100_u64), 1..=20),
+            spread_cents in -10_000_i64..=10_000_i64,
             backward in any::<bool>(),
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
@@ -10082,7 +10082,7 @@ mod property_tests {
 
         #[rstest]
         fn prop_bar_builder_inactive_adjustment_is_identity(
-            updates in prop::collection::vec((1i64..=100_000i64, 1u64..=1_000u64), 1..=20),
+            updates in prop::collection::vec((1_i64..=100_000_i64, 1_u64..=1_000_u64), 1..=20),
             use_ratio in any::<bool>(),
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
@@ -10119,10 +10119,10 @@ mod property_tests {
 
         #[rstest]
         fn prop_bar_builder_spread_preserves_raw_arithmetic(
-            updates in prop::collection::vec((10_000i64..=100_000i64, 1u64..=100u64), 1..=20),
+            updates in prop::collection::vec((10_000_i64..=100_000_i64, 1_u64..=100_u64), 1..=20),
             // Sub-precision spread: scale 4 versus price precision 2. Locks in that
             // spread mode performs raw addition without rounding to price precision.
-            spread_micro in -10_000i64..=10_000i64,
+            spread_micro in -10_000_i64..=10_000_i64,
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
             let bar_spec = BarSpecification::new(1, BarAggregation::Tick, PriceType::Last);
@@ -10188,9 +10188,9 @@ mod property_tests {
 
         #[rstest]
         fn prop_bar_builder_active_ratio_scales_each_ohlc(
-            updates in prop::collection::vec((1_000i64..=100_000i64, 1u64..=100u64), 1..=20),
+            updates in prop::collection::vec((1_000_i64..=100_000_i64, 1_u64..=100_u64), 1..=20),
             // Ratio in [0.50, 2.00] excluding exactly 1.00 to stay on the active path.
-            ratio_centi in prop_oneof![50i64..=99i64, 101i64..=200i64],
+            ratio_centi in prop_oneof![50_i64..=99_i64, 101_i64..=200_i64],
             backward in any::<bool>(),
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
@@ -10209,8 +10209,8 @@ mod property_tests {
 
             let mut min_cents = i64::MAX;
             let mut max_cents = i64::MIN;
-            let mut first_cents = 0i64;
-            let mut last_cents = 0i64;
+            let mut first_cents = 0_i64;
+            let mut last_cents = 0_i64;
 
             for (i, (price_cents, size)) in updates.iter().enumerate() {
                 if *price_cents < min_cents {
@@ -10245,8 +10245,8 @@ mod property_tests {
 
         #[rstest]
         fn prop_bar_builder_spread_mode_direction_is_metadata_only(
-            updates in prop::collection::vec((10_000i64..=100_000i64, 1u64..=100u64), 1..=20),
-            spread_cents in -10_000i64..=10_000i64,
+            updates in prop::collection::vec((10_000_i64..=100_000_i64, 1_u64..=100_u64), 1..=20),
+            spread_cents in -10_000_i64..=10_000_i64,
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
             let bar_spec = BarSpecification::new(1, BarAggregation::Tick, PriceType::Last);
@@ -10276,8 +10276,8 @@ mod property_tests {
 
         #[rstest]
         fn prop_value_bar_aggregator_ohlc_invariants(
-            ticks in prop::collection::vec((50i64..=500i64, 1u64..=20u64), 2..=30),
-            step in 100u64..=2_000u64,
+            ticks in prop::collection::vec((50_i64..=500_i64, 1_u64..=20_u64), 2..=30),
+            step in 100_u64..=2_000_u64,
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
             let bar_spec = BarSpecification::new(step as usize, BarAggregation::Value, PriceType::Last);
@@ -10311,8 +10311,8 @@ mod property_tests {
 
         #[rstest]
         fn prop_renko_brick_chain(
-            moves in prop::collection::vec(-500i64..=500i64, 1..=60),
-            step in 1usize..=10,
+            moves in prop::collection::vec(-500_i64..=500_i64, 1..=60),
+            step in 1_usize..=10,
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
             let bar_spec = BarSpecification::new(step, BarAggregation::Renko, PriceType::Last);
@@ -10365,8 +10365,8 @@ mod property_tests {
 
         #[rstest]
         fn prop_volume_imbalance_one_sided_conservation(
-            sizes in prop::collection::vec(1u64..=50u64, 1..=40),
-            step in 2u64..=10u64,
+            sizes in prop::collection::vec(1_u64..=50_u64, 1..=40),
+            step in 2_u64..=10_u64,
             buyer in any::<bool>(),
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
@@ -10417,8 +10417,8 @@ mod property_tests {
 
         #[rstest]
         fn prop_volume_runs_one_sided_conservation(
-            sizes in prop::collection::vec(1u64..=50u64, 1..=40),
-            step in 2u64..=10u64,
+            sizes in prop::collection::vec(1_u64..=50_u64, 1..=40),
+            step in 2_u64..=10_u64,
             buyer in any::<bool>(),
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
@@ -10468,8 +10468,8 @@ mod property_tests {
 
         #[rstest]
         fn prop_value_bar_cum_value_stays_below_step(
-            ticks in prop::collection::vec((50i64..=500i64, 1u64..=20u64), 1..=30),
-            step in 100u64..=2_000u64,
+            ticks in prop::collection::vec((50_i64..=500_i64, 1_u64..=20_u64), 1..=30),
+            step in 100_u64..=2_000_u64,
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
             let bar_spec = BarSpecification::new(step as usize, BarAggregation::Value, PriceType::Last);

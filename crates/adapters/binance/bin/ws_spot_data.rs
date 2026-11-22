@@ -105,9 +105,9 @@ async fn main() -> anyhow::Result<()> {
     let stream = ws_client.stream();
     tokio::pin!(stream);
 
-    let mut message_count = 0u64;
-    let mut trade_count = 0u64;
-    let mut quote_count = 0u64;
+    let mut message_count = 0_u64;
+    let mut trade_count = 0_u64;
+    let mut quote_count = 0_u64;
     let start_time = std::time::Instant::now();
 
     loop {

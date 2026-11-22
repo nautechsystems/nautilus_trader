@@ -416,8 +416,7 @@ pub fn parse_product_book_snapshot(
     }
     deltas.push(clear);
 
-    let mut processed = 0usize;
-
+    let mut processed = 0_usize;
     for level in &book.bids {
         processed += 1;
         let delta = parse_book_delta(

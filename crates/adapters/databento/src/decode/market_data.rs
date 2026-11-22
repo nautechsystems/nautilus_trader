@@ -111,7 +111,7 @@ pub(super) fn derive_cmbp_trade_id(
 fn trade_id_from_hash(hash: u64) -> TradeId {
     const HEX: &[u8; 16] = b"0123456789abcdef";
 
-    let mut bytes = [0u8; 16];
+    let mut bytes = [0_u8; 16];
     let mut value = hash;
     for byte in bytes.iter_mut().rev() {
         *byte = HEX[(value & 0x0f) as usize];
@@ -475,8 +475,8 @@ pub fn decode_mbp10_msg(
 ) -> anyhow::Result<OrderBookDepth> {
     let mut bids = [BookOrder::default(); DEPTH10_LEN];
     let mut asks = [BookOrder::default(); DEPTH10_LEN];
-    let mut bid_counts = [0u32; DEPTH10_LEN];
-    let mut ask_counts = [0u32; DEPTH10_LEN];
+    let mut bid_counts = [0_u32; DEPTH10_LEN];
+    let mut ask_counts = [0_u32; DEPTH10_LEN];
 
     for (index, level) in msg.levels.iter().enumerate() {
         // Empty Databento levels carry the i64::MAX sentinel; leave NULL_ORDER

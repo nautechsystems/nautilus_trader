@@ -904,12 +904,12 @@ mod tests {
             )),
             generator: DefaultTimeRangeGenerator::new(
                 None,
-                UnixNanos::from(0u64),
-                UnixNanos::from(1u64),
+                UnixNanos::from(0_u64),
+                UnixNanos::from(1_u64),
             )
             .unwrap(),
-            start_ns: UnixNanos::from(0u64),
-            end_ns: UnixNanos::from(1u64),
+            start_ns: UnixNanos::from(0_u64),
+            end_ns: UnixNanos::from(1_u64),
             response_client_id: ClientId::new("TEST"),
             data_count: 0,
             child_data_count: 0,
@@ -917,7 +917,7 @@ mod tests {
         };
 
         let result =
-            empty_time_range_parent_response(UUID4::new(), &state, UnixNanos::from(2u64), None);
+            empty_time_range_parent_response(UUID4::new(), &state, UnixNanos::from(2_u64), None);
 
         assert!(result.is_none());
     }

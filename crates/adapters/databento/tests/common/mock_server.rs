@@ -107,7 +107,7 @@ impl MockGateway {
         let stream = self.stream();
         let metadata = MetadataBuilder::new()
             .dataset(dataset)
-            .start(1_000_000_000u64)
+            .start(1_000_000_000_u64)
             .schema(None)
             .stype_in(None)
             .stype_out(SType::InstrumentId)

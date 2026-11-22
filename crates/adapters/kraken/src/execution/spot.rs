@@ -2370,7 +2370,7 @@ mod tests {
 
     #[rstest]
     fn test_resolve_leverage_valid_integer() {
-        let p = params_with("leverage", json!(5u64));
+        let p = params_with("leverage", json!(5_u64));
         assert_eq!(resolve_leverage(Some(&p), Some(3)).unwrap(), Some(5));
     }
 
@@ -2383,7 +2383,7 @@ mod tests {
 
     #[rstest]
     fn test_resolve_leverage_overflow_errors() {
-        let p = params_with("leverage", json!(65539u64));
+        let p = params_with("leverage", json!(65539_u64));
         let err = resolve_leverage(Some(&p), None).unwrap_err();
         assert!(err.contains("exceeds maximum"), "unexpected: {err}");
     }

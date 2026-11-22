@@ -3883,8 +3883,8 @@ def add_data_client():
                 Price::from("0.9000"),
                 Price::from("1.0500"),
                 Quantity::from("1000"),
-                UnixNanos::from(1_700_000_000_000_000_000u64),
-                UnixNanos::from(1_700_000_000_000_000_001u64),
+                UnixNanos::from(1_700_000_000_000_000_000_u64),
+                UnixNanos::from(1_700_000_000_000_000_001_u64),
             )
         }
     }
@@ -3956,7 +3956,7 @@ def add_data_client():
                 vec![Self::make_bar(bar_type)],
                 None,
                 None,
-                UnixNanos::from(1_700_000_000_000_000_002u64),
+                UnixNanos::from(1_700_000_000_000_000_002_u64),
                 None,
             );
 

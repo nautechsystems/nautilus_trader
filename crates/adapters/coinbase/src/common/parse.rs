@@ -199,7 +199,7 @@ mod tests {
     #[rstest]
     fn test_format_rfc3339_from_nanos_round_trip() {
         // 2024-01-15T10:30:00.000000000Z
-        let ts = UnixNanos::from(1_705_314_600_000_000_000u64);
+        let ts = UnixNanos::from(1_705_314_600_000_000_000_u64);
         let s = format_rfc3339_from_nanos(ts).unwrap();
         assert_eq!(s, "2024-01-15T10:30:00+00:00");
     }
@@ -207,7 +207,7 @@ mod tests {
     #[rstest]
     fn test_format_rfc3339_from_nanos_preserves_subsecond_precision() {
         // 2024-01-15T10:30:00.123456789Z
-        let ts = UnixNanos::from(1_705_314_600_123_456_789u64);
+        let ts = UnixNanos::from(1_705_314_600_123_456_789_u64);
         let s = format_rfc3339_from_nanos(ts).unwrap();
         assert_eq!(s, "2024-01-15T10:30:00.123456789+00:00");
     }

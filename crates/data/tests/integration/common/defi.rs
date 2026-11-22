@@ -59,11 +59,11 @@ pub(crate) fn make_initialized_pool_and_swap() -> (Pool, PoolSwap) {
         Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
@@ -75,7 +75,7 @@ pub(crate) fn make_initialized_pool_and_swap() -> (Pool, PoolSwap) {
         dex,
         pool.instrument_id,
         pool.pool_identifier,
-        1000u64,
+        1000_u64,
         "0x123".to_string(),
         0,
         0,

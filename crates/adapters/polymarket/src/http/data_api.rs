@@ -692,8 +692,8 @@ mod tests {
         );
         let token_id =
             "71321045863084981365469005770620412523470745398083994982746259498689308907982";
-        let price_precision = 2u8;
-        let size_precision = 2u8;
+        let price_precision = 2_u8;
+        let size_precision = 2_u8;
 
         let ticks: Vec<TradeTick> = trades
             .into_iter()
@@ -1021,7 +1021,7 @@ mod tests {
         let trades = parse_trades(trades, test_instrument_id(), token_id, 2, 2).unwrap();
 
         assert_eq!(trades.len(), 3);
-        let base_ns = 1_729_000_000u64 * 1_000_000_000;
+        let base_ns = 1_729_000_000_u64 * 1_000_000_000;
 
         for (i, trade) in trades.iter().enumerate() {
             assert!(u64::from(trade.ts_event) - base_ns < 1_000_000_000);

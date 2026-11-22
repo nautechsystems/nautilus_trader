@@ -657,7 +657,7 @@ impl Quantity {
         let scaled_amount = if precision < FIXED_PRECISION {
             amount
                 .checked_mul(U256::from(
-                    10u128.pow(u32::from(FIXED_PRECISION - precision)),
+                    10_u128.pow(u32::from(FIXED_PRECISION - precision)),
                 ))
                 .ok_or_else(|| CorrectnessError::PredicateViolation {
                     message: format!(
@@ -2127,7 +2127,7 @@ mod tests {
         // Raw values must be multiples of 10^(FIXED_PRECISION - precision)
         use crate::types::fixed::FIXED_PRECISION;
         let precision = 3;
-        let scale = QuantityRaw::from(10u64.pow(u32::from(FIXED_PRECISION - precision)));
+        let scale = QuantityRaw::from(10_u64.pow(u32::from(FIXED_PRECISION - precision)));
 
         // 79 * scale represents 0.079, 80 * scale represents 0.080
         let peak_qty = Quantity::from_raw(79 * scale, precision);
@@ -2398,7 +2398,7 @@ mod tests {
     #[rstest]
     #[cfg(feature = "defi")]
     fn test_from_u256_invalid_precision_returns_typed_error() {
-        let error = Quantity::from_u256(U256::from(1u8), 19).unwrap_err();
+        let error = Quantity::from_u256(U256::from(1_u8), 19).unwrap_err();
         match error {
             CorrectnessError::PredicateViolation { ref message } => {
                 assert!(
@@ -2459,23 +2459,23 @@ mod property_tests {
     /// Strategy to generate valid precision values.
     fn precision_strategy() -> impl Strategy<Value = u8> {
         let upper = FIXED_PRECISION.min(MAX_FLOAT_PRECISION);
-        prop_oneof![Just(0u8), 0u8..=upper, Just(FIXED_PRECISION),]
+        prop_oneof![Just(0_u8), 0_u8..=upper, Just(FIXED_PRECISION),]
     }
 
     fn precision_strategy_non_zero() -> impl Strategy<Value = u8> {
         let upper = FIXED_PRECISION.clamp(1, MAX_FLOAT_PRECISION);
-        prop_oneof![Just(upper), Just(FIXED_PRECISION.max(1)), 1u8..=upper,]
+        prop_oneof![Just(upper), Just(FIXED_PRECISION.max(1)), 1_u8..=upper,]
     }
 
     fn raw_for_precision_strategy() -> impl Strategy<Value = (QuantityRaw, u8)> {
         precision_strategy().prop_flat_map(|precision| {
-            let step_u128 = 10u128.pow(u32::from(FIXED_PRECISION.saturating_sub(precision)));
+            let step_u128 = 10_u128.pow(u32::from(FIXED_PRECISION.saturating_sub(precision)));
             #[cfg(feature = "high-precision")]
             let max_steps_u128 = QUANTITY_RAW_MAX / step_u128;
             #[cfg(not(feature = "high-precision"))]
             let max_steps_u128 = u128::from(QUANTITY_RAW_MAX) / step_u128;
 
-            (0u128..=max_steps_u128).prop_map(move |steps_u128| {
+            (0_u128..=max_steps_u128).prop_map(move |steps_u128| {
                 let raw_u128 = steps_u128 * step_u128;
                 #[cfg(feature = "high-precision")]
                 let raw = raw_u128;
@@ -2495,7 +2495,7 @@ mod property_tests {
             return false;
         }
         let precision_diff = u32::from(FIXED_PRECISION.saturating_sub(precision));
-        let divisor = 10u128.pow(precision_diff);
+        let divisor = 10_u128.pow(precision_diff);
         #[cfg(feature = "high-precision")]
         let rescaled_raw = raw / divisor;
         #[cfg(not(feature = "high-precision"))]
@@ -2629,12 +2629,12 @@ mod property_tests {
         /// Property: String parsing should be consistent with precision inference
         #[rstest]
         fn prop_quantity_string_parsing_precision(
-            integral in 0u32..1_000_000,
-            fractional in 0u32..1_000_000,
+            integral in 0_u32..1_000_000,
+            fractional in 0_u32..1_000_000,
             precision in precision_strategy_non_zero()
         ) {
             // Create a decimal string with exactly 'precision' decimal places
-            let pow = 10u128.pow(u32::from(precision));
+            let pow = 10_u128.pow(u32::from(precision));
             let fractional_mod = u128::from(fractional) % pow;
             let fractional_str = format!("{:0width$}", fractional_mod, width = precision as usize);
             let quantity_str = format!("{integral}.{fractional_str}");

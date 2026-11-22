@@ -351,7 +351,8 @@ pub fn precision_from_raw(value: i64) -> u8 {
     if v == 0 {
         return 0;
     }
-    let mut trailing = 0u8;
+
+    let mut trailing = 0_u8;
     while trailing < 9 && v.is_multiple_of(10) {
         v /= 10;
         trailing += 1;
@@ -448,7 +449,7 @@ pub fn decode_multiplier(value: i64) -> anyhow::Result<Quantity> {
         v => {
             let mantissa = v as u64;
             let mut frac_part = mantissa % SCALE;
-            let mut precision = 9u8;
+            let mut precision = 9_u8;
             while precision > 0 && frac_part.is_multiple_of(10) {
                 frac_part /= 10;
                 precision -= 1;

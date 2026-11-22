@@ -530,7 +530,7 @@ fn test_pagination_continues_with_valid_cursor() {
 #[rstest]
 fn test_limit_calculation() {
     // Test case 1: limit=10, total=0, should request min(10, 50) = 10
-    let limit = 10u32;
+    let limit = 10_u32;
     let total = 0;
     let remaining = (limit as usize).saturating_sub(total);
     let page_limit = std::cmp::min(remaining, 50);
@@ -553,7 +553,7 @@ fn test_limit_calculation() {
     assert_eq!(remaining, 0, "Should saturate at 0 when over limit");
 
     // Test case 5: limit=100, total=0, should request min(100, 50) = 50 (API max)
-    let limit = 100u32;
+    let limit = 100_u32;
     let total = 0;
     let remaining = (limit as usize).saturating_sub(total);
     let page_limit = std::cmp::min(remaining, 50);
@@ -584,14 +584,14 @@ fn test_limit_calculation() {
 #[rstest]
 fn test_execution_limit_calculation() {
     // Test case 1: limit=50, total=0, should request min(50, 100) = 50
-    let limit = 50u32;
+    let limit = 50_u32;
     let total = 0;
     let remaining = (limit as usize).saturating_sub(total);
     let page_limit = std::cmp::min(remaining, 100);
     assert_eq!(page_limit, 50, "Should request exactly 50 executions");
 
     // Test case 2: limit=150, total=0, should request min(150, 100) = 100 (API max)
-    let limit = 150u32;
+    let limit = 150_u32;
     let total = 0;
     let remaining = (limit as usize).saturating_sub(total);
     let page_limit = std::cmp::min(remaining, 100);

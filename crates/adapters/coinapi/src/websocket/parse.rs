@@ -383,11 +383,11 @@ mod tests {
                 .price_precision(price_precision)
                 .size_precision(size_precision)
                 .price_increment(Price::new(
-                    10f64.powi(-i32::from(price_precision)),
+                    10_f64.powi(-i32::from(price_precision)),
                     price_precision,
                 ))
                 .size_increment(Quantity::new(
-                    10f64.powi(-i32::from(size_precision)),
+                    10_f64.powi(-i32::from(size_precision)),
                     size_precision,
                 ))
                 .ts_event(UnixNanos::default())

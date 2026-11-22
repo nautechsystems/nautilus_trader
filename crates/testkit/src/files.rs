@@ -471,8 +471,7 @@ fn partial_path_for(filepath: &Path) -> PathBuf {
 fn calculate_sha256(filepath: &Path) -> anyhow::Result<String> {
     let mut file = File::open(filepath)?;
     let mut ctx = digest::Context::new(&digest::SHA256);
-    let mut buffer = [0u8; 4096];
-
+    let mut buffer = [0_u8; 4096];
     loop {
         let count = file.read(&mut buffer)?;
         if count == 0 {
@@ -1082,7 +1081,7 @@ mod tests {
                 let counter = counter_clone.clone();
 
                 task::spawn(async move {
-                    let mut buf = [0u8; 1024];
+                    let mut buf = [0_u8; 1024];
                     let _ = sock.read(&mut buf).await;
                     let n = counter.fetch_add(1, Ordering::SeqCst);
 
@@ -1427,7 +1426,7 @@ mod tests {
                 };
 
                 task::spawn(async move {
-                    let mut buf = [0u8; 1024];
+                    let mut buf = [0_u8; 1024];
                     let _ = sock.read(&mut buf).await;
                     let resp =
                         b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\nshort";

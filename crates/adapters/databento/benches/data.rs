@@ -502,7 +502,7 @@ fn bench_stream_path<T>(
             let decoder =
                 databento::dbn::decode::dbn::Decoder::from_zstd_file(black_box(&path)).unwrap();
             let mut stream = decoder.decode_stream::<T>();
-            let mut count = 0usize;
+            let mut count = 0_usize;
 
             loop {
                 stream.advance().unwrap();

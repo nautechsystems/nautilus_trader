@@ -247,8 +247,8 @@ pub fn compute_gap_hash(gap: &MarkerGap) -> [u8; 32] {
     hasher.update(&gap.from_marker_seq.to_be_bytes());
     hasher.update(&gap.to_marker_seq.to_be_bytes());
     let reason = match gap.reason {
-        MarkerGapReason::Overflow => 0u8,
-        MarkerGapReason::WriterClosed => 1u8,
+        MarkerGapReason::Overflow => 0_u8,
+        MarkerGapReason::WriterClosed => 1_u8,
     };
     hasher.update(&[reason]);
     *hasher.finalize().as_bytes()
@@ -312,7 +312,7 @@ mod tests {
             ts_event: UnixNanos::from(1_700_000_000_000_000_000),
             ts_init: UnixNanos::from(1_700_000_000_000_000_001),
             same_ts_ordinal: 0,
-            record_fingerprint: [0xabu8; 32],
+            record_fingerprint: [0xab_u8; 32],
         }
     }
 

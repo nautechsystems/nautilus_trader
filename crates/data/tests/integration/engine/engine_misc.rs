@@ -356,7 +356,7 @@ fn test_process_block(data_engine: Rc<RefCell<DataEngine>>, data_client: DataCli
     let block = Block::new(
         "0x123".to_string(),
         "0x456".to_string(),
-        1u64,
+        1_u64,
         "miner".into(),
         1_000_000_u64,
         500_000_u64,
@@ -418,11 +418,11 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
@@ -443,7 +443,7 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         dex,
         instrument_id,
         pool.pool_identifier,
-        1000u64,
+        1000_u64,
         "0x123".to_string(),
         0,
         0,
@@ -528,11 +528,11 @@ fn test_process_pool_liquidity_update(
         Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
@@ -554,13 +554,13 @@ fn test_process_pool_liquidity_update(
         instrument_id,
         pool.pool_identifier,
         PoolLiquidityUpdateType::Mint,
-        1000u64,
+        1000_u64,
         "0x123".to_string(),
         0,
         0,
         None,
         Address::from([0x12; 20]),
-        100u128,
+        100_u128,
         U256::from(1_000_000_u128),
         U256::from(2_000_000_u128),
         -100,
@@ -640,11 +640,11 @@ fn test_process_pool_fee_collect(
         Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
@@ -665,7 +665,7 @@ fn test_process_pool_fee_collect(
         dex,
         instrument_id,
         pool.pool_identifier,
-        1000u64,
+        1000_u64,
         "0x123".to_string(),
         0,
         0,
@@ -745,11 +745,11 @@ fn test_process_pool_flash(data_engine: Rc<RefCell<DataEngine>>, data_client: Da
         Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
@@ -770,7 +770,7 @@ fn test_process_pool_flash(data_engine: Rc<RefCell<DataEngine>>, data_client: Da
         dex,
         instrument_id,
         pool.pool_identifier,
-        1000u64,
+        1000_u64,
         "0x123".to_string(),
         0,
         0,
@@ -780,8 +780,8 @@ fn test_process_pool_flash(data_engine: Rc<RefCell<DataEngine>>, data_client: Da
         Address::from([0x34; 20]),
         U256::from(1_000_000_u128),
         U256::from(500_000_u128),
-        U256::from(5000u128),
-        U256::from(2500u128),
+        U256::from(5000_u128),
+        U256::from(2500_u128),
     );
 
     let sub = DefiSubscribeCommand::PoolFlashEvents(SubscribePoolFlashEvents {
@@ -857,11 +857,11 @@ fn test_pool_updater_processes_swap_updates_profiler(
         Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
@@ -883,13 +883,13 @@ fn test_pool_updater_processes_swap_updates_profiler(
         instrument_id,
         PoolIdentifier::from_address(Address::from([0x12; 20])),
         PoolLiquidityUpdateType::Mint,
-        999u64,
+        999_u64,
         "0x122".to_string(),
         0,
         0,
         None,
         Address::from([0xab; 20]),
-        10000u128, // Add significant liquidity
+        10000_u128, // Add significant liquidity
         U256::from(1_000_000_u128),
         U256::from(2_000_000_u128),
         -1000, // Wide range
@@ -1047,11 +1047,11 @@ fn test_pool_updater_processes_mint_updates_profiler(
         Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
@@ -1093,13 +1093,13 @@ fn test_pool_updater_processes_mint_updates_profiler(
         instrument_id,
         PoolIdentifier::from_address(Address::from([0x12; 20])),
         PoolLiquidityUpdateType::Mint,
-        1000u64,
+        1000_u64,
         "0x123".to_string(),
         0,
         0,
         None,
         Address::from([0xab; 20]),
-        1000u128, // liquidity amount
+        1000_u128, // liquidity amount
         U256::from(100_000_u128),
         U256::from(200_000_u128),
         -100, // tick_lower
@@ -1172,11 +1172,11 @@ fn test_pool_updater_processes_burn_updates_profiler(
         Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
@@ -1199,13 +1199,13 @@ fn test_pool_updater_processes_burn_updates_profiler(
         instrument_id,
         PoolIdentifier::from_address(Address::from([0x12; 20])),
         PoolLiquidityUpdateType::Mint,
-        1000u64,
+        1000_u64,
         "0x123".to_string(),
         0,
         0,
         None,
         owner,
-        1000u128,
+        1000_u128,
         U256::from(100_000_u128),
         U256::from(200_000_u128),
         -100,
@@ -1243,14 +1243,14 @@ fn test_pool_updater_processes_burn_updates_profiler(
         instrument_id,
         PoolIdentifier::from_address(Address::from([0x12; 20])),
         PoolLiquidityUpdateType::Burn,
-        1001u64,
+        1001_u64,
         "0x124".to_string(),
         0,
         0,
         None,
         owner,
-        500u128, // burn half the liquidity
-        U256::from(50000u128),
+        500_u128, // burn half the liquidity
+        U256::from(50000_u128),
         U256::from(100_000_u128),
         -100,
         100,
@@ -1323,11 +1323,11 @@ fn test_pool_updater_processes_collect_updates_profiler(
         Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
@@ -1362,15 +1362,15 @@ fn test_pool_updater_processes_collect_updates_profiler(
         dex,
         instrument_id,
         PoolIdentifier::from_address(Address::from([0x12; 20])),
-        1000u64,
+        1000_u64,
         "0x123".to_string(),
         0,
         0,
         owner,
-        50000u128, // amount0
-        30000u128, // amount1
-        -100,      // tick_lower
-        100,       // tick_upper
+        50000_u128, // amount0
+        30000_u128, // amount1
+        -100,       // tick_lower
+        100,        // tick_upper
         UnixNanos::default(),
         UnixNanos::default(),
     );
@@ -1438,11 +1438,11 @@ fn test_pool_updater_processes_flash_updates_profiler(
         Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::from_address(Address::from([0x12; 20])),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
@@ -1478,7 +1478,7 @@ fn test_pool_updater_processes_flash_updates_profiler(
         dex,
         instrument_id,
         PoolIdentifier::from_address(Address::from([0x12; 20])),
-        1000u64,
+        1000_u64,
         "0x123".to_string(),
         0,
         0,
@@ -1488,8 +1488,8 @@ fn test_pool_updater_processes_flash_updates_profiler(
         recipient,
         U256::from(1_000_000_u128), // amount0
         U256::from(500_000_u128),   // amount1
-        U256::from(5000u128),       // paid0
-        U256::from(2500u128),       // paid1
+        U256::from(5000_u128),      // paid0
+        U256::from(2500_u128),      // paid1
     );
 
     let mut data_engine = data_engine.borrow_mut();
@@ -1721,11 +1721,11 @@ fn test_setup_pool_updater_skips_snapshot_when_pool_in_cache(
         dex,
         Address::from([0x88; 20]),
         PoolIdentifier::from_address(Address::from([0x88; 20])),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
@@ -1805,13 +1805,13 @@ fn test_pool_events_publish_while_snapshot_pending(
         instrument_id,
         pool.pool_identifier,
         PoolLiquidityUpdateType::Mint,
-        1001u64,
+        1001_u64,
         "0x124".to_string(),
         0,
         0,
         None,
         Address::from([0x12; 20]),
-        100u128,
+        100_u128,
         U256::from(1_000_000_u128),
         U256::from(2_000_000_u128),
         -100,
@@ -1825,7 +1825,7 @@ fn test_pool_events_publish_while_snapshot_pending(
         Arc::clone(&pool.dex),
         instrument_id,
         pool.pool_identifier,
-        1002u64,
+        1002_u64,
         "0x125".to_string(),
         0,
         0,
@@ -1843,7 +1843,7 @@ fn test_pool_events_publish_while_snapshot_pending(
         Arc::clone(&pool.dex),
         instrument_id,
         pool.pool_identifier,
-        1003u64,
+        1003_u64,
         "0x126".to_string(),
         0,
         0,
@@ -1853,8 +1853,8 @@ fn test_pool_events_publish_while_snapshot_pending(
         Address::from([0x34; 20]),
         U256::from(1_000_000_u128),
         U256::from(500_000_u128),
-        U256::from(5000u128),
-        U256::from(2500u128),
+        U256::from(5000_u128),
+        U256::from(2500_u128),
     );
 
     let (swap_handler, swap_saver) = get_typed_message_saving_handler::<PoolSwap>(None);
@@ -2070,11 +2070,11 @@ fn test_setup_pool_updater_does_not_cache_profiler_on_initialize_failure(
         dex,
         Address::from([0x99; 20]),
         PoolIdentifier::from_address(Address::from([0x99; 20])),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
@@ -2174,11 +2174,11 @@ fn test_pool_arrival_with_snapshot_pending_does_not_create_profiler(
         dex,
         Address::from([0xaa; 20]),
         PoolIdentifier::from_address(Address::from([0xaa; 20])),
-        12_345_678u64,
+        12_345_678_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
@@ -2293,8 +2293,8 @@ fn test_pool_snapshot_handler_refuses_empty_stub_at_creation_block(
         creation_block,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
@@ -2391,8 +2391,8 @@ fn test_process_option_greeks_caches_and_publishes(
         ask_iv: Some(0.67),
         underlying_price: Some(50000.0),
         open_interest: Some(1000.0),
-        ts_event: UnixNanos::from(1u64),
-        ts_init: UnixNanos::from(1u64),
+        ts_event: UnixNanos::from(1_u64),
+        ts_init: UnixNanos::from(1_u64),
     };
 
     data_engine.borrow_mut().process(&greeks);
@@ -2629,7 +2629,7 @@ fn test_process_defi_data_increments_data_count(
     let block = Block::new(
         "0x123".to_string(),
         "0x456".to_string(),
-        1u64,
+        1_u64,
         "miner".into(),
         1_000_000_u64,
         500_000_u64,

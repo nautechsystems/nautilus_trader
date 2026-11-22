@@ -2585,7 +2585,7 @@ mod tests {
         register_gil_checked_custom_data();
         let directory = TempDir::new().unwrap();
 
-        let expected = [11u64, 29, 47]
+        let expected = [11_u64, 29, 47]
             .into_iter()
             .map(|ts| {
                 let value = GilCheckedCustomData {

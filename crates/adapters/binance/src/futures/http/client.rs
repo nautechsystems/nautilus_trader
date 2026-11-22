@@ -5279,7 +5279,7 @@ mod tests {
             InstrumentId::from("BTCUSDT-PERP.BINANCE"),
             2,
             3,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         );
 
         let error = result.unwrap_err().to_string();
@@ -5308,7 +5308,7 @@ mod tests {
             BarType::from("BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"),
             2,
             3,
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         );
 
         let error = result.unwrap_err().to_string();

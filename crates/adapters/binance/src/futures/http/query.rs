@@ -797,7 +797,7 @@ mod tests {
     fn test_depth_params_builder() {
         let params = BinanceDepthParamsBuilder::default()
             .symbol("BTCUSDT")
-            .limit(100u32)
+            .limit(100_u32)
             .build()
             .unwrap();
 

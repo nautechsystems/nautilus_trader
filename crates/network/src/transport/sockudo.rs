@@ -861,7 +861,7 @@ mod tests {
         S: AsyncRead + Unpin,
     {
         let mut buf = Vec::new();
-        let mut chunk = [0u8; 256];
+        let mut chunk = [0_u8; 256];
         loop {
             let n = stream.read(&mut chunk).await.unwrap();
             assert!(n > 0, "HTTP request closed before headers completed");
@@ -1083,7 +1083,7 @@ mod tests {
             server.write_all(b"def").await.unwrap();
         });
 
-        let mut buf = [0u8; 6];
+        let mut buf = [0_u8; 6];
         prefixed.read_exact(&mut buf).await.unwrap();
 
         assert_eq!(&buf, b"abcdef");

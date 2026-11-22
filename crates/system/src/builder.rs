@@ -679,7 +679,7 @@ mod tests {
     fn test_builder_with_clock_factory_drives_kernel_and_component_clocks() {
         use nautilus_common::clock::VirtualClock;
 
-        let calls = Rc::new(Cell::new(0usize));
+        let calls = Rc::new(Cell::new(0_usize));
         let calls_in_closure = calls.clone();
 
         let kernel = NautilusKernelBuilder::new(

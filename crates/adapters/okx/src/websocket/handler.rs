@@ -2915,7 +2915,7 @@ mod tests {
         let server = tokio::spawn(async move {
             let (socket, _) = listener.accept().await.unwrap();
             let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
-            let mut header = [0u8; 1];
+            let mut header = [0_u8; 1];
             tokio::io::AsyncReadExt::read_exact(socket.get_mut(), &mut header)
                 .await
                 .unwrap();

@@ -59,7 +59,7 @@ pub(crate) fn bytes_to_hex(bytes: &[u8]) -> String {
 pub(crate) fn hex_to_array<const N: usize>(hex: &str) -> [u8; N] {
     let bytes = hex_to_bytes(hex);
     assert_eq!(bytes.len(), N, "expected {N} bytes, was {}", bytes.len(),);
-    let mut out = [0u8; N];
+    let mut out = [0_u8; N];
     out.copy_from_slice(&bytes);
     out
 }
@@ -111,7 +111,7 @@ pub(crate) fn arb_fp5_nonzero() -> impl Strategy<Value = Fp5> {
 /// limbs through the reducing decoder so the result always lands in `0..n`.
 pub(crate) fn arb_scalar() -> impl Strategy<Value = Scalar> {
     any::<[u64; 5]>().prop_map(|limbs| {
-        let mut bytes = [0u8; SCALAR_BYTES];
+        let mut bytes = [0_u8; SCALAR_BYTES];
         for (i, limb) in limbs.iter().enumerate() {
             bytes[i * 8..(i + 1) * 8].copy_from_slice(&limb.to_le_bytes());
         }

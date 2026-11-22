@@ -335,7 +335,7 @@ pub fn default_fx_ccy(symbol: Symbol, venue: Option<Venue>) -> CurrencyPair {
         "FOREX_5DECIMAL"
     };
     let price_increment = Price::new(
-        1.0 / 10.0f64.powi(i32::from(price_precision)),
+        1.0 / 10.0_f64.powi(i32::from(price_precision)),
         price_precision,
     );
     CurrencyPair::builder()

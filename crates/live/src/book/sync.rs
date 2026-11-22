@@ -478,10 +478,10 @@ mod tests {
             Just(Op::Reject),
             Just(Op::CancelRecovery),
             Just(Op::Reconnect),
-            (1u8..30).prop_map(Op::Arm),
+            (1_u8..30).prop_map(Op::Arm),
             Just(Op::Expire),
-            (0u8..30).prop_map(Op::Tick),
-            (1u8..30).prop_map(Op::Stale),
+            (0_u8..30).prop_map(Op::Tick),
+            (1_u8..30).prop_map(Op::Stale),
         ]
     }
 
@@ -523,7 +523,7 @@ mod tests {
             let mut now = Instant::now();
             let mut book = Book::new(now);
             let mut model = Model::default();
-            let mut position = 0u64;
+            let mut position = 0_u64;
             let mut last_accepted = now;
 
             for op in ops {

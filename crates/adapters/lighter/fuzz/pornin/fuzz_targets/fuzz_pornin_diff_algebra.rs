@@ -20,9 +20,9 @@ const FP5_BYTES: usize = 40;
 const INPUT_LEN: usize = 4 * SCALAR_BYTES;
 
 fn fp5_from_slice(bytes: &[u8]) -> Fp5 {
-    let mut limbs = [0u64; 5];
+    let mut limbs = [0_u64; 5];
     for (i, slot) in limbs.iter_mut().enumerate() {
-        let mut chunk = [0u8; 8];
+        let mut chunk = [0_u8; 8];
         chunk.copy_from_slice(&bytes[i * 8..(i + 1) * 8]);
         *slot = u64::from_le_bytes(chunk);
     }
@@ -30,7 +30,7 @@ fn fp5_from_slice(bytes: &[u8]) -> Fp5 {
 }
 
 fn scalar_from_slice(bytes: &[u8]) -> Scalar {
-    let mut buf = [0u8; SCALAR_BYTES];
+    let mut buf = [0_u8; SCALAR_BYTES];
     buf.copy_from_slice(bytes);
     Scalar::from_le_bytes_reduce(buf)
 }

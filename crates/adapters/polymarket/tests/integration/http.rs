@@ -5291,7 +5291,7 @@ async fn test_request_trades_paginates_multiple_pages() {
     let condition_id = "0xcondition_test";
 
     let mut newest = Vec::new();
-    for i in 0..8u32 {
+    for i in 0..8_u32 {
         newest.push(make_data_api_trade(
             token,
             0.50 + (i as f64) * 0.01,
@@ -5300,7 +5300,7 @@ async fn test_request_trades_paginates_multiple_pages() {
         ));
     }
 
-    let oldest = (0..4u32)
+    let oldest = (0..4_u32)
         .map(|i| {
             make_data_api_trade(
                 token,

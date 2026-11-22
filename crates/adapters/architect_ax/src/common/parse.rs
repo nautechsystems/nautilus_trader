@@ -146,7 +146,7 @@ pub fn create_architect_trade_id(
     };
 
     // One-shot hashing avoids streaming setup for this fixed-size trade identity
-    let mut input = [0u8; TRADE_ID_DOMAIN.len() + 8 + 16 + 4 + 16 + 4 + 1];
+    let mut input = [0_u8; TRADE_ID_DOMAIN.len() + 8 + 16 + 4 + 16 + 4 + 1];
     let mut offset = 0;
     for part in [
         TRADE_ID_DOMAIN,
@@ -164,12 +164,12 @@ pub fn create_architect_trade_id(
 
     let hash = blake3::hash(&input);
 
-    let mut digest = [0u8; 8];
+    let mut digest = [0_u8; 8];
     digest.copy_from_slice(&hash.as_bytes()[..8]);
     let suffix = u64::from_be_bytes(digest);
 
     // Hold even a 20-digit timestamp so TradeId still rejects IDs beyond its capacity
-    let mut buffer = [0u8; 37];
+    let mut buffer = [0_u8; 37];
     let mut cursor = Cursor::new(buffer.as_mut_slice());
     write!(cursor, "{}-{suffix:016x}", ts_event.as_u64()).context(FAILED)?;
     let len = cursor.position() as usize;
@@ -585,13 +585,13 @@ mod tests {
     #[rstest]
     fn test_ax_timestamp_s_to_unix_nanos_valid() {
         let result = ax_timestamp_s_to_unix_nanos(1_000).unwrap();
-        assert_eq!(result, UnixNanos::from(1_000_000_000_000u64));
+        assert_eq!(result, UnixNanos::from(1_000_000_000_000_u64));
     }
 
     #[rstest]
     fn test_ax_timestamp_s_to_unix_nanos_zero() {
         let result = ax_timestamp_s_to_unix_nanos(0).unwrap();
-        assert_eq!(result, UnixNanos::from(0u64));
+        assert_eq!(result, UnixNanos::from(0_u64));
     }
 
     #[rstest]
@@ -602,7 +602,7 @@ mod tests {
     #[rstest]
     fn test_ax_timestamp_ns_to_unix_nanos_valid() {
         let result = ax_timestamp_ns_to_unix_nanos(1_000_000_000).unwrap();
-        assert_eq!(result, UnixNanos::from(1_000_000_000u64));
+        assert_eq!(result, UnixNanos::from(1_000_000_000_u64));
     }
 
     #[rstest]
@@ -613,13 +613,13 @@ mod tests {
     #[rstest]
     fn test_ax_timestamp_stn_to_unix_nanos_combines_seconds_and_nanos() {
         let result = ax_timestamp_stn_to_unix_nanos(1_000, 500).unwrap();
-        assert_eq!(result, UnixNanos::from(1_000_000_000_500u64));
+        assert_eq!(result, UnixNanos::from(1_000_000_000_500_u64));
     }
 
     #[rstest]
     fn test_ax_timestamp_stn_to_unix_nanos_zero_nanos() {
         let result = ax_timestamp_stn_to_unix_nanos(1_000, 0).unwrap();
-        assert_eq!(result, UnixNanos::from(1_000_000_000_000u64));
+        assert_eq!(result, UnixNanos::from(1_000_000_000_000_u64));
     }
 
     #[rstest]
@@ -630,6 +630,6 @@ mod tests {
     #[rstest]
     fn test_ax_timestamp_stn_to_unix_nanos_negative_nanos_clamps_to_zero() {
         let result = ax_timestamp_stn_to_unix_nanos(1_000, -1).unwrap();
-        assert_eq!(result, UnixNanos::from(1_000_000_000_000u64));
+        assert_eq!(result, UnixNanos::from(1_000_000_000_000_u64));
     }
 }

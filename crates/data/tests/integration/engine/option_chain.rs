@@ -614,7 +614,7 @@ fn test_subscribe_option_chain_filters_by_underlying(
         "ETH",
         "3000.000",
         OptionKind::Call,
-        UnixNanos::from(1_704_067_200_000_000_000u64),
+        UnixNanos::from(1_704_067_200_000_000_000_u64),
     );
     let _ = cache.borrow_mut().add_instrument(eth_option);
 
@@ -3041,8 +3041,8 @@ fn test_option_chain_deferred_bootstrap_from_greeks_keeps_bootstrap_event(
         Price::from("101.00"),
         Quantity::from("1.0"),
         Quantity::from("1.0"),
-        UnixNanos::from(2u64),
-        UnixNanos::from(2u64),
+        UnixNanos::from(2_u64),
+        UnixNanos::from(2_u64),
     );
     data_engine.borrow_mut().process_data(Data::Quote(quote));
 
@@ -4005,7 +4005,7 @@ fn make_btc_option(strike: &str, kind: OptionKind) -> InstrumentAny {
     };
 
     let symbol = format!("BTC-20240101-{strike}-{kind_char}.DERIBIT");
-    let expiration_ns = UnixNanos::from(1_704_067_200_000_000_000u64);
+    let expiration_ns = UnixNanos::from(1_704_067_200_000_000_000_u64);
     make_crypto_option(&symbol, "BTC", "BTC", strike, kind, expiration_ns)
 }
 
@@ -4025,8 +4025,8 @@ fn make_option_chain_greeks(instrument_id: InstrumentId, underlying_price: f64) 
         ask_iv: Some(0.67),
         underlying_price: Some(underlying_price),
         open_interest: Some(1000.0),
-        ts_event: UnixNanos::from(1u64),
-        ts_init: UnixNanos::from(1u64),
+        ts_event: UnixNanos::from(1_u64),
+        ts_init: UnixNanos::from(1_u64),
     }
 }
 
@@ -4035,7 +4035,7 @@ fn make_series_id() -> OptionSeriesId {
         Venue::new("DERIBIT"),
         ustr::Ustr::from("BTC"),
         ustr::Ustr::from("BTC"),
-        UnixNanos::from(1_704_067_200_000_000_000u64),
+        UnixNanos::from(1_704_067_200_000_000_000_u64),
     )
 }
 

@@ -81,9 +81,9 @@ impl Fp5 {
     ///
     /// Returns `None` if any limb is non-canonical (`>= p`).
     pub fn try_from_le_bytes(bytes: [u8; 40]) -> Option<Self> {
-        let mut limbs = [0u64; 5];
+        let mut limbs = [0_u64; 5];
         for (i, limb) in limbs.iter_mut().enumerate() {
-            let mut chunk = [0u8; 8];
+            let mut chunk = [0_u8; 8];
             chunk.copy_from_slice(&bytes[i * 8..(i + 1) * 8]);
             *limb = u64::from_le_bytes(chunk);
         }
@@ -92,7 +92,7 @@ impl Fp5 {
 
     /// Canonical 40-byte little-endian encoding (5 x 8-byte limbs, low-to-high degree).
     pub fn to_le_bytes(self) -> [u8; 40] {
-        let mut out = [0u8; 40];
+        let mut out = [0_u8; 40];
         for i in 0..5 {
             out[i * 8..(i + 1) * 8].copy_from_slice(&self.0[i].to_le_bytes());
         }
@@ -591,7 +591,7 @@ mod tests {
     fn decode_le40(hex: &str) -> [u8; 40] {
         let bytes = hex_to_bytes(hex);
         assert_eq!(bytes.len(), 40, "expected 40 bytes, was {}", bytes.len());
-        let mut out = [0u8; 40];
+        let mut out = [0_u8; 40];
         out.copy_from_slice(&bytes);
         out
     }
@@ -679,7 +679,7 @@ mod tests {
     #[case(3)]
     #[case(4)]
     fn from_u64s_canonical_rejects_non_canonical_limb(#[case] limb_index: usize) {
-        let mut limbs = [1u64, 2, 3, 4, 5];
+        let mut limbs = [1_u64, 2, 3, 4, 5];
         limbs[limb_index] = MODULUS;
         assert!(
             Fp5::from_u64s_canonical(limbs).is_none(),

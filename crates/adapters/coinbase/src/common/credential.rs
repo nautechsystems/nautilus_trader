@@ -119,7 +119,7 @@ impl CoinbaseCredential {
             .as_secs();
 
         let nonce = {
-            let mut buf = [0u8; 16];
+            let mut buf = [0_u8; 16];
             lc_rand::fill(&mut buf)
                 .map_err(|e| Error::auth(format!("Failed to generate nonce: {e}")))?;
             nautilus_core::hex::encode(buf)

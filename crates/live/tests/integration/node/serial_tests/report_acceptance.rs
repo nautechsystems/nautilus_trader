@@ -820,7 +820,7 @@ async fn targeted_report_maintenance_latency() {
         handle.stop();
     };
 
-    let core_poll_ns = Cell::new(0u64);
+    let core_poll_ns = Cell::new(0_u64);
     let run = node.run();
     tokio::pin!(run);
 

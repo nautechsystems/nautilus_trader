@@ -390,7 +390,7 @@ mod tests {
 
             let mut accumulator = TimeEventAccumulator::new();
 
-            for ts in [300u64, 100, 200] {
+            for ts in [300_u64, 100, 200] {
                 let event = TimeEvent::new(Ustr::from("TEST"), UUID4::new(), ts.into(), ts.into());
                 accumulator.push(TimeEventHandler::new(event, callback.clone()));
             }
@@ -416,7 +416,7 @@ mod tests {
             let mut accumulator = TimeEventAccumulator::new();
             let mut popped_timestamps: Vec<u64> = Vec::new();
 
-            for ts in [100u64, 300] {
+            for ts in [100_u64, 300] {
                 let event = TimeEvent::new(Ustr::from("TEST"), UUID4::new(), ts.into(), ts.into());
                 accumulator.push(TimeEventHandler::new(event, callback.clone()));
             }

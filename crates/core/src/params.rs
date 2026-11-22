@@ -364,7 +364,7 @@ fn json_heap_size(value: &Value) -> usize {
             values.capacity().saturating_mul(size_of::<Value>()),
             |bytes, value| bytes.saturating_add(json_heap_size(value)),
         ),
-        Value::Object(values) => values.iter().fold(0usize, |bytes, (key, value)| {
+        Value::Object(values) => values.iter().fold(0_usize, |bytes, (key, value)| {
             bytes
                 .saturating_add(size_of::<(String, Value)>())
                 .saturating_add(key.capacity())
@@ -402,9 +402,9 @@ mod tests {
     fn create_test_params() -> Params {
         Params::new(
             [
-                ("u64_val".to_string(), json!(42u64)),
-                ("i64_val".to_string(), json!(-100i64)),
-                ("usize_val".to_string(), json!(5u64)),
+                ("u64_val".to_string(), json!(42_u64)),
+                ("i64_val".to_string(), json!(-100_i64)),
+                ("usize_val".to_string(), json!(5_u64)),
                 ("str_val".to_string(), json!("hello")),
                 ("bool_val".to_string(), json!(true)),
                 ("f64_val".to_string(), json!(2.5)),

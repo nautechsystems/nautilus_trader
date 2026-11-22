@@ -2253,9 +2253,9 @@ mod tests {
 
         // replay@100, on_chain@150, invalid@200: one snapshot per block with a distinct verdict.
         for (block, state) in [
-            (100u64, "replay"),
-            (150u64, "on_chain"),
-            (200u64, "invalid"),
+            (100_u64, "replay"),
+            (150_u64, "on_chain"),
+            (200_u64, "invalid"),
         ] {
             let snapshot = PoolSnapshot::new(
                 instrument_id,

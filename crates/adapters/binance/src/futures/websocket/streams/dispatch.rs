@@ -2219,7 +2219,7 @@ mod tests {
         product_type: BinanceProductType,
         #[values(false, true)] use_trade_lite: bool,
     ) {
-        let ts_init = UnixNanos::from(1_734_300_000_999_888_000u64);
+        let ts_init = UnixNanos::from(1_734_300_000_999_888_000_u64);
         let clock = Box::leak(Box::new(AtomicTime::new(false, ts_init)));
         let (emitter, mut rx) = create_test_emitter(clock);
         let client = create_test_http_client(clock);
@@ -2333,7 +2333,7 @@ mod tests {
             LiquiditySide::Maker,
             Some(cid),
             Some(PositionId::from(format!("{instrument_id}-LONG"))),
-            UnixNanos::from(1_568_879_465_651_000_000u64),
+            UnixNanos::from(1_568_879_465_651_000_000_u64),
             ts_init,
             Some(fill.report_id),
         );
@@ -2835,7 +2835,7 @@ mod tests {
         #[case] executed_qty: &str,
         #[case] canceled: bool,
     ) {
-        let ts_init = UnixNanos::from(1_734_300_000_999_888_000u64);
+        let ts_init = UnixNanos::from(1_734_300_000_999_888_000_u64);
         let clock = Box::leak(Box::new(AtomicTime::new(false, ts_init)));
         let (emitter, mut rx) = create_test_emitter(clock);
         let client = create_test_http_client(clock);
@@ -2958,7 +2958,7 @@ mod tests {
         #[values("0.001", "0.003")] local_qty: &str,
         #[values(false, true)] accepted: bool,
     ) {
-        let ts_init = UnixNanos::from(1_734_300_000_999_888_000u64);
+        let ts_init = UnixNanos::from(1_734_300_000_999_888_000_u64);
         let clock = Box::leak(Box::new(AtomicTime::new(false, ts_init)));
         let (emitter, mut rx) = create_test_emitter(clock);
         let client = create_test_http_client(clock);
@@ -3170,7 +3170,7 @@ mod tests {
         #[values("0.001", "0.003")] local_qty: &str,
         #[values(false, true)] accepted: bool,
     ) {
-        let ts_init = UnixNanos::from(1_734_300_000_999_888_000u64);
+        let ts_init = UnixNanos::from(1_734_300_000_999_888_000_u64);
         let clock = Box::leak(Box::new(AtomicTime::new(false, ts_init)));
         let (emitter, mut rx) = create_test_emitter(clock);
         let client = create_test_http_client(clock);
@@ -3404,7 +3404,7 @@ mod tests {
         #[values(false, true)] executed: bool,
         #[values(false, true)] treat_expired_as_canceled: bool,
     ) {
-        let ts_init = UnixNanos::from(1_734_300_000_999_888_000u64);
+        let ts_init = UnixNanos::from(1_734_300_000_999_888_000_u64);
         let clock = Box::leak(Box::new(AtomicTime::new(false, ts_init)));
         let (emitter, mut rx) = create_test_emitter(clock);
         let client = create_test_http_client(clock);
@@ -3595,7 +3595,7 @@ mod tests {
 
     #[rstest]
     fn test_finished_close_all_keeps_multiple_fills(#[values("0", "0.004")] child_qty: &str) {
-        let ts_init = UnixNanos::from(1_734_300_000_999_888_000u64);
+        let ts_init = UnixNanos::from(1_734_300_000_999_888_000_u64);
         let clock = Box::leak(Box::new(AtomicTime::new(false, ts_init)));
         let (emitter, mut rx) = create_test_emitter(clock);
         let client = create_test_http_client(clock);
@@ -3709,7 +3709,7 @@ mod tests {
         #[values(false, true)] accepted: bool,
         #[values("0", "0.001")] executed_qty: &str,
     ) {
-        let ts_init = UnixNanos::from(1_734_300_000_999_888_000u64);
+        let ts_init = UnixNanos::from(1_734_300_000_999_888_000_u64);
         let clock = Box::leak(Box::new(AtomicTime::new(false, ts_init)));
         let (emitter, mut rx) = create_test_emitter(clock);
         let client = create_test_http_client(clock);

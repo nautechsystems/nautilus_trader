@@ -190,7 +190,7 @@ mod cmbp_trade_id_property_tests {
             ts_recv in any::<u64>(),
             price in any::<i64>(),
             size in any::<u32>(),
-            side_byte in 0u8..128,
+            side_byte in 0_u8..128,
         ) {
             let instrument_id = InstrumentId::from("ES.c.0.GLBX");
             let side = side_byte as c_char;
@@ -210,7 +210,7 @@ mod cmbp_trade_id_property_tests {
             ts_recv in any::<u64>(),
             price in any::<i64>(),
             size in any::<u32>(),
-            side_byte in 0u8..128,
+            side_byte in 0_u8..128,
         ) {
             let instrument_id = InstrumentId::from("ES.c.0.GLBX");
             let side = side_byte as c_char;

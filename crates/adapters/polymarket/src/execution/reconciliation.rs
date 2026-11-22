@@ -1192,7 +1192,7 @@ pub(crate) fn build_order_reports_from_orders(
     load_ids: Option<&[InstrumentId]>,
 ) -> anyhow::Result<(Vec<OrderStatusReport>, usize)> {
     let mut reports = Vec::new();
-    let mut filtered = 0usize;
+    let mut filtered = 0_usize;
     let mut selected_orders = AHashMap::new();
 
     for order in orders {
@@ -3154,7 +3154,7 @@ mod tests {
                 Some(&cached),
                 None,
             ),
-            UnixNanos::from(123_000_000_000u64),
+            UnixNanos::from(123_000_000_000_u64),
         );
 
         if let Some(expected_error) = expected_error {
@@ -3183,7 +3183,7 @@ mod tests {
             "../../test_data/decimal_precision_position.json"
         ))
         .unwrap();
-        let ts = UnixNanos::from(123_456_789u64);
+        let ts = UnixNanos::from(123_456_789_u64);
         let account_id = AccountId::from("POLYMARKET-001");
         let report =
             build_position_report_from_reportable_position(&position, account_id, ts).unwrap();
@@ -3217,7 +3217,7 @@ mod tests {
         let report = build_position_report_from_reportable_position(
             &positions[position_index],
             AccountId::from("POLYMARKET-001"),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         )
         .expect("fixture position is reportable");
 
@@ -3235,7 +3235,7 @@ mod tests {
         let report = build_position_report_from_reportable_position(
             &position,
             AccountId::from("POLYMARKET-001"),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         )
         .expect("fixture position is reportable");
 

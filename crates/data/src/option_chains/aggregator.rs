@@ -649,7 +649,7 @@ mod tests {
             Venue::new("DERIBIT"),
             ustr::Ustr::from("BTC"),
             ustr::Ustr::from("BTC"),
-            UnixNanos::from(1_700_000_000_000_000_000u64),
+            UnixNanos::from(1_700_000_000_000_000_000_u64),
         )
     }
 
@@ -660,14 +660,14 @@ mod tests {
             Price::from(ask),
             Quantity::from("1.0"),
             Quantity::from("1.0"),
-            UnixNanos::from(1u64),
-            UnixNanos::from(1u64),
+            UnixNanos::from(1_u64),
+            UnixNanos::from(1_u64),
         )
     }
 
     fn now() -> UnixNanos {
         // A base timestamp for tests (far enough from zero to avoid edge cases)
-        UnixNanos::from(1_000_000_000_000_000_000u64)
+        UnixNanos::from(1_000_000_000_000_000_000_u64)
     }
 
     /// Sets ATM price on an aggregator via a synthetic `OptionGreeks` with the given forward price.
@@ -771,17 +771,17 @@ mod tests {
         let quote = make_quote(call_id, "100.00", "101.00");
         agg.update_quote(&quote);
 
-        let slice = agg.snapshot(UnixNanos::from(100u64));
+        let slice = agg.snapshot(UnixNanos::from(100_u64));
         assert_eq!(slice.call_count(), 1);
-        assert_eq!(slice.ts_init, UnixNanos::from(100u64));
+        assert_eq!(slice.ts_init, UnixNanos::from(100_u64));
 
         // Buffers should still contain data (keep-latest semantics)
         assert!(!agg.is_buffer_empty());
 
         // Second snapshot should return the same data
-        let slice2 = agg.snapshot(UnixNanos::from(200u64));
+        let slice2 = agg.snapshot(UnixNanos::from(200_u64));
         assert_eq!(slice2.call_count(), 1);
-        assert_eq!(slice2.ts_init, UnixNanos::from(200u64));
+        assert_eq!(slice2.ts_init, UnixNanos::from(200_u64));
     }
 
     #[rstest]
@@ -1250,8 +1250,8 @@ mod tests {
             Price::from("101.00"),
             Quantity::from("1.0"),
             Quantity::from("1.0"),
-            UnixNanos::from(500u64), // ts_event
-            UnixNanos::from(500u64),
+            UnixNanos::from(500_u64), // ts_event
+            UnixNanos::from(500_u64),
         );
         agg.update_quote(&quote1);
 
@@ -1261,14 +1261,14 @@ mod tests {
             Price::from("51.00"),
             Quantity::from("1.0"),
             Quantity::from("1.0"),
-            UnixNanos::from(800u64), // ts_event: later
-            UnixNanos::from(800u64),
+            UnixNanos::from(800_u64), // ts_event: later
+            UnixNanos::from(800_u64),
         );
         agg.update_quote(&quote2);
 
-        let slice = agg.snapshot(UnixNanos::from(1000u64));
-        assert_eq!(slice.ts_event, UnixNanos::from(800u64));
-        assert_eq!(slice.ts_init, UnixNanos::from(1000u64));
+        let slice = agg.snapshot(UnixNanos::from(1000_u64));
+        assert_eq!(slice.ts_event, UnixNanos::from(800_u64));
+        assert_eq!(slice.ts_init, UnixNanos::from(1000_u64));
     }
 
     #[rstest]
@@ -1294,7 +1294,7 @@ mod tests {
     #[rstest]
     fn test_snapshot_event_time_without_market_data() {
         let (agg, _, _) = make_aggregator();
-        let slice = agg.snapshot(UnixNanos::from(1000u64));
+        let slice = agg.snapshot(UnixNanos::from(1000_u64));
 
         assert!(slice.is_empty());
         assert_eq!(slice.ts_event, UnixNanos::from(0));
@@ -1357,7 +1357,7 @@ mod tests {
         assert!(agg.check_rebalance(now()).is_none());
 
         // Snapshot must still include all 3 buffered strikes
-        let slice = agg.snapshot(UnixNanos::from(100u64));
+        let slice = agg.snapshot(UnixNanos::from(100_u64));
         assert_eq!(slice.call_count(), 3);
     }
 
@@ -1453,8 +1453,8 @@ mod tests {
             Price::from("101.00"),
             Quantity::from("1.0"),
             Quantity::from("1.0"),
-            UnixNanos::from(1_700_000_000_000_000_000u64),
-            UnixNanos::from(1_700_000_000_000_000_000u64),
+            UnixNanos::from(1_700_000_000_000_000_000_u64),
+            UnixNanos::from(1_700_000_000_000_000_000_u64),
         );
         agg.update_quote(&expired_quote);
         assert!(agg.is_buffer_empty());
@@ -1471,7 +1471,7 @@ mod tests {
         // Send greeks at expiry timestamp: should be dropped
         let greeks = OptionGreeks {
             instrument_id: call_id,
-            ts_event: UnixNanos::from(1_700_000_000_000_000_000u64),
+            ts_event: UnixNanos::from(1_700_000_000_000_000_000_u64),
             greeks: OptionGreekValues {
                 delta: 0.55,
                 ..Default::default()

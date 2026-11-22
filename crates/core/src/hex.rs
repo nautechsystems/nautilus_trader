@@ -19,8 +19,8 @@ use thiserror::Error;
 
 pub(crate) const ENCODE_PAIR: [[u8; 2]; 256] = {
     const NIBBLE: [u8; 16] = *b"0123456789abcdef";
-    let mut table = [[0u8; 2]; 256];
-    let mut i = 0u16;
+    let mut table = [[0_u8; 2]; 256];
+    let mut i = 0_u16;
     while i < 256 {
         table[i as usize] = [NIBBLE[(i >> 4) as usize], NIBBLE[(i & 0x0f) as usize]];
         i += 1;
@@ -31,8 +31,8 @@ pub(crate) const ENCODE_PAIR: [[u8; 2]; 256] = {
 
 // 0xFF sentinel marks invalid hex characters
 pub(crate) const DECODE_NIBBLE: [u8; 256] = {
-    let mut table = [0xffu8; 256];
-    let mut i = 0u8;
+    let mut table = [0xff_u8; 256];
+    let mut i = 0_u8;
     while i < 10 {
         table[(b'0' + i) as usize] = i;
         i += 1;
@@ -150,7 +150,7 @@ pub fn decode_array<const N: usize>(data: impl AsRef<[u8]>) -> Result<[u8; N], D
         });
     }
 
-    let mut out = [0u8; N];
+    let mut out = [0_u8; N];
     decode_into(hex, &mut out)?;
     Ok(out)
 }

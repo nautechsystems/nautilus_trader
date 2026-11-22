@@ -5024,7 +5024,7 @@ mod tests {
         let (emitter, mut rx) = create_test_emitter(clock);
         let client = create_test_http_client(clock);
         let account_id = AccountId::from("BINANCE-001");
-        let ts_init = UnixNanos::from(1_734_300_000_999_888_000u64);
+        let ts_init = UnixNanos::from(1_734_300_000_999_888_000_u64);
         let seen = Arc::new(Mutex::new(FifoCache::new()));
         let json = crate::common::testing::load_fixture_string(
             "spot/user_data_json/execution_report_new.json",
@@ -5863,7 +5863,7 @@ mod tests {
         );
         let mut report: BinanceSpotExecutionReport = serde_json::from_str(&json).unwrap();
         report.execution_type = terminal_type;
-        let ts_init = UnixNanos::from(1_734_300_000_999_888_000u64);
+        let ts_init = UnixNanos::from(1_734_300_000_999_888_000_u64);
 
         let dispatch = |report: &BinanceSpotExecutionReport| {
             dispatch_execution_report(
@@ -5927,7 +5927,7 @@ mod tests {
             LiquiditySide::Maker,
             Some(cid),
             None,
-            UnixNanos::from(1_709_654_401_000_000_000u64),
+            UnixNanos::from(1_709_654_401_000_000_000_u64),
             ts_init,
             Some(fill.report_id),
         );
@@ -6949,7 +6949,7 @@ mod tests {
                 assert_eq!(event.venue_order_id, Some(VenueOrderId::from("12345678")));
                 assert_eq!(
                     event.ts_event,
-                    UnixNanos::from(1_709_654_402_000_000_000u64)
+                    UnixNanos::from(1_709_654_402_000_000_000_u64)
                 );
             }
             other => panic!("Expected OrderCanceled, was {other:?}"),
@@ -7047,7 +7047,7 @@ mod tests {
                 assert_eq!(report.order_status, OrderStatus::Canceled);
                 assert_eq!(
                     report.ts_last,
-                    UnixNanos::from(1_709_654_402_000_000_000u64)
+                    UnixNanos::from(1_709_654_402_000_000_000_u64)
                 );
             }
             other => panic!("Expected order status report, was {other:?}"),

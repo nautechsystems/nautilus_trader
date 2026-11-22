@@ -1153,7 +1153,7 @@ mod tests {
             Venue::from("DERIBIT"),
             Ustr::from("BTC"),
             Ustr::from("BTC"),
-            UnixNanos::from(1_704_067_200_000_000_000u64),
+            UnixNanos::from(1_704_067_200_000_000_000_u64),
         );
         let instrument_id = InstrumentId::from("BTC-20240101-50000-C.DERIBIT");
         let request_id = UUID4::new();

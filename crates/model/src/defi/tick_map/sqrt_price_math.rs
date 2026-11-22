@@ -47,7 +47,7 @@ pub fn encode_sqrt_ratio_x96(amount0: u128, amount1: u128) -> U160 {
     // This is because: sqrt(amount0/amount1) * 2^96 = sqrt(amount0 * 2^192 / amount1)
 
     // First, scale amount0 by 2^192
-    let q192 = U256::from(1u128) << 192;
+    let q192 = U256::from(1_u128) << 192;
 
     // Check if amount0 * 2^192 would overflow
     if amount0_u256 > U256::MAX / q192 {
@@ -58,7 +58,7 @@ pub fn encode_sqrt_ratio_x96(amount0: u128, amount1: u128) -> U160 {
 
         assert!(!sqrt_amount1.is_zero(), "Division by zero in sqrt");
 
-        let q96 = U256::from(1u128) << 96;
+        let q96 = U256::from(1_u128) << 96;
 
         // Use FullMath for precise division
         let result = FullMath::mul_div(sqrt_amount0, q96, sqrt_amount1).expect("mul_div overflow");
@@ -147,7 +147,7 @@ fn get_next_sqrt_price_from_amount1_rounding_down(
             (amount << 96) / U256::from(liquidity)
         } else {
             // Use mul_div to prevent overflow
-            FullMath::mul_div(amount, U256::from(1u128) << 96, U256::from(liquidity))
+            FullMath::mul_div(amount, U256::from(1_u128) << 96, U256::from(liquidity))
                 .unwrap_or(U256::ZERO)
         };
 
@@ -159,7 +159,7 @@ fn get_next_sqrt_price_from_amount1_rounding_down(
             FullMath::div_rounding_up(amount << 96, U256::from(liquidity)).unwrap_or(U256::ZERO)
         } else {
             // FullMath.mulDivRoundingUp(amount, FixedPoint96.Q96, liquidity)
-            FullMath::mul_div_rounding_up(amount, U256::from(1u128) << 96, U256::from(liquidity))
+            FullMath::mul_div_rounding_up(amount, U256::from(1_u128) << 96, U256::from(liquidity))
                 .unwrap_or(U256::ZERO)
         };
 
@@ -269,8 +269,7 @@ pub fn get_amount1_delta(
 
     let liquidity_u256 = U256::from(liquidity);
     let sqrt_ratio_diff = U256::from(sqrt_ratio_b - sqrt_ratio_a);
-    let q96 = U256::from(1u128) << 96;
-
+    let q96 = U256::from(1_u128) << 96;
     if round_up {
         FullMath::mul_div_rounding_up(liquidity_u256, sqrt_ratio_diff, q96).unwrap_or(U256::ZERO)
     } else {
@@ -325,7 +324,7 @@ pub fn get_amounts_for_liquidity(
 /// Expands an amount to 18 decimal places (multiplies by 10^18).
 #[must_use]
 pub fn expand_to_18_decimals(amount: u64) -> u128 {
-    u128::from(amount) * 10u128.pow(18)
+    u128::from(amount) * 10_u128.pow(18)
 }
 
 /// Converts a sqrt price X96 to a raw Price (token1/token0 ratio without decimal adjustment).
@@ -341,7 +340,7 @@ pub fn expand_to_18_decimals(amount: u64) -> u128 {
 pub fn decode_sqrt_price_x96_to_price(sqrt_price_x96: U160) -> anyhow::Result<Price> {
     let sqrt_price = U256::from(sqrt_price_x96);
     let fixed_scalar = FullMath::pow10(FIXED_PRECISION)?;
-    let divisor = U256::from(1u128) << 192;
+    let divisor = U256::from(1_u128) << 192;
     let price_raw = FullMath::mul_div_scaled(sqrt_price, sqrt_price, divisor, &[fixed_scalar])?;
 
     price_from_u256(price_raw)
@@ -386,7 +385,7 @@ pub fn decode_sqrt_price_x96_to_price_tokens_adjusted(
         token1_scalar / token0_scalar
     };
     let fixed_scalar = FullMath::pow10(FIXED_PRECISION)?;
-    let divisor_base: U256 = U256::from(1u128) << 192;
+    let divisor_base: U256 = U256::from(1_u128) << 192;
 
     let price_raw = if invert {
         if decimal_diff >= 0 {

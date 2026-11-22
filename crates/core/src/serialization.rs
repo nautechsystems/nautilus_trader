@@ -2073,11 +2073,11 @@ mod tests {
         );
         assert_eq!(
             DecimalVisitor.visit_i128::<ValueError>(5).unwrap(),
-            Decimal::from(5i128)
+            Decimal::from(5_i128)
         );
         assert_eq!(
             DecimalVisitor.visit_u128::<ValueError>(5).unwrap(),
-            Decimal::from(5u128)
+            Decimal::from(5_u128)
         );
         assert_eq!(
             DecimalVisitor.visit_none::<ValueError>().unwrap(),
@@ -2114,11 +2114,11 @@ mod tests {
         );
         assert_eq!(
             OptionalDecimalVisitor.visit_i128::<ValueError>(5).unwrap(),
-            Some(Decimal::from(5i128))
+            Some(Decimal::from(5_i128))
         );
         assert_eq!(
             OptionalDecimalVisitor.visit_u128::<ValueError>(5).unwrap(),
-            Some(Decimal::from(5u128))
+            Some(Decimal::from(5_u128))
         );
         assert_eq!(
             OptionalDecimalVisitor.visit_none::<ValueError>().unwrap(),
@@ -2151,9 +2151,9 @@ mod tests {
         // Mantissa spans Decimal's full 96-bit range; every generated value is
         // exactly representable.
         (
-            -79_228_162_514_264_337_593_543_950_335i128
-                ..=79_228_162_514_264_337_593_543_950_335i128,
-            0u32..=28u32,
+            -79_228_162_514_264_337_593_543_950_335_i128
+                ..=79_228_162_514_264_337_593_543_950_335_i128,
+            0_u32..=28_u32,
         )
             .prop_map(|(mantissa, scale)| Decimal::from_i128_with_scale(mantissa, scale))
     }
@@ -2165,7 +2165,7 @@ mod tests {
             proptest::bool::ANY,
             "[0-9]{1,30}",
             proptest::option::of("[0-9]{1,40}"),
-            proptest::option::of(-40i32..=40),
+            proptest::option::of(-40_i32..=40),
         )
             .prop_map(|(negative, integer, fraction, exponent)| {
                 let mut value = String::new();
@@ -2192,7 +2192,7 @@ mod tests {
         #[rstest]
         fn prop_deserialize_decimal_scientific_roundtrips_representable_values(
             expected in representable_decimal_strategy(),
-            zeros in 0usize..=35,
+            zeros in 0_usize..=35,
         ) {
             let scientific = format!(
                 "{}{}e-{}",

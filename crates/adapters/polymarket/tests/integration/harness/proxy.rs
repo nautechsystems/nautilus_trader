@@ -30,7 +30,7 @@ pub(crate) async fn spawn_rejecting_proxy(
         for _ in 0..connection_count {
             let (mut stream, _) = listener.accept().await.unwrap();
             let mut request = Vec::new();
-            let mut chunk = [0u8; 1024];
+            let mut chunk = [0_u8; 1024];
             loop {
                 let read = stream.read(&mut chunk).await.unwrap();
                 if read == 0 {

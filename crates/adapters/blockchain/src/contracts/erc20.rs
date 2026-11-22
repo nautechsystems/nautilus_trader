@@ -780,7 +780,7 @@ mod tests {
         let spender = address!("E592427A0AEce92De3Edee1F18E0157C05861564");
         let calldata = ERC20::approveCall {
             spender,
-            amount: U256::from(1_000_000_000_000_000_000u64),
+            amount: U256::from(1_000_000_000_000_000_000_u64),
         }
         .abi_encode();
 
@@ -826,7 +826,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(balance, U256::from(500_000_000_000_000_000u64));
+        assert_eq!(balance, U256::from(500_000_000_000_000_000_u64));
         let requests = state.recorded_requests();
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0]["params"][1], "latest");
@@ -846,7 +846,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(allowance, U256::from(1_000_000_000_000_000_000u64));
+        assert_eq!(allowance, U256::from(1_000_000_000_000_000_000_u64));
         let requests = state.recorded_requests();
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0]["params"][1], "latest");

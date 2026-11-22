@@ -742,10 +742,10 @@ async fn test_mbo_single_f_last_emits_one_delta() {
             assert_eq!(deltas.deltas.len(), 1);
             assert_eq!(deltas.flags, 128);
             assert_eq!(deltas.sequence, 1);
-            assert_eq!(deltas.ts_event, 101_000_000_000u64);
+            assert_eq!(deltas.ts_event, 101_000_000_000_u64);
             assert_eq!(deltas.deltas[0].flags, 128);
             assert_eq!(deltas.deltas[0].sequence, 1);
-            assert_eq!(deltas.deltas[0].ts_event, 101_000_000_000u64);
+            assert_eq!(deltas.deltas[0].ts_event, 101_000_000_000_u64);
         }
         other => panic!("expected Data::BookDeltas, was {other:?}"),
     }
@@ -791,7 +791,7 @@ async fn test_mbo_rejected_trade_flushes_event_boundary() {
     cmd_tx.send(HandlerCommand::Start).unwrap();
 
     for (price, action, flags, ts) in [
-        ("100.00", BookAction::Add, 128, 1_000_000_000u64),
+        ("100.00", BookAction::Add, 128, 1_000_000_000_u64),
         ("100.25", BookAction::Update, 0, 2_000_000_000),
         ("101.00", BookAction::Add, 128, 4_000_000_000),
     ] {
@@ -1317,7 +1317,7 @@ async fn test_mbo_trade_emitted_once_book_initialized() {
             assert_eq!(deltas.deltas.len(), 1);
             assert_eq!(deltas.deltas[0].action, BookAction::Add);
             assert_eq!(deltas.deltas[0].order.price, Price::from("100.00"));
-            assert_eq!(deltas.deltas[0].ts_event, 101_000_000_000u64);
+            assert_eq!(deltas.deltas[0].ts_event, 101_000_000_000_u64);
         }
         other => panic!("expected Data::BookDeltas, was {other:?}"),
     }
@@ -1330,7 +1330,7 @@ async fn test_mbo_trade_emitted_once_book_initialized() {
             assert_eq!(trade.size, Quantity::from(10));
             assert_eq!(trade.aggressor_side, AggressorSide::Sell);
             assert_eq!(trade.trade_id, TradeId::new("1"));
-            assert_eq!(trade.ts_event, 102_000_000_000u64);
+            assert_eq!(trade.ts_event, 102_000_000_000_u64);
         }
         other => panic!("expected Data::Trade, was {other:?}"),
     }
@@ -1340,7 +1340,7 @@ async fn test_mbo_trade_emitted_once_book_initialized() {
         DatabentoMessage::Data(Data::BookDeltas(deltas)) => {
             assert_eq!(deltas.deltas.len(), 1);
             assert_eq!(deltas.deltas[0].action, BookAction::Delete);
-            assert_eq!(deltas.deltas[0].ts_event, 103_000_000_000u64);
+            assert_eq!(deltas.deltas[0].ts_event, 103_000_000_000_u64);
         }
         other => panic!("expected Data::BookDeltas, was {other:?}"),
     }
@@ -1416,7 +1416,7 @@ async fn test_mbo_and_trades_send_each_trade_once() {
     match msg {
         DatabentoMessage::Data(Data::Trade(trade)) => {
             assert_eq!(trade.price, Price::from("99.00"));
-            assert_eq!(trade.ts_event, 102_000_000_000u64);
+            assert_eq!(trade.ts_event, 102_000_000_000_u64);
         }
         other => panic!("expected Data::Trade, was {other:?}"),
     }
@@ -1495,7 +1495,7 @@ async fn test_dropped_mbo_trade_still_flushes_its_event() {
         DatabentoMessage::Data(Data::BookDeltas(deltas)) => {
             assert_eq!(deltas.deltas.len(), 1);
             assert_eq!(deltas.deltas[0].action, BookAction::Delete);
-            assert_eq!(deltas.deltas[0].ts_event, 101_000_000_000u64);
+            assert_eq!(deltas.deltas[0].ts_event, 101_000_000_000_u64);
         }
         other => panic!("expected Data::BookDeltas, was {other:?}"),
     }
@@ -1575,8 +1575,8 @@ async fn test_mbo_multiple_instruments() {
     let server = MockLsgServer::new(TEST_DATASET).await;
     let (cmd_tx, mut msg_rx, mut handler) = create_test_handler(&server.addr(), TEST_DATASET);
 
-    let instrument_a = 1u32;
-    let instrument_b = 2u32;
+    let instrument_a = 1_u32;
+    let instrument_b = 2_u32;
 
     server.authenticate();
     server.expect_subscription();
@@ -1776,7 +1776,7 @@ async fn test_replay_subscription_buffers_until_past_start() {
     server.send_record(mbo_msg(INSTRUMENT_ID, b'A', b'A', 128 | 32, 2_000_000_000));
 
     // Non-snapshot F_LAST with far-future ts_event to pass the buffering_start check
-    let far_future_ts = 9_000_000_000_000_000_000u64; // ~2255 CE
+    let far_future_ts = 9_000_000_000_000_000_000_u64; // ~2255 CE
     server.send_record(mbo_msg_with_ts(
         INSTRUMENT_ID,
         b'A',
@@ -1846,7 +1846,7 @@ async fn test_replay_mbo_trades_dropped_until_past_start() {
     ));
 
     // Live: the trade lacks F_LAST, so it arrives before the Cancel's F_LAST ends the replay
-    let far_future_ts = 9_000_000_000_000_000_000u64;
+    let far_future_ts = 9_000_000_000_000_000_000_u64;
     server.send_record(mbo_msg_with_ts(
         INSTRUMENT_ID,
         b'T',
@@ -1933,7 +1933,7 @@ async fn test_replay_after_failed_connect_drops_replayed_trades() {
     ));
 
     // Live: a far-future timestamp passes the session start
-    let far_future_ts = 9_000_000_000_000_000_000u64;
+    let far_future_ts = 9_000_000_000_000_000_000_u64;
     server.send_record(mbo_msg_with_ts(
         INSTRUMENT_ID,
         b'C',

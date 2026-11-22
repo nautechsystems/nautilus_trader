@@ -949,13 +949,13 @@ mod tests {
         client.sort();
         assert_eq!(
             client,
-            vec![("O-1".to_string(), 1u64), ("O-2".to_string(), 2u64)],
+            vec![("O-1".to_string(), 1_u64), ("O-2".to_string(), 2_u64)],
         );
 
         let venue = open_backend
             .iter_index_keys(IndexKind::VenueOrderId)
             .expect("iter");
-        assert_eq!(venue, vec![("V-1".to_string(), 1u64)]);
+        assert_eq!(venue, vec![("V-1".to_string(), 1_u64)]);
     }
 
     #[rstest]

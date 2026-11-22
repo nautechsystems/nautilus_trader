@@ -1885,7 +1885,7 @@ fn muldiv_floor_u128(a: u128, b: u128, c: u128) -> u128 {
 
 /// Returns the 256-bit product of two `u128` values as `(high, low)` halves.
 fn mul_wide_u128(a: u128, b: u128) -> (u128, u128) {
-    const MASK: u128 = (1u128 << 64) - 1;
+    const MASK: u128 = (1_u128 << 64) - 1;
     let (a_hi, a_lo) = (a >> 64, a & MASK);
     let (b_hi, b_lo) = (b >> 64, b & MASK);
 
@@ -1904,7 +1904,7 @@ fn mul_wide_u128(a: u128, b: u128) -> (u128, u128) {
 /// truncating toward zero. Requires `hi < c` so the quotient fits `u128`.
 fn div_wide_u128(hi: u128, lo: u128, c: u128) -> u128 {
     let mut rem = hi;
-    let mut quotient = 0u128;
+    let mut quotient = 0_u128;
 
     for i in (0..u128::BITS).rev() {
         // A carry out of the shift means the true remainder is rem + 2^128,
@@ -3504,8 +3504,8 @@ mod tests {
         // a * b overflows u128; the exact quotient is a - a/c, fractionally
         // under a, so an implementation that rounds instead of flooring
         // returns a. This is the shape of the Decimal-fallback defect.
-        let a = 10u128.pow(30);
-        let b = 7 * 10u128.pow(30);
+        let a = 10_u128.pow(30);
+        let b = 7 * 10_u128.pow(30);
         let c = b + 1;
         assert!(a.checked_mul(b).is_none());
         assert_eq!(muldiv_floor_u128(a, b, c), a - 1);

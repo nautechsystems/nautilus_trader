@@ -630,8 +630,8 @@ mod tests {
         let instrument_id = InstrumentId::from("GBPUSD.SIM");
         let bid = create_test_book_order(OrderSide::Buy, "1.2500", "50000", 1);
         let ask = create_test_book_order(OrderSide::Sell, "1.2501", "75000", 2);
-        let flags = 64u8;
-        let sequence = 999u64;
+        let flags = 64_u8;
+        let sequence = 999_u64;
         let ts_event = UnixNanos::from(5_000_000_000);
         let ts_init = UnixNanos::from(6_000_000_000);
 
@@ -873,8 +873,8 @@ mod tests {
     #[rstest]
     fn test_order_book_depths_get_metadata() {
         let instrument_id = InstrumentId::from("EURUSD.SIM");
-        let price_precision = 5u8;
-        let size_precision = 0u8;
+        let price_precision = 5_u8;
+        let size_precision = 0_u8;
 
         let metadata =
             OrderBookDepth::get_metadata(&instrument_id, price_precision, size_precision);

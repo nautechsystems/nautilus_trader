@@ -1007,7 +1007,7 @@ mod tests {
             assert_eq!(
                 round.unwrap(),
                 AHashMap::from_iter([
-                    (Ustr::from("1"), Decimal::from(9_007_199_254_740_993u64)),
+                    (Ustr::from("1"), Decimal::from(9_007_199_254_740_993_u64)),
                     (Ustr::from("3"), Decimal::new(125, 2))
                 ])
             );

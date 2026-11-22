@@ -1073,7 +1073,7 @@ mod tests {
                 .price_precision(price_precision)
                 .size_precision(8)
                 .price_increment(Price::new(
-                    10f64.powi(-i32::from(price_precision)),
+                    10_f64.powi(-i32::from(price_precision)),
                     price_precision,
                 ))
                 .size_increment(Quantity::from("0.00000001"))
