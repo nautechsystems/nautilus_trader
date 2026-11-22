@@ -172,6 +172,8 @@ Released on TBD (UTC).
 - Fixed own order books retaining stale orders after cache reload
 - Fixed historical book delta events splitting across response envelopes and time-range windows, thanks @faysou
 - Fixed portfolio balance aggregation to preserve exact totals and reject sums outside the `Money` range
+- Fixed trade PnL statistics counting closes that a fill void changed or removed
+- Fixed trade PnL statistics dropping NETTING cycles that share a close time
 - Fixed Architect AX funding subscriptions publishing the oldest rate in the lookback window
 - Fixed Architect AX order history requests failing on an empty page with a continuation cursor
 - Fixed Betfair instrument loading failures when a runner name is missing (#5718), thanks for reporting @nstkhv

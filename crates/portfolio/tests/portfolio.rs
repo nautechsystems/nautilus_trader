@@ -33,9 +33,9 @@ use nautilus_model::{
         PositionSide, TrailingOffsetType,
     },
     events::{
-        AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderPendingCancel,
-        OrderPendingUpdate, OrderSubmitted, PortfolioSnapshot, PositionAdjusted, PositionChanged,
-        PositionClosed, PositionEvent, PositionOpened,
+        AccountState, OrderAccepted, OrderEventAny, OrderFillVoided, OrderFilled,
+        OrderPendingCancel, OrderPendingUpdate, OrderSubmitted, PortfolioSnapshot,
+        PositionAdjusted, PositionChanged, PositionClosed, PositionEvent, PositionOpened,
         account::stubs::{betting_account_state, cash_account_state},
         order::{
             spec::{
@@ -6078,14 +6078,17 @@ fn test_position_records_account_currency_realized_pnl(
 }
 
 #[rstest]
-#[case::different_pnls("0.90", -10.0, 0.5)]
-#[case::equal_pnls("1.10", 10.0, 1.0)]
+#[case::different_pnls("0.90", -10.0, 0.5, [true, true])]
+#[case::equal_pnls("1.10", 10.0, 1.0, [true, true])]
+#[case::first_close_unrecorded("0.90", -10.0, 0.5, [false, true])]
+#[case::second_equal_close_unrecorded("1.10", 10.0, 1.0, [true, false])]
 fn test_netting_cycles_with_same_timestamps_record_each_pnl_once(
     mut portfolio: Portfolio,
     instrument_audusd: InstrumentAny,
     #[case] second_close_px: &str,
     #[case] second_pnl: f64,
     #[case] win_rate: f64,
+    #[case] record_close: [bool; 2],
 ) {
     let account_id = AccountId::new("SIM-001");
     let position_id = PositionId::new("P-SAME-TIMESTAMPS");
@@ -6142,10 +6145,14 @@ fn test_netting_cycles_with_same_timestamps_record_each_pnl_once(
             .borrow_mut()
             .update_position(current)
             .unwrap();
-        let closed = PositionEvent::PositionClosed(get_closed_position(current));
-        portfolio.update_position(&closed);
-        portfolio.update_position(&closed);
-        portfolio.update_position(&PositionEvent::PositionClosed(get_closed_position(current)));
+
+        if record_close[cycle] {
+            let closed = PositionEvent::PositionClosed(get_closed_position(current));
+            portfolio.update_position(&closed);
+            portfolio.update_position(&closed);
+            portfolio.update_position(&PositionEvent::PositionClosed(get_closed_position(current)));
+        }
+
         if cycle == 0 {
             portfolio
                 .cache()
@@ -6155,21 +6162,226 @@ fn test_netting_cycles_with_same_timestamps_record_each_pnl_once(
         }
     }
 
-    let expected = vec![
-        (position_id, UnixNanos::from(13), 10.0),
-        (position_id, UnixNanos::from(13), second_pnl),
-    ];
     let recorded = portfolio.recorded_realized_pnls();
     let analyzer = portfolio.analyzer();
     let stats = analyzer
         .get_performance_stats_pnls(Some(&Currency::USD()), None)
         .unwrap();
+    let ts = UnixNanos::from(13);
+    let snapshot_id = portfolio
+        .cache()
+        .borrow()
+        .position_snapshots(Some(&position_id), None)[0]
+        .id;
+
+    let first_id = if record_close[0] {
+        position_id
+    } else {
+        snapshot_id
+    };
+
+    let first = (first_id, ts, 10.0);
+    let second = (position_id, ts, second_pnl);
+    let expected_recorded: Vec<_> = [first, second]
+        .into_iter()
+        .zip(record_close)
+        .filter_map(|(row, recorded)| recorded.then_some(row))
+        .collect();
+
+    let expected = if record_close[1] {
+        vec![first, second]
+    } else {
+        vec![second, first]
+    };
+
     assert_eq!(stats["Win Rate"], win_rate);
-    assert_eq!(recorded[&Currency::USD()], expected);
+    assert_eq!(recorded[&Currency::USD()], expected_recorded);
     assert_eq!(
         analyzer.realized_pnls(Some(&Currency::USD())),
         Some(expected)
     );
+}
+
+#[rstest]
+#[case::current_cycle(false)]
+#[case::archived_cycle(true)]
+fn test_fill_void_removes_reopened_cycles_from_trade_pnl(
+    mut simple_cache: Cache,
+    clock: VirtualClock,
+    instrument_audusd: InstrumentAny,
+    #[case] void_archived_cycle: bool,
+) {
+    let usd = Currency::USD();
+    let eur = Currency::EUR();
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    simple_cache.set_mark_xrate(usd, eur, 0.9);
+    let config = PortfolioConfig::builder()
+        .use_mark_xrates(true)
+        .build()
+        .unwrap();
+
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        Some(config),
+    );
+
+    let account_id = AccountId::new("SIM-001");
+    let balance = Money::from("1000 EUR");
+    portfolio.update_account(&AccountState::new(
+        account_id,
+        AccountType::Margin,
+        vec![AccountBalance::new(balance, Money::zero(eur), balance)],
+        vec![],
+        true,
+        uuid4(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Some(eur),
+    ));
+
+    let position_id = PositionId::new("P-REOPENED-CYCLE");
+
+    let fills: Vec<_> = [
+        (OrderSide::Buy, "1.00"),
+        (OrderSide::Sell, "0.98"),
+        (OrderSide::Buy, "1.00"),
+        (OrderSide::Sell, "0.97"),
+        (OrderSide::Buy, "1.00"),
+        (OrderSide::Sell, "1.01"),
+        (OrderSide::Sell, "1.04"),
+        (OrderSide::Buy, "1.00"),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, (side, price))| {
+        let mut fill = make_fill_for_account(
+            &instrument_audusd,
+            account_id,
+            side,
+            Quantity::from("100"),
+            Price::from(price),
+            position_id,
+        );
+        fill.client_order_id = ClientOrderId::new(format!("O-{index}"));
+        fill.trade_id = TradeId::new(format!("T-{index}"));
+        fill.event_id = UUID4::new();
+        fill.ts_event = UnixNanos::from(index as u64 + 1);
+        fill
+    })
+    .collect();
+
+    let mut position = Position::new(&instrument_audusd, fills[0].clone());
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    for fill in &fills[1..] {
+        if position.is_closed() {
+            portfolio
+                .cache()
+                .borrow_mut()
+                .snapshot_position(&position)
+                .unwrap();
+        }
+
+        position.apply(fill);
+        if position.is_closed() {
+            portfolio
+                .cache()
+                .borrow_mut()
+                .update_position(&position)
+                .unwrap();
+            portfolio.update_position(&PositionEvent::PositionClosed(get_closed_position(
+                &position,
+            )));
+        }
+    }
+
+    let record = |ts: u64, pnl| (position_id, UnixNanos::from(ts), pnl);
+    let before_usd = vec![
+        record(2, -2.0),
+        record(4, -3.0),
+        record(6, 1.0),
+        record(8, 4.0),
+    ];
+    let before_eur = vec![
+        record(2, -1.8),
+        record(4, -2.7),
+        record(6, 0.9),
+        record(8, 3.6),
+    ];
+    let before = portfolio.analyzer();
+    assert_eq!(
+        before.trade_pnl_records(Some(&usd)),
+        Some(before_usd.clone())
+    );
+    assert_eq!(before.trade_pnl_records(Some(&eur)), Some(before_eur));
+    assert_eq!(
+        before.get_performance_stats_pnls(Some(&eur), None).unwrap()["Max Winner"],
+        3.6
+    );
+
+    portfolio.cache().borrow_mut().set_mark_xrate(usd, eur, 0.5);
+
+    if void_archived_cycle {
+        let (correction, closed_pnl) = apply_position_fill_void(&mut position, &fills[5], None);
+        let mut cache = portfolio.cache().borrow_mut();
+        cache.update_position(&position).unwrap();
+        cache.settle_position_snapshots(&position, closed_pnl);
+        let balance_snapshots = cache.position_snapshots(Some(&position_id), None);
+        assert_eq!(balance_snapshots.len(), 1);
+        assert_eq!(
+            balance_snapshots[0].realized_pnl,
+            Some(Money::from("-1 USD"))
+        );
+        drop(cache);
+        portfolio.update_order(&OrderEventAny::FillVoided(correction));
+    } else {
+        portfolio
+            .cache()
+            .borrow_mut()
+            .snapshot_position(&position)
+            .unwrap();
+        assert_eq!(
+            portfolio.analyzer().trade_pnl_records(Some(&usd)),
+            Some(before_usd)
+        );
+        void_position_fill(&mut portfolio, &mut position, &fills[7]);
+    }
+
+    let after = portfolio.analyzer();
+    let recorded = portfolio.recorded_realized_pnls();
+    let mut expected_usd = vec![record(2, -2.0), record(4, -3.0)];
+    let mut expected_eur = vec![record(2, -1.8), record(4, -2.7)];
+
+    if void_archived_cycle {
+        expected_usd.push(record(7, 4.0));
+        expected_eur.push(record(7, 2.0));
+    } else {
+        expected_usd.push(record(6, 1.0));
+        expected_eur.push(record(6, 0.9));
+    }
+
+    assert!(position.is_open());
+    assert_eq!(recorded[&usd], expected_usd);
+    assert_eq!(recorded[&eur], expected_eur);
+    assert_eq!(after.trade_pnl_records(Some(&eur)), Some(expected_eur));
+    let stats = after.get_performance_stats_pnls(Some(&eur), None).unwrap();
+
+    if void_archived_cycle {
+        expected_usd.push(record(8, 0.0));
+        assert_eq!(stats["Max Winner"], 2.0);
+    } else {
+        expected_usd.push(record(7, 0.0));
+        assert_eq!(stats["Max Winner"], 0.9);
+    }
+
+    assert_eq!(after.trade_pnl_records(Some(&usd)), Some(expected_usd));
 }
 
 #[rstest]
@@ -6257,10 +6469,33 @@ fn test_closed_position_fill_void_keeps_recorded_cycle_identity(
     );
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FeeSnapshot {
+    Identified,
+    Legacy,
+    LegacyRollback,
+    LegacyInheritedOrder,
+    LegacyCollision,
+    LegacyOtherAccount,
+    Adjustment,
+}
+
 #[rstest]
+#[case::separate_replay(false, false, FeeSnapshot::Identified)]
+#[case::retained_replay(true, false, FeeSnapshot::Identified)]
+#[case::same_order_and_timestamp(false, true, FeeSnapshot::Identified)]
+#[case::legacy_snapshot(true, false, FeeSnapshot::Legacy)]
+#[case::legacy_rollback(true, false, FeeSnapshot::LegacyRollback)]
+#[case::legacy_inherited_order(true, false, FeeSnapshot::LegacyInheritedOrder)]
+#[case::legacy_collision(false, true, FeeSnapshot::LegacyCollision)]
+#[case::legacy_other_account(false, true, FeeSnapshot::LegacyOtherAccount)]
+#[case::funding_adjustment(false, true, FeeSnapshot::Adjustment)]
 fn test_closed_position_records_retained_commission_without_fills(
     mut portfolio: Portfolio,
     instrument_audusd: InstrumentAny,
+    #[case] retain_replay: bool,
+    #[case] same_order: bool,
+    #[case] snapshot_kind: FeeSnapshot,
 ) {
     let account_id = AccountId::new("SIM-001");
     let position_id = PositionId::new("P-VOIDED-COMMISSION");
@@ -6300,6 +6535,439 @@ fn test_closed_position_records_retained_commission_without_fills(
     assert_eq!(
         portfolio.analyzer().realized_pnls(Some(&Currency::USD())),
         Some(expected)
+    );
+
+    let mut snapshot = position.clone_for_snapshot();
+    if snapshot_kind != FeeSnapshot::Identified {
+        snapshot.fee_only_fill_id = None;
+        portfolio.reset();
+    }
+
+    if snapshot_kind == FeeSnapshot::Adjustment {
+        let mut adjusted = Position::new(&instrument_audusd, fill.clone());
+        apply_position_funding(&mut adjusted, Money::from("-1.23 USD"), fill.ts_event);
+        apply_position_fill_void(&mut adjusted, &fill, fill.commission);
+        assert_eq!(adjusted.realized_pnl, snapshot.realized_pnl);
+        assert!(adjusted.commissions.is_empty());
+        snapshot = adjusted.clone_for_snapshot();
+    }
+
+    if snapshot_kind == FeeSnapshot::LegacyInheritedOrder {
+        snapshot.opening_order_id = ClientOrderId::new("O-VOIDED-OPENING-ORDER");
+    }
+
+    portfolio
+        .cache()
+        .borrow_mut()
+        .snapshot_position(&snapshot)
+        .unwrap();
+
+    if !same_order {
+        fill.client_order_id = ClientOrderId::new("O-SECOND-CYCLE");
+    }
+
+    if snapshot_kind == FeeSnapshot::LegacyOtherAccount {
+        fill.account_id = AccountId::new("SIM-002");
+        portfolio.update_account(&get_margin_account(Some(fill.account_id.as_str())));
+    }
+
+    fill.trade_id = TradeId::new("T-SECOND-CYCLE");
+    fill.event_id = UUID4::new();
+    if !matches!(
+        snapshot_kind,
+        FeeSnapshot::LegacyCollision | FeeSnapshot::LegacyOtherAccount | FeeSnapshot::Adjustment
+    ) {
+        fill.commission = Some(Money::from("2 USD"));
+    }
+
+    let commission_voided = if snapshot_kind == FeeSnapshot::LegacyRollback {
+        fill.commission
+    } else {
+        None
+    };
+
+    if retain_replay {
+        position.apply(&fill);
+        if commission_voided.is_none() {
+            fill.last_qty = Quantity::from("50");
+        }
+    } else {
+        position = Position::new(&instrument_audusd, fill.clone());
+    }
+
+    if snapshot_kind == FeeSnapshot::LegacyCollision {
+        let mut next_fill = fill.clone();
+        next_fill.client_order_id = ClientOrderId::new("O-THIRD-CYCLE");
+        next_fill.trade_id = TradeId::new("T-THIRD-CYCLE");
+        next_fill.event_id = UUID4::new();
+        next_fill.commission = None;
+        position.apply(&next_fill);
+    }
+
+    portfolio
+        .cache()
+        .borrow_mut()
+        .replace_position(&position, OmsType::Netting, false, false)
+        .unwrap();
+    void_position_fill_with_commission(&mut portfolio, &mut position, &fill, commission_voided);
+
+    let first = (position_id, UnixNanos::from(7), -1.23);
+    let second = (position_id, UnixNanos::from(7), -2.0);
+
+    let (recorded, expected) = if snapshot_kind == FeeSnapshot::LegacyCollision {
+        (vec![first], vec![(position_id, first.1, 0.0), first])
+    } else if snapshot_kind == FeeSnapshot::LegacyRollback {
+        (vec![first], vec![first])
+    } else if matches!(
+        snapshot_kind,
+        FeeSnapshot::LegacyOtherAccount | FeeSnapshot::Adjustment
+    ) {
+        let snapshot_id = portfolio
+            .cache()
+            .borrow()
+            .position_snapshots(Some(&position_id), None)[0]
+            .id;
+        (vec![first], vec![(snapshot_id, first.1, first.2), first])
+    } else if retain_replay {
+        (vec![first], vec![second, first])
+    } else {
+        (vec![first, second], vec![first, second])
+    };
+
+    assert_eq!(
+        portfolio
+            .recorded_realized_pnls()
+            .remove(&Currency::USD())
+            .unwrap_or_default(),
+        recorded
+    );
+    assert_eq!(
+        portfolio.analyzer().realized_pnls(Some(&Currency::USD())),
+        Some(expected)
+    );
+
+    if snapshot_kind == FeeSnapshot::LegacyRollback {
+        let mut restored = position.clone();
+        restored.fee_only_fill_id = None;
+        portfolio
+            .cache()
+            .borrow_mut()
+            .update_position(&restored)
+            .unwrap();
+        portfolio.reset();
+        assert_eq!(
+            portfolio.analyzer().realized_pnls(Some(&Currency::USD())),
+            Some(vec![first])
+        );
+
+        portfolio
+            .cache()
+            .borrow_mut()
+            .snapshot_position(&position)
+            .unwrap();
+        portfolio.reset();
+        assert_eq!(
+            portfolio.analyzer().realized_pnls(Some(&Currency::USD())),
+            Some(vec![first])
+        );
+
+        let mut next = fill;
+        next.client_order_id = ClientOrderId::new("O-REOPENED-AGAIN");
+        next.trade_id = TradeId::new("T-REOPENED-AGAIN");
+        next.event_id = UUID4::new();
+        next.ts_event = UnixNanos::from(8);
+        next.commission = None;
+        let reopened = Position::new(&instrument_audusd, next);
+        let mut cache = portfolio.cache().borrow_mut();
+        cache.snapshot_position(&position).unwrap();
+        cache
+            .replace_position(&reopened, OmsType::Netting, false, true)
+            .unwrap();
+        let snapshots = cache.position_snapshots(Some(&position_id), None);
+        drop(cache);
+
+        assert_eq!(snapshots.len(), 3);
+        assert_eq!(
+            portfolio.analyzer().realized_pnls(Some(&Currency::USD())),
+            Some(vec![
+                (snapshots[1].id, first.1, first.2),
+                (position_id, 8.into(), 0.0)
+            ])
+        );
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HistoricalClose {
+    Filled,
+    Fee,
+    Funding,
+}
+
+#[rstest]
+#[case::filled(HistoricalClose::Filled)]
+#[case::retained_fee(HistoricalClose::Fee)]
+#[case::funding(HistoricalClose::Funding)]
+fn test_replayed_trade_pnl_keeps_historical_account_and_chronology(
+    mut simple_cache: Cache,
+    clock: VirtualClock,
+    instrument_audusd: InstrumentAny,
+    #[case] close_kind: HistoricalClose,
+    #[values(false, true)] rollback: bool,
+) {
+    let usd = Currency::USD();
+    let eur = Currency::EUR();
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    simple_cache.set_mark_xrate(usd, eur, 0.5);
+
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        Some(
+            PortfolioConfig::builder()
+                .use_mark_xrates(true)
+                .build()
+                .unwrap(),
+        ),
+    );
+
+    let account_a = AccountId::new("SIM-001");
+    let account_b = AccountId::new("SIM-002");
+    for (account_id, currency) in [(account_a, usd), (account_b, eur)] {
+        let balance = Money::new(1000.0, currency);
+        portfolio.update_account(&AccountState::new(
+            account_id,
+            AccountType::Margin,
+            vec![AccountBalance::new(balance, Money::zero(currency), balance)],
+            vec![],
+            true,
+            UUID4::new(),
+            0.into(),
+            0.into(),
+            Some(currency),
+        ));
+    }
+
+    let position_id = PositionId::new("P-REPLAYED-ACCOUNT");
+    let recent_id = PositionId::new("P-RECENT-ACCOUNT");
+
+    let make_fill = |account_id, position_id, ts: u64, side, price| {
+        let mut fill = make_fill_for_account(
+            &instrument_audusd,
+            account_id,
+            side,
+            Quantity::from("100"),
+            Price::from(price),
+            position_id,
+        );
+        fill.client_order_id = ClientOrderId::new(format!("O-{ts}"));
+        fill.trade_id = TradeId::new(format!("T-{ts}"));
+        fill.event_id = UUID4::new();
+        fill.ts_event = ts.into();
+        fill
+    };
+
+    let mut opening = make_fill(account_a, position_id, 7, OrderSide::Buy, "1.00");
+    if close_kind == HistoricalClose::Fee {
+        opening.commission = Some(Money::from("1.23 USD"));
+    }
+
+    let mut archived = Position::new(&instrument_audusd, opening.clone());
+
+    let historical = match close_kind {
+        HistoricalClose::Filled => {
+            archived.apply(&make_fill(
+                account_a,
+                position_id,
+                8,
+                OrderSide::Sell,
+                "1.03",
+            ));
+            (position_id, 8.into(), 3.0)
+        }
+        HistoricalClose::Fee => {
+            apply_position_fill_void(&mut archived, &opening, None);
+            (position_id, 7.into(), -1.23)
+        }
+        HistoricalClose::Funding => {
+            apply_position_funding(&mut archived, Money::from("-1.23 USD"), opening.ts_event);
+            apply_position_fill_void(&mut archived, &opening, None);
+            (position_id, 7.into(), -1.23)
+        }
+    };
+
+    let mut legacy = archived.clone_for_snapshot();
+    legacy.fee_only_fill_id = None;
+
+    let mut recent = Position::new(
+        &instrument_audusd,
+        make_fill(account_b, recent_id, 20, OrderSide::Buy, "1.00"),
+    );
+
+    recent.apply(&make_fill(
+        account_b,
+        recent_id,
+        21,
+        OrderSide::Sell,
+        "1.04",
+    ));
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position_without_order(&recent, OmsType::Netting)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionClosed(get_closed_position(&recent)));
+
+    let mut next = make_fill(account_b, position_id, 22, OrderSide::Buy, "1.00");
+    let mut reopened = Position::new(&instrument_audusd, next.clone());
+    reopened.transfer_replay_state_from(&mut archived);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position_without_order(&reopened, OmsType::Netting)
+        .unwrap();
+
+    if !rollback {
+        next.last_qty = Quantity::from("50");
+    }
+
+    void_position_fill(&mut portfolio, &mut reopened, &next);
+
+    let recorded = portfolio.recorded_realized_pnls();
+    assert_eq!(recorded[&eur], vec![(recent_id, 21.into(), 2.0)]);
+    assert_eq!(
+        recorded[&usd],
+        vec![historical, (recent_id, 21.into(), 4.0)]
+    );
+
+    if close_kind == HistoricalClose::Fee && rollback {
+        let next = make_fill(account_b, position_id, 23, OrderSide::Buy, "1.00");
+        let next = Position::new(&instrument_audusd, next);
+        let mut cache = portfolio.cache().borrow_mut();
+        cache.snapshot_position(&legacy).unwrap();
+        cache.snapshot_position(&reopened).unwrap();
+        cache
+            .replace_position(&next, OmsType::Netting, false, true)
+            .unwrap();
+        let snapshots = cache.position_snapshots(Some(&position_id), None);
+        drop(cache);
+        portfolio.reset();
+
+        assert_eq!(snapshots[0].account_id, account_a);
+        assert_eq!(snapshots[1].account_id, account_b);
+        assert_eq!(
+            portfolio.analyzer().realized_pnls(Some(&usd)),
+            Some(vec![
+                (snapshots[1].id, historical.1, historical.2),
+                (recent_id, 21.into(), 4.0),
+                (position_id, 23.into(), 0.0),
+            ])
+        );
+    }
+}
+
+fn apply_position_funding(position: &mut Position, pnl: Money, ts: UnixNanos) {
+    position
+        .apply_adjustment(PositionAdjusted::new(
+            position.trader_id,
+            position.strategy_id,
+            position.instrument_id,
+            position.id,
+            position.account_id,
+            PositionAdjustmentType::Funding,
+            None,
+            Some(pnl),
+            None,
+            UUID4::new(),
+            ts,
+            ts,
+        ))
+        .unwrap();
+}
+
+#[rstest]
+fn test_fill_void_keeps_ledger_only_close_after_reopen(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_id = AccountId::new("SIM-001");
+    let position_id = PositionId::new("P-LEDGER-FEE");
+    portfolio.update_account(&get_margin_account(Some(account_id.as_str())));
+
+    let make_fill = |timestamp: u64, side: OrderSide| {
+        let mut fill = make_fill_for_account(
+            &instrument_audusd,
+            account_id,
+            side,
+            Quantity::from("100"),
+            Price::from("1.00"),
+            position_id,
+        );
+        fill.client_order_id = ClientOrderId::new(format!("O-{timestamp}"));
+        fill.trade_id = TradeId::new(format!("T-{timestamp}"));
+        fill.event_id = UUID4::new();
+        fill.ts_event = UnixNanos::from(timestamp);
+        fill
+    };
+
+    let mut first = make_fill(7, OrderSide::Buy);
+    first.commission = Some(Money::from("1.23 USD"));
+    let mut position = Position::new(&instrument_audusd, first.clone());
+    position.apply(&make_fill(8, OrderSide::Buy));
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+    void_position_fill(&mut portfolio, &mut position, &first);
+
+    let usd = Currency::USD();
+    let fee_close = (position_id, UnixNanos::from(7), -1.23);
+    assert_eq!(portfolio.recorded_realized_pnls()[&usd], [fee_close]);
+    assert_eq!(
+        portfolio
+            .cache()
+            .borrow()
+            .position_snapshot_count(&position_id),
+        0
+    );
+
+    position.apply(&make_fill(9, OrderSide::Sell));
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_position(&position)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionClosed(get_closed_position(
+        &position,
+    )));
+    portfolio
+        .cache()
+        .borrow_mut()
+        .snapshot_position(&position)
+        .unwrap();
+
+    let mut reopening = make_fill(10, OrderSide::Buy);
+    position = Position::new(&instrument_audusd, reopening.clone());
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_position(&position)
+        .unwrap();
+    reopening.last_qty = Quantity::from("50");
+    void_position_fill(&mut portfolio, &mut position, &reopening);
+
+    let second_close = (position_id, UnixNanos::from(9), 0.0);
+    let open = (position_id, UnixNanos::from(10), 0.0);
+    assert_eq!(
+        portfolio.recorded_realized_pnls()[&usd],
+        [fee_close, second_close]
+    );
+    assert_eq!(
+        portfolio.analyzer().trade_pnl_records(Some(&usd)),
+        Some(vec![fee_close, second_close, open])
     );
 }
 
@@ -6388,23 +7056,16 @@ fn test_closed_position_repeated_fill_corrections_keep_cycle_identity(
 }
 
 fn void_position_fill(portfolio: &mut Portfolio, position: &mut Position, fill: &OrderFilled) {
-    let correction = OrderFillVoidedSpec::builder()
-        .instrument_id(fill.instrument_id)
-        .client_order_id(fill.client_order_id)
-        .venue_order_id(fill.venue_order_id)
-        .account_id(fill.account_id)
-        .trade_id(fill.trade_id)
-        .voided_qty(fill.last_qty)
-        .order_side(fill.order_side)
-        .order_type(fill.order_type)
-        .last_px(fill.last_px)
-        .currency(fill.currency)
-        .liquidity_side(fill.liquidity_side)
-        .event_id(UUID4::new())
-        .build();
-    position
-        .apply_fill_void(correction, fill.last_qty, None)
-        .unwrap();
+    void_position_fill_with_commission(portfolio, position, fill, None);
+}
+
+fn void_position_fill_with_commission(
+    portfolio: &mut Portfolio,
+    position: &mut Position,
+    fill: &OrderFilled,
+    commission_voided: Option<Money>,
+) {
+    apply_position_fill_void(position, fill, commission_voided);
     portfolio
         .cache()
         .borrow_mut()
@@ -6418,6 +7079,32 @@ fn void_position_fill(portfolio: &mut Portfolio, position: &mut Position, fill: 
     };
 
     portfolio.update_position(&event);
+}
+
+fn apply_position_fill_void(
+    position: &mut Position,
+    fill: &OrderFilled,
+    commission_voided: Option<Money>,
+) -> (OrderFillVoided, Option<Money>) {
+    let correction = OrderFillVoidedSpec::builder()
+        .instrument_id(fill.instrument_id)
+        .client_order_id(fill.client_order_id)
+        .venue_order_id(fill.venue_order_id)
+        .account_id(fill.account_id)
+        .trade_id(fill.trade_id)
+        .voided_qty(fill.last_qty)
+        .order_side(fill.order_side)
+        .order_type(fill.order_type)
+        .last_px(fill.last_px)
+        .currency(fill.currency)
+        .liquidity_side(fill.liquidity_side)
+        .maybe_commission_voided(commission_voided)
+        .event_id(UUID4::new())
+        .build();
+    let closed_pnl = position
+        .apply_fill_void(correction.clone(), fill.last_qty, commission_voided)
+        .unwrap();
+    (correction, closed_pnl)
 }
 
 #[rstest]

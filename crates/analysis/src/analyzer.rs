@@ -753,11 +753,11 @@ impl PortfolioAnalyzer {
     /// IDs are preserved for NETTING position cycles. Records are returned in ascending
     /// `ts_event` order, with ties keeping their source order.
     ///
-    /// Native PnLs (derived from analyzed positions) and PnLs recorded live during
-    /// portfolio processing are merged per cycle: a native record is excluded only when a
-    /// recorded record shares its `(position_id, ts_event)`. Recorded values therefore take
-    /// precedence for the cycles they cover, while native cycles that were never recorded
-    /// are retained rather than dropped by position ID.
+    /// Merges PnLs added through [`Self::add_trade`] with PnLs observed through
+    /// [`Self::record_trade`]. Snapshots use their original position ID for matching.
+    /// When exactly one PnL from each source shares an ID and timestamp, the recorded value
+    /// takes precedence. Otherwise, each recorded PnL replaces at most one added PnL with
+    /// an equal amount. Unmatched PnLs remain in the output.
     ///
     /// Returns `None` if no PnLs exist, or if multiple currencies exist
     /// without an explicit currency specified.
@@ -781,23 +781,7 @@ impl PortfolioAnalyzer {
             (Some(realized_pnls), None) => realized_pnls.clone(),
             (None, Some(recorded_realized_pnls)) => recorded_realized_pnls.clone(),
             (Some(realized_pnls), Some(recorded_realized_pnls)) => {
-                let recorded_keys: IndexSet<(PositionId, UnixNanos)> = recorded_realized_pnls
-                    .iter()
-                    .map(|(position_id, ts_event, _)| {
-                        (canonical_position_id(*position_id), *ts_event)
-                    })
-                    .collect();
-                let mut merged: Vec<(PositionId, UnixNanos, f64)> = realized_pnls
-                    .iter()
-                    .copied()
-                    .filter(|(position_id, ts_event, _)| {
-                        let key = (canonical_position_id(*position_id), *ts_event);
-                        !recorded_keys.contains(&key)
-                    })
-                    .collect();
-                merged.extend(recorded_realized_pnls.iter().copied());
-
-                merged
+                merge_trade_pnl_records(realized_pnls, recorded_realized_pnls)
             }
         };
 
@@ -1255,6 +1239,51 @@ fn trade_pnl_value(pnl: &Money) -> f64 {
     }
 }
 
+fn merge_trade_pnl_records(
+    native: &[(PositionId, UnixNanos, f64)],
+    recorded: &[(PositionId, UnixNanos, f64)],
+) -> Vec<(PositionId, UnixNanos, f64)> {
+    let mut counts = AHashMap::<_, (usize, usize)>::with_capacity(recorded.len());
+    for &(id, ts, _) in recorded {
+        counts.entry((canonical_position_id(id), ts)).or_default().1 += 1;
+    }
+
+    for &(id, ts, _) in native {
+        if let Some((count, _)) = counts.get_mut(&(canonical_position_id(id), ts)) {
+            *count += 1;
+        }
+    }
+
+    let mut unmatched = AHashMap::<_, usize>::new();
+
+    for &(id, ts, pnl) in recorded {
+        let key = (canonical_position_id(id), ts);
+        if counts[&key] != (1, 1) {
+            *unmatched.entry((key, pnl.to_bits())).or_default() += 1;
+        }
+    }
+
+    let mut merged = Vec::with_capacity(native.len().max(recorded.len()));
+    for &(id, ts, pnl) in native {
+        let key = (canonical_position_id(id), ts);
+        if counts.get(&key) == Some(&(1, 1)) {
+            continue;
+        }
+
+        if let Some(count) = unmatched.get_mut(&(key, pnl.to_bits()))
+            && *count > 0
+        {
+            *count -= 1;
+            continue;
+        }
+
+        merged.push((id, ts, pnl));
+    }
+
+    merged.extend_from_slice(recorded);
+    merged
+}
+
 fn canonical_position_id(position_id: PositionId) -> PositionId {
     const UUID4_STRING_LEN: usize = 36;
 
@@ -1431,6 +1460,7 @@ mod tests {
             allows_negative_price: Some(false),
             inverse_gross_pnl_closed: 0.into(),
             inverse_entry_notional_closed: 0.into(),
+            fee_only_fill_id: None,
         }
     }
 
@@ -2186,6 +2216,35 @@ mod tests {
                 (position_id, UnixNanos::from(1), 10.0),
                 (position_id, UnixNanos::from(2), 25.0),
             ]
+        );
+    }
+
+    #[rstest]
+    #[case::different_pnls("-75 USD", -75.0)]
+    #[case::equal_pnls("25 USD", 25.0)]
+    fn test_trade_pnl_records_merge_one_same_timestamp_cycle(
+        #[case] first_pnl: &str,
+        #[case] first_value: f64,
+    ) {
+        let mut analyzer = PortfolioAnalyzer::new();
+        let currency = Currency::USD();
+        let position_id = PositionId::new("pos1");
+        let snapshot_id = PositionId::new(format!("{}-{}", position_id.as_str(), UUID4::new()));
+        let ts_event = UnixNanos::from(2);
+        let pnl = Money::from("25 USD");
+
+        analyzer.add_trade(&position_id, ts_event, &pnl);
+        analyzer.add_trade(&snapshot_id, ts_event, &Money::from(first_pnl));
+        analyzer.add_trade(&position_id, UnixNanos::from(1), &Money::from("10 USD"));
+        analyzer.record_trade(&position_id, ts_event, &pnl);
+
+        assert_eq!(
+            analyzer.trade_pnl_records(Some(&currency)),
+            Some(vec![
+                (position_id, UnixNanos::from(1), 10.0),
+                (snapshot_id, ts_event, first_value),
+                (position_id, ts_event, 25.0),
+            ])
         );
     }
 

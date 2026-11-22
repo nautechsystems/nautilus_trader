@@ -156,6 +156,7 @@ mod tests {
             allows_negative_price: Some(false),
             inverse_gross_pnl_closed: 0.into(),
             inverse_entry_notional_closed: 0.into(),
+            fee_only_fill_id: None,
         }
     }
 

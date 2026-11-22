@@ -789,8 +789,9 @@ fn test_current_cycle_fill_void_keeps_snapshot_frames(
 }
 
 #[rstest]
-fn test_current_cycle_fill_void_rollback_keeps_earlier_snapshots(
+fn test_current_cycle_fill_void_rollback_reports_replayed_close(
     #[values(false, true)] carry_replay_events_on_reopen: bool,
+    #[values(false, true)] earlier_cycle: bool,
 ) {
     let reducing = FillSpec {
         last_px: CYCLE_2_OPEN.last_px,
@@ -802,6 +803,13 @@ fn test_current_cycle_fill_void_rollback_keeps_earlier_snapshots(
         ..CYCLE_2_LONG_OPEN
     };
 
+    let mut fills = Vec::new();
+    if earlier_cycle {
+        fills.extend([CYCLE_1_OPEN, CYCLE_1_CLOSE]);
+    }
+
+    fills.extend([CYCLE_2_OPEN, reducing, reopening]);
+
     let NettingReopen {
         mut execution_engine,
         mut portfolio,
@@ -809,16 +817,7 @@ fn test_current_cycle_fill_void_rollback_keeps_earlier_snapshots(
         instrument_id,
         position_id,
         account_id,
-    } = run_netting_scenario_with_replay(
-        &[
-            CYCLE_1_OPEN,
-            CYCLE_1_CLOSE,
-            CYCLE_2_OPEN,
-            reducing,
-            reopening,
-        ],
-        carry_replay_events_on_reopen,
-    );
+    } = run_netting_scenario_with_replay(&fills, carry_replay_events_on_reopen);
 
     let first = build_fill_void_from_cached_fill(&execution_engine, CYCLE_2_OPEN);
     execution_engine.process(&first);
@@ -831,7 +830,26 @@ fn test_current_cycle_fill_void_rollback_keeps_earlier_snapshots(
         intermediate.events[0].trade_id,
         TradeId::from(reopening.trade_id)
     );
-    assert_eq!(cache.borrow().position_snapshot_count(&position_id), 1);
+    let snapshot_count = usize::from(earlier_cycle);
+    assert_eq!(
+        cache.borrow().position_snapshot_count(&position_id),
+        snapshot_count
+    );
+
+    let records = portfolio
+        .analyzer()
+        .trade_pnl_records(Some(&Currency::USD()))
+        .unwrap();
+    let mut pnls: Vec<_> = records.into_iter().map(|(_, _, pnl)| pnl).collect();
+    pnls.sort_by(f64::total_cmp);
+
+    let expected: &[f64] = if earlier_cycle {
+        &[-3.2, -2.0, 16.0]
+    } else {
+        &[-3.2, -2.0]
+    };
+
+    assert_eq!(pnls, expected);
 
     let mut second = build_fill_void_from_cached_fill(&execution_engine, reopening);
 
@@ -847,10 +865,20 @@ fn test_current_cycle_fill_void_rollback_keeps_earlier_snapshots(
     assert_eq!(position.side, PositionSide::Flat);
     assert_eq!(position.quantity, Quantity::zero(0));
     assert_eq!(position.realized_pnl, Some(Money::from("-3.20 USD")));
-    assert_eq!(cache.borrow().position_snapshot_count(&position_id), 1);
+    assert_eq!(
+        cache.borrow().position_snapshot_count(&position_id),
+        snapshot_count
+    );
+
+    let expected = if earlier_cycle {
+        "12.80 USD"
+    } else {
+        "-3.20 USD"
+    };
+
     assert_eq!(
         portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id), None),
-        Some(Money::from("12.80 USD")),
+        Some(Money::from(expected)),
     );
 }
 
