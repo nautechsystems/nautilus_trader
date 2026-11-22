@@ -126,10 +126,8 @@ impl LiveExecutionClient {
         log::debug!("{} collects single-order reports inline", self.client_id);
         let guard = self.reserve_report_task().await?;
         let result = { self.client.borrow().generate_order_status_report(cmd).await };
-        self.flush_pending_instruments();
-        let finish = Box::new(move || result);
         let guard = Rc::new(guard);
-        Ok(CollectedReport::new(finish, guard))
+        Ok(self.complete_inline_report(guard, result))
     }
 
     #[expect(
@@ -155,10 +153,8 @@ impl LiveExecutionClient {
                 .await
         };
 
-        self.flush_pending_instruments();
-        let finish = Box::new(move || result);
         let guard = Rc::new(guard);
-        Ok(CollectedReport::new(finish, guard))
+        Ok(self.complete_inline_report(guard, result))
     }
 
     #[expect(
@@ -177,10 +173,8 @@ impl LiveExecutionClient {
         log::debug!("{} collects fill reports inline", self.client_id);
         let guard = self.reserve_report_task().await?;
         let result = { self.client.borrow().generate_fill_reports(cmd).await };
-        self.flush_pending_instruments();
-        let finish = Box::new(move || result);
         let guard = Rc::new(guard);
-        Ok(CollectedReport::new(finish, guard))
+        Ok(self.complete_inline_report(guard, result))
     }
 
     #[expect(
@@ -210,10 +204,8 @@ impl LiveExecutionClient {
                 .await
         };
 
-        self.flush_pending_instruments();
-        let finish = Box::new(move || result);
         let guard = Rc::new(guard);
-        Ok(CollectedReport::new(finish, guard))
+        Ok(self.complete_inline_report(guard, result))
     }
 
     async fn collect_report<T>(
@@ -221,12 +213,29 @@ impl LiveExecutionClient {
         task: ExecutionReportTask<T>,
     ) -> anyhow::Result<CollectedReport<T>> {
         let guard = self.reserve_report_task().await?;
+        let guard = Rc::new(guard);
+        self.collect_worker_report(task, guard).await
+    }
 
+    async fn collect_worker_report<T>(
+        &self,
+        task: ExecutionReportTask<T>,
+        guard: Rc<ReportTaskGuard>,
+    ) -> anyhow::Result<CollectedReport<T>> {
         self.report_task.borrow_mut().spawn(task.collection)?;
         self.join_report_task().await?;
         self.flush_pending_instruments();
-        let guard = Rc::new(guard);
         Ok(CollectedReport::new(task.finish, guard))
+    }
+
+    fn complete_inline_report<T: 'static>(
+        &self,
+        guard: Rc<ReportTaskGuard>,
+        result: anyhow::Result<T>,
+    ) -> CollectedReport<T> {
+        self.flush_pending_instruments();
+        let finish = Box::new(move || result);
+        CollectedReport::new(finish, guard)
     }
 
     async fn reserve_report_task(&self) -> anyhow::Result<ReportTaskGuard> {
@@ -339,23 +348,15 @@ impl ReportCollector {
         cmd: GenerateFillReports,
     ) -> anyhow::Result<CollectedReport<Vec<FillReport>>> {
         let task = self.client.client.borrow().generate_fill_reports_task(&cmd);
-        let finish = if let Some(task) = task {
-            self.client
-                .report_task
-                .borrow_mut()
-                .spawn(task.collection)?;
-            self.client.join_report_task().await?;
-            task.finish
-        } else {
-            log::debug!("{} collects fill reports inline", self.client.client_id);
-            let result = { self.client.client.borrow().generate_fill_reports(cmd).await };
-            let finish: Box<dyn FnOnce() -> anyhow::Result<Vec<FillReport>>> =
-                Box::new(move || result);
-            finish
-        };
+        if let Some(task) = task {
+            let guard = Rc::clone(&self.guard);
+            return self.client.collect_worker_report(task, guard).await;
+        }
 
-        self.client.flush_pending_instruments();
-        Ok(CollectedReport::new(finish, Rc::clone(&self.guard)))
+        log::debug!("{} collects fill reports inline", self.client.client_id);
+        let result = { self.client.client.borrow().generate_fill_reports(cmd).await };
+        let guard = Rc::clone(&self.guard);
+        Ok(self.client.complete_inline_report(guard, result))
     }
 }
 

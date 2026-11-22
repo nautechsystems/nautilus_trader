@@ -59,7 +59,7 @@ where
 
     #[must_use]
     pub(crate) fn within(&self, key: &K, window: Duration) -> bool {
-        self.elapsed(key).is_some_and(|elapsed| elapsed < window)
+        self.within_at(key, dst::time::Instant::now(), window)
     }
 
     #[must_use]
