@@ -126,25 +126,28 @@ fn execution_inner(
         return;
     };
 
-    // Mirror the existing behavior: cache the order quantity by truncated cli
-    // ord id so the parser can fall back to it for quote-quantity orders.
-    let cached_qty = exec
+    let echoed_id = exec
         .cl_ord_id
-        .as_ref()
-        .and_then(|id| order_qty_cache.load().get(id).copied());
-    if let (Some(qty), Some(cl_ord_id)) = (exec.order_qty, &exec.cl_ord_id) {
+        .as_deref()
+        .and_then(|id| resolve_client_order_id(id, truncated_id_map));
+
+    // Mirror the existing behavior: cache the order quantity by truncated cli
+    // ord id so the parser can fall back to it for quote-quantity orders. An
+    // echo that names no order keys nothing, since unrelated orders can share it.
+    let qty_key = exec.cl_ord_id.as_ref().filter(|_| echoed_id.is_some());
+    let cached_qty = qty_key.and_then(|id| order_qty_cache.load().get(id).copied());
+    if let (Some(qty), Some(cl_ord_id)) = (exec.order_qty, qty_key) {
         order_qty_cache.insert(cl_ord_id.clone(), qty);
     }
 
-    // Resolve the `ClientOrderId`. When the frame carries `cl_ord_id` we
+    // Resolve the `ClientOrderId`. When the frame carries a valid `cl_ord_id` we
     // resolve it through the truncation map and seed the venue-id cache so
     // later delta frames (which routinely omit `cl_ord_id`) can recover it.
-    // When `cl_ord_id` is absent we consult the cache; without this lookup a
+    // Otherwise we consult the cache; without this lookup a
     // tracked order's delta `new` would fall through to the untracked report
     // path and the strategy would never see `OrderAccepted` (issue #4051).
-    let resolved_id = match exec.cl_ord_id.as_ref() {
-        Some(id) => {
-            let cid = resolve_client_order_id(id, truncated_id_map);
+    let resolved_id = match echoed_id {
+        Some(cid) => {
             state.cache_order_client_id(&exec.order_id, cid);
             Some(cid)
         }

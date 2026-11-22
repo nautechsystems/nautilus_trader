@@ -23,7 +23,7 @@
 
 use std::sync::Arc;
 
-use nautilus_common::messages::ExecutionEvent;
+use nautilus_common::messages::{ExecutionEvent, ExecutionReport};
 use nautilus_core::{AtomicMap, UnixNanos};
 use nautilus_kraken::{
     common::enums::{KrakenOrderSide, KrakenOrderType, KrakenTimeInForce},
@@ -35,14 +35,17 @@ use nautilus_kraken::{
         },
     },
 };
+use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{OrderSide, OrderType},
     events::OrderEventAny,
     identifiers::{ClientOrderId, InstrumentId, Symbol},
     instruments::{Instrument, InstrumentAny, currency_pair::CurrencyPair},
+    reports::OrderStatusReport,
     types::{Currency, Price, Quantity},
 };
 use rstest::rstest;
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 use crate::common::{
@@ -348,6 +351,205 @@ fn test_spot_execution_drops_an_invalid_venue_order_id(
 
     assert!(drain_events(&mut rx).is_empty());
     assert!(state.lookup_identity(&cid).is_some());
+}
+
+fn run_spot_execution(
+    exec: &KrakenWsExecutionData,
+    state: &Arc<WsDispatchState>,
+    emitter: &ExecutionEventEmitter,
+    order_qty_cache: &Arc<AtomicMap<String, Decimal>>,
+) {
+    dispatch::spot::execution(
+        exec,
+        state,
+        emitter,
+        &instruments_with(make_spot_pair()),
+        &empty_string_map(),
+        order_qty_cache,
+        account_id(),
+        UnixNanos::default(),
+    );
+}
+
+/// The order status report among `events` for `venue_order_id`.
+fn status_report_for<'a>(
+    events: &'a [ExecutionEvent],
+    venue_order_id: &str,
+) -> &'a OrderStatusReport {
+    events
+        .iter()
+        .find_map(|event| match event {
+            ExecutionEvent::Report(
+                ExecutionReport::Order(report) | ExecutionReport::OrderWithFills(report, _),
+            ) if report.venue_order_id.as_str() == venue_order_id => Some(report.as_ref()),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no status report for {venue_order_id} in {events:?}"))
+}
+
+/// An execution echoing a client order id that is not a valid id, which another tool on the
+/// account may send, reports the order with no client order id.
+#[rstest]
+#[case::status_empty(KrakenExecType::New, "", None)]
+#[case::status_blank(KrakenExecType::New, "   ", None)]
+#[case::status_non_ascii(KrakenExecType::New, "ordre-\u{e9}t\u{e9}", None)]
+#[case::trade_empty(KrakenExecType::Trade, "", Some("trade-invalid-echo"))]
+#[case::trade_blank(KrakenExecType::Trade, "   ", Some("trade-invalid-echo"))]
+#[case::trade_non_ascii(
+    KrakenExecType::Trade,
+    "ordre-\u{e9}t\u{e9}",
+    Some("trade-invalid-echo")
+)]
+fn test_spot_execution_reports_an_invalid_client_order_id_as_absent(
+    #[case] exec_type: KrakenExecType,
+    #[case] cl_ord_id: &str,
+    #[case] exec_id: Option<&str>,
+) {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+
+    let exec = make_spot_execution(exec_type, Some(cl_ord_id), "v-invalid-echo", exec_id);
+    run_spot_execution(&exec, &state, &emitter, &empty_decimal_map());
+
+    let events = drain_events(&mut rx);
+    assert_eq!(
+        status_report_for(&events, "v-invalid-echo").client_order_id,
+        None
+    );
+
+    for event in &events {
+        if let ExecutionEvent::Report(ExecutionReport::Fill(report)) = event {
+            assert_eq!(report.client_order_id, None);
+        }
+    }
+}
+
+/// A tracked order's later execution echoing a client order id that is not a valid id still
+/// resolves through the client order id cached for its venue order id.
+#[rstest]
+#[case::status_blank(KrakenExecType::Canceled, "   ", None)]
+#[case::status_non_ascii(KrakenExecType::Canceled, "ordre-\u{e9}t\u{e9}", None)]
+#[case::trade_blank(KrakenExecType::Trade, "   ", Some("trade-cached"))]
+#[case::trade_non_ascii(KrakenExecType::Trade, "ordre-\u{e9}t\u{e9}", Some("trade-cached"))]
+fn test_spot_execution_with_an_invalid_client_order_id_uses_the_cached_one(
+    #[case] exec_type: KrakenExecType,
+    #[case] cl_ord_id: &str,
+    #[case] exec_id: Option<&str>,
+) {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("uuid-spot-cached");
+    state.register_identity(
+        cid,
+        make_identity(SPOT_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
+    );
+    let placement = make_spot_execution(
+        KrakenExecType::New,
+        Some("uuid-spot-cached"),
+        "v-cached",
+        None,
+    );
+    run_spot_execution(&placement, &state, &emitter, &empty_decimal_map());
+    drain_events(&mut rx);
+
+    let exec = make_spot_execution(exec_type, Some(cl_ord_id), "v-cached", exec_id);
+    run_spot_execution(&exec, &state, &emitter, &empty_decimal_map());
+
+    let events = drain_events(&mut rx);
+    let tracked = events.iter().any(|event| match event {
+        ExecutionEvent::Order(OrderEventAny::Canceled(e)) => e.client_order_id == cid,
+        ExecutionEvent::Order(OrderEventAny::Filled(e)) => e.client_order_id == cid,
+        _ => false,
+    });
+    assert!(tracked, "{events:?}");
+}
+
+/// An execution naming its instrument by an empty symbol finds no instrument and emits nothing,
+/// while the same frame with the listed symbol reports.
+#[rstest]
+#[case::empty_symbol("", false)]
+#[case::listed_symbol(SPOT_SYMBOL, true)]
+fn test_spot_execution_with_an_empty_symbol_emits_nothing(
+    #[case] symbol: &str,
+    #[case] reports: bool,
+) {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+
+    let mut exec = make_spot_execution(KrakenExecType::New, None, "v-symbol", None);
+    exec.symbol = Some(symbol.to_string());
+    run_spot_execution(&exec, &state, &emitter, &empty_decimal_map());
+
+    assert_eq!(!drain_events(&mut rx).is_empty(), reports);
+}
+
+/// A later execution without `order_qty` takes the quantity cached under its order's echoed client
+/// order id.
+#[rstest]
+fn test_spot_execution_caches_quantity_under_a_valid_client_order_id() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let order_qty_cache = empty_decimal_map();
+
+    let mut placement = make_spot_execution(KrakenExecType::New, Some("ext-qty-1"), "v-qty", None);
+    placement.order_qty = Some(dec!(0.0003));
+    run_spot_execution(&placement, &state, &emitter, &order_qty_cache);
+
+    let mut trade = make_spot_execution(
+        KrakenExecType::Trade,
+        Some("ext-qty-1"),
+        "v-qty",
+        Some("trade-qty"),
+    );
+    trade.order_qty = None;
+    trade.cum_qty = Some(dec!(0.0001));
+    run_spot_execution(&trade, &state, &emitter, &order_qty_cache);
+
+    let events = drain_events(&mut rx);
+    let quantities: Vec<Quantity> = events
+        .iter()
+        .filter_map(|event| match event {
+            ExecutionEvent::Report(
+                ExecutionReport::Order(report) | ExecutionReport::OrderWithFills(report, _),
+            ) => Some(report.quantity),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        quantities.last(),
+        Some(&Quantity::from("0.0003")),
+        "{events:?}"
+    );
+}
+
+/// An echoed client order id that names no order does not key the order quantity cache, so two
+/// untracked orders echoing the same invalid id do not share a quantity.
+#[rstest]
+fn test_spot_execution_does_not_cache_quantity_under_an_invalid_client_order_id() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let order_qty_cache = empty_decimal_map();
+
+    let mut first = make_spot_execution(KrakenExecType::New, Some("   "), "v-first", None);
+    first.order_qty = Some(dec!(0.0003));
+    run_spot_execution(&first, &state, &emitter, &order_qty_cache);
+
+    let mut second = make_spot_execution(
+        KrakenExecType::Trade,
+        Some("   "),
+        "v-second",
+        Some("trade-second"),
+    );
+    second.order_qty = None;
+    second.cum_qty = Some(dec!(0.0001));
+    run_spot_execution(&second, &state, &emitter, &order_qty_cache);
+
+    let events = drain_events(&mut rx);
+    assert_eq!(
+        status_report_for(&events, "v-second").quantity,
+        Quantity::from("0.0001")
+    );
+    assert!(order_qty_cache.load().is_empty());
 }
 
 #[rstest]

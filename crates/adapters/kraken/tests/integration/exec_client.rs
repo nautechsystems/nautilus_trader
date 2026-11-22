@@ -3637,6 +3637,38 @@ async fn test_spot_mass_status_skips_a_fill_with_an_invalid_order_id_as_incomple
     assert!(!mass_status.reports_complete());
 }
 
+/// A spot trade whose history key is not a valid trade id is skipped and leaves the set incomplete,
+/// and its sibling on the page still reports.
+#[rstest]
+#[case::blank("   ")]
+#[case::non_ascii("TTRADE-\u{e9}")]
+#[tokio::test]
+async fn test_spot_mass_status_skips_a_fill_with_an_invalid_trade_id_as_incomplete(
+    #[case] trade_id: &str,
+) {
+    let (client, _rx, _cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+    *state.trades_history_json.lock().await = Some(
+        spot_trades_json(&["XBTUSDT", "XBTUSDT"])
+            .replace("\"TTRADE-0\"", &format!("\"{trade_id}\"")),
+    );
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .expect("mass status available");
+
+    let trade_ids: Vec<TradeId> = mass_status
+        .fill_reports()
+        .values()
+        .flatten()
+        .map(|report| report.trade_id)
+        .collect();
+    assert_eq!(trade_ids, [TradeId::from("TTRADE-1")]);
+    assert!(!mass_status.reports_complete());
+}
+
 /// What a single-order lookup answers for an order its read did not return.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LookupAnswer {
@@ -4335,6 +4367,37 @@ async fn test_futures_mass_status_skips_a_fill_with_an_invalid_order_id_as_incom
         VenueOrderId::from("V-SIBLING")
     );
     assert_eq!(sibling_reports[0].trade_id, TradeId::from("f-sibling"));
+    assert!(!mass_status.reports_complete());
+}
+
+/// A futures fill whose fill id is not a valid trade id is skipped and leaves the set incomplete,
+/// and its sibling on the page still reports.
+#[rstest]
+#[case::blank("   ")]
+#[case::non_ascii("f-\u{e9}")]
+#[tokio::test]
+async fn test_futures_mass_status_skips_a_fill_with_an_invalid_fill_id_as_incomplete(
+    #[case] fill_id: &str,
+) {
+    let (client, _rx, _cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    *state.fills_response.lock().await = Some(futures_fills_json(&[
+        (fill_id, "V-INVALID-FILL", "5", "27000.0"),
+        ("f-sibling", "V-SIBLING", "5", "27000.0"),
+    ]));
+
+    let mass_status = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status available");
+
+    let fill_reports = mass_status.fill_reports();
+    assert_eq!(fill_reports.len(), 1);
+    assert_eq!(
+        fill_reports[&VenueOrderId::from("V-SIBLING")][0].trade_id,
+        TradeId::from("f-sibling")
+    );
     assert!(!mass_status.reports_complete());
 }
 

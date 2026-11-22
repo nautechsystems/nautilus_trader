@@ -110,7 +110,7 @@ pub fn open_orders_delta(
         .order
         .cli_ord_id
         .as_ref()
-        .map(|id| resolve_client_order_id(id, truncated_id_map));
+        .and_then(|id| resolve_client_order_id(id, truncated_id_map));
 
     // Stale-report suppression: an order that already reached the filled
     // terminal state should not produce more events even if a late delta
@@ -404,7 +404,7 @@ pub fn open_orders_cancel(
     let resolved_id = cancel
         .cli_ord_id
         .as_ref()
-        .map(|id| resolve_client_order_id(id, truncated_id_map))
+        .and_then(|id| resolve_client_order_id(id, truncated_id_map))
         .or_else(|| venue_client_map.load().get(&cancel.order_id).copied());
 
     if let Some(client_order_id) = resolved_id
@@ -547,8 +547,7 @@ fn single_fill(
     let resolved_id = fill
         .cli_ord_id
         .as_deref()
-        .filter(|s| !s.is_empty())
-        .map(|id| resolve_client_order_id(id, truncated_id_map))
+        .and_then(|id| resolve_client_order_id(id, truncated_id_map))
         .or_else(|| venue_client_map.get(&fill.order_id).copied());
 
     if let Some(cid) = resolved_id

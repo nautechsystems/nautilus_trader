@@ -774,7 +774,13 @@ and an inferred price. A fill read supplies the real ones only if it arrives bef
 a later real fill to the inferred fill, so it can apply as a second fill and overstate the filled quantity until the
 mass status at the next startup corrects it.
 
-A successful submit or edit response naming the order only by such an ID leaves the outcome ambiguous: the command is
+A trade or fill ID that is empty, blank, not ASCII, or longer than 36 characters is handled the same way: a report
+row carrying one counts as unparsable, and a stream fill or public trade carrying one is dropped. A client order ID
+echo that is not a valid ID, which another tool on the account may send, names no order, so the order is identified
+by its venue order ID alone. A frame naming an empty or blank symbol finds no instrument and is skipped with a
+warning.
+
+A successful submit or edit response naming the order only by such a venue order ID leaves the outcome ambiguous: the command is
 not rejected, and the streams or reconciliation resolve the order. The in-flight check's `query_order` needs a venue
 order ID, so if a submitted order's stream frames are lost too and no open check (`open_check_interval_secs`) reads it
 before the in-flight retries run out, `SubmissionRecoveryPolicy::ResolveLocally` closes it locally, even while the venue

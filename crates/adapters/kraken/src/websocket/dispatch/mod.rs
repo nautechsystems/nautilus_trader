@@ -445,22 +445,30 @@ impl WsDispatchState {
     }
 }
 
-/// Resolves a shortened client order id to its full Nautilus form.
+/// Resolves an echoed client order id to its full Nautilus form, or `None` when the echo names
+/// no order.
 ///
 /// An order sent with its client order id shortened by `truncate_cl_ord_id` is
 /// echoed in that form; the truncation map, populated when such an order is
-/// submitted, lets the WebSocket consumer recover the original id. Falls back
-/// to constructing a fresh `ClientOrderId` from the echoed string when no
-/// mapping exists (the order is then treated as external by downstream lookup).
+/// submitted, lets the WebSocket consumer recover the original id. An unmapped
+/// echo becomes a fresh `ClientOrderId` (the order is then treated as external
+/// by downstream lookup). Another tool on the account may echo an empty, blank
+/// or non-ASCII id, which names no order.
 pub(crate) fn resolve_client_order_id(
     truncated: &str,
     truncated_id_map: &Arc<AtomicMap<String, ClientOrderId>>,
-) -> ClientOrderId {
-    truncated_id_map
-        .load()
-        .get(truncated)
-        .copied()
-        .unwrap_or_else(|| ClientOrderId::new(truncated))
+) -> Option<ClientOrderId> {
+    if let Some(client_order_id) = truncated_id_map.load().get(truncated).copied() {
+        return Some(client_order_id);
+    }
+
+    if truncated.is_empty() {
+        return None;
+    }
+
+    ClientOrderId::new_checked(truncated)
+        .inspect_err(|e| log::warn!("Ignoring invalid echoed client order id {truncated:?}: {e}"))
+        .ok()
 }
 
 /// Synthesizes and emits an `OrderAccepted` event when one has not yet been
@@ -715,13 +723,23 @@ mod tests {
         map.insert("trunc-id".to_string(), full);
 
         let resolved = resolve_client_order_id("trunc-id", &map);
-        assert_eq!(resolved, full);
+        assert_eq!(resolved, Some(full));
     }
 
     #[rstest]
     fn test_resolve_client_order_id_falls_back_to_input() {
         let map: Arc<AtomicMap<String, ClientOrderId>> = Arc::new(AtomicMap::new());
         let resolved = resolve_client_order_id("unknown", &map);
-        assert_eq!(resolved.as_str(), "unknown");
+        assert_eq!(resolved, Some(ClientOrderId::new("unknown")));
+    }
+
+    /// An unmapped echo that is not a valid client order id names no order instead of failing.
+    #[rstest]
+    #[case::empty("")]
+    #[case::blank("   ")]
+    #[case::non_ascii("ordre-\u{e9}t\u{e9}")]
+    fn test_resolve_client_order_id_returns_none_for_invalid_echo(#[case] echoed: &str) {
+        let map: Arc<AtomicMap<String, ClientOrderId>> = Arc::new(AtomicMap::new());
+        assert_eq!(resolve_client_order_id(echoed, &map), None);
     }
 }

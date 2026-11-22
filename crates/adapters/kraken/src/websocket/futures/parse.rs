@@ -25,7 +25,7 @@ use nautilus_model::{
     enums::{
         AggressorSide, BookAction, OrderSide, OrderStatus, OrderType, RecordFlag, TriggerType,
     },
-    identifiers::{AccountId, ClientOrderId, TradeId},
+    identifiers::{AccountId, TradeId},
     instruments::{Instrument, any::InstrumentAny},
     reports::{FillReport, OrderStatusReport},
     types::{Money, Price, Quantity},
@@ -38,7 +38,10 @@ use super::messages::{
 };
 use crate::common::{
     enums::KrakenOrderSide,
-    parse::{fee_currency, parse_futures_order_type_time_in_force, parse_venue_order_id},
+    parse::{
+        echoed_client_order_id, fee_currency, parse_futures_order_type_time_in_force,
+        parse_venue_order_id,
+    },
 };
 
 fn millis_to_nanos(millis: i64) -> UnixNanos {
@@ -98,10 +101,11 @@ pub fn parse_futures_ws_trade_tick(
         KrakenOrderSide::Sell => AggressorSide::Sell,
     };
 
-    let trade_id = trade
-        .uid
-        .as_deref()
-        .map_or_else(|| TradeId::new(trade.seq.to_string()), TradeId::new);
+    let trade_id = match trade.uid.as_deref() {
+        Some(uid) => TradeId::new_checked(uid)
+            .with_context(|| format!("Invalid uid '{uid}' in Kraken futures trade"))?,
+        None => TradeId::new(trade.seq.to_string()),
+    };
 
     let ts_event = millis_to_nanos(trade.time);
 
@@ -277,7 +281,7 @@ pub fn parse_futures_ws_order_status_report(
     let mut report = OrderStatusReport {
         account_id,
         instrument_id: instrument.id(),
-        client_order_id: order.cli_ord_id.as_ref().map(ClientOrderId::new),
+        client_order_id: echoed_client_order_id(order.cli_ord_id.as_deref()),
         venue_order_id,
         order_side: order_side.into(),
         order_type,
@@ -348,7 +352,8 @@ pub fn parse_futures_ws_fill_report(
         &fill.order_id,
         format_args!("futures fill {}", fill.fill_id),
     )?;
-    let trade_id = TradeId::new(&fill.fill_id);
+    let trade_id = TradeId::new_checked(&fill.fill_id)
+        .with_context(|| format!("Invalid fill_id '{}' in Kraken futures fill", fill.fill_id))?;
     let order_side = if fill.buy {
         OrderSide::Buy
     } else {
@@ -372,11 +377,7 @@ pub fn parse_futures_ws_fill_report(
 
     let ts_event = millis_to_nanos(fill.time);
 
-    let client_order_id = fill
-        .cli_ord_id
-        .as_ref()
-        .filter(|s| !s.is_empty())
-        .map(ClientOrderId::new);
+    let client_order_id = echoed_client_order_id(fill.cli_ord_id.as_deref());
 
     Ok(FillReport::new(
         account_id,
@@ -516,6 +517,39 @@ mod tests {
         assert_eq!(tick.price, Price::from("34969.5"));
         assert_eq!(tick.size, Quantity::from("15000.0"));
         assert_eq!(tick.aggressor_side, AggressorSide::Sell);
+    }
+
+    /// Kraken generates trade uids, so one that is not a valid trade id fails its tick with the
+    /// field named.
+    #[rstest]
+    #[case::empty("")]
+    #[case::blank("   ")]
+    #[case::non_ascii("fill-\u{e9}")]
+    #[case::interior_nul("fill\u{0}id")]
+    #[case::too_long("0123456789012345678901234567890123456")]
+    fn test_parse_futures_ws_trade_tick_fails_on_an_invalid_uid(#[case] uid: &str) {
+        let json = include_str!("../../../test_data/ws_futures_trade.json");
+        let mut trade: KrakenFuturesTradeData = serde_json::from_str(json).unwrap();
+        trade.uid = Some(uid.to_string());
+
+        let error = parse_futures_ws_trade_tick(&trade, &create_mock_perp(), TS).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("Invalid uid '{uid}' in Kraken futures trade")
+        );
+    }
+
+    /// A trade without a uid takes its sequence number as its trade id.
+    #[rstest]
+    fn test_parse_futures_ws_trade_tick_without_uid_takes_the_sequence_number() {
+        let json = include_str!("../../../test_data/ws_futures_trade.json");
+        let mut trade: KrakenFuturesTradeData = serde_json::from_str(json).unwrap();
+        trade.uid = None;
+
+        let tick = parse_futures_ws_trade_tick(&trade, &create_mock_perp(), TS).unwrap();
+
+        assert_eq!(tick.trade_id.as_str(), trade.seq.to_string());
     }
 
     fn assert_snapshot_delta_flags(instrument_id: InstrumentId, deltas: Vec<OrderBookDelta>) {
@@ -696,6 +730,98 @@ mod tests {
                 "Invalid order_id '' in Kraken futures fill {}",
                 fill.fill_id
             )
+        );
+    }
+
+    /// A client order id echo that is not a valid id, which another tool on the account may send,
+    /// names no order: the report carries none instead of the read failing.
+    #[rstest]
+    #[case::empty("")]
+    #[case::blank("   ")]
+    #[case::non_ascii("ordre-\u{e9}t\u{e9}")]
+    fn test_parse_futures_ws_order_status_report_drops_an_invalid_client_order_id(
+        #[case] cli_ord_id: &str,
+    ) {
+        let order = KrakenFuturesOpenOrder {
+            instrument: ustr::Ustr::from("PI_XBTUSD"),
+            time: 1_700_000_000_000,
+            last_update_time: 1_700_000_000_100,
+            qty: dec!(1000),
+            filled: Decimal::ZERO,
+            limit_price: Some(dec!(35000)),
+            stop_price: None,
+            order_type: KrakenFuturesOrderType::Limit,
+            order_id: "abc-123".to_string(),
+            cli_ord_id: Some(cli_ord_id.to_string()),
+            direction: 0,
+            reduce_only: false,
+            trigger_signal: None,
+        };
+
+        let report = parse_futures_ws_order_status_report(
+            &order,
+            false,
+            None,
+            &create_mock_perp(),
+            AccountId::from("KRAKEN-001"),
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.client_order_id, None);
+        assert_eq!(report.venue_order_id.as_str(), "abc-123");
+    }
+
+    /// A fill's client order id echo that is not a valid id names no order.
+    #[rstest]
+    #[case::blank("   ")]
+    #[case::non_ascii("ordre-\u{e9}t\u{e9}")]
+    fn test_parse_futures_ws_fill_report_drops_an_invalid_client_order_id(
+        #[case] cli_ord_id: &str,
+    ) {
+        let json = include_str!("../../../test_data/ws_futures_fills_delta.json");
+        let fills_delta: super::super::messages::KrakenFuturesFillsDelta =
+            serde_json::from_str(json).unwrap();
+        let mut fill = fills_delta.fills[0].clone();
+        fill.cli_ord_id = Some(cli_ord_id.to_string());
+
+        let report = parse_futures_ws_fill_report(
+            &fill,
+            &create_mock_perp(),
+            AccountId::from("KRAKEN-001"),
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.client_order_id, None);
+    }
+
+    /// Kraken generates fill ids, so one that is not a valid trade id fails its fill with the
+    /// field named instead of ending the process.
+    #[rstest]
+    #[case::empty("")]
+    #[case::blank("   ")]
+    #[case::non_ascii("fill-\u{e9}")]
+    #[case::interior_nul("fill\u{0}id")]
+    #[case::too_long("0123456789012345678901234567890123456")]
+    fn test_parse_futures_ws_fill_report_fails_on_an_invalid_fill_id(#[case] fill_id: &str) {
+        let json = include_str!("../../../test_data/ws_futures_fills_delta.json");
+        let fills_delta: super::super::messages::KrakenFuturesFillsDelta =
+            serde_json::from_str(json).unwrap();
+        let mut fill = fills_delta.fills[0].clone();
+        fill.fill_id = fill_id.to_string();
+
+        let error = parse_futures_ws_fill_report(
+            &fill,
+            &create_mock_perp(),
+            AccountId::from("KRAKEN-001"),
+            TS,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("Invalid fill_id '{fill_id}' in Kraken futures fill")
         );
     }
 

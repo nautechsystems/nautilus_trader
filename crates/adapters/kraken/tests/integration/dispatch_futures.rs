@@ -719,6 +719,209 @@ fn test_futures_fills_delta_keeps_the_sibling_of_an_invalid_venue_order_id() {
     assert_eq!(report.trade_id, TradeId::from("trade-sibling"));
 }
 
+/// An open-orders delta echoing a client order id that is not a valid id, which another tool on
+/// the account may send, reports the order by its venue order id with no client order id.
+#[rstest]
+#[case::update_empty(false, None, "")]
+#[case::update_blank(false, None, "   ")]
+#[case::update_non_ascii(false, None, "ordre-\u{e9}t\u{e9}")]
+#[case::cancel_delta_empty(true, Some("cancelled_by_user"), "")]
+#[case::cancel_delta_blank(true, Some("cancelled_by_user"), "   ")]
+#[case::cancel_delta_non_ascii(true, Some("cancelled_by_user"), "ordre-\u{e9}t\u{e9}")]
+fn test_futures_delta_reports_an_invalid_client_order_id_as_absent(
+    #[case] is_cancel: bool,
+    #[case] reason: Option<&str>,
+    #[case] cli_ord_id: &str,
+) {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let venue_client_map = empty_string_map();
+
+    let delta = make_open_orders_delta(
+        is_cancel,
+        reason,
+        dec!(0.0001),
+        Decimal::ZERO,
+        Some(cli_ord_id),
+        "v-invalid-echo",
+    );
+    dispatch::futures::open_orders_delta(
+        &delta,
+        &state,
+        &emitter,
+        &instruments_with(make_futures_perpetual()),
+        &empty_string_map(),
+        &empty_instrument_id_map(),
+        &venue_client_map,
+        &empty_quantity_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1, "{events:?}");
+    let ExecutionEvent::Report(ExecutionReport::Order(report)) = &events[0] else {
+        panic!("expected an order status report, was {:?}", events[0]);
+    };
+    assert_eq!(report.client_order_id, None);
+    assert_eq!(report.venue_order_id, VenueOrderId::from("v-invalid-echo"));
+    assert!(venue_client_map.load().is_empty());
+}
+
+/// A cancel-only frame echoing a client order id that is not a valid id names its order by the
+/// venue order id alone: a tracked order found through its venue order id is canceled, and an
+/// external order reports with no client order id.
+#[rstest]
+#[case::tracked_empty("", true)]
+#[case::tracked_blank("   ", true)]
+#[case::tracked_non_ascii("ordre-\u{e9}t\u{e9}", true)]
+#[case::external_empty("", false)]
+#[case::external_blank("   ", false)]
+#[case::external_non_ascii("ordre-\u{e9}t\u{e9}", false)]
+fn test_futures_open_orders_cancel_treats_an_invalid_client_order_id_as_absent(
+    #[case] cli_ord_id: &str,
+    #[case] tracked: bool,
+) {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("uuid-cancel-echo");
+    let venue_client_map = empty_string_map();
+    let order_instrument_map = empty_instrument_id_map();
+    let venue_order_qty = empty_quantity_map();
+
+    if tracked {
+        state.register_identity(
+            cid,
+            make_identity(FUTURES_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
+        );
+        venue_client_map.insert("v-cancel-echo".to_string(), cid);
+    } else {
+        order_instrument_map.insert(
+            "v-cancel-echo".to_string(),
+            InstrumentId::from(FUTURES_INSTRUMENT_ID),
+        );
+        venue_order_qty.insert("v-cancel-echo".to_string(), Quantity::from("0.0001"));
+    }
+
+    let cancel =
+        make_open_orders_cancel(Some("cancelled_by_user"), Some(cli_ord_id), "v-cancel-echo");
+    dispatch::futures::open_orders_cancel(
+        &cancel,
+        &state,
+        &emitter,
+        &empty_string_map(),
+        &order_instrument_map,
+        &venue_client_map,
+        &venue_order_qty,
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    if tracked {
+        assert_eq!(events.len(), 2, "{events:?}");
+        let ExecutionEvent::Order(OrderEventAny::Canceled(canceled)) = &events[1] else {
+            panic!("expected OrderCanceled, was {:?}", events[1]);
+        };
+        assert_eq!(canceled.client_order_id, cid);
+    } else {
+        assert_eq!(events.len(), 1, "{events:?}");
+        let ExecutionEvent::Report(ExecutionReport::Order(report)) = &events[0] else {
+            panic!("expected an order status report, was {:?}", events[0]);
+        };
+        assert_eq!(report.client_order_id, None);
+        assert_eq!(report.venue_order_id, VenueOrderId::from("v-cancel-echo"));
+    }
+}
+
+/// A fill with a fill id that is not a valid trade id is dropped on its own, and its sibling in
+/// the frame still reports.
+#[rstest]
+#[case::empty("")]
+#[case::blank("   ")]
+fn test_futures_fills_delta_keeps_the_sibling_of_an_invalid_fill_id(#[case] fill_id: &str) {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+
+    let mut fills = make_fills_delta(None, "v-invalid-fill", fill_id);
+    let sibling = make_fills_delta(None, "v-sibling", "trade-sibling");
+    fills.fills.extend(sibling.fills);
+    dispatch::futures::fills_delta(
+        &fills,
+        &state,
+        &emitter,
+        &instruments_with(make_futures_perpetual()),
+        &empty_string_map(),
+        &empty_string_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1, "{events:?}");
+    let ExecutionEvent::Report(ExecutionReport::Fill(report)) = &events[0] else {
+        panic!("expected a fill report, was {:?}", events[0]);
+    };
+    assert_eq!(report.trade_id, TradeId::from("trade-sibling"));
+}
+
+/// A fill echoing a client order id that is not a valid id names its order by the venue order id
+/// alone: an external order reports with no client order id, and a tracked order found through
+/// its venue order id still fills.
+#[rstest]
+#[case::external_empty("", false)]
+#[case::external_blank("   ", false)]
+#[case::external_non_ascii("ordre-\u{e9}t\u{e9}", false)]
+#[case::tracked_blank("   ", true)]
+#[case::tracked_non_ascii("ordre-\u{e9}t\u{e9}", true)]
+fn test_futures_fills_delta_treats_an_invalid_client_order_id_as_absent(
+    #[case] cli_ord_id: &str,
+    #[case] tracked: bool,
+) {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let venue_client_map = empty_string_map();
+
+    if tracked {
+        let cid = ClientOrderId::new("uuid-invalid-echo");
+        state.register_identity(
+            cid,
+            make_identity(FUTURES_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
+        );
+        venue_client_map.insert("v-invalid-echo".to_string(), cid);
+    }
+
+    let fills = make_fills_delta(Some(cli_ord_id), "v-invalid-echo", "trade-invalid-echo");
+    dispatch::futures::fills_delta(
+        &fills,
+        &state,
+        &emitter,
+        &instruments_with(make_futures_perpetual()),
+        &empty_string_map(),
+        &venue_client_map,
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    if tracked {
+        assert_eq!(events.len(), 2, "{events:?}");
+        let ExecutionEvent::Order(OrderEventAny::Filled(filled)) = &events[1] else {
+            panic!("expected OrderFilled, was {:?}", events[1]);
+        };
+        assert_eq!(
+            filled.client_order_id,
+            ClientOrderId::new("uuid-invalid-echo")
+        );
+    } else {
+        assert_eq!(events.len(), 1, "{events:?}");
+        let ExecutionEvent::Report(ExecutionReport::Fill(report)) = &events[0] else {
+            panic!("expected a fill report, was {:?}", events[0]);
+        };
+        assert_eq!(report.client_order_id, None);
+    }
+}
+
 #[rstest]
 fn test_futures_delta_external_emits_status_report() {
     let (emitter, mut rx) = test_emitter();

@@ -964,7 +964,7 @@ fn compute_avg_px(order: &SpotOrder) -> Option<Decimal> {
 /// # Errors
 ///
 /// Returns an error if:
-/// - Order ID, quantities, or prices cannot be parsed.
+/// - Order ID, trade ID, quantities, or prices cannot be parsed.
 pub fn parse_fill_report(
     trade_id: &str,
     trade: &SpotTrade,
@@ -974,7 +974,8 @@ pub fn parse_fill_report(
 ) -> anyhow::Result<FillReport> {
     let instrument_id = instrument.id();
     let venue_order_id = parse_venue_order_id(&trade.ordertxid, "spot trade")?;
-    let trade_id_obj = TradeId::new(trade_id);
+    let trade_id_obj = TradeId::new_checked(trade_id)
+        .with_context(|| format!("Invalid trade_id '{trade_id}' in Kraken spot trade"))?;
 
     let order_side = trade.trade_type.into();
 
@@ -1207,10 +1208,10 @@ pub fn parse_futures_order_event_status_report(
     })
 }
 
-/// The client order ID a futures response echoes, if it carries a valid one. An empty or invalid
-/// echo, which another tool on the account may have sent, names no order rather than failing the
-/// read.
-fn echoed_client_order_id(echoed: Option<&str>) -> Option<ClientOrderId> {
+/// The client order ID a Kraken response or stream frame echoes, if it carries a valid one. An
+/// empty or invalid echo, which another tool on the account may have sent, names no order rather
+/// than failing the read.
+pub(crate) fn echoed_client_order_id(echoed: Option<&str>) -> Option<ClientOrderId> {
     echoed
         .filter(|id| !id.is_empty())
         .and_then(|id| ClientOrderId::new_checked(id).ok())
@@ -1364,7 +1365,7 @@ fn parse_futures_order_event_status(
 ///
 /// # Errors
 ///
-/// Returns an error if order ID, quantities, or prices cannot be parsed.
+/// Returns an error if order ID, fill ID, quantities, or prices cannot be parsed.
 pub fn parse_futures_fill_report(
     fill: &FuturesFill,
     instrument: &InstrumentAny,
@@ -1373,7 +1374,8 @@ pub fn parse_futures_fill_report(
 ) -> anyhow::Result<FillReport> {
     let instrument_id = instrument.id();
     let venue_order_id = parse_venue_order_id(&fill.order_id, "futures fill")?;
-    let trade_id = TradeId::new(&fill.fill_id);
+    let trade_id = TradeId::new_checked(&fill.fill_id)
+        .with_context(|| format!("Invalid fill_id '{}' in Kraken futures fill", fill.fill_id))?;
 
     let order_side = fill.side.into();
 
@@ -2601,6 +2603,79 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "Invalid order_id '' in Kraken futures fill"
+        );
+    }
+
+    /// Kraken names each trade in TradesHistory by its key, so a key that is not a valid trade id
+    /// fails that trade with the key named instead of ending the process.
+    #[rstest]
+    #[case::empty("")]
+    #[case::blank("   ")]
+    #[case::non_ascii("fill-\u{e9}")]
+    #[case::interior_nul("fill\u{0}id")]
+    #[case::too_long("0123456789012345678901234567890123456")]
+    fn test_parse_fill_report_fails_on_an_invalid_trade_id(#[case] trade_id: &str) {
+        let json = load_test_json("http_trades_history.json");
+        let wrapper: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let trades: IndexMap<String, SpotTrade> =
+            serde_json::from_value(wrapper["result"]["trades"].clone()).unwrap();
+        let (_, trade) = trades.first().unwrap();
+
+        let error = parse_fill_report(
+            trade_id,
+            trade,
+            &usdc_eur_instrument(),
+            AccountId::new("KRAKEN-001"),
+            TS,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("Invalid trade_id '{trade_id}' in Kraken spot trade")
+        );
+    }
+
+    /// Kraken generates fill ids, so one that is not a valid trade id fails that fill with the
+    /// field named instead of ending the process.
+    #[rstest]
+    #[case::empty("")]
+    #[case::blank("   ")]
+    #[case::non_ascii("fill-\u{e9}")]
+    #[case::interior_nul("fill\u{0}id")]
+    #[case::too_long("0123456789012345678901234567890123456")]
+    fn test_parse_futures_fill_report_fails_on_an_invalid_fill_id(#[case] fill_id: &str) {
+        let json = load_test_json("http_futures_fills.json");
+        let mut response: FuturesFillsResponse = serde_json::from_str(&json).unwrap();
+        let mut fill = response.fills.swap_remove(0);
+        fill.fill_id = fill_id.to_string();
+
+        let error =
+            parse_futures_fill_report(&fill, &create_mock_perp(), AccountId::new("KRAKEN-001"), TS)
+                .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("Invalid fill_id '{fill_id}' in Kraken futures fill")
+        );
+    }
+
+    /// A frame naming an instrument by an empty or blank symbol finds no instrument instead of
+    /// failing the symbol.
+    #[rstest]
+    #[case::empty("", false)]
+    #[case::blank("   ", false)]
+    #[case::listed("PI_XBTUSD", true)]
+    fn test_lookup_instrument_in_snapshot_finds_no_instrument_for_an_invalid_symbol(
+        #[case] raw_symbol: &str,
+        #[case] found: bool,
+    ) {
+        let instrument = create_mock_perp();
+        let instruments = ahash::AHashMap::from([(instrument.id(), instrument)]);
+
+        assert_eq!(
+            crate::common::lookup_instrument_in_snapshot(&instruments, raw_symbol).is_some(),
+            found
         );
     }
 

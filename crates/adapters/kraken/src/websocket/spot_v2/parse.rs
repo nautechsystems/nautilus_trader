@@ -24,7 +24,7 @@ use nautilus_model::{
         AggregationSource, AggressorSide, BarAggregation, BookAction, LiquiditySide, OrderSide,
         OrderStatus, OrderType, PriceType, RecordFlag, TimeInForce, TriggerType,
     },
-    identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId},
+    identifiers::{AccountId, InstrumentId, TradeId},
     instruments::{Instrument, any::InstrumentAny},
     reports::{FillReport, OrderStatusReport},
     types::{Money, Price, Quantity},
@@ -40,7 +40,7 @@ use super::{
 };
 use crate::common::{
     enums::{KrakenOrderSide, KrakenOrderType, KrakenTimeInForce},
-    parse::{get_currency, parse_venue_order_id},
+    parse::{echoed_client_order_id, get_currency, parse_venue_order_id},
 };
 
 /// Parses Kraken WebSocket ticker data into a Nautilus quote tick.
@@ -473,10 +473,8 @@ pub fn parse_ws_order_status_report(
         Some(UUID4::new()),
     );
 
-    if let Some(ref cl_ord_id) = exec.cl_ord_id
-        && !cl_ord_id.is_empty()
-    {
-        report = report.with_client_order_id(ClientOrderId::new(cl_ord_id));
+    if let Some(client_order_id) = echoed_client_order_id(exec.cl_ord_id.as_deref()) {
+        report = report.with_client_order_id(client_order_id);
     }
 
     // The order's price is its limit alone: a fill price is `avg_px`, and a frame without the
@@ -593,11 +591,7 @@ pub fn parse_ws_fill_report(
 
     let ts_event = datetime_to_nanos(exec.timestamp, "execution.timestamp")?;
 
-    let client_order_id = exec
-        .cl_ord_id
-        .as_ref()
-        .filter(|s| !s.is_empty())
-        .map(ClientOrderId::new);
+    let client_order_id = echoed_client_order_id(exec.cl_ord_id.as_deref());
 
     Ok(FillReport::new(
         account_id,
@@ -977,6 +971,51 @@ mod tests {
             error.to_string(),
             "Invalid order_id '' in Kraken trade execution TRADE-1"
         );
+    }
+
+    /// A client order id echo that is not a valid id, which another tool on the account may send,
+    /// names no order: the report carries none instead of the read failing.
+    #[rstest]
+    #[case::empty("")]
+    #[case::blank("   ")]
+    #[case::non_ascii("ordre-\u{e9}t\u{e9}")]
+    fn test_parse_ws_order_status_report_drops_an_invalid_client_order_id(#[case] cl_ord_id: &str) {
+        let mut execution = ws_execution_data(Some(KrakenOrderSide::Buy));
+        execution.cl_ord_id = Some(cl_ord_id.to_string());
+
+        let report = parse_ws_order_status_report(
+            &execution,
+            &create_mock_instrument(),
+            AccountId::from("KRAKEN-001"),
+            None,
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.client_order_id, None);
+    }
+
+    /// A trade execution's client order id echo that is not a valid id names no order.
+    #[rstest]
+    #[case::blank("   ")]
+    #[case::non_ascii("ordre-\u{e9}t\u{e9}")]
+    fn test_parse_ws_fill_report_drops_an_invalid_client_order_id(#[case] cl_ord_id: &str) {
+        let mut execution = ws_execution_data(Some(KrakenOrderSide::Buy));
+        execution.exec_type = KrakenExecType::Trade;
+        execution.exec_id = Some("TRADE-1".to_string());
+        execution.last_qty = Some(dec!(1));
+        execution.last_price = Some(dec!(100));
+        execution.cl_ord_id = Some(cl_ord_id.to_string());
+
+        let report = parse_ws_fill_report(
+            &execution,
+            &create_mock_instrument(),
+            AccountId::from("KRAKEN-001"),
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.client_order_id, None);
     }
 
     #[rstest]

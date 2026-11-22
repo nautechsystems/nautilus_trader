@@ -36,6 +36,7 @@ pub(crate) fn lookup_instrument_in_snapshot<'a>(
     instruments: &'a AHashMap<InstrumentId, InstrumentAny>,
     raw_symbol: &str,
 ) -> Option<&'a InstrumentAny> {
-    let instrument_id = InstrumentId::new(Symbol::new(raw_symbol), *consts::KRAKEN_VENUE);
+    let instrument_id =
+        InstrumentId::new(Symbol::new_checked(raw_symbol).ok()?, *consts::KRAKEN_VENUE);
     instruments.get(&instrument_id)
 }
