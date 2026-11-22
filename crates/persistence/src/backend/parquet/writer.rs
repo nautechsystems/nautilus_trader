@@ -576,7 +576,7 @@ impl PromotionBackend for ParquetPromotionBackend {
         source: &Self::Source,
         file: &str,
         use_ts_event_for_ts_init: bool,
-        record_promoted: bool,
+        _record_promoted: bool,
     ) -> anyhow::Result<Option<FeatherConversionSummary>> {
         let object_path = ObjectPath::parse(file)?;
 
@@ -629,7 +629,8 @@ impl PromotionBackend for ParquetPromotionBackend {
             &identity,
         )?;
 
-        if summary.is_some() && record_promoted {
+        // Consolidation can replace each source's original Parquet output
+        if summary.is_some() {
             self.record_identity(&identity)?;
         }
 
@@ -3719,6 +3720,64 @@ mod tests {
             panic!("expected quotes")
         };
         assert_eq!(rows.as_ref(), &[quote]);
+    }
+
+    #[rstest]
+    fn restart_recognizes_retained_sources_after_consolidation() {
+        let directory = TempDir::new().unwrap();
+        let staging = directory.path().join("live/run-consolidated");
+        let config =
+            WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
+        let clock = WriterClock::Test(Arc::new(AtomicU64::new(0)));
+
+        let [first, second] = [10, 11].map(|timestamp| {
+            let timestamp = UnixNanos::from(timestamp);
+
+            QuoteTick {
+                ts_event: timestamp,
+                ts_init: timestamp,
+                ..sample_quote()
+            }
+        });
+
+        let mut staged = FeatherWriter::new(
+            staging,
+            clock.clone(),
+            RotationConfig::NoRotation,
+            None,
+            None,
+        );
+
+        staged.write(first).unwrap();
+        staged.seal().unwrap();
+        staged.write(second).unwrap();
+        staged.close().unwrap();
+        drop(staged);
+
+        let mut writer = ParquetWriter::new(&config, clock.clone()).unwrap();
+        StreamingSink::close(&mut writer).unwrap();
+        drop(writer);
+
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
+        let data_type = NautilusDataType::QuoteTick.into();
+        let before = catalog.get_file_list_from_data_cls(&data_type).unwrap();
+        catalog
+            .consolidate_data(&data_type, None, None, None, None, None)
+            .unwrap();
+        let consolidated = catalog.get_file_list_from_data_cls(&data_type).unwrap();
+
+        let mut restarted = ParquetWriter::new(&config, clock).unwrap();
+        StreamingSink::close(&mut restarted).unwrap();
+        let after = catalog.get_file_list_from_data_cls(&data_type).unwrap();
+        let quotes = catalog.query::<QuoteTick>().execute().unwrap();
+
+        assert_eq!(before.len(), 2);
+        assert_eq!(consolidated.len(), 1);
+        assert_eq!(after, consolidated);
+        assert_eq!(quotes, [first, second]);
     }
 
     #[rstest]
