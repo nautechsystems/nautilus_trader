@@ -524,7 +524,7 @@ repos:
         files: "\\.py$"
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.13.7 # Must match [uv] in .nautilus-engineering/tools.toml
+    rev: 0.13.8 # Must match [uv] in .nautilus-engineering/tools.toml
     hooks:
       - id: uv-lock
         args: ["--project", "python"]
@@ -548,7 +548,7 @@ repos:
         pass_filenames: false
 
   - repo: https://github.com/kynan/nbstripout
-    rev: 0.9.1
+    rev: 0.9.2
     hooks:
       - id: nbstripout
 

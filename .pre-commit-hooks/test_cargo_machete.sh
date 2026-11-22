@@ -8,6 +8,7 @@ REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
 
 HOOK="$REPO_ROOT/.pre-commit-hooks/cargo_machete.sh"
+MACHETE_VERSION=$(bash scripts/cargo-tool-version.sh cargo-machete)
 CASE_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/nautilus-cargo-machete.XXXXXX")
 trap 'rm -rf "$CASE_ROOT"' EXIT
 
@@ -25,7 +26,7 @@ printf '%s\n' \
   'set -euo pipefail' \
   '' \
   'if [ "${1:-}" = "machete" ] && [ "${2:-}" = "--version" ]; then' \
-  '  echo "0.9.2"' \
+  '  echo "${MACHETE_VERSION:?}"' \
   '  exit 0' \
   'fi' \
   '' \
@@ -102,6 +103,7 @@ run_hook() {
     GIT_BASE_RESOLVES="$base_resolves" \
     CHANGED_BASE_SHA="$changed_base" \
     MACHETE_STATUS="$machete_status" \
+    MACHETE_VERSION="$MACHETE_VERSION" \
     bash "$HOOK" > "$OUTPUT" 2>&1
   RUN_STATUS=$?
   set -e
@@ -169,7 +171,7 @@ assert_passed
 
 run_hook "crates/model/src/order.rs" "" "0" "" "true" "false"
 [ "$RUN_STATUS" -eq 1 ] || fail "A Rust change passed without Cargo Machete installed"
-grep -Fq "cargo-machete 0.9.2 is required" "$OUTPUT" ||
+grep -Fq "cargo-machete $MACHETE_VERSION is required" "$OUTPUT" ||
   fail "A missing Cargo Machete install was not reported"
 
 run_hook "" "base-sha" "0" "crates/model/src/order.rs"

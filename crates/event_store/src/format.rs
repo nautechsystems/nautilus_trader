@@ -22,7 +22,8 @@
 use std::io::ErrorKind;
 
 use redb::{
-    ReadableDatabase, StorageError, TableDefinition, TableError, TransactionError, WriteTransaction,
+    ReadableDatabase, ReadableTable, StorageError, TableDefinition, TableError, TransactionError,
+    WriteTransaction,
 };
 
 use crate::error::EventStoreError;

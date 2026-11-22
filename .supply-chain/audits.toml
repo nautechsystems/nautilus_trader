@@ -31,6 +31,12 @@ criteria = "safe-to-deploy"
 delta = "2.4.1 -> 2.5.0"
 notes = "Facade-only release bump. Published delta is the changelog and coordinated dependency versions; no runtime source, unsafe, build script, or ambient capability change."
 
+[[audits.alloy]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.5.0 -> 2.6.1"
+notes = "Adds optional Azure signer and extends sol-types feature wiring. The workspace uses the existing local signer and does not select the Azure signer."
+
 [[audits.alloy-chains]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -87,6 +93,12 @@ criteria = "safe-to-deploy"
 delta = "2.4.2 -> 2.5.0"
 notes = "Adds EIP-8141 transaction and receipt types with structural validation, and rejects 0x00-tagged legacy transactions and receipts on every decode path. No new unsafe, build script, network, or credential behavior."
 
+[[audits.alloy-consensus]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.5.0 -> 2.6.1"
+notes = "Adds frame transaction and receipt handling, reuses transaction delegation, and redacts signing backend errors. Legacy and EIP-1559 encoding still use their existing fields and signing paths."
+
 [[audits.alloy-consensus-any]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -125,6 +137,12 @@ criteria = "safe-to-deploy"
 delta = "2.4.2 -> 2.5.0"
 notes = "Receipt envelope decoding follows the consensus change that rejects 0x00-tagged legacy receipts. No new unsafe or ambient capability."
 
+[[audits.alloy-consensus-any]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.5.0 -> 2.6.1"
+notes = "Reuses the shared JSON header deserialization and delegation for unknown network block headers."
+
 [[audits.alloy-contract]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -162,6 +180,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.2 -> 2.5.0"
 notes = "Version and dependency coordination only. No runtime source change."
+
+[[audits.alloy-contract]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.5.0 -> 2.6.1"
+notes = "Updates call result mapping, storage-slot utilities, and event and multicall behavior. Calls continue to use the configured provider."
 
 [[audits.alloy-core]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -274,6 +298,12 @@ criteria = "safe-to-deploy"
 version = "0.1.1"
 notes = "Full review of published 0.1.1. Typed EIP-8141 frame, address, receipt, and signature definitions. Decoding rejects malformed lengths and the reserved zero digest; cryptographic verification stays with the caller. No unsafe, build script, filesystem, network, or process use."
 
+[[audits.alloy-eip8141]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.1.1 -> 0.2.0"
+notes = "Updates draft frame and nonce constants, authorization, and checked calldata encoding for frame transactions."
+
 [[audits.alloy-eips]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -312,6 +342,12 @@ criteria = "safe-to-deploy"
 delta = "2.4.2 -> 2.5.0"
 notes = "Re-exports EIP-8141 types and adds EIP-8282 builder execution request types. No unsafe or ambient capability."
 
+[[audits.alloy-eips]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.5.0 -> 2.6.1"
+notes = "Updates EIP constants and codecs, fixes blob iteration and base-fee edge cases, and adds deposit log helpers. Existing KZG operations use the same backend."
+
 [[audits.alloy-ens]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -344,6 +380,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.2 -> 2.5.0"
 notes = "Version and dependency coordination only. No runtime source change."
+
+[[audits.alloy-ens]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.5.0 -> 2.6.1"
+notes = "Extends ENS record resolution and isolates live DNSSEC from tests. Off-chain lookups use the existing provider and resolver configuration."
 
 [[audits.alloy-json-abi]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -408,6 +450,12 @@ criteria = "safe-to-deploy"
 delta = "2.4.2 -> 2.5.0"
 notes = "Adds ErrorResponseCode and RpcError::error_code so transport errors can surface a JSON-RPC code from an already-received body. Parsing stays with the transport implementer. No new endpoint, unsafe, or credential handling."
 
+[[audits.alloy-json-rpc]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.5.0 -> 2.6.1"
+notes = "Adds owned input deserialization, notification handling, and error decoding. Changes affect JSON codecs and request representations."
+
 [[audits.alloy-network]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -446,6 +494,12 @@ criteria = "safe-to-deploy"
 delta = "2.4.2 -> 2.5.0"
 notes = "Unknown-transaction equality ignores deserialization caches. No unsafe or network change."
 
+[[audits.alloy-network]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.5.0 -> 2.6.1"
+notes = "Delegates transaction builders and wallet signing for standard and unknown envelopes. Existing signer selection remains keyed by sender."
+
 [[audits.alloy-network-primitives]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -483,6 +537,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.2 -> 2.5.0"
 notes = "Trait-bound adjustment for the 2.5 consensus types. No unsafe or ambient capability."
+
+[[audits.alloy-network-primitives]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.5.0 -> 2.6.1"
+notes = "Extends block iteration and transaction mapping, including handling of full block responses."
 
 [[audits.alloy-primitives]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -547,6 +607,12 @@ criteria = "safe-to-deploy"
 delta = "2.4.2 -> 2.5.0"
 notes = "Provider method wiring for the new consensus and JSON-RPC helpers, including eth_getBlockAccessList. Calls remain caller-directed. No new destination or credential behavior."
 
+[[audits.alloy-provider]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.5.0 -> 2.6.1"
+notes = "Updates fee filling, heartbeat and reorg handling, and block-aware call batching. CCIP body streaming remains under the optional CCIP HTTP feature."
+
 [[audits.alloy-rlp]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -597,6 +663,12 @@ criteria = "safe-to-deploy"
 delta = "2.4.2 -> 2.5.0"
 notes = "Version and dependency coordination only. No runtime source change."
 
+[[audits.alloy-rpc-client]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.5.0 -> 2.6.1"
+notes = "Checks connection and subscription configuration, fixes empty batches, and applies configured or URL-derived HTTP authentication to the selected endpoint."
+
 [[audits.alloy-rpc-types-any]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -634,6 +706,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.2 -> 2.5.0"
 notes = "Version and dependency coordination only. No runtime source change."
+
+[[audits.alloy-rpc-types-any]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.5.0 -> 2.6.1"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
 
 [[audits.alloy-rpc-types-eth]]
 who = "Chris Sellers <chris@cjdsellers.io>"
@@ -673,6 +751,12 @@ criteria = "safe-to-deploy"
 delta = "2.4.2 -> 2.5.0"
 notes = "Removes Filter Hash implementations and ignores bloom caches in equality. Account and receipt types follow the consensus update. No unsafe or network change."
 
+[[audits.alloy-rpc-types-eth]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.5.0 -> 2.6.1"
+notes = "Extends transaction, block, and filter representations. Preserves create transaction kind and accepts omitted metadata and full newtype transactions."
+
 [[audits.alloy-serde]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -710,6 +794,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.2 -> 2.5.0"
 notes = "Adds lenient JSON-RPC parameter deserializers. No unsafe, filesystem, or network use."
+
+[[audits.alloy-serde]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.5.0 -> 2.6.1"
+notes = "Adjusts JSON optional, quantity, and flattened field codecs, including null and omitted values."
 
 [[audits.alloy-signer]]
 who = "Chris Sellers <chris@cjdsellers.io>"
@@ -749,6 +839,12 @@ criteria = "safe-to-deploy"
 delta = "2.4.2 -> 2.5.0"
 notes = "Version bump only. No runtime source change."
 
+[[audits.alloy-signer]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.5.0 -> 2.6.1"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.alloy-signer-local]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -786,6 +882,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.2 -> 2.5.0"
 notes = "Version and dependency coordination only. Signing implementation is unchanged."
+
+[[audits.alloy-signer-local]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.5.0 -> 2.6.1"
+notes = "Updates mnemonic derivation errors and secp256k1 recovery-ID conversion. The default local k256 key path and explicit wallet inputs remain in use."
 
 [[audits.alloy-sol-macro]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -950,6 +1052,12 @@ criteria = "safe-to-deploy"
 delta = "2.4.2 -> 2.5.0"
 notes = "Transport error helpers for the JSON-RPC error-code hook. No new destination or credential behavior."
 
+[[audits.alloy-transport]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.5.0 -> 2.6.1"
+notes = "Changes retry scheduling, fallback ranking, and shared error representation. URL credential extraction decodes explicit userinfo."
+
 [[audits.alloy-transport-http]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -987,6 +1095,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.2 -> 2.5.0"
 notes = "Version and dependency coordination only. HTTP transport source is unchanged."
+
+[[audits.alloy-transport-http]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.5.0 -> 2.6.1"
+notes = "Keeps POSTs on the configured URL, normalizes response handling, adds opt-in response limits, and fixes Bearer formatting for cached JWTs."
 
 [[audits.alloy-trie]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1043,6 +1157,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.4.2 -> 2.5.0"
 notes = "Proc-macro crate version bump only. Generated-code behavior is unchanged."
+
+[[audits.alloy-tx-macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.5.0 -> 2.6.1"
+notes = "Changes generated transaction delegation and serde expansion. The macro changes operate on its parsed input and emit tokens."
 
 [[audits.android_system_properties]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1116,6 +1236,12 @@ criteria = "safe-to-deploy"
 delta = "59.3.1 -> 59.3.2"
 notes = "Reviewed the published delta: manifest-only alignment to Arrow 59.3.2; production source is unchanged. The arrow crate also updates array-equality tests."
 
+[[audits.arrow]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.3.2 -> 59.3.3"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.arrow-arith]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1145,6 +1271,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "59.3.1 -> 59.3.2"
 notes = "Reviewed the published delta: manifest-only alignment to Arrow 59.3.2; production source is unchanged. The arrow crate also updates array-equality tests."
+
+[[audits.arrow-arith]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.3.2 -> 59.3.3"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
 
 [[audits.arrow-array]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1176,6 +1308,12 @@ criteria = "safe-to-deploy"
 delta = "59.3.1 -> 59.3.2"
 notes = "Reviewed the published delta: preserves run-end child offsets/lengths, slices sparse union children, and uses the actual dense-union field type ID when gathering nulls."
 
+[[audits.arrow-array]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.3.2 -> 59.3.3"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.arrow-buffer]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1205,6 +1343,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "59.3.1 -> 59.3.2"
 notes = "Reviewed the published delta: updates the Buffer pointer before invoking reservation resize so an unwind cannot leave a stale pointer after reallocation. Reviewed the callback and unsafe offset bounds."
+
+[[audits.arrow-buffer]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.3.2 -> 59.3.3"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
 
 [[audits.arrow-cast]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1236,6 +1380,12 @@ criteria = "safe-to-deploy"
 delta = "59.3.1 -> 59.3.2"
 notes = "Reviewed the published delta: manifest-only alignment to Arrow 59.3.2; production source is unchanged. The arrow crate also updates array-equality tests."
 
+[[audits.arrow-cast]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.3.2 -> 59.3.3"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.arrow-csv]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1265,6 +1415,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "59.3.1 -> 59.3.2"
 notes = "Reviewed the published delta: manifest-only alignment to Arrow 59.3.2; production source is unchanged. The arrow crate also updates array-equality tests."
+
+[[audits.arrow-csv]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.3.2 -> 59.3.3"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
 
 [[audits.arrow-data]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1296,6 +1452,12 @@ criteria = "safe-to-deploy"
 delta = "59.3.1 -> 59.3.2"
 notes = "Reviewed the published delta: validates union IDs/offsets and parent run lengths, preserves sliced child offsets, and checks fixed-list/run-end arithmetic before indexing."
 
+[[audits.arrow-data]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.3.2 -> 59.3.3"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.arrow-ipc]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1326,6 +1488,12 @@ criteria = "safe-to-deploy"
 delta = "59.3.1 -> 59.3.2"
 notes = "Reviewed the published delta: emits an empty validity buffer for null-free arrays and preserves materialized validity for arrays with nulls, matching the IPC format."
 
+[[audits.arrow-ipc]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.3.2 -> 59.3.3"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.arrow-json]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1356,6 +1524,12 @@ criteria = "safe-to-deploy"
 delta = "59.3.1 -> 59.3.2"
 notes = "Reviewed the published delta: manifest-only alignment to Arrow 59.3.2; production source is unchanged. The arrow crate also updates array-equality tests."
 
+[[audits.arrow-json]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.3.2 -> 59.3.3"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.arrow-ord]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1386,6 +1560,12 @@ criteria = "safe-to-deploy"
 delta = "59.3.1 -> 59.3.2"
 notes = "Reviewed the published delta: manifest-only alignment to Arrow 59.3.2; production source is unchanged. The arrow crate also updates array-equality tests."
 
+[[audits.arrow-ord]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.3.2 -> 59.3.3"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.arrow-row]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1415,6 +1595,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "59.3.1 -> 59.3.2"
 notes = "Reviewed the published delta: manifest-only alignment to Arrow 59.3.2; production source is unchanged. The arrow crate also updates array-equality tests."
+
+[[audits.arrow-row]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.3.2 -> 59.3.3"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
 
 [[audits.arrow-schema]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1446,6 +1632,12 @@ criteria = "safe-to-deploy"
 delta = "59.3.1 -> 59.3.2"
 notes = "Reviewed the published delta: UnionFields deserialization and collection construction enforce nonnegative unique type IDs through try_new; merge propagates validation errors."
 
+[[audits.arrow-schema]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.3.2 -> 59.3.3"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.arrow-select]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1476,6 +1668,12 @@ criteria = "safe-to-deploy"
 delta = "59.3.1 -> 59.3.2"
 notes = "Reviewed the published delta: manifest-only alignment to Arrow 59.3.2; production source is unchanged. The arrow crate also updates array-equality tests."
 
+[[audits.arrow-select]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.3.2 -> 59.3.3"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.arrow-string]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1505,6 +1703,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "59.3.1 -> 59.3.2"
 notes = "Reviewed the published delta: manifest-only alignment to Arrow 59.3.2; production source is unchanged. The arrow crate also updates array-equality tests."
+
+[[audits.arrow-string]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.3.2 -> 59.3.3"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
 
 [[audits.async-compression]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1765,11 +1969,23 @@ criteria = "safe-to-run"
 delta = "1.12.1 -> 1.13.1"
 notes = "Reviewed the published 1.12.1 -> 1.13.1 delta. Adds BString reference conversions with repr(transparent), a UTF-8 counting fast path, and serde_core feature wiring. The new pointer casts preserve Vec layout and borrow lifetimes. No new build script, filesystem, process, network, or environment access. The imported baseline excludes the unicode feature; this workspace enables only alloc and std."
 
+[[audits.bstr]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-run"
+delta = "1.13.1 -> 1.14.0"
+notes = "Regenerates Unicode boundary DFAs using regex-cli 0.2.3 and updates their generation metadata."
+
 [[audits.bytes]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.11.1 -> 1.12.0"
 notes = "Reviewed upstream delta: adds BytesMut::extend_from_within and public try_unsplit, fixes zero-length get_int panic, passes Bytes vtable data by value when consuming handles, adds safety comments, docs, and tests, and narrows published package files with an explicit include list. No new dependencies, build script, filesystem, network, process, or crypto behavior."
+
+[[audits.bytes]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.12.1 -> 1.12.2"
+notes = "Checks the shared refcount release, integer sign extension, and extend fast path. Vec-backed extension caps writes to spare capacity before updating the initialized length."
 
 [[audits.c-kzg]]
 who = "Chris Sellers <chris@cjdsellers.io>"
@@ -1903,6 +2119,12 @@ criteria = "safe-to-deploy"
 delta = "4.6.6 -> 4.6.7"
 notes = "Facade 4.6.6 -> 4.6.7: documents optional #[command(defer)] and refreshes examples. No runtime, unsafe, or build-script change."
 
+[[audits.clap]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "4.6.7 -> 4.6.8"
+notes = "Updates derive wiring and documentation. Runtime parser implementation remains in clap_builder at its existing version."
+
 [[audits.clap_builder]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1920,6 +2142,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "4.6.4 -> 4.6.7"
 notes = "Adds optional defer=bool for Parser/Subcommand enums (lazy subcommand init) and related attribute parsing. Remaining edits are syn API compatibility. Proc-macro only; no filesystem, network, or process behavior."
+
+[[audits.clap_derive]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "4.6.7 -> 4.6.8"
+notes = "Updates syn and reconstructs generated command arguments through explicit reassignment. Changes operate on input tokens and emit builder calls."
 
 [[audits.clap_lex]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2319,6 +2547,12 @@ criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.datafusion-catalog]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2337,6 +2571,12 @@ criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-catalog]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.datafusion-catalog-listing]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2354,6 +2594,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-catalog-listing]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Maps Hive null partition placeholders to null scalars when parsing listing paths."
 
 [[audits.datafusion-common]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2373,6 +2619,12 @@ criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-common]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.datafusion-common-runtime]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2390,6 +2642,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-common-runtime]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
 
 [[audits.datafusion-datasource]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2409,6 +2667,12 @@ criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-datasource]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Adjusts file group and statistics handling and the in-process write demultiplexer. Object store dependencies and supported backends stay on 0.13."
+
 [[audits.datafusion-datasource-arrow]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2426,6 +2690,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-datasource-arrow]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
 
 [[audits.datafusion-datasource-csv]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2445,6 +2715,12 @@ criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-datasource-csv]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.datafusion-datasource-json]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2462,6 +2738,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-datasource-json]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
 
 [[audits.datafusion-datasource-parquet]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2481,6 +2763,12 @@ criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. INT96 schema coercion carries existing field metadata through rebuilt struct, list, and map fields; regression coverage checks nested field IDs and arbitrary metadata. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-datasource-parquet]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.datafusion-doc]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2499,6 +2787,12 @@ criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-doc]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.datafusion-execution]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2516,6 +2810,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-execution]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
 
 [[audits.datafusion-expr]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2535,6 +2835,12 @@ criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. PostgreSQL JSON plan display serializes typed nodes and ordered field pairs through serde, preserving child and schema output without depending on serde_json preserve_order. The added serde dependency uses the existing resolved version. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-expr]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.datafusion-expr-common]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2552,6 +2858,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-expr-common]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
 
 [[audits.datafusion-functions]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2571,6 +2883,12 @@ criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-functions]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.datafusion-functions-aggregate]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2588,6 +2906,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-functions-aggregate]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Accounts for retained capacity in grouped byte min and max states after taking completed groups."
 
 [[audits.datafusion-functions-aggregate-common]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2607,6 +2931,12 @@ criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-functions-aggregate-common]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.datafusion-functions-nested]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2624,6 +2954,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-functions-nested]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
 
 [[audits.datafusion-functions-table]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2643,6 +2979,12 @@ criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-functions-table]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.datafusion-functions-window]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2660,6 +3002,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-functions-window]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Fixes LEAD and LAG with IGNORE NULLS and adjusts limit handling for window frames."
 
 [[audits.datafusion-functions-window-common]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2679,6 +3027,12 @@ criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-functions-window-common]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.datafusion-macros]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2697,6 +3051,12 @@ criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.datafusion-optimizer]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2714,6 +3074,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-optimizer]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
 
 [[audits.datafusion-physical-expr]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2733,6 +3099,12 @@ criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-physical-expr]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Casts and interval constraints use conservative bounds for wrapping integer arithmetic. Scalar async UDF results are expanded to the input batch length."
+
 [[audits.datafusion-physical-expr-adapter]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2751,6 +3123,12 @@ criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-physical-expr-adapter]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.datafusion-physical-expr-common]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2768,6 +3146,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-physical-expr-common]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
 
 [[audits.datafusion-physical-optimizer]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2787,6 +3171,12 @@ criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Distribution and sorting rewrites retain fetched row-selection boundaries; replacing a fetched ordered merge retains its ordering and limit in a sort above coalescing. Unfetched distribution-only operators remain replaceable. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-physical-optimizer]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.datafusion-physical-plan]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2805,6 +3195,12 @@ criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. PostgreSQL JSON plan display serializes typed nodes and insertion-ordered extra metrics through serde, retaining optional schema, row counts, timing, and child plans without serde_json preserve_order. The serde dependency uses the existing resolved version. No new unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-physical-plan]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Reviews IPC spill-message framing on the existing spill stream, ordered aggregate materialization, and sorting, null padding, and output ordering across merge-join batches."
+
 [[audits.datafusion-pruning]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2822,6 +3218,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-pruning]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
 
 [[audits.datafusion-session]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2841,6 +3243,12 @@ criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
 
+[[audits.datafusion-session]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
+
 [[audits.datafusion-sql]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2858,6 +3266,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "55.1.0 -> 55.2.0"
 notes = "Reviewed the published 55.1.0 to 55.2.0 crate delta. Source files are unchanged; Cargo metadata and packaged lockfile advance the coordinated DataFusion family. No new runtime, unsafe code, build script, filesystem, network destination, process, or credential behavior."
+
+[[audits.datafusion-sql]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "55.2.0 -> 55.3.0"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
 
 [[audits.dbn]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3685,6 +4099,12 @@ criteria = "safe-to-deploy"
 delta = "0.2.43 -> 0.2.44"
 notes = "Reviewed checksum-verified published source. Makes weekday accessors and iteration constructors const without changing their bodies. Updates the existing Jiff companion dependencies."
 
+[[audits.jiff]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.2.44 -> 0.2.46"
+notes = "Updates bounded date and span arithmetic, strptime, and IANA time-zone data. TZif equality uses representation-specific access after checking the active tag."
+
 [[audits.jiff-core]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -3710,6 +4130,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.1.5 -> 0.1.6"
 notes = "Reviewed checksum-verified published source. Checks timestamp range after balancing nanoseconds, including the lower boundary, and routes subtraction assignment through subtraction. No new unsafe operations or ambient access."
+
+[[audits.jiff-core]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.1.6 -> 0.1.8"
+notes = "Corrects timestamp and civil time calculations and restricts ArrayStr construction to valid UTF-8."
 
 [[audits.jiff-static]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3741,6 +4167,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.2.43 -> 0.2.44"
 notes = "Reviewed checksum-verified published source. Updates the existing Jiff core and time-zone dependencies. Published procedural macro source is identical."
+
+[[audits.jiff-static]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.2.44 -> 0.2.46"
+notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
 
 [[audits.jiff-tzdb]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3905,6 +4337,12 @@ criteria = "safe-to-deploy"
 delta = "0.14.0 -> 0.14.1"
 notes = "Reviewed checksum-verified published source. Uses the remaining distance between pointers in the same output buffer for the overlapping copy loop. The tail still copies the final byte when needed."
 
+[[audits.lz4_flex]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.14.1 -> 0.14.2"
+notes = "Published runtime source change is a comment about stabilization of the existing size optimization attribute."
+
 [[audits.mime]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -3934,6 +4372,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.2.4 -> 1.2.5"
 notes = "Reviewed checksum-verified published source. Reviewed Emscripten socket gating, kqueue flags, and Windows completion handling. Named pipe operations keep their buffers and handle alive through completion, with cancellation matched by operation identity."
+
+[[audits.nix]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-run"
+delta = "0.31.3 -> 0.31.4"
+notes = "Updates libc wrappers for recvfrom, POSIX spawn error handling, and feature-gated AIO projection. The workspace uses nix through development dependencies."
 
 [[audits.nom]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -4050,6 +4494,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "59.3.1 -> 59.3.2"
 notes = "Reviewed the published delta: fixed-size bounded batches skip wide delta miniblocks while retaining last_value; dictionary-page encoding metadata is ordered before data pages."
+
+[[audits.parquet]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.3.2 -> 59.3.3"
+notes = "Rejects bloom filters on encrypted columns before writing because encrypted bloom filters are unsupported. The ordinary writer path keeps its existing encryption selection."
 
 [[audits.peg]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -4424,6 +4874,18 @@ criteria = "safe-to-deploy"
 delta = "0.10.2 -> 0.10.3"
 notes = "Returns Error::Overflow from WeightedIndex instead of panicking on infinite float weight sums, fixes spurious NonFinite errors on large finite float ranges and panics from deserialized Uniform<char> samplers, and reports exact iterator lengths. Sampling algorithms are unchanged; no new unsafe, I/O, or OS interfaces."
 
+[[audits.rand]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.10.3 -> 0.10.4"
+notes = "Validates UniformDuration on deserialization and initializes the thread-local reseed counter before replacing its RNG state. StdRng retains its ChaCha12 implementation."
+
+[[audits.rand_pcg]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.10.2 -> 0.10.3"
+notes = "Documents jump period behavior on the existing generators. No implementation change to PCG stepping."
+
 [[audits.rand_xorshift]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -4486,6 +4948,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "4.5.0 -> 4.6.0"
 notes = "Reviewed checksum-verified published source. Reviewed transaction poisoning, commit-slot checksum checks, bounded integrity traversal, and backend close and lock ordering. The vendored XXH3 loads use fixed-size arrays and feature-checked SIMD dispatch."
+
+[[audits.redb]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "4.6.0 -> 5.0.0"
+notes = "Reviews table guard lifetimes, key ranges, standard-library backend selection, byte-range locks, and optional-type encoding."
 
 [[audits.redis]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -4586,6 +5054,12 @@ criteria = "safe-to-deploy"
 delta = "1.13.0 -> 1.13.1"
 notes = "Fixes reverse suffix and inner-literal optimizations with regression tests. No new unsafe, build script, filesystem, network, or process behavior."
 
+[[audits.regex]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.13.1 -> 1.13.2"
+notes = "Updates the parser builders for reusable syntax state and marks the unstable Pattern impl unsafe to reflect its contract."
+
 [[audits.regex-automata]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -4597,6 +5071,18 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.4.16 -> 0.4.18"
 notes = "Adds configurable cache-pool capacity, defaulting to available parallelism, and preserves bounds with a minimum capacity of one. No new unsafe, network, filesystem, process, or credential behavior."
+
+[[audits.regex-automata]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.18 -> 0.4.19"
+notes = "Fixes DFA quit bitset offsets, capture slot bounds, and backtracking and match-offset edge cases. Reviews deserialization and index changes."
+
+[[audits.regex-syntax]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.8.11 -> 0.8.12"
+notes = "Resets parser scratch storage on reuse and updates ordering and Unicode interval handling."
 
 [[audits.reqwest]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -4949,6 +5435,12 @@ delta = "1.16.4 -> 1.16.5"
 importable = false
 notes = "Reviewed the published delta. Source changes only reflow comments around ownership, capacity, and drain pointer invariants; runtime code, unsafe operations, dependencies, and build behavior are unchanged."
 
+[[audits.smallvec]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.16.5 -> 1.16.6"
+notes = "Reviews the MaybeUninit-backed inline representation and the spill, allocation, and drop paths. The prior repository redirects to the new upstream repository."
+
 [[audits.smawk]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-run"
@@ -5117,6 +5609,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.40.1 -> 0.40.3"
 notes = "Reviewed published source. Process-list deduplication, bounded socket-address reads, Windows synchronization/saturating counters, and GPU refresh bookkeeping reviewed. OS access remains explicit; no new network destinations or credential access."
+
+[[audits.sysinfo]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.40.3 -> 0.40.4"
+notes = "Uses fstatat for existing Linux descriptor inspection and canonicalizes device paths for sysfs disk queries. Updates the libc floor for musl."
 
 [[audits.tabled]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -5396,6 +5894,12 @@ criteria = "safe-to-run"
 version = "0.23.2"
 notes = "Reviewed the published derive entry point, attribute parsing, field/mutator handling, and generated builder implementations. Emits typed setters, defaults, and caller-supplied expressions without evaluating them in the macro process. No build script, unsafe code, filesystem, environment, process, or network access."
 
+[[audits.ucd-trie]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.1.7 -> 0.1.8"
+notes = "Updates generated Unicode general-category tables and changes owned trie construction. No source or build-script dependency added."
+
 [[audits.unicode-ident]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -5503,6 +6007,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.29.0 -> 1.29.2"
 notes = "Reviewed published sources. Timestamp arithmetic uses u128 nanoseconds, normalizes input parts, and bounds v7 reseeding and counter progression. WebAssembly target selection includes wasm64; native entropy sources and UUID v4 generation are unchanged. No new unsafe code, build script, or ambient capabilities."
+
+[[audits.uuid]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.29.2 -> 1.29.3"
+notes = "Updates parser and serde error representations and removes the atomic feature coupling for v1 and v6. Workspace-selected v4 still uses OS-backed randomness."
 
 [[audits.value-bag]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -5753,6 +6263,12 @@ criteria = "safe-to-deploy"
 delta = "0.8.18 -> 0.8.19"
 notes = "Reviewed the published crate delta. Extends existing AArch64 NEON intrinsic cfg gates to arm64ec without changing pointer arithmetic, loads, hashing operations, or buffer bounds."
 
+[[audits.xxhash-rust]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.8.19 -> 0.8.21"
+notes = "Adds validated secret-input wrappers and fixes large-length tracking in xxh32. Built-in ValidAsRef implementations provide fixed-length views. Workspace callers use existing xxh3 APIs."
+
 [[audits.yoke]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -5843,6 +6359,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.9.0 -> 1.9.1"
 notes = "Reviewed checksum-verified published crates. Zeroizing Debug becomes opaque. Vec zeros spare capacity before initialized elements and clear, avoiding duplicate zeroization. Fallback barrier reads MaybeUninit<u8>; internal barrier calls are removed while volatile writes remain. SIMD zero values and slice bounds are unchanged; no new ambient capabilities."
+
+[[audits.zeroize]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.9.1 -> 1.9.2"
+notes = "Reviews the bulk wipe path, typed fill with assembly barriers, volatile fallback, and initialized and spare capacity handling. Chunking preserves bounds and alignment."
 
 [[audits.zerotrie]]
 who = "Nautech Systems <info@nautechsystems.io>"

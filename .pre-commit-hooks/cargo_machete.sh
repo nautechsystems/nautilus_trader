@@ -11,7 +11,6 @@
 
 set -euo pipefail
 
-PINNED_VERSION="0.9.2"
 resolved_changed_base=0
 
 print_failure_guidance() {
@@ -148,6 +147,8 @@ if [ "$full_scan" -eq 0 ] && [ ${#workspace_manifests[@]} -eq 0 ] && [ "$quickst
   echo "No maintained Rust package changes detected; skipping cargo machete"
   exit 0
 fi
+
+PINNED_VERSION=$(bash scripts/cargo-tool-version.sh cargo-machete)
 
 if ! command -v cargo-machete &> /dev/null; then
   echo "ERROR: cargo-machete ${PINNED_VERSION} is required for the unused-dependency check" >&2
