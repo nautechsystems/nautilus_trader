@@ -21,16 +21,20 @@
 use std::hint::black_box;
 
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
-use nautilus_live::node::{RunnerChannelMetricsSnapshot, RunnerMetricsSnapshot};
 
-mod metrics {
-    pub(crate) use nautilus_live::node::{RunnerMetricsDelta, RunnerMetricsSnapshot};
-}
-
+// Compile both modules together so the queue monitor can use internal metrics methods
+#[allow(dead_code, unreachable_pub)]
+#[allow(
+    unused_imports,
+    reason = "the harness-free benchmark compiles with cfg(test) but omits unit test functions"
+)]
+#[path = "../src/node/metrics.rs"]
+mod metrics;
 #[allow(dead_code, unreachable_pub)]
 #[path = "../src/node/queue.rs"]
 mod queue;
 
+use metrics::{RunnerChannelMetricsSnapshot, RunnerMetricsSnapshot};
 use queue::{QueueMonitor, QueueMonitorConfig};
 
 const PROFILE_TICK_COUNT: u64 = 1_024;
@@ -109,15 +113,17 @@ fn config(
 
 fn snapshot(dispatched: u64, dispatch_busy_ns: u64, queue_depth: usize) -> RunnerMetricsSnapshot {
     let channel = channel_snapshot(dispatched, dispatch_busy_ns, queue_depth);
-    let mut snapshot = RunnerMetricsSnapshot::default();
-    snapshot.time_events = channel;
-    snapshot.exec_events = channel;
-    snapshot.exec_commands = channel;
-    snapshot.data_events = channel;
-    snapshot.data_commands = channel;
-    snapshot.dispatch_busy_ns = dispatch_busy_ns * 5;
-    snapshot.elapsed_ns = 100_000_000;
-    snapshot
+
+    RunnerMetricsSnapshot {
+        time_events: channel,
+        exec_events: channel,
+        exec_commands: channel,
+        data_events: channel,
+        data_commands: channel,
+        dispatch_busy_ns: dispatch_busy_ns * 5,
+        elapsed_ns: 100_000_000,
+        ..Default::default()
+    }
 }
 
 fn channel_snapshot(
@@ -125,12 +131,12 @@ fn channel_snapshot(
     dispatch_busy_ns: u64,
     queue_depth: usize,
 ) -> RunnerChannelMetricsSnapshot {
-    let mut snapshot = RunnerChannelMetricsSnapshot::default();
-    snapshot.dispatched = dispatched;
-    snapshot.dispatch_busy_ns = dispatch_busy_ns;
-    snapshot.queue_depth = queue_depth;
-    snapshot.last_dispatch_at_ns = 100_000_000;
-    snapshot
+    RunnerChannelMetricsSnapshot {
+        dispatched,
+        dispatch_busy_ns,
+        queue_depth,
+        last_dispatch_at_ns: 100_000_000,
+    }
 }
 
 criterion_group!(benches, bench_evaluate, bench_evaluate_batch);
