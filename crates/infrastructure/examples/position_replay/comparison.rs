@@ -164,7 +164,7 @@ fn state(cache: &Cache, id: PositionId, full: bool) -> serde_json::Value {
     }
 }
 fn writer_barrier(cache: &Cache, port: u16, trader_key: &str) {
-    cache.heartbeat(UnixNanos::from(123456u64)).unwrap();
+    cache.heartbeat(UnixNanos::from(123_456_u64)).unwrap();
     let client = redis::Client::open(format!("redis://127.0.0.1:{port}/")).unwrap();
     let mut conn = client.get_connection().unwrap();
     let key = format!("{trader_key}:health:heartbeat");
