@@ -89,6 +89,9 @@ pub struct PortfolioSnapshot {
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the event was initialized.
     pub ts_init: UnixNanos,
+    /// Whether the equity curve emitted this snapshot at account registration.
+    #[serde(default)]
+    pub is_registration: bool,
 }
 
 impl PortfolioSnapshot {
@@ -130,6 +133,7 @@ impl PortfolioSnapshot {
             event_id,
             ts_event,
             ts_init,
+            is_registration: false,
         }
     }
 }
@@ -176,7 +180,7 @@ mod tests {
 
     #[rstest]
     fn test_deserialize_legacy_snapshot_defaults_valuation_metadata() {
-        let snapshot = PortfolioSnapshot::new(
+        let mut snapshot = PortfolioSnapshot::new(
             AccountId::new("SIM-001"),
             AccountType::Cash,
             Some(Currency::USD()),
@@ -194,6 +198,8 @@ mod tests {
             UnixNanos::from(1),
             UnixNanos::from(2),
         );
+
+        snapshot.is_registration = true;
         let mut value = serde_json::to_value(snapshot).unwrap();
         let object = value.as_object_mut().unwrap();
         object.remove("base_currency_equity");
@@ -201,6 +207,7 @@ mod tests {
         object.remove("stale_instruments");
         object.remove("stale_currencies");
         object.remove("unpriced_instruments");
+        assert_eq!(object.remove("is_registration"), Some(true.into()));
 
         let decoded: PortfolioSnapshot = serde_json::from_value(value).unwrap();
 
@@ -209,5 +216,6 @@ mod tests {
         assert!(decoded.stale_instruments.is_empty());
         assert!(decoded.stale_currencies.is_empty());
         assert!(decoded.unpriced_instruments.is_empty());
+        assert!(!decoded.is_registration);
     }
 }

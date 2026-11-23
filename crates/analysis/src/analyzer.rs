@@ -421,7 +421,11 @@ impl PortfolioAnalyzer {
             .collect()
     }
 
-    /// Replaces the primary returns source with snapshot-backed portfolio returns when resolvable.
+    /// Replaces the portfolio return series using the supplied snapshots.
+    ///
+    /// Falls back to position returns when the snapshots cannot form a usable daily series.
+    /// Logs a warning and retains the current returns if snapshot equity exceeds the supported
+    /// float precision.
     pub fn set_portfolio_returns_from_snapshots<'a>(
         &mut self,
         account_ids: &[AccountId],
@@ -437,8 +441,9 @@ impl PortfolioAnalyzer {
         account_ids: &[AccountId],
         snapshots: impl IntoIterator<Item = &'a PortfolioSnapshot>,
     ) -> CorrectnessResult<()> {
-        if let Some(returns) = Self::calculate_snapshot_returns(account_ids, snapshots)? {
-            self.portfolio_returns = returns;
+        let returns = Self::calculate_snapshot_returns(account_ids, snapshots)?;
+        if returns.is_some() || !self.portfolio_returns.is_empty() {
+            self.portfolio_returns = returns.unwrap_or_default();
             self.sync_returns_alias();
         }
 
@@ -627,8 +632,6 @@ impl PortfolioAnalyzer {
                 currency = Some(equity.currency);
             }
 
-            let is_registration = !equity_by_account.contains_key(&snapshot.account_id);
-            let day_start = Self::snapshot_day_start(snapshot.ts_event, is_registration);
             check_float_precision(equity.currency.precision).map_err(|e| {
                 CorrectnessError::PredicateViolation {
                     message: format!(
@@ -638,10 +641,9 @@ impl PortfolioAnalyzer {
                 }
             })?;
 
-            equity_by_account
-                .entry(snapshot.account_id)
-                .or_default()
-                .insert(day_start, equity.as_f64());
+            let daily_equity = equity_by_account.entry(snapshot.account_id).or_default();
+            let day_start = Self::snapshot_day_start(snapshot, daily_equity.is_empty());
+            daily_equity.insert(day_start, equity.as_f64());
         }
 
         if equity_by_account.len() != expected_accounts.len() {
@@ -697,10 +699,13 @@ impl PortfolioAnalyzer {
         Some(daily_equity)
     }
 
-    fn snapshot_day_start(ts_event: UnixNanos, is_registration: bool) -> UnixNanos {
+    fn snapshot_day_start(snapshot: &PortfolioSnapshot, is_first_usable: bool) -> UnixNanos {
         let day = DurationNanos::from_days(1);
+        let ts_event = snapshot.ts_event;
         let day_start = ts_event.floor(day);
-        if is_registration || (ts_event == day_start && !ts_event.is_zero()) {
+        if (is_first_usable && snapshot.is_registration)
+            || (ts_event == day_start && !ts_event.is_zero())
+        {
             day_start.saturating_sub(day)
         } else {
             day_start
@@ -1617,13 +1622,16 @@ mod tests {
     fn test_calculate_snapshot_returns_tracks_daily_mark_to_market_equity() {
         let account_id = AccountId::new("SIM-001");
         let currency = Currency::USD();
+        let mut registration = create_portfolio_snapshot(
+            account_id,
+            Decimal::from(10_000),
+            currency,
+            NANOSECONDS_IN_DAY + NANOSECONDS_IN_DAY / 2,
+        );
+        registration.is_registration = true;
+
         let snapshots = [
-            create_portfolio_snapshot(
-                account_id,
-                Decimal::from(10_000),
-                currency,
-                NANOSECONDS_IN_DAY + NANOSECONDS_IN_DAY / 2,
-            ),
+            registration,
             create_portfolio_snapshot(
                 account_id,
                 Decimal::from(10_500),
@@ -1661,6 +1669,71 @@ mod tests {
         assert_eq!(values.len(), 2);
         assert!(approx_eq!(f64, values[0], 0.1, epsilon = 1e-12));
         assert!(approx_eq!(f64, values[1], 0.1, epsilon = 1e-12));
+    }
+
+    #[rstest]
+    #[case::no_registration(false)]
+    #[case::late_registration(true)]
+    fn test_snapshot_returns_fall_back_without_opening_registration(
+        #[case] late_registration: bool,
+    ) {
+        let account_id = AccountId::new("SIM-001");
+        let currency = Currency::USD();
+
+        let mut snapshots = [
+            create_portfolio_snapshot(
+                account_id,
+                Decimal::from(100),
+                currency,
+                NANOSECONDS_IN_DAY + NANOSECONDS_IN_DAY / 2,
+            ),
+            create_portfolio_snapshot(
+                account_id,
+                Decimal::from(110),
+                currency,
+                NANOSECONDS_IN_DAY + 3 * NANOSECONDS_IN_DAY / 4,
+            ),
+        ];
+
+        snapshots[1].is_registration = late_registration;
+        let mut analyzer = PortfolioAnalyzer::new();
+        let timestamp = UnixNanos::from(NANOSECONDS_IN_DAY);
+        analyzer.add_position_return(timestamp, 0.25);
+
+        analyzer.set_portfolio_returns_from_snapshots(&[account_id], &snapshots);
+
+        assert_eq!(analyzer.portfolio_returns(), &Returns::new());
+        assert_eq!(analyzer.returns(), &Returns::from([(timestamp, 0.25)]));
+    }
+
+    #[rstest]
+    fn test_snapshot_returns_refresh_falls_back_after_registration_eviction() {
+        let account_id = AccountId::new("SIM-001");
+        let currency = Currency::USD();
+        let day = UnixNanos::from(NANOSECONDS_IN_DAY);
+
+        let mut snapshots = [(100, 1), (110, 2), (125, 3)].map(|(equity, offset)| {
+            create_portfolio_snapshot(
+                account_id,
+                Decimal::from(equity),
+                currency,
+                NANOSECONDS_IN_DAY + offset,
+            )
+        });
+
+        snapshots[0].is_registration = true;
+        let mut analyzer = PortfolioAnalyzer::new();
+        analyzer.add_position_return(day, 0.5);
+
+        analyzer.set_portfolio_returns_from_snapshots(&[account_id], &snapshots);
+
+        assert_eq!(analyzer.portfolio_returns(), &Returns::from([(day, 0.25)]));
+        assert_eq!(analyzer.returns(), &Returns::from([(day, 0.25)]));
+
+        analyzer.set_portfolio_returns_from_snapshots(&[account_id], &snapshots[1..]);
+
+        assert_eq!(analyzer.portfolio_returns(), &Returns::new());
+        assert_eq!(analyzer.returns(), &Returns::from([(day, 0.5)]));
     }
 
     #[rstest]

@@ -46,6 +46,7 @@ Released on TBD (UTC).
 - Renamed Python `ParquetDataCatalog` `*_quote_ticks` and `*_trade_ticks` methods to `*_quotes` and `*_trades`
 - Changed `Position` layout. Use `PositionReplayEvents` for `replay_events` via `.into()` (#5551), thanks @Milchstrassse
 - Changed `Position` literals to require `allows_negative_price`. Use `None` if unknown (#5535)
+- Changed `PortfolioSnapshot` literals to require `is_registration`. Use `true` only for account registration
 - Changed repeat option-chain subscribes from one actor to no-ops; unsubscribe before changing configuration
 - Changed `UnsubscribeOptionChain` literals; use `correlation_id: Some(owner_id)` (`None` requires a sole owner)
 - Changed option chains to require supported `greeks_convention` values when supplied
@@ -175,6 +176,8 @@ Released on TBD (UTC).
 - Fixed own order books retaining stale orders after cache reload
 - Fixed historical book delta events splitting across response envelopes and time-range windows, thanks @faysou
 - Fixed portfolio balance aggregation to preserve exact totals and reject sums outside the `Money` range
+- Fixed Rust portfolio returns treating the first retained intraday snapshot as account registration
+- Fixed daily return statistics losing tiny values or reporting dispersion for constant returns
 - Fixed trade PnL statistics counting closes that a fill void changed or removed
 - Fixed trade PnL statistics dropping NETTING cycles that share a close time
 - Fixed Architect AX funding subscriptions publishing the oldest rate in the lookback window

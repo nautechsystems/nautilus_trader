@@ -11708,6 +11708,8 @@ fn test_default_equity_curve_samples_daily_while_flat(simple_cache: Cache, clock
 
     let snapshots = portfolio.snapshots(&account_id);
     assert_eq!(snapshots.len(), 2);
+    assert!(snapshots[0].is_registration);
+    assert!(!snapshots[1].is_registration);
     assert_eq!(snapshots[1].ts_event, UnixNanos::from(NANOSECONDS_IN_DAY));
     assert!(
         portfolio
@@ -11810,6 +11812,106 @@ fn test_equity_curve_can_be_disabled(simple_cache: Cache, clock: VirtualClock) {
 }
 
 #[rstest]
+fn test_intraday_snapshot_timer_does_not_create_daily_returns(
+    mut simple_cache: Cache,
+    clock: VirtualClock,
+    instrument_audusd: InstrumentAny,
+) {
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    let test_clock = Rc::new(RefCell::new(clock));
+    let start = UnixNanos::from(NANOSECONDS_IN_DAY + NANOSECONDS_IN_DAY / 2);
+    let _ = test_clock.borrow_mut().advance_time(start, true);
+    let config = PortfolioConfig::builder()
+        .equity_curve(false)
+        .snapshot_interval_ms(1_000)
+        .build()
+        .unwrap();
+
+    let mut portfolio = Portfolio::new(
+        Rc::clone(&test_clock) as Rc<RefCell<dyn Clock>>,
+        Rc::new(RefCell::new(simple_cache)),
+        Some(config),
+    );
+
+    let account_id = AccountId::new("SIM-001");
+    let cash = Money::from("100.00 USD");
+    portfolio.update_account(&AccountState::new(
+        account_id,
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            cash,
+            Money::zero(Currency::USD()),
+            cash,
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        start,
+        start,
+        Some(Currency::USD()),
+    ));
+    let fill = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("1"),
+        Price::from("100"),
+        PositionId::new("P-INTRADAY"),
+    );
+    let position = Position::new(&instrument_audusd, fill);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionOpened(get_open_position(&position)));
+
+    for (seconds, bid, ask) in [(1, "100", "101"), (2, "110", "111")] {
+        let ts = start + DurationNanos::from_secs(seconds);
+
+        let quote = QuoteTick::new(
+            instrument_audusd.id(),
+            Price::from(bid),
+            Price::from(ask),
+            Quantity::from("1"),
+            Quantity::from("1"),
+            ts,
+            ts,
+        );
+
+        portfolio.cache().borrow_mut().add_quote(quote).unwrap();
+        portfolio.update_quote_tick(&quote);
+        let events = test_clock.borrow_mut().advance_time(ts, true);
+        let handlers = test_clock.borrow().match_handlers(events);
+        assert_eq!(handlers.len(), 1);
+
+        for handler in handlers {
+            match handler.callback {
+                TimeEventCallback::RustLocal(callback) => callback(handler.event),
+                _ => panic!("expected RustLocal callback"),
+            }
+        }
+    }
+
+    let snapshots = portfolio.snapshots(&account_id);
+    assert_eq!(snapshots.len(), 2);
+    assert_eq!(snapshots[0].ts_event, start + DurationNanos::from_secs(1));
+    assert_eq!(snapshots[1].ts_event, start + DurationNanos::from_secs(2));
+    assert_eq!(snapshots[0].total_equity, vec![Money::from("200.00 USD")]);
+    assert_eq!(snapshots[1].total_equity, vec![Money::from("210.00 USD")]);
+    assert!(!snapshots[0].is_registration);
+    assert!(!snapshots[1].is_registration);
+    assert!(
+        snapshots
+            .iter()
+            .all(|snapshot| snapshot.unpriced_instruments.is_empty()),
+    );
+    assert!(portfolio.analyzer().portfolio_returns().is_empty());
+}
+
+#[rstest]
 fn test_finalize_equity_curve_samples_once_and_cancels_timer(
     simple_cache: Cache,
     clock: VirtualClock,
@@ -11829,7 +11931,10 @@ fn test_finalize_equity_curve_samples_once_and_cancels_timer(
     portfolio.update_account(&get_cash_account(Some(late_account_id.as_str())));
     portfolio.finalize_equity_curve();
 
-    assert_eq!(portfolio.snapshots(&account_id).len(), 2);
+    let snapshots = portfolio.snapshots(&account_id);
+    assert_eq!(snapshots.len(), 2);
+    assert!(snapshots[0].is_registration);
+    assert!(!snapshots[1].is_registration);
     assert!(portfolio.snapshots(&late_account_id).is_empty());
     assert!(
         !portfolio

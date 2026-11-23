@@ -1295,6 +1295,7 @@ impl Portfolio {
                 self.config,
                 account_id,
                 ts_event,
+                false,
             );
             self.clock
                 .borrow_mut()
@@ -4715,7 +4716,7 @@ fn register_equity_curve_account(
 
     arm_equity_curve_timer(clock, cache, inner, config, account_id);
     let ts_event = clock.borrow().timestamp_ns();
-    emit_snapshot(cache, clock, inner, config, account_id, ts_event);
+    emit_snapshot(cache, clock, inner, config, account_id, ts_event, true);
 }
 
 fn arm_equity_curve_timer(
@@ -4745,7 +4746,16 @@ fn arm_equity_curve_timer(
         let Some(inner) = inner_weak.upgrade() else {
             return;
         };
-        emit_snapshot(&cache, &clock, &inner, config, account_id, event.ts_event);
+
+        emit_snapshot(
+            &cache,
+            &clock,
+            &inner,
+            config,
+            account_id,
+            event.ts_event,
+            false,
+        );
     });
 
     if let Err(e) = clock.borrow_mut().set_timer_ns(
@@ -4846,7 +4856,16 @@ fn arm_snapshot_timer(
             Some(i) => i,
             None => return,
         };
-        emit_snapshot(&cache, &clock, &inner, config, account_id, event.ts_event);
+
+        emit_snapshot(
+            &cache,
+            &clock,
+            &inner,
+            config,
+            account_id,
+            event.ts_event,
+            false,
+        );
     });
 
     if let Err(e) = clock.borrow_mut().set_timer_ns(
@@ -4869,6 +4888,7 @@ fn emit_snapshot(
     config: PortfolioConfig,
     account_id: AccountId,
     ts_event: nautilus_core::UnixNanos,
+    is_registration: bool,
 ) {
     let mut portfolio = Portfolio {
         cache: Rc::clone(cache),
@@ -4887,6 +4907,7 @@ fn emit_snapshot(
     // is preserved even if the dispatcher batches or runs late. ts_init stays
     // the construction time set by build_snapshot.
     snapshot.ts_event = ts_event;
+    snapshot.is_registration = is_registration;
 
     msgbus::publish_portfolio_snapshot(format!("events.portfolio.{account_id}").into(), &snapshot);
 

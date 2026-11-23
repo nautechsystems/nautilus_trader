@@ -19,7 +19,10 @@ use std::fmt::Display;
 
 use nautilus_model::position::Position;
 
-use crate::{Returns, statistic::PortfolioStatistic};
+use crate::{
+    Returns,
+    statistic::{PortfolioStatistic, mean_and_sample_std},
+};
 
 /// Calculates the tracking error of portfolio returns relative to a benchmark.
 ///
@@ -106,20 +109,7 @@ impl PortfolioStatistic for TrackingError {
 ///
 /// Callers must ensure `r.len() == b.len() >= 2`.
 pub(crate) fn active_return_stats(r: &[f64], b: &[f64]) -> (f64, f64) {
-    let n = r.len() as f64;
-    let mean = r
-        .iter()
-        .zip(b.iter())
-        .map(|(&ri, &bi)| ri - bi)
-        .sum::<f64>()
-        / n;
-    let variance = r
-        .iter()
-        .zip(b.iter())
-        .map(|(&ri, &bi)| (ri - bi - mean).powi(2))
-        .sum::<f64>()
-        / (n - 1.0);
-    (mean, variance.sqrt())
+    mean_and_sample_std(r.iter().zip(b).map(|(&ri, &bi)| ri - bi))
 }
 
 #[cfg(test)]
@@ -198,6 +188,18 @@ mod tests {
             .calculate_from_returns_with_benchmark(&returns, &benchmark)
             .unwrap();
         assert!(approx_eq!(f64, result, 0.0, epsilon = 1e-12));
+    }
+
+    #[rstest]
+    fn test_constant_active_returns_have_zero_tracking_error() {
+        let stat = TrackingError::new(None);
+        let returns = create_returns(&[-0.1; 11]);
+        let benchmark = create_returns(&[0.0; 11]);
+
+        assert_eq!(
+            stat.calculate_from_returns_with_benchmark(&returns, &benchmark),
+            Some(0.0),
+        );
     }
 
     #[rstest]

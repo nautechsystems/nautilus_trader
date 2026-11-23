@@ -134,6 +134,22 @@ mod tests {
     }
 
     #[rstest]
+    fn test_constant_returns_have_zero_volatility() {
+        let stat = ReturnsVolatility::new(None);
+        let returns = create_returns(&[-0.1; 11]);
+
+        assert_eq!(stat.calculate_from_returns(&returns), Some(0.0));
+    }
+
+    #[rstest]
+    fn test_nearly_constant_returns_have_positive_volatility() {
+        let stat = ReturnsVolatility::new(None);
+        let returns = create_returns(&[-0.1, (-0.1_f64).next_up()]);
+
+        assert!(stat.calculate_from_returns(&returns).unwrap() > 0.0);
+    }
+
+    #[rstest]
     fn test_volatility_calculation() {
         let volatility = ReturnsVolatility::new(None);
 

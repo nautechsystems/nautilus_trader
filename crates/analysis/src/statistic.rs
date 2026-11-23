@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::BTreeMap, fmt::Debug};
+use std::fmt::Debug;
 
 use nautilus_core::DurationNanos;
 use nautilus_model::position::Position;
@@ -121,14 +121,21 @@ pub trait PortfolioStatistic: Debug {
     /// daily returns observe no behavior change.
     fn downsample_to_daily_bins(&self, returns: &Returns) -> Returns {
         let day = DurationNanos::from_days(1);
-        let mut daily_bins = BTreeMap::new();
+        let mut daily_bins = Returns::new();
 
         for (&timestamp, &value) in returns {
             let day_start = timestamp.floor(day);
 
-            // Geometrically compound returns within each day
-            let entry = daily_bins.entry(day_start).or_insert(0.0_f64);
-            *entry = (1.0_f64 + *entry).mul_add(1.0_f64 + value, -1.0_f64);
+            daily_bins
+                .entry(day_start)
+                .and_modify(|entry| {
+                    if *entry == 0.0 {
+                        *entry = value;
+                    } else if value != 0.0 {
+                        *entry = (1.0 + *entry).mul_add(1.0 + value, -1.0);
+                    }
+                })
+                .or_insert(value);
         }
 
         daily_bins
@@ -136,21 +143,34 @@ pub trait PortfolioStatistic: Debug {
 
     /// Calculates the standard deviation of returns with Bessel's correction.
     fn calculate_std(&self, returns: &Returns) -> f64 {
-        let n = returns.len() as f64;
-        if n < 2.0 {
-            return f64::NAN;
-        }
-
-        let mean = returns.values().sum::<f64>() / n;
-
-        let variance = returns.values().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
-
-        variance.sqrt()
+        mean_and_sample_std(returns.values().copied()).1
     }
+}
+
+#[expect(clippy::float_cmp, reason = "detects exactly constant series")]
+pub(crate) fn mean_and_sample_std(
+    values: impl ExactSizeIterator<Item = f64> + Clone,
+) -> (f64, f64) {
+    let n = values.len() as f64;
+    let first = values.clone().next().unwrap_or(f64::NAN);
+    if n < 2.0 {
+        return (first, f64::NAN);
+    }
+
+    // Summing identical values can round the mean away from the observations
+    if first.is_finite() && values.clone().all(|value| value == first) {
+        return (first, 0.0);
+    }
+
+    let mean = values.clone().sum::<f64>() / n;
+    let variance = values.map(|value| (value - mean).powi(2)).sum::<f64>() / (n - 1.0);
+    (mean, variance.sqrt())
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use nautilus_core::{UnixNanos, approx_eq};
     use rstest::rstest;
 
@@ -189,21 +209,47 @@ mod tests {
 
     #[rstest]
     fn test_downsample_daily_inputs_unchanged() {
-        // For one-return-per-day inputs the bin value equals the input return,
-        // so existing callers that already pass daily returns see no change.
         let stat = DummyStat;
         let mut returns: Returns = BTreeMap::new();
-        returns.insert(UnixNanos::from(BASE_NS), 0.01);
+        returns.insert(UnixNanos::from(BASE_NS), 1e-17);
         returns.insert(UnixNanos::from(BASE_NS + NANOS_PER_DAY), -0.02);
-        returns.insert(UnixNanos::from(BASE_NS + 2 * NANOS_PER_DAY), 0.015);
+        returns.insert(UnixNanos::from(BASE_NS + 2 * NANOS_PER_DAY), -0.0);
 
         let daily = stat.downsample_to_daily_bins(&returns);
 
-        let values: Vec<f64> = daily.values().copied().collect();
-        assert_eq!(values.len(), 3);
-        assert!(approx_eq!(f64, values[0], 0.01, epsilon = 1e-15));
-        assert!(approx_eq!(f64, values[1], -0.02, epsilon = 1e-15));
-        assert!(approx_eq!(f64, values[2], 0.015, epsilon = 1e-15));
+        let day = DurationNanos::from_days(1);
+        let expected = returns
+            .iter()
+            .map(|(&timestamp, &value)| (timestamp.floor(day), value.to_bits()))
+            .collect::<BTreeMap<_, _>>();
+        let actual = daily
+            .iter()
+            .map(|(&timestamp, &value)| (timestamp, value.to_bits()))
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    fn test_downsample_breakeven_observations_preserve_daily_return() {
+        let stat = DummyStat;
+        let returns = Returns::from([
+            (UnixNanos::from(1), 0.1),
+            (UnixNanos::from(NANOS_PER_DAY + 1), 0.1),
+            (UnixNanos::from(NANOS_PER_DAY + 2), 0.0),
+            (UnixNanos::from(2 * NANOS_PER_DAY + 1), 0.0),
+            (UnixNanos::from(2 * NANOS_PER_DAY + 2), 0.1),
+        ]);
+
+        let daily = stat.downsample_to_daily_bins(&returns);
+
+        assert_eq!(
+            daily,
+            Returns::from([
+                (UnixNanos::from(0), 0.1),
+                (UnixNanos::from(NANOS_PER_DAY), 0.1),
+                (UnixNanos::from(2 * NANOS_PER_DAY), 0.1),
+            ]),
+        );
     }
 
     #[rstest]
