@@ -40,7 +40,10 @@ use ustr::Ustr;
 
 use super::WsDispatchState;
 use crate::{
-    common::parse::{parse_venue_order_id, truncate_cl_ord_id},
+    common::{
+        enums::KrakenOrderType,
+        parse::{parse_venue_order_id, truncate_cl_ord_id},
+    },
     websocket::spot_v2::{
         enums::KrakenWsMethod,
         handler::SpotHandlerCommand,
@@ -157,14 +160,28 @@ impl OrderRequestState {
     ///
     /// # Errors
     ///
-    /// Returns an error if the JSON envelope fails to serialize or if the
-    /// handler command channel is closed.
+    /// Returns an error if the order or its conditional close order is an iceberg order, if the
+    /// JSON envelope fails to serialize or if the handler command channel is closed.
     pub fn submit(
         self: &Arc<Self>,
         params: KrakenWsAddOrderParams,
         identity: PendingRequest,
         ts_now_ns: u64,
     ) -> anyhow::Result<u64> {
+        // The request has no `display_qty`, which Kraken requires of an iceberg order
+        if params.order_type == KrakenOrderType::Iceberg {
+            anyhow::bail!("Iceberg orders are not supported on the Kraken WS path; use REST");
+        }
+
+        // Kraken's conditional close order types do not include iceberg
+        if params
+            .conditional
+            .as_ref()
+            .is_some_and(|close| close.order_type == KrakenOrderType::Iceberg)
+        {
+            anyhow::bail!("Iceberg conditional close orders are not supported by Kraken");
+        }
+
         self.send(
             KrakenWsRequest {
                 method: KrakenWsMethod::AddOrder,
@@ -224,13 +241,23 @@ impl OrderRequestState {
     ///
     /// # Errors
     ///
-    /// Returns an error if serialization fails or the handler command channel is closed.
+    /// Returns an error if an order is an iceberg order, if serialization fails or if the handler
+    /// command channel is closed.
     pub fn batch_add(
         self: &Arc<Self>,
         params: KrakenWsBatchAddParams,
         identity: PendingRequest,
         ts_now_ns: u64,
     ) -> anyhow::Result<u64> {
+        // The orders have no `display_qty`, which Kraken requires of an iceberg order
+        if params
+            .orders
+            .iter()
+            .any(|order| order.order_type == KrakenOrderType::Iceberg)
+        {
+            anyhow::bail!("Iceberg orders are not supported on the Kraken WS batch path; use REST");
+        }
+
         self.send(
             KrakenWsRequest {
                 method: KrakenWsMethod::BatchAdd,
@@ -838,9 +865,9 @@ mod tests {
         websocket::{
             dispatch::OrderIdentity,
             spot_v2::messages::{
-                KrakenWsAddOrderParams, KrakenWsAmendOrderParams, KrakenWsBatchAddParams,
-                KrakenWsBatchOrderResult, KrakenWsCancelOrderParams, KrakenWsOrderResponse,
-                KrakenWsOrderResult,
+                KrakenWsAddOrderParams, KrakenWsAmendOrderParams, KrakenWsBatchAddOrder,
+                KrakenWsBatchAddParams, KrakenWsBatchOrderResult, KrakenWsCancelOrderParams,
+                KrakenWsConditionalParams, KrakenWsOrderResponse, KrakenWsOrderResult,
             },
         },
     };
@@ -1017,6 +1044,87 @@ mod tests {
         }
     }
 
+    /// An add_order request cannot state a display quantity, so an iceberg order fails before it is
+    /// sent or awaits a response.
+    #[rstest]
+    fn test_submit_rejects_an_iceberg_order() {
+        let (state, mut rx) = make_state(60_000);
+        let params = KrakenWsAddOrderParams {
+            order_type: KrakenOrderType::Iceberg,
+            ..make_add_order_params("TKN")
+        };
+
+        let error = state
+            .submit(params, make_identity(PendingOperation::Submit), 1)
+            .expect_err("an iceberg order must not be sent");
+
+        assert!(
+            error.to_string().contains("Iceberg"),
+            "unexpected error: {error}"
+        );
+        assert_eq!(state.pending_len(), 0);
+        assert!(rx.try_recv().is_err());
+    }
+
+    /// Kraken accepts no iceberg conditional close order, so a limit order carrying one fails
+    /// before it is sent or awaits a response.
+    #[rstest]
+    fn test_submit_rejects_an_iceberg_conditional_close_order() {
+        let (state, mut rx) = make_state(60_000);
+        let params = KrakenWsAddOrderParams {
+            conditional: Some(KrakenWsConditionalParams {
+                order_type: KrakenOrderType::Iceberg,
+                limit_price: Some(dec!(51000)),
+                trigger_price: None,
+            }),
+            ..make_add_order_params("TKN")
+        };
+
+        let error = state
+            .submit(params, make_identity(PendingOperation::Submit), 1)
+            .expect_err("an iceberg close order must not be sent");
+
+        assert!(
+            error.to_string().contains("conditional close"),
+            "unexpected error: {error}"
+        );
+        assert_eq!(state.pending_len(), 0);
+        assert!(rx.try_recv().is_err());
+    }
+
+    /// A conditional close order of a type Kraken accepts is sent with its parent.
+    #[rstest]
+    fn test_submit_sends_a_stop_loss_limit_conditional_close_order() {
+        let (state, mut rx) = make_state(60_000);
+        let params = KrakenWsAddOrderParams {
+            conditional: Some(KrakenWsConditionalParams {
+                order_type: KrakenOrderType::StopLossLimit,
+                limit_price: Some(dec!(49000)),
+                trigger_price: Some(dec!(49100)),
+            }),
+            ..make_add_order_params("TKN")
+        };
+
+        state
+            .submit(params, make_identity(PendingOperation::Submit), 1)
+            .expect("a stop-loss-limit close order must be sent");
+
+        assert_eq!(state.pending_len(), 1);
+
+        match rx.try_recv().expect("cmd queued") {
+            SpotHandlerCommand::SendOrderRequest { payload, .. } => {
+                assert!(
+                    payload
+                        .expose_secret()
+                        .contains("\"conditional\":{\"order_type\":\"stop-loss-limit\""),
+                    "unexpected payload: {}",
+                    payload.expose_secret()
+                );
+            }
+            _ => panic!("wrong cmd variant"),
+        }
+    }
+
     #[tokio::test]
     async fn test_submit_uses_swapped_command_sender() {
         // Regression: dispatcher built before connect() must observe the
@@ -1115,6 +1223,54 @@ mod tests {
         } else {
             panic!("wrong variant");
         }
+    }
+
+    /// A batch_add request cannot state a display quantity, so a batch holding an iceberg order fails
+    /// whole before it is sent or awaits a response.
+    #[rstest]
+    fn test_batch_add_rejects_a_batch_holding_an_iceberg_order() {
+        let (state, mut rx) = make_state(60_000);
+        let order = |order_type, cl_ord_id: &str| KrakenWsBatchAddOrder {
+            order_type,
+            side: KrakenOrderSide::Buy,
+            order_qty: dec!(0.001),
+            limit_price: Some(dec!(50000)),
+            cl_ord_id: Some(cl_ord_id.to_string()),
+            time_in_force: None,
+            expire_time: None,
+            post_only: None,
+            reduce_only: None,
+            leverage: None,
+            trigger: None,
+        };
+        let params = KrakenWsBatchAddParams {
+            symbol: "BTC/USD".to_string(),
+            orders: vec![
+                order(KrakenOrderType::Limit, "O-A"),
+                order(KrakenOrderType::Iceberg, "O-B"),
+            ],
+            token: SecretString::from("TKN"),
+        };
+        let identity = PendingRequest {
+            operation: PendingOperation::BatchAdd,
+            client_order_ids: vec![ClientOrderId::from("O-A"), ClientOrderId::from("O-B")],
+            venue_order_ids: vec![None, None],
+            ts_sent_ns: 0,
+            new_quantity: None,
+            new_price: None,
+            new_trigger_price: None,
+        };
+
+        let error = state
+            .batch_add(params, identity, 1)
+            .expect_err("a batch holding an iceberg order must not be sent");
+
+        assert!(
+            error.to_string().contains("Iceberg"),
+            "unexpected error: {error}"
+        );
+        assert_eq!(state.pending_len(), 0);
+        assert!(rx.try_recv().is_err());
     }
 
     #[rstest]

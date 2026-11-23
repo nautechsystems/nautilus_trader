@@ -841,14 +841,16 @@ page, with a cap of 500 pages per read. Reaching the cap logs a warning:
 - A report carries the order's own prices, not the row's top-level `price`. That field is the average fill
   price and reads zero on an unfilled order. The report's `avg_px` comes from `cost` and `vol_exec`.
 
-  The limit comes from `descr.price` for a limit order and `descr.price2` for a stop-loss-limit or
-  take-profit-limit order, or a trailing-stop-limit order once `misc` marks it `stopped`. A
-  trailing-stop-limit's `limitprice` holds the peak price, not its limit. A market, settle-position,
-  stop-loss, take-profit or trailing-stop order carries no limit.
+  The limit comes from `descr.price` for a limit or iceberg order and `descr.price2` for a
+  stop-loss-limit or take-profit-limit order, or a trailing-stop-limit order once `misc` marks it
+  `stopped`. A trailing-stop-limit's `limitprice` holds the peak price, not its limit. A market,
+  settle-position, stop-loss, take-profit or trailing-stop order carries no limit. An iceberg order
+  reports as a limit order, without its display quantity.
 
-  The trigger comes from `stopprice`, which a stop-loss, take-profit, stop-loss-limit or take-profit-limit
-  order fills only once triggered, so `descr.price`, as AddOrder takes it, stands in before. A zero or
-  relative price reads as none.
+  A stop-loss, take-profit, stop-loss-limit or take-profit-limit order's trigger comes from
+  `descr.price`, as AddOrder takes it. Its `stopprice` is not read for the trigger: once the order
+  triggers, it holds the market price that triggered it, which can differ from the trigger. A
+  trailing order's trigger comes from `stopprice`. A zero or relative price reads as none.
 - An untriggered trailing-stop-limit order has no absolute limit, so its report carries no price,
   and an order the cache does not hold cannot be rebuilt from it until it triggers.
 - A take-profit-limit order whose trigger sits above a buy limit or below a sell limit cannot be a

@@ -144,6 +144,7 @@ pub enum KrakenOrderType {
     #[serde(rename = "settle-position")]
     #[strum(serialize = "settle-position")]
     SettlePosition,
+    Iceberg,
 }
 
 /// Kraken order side (buy or sell).
@@ -806,6 +807,7 @@ impl From<KrakenOrderType> for OrderType {
             KrakenOrderType::TrailingStop => Self::StopMarket,
             KrakenOrderType::TrailingStopLimit => Self::StopLimit,
             KrakenOrderType::SettlePosition => Self::Market,
+            KrakenOrderType::Iceberg => Self::Limit,
         }
     }
 }
