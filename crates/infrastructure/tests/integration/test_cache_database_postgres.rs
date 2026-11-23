@@ -74,13 +74,13 @@ mod serial_tests {
             Symbol, TradeId, TraderId, VenueOrderId, stubs::account_id,
         },
         instruments::{
-            Instrument, InstrumentAny, OptionSpread, SyntheticInstrument,
+            FuturesSpread, Instrument, InstrumentAny, OptionSpread, SyntheticInstrument,
             stubs::{
                 audusd_sim, binary_option, cfd_gold, commodity_gold, crypto_future_btcusdt,
                 crypto_futures_spread_btc_deribit, crypto_option_btc_deribit,
                 crypto_option_spread_btc_deribit, crypto_perpetual_ethusdt, currency_pair_ethusdt,
-                equity_aapl, futures_contract_es, index_instrument_spx, option_contract_appl,
-                option_spread, perpetual_contract_eurusd,
+                equity_aapl, futures_contract_es, futures_spread_es, index_instrument_spx,
+                option_contract_appl, option_spread, perpetual_contract_eurusd,
             },
         },
         orders::{Order, OrderAny, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -1277,6 +1277,127 @@ mod serial_tests {
                 .to_string()
                 .contains(&format!("missing cache columns instrument.{column}"))
         );
+    }
+
+    #[rstest]
+    #[case::populated(true)]
+    #[case::nulls(false)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_futures_spread_round_trip(
+        mut futures_spread_es: FuturesSpread,
+        #[case] populated: bool,
+    ) {
+        futures_spread_es.raw_symbol = Symbol::from("ESM4-ESU4-LOCAL");
+        futures_spread_es.currency = Currency::EUR();
+        futures_spread_es.price_precision = 3;
+        futures_spread_es.price_increment = Price::from("0.025");
+        futures_spread_es.multiplier = Quantity::from("50");
+        futures_spread_es.lot_size = Quantity::from("5");
+        futures_spread_es.margin_init = Decimal::from_str("0.17").unwrap();
+        futures_spread_es.margin_maint = Decimal::from_str("0.09").unwrap();
+        futures_spread_es.ts_event = UnixNanos::from(1_700_000_000_000_000_123_u64);
+        futures_spread_es.ts_init = UnixNanos::from(1_700_000_000_000_000_456_u64);
+        futures_spread_es.exchange = populated.then(|| Ustr::from("XCME"));
+        futures_spread_es.max_quantity = populated.then(|| Quantity::from("137"));
+        futures_spread_es.min_quantity = populated.then(|| Quantity::from("2"));
+        futures_spread_es.max_price = populated.then(|| Price::from("8.625"));
+        futures_spread_es.min_price = populated.then(|| Price::from("-3.125"));
+        futures_spread_es.tick_scheme = populated.then(|| Ustr::from("FIXED_PRECISION_3"));
+        futures_spread_es.info = populated.then(|| {
+            serde_json::from_value(serde_json::json!({
+                "legs": [
+                    {"instrument_id": "ESM4.GLBX", "ratio": 1},
+                    {"instrument_id": "ESU4.GLBX", "ratio": -1}
+                ],
+                "strategy": "calendar"
+            }))
+            .unwrap()
+        });
+
+        let expected = futures_spread_es.into_any();
+        let mut writer = get_test_pg_cache_database().await.unwrap();
+        writer.add_currency(&expected.quote_currency()).unwrap();
+        writer.add_instrument(&expected).unwrap();
+        writer.close().unwrap();
+
+        let mut restarted = get_test_pg_cache_database().await.unwrap();
+        let loaded = restarted
+            .load_instrument(&expected.id())
+            .await
+            .unwrap()
+            .unwrap();
+        let recovered = restarted.load_all().await.unwrap().instruments;
+
+        assert_entirely_equal(&loaded, &expected);
+        assert_entirely_equal(&recovered[&expected.id()], &expected);
+
+        reset_test_database(&restarted).await;
+        restarted.close().unwrap();
+    }
+
+    #[rstest]
+    #[case("raw_symbol", "''")]
+    #[case("settlement_currency", "'EUR'")]
+    #[case("is_inverse", "TRUE")]
+    #[case("activation_ns", "'invalid'")]
+    #[case("activation_ns", "'1.0'")]
+    #[case("expiration_ns", "'2024-06-21'")]
+    #[case("ts_event", "'1e3'")]
+    #[case("ts_init", "'1.5'")]
+    #[case("price_precision", "3")]
+    #[case("size_precision", "1")]
+    #[case("size_increment", "'2'")]
+    #[case("size_increment", "'1.0'")]
+    #[case("max_price", "'invalid'")]
+    #[case("margin_init", "'0.00000000000000000000000000001'")]
+    #[case("margin_maint", "'1.23456789012345678901234567891'")]
+    #[case("tick_scheme", "'UNKNOWN'")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_futures_spread_invalid_rows(
+        futures_spread_es: FuturesSpread,
+        #[case] column: &str,
+        #[case] value: &str,
+    ) {
+        let mut database = get_test_pg_cache_database().await.unwrap();
+        let id = futures_spread_es.id;
+        for currency in [futures_spread_es.currency, Currency::EUR()] {
+            DatabaseQueries::add_currency(&database.pool, currency)
+                .await
+                .unwrap();
+        }
+
+        DatabaseQueries::add_instrument(
+            &database.pool,
+            "FUTURES_SPREAD",
+            Box::new(futures_spread_es),
+        )
+        .await
+        .unwrap();
+        sqlx::query(AssertSqlSafe(format!(
+            "UPDATE instrument SET {column} = {value} WHERE id = $1"
+        )))
+        .bind(id.to_string())
+        .execute(&database.pool)
+        .await
+        .unwrap();
+
+        let lookup_error = database.load_instrument(&id).await.unwrap_err();
+        let bulk_error = database.load_instruments().await.unwrap_err();
+        for error in [lookup_error, bulk_error] {
+            let sqlx::Error::Decode(source) = error.downcast::<sqlx::Error>().unwrap() else {
+                panic!("Expected a SQL decode error for {id}");
+            };
+
+            let message = source.to_string();
+            assert!(
+                message.starts_with(&format!("Invalid FuturesSpread row Some(\"{id}\"): ")),
+                "{message}"
+            );
+            assert!(message.contains(column), "{message}");
+        }
+
+        reset_test_database(&database).await;
+        database.close().unwrap();
     }
 
     #[rstest]

@@ -26,7 +26,7 @@ use nautilus_model::{
     instruments::{
         BettingInstrument, BinaryOption, Cfd, Commodity, CryptoFuture, CryptoFuturesSpread,
         CryptoOption, CryptoOptionSpread, CryptoPerpetual, CurrencyPair, Equity, FuturesContract,
-        FuturesSpread, IndexInstrument, InstrumentAny, OptionContract, OptionSpread,
+        FuturesSpread, IndexInstrument, Instrument, InstrumentAny, OptionContract, OptionSpread,
         PerpetualContract, TokenizedAsset,
     },
     types::{Currency, Price, Quantity},
@@ -139,7 +139,7 @@ impl<'r> FromRow<'r, PgRow> for InstrumentAnyRow {
             )))
         } else if kind == "FUTURES_SPREAD" {
             Ok(Self(InstrumentAny::FuturesSpread(
-                FuturesSpreadRow::from_row(row).unwrap().0,
+                FuturesSpreadRow::from_row(row)?.0,
             )))
         } else if kind == "OPTION_CONTRACT" {
             Ok(Self(InstrumentAny::OptionContract(
@@ -979,8 +979,76 @@ impl<'r> FromRow<'r, PgRow> for FuturesContractRow {
 }
 
 impl<'r> FromRow<'r, PgRow> for FuturesSpreadRow {
-    fn from_row(_row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        todo!("Implement FromRow for FuturesSpread")
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        let result = (|| {
+            let exchange: Option<String> = row.try_get("exchange")?;
+            let underlying: String = row.try_get("underlying")?;
+            let strategy_type: String = row.try_get("strategy_type")?;
+            let tick_scheme: Option<String> = row.try_get("tick_scheme")?;
+            let info: Option<Json<Params>> = row.try_get("info")?;
+            let min_quantity = read_optional_parsed(row, "min_quantity")?;
+            let margin_init = read_parsed_with(row, "margin_init", Decimal::from_str_exact)?;
+            let margin_maint = read_parsed_with(row, "margin_maint", Decimal::from_str_exact)?;
+            let size_precision = read_u8(row, "size_precision")?;
+            let size_increment = read_parsed(row, "size_increment")?;
+
+            let mut instrument = FuturesSpread::builder()
+                .instrument_id(read_parsed(row, "id")?)
+                .raw_symbol(read_symbol(row)?)
+                .asset_class(row.try_get::<AssetClassPg, _>("asset_class")?.0)
+                .maybe_exchange(exchange.as_deref().map(Ustr::from))
+                .underlying(Ustr::from(&underlying))
+                .strategy_type(Ustr::from(&strategy_type))
+                .activation_ns(read_parsed::<u64>(row, "activation_ns")?.into())
+                .expiration_ns(read_parsed::<u64>(row, "expiration_ns")?.into())
+                .currency(read_parsed(row, "quote_currency")?)
+                .price_precision(read_u8(row, "price_precision")?)
+                .price_increment(read_parsed(row, "price_increment")?)
+                .multiplier(read_parsed(row, "multiplier")?)
+                .lot_size(read_parsed(row, "lot_size")?)
+                .maybe_max_quantity(read_optional_parsed(row, "max_quantity")?)
+                .maybe_min_quantity(min_quantity)
+                .maybe_max_price(read_optional_parsed(row, "max_price")?)
+                .maybe_min_price(read_optional_parsed(row, "min_price")?)
+                .margin_init(margin_init)
+                .margin_maint(margin_maint)
+                .maybe_tick_scheme(tick_scheme.as_deref().map(Ustr::from))
+                .maybe_info(info.map(|info| info.0))
+                .ts_event(read_parsed::<u64>(row, "ts_event")?.into())
+                .ts_init(read_parsed::<u64>(row, "ts_init")?.into())
+                .build()
+                .map_err(|e| sqlx::Error::Decode(e.to_string().into()))?;
+
+            if row.try_get::<String, _>("settlement_currency")?
+                != instrument.settlement_currency().code.as_str()
+            {
+                return Err(sqlx::Error::Decode(
+                    "settlement_currency must match quote_currency for FuturesSpread".into(),
+                ));
+            }
+
+            if row.try_get::<bool, _>("is_inverse")? != instrument.is_inverse() {
+                return Err(sqlx::Error::Decode(
+                    "Invalid is_inverse for FuturesSpread".into(),
+                ));
+            }
+
+            validate_spread_size(
+                size_precision,
+                size_increment,
+                instrument.size_precision,
+                instrument.size_increment,
+                "FuturesSpread",
+            )?;
+            // Preserve SQL NULL instead of the constructor's minimum quantity default
+            instrument.min_quantity = min_quantity;
+            Ok(Self(instrument))
+        })();
+
+        result.map_err(|e: sqlx::Error| {
+            let id = row.try_get::<String, _>("id").ok();
+            sqlx::Error::Decode(format!("Invalid FuturesSpread row {id:?}: {e}").into())
+        })
     }
 }
 
@@ -1417,14 +1485,7 @@ impl<'r> FromRow<'r, PgRow> for OptionSpreadRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let result = (|| {
             let id = read_parsed(row, "id")?;
-            let raw_symbol: String = row.try_get("raw_symbol")?;
-
-            let raw_symbol =
-                Symbol::new_checked(raw_symbol).map_err(|e| sqlx::Error::ColumnDecode {
-                    index: "raw_symbol".to_string(),
-                    source: e.to_string().into(),
-                })?;
-
+            let raw_symbol = read_symbol(row)?;
             let asset_class = row.try_get::<AssetClassPg, _>("asset_class")?.0;
             let exchange = row
                 .try_get::<Option<String>, _>("exchange")?
@@ -1488,14 +1549,13 @@ impl<'r> FromRow<'r, PgRow> for OptionSpreadRow {
 
             // Preserve SQL NULL instead of the constructor's minimum quantity default
             inst.min_quantity = min_quantity;
-            if size_precision != inst.size_precision
-                || size_increment != inst.size_increment
-                || size_increment.precision != inst.size_increment.precision
-            {
-                return Err(sqlx::Error::Decode(
-                    "Invalid size_precision or size_increment for OptionSpread".into(),
-                ));
-            }
+            validate_spread_size(
+                size_precision,
+                size_increment,
+                inst.size_precision,
+                inst.size_increment,
+                "OptionSpread",
+            )?;
 
             Ok(Self(inst))
         })();
@@ -1826,8 +1886,19 @@ where
     T: FromStr,
     T::Err: std::fmt::Display,
 {
+    read_parsed_with(row, column, T::from_str)
+}
+
+fn read_parsed_with<T, E>(
+    row: &PgRow,
+    column: &str,
+    parse: impl FnOnce(&str) -> Result<T, E>,
+) -> Result<T, sqlx::Error>
+where
+    E: std::fmt::Display,
+{
     let value: String = row.try_get(column)?;
-    value.parse::<T>().map_err(|e| sqlx::Error::ColumnDecode {
+    parse(&value).map_err(|e| sqlx::Error::ColumnDecode {
         index: column.to_string(),
         source: e.to_string().into(),
     })
@@ -1846,4 +1917,31 @@ where
             })
         })
         .transpose()
+}
+
+fn read_symbol(row: &PgRow) -> Result<Symbol, sqlx::Error> {
+    let raw_symbol: String = row.try_get("raw_symbol")?;
+    Symbol::new_checked(raw_symbol).map_err(|e| sqlx::Error::ColumnDecode {
+        index: "raw_symbol".to_string(),
+        source: e.to_string().into(),
+    })
+}
+
+fn validate_spread_size(
+    size_precision: u8,
+    size_increment: Quantity,
+    expected_precision: u8,
+    expected_increment: Quantity,
+    kind: &str,
+) -> Result<(), sqlx::Error> {
+    if size_precision != expected_precision
+        || size_increment != expected_increment
+        || size_increment.precision != expected_increment.precision
+    {
+        return Err(sqlx::Error::Decode(
+            format!("Invalid size_precision or size_increment for {kind}").into(),
+        ));
+    }
+
+    Ok(())
 }

@@ -133,6 +133,7 @@ Released on TBD (UTC).
 - Fixed option-chain delta selection depending on the arrival order of Greeks conventions
 - Fixed delta option chains missing matching strikes outside the ATM fallback
 - Fixed PostgreSQL cache restoring another trader's OMS type when position IDs overlap
+- Fixed PostgreSQL `FuturesSpread` reloads panicking
 - Fixed PostgreSQL `OptionSpread` reloads panicking and dropping `tick_scheme`
 - Fixed PostgreSQL persistence of emulated order releases and recovery when both initializations are stored
 - Fixed local catalog paths with `#`, `%`, or `?` in queries, migration, and run manifests
