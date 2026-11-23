@@ -23,6 +23,7 @@ use std::{
     },
 };
 
+use futures_util::future::BoxFuture;
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::string::secret::SecretString;
@@ -33,9 +34,11 @@ use nautilus_network::{
 use serde::Deserialize;
 use serde_json::{Value, value::RawValue};
 use tokio_tungstenite::tungstenite::Message;
+use tokio_util::sync::CancellationToken;
 
 use super::{
     enums::{KrakenWsChannel, KrakenWsMessageType},
+    level_2::BookRequests,
     messages::{
         KrakenSpotWsMessage, KrakenWsBookData, KrakenWsExecutionData, KrakenWsOhlcData,
         KrakenWsRawMessage, KrakenWsResponse, KrakenWsTickerData, KrakenWsTradeData,
@@ -44,7 +47,10 @@ use super::{
 };
 use crate::{
     common::consts::{KRAKEN_RATE_LIMIT_KEY_ORDER, KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION},
-    websocket::spot_v2::level_3::messages::{KrakenL3Snapshot, KrakenL3UpdateData},
+    websocket::{
+        error::KrakenWsError,
+        spot_v2::level_3::messages::{KrakenL3Snapshot, KrakenL3UpdateData},
+    },
 };
 
 /// Commands sent from the outer client to the inner message handler.
@@ -58,14 +64,35 @@ pub enum SpotHandlerCommand {
     SendOrderRequest { req_id: u64, payload: SecretString },
 }
 
+#[derive(Debug)]
+pub(super) struct SpotBookWrite {
+    pub(super) epoch: u64,
+    pub(super) operation: SpotBookOperation,
+}
+
+#[derive(Debug)]
+pub(super) enum SpotBookOperation {
+    Send(SecretString, Option<CancellationToken>),
+    Replace {
+        req_id: u64,
+        payloads: [SecretString; 2],
+        cancel: CancellationToken,
+        result: Option<tokio::sync::oneshot::Sender<Result<(), KrakenWsError>>>,
+    },
+}
+
 /// WebSocket message handler for Kraken Spot v2.
 pub(super) struct SpotFeedHandler {
     signal: Arc<AtomicBool>,
-    inner: Option<WebSocketClient>,
+    inner: Option<Arc<WebSocketClient>>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<SpotHandlerCommand>,
-    raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
+    raw_rx: tokio::sync::mpsc::UnboundedReceiver<(u64, Message)>,
     subscriptions: SubscriptionState,
     pending_messages: VecDeque<KrakenSpotWsMessage>,
+    book_rx: Option<tokio::sync::mpsc::UnboundedReceiver<SpotBookWrite>>,
+    book_requests: BookRequests,
+    book_write: Option<BoxFuture<'static, ()>>,
+    observed_epoch: u64,
 }
 
 impl SpotFeedHandler {
@@ -73,7 +100,7 @@ impl SpotFeedHandler {
     pub(super) fn new(
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<SpotHandlerCommand>,
-        raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
+        raw_rx: tokio::sync::mpsc::UnboundedReceiver<(u64, Message)>,
         subscriptions: SubscriptionState,
     ) -> Self {
         Self {
@@ -83,7 +110,24 @@ impl SpotFeedHandler {
             raw_rx,
             subscriptions,
             pending_messages: VecDeque::new(),
+            book_rx: None,
+            book_requests: BookRequests::default(),
+            book_write: None,
+            observed_epoch: 0,
         }
+    }
+
+    pub(super) fn manage_book_writes(
+        &mut self,
+        book_rx: tokio::sync::mpsc::UnboundedReceiver<SpotBookWrite>,
+        book_requests: BookRequests,
+    ) {
+        self.book_rx = Some(book_rx);
+        self.book_requests = book_requests;
+    }
+
+    pub(super) fn book_epoch(&self) -> u64 {
+        self.observed_epoch
     }
 
     pub(super) fn is_stopped(&self) -> bool {
@@ -102,14 +146,27 @@ impl SpotFeedHandler {
 
         loop {
             tokio::select! {
+                () = async { self.book_write.as_mut().expect("active book write").await },
+                    if self.book_write.is_some() => {
+                    self.book_write = None;
+                }
+                write = async { self.book_rx.as_mut().expect("book write channel").recv().await },
+                    if self.book_write.is_none() && self.book_rx.is_some() && self.inner.is_some() => {
+                    if let Some(write) = write {
+                        self.start_book_write(write);
+                    } else {
+                        self.book_rx = None;
+                    }
+                }
                 Some(cmd) = self.cmd_rx.recv() => {
                     match cmd {
                         SpotHandlerCommand::SetClient(client) => {
                             log::debug!("WebSocketClient received by handler");
-                            self.inner = Some(client);
+                            self.inner = Some(Arc::new(client));
                         }
                         SpotHandlerCommand::Disconnect => {
                             log::debug!("Disconnect command received");
+                            self.book_write = None;
 
                             if let Some(client) = self.inner.take() {
                                 client.disconnect().await;
@@ -161,7 +218,7 @@ impl SpotFeedHandler {
                 }
 
                 msg = self.raw_rx.recv() => {
-                    let msg = match msg {
+                    let (epoch, msg) = match msg {
                         Some(msg) => msg,
                         None => {
                             log::debug!("WebSocket stream closed");
@@ -213,13 +270,72 @@ impl SpotFeedHandler {
 
                     if text == RECONNECTED {
                         log::debug!("Received WebSocket reconnected signal");
+                        self.book_write = None;
+                        self.observed_epoch = epoch;
                         return Some(KrakenSpotWsMessage::Reconnected);
                     }
 
-                    if let Some(msg) = self.parse_message(&text) {
+                    if let Some(msg) = self.parse_message(&text)
+                        && (epoch == self.observed_epoch || !self.is_book_message(&msg))
+                    {
                         return Some(msg);
                     }
                 }
+            }
+        }
+    }
+
+    fn is_book_message(&self, msg: &KrakenSpotWsMessage) -> bool {
+        match msg {
+            KrakenSpotWsMessage::Book { .. }
+            | KrakenSpotWsMessage::L3Snapshot(_)
+            | KrakenSpotWsMessage::L3Update(_) => true,
+            KrakenSpotWsMessage::SubscriptionAck {
+                req_id: Some(req_id),
+                ..
+            } => self.book_requests.lock().contains_key(req_id),
+            _ => false,
+        }
+    }
+
+    fn start_book_write(&mut self, write: SpotBookWrite) {
+        let client = Arc::clone(self.inner.as_ref().expect("active book writer"));
+        let current_epoch = write.epoch == self.observed_epoch;
+        match write.operation {
+            SpotBookOperation::Send(payload, cancel) if current_epoch => {
+                self.book_write = Some(Box::pin(async move {
+                    if let Err(e) =
+                        send_book_payload(&client, write.epoch, payload, cancel.as_ref()).await
+                    {
+                        log::debug!("Spot book command did not complete: {e}");
+                    }
+                }));
+            }
+            SpotBookOperation::Send(..) => {}
+            SpotBookOperation::Replace {
+                req_id,
+                payloads,
+                cancel,
+                result,
+            } => {
+                if !current_epoch || !self.book_requests.lock().contains_key(&req_id) {
+                    if let Some(result) = result {
+                        let _ = result.send(Err(KrakenWsError::ConnectionError(
+                            "Spot book write was superseded".into(),
+                        )));
+                    }
+
+                    return;
+                }
+
+                self.book_write = Some(Box::pin(async move {
+                    let sent = send_book_replacement(&client, write.epoch, payloads, &cancel).await;
+                    if let Some(result) = result {
+                        let _ = result.send(sent);
+                    } else if let Err(e) = sent {
+                        log::debug!("Spot book replacement did not complete: {e}");
+                    }
+                }));
             }
         }
     }
@@ -459,6 +575,44 @@ impl SpotFeedHandler {
     }
 }
 
+async fn send_book_replacement(
+    ws_client: &WebSocketClient,
+    epoch: u64,
+    payloads: [SecretString; 2],
+    cancel: &CancellationToken,
+) -> Result<(), KrakenWsError> {
+    for payload in payloads {
+        send_book_payload(ws_client, epoch, payload, Some(cancel)).await?;
+    }
+
+    Ok(())
+}
+
+async fn send_book_payload(
+    ws_client: &WebSocketClient,
+    epoch: u64,
+    payload: SecretString,
+    cancel: Option<&CancellationToken>,
+) -> Result<(), KrakenWsError> {
+    let send = ws_client.send_text_on_connection(
+        payload.expose_secret().to_owned(),
+        Some(KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice()),
+        epoch,
+    );
+
+    let sent = if let Some(cancel) = cancel {
+        tokio::select! {
+            biased;
+            () = cancel.cancelled() => return Err(KrakenWsError::Disconnected("Book write cancelled".into())),
+            result = send => result,
+        }
+    } else {
+        send.await
+    };
+
+    sent.map_err(|e| KrakenWsError::ConnectionError(e.to_string()))
+}
+
 #[derive(Deserialize)]
 struct Level3RawMessage<'a> {
     channel: &'a str,
@@ -518,6 +672,7 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+    use crate::websocket::spot_v2::level_2::BookRequest;
 
     fn create_test_handler() -> SpotFeedHandler {
         let signal = Arc::new(AtomicBool::new(false));
@@ -762,7 +917,7 @@ mod tests {
     async fn test_send_order_request_without_active_client_does_not_panic() {
         let signal = Arc::new(AtomicBool::new(false));
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, Message)>();
         let subscriptions = SubscriptionState::new(':');
 
         let mut handler = SpotFeedHandler::new(signal.clone(), cmd_rx, raw_rx, subscriptions);
@@ -819,7 +974,7 @@ mod tests {
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
         // The raw stream stays open so `next` cannot return early: the only ready
         // branch is the command channel, so the queued subscribe is handled first.
-        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, Message)>();
         let subscriptions = SubscriptionState::new(':');
 
         let mut handler = SpotFeedHandler::new(signal, cmd_rx, raw_rx, subscriptions);
@@ -926,6 +1081,33 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn test_spot_order_reply_can_precede_the_reconnect_marker() {
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut handler = SpotFeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            SubscriptionState::new(':'),
+        );
+
+        raw_tx.send((1, Message::text(r#"{"method":"add_order","req_id":42,"success":false,"error":"EOrder:Insufficient funds","time_in":"2026-05-05T10:00:00.123Z","time_out":"2026-05-05T10:00:00.125Z"}"#))).unwrap();
+        raw_tx.send((1, Message::text(RECONNECTED))).unwrap();
+
+        let Some(KrakenSpotWsMessage::OrderResponse(response)) = handler.next().await else {
+            panic!("expected the definitive order rejection before reconnect");
+        };
+
+        assert_eq!(response.req_id, Some(42));
+        assert!(!response.success);
+        assert!(matches!(
+            handler.next().await,
+            Some(KrakenSpotWsMessage::Reconnected)
+        ));
+    }
+
     /// A rejected `subscribe` reaches the stream with the request id, the pair and the venue's
     /// reason, so the holder of the subscription can act on it.
     #[rstest]
@@ -982,6 +1164,126 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_reconnect_retires_spot_book_writes_without_blocking_feed() {
+        use std::num::NonZeroU32;
+
+        use futures_util::StreamExt;
+        use nautilus_network::{ratelimiter::quota::Quota, websocket::WebSocketConfig};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let config = WebSocketConfig::builder()
+            .url(format!("ws://{}", listener.local_addr().unwrap()))
+            .build()
+            .unwrap();
+
+        let server = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(tcp).await.unwrap();
+            while socket.next().await.is_some() {}
+        });
+
+        let (raw_handler, _) = nautilus_network::websocket::channel_message_handler();
+        let client = WebSocketClient::builder()
+            .config(config)
+            .message_handler(raw_handler)
+            .keyed_quotas(vec![(
+                KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION[0].to_string(),
+                Quota::per_hour(NonZeroU32::MIN),
+            )])
+            .connect()
+            .await
+            .unwrap();
+        client
+            .send_text(
+                "first".into(),
+                Some(KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice()),
+            )
+            .await
+            .unwrap();
+
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (book_tx, book_rx) = tokio::sync::mpsc::unbounded_channel();
+        let requests = BookRequests::default();
+        let symbol = ustr::Ustr::from("BTC/USD");
+        requests.lock().insert(50, BookRequest::new(symbol));
+        let epoch = client.connection_epoch();
+
+        let mut handler = SpotFeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            SubscriptionState::new(':'),
+        );
+
+        let (result, mut response) = tokio::sync::oneshot::channel();
+        handler.manage_book_writes(book_rx, Arc::clone(&requests));
+        cmd_tx.send(SpotHandlerCommand::SetClient(client)).unwrap();
+
+        let write = |epoch, req_id, result| SpotBookWrite {
+            epoch,
+            operation: SpotBookOperation::Replace {
+                req_id,
+                payloads: [
+                    SecretString::from("unsubscribe"),
+                    SecretString::from("subscribe"),
+                ],
+                cancel: CancellationToken::new(),
+                result: Some(result),
+            },
+        };
+
+        book_tx.send(write(epoch, 50, result)).unwrap();
+
+        let mut next = Box::pin(handler.next());
+        assert!(futures_util::poll!(&mut next).is_pending());
+        raw_tx.send((epoch, Message::text(
+            r#"{"method":"subscribe","result":{"channel":"book","symbol":"ETH/USD"},"success":true,"time_in":"2026-05-05T10:00:00.123Z","time_out":"2026-05-05T10:00:00.125Z","req_id":60}"#,
+        ))).unwrap();
+        let frame = tokio::time::timeout(Duration::from_secs(1), next.as_mut())
+            .await
+            .unwrap();
+        assert!(matches!(
+            frame,
+            Some(KrakenSpotWsMessage::SubscriptionAck {
+                req_id: Some(60),
+                success: true,
+                ..
+            })
+        ));
+        assert!(matches!(
+            response.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        ));
+        drop(next);
+        raw_tx
+            .send((epoch + 1, Message::text(RECONNECTED)))
+            .unwrap();
+        assert!(matches!(
+            handler.next().await,
+            Some(KrakenSpotWsMessage::Reconnected)
+        ));
+        assert!(response.await.is_err(), "reconnect drops the stalled write");
+
+        requests.lock().remove(&50);
+        requests.lock().insert(51, BookRequest::new(symbol));
+        let (old_connection, old_connection_result) = tokio::sync::oneshot::channel();
+        let (old_request, old_request_result) = tokio::sync::oneshot::channel();
+        book_tx.send(write(epoch, 51, old_connection)).unwrap();
+        book_tx.send(write(epoch + 1, 50, old_request)).unwrap();
+        let mut next = std::pin::pin!(handler.next());
+        assert!(futures_util::poll!(&mut next).is_pending());
+
+        for result in [old_connection_result, old_request_result] {
+            assert!(
+                matches!(result.await.unwrap(), Err(KrakenWsError::ConnectionError(message)) if message == "Spot book write was superseded")
+            );
+        }
+
+        server.abort();
+    }
+
     /// The handler yields a subscribe answer and the book frames after it in wire order, and a
     /// failed unsubscribe, which the venue reports under the subscribe method with the
     /// unsubscribe's request id, reaches the stream as a subscribe answer.
@@ -1002,7 +1304,7 @@ mod tests {
             r#"{"channel":"book","type":"update","data":[{"symbol":"BTC/USD","bids":[{"price":105944.20,"qty":2.0}],"asks":[],"checksum":12346,"timestamp":"2023-10-06T17:35:55.540295Z"}]}"#,
             r#"{"error":"Subscription with depth 10 not Found BTC/USD","method":"subscribe","req_id":502,"success":false,"symbol":"BTC/USD","time_in":"2026-05-05T10:00:01.123Z","time_out":"2026-05-05T10:00:01.125Z"}"#,
         ] {
-            raw_tx.send(Message::Text(text.into())).unwrap();
+            raw_tx.send((0, Message::Text(text.into()))).unwrap();
         }
 
         let Some(KrakenSpotWsMessage::SubscriptionAck {

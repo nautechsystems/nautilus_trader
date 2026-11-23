@@ -72,6 +72,8 @@ pub mod factories;
 pub mod http;
 pub mod websocket;
 
+pub(crate) mod book;
+
 #[cfg(feature = "python")]
 pub mod python;
 

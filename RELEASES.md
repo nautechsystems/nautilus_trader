@@ -26,6 +26,7 @@ Released on TBD (UTC).
 - Added Hyperliquid product scope for execution clients (#5570), thanks @graceyangfan
 - Added Interactive Brokers contract order types to `instrument.info["orderTypes"]` (#5624), thanks @jweltmer
 - Added Kalshi numbered subaccount support (#5648), thanks for reporting @wangschien
+- Added Kraken `book_snapshot_timeout_secs` for Spot and Futures book recovery (#5300)
 - Added optional Lighter account transaction timestamps to WebSocket wire models
 - Added OKX low-level chase-trigger placement, amendment, and typed reads for `FUTURES` and `SWAP`
 - Added OKX `order_request_ttl_ms` option to set `expTime` on order requests (#5646), thanks @michalismeng
@@ -101,6 +102,8 @@ Released on TBD (UTC).
 - Changed Kalshi `collect_snapshot`; pass `&AccountQuery { subaccount: 0, exchange_index }` for the primary account
 - Changed `FuturesEditOrderResponse` literals and reads. Add `error` and handle optional `edit_status` (#5614)
 - Changed `KrakenSpotHttpClient::modify_order` to return `Result<Option<VenueOrderId>>`. Handle `None` (#5661)
+- Changed `KrakenDataClientConfig` literals; add `book_snapshot_timeout_secs` or `..Default::default()` (#5300)
+- Changed Kraken Spot checksum recovery to retain the last book and keep validating checksums (#5300)
 - Changed Lighter `From<LighterTradeType>` for `LighterTradeQueryType` to `TryFrom`; handle the error
 - Changed Lighter position and asset frame literals; add `transaction_time: None` and update exhaustive matches
 - Changed Lighter venue enums with fallback and settlement variants; update exhaustive matches

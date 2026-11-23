@@ -189,6 +189,7 @@ impl KrakenSpotExecutionClient {
             ws_idle_timeout_ms: 0,
             max_requests_per_second: config.max_requests_per_second,
             transport_backend: config.transport_backend,
+            ..Default::default()
         };
 
         let ws =

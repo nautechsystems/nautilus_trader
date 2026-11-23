@@ -130,11 +130,14 @@ pub fn parse_futures_ws_book_snapshot_deltas(
 
     let capacity = snapshot.bids.len() + snapshot.asks.len() + 1;
     let mut deltas = Vec::with_capacity(capacity);
-    let mut seq = sequence;
 
     // Leading CLEAR delta to reset the book
-    deltas.push(OrderBookDelta::clear(instrument_id, seq, ts_event, ts_init));
-    seq += 1;
+    deltas.push(OrderBookDelta::clear(
+        instrument_id,
+        sequence,
+        ts_event,
+        ts_init,
+    ));
 
     for level in &snapshot.bids {
         if level.qty <= Decimal::ZERO {
@@ -150,11 +153,10 @@ pub fn parse_futures_ws_book_snapshot_deltas(
             BookAction::Add,
             order,
             RecordFlag::F_SNAPSHOT as u8,
-            seq,
+            sequence,
             ts_event,
             ts_init,
         ));
-        seq += 1;
     }
 
     for level in &snapshot.asks {
@@ -171,11 +173,10 @@ pub fn parse_futures_ws_book_snapshot_deltas(
             BookAction::Add,
             order,
             RecordFlag::F_SNAPSHOT as u8,
-            seq,
+            sequence,
             ts_event,
             ts_init,
         ));
-        seq += 1;
     }
 
     if let Some(last) = deltas.last_mut() {

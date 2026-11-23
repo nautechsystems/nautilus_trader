@@ -33,11 +33,14 @@ use serde_json::Value;
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
-use super::messages::{
-    KrakenFuturesBookDelta, KrakenFuturesBookSnapshot, KrakenFuturesChannel,
-    KrakenFuturesFillsDelta, KrakenFuturesMessageType, KrakenFuturesOpenOrdersCancel,
-    KrakenFuturesOpenOrdersDelta, KrakenFuturesTickerData, KrakenFuturesTradeData,
-    KrakenFuturesWsMessage, classify_futures_message,
+use super::{
+    book::{BookCommand, BookMessage, BookStream, BookSubscriptions},
+    messages::{
+        KrakenFuturesBookDelta, KrakenFuturesBookSnapshot, KrakenFuturesChannel,
+        KrakenFuturesFillsDelta, KrakenFuturesMessageType, KrakenFuturesOpenOrdersCancel,
+        KrakenFuturesOpenOrdersDelta, KrakenFuturesTickerData, KrakenFuturesTradeData,
+        KrakenFuturesWsMessage, classify_futures_message,
+    },
 };
 use crate::common::consts::KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION;
 
@@ -51,14 +54,38 @@ pub enum FuturesHandlerCommand {
     RequestChallenge { payload: SecretString },
 }
 
+enum Incoming {
+    Messages(tokio::sync::mpsc::UnboundedReceiver<Message>),
+    Epochs(tokio::sync::mpsc::UnboundedReceiver<(u64, Message)>),
+}
+
+impl Incoming {
+    async fn recv(&mut self) -> Option<(Option<u64>, Message)> {
+        match self {
+            Self::Messages(rx) => rx.recv().await.map(|message| (None, message)),
+            Self::Epochs(rx) => rx
+                .recv()
+                .await
+                .map(|(epoch, message)| (Some(epoch), message)),
+        }
+    }
+}
+
 /// WebSocket message handler for Kraken Futures.
 pub struct FuturesFeedHandler {
     signal: Arc<AtomicBool>,
-    inner: Option<WebSocketClient>,
+    inner: Option<Arc<WebSocketClient>>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<FuturesHandlerCommand>,
-    raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
+    raw_rx: Incoming,
     subscriptions: SubscriptionState,
     pending_messages: VecDeque<KrakenFuturesWsMessage>,
+    book_channels: Option<BookChannels>,
+    books: BookSubscriptions,
+}
+
+struct BookChannels {
+    commands: tokio::sync::mpsc::UnboundedReceiver<BookCommand>,
+    messages: tokio::sync::mpsc::UnboundedSender<BookMessage>,
 }
 
 impl FuturesFeedHandler {
@@ -69,6 +96,24 @@ impl FuturesFeedHandler {
         raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
         subscriptions: SubscriptionState,
     ) -> Self {
+        Self::with_incoming(signal, cmd_rx, Incoming::Messages(raw_rx), subscriptions)
+    }
+
+    pub(super) fn with_epochs(
+        signal: Arc<AtomicBool>,
+        cmd_rx: tokio::sync::mpsc::UnboundedReceiver<FuturesHandlerCommand>,
+        raw_rx: tokio::sync::mpsc::UnboundedReceiver<(u64, Message)>,
+        subscriptions: SubscriptionState,
+    ) -> Self {
+        Self::with_incoming(signal, cmd_rx, Incoming::Epochs(raw_rx), subscriptions)
+    }
+
+    fn with_incoming(
+        signal: Arc<AtomicBool>,
+        cmd_rx: tokio::sync::mpsc::UnboundedReceiver<FuturesHandlerCommand>,
+        raw_rx: Incoming,
+        subscriptions: SubscriptionState,
+    ) -> Self {
         Self {
             signal,
             inner: None,
@@ -76,7 +121,21 @@ impl FuturesFeedHandler {
             raw_rx,
             subscriptions,
             pending_messages: VecDeque::new(),
+            book_channels: None,
+            books: BookSubscriptions::default(),
         }
+    }
+
+    pub(super) fn manage_books(
+        &mut self,
+        commands: tokio::sync::mpsc::UnboundedReceiver<BookCommand>,
+        messages: tokio::sync::mpsc::UnboundedSender<BookMessage>,
+    ) {
+        self.book_channels = Some(BookChannels { commands, messages });
+    }
+
+    pub(super) fn book_stream(&self, msg: &KrakenFuturesWsMessage) -> Option<BookStream> {
+        self.books.stream(msg).cloned()
     }
 
     pub fn is_stopped(&self) -> bool {
@@ -96,11 +155,20 @@ impl FuturesFeedHandler {
 
         loop {
             tokio::select! {
+                () = async {
+                    self.books.poll_transition(self.inner.as_ref().expect("active book writer")).await;
+                }, if self.books.has_transitions() => {}
+                command = async {
+                    self.book_channels.as_mut().expect("managed book channels").commands.recv().await
+                }, if self.book_channels.is_some() && self.inner.is_some() => {
+                    let command = command?;
+                    self.books.command(command, self.inner.as_ref().expect("active book client"));
+                }
                 Some(cmd) = self.cmd_rx.recv() => {
                     match cmd {
                         FuturesHandlerCommand::SetClient(client) => {
                             log::debug!("WebSocketClient received by futures handler");
-                            self.inner = Some(client);
+                            self.inner = Some(Arc::new(client));
                         }
                         FuturesHandlerCommand::Disconnect => {
                             log::debug!("Disconnect command received");
@@ -139,7 +207,7 @@ impl FuturesFeedHandler {
                 }
 
                 msg = self.raw_rx.recv() => {
-                    let msg = match msg {
+                    let (epoch, msg) = match msg {
                         Some(msg) => msg,
                         None => {
                             log::debug!("WebSocket stream closed");
@@ -190,10 +258,15 @@ impl FuturesFeedHandler {
 
                     if text == RECONNECTED {
                         log::debug!("Received WebSocket reconnected signal");
+                        if let Some(epoch) = epoch {
+                            self.books.reconnect(epoch, self.inner.as_ref());
+                        }
                         return Some(KrakenFuturesWsMessage::Reconnected);
                     }
 
-                    self.parse_message(text);
+                    let current_book_epoch =
+                        self.book_channels.is_none() || epoch == Some(self.books.epoch());
+                    self.parse_message(text, current_book_epoch);
 
                     if let Some(msg) = self.pending_messages.pop_front() {
                         return Some(msg);
@@ -203,7 +276,39 @@ impl FuturesFeedHandler {
         }
     }
 
-    fn parse_message(&mut self, text: &str) {
+    fn confirm_book(&mut self, value: &Value, subscribed: bool, success: bool) {
+        if value["feed"] != "book" {
+            return;
+        }
+
+        for symbol in value["product_ids"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+        {
+            self.confirm_book_product(Ustr::from(symbol), subscribed, success);
+        }
+    }
+
+    fn confirm_book_product(&mut self, symbol: Ustr, subscribed: bool, success: bool) {
+        if let Some(client) = &self.inner {
+            let rejected = self.books.confirmed(symbol, subscribed, success, client);
+            self.forward_book_rejection(symbol, rejected);
+        }
+    }
+
+    fn forward_book_rejection(&self, symbol: Ustr, rejected: Option<u64>) {
+        if let Some(generation) = rejected
+            && let Some(channels) = &self.book_channels
+        {
+            let _ = channels
+                .messages
+                .send(BookMessage::Rejected(symbol, generation));
+        }
+    }
+
+    fn parse_message(&mut self, text: &str, current_book_epoch: bool) {
         let value: Value = match serde_json::from_str(text) {
             Ok(v) => v,
             Err(e) => {
@@ -212,7 +317,15 @@ impl FuturesFeedHandler {
             }
         };
 
-        match classify_futures_message(&value) {
+        let kind = classify_futures_message(&value);
+
+        if !current_book_epoch
+            && (value["feed"] == "book" || matches!(kind, KrakenFuturesMessageType::BookSnapshot))
+        {
+            return;
+        }
+
+        match kind {
             KrakenFuturesMessageType::OpenOrdersSnapshot => {
                 log::debug!(
                     "Skipping open_orders_snapshot (REST reconciliation handles initial state)"
@@ -252,9 +365,11 @@ impl FuturesFeedHandler {
                 log::debug!("Received text pong response");
             }
             KrakenFuturesMessageType::Subscribed => {
+                self.confirm_book(&value, true, true);
                 log::debug!("Subscription confirmed: {text}");
             }
             KrakenFuturesMessageType::Unsubscribed => {
+                self.confirm_book(&value, false, true);
                 log::debug!("Unsubscription confirmed: {text}");
             }
             KrakenFuturesMessageType::Challenge => {
@@ -275,9 +390,26 @@ impl FuturesFeedHandler {
                     .get("message")
                     .and_then(|v| v.as_str())
                     .unwrap_or("Unknown alert");
+
+                if current_book_epoch
+                    && let Some(symbol) = message
+                        .strip_prefix("Couldn't subscribe to invalid product `")
+                        .and_then(|product| product.strip_suffix('`'))
+                        .and_then(Ustr::from_existing)
+                {
+                    let rejected = self.books.reject_invalid_product(symbol);
+                    self.forward_book_rejection(symbol, rejected);
+                }
+
                 log::warn!("Kraken Futures WebSocket alert: {message}");
             }
             KrakenFuturesMessageType::Unknown => {
+                match value["event"].as_str() {
+                    Some("subscribed_failed") => self.confirm_book(&value, true, false),
+                    Some("unsubscribed_failed") => self.confirm_book(&value, false, false),
+                    _ => {}
+                }
+
                 log::warn!("Unhandled futures message: {text}");
             }
         }
@@ -348,8 +480,7 @@ impl FuturesFeedHandler {
 
         let has_book = self.is_subscribed(KrakenFuturesChannel::Book, &snapshot.product_id);
         let has_quotes = self.is_subscribed(KrakenFuturesChannel::Quotes, &snapshot.product_id);
-
-        if !has_book && !has_quotes {
+        if self.book_channels.is_none() && !has_book && !has_quotes {
             log::debug!(
                 "Received book snapshot for unsubscribed product: {}",
                 snapshot.product_id
@@ -372,8 +503,7 @@ impl FuturesFeedHandler {
 
         let has_book = self.is_subscribed(KrakenFuturesChannel::Book, &delta.product_id);
         let has_quotes = self.is_subscribed(KrakenFuturesChannel::Quotes, &delta.product_id);
-
-        if !has_book && !has_quotes {
+        if self.book_channels.is_none() && !has_book && !has_quotes {
             log::debug!(
                 "Received book delta for unsubscribed product: {}",
                 delta.product_id
@@ -446,6 +576,7 @@ mod tests {
     use std::time::Duration;
 
     use nautilus_core::string::secret::REDACTED;
+    use nautilus_network::websocket::WebSocketConfig;
     use parking_lot::Mutex;
     use rstest::rstest;
     use rust_decimal_macros::dec;
@@ -459,6 +590,54 @@ mod tests {
         let subscriptions = SubscriptionState::new(':');
 
         FuturesFeedHandler::new(signal, cmd_rx, raw_rx, subscriptions)
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_invalid_product_alert_can_precede_the_book_write_result() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let config = WebSocketConfig::builder()
+            .url(format!("ws://{}", listener.local_addr().unwrap()))
+            .build()
+            .unwrap();
+
+        let server = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(tcp).await.unwrap();
+            let _ = futures_util::StreamExt::next(&mut socket).await;
+        });
+
+        let mut handler = create_test_handler();
+
+        let client = Arc::new(
+            WebSocketClient::builder()
+                .config(config)
+                .message_handler(Arc::new(|_| {}))
+                .connect()
+                .await
+                .unwrap(),
+        );
+
+        handler.inner = Some(client.clone());
+        let (_commands, command_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (messages, mut message_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.manage_books(command_rx, messages);
+        let symbol = Ustr::from("PI_NOT_A_REAL_CONTRACT");
+        handler
+            .books
+            .command(BookCommand::Subscribe(symbol, 41), &client);
+
+        handler.parse_message(
+            r#"{"event":"alert","message":"Couldn't subscribe to invalid product `PI_NOT_A_REAL_CONTRACT`"}"#,
+            true,
+        );
+
+        assert!(
+            matches!(message_rx.try_recv().unwrap(), BookMessage::Rejected(rejected, 41) if rejected == symbol)
+        );
+        assert!(message_rx.try_recv().is_err());
+        client.disconnect().await;
+        server.await.unwrap();
     }
 
     #[rstest]
@@ -554,7 +733,7 @@ mod tests {
         let mut handler = create_test_handler();
         let json = include_str!("../../../test_data/ws_futures_ticker.json");
 
-        handler.parse_message(json);
+        handler.parse_message(json, true);
 
         assert_eq!(handler.pending_messages.len(), 1);
         let msg = handler.pending_messages.pop_front().unwrap();
@@ -574,7 +753,7 @@ mod tests {
 
         let json = include_str!("../../../test_data/ws_futures_trade.json");
 
-        handler.parse_message(json);
+        handler.parse_message(json, true);
 
         assert_eq!(handler.pending_messages.len(), 1);
         let msg = handler.pending_messages.pop_front().unwrap();
@@ -587,11 +766,47 @@ mod tests {
     }
 
     #[rstest]
+    #[tokio::test]
+    async fn test_futures_trade_can_precede_the_book_epoch_marker() {
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_book_tx, book_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (messages, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let subscriptions = SubscriptionState::new(':');
+        subscriptions.mark_subscribe("trades:PI_XBTUSD");
+        subscriptions.confirm_subscribe("trades:PI_XBTUSD");
+        let mut handler = FuturesFeedHandler::with_epochs(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            subscriptions,
+        );
+        handler.manage_books(book_rx, messages);
+
+        for payload in [
+            include_str!("../../../test_data/ws_futures_book_snapshot.json"),
+            include_str!("../../../test_data/ws_futures_trade.json"),
+            RECONNECTED,
+        ] {
+            raw_tx.send((1, Message::text(payload))).unwrap();
+        }
+
+        assert!(matches!(
+            handler.next().await,
+            Some(KrakenFuturesWsMessage::Trade(trade)) if trade.product_id == Ustr::from("PI_XBTUSD")
+        ));
+        assert!(matches!(
+            handler.next().await,
+            Some(KrakenFuturesWsMessage::Reconnected)
+        ));
+    }
+
+    #[rstest]
     fn test_parse_trade_filters_unsubscribed() {
         let mut handler = create_test_handler();
         let json = include_str!("../../../test_data/ws_futures_trade.json");
 
-        handler.parse_message(json);
+        handler.parse_message(json, true);
 
         assert!(
             handler.pending_messages.is_empty(),
@@ -607,7 +822,7 @@ mod tests {
 
         let json = include_str!("../../../test_data/ws_futures_book_snapshot.json");
 
-        handler.parse_message(json);
+        handler.parse_message(json, true);
 
         assert_eq!(handler.pending_messages.len(), 1);
         let msg = handler.pending_messages.pop_front().unwrap();
@@ -624,7 +839,7 @@ mod tests {
         let mut handler = create_test_handler();
         let json = include_str!("../../../test_data/ws_futures_book_snapshot.json");
 
-        handler.parse_message(json);
+        handler.parse_message(json, true);
 
         assert!(
             handler.pending_messages.is_empty(),
@@ -640,7 +855,7 @@ mod tests {
 
         let json = include_str!("../../../test_data/ws_futures_book_delta.json");
 
-        handler.parse_message(json);
+        handler.parse_message(json, true);
 
         assert_eq!(handler.pending_messages.len(), 1);
         let msg = handler.pending_messages.pop_front().unwrap();
@@ -658,7 +873,7 @@ mod tests {
         handler.subscriptions.confirm_subscribe("book:PI_XBTUSD");
         let json = include_str!("../../../test_data/ws_futures_book_precision.json");
 
-        handler.parse_message(json);
+        handler.parse_message(json, true);
 
         let message = handler.pending_messages.pop_front().unwrap();
         let KrakenFuturesWsMessage::BookDelta(delta) = message else {
@@ -673,7 +888,7 @@ mod tests {
         let mut handler = create_test_handler();
         let json = include_str!("../../../test_data/ws_futures_book_delta.json");
 
-        handler.parse_message(json);
+        handler.parse_message(json, true);
 
         assert!(
             handler.pending_messages.is_empty(),
@@ -686,7 +901,7 @@ mod tests {
         let mut handler = create_test_handler();
         let json = include_str!("../../../test_data/ws_futures_open_orders_cancel.json");
 
-        handler.parse_message(json);
+        handler.parse_message(json, true);
 
         assert_eq!(handler.pending_messages.len(), 1);
         let msg = handler.pending_messages.pop_front().unwrap();
@@ -702,7 +917,7 @@ mod tests {
         let mut handler = create_test_handler();
         let json = include_str!("../../../test_data/ws_futures_open_orders_delta.json");
 
-        handler.parse_message(json);
+        handler.parse_message(json, true);
 
         assert_eq!(handler.pending_messages.len(), 1);
         let msg = handler.pending_messages.pop_front().unwrap();
@@ -718,7 +933,7 @@ mod tests {
         let mut handler = create_test_handler();
         let json = include_str!("../../../test_data/ws_futures_fills_delta.json");
 
-        handler.parse_message(json);
+        handler.parse_message(json, true);
 
         assert_eq!(handler.pending_messages.len(), 1);
         let msg = handler.pending_messages.pop_front().unwrap();
@@ -737,7 +952,7 @@ mod tests {
         let mut handler = create_test_handler();
         let json = r#"{"event":"challenge","message":"server-challenge-abc"}"#;
 
-        handler.parse_message(json);
+        handler.parse_message(json, true);
 
         assert_eq!(handler.pending_messages.len(), 1);
         let msg = handler.pending_messages.pop_front().unwrap();
@@ -752,7 +967,7 @@ mod tests {
         let mut handler = create_test_handler();
         let json = r#"{"feed":"heartbeat","time":1700000000000}"#;
 
-        handler.parse_message(json);
+        handler.parse_message(json, true);
 
         assert!(handler.pending_messages.is_empty());
     }
@@ -762,7 +977,7 @@ mod tests {
         let mut handler = create_test_handler();
         let json = r#"{"event":"info","version":1}"#;
 
-        handler.parse_message(json);
+        handler.parse_message(json, true);
 
         assert!(handler.pending_messages.is_empty());
     }

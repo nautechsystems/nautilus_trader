@@ -32,6 +32,7 @@ use nautilus_core::{
 };
 use nautilus_live::{
     SocketControl,
+    book::recovery::BookRecovery,
     task::{TaskGroup, TaskShutdownError},
 };
 use nautilus_model::{
@@ -46,7 +47,7 @@ use nautilus_network::{
     mode::ConnectionMode,
     websocket::{
         AUTHENTICATION_TIMEOUT_SECS, AuthTracker, SubscriptionState, TransportBackend,
-        WebSocketClient, WebSocketConfig, channel_message_handler,
+        WebSocketClient, WebSocketConfig, channel_epoch_message_handler,
     },
 };
 use parking_lot::RwLock;
@@ -54,6 +55,7 @@ use tokio_util::sync::CancellationToken;
 use zeroize::Zeroizing;
 
 use super::{
+    book::{BookCommand, BookMessage},
     handler::{FuturesFeedHandler, FuturesHandlerCommand},
     messages::{
         KrakenFuturesChallengeRequest, KrakenFuturesEvent, KrakenFuturesFeed,
@@ -84,6 +86,8 @@ pub struct KrakenFuturesWebSocketClient {
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<FuturesHandlerCommand>>>,
     out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<KrakenFuturesWsMessage>>>,
+    book_out_rx: Option<tokio::sync::mpsc::UnboundedReceiver<BookMessage>>,
+    book_cmd_tx: Arc<RwLock<Option<tokio::sync::mpsc::UnboundedSender<BookCommand>>>>,
     handler_tasks: Arc<TaskGroup>,
     connect_lock: Arc<tokio::sync::Mutex<()>>,
     subscriptions: SubscriptionState,
@@ -112,6 +116,8 @@ impl Clone for KrakenFuturesWebSocketClient {
             connection_mode: Arc::clone(&self.connection_mode),
             cmd_tx: Arc::clone(&self.cmd_tx),
             out_rx: self.out_rx.clone(),
+            book_out_rx: None,
+            book_cmd_tx: Arc::clone(&self.book_cmd_tx),
             handler_tasks: Arc::clone(&self.handler_tasks),
             connect_lock: Arc::clone(&self.connect_lock),
             subscriptions: self.subscriptions.clone(),
@@ -168,6 +174,8 @@ impl KrakenFuturesWebSocketClient {
             connection_mode,
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
+            book_out_rx: None,
+            book_cmd_tx: Arc::new(RwLock::new(None)),
             handler_tasks: Arc::new(TaskGroup::new()),
             connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             subscriptions: SubscriptionState::new(KRAKEN_FUTURES_WS_TOPIC_DELIMITER),
@@ -299,6 +307,14 @@ impl KrakenFuturesWebSocketClient {
 
     /// Connects to the WebSocket server.
     pub async fn connect(&mut self) -> Result<(), KrakenWsError> {
+        self.connect_inner(false).await
+    }
+
+    pub(crate) async fn connect_books(&mut self) -> Result<(), KrakenWsError> {
+        self.connect_inner(true).await
+    }
+
+    async fn connect_inner(&mut self, manage_books: bool) -> Result<(), KrakenWsError> {
         let connect_lock = Arc::clone(&self.connect_lock);
         let _connect_guard = connect_lock.lock().await;
 
@@ -324,7 +340,7 @@ impl KrakenFuturesWebSocketClient {
 
         self.signal.store(false, Ordering::Relaxed);
 
-        let (raw_handler, raw_rx) = channel_message_handler();
+        let (raw_handler, raw_rx) = channel_epoch_message_handler();
         let headers = create_standard_nautilus_headers();
 
         let ws_config = WebSocketConfig {
@@ -355,9 +371,9 @@ impl KrakenFuturesWebSocketClient {
             *KRAKEN_FUTURES_WS_SUBSCRIPTION_QUOTA,
         )];
 
-        let ws_client = WebSocketClient::builder()
+        let ws_client = WebSocketClient::epoch_builder()
             .config(ws_config)
-            .message_handler(raw_handler)
+            .epoch_handler(raw_handler)
             .keyed_quotas(keyed_quotas)
             .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
             .connect()
@@ -367,8 +383,12 @@ impl KrakenFuturesWebSocketClient {
         let connection_mode = ws_client.connection_mode_atomic();
         let reconnect_handle = ws_client.reconnect_handle();
 
-        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<KrakenFuturesWsMessage>();
-        self.out_rx = Some(Arc::new(out_rx));
+        let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (book_tx, book_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (book_cmd_tx, book_cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        self.out_rx = (!manage_books).then_some(Arc::new(out_rx));
+        self.book_out_rx = manage_books.then_some(book_rx);
+        *self.book_cmd_tx.write() = manage_books.then_some(book_cmd_tx);
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<FuturesHandlerCommand>();
 
@@ -398,8 +418,25 @@ impl KrakenFuturesWebSocketClient {
         let auth_tracker_for_reconnect = self.auth_tracker.clone();
 
         let handler_task = async move {
-            let mut handler =
-                FuturesFeedHandler::new(signal.clone(), cmd_rx, raw_rx, subscriptions.clone());
+            let mut handler = FuturesFeedHandler::with_epochs(
+                signal.clone(),
+                cmd_rx,
+                raw_rx,
+                subscriptions.clone(),
+            );
+
+            if manage_books {
+                handler.manage_books(book_cmd_rx, book_tx.clone());
+            }
+
+            let send = |msg, stream| {
+                if manage_books {
+                    book_tx.send(BookMessage::Data(msg, stream)).is_ok()
+                } else {
+                    out_tx.send(msg).is_ok()
+                }
+            };
+
             let mut pending_resubscribe = false;
 
             loop {
@@ -452,8 +489,8 @@ impl KrakenFuturesWebSocketClient {
                             }
                         }
 
-                        if let Err(e) = out_tx.send(KrakenFuturesWsMessage::Reconnected) {
-                            log::debug!("Output channel closed: {e}");
+                        if !send(KrakenFuturesWsMessage::Reconnected, None) {
+                            log::debug!("Output channel closed");
                             break;
                         }
                     }
@@ -499,8 +536,9 @@ impl KrakenFuturesWebSocketClient {
                         }
                     }
                     Some(msg) => {
-                        if let Err(e) = out_tx.send(msg) {
-                            log::debug!("Output channel closed: {e}");
+                        let stream = handler.book_stream(&msg);
+                        if !send(msg, stream) {
+                            log::debug!("Output channel closed");
                             break;
                         }
                     }
@@ -561,6 +599,7 @@ impl KrakenFuturesWebSocketClient {
             .await;
 
         self.subscriptions.clear();
+        self.book_cmd_tx.write().take();
         self.subscription_payloads.write().await.clear();
         self.auth_tracker.fail("Disconnected");
 
@@ -825,6 +864,42 @@ impl KrakenFuturesWebSocketClient {
         self.subscriptions.confirm_unsubscribe(&ticker_key);
         self.subscription_payloads.write().await.remove(&ticker_key);
         Ok(())
+    }
+
+    pub(crate) async fn replace_book(
+        &self,
+        instrument_id: InstrumentId,
+        generation: u64,
+        cancel: CancellationToken,
+        recovery: Arc<BookRecovery<KrakenWsError>>,
+    ) -> Result<(), KrakenWsError> {
+        let (result, response) = tokio::sync::oneshot::channel();
+        self.send_book(BookCommand::Replace {
+            symbol: instrument_id.symbol.inner(),
+            generation,
+            cancel,
+            recovery,
+            result,
+        })?;
+
+        response
+            .await
+            .map_err(|e| KrakenWsError::ConnectionError(e.to_string()))?
+    }
+
+    pub(crate) fn send_book(&self, command: BookCommand) -> Result<(), KrakenWsError> {
+        self.book_cmd_tx
+            .read()
+            .as_ref()
+            .ok_or_else(|| KrakenWsError::Disconnected("No managed Futures WebSocket".into()))?
+            .send(command)
+            .map_err(|_| KrakenWsError::Disconnected("Managed Futures WebSocket closed".into()))
+    }
+
+    pub(crate) fn take_book_rx(
+        &mut self,
+    ) -> Option<tokio::sync::mpsc::UnboundedReceiver<BookMessage>> {
+        self.book_out_rx.take()
     }
 
     async fn ensure_book_subscribed(&self, symbol: Symbol) -> Result<(), KrakenWsError> {
@@ -1224,7 +1299,7 @@ mod tests {
     use std::time::Duration;
 
     use base64::{Engine, engine::general_purpose::STANDARD};
-    use futures_util::StreamExt;
+    use futures_util::{SinkExt, StreamExt};
     use nautilus_network::websocket::AuthTracker;
     use nautilus_testkit::connection::race_command_with_publication;
     use rstest::rstest;
@@ -1292,6 +1367,389 @@ mod tests {
             .expect("startup command must reach server")
             .unwrap();
         assert_eq!(payload, expected);
+    }
+
+    #[rstest]
+    #[case(false, false, false)]
+    #[case(true, false, false)]
+    #[case(false, true, false)]
+    #[case(false, false, true)]
+    #[tokio::test]
+    async fn test_managed_book_frames_follow_confirmed_subscriptions(
+        #[case] cancel_before_reconnect: bool,
+        #[case] cancel_during_replay: bool,
+        #[case] reject_before_reconnect: bool,
+    ) {
+        use serde_json::{Value, json};
+        use tokio_tungstenite::{WebSocketStream, tungstenite::Message};
+
+        async fn expect_command(
+            socket: &mut WebSocketStream<tokio::net::TcpStream>,
+            expected: &str,
+        ) {
+            let frame = socket.next().await.unwrap().unwrap();
+            let request: Value = serde_json::from_str(frame.to_text().unwrap()).unwrap();
+            assert_eq!(
+                request,
+                json!({"event": expected, "feed": "book", "product_ids": ["PI_XBTUSD"]})
+            );
+        }
+
+        async fn subscribed(socket: &mut WebSocketStream<tokio::net::TcpStream>, sequence: u64) {
+            socket
+                .send(Message::text(
+                    r#"{"event":"subscribed","feed":"book","product_ids":["PI_XBTUSD"]}"#,
+                ))
+                .await
+                .unwrap();
+            snapshot(socket, sequence).await;
+        }
+
+        async fn snapshot(socket: &mut WebSocketStream<tokio::net::TcpStream>, sequence: u64) {
+            let mut snapshot: Value = serde_json::from_str(include_str!(
+                "../../../test_data/ws_futures_book_snapshot.json"
+            ))
+            .unwrap();
+            snapshot["seq"] = json!(sequence);
+            socket
+                .send(Message::text(snapshot.to_string()))
+                .await
+                .unwrap();
+        }
+
+        tokio::time::timeout(Duration::from_secs(10), async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+
+            let mut client = KrakenFuturesWebSocketClient::new(
+                format!("ws://{}", listener.local_addr().unwrap()),
+                30,
+                None,
+            );
+
+            let (confirm_initial, initial_confirmation) = tokio::sync::oneshot::channel();
+            let (confirm_replay, replay_confirmation) = tokio::sync::oneshot::channel();
+            let (confirm_turnover, turnover_started) = tokio::sync::oneshot::channel();
+            let (unsubscribe_sent, unsubscribe_seen) = tokio::sync::oneshot::channel();
+            let (cut, cut_connection) = tokio::sync::oneshot::channel();
+
+            let server = tokio::spawn(async move {
+                let (tcp, _) = listener.accept().await.unwrap();
+                let mut socket = tokio_tungstenite::accept_async(tcp).await.unwrap();
+                expect_command(&mut socket, "subscribe").await;
+                initial_confirmation.await.unwrap();
+                subscribed(&mut socket, 41).await;
+                expect_command(&mut socket, "unsubscribe").await;
+                turnover_started.await.unwrap();
+                socket
+                    .send(Message::text(
+                        json!({
+                            "event": "alert",
+                            "message": "Couldn't subscribe to invalid product `PI_XBTUSD`",
+                        })
+                        .to_string(),
+                    ))
+                    .await
+                    .unwrap();
+                subscribed(&mut socket, 42).await;
+                socket
+                    .send(Message::text(
+                        r#"{"event":"unsubscribed","feed":"book","product_ids":["PI_XBTUSD"]}"#,
+                    ))
+                    .await
+                    .unwrap();
+                expect_command(&mut socket, "subscribe").await;
+                subscribed(&mut socket, 53).await;
+                expect_command(&mut socket, "unsubscribe").await;
+                if reject_before_reconnect {
+                    socket
+                        .send(Message::text(
+                            r#"{"event":"unsubscribed_failed","feed":"book","product_ids":["PI_XBTUSD"]}"#,
+                        ))
+                        .await
+                        .unwrap();
+                }
+
+                unsubscribe_sent.send(()).unwrap();
+                cut_connection.await.unwrap();
+                drop(socket);
+
+                let (tcp, _) = listener.accept().await.unwrap();
+                let mut socket = tokio_tungstenite::accept_async(tcp).await.unwrap();
+                expect_command(&mut socket, "subscribe").await;
+                snapshot(&mut socket, 58).await;
+                replay_confirmation.await.unwrap();
+                subscribed(&mut socket, 59).await;
+                let _ = socket.next().await;
+            });
+
+            client.connect_books().await.unwrap();
+            let mut rx = client.take_book_rx().unwrap();
+            let instrument_id = InstrumentId::from("PI_XBTUSD.KRAKEN");
+            let symbol = instrument_id.symbol.inner();
+            client.send_book(BookCommand::Subscribe(symbol, 1)).unwrap();
+            let initial_recovery: Arc<BookRecovery<KrakenWsError>> = Arc::default();
+            let initial_gate = initial_recovery.gate.clone();
+            initial_gate.lock().close();
+
+            {
+                let initial = client.replace_book(
+                    instrument_id,
+                    1,
+                    CancellationToken::new(),
+                    Arc::clone(&initial_recovery),
+                );
+                let mut initial = std::pin::pin!(initial);
+                assert!(futures_util::poll!(&mut initial).is_pending());
+                let retired = client
+                    .replace_book(
+                        instrument_id,
+                        0,
+                        CancellationToken::new(),
+                        Arc::default(),
+                    )
+                    .await;
+                assert!(matches!(retired, Err(KrakenWsError::Disconnected(_))));
+                assert!(initial_gate.lock().is_closed());
+                confirm_initial.send(()).unwrap();
+                initial.await.unwrap();
+            }
+
+            assert!(!initial_gate.lock().is_closed());
+
+            let BookMessage::Data(_, first) = rx.recv().await.unwrap() else {
+                panic!("Expected a Futures feed message");
+            };
+
+            let first = first.expect("confirmed initial subscription");
+            assert_eq!(first.generation, 1);
+
+            client.send_book(BookCommand::Unsubscribe(symbol)).unwrap();
+            client.send_book(BookCommand::Subscribe(symbol, 2)).unwrap();
+            let old = client
+                .replace_book(instrument_id, 1, CancellationToken::new(), Arc::default())
+                .await;
+            assert!(matches!(old, Err(KrakenWsError::Disconnected(_))));
+            confirm_turnover.send(()).unwrap();
+
+            let BookMessage::Data(message, late) = rx.recv().await.unwrap() else {
+                panic!("Expected a Futures feed message");
+            };
+
+            let KrakenFuturesWsMessage::BookSnapshot(snapshot) = message else {
+                panic!("expected a late snapshot");
+            };
+
+            assert_eq!(snapshot.seq, 42);
+            assert!(late.is_none());
+            assert!(first.lock_active().is_none());
+
+            let BookMessage::Data(message, current) = rx.recv().await.unwrap() else {
+                panic!("Expected a Futures feed message");
+            };
+
+            let KrakenFuturesWsMessage::BookSnapshot(snapshot) = message else {
+                panic!("expected fresh snapshot");
+            };
+
+            assert_eq!(snapshot.seq, 53);
+            let current = current.expect("confirmed second subscription");
+            assert_eq!(current.generation, 2);
+            assert!(current.lock_active().is_some());
+
+            let recovery: Arc<BookRecovery<KrakenWsError>> = Arc::default();
+            let gate = recovery.gate.clone();
+            gate.lock().close();
+
+            {
+                let cancellation = CancellationToken::new();
+                let mut replacement = Box::pin(client.replace_book(
+                    instrument_id,
+                    2,
+                    cancellation.clone(),
+                    Arc::clone(&recovery),
+                ));
+                assert!(futures_util::poll!(&mut replacement).is_pending());
+                unsubscribe_seen.await.unwrap();
+
+                let mut replacement = if reject_before_reconnect {
+                    assert!(matches!(replacement.await, Err(KrakenWsError::SubscriptionError(_))));
+                    None
+                } else if cancel_before_reconnect {
+                    cancellation.cancel();
+                    drop(replacement);
+                    None
+                } else {
+                    Some(replacement)
+                };
+
+                cut.send(()).unwrap();
+
+                let BookMessage::Data(reconnected, _) = rx.recv().await.unwrap() else {
+                panic!("Expected a Futures feed message");
+            };
+
+                assert!(matches!(reconnected, KrakenFuturesWsMessage::Reconnected));
+                assert!(current.lock_active().is_none());
+
+                let BookMessage::Data(pre_ack, stream) = rx.recv().await.unwrap() else {
+                panic!("Expected a Futures feed message");
+            };
+
+                assert!(matches!(pre_ack, KrakenFuturesWsMessage::BookSnapshot(s) if s.seq == 58));
+                assert!(stream.is_none());
+                assert!(gate.lock().is_closed());
+
+                if cancel_during_replay {
+                    cancellation.cancel();
+                    replacement = None;
+                }
+
+                confirm_replay.send(()).unwrap();
+
+                if let Some(replacement) = replacement {
+                    replacement.await.unwrap();
+                }
+            }
+
+            let BookMessage::Data(replayed, stream) = rx.recv().await.unwrap() else {
+                panic!("Expected a Futures feed message");
+            };
+
+            assert!(matches!(replayed, KrakenFuturesWsMessage::BookSnapshot(s) if s.seq == 59));
+            let stream = stream.expect("confirmed replay subscription");
+            assert_eq!(stream.generation, 2);
+            assert!(stream.lock_active().is_some());
+            assert!(!gate.lock().is_closed());
+            assert!(recovery.accept());
+            assert!(matches!(
+                client.replace_book(instrument_id, 2, CancellationToken::new(), recovery).await,
+                Err(KrakenWsError::Disconnected(_))
+            ));
+            assert!(stream.lock_active().is_some());
+            client.close().await.unwrap();
+            server.await.unwrap();
+        })
+        .await
+        .expect("Futures book turnover and replacement completed");
+    }
+
+    #[tokio::test]
+    async fn test_managed_book_unsubscribe_waits_for_in_flight_subscribe() {
+        use serde_json::{Value, json};
+        use tokio_tungstenite::tungstenite::Message;
+
+        tokio::time::timeout(Duration::from_secs(10), async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+
+            let mut client = KrakenFuturesWebSocketClient::new(
+                format!("ws://{}", listener.local_addr().unwrap()), 30, None,
+            );
+
+            let (sent, initial_sent) = tokio::sync::oneshot::channel();
+            let (confirm, final_requested) = tokio::sync::oneshot::channel();
+
+            let server = tokio::spawn(async move {
+                let (tcp, _) = listener.accept().await.unwrap();
+                let mut socket = tokio_tungstenite::accept_async(tcp).await.unwrap();
+                let mut pending_confirmation = Some((sent, final_requested));
+
+                for (request, ack) in [("subscribe", "subscribed"), ("unsubscribe", "unsubscribed")] {
+                    let frame = socket.next().await.unwrap().unwrap();
+                    let payload: Value = serde_json::from_str(frame.to_text().unwrap()).unwrap();
+                    assert_eq!(payload, json!({"event": request, "feed": "book", "product_ids": ["PI_XBTUSD"]}));
+
+                    if let Some((sent, final_requested)) = pending_confirmation.take() {
+                        // Hold this acknowledgement until the managed lane has processed the final unsubscribe.
+                        sent.send(()).unwrap();
+                        final_requested.await.unwrap();
+                    }
+
+                    let reply = json!({"event": ack, "feed": "book", "product_ids": ["PI_XBTUSD"]});
+                    socket.send(Message::text(reply.to_string())).await.unwrap();
+                }
+            });
+
+            client.connect_books().await.unwrap();
+            let instrument = InstrumentId::from("PI_XBTUSD.KRAKEN");
+            let symbol = instrument.symbol.inner();
+            client.send_book(BookCommand::Subscribe(symbol, 1)).unwrap();
+            initial_sent.await.unwrap();
+            client.send_book(BookCommand::Unsubscribe(symbol)).unwrap();
+            let superseded = client.replace_book(instrument, 1, CancellationToken::new(), Arc::default()).await;
+            assert!(matches!(superseded, Err(KrakenWsError::Disconnected(message)) if message == "Futures book subscription retired"));
+            confirm.send(()).unwrap();
+            server.await.unwrap();
+            client.close().await.unwrap();
+        }).await.expect("Futures turnover settled on the original socket");
+    }
+
+    #[tokio::test]
+    async fn test_managed_book_invalid_product_alert_settles_only_its_subscribe() {
+        use serde_json::{Value, json};
+        use tokio_tungstenite::tungstenite::Message;
+
+        tokio::time::timeout(Duration::from_secs(10), async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+
+            let mut client = KrakenFuturesWebSocketClient::new(
+                format!("ws://{}", listener.local_addr().unwrap()),
+                30,
+                None,
+            );
+
+            let (reject, ready) = tokio::sync::oneshot::channel();
+
+            let server = tokio::spawn(async move {
+                let (tcp, _) = listener.accept().await.unwrap();
+                let mut socket = tokio_tungstenite::accept_async(tcp).await.unwrap();
+                let mut products = Vec::new();
+
+                for _ in 0..2 {
+                    let frame = socket.next().await.unwrap().unwrap();
+                    let request: Value = serde_json::from_str(frame.to_text().unwrap()).unwrap();
+                    assert_eq!(request["event"], "subscribe");
+                    assert_eq!(request["feed"], "book");
+                    products.push(request["product_ids"][0].as_str().unwrap().to_owned());
+                }
+
+                products.sort_unstable();
+                assert_eq!(products, ["PI_NOT_A_REAL_CONTRACT", "PI_XBTUSD"]);
+                ready.await.unwrap();
+
+                for reply in [
+                    json!({"event": "alert", "message": "Couldn't subscribe to invalid product `PI_NOT_A_REAL_CONTRACT`"}),
+                    json!({"event": "subscribed", "feed": "book", "product_ids": ["PI_XBTUSD"]}),
+                ] {
+                    socket.send(Message::text(reply.to_string())).await.unwrap();
+                }
+
+                let _ = socket.next().await;
+            });
+
+            client.connect_books().await.unwrap();
+            let invalid = InstrumentId::from("PI_NOT_A_REAL_CONTRACT.KRAKEN");
+            let healthy = InstrumentId::from("PI_XBTUSD.KRAKEN");
+            client.send_book(BookCommand::Subscribe(invalid.symbol.inner(), 1)).unwrap();
+            client.send_book(BookCommand::Subscribe(healthy.symbol.inner(), 2)).unwrap();
+
+            {
+                let invalid = client.replace_book(invalid, 1, CancellationToken::new(), Arc::default());
+                let barrier = client.replace_book(healthy, 0, CancellationToken::new(), Arc::default());
+                let healthy = client.replace_book(healthy, 2, CancellationToken::new(), Arc::default());
+                tokio::pin!(invalid, healthy);
+                assert!(futures_util::poll!(&mut invalid).is_pending());
+                assert!(futures_util::poll!(&mut healthy).is_pending());
+                assert!(matches!(barrier.await, Err(KrakenWsError::Disconnected(_))));
+                reject.send(()).unwrap();
+
+                assert!(matches!(invalid.await, Err(KrakenWsError::SubscriptionError(_))));
+                healthy.await.unwrap();
+            }
+
+            assert!(client.is_active());
+            client.close().await.unwrap();
+            server.await.unwrap();
+        }).await.expect("invalid product and healthy subscribe settled on the original socket");
     }
 
     #[rstest]

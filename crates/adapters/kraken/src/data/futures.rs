@@ -19,7 +19,7 @@ use std::{
     future::Future,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
@@ -30,7 +30,7 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use nautilus_common::{
     clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
-    live::{get_data_event_sender, sender::EventSender},
+    live::{dst::time::Instant, get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
         data::{
@@ -51,30 +51,40 @@ use nautilus_core::{
     nanos::UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{SocketControl, task::TaskGroup};
+use nautilus_live::{
+    SocketControl,
+    book::{BookSequenceOutcome, DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS},
+    task::{TaskGroup, TaskSpawner},
+};
 use nautilus_model::{
     data::{Data, OrderBookDeltas, QuoteTick},
     enums::BookType,
-    identifiers::{ClientId, InstrumentId, Venue},
+    identifiers::{ClientId, InstrumentId, Symbol, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
 };
+use parking_lot::Mutex;
 use rust_decimal_macros::dec;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
+    book::sync::{BookSyncTracker, spawn_recovery},
     common::{consts::KRAKEN_VENUE, lookup_instrument_in_snapshot},
     config::KrakenDataClientConfig,
     http::{
         KrakenFuturesHttpClient, futures::client::KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND,
     },
-    websocket::futures::{
-        client::KrakenFuturesWebSocketClient,
-        messages::KrakenFuturesWsMessage,
-        parse::{
-            parse_futures_ws_book_delta, parse_futures_ws_book_snapshot_deltas,
-            parse_futures_ws_funding_rate, parse_futures_ws_index_price,
-            parse_futures_ws_mark_price, parse_futures_ws_trade_tick,
+    websocket::{
+        error::KrakenWsError,
+        futures::{
+            book::{BookCommand, BookMessage, BookStream, book_product},
+            client::KrakenFuturesWebSocketClient,
+            messages::KrakenFuturesWsMessage,
+            parse::{
+                parse_futures_ws_book_delta, parse_futures_ws_book_snapshot_deltas,
+                parse_futures_ws_funding_rate, parse_futures_ws_index_price,
+                parse_futures_ws_mark_price, parse_futures_ws_trade_tick,
+            },
         },
     },
 };
@@ -98,6 +108,8 @@ pub struct KrakenFuturesDataClient {
     quote_instruments: Arc<AtomicSet<InstrumentId>>,
     last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,
     book_instruments: Arc<AtomicSet<InstrumentId>>,
+    book_sync: Arc<Mutex<BookSyncTracker>>,
+    next_book_generation: u64,
     data_sender: EventSender<DataEvent>,
 }
 
@@ -145,6 +157,8 @@ impl KrakenFuturesDataClient {
             "kraken-futures-data-streams",
         ));
 
+        let snapshot_timeout = Duration::from_secs(config.book_snapshot_timeout_secs);
+
         Ok(Self {
             clock: get_atomic_clock_realtime(),
             client_id,
@@ -159,6 +173,8 @@ impl KrakenFuturesDataClient {
             quote_instruments: Arc::new(AtomicSet::new()),
             last_quotes: Arc::new(DashMap::new()),
             book_instruments: Arc::new(AtomicSet::new()),
+            book_sync: Arc::new(Mutex::new(BookSyncTracker::new(snapshot_timeout))),
+            next_book_generation: 0,
             data_sender: get_data_event_sender(),
         })
     }
@@ -271,6 +287,7 @@ impl KrakenFuturesDataClient {
     async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
         self.session_tasks.begin_shutdown();
         self.command_tasks.begin_shutdown();
+        self.book_sync.lock().clear();
         let ws_result = self.ws.close().await;
         let tasks_result = self.finish_tasks().await;
         self.is_connected.store(false, Ordering::Release);
@@ -281,18 +298,23 @@ impl KrakenFuturesDataClient {
     fn spawn_message_handler(&mut self) -> anyhow::Result<()> {
         let mut rx = self
             .ws
-            .take_output_rx()
+            .take_book_rx()
             .context("Failed to take futures WebSocket output receiver")?;
         let data_sender = self.data_sender.clone();
         let instruments = self.instruments.clone();
         let quote_instruments = self.quote_instruments.clone();
         let last_quotes = self.last_quotes.clone();
         let book_instruments = self.book_instruments.clone();
-        let book_sequence = Arc::new(AtomicU64::new(0));
         let cancellation_token = self.cancellation_token.clone();
         let clock = self.clock;
+        let book_sync = self.book_sync.clone();
+        let ws_client = self.ws.clone();
+        let snapshot_timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
+        let spawner = self.session_tasks.spawner()?;
 
         let future = async move {
+            let mut watchdog = tokio::time::interval(Duration::from_millis(100));
+            watchdog.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             let mut order_books: AHashMap<InstrumentId, OrderBook> = AHashMap::new();
 
             loop {
@@ -301,20 +323,44 @@ impl KrakenFuturesDataClient {
                         log::debug!("Futures message handler cancelled");
                         break;
                     }
+                    _ = watchdog.tick() => {
+                        let mut book_sync = book_sync.lock();
+                        order_books.retain(|id, _| book_instruments.contains(id) || quote_instruments.contains(id));
+
+                        for instrument_id in book_sync.expired(Instant::now()) {
+                            Self::recover_book(&mut book_sync, instrument_id, &ws_client, &spawner, snapshot_timeout);
+                        }
+                    }
                     msg = rx.recv() => {
                         match msg {
-                            Some(ws_msg) => {
-                                Self::handle_ws_message(
+                            Some(BookMessage::Data(ws_msg, stream)) => {
+                                let mut book_sync = book_sync.lock();
+                                if !Self::matches_book_generation(&book_sync, &ws_msg, stream.as_ref()) {
+                                    continue;
+                                }
+
+                                let recover = Self::handle_ws_message(
                                     ws_msg,
+                                    stream.as_ref(),
                                     &data_sender,
                                     &instruments,
                                     &quote_instruments,
                                     &book_instruments,
                                     &mut order_books,
                                     &last_quotes,
-                                    &book_sequence,
+                                    &mut book_sync,
                                     clock,
                                 );
+                                if let Some(instrument_id) = recover {
+                                    Self::recover_book(&mut book_sync, instrument_id, &ws_client, &spawner, snapshot_timeout);
+                                }
+                            }
+                            Some(BookMessage::Rejected(symbol, generation)) => {
+                                let id = InstrumentId::new(Symbol::from_ustr_unchecked(symbol), *KRAKEN_VENUE);
+                                let mut book_sync = book_sync.lock();
+                                if book_sync.generation(id) == Some(generation) {
+                                    Self::recover_book(&mut book_sync, id, &ws_client, &spawner, snapshot_timeout);
+                                }
                             }
                             None => {
                                 log::debug!("Futures WebSocket stream ended");
@@ -324,6 +370,8 @@ impl KrakenFuturesDataClient {
                     }
                 }
             }
+
+            book_sync.lock().clear();
         };
 
         self.session_tasks
@@ -331,18 +379,124 @@ impl KrakenFuturesDataClient {
             .context("failed to register Kraken Futures message handler")
     }
 
+    fn matches_book_generation(
+        books: &BookSyncTracker,
+        msg: &KrakenFuturesWsMessage,
+        stream: Option<&BookStream>,
+    ) -> bool {
+        let Some(symbol) = book_product(msg) else {
+            return true;
+        };
+
+        let id = InstrumentId::new(Symbol::from_ustr_unchecked(symbol), *KRAKEN_VENUE);
+        stream.is_some_and(|stream| books.generation(id) == Some(stream.generation))
+    }
+
+    fn start_book(&mut self, id: InstrumentId, replay: bool) -> Result<(), KrakenWsError> {
+        let mut books = self.book_sync.lock();
+        let generation = match books.generation(id) {
+            Some(generation) if replay => generation,
+            Some(_) => return Ok(()),
+            None => {
+                self.next_book_generation += 1;
+                self.next_book_generation
+            }
+        };
+
+        if replay || self.is_connected() {
+            self.ws
+                .send_book(BookCommand::Subscribe(id.symbol.inner(), generation))?;
+        }
+
+        books.track(id, generation, Instant::now());
+        Ok(())
+    }
+
+    fn replay_held_books(&mut self) -> Result<(), KrakenWsError> {
+        let deltas = self.book_instruments.load();
+        let quotes = self.quote_instruments.load();
+        let held: Vec<_> = deltas.union(&quotes).copied().collect();
+        self.book_sync.lock().reset_on_reconnect(Instant::now());
+
+        for id in held {
+            self.start_book(id, true)?;
+        }
+
+        Ok(())
+    }
+
+    fn stop_book(&self, id: InstrumentId) {
+        let mut books = self.book_sync.lock();
+        if books.generation(id).is_some() {
+            books.remove(id);
+
+            if let Err(e) = self
+                .ws
+                .send_book(BookCommand::Unsubscribe(id.symbol.inner()))
+            {
+                log::debug!("Futures book unsubscribe for {id} has no active feed: {e}");
+            }
+        }
+    }
+
+    fn recover_book(
+        books: &mut BookSyncTracker,
+        instrument_id: InstrumentId,
+        ws_client: &KrakenFuturesWebSocketClient,
+        spawner: &TaskSpawner,
+        timeout: Duration,
+    ) {
+        let Some(generation) = books.generation(instrument_id) else {
+            return;
+        };
+
+        let Some(recovery) = books.get_mut(instrument_id).and_then(|book| book.claim()) else {
+            return;
+        };
+
+        let ws_client = ws_client.clone();
+        let replacement_recovery = Arc::clone(&recovery);
+
+        // A short snapshot deadline still allows the venue to confirm the control transition.
+        let write_timeout = if timeout.is_zero() {
+            Duration::ZERO
+        } else {
+            timeout.max(Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS))
+        };
+
+        spawn_recovery(
+            spawner,
+            recovery,
+            instrument_id,
+            timeout,
+            write_timeout,
+            move |cancel, _| {
+                let ws_client = ws_client.clone();
+                let recovery = Arc::clone(&replacement_recovery);
+
+                async move {
+                    ws_client
+                        .replace_book(instrument_id, generation, cancel, recovery)
+                        .await
+                }
+            },
+        );
+    }
+
     #[expect(clippy::too_many_arguments)]
     fn handle_ws_message(
         msg: KrakenFuturesWsMessage,
+        stream: Option<&BookStream>,
         sender: &EventSender<DataEvent>,
         instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         quote_instruments: &Arc<AtomicSet<InstrumentId>>,
         book_instruments: &Arc<AtomicSet<InstrumentId>>,
         order_books: &mut AHashMap<InstrumentId, OrderBook>,
         last_quotes: &DashMap<InstrumentId, QuoteTick>,
-        book_sequence: &Arc<AtomicU64>,
+        book_sync: &mut BookSyncTracker,
         clock: &'static AtomicTime,
-    ) {
+    ) -> Option<InstrumentId> {
+        let now = Instant::now();
         let ts_init = clock.get_time_ns();
 
         match msg {
@@ -352,7 +506,7 @@ impl KrakenFuturesDataClient {
                     lookup_instrument_in_snapshot(&instruments, ticker.product_id.as_str())
                 else {
                     log::warn!("No instrument for product_id: {}", ticker.product_id);
-                    return;
+                    return None;
                 };
 
                 if let Some(mark) = parse_futures_ws_mark_price(&ticker, instrument, ts_init)
@@ -379,7 +533,7 @@ impl KrakenFuturesDataClient {
                     lookup_instrument_in_snapshot(&instruments, trade.product_id.as_str())
                 else {
                     log::warn!("No instrument for product_id: {}", trade.product_id);
-                    return;
+                    return None;
                 };
 
                 match parse_futures_ws_trade_tick(&trade, instrument, ts_init) {
@@ -397,100 +551,150 @@ impl KrakenFuturesDataClient {
                     lookup_instrument_in_snapshot(&instruments, snapshot.product_id.as_str())
                 else {
                     log::warn!("No instrument for product_id: {}", snapshot.product_id);
-                    return;
+                    return None;
                 };
                 let instrument_id = instrument.id();
-                let sequence = book_sequence.load(Ordering::Relaxed);
+                let sync = book_sync.get_mut(instrument_id)?;
+                if sync
+                    .position()
+                    .is_some_and(|previous| snapshot.seq < *previous)
+                {
+                    return None;
+                }
 
-                match parse_futures_ws_book_snapshot_deltas(
-                    &snapshot, instrument, sequence, ts_init,
-                ) {
-                    Ok(delta_vec) => {
-                        if delta_vec.is_empty() {
-                            return;
-                        }
-                        book_sequence.fetch_add(delta_vec.len() as u64, Ordering::Relaxed);
-                        let deltas = OrderBookDeltas::new(instrument_id, delta_vec);
+                let sequence = u64::try_from(snapshot.seq).ok()?;
+                let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
-                        let has_quote_sub = quote_instruments.contains(&instrument_id);
-                        let book = order_books
-                            .entry(instrument_id)
-                            .or_insert_with(|| OrderBook::new(instrument_id, BookType::L2_MBP));
+                let built =
+                    parse_futures_ws_book_snapshot_deltas(&snapshot, instrument, sequence, ts_init)
+                        .and_then(|deltas| {
+                            let deltas = OrderBookDeltas::new(instrument_id, deltas);
+                            book.apply_deltas(&deltas)?;
+                            Self::check_book_spread(&book)?;
+                            Ok(deltas)
+                        });
 
-                        if let Err(e) = book.apply_deltas(&deltas) {
-                            log::error!("Failed to apply snapshot deltas to order book: {e}");
-                        } else if has_quote_sub {
-                            Self::maybe_emit_quote(
-                                book,
-                                instrument_id,
-                                last_quotes,
-                                ts_init,
-                                sender,
-                            );
-                        }
+                let _active = stream?.lock_active()?;
 
-                        let has_book_sub = book_instruments.contains(&instrument_id);
-
-                        if has_book_sub
-                            && let Err(e) =
-                                sender.send(DataEvent::Data(Data::BookDeltas(Box::new(deltas))))
-                        {
-                            log::error!("Failed to send book snapshot deltas: {e}");
-                        }
+                match built {
+                    Ok(deltas) if sync.accept_snapshot(snapshot.seq, now) => {
+                        Self::emit_book(
+                            &book,
+                            deltas,
+                            sender,
+                            quote_instruments,
+                            book_instruments,
+                            last_quotes,
+                            ts_init,
+                        );
+                        order_books.insert(instrument_id, book);
                     }
-                    Err(e) => log::error!("Failed to parse book snapshot: {e}"),
+                    Ok(_) => {}
+                    Err(e) => {
+                        log::warn!("Invalid Kraken Futures snapshot for {instrument_id}: {e}");
+                        order_books.remove(&instrument_id);
+                        sync.reject(KrakenWsError::InvalidMessage(e.to_string()));
+                        return (sync.gap() == BookSequenceOutcome::Recover)
+                            .then_some(instrument_id);
+                    }
                 }
             }
             KrakenFuturesWsMessage::BookDelta(delta) => {
+                let _active = stream?.lock_active()?;
                 let instruments = instruments.load();
-                let Some(instrument) =
-                    lookup_instrument_in_snapshot(&instruments, delta.product_id.as_str())
-                else {
-                    log::warn!("No instrument for product_id: {}", delta.product_id);
-                    return;
-                };
+                let instrument =
+                    lookup_instrument_in_snapshot(&instruments, delta.product_id.as_str())?;
                 let instrument_id = instrument.id();
-                let sequence = book_sequence.fetch_add(1, Ordering::Relaxed);
-                match parse_futures_ws_book_delta(&delta, instrument, sequence, ts_init) {
-                    Ok(book_delta) => {
-                        let deltas = OrderBookDeltas::new(instrument_id, vec![book_delta]);
+                let sync = book_sync.get_mut(instrument_id)?;
+                if let Some(&previous) = sync.position() {
+                    if delta.seq <= previous {
+                        return None;
+                    }
 
-                        let has_quote_sub = quote_instruments.contains(&instrument_id);
+                    if previous.checked_add(1) != Some(delta.seq) {
+                        log::warn!(
+                            "Kraken Futures book sequence gap for {instrument_id}: {previous} to {}",
+                            delta.seq
+                        );
+                    } else if let Some(book) = order_books.get_mut(&instrument_id) {
+                        let sequence = u64::try_from(delta.seq).ok()?;
 
-                        if let Some(book) = order_books.get_mut(&instrument_id) {
-                            if let Err(e) = book.apply_deltas(&deltas) {
-                                log::error!("Failed to apply delta to order book: {e}");
-                            } else if has_quote_sub {
-                                Self::maybe_emit_quote(
+                        let applied =
+                            parse_futures_ws_book_delta(&delta, instrument, sequence, ts_init)
+                                .and_then(|delta| {
+                                    let deltas = OrderBookDeltas::new(instrument_id, vec![delta]);
+                                    book.apply_deltas(&deltas)?;
+                                    Self::check_book_spread(book)?;
+                                    Ok(deltas)
+                                });
+
+                        match applied {
+                            Ok(deltas) => {
+                                sync.advance(delta.seq, now);
+                                Self::emit_book(
                                     book,
-                                    instrument_id,
+                                    deltas,
+                                    sender,
+                                    quote_instruments,
+                                    book_instruments,
                                     last_quotes,
                                     ts_init,
-                                    sender,
                                 );
+                                return None;
+                            }
+                            Err(e) => {
+                                log::warn!("Invalid Kraken Futures delta for {instrument_id}: {e}");
                             }
                         }
-
-                        let has_book_sub = book_instruments.contains(&instrument_id);
-
-                        if has_book_sub
-                            && let Err(e) =
-                                sender.send(DataEvent::Data(Data::BookDeltas(Box::new(deltas))))
-                        {
-                            log::error!("Failed to send book delta: {e}");
-                        }
                     }
-                    Err(e) => log::error!("Failed to parse book delta: {e}"),
                 }
+
+                order_books.remove(&instrument_id);
+                last_quotes.remove(&instrument_id);
+                return (sync.gap() == BookSequenceOutcome::Recover).then_some(instrument_id);
             }
             KrakenFuturesWsMessage::Reconnected => {
+                order_books.clear();
                 last_quotes.clear();
+                book_sync.reset_on_reconnect(now);
                 log::info!("Futures WebSocket reconnected");
             }
             KrakenFuturesWsMessage::OpenOrdersCancel(_)
             | KrakenFuturesWsMessage::OpenOrdersDelta(_)
             | KrakenFuturesWsMessage::FillsDelta(_)
             | KrakenFuturesWsMessage::Challenge(_) => {}
+        }
+
+        None
+    }
+
+    fn check_book_spread(book: &OrderBook) -> anyhow::Result<()> {
+        // L2_MBP matches orders by price, so a level cannot contain multiple orders
+        if let (Some(bid), Some(ask)) = (book.best_bid_price(), book.best_ask_price()) {
+            anyhow::ensure!(bid <= ask, "Crossed book at {bid} / {ask}");
+        }
+
+        Ok(())
+    }
+
+    fn emit_book(
+        book: &OrderBook,
+        deltas: OrderBookDeltas,
+        sender: &EventSender<DataEvent>,
+        quote_instruments: &AtomicSet<InstrumentId>,
+        book_instruments: &AtomicSet<InstrumentId>,
+        last_quotes: &DashMap<InstrumentId, QuoteTick>,
+        ts_init: UnixNanos,
+    ) {
+        let instrument_id = deltas.instrument_id;
+        if quote_instruments.contains(&instrument_id) {
+            Self::maybe_emit_quote(book, instrument_id, last_quotes, ts_init, sender);
+        }
+
+        if book_instruments.contains(&instrument_id)
+            && let Err(e) = sender.send(DataEvent::Data(Data::BookDeltas(Box::new(deltas))))
+        {
+            log::error!("Failed to send book deltas: {e}");
         }
     }
 
@@ -564,6 +768,7 @@ impl DataClient for KrakenFuturesDataClient {
         log::info!("Stopping Futures data client: {}", self.client_id);
         self.session_tasks.begin_shutdown();
         self.command_tasks.begin_shutdown();
+        self.book_sync.lock().clear();
         self.ws.begin_shutdown();
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
@@ -573,6 +778,7 @@ impl DataClient for KrakenFuturesDataClient {
         log::info!("Resetting Futures data client: {}", self.client_id);
         self.session_tasks.begin_shutdown();
         self.command_tasks.begin_shutdown();
+        self.book_sync.lock().clear();
         self.ws.begin_shutdown();
         self.is_connected.store(false, Ordering::Relaxed);
 
@@ -580,6 +786,7 @@ impl DataClient for KrakenFuturesDataClient {
 
         self.last_quotes.clear();
         self.quote_instruments.store(ahash::AHashSet::new());
+        self.book_instruments.store(ahash::AHashSet::new());
 
         Ok(())
     }
@@ -609,7 +816,7 @@ impl DataClient for KrakenFuturesDataClient {
 
         let session_result = async {
             self.ws
-                .connect()
+                .connect_books()
                 .await
                 .context("Failed to connect futures WebSocket")?;
             self.ws
@@ -617,6 +824,7 @@ impl DataClient for KrakenFuturesDataClient {
                 .await
                 .context("Futures WebSocket failed to become active")?;
 
+            self.replay_held_books()?;
             self.spawn_message_handler()?;
 
             Ok::<(), anyhow::Error>(())
@@ -651,6 +859,7 @@ impl DataClient for KrakenFuturesDataClient {
 
         self.last_quotes.clear();
         self.quote_instruments.store(ahash::AHashSet::new());
+        self.book_instruments.store(ahash::AHashSet::new());
         self.is_connected.store(false, Ordering::Relaxed);
 
         log::info!("Disconnected: client_id={}", self.client_id);
@@ -670,8 +879,6 @@ impl DataClient for KrakenFuturesDataClient {
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
         execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
             let cmd = cmd.with_instrument_ids(instrument_id);
-            let depth = cmd.depth;
-
             if cmd.book_type != BookType::L2_MBP {
                 log::warn!(
                     "Book type {:?} not supported by Kraken, skipping subscription",
@@ -680,17 +887,29 @@ impl DataClient for KrakenFuturesDataClient {
                 return Ok(());
             }
 
-            self.book_instruments.insert(instrument_id);
+            let mut sync = self.book_sync.lock();
+            let was_quotes_only = !self.book_instruments.contains(&instrument_id)
+                && sync
+                    .get_mut(instrument_id)
+                    .is_some_and(|book| book.position().is_some());
 
-            let ws = self.ws.clone();
-            self.spawn_ws(
-                async move {
-                    ws.subscribe_book(instrument_id, depth.map(|d| d.get() as u32))
-                        .await
-                        .map_err(|e| anyhow::anyhow!("{e}"))
-                },
-                "subscribe book",
-            );
+            if was_quotes_only {
+                let spawner = self.session_tasks.spawner()?;
+                let timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
+                Self::recover_book(&mut sync, instrument_id, &self.ws, &spawner, timeout);
+            }
+
+            let held = self.book_instruments.contains(&instrument_id);
+            self.book_instruments.insert(instrument_id);
+            drop(sync);
+
+            if let Err(e) = self.start_book(instrument_id, false) {
+                if !held {
+                    self.book_instruments.remove(&instrument_id);
+                }
+
+                return Err(e.into());
+            }
 
             Ok(())
         })
@@ -698,18 +917,16 @@ impl DataClient for KrakenFuturesDataClient {
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
         execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
-            let ws = self.ws.clone();
-
+            let held = self.quote_instruments.contains(&instrument_id);
             self.last_quotes.remove(&instrument_id);
             self.quote_instruments.insert(instrument_id);
-            self.spawn_ws(
-                async move {
-                    ws.subscribe_quotes(instrument_id)
-                        .await
-                        .map_err(|e| anyhow::anyhow!("{e}"))
-                },
-                "subscribe quotes",
-            );
+            if let Err(e) = self.start_book(instrument_id, false) {
+                if !held {
+                    self.quote_instruments.remove(&instrument_id);
+                }
+
+                return Err(e.into());
+            }
 
             Ok(())
         })
@@ -803,16 +1020,9 @@ impl DataClient for KrakenFuturesDataClient {
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
         execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
             self.book_instruments.remove(&instrument_id);
-
-            let ws = self.ws.clone();
-            self.spawn_ws(
-                async move {
-                    ws.unsubscribe_book(instrument_id)
-                        .await
-                        .map_err(|e| anyhow::anyhow!("{e}"))
-                },
-                "unsubscribe book",
-            );
+            if !self.quote_instruments.contains(&instrument_id) {
+                self.stop_book(instrument_id);
+            }
 
             Ok(())
         })
@@ -820,18 +1030,12 @@ impl DataClient for KrakenFuturesDataClient {
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
         execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
-            let ws = self.ws.clone();
-
             self.quote_instruments.remove(&instrument_id);
+            if !self.book_instruments.contains(&instrument_id) {
+                self.stop_book(instrument_id);
+            }
+
             self.last_quotes.remove(&instrument_id);
-            self.spawn_ws(
-                async move {
-                    ws.unsubscribe_quotes(instrument_id)
-                        .await
-                        .map_err(|e| anyhow::anyhow!("{e}"))
-                },
-                "unsubscribe quotes",
-            );
 
             Ok(())
         })
@@ -1177,11 +1381,17 @@ pub(crate) mod tests {
     #[path = "quotes/mod.rs"]
     pub(crate) mod benchmarks;
 
+    use futures_util::{SinkExt, StreamExt};
     use nautilus_common::{live::runner::set_data_event_sender, messages::DataEvent};
     use nautilus_core::UUID4;
-    use nautilus_model::types::{Price, Quantity};
+    use nautilus_live::book::recovery::BookRecoveryOutcome;
+    use nautilus_model::{
+        enums::BookAction,
+        types::{Price, Quantity},
+    };
     use rstest::rstest;
     use rust_decimal::Decimal;
+    use tokio_tungstenite::tungstenite::Message;
     use ustr::Ustr;
 
     use super::*;
@@ -1236,6 +1446,275 @@ pub(crate) mod tests {
     }
 
     #[rstest]
+    #[case::initial(false, Duration::ZERO)]
+    #[case::replay(true, Duration::ZERO)]
+    #[case::delayed_confirmation(false, Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS + 1))]
+    #[tokio::test]
+    async fn test_preconnect_futures_book_recovers_a_rejected_subscribe(
+        #[case] reject_replay: bool,
+        #[case] confirmation_delay: Duration,
+    ) {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+
+        let config = KrakenDataClientConfig {
+            product_type: KrakenProductType::Futures,
+            ws_public_url: Some(format!("ws://{}", listener.local_addr().unwrap())),
+            book_snapshot_timeout_secs: 0,
+            ..Default::default()
+        };
+
+        let mut client = KrakenFuturesDataClient::new(*KRAKEN_CLIENT_ID, config).unwrap();
+        let instrument = futures_instrument();
+        let id = instrument.id();
+        client.instruments.insert(id, instrument);
+
+        let subscribe = || {
+            SubscribeQuotes::new(
+                id,
+                Some(*KRAKEN_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )
+        };
+
+        client.subscribe_quotes(subscribe()).unwrap();
+        client.subscribe_quotes(subscribe()).unwrap();
+
+        let server = tokio::spawn(async move {
+            for connection in 0..=usize::from(reject_replay) {
+                let (tcp, _) = listener.accept().await.unwrap();
+                let mut socket = tokio_tungstenite::accept_async(tcp).await.unwrap();
+                for reply in ["subscribed_failed", "subscribed"] {
+                    let request = socket.next().await.unwrap().unwrap();
+                    let request: serde_json::Value =
+                        serde_json::from_str(request.to_text().unwrap()).unwrap();
+                    assert_eq!(
+                        request,
+                        serde_json::json!({"event": "subscribe", "feed": "book", "product_ids": ["PI_XBTUSD"]})
+                    );
+
+                    if reply == "subscribed" && !confirmation_delay.is_zero() {
+                        tokio::time::sleep(confirmation_delay).await;
+                    }
+
+                    let response = serde_json::json!({"event": reply, "feed": "book", "product_ids": ["PI_XBTUSD"]});
+                    socket
+                        .send(Message::text(response.to_string()))
+                        .await
+                        .unwrap();
+                }
+
+                if reject_replay && connection == 0 {
+                    drop(socket);
+                    continue;
+                }
+
+                socket
+                    .send(Message::text(include_str!(
+                        "../../test_data/ws_futures_book_snapshot.json"
+                    )))
+                    .await
+                    .unwrap();
+                let _ = socket.next().await;
+            }
+        });
+
+        client.ws.connect_books().await.unwrap();
+        client.replay_held_books().unwrap();
+        client.spawn_message_handler().unwrap();
+        let event = tokio::time::timeout(Duration::from_secs(5) + confirmation_delay, rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(event, DataEvent::Data(Data::Quote(quote)) if quote.instrument_id == id));
+        client.disconnect().await.unwrap();
+        server.await.unwrap();
+    }
+
+    #[rstest]
+    fn test_queued_snapshot_cannot_satisfy_the_next_generation() {
+        let instrument = futures_instrument();
+        let id = instrument.id();
+        let mut tracker = BookSyncTracker::default();
+        let timestamp = Instant::now();
+        tracker.track(id, 1, timestamp);
+        let snapshot: KrakenFuturesBookSnapshot = serde_json::from_str(include_str!(
+            "../../test_data/ws_futures_book_snapshot.json"
+        ))
+        .unwrap();
+        let message = KrakenFuturesWsMessage::BookSnapshot(snapshot);
+
+        let queued = BookStream::new(1);
+
+        assert!(KrakenFuturesDataClient::matches_book_generation(
+            &tracker,
+            &message,
+            Some(&queued)
+        ));
+
+        tracker.remove(id);
+        tracker.track(id, 2, timestamp);
+        assert!(!KrakenFuturesDataClient::matches_book_generation(
+            &tracker,
+            &message,
+            Some(&queued)
+        ));
+
+        let current = BookStream::new(2);
+
+        assert!(KrakenFuturesDataClient::matches_book_generation(
+            &tracker,
+            &message,
+            Some(&current)
+        ));
+        assert!(!KrakenFuturesDataClient::matches_book_generation(
+            &tracker, &message, None
+        ));
+    }
+
+    #[rstest]
+    fn test_gap_suppresses_deltas_until_replacement_snapshot() {
+        let instrument = futures_instrument();
+        let id = instrument.id();
+        let instruments = Arc::new(AtomicMap::new());
+        instruments.insert(id, instrument);
+        let quote_instruments = Arc::new(AtomicSet::new());
+        let book_instruments = Arc::new(AtomicSet::new());
+        book_instruments.insert(id);
+        let mut book_sync = BookSyncTracker::default();
+        book_sync.track(id, 0, Instant::now());
+        let mut order_books = AHashMap::new();
+        let last_quotes = DashMap::new();
+        let clock = get_atomic_clock_realtime();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let sender = sender.into();
+        let mut snapshot: KrakenFuturesBookSnapshot = serde_json::from_str(include_str!(
+            "../../test_data/ws_futures_book_snapshot.json"
+        ))
+        .unwrap();
+        let mut delta: KrakenFuturesBookDelta =
+            serde_json::from_str(include_str!("../../test_data/ws_futures_book_delta.json"))
+                .unwrap();
+
+        let original = BookStream::new(0);
+
+        {
+            let mut process = |message| {
+                KrakenFuturesDataClient::handle_ws_message(
+                    message,
+                    Some(&original),
+                    &sender,
+                    &instruments,
+                    &quote_instruments,
+                    &book_instruments,
+                    &mut order_books,
+                    &last_quotes,
+                    &mut book_sync,
+                    clock,
+                )
+            };
+
+            assert_eq!(
+                process(KrakenFuturesWsMessage::BookSnapshot(snapshot.clone())),
+                None
+            );
+            delta.seq = snapshot.seq;
+            assert_eq!(
+                process(KrakenFuturesWsMessage::BookDelta(delta.clone())),
+                None
+            );
+            delta.seq += 2;
+            assert_eq!(
+                process(KrakenFuturesWsMessage::BookDelta(delta.clone())),
+                Some(id)
+            );
+        }
+
+        let recovery = book_sync.get_mut(id).unwrap().claim().unwrap();
+        assert!(recovery.begin_replacement());
+        original.retire();
+        let replacement_stream = BookStream::new(0);
+
+        let mut process = |message, stream| {
+            KrakenFuturesDataClient::handle_ws_message(
+                message,
+                Some(stream),
+                &sender,
+                &instruments,
+                &quote_instruments,
+                &book_instruments,
+                &mut order_books,
+                &last_quotes,
+                &mut book_sync,
+                clock,
+            )
+        };
+
+        assert_eq!(
+            process(KrakenFuturesWsMessage::BookDelta(delta.clone()), &original),
+            None
+        );
+        snapshot.seq = delta.seq;
+        let mut invalid = snapshot.clone();
+        invalid.bids[0].price = invalid.asks[0].price + dec!(100);
+        snapshot.bids.clear();
+        snapshot.asks.clear();
+        assert_eq!(
+            process(
+                KrakenFuturesWsMessage::BookSnapshot(snapshot.clone()),
+                &replacement_stream
+            ),
+            None
+        );
+        assert!(!recovery.is_accepted());
+
+        recovery.gate.open();
+        assert_eq!(
+            process(
+                KrakenFuturesWsMessage::BookSnapshot(snapshot.clone()),
+                &original
+            ),
+            None
+        );
+        assert_eq!(
+            process(KrakenFuturesWsMessage::BookSnapshot(invalid), &original),
+            None
+        );
+        assert!(!recovery.is_accepted());
+        assert!(matches!(
+            *recovery.outcome.borrow(),
+            BookRecoveryOutcome::Pending
+        ));
+        assert_eq!(
+            process(
+                KrakenFuturesWsMessage::BookSnapshot(snapshot.clone()),
+                &replacement_stream
+            ),
+            None
+        );
+        assert!(recovery.is_accepted());
+
+        let DataEvent::Data(Data::BookDeltas(initial)) = receiver.try_recv().unwrap() else {
+            panic!("Expected initial book");
+        };
+
+        let DataEvent::Data(Data::BookDeltas(replacement)) = receiver.try_recv().unwrap() else {
+            panic!("Expected replacement book");
+        };
+
+        assert_eq!(initial.sequence, 326_072_249);
+        assert_eq!(replacement.sequence, 326_072_251);
+        assert_eq!(replacement.deltas.len(), 1);
+        assert_eq!(replacement.deltas[0].action, BookAction::Clear);
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[rstest]
     #[case::bid_price(KrakenOrderSide::Buy, dec!(34893.0), dec!(6385))]
     #[case::ask_price(KrakenOrderSide::Sell, dec!(34911.0), dec!(20598))]
     #[case::bid_size(KrakenOrderSide::Buy, dec!(34892.5), dec!(7000))]
@@ -1253,9 +1732,10 @@ pub(crate) mod tests {
         quote_instruments.insert(instrument_id);
         let book_instruments = Arc::new(AtomicSet::new());
         book_instruments.insert(instrument_id);
+        let mut book_sync = BookSyncTracker::default();
+        book_sync.track(instrument_id, 0, Instant::now());
         let mut order_books = AHashMap::new();
         let last_quotes = DashMap::new();
-        let book_sequence = Arc::new(AtomicU64::new(0));
         let ts1 = UnixNanos::new(1_700_000_000_000_000_000);
         let ts2 = UnixNanos::new(1_700_000_000_100_000_000);
         let ts3 = UnixNanos::new(1_700_000_000_200_000_000);
@@ -1295,25 +1775,29 @@ pub(crate) mod tests {
             (ts4, delta(side, price, qty, 326_072_252, 1_612_269_826_100)),
         ];
         let mut expected_deltas = Vec::new();
-        let mut sequence = 0;
 
         for (ts_init, msg) in &messages {
             let deltas = match msg {
                 KrakenFuturesWsMessage::BookSnapshot(snapshot) => {
-                    parse_futures_ws_book_snapshot_deltas(snapshot, &instrument, sequence, *ts_init)
-                        .unwrap()
+                    parse_futures_ws_book_snapshot_deltas(
+                        snapshot,
+                        &instrument,
+                        snapshot.seq as u64,
+                        *ts_init,
+                    )
+                    .unwrap()
                 }
 
                 KrakenFuturesWsMessage::BookDelta(delta) => {
-                    let delta = parse_futures_ws_book_delta(delta, &instrument, sequence, *ts_init)
-                        .unwrap();
+                    let delta =
+                        parse_futures_ws_book_delta(delta, &instrument, delta.seq as u64, *ts_init)
+                            .unwrap();
                     vec![delta]
                 }
 
                 other => panic!("Unexpected message: {other:?}"),
             };
 
-            sequence += deltas.len() as u64;
             expected_deltas.push(OrderBookDeltas::new(instrument_id, deltas));
         }
 
@@ -1321,13 +1805,14 @@ pub(crate) mod tests {
             clock.set_time(ts_init);
             KrakenFuturesDataClient::handle_ws_message(
                 msg,
+                Some(&BookStream::new(0)),
                 &sender,
                 &instruments,
                 &quote_instruments,
                 &book_instruments,
                 &mut order_books,
                 &last_quotes,
-                &book_sequence,
+                &mut book_sync,
                 clock,
             );
         }
@@ -1395,9 +1880,10 @@ pub(crate) mod tests {
         quote_instruments.insert(instrument_id);
         let book_instruments = Arc::new(AtomicSet::new());
         book_instruments.insert(instrument_id);
+        let mut book_sync = BookSyncTracker::default();
+        book_sync.track(instrument_id, 0, Instant::now());
         let mut order_books = AHashMap::new();
         let last_quotes = DashMap::new();
-        let sequence = Arc::new(AtomicU64::new(0));
         let clock = Box::leak(Box::new(AtomicTime::new(false, UnixNanos::new(10))));
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let sender = tx.into();
@@ -1415,29 +1901,28 @@ pub(crate) mod tests {
         let mut changed = initial.clone();
         changed.bids[0].qty = dec!(7000);
         let mut expected_deltas = Vec::new();
-        let mut next_sequence = 0;
 
         for (snapshot, timestamp) in [(initial, 10), (filtered, 20), (changed, 30)] {
             let timestamp = UnixNanos::new(timestamp);
             let deltas = parse_futures_ws_book_snapshot_deltas(
                 &snapshot,
                 &instrument,
-                next_sequence,
+                snapshot.seq as u64,
                 timestamp,
             )
             .unwrap();
-            next_sequence += deltas.len() as u64;
             expected_deltas.push(OrderBookDeltas::new(instrument_id, deltas));
             clock.set_time(timestamp);
             KrakenFuturesDataClient::handle_ws_message(
                 KrakenFuturesWsMessage::BookSnapshot(snapshot),
+                Some(&BookStream::new(0)),
                 &sender,
                 &instruments,
                 &quote_instruments,
                 &book_instruments,
                 &mut order_books,
                 &last_quotes,
-                &sequence,
+                &mut book_sync,
                 clock,
             );
         }
@@ -1520,7 +2005,6 @@ pub(crate) mod tests {
         let ts3 = UnixNanos::new(1_700_000_000_200_000_000);
         let clock = Box::leak(Box::new(AtomicTime::new(false, ts1)));
         let mut order_books = AHashMap::new();
-        let sequence = Arc::new(AtomicU64::new(0));
         let snapshot: KrakenFuturesBookSnapshot = serde_json::from_str(include_str!(
             "../../test_data/ws_futures_book_snapshot.json"
         ))
@@ -1551,13 +2035,14 @@ pub(crate) mod tests {
         let mut handle = |client: &KrakenFuturesDataClient, msg| {
             KrakenFuturesDataClient::handle_ws_message(
                 msg,
+                Some(&BookStream::new(0)),
                 &client.data_sender,
                 &client.instruments,
                 &client.quote_instruments,
                 &client.book_instruments,
                 &mut order_books,
                 &client.last_quotes,
-                &sequence,
+                &mut client.book_sync.lock(),
                 clock,
             );
         };
@@ -1640,12 +2125,15 @@ pub(crate) mod tests {
         let instrument_id = instrument.id();
         client.instruments.insert(instrument_id, instrument.clone());
         client.book_instruments.insert(instrument_id);
+        client
+            .book_sync
+            .lock()
+            .track(instrument_id, 0, Instant::now());
         let ts1 = UnixNanos::new(1_700_000_000_000_000_000);
         let ts2 = UnixNanos::new(1_700_000_000_100_000_000);
         let ts3 = UnixNanos::new(1_700_000_000_200_000_000);
         let clock = Box::leak(Box::new(AtomicTime::new(false, ts1)));
         let mut order_books = AHashMap::new();
-        let sequence = Arc::new(AtomicU64::new(0));
         let snapshot: KrakenFuturesBookSnapshot = serde_json::from_str(include_str!(
             "../../test_data/ws_futures_book_snapshot.json"
         ))
@@ -1674,22 +2162,25 @@ pub(crate) mod tests {
         ];
 
         let mut expected_deltas = Vec::new();
-        let mut next_sequence = 0;
 
         for (message, ts) in messages.iter().zip([ts1, ts2, ts3]) {
             let deltas = match message {
                 KrakenFuturesWsMessage::BookSnapshot(snapshot) => {
-                    parse_futures_ws_book_snapshot_deltas(snapshot, &instrument, next_sequence, ts)
-                        .unwrap()
+                    parse_futures_ws_book_snapshot_deltas(
+                        snapshot,
+                        &instrument,
+                        snapshot.seq as u64,
+                        ts,
+                    )
+                    .unwrap()
                 }
 
                 KrakenFuturesWsMessage::BookDelta(delta) => vec![
-                    parse_futures_ws_book_delta(delta, &instrument, next_sequence, ts).unwrap(),
+                    parse_futures_ws_book_delta(delta, &instrument, delta.seq as u64, ts).unwrap(),
                 ],
                 other => panic!("Unexpected message: {other:?}"),
             };
 
-            next_sequence += deltas.len() as u64;
             expected_deltas.push(OrderBookDeltas::new(instrument_id, deltas));
         }
 
@@ -1731,13 +2222,14 @@ pub(crate) mod tests {
             clock.set_time([ts1, ts2, ts3][index]);
             KrakenFuturesDataClient::handle_ws_message(
                 message,
+                Some(&BookStream::new(0)),
                 &client.data_sender,
                 &client.instruments,
                 &client.quote_instruments,
                 &client.book_instruments,
                 &mut order_books,
                 &client.last_quotes,
-                &sequence,
+                &mut client.book_sync.lock(),
                 clock,
             );
         }

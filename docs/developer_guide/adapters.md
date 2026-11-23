@@ -1016,10 +1016,15 @@ snapshot parsing. The shared types describe the result of validation and monitor
   unsubscribe/subscribe pair on the existing socket. See
   [Deribit sequence gap recovery](../integrations/deribit.md#sequence-gap-recovery) for timer
   defaults and live validation.
+- **Kraken**: replaces subscriptions with an unsubscribe/subscribe pair. Spot matches
+  acknowledgements by request ID and queues all book commands and replay in connection order.
+  A confirmed replay can satisfy an in-flight recovery. Futures matches by feed and product,
+  binds writes to the observed connection, and confirms each transition before proceeding. See
+  [Kraken order book recovery](../integrations/kraken.md#order-book-recovery) for defaults and validation.
 
 Adapters fall into two recovery families, which determine the oracle a stress harness can use:
 
-- Push (OKX, Polymarket, Lighter, Hyperliquid, Bybit, Betfair, AX Exchange, Derive, Deribit,
+- Push (OKX, Polymarket, Lighter, Hyperliquid, Bybit, Betfair, AX Exchange, Derive, Deribit, Kraken,
   Coinbase): a replacement resubscribes, and the venue stream delivers the snapshot.
 - Pull (Binance): diff streams stay subscribed. A replacement fetches a REST snapshot, and the
   adapter accepts it only when the buffered diffs continue from its `lastUpdateId` without a gap.
