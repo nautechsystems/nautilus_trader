@@ -3013,16 +3013,26 @@ impl ExecutionClient for BybitExecutionClient {
     }
 }
 
+const BYBIT_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
+    OrderType::Market,
+    OrderType::Limit,
+    OrderType::StopMarket,
+    OrderType::StopLimit,
+    OrderType::MarketIfTouched,
+    OrderType::LimitIfTouched,
+];
+
 fn validate_order(
     order: &OrderAny,
     product_type: BybitProductType,
 ) -> Result<(), OrderDeniedReason> {
-    let (bybit_order_type, is_conditional) =
-        BybitExecutionClient::map_order_type(order.order_type()).map_err(|_| {
-            OrderDeniedReason::UnsupportedOrderType {
-                order_type: order.order_type(),
-            }
-        })?;
+    let order_type = order.order_type();
+    if !BYBIT_SUPPORTED_ORDER_TYPES.contains(&order_type) {
+        return Err(OrderDeniedReason::UnsupportedOrderType { order_type });
+    }
+
+    let (bybit_order_type, is_conditional) = BybitExecutionClient::map_order_type(order_type)
+        .map_err(|_| OrderDeniedReason::UnsupportedOrderType { order_type })?;
 
     map_time_in_force(
         bybit_order_type,

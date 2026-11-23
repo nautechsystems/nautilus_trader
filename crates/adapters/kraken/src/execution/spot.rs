@@ -50,6 +50,7 @@ use nautilus_model::{
         AccountType, OmsType, OrderSide, OrderType, PositionSide, TimeInForce, TrailingOffsetType,
         TriggerType,
     },
+    events::OrderDeniedReason,
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
@@ -345,35 +346,8 @@ impl KrakenSpotExecutionClient {
             return;
         }
 
-        let order_type = order.order_type();
-        let time_in_force = order.time_in_force();
-
-        if time_in_force == TimeInForce::Fok && order_type != OrderType::Limit {
-            self.emitter.emit_order_denied(
-                order,
-                "FOK time in force only supported for LIMIT orders on Kraken Spot",
-            );
-            return;
-        }
-
-        if matches!(
-            order_type,
-            OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
-        ) && let Some(offset_type) = order.trailing_offset_type()
-            && offset_type != TrailingOffsetType::Price
-        {
-            self.emitter.emit_order_denied(
-                order,
-                &format!(
-                    "Kraken Spot only supports Price trailing offset type: received {offset_type:?}"
-                ),
-            );
-            return;
-        }
-
-        if order.is_reduce_only() && self.config.spot_account_type == AccountType::Cash {
-            self.emitter
-                .emit_order_denied(order, "reduce_only requires spot_account_type=Margin");
+        if let Err(reason) = validate_order(order, self.config.spot_account_type) {
+            self.emitter.emit_order_denied(order, &reason);
             return;
         }
 
@@ -1606,32 +1580,8 @@ impl ExecutionClient for KrakenSpotExecutionClient {
                 continue;
             }
 
-            if order.time_in_force() == TimeInForce::Fok && order.order_type() != OrderType::Limit {
-                self.emitter.emit_order_denied(
-                    order,
-                    "FOK time in force only supported for LIMIT orders on Kraken Spot",
-                );
-                continue;
-            }
-
-            if matches!(
-                order.order_type(),
-                OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
-            ) && let Some(offset_type) = order.trailing_offset_type()
-                && offset_type != TrailingOffsetType::Price
-            {
-                self.emitter.emit_order_denied(
-                    order,
-                    &format!(
-                        "Kraken Spot only supports Price trailing offset type: received {offset_type:?}"
-                    ),
-                );
-                continue;
-            }
-
-            if order.is_reduce_only() && self.config.spot_account_type == AccountType::Cash {
-                self.emitter
-                    .emit_order_denied(order, "reduce_only requires spot_account_type=Margin");
+            if let Err(reason) = validate_order(order, self.config.spot_account_type) {
+                self.emitter.emit_order_denied(order, &reason);
                 continue;
             }
 
@@ -1679,7 +1629,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         }
 
         let use_ws_trade = resolve_use_ws_trade(cmd.params.as_ref(), self.config.use_ws_trade);
-        if use_ws_trade && self.ws.is_active() {
+        if use_ws_trade && self.ws.is_active() && (2..=15).contains(&prepared_orders.len()) {
             let any_quote_qty = prepared_orders.iter().any(|o| o.is_quote_quantity());
             let symbols_match = prepared_orders
                 .windows(2)
@@ -1857,6 +1807,45 @@ async fn cancel_order_for_spot(
 enum SpotBatchCancelId {
     VenueOrderId(String),
     ClientOrderId(String),
+}
+
+const KRAKEN_SPOT_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
+    OrderType::Market,
+    OrderType::Limit,
+    OrderType::StopMarket,
+    OrderType::StopLimit,
+    OrderType::MarketIfTouched,
+    OrderType::LimitIfTouched,
+    OrderType::TrailingStopMarket,
+    OrderType::TrailingStopLimit,
+];
+
+fn validate_order(order: &OrderAny, account_type: AccountType) -> Result<(), String> {
+    let order_type = order.order_type();
+    if !KRAKEN_SPOT_SUPPORTED_ORDER_TYPES.contains(&order_type) {
+        return Err(OrderDeniedReason::UnsupportedOrderType { order_type }.to_string());
+    }
+
+    if order.time_in_force() == TimeInForce::Fok && order_type != OrderType::Limit {
+        return Err("FOK time in force only supported for LIMIT orders on Kraken Spot".to_string());
+    }
+
+    if matches!(
+        order_type,
+        OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+    ) && let Some(offset_type) = order.trailing_offset_type()
+        && offset_type != TrailingOffsetType::Price
+    {
+        return Err(format!(
+            "Kraken Spot only supports Price trailing offset type: received {offset_type:?}"
+        ));
+    }
+
+    if order.is_reduce_only() && account_type == AccountType::Cash {
+        return Err("reduce_only requires spot_account_type=Margin".to_string());
+    }
+
+    Ok(())
 }
 
 const SPOT_BATCH_CANCEL_LIMIT: usize = 50;

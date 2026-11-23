@@ -156,6 +156,7 @@ struct TestServerState {
     submit_request_count: Arc<AtomicUsize>,
     modify_request_count: Arc<AtomicUsize>,
     batch_submit_request_count: Arc<AtomicUsize>,
+    ws_batch_submit_request_count: Arc<AtomicUsize>,
     cancel_request_count: Arc<AtomicUsize>,
     batch_cancel_request_count: Arc<AtomicUsize>,
     cancel_all_request_count: Arc<AtomicUsize>,
@@ -216,6 +217,7 @@ impl Default for TestServerState {
             submit_request_count: Arc::new(AtomicUsize::new(0)),
             modify_request_count: Arc::new(AtomicUsize::new(0)),
             batch_submit_request_count: Arc::new(AtomicUsize::new(0)),
+            ws_batch_submit_request_count: Arc::new(AtomicUsize::new(0)),
             cancel_request_count: Arc::new(AtomicUsize::new(0)),
             batch_cancel_request_count: Arc::new(AtomicUsize::new(0)),
             cancel_all_request_count: Arc::new(AtomicUsize::new(0)),
@@ -274,6 +276,12 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                 let Ok(payload) = serde_json::from_str::<Value>(&text) else {
                     continue;
                 };
+
+                if payload.get("method").and_then(Value::as_str) == Some("batch_add") {
+                    state
+                        .ws_batch_submit_request_count
+                        .fetch_add(1, Ordering::Relaxed);
+                }
 
                 if let Some(reply) = ws_reply(&payload)
                     && socket
@@ -7035,6 +7043,157 @@ async fn test_spot_local_submit_failure_emits_rejected_without_request() {
         other => panic!("Expected OrderRejected event, was {other:?}"),
     }
     assert_eq!(state.submit_request_count.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
+#[case::spot_single(true, false)]
+#[case::spot_list(true, true)]
+#[case::futures_single(false, false)]
+#[case::futures_list(false, true)]
+#[tokio::test]
+async fn test_submit_denies_unsupported_order_type(#[case] spot: bool, #[case] list: bool) {
+    let (client, mut rx, cache, instrument_id, state): (Box<dyn ExecutionClient>, _, _, _, _) =
+        if spot {
+            let (client, rx, cache, state) =
+                connected_spot_client_with_command_responses(CommandResponses::default()).await;
+
+            (
+                Box::new(client),
+                rx,
+                cache,
+                test_spot_instrument_id(),
+                state,
+            )
+        } else {
+            let (client, rx, cache, state) =
+                connected_client_with_command_responses(CommandResponses::default()).await;
+            (Box::new(client), rx, cache, test_instrument_id(), state)
+        };
+
+    while rx.try_recv().is_ok() {}
+
+    let order = OrderTestBuilder::new(OrderType::MarketToLimit)
+        .trader_id(test_trader_id())
+        .strategy_id(test_strategy_id())
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("unsupported-order-type"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("0.1"))
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    if list {
+        client
+            .submit_order_list(submit_order_list_command(
+                "OL-UNSUPPORTED-TYPE",
+                instrument_id,
+                std::slice::from_ref(&order),
+            ))
+            .unwrap();
+    } else {
+        client.submit_order(submit_order_command(&order)).unwrap();
+    }
+
+    let event = rx.try_recv().expect("missing OrderDenied");
+
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+        panic!("Expected OrderDenied, was {event:?}");
+    };
+
+    assert_eq!(denied.client_order_id, order.client_order_id());
+    assert_eq!(denied.reason, "UNSUPPORTED_ORDER_TYPE: MARKET_TO_LIMIT");
+    assert_eq!(
+        rx.try_recv().unwrap_err(),
+        tokio::sync::mpsc::error::TryRecvError::Empty
+    );
+    assert_eq!(state.submit_request_count.load(Ordering::Relaxed), 0);
+    assert_eq!(state.batch_submit_request_count.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
+#[case::spot(true)]
+#[case::futures(false)]
+#[tokio::test]
+async fn test_list_dispatches_supported_order_after_denying_unsupported_sibling(
+    #[case] spot: bool,
+) {
+    let limit_id = ClientOrderId::from("valid-sibling");
+
+    let (client, mut rx, cache, limit, state): (Box<dyn ExecutionClient>, _, _, _, _) = if spot {
+        let (addr, state) = start_test_server().await.unwrap();
+        let (mut client, rx, cache) =
+            create_test_spot_execution_client_with(addr, |config| config.use_ws_trade = true);
+        add_test_spot_account_to_cache(&cache);
+        client.connect().await.unwrap();
+        let limit = add_spot_limit_order_to_cache(&cache, limit_id);
+        (Box::new(client), rx, cache, limit, state)
+    } else {
+        let (client, rx, cache, state) =
+            connected_client_with_command_responses(CommandResponses::default()).await;
+        let limit = add_limit_order_to_cache(&cache, limit_id);
+        (Box::new(client), rx, cache, limit, state)
+    };
+
+    let instrument_id = limit.instrument_id();
+    let unsupported = OrderTestBuilder::new(OrderType::MarketToLimit)
+        .trader_id(test_trader_id())
+        .strategy_id(test_strategy_id())
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("unsupported-sibling"))
+        .quantity(Quantity::from("0.1"))
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(unsupported.clone(), None, None, false)
+        .unwrap();
+    let unsupported_id = unsupported.client_order_id();
+
+    client
+        .submit_order_list(submit_order_list_command(
+            "OL-UNSUPPORTED-SIBLING",
+            instrument_id,
+            &[unsupported, limit],
+        ))
+        .unwrap();
+
+    let event = recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Order(_))).await;
+
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+        panic!("Expected OrderDenied, was {event:?}");
+    };
+
+    let event = recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Order(_))).await;
+
+    let ExecutionEvent::Order(OrderEventAny::Submitted(submitted)) = event else {
+        panic!("Expected OrderSubmitted, was {event:?}");
+    };
+
+    let expected_requests = if spot {
+        &state.submit_request_count
+    } else {
+        &state.batch_submit_request_count
+    };
+
+    wait_for_count(expected_requests, 1).await;
+
+    assert_eq!(denied.client_order_id, unsupported_id);
+    assert_eq!(denied.reason, "UNSUPPORTED_ORDER_TYPE: MARKET_TO_LIMIT");
+    assert_eq!(submitted.client_order_id, limit_id);
+    assert_eq!(
+        state.submit_request_count.load(Ordering::Relaxed),
+        usize::from(spot)
+    );
+    assert_eq!(
+        state.batch_submit_request_count.load(Ordering::Relaxed),
+        usize::from(!spot)
+    );
+    assert_eq!(
+        state.ws_batch_submit_request_count.load(Ordering::Relaxed),
+        0
+    );
 }
 
 #[rstest]

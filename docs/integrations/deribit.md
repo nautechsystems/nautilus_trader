@@ -611,14 +611,21 @@ self.subscribe_data(
 
 An order's instrument must be loaded by the execution client's `product_types` or `load_ids`.
 The adapter validates order parameters and queues `OrderSubmitted` before sending an order.
-If validation or event queuing fails, the adapter returns an error without sending the order.
-The execution engine handles that error as `OrderDenied`.
+For an unsupported order type, the adapter queues `OrderDenied` with `UNSUPPORTED_ORDER_TYPE`
+and returns `Ok(())` without sending the order. If any other validation fails or the adapter
+cannot queue an event, it returns an error without sending the order. The execution engine
+handles that error as `OrderDenied`.
 
-For order lists, the adapter validates every member and queues all `OrderSubmitted` events
-before sending any member. A validation or queuing failure prevents all venue requests for that list.
+For order lists, the adapter skips closed members. It validates the remaining members and queues
+all `OrderSubmitted` events before sending any member. A validation or queuing failure prevents
+all venue requests for that list. If the first validation failure is an unsupported order type,
+the adapter queues `OrderDenied` for each remaining member and returns `Ok(())` once all denials
+are queued. The offending member receives `UNSUPPORTED_ORDER_TYPE` and the other members receive
+`ORDER_LIST_DENIED`.
 
 Below are the order types, execution instructions, and time-in-force options supported on Deribit.
-Routed spot pairs have the additional restrictions listed under [Spot](#spot).
+Option combos accept only `LIMIT` orders. Routed spot pairs have the additional restrictions listed
+under [Spot](#spot).
 
 ### Order types
 

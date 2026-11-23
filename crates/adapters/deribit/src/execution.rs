@@ -31,7 +31,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    DurationNanos, Params, UnixNanos,
+    DurationNanos, Params, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -41,7 +41,7 @@ use nautilus_live::{
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderType, PositionSide, TimeInForce},
-    events::OrderEventAny,
+    events::{OrderDenied, OrderDeniedReason, OrderEventAny},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue, VenueOrderId},
     instruments::InstrumentAny,
     orders::{Order, OrderAny},
@@ -262,9 +262,7 @@ impl DeribitExecutionClient {
             OrderType::StopMarket => "stop_market",
             OrderType::LimitIfTouched => "take_limit",
             OrderType::MarketIfTouched => "take_market",
-            other => {
-                anyhow::bail!("Unsupported order type {other:?} for Deribit");
-            }
+            order_type => anyhow::bail!(OrderDeniedReason::UnsupportedOrderType { order_type }),
         }
         .to_string();
 
@@ -895,7 +893,15 @@ impl ExecutionClient for DeribitExecutionClient {
             return Ok(());
         }
 
-        let params = self.build_order_params(&order)?;
+        let params = match self.build_order_params(&order) {
+            Ok(params) => params,
+            Err(e) => {
+                let reason = e.downcast::<OrderDeniedReason>()?.to_string();
+
+                return try_emit_order_denied(&self.emitter, self.clock, &order, &reason);
+            }
+        };
+
         self.emitter.try_emit_order_submitted(&order)?;
         self.spawn_order_submit(&order, params, "submit_order");
         Ok(())
@@ -921,10 +927,37 @@ impl ExecutionClient for DeribitExecutionClient {
             return Ok(());
         }
 
-        let params = orders
+        let prepared = orders
             .iter()
-            .map(|order| self.build_order_params(order))
-            .collect::<anyhow::Result<Vec<_>>>()?;
+            .map(|order| {
+                self.build_order_params(order)
+                    .map_err(|e| (order.client_order_id(), e))
+            })
+            .collect::<Result<Vec<_>, _>>();
+
+        let params = match prepared {
+            Ok(params) => params,
+            Err((offending_order_id, e)) => {
+                let denied_reason = e.downcast::<OrderDeniedReason>()?.to_string();
+
+                let list_reason = OrderDeniedReason::OrderListDenied {
+                    order_list_id: cmd.order_list.id,
+                }
+                .to_string();
+
+                for order in &orders {
+                    let reason = if order.client_order_id() == offending_order_id {
+                        &denied_reason
+                    } else {
+                        &list_reason
+                    };
+
+                    try_emit_order_denied(&self.emitter, self.clock, order, reason)?;
+                }
+
+                return Ok(());
+            }
+        };
 
         for order in &orders {
             self.emitter.try_emit_order_submitted(order)?;
@@ -1679,6 +1712,28 @@ fn emit_if_not_sent(
     emit(reason);
 }
 
+fn try_emit_order_denied(
+    emitter: &ExecutionEventEmitter,
+    clock: &AtomicTime,
+    order: &OrderAny,
+    reason: &str,
+) -> anyhow::Result<()> {
+    let ts_init = clock.get_time_ns();
+
+    let event = OrderDenied::new(
+        emitter.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        reason.into(),
+        UUID4::new(),
+        ts_init,
+        ts_init,
+    );
+
+    emitter.try_send_order_event(OrderEventAny::Denied(event))
+}
+
 fn deny_modify_command(
     emitter: &ExecutionEventEmitter,
     clock: &AtomicTime,
@@ -1741,18 +1796,18 @@ mod tests {
             execution::{CancelOrder, ExecutionReport, ModifyOrder},
         },
     };
-    use nautilus_core::UUID4;
     use nautilus_model::{
         enums::{LiquiditySide, OrderSide, OrderStatus, TriggerType},
-        events::{OrderDenied, OrderFilled},
+        events::OrderFilled,
         identifiers::{
             ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId, VenueOrderId,
         },
-        instruments::InstrumentAny,
+        instruments::{Instrument, InstrumentAny},
         orders::{OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
         types::{Currency, Money, Price, Quantity},
     };
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::*;
     use crate::{
@@ -1889,6 +1944,155 @@ mod tests {
             error.downcast_ref::<InstrumentLookupError>(),
             Some(&InstrumentLookupError::not_found(instrument_id))
         );
+    }
+
+    #[rstest]
+    #[case::sender_available(true, false, None)]
+    #[case::sender_uninitialized(
+        false,
+        false,
+        Some("Cannot send order event: sender not initialized")
+    )]
+    #[case::receiver_closed(true, true, Some("Failed to send order event: channel closed"))]
+    fn unsupported_order_type_fails_before_submission(
+        #[case] install_sender: bool,
+        #[case] close_receiver: bool,
+        #[case] expected_error: Option<&str>,
+        #[values(false, true)] batch: bool,
+    ) {
+        let (mut client, _, cache) = submission_test_rig(TimeInForce::Gtc);
+        let order = OrderTestBuilder::new(OrderType::MarketToLimit)
+            .instrument_id(InstrumentId::from("BTC-PERPETUAL.DERIBIT"))
+            .client_order_id(ClientOrderId::from("O-UNSUPPORTED-TYPE"))
+            .quantity(Quantity::from("20"))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        if install_sender {
+            client.emitter.set_sender(tx);
+        }
+
+        if close_receiver {
+            rx.close();
+        }
+
+        let result = submit_test_orders(&client, std::slice::from_ref(&order), batch);
+
+        assert!(client.pending_tasks.is_empty());
+
+        if let Some(expected_error) = expected_error {
+            assert_eq!(result.unwrap_err().to_string(), expected_error);
+            assert!(rx.is_empty());
+            return;
+        }
+
+        result.unwrap();
+
+        let event = rx.try_recv().unwrap();
+
+        let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+            panic!("Expected OrderDenied, was {event:?}");
+        };
+
+        assert_eq!(denied.client_order_id, order.client_order_id());
+        assert_eq!(denied.reason, "UNSUPPORTED_ORDER_TYPE: MARKET_TO_LIMIT");
+        assert_eq!(
+            rx.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
+    }
+
+    #[rstest]
+    #[case::single(false)]
+    #[case::list(true)]
+    fn option_combo_stop_fails_before_submission(#[case] batch: bool) {
+        let (mut client, _, cache) = submission_test_rig(TimeInForce::Gtc);
+        let response: DeribitJsonRpcResponse<Vec<DeribitInstrument>> = serde_json::from_str(
+            include_str!("../test_data/http_get_instruments_option_combo.json"),
+        )
+        .unwrap();
+        let instrument = parse_deribit_instrument_any(
+            &response.result.unwrap()[0],
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap()
+        .unwrap();
+        let instrument_id = instrument.id();
+        client.http_client.cache_instruments(&[instrument]);
+        let limit = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-COMBO-LIMIT"))
+            .quantity(Quantity::from("1"))
+            .price(Price::from("0.02"))
+            .build();
+        let stop = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-COMBO-STOP"))
+            .quantity(Quantity::from("1"))
+            .trigger_price(Price::from("0.03"))
+            .trigger_type(TriggerType::LastPrice)
+            .build();
+
+        let orders = if batch {
+            vec![limit.clone(), stop]
+        } else {
+            vec![stop]
+        };
+
+        for order in &orders {
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        client.emitter.set_sender(tx);
+
+        let limit_params = client.build_order_params(&limit).unwrap();
+        submit_test_orders(&client, &orders, batch).unwrap();
+
+        let denials: Vec<_> = orders
+            .iter()
+            .map(|_| {
+                let event = rx.try_recv().unwrap();
+
+                let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+                    panic!("Expected OrderDenied, was {event:?}");
+                };
+
+                (denied.client_order_id, denied.reason)
+            })
+            .collect();
+
+        let stop_denial = (
+            ClientOrderId::from("O-COMBO-STOP"),
+            Ustr::from("UNSUPPORTED_ORDER_TYPE: STOP_MARKET"),
+        );
+
+        let expected = if batch {
+            vec![
+                (
+                    limit.client_order_id(),
+                    Ustr::from("ORDER_LIST_DENIED: submit-list-001"),
+                ),
+                stop_denial,
+            ]
+        } else {
+            vec![stop_denial]
+        };
+
+        assert_eq!(limit_params.order_type, "limit");
+        assert_eq!(denials, expected);
+        assert_eq!(
+            rx.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
+        assert!(client.pending_tasks.is_empty());
     }
 
     #[rstest]

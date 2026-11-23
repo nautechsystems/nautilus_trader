@@ -144,6 +144,15 @@ use crate::{
     },
 };
 
+const DERIVE_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
+    OrderType::Market,
+    OrderType::Limit,
+    OrderType::StopMarket,
+    OrderType::StopLimit,
+    OrderType::MarketIfTouched,
+    OrderType::LimitIfTouched,
+];
+
 const DERIVE_PRIVATE_PAGE_SIZE: u32 = 500;
 const CANCEL_ON_DISCONNECT_CONFIRMATION_TIMEOUT: Duration = Duration::from_secs(30);
 const RECONNECT_HISTORY_OVERLAP: DurationNanos = DurationNanos::from_mins(1);
@@ -615,7 +624,12 @@ impl DeriveExecutionClient {
     }
 
     fn validate_order(&self, order: &OrderAny) -> anyhow::Result<()> {
-        if is_derive_trigger_order_type(order.order_type()) {
+        let order_type = order.order_type();
+        if !DERIVE_SUPPORTED_ORDER_TYPES.contains(&order_type) {
+            anyhow::bail!(OrderDeniedReason::UnsupportedOrderType { order_type });
+        }
+
+        if is_derive_trigger_order_type(order_type) {
             validate_trigger_order_support(order)?;
         } else {
             validate_order_support(order)?;

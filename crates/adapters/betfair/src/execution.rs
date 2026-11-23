@@ -3669,19 +3669,25 @@ fn emit_cancel_denials(
     }
 }
 
+const BETFAIR_SUPPORTED_ORDER_TYPES: &[OrderType] = &[OrderType::Market, OrderType::Limit];
+
 fn validate_order(order: &impl Order) -> Result<(), OrderDeniedReason> {
     if order.is_reduce_only() {
         return Err(OrderDeniedReason::UnsupportedReduceOnly);
     }
 
-    match order.order_type() {
-        OrderType::Limit => Ok(()),
-        OrderType::Market if order.time_in_force() != TimeInForce::AtTheClose => Err(
-            OrderDeniedReason::UnsupportedTimeInForce(order.time_in_force()),
-        ),
-        OrderType::Market => Ok(()),
-        order_type => Err(OrderDeniedReason::UnsupportedOrderType { order_type }),
+    let order_type = order.order_type();
+    if !BETFAIR_SUPPORTED_ORDER_TYPES.contains(&order_type) {
+        return Err(OrderDeniedReason::UnsupportedOrderType { order_type });
     }
+
+    if order_type == OrderType::Market && order.time_in_force() != TimeInForce::AtTheClose {
+        return Err(OrderDeniedReason::UnsupportedTimeInForce(
+            order.time_in_force(),
+        ));
+    }
+
+    Ok(())
 }
 
 // SP bets cannot be cancelled once placed.

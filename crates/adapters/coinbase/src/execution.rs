@@ -1524,10 +1524,18 @@ fn classify_coinbase_command_failure(error: &anyhow::Error) -> Option<CommandFai
     }
 }
 
+const COINBASE_SUPPORTED_ORDER_TYPES: &[OrderType] =
+    &[OrderType::Market, OrderType::Limit, OrderType::StopLimit];
+
 fn validate_order(
     order: &impl Order,
     instruments_cache: &AHashMap<String, InstrumentAny>,
 ) -> Result<(), OrderDeniedReason> {
+    let order_type = order.order_type();
+    if !COINBASE_SUPPORTED_ORDER_TYPES.contains(&order_type) {
+        return Err(OrderDeniedReason::UnsupportedOrderType { order_type });
+    }
+
     if order.is_reduce_only() {
         return Err(OrderDeniedReason::UnsupportedReduceOnly);
     }
@@ -2552,6 +2560,78 @@ mod tests {
         assert!(!client.provides_bulk_position_coverage(foreign_id));
         assert!(!client.provides_bulk_position_coverage(InstrumentId::from("BTC-USD.COINBASE")));
         assert!(!client.provides_bulk_position_coverage(InstrumentId::from("UNKNOWN.COINBASE")));
+    }
+
+    #[rstest]
+    fn test_exec_submit_order_denies_unsupported_order_type() {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let (emitter, mut rx) = make_emitter();
+        let trader_id = TraderId::from("TRADER-001");
+        let client_id = ClientId::from("COINBASE-TEST");
+
+        let core = ExecutionClientCore::new(
+            trader_id,
+            client_id,
+            *COINBASE_VENUE,
+            OmsType::Netting,
+            AccountId::from("COINBASE-001"),
+            AccountType::Cash,
+            None,
+            Rc::clone(&cache),
+        );
+
+        let config = CoinbaseExecutionClientConfig {
+            api_key: Some("test-key".into()),
+            api_secret: Some("test-secret".into()),
+            base_url_rest: Some("http://127.0.0.1:1".into()),
+            ..Default::default()
+        };
+
+        let mut client = CoinbaseExecutionClient::new(core, config).unwrap();
+        client.emitter = emitter;
+        let instrument = test_instrument();
+        let instrument_id = instrument.id();
+
+        client.instruments_cache = Arc::new(AHashMap::from([(
+            instrument_id.symbol.as_str().to_owned(),
+            instrument,
+        )]));
+
+        let order = OrderTestBuilder::new(OrderType::MarketToLimit)
+            .trader_id(trader_id)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-UNSUPPORTED-TYPE"))
+            .quantity(Quantity::from("0.1"))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(client_id), false)
+            .unwrap();
+
+        client
+            .submit_order(SubmitOrder::from_order(
+                &order,
+                trader_id,
+                Some(client_id),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+            ))
+            .unwrap();
+
+        let event = rx.try_recv().expect("missing OrderDenied");
+
+        let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+            panic!("Expected OrderDenied, was {event:?}");
+        };
+
+        assert_eq!(denied.client_order_id, order.client_order_id());
+        assert_eq!(denied.reason, "UNSUPPORTED_ORDER_TYPE: MARKET_TO_LIMIT");
+        assert_eq!(
+            rx.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
+        assert!(client.pending_tasks.is_empty());
     }
 
     #[rstest]

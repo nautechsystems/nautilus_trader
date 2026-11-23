@@ -3214,13 +3214,14 @@ fn create_fill_report(
     ))
 }
 
+const AX_SUPPORTED_ORDER_TYPES: &[OrderType] = &[OrderType::Market, OrderType::Limit];
+
 fn validate_order_for_ax_submit(order: &OrderAny) -> anyhow::Result<()> {
-    if !matches!(order.order_type(), OrderType::Market | OrderType::Limit) {
-        anyhow::bail!(
-            "Unsupported order type: {:?}, the Architect AX adapter accepts Nautilus MARKET and LIMIT orders",
-            order.order_type(),
-        );
-    }
+    let order_type = order.order_type();
+    anyhow::ensure!(
+        AX_SUPPORTED_ORDER_TYPES.contains(&order_type),
+        OrderDeniedReason::UnsupportedOrderType { order_type }
+    );
 
     // AX accepts only GTC, IOC, and DAY; deny others locally to avoid an opaque venue error
     if !matches!(
@@ -5263,7 +5264,7 @@ mod tests {
 
         let err = validate_order_for_ax_submit(&order).unwrap_err();
 
-        assert!(err.to_string().contains("Unsupported order type"));
+        assert_eq!(err.to_string(), "UNSUPPORTED_ORDER_TYPE: STOP_MARKET");
     }
 
     #[rstest]
@@ -5294,7 +5295,7 @@ mod tests {
 
         let err = validate_order_for_ax_submit(&order).unwrap_err();
 
-        assert!(err.to_string().contains("Unsupported order type"));
+        assert_eq!(err.to_string(), "UNSUPPORTED_ORDER_TYPE: STOP_LIMIT");
     }
 
     #[rstest]

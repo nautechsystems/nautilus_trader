@@ -8882,11 +8882,13 @@ fn restore_reconciled_order(
 
 fn grouped_submit_denial_reason(error: &anyhow::Error) -> String {
     match error.downcast_ref::<OrderDeniedReason>() {
-        Some(reason) => reason.to_string(),
-        None => OrderDeniedReason::UnsupportedOrderList {
-            detail: format!("Lighter grouped submit failed: {error}"),
+        Some(OrderDeniedReason::UnsupportedOrderType { .. }) | None => {
+            OrderDeniedReason::UnsupportedOrderList {
+                detail: format!("Lighter grouped submit failed: {error}"),
+            }
+            .to_string()
         }
-        .to_string(),
+        Some(reason) => reason.to_string(),
     }
 }
 
@@ -8904,9 +8906,10 @@ fn local_submit_denial_reason(
     }
 
     if !is_lighter_supported_order_type(order.order_type()) {
-        return Some(anyhow::anyhow!(unsupported_lighter_order_type_reason(
-            order.order_type()
-        )));
+        return Some(unsupported_order_type_denial(
+            order.order_type(),
+            LIGHTER_SUPPORTED_ORDER_TYPES_DETAIL,
+        ));
     }
 
     if is_lighter_limit_style_order(order.order_type()) && order.price().is_none() {
@@ -8936,12 +8939,9 @@ fn local_submit_denial_reason(
 
     if is_lighter_spot_order(order, instrument) && is_lighter_conditional_order(order.order_type())
     {
-        let denied = OrderDeniedReason::UnsupportedOrderType {
-            order_type: order.order_type(),
-        };
-
-        return Some(anyhow::anyhow!(
-            "{denied}; Lighter spot markets do not support conditional orders",
+        return Some(unsupported_order_type_denial(
+            order.order_type(),
+            "Lighter spot markets do not support conditional orders",
         ));
     }
 
@@ -8957,11 +8957,10 @@ fn local_submit_denial_reason(
     })
 }
 
-fn unsupported_lighter_order_type_reason(order_type: OrderType) -> String {
-    let denied = OrderDeniedReason::UnsupportedOrderType { order_type };
-    format!(
-        "{denied}; Lighter supports MARKET, LIMIT, STOP_MARKET, STOP_LIMIT, MARKET_IF_TOUCHED, and LIMIT_IF_TOUCHED",
-    )
+fn unsupported_order_type_denial(order_type: OrderType, detail: &str) -> anyhow::Error {
+    let reason = OrderDeniedReason::UnsupportedOrderType { order_type };
+    let message = format!("{reason}; {detail}");
+    anyhow::Error::new(reason).context(message)
 }
 
 fn is_grouped_order(order: &OrderAny) -> bool {
@@ -9169,16 +9168,19 @@ fn is_lighter_spot_order(order: &OrderAny, instrument: Option<&InstrumentAny>) -
         || product_type_from_instrument_id(&order.instrument_id()) == Some(LighterProductType::Spot)
 }
 
+const LIGHTER_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
+    OrderType::Market,
+    OrderType::Limit,
+    OrderType::StopMarket,
+    OrderType::StopLimit,
+    OrderType::MarketIfTouched,
+    OrderType::LimitIfTouched,
+];
+
+const LIGHTER_SUPPORTED_ORDER_TYPES_DETAIL: &str = "Lighter supports MARKET, LIMIT, STOP_MARKET, STOP_LIMIT, MARKET_IF_TOUCHED, and LIMIT_IF_TOUCHED";
+
 fn is_lighter_supported_order_type(order_type: OrderType) -> bool {
-    matches!(
-        order_type,
-        OrderType::Market
-            | OrderType::Limit
-            | OrderType::StopMarket
-            | OrderType::StopLimit
-            | OrderType::MarketIfTouched
-            | OrderType::LimitIfTouched
-    )
+    LIGHTER_SUPPORTED_ORDER_TYPES.contains(&order_type)
 }
 
 fn is_lighter_limit_style_order(order_type: OrderType) -> bool {
@@ -11331,7 +11333,11 @@ mod tests {
     #[rstest]
     fn unsupported_order_type_reason_keeps_lighter_capabilities() {
         assert_eq!(
-            unsupported_lighter_order_type_reason(OrderType::MarketToLimit),
+            unsupported_order_type_denial(
+                OrderType::MarketToLimit,
+                LIGHTER_SUPPORTED_ORDER_TYPES_DETAIL,
+            )
+            .to_string(),
             "UNSUPPORTED_ORDER_TYPE: MARKET_TO_LIMIT; Lighter supports MARKET, LIMIT, STOP_MARKET, STOP_LIMIT, MARKET_IF_TOUCHED, and LIMIT_IF_TOUCHED",
         );
     }
@@ -15198,6 +15204,50 @@ mod tests {
         }
 
         orders
+    }
+
+    #[tokio::test]
+    async fn submit_group_with_unsupported_order_type_emits_list_denials() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut orders = test_native_group(instrument_id, LighterGroupingType::OneTriggersTheOther);
+        orders[1] = OrderTestBuilder::new(OrderType::MarketToLimit)
+            .trader_id(trader_id())
+            .strategy_id(strategy_id())
+            .instrument_id(instrument_id)
+            .client_order_id(orders[1].client_order_id())
+            .quantity(Quantity::from("0.1000"))
+            .order_list_id(OrderListId::from("OL-GROUP"))
+            .parent_order_id(orders[0].client_order_id())
+            .build();
+
+        for order in &orders {
+            cache_order(&cache, order.clone());
+        }
+
+        let command = submit_order_list_command(&orders, "OL-GROUP");
+        client.submit_order_list(command).unwrap();
+
+        for order in &orders {
+            let event = recv_order_event(&mut rx).await;
+
+            let OrderEventAny::Denied(denied) = event else {
+                panic!("Expected OrderDenied, was {event:?}");
+            };
+
+            assert_eq!(denied.client_order_id, order.client_order_id());
+            assert_eq!(
+                denied.reason,
+                "UNSUPPORTED_ORDER_LIST: Lighter grouped submit failed: UNSUPPORTED_ORDER_TYPE: MARKET_TO_LIMIT; Lighter supports MARKET, LIMIT, STOP_MARKET, STOP_LIMIT, MARKET_IF_TOUCHED, and LIMIT_IF_TOUCHED"
+            );
+        }
+
+        assert_eq!(
+            rx.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
+        assert_nonce_reusable(&client.dispatch);
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
     }
 
     #[tokio::test]

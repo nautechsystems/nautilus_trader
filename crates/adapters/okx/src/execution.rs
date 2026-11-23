@@ -2996,40 +2996,61 @@ impl OKXExecutionClient {
         submission: OrderSubmission,
         params: Option<&Params>,
     ) -> Result<(), OrderDeniedReason> {
+        const LIMIT_ONLY_ORDER_TYPES: &[OrderType] = &[OrderType::Limit];
+
         if let Err(detail) = validate_okx_client_order_id(order.client_order_id().as_str()) {
             return Err(OrderDeniedReason::InvalidClientOrderId { detail });
         }
 
-        if !OKX_SUPPORTED_ORDER_TYPES.contains(&order.order_type()) {
-            return Err(OrderDeniedReason::UnsupportedOrderType {
-                order_type: order.order_type(),
-            });
+        let order_type = order.order_type();
+        let is_spread = self.http_client.is_spread(order.instrument_id());
+        let instrument = self
+            .http_client
+            .get_instrument(&order.instrument_id().symbol.inner());
+
+        let instrument_type = match (is_spread, instrument.as_ref()) {
+            (false, Some(instrument)) => okx_instrument_type(instrument).map_err(|e| {
+                OrderDeniedReason::ValidationFailed {
+                    detail: e.to_string(),
+                }
+            })?,
+            _ => okx_instrument_type_from_symbol(order.instrument_id().symbol.as_str()),
+        };
+
+        let supported_order_types = match (is_spread, instrument_type) {
+            (true, _) | (_, OKXInstrumentType::Option | OKXInstrumentType::Events) => {
+                LIMIT_ONLY_ORDER_TYPES
+            }
+            _ => OKX_SUPPORTED_ORDER_TYPES,
+        };
+
+        if !supported_order_types.contains(&order_type) {
+            return Err(OrderDeniedReason::UnsupportedOrderType { order_type });
         }
 
-        let is_spread = self.http_client.is_spread(order.instrument_id());
         if is_spread && order.is_reduce_only() {
             return Err(OrderDeniedReason::UnsupportedReduceOnly);
         }
 
         okx_algo_target_currency(
-            okx_instrument_type_from_symbol(order.instrument_id().symbol.as_str()),
+            instrument_type,
             trade_mode,
             order.order_side(),
-            order.order_type(),
+            order_type,
             order.is_quote_quantity(),
         )?;
 
         validate_algo_trigger_type(
-            okx_instrument_type_from_symbol(order.instrument_id().symbol.as_str()),
+            instrument_type,
             trade_mode,
-            order.order_type(),
+            order_type,
             order.trigger_type(),
         )
         .map_err(|detail| OrderDeniedReason::ValidationFailed { detail })?;
 
         if order.is_reduce_only()
             && okx_reduce_only_wire_value(
-                okx_instrument_type_from_symbol(order.instrument_id().symbol.as_str()),
+                instrument_type,
                 trade_mode,
                 order.order_side(),
                 None,
@@ -3062,22 +3083,7 @@ impl OKXExecutionClient {
         }
 
         if !is_spread && !OKX_CONDITIONAL_ORDER_TYPES.contains(&order.order_type()) {
-            let instrument = self
-                .http_client
-                .get_instrument(&order.instrument_id().symbol.inner());
-
             validate_limit_price(order, instrument.as_ref(), submission, params)?;
-
-            let instrument_type = instrument
-                .as_ref()
-                .map(okx_instrument_type)
-                .transpose()
-                .map_err(|e| OrderDeniedReason::ValidationFailed {
-                    detail: e.to_string(),
-                })?
-                .unwrap_or_else(|| {
-                    okx_instrument_type_from_symbol(order.instrument_id().symbol.as_str())
-                });
 
             let outcome = get_param_as_string(params, "outcome");
             validate_order_time_in_force(Some(order.time_in_force()))
@@ -4756,7 +4762,7 @@ mod tests {
         identifiers::{OrderListId, Symbol, TradeId, TraderId},
         instruments::{
             CryptoFuture, Instrument,
-            stubs::{crypto_future_btcusdt, currency_pair_ethusdt},
+            stubs::{binary_option, crypto_future_btcusdt, currency_pair_ethusdt},
         },
         orders::{OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
@@ -8274,6 +8280,155 @@ mod tests {
         client.config.instrument_types = vec![OKXInstrumentType::Spot, OKXInstrumentType::Option];
         client.update_position_mode().await.unwrap();
         server.abort();
+    }
+
+    #[rstest]
+    fn test_validate_order_allows_event_limit_using_cached_product_type() {
+        let client = build_test_exec_client();
+        let instrument_id = InstrumentId::from("BTC-ABOVE-DAILY-260224-C.OKX");
+        let mut instrument = binary_option();
+        instrument.id = instrument_id;
+        instrument.raw_symbol = instrument_id.symbol;
+        client
+            .http_client
+            .cache_instrument(InstrumentAny::BinaryOption(instrument));
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("OEVENTLIMIT"))
+            .quantity(Quantity::from("2"))
+            .price(Price::from("0.42"))
+            .build();
+        let params = Params::new([("outcome".to_string(), Value::String("yes".into()))].into());
+
+        assert_eq!(
+            client.validate_order(
+                &order,
+                OKXTradeMode::Isolated,
+                OrderSubmission::Single,
+                Some(&params),
+            ),
+            Ok(())
+        );
+    }
+
+    #[rstest]
+    #[case::option_market("ETH-USD-271231-2000-C.OKX", OrderType::Market, false)]
+    #[case::option_market_to_limit("ETH-USD-271231-2000-C.OKX", OrderType::MarketToLimit, false)]
+    #[case::option_stop("ETH-USD-271231-2000-C.OKX", OrderType::StopMarket, false)]
+    #[case::option_list("ETH-USD-271231-2000-C.OKX", OrderType::Market, true)]
+    #[case::spread_market("BCH-USDT_BCH-USDT-SWAP.OKX", OrderType::Market, false)]
+    #[case::spread_stop("BCH-USDT_BCH-USDT-SWAP.OKX", OrderType::StopMarket, false)]
+    #[case::event_market("BTC-ABOVE-DAILY-261224-1600-65000.OKX", OrderType::Market, false)]
+    #[case::event_stop("BTC-ABOVE-DAILY-261224-1600-65000.OKX", OrderType::StopMarket, false)]
+    #[case::event_market_list("BTC-ABOVE-DAILY-261224-1600-65000.OKX", OrderType::Market, true)]
+    fn test_submit_denies_unsupported_product_order_type(
+        #[case] instrument: &str,
+        #[case] order_type: OrderType,
+        #[case] list: bool,
+    ) {
+        let (mut client, cache) = build_test_exec_client_with_cache();
+        client.http_client = OKXHttpClient::with_credentials(
+            Some("key".into()),
+            Some("secret".into()),
+            Some("pass".into()),
+            Some("http://127.0.0.1:1".into()),
+            5,
+            0,
+            1,
+            1,
+            OKXEnvironment::Demo,
+            None,
+        )
+        .unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+        let instrument_id = InstrumentId::from(instrument);
+
+        let params = Params::new(
+            [
+                ("outcome".to_string(), Value::String("yes".into())),
+                ("td_mode".to_string(), Value::String("isolated".into())),
+            ]
+            .into(),
+        );
+
+        if okx_instrument_type_from_symbol(instrument_id.symbol.as_str())
+            == OKXInstrumentType::Events
+        {
+            let mut event = binary_option();
+            event.id = instrument_id;
+            event.raw_symbol = instrument_id.symbol;
+            client
+                .http_client
+                .cache_instrument(InstrumentAny::BinaryOption(event));
+        }
+
+        let order = OrderTestBuilder::new(order_type)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("OUNSUPPORTEDTYPE"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("2"))
+            .trigger_price(Price::from("2000.00"))
+            .trigger_type(TriggerType::LastPrice)
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+            .unwrap();
+
+        if list {
+            let order_list = OrderList::new(
+                OrderListId::from("OL-UNSUPPORTED-TYPE"),
+                instrument_id,
+                order.strategy_id(),
+                vec![order.client_order_id()],
+                UnixNanos::default(),
+            );
+
+            client
+                .submit_order_list(SubmitOrderList::new(
+                    client.core.trader_id,
+                    Some(*OKX_CLIENT_ID),
+                    order.strategy_id(),
+                    order_list,
+                    vec![OrderInitialized::from(&order)],
+                    None,
+                    None,
+                    Some(params),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                ))
+                .unwrap();
+        } else {
+            let mut command = SubmitOrder::from_order(
+                &order,
+                client.core.trader_id,
+                Some(*OKX_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+            );
+            command.params = Some(params);
+            client.submit_order(command).unwrap();
+        }
+
+        let event = rx.try_recv().expect("missing OrderDenied");
+
+        let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+            panic!("Expected OrderDenied, was {event:?}");
+        };
+
+        assert_eq!(denied.client_order_id, order.client_order_id());
+        assert_eq!(
+            denied.reason.as_str(),
+            format!("UNSUPPORTED_ORDER_TYPE: {order_type}")
+        );
+        assert_eq!(
+            rx.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
+        assert!(client.pending_tasks.is_empty());
     }
 
     #[rstest]

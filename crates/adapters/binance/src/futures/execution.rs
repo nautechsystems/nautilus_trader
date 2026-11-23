@@ -1664,10 +1664,13 @@ fn build_futures_order_list_batch(
         .iter()
         .find(|order| is_algo_order_type(order.order_type()))
     {
-        return Err(format!(
-            "Binance Futures batch order submission does not support conditional order type {:?}",
-            order.order_type()
-        ));
+        return Err(OrderDeniedReason::UnsupportedOrderList {
+            detail: format!(
+                "Binance Futures batch submission does not support conditional order type {}",
+                order.order_type()
+            ),
+        }
+        .to_string());
     }
 
     let mut batch_items = Vec::with_capacity(orders.len());
@@ -1684,8 +1687,15 @@ fn build_futures_order_list_batch(
         }
 
         let binance_side = BinanceSide::try_from(order.order_side()).map_err(|e| e.to_string())?;
+
         let binance_order_type =
-            order_type_to_binance_futures(order.order_type()).map_err(|e| e.to_string())?;
+            order_type_to_binance_futures(order.order_type()).map_err(|e| {
+                OrderDeniedReason::UnsupportedOrderList {
+                    detail: e.to_string(),
+                }
+                .to_string()
+            })?;
+
         let lifetime = determine_futures_order_lifetime(
             product_type,
             order.order_type(),
@@ -4266,12 +4276,7 @@ fn validate_order(
     cmd: &SubmitOrder,
     order: &OrderAny,
 ) -> Result<ValidatedOrder, OrderDeniedReason> {
-    order_type_to_binance_futures(order.order_type()).map_err(|_| {
-        OrderDeniedReason::UnsupportedOrderType {
-            order_type: order.order_type(),
-        }
-    })?;
-
+    order_type_to_binance_futures(order.order_type())?;
     if let Some(offset_type) = order.trailing_offset_type() {
         if offset_type != TrailingOffsetType::BasisPoints {
             return Err(OrderDeniedReason::UnsupportedTrailingOffsetType { offset_type });
@@ -4598,13 +4603,14 @@ mod tests {
         enums::{AccountType, OmsType, OrderSide, OrderType},
         events::OrderEventAny,
         identifiers::{
-            AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
+            AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId,
+            VenueOrderId,
         },
         instruments::stubs::{
             btcusd_bybit, crypto_future_btcusdt, crypto_perpetual_ethusdt, currency_pair_btcusdt,
             perpetual_contract_eurusd,
         },
-        orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
+        orders::{OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
         types::{Price, Quantity},
     };
     use rstest::rstest;
@@ -5106,6 +5112,97 @@ mod tests {
         ));
         assert!(!is_instrument_for_product(&spot, BinanceProductType::UsdM));
         assert!(!is_instrument_for_product(&spot, BinanceProductType::CoinM));
+    }
+
+    #[rstest]
+    fn test_unsupported_order_type_denies_the_batch_with_a_list_reason() {
+        let (mut client, cache) = test_execution_client("http://127.0.0.1:1".to_string());
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let order_type = OrderType::MarketToLimit;
+        let order = OrderTestBuilder::new(order_type)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-UNSUPPORTED-TYPE"))
+            .quantity(Quantity::from("0.01"))
+            .build();
+        let limit = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-SUPPORTED-TYPE"))
+            .quantity(Quantity::from("0.02"))
+            .price(Price::from("50000"))
+            .build();
+        let command = SubmitOrder::from_order(
+            &order,
+            client.core.trader_id,
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        );
+        let orders = [limit, order];
+        for order in &orders {
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+
+        let strategy_id = orders[0].strategy_id();
+
+        let list = OrderList::new(
+            OrderListId::from("OL-UNSUPPORTED-TYPE"),
+            instrument_id,
+            strategy_id,
+            orders.iter().map(Order::client_order_id).collect(),
+            UnixNanos::default(),
+        );
+
+        let list_command = SubmitOrderList::new(
+            client.core.trader_id,
+            Some(*BINANCE_CLIENT_ID),
+            strategy_id,
+            list,
+            orders
+                .iter()
+                .map(|order| order.init_event().clone())
+                .collect(),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+
+        let single_result = validate_order(&client, &command, &orders[1]);
+        client.submit_order_list(list_command).unwrap();
+
+        assert_eq!(
+            single_result.err(),
+            Some(OrderDeniedReason::UnsupportedOrderType { order_type })
+        );
+
+        for order in &orders {
+            let event = rx.try_recv().unwrap();
+
+            let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+                panic!("Expected OrderDenied, was {event:?}");
+            };
+
+            assert_eq!(denied.client_order_id, order.client_order_id());
+            assert_eq!(
+                denied.reason,
+                "UNSUPPORTED_ORDER_LIST: UNSUPPORTED_ORDER_TYPE: MARKET_TO_LIMIT"
+            );
+        }
+
+        assert_eq!(
+            rx.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
+        assert!(client.pending_tasks.is_empty());
     }
 
     fn test_execution_client(

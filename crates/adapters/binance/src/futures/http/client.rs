@@ -40,7 +40,7 @@ use nautilus_model::{
         AggregationSource, AggressorSide, BarAggregation, BookType, MarketStatusAction, OrderSide,
         OrderType, TimeInForce,
     },
-    events::AccountState,
+    events::{AccountState, OrderDeniedReason},
     identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     instruments::{Instrument, any::InstrumentAny},
     orderbook::OrderBook,
@@ -4080,20 +4080,33 @@ pub fn is_algo_order_type(order_type: OrderType) -> bool {
     )
 }
 
+const BINANCE_FUTURES_SUPPORTED_ORDER_TYPES: &[(OrderType, BinanceFuturesOrderType)] = &[
+    (OrderType::Market, BinanceFuturesOrderType::Market),
+    (OrderType::Limit, BinanceFuturesOrderType::Limit),
+    (OrderType::StopMarket, BinanceFuturesOrderType::StopMarket),
+    (OrderType::StopLimit, BinanceFuturesOrderType::Stop),
+    (
+        OrderType::MarketIfTouched,
+        BinanceFuturesOrderType::TakeProfitMarket,
+    ),
+    (
+        OrderType::LimitIfTouched,
+        BinanceFuturesOrderType::TakeProfit,
+    ),
+    (
+        OrderType::TrailingStopMarket,
+        BinanceFuturesOrderType::TrailingStopMarket,
+    ),
+];
+
 /// Converts a Nautilus order type to a Binance Futures order type.
 pub(crate) fn order_type_to_binance_futures(
     order_type: OrderType,
-) -> anyhow::Result<BinanceFuturesOrderType> {
-    match order_type {
-        OrderType::Market => Ok(BinanceFuturesOrderType::Market),
-        OrderType::Limit => Ok(BinanceFuturesOrderType::Limit),
-        OrderType::StopMarket => Ok(BinanceFuturesOrderType::StopMarket),
-        OrderType::StopLimit => Ok(BinanceFuturesOrderType::Stop),
-        OrderType::MarketIfTouched => Ok(BinanceFuturesOrderType::TakeProfitMarket),
-        OrderType::LimitIfTouched => Ok(BinanceFuturesOrderType::TakeProfit),
-        OrderType::TrailingStopMarket => Ok(BinanceFuturesOrderType::TrailingStopMarket),
-        _ => anyhow::bail!("Unsupported order type for Binance Futures: {order_type:?}"),
-    }
+) -> Result<BinanceFuturesOrderType, OrderDeniedReason> {
+    BINANCE_FUTURES_SUPPORTED_ORDER_TYPES
+        .iter()
+        .find_map(|(supported, venue_type)| (*supported == order_type).then_some(*venue_type))
+        .ok_or(OrderDeniedReason::UnsupportedOrderType { order_type })
 }
 
 #[cfg(test)]

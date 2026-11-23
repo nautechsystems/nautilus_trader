@@ -606,10 +606,9 @@ Nautilus order fields:
 - `STOP_LIMIT` GTC -> `stop_limit_stop_limit_gtc`, GTD ->
   `stop_limit_stop_limit_gtd`. Stop direction is derived from the order
   side (`Buy` -> `STOP_DIRECTION_STOP_UP`, `Sell` -> `STOP_DIRECTION_STOP_DOWN`).
-- `STOP_MARKET`, `MARKET_IF_TOUCHED`, `LIMIT_IF_TOUCHED`, and trailing-stop
-  variants are not supported by Coinbase. They surface as `OrderRejected`
-  carrying the `build_order_configuration` error from the spawned submit
-  task (the order is emitted as `OrderSubmitted` first).
+- For `STOP_MARKET`, `MARKET_TO_LIMIT`, `MARKET_IF_TOUCHED`, `LIMIT_IF_TOUCHED`, and trailing-stop
+  variants, the adapter emits `OrderDenied` with `UNSUPPORTED_ORDER_TYPE` and stops submission
+  before an `OrderSubmitted` event or HTTP request.
 
 On a successful HTTP create, an `OrderAccepted` is emitted carrying the
 venue order ID returned in `success_response.order_id`. On a `success=false`

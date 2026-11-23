@@ -2196,7 +2196,24 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
     }
 }
 
+const IB_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
+    OrderType::Market,
+    OrderType::Limit,
+    OrderType::StopMarket,
+    OrderType::StopLimit,
+    OrderType::MarketToLimit,
+    OrderType::MarketIfTouched,
+    OrderType::LimitIfTouched,
+    OrderType::TrailingStopMarket,
+    OrderType::TrailingStopLimit,
+];
+
 fn validate_order(order: &impl Order) -> Result<(), OrderDeniedReason> {
+    let order_type = order.order_type();
+    if !IB_SUPPORTED_ORDER_TYPES.contains(&order_type) {
+        return Err(OrderDeniedReason::UnsupportedOrderType { order_type });
+    }
+
     if order.is_reduce_only() {
         return Err(OrderDeniedReason::UnsupportedReduceOnly);
     }

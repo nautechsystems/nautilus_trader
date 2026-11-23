@@ -49,6 +49,8 @@ use crate::{
     websocket::client::KalshiWebSocketClient,
 };
 
+const KALSHI_SUPPORTED_ORDER_TYPES: &[OrderType] = &[OrderType::Limit];
+
 pub(super) struct Submission {
     pub(super) order: OrderAny,
     pub(super) position_qty: Option<Decimal>,
@@ -353,7 +355,7 @@ pub fn request(
     shard: u32,
     subaccount: u32,
 ) -> Result<CreateOrderRequest, OrderDeniedReason> {
-    if order.order_type() != OrderType::Limit {
+    if !KALSHI_SUPPORTED_ORDER_TYPES.contains(&order.order_type()) {
         return Err(OrderDeniedReason::UnsupportedOrderType {
             order_type: order.order_type(),
         });

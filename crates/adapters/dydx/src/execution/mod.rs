@@ -131,6 +131,15 @@ pub mod wallet;
 
 use block_time::BlockTimeMonitor;
 
+const DYDX_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
+    OrderType::Market,
+    OrderType::Limit,
+    OrderType::StopMarket,
+    OrderType::StopLimit,
+    OrderType::MarketIfTouched,
+    OrderType::LimitIfTouched,
+];
+
 const DYDX_INDEXER_REPORT_LIMIT: u32 = 1_000;
 
 /// Live execution client for the dYdX v4 exchange adapter.
@@ -1353,25 +1362,13 @@ impl ExecutionClient for DydxExecutionClient {
             return Ok(());
         }
 
-        match order.order_type() {
-            OrderType::Market
-            | OrderType::Limit
-            | OrderType::StopMarket
-            | OrderType::StopLimit
-            | OrderType::MarketIfTouched
-            | OrderType::LimitIfTouched => {}
-            OrderType::TrailingStopMarket | OrderType::TrailingStopLimit => {
-                let reason = "Trailing stop orders not supported by dYdX v4 protocol";
-                log::warn!("{reason}");
-                self.emitter.emit_order_denied(&order, reason);
-                return Ok(());
-            }
-            order_type => {
-                let reason = format!("Order type {order_type:?} not supported by dYdX");
-                log::warn!("{reason}");
-                self.emitter.emit_order_denied(&order, &reason);
-                return Ok(());
-            }
+        let order_type = order.order_type();
+        if !DYDX_SUPPORTED_ORDER_TYPES.contains(&order_type) {
+            let reason = OrderDeniedReason::UnsupportedOrderType { order_type }.to_string();
+
+            log::warn!("{reason}");
+            self.emitter.emit_order_denied(&order, &reason);
+            return Ok(());
         }
 
         let (tx_manager, broadcaster, order_builder) = match self.get_execution_components() {
@@ -3150,7 +3147,7 @@ mod tests {
         enums::OrderSide,
         identifiers::{Symbol, TraderId},
         instruments::{CryptoPerpetual, InstrumentAny},
-        orders::{Order as _, OrderAny},
+        orders::{Order as _, OrderAny, OrderTestBuilder},
         types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
@@ -3374,6 +3371,40 @@ mod tests {
             }
             event => panic!("Expected order denied event, was {event:?}"),
         }
+    }
+
+    #[rstest]
+    fn test_submit_order_denies_unsupported_order_type() {
+        let (client, cache, mut rx) = create_execution_client();
+        let order = OrderTestBuilder::new(OrderType::MarketToLimit)
+            .instrument_id(InstrumentId::from("BTC-USD-PERP.DYDX"))
+            .client_order_id(ClientOrderId::from("O-UNSUPPORTED-TYPE"))
+            .quantity(Quantity::from("0.1"))
+            .build();
+        cache_order(&cache, order.clone());
+        let command = SubmitOrder::from_order(
+            &order,
+            order.trader_id(),
+            Some(*DYDX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        );
+
+        client.submit_order(command).unwrap();
+
+        let event = recv_order_event(&mut rx);
+
+        let OrderEventAny::Denied(denied) = event else {
+            panic!("Expected OrderDenied, was {event:?}");
+        };
+
+        assert_eq!(denied.client_order_id, order.client_order_id());
+        assert_eq!(denied.reason, "UNSUPPORTED_ORDER_TYPE: MARKET_TO_LIMIT");
+        assert_eq!(
+            rx.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
     }
 
     #[rstest]

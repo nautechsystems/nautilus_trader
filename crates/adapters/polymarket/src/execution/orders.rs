@@ -70,6 +70,8 @@ use crate::{
     signing::eip712::OrderSigningContext,
 };
 
+const POLYMARKET_SUPPORTED_ORDER_TYPES: &[OrderType] = &[OrderType::Market, OrderType::Limit];
+
 impl PolymarketExecutionClient {
     pub(super) fn submit_limit_order(&self, order: OrderAny) {
         if let Err(reason) = PolymarketOrderBuilder::validate_limit_order(&order) {
@@ -448,18 +450,10 @@ impl PolymarketExecutionClient {
             return Ok(());
         }
 
-        match order.order_type() {
-            OrderType::Limit => self.submit_limit_order(order),
-            OrderType::Market => self.submit_market_order(order),
-            _ => {
-                self.emitter.emit_order_denied(
-                    &order,
-                    &OrderDeniedReason::UnsupportedOrderType {
-                        order_type: order.order_type(),
-                    }
-                    .to_string(),
-                );
-            }
+        match self.order_type_or_deny(&order) {
+            Some(OrderType::Market) => self.submit_market_order(order),
+            Some(_) => self.submit_limit_order(order),
+            None => {}
         }
         Ok(())
     }
@@ -487,19 +481,13 @@ impl PolymarketExecutionClient {
                 continue;
             }
 
-            match order.order_type() {
-                OrderType::Limit => {}
-                OrderType::Market => {
+            match self.order_type_or_deny(&order) {
+                Some(OrderType::Market) => {
                     self.submit_market_order(order);
                     continue;
                 }
-                other => {
-                    self.emitter.emit_order_denied(
-                        &order,
-                        &OrderDeniedReason::UnsupportedOrderType { order_type: other }.to_string(),
-                    );
-                    continue;
-                }
+                Some(_) => {}
+                None => continue,
             }
 
             if let Err(reason) = PolymarketOrderBuilder::validate_limit_order(&order) {
@@ -724,6 +712,17 @@ impl PolymarketExecutionClient {
 
             Ok(())
         });
+    }
+
+    fn order_type_or_deny(&self, order: &OrderAny) -> Option<OrderType> {
+        let order_type = order.order_type();
+        if POLYMARKET_SUPPORTED_ORDER_TYPES.contains(&order_type) {
+            return Some(order_type);
+        }
+
+        let reason = OrderDeniedReason::UnsupportedOrderType { order_type };
+        self.emitter.emit_order_denied(order, &reason.to_string());
+        None
     }
 
     fn prepare_limit_order_request(

@@ -2380,12 +2380,25 @@ impl ExecutionClient for BinanceSpotExecutionClient {
     }
 }
 
+const BINANCE_SPOT_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
+    OrderType::Market,
+    OrderType::Limit,
+    OrderType::StopMarket,
+    OrderType::StopLimit,
+    OrderType::MarketIfTouched,
+    OrderType::LimitIfTouched,
+];
+
 fn validate_order(order: &impl Order, use_gtd: bool) -> Result<(), OrderDeniedReason> {
     if order.is_reduce_only() {
         return Err(OrderDeniedReason::UnsupportedReduceOnly);
     }
 
     let order_type = order.order_type();
+    if !BINANCE_SPOT_SUPPORTED_ORDER_TYPES.contains(&order_type) {
+        return Err(OrderDeniedReason::UnsupportedOrderType { order_type });
+    }
+
     let venue_type = order_type_to_binance_spot(order_type, order.is_post_only())
         .map_err(|_| OrderDeniedReason::UnsupportedOrderType { order_type })?;
 

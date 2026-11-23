@@ -65,7 +65,8 @@ use crate::{
     common::{
         consts::{
             HYPERLIQUID_BUILDER_APPROVAL_DOCS_URL, HYPERLIQUID_BUILDER_FEE_NOT_APPROVED,
-            HYPERLIQUID_POST_ONLY_WOULD_MATCH, HYPERLIQUID_VENUE,
+            HYPERLIQUID_POST_ONLY_WOULD_MATCH, HYPERLIQUID_SUPPORTED_ORDER_TYPES,
+            HYPERLIQUID_VENUE,
         },
         credential::Secrets,
         enums::{HyperliquidAccountAbstraction, HyperliquidProductType},
@@ -978,13 +979,9 @@ impl ExecutionClient for HyperliquidExecutionClient {
         }
 
         if let Err(e) = self.validate_order_submission(&order) {
-            self.emitter.emit_order_denied(
-                &order,
-                &OrderDeniedReason::ValidationFailed {
-                    detail: e.to_string(),
-                }
-                .to_string(),
-            );
+            let reason = submission_validation_reason(&e, ToString::to_string);
+
+            self.emitter.emit_order_denied(&order, &reason);
             return Ok(());
         }
 
@@ -1194,13 +1191,11 @@ impl ExecutionClient for HyperliquidExecutionClient {
                     valid_orders.push(order.clone());
                 }
                 Err(e) => {
-                    self.emitter.emit_order_denied(
-                        order,
-                        &OrderDeniedReason::ValidationFailed {
-                            detail: format!("Order conversion failed: {e}"),
-                        }
-                        .to_string(),
-                    );
+                    let reason = submission_validation_reason(&e, |e| {
+                        format!("Order conversion failed: {e}")
+                    });
+
+                    self.emitter.emit_order_denied(order, &reason);
                 }
             }
         }
@@ -4233,6 +4228,21 @@ fn order_normal_tpsl_submission(
     pairs.into_iter().unzip()
 }
 
+fn submission_validation_reason(
+    error: &anyhow::Error,
+    detail: impl FnOnce(&anyhow::Error) -> String,
+) -> String {
+    error.downcast_ref::<OrderDeniedReason>().map_or_else(
+        || {
+            OrderDeniedReason::ValidationFailed {
+                detail: detail(error),
+            }
+            .to_string()
+        },
+        ToString::to_string,
+    )
+}
+
 /// Validates that an order is acceptable for submission to Hyperliquid.
 ///
 /// Checks symbol format, order type support, and HIP-4-specific restrictions
@@ -4251,18 +4261,12 @@ pub fn validate_order_for_hyperliquid(order: &OrderAny) -> anyhow::Result<()> {
         )
     })?;
 
-    match order.order_type() {
-        OrderType::Market
-        | OrderType::Limit
-        | OrderType::StopMarket
-        | OrderType::StopLimit
-        | OrderType::MarketIfTouched
-        | OrderType::LimitIfTouched => {}
-        _ => anyhow::bail!(
-            "Unsupported order type for Hyperliquid: {:?}",
-            order.order_type()
-        ),
-    }
+    let order_type = order.order_type();
+    let unsupported_type = OrderDeniedReason::UnsupportedOrderType { order_type };
+    anyhow::ensure!(
+        HYPERLIQUID_SUPPORTED_ORDER_TYPES.contains(&order_type),
+        unsupported_type,
+    );
 
     // HIP-4 outcomes are fully-collateralized side tokens with no margin,
     // funding, or trigger machinery. Reject features that don't apply.
@@ -4271,13 +4275,10 @@ pub fn validate_order_for_hyperliquid(order: &OrderAny) -> anyhow::Result<()> {
             anyhow::bail!("Reduce-only is not supported for Hyperliquid HIP-4 outcomes: {symbol}");
         }
 
-        if !matches!(order.order_type(), OrderType::Market | OrderType::Limit) {
-            anyhow::bail!(
-                "Trigger order types are not supported for Hyperliquid HIP-4 outcomes: \
-                 {symbol} (received {:?})",
-                order.order_type()
-            );
-        }
+        anyhow::ensure!(
+            matches!(order_type, OrderType::Market | OrderType::Limit),
+            unsupported_type
+        );
     }
 
     if matches!(
@@ -8105,11 +8106,7 @@ mod tests {
     fn test_validate_rejects_outcome_trigger_order() {
         let order = outcome_stop_order("O-VAL-TRIG");
         let err = validate_order_for_hyperliquid(&order).unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("Trigger order types are not supported"),
-            "unexpected error: {err}",
-        );
+        assert_eq!(err.to_string(), "UNSUPPORTED_ORDER_TYPE: STOP_MARKET");
     }
 
     #[rstest]

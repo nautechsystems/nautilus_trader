@@ -16268,6 +16268,7 @@ enum SubmitDenial {
     NegativeFeeExponent,
     MarketInstrumentNotCached,
     UnsupportedOrderType,
+    UnsupportedOrderTypeInList,
 }
 
 #[rstest]
@@ -16275,6 +16276,7 @@ enum SubmitDenial {
 #[case::negative_fee_exponent(SubmitDenial::NegativeFeeExponent)]
 #[case::market_instrument_not_cached(SubmitDenial::MarketInstrumentNotCached)]
 #[case::unsupported_order_type(SubmitDenial::UnsupportedOrderType)]
+#[case::unsupported_order_type_in_list(SubmitDenial::UnsupportedOrderTypeInList)]
 #[tokio::test]
 async fn test_submit_order_denied_before_post(#[case] denial: SubmitDenial) {
     let state = TestServerState::default();
@@ -16313,7 +16315,7 @@ async fn test_submit_order_denied_before_post(#[case] denial: SubmitDenial) {
             make_market_order("O-DENY-INSTRUMENT", instrument_id, OrderSide::Buy, true),
             OrderDeniedReason::InstrumentNotFound { instrument_id }.to_string(),
         ),
-        SubmitDenial::UnsupportedOrderType => (
+        SubmitDenial::UnsupportedOrderType | SubmitDenial::UnsupportedOrderTypeInList => (
             make_stop_market_order("O-DENY-TYPE", instrument_id, OrderSide::Buy),
             OrderDeniedReason::UnsupportedOrderType {
                 order_type: OrderType::StopMarket,
@@ -16327,14 +16329,24 @@ async fn test_submit_order_denied_before_post(#[case] denial: SubmitDenial) {
         .add_order(order.clone(), None, None, false)
         .unwrap();
 
-    client
-        .submit_order(make_submit_cmd(&order, instrument_id))
-        .unwrap();
+    if matches!(denial, SubmitDenial::UnsupportedOrderTypeInList) {
+        client
+            .submit_order_list(make_submit_order_list_cmd(
+                instrument_id,
+                std::slice::from_ref(&order),
+            ))
+            .unwrap();
+    } else {
+        client
+            .submit_order(make_submit_cmd(&order, instrument_id))
+            .unwrap();
+    }
 
     let denied = assert_order_event(recv_execution_event(&mut rx).await, "Denied");
     assert_eq!(order_event_reason(&denied), expected_reason);
     assert_eq!(denied.client_order_id(), order.client_order_id());
     assert_eq!(*state.order_post_count.lock().await, 0);
+    assert_eq!(*state.batch_order_post_count.lock().await, 0);
     assert_no_execution_event(&mut rx).await;
 }
 

@@ -289,7 +289,9 @@ impl KrakenFuturesExecutionClient {
             return;
         }
 
-        if let Err(reason) = validate_order(order) {
+        if let Err(reason) = validate_order_type(order.order_type())
+            .and_then(|()| validate_client_order_id(order.client_order_id()))
+        {
             self.emitter.emit_order_denied(order, &reason.to_string());
             return;
         }
@@ -1437,11 +1439,11 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             orders.len()
         );
 
-        // A list's open members go out together or not at all, so no leg is stranded
+        // An invalid client order ID denies the whole list before any leg is sent
         if let Some(reason) = orders
             .iter()
             .filter(|order| !order.is_closed())
-            .find_map(|order| validate_order(order).err())
+            .find_map(|order| validate_client_order_id(order.client_order_id()).err())
         {
             for order in orders.iter().filter(|order| !order.is_closed()) {
                 self.emitter.emit_order_denied(order, &reason.to_string());
@@ -1465,6 +1467,11 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             // submit market orders individually
             if order.order_type() == OrderType::Market {
                 self.submit_single_order(order, "submit_order_list");
+                continue;
+            }
+
+            if let Err(reason) = validate_order_type(order.order_type()) {
+                self.emitter.emit_order_denied(order, &reason.to_string());
                 continue;
             }
 
@@ -2092,10 +2099,25 @@ impl KrakenFuturesExecutionClient {
     }
 }
 
-/// Checks an order against the venue's documented limits before it is submitted.
-fn validate_order(order: &OrderAny) -> Result<(), OrderDeniedReason> {
-    let len = order.client_order_id().as_str().len();
+const KRAKEN_FUTURES_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
+    OrderType::Market,
+    OrderType::Limit,
+    OrderType::StopMarket,
+    OrderType::StopLimit,
+    OrderType::MarketIfTouched,
+    OrderType::LimitIfTouched,
+];
 
+fn validate_order_type(order_type: OrderType) -> Result<(), OrderDeniedReason> {
+    if !KRAKEN_FUTURES_SUPPORTED_ORDER_TYPES.contains(&order_type) {
+        return Err(OrderDeniedReason::UnsupportedOrderType { order_type });
+    }
+
+    Ok(())
+}
+
+fn validate_client_order_id(client_order_id: ClientOrderId) -> Result<(), OrderDeniedReason> {
+    let len = client_order_id.as_str().len();
     if len > KRAKEN_FUTURES_MAX_CLIENT_ORDER_ID_LEN {
         return Err(OrderDeniedReason::InvalidClientOrderId {
             detail: format!(
