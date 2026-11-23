@@ -2124,6 +2124,9 @@ async fn test_futures_definition_replaces_inferred_year_and_preserves_venue(
     definition.expiration = 1_766_102_400_000_000_000;
     definition.raw_symbol = crate::common::str_to_cchar_array::<{ dbn::SYMBOL_CSTR_LEN }>("CLF6");
     definition.exchange = crate::common::str_to_cchar_array::<5>(exchange);
+    let mut missing_multiplier = definition.clone();
+    missing_multiplier.unit_of_measure_qty = dbn::UNDEF_PRICE;
+    missing_multiplier.expiration = dbn::UNDEF_TIMESTAMP;
 
     server.authenticate();
     server.expect_subscription();
@@ -2131,6 +2134,7 @@ async fn test_futures_definition_replaces_inferred_year_and_preserves_venue(
     server.send_record(symbol_mapping_msg(INSTRUMENT_ID, "CLF6"));
     server.send_record(quote.clone());
     server.send_record(definition);
+    server.send_record(missing_multiplier);
     server.send_record(symbol_mapping_msg(INSTRUMENT_ID, "CLF6"));
     server.send_record(quote);
 

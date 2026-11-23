@@ -32,7 +32,7 @@ use nautilus_model::{
         OptionKind, OrderSide, SettlementType,
     },
     identifiers::{InstrumentId, TradeId},
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     types::{
         Currency, Price, Quantity,
         fixed::{FIXED_PRECISION, FIXED_PRECISION_STANDARD, check_fixed_precision},
@@ -1381,6 +1381,51 @@ fn test_decode_definition_msg_option_contract(
     assert_eq!(put.raw_symbol.as_str(), "ESU6 P6575");
     assert_eq!(put.option_kind, OptionKind::Put);
     assert_eq!(put.strike_price, Price::from("6575.00"));
+}
+
+#[rstest]
+#[case("futures_contract", b'F', "ESU6.XCME")]
+#[case("option", b'C', "ESU6 C9600.XCME")]
+#[case("option", b'P', "ESU6 P6575.XCME")]
+fn test_glbx_outright_requires_multiplier(
+    #[case] fixture: &str,
+    #[case] class: u8,
+    #[case] instrument_id: InstrumentId,
+    #[values(0, dbn::UNDEF_PRICE)] missing: i64,
+) {
+    let path = test_data_path().join(format!("test_data.definition.{fixture}.dbn.zst"));
+    let mut stream = Decoder::from_zstd_file(path)
+        .unwrap()
+        .decode_stream::<dbn::InstrumentDefMsg>();
+
+    let mut msg = loop {
+        let msg = stream.next().unwrap().unwrap();
+        if msg.instrument_class as u8 == class {
+            break msg.clone();
+        }
+    };
+
+    msg.unit_of_measure_qty = 1_000_000_000;
+    let explicit = decode_instrument_def_msg(&msg, instrument_id, None, None)
+        .unwrap()
+        .unwrap();
+    msg.unit_of_measure_qty = missing;
+    let skipped = decode_instrument_def_msg(&msg, instrument_id, None, None).unwrap();
+    let error = if class == b'F' {
+        decode_futures_contract(&msg, instrument_id, None).unwrap_err()
+    } else {
+        decode_option_contract(&msg, instrument_id, None, None).unwrap_err()
+    };
+
+    assert_eq!(explicit.multiplier(), quantity(1));
+    assert!(skipped.is_none());
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "GLBX {} {instrument_id} has no multiplier in `unit_of_measure_qty`",
+            if class == b'F' { "future" } else { "option" }
+        )
+    );
 }
 
 #[rstest]

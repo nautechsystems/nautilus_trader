@@ -52,6 +52,7 @@ mod primitives;
 
 pub use custom::{decode_imbalance_msg, decode_statistics_msg, is_supported_stat_type};
 pub use expiration::{DatabentoDecodeConfig, OptionExpirationRule, corrected_option_expiration};
+pub(crate) use instruments::skip_glbx_outright_without_multiplier;
 pub use instruments::{
     decode_equity, decode_futures_contract, decode_futures_spread, decode_instrument_def_msg,
     decode_option_contract, decode_option_spread,

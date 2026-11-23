@@ -43,7 +43,9 @@ use super::{
 };
 use crate::{
     common::{build_publisher_venue_map, load_publishers},
-    decode::{DatabentoDecodeConfig, decode_instrument_def_msg},
+    decode::{
+        DatabentoDecodeConfig, decode_instrument_def_msg, skip_glbx_outright_without_multiplier,
+    },
     symbology::MetadataCache,
 };
 
@@ -268,8 +270,6 @@ impl DatabentoDataLoader {
         let decoder = Decoder::from_zstd_file(filepath)?;
         let mut dbn_stream = decoder.decode_stream::<InstrumentDefMsg>();
 
-        // Loop over skipped records (Ok(None)) so one unsupported class does not
-        // terminate the stream
         Ok(std::iter::from_fn(move || {
             loop {
                 let advance = dbn_stream
@@ -280,6 +280,9 @@ impl DatabentoDataLoader {
                 }
 
                 let rec = dbn_stream.get()?;
+                if skip_glbx_outright_without_multiplier(rec) {
+                    continue;
+                }
 
                 let result: anyhow::Result<Option<InstrumentAny>> = (|| {
                     let record = dbn::RecordRef::from(rec);
@@ -1718,6 +1721,39 @@ mod tests {
             InstrumentId::new(Symbol::from(raw), Venue::from("GLBX"))
         );
         assert_eq!(legacy_instruments[0].raw_symbol(), Symbol::from(raw));
+    }
+
+    #[rstest]
+    fn test_strict_loader_skips_glbx_definition_without_multiplier(
+        mut loader_without_seed: DatabentoDataLoader,
+    ) {
+        let path = test_data_path().join("test_data.definition.futures_contract.dbn.zst");
+        let mut decoder = Decoder::from_zstd_file(path).unwrap();
+        let metadata = decoder.metadata().clone();
+        let definition = decoder
+            .decode_record::<InstrumentDefMsg>()
+            .unwrap()
+            .unwrap()
+            .clone();
+        let mut missing_multiplier = definition.clone();
+        missing_multiplier.unit_of_measure_qty = dbn::UNDEF_PRICE;
+        missing_multiplier.exchange.fill(0);
+        let mut replay = tempfile::NamedTempFile::new().unwrap();
+
+        {
+            let mut encoder = dbn::encode::dbn::Encoder::with_zstd(&mut replay, &metadata).unwrap();
+            encoder.encode_record(&missing_multiplier).unwrap();
+            encoder.encode_record(&definition).unwrap();
+            encoder.flush().unwrap();
+        }
+
+        let instruments = loader_without_seed
+            .load_instruments(replay.path(), true, false, None)
+            .unwrap();
+
+        assert_eq!(instruments.len(), 1);
+        assert_eq!(instruments[0].id(), InstrumentId::from("ESU26.XCME"));
+        assert_eq!(instruments[0].multiplier(), Quantity::from(50));
     }
 
     #[rstest]

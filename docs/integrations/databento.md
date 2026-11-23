@@ -118,6 +118,13 @@ skipped. Index definitions come mainly from the Cboe Global Indices Feed (`MAIN.
 publishers. `publishers.json` lists every publisher ID with its dataset and venue. Open an issue if you need
 Nautilus modeling for these.
 
+For `GLBX.MDP3`, the adapter skips outright futures and options with a zero or undefined `unit_of_measure_qty`
+(the contract multiplier). The warning includes the raw symbol and Databento instrument ID. A skipped definition
+cannot supply the exchange venue, contract year, or price precision. Pass `price_precision` when requesting or
+subscribing to market data for these symbols where supported. The historical client and DBN loader also support
+`set_price_precision` for per-symbol overrides. When loading a single-instrument DBN file, you can also pass its
+`instrument_id`. See [Price precision](#price-precision).
+
 Statistics messages with `stat_type` values outside the modeled range (1-20) are
 also skipped with a warning. This includes the venue-specific values
 `VenueSpecificVolume1` (10001) and `VenueSpecificPrice1` (10002), which exceed

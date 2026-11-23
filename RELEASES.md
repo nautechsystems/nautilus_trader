@@ -88,6 +88,7 @@ Released on TBD (UTC).
 - Changed `ParquetDataCatalog::from_uri` to take `impl AsRef<Path>`; pass paths, not `&Cow<str>` values
 - Changed Databento and Interactive Brokers share-class stock IDs to use a space (`BRK B`) (#5606), thanks @mmatvien
 - Changed Databento generic loader bounds to `dbn::v3::HasRType` for DBN v1-v3 records
+- Changed Databento GLBX to skip outright futures and options with a missing multiplier. Supply `price_precision` for their market data
 - Changed `BinanceDataClientConfig` literals to require `use_usdm_raw_trades`. Use `false` for aggregate trades (#5643)
 - Changed `BinanceFuturesTradeMsg` literals to require `trade_type` (#5643)
 - Changed `BybitExecutionClientConfig` literals; add `load_ids: None`
