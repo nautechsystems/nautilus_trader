@@ -659,7 +659,7 @@ mod tests {
     #[case("O20260101000000ABC1", true)]
     #[case("E202611200910100010002E1", true)] // unhyphenated spawned order ID (issue #5717)
     #[case("E20261120091010001A1E1", true)] // unhyphenated spawned order ID avoiding collision
-    #[case("c023d8c0bdfd4399b101689255a621E1", true)] // 32-char UUID spawned order ID (issue #5717)
+    #[case("c023d8c0bdfd439101689255a6217bE1", true)] // 32-char UUID spawned order ID (issue #5717)
     #[case("O202611200910100010002-E1", false)] // hyphenated spawned order ID rejected
     #[case("aB9", true)]
     #[case("abcdefghij0123456789ABCDEFGHIJ12", true)] // exactly 32 chars

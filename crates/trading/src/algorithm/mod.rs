@@ -3409,7 +3409,7 @@ mod tests {
         assert_eq!(spawned.client_order_id.as_str().len(), 32);
         assert_eq!(
             spawned.client_order_id.as_str(),
-            "c023d8c0bdfd4399b101689255a621E1"
+            "c023d8c0bdfd439101689255a6217bE1"
         );
         assert_eq!(spawned.exec_spawn_id, Some(ClientOrderId::from(full_uuid)));
         assert_eq!(spawned.instrument_id, instrument_id);

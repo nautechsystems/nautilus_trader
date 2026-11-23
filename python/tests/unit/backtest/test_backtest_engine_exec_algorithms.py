@@ -119,35 +119,21 @@ class CustomExecutionAlgorithm(ExecutionAlgorithm):
         type(self).received_config = config
 
 
-class SubclassInitExecutionAlgorithmConfig(ExecutionAlgorithmConfig):
-    """
-    Subclass config that explicitly enables hyphens in client order IDs.
-    """
-
-    def __init__(self, **_kwargs: object) -> None:
-        """
-        Initialize the instance.
-        """
-        super().__init__(
-            use_hyphens_in_client_order_ids=True,
-            **_kwargs,
-        )
-
-
 class SubclassInitExecutionAlgorithm(ExecutionAlgorithm):
     """
     Subclass algorithm that constructs its config in __init__.
     """
 
-    received_config: SubclassInitExecutionAlgorithmConfig | None = None
+    received_config: ExecutionAlgorithmConfig | None = None
 
-    def __init__(self, config: SubclassInitExecutionAlgorithmConfig | None = None) -> None:
+    def __init__(self, config: ExecutionAlgorithmConfig | None = None) -> None:
         """
         Initialize the instance.
         """
         if config is None:
-            config = SubclassInitExecutionAlgorithmConfig(
+            config = ExecutionAlgorithmConfig(
                 exec_algorithm_id=ExecAlgorithmId("SUBCLASS-INIT"),
+                use_hyphens_in_client_order_ids=True,
             )
         super().__init__(config)
         type(self).received_config = config

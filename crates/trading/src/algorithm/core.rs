@@ -239,9 +239,11 @@ impl ExecutionAlgorithmCore {
             let base = base.replace('-', "");
             let max_base_len = 32_usize.saturating_sub(suffix.len());
             let trimmed_base = if base.len() > max_base_len {
-                &base[..max_base_len]
+                let head_len = max_base_len / 2;
+                let tail_len = max_base_len - head_len;
+                format!("{}{}", &base[..head_len], &base[base.len() - tail_len..])
             } else {
-                &base
+                base
             };
             ClientOrderId::new(format!("{trimmed_base}{suffix}"))
         }
@@ -601,11 +603,31 @@ mod tests {
 
         let child1 = core.spawn_client_order_id(&primary_uuid);
         assert_eq!(child1.as_str().len(), 32);
-        assert_eq!(child1.as_str(), "c023d8c0bdfd4399b101689255a621E1");
+        assert_eq!(child1.as_str(), "c023d8c0bdfd439101689255a6217bE1");
 
         let child2 = core.spawn_client_order_id(&primary_uuid);
         assert_eq!(child2.as_str().len(), 32);
-        assert_eq!(child2.as_str(), "c023d8c0bdfd4399b101689255a621E2");
+        assert_eq!(child2.as_str(), "c023d8c0bdfd439101689255a6217bE2");
+    }
+
+    #[rstest]
+    fn test_spawn_client_order_id_distinct_for_different_32_character_parents() {
+        let mut config = create_test_config();
+        config.use_hyphens_in_client_order_ids = Some(false);
+        let mut core = ExecutionAlgorithmCore::new(config);
+
+        // Two 32-character parent IDs sharing the same 30-character prefix with distinct trailing counters
+        let parent1 = ClientOrderId::new("O2026112009101000100000000000010");
+        let parent2 = ClientOrderId::new("O2026112009101000100000000000011");
+        assert_eq!(parent1.as_str().len(), 32);
+        assert_eq!(parent2.as_str().len(), 32);
+
+        let child1 = core.spawn_client_order_id(&parent1);
+        let child2 = core.spawn_client_order_id(&parent2);
+
+        assert_eq!(child1.as_str().len(), 32);
+        assert_eq!(child2.as_str().len(), 32);
+        assert_ne!(child1, child2);
     }
 
     #[rstest]
