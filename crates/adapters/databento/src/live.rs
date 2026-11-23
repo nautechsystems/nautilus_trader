@@ -38,7 +38,7 @@ use std::{
 
 use ahash::{AHashMap, HashSet, HashSetExt};
 use databento::{
-    dbn::{self, PitSymbolMap, SymbolIndex},
+    dbn::{self, PitSymbolMap, SymbolIndex, SymbolMappingRec, SystemRec},
     live::Subscription,
 };
 use indexmap::IndexMap;

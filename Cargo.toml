@@ -343,7 +343,7 @@ bollard = { version = "0.21.1", default-features = false, features = [
 bzip2 = "0.6.1"
 cosmrs = { version = "0.22.0", default-features = false }
 csv = "1.4.0"
-databento = { version = "0.63.0" }
+databento = { version = "0.65.0" }
 dydx-proto = { version = "0.4.0", default-features = false }
 fallible-streaming-iterator = "0.1.9"
 hypersync-client = { version = "2.0.0" }

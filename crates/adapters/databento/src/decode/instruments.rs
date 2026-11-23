@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use ahash::AHashMap;
-use databento::dbn;
+use databento::dbn::{self, InstrumentDefRec};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{AssetClass, ExerciseStyle, SettlementType},

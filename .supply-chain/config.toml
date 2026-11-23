@@ -1019,6 +1019,12 @@ criteria = "safe-to-deploy"
 version = "0.58.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.dbn]]
+version = "0.74.0"
+criteria = "safe-to-deploy"
+suggest = false
+notes = "The Databento adapter uses immutable record views. Its live, historical, and file decoding paths do not reach the blanket mutable record conversion. Reassess the exemption when the resolved DBN version or these call paths change."
+
 [[exemptions.dbn-macros]]
 version = "0.58.0"
 criteria = "safe-to-deploy"

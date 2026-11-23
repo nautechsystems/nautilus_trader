@@ -17,7 +17,7 @@ use core::fmt::NumBuffer;
 use std::{collections::VecDeque, ffi::c_char, num::NonZeroUsize};
 
 use ahash::AHashMap;
-use databento::dbn;
+use databento::dbn::{self, MboRec};
 use nautilus_core::{DurationNanos, UnixNanos};
 use nautilus_model::{
     data::{

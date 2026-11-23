@@ -20,7 +20,7 @@ use std::{
 
 use ahash::AHashMap;
 use anyhow::Context;
-use databento::dbn::{self, InstrumentDefMsg};
+use databento::dbn::{self, InstrumentDefMsg, InstrumentDefRec};
 use dbn::{
     Publisher,
     decode::{DbnMetadata, DecodeStream, dbn::Decoder},
@@ -372,7 +372,7 @@ impl DatabentoDataLoader {
         bars_timestamp_on_close: Option<bool>,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<(Option<Data>, Option<Data>)>> + '_>
     where
-        T: dbn::Record + dbn::HasRType + 'static,
+        T: dbn::v3::HasRType + 'static,
     {
         let decoder = Decoder::from_zstd_file(filepath)?;
         let mut metadata_cache = if instrument_id.is_none() {
@@ -807,7 +807,7 @@ impl DatabentoDataLoader {
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<InstrumentStatus>> + '_>
     where
-        T: dbn::Record + dbn::HasRType + 'static,
+        T: dbn::v3::HasRType + 'static,
     {
         let decoder = Decoder::from_zstd_file(filepath)?;
         let mut metadata_cache = if instrument_id.is_none() {
@@ -862,7 +862,7 @@ impl DatabentoDataLoader {
         price_precision: Option<u8>,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<DatabentoImbalance>> + '_>
     where
-        T: dbn::Record + dbn::HasRType + 'static,
+        T: dbn::v3::HasRType + 'static,
     {
         let decoder = Decoder::from_zstd_file(filepath)?;
         let mut metadata_cache = if instrument_id.is_none() {
@@ -932,7 +932,7 @@ impl DatabentoDataLoader {
         price_precision: Option<u8>,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<DatabentoStatistics>> + '_>
     where
-        T: dbn::Record + dbn::HasRType + 'static,
+        T: dbn::v3::HasRType + 'static,
     {
         let decoder = Decoder::from_zstd_file(filepath)?;
         let mut metadata_cache = if instrument_id.is_none() {

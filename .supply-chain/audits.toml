@@ -2529,6 +2529,12 @@ criteria = "safe-to-deploy"
 delta = "0.62.0 -> 0.63.0"
 notes = "Reviewed published live-reader delta and its existing DbnFsm batch API. Buffered records are drained before refill; read counts are bounded by supplied space, errors and heartbeat timeout remain explicit, and borrowed records retain the mutable client lifetime. Coordinated DBN and zstd upgrades add no network destination or credential behavior."
 
+[[audits.databento]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.63.0 -> 0.65.0"
+notes = "Reviewed the published batch, symbology, and live client changes. They reuse the existing HTTP transport and live gateway connection. The live client still returns immutable DBN record views. No new unsafe code, credentials, destinations, filesystem, or process behavior. DBN is covered separately."
+
 [[audits.datafusion]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -3440,6 +3446,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.70.0 -> 0.71.0"
 notes = "Published delta only changes the package version; no generated-code implementation change."
+
+[[audits.dbn-macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.71.0 -> 0.74.0"
+notes = "Reviewed source and code generation for v4 record header types, compile-time layout descriptions, field ordering, and Arrow attributes. Layout offsets come from the declared Rust structs. No new unsafe code, build script, network, filesystem, or process behavior."
 
 [[audits.defmt]]
 who = "Nautech Systems <info@nautechsystems.io>"

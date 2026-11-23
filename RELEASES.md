@@ -87,6 +87,7 @@ Released on TBD (UTC).
 - Changed `ParquetDataCatalog` typed queries such as `bars()` to return a builder; call `execute()`
 - Changed `ParquetDataCatalog::from_uri` to take `impl AsRef<Path>`; pass paths, not `&Cow<str>` values
 - Changed Databento and Interactive Brokers share-class stock IDs to use a space (`BRK B`) (#5606), thanks @mmatvien
+- Changed Databento generic loader bounds to `dbn::v3::HasRType` for DBN v1-v3 records
 - Changed `BinanceDataClientConfig` literals to require `use_usdm_raw_trades`. Use `false` for aggregate trades (#5643)
 - Changed `BinanceFuturesTradeMsg` literals to require `trade_type` (#5643)
 - Changed `BybitExecutionClientConfig` literals; add `load_ids: None`
@@ -294,6 +295,7 @@ Released on TBD (UTC).
 - Upgraded `arrow` and `parquet` crates to v59.3.3
 - Upgraded `bytes` crate to v1.12.2
 - Upgraded `clap` crate to v4.6.8
+- Upgraded `databento` crate to v0.65.0
 - Upgraded `datafusion` crate to v55.3.0
 - Upgraded `flate2` crate to v1.1.11
 - Upgraded `jiff` crate to v0.2.46
