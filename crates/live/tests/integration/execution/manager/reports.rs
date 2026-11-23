@@ -28,6 +28,290 @@ fn test_fill_deduplication_new_fill_not_processed() {
 }
 
 #[rstest]
+fn test_fill_deduplication_tracks_processed_fill() {
+    let mut ctx = TestContext::new();
+    let trade_id = TradeId::from("T-001");
+
+    ctx.manager
+        .mark_fill_processed(test_account_id(), test_instrument_id(), trade_id);
+
+    assert!(ctx.manager.is_fill_recently_processed(
+        test_account_id(),
+        test_instrument_id(),
+        trade_id
+    ));
+    assert!(!ctx.manager.is_fill_recently_processed(
+        test_account_id(),
+        test_instrument_id2(),
+        trade_id
+    ));
+    assert!(!ctx.manager.is_fill_recently_processed(
+        AccountId::from("BINANCE-002"),
+        test_instrument_id(),
+        trade_id
+    ));
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_fill_deduplication_prune_removes_expired() {
+    let mut ctx = TestContext::new();
+    let old_trade = TradeId::from("T-OLD");
+    let new_trade = TradeId::from("T-NEW");
+
+    ctx.manager
+        .mark_fill_processed(test_account_id(), test_instrument_id(), old_trade);
+    ctx.advance_both(dst::time::Duration::from_secs(120)).await;
+    ctx.manager
+        .mark_fill_processed(test_account_id(), test_instrument_id(), new_trade);
+
+    ctx.manager.prune_recent_fills_cache(60.0); // 60 second TTL
+
+    assert!(!ctx.manager.is_fill_recently_processed(
+        test_account_id(),
+        test_instrument_id(),
+        old_trade
+    ));
+    assert!(ctx.manager.is_fill_recently_processed(
+        test_account_id(),
+        test_instrument_id(),
+        new_trade
+    ));
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_fill_deduplication_prune_uses_monotonic_ttl() {
+    let mut ctx = TestContext::new();
+    let trade_id = TradeId::from("T-MONOTONIC");
+
+    ctx.manager
+        .mark_fill_processed(test_account_id(), test_instrument_id(), trade_id);
+    ctx.advance_time(120_000_000_000);
+    ctx.manager.prune_recent_fills_cache(60.0);
+    assert!(ctx.manager.is_fill_recently_processed(
+        test_account_id(),
+        test_instrument_id(),
+        trade_id
+    ));
+
+    advance_clock(dst::time::Duration::from_secs(61)).await;
+    ctx.manager.prune_recent_fills_cache(60.0);
+    assert!(!ctx.manager.is_fill_recently_processed(
+        test_account_id(),
+        test_instrument_id(),
+        trade_id
+    ));
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_prune_recent_fills_cache_keeps_all_on_overflow_ttl() {
+    // Positive-overflow and infinity TTLs must saturate to keep-all.
+    let mut ctx = TestContext::new();
+    let trade_id = TradeId::from("T-KEEP");
+    ctx.manager
+        .mark_fill_processed(test_account_id(), test_instrument_id(), trade_id);
+    advance_clock(dst::time::Duration::from_nanos(1)).await;
+
+    ctx.manager.prune_recent_fills_cache(1.0e30);
+    assert!(
+        ctx.manager
+            .is_fill_recently_processed(test_account_id(), test_instrument_id(), trade_id),
+        "overflowing TTL must keep entries, not prune them",
+    );
+
+    ctx.manager.prune_recent_fills_cache(f64::INFINITY);
+    assert!(
+        ctx.manager
+            .is_fill_recently_processed(test_account_id(), test_instrument_id(), trade_id),
+        "infinite TTL must keep entries",
+    );
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_prune_recent_fills_cache_prunes_all_on_negative_or_nan_ttl() {
+    // Negative and NaN TTLs fall back to a zero TTL, matching the old cast.
+    let mut ctx = TestContext::new();
+
+    ctx.manager.mark_fill_processed(
+        test_account_id(),
+        test_instrument_id(),
+        TradeId::from("T-NEG"),
+    );
+    advance_clock(dst::time::Duration::from_nanos(1)).await;
+    ctx.manager.prune_recent_fills_cache(-1.0);
+    assert!(!ctx.manager.is_fill_recently_processed(
+        test_account_id(),
+        test_instrument_id(),
+        TradeId::from("T-NEG"),
+    ));
+
+    ctx.manager.mark_fill_processed(
+        test_account_id(),
+        test_instrument_id(),
+        TradeId::from("T-NAN"),
+    );
+    advance_clock(dst::time::Duration::from_nanos(1)).await;
+    ctx.manager.prune_recent_fills_cache(f64::NAN);
+    assert!(!ctx.manager.is_fill_recently_processed(
+        test_account_id(),
+        test_instrument_id(),
+        TradeId::from("T-NAN"),
+    ));
+}
+
+#[rstest]
+fn test_observe_fill_report_does_not_mark_fill_processed() {
+    // Incoming fill reports record activity only. Normal-live fill dedup marking
+    // follows the separate order-event observation path.
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let trade_id = TradeId::from("T-001");
+
+    ctx.add_instrument(test_instrument());
+
+    let fill_report = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        VenueOrderId::from("V-001"),
+        trade_id,
+        OrderSide::Buy,
+        Quantity::from("1.0"),
+        Price::from("3000.00"),
+        Money::new(0.0, Currency::USDT()),
+        LiquiditySide::Maker,
+        Some(ClientOrderId::from("O-001")),
+        None, // venue_position_id
+        UnixNanos::from(2_000_000),
+        UnixNanos::from(2_000_000),
+        None, // report_id
+    );
+
+    let report = ExecutionReport::Fill(Box::new(fill_report));
+
+    ctx.manager.observe_execution_report(&report);
+
+    // observe_execution_report should not mark fills as processed.
+    assert!(
+        !ctx.manager
+            .is_fill_recently_processed(test_account_id(), instrument_id, trade_id)
+    );
+}
+
+#[rstest]
+fn test_observe_fill_report_without_client_order_id_uses_cache_fallback() {
+    let config = ExecutionManagerConfig {
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 5,
+        open_check_threshold_ns: DurationNanos::from_secs(1),
+        max_single_order_queries_per_cycle: 5,
+        ..Default::default()
+    };
+
+    let mut ctx = TestContext::with_config(config);
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let trade_id = TradeId::from("T-FALLBACK");
+
+    ctx.add_instrument(test_instrument());
+    insert_accepted_limit_order(&ctx, client_order_id, venue_order_id, test_client_id());
+
+    // Register inflight so we can verify activity recording deferred the check
+    ctx.manager.register_inflight(client_order_id, UUID4::new());
+
+    // Create fill report without client_order_id
+    let fill_report = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        venue_order_id,
+        trade_id,
+        OrderSide::Buy,
+        Quantity::from("1.0"),
+        Price::from("3000.00"),
+        Money::new(0.0, Currency::USDT()),
+        LiquiditySide::Maker,
+        None, // No client_order_id: triggers cache fallback
+        None,
+        UnixNanos::from(2_000_000),
+        UnixNanos::from(2_000_000),
+        None,
+    );
+
+    let report = ExecutionReport::Fill(Box::new(fill_report));
+
+    // observe should resolve client_order_id via cache and record activity
+    ctx.manager.observe_execution_report(&report);
+
+    let queries = ctx.manager.check_open_order_queries();
+    assert!(queries.is_empty());
+}
+
+#[tokio::test]
+async fn test_zero_quantity_fill_does_not_refresh_recency() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let trade_id = TradeId::from("T-ZERO-RECENCY");
+    let mut order = create_accepted_order(
+        "O-ZERO-RECENCY",
+        instrument.id(),
+        OrderSide::Buy,
+        "2.0",
+        "3000.00",
+        VenueOrderId::from("V-ZERO-RECENCY"),
+    );
+    let event = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(trade_id),
+        None,
+        Some(Price::from("3000.00")),
+        Some(Quantity::from("1.0")),
+        Some(LiquiditySide::Maker),
+        None,
+        None,
+        Some(test_account_id()),
+    );
+    order.apply(event.clone()).unwrap();
+    ctx.add_order(order);
+
+    let OrderEventAny::Filled(fill) = event else {
+        panic!("Expected fill");
+    };
+
+    let mut zero = fill.clone();
+    zero.last_qty = Quantity::zero(1);
+
+    ctx.manager.commit_recent_fill_if_applied(&zero);
+
+    assert!(
+        !ctx.manager
+            .is_fill_recently_processed(test_account_id(), instrument.id(), trade_id)
+    );
+
+    ctx.manager.commit_recent_fill_if_applied(&fill);
+
+    assert!(
+        ctx.manager
+            .is_fill_recently_processed(test_account_id(), instrument.id(), trade_id)
+    );
+}
+
+#[rstest]
 #[case::unchanged(None, "3.000", "0.75 USDT")]
 #[case::partial_opening(Some("0.500"), "2.500", "0.625 USDT")]
 #[case::entire_opening(Some("1.000"), "2.000", "0.50 USDT")]
@@ -253,191 +537,6 @@ fn test_position_fill_report_preserves_netting_void_behavior(
     assert_eq!(position.quantity, Quantity::from("1.000"));
     assert!(ctx.manager.position_contains_fill_report(&report));
     assert!(!ctx.manager.position_contains_fill_report(&corrected_report));
-}
-
-#[rstest]
-fn test_fill_deduplication_tracks_processed_fill() {
-    let mut ctx = TestContext::new();
-    let trade_id = TradeId::from("T-001");
-
-    ctx.manager
-        .mark_fill_processed(test_account_id(), test_instrument_id(), trade_id);
-
-    assert!(ctx.manager.is_fill_recently_processed(
-        test_account_id(),
-        test_instrument_id(),
-        trade_id
-    ));
-    assert!(!ctx.manager.is_fill_recently_processed(
-        test_account_id(),
-        test_instrument_id2(),
-        trade_id
-    ));
-    assert!(!ctx.manager.is_fill_recently_processed(
-        AccountId::from("BINANCE-002"),
-        test_instrument_id(),
-        trade_id
-    ));
-}
-
-#[cfg_attr(
-    not(all(feature = "simulation", madsim)),
-    tokio::test(start_paused = true)
-)]
-#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
-async fn test_fill_deduplication_prune_removes_expired() {
-    let mut ctx = TestContext::new();
-    let old_trade = TradeId::from("T-OLD");
-    let new_trade = TradeId::from("T-NEW");
-
-    ctx.manager
-        .mark_fill_processed(test_account_id(), test_instrument_id(), old_trade);
-    ctx.advance_both(dst::time::Duration::from_secs(120)).await;
-    ctx.manager
-        .mark_fill_processed(test_account_id(), test_instrument_id(), new_trade);
-
-    ctx.manager.prune_recent_fills_cache(60.0); // 60 second TTL
-
-    assert!(!ctx.manager.is_fill_recently_processed(
-        test_account_id(),
-        test_instrument_id(),
-        old_trade
-    ));
-    assert!(ctx.manager.is_fill_recently_processed(
-        test_account_id(),
-        test_instrument_id(),
-        new_trade
-    ));
-}
-
-#[cfg_attr(
-    not(all(feature = "simulation", madsim)),
-    tokio::test(start_paused = true)
-)]
-#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
-async fn test_fill_deduplication_prune_uses_monotonic_ttl() {
-    let mut ctx = TestContext::new();
-    let trade_id = TradeId::from("T-MONOTONIC");
-
-    ctx.manager
-        .mark_fill_processed(test_account_id(), test_instrument_id(), trade_id);
-    ctx.advance_time(120_000_000_000);
-    ctx.manager.prune_recent_fills_cache(60.0);
-    assert!(ctx.manager.is_fill_recently_processed(
-        test_account_id(),
-        test_instrument_id(),
-        trade_id
-    ));
-
-    advance_clock(dst::time::Duration::from_secs(61)).await;
-    ctx.manager.prune_recent_fills_cache(60.0);
-    assert!(!ctx.manager.is_fill_recently_processed(
-        test_account_id(),
-        test_instrument_id(),
-        trade_id
-    ));
-}
-
-#[cfg_attr(
-    not(all(feature = "simulation", madsim)),
-    tokio::test(start_paused = true)
-)]
-#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
-async fn test_prune_recent_fills_cache_keeps_all_on_overflow_ttl() {
-    // Positive-overflow and infinity TTLs must saturate to keep-all.
-    let mut ctx = TestContext::new();
-    let trade_id = TradeId::from("T-KEEP");
-    ctx.manager
-        .mark_fill_processed(test_account_id(), test_instrument_id(), trade_id);
-    advance_clock(dst::time::Duration::from_nanos(1)).await;
-
-    ctx.manager.prune_recent_fills_cache(1.0e30);
-    assert!(
-        ctx.manager
-            .is_fill_recently_processed(test_account_id(), test_instrument_id(), trade_id),
-        "overflowing TTL must keep entries, not prune them",
-    );
-
-    ctx.manager.prune_recent_fills_cache(f64::INFINITY);
-    assert!(
-        ctx.manager
-            .is_fill_recently_processed(test_account_id(), test_instrument_id(), trade_id),
-        "infinite TTL must keep entries",
-    );
-}
-
-#[cfg_attr(
-    not(all(feature = "simulation", madsim)),
-    tokio::test(start_paused = true)
-)]
-#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
-async fn test_prune_recent_fills_cache_prunes_all_on_negative_or_nan_ttl() {
-    // Negative and NaN TTLs fall back to a zero TTL, matching the old cast.
-    let mut ctx = TestContext::new();
-
-    ctx.manager.mark_fill_processed(
-        test_account_id(),
-        test_instrument_id(),
-        TradeId::from("T-NEG"),
-    );
-    advance_clock(dst::time::Duration::from_nanos(1)).await;
-    ctx.manager.prune_recent_fills_cache(-1.0);
-    assert!(!ctx.manager.is_fill_recently_processed(
-        test_account_id(),
-        test_instrument_id(),
-        TradeId::from("T-NEG"),
-    ));
-
-    ctx.manager.mark_fill_processed(
-        test_account_id(),
-        test_instrument_id(),
-        TradeId::from("T-NAN"),
-    );
-    advance_clock(dst::time::Duration::from_nanos(1)).await;
-    ctx.manager.prune_recent_fills_cache(f64::NAN);
-    assert!(!ctx.manager.is_fill_recently_processed(
-        test_account_id(),
-        test_instrument_id(),
-        TradeId::from("T-NAN"),
-    ));
-}
-
-#[rstest]
-fn test_observe_fill_report_does_not_mark_fill_processed() {
-    // Incoming fill reports record activity only. Normal-live fill dedup marking
-    // follows the separate order-event observation path.
-    let mut ctx = TestContext::new();
-    let instrument_id = test_instrument_id();
-    let trade_id = TradeId::from("T-001");
-
-    ctx.add_instrument(test_instrument());
-
-    let fill_report = FillReport::new(
-        test_account_id(),
-        instrument_id,
-        VenueOrderId::from("V-001"),
-        trade_id,
-        OrderSide::Buy,
-        Quantity::from("1.0"),
-        Price::from("3000.00"),
-        Money::new(0.0, Currency::USDT()),
-        LiquiditySide::Maker,
-        Some(ClientOrderId::from("O-001")),
-        None, // venue_position_id
-        UnixNanos::from(2_000_000),
-        UnixNanos::from(2_000_000),
-        None, // report_id
-    );
-
-    let report = ExecutionReport::Fill(Box::new(fill_report));
-
-    ctx.manager.observe_execution_report(&report);
-
-    // observe_execution_report should not mark fills as processed.
-    assert!(
-        !ctx.manager
-            .is_fill_recently_processed(test_account_id(), instrument_id, trade_id)
-    );
 }
 
 #[rstest]
@@ -891,103 +990,4 @@ fn test_empty_terminal_bundle_preserves_size_before_authoritative_fill() {
     assert_eq!(closed.price(), Some(Price::from("3000.00")));
     assert_eq!(positions.len(), 1);
     assert_eq!(positions[0].quantity, Quantity::from("1.5"));
-}
-
-#[rstest]
-fn test_observe_fill_report_without_client_order_id_uses_cache_fallback() {
-    let config = ExecutionManagerConfig {
-        inflight_threshold_ms: 100,
-        inflight_max_retries: 5,
-        open_check_threshold_ns: DurationNanos::from_secs(1),
-        max_single_order_queries_per_cycle: 5,
-        ..Default::default()
-    };
-
-    let mut ctx = TestContext::with_config(config);
-    let instrument_id = test_instrument_id();
-    let client_order_id = ClientOrderId::from("O-001");
-    let venue_order_id = VenueOrderId::from("V-001");
-    let trade_id = TradeId::from("T-FALLBACK");
-
-    ctx.add_instrument(test_instrument());
-    insert_accepted_limit_order(&ctx, client_order_id, venue_order_id, test_client_id());
-
-    // Register inflight so we can verify activity recording deferred the check
-    ctx.manager.register_inflight(client_order_id, UUID4::new());
-
-    // Create fill report without client_order_id
-    let fill_report = FillReport::new(
-        test_account_id(),
-        instrument_id,
-        venue_order_id,
-        trade_id,
-        OrderSide::Buy,
-        Quantity::from("1.0"),
-        Price::from("3000.00"),
-        Money::new(0.0, Currency::USDT()),
-        LiquiditySide::Maker,
-        None, // No client_order_id: triggers cache fallback
-        None,
-        UnixNanos::from(2_000_000),
-        UnixNanos::from(2_000_000),
-        None,
-    );
-
-    let report = ExecutionReport::Fill(Box::new(fill_report));
-
-    // observe should resolve client_order_id via cache and record activity
-    ctx.manager.observe_execution_report(&report);
-
-    let queries = ctx.manager.check_open_order_queries();
-    assert!(queries.is_empty());
-}
-
-#[tokio::test]
-async fn test_zero_quantity_fill_does_not_refresh_recency() {
-    let mut ctx = TestContext::new();
-    let instrument = test_instrument();
-    let trade_id = TradeId::from("T-ZERO-RECENCY");
-    let mut order = create_accepted_order(
-        "O-ZERO-RECENCY",
-        instrument.id(),
-        OrderSide::Buy,
-        "2.0",
-        "3000.00",
-        VenueOrderId::from("V-ZERO-RECENCY"),
-    );
-    let event = TestOrderEventStubs::filled(
-        &order,
-        &instrument,
-        Some(trade_id),
-        None,
-        Some(Price::from("3000.00")),
-        Some(Quantity::from("1.0")),
-        Some(LiquiditySide::Maker),
-        None,
-        None,
-        Some(test_account_id()),
-    );
-    order.apply(event.clone()).unwrap();
-    ctx.add_order(order);
-
-    let OrderEventAny::Filled(fill) = event else {
-        panic!("Expected fill");
-    };
-
-    let mut zero = fill.clone();
-    zero.last_qty = Quantity::zero(1);
-
-    ctx.manager.commit_recent_fill_if_applied(&zero);
-
-    assert!(
-        !ctx.manager
-            .is_fill_recently_processed(test_account_id(), instrument.id(), trade_id)
-    );
-
-    ctx.manager.commit_recent_fill_if_applied(&fill);
-
-    assert!(
-        ctx.manager
-            .is_fill_recently_processed(test_account_id(), instrument.id(), trade_id)
-    );
 }

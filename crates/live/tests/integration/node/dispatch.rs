@@ -112,11 +112,12 @@ async fn test_run_publishes_queue_state_after_dispatch_sample() {
 }
 
 #[rstest]
+#[case::data(false, false)]
+#[case::data_with_slow_timer(false, true)]
+#[case::execution(true, false)]
+#[case::execution_with_slow_timer(true, true)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_run_dispatch_progress_under_load(
-    #[values(false, true)] execution: bool,
-    #[values(false, true)] slow: bool,
-) {
+async fn test_run_dispatch_progress_under_load(#[case] execution: bool, #[case] slow: bool) {
     let config = LiveNodeConfig {
         delay_post_stop: Duration::ZERO,
         ..Default::default()

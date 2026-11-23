@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_model::events::order::spec::OrderEmulatedSpec;
+
 use super::*;
 
 #[rstest]
@@ -4153,15 +4155,14 @@ async fn test_reconciled_oto_parent_exit_recovers_only_in_its_position_lifecycle
         .reduce_only(true)
         .build();
     child
-        .apply(OrderEventAny::Emulated(OrderEmulated::new(
-            child.trader_id(),
-            strategy_id,
-            instrument_id,
-            child_id,
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-        )))
+        .apply(OrderEventAny::Emulated(
+            OrderEmulatedSpec::builder()
+                .trader_id(child.trader_id())
+                .strategy_id(strategy_id)
+                .instrument_id(instrument_id)
+                .client_order_id(child_id)
+                .build(),
+        ))
         .unwrap();
     ctx.add_order(child);
 

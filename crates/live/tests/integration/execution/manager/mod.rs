@@ -75,7 +75,7 @@ use nautilus_model::{
         OrderStatus, OrderType, PositionSide, TimeInForce, TriggerType,
     },
     events::{
-        OrderEmulated, OrderEventAny, OrderFilled, PositionEvent,
+        OrderEventAny, OrderFilled, PositionEvent,
         account::state::AccountState,
         order::spec::{
             OrderAcceptedSpec, OrderCancelRejectedSpec, OrderFillVoidedSpec,
@@ -153,24 +153,10 @@ impl TestContext {
         let cache = Rc::new(RefCell::new(cache));
 
         // Add test account to cache (required for position creation in ExecutionEngine)
-        let account_state = AccountState::new(
-            test_account_id(),
-            AccountType::Margin,
-            vec![AccountBalance::new(
-                Money::from("1000000 USDT"),
-                Money::from("0 USDT"),
-                Money::from("1000000 USDT"),
-            )],
-            vec![],
-            true,
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            Some(Currency::USDT()),
-        );
-
-        let account = AccountAny::Margin(MarginAccount::new(account_state, true));
-        cache.borrow_mut().add_account(account).unwrap();
+        cache
+            .borrow_mut()
+            .add_account(funded_margin_account(test_account_id()))
+            .unwrap();
 
         let manager =
             ExecutionManager::new(clock.clone(), cache.clone(), config).expect("valid config");
@@ -248,25 +234,31 @@ impl TestContext {
     }
 
     fn add_margin_account(&self, account_id: AccountId) {
-        let account_state = AccountState::new(
-            account_id,
-            AccountType::Margin,
-            vec![AccountBalance::new(
-                Money::from("1000000 USDT"),
-                Money::from("0 USDT"),
-                Money::from("1000000 USDT"),
-            )],
-            vec![],
-            true,
-            UUID4::new(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            Some(Currency::USDT()),
-        );
-
-        let account = AccountAny::Margin(MarginAccount::new(account_state, true));
-        self.cache.borrow_mut().add_account(account).unwrap();
+        self.cache
+            .borrow_mut()
+            .add_account(funded_margin_account(account_id))
+            .unwrap();
     }
+}
+
+fn funded_margin_account(account_id: AccountId) -> AccountAny {
+    let account_state = AccountState::new(
+        account_id,
+        AccountType::Margin,
+        vec![AccountBalance::new(
+            Money::from("1000000 USDT"),
+            Money::from("0 USDT"),
+            Money::from("1000000 USDT"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Some(Currency::USDT()),
+    );
+
+    AccountAny::Margin(MarginAccount::new(account_state, true))
 }
 
 fn test_instrument() -> InstrumentAny {

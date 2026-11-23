@@ -276,60 +276,6 @@ nautilus_execution_algorithm!(TestExecutionAlgorithm, {
     }
 });
 
-#[rstest]
-fn test_handle_initial_state() {
-    let handle = LiveNodeHandle::new();
-
-    assert_eq!(handle.state(), NodeState::Idle);
-    assert!(!handle.should_stop());
-    assert!(!handle.is_running());
-}
-
-#[rstest]
-fn test_handle_stop_sets_flag() {
-    let handle = LiveNodeHandle::new();
-
-    handle.stop();
-
-    assert!(handle.should_stop());
-}
-
-#[rstest]
-fn test_handle_clone_shares_state() {
-    let handle1 = LiveNodeHandle::new();
-    let handle2 = handle1.clone();
-
-    handle1.stop();
-
-    assert!(handle2.should_stop());
-}
-
-#[rstest]
-fn test_builder_rejects_backtest_environment() {
-    let result = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Backtest);
-
-    assert!(result.is_err());
-    let err = result.unwrap_err().to_string();
-    assert!(
-        err.contains("Backtest"),
-        "Expected Backtest error, was: {err}"
-    );
-}
-
-#[rstest]
-fn test_builder_accepts_sandbox() {
-    let result = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox);
-
-    assert!(result.is_ok());
-}
-
-#[rstest]
-fn test_builder_accepts_live() {
-    let result = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Live);
-
-    assert!(result.is_ok());
-}
-
 // -- LiveNode construction tests (require process isolation via nextest) --------------------------
 // These tests initialize global logging state and require isolated processes.
 // Run with: cargo nextest run -p nautilus-live --test integration node::
@@ -4128,6 +4074,96 @@ pub(crate) mod serial_tests {
         assert!(state.disconnect_attempted.load(Ordering::Relaxed));
         assert_eq!(handle.state(), NodeState::Stopped);
         assert!(!state.connected.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[case::start(false)]
+    #[case::run(true)]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_startup_reconciliation_shares_deadline_across_clients(#[case] run: bool) {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecutionEngineConfig {
+                reconciliation: true,
+                ..Default::default()
+            },
+            timeout_reconciliation: Duration::from_millis(100),
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+
+        let mut builder = LiveNodeBuilder::from_config(config).unwrap();
+
+        let states = [("ALPHA", "ALPHA-001"), ("BETA", "BETA-001")].map(|(venue, account_id)| {
+            let state = StartupMassStatusClientState {
+                mass_status_delay: Duration::from_millis(60),
+                ..Default::default()
+            };
+
+            (Venue::from(venue), AccountId::from(account_id), state)
+        });
+
+        for (venue, account_id, state) in &states {
+            let factory = StartupMassStatusExecutionClientFactory::new(
+                state.clone(),
+                StartupMassStatusBehavior::Unavailable,
+            )
+            .with_identity(ClientId::from(venue.as_str()), *account_id, *venue);
+
+            builder = builder
+                .add_exec_client(
+                    Some(venue.to_string()),
+                    Box::new(factory),
+                    Box::new(StartupMassStatusExecutionClientConfig),
+                )
+                .unwrap();
+        }
+
+        let mut node = builder.build().unwrap();
+        let [_, last_client]: [ClientId; 2] = node
+            .kernel()
+            .exec_engine
+            .borrow()
+            .client_ids()
+            .try_into()
+            .unwrap();
+
+        let quantity_on_start = Rc::new(Cell::new(None));
+        node.add_strategy(PositionStartupStrategy {
+            core: StrategyCore::new(StrategyConfig::default()),
+            handle: node.handle(),
+            quantity_on_start: quantity_on_start.clone(),
+        })
+        .unwrap();
+
+        let error = dst::time::timeout(Duration::from_secs(1), async {
+            if run {
+                node.run().await
+            } else {
+                node.start().await
+            }
+        })
+        .await
+        .expect("startup should finish within the test timeout")
+        .expect_err("both requests must share the startup reconciliation deadline");
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Startup reconciliation timeout reached while requesting mass status from {last_client}"
+            )
+        );
+        assert_eq!(quantity_on_start.get(), None);
+        assert_eq!(node.state(), NodeState::Stopped);
+
+        for (_, _, state) in states {
+            assert!(state.mass_status_requested.load(Ordering::Relaxed));
+            assert!(state.disconnect_attempted.load(Ordering::Relaxed));
+            assert!(!state.connected.load(Ordering::Relaxed));
+        }
     }
 
     #[rstest]

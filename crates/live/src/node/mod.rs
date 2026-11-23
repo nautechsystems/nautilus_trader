@@ -3589,8 +3589,8 @@ mod tests {
             order::{
                 OrderEventType,
                 spec::{
-                    OrderAcceptedSpec, OrderPendingCancelSpec, OrderPendingUpdateSpec,
-                    OrderUpdatedSpec,
+                    OrderAcceptedSpec, OrderFilledSpec, OrderPendingCancelSpec,
+                    OrderPendingUpdateSpec, OrderSubmittedSpec, OrderUpdatedSpec,
                 },
             },
         },
@@ -9621,13 +9621,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_builder_creation() {
-        let result = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox);
-
-        assert!(result.is_ok());
-    }
-
-    #[rstest]
     fn test_stream_processor_receives_unregistered_typed_payload() {
         let mut node = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox)
             .unwrap()
@@ -9705,25 +9698,21 @@ mod tests {
     }
 
     #[rstest]
-    fn test_builder_rejects_backtest() {
-        let result = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Backtest);
+    #[case::live(Environment::Live, Ok(()))]
+    #[case::sandbox(Environment::Sandbox, Ok(()))]
+    #[case::backtest(
+        Environment::Backtest,
+        Err("LiveNode cannot be used with Backtest environment")
+    )]
+    fn test_builder_validates_environment(
+        #[case] environment: Environment,
+        #[case] expected: Result<(), &str>,
+    ) {
+        let result = LiveNode::builder(TraderId::from("TRADER-001"), environment)
+            .map(|_| ())
+            .map_err(|e| e.to_string());
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Backtest"));
-    }
-
-    #[rstest]
-    fn test_builder_accepts_live_environment() {
-        let result = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Live);
-
-        assert!(result.is_ok());
-    }
-
-    #[rstest]
-    fn test_builder_accepts_sandbox_environment() {
-        let result = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox);
-
-        assert!(result.is_ok());
+        assert_eq!(result, expected.map_err(str::to_owned));
     }
 
     #[rstest]
@@ -10368,115 +10357,101 @@ mod tests {
     }
 
     #[rstest]
-    fn test_flush_all_pending_buffers_submitted_batch_as_individual_events() {
-        let (_time_tx, mut time_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<TimeEventMessage>>();
-        let (_system_evt_tx, mut system_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<SystemEvent>>();
-        let (_system_cmd_tx, mut system_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<SystemCommand>>();
-        let (_data_evt_tx, mut data_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataEvent>>();
-        let (_data_cmd_tx, mut data_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataCommand>>();
-        let (exec_evt_tx, mut exec_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<ExecutionEvent>>();
-        let (_exec_cmd_tx, mut exec_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<TradingCommandMessage>>();
-
-        let mut pending = PendingEvents::default();
-
-        exec_evt_tx
-            .send((stub_submitted_batch_event()).into())
-            .unwrap();
-
-        let mut receivers = RunnerReceivers {
-            time_evt: &mut time_rx,
-            system_evt: &mut system_evt_rx,
-            system_cmd: &mut system_cmd_rx,
-            exec_evt: &mut exec_evt_rx,
-            exec_cmd: &mut exec_cmd_rx,
-            data_evt: &mut data_evt_rx,
-            data_cmd: &mut data_cmd_rx,
-        };
-
-        flush_all_pending(&mut pending, &mut receivers);
-
-        // Batch should be unpacked into individual Submitted events then drained
-        assert!(pending.order_evts.is_empty());
-        assert!(exec_evt_rx.try_recv().is_err());
-    }
-
-    #[rstest]
-    fn test_flush_all_pending_buffers_canceled_batch_as_individual_events() {
-        let (_time_tx, mut time_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<TimeEventMessage>>();
-        let (_system_evt_tx, mut system_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<SystemEvent>>();
-        let (_system_cmd_tx, mut system_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<SystemCommand>>();
-        let (_data_evt_tx, mut data_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataEvent>>();
-        let (_data_cmd_tx, mut data_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataCommand>>();
-        let (exec_evt_tx, mut exec_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<ExecutionEvent>>();
-        let (_exec_cmd_tx, mut exec_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<TradingCommandMessage>>();
-
-        let mut pending = PendingEvents::default();
-
-        exec_evt_tx
-            .send((stub_canceled_batch_event()).into())
-            .unwrap();
-
-        let mut receivers = RunnerReceivers {
-            time_evt: &mut time_rx,
-            system_evt: &mut system_evt_rx,
-            system_cmd: &mut system_cmd_rx,
-            exec_evt: &mut exec_evt_rx,
-            exec_cmd: &mut exec_cmd_rx,
-            data_evt: &mut data_evt_rx,
-            data_cmd: &mut data_cmd_rx,
-        };
-
-        flush_all_pending(&mut pending, &mut receivers);
-
-        // Batch should be unpacked into individual Canceled events then drained
-        assert!(pending.order_evts.is_empty());
-        assert!(exec_evt_rx.try_recv().is_err());
-    }
-
-    #[rstest]
     #[case::submitted(stub_submitted_batch_event, OrderEventType::Submitted, ["O-001", "O-002"])]
     #[case::accepted(stub_accepted_batch_event, OrderEventType::Accepted, ["O-017", "O-023"])]
     #[case::canceled(stub_canceled_batch_event, OrderEventType::Canceled, ["O-001", "O-002"])]
-    fn test_flush_all_pending_expands_batch_into_order_evts_before_drain(
+    #[tokio::test]
+    async fn test_startup_dispatches_buffered_order_and_batch_at_flush(
         #[case] make_event: fn() -> ExecutionEvent,
         #[case] event_type: OrderEventType,
         #[case] client_order_ids: [&str; 2],
+        #[values(false, true)] batch_during_connect: bool,
     ) {
-        let (exec_evt_tx, mut exec_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<ExecutionEvent>>();
+        let runner = AsyncRunner::new();
+        runner.bind_senders();
+        let sender = get_exec_event_sender();
+        let mut channels = runner.take_channels();
 
-        exec_evt_tx.send(make_event().into()).unwrap();
+        let mut receivers = RunnerReceivers {
+            time_evt: &mut channels.time_evt_rx,
+            system_evt: &mut channels.system_evt_rx,
+            system_cmd: &mut channels.system_cmd_rx,
+            exec_evt: &mut channels.exec_evt_rx,
+            exec_cmd: &mut channels.exec_cmd_rx,
+            data_evt: &mut channels.data_evt_rx,
+            data_cmd: &mut channels.data_cmd_rx,
+        };
 
-        let mut pending = PendingEvents::default();
-        while let Ok(evt) = exec_evt_rx.try_recv() {
-            pending.push_exec_event(evt);
+        let received = Rc::new(RefCell::new(Vec::new()));
+        msgbus::register_order_event_endpoint(
+            MessagingSwitchboard::exec_engine_process(),
+            TypedIntoHandler::from({
+                let received = received.clone();
+                move |event: OrderEventAny| {
+                    received
+                        .borrow_mut()
+                        .push((event.event_type(), event.client_order_id()));
+                }
+            }),
+        );
+
+        let buffered = ClientOrderId::from("O-BUFFERED");
+        let submitted = OrderSubmittedSpec::builder()
+            .client_order_id(buffered)
+            .build();
+        sender
+            .send(ExecutionEvent::Order(OrderEventAny::Submitted(submitted)))
+            .unwrap();
+
+        let trailing = ClientOrderId::from("O-TRAILING");
+
+        let send_batch_and_fill = || {
+            sender.send(make_event()).unwrap();
+            let fill = OrderFilledSpec::builder().client_order_id(trailing).build();
+            sender
+                .send(ExecutionEvent::Order(OrderEventAny::Filled(fill)))
+                .unwrap();
+        };
+
+        if batch_during_connect {
+            send_batch_and_fill();
         }
 
-        let (event_types, order_ids): (Vec<_>, Vec<_>) = pending
-            .order_evts
-            .drain(..)
-            .map(|event| event.dispatch(|event| (event.event_type(), event.client_order_id())))
-            .unzip();
-        assert_eq!(order_ids, client_order_ids.map(ClientOrderId::from));
-        assert!(
-            event_types
+        let mut pending = PendingEvents::default();
+
+        {
+            let (connected, connection) = tokio::sync::oneshot::channel();
+            let connecting = drive_with_event_buffering(connection, &mut pending, &mut receivers);
+            tokio::pin!(connecting);
+            assert!(futures_util::poll!(&mut connecting).is_pending());
+            connected.send(()).unwrap();
+            connecting.await.unwrap();
+        }
+
+        assert!(receivers.exec_evt.is_empty());
+        assert!(received.borrow().is_empty());
+
+        if !batch_during_connect {
+            send_batch_and_fill();
+        }
+
+        flush_all_pending(&mut pending, &mut receivers);
+
+        let received = received.borrow();
+        assert_eq!(
+            received
                 .iter()
-                .all(|actual_type| actual_type == &event_type)
+                .map(|(event_type, id)| (event_type, *id))
+                .collect::<Vec<_>>(),
+            [
+                (&OrderEventType::Submitted, buffered),
+                (&event_type, ClientOrderId::from(client_order_ids[0])),
+                (&event_type, ClientOrderId::from(client_order_ids[1])),
+                (&OrderEventType::Filled, trailing),
+            ]
         );
+        assert!(pending.is_empty());
+        assert!(channels.exec_evt_rx.try_recv().is_err());
     }
 
     #[rstest]

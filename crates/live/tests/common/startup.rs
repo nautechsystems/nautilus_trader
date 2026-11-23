@@ -20,6 +20,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
+    time::Duration,
 };
 
 use async_trait::async_trait;
@@ -29,7 +30,10 @@ use nautilus_common::{
     clients::ExecutionClient,
     clock::Clock,
     factories::{ClientConfig, ExecutionClientFactory},
-    live::runner::{get_data_event_sender, get_exec_event_sender},
+    live::{
+        dst::time,
+        runner::{get_data_event_sender, get_exec_event_sender},
+    },
     messages::{DataEvent, ExecutionEvent, execution::CancelOrder},
     msgbus::{self, MessagingSwitchboard},
     nautilus_actor,
@@ -72,6 +76,7 @@ pub(crate) struct StartupMassStatusClientState {
     pub(crate) factory_trader_id: Arc<Mutex<Option<TraderId>>>,
     pub(crate) factory_clock_id: Arc<Mutex<Option<usize>>>,
     pub(crate) mass_status_requested: Arc<AtomicBool>,
+    pub(crate) mass_status_delay: Duration,
     pub(crate) connect_account: Arc<Mutex<Option<AccountState>>>,
     pub(crate) connect_instrument: Arc<Mutex<Option<InstrumentAny>>>,
     pub(crate) recovered_instrument: Arc<Mutex<Option<InstrumentAny>>>,
@@ -301,6 +306,10 @@ impl ExecutionClient for StartupMassStatusExecutionClient {
         self.state
             .mass_status_requested
             .store(true, Ordering::Relaxed);
+
+        if !self.state.mass_status_delay.is_zero() {
+            time::sleep(self.state.mass_status_delay).await;
+        }
 
         let recovered = self.state.recovered_instrument.lock().take();
         if let Some(instrument) = recovered {
