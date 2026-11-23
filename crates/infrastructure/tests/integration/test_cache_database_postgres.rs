@@ -18,9 +18,11 @@
 #[cfg(target_os = "linux")] // Databases only tested and supported on Linux
 mod serial_tests {
     use std::{
-        cell::RefCell,
+        cell::{Cell, RefCell},
         collections::HashSet,
+        io::ErrorKind,
         panic::{AssertUnwindSafe, catch_unwind},
+        process::Command,
         rc::Rc,
         str::FromStr,
         time::Duration,
@@ -35,6 +37,7 @@ mod serial_tests {
             database::{CacheDatabaseAdapter, CacheDatabaseFactory, POSITION_OMS_KEY_PREFIX},
         },
         clock::VirtualClock,
+        enums::Environment,
         live::get_runtime,
         messages::execution::SubmitOrder,
         signal::Signal,
@@ -47,6 +50,10 @@ mod serial_tests {
         models::instruments::{InstrumentAnyRow, OptionSpreadRow},
         pg::{connect_pg, get_postgres_connect_options, init_postgres},
         queries::DatabaseQueries,
+    };
+    use nautilus_live::{
+        config::LiveExecutionEngineConfig,
+        node::{LiveNode, NodeState},
     };
     use nautilus_model::{
         accounts::{AccountAny, CashAccount},
@@ -161,6 +168,348 @@ mod serial_tests {
 
         assert_eq!(owner, trader_id);
         assert!(loaded.is_none());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_live_node_recovers_postgres_cache_on_current_thread() {
+        const CHILD: &str = "NAUTILUS_POSTGRES_RECOVERY_CHILD";
+
+        if std::env::var_os(CHILD).is_some() {
+            Box::pin(recover_postgres_cache_on_current_thread()).await;
+            return;
+        }
+
+        let test = "test_cache_database_postgres::serial_tests::test_live_node_recovers_postgres_cache_on_current_thread";
+        let executable = std::env::current_exe().unwrap();
+        let selection = Command::new(&executable)
+            .args(["--list", "--exact", test])
+            .output()
+            .unwrap();
+        assert!(selection.status.success());
+        assert!(
+            String::from_utf8_lossy(&selection.stdout)
+                .lines()
+                .any(|line| line.strip_suffix(": test") == Some(test)),
+            "PostgreSQL recovery child test is missing: {test}"
+        );
+
+        let mut child = Command::new(executable)
+            .args(["--exact", test, "--nocapture"])
+            .env(CHILD, "1")
+            .env("NAUTILUS_WORKER_THREADS", "1")
+            .spawn()
+            .unwrap();
+
+        let status = tokio::time::timeout(Duration::from_secs(20), async {
+            loop {
+                if let Some(status) = child.try_wait().unwrap() {
+                    break status;
+                }
+
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await;
+
+        match status {
+            Ok(status) => assert!(
+                status.success(),
+                "PostgreSQL recovery child exited with {status}"
+            ),
+            Err(_) => {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                panic!("PostgreSQL recovery exceeded the process deadline");
+            }
+        }
+    }
+
+    async fn recover_postgres_cache_on_current_thread() {
+        let trader_id = TraderId::from(format!("PG-RECOVERY-{}", UUID4::new()));
+        let config = PostgresCacheConfig::default();
+        let writer = config
+            .create(trader_id, UUID4::new(), CacheConfig::default())
+            .await
+            .unwrap();
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        add_test_instrument(writer.as_ref(), &instrument).await;
+        let client_id = ClientId::new("PG-RECOVERY-CLIENT");
+        let (order, position, account) = write_shared_state(
+            writer.as_ref(),
+            &instrument,
+            trader_id,
+            "1.0",
+            "1000000 USD",
+            client_id,
+        );
+        let key = "startup-recovery";
+        let value = Bytes::from(format!("persisted by {trader_id}"));
+        let options = get_postgres_connect_options(None, None, None, None, None);
+        let pool = connect_test_pg(options.into()).await.unwrap();
+        writer.add(key.to_string(), value.clone()).unwrap();
+        wait_until_async(
+            || async {
+                sqlx::query_scalar::<_, bool>(
+                    "SELECT EXISTS (SELECT 1 FROM general WHERE value = $1)",
+                )
+                .bind(value.as_ref())
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        drop(writer);
+        let order_id = order.client_order_id();
+        let position_id = position.id;
+
+        let mut lock = pool.begin().await.unwrap();
+        sqlx::query("LOCK TABLE order_position_index IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *lock)
+            .await
+            .unwrap();
+
+        let mut node = LiveNode::builder(trader_id, Environment::Live)
+            .unwrap()
+            .with_delay_post_stop_secs(0)
+            .with_exec_engine_config(LiveExecutionEngineConfig {
+                reconciliation: false,
+                load_cache: true,
+                ..Default::default()
+            })
+            .with_cache_database_factory(Box::new(config))
+            .build()
+            .unwrap();
+
+        let handle = node.handle();
+
+        let drive = async {
+            // Recovery must yield to this future while PostgreSQL waits for the index lock
+            wait_until_async(
+                || async {
+                    sqlx::query_scalar::<_, bool>(
+                        "SELECT EXISTS (SELECT 1 FROM pg_locks
+                         WHERE relation = 'order_position_index'::regclass
+                            AND mode = 'AccessShareLock' AND NOT granted)",
+                    )
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap()
+                },
+                Duration::from_secs(5),
+            )
+            .await;
+
+            lock.commit().await.unwrap();
+            wait_until_async(|| async { handle.is_running() }, Duration::from_secs(5)).await;
+            handle.stop();
+        };
+
+        let (result, ()) = tokio::join!(node.run(), drive);
+        result.unwrap();
+
+        {
+            let cache = node.kernel().cache();
+            let cache = cache.borrow();
+            assert_eq!(node.state(), NodeState::Stopped);
+            assert_eq!(cache.get(key).unwrap(), Some(&value));
+            assert_entirely_equal(&*cache.account(&account.id()).unwrap(), &account);
+            assert_entirely_equal(&*cache.order(&order_id).unwrap(), &order);
+            assert_entirely_equal(&*cache.position(&position_id).unwrap(), &position);
+            assert_eq!(cache.position_id(&order_id), Some(&position_id));
+            assert_eq!(cache.client_id(&order_id), Some(&client_id));
+        }
+
+        drop(node);
+
+        let reader = get_pg_cache_database(trader_id).await.unwrap();
+        assert_entirely_equal(
+            reader.load_account(&account.id()).await.unwrap(),
+            Some(account),
+        );
+        assert_entirely_equal(reader.load_order(&order_id).await.unwrap(), Some(order));
+        assert_entirely_equal(
+            &reader.load_position(&position_id).await.unwrap().unwrap(),
+            &position,
+        );
+        assert_entirely_equal(
+            &reader.load_positions().await.unwrap()[&position_id],
+            &position,
+        );
+        let runtime = get_runtime();
+        assert_eq!(runtime.metrics().num_workers(), 1);
+
+        let foreign = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let reader = foreign
+            .spawn(async move { get_pg_cache_database(trader_id).await.unwrap() })
+            .await
+            .unwrap();
+        let foreign_handle = foreign.handle().clone();
+        let (general, position_index, client_index) = runtime
+            .spawn(async move {
+                let _guard = foreign_handle.enter();
+
+                (
+                    reader.load().unwrap(),
+                    reader.load_index_order_position().unwrap(),
+                    reader.load_index_order_client().unwrap(),
+                )
+            })
+            .await
+            .unwrap();
+
+        foreign.shutdown_background();
+        assert_eq!(general.get(key), Some(&value));
+        assert_eq!(position_index, AHashMap::from([(order_id, position_id)]));
+        assert_eq!(client_index, AHashMap::from([(order_id, client_id)]));
+
+        DatabaseQueries::delete_trader(&pool, &trader_id)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_live_node_reports_postgres_connection_refused() {
+        let socket = tokio::net::TcpSocket::new_v4().unwrap();
+        socket.bind(([127, 0, 0, 1], 0).into()).unwrap();
+
+        let config = PostgresCacheConfig {
+            host: Some("127.0.0.1".to_string()),
+            port: Some(socket.local_addr().unwrap().port()),
+            ..Default::default()
+        };
+
+        let mut node = LiveNode::builder(TraderId::from("PG-REFUSED-001"), Environment::Live)
+            .unwrap()
+            .with_cache_database_factory(Box::new(config))
+            .build()
+            .unwrap();
+
+        let error = tokio::time::timeout(Duration::from_secs(40), node.run())
+            .await
+            .expect("PostgreSQL connection refusal exceeded the startup deadline")
+            .unwrap_err();
+
+        assert_eq!(error.to_string(), "failed to create cache database backing");
+        assert!(matches!(
+            error.downcast_ref::<sqlx::Error>(),
+            Some(sqlx::Error::PoolTimedOut)
+        ));
+        assert_eq!(node.state(), NodeState::Idle);
+        assert!(node.has_pending_cache_database());
+        assert!(!node.kernel().cache().borrow().has_backing());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_cache_factory_reports_postgres_writer_connection_failure() {
+        let options = get_postgres_connect_options(None, None, None, None, None);
+        let pool = connect_test_pg(options.clone().into()).await.unwrap();
+        let mut lock = pool.begin().await.unwrap();
+        sqlx::query("LOCK TABLE account_event IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *lock)
+            .await
+            .unwrap();
+
+        let proxy = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+
+        let config = PostgresCacheConfig {
+            host: Some("127.0.0.1".to_string()),
+            port: Some(proxy.local_addr().unwrap().port()),
+            username: Some(options.username),
+            password: Some(options.password),
+            database: Some(options.database),
+        };
+
+        let accept_new_connections = Cell::new(true);
+
+        let serve = async {
+            loop {
+                let (mut client, _) = proxy.accept().await.unwrap();
+
+                if !accept_new_connections.get() {
+                    continue;
+                }
+
+                let host = options.host.clone();
+                let port = options.port;
+
+                tokio::spawn(async move {
+                    if host.starts_with('/') {
+                        let path = format!("{host}/.s.PGSQL.{port}");
+                        let mut backend = tokio::net::UnixStream::connect(path).await.unwrap();
+                        let _ = tokio::io::copy_bidirectional(&mut client, &mut backend).await;
+                    } else {
+                        let mut backend = tokio::net::TcpStream::connect((host.as_str(), port))
+                            .await
+                            .unwrap();
+                        let _ = tokio::io::copy_bidirectional(&mut client, &mut backend).await;
+                    }
+                });
+            }
+        };
+
+        let deny_writer = async {
+            // Reject new connections only after the read pool reaches its last validation query
+            wait_until_async(
+                || async {
+                    sqlx::query_scalar::<_, bool>(
+                        "SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+                         WHERE datname = current_database() AND wait_event_type = 'Lock'
+                            AND query LIKE '%FROM \"account_event\"%'
+                            AND query LIKE '%trader_id IS NULL%')",
+                    )
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap()
+                },
+                POSTGRES_SETUP_TIMEOUT,
+            )
+            .await;
+
+            accept_new_connections.set(false);
+            lock.commit().await.unwrap();
+        };
+
+        let trader_id = TraderId::from("PG-WRITER-REFUSED-001");
+
+        let start = async {
+            tokio::join!(
+                config.create(trader_id, UUID4::new(), CacheConfig::default()),
+                deny_writer
+            )
+            .0
+        };
+
+        let result = tokio::time::timeout(POSTGRES_SETUP_TIMEOUT, async {
+            tokio::select! {
+                result = start => result,
+                () = serve => unreachable!(),
+            }
+        })
+        .await
+        .unwrap();
+
+        let error = result.err().expect("factory accepted an unusable writer");
+
+        assert!(
+            matches!(
+                error.downcast_ref::<sqlx::Error>(),
+                Some(sqlx::Error::Io(e)) if matches!(
+                    e.kind(),
+                    ErrorKind::UnexpectedEof | ErrorKind::ConnectionReset | ErrorKind::BrokenPipe
+                )
+            ),
+            "expected the writer transport to close, error was {error:#}"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -4028,7 +4377,7 @@ mod serial_tests {
             })
     }
 
-    async fn add_test_instrument(pg_cache: &PostgresCacheDatabase, instrument: &InstrumentAny) {
+    async fn add_test_instrument(pg_cache: &dyn CacheDatabaseAdapter, instrument: &InstrumentAny) {
         pg_cache
             .add_currency(&instrument.base_currency().unwrap())
             .unwrap();
@@ -4553,7 +4902,7 @@ mod serial_tests {
     // Persists an order, a NETTING position, the order-position index, a client claim, both
     // snapshots and an account under the shared IDs, as a trader's node would
     fn write_shared_state(
-        pg_cache: &PostgresCacheDatabase,
+        pg_cache: &dyn CacheDatabaseAdapter,
         instrument: &InstrumentAny,
         trader_id: TraderId,
         quantity: &str,
@@ -4929,11 +5278,12 @@ mod serial_tests {
 
     #[rstest]
     #[case::accounts("account_event")]
+    #[case::invalid_account_kind("kind")]
     #[case::currencies("currency")]
     #[case::order_position_index("order_position_index")]
     #[case::order_client_index("client_id")]
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn test_engine_reload_preserves_account_on_read_error(#[case] missing: &str) {
+    async fn test_engine_reload_preserves_account_on_read_error(#[case] failure: &str) {
         let trader_id = TraderId::from("GENERAL-001");
         let mut writer = get_pg_cache_database(trader_id).await.unwrap();
         reset_test_database(&writer).await;
@@ -4949,21 +5299,25 @@ mod serial_tests {
         let mut engine = ExecutionEngine::new(clock, Rc::clone(&cache), None);
         engine.load_cache().await.unwrap();
 
-        let (hide, restore, expected_error) = if missing == "client_id" {
-            (
+        let (break_read, restore, expected_error) = match failure {
+            "kind" => (
+                "UPDATE account_event SET kind = 'INVALID'".to_string(),
+                "UPDATE account_event SET kind = 'CASH'".to_string(),
+                None,
+            ),
+            "client_id" => (
                 "ALTER TABLE order_event RENAME COLUMN client_id TO client_id_test".to_string(),
                 "ALTER TABLE order_event RENAME COLUMN client_id_test TO client_id".to_string(),
-                "column \"client_id\" does not exist".to_string(),
-            )
-        } else {
-            (
+                Some("column \"client_id\" does not exist".to_string()),
+            ),
+            missing => (
                 format!("ALTER TABLE {missing} RENAME TO engine_reload_test"),
                 format!("ALTER TABLE engine_reload_test RENAME TO {missing}"),
-                format!("relation \"{missing}\" does not exist"),
-            )
+                Some(format!("relation \"{missing}\" does not exist")),
+            ),
         };
 
-        sqlx::query(AssertSqlSafe(hide))
+        sqlx::query(AssertSqlSafe(break_read))
             .execute(&pool)
             .await
             .unwrap();
@@ -4974,7 +5328,17 @@ mod serial_tests {
             .unwrap();
 
         let error = result.unwrap_err();
-        assert!(format!("{error:#}").contains(&expected_error), "{error:#}");
+
+        match expected_error {
+            Some(expected) => assert!(format!("{error:#}").contains(&expected), "{error:#}"),
+            None => assert!(
+                error
+                    .downcast_ref::<tokio::task::JoinError>()
+                    .unwrap()
+                    .is_panic()
+            ),
+        }
+
         assert_entirely_equal(&*cache.borrow().account(&account.id()).unwrap(), &account);
 
         DatabaseQueries::truncate(&pool).await.unwrap();

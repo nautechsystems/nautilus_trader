@@ -120,6 +120,13 @@ pub struct CacheMap {
     pub yield_curves: AHashMap<String, YieldCurve>,
 }
 
+/// Persisted mappings from orders to their positions and execution clients.
+#[derive(Debug)]
+pub struct CacheOrderIndexes {
+    pub order_position: AHashMap<ClientOrderId, PositionId>,
+    pub order_client: AHashMap<ClientOrderId, ClientId>,
+}
+
 /// Factory for constructing cache database adapters at runtime.
 ///
 /// Implementations own the concrete database configuration and return the transport-neutral
@@ -186,6 +193,25 @@ pub trait CacheDatabaseAdapter {
             };
 
             Ok((self.load()?, cache))
+        })
+    }
+
+    /// Loads persisted order indexes during recovery.
+    ///
+    /// The default calls the synchronous index readers. Backends that support asynchronous reads
+    /// can override it to keep recovery from blocking the executor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either index read fails.
+    fn load_order_indexes(&self) -> LocalBoxFuture<'_, anyhow::Result<CacheOrderIndexes>> {
+        Box::pin(async move {
+            let order_position = self.load_index_order_position()?;
+            let order_client = self.load_index_order_client()?;
+            Ok(CacheOrderIndexes {
+                order_position,
+                order_client,
+            })
         })
     }
 

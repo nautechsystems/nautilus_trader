@@ -611,11 +611,7 @@ impl Cache {
         let (general, mut cache_map, order_indexes) = match &self.database {
             Some(db) => {
                 let (general, cache_map) = db.load_for_recovery(false).await?;
-
-                let order_indexes = (
-                    db.load_index_order_position()?,
-                    db.load_index_order_client()?,
-                );
+                let order_indexes = db.load_order_indexes().await?;
 
                 (general, cache_map, Some(order_indexes))
             }
@@ -659,9 +655,10 @@ impl Cache {
 
         self.restore_positions(cache_map.positions);
 
-        if let Some((order_position, order_client)) = order_indexes {
-            self.index.order_position = self.sanitize_order_position_index(order_position);
-            self.index.order_client = order_client;
+        if let Some(order_indexes) = order_indexes {
+            self.index.order_position =
+                self.sanitize_order_position_index(order_indexes.order_position);
+            self.index.order_client = order_indexes.order_client;
         }
 
         self.assign_position_ids_to_contingencies();

@@ -137,6 +137,7 @@ Released on TBD (UTC).
 - Fixed `OptionChainSlice` ignoring Greeks in `ts_event` and using trigger timestamps for `ts_init`
 - Fixed option-chain delta selection depending on the arrival order of Greeks conventions
 - Fixed delta option chains missing matching strikes outside the ATM fallback
+- Fixed PostgreSQL cache startup hanging on current-thread Tokio or panicking on connection failure
 - Fixed PostgreSQL cache restoring another trader's OMS type when position IDs overlap
 - Fixed PostgreSQL `FuturesSpread` reloads panicking
 - Fixed PostgreSQL `OptionSpread` reloads panicking and dropping `tick_scheme`
