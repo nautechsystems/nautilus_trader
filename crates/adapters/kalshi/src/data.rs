@@ -432,6 +432,7 @@ impl DataClient for KalshiDataClient {
             refresh_interval: Duration::from_secs(
                 self.config.update_instruments_interval_mins * 60,
             ),
+            refresh_in_flight: Arc::new(AtomicBool::new(false)),
         };
 
         let (startup, initialized) = tokio::sync::oneshot::channel();
@@ -895,6 +896,15 @@ struct Session {
     ws_client: KalshiWebSocketClient,
     clock: &'static AtomicTime,
     refresh_interval: Duration,
+    refresh_in_flight: Arc<AtomicBool>,
+}
+
+struct InFlightGuard(Arc<AtomicBool>);
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
 }
 
 impl Session {
@@ -944,7 +954,7 @@ impl Session {
                 biased;
                 () = cancellation.cancelled() => return Ok(()),
                 _ = health_tick.tick() => { anyhow::ensure!(!self.sender.is_closed(), "data event receiver closed"); self.books.monitor(&self.ws_client, &self.tasks); self.lifecycle.tick(&self.context, &self.sender, self.clock.get_time_ns())?; continue; },
-                _ = refresh_tick.tick() => { self.refresh(&mut refresh_tick, cancellation).await?; continue; },
+                _ = refresh_tick.tick() => { self.spawn_refresh(); continue; },
                 event = receiver.recv() => event.context("WebSocket event receiver closed")?,
             };
 
@@ -1102,6 +1112,45 @@ impl Session {
         .await?;
         refresh_tick.reset();
         Ok(())
+    }
+
+    fn spawn_refresh(&self) {
+        if self
+            .refresh_in_flight
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return;
+        }
+
+        let provider = Arc::clone(&self.provider);
+        let instruments = self.instruments.clone();
+        let context = Arc::clone(&self.context);
+        let lifecycle = Arc::clone(&self.lifecycle);
+        let sender = self.sender.clone();
+        let in_flight = Arc::clone(&self.refresh_in_flight);
+        let cancellation = self.tasks.cancellation_token();
+
+        let spawned = self.tasks.spawn(async move {
+            let _guard = InFlightGuard(in_flight);
+            if let Err(e) = refresh(
+                &provider,
+                &instruments,
+                &context,
+                &lifecycle,
+                &sender,
+                &cancellation,
+            )
+            .await
+            {
+                log::warn!("Kalshi periodic metadata refresh failed: {e}");
+            }
+        });
+
+        if let Err(e) = spawned {
+            log::warn!("Failed to spawn Kalshi background metadata refresh task: {e}");
+            self.refresh_in_flight.store(false, Ordering::Release);
+        }
     }
 
     fn recheck_settlement(&self, id: InstrumentId) -> anyhow::Result<()> {
@@ -1509,6 +1558,7 @@ mod tests {
                 ws_client,
                 clock: client.clock,
                 refresh_interval: Duration::from_secs(60),
+                refresh_in_flight: Arc::new(AtomicBool::new(false)),
             };
 
             let context = Arc::clone(&client.context);
@@ -1578,6 +1628,7 @@ mod tests {
             ws_client,
             clock,
             refresh_interval,
+            refresh_in_flight: Arc::new(AtomicBool::new(false)),
         };
 
         let (input, receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -1630,6 +1681,76 @@ mod tests {
         assert_eq!(tick.instrument_id, id);
         assert_eq!(tick.size.as_decimal(), "7.25".parse().unwrap());
         assert_eq!(tick.price.as_decimal(), "0.123456".parse().unwrap());
+    }
+
+    #[tokio::test]
+    async fn periodic_refresh_coalesces_in_flight_requests() {
+        let peer = peer::Peer::new().await;
+        peer.response_gate
+            .forget_permits(tokio::sync::Semaphore::MAX_PERMITS);
+        let fixtures: Value =
+            serde_json::from_str(include_str!("../test_data/instruments.json")).unwrap();
+        let market: Market =
+            serde_json::from_value(fixtures["definitions"]["live"]["market"].clone()).unwrap();
+        let event: Event =
+            serde_json::from_value(fixtures["definitions"]["live"]["event"].clone()).unwrap();
+        let instrument = parse_instrument(&market, &event, UnixNanos::from(1)).unwrap();
+        let id = instrument.id;
+        let (sender, _output) = tokio::sync::mpsc::unbounded_channel();
+        let sender: EventSender<DataEvent> = sender.into();
+        let clock = get_atomic_clock_realtime();
+
+        let provider = Arc::new(KalshiInstrumentProvider::new(
+            KalshiHttpClient::new(&peer.config).unwrap(),
+            clock,
+            sender.clone(),
+        ));
+
+        let (ws_client, _events) = KalshiWebSocketClient::new(peer.config.clone()).unwrap();
+        let tasks = TaskGroup::new();
+
+        let session = Session {
+            provider,
+            lifecycle: Arc::default(),
+            books: BookSyncTracker::new(&[id], Duration::from_secs(10)),
+            tasks: tasks.spawner().unwrap(),
+            instruments: vec![id],
+            context: Arc::new(Mutex::new(HashMap::from([(id, instrument)]))),
+            demand: Arc::new(Mutex::new(HashMap::from([(
+                id,
+                Demand {
+                    quotes: 0,
+                    trades: 1,
+                },
+            )]))),
+            sender,
+            connected: Arc::new(AtomicBool::new(true)),
+            ws_client,
+            clock,
+            refresh_interval: Duration::from_secs(60),
+            refresh_in_flight: Arc::new(AtomicBool::new(false)),
+        };
+
+        // First spawn acquires the in-flight guard and begins the request
+        session.spawn_refresh();
+        peer.wait_requests(1).await;
+        assert!(session.refresh_in_flight.load(Ordering::Acquire));
+
+        // Subsequent spawns while the first is in-flight must be dropped
+        session.spawn_refresh();
+        session.spawn_refresh();
+
+        // Release the in-flight HTTP request
+        peer.response_gate
+            .add_permits(tokio::sync::Semaphore::MAX_PERMITS);
+
+        // Wait for task to finish
+        while session.refresh_in_flight.load(Ordering::Acquire) {
+            tokio::task::yield_now().await;
+        }
+
+        // Only one refresh cycle (3 REST requests for 1 instrument) was made to peer
+        assert_eq!(peer.requests.load(Ordering::SeqCst), 3);
     }
 
     #[rstest]
