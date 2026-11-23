@@ -3409,6 +3409,234 @@ async fn test_spot_restored_pending_cancel_order_trade_frame_keeps_pending_cance
     assert_tracked_used_events(harness.routed());
 }
 
+/// The trade that filled 0.4 of the restored order before the restart, as the cache holds it.
+const RESTORED_CACHED_TRADE_ID: &str = "TCACHE-AAAAA-000001";
+
+/// The trade that filled 0.3 of the restored order while the node was down.
+const RESTORED_OFFLINE_TRADE_ID: &str = "TOFFLN-AAAAA-000002";
+
+/// What the venue read at startup holds for a restored order that filled further while the node
+/// was down.
+#[derive(Clone, Copy, Debug)]
+enum OfflineFill {
+    /// Open with 0.7 filled, and the offline fill among the trades read.
+    Reported,
+    /// Open with 0.7 filled, and no trades read, as when the fills predate the lookback.
+    Inferred,
+    /// Closed with 1.0 filled, and all three trades read: the final trade's frame was still in
+    /// flight when the node read the venue.
+    Completed,
+}
+
+/// Kraken's order row for the restored order, a SELL limit of 1.0 at 26599.9 with `vol_exec`
+/// filled, in an `OpenOrders` result or, when `closed`, a `ClosedOrders` result.
+fn restored_order_rows_json(vol_exec: &str, closed: bool, now: u64) -> String {
+    let fixture: Value = serde_json::from_str(&load_test_data("http_open_orders.json")).unwrap();
+    let mut order = fixture["result"]["open"]["O26VBY-ISGAE-JP5TLU"].clone();
+    let filled = vol_exec.parse::<Decimal>().unwrap();
+    order["descr"]["type"] = json!("sell");
+    order["descr"]["price"] = json!("26599.9");
+    order["descr"]["order"] = json!("sell 1.00000000 XBTUSDT @ limit 26599.9");
+    order["vol"] = json!("1.00000000");
+    order["vol_exec"] = json!(vol_exec);
+    order["cost"] = json!((filled * dec!(26599.9)).to_string());
+    order["price"] = json!("26599.9");
+    order["opentm"] = json!(now - 3_000);
+
+    if closed {
+        order["status"] = json!("closed");
+        order["closetm"] = json!(now - 60);
+        json!({ "error": [], "result": { "closed": { RESTORED_VENUE_ORDER_ID: order }, "count": 1 } })
+    } else {
+        json!({ "error": [], "result": { "open": { RESTORED_VENUE_ORDER_ID: order } } })
+    }
+    .to_string()
+}
+
+/// One `TradesHistory` page of the restored order's `trades` at 26599.9, each a trade ID, a
+/// volume and its age in seconds.
+fn restored_order_trades_json(trades: &[(&str, &str, u64)], now: u64) -> String {
+    let rows: serde_json::Map<String, Value> = trades
+        .iter()
+        .zip(3001..)
+        .map(|((txid, vol, age), trade_id)| {
+            let cost = vol.parse::<Decimal>().unwrap() * dec!(26599.9);
+            let trade = json!({
+                "ordertxid": RESTORED_VENUE_ORDER_ID,
+                "postxid": "TKH2SE-M7IF5-CFI7LT",
+                "pair": "XBTUSDT",
+                "time": now - age,
+                "type": "sell",
+                "ordertype": "limit",
+                "price": "26599.9",
+                "cost": cost.to_string(),
+                "fee": "0.00000",
+                "vol": vol,
+                "margin": "0.00000",
+                "misc": "",
+                "trade_id": trade_id,
+                "maker": true,
+                "ledgers": [format!("LRESTO-AAAAA-{trade_id}")]
+            });
+            ((*txid).to_string(), trade)
+        })
+        .collect();
+    json!({ "error": [], "result": { "trades": rows, "count": trades.len() } }).to_string()
+}
+
+/// The restored order's final trade frame, a 0.3 fill that brings `cum_qty` to 1.0 and, as Kraken
+/// sends it, still states `partially_filled`, then Kraken's `filled` frame, which carries no fill.
+fn restored_order_final_frames(instrument: &InstrumentAny) -> [String; 2] {
+    let mut trade: Value =
+        serde_json::from_str(&restored_order_trade_frame(instrument, None)).unwrap();
+    let exec = &mut trade["data"][0];
+    exec["last_qty"] = json!(0.3);
+    exec["cost"] = json!(7979.97);
+    exec["cum_qty"] = json!(1.0);
+    exec["cum_cost"] = json!(26599.9);
+    assert_eq!(exec["order_status"], json!("partially_filled"));
+    let filled = json!({
+        "channel": "executions",
+        "type": "update",
+        "data": [{
+            "order_id": RESTORED_VENUE_ORDER_ID,
+            "exec_type": "filled",
+            "timestamp": exec["timestamp"],
+            "order_status": "filled",
+            "order_userref": exec["order_userref"],
+            "cum_qty": 1.0,
+            "cum_cost": 26599.9,
+            "avg_price": 26599.9,
+            "fee_usd_equiv": 0.0
+        }],
+        "sequence": 11
+    });
+    [trade.to_string(), filled.to_string()]
+}
+
+/// An order restored with 0.4 filled, which filled 0.3 more while the node was down, takes the
+/// venue's filled quantity from startup reconciliation, and its final trade then completes it with
+/// each fill applied once, whether reconciliation reads the offline fill, infers it, or also reads
+/// the final trade.
+#[rstest]
+#[case::offline_fill_reported(OfflineFill::Reported)]
+#[case::offline_fill_inferred(OfflineFill::Inferred)]
+#[case::final_trade_reported(OfflineFill::Completed)]
+#[tokio::test]
+async fn test_spot_restored_order_reconciles_offline_fill_before_final_trade(
+    #[case] offline: OfflineFill,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let instrument = btcusdt_spot_instrument();
+    let mut harness = spot_harness(&instrument);
+    let client_order_id = ClientOrderId::from(RESTORED_CLIENT_ORDER_ID);
+    add_cached_spot_order(
+        harness.cache(),
+        &instrument,
+        CachedSpotOrder::Accepted,
+        client_order_id,
+    );
+    let accepted = harness
+        .cache()
+        .borrow()
+        .order(&client_order_id)
+        .map(|order| order.clone())
+        .unwrap();
+    let cached_fill = TestOrderEventStubs::filled(
+        &accepted,
+        &instrument,
+        Some(TradeId::from(RESTORED_CACHED_TRADE_ID)),
+        None,
+        Some(Price::from_decimal_dp(dec!(26599.9), instrument.price_precision()).unwrap()),
+        Some(Quantity::from_decimal_dp(dec!(0.4), instrument.size_precision()).unwrap()),
+        None,
+        None,
+        None,
+        Some(test_account_id()),
+    );
+    harness
+        .cache()
+        .borrow_mut()
+        .update_order(&cached_fill)
+        .unwrap();
+    connect_restarted_spot_client(&harness, addr, false).await;
+
+    let now = now_secs();
+    let trades = [
+        (RESTORED_CACHED_TRADE_ID, "0.40000000", 2_400),
+        (RESTORED_OFFLINE_TRADE_ID, "0.30000000", 600),
+        (RESTORED_TRADE_ID, "0.30000000", 120),
+    ];
+    let (open_rows, closed_rows, trade_rows, reconciled_qty) = match offline {
+        OfflineFill::Reported => (
+            restored_order_rows_json("0.70000000", false, now),
+            None,
+            Some(restored_order_trades_json(&trades[..2], now)),
+            dec!(0.7),
+        ),
+        OfflineFill::Inferred => (
+            restored_order_rows_json("0.70000000", false, now),
+            None,
+            None,
+            dec!(0.7),
+        ),
+        OfflineFill::Completed => (
+            EMPTY_SPOT_OPEN_ORDERS.to_string(),
+            Some(restored_order_rows_json("1.00000000", true, now)),
+            Some(restored_order_trades_json(&trades, now)),
+            dec!(1.0),
+        ),
+    };
+    *state.spot_open_orders_json.lock().await = Some(open_rows);
+    *state.closed_orders_json.lock().await = closed_rows;
+    *state.trades_history_json.lock().await = trade_rows;
+    let mut manager = claiming_manager(&harness, false, true, Some(60));
+    let mass_status = spot_mass_status(&harness, Some(60)).await;
+    manager.reconcile_execution_mass_status(&mass_status, harness.exec_engine());
+    assert_filled_qty(&harness.cache().borrow(), &client_order_id, reconciled_qty);
+
+    for frame in restored_order_final_frames(&instrument) {
+        state.ws_message_tx.send(frame).unwrap();
+    }
+    let routed = harness
+        .pump_until_routed(Duration::from_secs(5), RoutedKind::Order)
+        .await;
+    assert!(routed, "final trade not routed: {:?}", harness.routed());
+    harness.pump_for(Duration::from_millis(300)).await;
+
+    let cache = harness.cache().borrow();
+    assert_order_status(&cache, &client_order_id, OrderStatus::Filled);
+    assert_filled_qty(&cache, &client_order_id, dec!(1.0));
+    let mut trade_ids: Vec<String> = cache
+        .order(&client_order_id)
+        .unwrap()
+        .trade_ids()
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    trade_ids.sort();
+
+    if matches!(offline, OfflineFill::Inferred) {
+        assert_eq!(trade_ids.len(), 3, "{trade_ids:?}");
+        assert!(
+            trade_ids.contains(&RESTORED_CACHED_TRADE_ID.to_string())
+                && trade_ids.contains(&RESTORED_TRADE_ID.to_string())
+                && !trade_ids.contains(&RESTORED_OFFLINE_TRADE_ID.to_string()),
+            "{trade_ids:?}"
+        );
+    } else {
+        assert_eq!(
+            trade_ids,
+            [
+                RESTORED_CACHED_TRADE_ID,
+                RESTORED_TRADE_ID,
+                RESTORED_OFFLINE_TRADE_ID,
+            ]
+        );
+    }
+    assert_tracked_used_events(harness.routed());
+}
+
 /// The client restores only the open or in-flight orders it submitted itself on its account, with
 /// a base quantity: a frame for any other cached order still reaches the engine as reports.
 #[rstest]

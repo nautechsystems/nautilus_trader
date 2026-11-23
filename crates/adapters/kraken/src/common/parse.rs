@@ -42,8 +42,8 @@ use crate::{
         consts::{KRAKEN_ALTNAME_KEY, KRAKEN_PAIR_DECIMALS_KEY, KRAKEN_VENUE},
         enums::{
             KrakenFuturesOrderEventType, KrakenFuturesOrderLifecycleStatus, KrakenFuturesOrderType,
-            KrakenInstrumentType, KrakenOrderSide, KrakenOrderType, KrakenPositionSide,
-            KrakenSpotTrigger, KrakenTriggerSignal,
+            KrakenInstrumentType, KrakenOrderSide, KrakenOrderStatus, KrakenOrderType,
+            KrakenPositionSide, KrakenSpotTrigger, KrakenTriggerSignal,
         },
     },
     http::models::{
@@ -764,7 +764,6 @@ pub fn parse_order_status_report(
 
     let order_side = OrderSide::from(order.descr.order_side).into();
     let order_type = order.descr.ordertype.into();
-    let order_status = order.status.into();
 
     // Kraken returns expiretm=0 for GTC orders, so check for actual expiration value
     let has_expiration = order.expiretm.is_some_and(|t| t > 0.0);
@@ -784,6 +783,13 @@ pub fn parse_order_status_report(
         instrument.size_precision(),
         "order.vol_exec",
     )?;
+
+    // A Spot order row has no partially filled status, so an open order with a fill reports one,
+    // as a Futures order does, and reconciliation can infer a fill it does not read
+    let order_status = match order.status {
+        KrakenOrderStatus::Open if filled_qty.is_positive() => OrderStatus::PartiallyFilled,
+        status => status.into(),
+    };
 
     let ts_accepted = parse_millis_timestamp(order.opentm, "order.opentm")?;
 
@@ -2290,6 +2296,42 @@ mod tests {
         assert_eq!(report.order_type, OrderType::Limit);
         assert_eq!(report.price, Some(Price::from("0.4467")));
         assert_eq!(report.trigger_price, None);
+    }
+
+    /// An open row with a filled quantity reports partially filled, since an order row states no
+    /// such status, and a row in any other status keeps the status Kraken states. The input is
+    /// synthetic: a captured open limit row of 5 with its status and filled quantity replaced.
+    #[rstest]
+    #[case::open_unfilled("open", "0.00000000", OrderStatus::Accepted)]
+    #[case::open_partially_filled("open", "2.00000000", OrderStatus::PartiallyFilled)]
+    #[case::pending("pending", "0.00000000", OrderStatus::Initialized)]
+    #[case::closed("closed", "5.00000000", OrderStatus::Filled)]
+    #[case::canceled_partially_filled("canceled", "2.00000000", OrderStatus::Canceled)]
+    #[case::expired_partially_filled("expired", "2.00000000", OrderStatus::Expired)]
+    fn test_parse_order_status_report_reads_an_open_row_with_a_fill_as_partially_filled(
+        #[case] status: &str,
+        #[case] vol_exec: &str,
+        #[case] expected: OrderStatus,
+    ) {
+        let order_id = "OCAP08-LIMIT-000008";
+        let mut json: serde_json::Value =
+            serde_json::from_str(&load_test_json("http_open_orders_conditional.json")).unwrap();
+        json["result"]["open"][order_id]["status"] = status.into();
+        json["result"]["open"][order_id]["vol_exec"] = vol_exec.into();
+        let response: KrakenResponse<SpotOpenOrdersResult> = serde_json::from_value(json).unwrap();
+        let order = &response.result.unwrap().open[order_id];
+
+        let report = parse_order_status_report(
+            order_id,
+            order,
+            &usdc_eur_instrument(),
+            AccountId::new("KRAKEN-001"),
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.order_status, expected);
+        assert_eq!(report.filled_qty, Quantity::from(vol_exec));
     }
 
     /// An untriggered trailing-stop-limit carries no price whatever its `descr.price2` holds, so an

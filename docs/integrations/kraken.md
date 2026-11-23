@@ -838,6 +838,9 @@ page, with a cap of 500 pages per read. Reaching the cap logs a warning:
 - Startup mass status reads closed orders alongside open ones, so an order that reached a terminal
   state while the node was down is reconciled. The reconciliation lookback bounds the read, and a
   closed-order read cut short by the page cap leaves the mass status incomplete.
+- A Spot order row has no partially filled status, so an open order with a filled quantity reports
+  `PARTIALLY_FILLED`, as a Futures order does. Reconciliation can then infer a fill the trade history
+  read does not return, such as one older than the lookback.
 - A report carries the order's own prices, not the row's top-level `price`. That field is the average fill
   price and reads zero on an unfilled order. The report's `avg_px` comes from `cost` and `vol_exec`.
 
@@ -870,7 +873,10 @@ page, with a cap of 500 pages per read. Reaching the cap logs a warning:
 Before subscribing to executions, the Spot execution client restores the orders it submitted that the
 cache holds open or in flight. Their stream updates then apply as order events, and a fill carries the
 venue trade ID and fee. The restore seeds no symbol, so a frame that omits `symbol` is dropped until a
-frame for the order names it.
+frame for the order names it. Fills made while the node was down reach the engine only through
+reconciliation: startup reconciliation applies them, and the stream's later fills apply on top. With
+startup reconciliation off, or the instrument outside `reconciliation_instrument_ids`, the order lacks
+them until another reconciliation check reads it.
 
 Stream updates for other orders reach the engine as reports. A report takes its order quantity from the
 frame's `order_qty`, which Kraken's documented `trade` frame omits. Without it, the report can carry the
