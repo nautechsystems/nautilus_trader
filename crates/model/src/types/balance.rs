@@ -348,6 +348,20 @@ impl<'de> Deserialize<'de> for AccountBalance {
         } else {
             let balance =
                 AccountBalanceLegacy::deserialize(value).map_err(serde::de::Error::custom)?;
+
+            for (field, money) in [
+                ("total", balance.total),
+                ("locked", balance.locked),
+                ("free", balance.free),
+            ] {
+                if balance.currency != money.currency {
+                    return Err(serde::de::Error::custom(format!(
+                        "`currency` ({}) != `{field}` currency ({})",
+                        balance.currency, money.currency
+                    )));
+                }
+            }
+
             Ok(Self {
                 currency: balance.currency,
                 total: balance.total,
@@ -728,6 +742,49 @@ mod tests {
             Money::new(250.0, eur),
             Money::new(750.0, usd),
         );
+    }
+
+    #[rstest]
+    #[case::total("100 EUR", "25 USD", "75 USD", "total")]
+    #[case::locked("100 USD", "25 EUR", "75 USD", "locked")]
+    #[case::free("100 USD", "25 USD", "75 EUR", "free")]
+    #[case::all("100 EUR", "25 EUR", "75 EUR", "total")]
+    fn test_legacy_account_balance_rejects_currency_mismatch(
+        #[case] total: &str,
+        #[case] locked: &str,
+        #[case] free: &str,
+        #[case] field: &str,
+    ) {
+        let value = serde_json::json!({
+            "currency": "USD",
+            "total": total,
+            "locked": locked,
+            "free": free,
+        });
+
+        let error = serde_json::from_value::<AccountBalance>(value).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("`currency` (USD) != `{field}` currency (EUR)")
+        );
+    }
+
+    #[rstest]
+    fn test_legacy_account_balance_preserves_amounts() {
+        let value = serde_json::json!({
+            "currency": "USD",
+            "total": "100 USD",
+            "locked": "25 USD",
+            "free": "80 USD",
+        });
+
+        let balance: AccountBalance = serde_json::from_value(value).unwrap();
+
+        assert_eq!(balance.currency, Currency::USD());
+        assert_eq!(balance.total, Money::from("100 USD"));
+        assert_eq!(balance.locked, Money::from("25 USD"));
+        assert_eq!(balance.free, Money::from("80 USD"));
     }
 
     #[rstest]

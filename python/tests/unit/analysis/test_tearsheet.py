@@ -19,6 +19,7 @@ Test tearsheet behavior.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import ClassVar
 
 import pytest
@@ -49,6 +50,8 @@ from nautilus_trader.analysis import register_theme
 from nautilus_trader.analysis import tearsheet
 from nautilus_trader.analysis import themes
 from nautilus_trader.model import AccountId
+from nautilus_trader.model import Currency
+from nautilus_trader.model import Money
 from nautilus_trader.model import Venue
 
 
@@ -1171,7 +1174,11 @@ def test_issue_3899_equity_curve_tracks_open_position_mark_to_market() -> None:
     assert fills["last_qty"].tolist() == ["90", "90"]
     assert fills["last_px"].tolist() == ["100.50", "122.50"]
     assert len(snapshots) >= 8
+    assert snapshots[0].is_registration
+    assert not any(snapshot.is_registration for snapshot in snapshots[1:])
     assert snapshots[-1].ts_event == final_ts
+    assert returns.index[0] == pd.Timestamp("2024-01-02", tz="UTC")
+    assert returns.iloc[0] == 0.0
     assert len(normalized_equity) >= 6
     assert normalized_equity.nunique() >= 5
     assert normalized_equity.iloc[-1] == pytest.approx(1.198)
@@ -1302,13 +1309,20 @@ def test_resolve_tearsheet_returns_prefers_mark_to_market_snapshots() -> None:
 
         base_currency_equity = None
 
-        def __init__(self, value: object, ts_event: object, unpriced: object = False) -> None:
+        def __init__(
+            self,
+            value: object,
+            ts_event: object,
+            unpriced: object = False,
+            is_registration: bool = False,
+        ) -> None:
             """
             Initialize the instance.
             """
             self.total_equity = [DummyMoney(value)]
             self.ts_event = ts_event
             self.unpriced_instruments = ["KO.XNAS"] if unpriced else []
+            self.is_registration = is_registration
 
     class DummyAccount:
         """
@@ -1340,7 +1354,8 @@ def test_resolve_tearsheet_returns_prefers_mark_to_market_snapshots() -> None:
             Snapshots.
             """
             return [
-                DummySnapshot(100.0, 1_577_880_000_000_000_000),
+                DummySnapshot(1.0, 1_577_876_400_000_000_000, unpriced=True),
+                DummySnapshot(100.0, 1_577_880_000_000_000_000, is_registration=True),
                 DummySnapshot(105.0, 1_577_901_600_000_000_000),
                 DummySnapshot(110.0, 1_577_923_200_000_000_000),
                 DummySnapshot(1.0, 1_578_009_600_000_000_000, unpriced=True),
@@ -1375,6 +1390,95 @@ def test_resolve_tearsheet_returns_prefers_mark_to_market_snapshots() -> None:
 
     assert returns.index.strftime("%Y-%m-%d").tolist() == ["2020-01-01", "2020-01-02", "2020-01-03"]
     assert returns.tolist() == pytest.approx([0.10, 0.0, 0.10])
+
+
+@pytest.mark.parametrize(
+    ("first_marker", "last_marker"),
+    [
+        pytest.param({}, {}, id="missing-markers"),
+        pytest.param(
+            {"is_registration": False},
+            {"is_registration": False},
+            id="retained-tail",
+        ),
+        pytest.param(
+            {"is_registration": False},
+            {"is_registration": True},
+            id="late-registration",
+        ),
+    ],
+)
+def test_resolve_tearsheet_returns_falls_back_without_opening_registration(
+    first_marker: dict[str, bool],
+    last_marker: dict[str, bool],
+) -> None:
+    """
+    Use account returns when same-day snapshots lack an opening registration.
+    """
+    usd = Currency.from_str("USD")
+    snapshots = [
+        SimpleNamespace(
+            base_currency_equity=None,
+            total_equity=[Money(value, usd)],
+            ts_event=pd.Timestamp(timestamp, tz="UTC").value,
+            **marker,
+        )
+        for value, timestamp, marker in [
+            (100.0, "2024-01-02 12:00", first_marker),
+            (110.0, "2024-01-02 18:00", last_marker),
+        ]
+    ]
+    report = _account_report(
+        [("2024-01-02", "USD", "100.0"), ("2024-01-03", "USD", "125.0")],
+    )
+
+    engine = SimpleNamespace(
+        cache=SimpleNamespace(account_for_venue=lambda _: SimpleNamespace(id="SIM-001")),
+        portfolio=SimpleNamespace(snapshots=lambda _: snapshots),
+        list_venues=lambda: [Venue("SIM")],
+        generate_account_report=lambda **_: report,
+    )
+
+    returns = tearsheet._resolve_tearsheet_returns(engine=engine)
+
+    assert returns.index.tolist() == [pd.Timestamp("2024-01-03", tz="UTC")]
+    assert returns.tolist() == [0.25]
+
+
+@pytest.mark.parametrize(
+    ("timestamp", "expected"),
+    [
+        ("1970-01-01", "1970-01-01"),
+        ("2024-01-02", "2024-01-01 23:59:59.999999999"),
+    ],
+)
+def test_snapshot_equity_series_samples_midnight_in_requested_currency(
+    timestamp: str,
+    expected: str,
+) -> None:
+    """
+    Assign nonzero midnight to the prior day and preserve the epoch.
+    """
+    eur = Money(100.0, Currency.from_str("EUR"))
+    usd = Money(125.0, Currency.from_str("USD"))
+
+    snapshot = SimpleNamespace(
+        base_currency_equity=eur,
+        total_equity=[eur, usd],
+        ts_event=pd.Timestamp(timestamp, tz="UTC").value,
+        is_registration=False,
+    )
+
+    equity, currencies = tearsheet._snapshot_equity_series(
+        snapshots=[snapshot],
+        target_currency="USD",
+        account_id="SIM-001",
+        one_day_ns=pd.Timedelta(days=1).value,
+    )
+
+    assert equity.index.tolist() == [pd.Timestamp(expected, tz="UTC")]
+    assert equity.tolist() == [125.0]
+    assert currencies == {"USD"}
 
 
 def test_calculate_snapshot_returns_rejects_mixed_account_currencies() -> None:
@@ -1487,8 +1591,6 @@ def test_resolve_snapshot_equity_uses_requested_total_currency() -> None:
     """
     Test resolve snapshot equity uses requested total currency.
     """
-    from nautilus_trader.model import Currency
-    from nautilus_trader.model import Money
 
     class DummySnapshot:
         """
@@ -1506,8 +1608,6 @@ def test_resolve_snapshot_equity_rejects_implicit_multi_currency_total() -> None
     """
     Test resolve snapshot equity rejects implicit multi currency total.
     """
-    from nautilus_trader.model import Currency
-    from nautilus_trader.model import Money
 
     class DummySnapshot:
         """

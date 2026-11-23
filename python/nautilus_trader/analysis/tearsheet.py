@@ -1218,7 +1218,7 @@ def _snapshot_equity_series(
         value, observed_currency = resolved
         values.append(value)
         ts_event = snapshot.ts_event
-        if len(values) == 1:
+        if len(values) == 1 and getattr(snapshot, "is_registration", False):
             ts_event = max(ts_event - (ts_event % one_day_ns) - 1, 0)
         elif ts_event > 0 and ts_event % one_day_ns == 0:
             ts_event -= 1

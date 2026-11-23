@@ -183,7 +183,8 @@ Released on TBD (UTC).
 - Fixed own order books retaining stale orders after cache reload
 - Fixed historical book delta events splitting across response envelopes and time-range windows, thanks @faysou
 - Fixed portfolio balance aggregation to preserve exact totals and reject sums outside the `Money` range
-- Fixed Rust portfolio returns treating the first retained intraday snapshot as account registration
+- Fixed Rust portfolio returns and Python tearsheets using the first retained intraday snapshot as account registration
+- Fixed legacy `AccountBalance` deserialization accepting amounts in currencies other than the declared one
 - Fixed daily return statistics losing tiny values or reporting dispersion for constant returns
 - Fixed trade PnL statistics counting closes that a fill void changed or removed
 - Fixed trade PnL statistics dropping NETTING cycles that share a close time
