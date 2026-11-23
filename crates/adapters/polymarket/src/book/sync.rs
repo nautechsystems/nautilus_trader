@@ -34,7 +34,7 @@
 //! after it has a token to recover with; an early return leaves the book unowned for the next
 //! update.
 
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use ahash::{AHashMap, AHashSet};
 use dashmap::DashSet;
@@ -46,7 +46,36 @@ use parking_lot::Mutex;
 use super::{BookSequenceOutcome, BookSyncSignal, BookSyncSignalKind, recovery::BookRecovery};
 use crate::websocket::error::PolymarketWsError;
 
-type Book = BookSync<PolymarketWsError>;
+#[derive(Debug, Default)]
+struct Book {
+    sync: Option<BookSync<PolymarketWsError>>,
+    has_accepted_snapshot: bool,
+    recovery: Weak<BookRecovery>,
+}
+
+impl Book {
+    fn sync(&mut self, now: Instant) -> &mut BookSync<PolymarketWsError> {
+        self.sync.get_or_insert_with(|| BookSync::new(now))
+    }
+
+    fn claim(&mut self) -> Option<Arc<BookRecovery>> {
+        let recovery = self.sync(Instant::now()).claim()?;
+        self.recovery = Arc::downgrade(&recovery);
+        Some(recovery)
+    }
+
+    fn reject_snapshot(&self, error: impl FnOnce() -> PolymarketWsError) {
+        if let Some(sync) = &self.sync
+            && let Some(recovery) = self.recovery.upgrade()
+            && recovery.is_running()
+        {
+            let gate = recovery.gate.lock();
+            if !gate.is_closed() {
+                sync.reject(error());
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct BookSyncTracker {
@@ -58,8 +87,16 @@ impl BookSyncTracker {
         self.books.lock().remove(&instrument_id);
     }
 
-    pub(crate) fn clear(&self) {
-        self.books.lock().clear();
+    pub(crate) fn disconnect(&self) {
+        self.books.lock().retain(|_, book| {
+            if !book.has_accepted_snapshot {
+                return false;
+            }
+
+            book.sync = None;
+            book.recovery = Weak::new();
+            true
+        });
     }
 
     pub(crate) fn record_snapshot_if_subscribed(
@@ -77,10 +114,10 @@ impl BookSyncTracker {
             return false;
         }
 
-        books
-            .entry(instrument_id)
-            .or_insert_with(|| Book::new(now))
-            .accept_snapshot((), now)
+        let book = books.entry(instrument_id).or_default();
+        let accepted = book.sync(now).accept_snapshot((), now);
+        book.has_accepted_snapshot |= accepted;
+        accepted
     }
 
     pub(crate) fn validate_incremental_if_subscribed(
@@ -130,13 +167,12 @@ impl BookSyncTracker {
             return BookSequenceOutcome::Suppress;
         }
 
-        let book = books.entry(instrument_id).or_insert_with(|| Book::new(now));
-
-        if book.position().is_some() {
+        let sync = books.entry(instrument_id).or_default().sync(now);
+        if sync.position().is_some() {
             return BookSequenceOutcome::Suppress;
         }
 
-        book.gap()
+        sync.gap()
     }
 
     /// Marks the book gated after a snapshot fails validation and delivers `error` to the running
@@ -156,14 +192,29 @@ impl BookSyncTracker {
         }
 
         let outcome = request_recovery(&mut books, instrument_id, now);
-
         if outcome == BookSequenceOutcome::Suppress
             && let Some(book) = books.get(&instrument_id)
         {
-            book.reject(error);
+            book.reject_snapshot(|| error);
         }
 
         outcome
+    }
+
+    pub(crate) fn reject_stale_snapshot_if_subscribed(
+        &self,
+        active_delta_subs: &DashSet<InstrumentId>,
+        instrument_id: InstrumentId,
+    ) {
+        let books = self.books.lock();
+
+        if active_delta_subs.contains(&instrument_id)
+            && let Some(book) = books.get(&instrument_id)
+        {
+            book.reject_snapshot(|| {
+                PolymarketWsError::InvalidSnapshot("Book snapshot predates an update".into())
+            });
+        }
     }
 
     pub(crate) fn reset_for_instruments(
@@ -183,7 +234,8 @@ impl BookSyncTracker {
 
             books
                 .entry(*instrument_id)
-                .or_insert_with(|| Book::new(now))
+                .or_default()
+                .sync(now)
                 .reset_on_reconnect();
         }
     }
@@ -205,7 +257,8 @@ impl BookSyncTracker {
             .filter(|instrument_id| {
                 books
                     .entry(**instrument_id)
-                    .or_insert_with(|| Book::new(now))
+                    .or_default()
+                    .sync(now)
                     .arm_deadline(deadline)
             })
             .count()
@@ -224,10 +277,10 @@ impl BookSyncTracker {
             return false;
         }
 
-        let book = books.entry(instrument_id).or_insert_with(|| Book::new(now));
-        book.position().is_none()
-            && book.gap() == BookSequenceOutcome::Recover
-            && book.arm_deadline(now + timeout)
+        let sync = books.entry(instrument_id).or_default().sync(now);
+        sync.position().is_none()
+            && sync.gap() == BookSequenceOutcome::Recover
+            && sync.arm_deadline(now + timeout)
     }
 
     pub(crate) fn claim_recovery_if_subscribed(
@@ -242,10 +295,14 @@ impl BookSyncTracker {
             return None;
         }
 
-        books
-            .entry(instrument_id)
-            .or_insert_with(|| Book::new(Instant::now()))
-            .claim()
+        books.entry(instrument_id).or_default().claim()
+    }
+
+    pub(crate) fn has_accepted_snapshot(&self, instrument_id: InstrumentId) -> bool {
+        self.books
+            .lock()
+            .get(&instrument_id)
+            .is_some_and(|book| book.has_accepted_snapshot)
     }
 
     /// Reports whether book delta output is gated pending a valid snapshot.
@@ -253,7 +310,8 @@ impl BookSyncTracker {
         self.books
             .lock()
             .get(&instrument_id)
-            .is_some_and(|book| book.position().is_none() || book.has_pending_snapshot())
+            .and_then(|book| book.sync.as_ref())
+            .is_some_and(|sync| sync.position().is_none() || sync.has_pending_snapshot())
     }
 
     /// Reports books without a running recovery whose feed has exceeded `threshold` since the
@@ -265,10 +323,13 @@ impl BookSyncTracker {
             .lock()
             .iter_mut()
             .filter_map(|(instrument_id, book)| {
-                book.stale(threshold, now).map(|elapsed| BookSyncSignal {
-                    instrument_id: *instrument_id,
-                    kind: BookSyncSignalKind::Stale { elapsed },
-                })
+                book.sync
+                    .as_mut()?
+                    .stale(threshold, now)
+                    .map(|elapsed| BookSyncSignal {
+                        instrument_id: *instrument_id,
+                        kind: BookSyncSignalKind::Stale { elapsed },
+                    })
             })
             .collect::<Vec<_>>();
 
@@ -287,12 +348,11 @@ impl BookSyncTracker {
             .lock()
             .iter_mut()
             .filter_map(|(instrument_id, book)| {
-                (instrument_ids.contains(instrument_id) && book.take_expired(now)).then_some(
-                    BookSyncSignal {
+                (instrument_ids.contains(instrument_id) && book.sync.as_mut()?.take_expired(now))
+                    .then_some(BookSyncSignal {
                         instrument_id: *instrument_id,
                         kind: BookSyncSignalKind::SnapshotMissing,
-                    },
-                )
+                    })
             })
             .collect::<Vec<_>>();
 
@@ -307,14 +367,12 @@ fn validate_incremental(
     instrument_id: InstrumentId,
     now: Instant,
 ) -> BookSequenceOutcome {
-    let book = books.entry(instrument_id).or_insert_with(|| Book::new(now));
-
-    if book.advance((), now) {
+    let sync = books.entry(instrument_id).or_default().sync(now);
+    if sync.advance((), now) {
         return BookSequenceOutcome::Accept;
     }
 
-    let outcome = book.gap();
-
+    let outcome = sync.gap();
     if outcome == BookSequenceOutcome::Recover {
         log::warn!("Book update before snapshot for {instrument_id}; requesting a fresh snapshot");
     }
@@ -327,10 +385,7 @@ fn request_recovery(
     instrument_id: InstrumentId,
     now: Instant,
 ) -> BookSequenceOutcome {
-    books
-        .entry(instrument_id)
-        .or_insert_with(|| Book::new(now))
-        .gap()
+    books.entry(instrument_id).or_default().sync(now).gap()
 }
 
 #[cfg(test)]
@@ -342,7 +397,7 @@ mod tests {
     use nautilus_model::identifiers::InstrumentId;
     use rstest::rstest;
 
-    use super::{Book, BookSequenceOutcome, BookSyncSignalKind, BookSyncTracker};
+    use super::{BookSequenceOutcome, BookSyncSignalKind, BookSyncTracker};
     use crate::websocket::error::PolymarketWsError;
 
     fn instrument_id() -> InstrumentId {
@@ -443,11 +498,19 @@ mod tests {
         let recovery = tracker
             .claim_recovery_if_subscribed(&subs, instrument_id)
             .unwrap();
+        assert!(recovery.begin_replacement());
+        let in_flight = tracker.reject_snapshot_if_subscribed(&subs, instrument_id, error(), now);
+        assert!(matches!(
+            *recovery.outcome.borrow(),
+            BookRecoveryOutcome::Pending
+        ));
+        recovery.gate.open();
         let owned = tracker.reject_snapshot_if_subscribed(&subs, instrument_id, error(), now);
         let unsubscribed =
             tracker.reject_snapshot_if_subscribed(&DashSet::new(), instrument_id, error(), now);
 
         assert_eq!(unowned, BookSequenceOutcome::Recover);
+        assert_eq!(in_flight, BookSequenceOutcome::Suppress);
         assert_eq!(owned, BookSequenceOutcome::Suppress);
         assert_eq!(unsubscribed, BookSequenceOutcome::Suppress);
         assert!(matches!(
@@ -545,10 +608,17 @@ mod tests {
     }
 
     #[rstest]
-    fn replacement_send_blocks_snapshot_acceptance_until_open() {
+    #[case::initial(false)]
+    #[case::previously_synced(true)]
+    fn replacement_send_blocks_snapshot_acceptance_until_open(#[case] previously_synced: bool) {
         let (tracker, subs) = subscribed_tracker();
         let instrument_id = instrument_id();
         let now = Instant::now();
+
+        if previously_synced {
+            assert!(tracker.record_snapshot_if_subscribed(&subs, instrument_id, now));
+        }
+
         let recovery = tracker
             .claim_recovery_if_subscribed(&subs, instrument_id)
             .unwrap();
@@ -559,8 +629,13 @@ mod tests {
             *recovery.outcome.borrow(),
             BookRecoveryOutcome::Pending
         ));
+        assert_eq!(
+            tracker.has_accepted_snapshot(instrument_id),
+            previously_synced
+        );
         recovery.gate.open();
         assert!(tracker.record_snapshot_if_subscribed(&subs, instrument_id, now));
+        assert!(tracker.has_accepted_snapshot(instrument_id));
         assert!(matches!(
             *recovery.outcome.borrow(),
             BookRecoveryOutcome::Accepted
@@ -944,6 +1019,11 @@ mod tests {
         let (tracker, subs) = subscribed_tracker();
         let instrument_id = instrument_id();
         let now = Instant::now();
+
+        if boundary == 2 {
+            assert!(tracker.record_snapshot_if_subscribed(&subs, instrument_id, now));
+        }
+
         let obsolete = tracker
             .claim_recovery_if_subscribed(&subs, instrument_id)
             .unwrap();
@@ -954,7 +1034,7 @@ mod tests {
                 assert!(tracker.record_snapshot_if_subscribed(&subs, instrument_id, now));
                 tracker.reset_for_instruments(&subs, &[instrument_id], now);
             }
-            2 => tracker.clear(),
+            2 => tracker.disconnect(),
             _ => unreachable!(),
         }
 
@@ -1017,7 +1097,7 @@ mod tests {
     }
 
     #[rstest]
-    fn clear_removes_all_tracking_state() {
+    fn disconnect_clears_session_state_but_keeps_snapshot_history() {
         let tracker = BookSyncTracker::default();
         let first = InstrumentId::from("0xCOND-A-0xTOKEN-A.POLYMARKET");
         let second = InstrumentId::from("0xCOND-B-0xTOKEN-B.POLYMARKET");
@@ -1028,15 +1108,20 @@ mod tests {
         subs.insert(second);
         assert!(tracker.record_snapshot_if_subscribed(&subs, first, now));
         tracker.seed_pending_snapshots(&subs, &[first, second], Duration::from_secs(3), now);
+        let recovery = tracker.claim_recovery_if_subscribed(&subs, second).unwrap();
+
+        tracker.disconnect();
+
+        assert!(tracker.has_accepted_snapshot(first));
+        assert!(!tracker.book_gated(first));
+        assert!(!has_pending_snapshot(&tracker, first));
+        assert!(!is_tracked(&tracker, second));
+        assert!(recovery.cancellation.is_cancelled());
         assert!(
             tracker
-                .claim_recovery_if_subscribed(&subs, second)
-                .is_some()
+                .stale_books(Duration::from_secs(1), now + Duration::from_secs(2))
+                .is_empty()
         );
-
-        tracker.clear();
-
-        assert!(is_empty(&tracker));
     }
 
     #[rstest]
@@ -1353,7 +1438,8 @@ mod tests {
             .books
             .lock()
             .get(&instrument_id)
-            .is_some_and(Book::has_pending_snapshot)
+            .and_then(|book| book.sync.as_ref())
+            .is_some_and(|sync| sync.has_pending_snapshot())
     }
 
     fn is_empty(tracker: &BookSyncTracker) -> bool {

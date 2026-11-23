@@ -2413,10 +2413,11 @@ snapshots leave the book gated until a valid snapshot arrives or recovery starts
 A zero timeout disables initial and reconnect deadlines, plus per-attempt snapshot deadlines
 within the 180-second retry budget. The budget still ends a pending attempt; later attempts time out after one minute.
 
-The venue sends a `book` snapshot on first subscribe and ignores duplicate subscribes. A book-delta
-subscription can join an asset held by quotes, trades, or resolution watches. Without an accepted
-snapshot, it starts recovery unless an armed deadline or running recovery already covers the book.
-Recovery cycles the asset's subscription until a valid snapshot arrives.
+On first subscribe, the venue sends a `book` snapshot if the book is available. The venue ignores
+duplicate subscribes. A book-delta subscription can join an asset held by quotes, trades, or
+resolution watches. Without an accepted snapshot, it starts recovery unless an armed deadline or
+running recovery already covers the book. Recovery cycles the asset's subscription until a valid
+snapshot arrives.
 
 A single `price_change` payload can contain interleaved updates for several assets. The adapter
 groups book updates by instrument, then splits consecutive updates by hash. Quote processing remains
@@ -2501,15 +2502,21 @@ exact wire values and level order. It logs and rejects a mismatch before the sna
 - Emit snapshot-derived deltas or quotes.
 - Resume gated book deltas.
 
-For book-delta subscribers, a hash rejection drops the comparison book and gates `price_change` deltas:
+For book-delta subscribers, rejecting a decoded `book` message gates `price_change` deltas. Rejections
+include hash mismatches, invalid timestamps or levels, and snapshots the adapter cannot apply. A
+hash mismatch also drops the comparison book.
 
 - An armed initial or reconnect deadline starts recovery at expiry.
-- During recovery, a mismatch fails the attempt and resubscribes immediately, without waiting for its snapshot deadline.
-- Otherwise, recovery starts immediately.
+- After a confirmed recovery resubscribe, rejection fails the attempt before its snapshot deadline.
+  A stale snapshot can also fail that attempt.
+- With no recovery owner or armed deadline, recovery starts immediately.
 
-The next accepted snapshot emits a full `CLEAR` reseed, including with effective deltas.
+After a hash mismatch, the next accepted snapshot emits a full `CLEAR` reseed, including with effective deltas.
 
-After exhausting its retry budget, recovery retries at intervals that double from one to fifteen minutes.
+After exhausting its retry budget, recovery retries at intervals that double from one to fifteen
+minutes. For a book with no accepted snapshot in its current book-delta subscription, a confirmed
+resubscribe followed by a snapshot timeout skips the rest of the retry budget. A valid snapshot can
+complete recovery between attempts.
 
 [Polymarket book messages](https://docs.polymarket.com/market-data/realtime-data) can omit hash inputs
 such as `tick_size` and `last_trade_price`. Instrument metadata supplies missing `min_order_size` and

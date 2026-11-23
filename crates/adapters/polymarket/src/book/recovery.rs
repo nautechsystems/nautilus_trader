@@ -116,6 +116,7 @@ pub(crate) fn start_recovery(
         recovery,
         pool.clone(),
         snapshot_timeout,
+        book_sync.has_accepted_snapshot(instrument_id),
         tasks,
     );
 }
@@ -126,6 +127,7 @@ fn spawn_recovery_task(
     recovery: Arc<BookRecovery>,
     pool: PolymarketMarketPoolHandle,
     snapshot_timeout: Duration,
+    has_accepted_snapshot: bool,
     tasks: &TaskSpawner,
 ) {
     let shutdown = tasks.cancellation_token();
@@ -159,7 +161,7 @@ fn spawn_recovery_task(
                         Ok(())
                     }
                 },
-                is_retryable_error,
+                |e| is_retryable_error(e, has_accepted_snapshot),
                 PolymarketWsError::Client,
                 || PolymarketWsError::OperationTimeout {
                     timeout_ms: snapshot_timeout.as_millis().min(u128::from(u64::MAX)) as u64,
@@ -171,16 +173,18 @@ fn spawn_recovery_task(
     }
 }
 
-fn is_retryable_error(error: &PolymarketWsError) -> bool {
-    matches!(
-        error,
+fn is_retryable_error(error: &PolymarketWsError, has_accepted_snapshot: bool) -> bool {
+    match error {
+        // Only a confirmed replacement write can time out waiting for a snapshot.
+        // For an unseeded book, go straight to the runner's retry ceiling after that wait.
+        PolymarketWsError::OperationTimeout { .. } => has_accepted_snapshot,
         PolymarketWsError::Network(_)
-            | PolymarketWsError::TransportSend(_)
-            | PolymarketWsError::TungsteniteError(_)
-            | PolymarketWsError::Connection(_)
-            | PolymarketWsError::OperationTimeout { .. }
-            | PolymarketWsError::InvalidSnapshot(_)
-    )
+        | PolymarketWsError::TransportSend(_)
+        | PolymarketWsError::TungsteniteError(_)
+        | PolymarketWsError::Connection(_)
+        | PolymarketWsError::InvalidSnapshot(_) => true,
+        _ => false,
+    }
 }
 
 fn cycle_outcome_result(outcome: CycleMarketOutcome) -> Result<(), PolymarketWsError> {
@@ -209,7 +213,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::websocket::pool::PolymarketMarketPoolHandle;
+    use crate::websocket::handler::HandlerCommand;
 
     fn instrument_id() -> InstrumentId {
         InstrumentId::from("0xCOND-0xTOKEN.POLYMARKET")
@@ -331,6 +335,144 @@ mod tests {
         );
     }
 
+    enum SubscriptionStart {
+        Initial,
+        Reconnect,
+        Disconnect,
+        Resubscribe,
+    }
+
+    #[rstest]
+    #[case::initial_snapshot_timeout(
+        SubscriptionStart::Initial,
+        CycleMarketOutcome::Completed,
+        true
+    )]
+    #[case::snapshot_timeout_after_reconnect(
+        SubscriptionStart::Reconnect,
+        CycleMarketOutcome::Completed,
+        false
+    )]
+    #[case::snapshot_timeout_after_disconnect(
+        SubscriptionStart::Disconnect,
+        CycleMarketOutcome::Completed,
+        false
+    )]
+    #[case::snapshot_timeout_after_resubscribe(
+        SubscriptionStart::Resubscribe,
+        CycleMarketOutcome::Completed,
+        true
+    )]
+    #[case::rejected_write(
+        SubscriptionStart::Initial,
+        CycleMarketOutcome::SendFailed(SendError::BufferFull),
+        false
+    )]
+    #[tokio::test]
+    async fn recovery_uses_slow_retry_only_for_missing_initial_snapshot(
+        #[case] subscription_start: SubscriptionStart,
+        #[case] first_outcome: CycleMarketOutcome,
+        #[case] slow_retry: bool,
+    ) {
+        let book_sync = BookSyncTracker::default();
+        let active_delta_subs = Arc::new(DashSet::new());
+        let instrument_id = instrument_id();
+        active_delta_subs.insert(instrument_id);
+        let now = Instant::now();
+
+        if !matches!(subscription_start, SubscriptionStart::Initial) {
+            assert!(book_sync.record_snapshot_if_subscribed(
+                &active_delta_subs,
+                instrument_id,
+                now
+            ));
+        }
+
+        match subscription_start {
+            SubscriptionStart::Initial => {}
+            SubscriptionStart::Reconnect => {
+                book_sync.reset_for_instruments(&active_delta_subs, &[instrument_id], now);
+            }
+            SubscriptionStart::Disconnect | SubscriptionStart::Resubscribe => {
+                book_sync.disconnect();
+
+                if matches!(subscription_start, SubscriptionStart::Resubscribe) {
+                    active_delta_subs.remove(&instrument_id);
+                    book_sync.remove(instrument_id);
+                    active_delta_subs.insert(instrument_id);
+                }
+            }
+        }
+
+        let (ws_tx, mut ws_rx) = tokio::sync::mpsc::unbounded_channel();
+        let pool = PolymarketMarketPoolHandle::test_single_shard(ws_tx, &["0xTOKEN"]);
+        let (tasks, spawner) = test_tasks();
+        start_recovery(
+            instrument_id,
+            Some("0xTOKEN".to_string()),
+            &active_delta_subs,
+            &book_sync,
+            &pool,
+            Duration::from_millis(25),
+            &spawner,
+        );
+
+        let command = time::timeout(Duration::from_secs(5), ws_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        let HandlerCommand::CycleMarketSubscription {
+            responder, gate, ..
+        } = command
+        else {
+            panic!("expected subscription cycle, was {command:?}");
+        };
+
+        if matches!(first_outcome, CycleMarketOutcome::Completed) {
+            gate.open();
+        }
+
+        responder.send(first_outcome).unwrap();
+
+        if slow_retry {
+            assert!(
+                time::timeout(Duration::from_secs(1), ws_rx.recv())
+                    .await
+                    .is_err()
+            );
+
+            book_sync.reset_for_instruments(&active_delta_subs, &[instrument_id], Instant::now());
+        }
+
+        let command = time::timeout(Duration::from_secs(5), ws_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        let HandlerCommand::CycleMarketSubscription {
+            asset_ids,
+            responder,
+            gate,
+            ..
+        } = command
+        else {
+            panic!("expected subscription cycle, was {command:?}");
+        };
+
+        assert_eq!(asset_ids, ["0xTOKEN"]);
+        assert!(book_sync.book_gated(instrument_id));
+        gate.open();
+        responder.send(CycleMarketOutcome::Completed).unwrap();
+        assert!(book_sync.record_snapshot_if_subscribed(
+            &active_delta_subs,
+            instrument_id,
+            Instant::now()
+        ));
+        wait_until_async(|| async { tasks.all_finished() }, StdDuration::from_secs(5)).await;
+        assert!(!book_sync.book_gated(instrument_id));
+    }
+
     #[rstest]
     #[tokio::test]
     async fn recovery_task_keeps_ownership_after_non_retryable_failure() {
@@ -353,6 +495,7 @@ mod tests {
             recovery.clone(),
             pool,
             Duration::from_secs(10),
+            false,
             &spawner,
         );
 
@@ -412,6 +555,12 @@ mod tests {
         false
     )]
     fn recovery_retry_classification(#[case] error: PolymarketWsError, #[case] expected: bool) {
-        assert_eq!(is_retryable_error(&error), expected);
+        assert_eq!(is_retryable_error(&error, true), expected);
+    }
+
+    #[rstest]
+    fn rejected_initial_snapshot_is_retryable() {
+        let error = PolymarketWsError::InvalidSnapshot("e".to_string());
+        assert!(is_retryable_error(&error, false));
     }
 }

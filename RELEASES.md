@@ -241,6 +241,7 @@ Released on TBD (UTC).
 - Fixed Polymarket reconciliation of wallet orders and positions outside discovery filters (#5649), thanks @imbolc
 - Fixed Polymarket stale metadata and resolution deadlines for tracked markets (#5671, #5655), thanks @imbolc
 - Fixed Polymarket book recovery stalling on older snapshots with matching book hashes (#5659), thanks @imbolc
+- Fixed Polymarket exhausting its fast recovery budget on books with no initial snapshot
 - Fixed Polymarket resolution fallbacks retrying every poll after a failure (#5660), thanks @imbolc
 
 ### Internal Improvements
