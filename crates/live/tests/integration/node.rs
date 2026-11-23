@@ -105,6 +105,11 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
+mod dispatch;
+mod external_msgbus;
+mod lifecycle;
+mod routing;
+
 #[derive(Debug)]
 struct TestActor {
     core: DataActorCore,
@@ -297,24 +302,6 @@ fn test_handle_clone_shares_state() {
     handle1.stop();
 
     assert!(handle2.should_stop());
-}
-
-#[rstest]
-fn test_node_state_values() {
-    assert_eq!(NodeState::Idle.as_u8(), 0);
-    assert_eq!(NodeState::Starting.as_u8(), 1);
-    assert_eq!(NodeState::Running.as_u8(), 2);
-    assert_eq!(NodeState::ShuttingDown.as_u8(), 3);
-    assert_eq!(NodeState::Stopped.as_u8(), 4);
-}
-
-#[rstest]
-fn test_node_state_is_running() {
-    assert!(!NodeState::Idle.is_running());
-    assert!(!NodeState::Starting.is_running());
-    assert!(NodeState::Running.is_running());
-    assert!(!NodeState::ShuttingDown.is_running());
-    assert!(!NodeState::Stopped.is_running());
 }
 
 #[rstest]
@@ -1931,21 +1918,6 @@ pub(crate) mod serial_tests {
 
         assert_eq!(handle.state(), NodeState::Idle);
         assert!(!handle.should_stop());
-    }
-
-    #[rstest]
-    fn test_live_node_config_with_disabled_reconciliation() {
-        let config = LiveNodeConfig {
-            exec_engine: LiveExecutionEngineConfig {
-                reconciliation: false,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        let node = LiveNode::build("TestNode".to_string(), Some(config)).unwrap();
-
-        assert_eq!(node.state(), NodeState::Idle);
     }
 
     #[rstest]

@@ -36,7 +36,8 @@ These events carry `reconciliation=true`. The manager retains unacknowledged ord
 - **Implementation**: [Execution manager](../../crates/live/src/execution/manager.rs),
   `check_inflight_orders`, `register_submission_retention`, `submission_is_retained`, and
   `resolve_missing_order`.
-- **Representative checks**: [Manager integration tests](../../crates/live/tests/integration/manager.rs),
+- **Representative checks**: [Inflight tests](../../crates/live/tests/integration/execution/manager/inflight.rs)
+  and [submission recovery tests](../../crates/live/tests/integration/execution/manager/submission.rs),
   `test_inflight_order_generates_rejection_after_max_retries`,
   `test_retained_submission_survives_recovery_and_accepts_late_evidence`,
   `test_check_open_orders_submitted_missing_at_venue_obeys_recovery_policy`,

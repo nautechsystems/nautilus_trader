@@ -13,9 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-mod emitter;
+mod account;
+#[path = "../common/dispatch.rs"]
+mod dispatch_fixtures;
+mod execution;
 mod external_account;
-mod manager;
+#[path = "../common/external_msgbus.rs"]
+mod external_msgbus_fixtures;
 mod node;
 #[path = "../common/startup.rs"]
 mod startup;
