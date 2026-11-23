@@ -140,6 +140,7 @@ The adapter maps `TRADIFI_PERPETUAL` listings to
 | ------------------------------------------------------------ | -------------------- |
 | `EQUITY`, `CN_EQUITY`, `KR_EQUITY`, `HK_EQUITY`, `PREMARKET` | Equity               |
 | `COMMODITY`                                                  | Commodity            |
+| `FX`                                                         | FX                   |
 
 Listings with other or missing values are skipped with a warning.
 

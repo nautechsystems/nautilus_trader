@@ -128,6 +128,7 @@ fn parse_tradifi_asset_class(symbol: &BinanceFuturesUsdSymbol) -> anyhow::Result
     match underlying_type {
         "EQUITY" | "CN_EQUITY" | "KR_EQUITY" | "HK_EQUITY" | "PREMARKET" => Ok(AssetClass::Equity),
         "COMMODITY" => Ok(AssetClass::Commodity),
+        "FX" => Ok(AssetClass::FX),
         _ => anyhow::bail!(
             "Unsupported underlying type '{underlying_type}' for TRADIFI_PERPETUAL symbol '{}'",
             symbol.symbol
@@ -2197,6 +2198,7 @@ mod tests {
     #[case::hong_kong_equity("0700USDT", "0700", "HK_EQUITY", AssetClass::Equity)]
     #[case::premarket("SPCXUSDT", "SPCX", "PREMARKET", AssetClass::Equity)]
     #[case::commodity("XAUUSDT", "XAU", "COMMODITY", AssetClass::Commodity)]
+    #[case::fx("USDBRLUSDT", "USDBRL", "FX", AssetClass::FX)]
     fn test_parse_usdm_tradifi_perpetual(
         #[case] raw_symbol: &str,
         #[case] underlying: &str,
