@@ -441,7 +441,7 @@ pub trait ExecutionAlgorithm: DataActor {
     /// Spawns a market order from a primary order.
     ///
     /// Creates a new market order with:
-    /// - A unique client order ID: `{primary_id}-E{sequence}`.
+    /// - A client order ID from [`ExecutionAlgorithmCore::spawn_client_order_id`].
     /// - The primary order's trader ID, strategy ID, and instrument ID.
     /// - The algorithm's `exec_algorithm_id`.
     /// - `exec_spawn_id` set to the primary order's client order ID.
@@ -512,7 +512,7 @@ pub trait ExecutionAlgorithm: DataActor {
     /// Spawns a limit order from a primary order.
     ///
     /// Creates a new limit order with:
-    /// - A unique client order ID: `{primary_id}-E{sequence}`
+    /// - A client order ID from [`ExecutionAlgorithmCore::spawn_client_order_id`]
     /// - The primary order's trader ID, strategy ID, and instrument ID
     /// - The algorithm's `exec_algorithm_id`
     /// - `exec_spawn_id` set to the primary order's client order ID
@@ -598,7 +598,7 @@ pub trait ExecutionAlgorithm: DataActor {
     /// Spawns a market-to-limit order from a primary order.
     ///
     /// Creates a new market-to-limit order with:
-    /// - A unique client order ID: `{primary_id}-E{sequence}`
+    /// - A client order ID from [`ExecutionAlgorithmCore::spawn_client_order_id`]
     /// - The primary order's trader ID, strategy ID, and instrument ID
     /// - The algorithm's `exec_algorithm_id`
     /// - `exec_spawn_id` set to the primary order's client order ID
@@ -3306,72 +3306,21 @@ mod tests {
     }
 
     #[rstest]
-    fn test_algorithm_spawn_limit_without_hyphens_creates_alphanumeric_id() {
-        let mut algo = create_test_algorithm();
-        register_algorithm(&mut algo);
-
-        let instrument_id = InstrumentId::from("BTC/USDT.BINANCE");
-        let mut primary = OrderAny::Market(MarketOrder::new(
-            TraderId::from("TRADER-001"),
-            StrategyId::from("STRAT-001"),
-            instrument_id,
-            ClientOrderId::from("O202611200910100010002"),
-            OrderSide::Buy,
-            Quantity::from("1.0"),
-            TimeInForce::Gtc,
-            UUID4::new(),
-            0.into(),
-            false,
-            false,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        ));
-
-        let price = Price::from("50000.0");
-        let spawned = algo
-            .spawn_limit(
-                &mut primary,
-                Quantity::from("0.5"),
-                price,
-                TimeInForce::Gtc,
-                None,  // expire_time
-                false, // post_only
-                false, // reduce_only
-                None,  // display_qty
-                None,  // emulation_trigger
-                None,  // tags
-                false, // reduce_primary
-            )
-            .unwrap();
-
-        assert_eq!(spawned.client_order_id.as_str(), "E202611200910100010002E1");
-        assert_eq!(
-            spawned.exec_spawn_id,
-            Some(ClientOrderId::from("O202611200910100010002"))
-        );
-        assert_eq!(spawned.instrument_id, instrument_id);
-        assert_eq!(spawned.order_side(), OrderSide::Buy);
-    }
-
-    #[rstest]
-    fn test_algorithm_spawn_limit_with_uuid_bounds_to_32_characters_and_preserves_full_exec_spawn_id()
-     {
+    #[case("O202611200910100010002")]
+    #[case("c023d8c0bdfd4399b101689255a6217b")]
+    #[case("Desk_1")]
+    fn test_algorithm_spawn_limit_preserves_primary_id_with_compact_child(
+        #[case] primary_id: &str,
+    ) {
         let mut algo = create_test_algorithm();
         register_algorithm(&mut algo);
 
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let full_uuid = "c023d8c0bdfd4399b101689255a6217b";
         let mut primary = OrderAny::Market(MarketOrder::new(
             TraderId::from("TRADER-001"),
             StrategyId::from("STRAT-001"),
             instrument_id,
-            ClientOrderId::from(full_uuid),
+            ClientOrderId::from(primary_id),
             OrderSide::Buy,
             Quantity::from("1.0"),
             TimeInForce::Gtc,
@@ -3406,12 +3355,10 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(spawned.client_order_id.as_str().len(), 32);
-        assert_eq!(
-            spawned.client_order_id.as_str(),
-            "c023d8c0bdfd439101689255a6217bE1"
-        );
-        assert_eq!(spawned.exec_spawn_id, Some(ClientOrderId::from(full_uuid)));
+        let id = spawned.client_order_id.as_str();
+        assert_eq!(id.len(), 32);
+        assert!(id.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert_eq!(spawned.exec_spawn_id, Some(ClientOrderId::from(primary_id)));
         assert_eq!(spawned.instrument_id, instrument_id);
         assert_eq!(spawned.order_side(), OrderSide::Buy);
     }

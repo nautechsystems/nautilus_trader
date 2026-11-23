@@ -1615,16 +1615,11 @@ fn py_config_to_json(config: &Bound<'_, PyAny>) -> PyResult<HashMap<String, serd
         "actor_id",
         "log_events",
         "log_commands",
+        "use_hyphens_in_client_order_ids",
     ] {
         if let Ok(value) = config.getattr(field) {
             config_dict.set_item(field, value)?;
         }
-    }
-
-    if let Ok(value) = config.getattr("use_hyphens_in_client_order_ids")
-        && !value.is_none()
-    {
-        config_dict.set_item("use_hyphens_in_client_order_ids", value)?;
     }
 
     py_dict_to_json(&config_dict)

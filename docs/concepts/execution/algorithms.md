@@ -139,16 +139,12 @@ follows this pattern:
 For example, the first order spawned from `O-20230404-001-000` has the ID
 `O-20230404-001-000-E1`.
 
-When hyphens are disabled (`use_hyphens_in_client_order_ids=False` or inferred from an unhyphenated primary ID):
+When hyphens are disabled (`use_hyphens_in_client_order_ids=False`), each child gets a fresh
+32-character UUID without hyphens. This meets the client order ID requirements of venues such as
+OKX.
 
-- If the primary order ID begins with `O`, the leading `O` is replaced with `E` to distinguish spawned orders from standard strategy orders and prevent ID collisions across strategy tags.
-- Any hyphens are stripped, and the spawn sequence is appended as `E{spawn_sequence}`.
-- If the resulting ID exceeds 32 characters (e.g. when trading with 32-character UUID client order IDs on venues like OKX), the primary ID base is bounded to at most `32 - len(E{spawn_sequence})` characters by dropping excess characters from the middle to preserve both prefix routing and trailing counter uniqueness, while `exec_spawn_id` always retains the full primary order ID.
-
-For example:
-
-- The first order spawned from `O202611200910100010002` has the ID `E202611200910100010002E1`.
-- The first order spawned from a 32-character UUID `c023d8c0bdfd4399b101689255a6217b` has the ID `c023d8c0bdfd439101689255a6217bE1` (32 characters).
+When the setting is omitted or `None`, the algorithm uses hyphens if the primary order ID contains
+one.
 
 :::note
 The primary and spawned terminology distinguishes execution slicing from parent and child
