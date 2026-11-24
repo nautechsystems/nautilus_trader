@@ -871,7 +871,8 @@ page, with a cap of 500 pages per read. Reaching the cap logs a warning:
   row is skipped and leaves the set incomplete.
 - An executions frame states the order's price only when it carries `limit_price`, never at a
   fill price. Its trigger is `triggers.price` when `triggers.price_type` is `static`, tracking the
-  `last` or `index` price. A relative or trailing trigger reads as none.
+  `last` or `index` price. A relative or trailing trigger reads as none. A frame without
+  `order_type` reads the trigger of an order the node submitted by the type it was submitted as.
 
 #### Orders placed outside the node
 
@@ -888,6 +889,13 @@ frame from them:
 - A `trade` frame reports its status and fill together, so the engine applies the trade's fill
   rather than inferring one. A frame whose cumulative quantity reaches the order quantity reports
   `FILLED`, although a trade can state `partially_filled`.
+- A `trade` frame without `cum_qty` adds its fill to the kept cumulative quantity, which a later
+  frame that states none reports.
+
+The frames sent while the executions stream reconnects are lost, so the client resubscribes with
+`snap_orders`: Kraken then restates each open order, and a kept order takes the quantity, limit,
+trigger and cumulative quantity it states. A shape kept before the client last connected is
+dropped, since that subscription restates no order.
 
 Each frame reports alone, and a trade's fill arrives as its own report, for an order the adapter
 did not see placed or one the engine cannot rebuild from its `pending_new` frame. That covers

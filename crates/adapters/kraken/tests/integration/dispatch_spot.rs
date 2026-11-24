@@ -1460,9 +1460,13 @@ fn test_spot_tracked_frames_seed_no_order_shape() {
 }
 
 /// A tracked conditional order's amendment updates its trigger to the static price the frame
-/// states.
+/// states, whether or not the frame states the order's type.
 #[rstest]
-fn test_spot_tracked_amended_carries_static_trigger() {
+#[case::frame_states_type(Some(KrakenOrderType::StopLossLimit))]
+#[case::frame_omits_type(None)]
+fn test_spot_tracked_amended_carries_static_trigger(
+    #[case] frame_order_type: Option<KrakenOrderType>,
+) {
     let state = WsDispatchState::new();
     let cid = ClientOrderId::new("uuid-spot-stop-amend");
     state.register_identity(
@@ -1481,7 +1485,7 @@ fn test_spot_tracked_amended_carries_static_trigger() {
         "v-spot-stop-amend",
         None,
     );
-    amended.order_type = Some(KrakenOrderType::StopLossLimit);
+    amended.order_type = frame_order_type;
     amended.triggers = external_stop_pending_new("v-spot-stop-amend").triggers;
 
     let events = dispatch_spot_frames(&[new, amended], &state, &make_spot_pair());

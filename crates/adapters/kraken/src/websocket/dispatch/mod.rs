@@ -438,6 +438,11 @@ impl WsDispatchState {
         self.spot_order_shapes.lock().remove(&order_id.to_string());
     }
 
+    /// Removes every kept spot order shape.
+    pub fn forget_spot_order_shapes(&self) {
+        self.spot_order_shapes.lock().clear();
+    }
+
     /// Updates the tracked `quantity` for an order following a successful
     /// modify acknowledgement, leaving all other identity fields untouched.
     pub fn update_identity_quantity(&self, client_order_id: &ClientOrderId, quantity: Quantity) {

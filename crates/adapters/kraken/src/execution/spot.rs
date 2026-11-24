@@ -1296,6 +1296,9 @@ impl ExecutionClient for KrakenSpotExecutionClient {
                 }
             });
 
+            // This subscription restates no open order, so a shape kept from an earlier session
+            // misses what changed since
+            self.ws_dispatch_state.forget_spot_order_shapes();
             self.ws
                 .subscribe_executions(false, false)
                 .await

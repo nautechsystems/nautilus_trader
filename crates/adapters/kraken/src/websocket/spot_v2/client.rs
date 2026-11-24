@@ -2055,6 +2055,16 @@ impl SpotReplay {
             payload.clone()
         };
 
+        // The frames sent while the connection was down are lost, and a snapshot of the open
+        // orders restates what they changed
+        let payload = if topic == "executions" {
+            request_order_snapshot_in_payload(payload.expose_secret())
+                .inspect_err(|e| log::error!("Failed to request an order snapshot: {e}"))
+                .ok()?
+        } else {
+            payload
+        };
+
         if let Some(symbol) = topic.strip_prefix("book:") {
             record_book_replay(
                 &payload,
@@ -2164,6 +2174,20 @@ fn update_auth_token_in_payload(
 
     if let Some(params) = value.get_mut("params") {
         params["token"] = serde_json::Value::String(new_token.to_string());
+    }
+
+    serde_json::to_string(&value)
+        .map(SecretString::from)
+        .map_err(|e| KrakenWsError::JsonError(e.to_string()))
+}
+
+/// Returns an executions subscribe `payload` that requests a snapshot of the open orders.
+fn request_order_snapshot_in_payload(payload: &str) -> Result<SecretString, KrakenWsError> {
+    let mut value: serde_json::Value =
+        serde_json::from_str(payload).map_err(|e| KrakenWsError::JsonError(e.to_string()))?;
+
+    if let Some(params) = value.get_mut("params") {
+        params["snap_orders"] = serde_json::Value::Bool(true);
     }
 
     serde_json::to_string(&value)
@@ -3028,6 +3052,25 @@ mod tests {
             .await
             .expect_err("generic unsubscribe must reject Level3");
         assert!(matches!(err, KrakenWsError::InvalidMessage(_)));
+    }
+
+    /// An executions subscribe replayed after a reconnect asks for the open orders and keeps its
+    /// other params.
+    #[rstest]
+    fn test_request_order_snapshot_in_payload_for_executions() {
+        let original = r#"{"method":"subscribe","params":{"channel":"executions","token":"T","snap_orders":false,"snap_trades":false},"req_id":7}"#;
+
+        let rewritten = request_order_snapshot_in_payload(original).unwrap();
+
+        let value: serde_json::Value = serde_json::from_str(rewritten.expose_secret()).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "method": "subscribe",
+                "params": {"channel": "executions", "token": "T", "snap_orders": true, "snap_trades": false},
+                "req_id": 7,
+            })
+        );
     }
 
     #[rstest]

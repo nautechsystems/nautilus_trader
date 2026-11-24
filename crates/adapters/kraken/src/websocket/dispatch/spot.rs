@@ -46,10 +46,7 @@ use crate::{
     websocket::spot_v2::{
         enums::KrakenExecType,
         messages::KrakenWsExecutionData,
-        parse::{
-            RetainedOrderFields, parse_ws_fill_report, parse_ws_order_status_report,
-            parse_ws_retained_order_status_report,
-        },
+        parse::{RetainedOrderFields, parse_ws_fill_report, parse_ws_retained_order_status_report},
     },
 };
 
@@ -192,8 +189,16 @@ fn execution_inner(
         return;
     }
 
-    // Status update.
-    match parse_ws_order_status_report(exec, instrument, account_id, cached_qty, ts_init) {
+    // Status update. A tracked order's frame can omit its type, which the client submitted.
+    match parse_ws_retained_order_status_report(
+        exec,
+        None,
+        identity.as_ref().map(|identity| identity.order_type),
+        instrument,
+        account_id,
+        cached_qty,
+        ts_init,
+    ) {
         Ok(mut report) => {
             if let Some(cid) = resolved_id {
                 report = report.with_client_order_id(cid);
@@ -305,6 +310,7 @@ fn shaped_execution(
     let status = match parse_ws_retained_order_status_report(
         exec,
         Some(&shape.retained),
+        None,
         instrument,
         account_id,
         cached_qty,
@@ -353,6 +359,7 @@ fn seed_order_shape(
     let report = parse_ws_retained_order_status_report(
         exec,
         Some(&shape.retained),
+        None,
         instrument,
         account_id,
         cached_qty,
