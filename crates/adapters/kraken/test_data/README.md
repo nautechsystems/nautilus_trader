@@ -61,6 +61,14 @@ other value is as received. The CLI printed the second frame's `order_status` as
 prints for any value outside its catalog. The file has `triggered`, inferred because the node logged
 no deserialization error for that frame.
 
+`ws_executions_order_snapshot.json` holds the executions frames of a USDC/EUR post-only limit buy
+of 5 placed on a live account, amended to 6 and canceled, as received directly from Kraken on two
+subscriptions. The `pending_new`, `new`, `amended` and `canceled` updates arrived on one subscribed
+without `snap_orders`. Between the amendment and the cancel, a second subscription with
+`snap_orders` received the `snapshot` frame, which the file holds in arrival order. The order ID
+and timestamps are replaced; every other value is as received. The snapshot entry states the
+amended quantity and the amendment's timestamp, and no `cum_qty`.
+
 ## Futures edit response
 
 `http_edit_order_futures.json` is the response example from Kraken's

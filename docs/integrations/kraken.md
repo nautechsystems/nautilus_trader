@@ -893,16 +893,18 @@ frame from them:
   frame that states none reports.
 
 The frames sent while the executions stream reconnects are lost, so the client resubscribes with
-`snap_orders`: Kraken then restates each open order, and a kept order takes the quantity, limit,
-trigger and cumulative quantity it states. A shape kept before the client last connected is
-dropped, since that subscription restates no order.
+`snap_orders`: Kraken then restates each open order with its side, type, quantity and limit. A kept
+order takes the fields the entry states, and keeps its cumulative quantity when the entry states no
+`cum_qty`. An order the adapter does not keep is kept from its entry, as from a `pending_new`
+frame. The snapshot asks for no trades, so it restates no fill made while the stream was down. A
+shape kept before the client last connected is dropped, since that subscription restates no order.
 
 Each frame reports alone, and a trade's fill arrives as its own report, for an order the adapter
-did not see placed or one the engine cannot rebuild from its `pending_new` frame. That covers
-orders open before the node connected or placed during a reconnect gap, orders resting across a
-restart, orders whose trigger `price_type` is not `static`, take-profit-limit orders whose trigger
-sits above a buy limit or below a sell limit, and GTD orders that are not post-only. A post-only
-GTD order reports as GTC.
+keeps nothing of or one the engine cannot rebuild from its `pending_new` frame or snapshot entry.
+That covers orders open before the node connected, including orders resting across a restart,
+until a reconnect restates them, orders whose trigger `price_type` is not `static`,
+take-profit-limit orders whose trigger sits above a buy limit or below a sell limit, and GTD orders
+that are not post-only. A post-only GTD order reports as GTC.
 
 #### Fill reports
 

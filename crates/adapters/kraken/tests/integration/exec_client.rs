@@ -104,8 +104,8 @@ use serde_json::{Value, json};
 use ustr::Ustr;
 
 use crate::common::{
-    CAPTURED_MARKET_ORDER_ID, CAPTURED_STOP_ORDER_ID, captured_spot_frames, dispatch_spot_frames,
-    usdc_eur_pair,
+    CAPTURED_LIMIT_ORDER_ID, CAPTURED_MARKET_ORDER_ID, CAPTURED_STOP_ORDER_ID,
+    captured_snapshot_frames, captured_spot_frames, dispatch_spot_frames, usdc_eur_pair,
 };
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -11950,24 +11950,19 @@ fn test_spot_external_amendment_after_trade_without_cumulative_moves_order_terms
     );
 }
 
-/// The open-orders snapshot Kraken sends on resubscribe for a kept order another client grew from
-/// 5 to 10 during a reconnect.
+/// The open-orders snapshot entry Kraken sends on resubscribe for a kept order another client grew
+/// from 5 to 10 during a reconnect, with the fields of the captured entry.
 fn grown_order_snapshot_entry() -> KrakenWsExecutionData {
-    spot_frame(json!({
-        "order_id": CAPTURED_STOP_ORDER_ID,
-        "exec_type": "new",
-        "order_status": "new",
-        "symbol": "USDC/EUR",
-        "side": "buy",
-        "order_type": "stop-loss-limit",
-        "order_qty": 10.0,
-        "cum_qty": 0.0,
-        "cum_cost": 0.0,
-        "limit_price": 0.9132,
-        "time_in_force": "GTC",
-        "amended": true,
-        "timestamp": "2026-01-01T00:00:09.000000Z",
-    }))
+    patched_spot_frame(
+        &captured_snapshot_frames()[3],
+        json!({
+            "order_id": CAPTURED_STOP_ORDER_ID,
+            "order_type": "stop-loss-limit",
+            "order_qty": 10.0,
+            "limit_price": 0.9132,
+            "timestamp": "2026-01-01T00:00:09.000000Z",
+        }),
+    )
 }
 
 /// A kept order another client grows from 5 to 10 while the stream reconnects takes the grown
@@ -12041,6 +12036,126 @@ fn test_spot_external_order_grown_during_reconnect_fills_past_kept_quantity() {
     );
 }
 
+/// A kept order whose amendment is lost while the stream reconnects takes the amended quantity
+/// from Kraken's open-orders snapshot.
+#[rstest]
+fn test_spot_external_order_amended_during_reconnect_takes_snapshot_quantity() {
+    let instrument = usdc_eur_pair();
+    let harness = usdc_eur_harness();
+    let state = WsDispatchState::new();
+    let captured = captured_snapshot_frames();
+    let lost_amendment = [
+        captured[0].clone(),
+        captured[1].clone(),
+        captured[3].clone(),
+    ];
+
+    replay_spot_events(
+        &harness,
+        dispatch_spot_frames(&lost_amendment, &state, &instrument),
+    );
+
+    let order = only_order(&harness);
+    assert_eq!(
+        (
+            order.status(),
+            order.quantity(),
+            order.price(),
+            order.filled_qty(),
+        ),
+        (
+            OrderStatus::Accepted,
+            Quantity::from("6.00000000"),
+            Some(Price::from("0.4571")),
+            Quantity::from("0.00000000"),
+        ),
+    );
+
+    replay_spot_events(
+        &harness,
+        dispatch_spot_frames(&captured[4..], &state, &instrument),
+    );
+
+    let order = only_order(&harness);
+    assert_eq!(
+        (order.status(), order.quantity()),
+        (OrderStatus::Canceled, Quantity::from("6.00000000")),
+    );
+}
+
+/// Kraken's open-orders snapshot states no cumulative quantity, so a kept order it restates keeps
+/// the fills made before the reconnect while taking the quantity grown during it.
+#[rstest]
+fn test_spot_external_order_snapshot_keeps_fills_made_before_reconnect() {
+    let instrument = usdc_eur_pair();
+    let harness = usdc_eur_harness();
+    let state = WsDispatchState::new();
+    let captured = captured_snapshot_frames();
+    let trade = patched_spot_frame(
+        &captured_spot_frames(CAPTURED_STOP_ORDER_ID)[3],
+        json!({
+            "order_id": CAPTURED_LIMIT_ORDER_ID,
+            "order_type": "limit",
+            "exec_id": "TGAP03-AAAAA-000003",
+            "last_qty": 2.0,
+            "last_price": 0.4571,
+            "cost": 0.9142,
+            "cum_qty": 2.0,
+            "cum_cost": 0.9142,
+            "avg_price": 0.4571,
+            "liquidity_ind": "m",
+            "timestamp": "2026-01-01T00:00:01.500000Z",
+        }),
+    );
+    let snapshot = patched_spot_frame(
+        &captured[3],
+        json!({"order_qty": 10.0, "order_status": "partially_filled", "cum_cost": 0.9142}),
+    );
+    let frames = [captured[0].clone(), captured[1].clone(), trade, snapshot];
+
+    replay_spot_events(&harness, dispatch_spot_frames(&frames, &state, &instrument));
+
+    let order = only_order(&harness);
+    assert_eq!(
+        (
+            order.status(),
+            order.quantity(),
+            order.filled_qty(),
+            order.leaves_qty(),
+        ),
+        (
+            OrderStatus::PartiallyFilled,
+            Quantity::from("10.00000000"),
+            Quantity::from("2.00000000"),
+            Quantity::from("8.00000000"),
+        ),
+    );
+}
+
+/// An order first seen in Kraken's open-orders snapshot, placed while the stream was down, takes
+/// its shape from the snapshot entry, so a later frame stating only what changed keeps its terms.
+#[rstest]
+fn test_spot_external_order_first_seen_in_snapshot_keeps_its_terms() {
+    let instrument = usdc_eur_pair();
+    let harness = usdc_eur_harness();
+    let captured = captured_snapshot_frames();
+
+    replay_spot_events(
+        &harness,
+        dispatch_spot_frames(&captured[3..], &WsDispatchState::new(), &instrument),
+    );
+
+    let order = only_order(&harness);
+    assert_eq!(
+        (order.status(), order.quantity(), order.price()),
+        (
+            OrderStatus::Canceled,
+            Quantity::from("6.00000000"),
+            Some(Price::from("0.4571")),
+        ),
+    );
+}
+
 /// The executions frames of a limit buy of 0.0002 BTC/USDT at 70000.0 placed outside the node.
 fn external_btc_frame(fields: Value) -> String {
     let mut data = json!({
@@ -12087,7 +12202,7 @@ async fn test_spot_ws_reconnect_restates_kept_orders_from_snapshot() {
             "exec_type": "new",
             "order_status": "new",
             "order_qty": 0.0003,
-            "cum_qty": 0.0,
+            "cum_cost": 0.0,
             "limit_price": 70000.0,
             "time_in_force": "GTC",
             "amended": true,

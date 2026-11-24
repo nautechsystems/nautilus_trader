@@ -1,0 +1,110 @@
+[
+  {
+    "channel": "executions",
+    "type": "update",
+    "data": [
+      {
+        "order_id": "OCAP16-LIMIT-000016",
+        "symbol": "USDC/EUR",
+        "order_qty": 5.0,
+        "cum_cost": 0.0,
+        "time_in_force": "GTC",
+        "exec_type": "pending_new",
+        "side": "buy",
+        "order_type": "limit",
+        "order_userref": 5704,
+        "limit_price_type": "static",
+        "limit_price": 0.4571,
+        "stop_price": 0.0,
+        "post_only": true,
+        "order_status": "pending_new",
+        "fee_usd_equiv": 0.0,
+        "fee_ccy_pref": "fciq",
+        "timestamp": "2026-01-01T00:00:01.000000Z"
+      }
+    ],
+    "sequence": 1
+  },
+  {
+    "channel": "executions",
+    "type": "update",
+    "data": [
+      {
+        "timestamp": "2026-01-01T00:00:01.000000Z",
+        "order_status": "new",
+        "exec_type": "new",
+        "order_userref": 5704,
+        "post_only": true,
+        "order_id": "OCAP16-LIMIT-000016"
+      }
+    ],
+    "sequence": 2
+  },
+  {
+    "channel": "executions",
+    "type": "update",
+    "data": [
+      {
+        "timestamp": "2026-01-01T00:00:02.000000Z",
+        "exec_type": "amended",
+        "order_status": "new",
+        "cum_qty": 0.0,
+        "reason": "User requested",
+        "amended": true,
+        "order_qty": 6.0,
+        "limit_price": 0.4571,
+        "limit_price_type": "static",
+        "order_userref": 5704,
+        "order_id": "OCAP16-LIMIT-000016"
+      }
+    ],
+    "sequence": 3
+  },
+  {
+    "channel": "executions",
+    "type": "snapshot",
+    "data": [
+      {
+        "order_id": "OCAP16-LIMIT-000016",
+        "symbol": "USDC/EUR",
+        "order_qty": 6.0,
+        "cum_cost": 0.0,
+        "time_in_force": "GTC",
+        "exec_type": "new",
+        "side": "buy",
+        "order_type": "limit",
+        "order_userref": 5704,
+        "amended": true,
+        "limit_price_type": "static",
+        "limit_price": 0.4571,
+        "stop_price": 0.0,
+        "order_status": "new",
+        "fee_usd_equiv": 0.0,
+        "fee_ccy_pref": "fciq",
+        "timestamp": "2026-01-01T00:00:02.000000Z"
+      }
+    ],
+    "sequence": 1
+  },
+  {
+    "channel": "executions",
+    "type": "update",
+    "data": [
+      {
+        "timestamp": "2026-01-01T00:00:03.000000Z",
+        "order_status": "canceled",
+        "exec_type": "canceled",
+        "cum_qty": 0.0,
+        "cum_cost": 0.0,
+        "fee_usd_equiv": 0.0,
+        "avg_price": 0.0,
+        "order_userref": 5704,
+        "post_only": true,
+        "cancel_reason": "User requested",
+        "reason": "User requested",
+        "order_id": "OCAP16-LIMIT-000016"
+      }
+    ],
+    "sequence": 4
+  }
+]

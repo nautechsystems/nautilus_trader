@@ -342,8 +342,8 @@ fn shaped_execution(
     true
 }
 
-/// Returns the shape of an untracked order from its `pending_new` frame, when the engine can build
-/// the order from it.
+/// Returns the shape of an untracked order from its `pending_new` frame or its open-orders
+/// snapshot entry, when the engine can build the order from it.
 fn seed_order_shape(
     exec: &KrakenWsExecutionData,
     instrument: &InstrumentAny,
@@ -351,7 +351,12 @@ fn seed_order_shape(
     cached_qty: Option<Decimal>,
     ts_init: UnixNanos,
 ) -> Option<SpotOrderShape> {
-    if exec.exec_type != KrakenExecType::PendingNew {
+    // A snapshot entry states the whole order as `new`; an update's `new` frame states too little
+    // to build the order from
+    if !matches!(
+        exec.exec_type,
+        KrakenExecType::PendingNew | KrakenExecType::New
+    ) {
         return None;
     }
     let mut shape = SpotOrderShape::default();

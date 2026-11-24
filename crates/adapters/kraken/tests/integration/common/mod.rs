@@ -44,6 +44,9 @@ pub(crate) const CAPTURED_STOP_ORDER_ID: &str = "OCAP14-STLMT-000014";
 /// Venue order ID of the market sell in `ws_executions_external_orders.json`.
 pub(crate) const CAPTURED_MARKET_ORDER_ID: &str = "OCAP15-MARKT-000015";
 
+/// Venue order ID of the limit buy in `ws_executions_order_snapshot.json`.
+pub(crate) const CAPTURED_LIMIT_ORDER_ID: &str = "OCAP16-LIMIT-000016";
+
 pub(crate) fn test_emitter() -> (
     ExecutionEventEmitter,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -107,14 +110,27 @@ pub(crate) fn empty_decimal_map() -> Arc<AtomicMap<String, Decimal>> {
 
 /// The executions frames of one order in `ws_executions_external_orders.json`, in arrival order.
 pub(crate) fn captured_spot_frames(order_id: &str) -> Vec<KrakenWsExecutionData> {
-    let envelopes: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+    executions_entries(include_str!(
         "../../../test_data/ws_executions_external_orders.json"
     ))
-    .unwrap();
+    .into_iter()
+    .filter(|exec| exec.order_id == order_id)
+    .collect()
+}
+
+/// The executions frames in `ws_executions_order_snapshot.json`, in arrival order: `pending_new`,
+/// `new`, `amended`, the `snapshot` entry, then `canceled`.
+pub(crate) fn captured_snapshot_frames() -> Vec<KrakenWsExecutionData> {
+    executions_entries(include_str!(
+        "../../../test_data/ws_executions_order_snapshot.json"
+    ))
+}
+
+fn executions_entries(json: &str) -> Vec<KrakenWsExecutionData> {
+    let envelopes: Vec<serde_json::Value> = serde_json::from_str(json).unwrap();
     envelopes
         .iter()
         .map(|envelope| serde_json::from_value(envelope["data"][0].clone()).unwrap())
-        .filter(|exec: &KrakenWsExecutionData| exec.order_id == order_id)
         .collect()
 }
 
