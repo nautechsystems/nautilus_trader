@@ -1133,6 +1133,7 @@ impl Session {
 
         let spawned = self.tasks.spawn(async move {
             let _guard = InFlightGuard(in_flight);
+
             if let Err(e) = refresh(
                 &provider,
                 &instruments,
