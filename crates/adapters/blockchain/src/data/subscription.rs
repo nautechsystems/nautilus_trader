@@ -261,6 +261,52 @@ impl DefiDataSubscriptionManager {
         result
     }
 
+    /// Gets each registered pool event signature for the given DEX as a hex string,
+    /// paired with the addresses of pools subscribed to that event type.
+    /// Omits event types with no subscribed pools.
+    #[must_use]
+    pub fn get_active_pool_event_filters(&self, dex: &DexType) -> Vec<(String, Vec<Address>)> {
+        let mut result = Vec::new();
+
+        push_active_pool_event_pair(
+            &mut result,
+            self.pool_swap_event_encoded.get(dex),
+            self.get_subscribed_pool_swap_addresses(dex),
+        );
+        push_active_pool_event_pair(
+            &mut result,
+            self.pool_mint_event_encoded.get(dex),
+            self.get_subscribed_pool_mint_addresses(dex),
+        );
+        push_active_pool_event_pair(
+            &mut result,
+            self.pool_burn_event_encoded.get(dex),
+            self.get_subscribed_pool_burn_addresses(dex),
+        );
+        push_active_pool_event_pair(
+            &mut result,
+            self.pool_collect_event_encoded.get(dex),
+            self.get_subscribed_pool_collect_addresses(dex),
+        );
+        push_active_pool_event_pair(
+            &mut result,
+            self.pool_flash_event_encoded.get(dex),
+            self.get_subscribed_pool_flash_addresses(dex),
+        );
+        push_active_pool_event_pair(
+            &mut result,
+            self.pool_fee_protocol_update_event_encoded.get(dex),
+            self.get_subscribed_pool_fee_protocol_update_addresses(dex),
+        );
+        push_active_pool_event_pair(
+            &mut result,
+            self.pool_fee_protocol_collect_event_encoded.get(dex),
+            self.get_subscribed_pool_fee_protocol_collect_addresses(dex),
+        );
+
+        result
+    }
+
     /// Gets pool addresses subscribed to swap events for a given DEX.
     #[must_use]
     pub fn get_subscribed_pool_swap_addresses(&self, dex: &DexType) -> Vec<Address> {
@@ -623,6 +669,22 @@ fn release_pool_event(demand: &mut PoolEventDemand, address: Address) {
             demand.remove(&address);
         }
     }
+}
+
+fn push_active_pool_event_pair(
+    pairs: &mut Vec<(String, Vec<Address>)>,
+    signature: Option<&String>,
+    addresses: Vec<Address>,
+) {
+    let Some(signature) = signature else {
+        return;
+    };
+
+    if addresses.is_empty() {
+        return;
+    }
+
+    pairs.push((signature.clone(), addresses));
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1040,6 +1102,98 @@ mod tests {
         assert!(addresses.contains(&pool_address));
         assert!(active_signatures.contains(&update_sig));
         assert!(active_signatures.contains(&collect_sig));
+    }
+
+    #[rstest]
+    fn test_active_pool_event_filters_keep_narrow_pairs(
+        mut registered_manager: DefiDataSubscriptionManager,
+    ) {
+        let pool_a = address!("1111111111111111111111111111111111111111");
+        let pool_b = address!("2222222222222222222222222222222222222222");
+        let swap_sig = registered_manager
+            .get_dex_pool_swap_event_signature(&DexType::UniswapV3)
+            .unwrap();
+        let mint_sig = registered_manager
+            .get_dex_pool_mint_event_signature(&DexType::UniswapV3)
+            .unwrap();
+        let burn_sig = registered_manager
+            .get_dex_pool_burn_event_signature(&DexType::UniswapV3)
+            .unwrap();
+
+        assert!(
+            registered_manager
+                .get_active_pool_event_filters(&DexType::UniswapV3)
+                .is_empty()
+        );
+
+        registered_manager.subscribe_swaps(DexType::UniswapV3, pool_a);
+        registered_manager.subscribe_mints(DexType::UniswapV3, pool_b);
+        registered_manager.subscribe_burns(DexType::UniswapV3, pool_b);
+
+        assert_eq!(
+            registered_manager.get_active_pool_event_filters(&DexType::UniswapV3),
+            vec![
+                (swap_sig, vec![pool_a]),
+                (mint_sig, vec![pool_b]),
+                (burn_sig, vec![pool_b]),
+            ]
+        );
+    }
+
+    #[rstest]
+    fn test_active_pool_event_filters_cover_overlapping_subscriptions_without_duplicates(
+        mut registered_manager: DefiDataSubscriptionManager,
+    ) {
+        let pool_a = address!("1111111111111111111111111111111111111111");
+        let pool_b = address!("2222222222222222222222222222222222222222");
+        registered_manager.register_dex_fee_protocol_events(
+            DexType::UniswapV3,
+            Some("SetFeeProtocol(uint8,uint8,uint8,uint8)"),
+            Some("CollectProtocol(address,address,uint128,uint128)"),
+        );
+        let swap_sig = registered_manager
+            .get_dex_pool_swap_event_signature(&DexType::UniswapV3)
+            .unwrap();
+        let mint_sig = registered_manager
+            .get_dex_pool_mint_event_signature(&DexType::UniswapV3)
+            .unwrap();
+        let burn_sig = registered_manager
+            .get_dex_pool_burn_event_signature(&DexType::UniswapV3)
+            .unwrap();
+        let collect_sig = registered_manager
+            .get_dex_pool_collect_event_signature(&DexType::UniswapV3)
+            .unwrap();
+        let flash_sig = registered_manager
+            .get_dex_pool_flash_event_signature(&DexType::UniswapV3)
+            .unwrap();
+        let fee_update_sig = registered_manager
+            .get_dex_pool_fee_protocol_update_event_signature(&DexType::UniswapV3)
+            .unwrap();
+        let fee_collect_sig = registered_manager
+            .get_dex_pool_fee_protocol_collect_event_signature(&DexType::UniswapV3)
+            .unwrap();
+
+        registered_manager.subscribe_pool(DexType::UniswapV3, pool_a);
+        registered_manager.subscribe_swaps(DexType::UniswapV3, pool_b);
+        registered_manager.subscribe_swaps(DexType::UniswapV3, pool_a);
+
+        let mut filters = registered_manager.get_active_pool_event_filters(&DexType::UniswapV3);
+        for (_, addresses) in &mut filters {
+            addresses.sort_unstable();
+        }
+
+        assert_eq!(
+            filters,
+            vec![
+                (swap_sig, vec![pool_a, pool_b]),
+                (mint_sig, vec![pool_a]),
+                (burn_sig, vec![pool_a]),
+                (collect_sig, vec![pool_a]),
+                (flash_sig, vec![pool_a]),
+                (fee_update_sig, vec![pool_a]),
+                (fee_collect_sig, vec![pool_a]),
+            ]
+        );
     }
 
     #[rstest]

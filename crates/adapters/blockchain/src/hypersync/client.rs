@@ -151,14 +151,15 @@ impl HyperSyncClient {
     ///
     /// The stream query is open-ended (`to_block = None`) and the background task resumes from the
     /// last HyperSync `next_block` whenever the SDK stream reaches the current indexed tip.
+    /// Each distinct signature in `event_filters` becomes one log selection over its
+    /// subscribed addresses, so only subscribed pool-event pairs match. Entries with
+    /// empty address lists are ignored; an empty filter stops the stream.
     pub async fn update_dex_event_stream(
         &mut self,
         dex: DexType,
-        contract_addresses: Vec<Address>,
-        event_signatures: Vec<String>,
+        event_filters: Vec<(String, Vec<Address>)>,
     ) {
-        let filter = DexEventStreamFilter::new(contract_addresses, event_signatures);
-
+        let filter = DexEventStreamFilter::new(event_filters);
         if filter.is_empty() {
             self.stop_dex_event_stream(dex).await;
             return;
@@ -240,6 +241,8 @@ impl HyperSyncClient {
 
     /// Creates a stream of contract event logs matching the specified criteria.
     ///
+    /// An empty topic list matches every log at the address.
+    ///
     /// # Panics
     ///
     /// Panics if the contract address cannot be parsed as a valid Ethereum address.
@@ -250,12 +253,9 @@ impl HyperSyncClient {
         contract_address: &Address,
         topics: Vec<&str>,
     ) -> impl Stream<Item = PoolEventStreamItem> + use<> {
-        let query = Self::construct_contract_events_query(
-            from_block,
-            to_block,
-            &[*contract_address],
-            &topics,
-        );
+        let log_selections = backfill_log_selections(contract_address, topics);
+        let query =
+            Self::construct_query_with_log_selections(from_block, to_block, &log_selections);
 
         let chain = self.chain.name;
         let mut rx = self
@@ -480,15 +480,24 @@ impl HyperSyncClient {
     fn construct_contract_events_query(
         from_block: u64,
         to_block: Option<u64>,
-        contract_addresses: &[Address],
-        topics: &[&str],
+        event_filters: &[(String, Vec<Address>)],
+    ) -> Query {
+        let log_selections: Vec<serde_json::Value> = event_filters
+            .iter()
+            .map(|(signature, addresses)| pair_log_selection(signature, addresses))
+            .collect();
+
+        Self::construct_query_with_log_selections(from_block, to_block, &log_selections)
+    }
+
+    fn construct_query_with_log_selections(
+        from_block: u64,
+        to_block: Option<u64>,
+        log_selections: &[serde_json::Value],
     ) -> Query {
         let mut query_value = serde_json::json!({
             "from_block": from_block,
-            "logs": [{
-                "topics": [topics],
-                "address": contract_addresses
-            }],
+            "logs": log_selections,
             "field_selection": {
                 "log": [
                     "block_number",
@@ -546,17 +555,9 @@ impl HyperSyncClient {
                 break;
             }
 
-            let topics = filter
-                .event_signatures
-                .iter()
-                .map(String::as_str)
-                .collect::<Vec<_>>();
-            let query = Self::construct_contract_events_query(
-                from_block,
-                None,
-                &filter.contract_addresses,
-                &topics,
-            );
+            let query =
+                Self::construct_contract_events_query(from_block, None, &filter.event_filters);
+
             let mut rx = match client.stream(query, StreamConfig::default()).await {
                 Ok(rx) => rx,
                 Err(e) => {
@@ -788,24 +789,40 @@ impl Drop for HyperSyncClient {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DexEventStreamFilter {
-    contract_addresses: Vec<Address>,
-    event_signatures: Vec<String>,
+    event_filters: Vec<(String, Vec<Address>)>,
 }
 
 impl DexEventStreamFilter {
-    fn new(mut contract_addresses: Vec<Address>, mut event_signatures: Vec<String>) -> Self {
-        contract_addresses.sort_unstable();
-        contract_addresses.dedup();
-        event_signatures.sort_unstable();
-        event_signatures.dedup();
+    fn new(event_filters: Vec<(String, Vec<Address>)>) -> Self {
+        // Merge pairs sharing a signature so each log can match at most one selection.
+        let mut merged: Vec<(String, Vec<Address>)> = Vec::new();
+
+        for (signature, addresses) in event_filters {
+            if addresses.is_empty() {
+                continue;
+            }
+
+            if let Some(existing) = merged.iter_mut().find(|(sig, _)| *sig == signature) {
+                existing.1.extend(addresses);
+            } else {
+                merged.push((signature, addresses));
+            }
+        }
+
+        for (_, addresses) in &mut merged {
+            addresses.sort_unstable();
+            addresses.dedup();
+        }
+
+        merged.sort_by(|a, b| a.0.cmp(&b.0));
+
         Self {
-            contract_addresses,
-            event_signatures,
+            event_filters: merged,
         }
     }
 
     fn is_empty(&self) -> bool {
-        self.contract_addresses.is_empty() || self.event_signatures.is_empty()
+        self.event_filters.is_empty()
     }
 }
 
@@ -815,6 +832,40 @@ struct DexEventStreamTask {
     next_from_block: Arc<AtomicU64>,
     cancellation_token: tokio_util::sync::CancellationToken,
     task: TaskSlot<()>,
+}
+
+/// Builds one log selection matching one signature at the given addresses.
+fn pair_log_selection(signature: &str, addresses: &[Address]) -> serde_json::Value {
+    serde_json::json!({
+        "topics": [[signature]],
+        "address": addresses
+    })
+}
+
+/// Builds log selections for a single-address backfill: one selection per distinct
+/// topic, or the address-only selection matching every log at the address when no
+/// topics are given.
+///
+/// Selection order carries no meaning (the server matches selections as a set), so topics
+/// are sorted to deduplicate them.
+fn backfill_log_selections(
+    contract_address: &Address,
+    topics: Vec<&str>,
+) -> Vec<serde_json::Value> {
+    if topics.is_empty() {
+        return vec![serde_json::json!({
+            "topics": [[]],
+            "address": [*contract_address],
+        })];
+    }
+
+    let mut topics = topics;
+    topics.sort_unstable();
+    topics.dedup();
+    topics
+        .into_iter()
+        .map(|topic| pair_log_selection(topic, &[*contract_address]))
+        .collect()
 }
 
 /// Maps one HyperSync response into stream items, surfacing blocks ahead of the logs from the
@@ -1047,8 +1098,10 @@ mod tests {
         let query = HyperSyncClient::construct_contract_events_query(
             10,
             Some(12),
-            &[address],
-            &["0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67"],
+            &[(
+                "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67".to_string(),
+                vec![address],
+            )],
         );
 
         assert_eq!(query.from_block, 10);
@@ -1061,8 +1114,10 @@ mod tests {
         let query = HyperSyncClient::construct_contract_events_query(
             10,
             Some(10),
-            &[address],
-            &["0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67"],
+            &[(
+                "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67".to_string(),
+                vec![address],
+            )],
         );
 
         assert_eq!(query.from_block, 10);
@@ -1075,8 +1130,10 @@ mod tests {
         let query = HyperSyncClient::construct_contract_events_query(
             10,
             None,
-            &[address],
-            &["0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67"],
+            &[(
+                "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67".to_string(),
+                vec![address],
+            )],
         );
 
         assert_eq!(query.from_block, 10);
@@ -1084,35 +1141,161 @@ mod tests {
     }
 
     #[rstest]
-    fn dex_event_stream_filter_sorts_and_deduplicates_inputs() {
-        let address1 = Address::from_str("0x0000000000000000000000000000000000000001").unwrap();
-        let address2 = Address::from_str("0x0000000000000000000000000000000000000002").unwrap();
-        let filter = DexEventStreamFilter::new(
-            vec![address2, address1, address2],
+    fn backfill_log_selections_deduplicate_topics() {
+        let address = Address::from_str("0x0000000000000000000000000000000000000001").unwrap();
+
+        let selections = backfill_log_selections(
+            &address,
             vec![
-                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
-                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
-                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             ],
         );
 
-        assert_eq!(filter.contract_addresses, vec![address1, address2]);
         assert_eq!(
-            filter.event_signatures,
+            selections,
             vec![
-                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
-                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+                serde_json::json!({
+                    "topics": [["0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]],
+                    "address": ["0x0000000000000000000000000000000000000001"],
+                }),
+                serde_json::json!({
+                    "topics": [["0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]],
+                    "address": ["0x0000000000000000000000000000000000000001"],
+                }),
             ]
         );
     }
 
     #[rstest]
-    fn dex_event_stream_filter_requires_addresses_and_signatures() {
+    fn backfill_without_topics_keeps_address_only_selection() {
         let address = Address::from_str("0x0000000000000000000000000000000000000001").unwrap();
 
-        assert!(DexEventStreamFilter::new(vec![], vec!["0x01".to_string()]).is_empty());
-        assert!(DexEventStreamFilter::new(vec![address], vec![]).is_empty());
-        assert!(!DexEventStreamFilter::new(vec![address], vec!["0x01".to_string()]).is_empty());
+        let selections = backfill_log_selections(&address, vec![]);
+
+        assert_eq!(
+            selections,
+            vec![serde_json::json!({
+                "topics": [[]],
+                "address": ["0x0000000000000000000000000000000000000001"],
+            })]
+        );
+    }
+
+    #[rstest]
+    fn construct_contract_events_query_keeps_narrow_pairs_in_separate_selections() {
+        let pool_a = Address::from_str("0x1111111111111111111111111111111111111111").unwrap();
+        let pool_b = Address::from_str("0x2222222222222222222222222222222222222222").unwrap();
+        let swap_sig = "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67";
+        let mint_sig = "0x7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde";
+
+        let query = HyperSyncClient::construct_contract_events_query(
+            10,
+            None,
+            &[
+                (swap_sig.to_string(), vec![pool_a]),
+                (mint_sig.to_string(), vec![pool_b]),
+            ],
+        );
+
+        let value = serde_json::to_value(&query).expect("query serializes");
+        assert_eq!(
+            value["logs"],
+            serde_json::json!([
+                {
+                    "address": ["0x1111111111111111111111111111111111111111"],
+                    "topics": [[swap_sig]],
+                },
+                {
+                    "address": ["0x2222222222222222222222222222222222222222"],
+                    "topics": [[mint_sig]],
+                },
+            ])
+        );
+
+        // HyperSync matches a log when its address is in a selection's address
+        // list and its topic0 is in that selection's topics[0], across any
+        // selection, so only the subscribed pairs below may match.
+        let matches = |address: &str, topic0: &str| {
+            value["logs"].as_array().is_some_and(|selections| {
+                selections.iter().any(|selection| {
+                    selection["address"]
+                        .as_array()
+                        .is_some_and(|addresses| addresses.iter().any(|a| a == address))
+                        && selection["topics"][0]
+                            .as_array()
+                            .is_some_and(|topics| topics.iter().any(|t| t == topic0))
+                })
+            })
+        };
+
+        assert!(matches(
+            "0x1111111111111111111111111111111111111111",
+            swap_sig
+        ));
+        assert!(matches(
+            "0x2222222222222222222222222222222222222222",
+            mint_sig
+        ));
+        assert!(!matches(
+            "0x2222222222222222222222222222222222222222",
+            swap_sig
+        ));
+        assert!(!matches(
+            "0x1111111111111111111111111111111111111111",
+            mint_sig
+        ));
+    }
+
+    #[rstest]
+    fn dex_event_stream_filter_sorts_deduplicates_and_merges_inputs() {
+        let address1 = Address::from_str("0x0000000000000000000000000000000000000001").unwrap();
+        let address2 = Address::from_str("0x0000000000000000000000000000000000000002").unwrap();
+
+        let filter = DexEventStreamFilter::new(vec![
+            (
+                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+                vec![address2, address1, address2],
+            ),
+            (
+                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+                vec![address2],
+            ),
+            (
+                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+                vec![address1],
+            ),
+            (
+                "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".to_string(),
+                vec![],
+            ),
+        ]);
+
+        assert_eq!(
+            filter.event_filters,
+            vec![
+                (
+                    "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                        .to_string(),
+                    vec![address2],
+                ),
+                (
+                    "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                        .to_string(),
+                    vec![address1, address2],
+                ),
+            ]
+        );
+    }
+
+    #[rstest]
+    fn dex_event_stream_filter_requires_pairs_with_addresses() {
+        let address = Address::from_str("0x0000000000000000000000000000000000000001").unwrap();
+
+        assert!(DexEventStreamFilter::new(vec![]).is_empty());
+        assert!(DexEventStreamFilter::new(vec![("0x01".to_string(), vec![])]).is_empty());
+        assert!(!DexEventStreamFilter::new(vec![("0x01".to_string(), vec![address])]).is_empty());
     }
 
     #[tokio::test]
@@ -1127,7 +1310,7 @@ mod tests {
             task_next_from_block.store(99, Ordering::Relaxed);
         });
         let stream_task = DexEventStreamTask {
-            filter: DexEventStreamFilter::new(vec![], vec![]),
+            filter: DexEventStreamFilter::new(vec![]),
             next_from_block,
             cancellation_token,
             task: TaskSlot::from_handle(task),
