@@ -2470,7 +2470,7 @@ mod tests {
         symbol.status = status;
         symbol.contract_type = contract_type.to_string();
         symbol.underlying_type = underlying_type.map(str::to_string);
-        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
 
         let error = parse_usdm_instrument(&symbol, ts, ts).unwrap_err();
 
