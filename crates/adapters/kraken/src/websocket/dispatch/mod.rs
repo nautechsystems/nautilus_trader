@@ -137,13 +137,15 @@ pub struct OrderIdentity {
 /// Tracks which orders were submitted through this client (so we can route
 /// venue events to typed [`OrderEventAny`] emissions for tracked orders, and
 /// fall back to reports for external orders), and provides cross-stream
-/// dedup for `OrderAccepted` and `OrderFilled` emissions.
+/// dedup for `OrderAccepted`, `OrderTriggered` and `OrderFilled` emissions.
 #[derive(Debug)]
 pub struct WsDispatchState {
     /// Tracked orders keyed by full Nautilus [`ClientOrderId`].
     pub order_identities: DashMap<ClientOrderId, OrderIdentity>,
     /// Client order IDs for which an `OrderAccepted` event has been emitted.
     pub emitted_accepted: DashSet<ClientOrderId>,
+    /// Client order IDs for which an `OrderTriggered` event has been emitted.
+    emitted_triggered: DashSet<ClientOrderId>,
     /// Client order IDs that have reached the filled terminal state.
     pub filled_orders: DashSet<ClientOrderId>,
     /// Symbol captured from execution frames for a venue order id.
@@ -156,15 +158,15 @@ pub struct WsDispatchState {
     /// any frame that carries it (first writer wins). Keyed by venue
     /// `order_id` because delta frames often lack `cl_ord_id` as well.
     ///
-    /// Known limitation: the live spot execution client currently subscribes
-    /// with `snap_orders=false` (see `execution/spot.rs`). Orders that were
-    /// already open at the venue before this process connected therefore do
-    /// not receive an in-session `pending_new`, and if their next delta
-    /// frame omits `symbol` it is dropped at symbol resolution. State for
-    /// such orders is recovered via REST reconciliation
-    /// (`request_order_status_reports`). Enabling `snap_orders=true` would
-    /// allow the executions snapshot to seed the cache for pre-existing
-    /// orders.
+    /// Known limitation: the live spot execution client subscribes with
+    /// `snap_orders=false` when it connects (see `execution/spot.rs`); only a
+    /// subscription replayed after a reconnect asks for the open-orders
+    /// snapshot. Orders that were already open at the venue before this
+    /// process connected therefore do not receive an in-session
+    /// `pending_new`, and until a reconnect restates them, a delta frame
+    /// that omits `symbol` is dropped at symbol resolution. State for such
+    /// orders is recovered via REST reconciliation
+    /// (`request_order_status_reports`).
     ///
     /// Steady-state eviction happens on terminal exec types
     /// (`Canceled`/`Filled`/`Expired`). Bounded by `DEDUP_CAPACITY` as a
@@ -218,8 +220,8 @@ pub struct WsDispatchState {
     pub emitted_trades: Mutex<IndexSet<TradeId>>,
     /// Shapes of spot orders this client does not track, keyed by venue `order_id`.
     ///
-    /// An entry starts at the order's `pending_new` frame and ends at its `filled`, `canceled` or
-    /// `expired` frame. Beyond `DEDUP_CAPACITY` the oldest entry is evicted, and that order's later
+    /// An entry starts at the order's `pending_new` frame or open-orders snapshot entry and ends at
+    /// its `filled`, `canceled` or `expired` frame. Beyond `DEDUP_CAPACITY` the oldest entry is evicted, and that order's later
     /// frames are reported from what they state.
     spot_order_shapes: Mutex<FifoCacheMap<String, SpotOrderShape, DEDUP_CAPACITY>>,
     clearing: AtomicBool,
@@ -230,6 +232,7 @@ impl Default for WsDispatchState {
         Self {
             order_identities: DashMap::new(),
             emitted_accepted: DashSet::default(),
+            emitted_triggered: DashSet::default(),
             filled_orders: DashSet::default(),
             order_symbol_cache: DashMap::new(),
             order_client_id_cache: DashMap::new(),
@@ -274,6 +277,13 @@ impl WsDispatchState {
     pub fn insert_accepted(&self, cid: ClientOrderId) -> bool {
         self.evict_if_full(&self.emitted_accepted);
         self.emitted_accepted.insert(cid)
+    }
+
+    /// Atomically marks an `OrderTriggered` event as emitted for this order, returning whether it
+    /// was newly marked.
+    pub(crate) fn insert_triggered(&self, cid: ClientOrderId) -> bool {
+        self.evict_if_full(&self.emitted_triggered);
+        self.emitted_triggered.insert(cid)
     }
 
     /// Marks an order as having reached the filled terminal state.
@@ -367,6 +377,7 @@ impl WsDispatchState {
     pub fn cleanup_terminal(&self, client_order_id: &ClientOrderId) {
         self.order_identities.remove(client_order_id);
         self.emitted_accepted.remove(client_order_id);
+        self.emitted_triggered.remove(client_order_id);
         self.order_filled_qty.remove(client_order_id);
         self.delta_snapshots.remove(client_order_id);
         self.pending_removals.remove(client_order_id);
@@ -439,7 +450,7 @@ impl WsDispatchState {
     }
 
     /// Removes every kept spot order shape.
-    pub fn forget_spot_order_shapes(&self) {
+    pub(crate) fn forget_spot_order_shapes(&self) {
         self.spot_order_shapes.lock().clear();
     }
 

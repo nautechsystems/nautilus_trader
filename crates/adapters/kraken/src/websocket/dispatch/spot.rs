@@ -494,6 +494,11 @@ fn status_tracked(
             emitter.send_order_event(OrderEventAny::Accepted(accepted));
         }
         OrderStatus::Triggered => {
+            // A reconnect's open-orders snapshot restates a triggered order
+            if !state.insert_triggered(client_order_id) {
+                return;
+            }
+
             // Stop / take-profit transition. Synthesize Accepted first if the
             // venue compressed placement and trigger into one message.
             ensure_accepted_emitted(

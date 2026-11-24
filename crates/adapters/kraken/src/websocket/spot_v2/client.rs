@@ -2055,8 +2055,8 @@ impl SpotReplay {
             payload.clone()
         };
 
-        // The frames sent while the connection was down are lost, and a snapshot of the open
-        // orders restates what they changed
+        // The frames sent while the connection was down are lost, and a snapshot restates the
+        // open orders they may have changed
         let payload = if topic == "executions" {
             request_order_snapshot_in_payload(payload.expose_secret())
                 .inspect_err(|e| log::error!("Failed to request an order snapshot: {e}"))

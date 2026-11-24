@@ -11815,9 +11815,12 @@ fn spot_frame(fields: Value) -> KrakenWsExecutionData {
 
 /// `frame` with the JSON fields in `patch` replaced.
 fn patched_spot_frame(frame: &KrakenWsExecutionData, patch: Value) -> KrakenWsExecutionData {
+    let Value::Object(patch) = patch else {
+        panic!("expected the patch as a JSON object");
+    };
     let mut value = serde_json::to_value(frame).unwrap();
-    for (key, field) in patch.as_object().unwrap() {
-        value[key] = field.clone();
+    for (key, field) in patch {
+        value[key] = field;
     }
     spot_frame(value)
 }
@@ -12158,6 +12161,9 @@ fn test_spot_external_order_first_seen_in_snapshot_keeps_its_terms() {
 
 /// The executions frames of a limit buy of 0.0002 BTC/USDT at 70000.0 placed outside the node.
 fn external_btc_frame(fields: Value) -> String {
+    let Value::Object(fields) = fields else {
+        panic!("expected the fields as a JSON object");
+    };
     let mut data = json!({
         "order_id": "OGAP01-AAAAA-000001",
         "symbol": "BTC/USDT",
@@ -12165,8 +12171,9 @@ fn external_btc_frame(fields: Value) -> String {
         "order_type": "limit",
         "timestamp": "2026-04-11T00:00:00.000000Z",
     });
-    for (key, field) in fields.as_object().unwrap() {
-        data[key] = field.clone();
+
+    for (key, field) in fields {
+        data[key] = field;
     }
     json!({"channel": "executions", "type": "update", "data": [data]}).to_string()
 }

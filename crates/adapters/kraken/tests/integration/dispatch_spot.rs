@@ -418,6 +418,36 @@ fn test_spot_execution_triggered_emits_order_triggered() {
     ));
 }
 
+/// A tracked order already reported triggered emits no second `OrderTriggered` when a later frame,
+/// such as its entry in a reconnect's open-orders snapshot, restates it triggered.
+#[rstest]
+fn test_spot_execution_triggered_again_emits_nothing() {
+    let state = WsDispatchState::new();
+    let cid = ClientOrderId::new("uuid-spot-retrig");
+    state.register_identity(
+        cid,
+        make_identity(SPOT_INSTRUMENT_ID, OrderSide::Buy, OrderType::StopLimit),
+    );
+    let mut triggered = make_spot_execution(
+        KrakenExecType::New,
+        Some("uuid-spot-retrig"),
+        "v-spot-retrig",
+        None,
+    );
+    triggered.order_status = Some(KrakenWsOrderStatus::Triggered);
+
+    let events = dispatch_spot_frames(&[triggered.clone(), triggered], &state, &make_spot_pair());
+
+    assert!(matches!(
+        events[0].as_slice(),
+        [
+            ExecutionEvent::Order(OrderEventAny::Accepted(_)),
+            ExecutionEvent::Order(OrderEventAny::Triggered(_)),
+        ]
+    ));
+    assert!(events[1].is_empty(), "{:?}", events[1]);
+}
+
 #[rstest]
 fn test_spot_execution_amended_emits_order_updated() {
     let (emitter, mut rx) = test_emitter();
