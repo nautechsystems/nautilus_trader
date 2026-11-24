@@ -267,11 +267,9 @@ pub fn parse_futures_ws_order_status_report(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let remaining_qty = Quantity::from_decimal_dp(order.qty, size_precision)
-        .context("Failed to parse order qty")?;
+    let quantity = parse_futures_ws_order_quantity(order, size_precision)?;
     let filled_qty = Quantity::from_decimal_dp(order.filled, size_precision)
         .context("Failed to parse order filled")?;
-    let quantity = remaining_qty + filled_qty;
 
     let ts_accepted = millis_to_nanos(order.time);
     let ts_last = millis_to_nanos(order.last_update_time);
@@ -335,6 +333,25 @@ pub fn parse_futures_ws_order_status_report(
     }
 
     Ok(report)
+}
+
+pub(crate) fn parse_futures_ws_order_quantity(
+    order: &KrakenFuturesOpenOrder,
+    size_precision: u8,
+) -> anyhow::Result<Quantity> {
+    anyhow::ensure!(
+        order.qty >= Decimal::ZERO && order.filled >= Decimal::ZERO,
+        "expected non-negative order quantities, was qty={}, filled={}",
+        order.qty,
+        order.filled
+    );
+
+    // The feed sends open quantity in `qty` and cumulative fills in `filled`
+    let total_qty = order
+        .qty
+        .checked_add(order.filled)
+        .context("total order quantity overflow")?;
+    Quantity::from_decimal_dp(total_qty, size_precision).context("invalid total order quantity")
 }
 
 pub fn parse_futures_ws_fill_report(
@@ -872,8 +889,8 @@ mod tests {
             instrument: ustr::Ustr::from("PF_ETHUSD"),
             time: 1_700_000_000_000,
             last_update_time: 1_700_000_000_100,
-            qty: dec!(27),
-            filled: dec!(26),
+            qty: dec!(13),
+            filled: dec!(29),
             limit_price: Some(dec!(3500)),
             stop_price: None,
             order_type: KrakenFuturesOrderType::Limit,
@@ -891,8 +908,8 @@ mod tests {
                 .unwrap();
 
         assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
-        assert_eq!(report.quantity.as_decimal(), dec!(53));
-        assert_eq!(report.filled_qty.as_decimal(), dec!(26));
+        assert_eq!(report.quantity.as_decimal(), dec!(42));
+        assert_eq!(report.filled_qty.as_decimal(), dec!(29));
     }
 
     #[rstest]

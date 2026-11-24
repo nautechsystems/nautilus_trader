@@ -45,7 +45,10 @@ use crate::{
             KrakenFuturesFill, KrakenFuturesFillsDelta, KrakenFuturesOpenOrdersCancel,
             KrakenFuturesOpenOrdersDelta,
         },
-        parse::{parse_futures_ws_fill_report, parse_futures_ws_order_status_report},
+        parse::{
+            parse_futures_ws_fill_report, parse_futures_ws_order_quantity,
+            parse_futures_ws_order_status_report,
+        },
     },
 };
 
@@ -96,16 +99,14 @@ pub fn open_orders_delta(
         return;
     };
 
-    // Cache instrument and qty by venue order id so cancel-only messages
-    // (which arrive without the order body) can be reconstructed for the
-    // external fallback path. Kraken Futures reports the open remainder in `qty`
-    // and cumulative filled in `filled`, so total order size is `qty + filled`.
-    order_instrument_map.insert(delta.order.order_id.clone(), instrument.id());
-    let total_qty = delta.order.qty + delta.order.filled;
-    let Ok(qty) = Quantity::from_decimal_dp(total_qty, instrument.size_precision()) else {
-        log::error!("Failed to parse order quantity: {total_qty}");
+    let Ok(qty) = parse_futures_ws_order_quantity(&delta.order, instrument.size_precision())
+        .inspect_err(|e| log::error!("Failed to parse order quantity: {e:#}"))
+    else {
         return;
     };
+
+    // Cancel-only messages need both cached fields for the external fallback
+    order_instrument_map.insert(delta.order.order_id.clone(), instrument.id());
     venue_order_qty.insert(delta.order.order_id.clone(), qty);
 
     let resolved_id = delta
@@ -148,6 +149,7 @@ pub fn open_orders_delta(
 
             delta_tracked(
                 delta,
+                qty,
                 client_order_id,
                 venue_order_id,
                 &identity,
@@ -192,6 +194,7 @@ pub fn open_orders_delta(
 #[expect(clippy::too_many_arguments)]
 fn delta_tracked(
     delta: &KrakenFuturesOpenOrdersDelta,
+    qty: Quantity,
     client_order_id: ClientOrderId,
     venue_order_id: VenueOrderId,
     identity: &OrderIdentity,
@@ -220,15 +223,6 @@ fn delta_tracked(
         ts_init,
     );
 
-    // Kraken Futures reports open remainder in `qty` and cumulative filled in `filled`.
-    // The order size is `qty + filled`. Measuring size against open remainder alone causes
-    // partial fills to look like size amends, emitting spurious `OrderUpdated` events and
-    // shrinking the order in the execution engine.
-    let total_qty = delta.order.qty + delta.order.filled;
-    let Ok(qty) = Quantity::from_decimal_dp(total_qty, instrument.size_precision()) else {
-        log::error!("Failed to parse order quantity: {total_qty}");
-        return;
-    };
     let snapshot = DeltaSnapshot::new(
         qty,
         new_filled,
