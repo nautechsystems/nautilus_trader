@@ -1419,6 +1419,97 @@ async fn test_mass_status_recovers_off_tick_average_with_partial_fill_history(
 }
 
 #[rstest]
+#[tokio::test]
+async fn test_mass_status_recovers_average_with_partial_fill_history_and_reduction(
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+) {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    ctx.add_instrument(instrument);
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(StrategyId::external(), OmsType::Netting);
+
+    let reduce_side = match side {
+        OrderSide::Buy => OrderSide::Sell,
+        OrderSide::Sell => OrderSide::Buy,
+    };
+    let position_side = if side == OrderSide::Buy {
+        PositionSide::Long
+    } else {
+        PositionSide::Short
+    };
+
+    let (add_order, add_fill) = create_bounded_fill_lifecycle(
+        instrument_id,
+        VenueOrderId::from("1"),
+        TradeId::from("1"),
+        side,
+        "8.000",
+        "50.00",
+        false,
+        UnixNanos::from(2_000_000),
+    );
+    let (reduce_order, reduce_fill) = create_bounded_fill_lifecycle(
+        instrument_id,
+        VenueOrderId::from("2"),
+        TradeId::from("2"),
+        reduce_side,
+        "1.500",
+        "50.10",
+        true,
+        UnixNanos::from(3_000_000),
+    );
+
+    let report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        position_side,
+        Quantity::from("7.500"),
+        UnixNanos::from(4_000_000),
+        UnixNanos::from(4_000_000),
+        None,
+        None,
+        Some(dec!(50.50)),
+    );
+
+    let mut mass_status =
+        create_mass_status(vec![add_order, reduce_order], vec![add_fill, reduce_fill]);
+    mass_status.add_position_reports(vec![report]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    let cache = ctx.cache.borrow();
+    let positions = cache.positions_open(
+        None,
+        Some(&instrument_id),
+        None,
+        Some(&test_account_id()),
+        None,
+    );
+
+    assert!(
+        result.unresolved_positions.is_empty(),
+        "{:?}",
+        result.unresolved_positions
+    );
+    assert_eq!(
+        filled_events(&result.events),
+        vec![
+            (side, Quantity::from("1.000"), Price::from("54.50")),
+            (side, Quantity::from("8.000"), Price::from("50.00")),
+            (reduce_side, Quantity::from("1.500"), Price::from("50.10")),
+        ]
+    );
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].side, position_side);
+    assert_eq!(positions[0].quantity, Quantity::from("7.500"));
+    assert_eq!(positions[0].avg_px_open, dec!(50.5));
+}
+
+#[rstest]
 #[case::missing_instrument(false, true, true, Some(dec!(3000.50)), "instrument missing from cache")]
 #[case::missing_account(true, false, true, Some(dec!(3000.50)), "account missing from cache")]
 #[case::disabled_generation(true, true, false, Some(dec!(3000.50)), "generate_missing_orders is disabled")]

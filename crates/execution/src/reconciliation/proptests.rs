@@ -481,6 +481,98 @@ proptest! {
         );
     }
 
+    #[rstest]
+    fn prop_adjust_fills_synthetic_opening_with_reductions_matches_venue(
+        pos_side in position_side_strategy(),
+        opening_qty in 10_i64..=200_i64,
+        opening_px_units in 100_i64..=10_000_i64,
+        first_qty in 20_i64..=200_i64,
+        first_px_units in 100_i64..=10_000_i64,
+        reduce_qty in 1_i64..=19_i64,
+        reduce_px_units in 100_i64..=10_000_i64,
+        extra in proptest::collection::vec(
+            (prop::bool::ANY, 1_i64..=100_i64, 100_i64..=10_000_i64, venue_order_id_strategy()),
+            0..=4,
+        ),
+    ) {
+        let (open_side, close_side) = match pos_side {
+            PositionSide::Long => (OrderSide::Buy, OrderSide::Sell),
+            PositionSide::Short => (OrderSide::Sell, OrderSide::Buy),
+            PositionSide::Flat => unreachable!(),
+        };
+        let voi0 = VenueOrderId::new("V-0001");
+        let true_opening = FillSnapshot::new(
+            voi0,
+            open_side,
+            Decimal::from(opening_qty),
+            Decimal::new(opening_px_units, 2),
+            1,
+        );
+
+        let mut window = vec![
+            FillSnapshot::new(
+                voi0,
+                open_side,
+                Decimal::from(first_qty),
+                Decimal::new(first_px_units, 2),
+                2,
+            ),
+            FillSnapshot::new(
+                voi0,
+                close_side,
+                Decimal::from(reduce_qty),
+                Decimal::new(reduce_px_units, 2),
+                3,
+            ),
+        ];
+        let mut window_abs = first_qty - reduce_qty;
+
+        for (i, (is_increase, q, px_units, voi)) in extra.into_iter().enumerate() {
+            let (side, step_qty) = if is_increase || window_abs <= 1 {
+                window_abs += q;
+                (open_side, q)
+            } else {
+                let capped = q.min(window_abs - 1);
+                window_abs -= capped;
+                (close_side, capped)
+            };
+            window.push(FillSnapshot::new(
+                voi,
+                side,
+                Decimal::from(step_qty),
+                Decimal::new(px_units, 2),
+                (i as u64) + 4,
+            ));
+        }
+
+        let full: Vec<&FillSnapshot> = std::iter::once(&true_opening).chain(&window).collect();
+        let (target_signed_qty, target_value) = simulate_position(full, false);
+        let target_abs_qty = target_signed_qty.abs();
+        let target_avg = target_value / target_abs_qty;
+
+        let venue = VenuePositionSnapshot {
+            side: pos_side,
+            qty: target_abs_qty,
+            avg_px: target_avg,
+            avg_px_reconciliation: AvgPxReconciliation::Match,
+            avg_px_precision: None,
+        };
+
+        let adjustment =
+            adjust_fills_for_partial_window(&window, &venue, dec!(0.0001), false, None);
+        prop_assert!(
+            matches!(adjustment, FillAdjustmentResult::AddSyntheticOpening { .. }),
+            "expected AddSyntheticOpening, was {adjustment:?}",
+        );
+
+        let effective = apply_adjustment(window, &adjustment);
+        let (eff_qty, eff_value) = simulate_position(&effective, false);
+        prop_assert!(
+            check_position_match(eff_qty, eff_value, &venue, dec!(0.0001)),
+            "eff_qty={eff_qty}, eff_value={eff_value}, venue={venue:?}",
+        );
+    }
+
     // Flip-scenario roundtrip: applying the reconciliation price for a flip
     // should land on target_avg_px after simulation.
     #[rstest]

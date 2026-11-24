@@ -405,31 +405,36 @@ fn synthetic_opening_fill(
 
     fill.px = match venue_position.avg_px_reconciliation {
         AvgPxReconciliation::OpeningOnly => venue_position.avg_px,
-        AvgPxReconciliation::Match if divides_notional_by_price => {
+        AvgPxReconciliation::Match => {
             if window_qty.is_sign_negative() == venue_position.signed_qty().is_sign_negative()
-                && let Some(window_avg_px) = window_avg_px
+                && let Some(window_avg_px) = window_avg_px.filter(|px| *px > Decimal::ZERO)
                 && keeps_current_avg_px(
                     window_avg_px,
                     Some(venue_position.avg_px),
                     AvgPxReconciliation::Match,
                     venue_position.avg_px_precision,
                 )
-                && inverse_opening_matches(&fill, fills, venue_position, tolerance)
+                && opening_matches(
+                    &fill,
+                    fills,
+                    venue_position,
+                    tolerance,
+                    divides_notional_by_price,
+                )
             {
                 return Some(fill);
             }
 
-            inverse_synthetic_opening_price(fills, venue_position, max_px)?
+            if divides_notional_by_price {
+                inverse_synthetic_opening_price(fills, venue_position, max_px)?
+            } else {
+                fill.px = linear_synthetic_opening_price(fills, venue_position)?;
+                if !opening_matches(&fill, fills, venue_position, tolerance, false) {
+                    return None;
+                }
+                fill.px
+            }
         }
-        AvgPxReconciliation::Match => calculate_reconciliation_price(
-            window_qty,
-            window_avg_px,
-            venue_position.signed_qty(),
-            Some(venue_position.avg_px),
-            AvgPxReconciliation::Match,
-            venue_position.avg_px_precision,
-            false,
-        )?,
     };
 
     Some(fill)
@@ -456,18 +461,53 @@ fn match_inverse_opening_fill(
 
     fill.px = px;
 
-    inverse_opening_matches(fill, existing_fills, venue_position, tolerance)
+    opening_matches(fill, existing_fills, venue_position, tolerance, true)
 }
 
-fn inverse_opening_matches(
+fn opening_matches(
     opening: &FillSnapshot,
     fills: &[FillSnapshot],
     venue_position: &VenuePositionSnapshot,
     tolerance: Decimal,
+    divides_notional_by_price: bool,
 ) -> bool {
     let fills = std::iter::once(opening).chain(fills);
-    let (qty, value) = simulate_position(fills, true);
+    let (qty, value) = simulate_position(fills, divides_notional_by_price);
     check_position_match(qty, value, venue_position, tolerance)
+}
+
+fn linear_synthetic_opening_price(
+    fills: &[FillSnapshot],
+    venue_position: &VenuePositionSnapshot,
+) -> Option<Decimal> {
+    if venue_position.avg_px <= Decimal::ZERO {
+        return None;
+    }
+
+    let mut qty = venue_position.signed_qty();
+    let mut avg_px = Some(venue_position.avg_px);
+
+    // Undo the fills in replay order backwards, since reductions retain the prior average
+    for fill in fills.iter().rev() {
+        let fill_qty = Decimal::from(fill.direction()) * fill.qty;
+        let prior_qty = qty - fill_qty;
+        if prior_qty.is_zero() || prior_qty.is_sign_negative() != qty.is_sign_negative() {
+            // Closing or flipping erases the average of the earlier position
+            return Some(venue_position.avg_px);
+        }
+
+        if fill_qty.is_sign_negative() == qty.is_sign_negative() {
+            avg_px = avg_px.and_then(|avg_px| {
+                let target_value = qty.checked_mul(avg_px)?;
+                let fill_value = fill_qty.checked_mul(fill.px)?;
+                target_value.checked_sub(fill_value)?.checked_div(prior_qty)
+            });
+        }
+
+        qty = prior_qty;
+    }
+
+    avg_px.filter(|px| *px > Decimal::ZERO)
 }
 
 fn inverse_synthetic_opening_price(
