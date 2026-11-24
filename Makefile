@@ -1206,7 +1206,11 @@ MIRI_PROPTEST_CASES ?= 4
 # pointer/integer code where Miri provides the most signal. Miri runs ~10-100x
 # slower than native, so we narrow the default scope; pass the override above
 # (or `MIRI_CORE_FILTER=`) to widen it.
-MIRI_CORE_FILTER ?= -E 'test(/^(string::stack_str|nanos|uuid|hex|correctness|datetime)::/)'
+# Exhaustive date and byte sweeps are inexpensive natively and costly under Miri
+MIRI_CORE_FILTER ?= -E 'test(/^(string::stack_str|nanos|uuid|hex|correctness|datetime)::/) \
+	and not test(=datetime::tests::test_formatters_match_jiff_on_every_representable_utc_day) \
+	and not test(=hex::tests::test_decode_checks_every_byte_across_wide_chunks) \
+	and not test(=nanos::tests::test_digit_parser_validates_every_byte_position)'
 # `collections::` covers AtomicMap/AtomicSet, which are backed by arc-swap.
 # arc-swap runs Miri with permissive provenance, so use the same provenance
 # policy for this slice while keeping strict provenance for in-tree pointer code.

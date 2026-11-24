@@ -8382,15 +8382,17 @@ fn test_own_book_with_operations(operations: Vec<OwnBookOperation>) {
 
 #[rstest]
 fn prop_test_own_book_operations_preserve_indexes_and_quantities() {
-    proptest!(|(operations in prop::collection::vec(own_book_operation_strategy(), 1..=80))| {
+    let max_operations = book_proptest_max_len(80);
+    proptest!(|(operations in prop::collection::vec(own_book_operation_strategy(), 1..=max_operations))| {
         test_own_book_with_operations(operations);
     });
 }
 
 #[rstest]
 fn prop_test_own_book_audit_open_orders_keeps_only_valid_ids() {
+    let max_orders = book_proptest_max_len(64);
     proptest!(|(
-        specs in prop::collection::vec(own_book_order_spec_strategy(1, 10_000), 1..=64),
+        specs in prop::collection::vec(own_book_order_spec_strategy(1, 10_000), 1..=max_orders),
         open_ids in prop::collection::vec(0_u8..32, 0..32),
     )| {
         let instrument_id = InstrumentId::from("TEST.VENUE");
@@ -8414,8 +8416,9 @@ fn prop_test_own_book_audit_open_orders_keeps_only_valid_ids() {
 
 #[rstest]
 fn prop_test_own_book_grouped_filtered_quantities_match_reference() {
+    let max_orders = book_proptest_max_len(64);
     proptest!(|(
-        specs in prop::collection::vec(own_book_order_spec_strategy(1, 10_000), 1..=64),
+        specs in prop::collection::vec(own_book_order_spec_strategy(1, 10_000), 1..=max_orders),
     )| {
         let instrument_id = InstrumentId::from("TEST.VENUE");
         let mut book = OwnOrderBook::new(instrument_id);
@@ -8431,10 +8434,12 @@ fn prop_test_own_book_grouped_filtered_quantities_match_reference() {
 
 #[rstest]
 fn prop_test_order_book_filtered_views_match_reference() {
+    let max_levels = book_proptest_max_len(24);
+    let max_orders = book_proptest_max_len(48);
     proptest!(|(
-        public_bids in prop::collection::btree_map(1_u16..=200, 1_u16..=5_000, 0..=24),
-        public_asks in prop::collection::btree_map(1_u16..=200, 1_u16..=5_000, 0..=24),
-        specs in prop::collection::vec(own_book_order_spec_strategy(1, 200), 0..=48),
+        public_bids in prop::collection::btree_map(1_u16..=200, 1_u16..=5_000, 0..=max_levels),
+        public_asks in prop::collection::btree_map(1_u16..=200, 1_u16..=5_000, 0..=max_levels),
+        specs in prop::collection::vec(own_book_order_spec_strategy(1, 200), 0..=max_orders),
         depth in prop::option::of(1_usize..=12),
         group_size in prop::sample::select(vec![
             dec!(0.01),
@@ -8518,9 +8523,10 @@ fn prop_test_order_book_filtered_views_match_reference() {
 
 #[rstest]
 fn prop_test_own_book_combined_with_opposite_transforms_orders() {
+    let max_orders = book_proptest_max_len(32);
     proptest!(|(
-        own_specs in prop::collection::vec(own_book_order_spec_strategy(1, 99), 0..=32),
-        opposite_specs in prop::collection::vec(own_book_order_spec_strategy(1, 99), 0..=32),
+        own_specs in prop::collection::vec(own_book_order_spec_strategy(1, 99), 0..=max_orders),
+        opposite_specs in prop::collection::vec(own_book_order_spec_strategy(1, 99), 0..=max_orders),
     )| {
         let instrument_id = InstrumentId::from("YES.TEST");
         let opposite_instrument_id = InstrumentId::from("NO.TEST");
@@ -8706,9 +8712,11 @@ fn orderbook_operation_strategy() -> impl Strategy<Value = OrderBookOperation> {
 }
 
 fn orderbook_test_strategy() -> impl Strategy<Value = (BookType, Vec<OrderBookOperation>)> {
+    let max_operations = book_proptest_max_len(100);
+
     (
         prop::sample::select(vec![BookType::L1_MBP, BookType::L2_MBP, BookType::L3_MBO]),
-        prop::collection::vec(orderbook_operation_strategy(), 10..=100),
+        prop::collection::vec(orderbook_operation_strategy(), 10..=max_operations),
     )
 }
 
@@ -9267,9 +9275,14 @@ fn test_l1_book_with_operations(operations: Vec<L1Operation>) {
 
 #[rstest]
 fn prop_test_l1_book_operations() {
-    proptest!(|(operations in prop::collection::vec(l1_operation_strategy(), 5..=50))| {
+    let max_operations = book_proptest_max_len(50);
+    proptest!(|(operations in prop::collection::vec(l1_operation_strategy(), 5..=max_operations))| {
         test_l1_book_with_operations(operations);
     });
+}
+
+fn book_proptest_max_len(native: usize) -> usize {
+    if cfg!(miri) { native.min(16) } else { native }
 }
 
 #[rstest]
