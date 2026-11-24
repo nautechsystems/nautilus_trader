@@ -1769,7 +1769,7 @@ async fn test_subscribe_bars_accepts_ws_streamable_resolution() {
 
 #[rstest]
 #[tokio::test]
-async fn test_request_instruments_emits_response() {
+async fn test_request_instruments_publishes_before_response() {
     let (addr, _state) = start_server().await;
     let (mut client, mut rx) = build_client(build_config(addr));
 
@@ -1788,23 +1788,40 @@ async fn test_request_instruments_emits_response() {
         ))
         .expect("request_instruments");
 
-    let event = next_event_matching(&mut rx, Duration::from_secs(2), |e| {
-        matches!(e, DataEvent::Response(DataResponse::Instruments(_)))
-    })
-    .await
-    .expect("expected Instruments response");
+    let Some(DataEvent::Data(Data::Instrument(published))) =
+        tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .unwrap()
+    else {
+        panic!("expected instrument update before the response");
+    };
 
-    if let DataEvent::Response(DataResponse::Instruments(response)) = event {
-        assert_eq!(response.data.len(), 1);
-        assert_eq!(response.data[0].id(), eth_perp_id());
-    }
+    let Some(DataEvent::Response(DataResponse::Instruments(response))) =
+        tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .unwrap()
+    else {
+        panic!("expected the Instruments response");
+    };
+
+    let [instrument] = response.data.as_slice() else {
+        panic!("expected one instrument, was {:?}", response.data);
+    };
+
+    assert_eq!(instrument.id(), eth_perp_id());
+    assert_eq!(published.id(), eth_perp_id());
+    assert_eq!(published.ts_init(), instrument.ts_init());
+    assert_eq!(published.price_increment(), instrument.price_increment());
+    assert_eq!(published.size_increment(), instrument.size_increment());
 
     client.disconnect().await.expect("disconnect");
 }
 
 #[rstest]
+#[case::live(false)]
+#[case::pre_epoch_bound(true)]
 #[tokio::test]
-async fn test_request_instrument_emits_response() {
+async fn test_request_instrument_publishes_only_for_live_requests(#[case] bounded: bool) {
     let (addr, _state) = start_server().await;
     let (mut client, mut rx) = build_client(build_config(addr));
 
@@ -1814,7 +1831,7 @@ async fn test_request_instrument_emits_response() {
     client
         .request_instrument(RequestInstrument::new(
             eth_perp_id(),
-            None,
+            bounded.then(|| "1969-12-31T23:59:59Z".parse().unwrap()),
             None,
             Some(client_id()),
             UUID4::new(),
@@ -1823,14 +1840,37 @@ async fn test_request_instrument_emits_response() {
         ))
         .expect("request_instrument");
 
-    let event = next_event_matching(&mut rx, Duration::from_secs(2), |e| {
-        matches!(e, DataEvent::Response(DataResponse::Instrument(_)))
-    })
-    .await
-    .expect("expected Instrument response");
+    let published = if bounded {
+        None
+    } else {
+        let Some(DataEvent::Data(Data::Instrument(published))) =
+            tokio::time::timeout(Duration::from_secs(2), rx.recv())
+                .await
+                .unwrap()
+        else {
+            panic!("expected instrument update before the response");
+        };
 
-    if let DataEvent::Response(DataResponse::Instrument(response)) = event {
-        assert_eq!(response.instrument_id, eth_perp_id());
+        Some(published)
+    };
+
+    let Some(DataEvent::Response(DataResponse::Instrument(response))) =
+        tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .unwrap()
+    else {
+        panic!("expected the Instrument response");
+    };
+
+    assert_eq!(response.instrument_id, eth_perp_id());
+    let instrument = &response.data;
+    assert_eq!(instrument.id(), eth_perp_id());
+
+    if let Some(published) = published {
+        assert_eq!(published.id(), eth_perp_id());
+        assert_eq!(published.ts_init(), instrument.ts_init());
+        assert_eq!(published.price_increment(), instrument.price_increment());
+        assert_eq!(published.size_increment(), instrument.size_increment());
     }
 
     client.disconnect().await.expect("disconnect");

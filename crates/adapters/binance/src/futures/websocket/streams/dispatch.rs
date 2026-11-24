@@ -35,6 +35,7 @@ use nautilus_model::{
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, VenueOrderId,
     },
+    instruments::Instrument,
     reports::{FillReport, OrderStatusReport},
     types::{Currency, Money, Price, Quantity},
 };
@@ -67,10 +68,7 @@ use crate::{
         },
         symbol::format_instrument_id,
     },
-    futures::{
-        conversions::normalize_futures_asset,
-        http::client::{BinanceFuturesHttpClient, BinanceFuturesInstrument},
-    },
+    futures::{conversions::normalize_futures_asset, http::client::BinanceFuturesHttpClient},
 };
 
 /// Shared state required by the user data stream dispatch task.
@@ -306,12 +304,11 @@ pub(crate) fn dispatch_order_update(
     let ts_event =
         parse_millis_or_init(msg.event_time, "Futures order dispatch event time", ts_init);
 
-    let Some((cached_instrument, price_precision, size_precision)) =
+    let Some((instrument_id, quote_currency, price_precision, size_precision)) =
         resolve_instrument_metadata(http_client, symbol_ustr, product_type, "order update")
     else {
         return;
     };
-    let instrument_id = cached_instrument.id();
 
     let client_order_id = match decode_order_client_id(order) {
         Ok(client_order_id) => client_order_id,
@@ -333,9 +330,7 @@ pub(crate) fn dispatch_order_update(
     // reconciliation reports regardless of tracked/untracked state, because
     // they have no locally submitted identity
     if order.is_exchange_generated() {
-        let is_linear = matches!(cached_instrument, BinanceFuturesInstrument::UsdM(_));
-        let quote_currency = cached_instrument.quote_currency();
-
+        let is_linear = product_type == BinanceProductType::UsdM;
         let taker_fee = if is_linear {
             Some(default_taker_fee)
         } else {
@@ -498,7 +493,7 @@ pub(crate) fn dispatch_order_update(
                         identity.order_type,
                         last_qty,
                         last_px,
-                        cached_instrument.quote_currency(),
+                        quote_currency,
                         liquidity_side,
                         UUID4::new(),
                         ts_event,
@@ -1215,12 +1210,11 @@ pub(crate) fn dispatch_trade_lite(
     let ts_init = clock.get_time_ns();
     let ts_event = parse_millis_or_init(msg.event_time, "Futures TRADE_LITE event time", ts_init);
 
-    let Some((cached_instrument, price_precision, size_precision)) =
+    let Some((instrument_id, quote_currency, price_precision, size_precision)) =
         resolve_instrument_metadata(http_client, symbol_ustr, product_type, "TRADE_LITE")
     else {
         return;
     };
-    let instrument_id = cached_instrument.id();
 
     let client_order_id =
         match decode_client_order_id(&msg.client_order_id, BINANCE_NAUTILUS_FUTURES_BROKER_ID) {
@@ -1301,7 +1295,6 @@ pub(crate) fn dispatch_trade_lite(
 
     // TRADE_LITE does not carry commission_asset, so fall back to the
     // instrument's quote currency (COIN-M and non-USDT USD-M symbols).
-    let quote_currency = cached_instrument.quote_currency();
 
     let filled = OrderFilled::new(
         emitter.trader_id(),
@@ -1552,12 +1545,12 @@ pub(crate) fn dispatch_algo_update(
     };
 
     let symbol_ustr = algo_data.symbol;
-    let Some((instrument, price_precision, size_precision)) =
+
+    let Some((instrument_id, _, price_precision, size_precision)) =
         resolve_instrument_metadata(http_client, symbol_ustr, product_type, "algo update")
     else {
         return;
     };
-    let instrument_id = instrument.id();
 
     let identity = dispatch_state
         .order_identities
@@ -1977,8 +1970,16 @@ fn resolve_instrument_metadata(
     symbol: ustr::Ustr,
     product_type: BinanceProductType,
     update: &str,
-) -> Option<(BinanceFuturesInstrument, u8, u8)> {
+) -> Option<(InstrumentId, Currency, u8, u8)> {
     let expected_id = format_instrument_id(&symbol, product_type);
+    if let Some(instrument) = http_client.instrument_reconciliation(&expected_id) {
+        return Some((
+            expected_id,
+            instrument.quote_currency(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+        ));
+    }
 
     let Some(instrument) = http_client
         .instruments_cache()
@@ -2005,7 +2006,12 @@ fn resolve_instrument_metadata(
         }
     };
 
-    Some((instrument, price_precision, size_precision))
+    Some((
+        expected_id,
+        instrument.quote_currency(),
+        price_precision,
+        size_precision,
+    ))
 }
 
 fn emit_venue_order_id_update(
@@ -2062,7 +2068,7 @@ mod tests {
             testing::load_fixture_string,
         },
         futures::http::{
-            client::BinanceFuturesHttpClient,
+            client::{BinanceFuturesHttpClient, BinanceFuturesInstrument},
             models::{BinanceFuturesCoinSymbol, BinanceFuturesUsdSymbol},
         },
     };
@@ -5501,6 +5507,40 @@ mod tests {
         );
 
         assert!(resolved.is_none());
+    }
+
+    #[rstest]
+    #[case::new_listing(false)]
+    #[case::revised_tick(true)]
+    fn test_resolve_instrument_metadata_reads_runtime_definition(#[case] raw_cached: bool) {
+        let http_client = create_test_http_client(get_atomic_clock_realtime());
+        let symbol = ustr::Ustr::from("ETHUSDT");
+
+        if raw_cached {
+            http_client
+                .instruments_cache()
+                .insert(symbol, usdm_instrument("ETHUSDT", "USDT"));
+        }
+
+        let id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let mut instrument = crypto_perpetual_ethusdt();
+        instrument.id = id;
+        instrument.price_precision = 6;
+        instrument.price_increment = Price::from("0.000001");
+        instrument.size_precision = 4;
+        instrument.size_increment = Quantity::from("0.0001");
+        let quote_currency = instrument.quote_currency;
+        http_client.cache_reconciliation_instrument(instrument.into());
+
+        assert_eq!(
+            resolve_instrument_metadata(
+                &http_client,
+                symbol,
+                BinanceProductType::UsdM,
+                "test update"
+            ),
+            Some((id, quote_currency, 6, 4)),
+        );
     }
 
     #[rstest]

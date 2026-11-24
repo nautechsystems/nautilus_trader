@@ -1513,27 +1513,29 @@ impl DataClient for HyperliquidDataClient {
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let venue = self.venue();
+        let publish = request.start.is_none() && request.end.is_none();
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
         let params = request.params;
         let clock = self.clock;
 
         self.spawn_instrument_request(request_id, async move {
-            // the fetched universe also feeds the cache the periodic refresh diffs
-            // against, so it must be published like a refresh pass or a market first
-            // seen here would never reach execution
-            let refresh = refresh_instruments(
-                &update_lock,
-                &http,
-                &ws,
-                &instruments_cache,
-                &coin_map,
-                &instrument_status,
-                &sender,
-            )
-            .await?;
-            refresh.log(client_id);
-            let instruments = refresh.fetched;
+            let instruments = if publish {
+                let refresh = refresh_instruments(
+                    &update_lock,
+                    &http,
+                    &ws,
+                    &instruments_cache,
+                    &coin_map,
+                    &instrument_status,
+                    &sender,
+                )
+                .await?;
+                refresh.log(client_id);
+                refresh.fetched
+            } else {
+                http.fetch_instruments().await?
+            };
 
             Ok(DataResponse::Instruments(InstrumentsResponse::new(
                 request_id,
@@ -1562,27 +1564,31 @@ impl DataClient for HyperliquidDataClient {
         let instrument_status = Arc::clone(&self.instrument_status);
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
+        let publish = request.start.is_none() && request.end.is_none();
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
         let params = request.params;
         let clock = self.clock;
 
         self.spawn_instrument_request(request_id, async move {
-            // the venue only serves the whole universe, so a single-instrument request
-            // can discover other new markets and must publish them like a refresh pass
-            let refresh = refresh_instruments(
-                &update_lock,
-                &http,
-                &ws,
-                &instruments_cache,
-                &coin_map,
-                &instrument_status,
-                &sender,
-            )
-            .await?;
-            refresh.log(client_id);
-            let instrument = refresh
-                .fetched
+            let instruments = if publish {
+                let refresh = refresh_instruments(
+                    &update_lock,
+                    &http,
+                    &ws,
+                    &instruments_cache,
+                    &coin_map,
+                    &instrument_status,
+                    &sender,
+                )
+                .await?;
+                refresh.log(client_id);
+                refresh.fetched
+            } else {
+                http.fetch_instruments().await?
+            };
+
+            let instrument = instruments
                 .into_iter()
                 .find(|i| i.id() == instrument_id)
                 .with_context(|| format!("Hyperliquid instrument {instrument_id} not found"))?;
@@ -2079,7 +2085,7 @@ fn changed_definitions(
         .filter(|instrument| {
             instruments_by_id
                 .get_cloned(&instrument.id())
-                .is_none_or(|cached| !instrument_definitions_match(&cached, instrument))
+                .is_none_or(|cached| !cached.same_definition(instrument))
         })
         .cloned()
         .collect()
@@ -2100,34 +2106,6 @@ fn added_symbols(
         .filter(|instrument| instruments_by_id.get_cloned(&instrument.id()).is_none())
         .map(|instrument| instrument.symbol().inner())
         .collect()
-}
-
-/// Returns `true` when two instruments carry the same tradable definition,
-/// ignoring event timestamps.
-///
-/// Comparison runs on the serialized form so every venue field, including the
-/// free-form `info` metadata, participates without listing each field.
-fn instrument_definitions_match(a: &InstrumentAny, b: &InstrumentAny) -> bool {
-    fn normalized(instrument: &InstrumentAny) -> Option<serde_json::Value> {
-        let mut value = serde_json::to_value(instrument).ok()?;
-
-        if let Some(definition) = value
-            .as_object_mut()
-            .and_then(|obj| obj.values_mut().next())
-            .and_then(serde_json::Value::as_object_mut)
-        {
-            definition.remove("ts_event");
-            definition.remove("ts_init");
-        }
-
-        Some(value)
-    }
-
-    // A serialization failure compares as changed so updates are never suppressed
-    match (normalized(a), normalized(b)) {
-        (Some(a), Some(b)) => a == b,
-        _ => false,
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -798,7 +798,6 @@ impl LiveNodeBuilder {
         )?;
 
         for venue in instrument_venues {
-            ExecutionEngine::subscribe_venue_instruments(&kernel.exec_engine, venue);
             if !self_settling_venues.contains(&venue) {
                 ExecutionEngine::subscribe_venue_instrument_closes(&kernel.exec_engine, venue);
             }

@@ -34,7 +34,7 @@ use nautilus_model::{
     data::InstrumentClose,
     enums::{AccountType, InstrumentCloseType, OmsType, OrderSide, OrderType},
     events::{AccountState, OrderDeniedReason, OrderEventAny},
-    identifiers::{AccountId, ClientId, ClientOrderId, TraderId, Venue},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, TraderId, Venue},
     instruments::{
         Instrument, InstrumentAny,
         stubs::{audusd_sim, binary_option},
@@ -170,6 +170,83 @@ fn test_execution_client_routing_and_instruments(
             vec![instrument.clone()]
         );
     }
+}
+
+#[rstest]
+#[case::default_accepts_venue(true, false)]
+#[case::default_rejects_venue(false, false)]
+#[case::explicit_route_takes_precedence(true, true)]
+fn test_execution_instruments_follow_default_broker_routing(
+    #[case] broker_accepts_venue: bool,
+    #[case] explicit_route: bool,
+) {
+    let mut broker = StubExecutionClient::new(
+        ClientId::from("BROKER"),
+        AccountId::from("BROKER-001"),
+        Venue::from("BROKER"),
+        OmsType::Netting,
+        None,
+    );
+
+    if broker_accepts_venue {
+        broker = broker.with_handles_all_order_venues();
+    }
+
+    let other = StubExecutionClient::new(
+        ClientId::from("OTHER"),
+        AccountId::from("OTHER-001"),
+        Venue::from("OTHER"),
+        OmsType::Netting,
+        None,
+    );
+
+    let node = LiveNodeBuilder::new(TraderId::test_default(), Environment::Live)
+        .unwrap()
+        .add_exec_client_with_routing(
+            Some("broker".into()),
+            Box::new(RoutingClientFactory(broker.clone())),
+            Box::new(RoutingClientConfig),
+            RoutingConfig {
+                default: true,
+                venues: None,
+            },
+        )
+        .unwrap()
+        .add_exec_client_with_routing(
+            Some("other".into()),
+            Box::new(RoutingClientFactory(other.clone())),
+            Box::new(RoutingClientConfig),
+            RoutingConfig {
+                default: false,
+                venues: explicit_route.then(|| vec!["XCME".into()]),
+            },
+        )
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let mut instrument = audusd_sim();
+    instrument.id = InstrumentId::from("AUDUSD.XCME");
+    let instrument = InstrumentAny::CurrencyPair(instrument);
+
+    let engine = node.kernel().exec_engine.borrow_mut();
+    node.kernel().data_engine.borrow_mut().process(&instrument);
+    drop(engine);
+
+    let broker_expected = if broker_accepts_venue && !explicit_route {
+        vec![instrument.clone()]
+    } else {
+        vec![]
+    };
+
+    let other_expected = if explicit_route {
+        vec![instrument]
+    } else {
+        vec![]
+    };
+
+    assert_eq!(*broker.received_instruments().borrow(), broker_expected);
+    assert_eq!(*other.received_instruments().borrow(), other_expected);
 }
 
 #[rstest]
@@ -541,10 +618,10 @@ impl ExecutionClientFactory for RoutingClientFactory {
         _trader_id: TraderId,
         _name: &str,
         _config: &dyn ClientConfig,
-        _cache: CacheView,
+        cache: CacheView,
         _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
-        Ok(Box::new(self.0.clone()))
+        Ok(Box::new(self.0.clone().with_instrument_subscription(cache)))
     }
 
     fn name(&self) -> &'static str {

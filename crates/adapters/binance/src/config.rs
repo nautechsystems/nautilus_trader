@@ -246,11 +246,11 @@ pub struct BinanceDataClientConfig {
     /// Instrument loading and fee configuration.
     #[builder(default)]
     pub instrument_provider: BinanceInstrumentProviderConfig,
-    /// Interval in seconds for a full instrument catalog refresh.
+    /// Interval (minutes) between full instrument refreshes.
     ///
-    /// Set to 0 to disable. Defaults to 3600 (60 minutes).
-    #[builder(default = 3600)]
-    pub instrument_refresh_interval_secs: u64,
+    /// Set to 0 to disable periodic refresh.
+    #[builder(default = 60)]
+    pub update_instruments_interval_mins: u64,
     /// Interval in seconds for polling exchange info to detect instrument status
     /// changes (e.g. Trading -> Halt). Set to 0 to disable. Defaults to 3600 (60 minutes).
     #[builder(default = 3600)]
@@ -290,7 +290,7 @@ nautilus_core::impl_pyo3_config_getters!(BinanceDataClientConfig {
     spot_market_data_mode: BinanceSpotMarketDataMode,
     use_usdm_raw_trades: bool,
     instrument_provider: BinanceInstrumentProviderConfig,
-    instrument_refresh_interval_secs: u64,
+    update_instruments_interval_mins: u64,
     instrument_status_poll_secs: u64,
     book_snapshot_timeout_secs: u64,
     recv_window_ms: u64,
@@ -407,11 +407,11 @@ pub struct BinanceExecutionClientConfig {
     /// Instrument loading and fee configuration.
     #[builder(default)]
     pub instrument_provider: BinanceInstrumentProviderConfig,
-    /// Interval in seconds for refreshing the execution instrument cache.
+    /// Interval (minutes) between execution instrument cache refreshes.
     ///
-    /// Set to 0 to disable. Defaults to 3600 (60 minutes).
-    #[builder(default = 3600)]
-    pub instrument_refresh_interval_secs: u64,
+    /// Set to 0 to disable periodic refresh.
+    #[builder(default = 60)]
+    pub update_instruments_interval_mins: u64,
     /// Whether to use Binance-native GTD orders.
     ///
     /// Set to false only when the strategy manages GTD expiry locally. The adapter then maps GTD
@@ -487,7 +487,7 @@ nautilus_core::impl_pyo3_config_getters!(BinanceExecutionClientConfig {
     use_ws_trading: bool,
     ws_trading_setup_timeout_ms: u64,
     instrument_provider: BinanceInstrumentProviderConfig,
-    instrument_refresh_interval_secs: u64,
+    update_instruments_interval_mins: u64,
     use_gtd: bool,
     use_position_ids: bool,
     oms_type: Option<OmsType>,
@@ -621,6 +621,7 @@ mod tests {
             r#"
 environment = "Testnet"
 product_type = "USD_M"
+update_instruments_interval_mins = 30
 instrument_status_poll_secs = 600
 "#,
         )
@@ -630,6 +631,7 @@ instrument_status_poll_secs = 600
         assert_eq!(config.product_type, BinanceProductType::UsdM);
         assert_eq!(config.spot_market_data_mode, BinanceSpotMarketDataMode::Sbe);
         assert!(!config.use_usdm_raw_trades);
+        assert_eq!(config.update_instruments_interval_mins, 30);
         assert_eq!(config.instrument_status_poll_secs, 600);
         assert_eq!(config.book_snapshot_timeout_secs, 10);
     }
@@ -701,10 +703,7 @@ product_types = ["SPOT", "USD_M"]
         assert_eq!(config.use_ws_trading, expected.use_ws_trading);
         assert_eq!(config.ws_trading_setup_timeout_ms, 10_000);
         assert_eq!(config.instrument_provider, expected.instrument_provider);
-        assert_eq!(
-            config.instrument_refresh_interval_secs,
-            expected.instrument_refresh_interval_secs
-        );
+        assert_eq!(config.update_instruments_interval_mins, 60);
         assert_eq!(config.use_gtd, expected.use_gtd);
         assert_eq!(config.use_position_ids, expected.use_position_ids);
         assert_eq!(config.oms_type, expected.oms_type);

@@ -308,7 +308,8 @@ controlled requests complete any required authentication and exchange raw venue 
 | 2.4  | Instrument updates | Implement fresh instrument requests and any supported definition or status updates.                      |
 
 **Exit**: Distinct fixtures cover every supported instrument family, invalid definitions fail
-clearly, and the data client emits or returns complete Nautilus instruments.
+clearly, and the data client emits or returns complete Nautilus instruments. Verify that live
+changes follow the [instrument definition update contract](#instrument-definition-updates).
 
 ### Phase 3: Implement market data
 
@@ -883,9 +884,6 @@ enters the engine:
 | `DataEvent::Data(Data::OptionGreeks(_))`     | Venue-provided option greeks.                                  | Preserve the source instrument and distinguish venue values from local calculation. |
 | `DataEvent::DeFi`                            | Feature-gated decentralized finance data.                      | Emit only when the adapter and build expose the shared `defi` feature.              |
 
-Add a regression test that changes the upstream instrument response between two requests. The
-second response must reflect the new venue state rather than a private cache entry.
-
 Publish typed data through the engine's data event path. Parse and validate before emission, and do not hold
 mutable adapter state across downstream dispatch. A closed event receiver normally means that the engine is
 stopping. Log the send failure. Let lifecycle teardown own recovery, rather than retrying the same event
@@ -900,6 +898,51 @@ If a venue exposes instrument status only as a polled snapshot, compare it with 
 Emit only the changes, not all the statuses again. Treat an instrument removed from the snapshot according to
 the venue contract. Map removal to `NotAvailableForTrading` only when disappearance means the instrument is
 unavailable. Update the full private cache even when emissions are filtered to active subscriptions.
+
+### Instrument definition updates
+
+**Fetch and parse.** Use the venue's definition stream when it provides usable updates. Use REST to
+bootstrap, fill gaps after reconnect, or fetch a full definition when a partial update signals a
+change. Poll when the venue lacks a usable definition stream. Keep fetching and parsing separate
+from cache writes.
+
+**Accept.** Use one acceptance path for bootstrap, streams, refreshes, and live requests. Validate and
+merge partial definitions before applying them. Order updates per `InstrumentId` by a comparable venue
+revision when available. If you order by `ts_init`, record it at REST request start or stream receipt.
+Reject older definitions at the point of application, including after queueing.
+
+**Update and publish.** Compare with the existing instrument cache. Install new or materially changed
+definitions in the producing client's parser caches before emitting
+`DataEvent::Data(Data::Instrument(_))`. For a parser in another task, use a shared cache snapshot or
+confirm that it applied the update.
+
+**Apply in execution.** Execution clients with local instrument state own their subscriptions to
+accepted definitions on the message bus. Use `get_instruments_pattern(venue)` for a single venue.
+Multi-venue clients filter updates using their configured routes. Capture the adapter caches or
+stream state in the handler so delivery can proceed while the client is busy. Subscribe before data
+bootstrap or seed local state from the shared cache when subscribing later. Keep the
+`InstrumentSubscription` guard on the adapter and drop it on teardown. Apply updates to private-stream,
+order-handling, and report-parsing lookups independently of strategy subscriptions. When recovery
+waits for registration, let a newer accepted definition satisfy the wait if it provides the
+required metadata.
+
+**Reply to requests.** Apply a definition fetched for live use only if it passes the freshness
+checks above. Apply any accepted change before sending the correlated response. When the request
+specifies a start or end, return the definitions in the correlated response and leave the live
+instrument caches untouched.
+
+**Stop or reset.** Cancel in-flight refreshes on shutdown and guard cache writes and publication
+against reset.
+
+Cover these cases in regression tests.
+
+- **Live changes.** Test a new listing and a precision change without restarting. Verify that
+  parsers use each definition and execution receives it.
+- **Late REST result.** Queue a newer stream update before the REST result and verify that every cache
+  keeps the newer definition.
+- **Reset during a fetch.** Verify that the result leaves the caches and event stream untouched.
+- **Requests.** Change the venue definition between successive explicit requests and verify that
+  the second response reflects the change.
 
 ### Order book recovery ownership
 
@@ -1377,8 +1420,8 @@ economic application rules.
 ### Instrument resolution during reconciliation
 
 Report generation resolves each record's instrument to parse venue payloads at the correct price and size
-precision. Resolve it from the instruments that the adapter loaded during connect. Classify a miss by whether
-the record was in scope.
+precision. Resolve it from the adapter's active instrument cache, which the client populates during connect
+and maintains with accepted live definitions. Classify a miss by whether the record was in scope.
 
 Do not request an instrument from the venue while generating reports:
 

@@ -245,7 +245,7 @@ async fn handle_ws_socket(mut socket: WebSocket) {
                                 "ticker" => load_json_str("ws_ticker.json"),
                                 "level2" => load_json_str("ws_l2_data_snapshot.json"),
                                 "candles" => load_json_str("ws_candles.json"),
-                                "status" => json!({
+                                "status" if payload["product_ids"] == json!(["BTC-USD"]) => json!({
                                     "channel": "status",
                                     "client_id": "",
                                     "timestamp": "2026-04-07T00:28:32.643779Z",
@@ -265,6 +265,11 @@ async fn handle_ws_socket(mut socket: WebSocket) {
                                             "min_market_funds": "1"
                                         }]
                                     }]
+                                })
+                                .to_string(),
+                                "status" => json!({
+                                    "type": "error",
+                                    "message": "authentication failure"
                                 })
                                 .to_string(),
                                 _ => json!({"channel": channel}).to_string(),

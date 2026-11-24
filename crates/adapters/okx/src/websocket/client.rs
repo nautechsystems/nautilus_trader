@@ -61,7 +61,7 @@ use nautilus_network::{
     ratelimiter::quota::Quota,
     websocket::{
         AUTHENTICATION_TIMEOUT_SECS, AuthTracker, SubscriptionState, TEXT_PING, TransportBackend,
-        WebSocketClient, WebSocketConfig, channel_message_handler,
+        WebSocketClient, WebSocketConfig,
     },
 };
 use parking_lot::Mutex;
@@ -689,7 +689,7 @@ impl OKXWebSocketClient {
         // Reset signal so is_active()/is_closed() work after a previous close()
         self.signal.store(false, Ordering::Release);
 
-        let (message_handler, raw_rx) = channel_message_handler();
+        let (message_handler, raw_rx) = super::handler::channel_timestamped_messages(self.clock);
 
         // No-op ping handler: handler owns the WebSocketClient and responds to pings directly
         // in the message loop for minimal latency (see handler.rs TEXT_PONG response)

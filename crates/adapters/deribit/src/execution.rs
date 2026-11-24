@@ -29,6 +29,7 @@ use nautilus_common::{
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
         ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
+    msgbus::{InstrumentSubscription, TypedHandler, switchboard::get_instruments_pattern},
 };
 use nautilus_core::{
     DurationNanos, Params, UUID4, UnixNanos,
@@ -43,7 +44,7 @@ use nautilus_model::{
     enums::{AccountType, OmsType, OrderType, PositionSide, TimeInForce},
     events::{OrderDenied, OrderDeniedReason, OrderEventAny},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue, VenueOrderId},
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Quantity},
@@ -54,7 +55,7 @@ use crate::{
     common::{
         capabilities::validate_order,
         consts::{DERIBIT_VENUE, DERIBIT_WS_HEARTBEAT_SECS},
-        enums::resolve_trigger_type,
+        enums::{DeribitProductType, resolve_trigger_type},
     },
     config::DeribitExecutionClientConfig,
     http::{
@@ -80,6 +81,7 @@ pub struct DeribitExecutionClient {
     emitter: ExecutionEventEmitter,
     http_client: DeribitHttpClient,
     ws_client: DeribitWebSocketClient,
+    instrument_subscription: Option<InstrumentSubscription>,
     session_tasks: TaskGroup,
     pending_tasks: TaskGroup,
 }
@@ -170,6 +172,7 @@ impl DeribitExecutionClient {
             emitter,
             http_client,
             ws_client,
+            instrument_subscription: None,
             session_tasks,
             pending_tasks,
         })
@@ -411,12 +414,14 @@ impl DeribitExecutionClient {
     }
 
     async fn load_execution_instruments(&self) -> anyhow::Result<()> {
+        self.seed_execution_instruments();
+
         if self.core.instruments_initialized() {
             return Ok(());
         }
 
         for product_type in &self.config.product_types {
-            let instruments = self
+            let mut instruments = self
                 .http_client
                 .request_instruments(DeribitCurrency::ANY, Some(*product_type))
                 .await
@@ -428,15 +433,22 @@ impl DeribitExecutionClient {
             }
 
             log::debug!("Fetched {} {product_type:?} instruments", instruments.len());
+            instruments.retain(|instrument| {
+                Self::should_cache_instrument(&self.http_client, &self.config, instrument)
+            });
+
             self.ws_client.cache_instruments(&instruments);
             self.http_client.cache_instruments(&instruments);
         }
 
-        let required = self
+        let mut required = self
             .http_client
             .request_uncached_instruments(self.config.load_ids.as_deref().unwrap_or(&[]))
             .await
             .context("failed to load reconciliation instruments")?;
+        required.retain(|instrument| {
+            Self::should_cache_instrument(&self.http_client, &self.config, instrument)
+        });
 
         if !required.is_empty() {
             self.ws_client.cache_instruments(&required);
@@ -447,8 +459,90 @@ impl DeribitExecutionClient {
         Ok(())
     }
 
+    fn seed_execution_instruments(&self) {
+        let definitions: Vec<_> = self
+            .core
+            .cache()
+            .instruments(&DERIBIT_VENUE, None)
+            .into_iter()
+            .filter(|instrument| {
+                Self::should_cache_instrument(&self.http_client, &self.config, instrument)
+            })
+            .cloned()
+            .collect();
+
+        if !definitions.is_empty() {
+            self.http_client.cache_instruments(&definitions);
+            self.ws_client.cache_instruments(&definitions);
+        }
+    }
+
     fn reconciliation_scope(&self) -> ReconciliationScope {
         ReconciliationScope::from_load_ids(self.config.load_ids.as_deref())
+    }
+}
+
+impl DeribitExecutionClient {
+    fn subscribe_instruments(&mut self) {
+        if self.instrument_subscription.is_some() {
+            return;
+        }
+
+        self.seed_execution_instruments();
+
+        let http_client = self.http_client.clone();
+        let ws_client = self.ws_client.clone();
+        let config = self.config.clone();
+        self.instrument_subscription = Some(InstrumentSubscription::new(
+            get_instruments_pattern(self.venue()),
+            TypedHandler::from(move |instrument: &InstrumentAny| {
+                Self::apply_instrument(&http_client, &ws_client, &config, instrument.clone());
+            }),
+        ));
+    }
+
+    fn apply_instrument(
+        http_client: &DeribitHttpClient,
+        ws_client: &DeribitWebSocketClient,
+        config: &DeribitExecutionClientConfig,
+        instrument: InstrumentAny,
+    ) {
+        if Self::should_cache_instrument(http_client, config, &instrument) {
+            http_client.cache_instruments(std::slice::from_ref(&instrument));
+            ws_client.cache_instrument(instrument);
+        }
+    }
+
+    fn should_cache_instrument(
+        http_client: &DeribitHttpClient,
+        config: &DeribitExecutionClientConfig,
+        instrument: &InstrumentAny,
+    ) -> bool {
+        let id = instrument.id();
+        if id.venue != *DERIBIT_VENUE {
+            return false;
+        }
+
+        let product_type = match instrument {
+            InstrumentAny::CryptoPerpetual(_) | InstrumentAny::CryptoFuture(_) => {
+                DeribitProductType::Future
+            }
+            InstrumentAny::CryptoOption(_) => DeribitProductType::Option,
+            InstrumentAny::CurrencyPair(_) => DeribitProductType::Spot,
+            InstrumentAny::CryptoFuturesSpread(_) => DeribitProductType::FutureCombo,
+            InstrumentAny::CryptoOptionSpread(_) => DeribitProductType::OptionCombo,
+            _ => return false,
+        };
+
+        let explicitly_loaded = config
+            .load_ids
+            .as_ref()
+            .is_some_and(|ids| ids.contains(&id));
+
+        (explicitly_loaded || config.product_types.contains(&product_type))
+            && http_client
+                .get_instrument(&instrument.raw_symbol().inner())
+                .is_none_or(|cached| execution_instrument_changed(&cached, instrument))
     }
 }
 
@@ -468,6 +562,10 @@ impl ExecutionClient for DeribitExecutionClient {
 
     fn venue(&self) -> Venue {
         *DERIBIT_VENUE
+    }
+
+    fn on_instrument(&mut self, instrument: InstrumentAny) {
+        Self::apply_instrument(&self.http_client, &self.ws_client, &self.config, instrument);
     }
 
     fn oms_type(&self) -> OmsType {
@@ -512,6 +610,8 @@ impl ExecutionClient for DeribitExecutionClient {
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         if self.core.is_stopped() {
             return Ok(());
         }
@@ -571,6 +671,7 @@ impl ExecutionClient for DeribitExecutionClient {
         self.ws_client.set_account_id(self.core.account_id);
 
         self.load_execution_instruments().await?;
+        self.subscribe_instruments();
 
         // Fetch initial account state
         let account_state = self
@@ -1614,6 +1715,20 @@ fn add_flat_reports_without_position(
     mass_status.add_position_reports(flats);
 }
 
+fn execution_instrument_changed(previous: &InstrumentAny, current: &InstrumentAny) -> bool {
+    previous.ts_init() < current.ts_init()
+        || previous.ts_init() == current.ts_init()
+            && (previous.id() != current.id()
+                || previous.instrument_class() != current.instrument_class()
+                || previous.price_precision() != current.price_precision()
+                || previous.size_precision() != current.size_precision()
+                || previous.price_increment() != current.price_increment()
+                || previous.size_increment() != current.size_increment()
+                || previous.quote_currency() != current.quote_currency()
+                || previous.settlement_currency() != current.settlement_currency()
+                || previous.info() != current.info())
+}
+
 fn position_snapshot_covers(http_client: &DeribitHttpClient, instrument_id: InstrumentId) -> bool {
     http_client
         .get_instrument(&instrument_id.symbol.inner())
@@ -1795,6 +1910,7 @@ mod tests {
             ExecutionEvent,
             execution::{CancelOrder, ExecutionReport, ModifyOrder},
         },
+        msgbus::{publish_instrument, switchboard::get_instrument_topic},
     };
     use nautilus_model::{
         enums::{LiquiditySide, OrderSide, OrderStatus, TriggerType},
@@ -1815,6 +1931,83 @@ mod tests {
         http::models::{DeribitInstrument, DeribitJsonRpcResponse},
         websocket::failure::REASON_NOT_STARTED,
     };
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_on_instrument_seeds_execution_definitions_then_applies_changes() {
+        let InstrumentAny::CurrencyPair(mut definition) = routed_spot_instrument() else {
+            panic!("expected a spot instrument");
+        };
+
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let core = ExecutionClientCore::new(
+            TraderId::from("TESTER-001"),
+            ClientId::from("DERIBIT"),
+            *DERIBIT_VENUE,
+            OmsType::Netting,
+            AccountId::from("DERIBIT-001"),
+            AccountType::Margin,
+            None,
+            Rc::clone(&cache),
+        );
+
+        let config = DeribitExecutionClientConfig {
+            api_key: Some("test_api_key".into()),
+            api_secret: Some("test_api_secret".into()),
+            base_url_http: Some("http://127.0.0.1:1".into()),
+            product_types: Vec::new(),
+            load_ids: Some(vec![definition.id]),
+            ..Default::default()
+        };
+
+        let mut client = DeribitExecutionClient::new(core, config).unwrap();
+        let symbol = definition.raw_symbol.inner();
+        let topic = get_instrument_topic(definition.id);
+        cache
+            .borrow_mut()
+            .add_instrument(definition.clone().into())
+            .unwrap();
+        client.load_execution_instruments().await.unwrap();
+        let initial = client.http_client.get_instrument(&symbol).unwrap();
+
+        definition.ts_init = UnixNanos::from(10);
+        definition.price_precision = 3;
+        definition.price_increment = Price::from("0.001");
+        cache
+            .borrow_mut()
+            .add_instrument(definition.clone().into())
+            .unwrap();
+        client.subscribe_instruments();
+        let seeded = client.http_client.get_instrument(&symbol).unwrap();
+
+        definition.ts_init = UnixNanos::from(20);
+        publish_instrument(topic, &definition.clone().into());
+        let unchanged = client.http_client.get_instrument(&symbol).unwrap();
+
+        let mut stale = definition.clone();
+        stale.ts_init = UnixNanos::from(15);
+        stale.price_precision = 2;
+        stale.price_increment = Price::from("0.01");
+        publish_instrument(topic, &stale.into());
+        let after_stale = client.http_client.get_instrument(&symbol).unwrap();
+
+        definition.ts_init = UnixNanos::from(30);
+        definition.price_precision = 4;
+        definition.price_increment = Price::from("0.0001");
+        publish_instrument(topic, &definition.into());
+        let revised = client.http_client.get_instrument(&symbol).unwrap();
+
+        assert_eq!(initial.ts_init(), UnixNanos::default());
+        assert_eq!(seeded.ts_init(), UnixNanos::from(10));
+        assert_eq!(seeded.price_increment(), Price::from("0.001"));
+        assert_eq!(unchanged.ts_init(), UnixNanos::from(20));
+        assert_eq!(after_stale.ts_init(), unchanged.ts_init());
+        assert_eq!(after_stale.price_increment(), Price::from("0.001"));
+        assert_eq!(revised.ts_init(), UnixNanos::from(30));
+        assert_eq!(revised.price_precision(), 4);
+        assert_eq!(revised.price_increment(), Price::from("0.0001"));
+    }
 
     #[rstest]
     #[case(OrderType::Limit, TimeInForce::Gtc, true)]

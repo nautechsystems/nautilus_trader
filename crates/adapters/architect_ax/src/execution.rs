@@ -39,7 +39,7 @@ use nautilus_common::{
             ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
         },
     },
-    msgbus::{self, TypedHandler},
+    msgbus::{self, InstrumentSubscription, TypedHandler, switchboard::get_instruments_pattern},
 };
 use nautilus_core::{
     AtomicMap, DurationNanos, Params, UUID4, UnixNanos,
@@ -115,6 +115,7 @@ pub struct AxExecutionClient {
     emitter: ExecutionEventEmitter,
     http_client: AxHttpClient,
     ws_orders: AxOrdersWebSocketClient,
+    instrument_subscription: Option<InstrumentSubscription>,
     order_event_handler: Option<TypedHandler<OrderEventAny>>,
     session_tasks: TaskGroup,
     pending_tasks: TaskGroup,
@@ -186,6 +187,7 @@ impl AxExecutionClient {
             emitter,
             http_client,
             ws_orders,
+            instrument_subscription: None,
             order_event_handler: None,
             session_tasks,
             pending_tasks,
@@ -596,6 +598,38 @@ impl AxExecutionClient {
     }
 }
 
+impl AxExecutionClient {
+    fn subscribe_instruments(&mut self) {
+        if self.instrument_subscription.is_some() {
+            return;
+        }
+
+        let http_client = self.http_client.clone();
+        let ws_orders = self.ws_orders.clone();
+        self.instrument_subscription = Some(InstrumentSubscription::new(
+            get_instruments_pattern(self.venue()),
+            TypedHandler::from(move |instrument: &InstrumentAny| {
+                Self::apply_instrument(&http_client, &ws_orders, instrument.clone());
+            }),
+        ));
+    }
+
+    fn apply_instrument(
+        http_client: &AxHttpClient,
+        ws_orders: &AxOrdersWebSocketClient,
+        instrument: InstrumentAny,
+    ) {
+        if instrument.id().venue == *AX_VENUE
+            && http_client
+                .get_instrument(&instrument.raw_symbol().inner())
+                .is_none_or(|cached| cached.ts_init() <= instrument.ts_init())
+        {
+            http_client.cache_instrument(instrument.clone());
+            ws_orders.cache_instrument(instrument);
+        }
+    }
+}
+
 #[async_trait(?Send)]
 impl ExecutionClient for AxExecutionClient {
     fn is_connected(&self) -> bool {
@@ -614,6 +648,10 @@ impl ExecutionClient for AxExecutionClient {
         *AX_VENUE
     }
 
+    fn on_instrument(&mut self, instrument: InstrumentAny) {
+        Self::apply_instrument(&self.http_client, &self.ws_orders, instrument);
+    }
+
     fn oms_type(&self) -> OmsType {
         self.core.oms_type
     }
@@ -623,6 +661,8 @@ impl ExecutionClient for AxExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         if self.is_connected() && self.pending_tasks.is_open() && self.session_tasks.is_open() {
             return Ok(());
         }
@@ -676,8 +716,10 @@ impl ExecutionClient for AxExecutionClient {
                 log::warn!("No instruments returned from AX");
             } else {
                 log::debug!("Loaded {} instruments", instruments.len());
-                self.http_client.cache_instruments(&instruments);
-                self.ws_orders.cache_instruments(&instruments);
+
+                for instrument in instruments {
+                    self.on_instrument(instrument);
+                }
             }
             self.core.set_instruments_initialized();
         }
@@ -895,6 +937,8 @@ impl ExecutionClient for AxExecutionClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         self.ensure_order_event_subscription();
 
         if self.core.is_started() {
@@ -913,6 +957,8 @@ impl ExecutionClient for AxExecutionClient {
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         self.clear_order_event_subscription();
 
         if self.core.is_stopped() {
@@ -930,6 +976,8 @@ impl ExecutionClient for AxExecutionClient {
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         self.clear_order_event_subscription();
         self.abort_session_tasks();
         self.abort_pending_tasks();
@@ -939,6 +987,8 @@ impl ExecutionClient for AxExecutionClient {
     }
 
     fn dispose(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         self.clear_order_event_subscription();
         self.abort_session_tasks();
         self.abort_pending_tasks();

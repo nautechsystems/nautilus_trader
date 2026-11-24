@@ -396,7 +396,7 @@ struct MarketDataPipeline {
     clock: AtomicTime,
     http: OKXHttpClient,
     config: OKXDataClientConfig,
-    update_lock: InstrumentUpdateLock,
+    update_lock: parking_lot::Mutex<()>,
     instruments: Arc<AtomicMap<Ustr, InstrumentAny>>,
     book_channels: Arc<AtomicMap<InstrumentId, OKXBookChannel>>,
     book_sync: BookSyncTracker,
@@ -455,7 +455,7 @@ impl MarketDataPipeline {
             )
             .unwrap(),
             config: OKXDataClientConfig::default(),
-            update_lock: InstrumentUpdateLock::default(),
+            update_lock: parking_lot::Mutex::default(),
             instruments,
             book_channels: Arc::new(AtomicMap::new()),
             book_sync: BookSyncTracker::default(),

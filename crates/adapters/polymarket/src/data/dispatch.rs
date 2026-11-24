@@ -2908,7 +2908,7 @@ mod tests {
 
         assert_eq!(client.instruments.load().len(), expected);
         assert_eq!(client.subscriptions.token_meta.len(), expected);
-        assert_eq!(publish_count, usize::from(!multiple && !closed));
+        assert_eq!(publish_count, expected);
 
         for instrument in response_instruments {
             assert_eq!(crate::filters::market_closed(instrument), Some(closed));

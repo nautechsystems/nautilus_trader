@@ -40,6 +40,7 @@ use nautilus_common::{
         GeneratePositionStatusReports, GeneratePositionStatusReportsBuilder, ModifyOrder,
         PARAMS_CLOSE_POSITION, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
+    msgbus::{InstrumentSubscription, TypedHandler, switchboard::get_instruments_pattern},
 };
 use nautilus_core::{
     AtomicSet, DurationNanos, Params, UUID4, UnixNanos,
@@ -119,7 +120,7 @@ use crate::{
             BinanceProductType, BinanceSide, BinanceTimeInForce, BinanceWorkingType,
         },
         failure::{classify_futures_batch_failure, classify_futures_http_failure, sanitize_reason},
-        instruments::BinanceInstrumentSelector,
+        instruments::{BinanceInstrumentSelector, CONTRACT_TYPE_INFO_KEY},
         symbol::{format_binance_symbol, format_instrument_id},
         urls::{get_usdm_ws_route_base_url, get_ws_private_base_url},
     },
@@ -186,6 +187,7 @@ pub struct BinanceFuturesExecutionClient {
     ws_client: Arc<Mutex<Option<BinanceFuturesWebSocketClient>>>,
     socket_factory: SocketControlFactory,
     ws_trading_client: Option<BinanceFuturesWsTradingClient>,
+    instrument_subscription: Option<InstrumentSubscription>,
     listen_key: Arc<RwLock<Option<SecretString>>>,
     recovery_listen_key: Arc<RwLock<Option<SecretString>>>,
     cancellation_token: CancellationToken,
@@ -307,6 +309,7 @@ impl BinanceFuturesExecutionClient {
             ws_client: Arc::new(Mutex::new(None)),
             socket_factory,
             ws_trading_client,
+            instrument_subscription: None,
             listen_key: Arc::new(RwLock::new(None)),
             recovery_listen_key: Arc::new(RwLock::new(None)),
             cancellation_token: CancellationToken::new(),
@@ -583,12 +586,7 @@ impl BinanceFuturesExecutionClient {
 
         let use_algo_api = is_algo_order_type(order_type);
         let use_ws = self.ws_trading_active() && !use_algo_api;
-        if !use_ws
-            && let Err(e) = self
-                .http_client
-                .instrument_metadata(instrument_id)
-                .and_then(|metadata| Ok(metadata.precisions()?))
-        {
+        if !use_ws && let Err(e) = self.http_client.execution_precisions_by_id(instrument_id) {
             let reason = OrderDeniedReason::ValidationFailed {
                 detail: e.to_string(),
             };
@@ -1928,6 +1926,78 @@ pub(crate) fn classify_submit_order_error(err: &anyhow::Error) -> bool {
     venue_code == Some(BINANCE_GTX_ORDER_REJECT_CODE)
 }
 
+impl BinanceFuturesExecutionClient {
+    fn subscribe_instruments(&mut self) {
+        if self.instrument_subscription.is_some() {
+            return;
+        }
+
+        let http_client = self.http_client.clone();
+        let config = self.config.clone();
+        let product_type = self.product_type;
+        self.instrument_subscription = Some(InstrumentSubscription::new(
+            get_instruments_pattern(self.venue()),
+            TypedHandler::from(move |instrument: &InstrumentAny| {
+                Self::apply_instrument(&http_client, &config, product_type, instrument.clone());
+            }),
+        ));
+    }
+
+    fn apply_instrument(
+        http_client: &BinanceFuturesHttpClient,
+        config: &BinanceExecutionClientConfig,
+        product_type: BinanceProductType,
+        instrument: InstrumentAny,
+    ) {
+        let id = instrument.id();
+        if id.venue != *BINANCE_VENUE || !is_instrument_for_product(&instrument, product_type) {
+            return;
+        }
+
+        let Ok(selector) =
+            BinanceInstrumentSelector::new(&config.instrument_provider, product_type)
+        else {
+            return;
+        };
+
+        let raw = http_client.instrument_metadata(id).ok();
+        let (base, contract_type) = match &raw {
+            Some(BinanceFuturesInstrument::UsdM(raw)) => {
+                (Some(raw.base_asset), Some(raw.contract_type.as_str()))
+            }
+            Some(BinanceFuturesInstrument::CoinM(raw)) => {
+                (Some(raw.base_asset), Some(raw.contract_type.as_str()))
+            }
+            None => (None, None),
+        };
+
+        let base = base.map_or_else(
+            || {
+                instrument
+                    .base_currency()
+                    .map(|currency| currency.code)
+                    .or_else(|| instrument.underlying())
+            },
+            Some,
+        );
+
+        let contract_type = instrument
+            .info()
+            .and_then(|info| info.get_str(CONTRACT_TYPE_INFO_KEY))
+            .or(contract_type);
+
+        if selector.includes(
+            id,
+            instrument.raw_symbol().as_str(),
+            base.as_ref().map_or("", |symbol| symbol.as_str()),
+            instrument.quote_currency().code.as_str(),
+            contract_type,
+        ) {
+            http_client.cache_reconciliation_instrument(instrument);
+        }
+    }
+}
+
 #[async_trait(?Send)]
 impl ExecutionClient for BinanceFuturesExecutionClient {
     fn is_connected(&self) -> bool {
@@ -1946,6 +2016,15 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         *BINANCE_VENUE
     }
 
+    fn on_instrument(&mut self, instrument: InstrumentAny) {
+        Self::apply_instrument(
+            &self.http_client,
+            &self.config,
+            self.product_type,
+            instrument,
+        );
+    }
+
     fn oms_type(&self) -> OmsType {
         self.core.oms_type
     }
@@ -1955,6 +2034,8 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         if self.core.is_connected() && self.session_tasks.is_open() && self.pending_tasks.is_open()
         {
             return Ok(());
@@ -2253,13 +2334,13 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             }
         }
 
-        let refresh_secs = self.config.instrument_refresh_interval_secs;
-        if refresh_secs > 0 {
+        let refresh_mins = self.config.update_instruments_interval_mins;
+        if refresh_mins > 0 {
             let http_client = self.http_client.clone();
             let provider = self.config.instrument_provider.clone();
 
             self.session_tasks.spawn(async move {
-                let mut interval = tokio::time::interval(Duration::from_secs(refresh_secs));
+                let mut interval = tokio::time::interval(Duration::from_secs(refresh_mins.saturating_mul(60)));
                 interval.tick().await;
 
                 loop {
@@ -3390,6 +3471,8 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         if self.core.is_started() {
             return Ok(());
         }
@@ -3408,6 +3491,8 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         let was_started = self.core.is_started();
         self.core.set_stopped();
         self.begin_generation_shutdown();
@@ -3419,11 +3504,15 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         self.begin_generation_shutdown();
         Ok(())
     }
 
     fn dispose(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         self.begin_generation_shutdown();
         Ok(())
     }

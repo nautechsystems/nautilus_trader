@@ -198,26 +198,13 @@ impl CoinbaseWebSocketClient {
         }
     }
 
-    /// Bulk-populates the instrument cache.
-    ///
-    /// Safe to call before or after [`Self::connect`]. When called before
-    /// connect, instruments are picked up by the initial `InitializeInstruments`
-    /// command the client sends to the handler; when called after, a fresh
-    /// `InitializeInstruments` command is sent to refresh the handler's cache.
+    /// Adds instruments to the cache shared with the WebSocket parser.
+    #[expect(
+        clippy::unused_async,
+        reason = "preserves the public WebSocket client API"
+    )]
     pub async fn initialize_instruments(&self, instruments: Vec<InstrumentAny>) {
-        let cmd_tx = self.cmd_tx.read().await;
-
-        if !instruments.is_empty() {
-            self.instruments.rcu(|cache| {
-                for instrument in &instruments {
-                    cache.insert(instrument.id(), instrument.clone());
-                }
-            });
-        }
-
-        if let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(instruments)) {
-            log::debug!("Failed to send InitializeInstruments: {e}");
-        }
+        self.cache_instruments(&instruments);
     }
 
     // Coinbase closes clients that idle without a subscribe inside 5s, and
@@ -316,14 +303,6 @@ impl CoinbaseWebSocketClient {
 
         {
             let mut command_sender = self.cmd_tx.write().await;
-            let instruments_vec: Vec<InstrumentAny> =
-                self.instruments.load().values().cloned().collect();
-
-            if !instruments_vec.is_empty()
-                && let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(instruments_vec))
-            {
-                log::error!("Failed to send InitializeInstruments: {e}");
-            }
 
             // Restore bar type registrations from previous session
             for (key, bar_type) in &self.bar_types {
@@ -352,6 +331,7 @@ impl CoinbaseWebSocketClient {
             );
 
             *command_sender = cmd_tx.clone();
+            drop(command_sender);
             self.connection_mode.store(connection_mode);
         }
 
@@ -360,9 +340,11 @@ impl CoinbaseWebSocketClient {
         let credential = self.credential.clone();
         let cmd_tx_reconnect = cmd_tx.clone();
         let aliases_for_handler = Arc::clone(&self.subscription_aliases);
+        let instruments = Arc::clone(&self.instruments);
 
         if let Err(e) = self.task_handle.spawn(async move {
-            let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx, aliases_for_handler);
+            let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx, aliases_for_handler)
+                .with_instruments(instruments);
 
             loop {
                 match handler.next().await {
@@ -697,36 +679,29 @@ impl CoinbaseWebSocketClient {
         &self.subscriptions
     }
 
-    /// Updates an instrument in the cache and notifies the handler.
-    pub async fn update_instrument(&self, instrument: InstrumentAny) {
-        let cmd_tx = self.cmd_tx.read().await;
-        let id = instrument.id();
-        self.instruments.insert(id, instrument.clone());
-
-        if let Err(e) = cmd_tx.send(HandlerCommand::UpdateInstrument(Box::new(instrument))) {
-            log::debug!("Failed to send UpdateInstrument: {e}");
-        }
+    pub(crate) fn cache_instrument(&self, instrument: InstrumentAny) {
+        self.instruments.insert(instrument.id(), instrument);
     }
 
-    pub(crate) async fn update_instruments(&self, instruments: &[InstrumentAny]) {
+    /// Updates an instrument in the cache shared with the WebSocket parser.
+    #[expect(
+        clippy::unused_async,
+        reason = "preserves the public WebSocket client API"
+    )]
+    pub async fn update_instrument(&self, instrument: InstrumentAny) {
+        self.cache_instrument(instrument);
+    }
+
+    pub(crate) fn cache_instruments(&self, instruments: &[InstrumentAny]) {
         if instruments.is_empty() {
             return;
         }
 
-        let cmd_tx = self.cmd_tx.read().await;
         self.instruments.rcu(|cache| {
             for instrument in instruments {
                 cache.insert(instrument.id(), instrument.clone());
             }
         });
-
-        for instrument in instruments {
-            if let Err(e) = cmd_tx.send(HandlerCommand::UpdateInstrument(Box::new(
-                instrument.clone(),
-            ))) {
-                log::debug!("Failed to send UpdateInstrument: {e}");
-            }
-        }
     }
 
     /// Takes the output message receiver, leaving `None` in its place.
@@ -891,57 +866,9 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[case::single(false)]
-    #[case::bulk(true)]
     #[tokio::test]
-    async fn instrument_updates_wait_for_sender_publication(#[case] bulk: bool) {
-        let ws_client =
-            CoinbaseWebSocketClient::new("wss://test", TransportBackend::default(), None);
-        let instrument = InstrumentAny::CryptoPerpetual(
-            nautilus_model::instruments::stubs::crypto_perpetual_ethusdt(),
-        );
-        let mut sender = ws_client.cmd_tx.write().await;
-
-        let mut update = Box::pin(async {
-            if bulk {
-                ws_client
-                    .initialize_instruments(vec![instrument.clone()])
-                    .await;
-            } else {
-                ws_client.update_instrument(instrument.clone()).await;
-            }
-        });
-
-        assert!(futures_util::poll!(update.as_mut()).is_pending());
-        assert!(ws_client.instruments.load().is_empty());
-        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
-        *sender = cmd_tx;
-        drop(sender);
-        update.await;
-
-        assert_eq!(
-            ws_client.instruments.get_cloned(&instrument.id()),
-            Some(instrument.clone())
-        );
-
-        match (bulk, cmd_rx.try_recv().unwrap()) {
-            (true, HandlerCommand::InitializeInstruments(instruments)) => {
-                assert_eq!(instruments, vec![instrument]);
-            }
-            (false, HandlerCommand::UpdateInstrument(updated)) => assert_eq!(*updated, instrument),
-            (_, command) => panic!("unexpected cache command: {command:?}"),
-        }
-
-        assert!(cmd_rx.try_recv().is_err());
-    }
-
-    #[rstest]
-    #[case::initialize(true)]
-    #[case::update(false)]
-    #[tokio::test]
-    async fn batch_updates_merge_and_keep_command_order(#[case] initialize: bool) {
-        let ws_client =
-            CoinbaseWebSocketClient::new("wss://test", TransportBackend::default(), None);
+    async fn instrument_cache_updates_do_not_depend_on_the_command_sender() {
+        let ws = CoinbaseWebSocketClient::new("wss://test", TransportBackend::default(), None);
         let retained = InstrumentAny::CryptoPerpetual(
             nautilus_model::instruments::stubs::crypto_perpetual_ethusdt(),
         );
@@ -955,58 +882,27 @@ mod tests {
         first.ts_event = 17.into();
         let mut latest = first.clone();
         latest.ts_event = 29.into();
-        let batch = vec![
-            InstrumentAny::CryptoPerpetual(first),
-            InstrumentAny::CryptoPerpetual(latest),
-        ];
-        ws_client
-            .initialize_instruments(vec![retained.clone()])
-            .await;
-        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-        *ws_client.cmd_tx.write().await = sender;
-        if initialize {
-            ws_client.initialize_instruments(batch.clone()).await;
-        } else {
-            ws_client.update_instruments(&batch).await;
+        let first = InstrumentAny::CryptoPerpetual(first);
+        let latest = InstrumentAny::CryptoPerpetual(latest);
+        let _sender = ws.cmd_tx.write().await;
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            ws.initialize_instruments(vec![retained.clone(), first])
+                .await;
+            ws.update_instrument(latest.clone()).await;
+        })
+        .await
+        .unwrap();
+
+        let snapshot = ws.instruments.load();
+        assert_eq!(snapshot.len(), 2);
+
+        for expected in [&retained, &latest] {
+            assert!(snapshot[&expected.id()].same_definition(expected));
+            assert_eq!(snapshot[&expected.id()].ts_event(), expected.ts_event());
         }
 
-        assert_eq!(ws_client.instruments.len(), 2);
-
-        for expected in [&retained, &batch[1]] {
-            assert_eq!(
-                serde_json::to_value(ws_client.instruments.get_cloned(&expected.id()).unwrap())
-                    .unwrap(),
-                serde_json::to_value(expected).unwrap()
-            );
-        }
-
-        if initialize {
-            let HandlerCommand::InitializeInstruments(actual) = receiver.try_recv().unwrap() else {
-                panic!("expected InitializeInstruments");
-            };
-
-            assert_eq!(
-                serde_json::to_value(actual).unwrap(),
-                serde_json::to_value(&batch).unwrap()
-            );
-        } else {
-            for expected in &batch {
-                let HandlerCommand::UpdateInstrument(actual) = receiver.try_recv().unwrap() else {
-                    panic!("expected UpdateInstrument");
-                };
-
-                assert_eq!(
-                    serde_json::to_value(actual).unwrap(),
-                    serde_json::to_value(expected).unwrap()
-                );
-            }
-        }
-
-        assert!(receiver.try_recv().is_err());
-        let before = ws_client.instruments.load();
-        ws_client.update_instruments(&[]).await;
-        assert!(Arc::ptr_eq(&before, &ws_client.instruments.load()));
-        assert!(receiver.try_recv().is_err());
+        ws.initialize_instruments(Vec::new()).await;
+        assert!(Arc::ptr_eq(&snapshot, &ws.instruments.load()));
     }
 
     #[tokio::test]

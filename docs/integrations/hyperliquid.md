@@ -2052,14 +2052,14 @@ separate weights and request limits therefore remain outside this adapter's limi
 | `http_timeout_secs`                      | `60`      | REST timeout in seconds.                                                                             |
 | `ws_timeout_secs`                        | `30`      | WebSocket connection timeout in seconds.                                                             |
 | `stale_stream_receive_timeout_secs`      | `120`     | Stale receive threshold in seconds; `0` disables stream health monitoring.                           |
-| `stream_health_check_interval_secs`      | `15`      | Stream health check interval in seconds; `0` disables monitoring.                                    |
-| `stale_stream_warning_cooldown_secs`     | `60`      | Seconds between stale warnings for the same stream.                                                  |
+| `stream_health_check_interval_secs`      | `15`      | Interval (seconds) between stream health checks. `0` disables monitoring.                            |
+| `stale_stream_warning_cooldown_secs`     | `60`      | Interval (seconds) between stale warnings for the same stream.                                       |
 | `stale_stream_recovery_enabled`          | `False`   | Stale-stream recovery: book recovery for deltas; resubscribe, then reconnect for depth-only and BBO. |
-| `stale_stream_recovery_cooldown_secs`    | `120`     | Seconds between recovery actions per stream; must be positive for recovery to run.                   |
+| `stale_stream_recovery_cooldown_secs`    | `120`     | Interval (seconds) between recovery actions per stream. Must be positive for recovery to run.        |
 | `stale_stream_max_targeted_resubscribes` | `3`       | Depth-only or BBO resubscribe attempts before a full WebSocket reconnect.                            |
 | `book_snapshot_timeout_secs`             | `10`      | Initial, reconnect, and recovery snapshot wait in seconds; `0` disables deadlines.                   |
 | `book_feed`                              | `l2Book`  | Fixed book source: documented `l2Book` snapshots or the web application's compact `l2` feed.         |
-| `update_instruments_interval_mins`       | `60`      | Instrument refresh interval in minutes; `0` disables periodic refresh.                               |
+| `update_instruments_interval_mins`       | `60`      | Interval (minutes) between instrument refreshes. `0` disables periodic refresh.                      |
 | `transport_backend`                      | `Sockudo` | WebSocket transport backend.                                                                         |
 
 For `request_instrument` and `request_instruments`, `http_timeout_secs` also bounds the entire
@@ -2088,7 +2088,7 @@ Partial metadata loads retain their existing best-effort behavior.
 | `normalize_prices`              | `True`            | Normalize order prices to 5 significant figures before submission.                                                                         |
 | `include_builder_attribution`   | `True`            | Zero-fee Nautilus builder attribution on eligible mainnet orders.                                                                          |
 | `market_order_slippage_bps`     | `50`              | MARKET and stop-trigger slippage in bps; overridable in `SubmitOrder.params`.                                                              |
-| `outcome_settlement_poll_secs`  | `0`               | Rust-only HIP-4 `outcomeMeta` polling interval in seconds; disabled as venue fills cover settlement.                                       |
+| `outcome_settlement_poll_secs`  | `0`               | Interval (seconds) between HIP-4 `outcomeMeta` polls (Rust only). Disabled because venue fills cover settlement.                           |
 | `scheduled_cancel_timeout_secs` | `None`            | Account-wide timeout in seconds, at least 15; refreshes every third of the timeout. See [Scheduled cancellation](#scheduled-cancellation). |
 | `proxy_url`                     | `None`            | Optional HTTP and WebSocket proxy.                                                                                                         |
 | `transport_backend`             | `Sockudo`         | WebSocket transport backend.                                                                                                               |

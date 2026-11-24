@@ -652,10 +652,10 @@ endpoints can use the custom API URL alone.
 | `max_retries`                      | `3`       | Maximum retry attempts for idempotent REST requests (`GET`, `HEAD`, `OPTIONS`). |
 | `retry_delay_initial_ms`           | `1,000`   | Initial delay (milliseconds) between retries.                                   |
 | `retry_delay_max_ms`               | `10,000`  | Maximum delay (milliseconds) between retries (exponential backoff).             |
-| `heartbeat_interval_secs`          | `20`      | Heartbeat interval (seconds) for WebSocket connections.                         |
+| `heartbeat_interval_secs`          | `20`      | Interval (seconds) between WebSocket heartbeats.                                |
 | `recv_window_ms`                   | `5,000`   | Reserved; AX uses bearer tokens and the adapter sends no window.                |
-| `update_instruments_interval_mins` | `60`      | Interval between catalog refreshes; `0` disables periodic refresh.              |
-| `funding_rate_poll_interval_mins`  | `15`      | Interval between funding rate polls; `0` selects one minute, not disabled.      |
+| `update_instruments_interval_mins` | `60`      | Interval (minutes) between catalog refreshes. `0` disables periodic refresh.    |
+| `funding_rate_poll_interval_mins`  | `15`      | Interval (minutes) between funding rate polls. `0` sets a one-minute interval.  |
 | `book_snapshot_timeout_secs`       | `10`      | Initial, reconnect, and recovery book snapshot wait; `0` disables.              |
 | `transport_backend`                | `Sockudo` | WebSocket transport backend.                                                    |
 
@@ -675,7 +675,7 @@ endpoints can use the custom API URL alone.
 | `max_retries`             | `3`       | Maximum retry attempts for idempotent REST requests (`GET`, `HEAD`, `OPTIONS`). |
 | `retry_delay_initial_ms`  | `1,000`   | Initial delay (milliseconds) between retries.                                   |
 | `retry_delay_max_ms`      | `10,000`  | Maximum delay (milliseconds) between retries (exponential backoff).             |
-| `heartbeat_interval_secs` | `30`      | Heartbeat interval (seconds) for WebSocket connections.                         |
+| `heartbeat_interval_secs` | `30`      | Interval (seconds) between WebSocket heartbeats.                                |
 | `recv_window_ms`          | `5,000`   | Reserved; AX uses bearer tokens and the adapter sends no window.                |
 | `cancel_on_disconnect`    | `False`   | Cancel this WebSocket session's open orders on disconnect.                      |
 | `transport_backend`       | `Sockudo` | WebSocket transport backend.                                                    |

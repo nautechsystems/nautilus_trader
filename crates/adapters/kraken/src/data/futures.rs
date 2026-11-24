@@ -67,6 +67,7 @@ use parking_lot::Mutex;
 use rust_decimal_macros::dec;
 use tokio_util::sync::CancellationToken;
 
+use super::apply_instrument_definitions;
 use crate::{
     book::sync::{BookSyncTracker, spawn_recovery},
     common::{consts::KRAKEN_VENUE, lookup_instrument_in_snapshot},
@@ -105,6 +106,7 @@ pub struct KrakenFuturesDataClient {
     session_tasks: TaskGroup,
     command_tasks: TaskGroup,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    instrument_publish_lock: Arc<Mutex<()>>,
     quote_instruments: Arc<AtomicSet<InstrumentId>>,
     last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,
     book_instruments: Arc<AtomicSet<InstrumentId>>,
@@ -170,6 +172,7 @@ impl KrakenFuturesDataClient {
             session_tasks,
             command_tasks,
             instruments: Arc::new(AtomicMap::new()),
+            instrument_publish_lock: Arc::new(Mutex::new(())),
             quote_instruments: Arc::new(AtomicSet::new()),
             last_quotes: Arc::new(DashMap::new()),
             book_instruments: Arc::new(AtomicSet::new()),
@@ -191,28 +194,50 @@ impl KrakenFuturesDataClient {
         self.instruments.load().get(instrument_id).cloned()
     }
 
-    async fn load_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
-        let instruments = self
-            .http
-            .request_instruments()
-            .await
-            .context("Failed to load futures instruments")?;
+    fn spawn_instrument_refresh(&self) -> anyhow::Result<()> {
+        let http = self.http.clone();
+        let sender = self.data_sender.clone();
+        let cache = self.instruments.clone();
+        let instrument_publish_lock = self.instrument_publish_lock.clone();
+        let cancel = self.cancellation_token.clone();
 
-        self.instruments.rcu(|m| {
-            for instrument in &instruments {
-                m.insert(instrument.id(), instrument.clone());
+        self.session_tasks.spawn(async move {
+            let mut interval = super::instrument_refresh_interval();
+
+            loop {
+                tokio::select! {
+                    biased;
+                    () = cancel.cancelled() => break,
+                    _ = interval.tick() => {}
+                }
+
+                let Some(result) = cancel
+                    .run_until_cancelled(Box::pin(http.request_instruments()))
+                    .await
+                else {
+                    break;
+                };
+
+                let _publish_guard = instrument_publish_lock.lock();
+
+                if cancel.is_cancelled() {
+                    break;
+                }
+
+                match result {
+                    Ok(instruments) => apply_instrument_definitions(
+                        |updated| http.cache_instruments(updated),
+                        &cache,
+                        &sender,
+                        &instruments,
+                        false,
+                    ),
+                    Err(e) => log::warn!("Failed to refresh Kraken Futures instruments: {e}"),
+                }
             }
-        });
+        })?;
 
-        self.http.cache_instruments(&instruments);
-
-        log::debug!(
-            "Loaded instruments: client_id={}, count={}",
-            self.client_id,
-            instruments.len()
-        );
-
-        Ok(instruments)
+        Ok(())
     }
 
     fn spawn_ws<F>(&self, fut: F, context: &'static str)
@@ -766,6 +791,7 @@ impl DataClient for KrakenFuturesDataClient {
 
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping Futures data client: {}", self.client_id);
+        let _publish_guard = self.instrument_publish_lock.lock();
         self.session_tasks.begin_shutdown();
         self.command_tasks.begin_shutdown();
         self.book_sync.lock().clear();
@@ -776,6 +802,7 @@ impl DataClient for KrakenFuturesDataClient {
 
     fn reset(&mut self) -> anyhow::Result<()> {
         log::info!("Resetting Futures data client: {}", self.client_id);
+        let _publish_guard = self.instrument_publish_lock.lock();
         self.session_tasks.begin_shutdown();
         self.command_tasks.begin_shutdown();
         self.book_sync.lock().clear();
@@ -812,7 +839,11 @@ impl DataClient for KrakenFuturesDataClient {
         self.prepare_task_groups().await?;
         self.last_quotes.clear();
 
-        let instruments = self.load_instruments().await?;
+        let instruments = self
+            .http
+            .request_instruments()
+            .await
+            .context("Failed to load futures instruments")?;
 
         let session_result = async {
             self.ws
@@ -824,8 +855,20 @@ impl DataClient for KrakenFuturesDataClient {
                 .await
                 .context("Futures WebSocket failed to become active")?;
 
+            {
+                let _publish_guard = self.instrument_publish_lock.lock();
+                apply_instrument_definitions(
+                    |updated| self.http.cache_instruments(updated),
+                    &self.instruments,
+                    &self.data_sender,
+                    &instruments,
+                    true,
+                );
+            }
+
             self.replay_held_books()?;
             self.spawn_message_handler()?;
+            self.spawn_instrument_refresh()?;
 
             Ok::<(), anyhow::Error>(())
         }
@@ -838,12 +881,6 @@ impl DataClient for KrakenFuturesDataClient {
                 )));
             }
             return Err(e);
-        }
-
-        for instrument in instruments {
-            if let Err(e) = self.data_sender.send(DataEvent::Data(instrument.into())) {
-                log::error!("Failed to send instrument: {e}");
-            }
         }
 
         self.is_connected.store(true, Ordering::Release);
@@ -867,12 +904,12 @@ impl DataClient for KrakenFuturesDataClient {
     }
 
     fn subscribe_instruments(&mut self, _cmd: SubscribeInstruments) -> anyhow::Result<()> {
-        log::debug!("subscribe_instruments: Kraken instruments are fetched via HTTP on connect");
+        log::debug!("subscribe_instruments: Kraken Futures instruments refresh periodically");
         Ok(())
     }
 
     fn subscribe_instrument(&mut self, _cmd: SubscribeInstrument) -> anyhow::Result<()> {
-        log::debug!("subscribe_instrument: Kraken instruments are fetched via HTTP on connect");
+        log::debug!("subscribe_instrument: Kraken Futures instruments refresh periodically");
         Ok(())
     }
 
@@ -1120,23 +1157,42 @@ impl DataClient for KrakenFuturesDataClient {
         let http = self.http.clone();
         let sender = self.data_sender.clone();
         let instruments_cache = self.instruments.clone();
+        let instrument_publish_lock = self.instrument_publish_lock.clone();
+        let cancel = self.command_tasks.cancellation_token();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let venue = *KRAKEN_VENUE;
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
+        let publish = request.start.is_none() && request.end.is_none();
         let params = request.params;
         let clock = self.clock;
 
         self.spawn_command(async move {
-            match http.request_instruments().await {
+            let Some(result) = cancel
+                .run_until_cancelled(Box::pin(http.request_instruments()))
+                .await
+            else {
+                return;
+            };
+
+            match result {
                 Ok(instruments) => {
-                    instruments_cache.rcu(|m| {
-                        for instrument in &instruments {
-                            m.insert(instrument.id(), instrument.clone());
-                        }
-                    });
-                    http.cache_instruments(&instruments);
+                    let _publish_guard = instrument_publish_lock.lock();
+
+                    if cancel.is_cancelled() {
+                        return;
+                    }
+
+                    if publish {
+                        apply_instrument_definitions(
+                            |updated| http.cache_instruments(updated),
+                            &instruments_cache,
+                            &sender,
+                            &instruments,
+                            false,
+                        );
+                    }
 
                     let response = DataResponse::Instruments(InstrumentsResponse::new(
                         request_id,
@@ -1166,22 +1222,41 @@ impl DataClient for KrakenFuturesDataClient {
         let http = self.http.clone();
         let sender = self.data_sender.clone();
         let instruments = self.instruments.clone();
+        let instrument_publish_lock = self.instrument_publish_lock.clone();
+        let cancel = self.command_tasks.cancellation_token();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
+        let publish = request.start.is_none() && request.end.is_none();
         let params = request.params;
         let clock = self.clock;
 
         self.spawn_command(async move {
-            match http.request_instruments().await {
+            let Some(result) = cancel
+                .run_until_cancelled(Box::pin(http.request_instruments()))
+                .await
+            else {
+                return;
+            };
+
+            match result {
                 Ok(all_instruments) => {
-                    instruments.rcu(|m| {
-                        for instrument in &all_instruments {
-                            m.insert(instrument.id(), instrument.clone());
-                        }
-                    });
-                    http.cache_instruments(&all_instruments);
+                    let _publish_guard = instrument_publish_lock.lock();
+
+                    if cancel.is_cancelled() {
+                        return;
+                    }
+
+                    if publish {
+                        apply_instrument_definitions(
+                            |updated| http.cache_instruments(updated),
+                            &instruments,
+                            &sender,
+                            &all_instruments,
+                            false,
+                        );
+                    }
 
                     let instrument = all_instruments
                         .into_iter()
@@ -1429,6 +1504,86 @@ pub(crate) mod tests {
         assert!(!client.is_connected());
         assert!(client.is_disconnected());
         assert!(client.instruments().is_empty());
+    }
+
+    #[rstest]
+    fn test_futures_definition_refresh_updates_local_and_http_lookups() {
+        setup_test_env();
+        let mut client = KrakenFuturesDataClient::new(
+            *KRAKEN_CLIENT_ID,
+            KrakenDataClientConfig::builder()
+                .product_type(KrakenProductType::Futures)
+                .build(),
+        )
+        .unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.data_sender = tx.into();
+
+        let InstrumentAny::CryptoPerpetual(mut instrument) = futures_instrument() else {
+            panic!("expected a perpetual contract");
+        };
+
+        instrument.id = InstrumentId::from("PF_ETHUSD.KRAKEN");
+        let id = instrument.id;
+        for (timestamp, precision, increment) in
+            [(1, 2, Price::from("0.01")), (2, 4, Price::from("0.0001"))]
+        {
+            instrument.ts_init = UnixNanos::from(timestamp);
+            instrument.price_precision = precision;
+            instrument.price_increment = increment;
+            let definition = InstrumentAny::CryptoPerpetual(instrument.clone());
+            apply_instrument_definitions(
+                |updated| client.http.cache_instruments(updated),
+                &client.instruments,
+                &client.data_sender,
+                std::slice::from_ref(&definition),
+                false,
+            );
+
+            let DataEvent::Data(Data::Instrument(published)) = rx.try_recv().unwrap() else {
+                panic!("expected an instrument update");
+            };
+
+            let local = client.get_instrument(&id).unwrap();
+            let http = client
+                .http
+                .get_cached_instrument(&id.symbol.inner())
+                .unwrap();
+
+            for updated in [&*published, &local, &http] {
+                assert_eq!(updated.id(), id);
+                assert_eq!(updated.price_precision(), precision);
+                assert_eq!(updated.price_increment(), increment);
+            }
+        }
+
+        for (timestamp, precision, increment) in
+            [(4, 4, Price::from("0.0001")), (3, 2, Price::from("0.01"))]
+        {
+            instrument.ts_init = UnixNanos::from(timestamp);
+            instrument.price_precision = precision;
+            instrument.price_increment = increment;
+            apply_instrument_definitions(
+                |updated| client.http.cache_instruments(updated),
+                &client.instruments,
+                &client.data_sender,
+                &[instrument.clone().into()],
+                false,
+            );
+        }
+
+        let local = client.get_instrument(&id).unwrap();
+        let http = client
+            .http
+            .get_cached_instrument(&id.symbol.inner())
+            .unwrap();
+        assert_eq!(local.ts_init(), UnixNanos::from(4));
+        assert_eq!(local.price_increment(), Price::from("0.0001"));
+        assert_eq!(http.price_increment(), Price::from("0.0001"));
+        assert!(matches!(
+            rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
     }
 
     #[rstest]

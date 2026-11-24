@@ -807,7 +807,7 @@ and a 60-second stop timer. For general setup, see [Configure live trading](../h
 | `http_timeout_secs`       | `http.timeout_secs`            | `300`                     | Transport timeout per request, in seconds.                                      |
 | `max_concurrent_requests` | `http.max_concurrent_requests` | `1`                       | Managed requests in flight on this instance.                                    |
 | `attempt_budget`          | `http.attempt_budget`          | `100`                     | Lifetime FinFeed managed attempts per connection generation.                    |
-| `min_request_interval_ms` | `http.min_request_interval_ms` | `10000`                   | Shared spacing between attempt starts, in milliseconds.                         |
+| `min_request_interval_ms` | `http.min_request_interval_ms` | `10000`                   | Shared minimum interval (milliseconds) between request attempt starts.          |
 | `connect_timeout_secs`    | `connect_timeout_secs`         | `120`                     | Entire bootstrap deadline in seconds.                                           |
 
 Each `FinFeedInstrumentSelection` requires `exchange_id` and `market_ids`, with no selection defaults.
@@ -818,10 +818,10 @@ concurrency and attempt allowance must be positive.
 
 #### Polling
 
-| Python keyword     | Rust field         | Default | Meaning                                    |
-| ------------------ | ------------------ | ------- | ------------------------------------------ |
-| `poll_interval_ms` | `poll_interval_ms` | `10000` | Delay after each endpoint poll completes.  |
-| `poll_limit`       | `poll_limit`       | `100`   | Maximum latest quotes and trades per list. |
+| Python keyword     | Rust field         | Default | Meaning                                                     |
+| ------------------ | ------------------ | ------- | ----------------------------------------------------------- |
+| `poll_interval_ms` | `poll_interval_ms` | `10000` | Interval (milliseconds) after each endpoint poll completes. |
+| `poll_limit`       | `poll_limit`       | `100`   | Maximum latest quotes and trades per list.                  |
 
 Polling accepts `[100, 86400000]` milliseconds and a `poll_limit` in `[1, 10000]`.
 OHLCV requests use `poll_limit + 1` rows for a running period: at most 10001, within the market

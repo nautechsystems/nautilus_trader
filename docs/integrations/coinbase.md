@@ -435,16 +435,16 @@ Historical funding rate requests are not implemented.
 
 ### Instrument status
 
-`subscribe_instrument_status` joins the Coinbase WebSocket `status` channel on first subscription (the venue
-publishes one status feed for all products). It filters incoming events to the subscribed instruments. It
-emits `InstrumentStatus` events with these actions:
+`subscribe_instrument_status` subscribes to the Coinbase WebSocket `status` channel for the requested
+product. The adapter shares the subscription between instrument aliases that use the same Coinbase
+product ID. It emits `InstrumentStatus` events with these actions:
 
 - `MarketStatusAction::Trading` for `online`.
 - `Halt` for `offline`.
 - `Close` for `delisted`.
 
-Products reporting an unset status (futures) or a status the adapter does not model carry no information for
-the data engine and are skipped. The channel subscription is dropped when the last instrument unsubscribes.
+The adapter skips products with an unset or unsupported status. It drops each product subscription
+when its last instrument unsubscribes.
 
 ## Orders capability
 
@@ -797,20 +797,20 @@ command lost a race with the shutdown signal.
 
 ### Data client configuration options
 
-| Option                             | Default   | Description                                                                       |
-| ---------------------------------- | --------- | --------------------------------------------------------------------------------- |
-| `api_key`                          | `None`    | Falls back to `COINBASE_API_KEY` env var.                                         |
-| `api_secret`                       | `None`    | Falls back to `COINBASE_API_SECRET` env var.                                      |
-| `base_url_rest`                    | `None`    | Override for the REST base URL.                                                   |
-| `base_url_ws`                      | `None`    | Override for the WebSocket market data URL.                                       |
-| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports.                             |
-| `environment`                      | `Live`    | `Live` or `Sandbox`.                                                              |
-| `http_timeout_secs`                | `10`      | HTTP request timeout (seconds).                                                   |
-| `ws_timeout_secs`                  | `30`      | WebSocket timeout (seconds).                                                      |
-| `update_instruments_interval_mins` | `60`      | Interval between instrument catalog refreshes.                                    |
-| `derivatives_poll_interval_secs`   | `15`      | Interval between REST polls that emit `IndexPriceUpdate` and `FundingRateUpdate`. |
-| `book_snapshot_timeout_secs`       | `10`      | Initial, reconnect, and recovery snapshot wait; `0` disables the deadlines.       |
-| `transport_backend`                | `Sockudo` | WebSocket transport backend.                                                      |
+| Option                             | Default   | Description                                                                     |
+| ---------------------------------- | --------- | ------------------------------------------------------------------------------- |
+| `api_key`                          | `None`    | Falls back to `COINBASE_API_KEY` env var.                                       |
+| `api_secret`                       | `None`    | Falls back to `COINBASE_API_SECRET` env var.                                    |
+| `base_url_rest`                    | `None`    | Override for the REST base URL.                                                 |
+| `base_url_ws`                      | `None`    | Override for the WebSocket market data URL.                                     |
+| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports.                           |
+| `environment`                      | `Live`    | `Live` or `Sandbox`.                                                            |
+| `http_timeout_secs`                | `10`      | HTTP request timeout (seconds).                                                 |
+| `ws_timeout_secs`                  | `30`      | WebSocket timeout (seconds).                                                    |
+| `update_instruments_interval_mins` | `60`      | Interval (minutes) between instrument refreshes. `0` disables periodic refresh. |
+| `derivatives_poll_interval_secs`   | `15`      | Interval (seconds) to poll REST for `IndexPriceUpdate` and `FundingRateUpdate`. |
+| `book_snapshot_timeout_secs`       | `10`      | Initial, reconnect, and recovery snapshot wait; `0` disables the deadlines.     |
+| `transport_backend`                | `Sockudo` | WebSocket transport backend.                                                    |
 
 ### Execution client configuration options
 

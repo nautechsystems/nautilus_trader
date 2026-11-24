@@ -27,6 +27,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::{
     mutation::{Mutation, RECOVERY_POLL_INTERVAL},
+    stream::PrivateStreamCommand,
     submit::{self, Submission},
 };
 use crate::{
@@ -253,7 +254,7 @@ async fn submit_orders(chunk: &[Submission], epoch: Option<(u64, u64)>) -> bool 
 
     let result = http.create_batch(&request, false).await;
     let complete = resolve_submissions(chunk, result);
-    let _ = first.refresh.send(());
+    let _ = first.refresh.send(PrivateStreamCommand::Refresh);
     complete
 }
 
@@ -412,7 +413,7 @@ async fn cancel_orders(chunk: &[Mutation], epoch: Option<(u64, u64)>) -> bool {
 
     let result = http.cancel_batch(&request, false).await;
     let complete = resolve_cancellations(&chunk, result);
-    let _ = first.refresh.send(());
+    let _ = first.refresh.send(PrivateStreamCommand::Refresh);
     complete
 }
 

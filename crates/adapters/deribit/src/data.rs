@@ -557,14 +557,23 @@ impl DeribitDataClient {
         ws: &DeribitWebSocketClient,
         instruments: &AtomicMap<InstrumentId, InstrumentAny>,
         instrument_id: InstrumentId,
+        instruments_lock: &Mutex<()>,
+        cancellation: &CancellationToken,
+        sender: &EventSender<DataEvent>,
     ) -> anyhow::Result<()> {
         let instrument = http_client
             .request_instrument(instrument_id)
             .await
             .with_context(|| format!("failed to lazy-load instrument {instrument_id}"))?;
-        instruments.insert(instrument.id(), instrument.clone());
-        http_client.cache_instruments(std::slice::from_ref(&instrument));
-        ws.cache_instruments(std::slice::from_ref(&instrument));
+        let _guard = instruments_lock.lock();
+
+        anyhow::ensure!(
+            !cancellation.is_cancelled(),
+            "Instrument hydration cancelled"
+        );
+        let accepted =
+            cache_fetched_instruments(&mut [instrument], instruments, http_client, Some(ws), true);
+        publish_instruments(accepted, sender);
         Ok(())
     }
 
@@ -735,16 +744,24 @@ impl DeribitDataClient {
                 .request_instruments(DeribitCurrency::ANY, Some(*product_type))
                 .await
                 .with_context(|| format!("failed to request instruments for {product_type:?}"))?;
-            self.cache_loaded_instruments(&fetched);
             all_instruments.extend(fetched);
         }
 
+        let fetched_ids: AHashSet<_> = all_instruments.iter().map(Instrument::id).collect();
+        let missing_ids: Vec<_> = self
+            .config
+            .load_ids
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .copied()
+            .filter(|id| !fetched_ids.contains(id))
+            .collect();
         let required = self
             .http_client
-            .request_uncached_instruments(self.config.load_ids.as_deref().unwrap_or(&[]))
+            .request_uncached_instruments(&missing_ids)
             .await
             .context("failed to load reconciliation instruments")?;
-        self.cache_loaded_instruments(&required);
         all_instruments.extend(required);
         self.append_cached_load_ids(&mut all_instruments);
         log::debug!(
@@ -753,19 +770,6 @@ impl DeribitDataClient {
             all_instruments.len()
         );
         Ok(all_instruments)
-    }
-
-    fn cache_loaded_instruments(&self, instruments: &[InstrumentAny]) {
-        if instruments.is_empty() {
-            return;
-        }
-
-        self.http_client.cache_instruments(instruments);
-        self.instruments.rcu(|cached| {
-            for instrument in instruments {
-                cached.insert(instrument.id(), instrument.clone());
-            }
-        });
     }
 
     fn append_cached_load_ids(&self, instruments: &mut Vec<InstrumentAny>) {
@@ -800,7 +804,6 @@ impl DeribitDataClient {
             }
         }
 
-        self.cache_loaded_instruments(&cached);
         instruments.extend(cached);
     }
 }
@@ -885,22 +888,25 @@ impl DataClient for DeribitDataClient {
 
         register_deribit_custom_data();
 
-        let all_instruments = self.load_data_instruments().await?;
-        for instrument in &all_instruments {
-            if let Err(e) = self
-                .data_sender
-                .send(DataEvent::Data(instrument.clone().into()))
-            {
-                log::warn!("Failed to send instrument: {e}");
-            }
+        let mut all_instruments = self.load_data_instruments().await?;
+
+        {
+            let _guard = self.instruments_lock.lock();
+            let accepted = cache_fetched_instruments(
+                &mut all_instruments,
+                &self.instruments,
+                &self.http_client,
+                self.ws_client.as_ref(),
+                true,
+            );
+            publish_instruments(accepted, &self.data_sender);
         }
 
-        // Cache instruments and set subscription filters in WebSocket client before connecting
+        // Restore the stream subscription filters before connecting
         let mark_price_subs = self.mark_price_subs.clone();
         let index_price_subs = self.index_price_subs.clone();
         let option_greeks_subs = self.option_greeks_subs.clone();
         let ws = self.ws_client_mut()?;
-        ws.cache_instruments(&all_instruments);
         ws.set_mark_price_subs(mark_price_subs);
         ws.set_index_price_subs(index_price_subs);
         ws.set_option_greeks_subs(option_greeks_subs);
@@ -1054,6 +1060,9 @@ impl DataClient for DeribitDataClient {
                 .clone();
             let http_client = self.http_client.clone();
             let instruments = Arc::clone(&self.instruments);
+            let instruments_lock = Arc::clone(&self.instruments_lock);
+            let cancellation = self.command_tasks.cancellation_token();
+            let sender = self.data_sender.clone();
             let interval = self.get_interval(&cmd.params);
 
             let depth = cmd
@@ -1091,9 +1100,16 @@ impl DataClient for DeribitDataClient {
 
             self.spawn_command(async move {
                 if needs_load
-                    && let Err(e) =
-                        Self::lazy_load_instrument(&http_client, &ws, &instruments, instrument_id)
-                            .await
+                    && let Err(e) = Self::lazy_load_instrument(
+                        &http_client,
+                        &ws,
+                        &instruments,
+                        instrument_id,
+                        &instruments_lock,
+                        &cancellation,
+                        &sender,
+                    )
+                    .await
                 {
                     log::error!("Lazy-load failed for {instrument_id} (book deltas): {e}");
                     return;
@@ -1131,6 +1147,9 @@ impl DataClient for DeribitDataClient {
                 .clone();
             let http_client = self.http_client.clone();
             let instruments = Arc::clone(&self.instruments);
+            let instruments_lock = Arc::clone(&self.instruments_lock);
+            let cancellation = self.command_tasks.cancellation_token();
+            let sender = self.data_sender.clone();
             let interval = self.get_interval(&cmd.params);
             let group = cmd
                 .params
@@ -1149,9 +1168,16 @@ impl DataClient for DeribitDataClient {
 
             self.spawn_command(async move {
                 if needs_load
-                    && let Err(e) =
-                        Self::lazy_load_instrument(&http_client, &ws, &instruments, instrument_id)
-                            .await
+                    && let Err(e) = Self::lazy_load_instrument(
+                        &http_client,
+                        &ws,
+                        &instruments,
+                        instrument_id,
+                        &instruments_lock,
+                        &cancellation,
+                        &sender,
+                    )
+                    .await
                 {
                     log::error!("Lazy-load failed for {instrument_id} (book depth): {e}");
                     return;
@@ -1182,11 +1208,14 @@ impl DataClient for DeribitDataClient {
                 .clone();
             let http_client = self.http_client.clone();
             let instruments = Arc::clone(&self.instruments);
+            let instruments_lock = Arc::clone(&self.instruments_lock);
+            let cancellation = self.command_tasks.cancellation_token();
+            let sender = self.data_sender.clone();
 
             self.spawn_command(async move {
                 if needs_load
                     && let Err(e) =
-                        Self::lazy_load_instrument(&http_client, &ws, &instruments, instrument_id).await
+                        Self::lazy_load_instrument(&http_client, &ws, &instruments, instrument_id, &instruments_lock, &cancellation, &sender).await
                 {
                     log::error!(
                         "Lazy-load failed for {instrument_id} (quotes, command_id={command_id}): {e}"
@@ -1221,6 +1250,9 @@ impl DataClient for DeribitDataClient {
                 .clone();
             let http_client = self.http_client.clone();
             let instruments = Arc::clone(&self.instruments);
+            let instruments_lock = Arc::clone(&self.instruments_lock);
+            let cancellation = self.command_tasks.cancellation_token();
+            let sender = self.data_sender.clone();
             let interval = self.get_interval(&cmd.params);
 
             // Track subscription so handler gates MarkPriceUpdate emission
@@ -1234,9 +1266,16 @@ impl DataClient for DeribitDataClient {
 
             self.spawn_command(async move {
                 if needs_load
-                    && let Err(e) =
-                        Self::lazy_load_instrument(&http_client, &ws, &instruments, instrument_id)
-                            .await
+                    && let Err(e) = Self::lazy_load_instrument(
+                        &http_client,
+                        &ws,
+                        &instruments,
+                        instrument_id,
+                        &instruments_lock,
+                        &cancellation,
+                        &sender,
+                    )
+                    .await
                 {
                     log::error!("Lazy-load failed for {instrument_id} (mark prices): {e}");
                     return;
@@ -1263,6 +1302,9 @@ impl DataClient for DeribitDataClient {
                 .clone();
             let http_client = self.http_client.clone();
             let instruments = Arc::clone(&self.instruments);
+            let instruments_lock = Arc::clone(&self.instruments_lock);
+            let cancellation = self.command_tasks.cancellation_token();
+            let sender = self.data_sender.clone();
             let interval = self.get_interval(&cmd.params);
 
             // Track subscription so handler gates IndexPriceUpdate emission
@@ -1276,9 +1318,16 @@ impl DataClient for DeribitDataClient {
 
             self.spawn_command(async move {
                 if needs_load
-                    && let Err(e) =
-                        Self::lazy_load_instrument(&http_client, &ws, &instruments, instrument_id)
-                            .await
+                    && let Err(e) = Self::lazy_load_instrument(
+                        &http_client,
+                        &ws,
+                        &instruments,
+                        instrument_id,
+                        &instruments_lock,
+                        &cancellation,
+                        &sender,
+                    )
+                    .await
                 {
                     log::error!("Lazy-load failed for {instrument_id} (index prices): {e}");
                     return;
@@ -1306,13 +1355,23 @@ impl DataClient for DeribitDataClient {
                 .clone();
             let http_client = self.http_client.clone();
             let instruments = Arc::clone(&self.instruments);
+            let instruments_lock = Arc::clone(&self.instruments_lock);
+            let cancellation = self.command_tasks.cancellation_token();
+            let sender = self.data_sender.clone();
             let resolution = bar_spec_to_resolution(&bar_type);
 
             self.spawn_command(async move {
                 if needs_load
-                    && let Err(e) =
-                        Self::lazy_load_instrument(&http_client, &ws, &instruments, instrument_id)
-                            .await
+                    && let Err(e) = Self::lazy_load_instrument(
+                        &http_client,
+                        &ws,
+                        &instruments,
+                        instrument_id,
+                        &instruments_lock,
+                        &cancellation,
+                        &sender,
+                    )
+                    .await
                 {
                     log::error!("Lazy-load failed for {instrument_id} (bars): {e}");
                     return;
@@ -1340,6 +1399,9 @@ impl DataClient for DeribitDataClient {
                 .clone();
             let http_client = self.http_client.clone();
             let instruments = Arc::clone(&self.instruments);
+            let instruments_lock = Arc::clone(&self.instruments_lock);
+            let cancellation = self.command_tasks.cancellation_token();
+            let sender = self.data_sender.clone();
             let interval = self.get_interval(&cmd.params);
 
             log::debug!(
@@ -1351,7 +1413,7 @@ impl DataClient for DeribitDataClient {
             self.spawn_command(async move {
                 if needs_load
                     && let Err(e) =
-                        Self::lazy_load_instrument(&http_client, &ws, &instruments, instrument_id).await
+                        Self::lazy_load_instrument(&http_client, &ws, &instruments, instrument_id, &instruments_lock, &cancellation, &sender).await
                 {
                     log::error!("Lazy-load failed for {instrument_id} (funding rates): {e}");
                     return;
@@ -1421,6 +1483,9 @@ impl DataClient for DeribitDataClient {
                 .clone();
             let http_client = self.http_client.clone();
             let instruments = Arc::clone(&self.instruments);
+            let instruments_lock = Arc::clone(&self.instruments_lock);
+            let cancellation = self.command_tasks.cancellation_token();
+            let sender = self.data_sender.clone();
             let interval = self.get_interval(&cmd.params);
 
             // Track subscription so handler gates OptionGreeks emission
@@ -1434,9 +1499,16 @@ impl DataClient for DeribitDataClient {
 
             self.spawn_command(async move {
                 if needs_load
-                    && let Err(e) =
-                        Self::lazy_load_instrument(&http_client, &ws, &instruments, instrument_id)
-                            .await
+                    && let Err(e) = Self::lazy_load_instrument(
+                        &http_client,
+                        &ws,
+                        &instruments,
+                        instrument_id,
+                        &instruments_lock,
+                        &cancellation,
+                        &sender,
+                    )
+                    .await
                 {
                     log::error!("Lazy-load failed for {instrument_id} (option greeks): {e}");
                     return;
@@ -1939,11 +2011,14 @@ impl DataClient for DeribitDataClient {
         let http_client = self.http_client.clone();
         let ws_client = self.ws_client.clone();
         let instruments_cache = Arc::clone(&self.instruments);
+        let instruments_lock = Arc::clone(&self.instruments_lock);
+        let cancellation = self.command_tasks.cancellation_token();
         let sender = self.data_sender.clone();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
+        let publish = request.start.is_none() && request.end.is_none();
         let params = request.params;
         let clock = self.clock;
         let venue = *DERIBIT_VENUE;
@@ -1974,11 +2049,6 @@ impl DataClient for DeribitDataClient {
                             product_type
                         );
 
-                        instruments_cache.rcu(|m| {
-                            for instrument in &instruments {
-                                m.insert(instrument.id(), instrument.clone());
-                            }
-                        });
                         all_instruments.extend(instruments);
                     }
                     Err(e) => {
@@ -1987,14 +2057,22 @@ impl DataClient for DeribitDataClient {
                 }
             }
 
-            // Propagate to HTTP and WebSocket caches so downstream
-            // requests use correct precisions.
-            if !all_instruments.is_empty() {
-                http_client.cache_instruments(&all_instruments);
+            let _guard = instruments_lock.lock();
 
-                if let Some(ws) = &ws_client {
-                    ws.cache_instruments(&all_instruments);
-                }
+            if cancellation.is_cancelled() {
+                return;
+            }
+
+            let current = cache_fetched_instruments(
+                &mut all_instruments,
+                &instruments_cache,
+                &http_client,
+                ws_client.as_ref(),
+                publish,
+            );
+
+            if publish {
+                publish_instruments(current, &sender);
             }
 
             // Send response with all collected instruments
@@ -2037,11 +2115,14 @@ impl DataClient for DeribitDataClient {
         let http_client = self.http_client.clone();
         let ws_client = self.ws_client.clone();
         let instruments_cache = Arc::clone(&self.instruments);
+        let instruments_lock = Arc::clone(&self.instruments_lock);
+        let cancellation = self.command_tasks.cancellation_token();
         let sender = self.data_sender.clone();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
+        let publish = request.start.is_none() && request.end.is_none();
         let params = request.params;
         let clock = self.clock;
 
@@ -2051,14 +2132,25 @@ impl DataClient for DeribitDataClient {
                 .await
                 .context("failed to request instrument from Deribit")
             {
-                Ok(instrument) => {
+                Ok(mut instrument) => {
                     log::debug!("Successfully fetched instrument: {instrument_id}");
 
-                    instruments_cache.insert(instrument.id(), instrument.clone());
-                    http_client.cache_instruments(std::slice::from_ref(&instrument));
+                    let _guard = instruments_lock.lock();
 
-                    if let Some(ws) = &ws_client {
-                        ws.cache_instruments(std::slice::from_ref(&instrument));
+                    if cancellation.is_cancelled() {
+                        return;
+                    }
+
+                    let current = cache_fetched_instruments(
+                        std::slice::from_mut(&mut instrument),
+                        &instruments_cache,
+                        &http_client,
+                        ws_client.as_ref(),
+                        publish,
+                    );
+
+                    if publish {
+                        publish_instruments(current, &sender);
                     }
 
                     // Send response
@@ -2384,6 +2476,9 @@ impl DeribitDataClient {
             .clone();
         let http_client = self.http_client.clone();
         let instruments = Arc::clone(&self.instruments);
+        let instruments_lock = Arc::clone(&self.instruments_lock);
+        let cancellation = self.command_tasks.cancellation_token();
+        let sender = self.data_sender.clone();
         let combo_leg_trade_subs = Arc::clone(&self.combo_leg_trade_subs);
         let auto_load_missing_instruments = self.config.auto_load_missing_instruments;
         let interval = self.get_interval(&cmd.params);
@@ -2397,7 +2492,7 @@ impl DeribitDataClient {
         self.spawn_command(async move {
             if needs_load
                 && let Err(e) =
-                    Self::lazy_load_instrument(&http_client, &ws, &instruments, instrument_id).await
+                    Self::lazy_load_instrument(&http_client, &ws, &instruments, instrument_id, &instruments_lock, &cancellation, &sender).await
             {
                 log::error!("Lazy-load failed for {instrument_id} (trades): {e}");
                 return;
@@ -2407,6 +2502,7 @@ impl DeribitDataClient {
             if subscribe_combo_legs {
                 subscription_ids.extend(Self::load_combo_trade_legs(
                     &http_client, &ws, &instruments, instrument_id, auto_load_missing_instruments,
+                    &instruments_lock, (&cancellation, &sender),
                 ).await);
             }
 
@@ -2444,6 +2540,8 @@ impl DeribitDataClient {
         instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         instrument_id: InstrumentId,
         auto_load_missing_instruments: bool,
+        instruments_lock: &Mutex<()>,
+        publication: (&CancellationToken, &EventSender<DataEvent>),
     ) -> Vec<InstrumentId> {
         let mut subscription_ids = Vec::new();
         let leg_ids = Self::combo_leg_trade_ids(instruments, instrument_id);
@@ -2462,8 +2560,16 @@ impl DeribitDataClient {
                     continue;
                 }
 
-                if let Err(e) =
-                    Self::lazy_load_instrument(http_client, ws_client, instruments, leg_id).await
+                if let Err(e) = Self::lazy_load_instrument(
+                    http_client,
+                    ws_client,
+                    instruments,
+                    leg_id,
+                    instruments_lock,
+                    publication.0,
+                    publication.1,
+                )
+                .await
                 {
                     log::error!("Lazy-load failed for {leg_id} (combo leg trades): {e}");
                     continue;
@@ -2496,30 +2602,67 @@ fn cache_instruments(
         return;
     }
 
-    let cached = instruments.load();
-    for instrument in &mut fetched {
-        if let Some(cached) = cached.get(&instrument.id()) {
-            preserve_combo_leg_info(instrument, cached);
-        }
-    }
-    drop(cached);
-
-    instruments.rcu(|m| {
-        for instrument in &fetched {
-            m.insert(instrument.id(), instrument.clone());
-        }
+    let previous = instruments.load();
+    let mut current =
+        cache_fetched_instruments(&mut fetched, instruments, http_client, ws_client, true);
+    current.retain(|instrument| {
+        previous
+            .get(&instrument.id())
+            .is_none_or(|cached| !cached.same_definition(instrument))
     });
-    http_client.cache_instruments(&fetched);
 
-    if let Some(ws) = ws_client {
-        ws.cache_instruments(&fetched);
-    }
+    publish_instruments(current, sender);
+}
 
-    for instrument in fetched {
+fn publish_instruments(instruments: Vec<InstrumentAny>, sender: &EventSender<DataEvent>) {
+    for instrument in instruments {
         if let Err(e) = sender.send(DataEvent::Data(instrument.into())) {
             log::warn!("Failed to send instrument: {e}");
         }
     }
+}
+
+fn cache_fetched_instruments(
+    fetched: &mut [InstrumentAny],
+    instruments: &AtomicMap<InstrumentId, InstrumentAny>,
+    http_client: &DeribitHttpClient,
+    ws_client: Option<&DeribitWebSocketClient>,
+    apply: bool,
+) -> Vec<InstrumentAny> {
+    let cached = instruments.load();
+    let current: Vec<_> = fetched
+        .iter_mut()
+        .filter_map(|instrument| {
+            if let Some(cached) = cached.get(&instrument.id()) {
+                if cached.ts_init() > instrument.ts_init() {
+                    return None;
+                }
+
+                preserve_combo_leg_info(instrument, cached);
+            }
+
+            Some(instrument.clone())
+        })
+        .collect();
+
+    drop(cached);
+
+    if !apply || current.is_empty() {
+        return current;
+    }
+
+    instruments.rcu(|map| {
+        for instrument in &current {
+            map.insert(instrument.id(), instrument.clone());
+        }
+    });
+
+    http_client.cache_instruments(&current);
+    if let Some(ws) = ws_client {
+        ws.cache_instruments(&current);
+    }
+
+    current
 }
 
 // `request_instruments` still succeeds when its supplementary `get_combos` request fails, returning
@@ -2600,6 +2743,33 @@ mod tests {
     }
 
     #[rstest]
+    #[tokio::test]
+    async fn test_instrument_refresh_caches_new_timestamp_without_republishing() {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(sender);
+        let client =
+            DeribitDataClient::new(*DERIBIT_CLIENT_ID, DeribitDataClientConfig::default()).unwrap();
+        let id = perpetual(1).id();
+        client.instruments.insert(id, perpetual(1));
+
+        cache_instruments(
+            vec![perpetual(2)],
+            &client.instruments,
+            &client.http_client,
+            client.ws_client.as_ref(),
+            &client.data_sender,
+            &client.cancellation_token,
+            &client.instruments_lock,
+        );
+
+        assert_eq!(
+            client.instruments.get_cloned(&id).unwrap().ts_init(),
+            UnixNanos::from(2)
+        );
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[rstest]
     #[case::stop("stop")]
     #[case::reset("reset")]
     #[case::dispose("dispose")]
@@ -2646,6 +2816,51 @@ mod tests {
                 .is_none()
         );
         assert!(receiver.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_cache_instruments_drops_older_refresh() {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(sender);
+        let client =
+            DeribitDataClient::new(*DERIBIT_CLIENT_ID, DeribitDataClientConfig::default()).unwrap();
+        let latest = perpetual(20);
+        let id = latest.id();
+        cache_fetched_instruments(
+            &mut [latest],
+            &client.instruments,
+            &client.http_client,
+            client.ws_client.as_ref(),
+            true,
+        );
+
+        cache_instruments(
+            vec![perpetual(10)],
+            &client.instruments,
+            &client.http_client,
+            client.ws_client.as_ref(),
+            &client.data_sender,
+            &client.cancellation_token,
+            &client.instruments_lock,
+        );
+
+        assert_eq!(
+            client.instruments.get_cloned(&id).unwrap().ts_init(),
+            UnixNanos::from(20)
+        );
+        assert_eq!(
+            client
+                .http_client
+                .get_instrument(&id.symbol.inner())
+                .unwrap()
+                .ts_init(),
+            UnixNanos::from(20),
+        );
+        assert_eq!(
+            receiver.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
     }
 
     fn combo(fixture: &str, legs: Option<&str>) -> InstrumentAny {
@@ -2700,17 +2915,37 @@ mod tests {
         Some("fresh")
     )]
     #[case::nothing_cached("http_get_instruments_future_combo.json", None, None, None)]
-    fn test_preserve_combo_leg_info(
+    #[tokio::test]
+    async fn test_cache_fetched_instruments_preserves_response_combo_legs(
         #[case] fixture: &str,
         #[case] fetched_legs: Option<&str>,
         #[case] cached_legs: Option<&str>,
         #[case] expected: Option<&str>,
+        #[values(true, false)] apply: bool,
     ) {
-        let mut fetched = combo(fixture, fetched_legs);
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(sender);
+        let client =
+            DeribitDataClient::new(*DERIBIT_CLIENT_ID, DeribitDataClientConfig::default()).unwrap();
+        let mut fetched = [combo(fixture, fetched_legs)];
         let cached = combo(fixture, cached_legs);
+        let id = cached.id();
+        client.instruments.insert(id, cached);
 
-        preserve_combo_leg_info(&mut fetched, &cached);
+        let accepted = cache_fetched_instruments(
+            &mut fetched,
+            &client.instruments,
+            &client.http_client,
+            client.ws_client.as_ref(),
+            apply,
+        );
 
-        assert_eq!(combo_leg_name(&fetched), expected);
+        assert_eq!(combo_leg_name(&fetched[0]), expected);
+        assert_eq!(combo_leg_name(&accepted[0]), expected);
+        let stored = client.instruments.get_cloned(&id).unwrap();
+        assert_eq!(
+            combo_leg_name(&stored),
+            if apply { expected } else { cached_legs }
+        );
     }
 }

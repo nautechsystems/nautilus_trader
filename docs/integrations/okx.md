@@ -1914,8 +1914,8 @@ The OKX data client provides the following Python configuration options.
 | `max_retries`                      | `3`                        | Retry attempts for recoverable REST errors.                                                                   |
 | `retry_delay_initial_ms`           | `1,000`                    | Initial delay before retrying.                                                                                |
 | `retry_delay_max_ms`               | `10,000`                   | Maximum exponential backoff delay.                                                                            |
-| `update_instruments_interval_mins` | `60`                       | REST instrument cache reconciliation interval in minutes; `0` disables.                                       |
-| `book_stale_check_interval_secs`   | `5`                        | Stale book check interval.                                                                                    |
+| `update_instruments_interval_mins` | `60`                       | Interval (minutes) between REST instrument cache reconciliations. `0` disables reconciliation.                |
+| `book_stale_check_interval_secs`   | `5`                        | Interval (seconds) between stale book checks.                                                                 |
 | `book_stale_threshold_secs`        | `30`                       | Idle time before a stale book warning.                                                                        |
 | `book_snapshot_timeout_secs`       | `10`                       | Initial, reconnect, and recovery snapshot wait.                                                               |
 | `vip_level`                        | `None`                     | Selects book channels; VIP4+ requires credentials. See [Order book subscriptions](#order-book-subscriptions). |

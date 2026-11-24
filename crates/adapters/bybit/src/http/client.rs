@@ -102,6 +102,7 @@ use crate::common::{
         BybitOrderStatus, BybitOrderType, BybitPositionIdx, BybitPositionMode, BybitProductType,
         BybitRepayStatus, BybitTpSlMode,
     },
+    instruments::economics_differ,
     models::{BybitCursorListResponse, BybitErrorCheck, BybitResponseCheck},
     parse::{
         bar_spec_to_bybit_interval, bybit_rejection_due_post_only, make_bybit_symbol,
@@ -1998,6 +1999,25 @@ impl BybitHttpClient {
         self.cache_initialized.store(true, Ordering::Release);
     }
 
+    pub(crate) fn cache_execution_instrument(&self, instrument: &InstrumentAny) {
+        let symbol = instrument.symbol().inner();
+        let should_update = |cache: &AHashMap<Ustr, InstrumentAny>| {
+            cache.get(&symbol).is_none_or(|current| {
+                current.ts_init() <= instrument.ts_init() && economics_differ(current, instrument)
+            })
+        };
+
+        if should_update(&self.instruments_cache.load()) {
+            self.instruments_cache.rcu(|cache| {
+                if should_update(cache) {
+                    cache.insert(symbol, instrument.clone());
+                }
+            });
+
+            self.cache_initialized.store(true, Ordering::Release);
+        }
+    }
+
     /// Any existing instruments with the same symbols will be replaced.
     pub fn cache_instruments(&self, instruments: &[InstrumentAny]) {
         self.instruments_cache.rcu(|m| {
@@ -3602,6 +3622,33 @@ impl BybitHttpClient {
         symbol: Option<String>,
         base_coin: Option<Ustr>,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
+        let instruments = self
+            .fetch_instruments(product_type, symbol, base_coin)
+            .await?;
+
+        self.instruments_cache.rcu(|cache| {
+            for instrument in &instruments {
+                let symbol = instrument.symbol().inner();
+                if cache
+                    .get(&symbol)
+                    .is_none_or(|previous| previous.ts_init() <= instrument.ts_init())
+                {
+                    cache.insert(symbol, instrument.clone());
+                }
+            }
+        });
+
+        self.cache_initialized.store(true, Ordering::Release);
+
+        Ok(instruments)
+    }
+
+    pub(crate) async fn fetch_instruments(
+        &self,
+        product_type: BybitProductType,
+        symbol: Option<String>,
+        base_coin: Option<Ustr>,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
         let ts_init = self.generate_ts_init();
 
         let instruments = match product_type {
@@ -3667,8 +3714,6 @@ impl BybitHttpClient {
             }
         };
 
-        self.cache_instruments(&instruments);
-
         Ok(instruments)
     }
 
@@ -3682,6 +3727,18 @@ impl BybitHttpClient {
     ///
     /// Returns an error if the request fails or parsing fails.
     pub async fn request_instruments_with_statuses(
+        &self,
+        product_type: BybitProductType,
+    ) -> anyhow::Result<(
+        Vec<InstrumentAny>,
+        AHashMap<InstrumentId, MarketStatusAction>,
+    )> {
+        let (instruments, statuses) = self.fetch_instruments_with_statuses(product_type).await?;
+        self.cache_instruments(&instruments);
+        Ok((instruments, statuses))
+    }
+
+    pub(crate) async fn fetch_instruments_with_statuses(
         &self,
         product_type: BybitProductType,
     ) -> anyhow::Result<(
@@ -3777,8 +3834,6 @@ impl BybitHttpClient {
                 .await?
             }
         };
-
-        self.cache_instruments(&instruments);
 
         Ok((instruments, statuses))
     }

@@ -64,6 +64,7 @@ use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
+use super::{apply_instrument_definitions, instrument_refresh_interval};
 use crate::{
     book::sync::{BookSyncTracker, spawn_recovery},
     common::{consts::KRAKEN_VENUE, lookup_instrument_in_snapshot},
@@ -104,6 +105,7 @@ pub struct KrakenSpotDataClient {
     session_tasks: TaskGroup,
     command_tasks: TaskGroup,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    instrument_publish_lock: Arc<Mutex<()>>,
     data_sender: EventSender<DataEvent>,
 }
 
@@ -172,6 +174,7 @@ impl KrakenSpotDataClient {
             session_tasks,
             command_tasks,
             instruments: Arc::new(AtomicMap::new()),
+            instrument_publish_lock: Arc::new(Mutex::new(())),
             data_sender: get_data_event_sender(),
         })
     }
@@ -188,28 +191,50 @@ impl KrakenSpotDataClient {
         self.instruments.load().get(instrument_id).cloned()
     }
 
-    async fn load_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
-        let instruments = self
-            .http
-            .request_instruments(None)
-            .await
-            .context("Failed to load spot instruments")?;
+    fn spawn_instrument_refresh(&self) -> anyhow::Result<()> {
+        let http = self.http.clone();
+        let sender = self.data_sender.clone();
+        let cache = self.instruments.clone();
+        let instrument_publish_lock = self.instrument_publish_lock.clone();
+        let cancel = self.cancellation_token.clone();
 
-        self.instruments.rcu(|m| {
-            for instrument in &instruments {
-                m.insert(instrument.id(), instrument.clone());
+        self.session_tasks.spawn(async move {
+            let mut interval = instrument_refresh_interval();
+
+            loop {
+                tokio::select! {
+                    biased;
+                    () = cancel.cancelled() => break,
+                    _ = interval.tick() => {}
+                }
+
+                let Some(result) = cancel
+                    .run_until_cancelled(Box::pin(http.fetch_instruments(None)))
+                    .await
+                else {
+                    break;
+                };
+
+                let _publish_guard = instrument_publish_lock.lock();
+
+                if cancel.is_cancelled() {
+                    break;
+                }
+
+                match result {
+                    Ok(snapshot) => apply_instrument_definitions(
+                        |accepted| http.cache_instrument_snapshot(&snapshot, accepted),
+                        &cache,
+                        &sender,
+                        &snapshot.instruments,
+                        false,
+                    ),
+                    Err(e) => log::warn!("Failed to refresh Kraken Spot instruments: {e}"),
+                }
             }
-        });
+        })?;
 
-        self.http.cache_instruments(&instruments);
-
-        log::debug!(
-            "Loaded instruments: client_id={}, count={}",
-            self.client_id,
-            instruments.len()
-        );
-
-        Ok(instruments)
+        Ok(())
     }
 
     fn spawn_ws<F>(&self, fut: F, context: &'static str)
@@ -933,6 +958,7 @@ impl DataClient for KrakenSpotDataClient {
 
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping Spot data client: {}", self.client_id);
+        let _publish_guard = self.instrument_publish_lock.lock();
         self.session_tasks.begin_shutdown();
         self.command_tasks.begin_shutdown();
         self.ws.begin_shutdown();
@@ -942,6 +968,7 @@ impl DataClient for KrakenSpotDataClient {
 
     fn reset(&mut self) -> anyhow::Result<()> {
         log::info!("Resetting Spot data client: {}", self.client_id);
+        let _publish_guard = self.instrument_publish_lock.lock();
         self.session_tasks.begin_shutdown();
         self.command_tasks.begin_shutdown();
         self.ws.begin_shutdown();
@@ -971,7 +998,11 @@ impl DataClient for KrakenSpotDataClient {
 
         self.prepare_task_groups().await?;
 
-        let instruments = self.load_instruments().await?;
+        let snapshot = self
+            .http
+            .fetch_instruments(None)
+            .await
+            .context("Failed to load spot instruments")?;
 
         let session_result = async {
             self.ws
@@ -984,6 +1015,7 @@ impl DataClient for KrakenSpotDataClient {
                 .context("Spot WebSocket failed to become active")?;
 
             self.spawn_message_handler()?;
+            self.spawn_instrument_refresh()?;
 
             Ok::<(), anyhow::Error>(())
         }
@@ -998,10 +1030,15 @@ impl DataClient for KrakenSpotDataClient {
             return Err(e);
         }
 
-        for instrument in instruments {
-            if let Err(e) = self.data_sender.send(DataEvent::Data(instrument.into())) {
-                log::error!("Failed to send instrument: {e}");
-            }
+        {
+            let _publish_guard = self.instrument_publish_lock.lock();
+            apply_instrument_definitions(
+                |accepted| self.http.cache_instrument_snapshot(&snapshot, accepted),
+                &self.instruments,
+                &self.data_sender,
+                &snapshot.instruments,
+                true,
+            );
         }
 
         self.is_connected.store(true, Ordering::Release);
@@ -1018,12 +1055,12 @@ impl DataClient for KrakenSpotDataClient {
     }
 
     fn subscribe_instruments(&mut self, _cmd: SubscribeInstruments) -> anyhow::Result<()> {
-        log::debug!("subscribe_instruments: Kraken instruments are fetched via HTTP on connect");
+        log::debug!("subscribe_instruments: Kraken Spot instruments refresh periodically");
         Ok(())
     }
 
     fn subscribe_instrument(&mut self, _cmd: SubscribeInstrument) -> anyhow::Result<()> {
-        log::debug!("subscribe_instrument: Kraken instruments are fetched via HTTP on connect");
+        log::debug!("subscribe_instrument: Kraken Spot instruments refresh periodically");
         Ok(())
     }
 
@@ -1273,29 +1310,48 @@ impl DataClient for KrakenSpotDataClient {
         let http = self.http.clone();
         let sender = self.data_sender.clone();
         let instruments_cache = self.instruments.clone();
+        let instrument_publish_lock = self.instrument_publish_lock.clone();
+        let cancel = self.command_tasks.cancellation_token();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let venue = *KRAKEN_VENUE;
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
+        let publish = request.start.is_none() && request.end.is_none();
         let params = request.params;
         let clock = self.clock;
 
         self.spawn_command(async move {
-            match http.request_instruments(None).await {
-                Ok(instruments) => {
-                    instruments_cache.rcu(|m| {
-                        for instrument in &instruments {
-                            m.insert(instrument.id(), instrument.clone());
-                        }
-                    });
-                    http.cache_instruments(&instruments);
+            let Some(result) = cancel
+                .run_until_cancelled(Box::pin(http.fetch_instruments(None)))
+                .await
+            else {
+                return;
+            };
+
+            match result {
+                Ok(snapshot) => {
+                    let _publish_guard = instrument_publish_lock.lock();
+
+                    if cancel.is_cancelled() {
+                        return;
+                    }
+
+                    if publish {
+                        apply_instrument_definitions(
+                            |accepted| http.cache_instrument_snapshot(&snapshot, accepted),
+                            &instruments_cache,
+                            &sender,
+                            &snapshot.instruments,
+                            false,
+                        );
+                    }
 
                     let response = DataResponse::Instruments(InstrumentsResponse::new(
                         request_id,
                         client_id,
                         venue,
-                        instruments,
+                        snapshot.instruments,
                         start_nanos,
                         end_nanos,
                         clock.get_time_ns(),
@@ -1319,24 +1375,44 @@ impl DataClient for KrakenSpotDataClient {
         let http = self.http.clone();
         let sender = self.data_sender.clone();
         let instruments = self.instruments.clone();
+        let instrument_publish_lock = self.instrument_publish_lock.clone();
+        let cancel = self.command_tasks.cancellation_token();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
+        let publish = request.start.is_none() && request.end.is_none();
         let params = request.params;
         let clock = self.clock;
 
         self.spawn_command(async move {
-            match http.request_instruments(None).await {
-                Ok(all_instruments) => {
-                    instruments.rcu(|m| {
-                        for instrument in &all_instruments {
-                            m.insert(instrument.id(), instrument.clone());
-                        }
-                    });
-                    http.cache_instruments(&all_instruments);
+            let Some(result) = cancel
+                .run_until_cancelled(Box::pin(http.fetch_instruments(None)))
+                .await
+            else {
+                return;
+            };
 
-                    let instrument = all_instruments
+            match result {
+                Ok(snapshot) => {
+                    let _publish_guard = instrument_publish_lock.lock();
+
+                    if cancel.is_cancelled() {
+                        return;
+                    }
+
+                    if publish {
+                        apply_instrument_definitions(
+                            |accepted| http.cache_instrument_snapshot(&snapshot, accepted),
+                            &instruments,
+                            &sender,
+                            &snapshot.instruments,
+                            false,
+                        );
+                    }
+
+                    let instrument = snapshot
+                        .instruments
                         .into_iter()
                         .find(|i| i.id() == instrument_id);
 

@@ -890,6 +890,8 @@ impl DataEngine {
                     now_ns,
                     Some(catalog_response_params(cmd.params.as_ref())),
                 )));
+                self.inflight_requests
+                    .insert(cmd.request_id, RequestCommand::Instrument(cmd));
                 self.response(response);
                 return Ok(());
             }
@@ -1025,6 +1027,8 @@ impl DataEngine {
             now_ns,
             Some(catalog_response_params(cmd.params.as_ref())),
         ));
+        self.inflight_requests
+            .insert(cmd.request_id, RequestCommand::Instruments(cmd));
         self.response(response);
         Ok(())
     }

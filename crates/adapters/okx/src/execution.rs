@@ -38,7 +38,7 @@ use nautilus_common::{
         },
     },
     msgbus::{
-        self, TypedHandler,
+        self, InstrumentSubscription, TypedHandler,
         switchboard::{MessagingSwitchboard, get_instruments_pattern},
     },
 };
@@ -136,7 +136,7 @@ pub struct OKXExecutionClient {
     session_tasks: TaskGroup,
     pending_tasks: TaskGroup,
     stream_state: Arc<StreamState>,
-    stream_instruments: Option<TypedHandler<InstrumentAny>>,
+    stream_instruments: Option<InstrumentSubscription>,
 }
 
 impl OKXExecutionClient {
@@ -1225,12 +1225,13 @@ impl OKXExecutionClient {
         }
     }
 
-    fn begin_generation_shutdown(&self) {
+    fn begin_generation_shutdown(&mut self) {
         self.pending_tasks.begin_shutdown();
         self.session_tasks.begin_shutdown();
         self.ws_private.begin_shutdown();
         self.ws_business.begin_shutdown();
         self.core.set_disconnected();
+        self.unregister_stream_instruments();
     }
 
     /// Polls the cache until the account is registered or timeout is reached.
@@ -1293,7 +1294,6 @@ impl OKXExecutionClient {
                 .context("failed to start OKX execution stream task generation")?;
         }
 
-        self.register_stream_instruments();
         let instrument_types = self.instrument_types();
 
         self.update_position_mode().await?;
@@ -1397,6 +1397,7 @@ impl OKXExecutionClient {
             self.core.set_instruments_initialized();
         }
 
+        self.register_stream_instruments();
         Box::pin(self.prepare_active_instruments()).await?;
 
         self.ws_private.connect().await?;
@@ -1512,19 +1513,56 @@ impl OKXExecutionClient {
 
     fn register_stream_instruments(&mut self) {
         self.unregister_stream_instruments();
-        let registered = self
+        let private = self.ws_private.instruments_cache_arc();
+        let private = private.load();
+        let business = self.ws_business.instruments_cache_arc();
+        let business = business.load();
+
+        let definitions: Vec<_> = self
             .core
             .cache()
-            .instrument_ids(Some(&OKX_VENUE))
+            .instruments(&OKX_VENUE, None)
             .into_iter()
-            .copied()
-            .collect::<Vec<_>>();
+            .map(|instrument| {
+                let symbol = instrument.symbol().inner();
+                [
+                    self.http_client
+                        .get_instrument(&instrument.raw_symbol().inner()),
+                    private.get(&symbol).cloned(),
+                    business.get(&symbol).cloned(),
+                ]
+                .into_iter()
+                .flatten()
+                .filter(|cached| cached.ts_init() > instrument.ts_init())
+                .max_by_key(Instrument::ts_init)
+                .unwrap_or_else(|| instrument.clone())
+            })
+            .collect();
+
+        if !definitions.is_empty() {
+            self.http_client.cache_instruments(&definitions);
+
+            let codes = definitions.iter().filter_map(|instrument| {
+                let symbol = instrument.raw_symbol().inner();
+                self.http_client
+                    .inst_id_code(&symbol)
+                    .map(|code| (symbol, code))
+            });
+
+            let currencies = self.http_client.trade_quote_ccy_lists_snapshot();
+
+            for ws in [&self.ws_private, &self.ws_business] {
+                ws.cache_instruments(&definitions);
+                ws.cache_inst_id_codes(codes.clone());
+                ws.cache_trade_quote_ccy_lists(currencies.iter().cloned());
+            }
+        }
 
         self.stream_state = Arc::new(StreamState::new(
             self.http_client.clone(),
             self.ws_private.clone(),
             self.ws_business.clone(),
-            registered,
+            definitions.iter().map(Instrument::id),
         ));
         let state = Arc::downgrade(&self.stream_state);
         let core = self.core.clone();
@@ -1536,13 +1574,16 @@ impl OKXExecutionClient {
             }
         });
 
-        msgbus::subscribe_instruments(get_instruments_pattern(*OKX_VENUE), handler.clone(), None);
-        self.stream_instruments = Some(handler);
+        self.stream_instruments = Some(InstrumentSubscription::new(
+            get_instruments_pattern(*OKX_VENUE),
+            handler,
+        ));
+        self.stream_state.register_completion(self.core.clone());
     }
 
     fn unregister_stream_instruments(&mut self) {
-        if let Some(handler) = self.stream_instruments.take() {
-            msgbus::unsubscribe_instruments(get_instruments_pattern(*OKX_VENUE), &handler);
+        if self.stream_instruments.take().is_some() {
+            self.stream_state.unregister_completion();
         }
     }
 
@@ -1687,7 +1728,6 @@ impl OKXExecutionClient {
 
         self.core.set_disconnected();
 
-        self.unregister_stream_instruments();
         let mut errors = Vec::new();
         if let Some(failure) = self.stream_state.take_failure() {
             errors.push(failure);
@@ -1720,7 +1760,6 @@ impl OKXExecutionClient {
 impl Drop for OKXExecutionClient {
     fn drop(&mut self) {
         self.begin_generation_shutdown();
-        self.unregister_stream_instruments();
     }
 }
 
@@ -1848,6 +1887,7 @@ impl ExecutionClient for OKXExecutionClient {
             && !self.ws_business.has_task()
             && self.stream_state.is_healthy()
         {
+            self.unregister_stream_instruments();
             return Ok(());
         }
 
@@ -2086,9 +2126,7 @@ impl ExecutionClient for OKXExecutionClient {
     }
 
     fn on_instrument(&mut self, instrument: InstrumentAny) {
-        self.http_client.cache_instrument(instrument.clone());
-        self.ws_private.cache_instrument(instrument.clone());
-        self.ws_business.cache_instrument(instrument);
+        self.stream_state.cache_routed_definition(&instrument);
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
@@ -4736,7 +4774,7 @@ fn select_query_order_report(
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc, sync::Mutex, time::Duration};
+    use std::{cell::RefCell, net::SocketAddr, rc::Rc, sync::Mutex, time::Duration};
 
     use axum::{
         Json, Router,
@@ -5459,8 +5497,9 @@ mod tests {
             .unwrap()
             .retain(|row| row["instId"] == "BTC-USDT-SWAP");
 
-        let definition: OKXInstrument =
+        let mut definition: OKXInstrument =
             serde_json::from_value(response["data"][0].clone()).unwrap();
+        definition.inst_id_code = None;
         let instrument = parse_instrument_any(&definition, None, None, UnixNanos::default())
             .unwrap()
             .unwrap();
@@ -6334,12 +6373,20 @@ mod tests {
     }
 
     fn build_test_exec_client_with_cache() -> (OKXExecutionClient, Rc<RefCell<Cache>>) {
-        let config = OKXExecutionClientConfig {
+        build_test_exec_client_configured(|_| {})
+    }
+
+    fn build_test_exec_client_configured(
+        configure: impl FnOnce(&mut OKXExecutionClientConfig),
+    ) -> (OKXExecutionClient, Rc<RefCell<Cache>>) {
+        let mut config = OKXExecutionClientConfig {
             api_key: Some("test_key".into()),
             api_secret: Some("test_secret".into()),
             api_passphrase: Some("test_pass".into()),
             ..OKXExecutionClientConfig::default()
         };
+
+        configure(&mut config);
 
         let cache = Rc::new(RefCell::new(Cache::default()));
         let core = ExecutionClientCore::new(
@@ -6357,6 +6404,23 @@ mod tests {
             OKXExecutionClient::new(core, config).expect("failed to build test client"),
             cache,
         )
+    }
+
+    fn build_test_exec_client_with_mock_venue(
+        address: SocketAddr,
+        private_ws_path: Option<&str>,
+        environment: OKXEnvironment,
+    ) -> (OKXExecutionClient, Rc<RefCell<Cache>>) {
+        build_test_exec_client_configured(|config| {
+            config.base_url_http = Some(format!("http://{address}"));
+            config.base_url_ws_private =
+                private_ws_path.map(|path| format!("ws://{address}{path}"));
+            config.environment = environment;
+            config.http_timeout_secs = 5;
+            config.max_retries = 0;
+            config.retry_delay_initial_ms = 1;
+            config.retry_delay_max_ms = 1;
+        })
     }
 
     #[rstest]
@@ -8011,6 +8075,71 @@ mod tests {
     }
 
     #[rstest]
+    #[case::stop(Some(ExecutionTaskBoundary::RepeatedStop))]
+    #[case::reset(Some(ExecutionTaskBoundary::Reset))]
+    #[case::dispose(Some(ExecutionTaskBoundary::Dispose))]
+    #[case::disconnect_during_startup(None)]
+    #[tokio::test]
+    async fn stream_subscription_seeds_cached_definitions_and_releases_on_shutdown(
+        #[case] boundary: Option<ExecutionTaskBoundary>,
+    ) {
+        use nautilus_common::msgbus::{publish_instrument, switchboard::get_instrument_topic};
+        use nautilus_model::instruments::stubs::crypto_perpetual_ethusdt;
+
+        let (mut client, cache) = build_test_exec_client_with_cache();
+        let mut definition = crypto_perpetual_ethusdt();
+        definition.id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+        definition.raw_symbol = definition.id.symbol;
+        definition.ts_init = UnixNanos::from(11);
+        cache
+            .borrow_mut()
+            .add_instrument(definition.clone().into())
+            .unwrap();
+        client.register_stream_instruments();
+
+        let symbol = definition.id.symbol.inner();
+
+        let cached_times = |client: &OKXExecutionClient| {
+            [
+                client.http_client.get_instrument(&symbol),
+                client
+                    .ws_private
+                    .instruments_cache_arc()
+                    .get_cloned(&symbol),
+                client
+                    .ws_business
+                    .instruments_cache_arc()
+                    .get_cloned(&symbol),
+            ]
+            .map(|instrument| instrument.unwrap().ts_init())
+        };
+
+        assert_eq!(cached_times(&client), [UnixNanos::from(11); 3]);
+
+        match boundary {
+            Some(ExecutionTaskBoundary::Reset) => client.reset().unwrap(),
+            Some(ExecutionTaskBoundary::Dispose) => client.dispose().unwrap(),
+            Some(ExecutionTaskBoundary::RepeatedStop) => {
+                client.stop().unwrap();
+                client.stop().unwrap();
+            }
+            None => client.disconnect().await.unwrap(),
+        }
+
+        definition.ts_init = UnixNanos::from(17);
+        definition.price_precision = 3;
+        definition.price_increment = Price::from("0.001");
+        let instrument = InstrumentAny::CryptoPerpetual(definition);
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        publish_instrument(get_instrument_topic(instrument.id()), &instrument);
+
+        assert_eq!(cached_times(&client), [UnixNanos::from(11); 3]);
+    }
+
+    #[rstest]
     #[case(OrderSide::Buy, false, PositionSide::Long)]
     #[case(OrderSide::Sell, false, PositionSide::Short)]
     #[case(OrderSide::Buy, true, PositionSide::Short)]
@@ -8180,22 +8309,10 @@ mod tests {
             axum::serve(listener, router).await.unwrap();
         });
 
-        let mut client = build_test_exec_client();
+        let (mut client, _) =
+            build_test_exec_client_with_mock_venue(address, None, OKXEnvironment::Demo);
         client.config.instrument_types = vec![OKXInstrumentType::Swap];
         client.config.margin_mode = margin_mode;
-        client.http_client = OKXHttpClient::with_credentials(
-            Some("key".into()),
-            Some("secret".into()),
-            Some("pass".into()),
-            Some(format!("http://{address}")),
-            5,
-            0,
-            1,
-            1,
-            OKXEnvironment::Demo,
-            None,
-        )
-        .unwrap();
         response.lock().unwrap()["data"][0]["posMode"] = Value::String("long_short_mode".into());
         client.update_position_mode().await.unwrap();
         assert_eq!(client.position_mode, OKXPositionMode::LongShortMode);
@@ -8967,23 +9084,10 @@ mod tests {
             );
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let base_url = format!("http://{}", listener.local_addr().unwrap());
-
+        let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-        let (mut client, cache) = build_test_exec_client_with_cache();
-        client.http_client = OKXHttpClient::with_credentials(
-            Some("test_key".into()),
-            Some("test_secret".into()),
-            Some("test_pass".into()),
-            Some(base_url),
-            5,
-            0,
-            1,
-            1,
-            OKXEnvironment::Live,
-            None,
-        )
-        .unwrap();
+        let (mut client, cache) =
+            build_test_exec_client_with_mock_venue(address, None, OKXEnvironment::Live);
         client.config.instrument_types = vec![OKXInstrumentType::Swap];
         client.on_instrument(instrument);
         let order = OrderTestBuilder::new(OrderType::StopMarket)
@@ -9307,40 +9411,12 @@ mod tests {
             axum::serve(listener, router).await.unwrap();
         });
 
-        let (mut client, cache) = build_test_exec_client_with_cache();
+        let (mut client, cache) =
+            build_test_exec_client_with_mock_venue(address, Some("/ws"), OKXEnvironment::Demo);
         client.position_mode = OKXPositionMode::LongShortMode;
         client.trade_mode = OKXTradeMode::Cross;
-        client.http_client = OKXHttpClient::with_credentials(
-            Some("key".into()),
-            Some("secret".into()),
-            Some("pass".into()),
-            Some(format!("http://{address}")),
-            5,
-            0,
-            1,
-            1,
-            OKXEnvironment::Demo,
-            None,
-        )
-        .unwrap();
-        client.ws_private = OKXWebSocketClient::with_credentials(
-            Some(format!("ws://{address}/ws")),
-            Some("key".into()),
-            Some("secret".into()),
-            Some("pass".into()),
-            Some(client.core.account_id),
-            None,
-            None,
-            client.config.transport_backend,
-            None,
-        )
-        .unwrap();
         let instrument = swap_instrument();
         client.on_instrument(instrument.clone());
-        client
-            .ws_private
-            .cache_inst_id_codes([(instrument.raw_symbol().inner(), 10458)]);
-
         if transport == "ws" || transport == "batch" {
             client.ws_private.connect().await.unwrap();
             client.ws_private.wait_until_active(5.0).await.unwrap();
@@ -9519,33 +9595,8 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-        let (mut client, cache) = build_test_exec_client_with_cache();
-
-        client.http_client = OKXHttpClient::with_credentials(
-            Some("key".into()),
-            Some("secret".into()),
-            Some("pass".into()),
-            Some(format!("http://{address}")),
-            5,
-            0,
-            1,
-            1,
-            OKXEnvironment::Demo,
-            None,
-        )
-        .unwrap();
-        client.ws_private = OKXWebSocketClient::with_credentials(
-            Some(format!("ws://{address}/ws")),
-            Some("key".into()),
-            Some("secret".into()),
-            Some("pass".into()),
-            Some(client.core.account_id),
-            None,
-            None,
-            client.config.transport_backend,
-            None,
-        )
-        .unwrap();
+        let (mut client, cache) =
+            build_test_exec_client_with_mock_venue(address, Some("/ws"), OKXEnvironment::Demo);
         let raw: Value = serde_json::from_str(include_str!(
             "../test_data/http_get_instruments_spot_usdc.json"
         ))
@@ -9556,9 +9607,6 @@ mod tests {
             .unwrap();
         let instrument_id = instrument.id();
         client.on_instrument(instrument);
-        client
-            .ws_private
-            .cache_inst_id_code(Ustr::from("BTC-USDC"), 20459);
         client.ws_private.connect().await.unwrap();
         client.ws_private.wait_until_active(5.0).await.unwrap();
         let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();

@@ -32,6 +32,8 @@ use ustr::Ustr;
 
 use super::{consts::LIGHTER_VENUE, enums::LighterProductType};
 
+pub(crate) const MARKET_ID_INFO_KEY: &str = "market_id";
+
 /// Suffix applied to perpetual instrument symbols on the Nautilus side.
 pub const PERP_SUFFIX: &str = "-PERP";
 

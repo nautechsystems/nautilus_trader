@@ -45,6 +45,9 @@ The adapter supports these product categories:
 | Spot tokenized assets | ✓         | Loaded from Kraken's `tokenized_asset` asset class. |
 | Futures               | ✓         | Instruments returned by the Kraken Futures API.     |
 
+Spot and Futures data clients refresh instrument definitions every 60 seconds. New and updated definitions
+reach the cache and the corresponding execution client while the node runs.
+
 :::warning
 Kraken Futures can return instrument definitions that need more than standard-precision mode's nine decimal places.
 Keep [high-precision mode](../getting_started/installation.md#precision-mode) enabled for Futures. Standard-precision
@@ -1422,7 +1425,7 @@ increase the intervals or reduce `max_requests_per_second`.
 | `book_snapshot_timeout_secs` | `10`      | Snapshot deadline in seconds. `0` disables snapshot deadlines.   |
 | `proxy_url`                  | `None`    | Optional proxy URL for HTTP and WebSocket transports.            |
 | `timeout_secs`               | `30`      | HTTP request timeout in seconds.                                 |
-| `heartbeat_interval_secs`    | `30`      | WebSocket heartbeat interval in seconds.                         |
+| `heartbeat_interval_secs`    | `30`      | Interval (seconds) between WebSocket heartbeats.                 |
 | `ws_idle_timeout_ms`         | `10,000`  | Data-silence timeout for the Spot v2 WebSocket; `0` disables.    |
 | `max_requests_per_second`    | `None`    | Per-client request throttle; default is 5 req/s.                 |
 | `transport_backend`          | `Sockudo` | WebSocket transport backend.                                     |
@@ -1440,7 +1443,7 @@ increase the intervals or reduce `max_requests_per_second`.
 | `ws_url`                        | `None`    | Override for the Kraken WebSocket URL.                                |
 | `proxy_url`                     | `None`    | Optional proxy URL for HTTP and WebSocket transports.                 |
 | `timeout_secs`                  | `30`      | HTTP request timeout in seconds.                                      |
-| `heartbeat_interval_secs`       | `30`      | WebSocket heartbeat interval in seconds.                              |
+| `heartbeat_interval_secs`       | `30`      | Interval (seconds) between WebSocket heartbeats.                      |
 | `auth_timeout_secs`             | `None`    | Futures WebSocket auth timeout; `None` uses the client default.       |
 | `max_requests_per_second`       | `None`    | Per-client request throttle; default is 5 req/s.                      |
 | `max_retries`                   | `3`       | Maximum retry attempts for retryable REST requests.                   |

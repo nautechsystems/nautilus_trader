@@ -68,6 +68,32 @@ impl InstrumentAny {
                 | Self::CryptoOptionSpread(_)
         )
     }
+
+    /// Compares the serialized instrument definitions, ignoring their event and initialization timestamps.
+    ///
+    /// Returns false if either definition cannot be serialized.
+    #[must_use]
+    pub fn same_definition(&self, other: &Self) -> bool {
+        fn normalized(instrument: &InstrumentAny) -> Option<serde_json::Value> {
+            let mut value = serde_json::to_value(instrument).ok()?;
+            if let Some(definition) = value
+                .as_object_mut()
+                .and_then(|obj| obj.values_mut().next())
+                .and_then(serde_json::Value::as_object_mut)
+            {
+                definition.remove("ts_event");
+                definition.remove("ts_init");
+            }
+
+            Some(value)
+        }
+
+        // A serialization failure compares as changed so updates are never suppressed
+        match (normalized(self), normalized(other)) {
+            (Some(a), Some(b)) => a == b,
+            _ => false,
+        }
+    }
 }
 
 impl PartialEq for InstrumentAny {

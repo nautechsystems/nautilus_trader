@@ -313,6 +313,23 @@ impl InteractiveBrokersInstrumentProvider {
     where
         I: IntoIterator<Item = InstrumentAny>,
     {
+        self.upsert_cached_instruments(instruments, false)
+    }
+
+    pub(crate) fn update_cached_instrument(&self, instrument: InstrumentAny) {
+        if self
+            .find(&instrument.id())
+            .is_none_or(|previous| previous.ts_init() <= instrument.ts_init())
+        {
+            self.upsert_cached_instruments([instrument], true);
+        }
+    }
+
+    fn upsert_cached_instruments(
+        &self,
+        instruments: impl IntoIterator<Item = InstrumentAny>,
+        force_instrument_update: bool,
+    ) -> usize {
         let mut added = 0;
 
         for instrument in instruments {
@@ -334,7 +351,7 @@ impl InteractiveBrokersInstrumentProvider {
                 None,
                 Some(contract),
                 Some(price_magnifier),
-                false,
+                force_instrument_update,
             ) {
                 added += 1;
             }

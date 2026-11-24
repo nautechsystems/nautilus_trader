@@ -17,11 +17,8 @@
 
 use std::sync::Arc;
 
-use nautilus_core::AtomicMap;
-use nautilus_model::{
-    identifiers::InstrumentId,
-    instruments::{Instrument, InstrumentAny},
-};
+use nautilus_core::{AtomicMap, UnixNanos};
+use nautilus_model::{identifiers::InstrumentId, instruments::InstrumentAny};
 
 use crate::{
     common::enums::{CoinbaseFuturesAssetType, CoinbaseProductType},
@@ -73,13 +70,23 @@ impl CoinbaseInstrumentProvider {
     ///
     /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn load_all(&self) -> anyhow::Result<Vec<InstrumentAny>> {
+        let (instruments, products) = self.fetch_instruments(None).await?;
+        self.cache_instruments(&instruments, &products);
+        Ok(instruments)
+    }
+
+    pub(crate) async fn fetch_instruments(
+        &self,
+        product_type: Option<CoinbaseProductType>,
+    ) -> anyhow::Result<(Vec<InstrumentAny>, Vec<Product>)> {
+        let ts_init = self.client.ts_now();
         let json = self
             .client
             .get_products()
             .await
             .map_err(|e| anyhow::anyhow!("Failed to fetch products: {e}"))?;
 
-        self.load_from_products_response(&json)
+        Self::parse_products_response(&json, product_type, ts_init)
     }
 
     /// Loads all instruments of a specific product type from the REST API.
@@ -91,13 +98,9 @@ impl CoinbaseInstrumentProvider {
         &self,
         product_type: CoinbaseProductType,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
-        let json = self
-            .client
-            .get_products()
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to fetch products: {e}"))?;
-
-        self.load_from_products_response_filtered(&json, product_type)
+        let (instruments, products) = self.fetch_instruments(Some(product_type)).await?;
+        self.cache_instruments(&instruments, &products);
+        Ok(instruments)
     }
 
     /// Loads a single instrument by product ID from the REST API.
@@ -106,13 +109,23 @@ impl CoinbaseInstrumentProvider {
     ///
     /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn load(&self, product_id: &str) -> anyhow::Result<InstrumentAny> {
+        let (instrument, product) = self.fetch_instrument(product_id).await?;
+        self.cache_instruments(std::slice::from_ref(&instrument), &[product]);
+        Ok(instrument)
+    }
+
+    pub(crate) async fn fetch_instrument(
+        &self,
+        product_id: &str,
+    ) -> anyhow::Result<(InstrumentAny, Product)> {
+        let ts_init = self.client.ts_now();
         let json = self
             .client
             .get_product(product_id)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to fetch product '{product_id}': {e}"))?;
 
-        self.load_from_product_response(&json)
+        Self::parse_product_response(&json, ts_init)
     }
 
     /// Parses a products list response and caches the instruments.
@@ -126,14 +139,9 @@ impl CoinbaseInstrumentProvider {
         &self,
         json: &serde_json::Value,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
-        let response: ProductsResponse =
-            serde_json::from_value(json.clone()).map_err(|e| anyhow::anyhow!("{e}"))?;
-
-        let instruments = self.parse_and_cache_products(&response.products)?;
-        // Populate the alias map so subscribe paths (which only see the parsed
-        // `InstrumentAny`) can resolve a caller-supplied product id back to the
-        // canonical id Coinbase uses on the wire.
-        self.client.record_product_aliases(&response.products);
+        let (instruments, products) =
+            Self::parse_products_response(json, None, self.client.ts_now())?;
+        self.cache_instruments(&instruments, &products);
         Ok(instruments)
     }
 
@@ -147,20 +155,9 @@ impl CoinbaseInstrumentProvider {
         json: &serde_json::Value,
         product_type: CoinbaseProductType,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
-        let response: ProductsResponse =
-            serde_json::from_value(json.clone()).map_err(|e| anyhow::anyhow!("{e}"))?;
-
-        let filtered: Vec<&Product> = response
-            .products
-            .iter()
-            .filter(|p| p.product_type == product_type)
-            .collect();
-
-        let instruments = self.parse_and_cache_product_refs(&filtered)?;
-        // Filtering throws away non-matching products, but their alias
-        // metadata is independent of the type filter and should still be
-        // recorded so subsequent subscribes can resolve aliased pairs.
-        self.client.record_product_aliases(&response.products);
+        let (instruments, products) =
+            Self::parse_products_response(json, Some(product_type), self.client.ts_now())?;
+        self.cache_instruments(&instruments, &products);
         Ok(instruments)
     }
 
@@ -175,6 +172,44 @@ impl CoinbaseInstrumentProvider {
         &self,
         json: &serde_json::Value,
     ) -> anyhow::Result<InstrumentAny> {
+        let (instrument, product) = Self::parse_product_response(json, self.client.ts_now())?;
+        self.cache_instruments(std::slice::from_ref(&instrument), &[product]);
+        Ok(instrument)
+    }
+
+    fn cache_instruments(&self, instruments: &[InstrumentAny], products: &[Product]) {
+        self.client.cache_instruments(instruments);
+        self.client.record_product_aliases(products);
+    }
+
+    fn parse_products_response(
+        json: &serde_json::Value,
+        product_type: Option<CoinbaseProductType>,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<(Vec<InstrumentAny>, Vec<Product>)> {
+        let response: ProductsResponse =
+            serde_json::from_value(json.clone()).map_err(|e| anyhow::anyhow!("{e}"))?;
+        let mut instruments = Vec::with_capacity(response.products.len());
+        for product in &response.products {
+            if product_type.is_some_and(|kind| product.product_type != kind) {
+                continue;
+            }
+
+            if !is_supported_product(product) {
+                log::debug!("Skipping unsupported product '{}'", product.product_id);
+                continue;
+            }
+
+            instruments.push(parse_instrument(product, ts_init)?);
+        }
+
+        Ok((instruments, response.products))
+    }
+
+    fn parse_product_response(
+        json: &serde_json::Value,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<(InstrumentAny, Product)> {
         let product: Product =
             serde_json::from_value(json.clone()).map_err(|e| anyhow::anyhow!("{e}"))?;
 
@@ -189,67 +224,8 @@ impl CoinbaseInstrumentProvider {
                 .is_some_and(|d| d.non_crypto),
         );
 
-        let ts_init = self.client.ts_now();
         let instrument = parse_instrument(&product, ts_init)?;
-
-        self.cache_instrument(&instrument);
-        self.client
-            .record_product_aliases(std::slice::from_ref(&product));
-
-        Ok(instrument)
-    }
-
-    fn parse_and_cache_products(&self, products: &[Product]) -> anyhow::Result<Vec<InstrumentAny>> {
-        let ts_init = self.client.ts_now();
-        let mut instruments = Vec::with_capacity(products.len());
-
-        for product in products {
-            if !is_supported_product(product) {
-                log::debug!("Skipping unsupported product '{}'", product.product_id);
-                continue;
-            }
-            let instrument = parse_instrument(product, ts_init)?;
-            instruments.push(instrument);
-        }
-
-        self.cache_instruments(&instruments);
-
-        Ok(instruments)
-    }
-
-    fn parse_and_cache_product_refs(
-        &self,
-        products: &[&Product],
-    ) -> anyhow::Result<Vec<InstrumentAny>> {
-        let ts_init = self.client.ts_now();
-        let mut instruments = Vec::with_capacity(products.len());
-
-        for product in products {
-            if !is_supported_product(product) {
-                log::debug!("Skipping unsupported product '{}'", product.product_id);
-                continue;
-            }
-            let instrument = parse_instrument(product, ts_init)?;
-            instruments.push(instrument);
-        }
-
-        self.cache_instruments(&instruments);
-
-        Ok(instruments)
-    }
-
-    fn cache_instrument(&self, instrument: &InstrumentAny) {
-        self.client.instruments().rcu(|m| {
-            m.insert(instrument.id(), instrument.clone());
-        });
-    }
-
-    fn cache_instruments(&self, instruments: &[InstrumentAny]) {
-        self.client.instruments().rcu(|m| {
-            for instrument in instruments {
-                m.insert(instrument.id(), instrument.clone());
-            }
-        });
+        Ok((instrument, product))
     }
 }
 
@@ -312,6 +288,40 @@ mod tests {
         assert_eq!(instrument.id().venue.as_str(), "COINBASE");
         assert_eq!(provider.count(), 1);
         assert!(provider.get(&instrument.id()).is_some());
+    }
+
+    #[rstest]
+    #[case::older_response(10, true)]
+    #[case::response_only(30, false)]
+    fn test_product_response_preserves_live_definition(
+        #[case] timestamp: u64,
+        #[case] cache: bool,
+    ) {
+        let provider = provider();
+        let mut response: serde_json::Value =
+            serde_json::from_str(&load_test_fixture("http_product.json")).unwrap();
+        response["price_increment"] = serde_json::json!("0.01");
+        let (latest, product) =
+            CoinbaseInstrumentProvider::parse_product_response(&response, UnixNanos::from(20))
+                .unwrap();
+        provider.cache_instruments(std::slice::from_ref(&latest), &[product]);
+
+        response["price_increment"] = serde_json::json!("0.001");
+        let (fetched, product) = CoinbaseInstrumentProvider::parse_product_response(
+            &response,
+            UnixNanos::from(timestamp),
+        )
+        .unwrap();
+
+        if cache {
+            provider.cache_instruments(std::slice::from_ref(&fetched), &[product]);
+        }
+
+        let cached = provider.get(&latest.id()).unwrap();
+        assert_eq!(fetched.ts_init(), UnixNanos::from(timestamp));
+        assert_eq!(fetched.price_increment().to_string(), "0.001");
+        assert_eq!(cached.ts_init(), UnixNanos::from(20));
+        assert_eq!(cached.price_increment().to_string(), "0.01");
     }
 
     #[rstest]

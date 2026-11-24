@@ -21,7 +21,7 @@
 use std::str::FromStr;
 
 use anyhow::Context;
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::{Params, nanos::UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, QuoteTick,
@@ -43,6 +43,7 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use serde_json::Value;
 
+use super::instruments::CONTRACT_TYPE_INFO_KEY;
 use crate::{
     common::{
         consts::BINANCE,
@@ -361,6 +362,15 @@ pub(crate) fn parse_usdm_instrument_with_fees(
 
     let min_notional = parse_futures_min_notional(&symbol.filters, quote_currency);
 
+    let contract_info = Params::new(
+        [(
+            CONTRACT_TYPE_INFO_KEY.to_owned(),
+            serde_json::Value::from(symbol.contract_type.as_str()),
+        )]
+        .into_iter()
+        .collect(),
+    );
+
     let margin_maint = Decimal::new(1, 1);
 
     match contract_kind {
@@ -385,6 +395,7 @@ pub(crate) fn parse_usdm_instrument_with_fees(
                 .maybe_min_price(min_price)
                 .margin_init(Decimal::ONE)
                 .margin_maint(margin_maint)
+                .info(contract_info)
                 .ts_event(ts_event)
                 .ts_init(ts_init)
                 .build()?;
@@ -410,6 +421,7 @@ pub(crate) fn parse_usdm_instrument_with_fees(
                 .maybe_min_price(min_price)
                 .margin_init(Decimal::ONE)
                 .margin_maint(margin_maint)
+                .info(contract_info)
                 .ts_event(ts_event)
                 .ts_init(ts_init)
                 .build()
@@ -440,6 +452,7 @@ pub(crate) fn parse_usdm_instrument_with_fees(
                 .maybe_min_price(min_price)
                 .margin_init(Decimal::ONE)
                 .margin_maint(margin_maint)
+                .info(contract_info)
                 .ts_event(ts_event)
                 .ts_init(ts_init)
                 .build()
@@ -529,6 +542,15 @@ pub(crate) fn parse_coinm_instrument_with_fees(
 
     let min_notional = parse_futures_min_notional(&symbol.filters, quote_currency);
 
+    let contract_info = Params::new(
+        [(
+            CONTRACT_TYPE_INFO_KEY.to_owned(),
+            serde_json::Value::from(symbol.contract_type.as_str()),
+        )]
+        .into_iter()
+        .collect(),
+    );
+
     let margin_maint = Decimal::new(1, 1);
 
     if is_perpetual {
@@ -552,6 +574,7 @@ pub(crate) fn parse_coinm_instrument_with_fees(
             .maybe_min_price(min_price)
             .margin_init(Decimal::ONE)
             .margin_maint(margin_maint)
+            .info(contract_info)
             .ts_event(ts_event)
             .ts_init(ts_init)
             .build()
@@ -582,6 +605,7 @@ pub(crate) fn parse_coinm_instrument_with_fees(
             .maybe_min_price(min_price)
             .margin_init(Decimal::ONE)
             .margin_maint(margin_maint)
+            .info(contract_info)
             .ts_event(ts_event)
             .ts_init(ts_init)
             .build()

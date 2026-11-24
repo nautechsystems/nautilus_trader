@@ -1030,9 +1030,9 @@ for the testnet through the testnet interface at [test.deribit.com](https://test
 | `max_retries`                      | `3`        | Maximum retry attempts for recoverable errors.                     |
 | `retry_delay_initial_ms`           | `1,000`    | Initial delay in milliseconds before retrying.                     |
 | `retry_delay_max_ms`               | `10,000`   | Maximum delay in milliseconds between retries.                     |
-| `heartbeat_interval_secs`          | `30`       | WebSocket heartbeat interval.                                      |
+| `heartbeat_interval_secs`          | `30`       | Interval (seconds) between WebSocket heartbeats.                   |
 | `auth_timeout_secs`                | `None`     | Seconds to await the WebSocket auth result; unset means 30.        |
-| `update_instruments_interval_mins` | `60`       | Instrument refresh interval in minutes; `0` disables it.           |
+| `update_instruments_interval_mins` | `60`       | Interval (minutes) between instrument refreshes. `0` disables it.  |
 | `book_snapshot_timeout_secs`       | `10`       | Snapshot wait bound in seconds; `0` disables it.                   |
 | `book_stale_threshold_secs`        | `120`      | Stale-feed threshold in seconds; `0` disables it.                  |
 | `auto_load_missing_instruments`    | `False`    | Lazy-load uncached instruments on subscribe.                       |

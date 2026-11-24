@@ -492,9 +492,14 @@ impl Cache {
     /// Returns the execution client registered as the route for `venue`, else the default client.
     #[must_use]
     pub fn client_id_for_venue(&self, venue: &Venue) -> Option<&ClientId> {
-        self.client_routes
-            .get(venue)
+        self.client_route_for_venue(venue)
             .or(self.default_client_id.as_ref())
+    }
+
+    /// Returns the execution client registered as the route for `venue`, if one exists.
+    #[must_use]
+    pub fn client_route_for_venue(&self, venue: &Venue) -> Option<&ClientId> {
+        self.client_routes.get(venue)
     }
 
     /// Registers the execution client `client_id` as the route for commands on `venue`, replacing
@@ -3252,14 +3257,7 @@ impl Cache {
         let token = nautilus_model::defi::currency::check(currency)?.is_some();
         #[cfg(feature = "defi")]
         if token {
-            if let Some(existing) = self.currencies.get(&currency.code) {
-                if !self.defi.contains_currency(&currency.code) {
-                    anyhow::bail!("Legacy currency occupies token code {}", currency.code);
-                }
-
-                nautilus_model::defi::currency::check(*existing)?;
-            }
-
+            self.check_cached_token_currency(currency.code)?;
             Currency::register(currency, false)?;
         }
 

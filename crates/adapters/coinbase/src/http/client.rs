@@ -1024,6 +1024,7 @@ impl CoinbaseHttpClient {
         &self,
         product_type: Option<CoinbaseProductType>,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
+        let ts_init = self.ts_now();
         let json = self
             .inner
             .get_products()
@@ -1032,9 +1033,7 @@ impl CoinbaseHttpClient {
         let response: ProductsResponse =
             serde_json::from_value(json).map_err(|e| anyhow::anyhow!(e))?;
 
-        let ts_init = self.ts_now();
         let mut instruments = Vec::with_capacity(response.products.len());
-
         for product in &response.products {
             if let Some(filter) = product_type
                 && product.product_type != filter
@@ -1067,6 +1066,7 @@ impl CoinbaseHttpClient {
     /// Returns an error if the HTTP request fails, deserialization fails, or the product cannot be
     /// parsed into a supported instrument.
     pub async fn request_instrument(&self, product_id: &str) -> anyhow::Result<InstrumentAny> {
+        let ts_init = self.ts_now();
         let json = self
             .inner
             .get_product(product_id)
@@ -1074,7 +1074,6 @@ impl CoinbaseHttpClient {
             .map_err(|e| anyhow::anyhow!("Failed to fetch product '{product_id}': {e}"))?;
         let product: crate::http::models::Product =
             serde_json::from_value(json).map_err(|e| anyhow::anyhow!(e))?;
-        let ts_init = self.ts_now();
         let instrument = parse_instrument(&product, ts_init)?;
         self.cache_instrument(&instrument);
         self.record_product_aliases(std::slice::from_ref(&product));
@@ -1285,16 +1284,20 @@ impl CoinbaseHttpClient {
 
     /// Caches an instrument in the shared instrument map.
     pub fn cache_instrument(&self, instrument: &InstrumentAny) {
-        self.instruments.rcu(|m| {
-            m.insert(instrument.id(), instrument.clone());
-        });
+        self.cache_instruments(std::slice::from_ref(instrument));
     }
 
     /// Caches a batch of instruments in the shared instrument map.
     pub fn cache_instruments(&self, instruments: &[InstrumentAny]) {
-        self.instruments.rcu(|m| {
+        self.instruments.rcu(|cache| {
             for instrument in instruments {
-                m.insert(instrument.id(), instrument.clone());
+                let id = instrument.id();
+                if cache
+                    .get(&id)
+                    .is_none_or(|cached| cached.ts_init() <= instrument.ts_init())
+                {
+                    cache.insert(id, instrument.clone());
+                }
             }
         });
     }
@@ -1304,12 +1307,15 @@ impl CoinbaseHttpClient {
     /// `BTC-USDC -> BTC-USD`) that the WebSocket and user channel use on the
     /// wire even when callers operate on the alias side.
     pub fn record_product_aliases(&self, products: &[crate::http::models::Product]) {
-        let aliased: Vec<(Ustr, Ustr)> = products
-            .iter()
-            .filter(|p| !p.alias.is_empty())
-            .map(|p| (p.product_id, p.alias))
-            .collect();
+        self.cache_product_aliases(
+            products
+                .iter()
+                .map(|product| (product.product_id, product.alias)),
+        );
+    }
 
+    pub(crate) fn cache_product_aliases(&self, aliases: impl Iterator<Item = (Ustr, Ustr)>) {
+        let aliased: Vec<_> = aliases.filter(|(_, alias)| !alias.is_empty()).collect();
         if aliased.is_empty() {
             return;
         }
@@ -1367,10 +1373,15 @@ impl CoinbaseHttpClient {
         if let Some(instrument) = self.instruments.get_cloned(&instrument_id) {
             return Ok(instrument);
         }
+
         // Cache miss: fetch and cache the single product. Any parse error
         // (unsupported product type, missing fields) surfaces to the caller so
         // the offending record can be skipped with a log.
-        self.request_instrument(product_id.as_str()).await
+        let fetched = self.request_instrument(product_id.as_str()).await?;
+        Ok(self
+            .instruments
+            .get_cloned(&instrument_id)
+            .unwrap_or(fetched))
     }
 
     /// Submits a new order built from Nautilus domain types.
@@ -1742,10 +1753,64 @@ pub fn build_order_configuration(
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
 
     use super::*;
+
+    #[tokio::test]
+    async fn test_report_lookup_uses_definition_accepted_while_fetch_was_in_flight() {
+        let fixture = include_str!("../../test_data/http_product.json");
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let (seen, ready) = (Arc::clone(&entered), Arc::clone(&release));
+
+        let router = axum::Router::new().route(
+            "/api/v3/brokerage/market/products/BTC-USD",
+            axum::routing::get(move || {
+                let (seen, ready) = (Arc::clone(&seen), Arc::clone(&ready));
+                async move {
+                    seen.notify_one();
+                    ready.notified().await;
+                    axum::Json(serde_json::from_str::<Value>(fixture).unwrap())
+                }
+            }),
+        );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let client = CoinbaseHttpClient::new(CoinbaseEnvironment::Live, 5, None, None).unwrap();
+        client.set_base_url(format!("http://{addr}"));
+        let lookup = client.clone();
+        let result = tokio::spawn(async move {
+            lookup
+                .get_or_fetch_instrument(Ustr::from("BTC-USD"))
+                .await
+                .unwrap()
+        });
+
+        tokio::time::timeout(Duration::from_secs(5), entered.notified())
+            .await
+            .unwrap();
+
+        let mut definition: Value = serde_json::from_str(fixture).unwrap();
+        definition["price_increment"] = serde_json::json!("0.001");
+        let product = serde_json::from_value(definition).unwrap();
+        let accepted = parse_instrument(&product, client.ts_now()).unwrap();
+        client.cache_instrument(&accepted);
+        release.notify_one();
+
+        let resolved = tokio::time::timeout(Duration::from_secs(5), result)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(resolved.price_increment(), Price::from("0.001"));
+        assert_eq!(resolved.ts_init(), accepted.ts_init());
+        server.abort();
+    }
 
     #[tokio::test]
     async fn test_authenticated_client_rejects_redirects() {

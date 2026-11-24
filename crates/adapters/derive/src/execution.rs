@@ -55,6 +55,7 @@ use nautilus_common::{
             ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
         },
     },
+    msgbus::{InstrumentSubscription, TypedHandler, switchboard::get_instruments_pattern},
     runner::{TimeEventMessage, TimeEventSender, try_get_time_event_sender},
     timer::{TimeEvent, TimeEventCallback},
 };
@@ -173,6 +174,7 @@ pub struct DeriveExecutionClient {
     http_client: DeriveHttpClient,
     ws_client: DeriveWebSocketClient,
     ws_exec: DeriveWsExecutionHandle,
+    instrument_subscription: Option<InstrumentSubscription>,
     instruments: Arc<AtomicMap<InstrumentId, Arc<DeriveInstrument>>>,
     nonce_manager: Arc<NonceManager>,
     signing: SigningContext,
@@ -280,6 +282,7 @@ impl DeriveExecutionClient {
             http_client,
             ws_client,
             ws_exec,
+            instrument_subscription: None,
             instruments: Arc::new(AtomicMap::new()),
             nonce_manager: Arc::new(NonceManager::new()),
             signing,
@@ -320,13 +323,21 @@ impl DeriveExecutionClient {
     ///
     /// Returns an error if instrument identity or price and size increments are invalid.
     pub fn cache_instrument(&self, instrument: DeriveInstrument) -> anyhow::Result<()> {
-        let instrument_id = self.register_instrument_precision(&instrument)?;
-        self.instruments.insert(instrument_id, Arc::new(instrument));
+        Self::cache_execution_instrument(&self.instruments, &self.dispatch_state, instrument)
+    }
+
+    fn cache_execution_instrument(
+        instruments: &AtomicMap<InstrumentId, Arc<DeriveInstrument>>,
+        dispatch_state: &WsDispatchState,
+        instrument: DeriveInstrument,
+    ) -> anyhow::Result<()> {
+        let instrument_id = Self::register_instrument_precision(dispatch_state, &instrument)?;
+        instruments.insert(instrument_id, Arc::new(instrument));
         Ok(())
     }
 
     fn register_instrument_precision(
-        &self,
+        dispatch_state: &WsDispatchState,
         instrument: &DeriveInstrument,
     ) -> anyhow::Result<InstrumentId> {
         let instrument_id = format_instrument_id(instrument.instrument_name)?;
@@ -344,7 +355,7 @@ impl DeriveExecutionClient {
         let size_increment =
             Quantity::from_decimal_dp(instrument.amount_step, instrument.amount_step.scale() as u8)
                 .context("invalid Derive amount_step")?;
-        self.dispatch_state.register_instrument_precision(
+        dispatch_state.register_instrument_precision(
             instrument_id,
             price_increment.precision,
             size_increment.precision,
@@ -422,7 +433,8 @@ impl DeriveExecutionClient {
         let result: anyhow::Result<()> = (|| {
             for instrument in &instruments {
                 let definition = Self::native_instrument(instrument)?;
-                let instrument_id = self.register_instrument_precision(&definition)?;
+                let instrument_id =
+                    Self::register_instrument_precision(&self.dispatch_state, &definition)?;
                 pending.push((instrument_id, Arc::new(definition)));
             }
 
@@ -516,10 +528,6 @@ impl DeriveExecutionClient {
         self.await_account_registered(DERIVE_ACCOUNT_REGISTRATION_TIMEOUT_SECS)
             .await?;
         Ok(())
-    }
-
-    fn cache_native_instrument(&self, instrument: &InstrumentAny) -> anyhow::Result<()> {
-        self.cache_instrument(Self::native_instrument(instrument)?)
     }
 
     fn native_instrument(instrument: &InstrumentAny) -> anyhow::Result<DeriveInstrument> {
@@ -974,6 +982,35 @@ impl DeriveExecutionClient {
     }
 }
 
+impl DeriveExecutionClient {
+    fn subscribe_instruments(&mut self) {
+        if self.instrument_subscription.is_some() {
+            return;
+        }
+
+        let instruments = Arc::clone(&self.instruments);
+        let dispatch_state = Arc::clone(&self.dispatch_state);
+        self.instrument_subscription = Some(InstrumentSubscription::new(
+            get_instruments_pattern(self.venue()),
+            TypedHandler::from(move |instrument: &InstrumentAny| {
+                Self::apply_instrument(&instruments, &dispatch_state, instrument);
+            }),
+        ));
+    }
+
+    fn apply_instrument(
+        instruments: &AtomicMap<InstrumentId, Arc<DeriveInstrument>>,
+        dispatch_state: &WsDispatchState,
+        instrument: &InstrumentAny,
+    ) {
+        if let Err(e) = Self::native_instrument(instrument).and_then(|native| {
+            Self::cache_execution_instrument(instruments, dispatch_state, native)
+        }) {
+            log::warn!("Cannot cache Derive instrument {}: {e:#}", instrument.id());
+        }
+    }
+}
+
 #[async_trait(?Send)]
 impl ExecutionClient for DeriveExecutionClient {
     fn is_connected(&self) -> bool {
@@ -1081,6 +1118,8 @@ impl ExecutionClient for DeriveExecutionClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         self.emitter.set_sender(get_exec_event_sender());
         self.restore_active_orders();
         flush_pending_delivery(
@@ -1108,6 +1147,8 @@ impl ExecutionClient for DeriveExecutionClient {
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         if self.core.is_stopped()
             && self.cancellation_token.is_cancelled()
             && !self.session_tasks.is_open()
@@ -1139,6 +1180,8 @@ impl ExecutionClient for DeriveExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         if self.is_connected()
             && !self.cancellation_token.is_cancelled()
             && self.session_tasks.is_open()
@@ -1277,9 +1320,7 @@ impl ExecutionClient for DeriveExecutionClient {
     }
 
     fn on_instrument(&mut self, instrument: InstrumentAny) {
-        if let Err(e) = self.cache_native_instrument(&instrument) {
-            log::warn!("Cannot cache Derive instrument {}: {e:#}", instrument.id());
-        }
+        Self::apply_instrument(&self.instruments, &self.dispatch_state, &instrument);
     }
 
     fn generate_order_status_report_task(
@@ -6682,8 +6723,17 @@ async fn cached_or_fetch_instrument(
         .get_instrument(venue_symbol)
         .await
         .with_context(|| format!("failed to fetch instrument {venue_symbol}"))?;
-    instruments.insert(*instrument_id, Arc::new(instrument.clone()));
-    Ok(instrument)
+    let fetched = Arc::new(instrument);
+    let mut current = Arc::clone(&fetched);
+    instruments.rcu(|cache| {
+        current = Arc::clone(
+            cache
+                .entry(*instrument_id)
+                .or_insert_with(|| Arc::clone(&fetched)),
+        );
+    });
+
+    Ok((*current).clone())
 }
 
 #[cfg(test)]

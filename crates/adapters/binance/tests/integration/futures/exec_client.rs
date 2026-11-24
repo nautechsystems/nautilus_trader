@@ -10838,19 +10838,18 @@ async fn test_order_trade_update_rejects_missing_precision_metadata() {
     client.start().unwrap();
     client.connect().await.unwrap();
 
-    let instruments = client.instruments_cache();
-    instruments.clear();
+    wait_until_async(
+        || async { ws_injector.receiver_count() > 0 },
+        Duration::from_secs(5),
+    )
+    .await;
 
-    while rx.try_recv().is_ok() {}
-
-    tokio::time::sleep(Duration::from_millis(200)).await;
-
-    let order_update = json!({
+    let mut order_update = json!({
         "e": "ORDER_TRADE_UPDATE",
         "T": 1_568_879_465_651_i64,
         "E": 1_568_879_465_651_i64,
         "o": {
-            "s": "BTCUSDT",
+            "s": "UNLISTEDUSDT",
             "c": "test-cache-miss",
             "S": "BUY",
             "o": "LIMIT",
@@ -10887,35 +10886,30 @@ async fn test_order_trade_update_rejects_missing_precision_metadata() {
         }
     });
     ws_injector.send(order_update.to_string()).unwrap();
-    let account_update = json!({
-        "e": "ACCOUNT_UPDATE",
-        "E": 1_568_879_465_652_i64,
-        "T": 1_568_879_465_652_i64,
-        "a": {
-            "m": "ORDER",
-            "B": [{
-                "a": "USDT",
-                "wb": "1000.00000000",
-                "cw": "1000.00000000"
-            }],
-            "P": []
-        }
-    });
-    ws_injector.send(account_update.to_string()).unwrap();
 
-    tokio::time::timeout(Duration::from_secs(5), async {
-        loop {
-            match rx.recv().await.expect("Execution event channel closed") {
-                ExecutionEvent::Account(_) => break,
-                ExecutionEvent::Report(report) => {
-                    panic!("Unexpected report without precision metadata: {report:?}")
-                }
-                _ => {}
-            }
-        }
+    order_update["o"]["s"] = json!("BTCUSDT");
+    order_update["o"]["c"] = json!("test-known-symbol");
+    order_update["o"]["i"] = json!(9_999_998);
+    order_update["o"]["t"] = json!(12_345_679);
+    ws_injector.send(order_update.to_string()).unwrap();
+
+    let event = recv_until(&mut rx, |event| {
+        matches!(event, ExecutionEvent::Report(_) | ExecutionEvent::Order(_))
     })
-    .await
-    .expect("Timed out waiting for account update after rejected order update");
+    .await;
+
+    let ExecutionEvent::Report(ExecutionReport::OrderWithFills(report, _)) = event else {
+        panic!("Expected report for BTCUSDT, received {event:?}");
+    };
+
+    assert_eq!(
+        report.instrument_id,
+        InstrumentId::from("BTCUSDT-PERP.BINANCE")
+    );
+    assert_eq!(
+        report.client_order_id,
+        Some(ClientOrderId::from("test-known-symbol"))
+    );
 }
 
 #[rstest]

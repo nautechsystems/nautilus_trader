@@ -96,7 +96,7 @@ class BinanceDataClientConfig:
     @property
     def instrument_provider(self) -> BinanceInstrumentProviderConfig: ...
     @property
-    def instrument_refresh_interval_secs(self) -> int: ...
+    def update_instruments_interval_mins(self) -> int: ...
     @property
     def instrument_status_poll_secs(self) -> int: ...
     @property
@@ -123,7 +123,7 @@ class BinanceDataClientConfig:
         api_secret: str | None = None,
         spot_market_data_mode: BinanceSpotMarketDataMode | None = None,
         instrument_provider: BinanceInstrumentProviderConfig | None = None,
-        instrument_refresh_interval_secs: int | None = None,
+        update_instruments_interval_mins: int | None = None,
         instrument_status_poll_secs: int | None = None,
         proxy_url: str | None = None,
         recv_window_ms: int | None = None,
@@ -164,7 +164,7 @@ class BinanceExecutionClientConfig:
     @property
     def instrument_provider(self) -> BinanceInstrumentProviderConfig: ...
     @property
-    def instrument_refresh_interval_secs(self) -> int: ...
+    def update_instruments_interval_mins(self) -> int: ...
     @property
     def use_gtd(self) -> bool: ...
     @property
@@ -206,7 +206,7 @@ class BinanceExecutionClientConfig:
         use_ws_trading: bool = True,
         ws_trading_setup_timeout_ms: int | None = None,
         instrument_provider: BinanceInstrumentProviderConfig | None = None,
-        instrument_refresh_interval_secs: int | None = None,
+        update_instruments_interval_mins: int | None = None,
         use_gtd: bool = True,
         use_position_ids: bool = True,
         oms_type: model.OmsType | None = None,

@@ -53,8 +53,8 @@ use nautilus_common::{
         system::{QueueStateChanged, ShutdownSystem},
     },
     msgbus::{
-        self, BusMessage, MessageBusExternalIngress, MessagingSwitchboard, ShareableMessageHandler,
-        switchboard,
+        self, BusMessage, InstrumentSubscription, MessageBusExternalIngress, MessagingSwitchboard,
+        ShareableMessageHandler, TypedHandler, switchboard, switchboard::get_instruments_pattern,
     },
     nautilus_actor,
     runner::{TimeEventMessage, TimeEventSender, get_time_event_sender},
@@ -848,6 +848,7 @@ pub(crate) mod serial_tests {
         account_id: AccountId,
         venue: Venue,
         state: BlockingReportClientState,
+        instrument_subscription: Option<InstrumentSubscription>,
         fill_report_release: Option<Arc<tokio::sync::Notify>>,
         fill_report_responses: Arc<Mutex<VecDeque<Vec<FillReport>>>>,
         fill_reports_at_window_end: bool,
@@ -871,6 +872,7 @@ pub(crate) mod serial_tests {
                 account_id: factory.account_id,
                 venue: factory.venue,
                 state: factory.state.clone(),
+                instrument_subscription: None,
                 fill_report_release: factory.fill_report_release.clone(),
                 fill_report_responses: factory.fill_report_responses.clone(),
                 fill_reports_at_window_end: factory.fill_reports_at_window_end,
@@ -1126,10 +1128,20 @@ pub(crate) mod serial_tests {
         }
 
         fn start(&mut self) -> anyhow::Result<()> {
+            let state = self.state.clone();
+            let handler = TypedHandler::from(move |_: &InstrumentAny| {
+                state.instrument_received.store(true, Ordering::Relaxed);
+            });
+
+            self.instrument_subscription = Some(InstrumentSubscription::new(
+                get_instruments_pattern(self.venue),
+                handler,
+            ));
             Ok(())
         }
 
         fn stop(&mut self) -> anyhow::Result<()> {
+            self.instrument_subscription.take();
             Ok(())
         }
 
@@ -1139,12 +1151,6 @@ pub(crate) mod serial_tests {
                 .store(true, Ordering::Relaxed);
             self.state.query_order_ids.lock().push(cmd.client_order_id);
             Ok(())
-        }
-
-        fn on_instrument(&mut self, _instrument: InstrumentAny) {
-            self.state
-                .instrument_received
-                .store(true, Ordering::Relaxed);
         }
 
         async fn connect(&mut self) -> anyhow::Result<()> {
@@ -4608,13 +4614,8 @@ pub(crate) mod serial_tests {
             let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
             let topic = switchboard::get_instrument_topic(instrument.id());
             msgbus::publish_instrument(topic, &instrument);
+            assert!(instrument_observed.load(Ordering::Relaxed));
             order_report_release.notify_one();
-
-            wait_until_async(
-                || async { instrument_observed.load(Ordering::Relaxed) },
-                Duration::from_secs(5),
-            )
-            .await;
             stop_handle.stop();
         });
 
@@ -4626,7 +4627,7 @@ pub(crate) mod serial_tests {
         );
         assert!(
             result.unwrap().is_ok(),
-            "run() should stop cleanly after flushing deferred instrument updates"
+            "run() should stop cleanly after delivering instrument updates"
         );
         assert!(blocking_order_report_requested.load(Ordering::Relaxed));
         assert!(instrument_received.load(Ordering::Relaxed));
@@ -4684,13 +4685,8 @@ pub(crate) mod serial_tests {
             let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
             let topic = switchboard::get_instrument_topic(instrument.id());
             msgbus::publish_instrument(topic, &instrument);
+            assert!(instrument_observed.load(Ordering::Relaxed));
             position_report_release.notify_one();
-
-            wait_until_async(
-                || async { instrument_observed.load(Ordering::Relaxed) },
-                Duration::from_secs(5),
-            )
-            .await;
             stop_handle.stop();
         });
 
@@ -4702,7 +4698,7 @@ pub(crate) mod serial_tests {
         );
         assert!(
             result.unwrap().is_ok(),
-            "run() should stop cleanly after flushing deferred instrument updates"
+            "run() should stop cleanly after delivering instrument updates"
         );
         assert!(position_report_requested.load(Ordering::Relaxed));
         assert!(instrument_received.load(Ordering::Relaxed));
@@ -5801,7 +5797,7 @@ pub(crate) mod serial_tests {
 
     #[rstest]
     #[tokio::test(start_paused = true)]
-    async fn test_timed_out_report_task_flushes_deferred_instrument_update() {
+    async fn test_instrument_update_is_delivered_while_report_task_is_pending() {
         let config = LiveNodeConfig {
             exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
@@ -5822,7 +5818,7 @@ pub(crate) mod serial_tests {
         );
         let mut node = LiveNodeBuilder::from_config(config)
             .unwrap()
-            .with_name("ReportTimeoutInstrumentFlushNode")
+            .with_name("ReportPendingInstrumentUpdateNode")
             .add_exec_client(
                 Some("blocking-report".to_string()),
                 Box::new(factory),
@@ -5845,11 +5841,7 @@ pub(crate) mod serial_tests {
             let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
             let topic = switchboard::get_instrument_topic(instrument.id());
             msgbus::publish_instrument(topic, &instrument);
-            wait_until_async(
-                || async { instrument_received.load(Ordering::Relaxed) },
-                Duration::from_secs(1),
-            )
-            .await;
+            assert!(instrument_received.load(Ordering::Relaxed));
             stop_handle.stop();
         });
 
@@ -5857,7 +5849,7 @@ pub(crate) mod serial_tests {
 
         assert!(
             result.is_ok(),
-            "timeout cancellation should flush deferred instruments"
+            "instrument delivery should succeed while a report task is pending"
         );
         assert!(result.unwrap().is_ok());
         assert!(state.bulk_order_report_requested.load(Ordering::Relaxed));

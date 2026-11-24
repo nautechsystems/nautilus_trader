@@ -30,6 +30,10 @@ impl DataEngine {
     }
 
     pub(crate) fn handle_instrument(&mut self, instrument: &InstrumentAny, is_live: bool) {
+        if is_live && Self::newer_instrument(&self.cache.borrow(), instrument).is_some() {
+            return;
+        }
+
         if self.cache_instrument(instrument) {
             self.publish_instrument(instrument, is_live);
         }
@@ -61,6 +65,44 @@ impl DataEngine {
         }
 
         true
+    }
+
+    pub(crate) fn apply_instrument_response(
+        &mut self,
+        instruments: &[InstrumentAny],
+        is_bounded: bool,
+    ) -> bool {
+        if is_bounded {
+            #[cfg(feature = "defi")]
+            if let Err(e) = self
+                .cache
+                .borrow()
+                .validate_instrument_currency_integrity(instruments)
+            {
+                log_error_on_cache_insert(&e);
+                return false;
+            }
+
+            return true;
+        }
+
+        let mut accepted = true;
+
+        for instrument in instruments {
+            let has_newer = Self::newer_instrument(&self.cache.borrow(), instrument).is_some();
+            accepted &= has_newer || self.cache_instrument(instrument);
+        }
+
+        accepted
+    }
+
+    fn newer_instrument<'a>(
+        cache: &'a Cache,
+        instrument: &InstrumentAny,
+    ) -> Option<&'a InstrumentAny> {
+        cache
+            .instrument(&instrument.id())
+            .filter(|current| current.ts_init() > instrument.ts_init())
     }
 
     pub(crate) fn publish_instrument(&mut self, instrument: &InstrumentAny, is_live: bool) {

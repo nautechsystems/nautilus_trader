@@ -16,7 +16,7 @@
 //! Data structures modeling OKX WebSocket request and response payloads.
 
 use derive_builder::Builder;
-use nautilus_core::string::secret::SecretString;
+use nautilus_core::{UnixNanos, string::secret::SecretString};
 use nautilus_model::{
     data::{Data, FundingRateUpdate, InstrumentStatus, OrderBookDeltas},
     events::{
@@ -177,6 +177,10 @@ pub enum OKXWsMessage {
 #[derive(Debug)]
 pub(crate) enum OKXWsInbound<T> {
     Standard(T),
+    Timestamped {
+        message: T,
+        received_at: UnixNanos,
+    },
     MarketData {
         inst_id: Option<Ustr>,
         data: OKXMarketData,
@@ -186,7 +190,7 @@ pub(crate) enum OKXWsInbound<T> {
 impl<T> OKXWsInbound<T> {
     pub(crate) fn into_standard(self) -> Option<T> {
         match self {
-            Self::Standard(message) => Some(message),
+            Self::Standard(message) | Self::Timestamped { message, .. } => Some(message),
             Self::MarketData { .. } => None,
         }
     }

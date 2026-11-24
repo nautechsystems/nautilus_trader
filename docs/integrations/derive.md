@@ -1272,7 +1272,7 @@ Class/struct: `DeriveDataClientConfig`.
 | `ws_timeout_secs`                  | `None`    | Per-operation WebSocket timeout (login, subscribe, read, write) in seconds. Unset uses 10s. |
 | `book_snapshot_timeout_secs`       | `10`      | Snapshot wait in seconds; `0` disables deadlines.                                           |
 | `book_stale_threshold_secs`        | `120`     | Seconds without an advancing snapshot before recovery; `0` disables this timer.             |
-| `update_instruments_interval_mins` | `60`      | Instrument refresh interval in minutes; `0` disables periodic refresh.                      |
+| `update_instruments_interval_mins` | `60`      | Interval (minutes) between instrument refreshes. `0` disables periodic refresh.             |
 | `currencies`                       | `[]`      | Currencies to bulk-load on connect. Empty means lazy-load on demand.                        |
 | `include_expired`                  | `false`   | Merge live and expired option listings from `public/get_all_instruments`.                   |
 | `auto_load_missing_instruments`    | `true`    | Lazy-load an unknown instrument before sending a subscribe request.                         |

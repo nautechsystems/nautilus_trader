@@ -1653,7 +1653,9 @@ impl HyperliquidHttpClient {
 
     /// Fetch and parse all instrument definitions, populating the asset indices cache.
     pub async fn request_instrument_defs(&self) -> Result<Vec<HyperliquidInstrumentDef>> {
-        Ok(self.load_instrument_defs().await?.0)
+        let (defs, _) = self.load_instrument_defs().await?;
+        self.cache_asset_indices_from_defs(&defs);
+        Ok(defs)
     }
 
     /// Loads all instrument definitions, together with the product types whose
@@ -1793,11 +1795,13 @@ impl HyperliquidHttpClient {
                 );
             }
         }
-        let defs = deduped;
 
-        // Populate asset indices for all instruments (including filtered HIP-3)
+        Ok((deduped, loaded))
+    }
+
+    fn cache_asset_indices_from_defs(&self, defs: &[HyperliquidInstrumentDef]) {
         self.asset_indices.rcu(|m| {
-            for def in &defs {
+            for def in defs {
                 m.insert(def.symbol, def.asset_index);
             }
         });
@@ -1805,8 +1809,6 @@ impl HyperliquidHttpClient {
             "Populated asset indices map (count={})",
             self.asset_indices.len()
         );
-
-        Ok((defs, loaded))
     }
 
     /// Converts instrument definitions into Nautilus instruments.
@@ -1821,9 +1823,16 @@ impl HyperliquidHttpClient {
         Ok(self.convert_defs(defs))
     }
 
+    pub(crate) async fn fetch_instruments(&self) -> Result<Vec<InstrumentAny>> {
+        let (defs, _) = self.load_instrument_defs().await?;
+        Ok(self.convert_defs(defs))
+    }
+
     /// Fetch all available instruments together with the market status of each.
     pub(crate) async fn request_instruments_with_statuses(&self) -> Result<InstrumentSnapshot> {
         let (defs, loaded) = self.load_instrument_defs().await?;
+        self.cache_asset_indices_from_defs(&defs);
+
         let def_statuses: AHashMap<Ustr, MarketStatusAction> = defs
             .iter()
             .map(|def| {

@@ -1416,7 +1416,8 @@ impl DataClient for InteractiveBrokersDataClient {
                 .ib_client
                 .as_ref()
                 .context("IB client not connected. Call connect() first")?;
-            let instrument_provider = Arc::clone(&self.instrument_provider);
+            let bounded = cmd.start.is_some() || cmd.end.is_some();
+            let instrument_provider = self.instrument_request_provider(bounded)?;
             let data_sender = self.data_sender.clone();
             let clock = self.clock;
             let request_id = cmd.request_id;
@@ -1436,7 +1437,7 @@ impl DataClient for InteractiveBrokersDataClient {
                     instrument_id,
                     force_update,
                     filters,
-                    &data_sender,
+                    (!bounded).then_some(&data_sender),
                 )
                 .await
                 {
@@ -1572,6 +1573,9 @@ impl DataClient for InteractiveBrokersDataClient {
 
         // Handle batch loading if contracts are provided or force_update is requested
         if !contract_specs_to_load.is_empty() || force_update {
+            let live_provider = instrument_provider;
+            let instrument_provider =
+                self.instrument_request_provider(cmd.start.is_some() || cmd.end.is_some())?;
             let contract_specs_to_load_clone = contract_specs_to_load;
             let return_loaded_only = !contract_specs_to_load_clone.is_empty();
 
@@ -1624,7 +1628,7 @@ impl DataClient for InteractiveBrokersDataClient {
 
                 // If force_update, also reload all existing instruments
                 if force_update && !return_loaded_only {
-                    let all_instrument_ids: Vec<InstrumentId> = instrument_provider
+                    let all_instrument_ids: Vec<InstrumentId> = live_provider
                         .get_all()
                         .into_iter()
                         .map(|inst| inst.id())
@@ -2212,6 +2216,19 @@ impl DataClient for InteractiveBrokersDataClient {
 }
 
 impl InteractiveBrokersDataClient {
+    fn instrument_request_provider(
+        &self,
+        bounded: bool,
+    ) -> anyhow::Result<Arc<InteractiveBrokersInstrumentProvider>> {
+        if bounded {
+            Ok(Arc::new(InteractiveBrokersInstrumentProvider::new(
+                self.config.instrument_provider.clone(),
+            )?))
+        } else {
+            Ok(Arc::clone(&self.instrument_provider))
+        }
+    }
+
     fn has_subscription(
         &self,
         instrument_id: InstrumentId,
@@ -2443,7 +2460,7 @@ async fn load_requested_instrument(
     instrument_id: InstrumentId,
     force_update: bool,
     filters: Option<HashMap<String, String>>,
-    data_sender: &EventSender<DataEvent>,
+    data_sender: Option<&EventSender<DataEvent>>,
 ) -> anyhow::Result<()> {
     if !is_spread_instrument_id(&instrument_id) {
         return instrument_provider
@@ -2454,6 +2471,11 @@ async fn load_requested_instrument(
     instrument_provider
         .fetch_spread_instrument(client, instrument_id, force_update, filters)
         .await?;
+
+    let Some(data_sender) = data_sender else {
+        return Ok(());
+    };
+
     let leg_ids = parse_spread_instrument_id_to_legs(&instrument_id)?
         .into_iter()
         .map(|(leg_id, _)| leg_id)

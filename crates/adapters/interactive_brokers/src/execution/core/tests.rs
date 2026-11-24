@@ -25,6 +25,7 @@ use ibapi::{
 use nautilus_common::{
     cache::Cache,
     live::{runner::replace_exec_event_sender, sender::EventSender},
+    msgbus::{publish_instrument, switchboard::get_instrument_topic},
 };
 use nautilus_core::Params;
 use nautilus_live::{ExecutionClientCore, execution::failure::CommandFailure};
@@ -6529,6 +6530,37 @@ fn create_magnified_zc_future() -> InstrumentAny {
         .unwrap();
 
     InstrumentAny::FuturesContract(instrument)
+}
+
+#[rstest]
+#[case::explicit(Some(*IB_CLIENT_ID), false, true)]
+#[case::default(None, true, true)]
+#[case::explicit_other(Some(ClientId::from("OTHER")), true, false)]
+fn test_instrument_subscription_follows_broker_routes(
+    #[case] route: Option<ClientId>,
+    #[case] default_broker: bool,
+    #[case] receives: bool,
+) {
+    let (mut client, _, cache) = create_test_execution_client();
+    let instrument = create_magnified_zc_future();
+    let id = instrument.id();
+    if let Some(route) = route {
+        cache.borrow_mut().add_client_route(route, id.venue);
+    }
+
+    if default_broker {
+        cache.borrow_mut().set_default_client(client.client_id());
+    }
+
+    client.start().unwrap();
+    publish_instrument(get_instrument_topic(id), &instrument);
+
+    let provider = &client.instrument_provider;
+    assert_eq!(provider.find(&id).as_ref(), receives.then_some(&instrument));
+    assert_eq!(
+        provider.get_price_magnifier(&id),
+        if receives { 100 } else { 1 }
+    );
 }
 
 #[rstest]

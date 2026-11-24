@@ -1512,7 +1512,7 @@ and the data client check field presence, including environment fallback; they d
 | `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket.                      |
 | `http_timeout_secs`                | `60`      | HTTP request timeout in seconds.                                |
 | `ws_timeout_secs`                  | `30`      | WebSocket connection and reconnection timeout.                  |
-| `update_instruments_interval_mins` | `60`      | Instrument metadata refresh interval in minutes; 0 disables it. |
+| `update_instruments_interval_mins` | `60`      | Interval (minutes) between metadata refreshes. `0` disables it. |
 | `book_snapshot_timeout_secs`       | `10`      | Initial, reconnect, and recovery snapshot wait.                 |
 | `rest_quota_per_min`               | `None`    | REST quota override; unset or 0 keeps 60 req/min.               |
 | `transport_backend`                | Default   | WebSocket transport backend.                                    |

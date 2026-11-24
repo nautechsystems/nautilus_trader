@@ -54,7 +54,7 @@ use nautilus_common::{
 };
 use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
-    data::BarType,
+    data::{BarType, Data},
     enums::BookType,
     identifiers::{InstrumentId, OptionSeriesId},
     instruments::{Instrument, InstrumentAny},
@@ -428,6 +428,24 @@ async fn test_request_instruments_includes_spreads_when_enabled() {
     let events =
         collect_data_events_until_response(&mut rx, request_id, Duration::from_secs(5)).await;
     let response = instruments_response(&events);
+
+    let published: Vec<_> = events
+        .iter()
+        .take_while(|event| completed_response(event).is_none())
+        .filter_map(|event| match event {
+            DataEvent::Data(Data::Instrument(instrument)) => {
+                Some((instrument.id(), instrument.price_increment()))
+            }
+            _ => None,
+        })
+        .collect();
+
+    let returned: Vec<_> = response
+        .data
+        .iter()
+        .map(|instrument| (instrument.id(), instrument.price_increment()))
+        .collect();
+    assert_eq!(published, returned);
     let rpi_instrument = response
         .data
         .iter()
@@ -481,10 +499,16 @@ async fn test_request_instruments_fails_with_the_rows_when_spread_endpoint_fails
         .request_instruments(request)
         .expect("request_instruments");
 
-    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-        .await
-        .expect("the failed instruments request was never completed")
-        .expect("data event channel closed");
+    let event = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let event = rx.recv().await.expect("data event channel closed");
+            if !matches!(event, DataEvent::Data(Data::Instrument(_))) {
+                break event;
+            }
+        }
+    })
+    .await
+    .expect("the failed instruments request was never completed");
 
     let DataEvent::RequestFailed(failure) = event else {
         panic!("expected instruments request failure, received {event:?}");
@@ -561,10 +585,16 @@ async fn test_request_instruments_fails_with_the_rows_when_a_definition_fails_to
         .request_instruments(request)
         .expect("request_instruments");
 
-    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-        .await
-        .expect("the failed instruments request was never completed")
-        .expect("data event channel closed");
+    let event = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let event = rx.recv().await.expect("data event channel closed");
+            if !matches!(event, DataEvent::Data(Data::Instrument(_))) {
+                break event;
+            }
+        }
+    })
+    .await
+    .expect("the failed instruments request was never completed");
 
     let DataEvent::RequestFailed(failure) = event else {
         panic!("expected instruments request failure, received {event:?}");
@@ -608,6 +638,13 @@ async fn test_request_instrument_returns_spread_when_enabled() {
     let events =
         collect_data_events_until_response(&mut rx, request_id, Duration::from_secs(5)).await;
     let response = instrument_response(&events).expect("spread response must be emitted");
+
+    let DataEvent::Data(Data::Instrument(published)) = &events[0] else {
+        panic!("expected spread instrument update before the response");
+    };
+
+    assert_eq!(published.id(), response.instrument_id);
+    assert_eq!(published.price_increment(), response.data.price_increment());
     let spread_queries = state.spread_queries.lock().await;
 
     assert_eq!(

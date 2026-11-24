@@ -42,6 +42,7 @@ use nautilus_deribit::{
 use nautilus_model::{
     data::BarType,
     identifiers::{InstrumentId, Symbol},
+    instruments::Instrument,
 };
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
@@ -59,6 +60,8 @@ enum RequiredInstrumentCachePath {
 struct TestServerState {
     request_counts: Arc<DashMap<String, usize>>,
     last_request_params: Arc<DashMap<String, serde_json::Value>>,
+    bulk_instrument_requests:
+        Option<tokio::sync::mpsc::UnboundedSender<tokio::sync::oneshot::Sender<()>>>,
 }
 
 fn load_test_data(filename: &str) -> serde_json::Value {
@@ -125,7 +128,15 @@ async fn handle_jsonrpc_request(
     // Route based on method field
     match method {
         "public/get_instrument" => handle_get_instrument(id, params).await,
-        "public/get_instruments" => handle_get_instruments(id, params).await,
+        "public/get_instruments" => {
+            if let Some(requests) = &state.bulk_instrument_requests {
+                let (release, wait) = tokio::sync::oneshot::channel();
+                requests.send(release).unwrap();
+                wait.await.unwrap();
+            }
+
+            handle_get_instruments(id, params).await
+        }
         "public/get_expirations" => handle_get_expirations(id, params).await,
         "public/get_last_trades_by_instrument_and_time" => handle_get_last_trades(id, params).await,
         "public/get_tradingview_chart_data" => handle_get_tradingview_chart_data(id, params).await,
@@ -530,6 +541,53 @@ async fn test_json_response_with_invalid_result_returns_json_error() {
         }
         other => panic!("Expected JsonError, was {other:?}"),
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_deribit_instrument_timestamp_precedes_later_request() {
+    let (request_tx, mut requests) = tokio::sync::mpsc::unbounded_channel();
+
+    let addr = start_test_server(TestServerState {
+        bulk_instrument_requests: Some(request_tx),
+        ..Default::default()
+    })
+    .await;
+
+    wait_for_server(addr).await;
+
+    let client = DeribitHttpClient::new(
+        Some(format!("http://{addr}/api/v2")),
+        DeribitEnvironment::Mainnet,
+        5,
+        0,
+        1,
+        1,
+        None,
+    )
+    .unwrap();
+    let instrument_id = InstrumentId::new(Symbol::from("BTC-PERPETUAL"), *DERIBIT_VENUE);
+    let earlier =
+        client.request_instruments(DeribitCurrency::BTC, Some(DeribitProductType::Future));
+
+    let later = async {
+        let release = tokio::time::timeout(std::time::Duration::from_secs(5), requests.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let instrument = client.request_instrument(instrument_id).await.unwrap();
+        release.send(()).unwrap();
+        instrument
+    };
+
+    let (earlier, later) = tokio::join!(earlier, later);
+    let earlier = earlier
+        .unwrap()
+        .into_iter()
+        .find(|instrument| instrument.id() == instrument_id)
+        .unwrap();
+    assert_eq!(later.id(), instrument_id);
+    assert!(earlier.ts_init() < later.ts_init());
 }
 
 #[rstest]

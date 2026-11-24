@@ -40,8 +40,8 @@ use nautilus_common::{
         },
     },
     msgbus::{
-        self, MStr, MessagingSwitchboard, Pattern, TypedHandler,
-        typed_handler::ShareableMessageHandler,
+        self, InstrumentSubscription, MStr, MessagingSwitchboard, Pattern, TypedHandler,
+        switchboard::get_instruments_pattern, typed_handler::ShareableMessageHandler,
     },
     timer::{TimeEvent, TimeEventCallback},
 };
@@ -88,10 +88,11 @@ pub struct SandboxExecutionClient {
     core: RefCell<ExecutionClientCore>,
     factory: OrderEventFactory,
     config: SandboxExecutionClientConfig,
-    inner: Rc<RefCell<SandboxInner>>,
-    handlers: RefCell<Option<RegisteredHandlers>>,
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
+    inner: Rc<RefCell<SandboxInner>>,
+    instrument_subscription: Option<InstrumentSubscription>,
+    handlers: RefCell<Option<RegisteredHandlers>>,
     /// Set by `reset`, so the next `connect` reports the starting balances whatever account
     /// the shared cache still holds.
     reset_pending: Cell<bool>,
@@ -217,10 +218,11 @@ impl SandboxExecutionClient {
             core: RefCell::new(core),
             factory,
             config,
-            inner,
-            handlers: RefCell::new(None),
             clock,
             cache,
+            inner,
+            instrument_subscription: None,
+            handlers: RefCell::new(None),
             reset_pending: Cell::new(false),
         })
     }
@@ -743,6 +745,34 @@ impl SandboxExecutionClient {
     }
 }
 
+impl SandboxExecutionClient {
+    fn subscribe_instruments(&mut self) {
+        if self.instrument_subscription.is_some() {
+            return;
+        }
+
+        let inner = Rc::clone(&self.inner);
+        self.instrument_subscription = Some(InstrumentSubscription::new(
+            get_instruments_pattern(self.venue()),
+            TypedHandler::from(move |instrument: &InstrumentAny| {
+                Self::apply_instrument(&inner, instrument.clone());
+            }),
+        ));
+    }
+
+    fn apply_instrument(inner: &RefCell<SandboxInner>, instrument: InstrumentAny) {
+        let instrument_id = instrument.id();
+        let mut inner = inner.borrow_mut();
+        if let Some(engine) = inner.matching_engines.get_mut(&instrument_id)
+            && let Err(e) = engine.update_instrument(instrument)
+        {
+            log::error!("Failed to update instrument {instrument_id} in sandbox engine: {e}");
+        }
+
+        inner.drain_oto_commands();
+    }
+}
+
 #[async_trait(?Send)]
 impl ExecutionClient for SandboxExecutionClient {
     fn is_connected(&self) -> bool {
@@ -775,15 +805,7 @@ impl ExecutionClient for SandboxExecutionClient {
     }
 
     fn on_instrument(&mut self, instrument: InstrumentAny) {
-        let instrument_id = instrument.id();
-        let mut inner = self.inner.borrow_mut();
-        if let Some(engine) = inner.matching_engines.get_mut(&instrument_id)
-            && let Err(e) = engine.update_instrument(instrument)
-        {
-            log::error!("Failed to update instrument {instrument_id} in sandbox engine: {e}");
-        }
-
-        inner.drain_oto_commands();
+        Self::apply_instrument(&self.inner, instrument);
     }
 
     fn get_account(&self) -> Option<AccountAny> {
@@ -792,6 +814,8 @@ impl ExecutionClient for SandboxExecutionClient {
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         Self::reset(self);
         Ok(())
     }
@@ -809,6 +833,8 @@ impl ExecutionClient for SandboxExecutionClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         if self.core.borrow().is_started() {
             return Ok(());
         }
@@ -848,6 +874,8 @@ impl ExecutionClient for SandboxExecutionClient {
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         if self.core.borrow().is_stopped() {
             return Ok(());
         }
@@ -876,6 +904,8 @@ impl ExecutionClient for SandboxExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         if self.core.borrow().is_connected() {
             return Ok(());
         }

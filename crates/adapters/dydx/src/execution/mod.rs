@@ -59,6 +59,7 @@ use nautilus_common::{
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
         ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
+    msgbus::{InstrumentSubscription, TypedHandler, switchboard::get_instruments_pattern},
 };
 use nautilus_core::{
     DurationNanos, Params, UUID4, UnixNanos,
@@ -162,6 +163,7 @@ pub struct DydxExecutionClient {
     http_client: DydxHttpClient,
     ws_client: DydxWebSocketClient,
     grpc_client: Arc<tokio::sync::RwLock<Option<DydxGrpcClient>>>,
+    instrument_subscription: Option<InstrumentSubscription>,
     instrument_cache: Arc<InstrumentCache>,
     block_time_monitor: Arc<BlockTimeMonitor>,
     oracle_prices: Arc<DashMap<InstrumentId, Decimal>>,
@@ -257,6 +259,7 @@ impl DydxExecutionClient {
             http_client,
             ws_client,
             grpc_client,
+            instrument_subscription: None,
             instrument_cache,
             block_time_monitor: Arc::new(BlockTimeMonitor::new()),
             oracle_prices: Arc::new(DashMap::new()),
@@ -1245,6 +1248,28 @@ fn is_definitive_broadcast_rejection(err: &anyhow::Error) -> bool {
         .is_some_and(DydxError::is_definitive_broadcast_rejection)
 }
 
+impl DydxExecutionClient {
+    fn subscribe_instruments(&mut self) {
+        if self.instrument_subscription.is_some() {
+            return;
+        }
+
+        let instrument_cache = Arc::clone(&self.instrument_cache);
+        self.instrument_subscription = Some(InstrumentSubscription::new(
+            get_instruments_pattern(self.venue()),
+            TypedHandler::from(move |instrument: &InstrumentAny| {
+                Self::apply_instrument(&instrument_cache, instrument.clone());
+            }),
+        ));
+    }
+
+    fn apply_instrument(instrument_cache: &InstrumentCache, instrument: InstrumentAny) {
+        if instrument.id().venue == *DYDX_VENUE {
+            instrument_cache.update_definition(instrument);
+        }
+    }
+}
+
 #[async_trait(?Send)]
 impl ExecutionClient for DydxExecutionClient {
     fn is_connected(&self) -> bool {
@@ -1261,6 +1286,10 @@ impl ExecutionClient for DydxExecutionClient {
 
     fn venue(&self) -> Venue {
         *DYDX_VENUE
+    }
+
+    fn on_instrument(&mut self, instrument: InstrumentAny) {
+        Self::apply_instrument(&self.instrument_cache, instrument);
     }
 
     fn oms_type(&self) -> OmsType {
@@ -1285,6 +1314,8 @@ impl ExecutionClient for DydxExecutionClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         if self.core.is_started() {
             log::warn!("dYdX execution client already started");
             return Ok(());
@@ -1298,6 +1329,8 @@ impl ExecutionClient for DydxExecutionClient {
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         if self.core.is_stopped() {
             log::warn!("dYdX execution client not started");
             return Ok(());
@@ -2395,6 +2428,8 @@ impl ExecutionClient for DydxExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         if self.core.is_connected() && self.session_tasks.is_open() && self.pending_tasks.is_open()
         {
             log::warn!("dYdX execution client already connected");

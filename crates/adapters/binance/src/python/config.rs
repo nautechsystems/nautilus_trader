@@ -131,7 +131,7 @@ impl BinanceDataClientConfig {
         api_secret = None,
         spot_market_data_mode = None,
         instrument_provider = None,
-        instrument_refresh_interval_secs = None,
+        update_instruments_interval_mins = None,
         instrument_status_poll_secs = None,
         proxy_url = None,
         recv_window_ms = None,
@@ -153,7 +153,7 @@ impl BinanceDataClientConfig {
         api_secret: Option<String>,
         spot_market_data_mode: Option<BinanceSpotMarketDataMode>,
         instrument_provider: Option<BinanceInstrumentProviderConfig>,
-        instrument_refresh_interval_secs: Option<u64>,
+        update_instruments_interval_mins: Option<u64>,
         instrument_status_poll_secs: Option<u64>,
         proxy_url: Option<String>,
         recv_window_ms: Option<u64>,
@@ -176,8 +176,8 @@ impl BinanceDataClientConfig {
             spot_market_data_mode: spot_market_data_mode.unwrap_or(defaults.spot_market_data_mode),
             use_usdm_raw_trades,
             instrument_provider: instrument_provider.unwrap_or(defaults.instrument_provider),
-            instrument_refresh_interval_secs: instrument_refresh_interval_secs
-                .unwrap_or(defaults.instrument_refresh_interval_secs),
+            update_instruments_interval_mins: update_instruments_interval_mins
+                .unwrap_or(defaults.update_instruments_interval_mins),
             instrument_status_poll_secs: instrument_status_poll_secs
                 .unwrap_or(defaults.instrument_status_poll_secs),
             book_snapshot_timeout_secs: book_snapshot_timeout_secs
@@ -223,7 +223,7 @@ impl BinanceExecutionClientConfig {
         use_ws_trading = true,
         ws_trading_setup_timeout_ms = None,
         instrument_provider = None,
-        instrument_refresh_interval_secs = None,
+        update_instruments_interval_mins = None,
         use_gtd = true,
         use_position_ids = true,
         oms_type = None,
@@ -254,7 +254,7 @@ impl BinanceExecutionClientConfig {
         use_ws_trading: bool,
         ws_trading_setup_timeout_ms: Option<u64>,
         instrument_provider: Option<BinanceInstrumentProviderConfig>,
-        instrument_refresh_interval_secs: Option<u64>,
+        update_instruments_interval_mins: Option<u64>,
         use_gtd: bool,
         use_position_ids: bool,
         oms_type: Option<OmsType>,
@@ -286,8 +286,8 @@ impl BinanceExecutionClientConfig {
             ws_trading_setup_timeout_ms: ws_trading_setup_timeout_ms
                 .unwrap_or(defaults.ws_trading_setup_timeout_ms),
             instrument_provider: instrument_provider.unwrap_or(defaults.instrument_provider),
-            instrument_refresh_interval_secs: instrument_refresh_interval_secs
-                .unwrap_or(defaults.instrument_refresh_interval_secs),
+            update_instruments_interval_mins: update_instruments_interval_mins
+                .unwrap_or(defaults.update_instruments_interval_mins),
             use_gtd,
             use_position_ids,
             oms_type,
@@ -394,8 +394,8 @@ mod tests {
         assert!(!config.use_usdm_raw_trades);
         assert_eq!(config.instrument_provider, defaults.instrument_provider);
         assert_eq!(
-            config.instrument_refresh_interval_secs,
-            defaults.instrument_refresh_interval_secs
+            config.update_instruments_interval_mins,
+            defaults.update_instruments_interval_mins
         );
         assert_eq!(
             config.instrument_status_poll_secs,
@@ -455,7 +455,7 @@ mod tests {
             BinanceSpotMarketDataMode::Json
         );
         assert!(config.use_usdm_raw_trades);
-        assert_eq!(config.instrument_refresh_interval_secs, 30);
+        assert_eq!(config.update_instruments_interval_mins, 30);
         assert_eq!(config.instrument_status_poll_secs, 15);
         assert_eq!(
             config.proxy_url.as_ref().map(SecretString::expose_secret),
@@ -489,8 +489,8 @@ mod tests {
         assert_eq!(config.ws_trading_setup_timeout_ms, 10_000);
         assert_eq!(config.instrument_provider, defaults.instrument_provider);
         assert_eq!(
-            config.instrument_refresh_interval_secs,
-            defaults.instrument_refresh_interval_secs
+            config.update_instruments_interval_mins,
+            defaults.update_instruments_interval_mins
         );
         assert!(config.use_gtd);
         assert_eq!(config.oms_type, defaults.oms_type);
@@ -564,7 +564,7 @@ mod tests {
         );
         assert!(!config.use_ws_trading);
         assert_eq!(config.ws_trading_setup_timeout_ms, 250);
-        assert_eq!(config.instrument_refresh_interval_secs, 45);
+        assert_eq!(config.update_instruments_interval_mins, 45);
         assert!(!config.use_gtd);
         assert!(!config.use_position_ids);
         assert_eq!(config.oms_type, Some(OmsType::Hedging));

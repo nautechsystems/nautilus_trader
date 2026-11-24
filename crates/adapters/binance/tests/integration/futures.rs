@@ -15,8 +15,6 @@
 
 //! Integration tests for Binance Futures adapter.
 
-#[path = "futures/data_client.rs"]
-mod data_client;
 #[path = "futures/exec_client.rs"]
 mod exec_client;
 #[path = "futures/http.rs"]

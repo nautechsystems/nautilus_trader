@@ -595,7 +595,7 @@ The loader accepts these optional HTTP keywords:
 | `proxy_url`               | Explicit HTTP(S) proxy for REST and Flat Files.               |
 | `timeout_secs`            | Per-attempt deadline, including admission and body streaming. |
 | `max_concurrent_requests` | Shared limit for REST requests and file downloads.            |
-| `min_request_interval_ms` | Optional minimum spacing between REST attempt starts.         |
+| `min_request_interval_ms` | Minimum interval (milliseconds) between REST attempt starts.  |
 | `credit_budget`           | Lifetime local REST credit allowance.                         |
 | `max_retries`             | Maximum retries for each HTTP request or download.            |
 | `retry_delay_initial_ms`  | Initial retry delay.                                          |
@@ -814,24 +814,24 @@ source volumes remain valid.
 Register `CoinApiDataClientFactory` and `CoinApiDataClientConfig` with the node builder. The default client ID
 is `COINAPI`. A custom client name becomes its client ID.
 
-| Field                        | Default   | Purpose                                                     |
-| ---------------------------- | --------- | ----------------------------------------------------------- |
-| `api_key`                    | `None`    | API key; `None` reads `COINAPI_API_KEY`.                    |
-| `base_url_http`              | `None`    | REST URL override, including `/v1/`.                        |
-| `base_url_ws`                | `None`    | WebSocket URL override.                                     |
-| `proxy_url`                  | `None`    | Explicit HTTP(S) proxy for REST and WebSocket.              |
-| `instruments`                | Empty     | Instrument selections loaded on connect.                    |
-| `credit_budget`              | `100`     | Local lifetime REST credit allowance for this client.       |
-| `max_retries`                | `3`       | Maximum retries for a failed REST request.                  |
-| `http_timeout_secs`          | `30`      | Per-attempt REST timeout, including concurrency admission.  |
-| `max_concurrent_requests`    | `1`       | Maximum simultaneous REST requests.                         |
-| `min_request_interval_ms`    | `None`    | Minimum spacing between REST attempt starts.                |
-| `retry_delay_initial_ms`     | 1,000     | Initial REST retry delay.                                   |
-| `retry_delay_max_ms`         | 10,000    | Maximum REST backoff; provider retry delays can exceed it.  |
-| `retry_max_elapsed_ms`       | 120,000   | Total budget per REST GET, including admission and retries. |
-| `transport_backend`          | `Sockudo` | Shared WebSocket backend; `Tungstenite` is also available.  |
-| `book_snapshot_timeout_secs` | `10`      | Seconds to wait for a book snapshot; `0` disables.          |
-| `price_precisions`           | Empty     | Price precision overrides by instrument ID.                 |
+| Field                        | Default   | Purpose                                                      |
+| ---------------------------- | --------- | ------------------------------------------------------------ |
+| `api_key`                    | `None`    | API key; `None` reads `COINAPI_API_KEY`.                     |
+| `base_url_http`              | `None`    | REST URL override, including `/v1/`.                         |
+| `base_url_ws`                | `None`    | WebSocket URL override.                                      |
+| `proxy_url`                  | `None`    | Explicit HTTP(S) proxy for REST and WebSocket.               |
+| `instruments`                | Empty     | Instrument selections loaded on connect.                     |
+| `credit_budget`              | `100`     | Local lifetime REST credit allowance for this client.        |
+| `max_retries`                | `3`       | Maximum retries for a failed REST request.                   |
+| `http_timeout_secs`          | `30`      | Per-attempt REST timeout, including concurrency admission.   |
+| `max_concurrent_requests`    | `1`       | Maximum simultaneous REST requests.                          |
+| `min_request_interval_ms`    | `None`    | Minimum interval (milliseconds) between REST attempt starts. |
+| `retry_delay_initial_ms`     | 1,000     | Initial REST retry delay.                                    |
+| `retry_delay_max_ms`         | 10,000    | Maximum REST backoff; provider retry delays can exceed it.   |
+| `retry_max_elapsed_ms`       | 120,000   | Total budget per REST GET, including admission and retries.  |
+| `transport_backend`          | `Sockudo` | Shared WebSocket backend; `Tungstenite` is also available.   |
+| `book_snapshot_timeout_secs` | `10`      | Seconds to wait for a book snapshot; `0` disables.           |
+| `price_precisions`           | Empty     | Price precision overrides by instrument ID.                  |
 
 Configuration rejects unknown fields. Unset URL overrides use the production endpoints. Sockudo is the default
 WebSocket backend. Set `transport_backend=TransportBackend.TUNGSTENITE` to use Tungstenite instead, importing

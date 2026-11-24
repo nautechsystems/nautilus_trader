@@ -29,7 +29,6 @@ use indexmap::IndexMap;
 use jiff::{SignedDuration, Timestamp};
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
-    AtomicMap,
     datetime::{NANOSECONDS_IN_MILLISECOND, SECONDS_IN_DAY},
     nanos::UnixNanos,
     time::AtomicTime,
@@ -54,7 +53,7 @@ use nautilus_network::{
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
     retry::{RetryConfig, RetryError, RetryManager},
 };
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use ustr::Ustr;
@@ -1961,7 +1960,7 @@ pub struct BinanceFuturesHttpClient {
     product_type: BinanceProductType,
     clock: &'static AtomicTime,
     instruments: Arc<DashMap<Ustr, BinanceFuturesInstrument>>,
-    instruments_reconciliation: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    instruments_reconciliation: Arc<RwLock<AHashMap<InstrumentId, InstrumentAny>>>,
     instruments_load_lock: Arc<tokio::sync::Mutex<()>>,
     treat_expired_as_canceled: bool,
 }
@@ -2010,7 +2009,7 @@ impl BinanceFuturesHttpClient {
             product_type,
             clock,
             instruments: Arc::new(DashMap::new()),
-            instruments_reconciliation: Arc::new(AtomicMap::new()),
+            instruments_reconciliation: Arc::default(),
             instruments_load_lock: Arc::new(tokio::sync::Mutex::new(())),
             treat_expired_as_canceled,
         })
@@ -2044,12 +2043,26 @@ impl BinanceFuturesHttpClient {
         &self,
         instrument_id: &InstrumentId,
     ) -> Option<InstrumentAny> {
-        self.instruments_reconciliation.get_cloned(instrument_id)
+        self.instruments_reconciliation
+            .read()
+            .get(instrument_id)
+            .cloned()
+    }
+
+    pub(crate) fn cache_reconciliation_instrument(&self, instrument: InstrumentAny) {
+        let id = instrument.id();
+        let mut cache = self.instruments_reconciliation.write();
+        if cache
+            .get(&id)
+            .is_none_or(|cached| cached.ts_init() <= instrument.ts_init())
+        {
+            cache.insert(id, instrument);
+        }
     }
 
     pub(crate) fn instrument_ids_reconciliation(&self) -> Vec<InstrumentId> {
         self.instruments_reconciliation
-            .load()
+            .read()
             .keys()
             .copied()
             .collect()
@@ -2232,49 +2245,25 @@ impl BinanceFuturesHttpClient {
     pub(crate) async fn request_symbol_trading_statuses(
         &self,
     ) -> BinanceFuturesHttpResult<AHashMap<Ustr, SymbolTradingStatus>> {
-        let mut statuses = AHashMap::new();
-
         match self.product_type {
             BinanceProductType::UsdM => {
                 let info: BinanceFuturesUsdExchangeInfo = self
                     .inner
                     .get("exchangeInfo", None::<&()>, false, false)
                     .await?;
-
-                for symbol in &info.symbols {
-                    let status = futures_symbol_status(
-                        MarketStatusAction::from(symbol.status),
-                        &symbol.contract_type,
-                        symbol.delivery_date,
-                    );
-                    statuses.insert(symbol.symbol, status);
-                }
+                Ok(info.symbols.iter().map(usdm_symbol_status).collect())
             }
             BinanceProductType::CoinM => {
                 let info: BinanceFuturesCoinExchangeInfo = self
                     .inner
                     .get("exchangeInfo", None::<&()>, false, false)
                     .await?;
-
-                for symbol in &info.symbols {
-                    let status = futures_symbol_status(
-                        symbol
-                            .contract_status
-                            .map_or(MarketStatusAction::NotAvailableForTrading, Into::into),
-                        &symbol.contract_type,
-                        symbol.delivery_date,
-                    );
-                    statuses.insert(symbol.symbol, status);
-                }
+                Ok(info.symbols.iter().map(coinm_symbol_status).collect())
             }
-            _ => {
-                return Err(BinanceFuturesHttpError::ValidationError(
-                    "Invalid product type for futures".to_string(),
-                ));
-            }
+            _ => Err(BinanceFuturesHttpError::ValidationError(
+                "Invalid product type for futures".to_string(),
+            )),
         }
-
-        Ok(statuses)
     }
 
     /// Fetches exchange information and returns parsed Nautilus instruments.
@@ -2302,19 +2291,64 @@ impl BinanceFuturesHttpClient {
         &self,
         config: &BinanceInstrumentProviderConfig,
     ) -> BinanceFuturesHttpResult<Vec<InstrumentAny>> {
+        self.load_instruments(config, None, None, true)
+            .await
+            .map(|(instruments, _)| instruments)
+    }
+
+    pub(crate) async fn request_instruments_with_statuses(
+        &self,
+        config: &BinanceInstrumentProviderConfig,
+        previous: &AHashMap<InstrumentId, InstrumentAny>,
+        publication: (
+            &parking_lot::Mutex<()>,
+            &tokio_util::sync::CancellationToken,
+        ),
+    ) -> BinanceFuturesHttpResult<(Vec<InstrumentAny>, AHashMap<Ustr, SymbolTradingStatus>)> {
+        self.load_instruments(config, Some(previous), Some(publication), true)
+            .await
+    }
+
+    pub(crate) async fn request_instruments_in_generation(
+        &self,
+        config: &BinanceInstrumentProviderConfig,
+        publish_lock: &parking_lot::Mutex<()>,
+        cancel: &tokio_util::sync::CancellationToken,
+        apply_cache: bool,
+    ) -> BinanceFuturesHttpResult<Vec<InstrumentAny>> {
+        self.load_instruments(config, None, Some((publish_lock, cancel)), apply_cache)
+            .await
+            .map(|(instruments, _)| instruments)
+    }
+
+    async fn load_instruments(
+        &self,
+        config: &BinanceInstrumentProviderConfig,
+        previous: Option<&AHashMap<InstrumentId, InstrumentAny>>,
+        publication: Option<(
+            &parking_lot::Mutex<()>,
+            &tokio_util::sync::CancellationToken,
+        )>,
+        apply_cache: bool,
+    ) -> BinanceFuturesHttpResult<(Vec<InstrumentAny>, AHashMap<Ustr, SymbolTradingStatus>)> {
         let _guard = self.instruments_load_lock.lock().await;
         let selector = BinanceInstrumentSelector::new(config, self.product_type)
             .map_err(|e| BinanceFuturesHttpError::ValidationError(e.to_string()))?;
         let ts_init = self.clock.get_time_ns();
         let mut cache = Vec::new();
+        let mut statuses = AHashMap::new();
         let mut reconciliation = AHashMap::new();
 
-        let instruments = match self.product_type {
+        let mut instruments = match self.product_type {
             BinanceProductType::UsdM => {
                 let info: BinanceFuturesUsdExchangeInfo = self
                     .inner
                     .get("exchangeInfo", None::<&()>, false, false)
                     .await?;
+
+                if previous.is_some() {
+                    statuses.extend(info.symbols.iter().map(usdm_symbol_status));
+                }
 
                 let mut instruments = Vec::with_capacity(info.symbols.len());
 
@@ -2369,6 +2403,10 @@ impl BinanceFuturesHttpClient {
                     .get("exchangeInfo", None::<&()>, false, false)
                     .await?;
 
+                if previous.is_some() {
+                    statuses.extend(info.symbols.iter().map(coinm_symbol_status));
+                }
+
                 let mut instruments = Vec::with_capacity(info.symbols.len());
                 for symbol in info.symbols {
                     let instrument_id =
@@ -2422,9 +2460,53 @@ impl BinanceFuturesHttpClient {
             }
         };
 
-        self.replace_instruments(cache)?;
-        self.instruments_reconciliation.store(reconciliation);
-        Ok(instruments)
+        if let Some(previous) = previous {
+            for instrument in previous.values() {
+                if statuses
+                    .get(&instrument.raw_symbol().inner())
+                    .is_some_and(|status| !status.is_trading)
+                {
+                    reconciliation.insert(instrument.id(), instrument.clone());
+                    instruments.push(instrument.clone());
+                }
+            }
+        }
+
+        let _guard = publication.map(|(lock, _)| lock.lock());
+        if publication.is_some_and(|(_, cancel)| cancel.is_cancelled()) {
+            return Err(BinanceFuturesHttpError::ValidationError(
+                "Instrument request cancelled".to_string(),
+            ));
+        }
+
+        if apply_cache {
+            self.replace_instruments(cache)?;
+            let replace = previous.is_some() || publication.is_none();
+            self.cache_reconciliation_instruments(&reconciliation, ts_init, replace);
+        }
+
+        Ok((instruments, statuses))
+    }
+
+    fn cache_reconciliation_instruments(
+        &self,
+        fetched: &AHashMap<InstrumentId, InstrumentAny>,
+        requested_at: UnixNanos,
+        replace: bool,
+    ) {
+        let mut current = self.instruments_reconciliation.write();
+        if replace {
+            current.retain(|_, instrument| instrument.ts_init() > requested_at);
+        }
+
+        for (id, instrument) in fetched {
+            if current
+                .get(id)
+                .is_none_or(|cached| cached.ts_init() <= requested_at)
+            {
+                current.insert(*id, instrument.clone());
+            }
+        }
     }
 
     /// Fetches 24hr ticker statistics.
@@ -2761,7 +2843,7 @@ impl BinanceFuturesHttpClient {
         good_till_date: Option<i64>,
     ) -> anyhow::Result<OrderStatusReport> {
         let (symbol, price_precision, size_precision) =
-            self.cached_precisions_by_id(instrument_id)?;
+            self.execution_precisions_by_id(instrument_id)?;
 
         let binance_side = BinanceSide::try_from(order_side)?;
         let binance_order_type = order_type_to_binance_futures(order_type)?;
@@ -2873,7 +2955,7 @@ impl BinanceFuturesHttpClient {
         good_till_date: Option<i64>,
     ) -> anyhow::Result<OrderStatusReport> {
         let (symbol, price_precision, size_precision) =
-            self.cached_precisions_by_id(instrument_id)?;
+            self.execution_precisions_by_id(instrument_id)?;
 
         let binance_side = BinanceSide::try_from(order_side)?;
         let binance_order_type = order_type_to_binance_futures(order_type)?;
@@ -3011,7 +3093,7 @@ impl BinanceFuturesHttpClient {
         );
 
         let (symbol, price_precision, size_precision) =
-            self.cached_precisions_by_id(instrument_id)?;
+            self.execution_precisions_by_id(instrument_id)?;
 
         let binance_side = BinanceSide::try_from(order_side)?;
 
@@ -3430,7 +3512,7 @@ impl BinanceFuturesHttpClient {
         );
 
         let (symbol, price_precision, size_precision) =
-            self.cached_precisions_by_id(instrument_id)?;
+            self.execution_precisions_by_id(instrument_id)?;
 
         let order_id = venue_order_id
             .map(|id| id.inner().parse::<i64>())
@@ -3503,7 +3585,7 @@ impl BinanceFuturesHttpClient {
             let order_instrument_id = instrument_id
                 .unwrap_or_else(|| format_instrument_id(&order.symbol, self.product_type));
             let (_, price_precision, size_precision) =
-                self.cached_precisions_by_id(order_instrument_id)?;
+                self.execution_precisions_by_id(order_instrument_id)?;
 
             match order.to_order_status_report(
                 account_id,
@@ -3540,7 +3622,7 @@ impl BinanceFuturesHttpClient {
         bnfcr_currency: Currency,
     ) -> anyhow::Result<Vec<FillReport>> {
         let (symbol, price_precision, size_precision) =
-            self.cached_precisions_by_id(instrument_id)?;
+            self.execution_precisions_by_id(instrument_id)?;
 
         let order_id = venue_order_id
             .map(|id| id.inner().parse::<i64>())
@@ -3808,6 +3890,21 @@ impl BinanceFuturesHttpClient {
         Ok(book)
     }
 
+    pub(crate) fn execution_precisions_by_id(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<(String, u8, u8)> {
+        if let Some(instrument) = self.instruments_reconciliation.read().get(&instrument_id) {
+            return Ok((
+                instrument.raw_symbol().to_string(),
+                instrument.price_precision(),
+                instrument.size_precision(),
+            ));
+        }
+
+        self.cached_precisions_by_id(instrument_id)
+    }
+
     fn cached_precisions_by_id(
         &self,
         instrument_id: InstrumentId,
@@ -4067,6 +4164,26 @@ fn validate_reconciliation_instrument(
     }
 
     Ok(())
+}
+
+fn usdm_symbol_status(symbol: &BinanceFuturesUsdSymbol) -> (Ustr, SymbolTradingStatus) {
+    let action = MarketStatusAction::from(symbol.status);
+
+    (
+        symbol.symbol,
+        futures_symbol_status(action, &symbol.contract_type, symbol.delivery_date),
+    )
+}
+
+fn coinm_symbol_status(symbol: &BinanceFuturesCoinSymbol) -> (Ustr, SymbolTradingStatus) {
+    let action = symbol
+        .contract_status
+        .map_or(MarketStatusAction::NotAvailableForTrading, Into::into);
+
+    (
+        symbol.symbol,
+        futures_symbol_status(action, &symbol.contract_type, symbol.delivery_date),
+    )
 }
 
 fn log_futures_instrument_parse_error(
@@ -5519,6 +5636,45 @@ mod tests {
             time_in_force: Vec::new(),
             filters: Vec::new(),
         }
+    }
+
+    #[rstest]
+    #[case::changed(false)]
+    #[case::unchanged(true)]
+    fn test_reconciliation_refresh_keeps_definition_received_during_fetch(#[case] same_tick: bool) {
+        use nautilus_model::instruments::stubs::crypto_perpetual_ethusdt;
+
+        let client = create_test_client();
+        let mut definition = crypto_perpetual_ethusdt();
+        definition.id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let id = definition.id;
+        definition.ts_init = UnixNanos::from(10);
+        let fetched = AHashMap::from([(id, InstrumentAny::from(definition.clone()))]);
+
+        definition.ts_init = UnixNanos::from(20);
+        definition.price_precision = 6;
+        definition.price_increment = Price::from("0.000001");
+        if same_tick {
+            let mut previous = definition.clone();
+            previous.ts_init = UnixNanos::from(5);
+            client.cache_reconciliation_instrument(previous.into());
+        }
+
+        client.cache_reconciliation_instrument(definition.into());
+        client.cache_reconciliation_instruments(&fetched, UnixNanos::from(10), true);
+
+        let current = client.instrument_reconciliation(&id).unwrap();
+        assert_eq!(current.ts_init(), UnixNanos::from(20));
+        assert_eq!(current.price_precision(), 6);
+        assert_eq!(current.price_increment(), Price::from("0.000001"));
+        assert_eq!(
+            client.execution_precisions_by_id(id).unwrap(),
+            (
+                current.raw_symbol().to_string(),
+                6,
+                current.size_precision()
+            )
+        );
     }
 
     #[rstest]

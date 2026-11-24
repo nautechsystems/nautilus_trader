@@ -35,9 +35,10 @@ use nautilus_common::{
         GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports, ModifyOrder,
         QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
+    msgbus::{InstrumentSubscription, TypedHandler, switchboard::get_instruments_pattern},
 };
 use nautilus_core::{
-    DurationNanos, Params, UUID4, UnixNanos,
+    AtomicMap, DurationNanos, Params, UUID4, UnixNanos,
     datetime::{NANOSECONDS_IN_MILLISECOND, unix_nanos_to_iso8601},
     env::get_or_env_var,
     string::secret::SecretString,
@@ -120,10 +121,10 @@ pub struct BybitExecutionClient {
     http_client: BybitHttpClient,
     ws_private: BybitWebSocketClient,
     ws_trade: BybitWebSocketClient,
+    instrument_subscription: Option<InstrumentSubscription>,
     session_tasks: TaskGroup,
     pending_tasks: TaskGroup,
     shutdown_errors: Vec<String>,
-    instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
     dispatch_state: Arc<WsDispatchState>,
 }
 
@@ -225,10 +226,10 @@ impl BybitExecutionClient {
             http_client,
             ws_private,
             ws_trade,
+            instrument_subscription: None,
             session_tasks,
             pending_tasks,
             shutdown_errors: Vec::new(),
-            instruments_cache: Arc::new(AHashMap::new()),
             dispatch_state: Arc::new(dispatch_state),
         })
     }
@@ -244,7 +245,7 @@ impl BybitExecutionClient {
     async fn refresh_execution_fee_rates(
         http_client: BybitHttpClient,
         product_types: Vec<BybitProductType>,
-        instruments: Arc<AHashMap<Ustr, InstrumentAny>>,
+        instruments: Arc<AtomicMap<Ustr, InstrumentAny>>,
         state: Arc<WsDispatchState>,
     ) -> anyhow::Result<()> {
         for product_type in product_types {
@@ -258,8 +259,12 @@ impl BybitExecutionClient {
                             != Some(product_type)
                     });
 
-                    let cached =
-                        cache_execution_fee_rates(&state, &instruments, product_type, fee_rates);
+                    let cached = cache_execution_fee_rates(
+                        &state,
+                        &instruments.load(),
+                        product_type,
+                        fee_rates,
+                    );
                     log::debug!("Cached {cached} {product_type:?} execution fee rates");
                 }
                 Err(e) => {
@@ -283,12 +288,10 @@ impl BybitExecutionClient {
     }
 
     async fn initialize_instruments(
-        &mut self,
+        &self,
         product_types: Vec<BybitProductType>,
     ) -> anyhow::Result<()> {
         if !self.core.instruments_initialized() {
-            let mut all_instruments = Vec::new();
-
             for product_type in &product_types {
                 let instruments = self
                     .http_client
@@ -304,18 +307,6 @@ impl BybitExecutionClient {
                 }
 
                 log::debug!("Loaded {} {product_type:?} instruments", instruments.len());
-
-                self.http_client.cache_instruments(&instruments);
-                all_instruments.extend(instruments);
-            }
-
-            if !all_instruments.is_empty() {
-                let mut instruments_map = AHashMap::new();
-                for instrument in &all_instruments {
-                    instruments_map.insert(instrument.id().symbol.inner(), instrument.clone());
-                }
-
-                self.instruments_cache = Arc::new(instruments_map);
             }
 
             self.core.set_instruments_initialized();
@@ -326,7 +317,7 @@ impl BybitExecutionClient {
             Self::refresh_execution_fee_rates(
                 self.http_client.clone(),
                 product_types,
-                Arc::clone(&self.instruments_cache),
+                Arc::clone(&self.http_client.instruments_cache),
                 Arc::clone(&self.dispatch_state),
             )
             .await?;
@@ -341,7 +332,7 @@ impl BybitExecutionClient {
         log::debug!("Connected to private WebSocket");
 
         let account_id = self.core.account_id;
-        let instruments = Arc::clone(&self.instruments_cache);
+        let instruments = Arc::clone(&self.http_client.instruments_cache);
         let state = Arc::clone(&self.dispatch_state);
         let clock = self.clock;
         let stream = self.ws_private.stream();
@@ -351,7 +342,14 @@ impl BybitExecutionClient {
             pin_mut!(stream);
 
             while let Some(message) = stream.next().await {
-                dispatch_ws_message(&message, account_id, &instruments, clock, &state, &emitter);
+                dispatch_ws_message(
+                    &message,
+                    account_id,
+                    &instruments.load(),
+                    clock,
+                    &state,
+                    &emitter,
+                );
             }
         })?;
 
@@ -379,7 +377,7 @@ impl BybitExecutionClient {
         log::debug!("Connected to trade WebSocket");
 
         let account_id = self.core.account_id;
-        let instruments = Arc::clone(&self.instruments_cache);
+        let instruments = Arc::clone(&self.http_client.instruments_cache);
         let state = Arc::clone(&self.dispatch_state);
         let clock = self.clock;
         let stream = self.ws_trade.stream();
@@ -389,7 +387,14 @@ impl BybitExecutionClient {
             pin_mut!(stream);
 
             while let Some(message) = stream.next().await {
-                dispatch_ws_message(&message, account_id, &instruments, clock, &state, &emitter);
+                dispatch_ws_message(
+                    &message,
+                    account_id,
+                    &instruments.load(),
+                    clock,
+                    &state,
+                    &emitter,
+                );
             }
         })?;
 
@@ -710,7 +715,7 @@ impl BybitExecutionClient {
 
         if self.dispatch_state.fast_execution {
             flush_pending_fast_executions(
-                &self.instruments_cache,
+                &self.http_client.instruments_cache.load(),
                 self.core.account_id,
                 self.clock.get_time_ns(),
                 &self.dispatch_state,
@@ -1116,6 +1121,39 @@ fn submit_rejection_reason(error: &anyhow::Error) -> Option<&str> {
     None
 }
 
+impl BybitExecutionClient {
+    fn subscribe_instruments(&mut self) {
+        if self.instrument_subscription.is_some() {
+            return;
+        }
+
+        let http_client = self.http_client.clone();
+        let product_types = self.product_types();
+        self.instrument_subscription = Some(InstrumentSubscription::new(
+            get_instruments_pattern(self.venue()),
+            TypedHandler::from(move |instrument: &InstrumentAny| {
+                Self::apply_instrument(&http_client, &product_types, instrument);
+            }),
+        ));
+    }
+
+    fn apply_instrument(
+        http_client: &BybitHttpClient,
+        product_types: &[BybitProductType],
+        instrument: &InstrumentAny,
+    ) {
+        let id = instrument.id();
+        if id.venue != *BYBIT_VENUE
+            || BybitProductType::from_suffix(id.symbol.as_str())
+                .is_none_or(|product_type| !product_types.contains(&product_type))
+        {
+            return;
+        }
+
+        http_client.cache_execution_instrument(instrument);
+    }
+}
+
 #[async_trait(?Send)]
 impl ExecutionClient for BybitExecutionClient {
     fn is_connected(&self) -> bool {
@@ -1142,6 +1180,10 @@ impl ExecutionClient for BybitExecutionClient {
         self.core.cache().account_owned(&self.core.account_id)
     }
 
+    fn on_instrument(&mut self, instrument: InstrumentAny) {
+        Self::apply_instrument(&self.http_client, &self.product_types(), &instrument);
+    }
+
     fn provides_bulk_position_coverage(&self, instrument_id: InstrumentId) -> bool {
         // Resolve the suffix directly rather than through `get_product_type_for_instrument`, whose
         // Linear fallback would claim coverage for an identifier this adapter cannot classify. A
@@ -1159,6 +1201,8 @@ impl ExecutionClient for BybitExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         if self.core.is_connected() && self.pending_tasks.is_open() && self.session_tasks.is_open()
         {
             return Ok(());
@@ -1306,7 +1350,7 @@ impl ExecutionClient for BybitExecutionClient {
         let account_id = self.core.account_id;
         let strategy_id = cmd.strategy_id;
         let state = Arc::clone(&self.dispatch_state);
-        let instruments = Arc::clone(&self.instruments_cache);
+        let instruments = Arc::clone(&self.http_client.instruments_cache);
         let http_client = self.http_client.clone();
         let emitter = self.emitter.clone();
 
@@ -1323,7 +1367,7 @@ impl ExecutionClient for BybitExecutionClient {
             {
                 Ok(Some(report)) => {
                     let recovered = collect_quote_market_executions(&http_client, &state, &report).await?;
-                    if !dispatch_quote_market_rest_report(&report, recovered, &instruments, &state, &emitter) {
+                    if !dispatch_quote_market_rest_report(&report, recovered, &instruments.load(), &state, &emitter) {
                         return Ok(());
                     }
 
@@ -1352,7 +1396,7 @@ impl ExecutionClient for BybitExecutionClient {
                             None,
                             &state,
                             &report,
-                            &instruments,
+                            &instruments.load(),
                             &emitter,
                         );
                     }
@@ -1386,6 +1430,8 @@ impl ExecutionClient for BybitExecutionClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         if self.core.is_started() {
             return Ok(());
         }
@@ -1398,7 +1444,7 @@ impl ExecutionClient for BybitExecutionClient {
         let product_types = self.config.product_types.clone();
 
         self.session_tasks.spawn(async move {
-            let mut all_instruments = Vec::new();
+            let mut count = 0;
 
             for product_type in product_types {
                 match http_client
@@ -1410,8 +1456,8 @@ impl ExecutionClient for BybitExecutionClient {
                             log::warn!("No instruments returned for {product_type:?}");
                             continue;
                         }
-                        http_client.cache_instruments(&instruments);
-                        all_instruments.extend(instruments);
+
+                        count += instruments.len();
                     }
                     Err(e) => {
                         log::error!("Failed to request instruments for {product_type:?}: {e}");
@@ -1419,12 +1465,12 @@ impl ExecutionClient for BybitExecutionClient {
                 }
             }
 
-            if all_instruments.is_empty() {
+            if count == 0 {
                 log::warn!(
                     "Instrument bootstrap yielded no instruments; WebSocket submissions may fail"
                 );
             } else {
-                log::debug!("Instruments initialized: count={}", all_instruments.len());
+                log::debug!("Instruments initialized: count={count}");
             }
         })?;
 
@@ -1441,6 +1487,8 @@ impl ExecutionClient for BybitExecutionClient {
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         if self.core.is_stopped() {
             return Ok(());
         }
@@ -1466,7 +1514,7 @@ impl ExecutionClient for BybitExecutionClient {
         let account_id = core.account_id;
         let state = Arc::clone(&self.dispatch_state);
         let collection_state = Arc::clone(&state);
-        let instruments = Arc::clone(&self.instruments_cache);
+        let instruments = Arc::clone(&self.http_client.instruments_cache);
         let emitter = self.emitter.clone();
 
         let instrument = cmd.instrument_id.map(|instrument_id| {
@@ -1524,7 +1572,7 @@ impl ExecutionClient for BybitExecutionClient {
                         dispatch_quote_market_rest_report(
                             report,
                             recovered,
-                            &instruments,
+                            &instruments.load(),
                             &state,
                             &emitter
                         ),
@@ -1536,7 +1584,7 @@ impl ExecutionClient for BybitExecutionClient {
                         Some(&core),
                         &state,
                         report,
-                        &instruments,
+                        &instruments.load(),
                         &emitter,
                     );
                 }
@@ -1555,7 +1603,7 @@ impl ExecutionClient for BybitExecutionClient {
         let account_id = core.account_id;
         let state = Arc::clone(&self.dispatch_state);
         let collection_state = Arc::clone(&state);
-        let instruments = Arc::clone(&self.instruments_cache);
+        let instruments = Arc::clone(&self.http_client.instruments_cache);
         let emitter = self.emitter.clone();
         let product_types = cmd.instrument_id.map_or_else(
             || self.product_types(),
@@ -1605,7 +1653,7 @@ impl ExecutionClient for BybitExecutionClient {
                     if !dispatch_quote_market_rest_report(
                         &report,
                         recovered,
-                        &instruments,
+                        &instruments.load(),
                         &state,
                         &emitter,
                     ) {
@@ -1617,7 +1665,7 @@ impl ExecutionClient for BybitExecutionClient {
                         Some(&core),
                         &state,
                         &report,
-                        &instruments,
+                        &instruments.load(),
                         &emitter,
                     );
                     reports.push(report);
@@ -1821,7 +1869,7 @@ impl ExecutionClient for BybitExecutionClient {
                     dispatch_quote_market_rest_report(
                         report,
                         Vec::new(),
-                        &self.instruments_cache,
+                        &self.http_client.instruments_cache.load(),
                         &self.dispatch_state,
                         &self.emitter,
                     );
@@ -1832,7 +1880,7 @@ impl ExecutionClient for BybitExecutionClient {
                     Some(&self.core),
                     &self.dispatch_state,
                     report,
-                    &self.instruments_cache,
+                    &self.http_client.instruments_cache.load(),
                     &self.emitter,
                 ),
             }
@@ -3591,6 +3639,7 @@ mod tests {
             testing::load_test_json,
         },
         http::models::{BybitInstrumentLinearResponse, BybitInstrumentSpotResponse},
+        websocket::messages::{BybitWsAccountExecutionMsg, BybitWsAccountOrderMsg, BybitWsMessage},
     };
 
     fn cache_fee_rates(client: &BybitExecutionClient, instrument_id: InstrumentId) {
@@ -3619,6 +3668,74 @@ mod tests {
         };
 
         (BybitExecutionClient::new(core, config).unwrap(), cache)
+    }
+
+    #[rstest]
+    #[case::revised_tick("BTCUSDT", true)]
+    #[case::new_listing("NEWUSDT", false)]
+    fn test_execution_instrument_update_reaches_running_dispatch(
+        #[case] symbol: &str,
+        #[case] already_listed: bool,
+    ) {
+        let (mut client, _) = test_execution_client();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+        let running_lookup = client.http_client.instruments_cache.clone();
+        let mut current = crypto_perpetual_ethusdt();
+        current.id = InstrumentId::from(format!("{symbol}-LINEAR.BYBIT").as_str());
+        current.price_precision = 6;
+        current.price_increment = Price::from("0.000001");
+        if already_listed {
+            let mut previous = current.clone();
+            previous.price_precision = 5;
+            previous.price_increment = Price::from("0.00001");
+            client.http_client.cache_instrument(previous.into());
+        }
+
+        let instrument_id = current.id;
+        client.on_instrument(current.into());
+
+        let json = load_test_json("ws_account_order.json");
+        let mut wire_order: BybitWsAccountOrderMsg = serde_json::from_str(&json).unwrap();
+        wire_order.data[0].symbol = Ustr::from(symbol);
+        wire_order.data[0].price = "0.005159".to_owned();
+        dispatch_ws_message(
+            &BybitWsMessage::AccountOrder(wire_order),
+            client.core.account_id,
+            &running_lookup.load(),
+            client.clock,
+            &client.dispatch_state,
+            &client.emitter,
+        );
+
+        let ExecutionEvent::Report(ExecutionReport::Order(report)) = rx.try_recv().unwrap() else {
+            panic!("expected an order report");
+        };
+
+        assert_eq!(report.instrument_id, instrument_id);
+        assert_eq!(report.price, Some(Price::from("0.005159")));
+        assert_eq!(report.price.unwrap().precision, 6);
+        let json = load_test_json("ws_account_execution.json");
+        let mut wire_fill: BybitWsAccountExecutionMsg = serde_json::from_str(&json).unwrap();
+        wire_fill.data[0].symbol = Ustr::from(symbol);
+        wire_fill.data[0].exec_price = "0.005159".to_owned();
+        dispatch_ws_message(
+            &BybitWsMessage::AccountExecution(wire_fill),
+            client.core.account_id,
+            &running_lookup.load(),
+            client.clock,
+            &client.dispatch_state,
+            &client.emitter,
+        );
+
+        let ExecutionEvent::Report(ExecutionReport::Fill(fill)) = rx.try_recv().unwrap() else {
+            panic!("expected a fill report");
+        };
+
+        assert_eq!(fill.instrument_id, instrument_id);
+        assert_eq!(fill.last_px, Price::from("0.005159"));
+        assert_eq!(fill.last_px.precision, 6);
+        assert!(rx.try_recv().is_err());
     }
 
     async fn wait_for_spawned_tasks(client: &BybitExecutionClient) {
@@ -4317,7 +4434,7 @@ mod tests {
             Some(&client.core),
             &client.dispatch_state,
             &report,
-            &client.instruments_cache,
+            &client.http_client.instruments_cache.load(),
             &client.emitter,
         );
 
@@ -4345,7 +4462,7 @@ mod tests {
             Some(&client.core),
             &client.dispatch_state,
             &terminal_report,
-            &client.instruments_cache,
+            &client.http_client.instruments_cache.load(),
             &client.emitter,
         );
 
@@ -4384,7 +4501,7 @@ mod tests {
             Some(&client.core),
             &client.dispatch_state,
             &accepted,
-            &client.instruments_cache,
+            &client.http_client.instruments_cache.load(),
             &client.emitter,
         );
         let mut terminal =
@@ -4396,7 +4513,7 @@ mod tests {
             Some(&client.core),
             &client.dispatch_state,
             &terminal,
-            &client.instruments_cache,
+            &client.http_client.instruments_cache.load(),
             &client.emitter,
         );
 
@@ -4445,7 +4562,7 @@ mod tests {
         let instrument_id = instrument.id();
         let mut instruments = AHashMap::new();
         instruments.insert(instrument_id.symbol.inner(), instrument.clone());
-        client.instruments_cache = Arc::new(instruments);
+        client.http_client.instruments_cache.store(instruments);
         let client_order_id = ClientOrderId::from("O-FAST-DRAIN");
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_id)
@@ -4475,7 +4592,7 @@ mod tests {
         dispatch_ws_message(
             &crate::websocket::messages::BybitWsMessage::AccountExecutionFast(fast),
             client.core.account_id,
-            &client.instruments_cache,
+            &client.http_client.instruments_cache.load(),
             client.clock,
             &client.dispatch_state,
             &client.emitter,
@@ -4489,6 +4606,7 @@ mod tests {
         );
         assert!(
             client
+                .http_client
                 .instruments_cache
                 .contains_key(&instrument_id.symbol.inner())
         );
@@ -4499,7 +4617,7 @@ mod tests {
                 Some(&client.core),
                 &client.dispatch_state,
                 &accepted,
-                &client.instruments_cache,
+                &client.http_client.instruments_cache.load(),
                 &client.emitter,
             );
 
@@ -4547,7 +4665,7 @@ mod tests {
                 Some(&client.core),
                 &client.dispatch_state,
                 &terminal,
-                &client.instruments_cache,
+                &client.http_client.instruments_cache.load(),
                 &client.emitter,
             );
         }
@@ -4612,7 +4730,7 @@ mod tests {
         let instrument_id = instrument.id();
         let mut instruments = AHashMap::new();
         instruments.insert(instrument_id.symbol.inner(), instrument);
-        client.instruments_cache = Arc::new(instruments);
+        client.http_client.instruments_cache.store(instruments);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         client.emitter.set_sender(tx);
         cache_fee_rates(&client, instrument_id);
@@ -4628,7 +4746,7 @@ mod tests {
         dispatch_ws_message(
             &crate::websocket::messages::BybitWsMessage::AccountExecutionFast(fast),
             client.core.account_id,
-            &client.instruments_cache,
+            &client.http_client.instruments_cache.load(),
             client.clock,
             &client.dispatch_state,
             &client.emitter,
@@ -4705,9 +4823,11 @@ mod tests {
         )
         .unwrap();
         let instrument_id = instrument.id();
-        let mut instruments = AHashMap::new();
-        instruments.insert(instrument_id.symbol.inner(), instrument);
-        let instruments = Arc::new(instruments);
+        let instruments = Arc::new(AtomicMap::new());
+        instruments.store(AHashMap::from_iter([(
+            instrument_id.symbol.inner(),
+            instrument,
+        )]));
 
         let refresh = || {
             BybitExecutionClient::refresh_execution_fee_rates(
@@ -4758,7 +4878,7 @@ mod tests {
         let instrument_id = instrument.id();
         let mut instruments = AHashMap::new();
         instruments.insert(instrument_id.symbol.inner(), instrument.clone());
-        client.instruments_cache = Arc::new(instruments);
+        client.http_client.instruments_cache.store(instruments);
         let client_order_id = ClientOrderId::from("O-REST-ONLY");
         let venue_order_id = VenueOrderId::from("BYBIT-ORDER-001");
         let account_id = client.core.account_id;
@@ -4800,7 +4920,7 @@ mod tests {
             Some(&client.core),
             &client.dispatch_state,
             &terminal,
-            &client.instruments_cache,
+            &client.http_client.instruments_cache.load(),
             &client.emitter,
         );
 
@@ -4830,7 +4950,7 @@ mod tests {
             Some(&client.core),
             &client.dispatch_state,
             &terminal,
-            &client.instruments_cache,
+            &client.http_client.instruments_cache.load(),
             &client.emitter,
         );
 
@@ -4857,7 +4977,7 @@ mod tests {
         let instrument_id = instrument.id();
         let mut instruments = AHashMap::new();
         instruments.insert(instrument_id.symbol.inner(), instrument);
-        client.instruments_cache = Arc::new(instruments);
+        client.http_client.instruments_cache.store(instruments);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         client.emitter.set_sender(tx);
         let mut report = sample_order_status_report(
@@ -4880,7 +5000,7 @@ mod tests {
         dispatch_ws_message(
             &crate::websocket::messages::BybitWsMessage::AccountExecutionFast(fast),
             client.core.account_id,
-            &client.instruments_cache,
+            &client.http_client.instruments_cache.load(),
             client.clock,
             &client.dispatch_state,
             &client.emitter,
@@ -4892,7 +5012,7 @@ mod tests {
             Some(&client.core),
             &client.dispatch_state,
             &report,
-            &client.instruments_cache,
+            &client.http_client.instruments_cache.load(),
             &client.emitter,
         );
 
@@ -4935,7 +5055,7 @@ mod tests {
             Some(&client.core),
             &client.dispatch_state,
             &report,
-            &client.instruments_cache,
+            &client.http_client.instruments_cache.load(),
             &client.emitter,
         );
 
@@ -4988,7 +5108,7 @@ mod tests {
             Some(&client.core),
             &client.dispatch_state,
             &report,
-            &client.instruments_cache,
+            &client.http_client.instruments_cache.load(),
             &client.emitter,
         );
         client.dispatch_state.pending_requests.insert(
@@ -5067,7 +5187,7 @@ mod tests {
         dispatch_ws_message(
             &message,
             client.core.account_id,
-            &client.instruments_cache,
+            &client.http_client.instruments_cache.load(),
             client.clock,
             &client.dispatch_state,
             &client.emitter,
@@ -6156,7 +6276,7 @@ mod tests {
         .unwrap();
         let mut instruments = AHashMap::new();
         instruments.insert(instrument_id.symbol.inner(), instrument);
-        client.instruments_cache = Arc::new(instruments);
+        client.http_client.instruments_cache.store(instruments);
         client.dispatch_state.order_identities.insert(
             client_order_id,
             OrderIdentity {
@@ -6183,7 +6303,7 @@ mod tests {
         dispatch_ws_message(
             &crate::websocket::messages::BybitWsMessage::AccountExecutionFast(fast),
             client.core.account_id,
-            &client.instruments_cache,
+            &client.http_client.instruments_cache.load(),
             client.clock,
             &client.dispatch_state,
             &client.emitter,
@@ -6263,7 +6383,7 @@ mod tests {
         .unwrap();
         let mut instruments = AHashMap::new();
         instruments.insert(instrument_id.symbol.inner(), instrument);
-        client.instruments_cache = Arc::new(instruments);
+        client.http_client.instruments_cache.store(instruments);
         if recover_pending {
             client.dispatch_state.order_identities.insert(
                 client_order_id,
@@ -6293,7 +6413,7 @@ mod tests {
             dispatch_ws_message(
                 &crate::websocket::messages::BybitWsMessage::AccountExecutionFast(fast),
                 client.core.account_id,
-                &client.instruments_cache,
+                &client.http_client.instruments_cache.load(),
                 client.clock,
                 &client.dispatch_state,
                 &client.emitter,
@@ -6389,10 +6509,13 @@ mod tests {
         let instrument_id = instrument.id();
         client.http_client.cache_instrument(instrument.clone());
 
-        client.instruments_cache = Arc::new(AHashMap::from_iter([(
-            instrument_id.symbol.inner(),
-            instrument,
-        )]));
+        client
+            .http_client
+            .instruments_cache
+            .store(AHashMap::from_iter([(
+                instrument_id.symbol.inner(),
+                instrument,
+            )]));
 
         let order = OrderTestBuilder::new(OrderType::Market)
             .client_order_id(cid)
@@ -6629,7 +6752,7 @@ mod tests {
             .unwrap();
 
         if converted {
-            let instrument = &client.instruments_cache[&order.symbol().inner()];
+            let instrument = &client.http_client.instruments_cache.load()[&order.symbol().inner()];
             order
                 .apply(OrderEventAny::Updated(OrderUpdated::new(
                     order.trader_id(),
@@ -6822,7 +6945,7 @@ mod tests {
             Some(&client.core),
             &client.dispatch_state,
             &working,
-            &client.instruments_cache,
+            &client.http_client.instruments_cache.load(),
             &client.emitter,
         );
         assert!(
@@ -6905,10 +7028,13 @@ mod tests {
         client.config.product_types = vec![BybitProductType::Spot];
         client.http_client.cache_instrument(instrument.clone());
 
-        client.instruments_cache = Arc::new(AHashMap::from_iter([(
-            instrument.symbol().inner(),
-            instrument,
-        )]));
+        client
+            .http_client
+            .instruments_cache
+            .store(AHashMap::from_iter([(
+                instrument.symbol().inner(),
+                instrument,
+            )]));
 
         let (repay_tx, mut repay_rx) = tokio::sync::mpsc::unbounded_channel();
         client.dispatch_state.set_repay_sender(repay_tx);
@@ -6992,7 +7118,7 @@ mod tests {
         dispatch_ws_message(
             &BybitWsMessage::AccountExecution(message),
             client.core.account_id,
-            &client.instruments_cache,
+            &client.http_client.instruments_cache.load(),
             client.clock,
             &client.dispatch_state,
             &client.emitter,
@@ -7214,7 +7340,7 @@ mod tests {
     }
 
     fn assert_websocket_fill_after_rest(
-        client: &mut BybitExecutionClient,
+        client: &BybitExecutionClient,
         rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
         client_order_id: ClientOrderId,
         instrument_id: InstrumentId,
@@ -7224,10 +7350,13 @@ mod tests {
         instrument.id = instrument_id;
         let instrument: InstrumentAny = instrument.into();
 
-        client.instruments_cache = Arc::new(AHashMap::from_iter([(
-            instrument_id.symbol.inner(),
-            instrument,
-        )]));
+        client
+            .http_client
+            .instruments_cache
+            .store(AHashMap::from_iter([(
+                instrument_id.symbol.inner(),
+                instrument,
+            )]));
         cache_fee_rates(client, instrument_id);
         let json = crate::common::testing::load_test_json("ws_account_execution_fast.json");
         let mut fast: crate::websocket::messages::BybitWsAccountExecutionFastMsg =
@@ -7245,7 +7374,7 @@ mod tests {
         dispatch_ws_message(
             &crate::websocket::messages::BybitWsMessage::AccountExecutionFast(fast),
             client.core.account_id,
-            &client.instruments_cache,
+            &client.http_client.instruments_cache.load(),
             client.clock,
             &client.dispatch_state,
             &client.emitter,
@@ -7342,7 +7471,7 @@ mod tests {
                 .contains_key(&client_order_id)
         );
         assert_websocket_fill_after_rest(
-            &mut client,
+            &client,
             &mut rx,
             client_order_id,
             instrument_id,
@@ -7407,7 +7536,7 @@ mod tests {
                 .contains_key(&client_order_id)
         );
         assert_websocket_fill_after_rest(
-            &mut client,
+            &client,
             &mut rx,
             client_order_id,
             instrument_id,

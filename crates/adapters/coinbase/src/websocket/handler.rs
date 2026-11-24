@@ -186,7 +186,7 @@ pub struct FeedHandler {
     client: Option<WebSocketClient>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
-    instruments: AHashMap<InstrumentId, InstrumentAny>,
+    instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     /// Shared with [`super::client::CoinbaseWebSocketClient`]; consulted in
     /// `resolve_instrument_id_from_aliases` to re-key inbound messages whose wire
     /// `product_id` is the canonical alias of a subscribed/submitted product.
@@ -212,7 +212,7 @@ impl FeedHandler {
             client: None,
             cmd_rx,
             raw_rx,
-            instruments: AHashMap::new(),
+            instruments: Arc::new(AtomicMap::new()),
             subscription_aliases,
             bar_types: AHashMap::new(),
             account_id: None,
@@ -220,6 +220,14 @@ impl FeedHandler {
             last_heartbeat_counter: None,
             last_sequence_num: None,
         }
+    }
+
+    pub(crate) fn with_instruments(
+        mut self,
+        instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    ) -> Self {
+        self.instruments = instruments;
+        self
     }
 
     /// Sets the account ID used to stamp user-channel execution reports.
@@ -493,7 +501,8 @@ impl FeedHandler {
         for event in events {
             let instrument_id = resolve_instrument_id_from_aliases(&aliases, &event.product_id);
 
-            let instrument = match self.instruments.get(&instrument_id) {
+            let instruments = self.instruments.load();
+            let instrument = match instruments.get(&instrument_id) {
                 Some(inst) => inst,
                 None => {
                     log::warn!("No instrument cached for {instrument_id}");
@@ -537,7 +546,8 @@ impl FeedHandler {
             for trade in &event.trades {
                 let instrument_id = resolve_instrument_id_from_aliases(&aliases, &trade.product_id);
 
-                let instrument = match self.instruments.get(&instrument_id) {
+                let instruments = self.instruments.load();
+                let instrument = match instruments.get(&instrument_id) {
                     Some(inst) => inst,
                     None => {
                         log::warn!("No instrument cached for {instrument_id}");
@@ -582,7 +592,8 @@ impl FeedHandler {
 
                 let instrument_id = resolve_instrument_id_from_aliases(&aliases, &trade.product_id);
 
-                if let Some(instrument) = self.instruments.get(&instrument_id)
+                let instruments = self.instruments.load();
+                if let Some(instrument) = instruments.get(&instrument_id)
                     && let Ok(tick) = parse_ws_trade(trade, instrument, ts_init)
                 {
                     self.buffer.push(NautilusWsMessage::Trade(tick));
@@ -607,7 +618,8 @@ impl FeedHandler {
                 let instrument_id =
                     resolve_instrument_id_from_aliases(&aliases, &ticker.product_id);
 
-                let instrument = match self.instruments.get(&instrument_id) {
+                let instruments = self.instruments.load();
+                let instrument = match instruments.get(&instrument_id) {
                     Some(inst) => inst,
                     None => {
                         log::warn!("No instrument cached for {instrument_id}");
@@ -665,7 +677,7 @@ impl FeedHandler {
 
             for order in &event.orders {
                 let instrument_id = resolve_instrument_id_from_aliases(&aliases, &order.product_id);
-                let instrument = match self.instruments.get(&instrument_id).cloned() {
+                let instrument = match self.instruments.get_cloned(&instrument_id) {
                     Some(inst) => inst,
                     None => {
                         log::warn!("No instrument cached for {instrument_id}");
@@ -737,13 +749,13 @@ impl FeedHandler {
         let ts_event = crate::http::parse::parse_rfc3339_timestamp(timestamp).unwrap_or(ts_init);
 
         let mut first: Option<NautilusWsMessage> = None;
-        let aliases = self.subscription_aliases.load();
 
         for event in events {
             for product in &event.products {
-                let canonical = product.id;
-                let resolved = resolve_instrument_id_from_aliases(&aliases, &canonical);
-                let Some(status) = parse_ws_status_product(product, resolved, ts_event, ts_init)
+                let instrument_id = instrument_id_from_product(&product.id);
+
+                let Some(status) =
+                    parse_ws_status_product(product, instrument_id, ts_event, ts_init)
                 else {
                     continue;
                 };
@@ -808,7 +820,8 @@ impl FeedHandler {
                 let instrument_id =
                     resolve_instrument_id_from_aliases(&aliases, &candle.product_id);
 
-                let instrument = match self.instruments.get(&instrument_id) {
+                let instruments = self.instruments.load();
+                let instrument = match instruments.get(&instrument_id) {
                     Some(inst) => inst,
                     None => {
                         log::warn!("No instrument cached for {instrument_id}");
@@ -1042,6 +1055,32 @@ mod tests {
     }
 
     #[rstest]
+    fn test_handle_l2_update_uses_shared_definition_after_handler_creation() {
+        let instruments = Arc::new(AtomicMap::new());
+        let mut handler = test_handler().with_instruments(Arc::clone(&instruments));
+
+        let InstrumentAny::CurrencyPair(mut instrument) = btc_usd_instrument() else {
+            panic!("expected a currency pair");
+        };
+
+        instrument.price_precision = 3;
+        instrument.price_increment = Price::from("0.001");
+        instruments.insert(instrument.id, instrument.into());
+
+        let frame = load_test_fixture("ws_l2_data_update.json");
+
+        let Some(NautilusWsMessage::Deltas(deltas)) = handler.handle_text(&frame) else {
+            panic!("expected deltas parsed with the shared definition");
+        };
+
+        assert!(!deltas.deltas.is_empty());
+
+        for delta in &deltas.deltas {
+            assert_eq!(delta.order.price.precision, 3);
+        }
+    }
+
+    #[rstest]
     fn test_handle_l2_update_malformed_timestamp_falls_back_to_ts_init() {
         let json = load_test_fixture("ws_l2_data_update.json")
             .replace("2026-04-07T14:30:01.456789Z", "not-a-valid-timestamp");
@@ -1202,7 +1241,7 @@ mod tests {
     }
 
     fn capture_handler() -> FeedHandler {
-        let mut handler = test_handler();
+        let handler = test_handler();
         for instrument in [btc_usd_instrument(), eth_usd_instrument()] {
             handler.instruments.insert(instrument.id(), instrument);
         }

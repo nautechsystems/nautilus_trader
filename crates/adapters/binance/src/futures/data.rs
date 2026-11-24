@@ -16,6 +16,7 @@
 //! Live market data client implementation for the Binance Futures adapter.
 
 use std::{
+    future::Future,
     num::{NonZeroU32, NonZeroUsize},
     str::FromStr,
     sync::{
@@ -93,7 +94,7 @@ use crate::{
             parse_required_price_at_precision, parse_required_quantity_at_precision,
             quote_to_l1_deltas,
         },
-        status::{InstrumentStatusCache, SymbolTradingStatus},
+        status::{InstrumentStatusCache, SymbolTradingStatus, publish_refreshed_instruments},
         symbol::{format_binance_stream_symbol, format_binance_symbol},
         urls::{get_usdm_ws_route_base_url, get_ws_public_base_url},
         websocket::{chain_command, send_book_snapshot},
@@ -146,6 +147,7 @@ pub struct BinanceFuturesDataClient {
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     status_cache: Arc<InstrumentStatusCache<SymbolTradingStatus>>,
     instrument_update_lock: Arc<tokio::sync::Mutex<()>>,
+    instrument_publish_lock: Arc<parking_lot::Mutex<()>>,
     book_sync: BookSyncTracker,
     book_subscriptions: Arc<AtomicMap<InstrumentId, u32>>,
     book_deltas: AHashSet<InstrumentId>,
@@ -292,6 +294,7 @@ impl BinanceFuturesDataClient {
             instruments: Arc::new(AtomicMap::new()),
             status_cache: Arc::new(InstrumentStatusCache::new()),
             instrument_update_lock: Arc::new(tokio::sync::Mutex::new(())),
+            instrument_publish_lock: Arc::new(parking_lot::Mutex::new(())),
             book_sync,
             book_subscriptions: Arc::new(AtomicMap::new()),
             book_deltas: AHashSet::new(),
@@ -317,6 +320,32 @@ impl BinanceFuturesDataClient {
     fn send_data(sender: &EventSender<DataEvent>, data: Data) {
         if let Err(e) = sender.send(DataEvent::Data(data)) {
             log::error!("Failed to emit data event: {e}");
+        }
+    }
+
+    fn apply_requested_instruments(
+        cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+        instruments: &[InstrumentAny],
+        ws: &BinanceFuturesWebSocketClient,
+        ws_public: &BinanceFuturesWebSocketClient,
+        sender: &EventSender<DataEvent>,
+        publish: bool,
+    ) {
+        if !publish {
+            return;
+        }
+
+        let previous = cache.load();
+        upsert_instruments(cache, instruments);
+        ws.cache_instruments(instruments);
+        ws_public.cache_instruments(instruments);
+        for instrument in instruments {
+            if previous
+                .get(&instrument.id())
+                .is_none_or(|cached| !cached.same_definition(instrument))
+            {
+                Self::send_data(sender, instrument.clone().into());
+            }
         }
     }
 
@@ -415,6 +444,117 @@ impl BinanceFuturesDataClient {
         Ok(())
     }
 
+    fn instrument_status_poll(&self) -> Option<impl Future<Output = ()> + Send + 'static> {
+        let poll_secs = self.config.instrument_status_poll_secs;
+        if poll_secs == 0 {
+            return None;
+        }
+
+        let poll_http = self.http_client.clone();
+        let poll_sender = self.data_sender.clone();
+        let poll_instruments = self.instruments.clone();
+        let poll_status_cache = self.status_cache.clone();
+        let poll_update_lock = self.instrument_update_lock.clone();
+        let poll_cancel = self.cancellation_token.clone();
+        let poll_clock = self.clock;
+
+        Some(async move {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(poll_secs));
+            interval.tick().await; // Skip first immediate tick
+
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        let _guard = poll_update_lock.lock().await;
+
+                        match poll_http.request_symbol_trading_statuses().await {
+                            Ok(symbol_statuses) => {
+                                let inst_guard = poll_instruments.load();
+
+                                let raw_to_id: AHashMap<Ustr, InstrumentId> = inst_guard
+                                    .values()
+                                    .map(|inst| (inst.raw_symbol().inner(), inst.id()))
+                                    .collect();
+
+                                let mut new_statuses = AHashMap::new();
+
+                                for (raw_symbol, status) in &symbol_statuses {
+                                    if let Some(&id) = raw_to_id.get(raw_symbol) {
+                                        new_statuses.insert(id, *status);
+                                    }
+                                }
+                                drop(inst_guard);
+
+                                poll_status_cache.update(&new_statuses, &poll_sender, poll_clock);
+                            }
+                            Err(e) => {
+                                log::warn!("Futures instrument status poll failed: {e}");
+                            }
+                        }
+                    }
+                    () = poll_cancel.cancelled() => {
+                        log::debug!("Futures instrument status polling task cancelled");
+                        break;
+                    }
+                }
+            }
+        })
+    }
+
+    fn instrument_refresh(
+        &self,
+        mut previous_non_trading: Option<AHashSet<InstrumentId>>,
+    ) -> Option<impl Future<Output = ()> + Send + 'static> {
+        let refresh_mins = self.config.update_instruments_interval_mins;
+        if refresh_mins == 0 {
+            return None;
+        }
+
+        let http = self.http_client.clone();
+        let provider = self.config.instrument_provider.clone();
+        let instruments = self.instruments.clone();
+        let statuses = self.status_cache.clone();
+        let update_lock = self.instrument_update_lock.clone();
+        let publish_lock = self.instrument_publish_lock.clone();
+        let ws = self.ws_client.clone();
+        let ws_public = self.ws_public_client.clone();
+        let sender = self.data_sender.clone();
+        let clock = self.clock;
+        let cancel = self.cancellation_token.clone();
+
+        Some(async move {
+            let mut interval =
+                tokio::time::interval(Duration::from_secs(refresh_mins.saturating_mul(60)));
+            interval.tick().await;
+
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        if let Err(e) = Self::refresh_instrument_catalog(
+                            &http,
+                            &provider,
+                            &instruments,
+                            &statuses,
+                            &update_lock,
+                            (&publish_lock, &cancel),
+                            &ws,
+                            &ws_public,
+                            &sender,
+                            clock,
+                            &mut previous_non_trading,
+                        ).await {
+                            log::warn!("Binance Futures instrument refresh failed: {e}");
+                        }
+                    }
+                    () = cancel.cancelled() => {
+                        log::debug!("Binance Futures instrument refresh task cancelled");
+                        break;
+                    }
+                }
+            }
+        })
+    }
+
     #[expect(clippy::too_many_arguments)]
     async fn refresh_instrument_catalog(
         http: &BinanceFuturesHttpClient,
@@ -422,21 +562,43 @@ impl BinanceFuturesDataClient {
         instruments_cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         status_cache: &InstrumentStatusCache<SymbolTradingStatus>,
         instrument_update_lock: &tokio::sync::Mutex<()>,
+        publication: (&parking_lot::Mutex<()>, &CancellationToken),
         ws: &BinanceFuturesWebSocketClient,
         ws_public: &BinanceFuturesWebSocketClient,
         sender: &EventSender<DataEvent>,
         clock: &'static AtomicTime,
-        emit_status_changes: bool,
-    ) -> anyhow::Result<Vec<InstrumentAny>> {
-        let _guard = instrument_update_lock.lock().await;
-        let instruments = http
-            .request_instruments_with_config(provider)
+        previous_non_trading: &mut Option<AHashSet<InstrumentId>>,
+    ) -> anyhow::Result<()> {
+        let (publish_lock, cancel) = publication;
+
+        let Some(_update_guard) = cancel
+            .run_until_cancelled(instrument_update_lock.lock())
             .await
-            .context("failed to request Binance Futures instruments")?;
-        let venue_statuses = http
-            .request_symbol_trading_statuses()
+        else {
+            return Ok(());
+        };
+
+        let previous = Arc::clone(&instruments_cache.load());
+
+        let Some(result) = cancel
+            .run_until_cancelled(Box::pin(http.request_instruments_with_statuses(
+                provider,
+                &previous,
+                publication,
+            )))
             .await
-            .context("failed to request Binance Futures instrument statuses")?;
+        else {
+            return Ok(());
+        };
+
+        let _publish_guard = publish_lock.lock();
+
+        if cancel.is_cancelled() {
+            return Ok(());
+        }
+
+        let (instruments, venue_statuses) =
+            result.context("failed to request Binance Futures instruments and statuses")?;
 
         let instrument_map = instruments
             .iter()
@@ -461,19 +623,21 @@ impl BinanceFuturesDataClient {
         ws.replace_instruments(&instruments);
         ws_public.replace_instruments(&instruments);
 
-        if emit_status_changes {
+        if previous_non_trading.is_some() {
             status_cache.update(&status_map, sender, clock);
         } else {
-            status_cache.seed(status_map);
+            status_cache.seed(status_map.clone());
         }
 
-        for instrument in &instruments {
-            if let Err(e) = sender.send(DataEvent::Data(instrument.clone().into())) {
-                log::warn!("Failed to send refreshed Binance Futures instrument: {e}");
-            }
-        }
+        publish_refreshed_instruments(
+            &instruments,
+            &previous,
+            &status_map,
+            previous_non_trading,
+            sender,
+        );
 
-        Ok(instruments)
+        Ok(())
     }
 
     fn custom_liquidation_instrument_id(
@@ -1182,8 +1346,13 @@ impl DataClient for BinanceFuturesDataClient {
 
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping {id}", id = self.client_id);
-        self.session_tasks.begin_shutdown();
-        self.command_tasks.begin_shutdown();
+
+        {
+            let _guard = self.instrument_publish_lock.lock();
+            self.session_tasks.begin_shutdown();
+            self.command_tasks.begin_shutdown();
+        }
+
         self.ws_client.begin_shutdown();
         self.ws_public_client.begin_shutdown();
         self.is_connected.store(false, Ordering::Relaxed);
@@ -1193,8 +1362,12 @@ impl DataClient for BinanceFuturesDataClient {
     fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting {id}", id = self.client_id);
 
-        self.session_tasks.begin_shutdown();
-        self.command_tasks.begin_shutdown();
+        {
+            let _guard = self.instrument_publish_lock.lock();
+            self.session_tasks.begin_shutdown();
+            self.command_tasks.begin_shutdown();
+        }
+
         self.ws_client.begin_shutdown();
         self.ws_public_client.begin_shutdown();
         self.is_connected.store(false, Ordering::Relaxed);
@@ -1238,17 +1411,19 @@ impl DataClient for BinanceFuturesDataClient {
                 ws_public_client.begin_shutdown();
             });
 
+        let mut previous_non_trading = None;
         Self::refresh_instrument_catalog(
             &self.http_client,
             &self.config.instrument_provider,
             &self.instruments,
             &self.status_cache,
             &self.instrument_update_lock,
+            (&self.instrument_publish_lock, &self.cancellation_token),
             &self.ws_client,
             &self.ws_public_client,
             &self.data_sender,
             self.clock,
-            false,
+            &mut previous_non_trading,
         )
         .await?;
 
@@ -1383,110 +1558,24 @@ impl DataClient for BinanceFuturesDataClient {
                 .spawn(future)
                 .context("failed to register Binance Futures public stream task")?;
 
-            let poll_secs = self.config.instrument_status_poll_secs;
-            if poll_secs > 0 {
-                let poll_http = self.http_client.clone();
-                let poll_sender = self.data_sender.clone();
-                let poll_instruments = self.instruments.clone();
-                let poll_status_cache = self.status_cache.clone();
-                let poll_update_lock = self.instrument_update_lock.clone();
-                let poll_cancel = self.cancellation_token.clone();
-                let poll_clock = self.clock;
-
-                let future = async move {
-                    let mut interval =
-                        tokio::time::interval(tokio::time::Duration::from_secs(poll_secs));
-                    interval.tick().await; // Skip first immediate tick
-
-                    loop {
-                        tokio::select! {
-                            _ = interval.tick() => {
-                                let _guard = poll_update_lock.lock().await;
-
-                                match poll_http.request_symbol_trading_statuses().await {
-                                    Ok(symbol_statuses) => {
-                                        let inst_guard = poll_instruments.load();
-
-                                        let raw_to_id: AHashMap<Ustr, InstrumentId> = inst_guard
-                                            .values()
-                                            .map(|inst| (inst.raw_symbol().inner(), inst.id()))
-                                            .collect();
-
-                                        let mut new_statuses = AHashMap::new();
-
-                                        for (raw_symbol, status) in &symbol_statuses {
-                                            if let Some(&id) = raw_to_id.get(raw_symbol) {
-                                                new_statuses.insert(id, *status);
-                                            }
-                                        }
-                                        drop(inst_guard);
-
-                                        poll_status_cache.update(&new_statuses, &poll_sender, poll_clock);
-                                    }
-                                    Err(e) => {
-                                        log::warn!("Futures instrument status poll failed: {e}");
-                                    }
-                                }
-                            }
-                            () = poll_cancel.cancelled() => {
-                                log::debug!("Futures instrument status polling task cancelled");
-                                break;
-                            }
-                        }
-                    }
-                };
+            if let Some(future) = self.instrument_status_poll() {
                 self.session_tasks
                     .spawn(future)
                     .context("failed to register Binance Futures status polling task")?;
-                log::debug!("Futures instrument status polling started: interval={poll_secs}s");
+                log::debug!(
+                    "Instrument status polling started: interval={}s",
+                    self.config.instrument_status_poll_secs
+                );
             }
 
-            let refresh_secs = self.config.instrument_refresh_interval_secs;
-            if refresh_secs > 0 {
-                let http = self.http_client.clone();
-                let provider = self.config.instrument_provider.clone();
-                let instruments = self.instruments.clone();
-                let statuses = self.status_cache.clone();
-                let update_lock = self.instrument_update_lock.clone();
-                let ws = self.ws_client.clone();
-                let ws_public = self.ws_public_client.clone();
-                let sender = self.data_sender.clone();
-                let clock = self.clock;
-                let cancel = self.cancellation_token.clone();
-
-                let future = async move {
-                    let mut interval = tokio::time::interval(Duration::from_secs(refresh_secs));
-                    interval.tick().await;
-
-                    loop {
-                        tokio::select! {
-                            _ = interval.tick() => {
-                                if let Err(e) = Self::refresh_instrument_catalog(
-                                    &http,
-                                    &provider,
-                                    &instruments,
-                                    &statuses,
-                                    &update_lock,
-                                    &ws,
-                                    &ws_public,
-                                    &sender,
-                                    clock,
-                                    true,
-                                ).await {
-                                    log::warn!("Binance Futures instrument refresh failed: {e}");
-                                }
-                            }
-                            () = cancel.cancelled() => {
-                                log::debug!("Binance Futures instrument refresh task cancelled");
-                                break;
-                            }
-                        }
-                    }
-                };
+            if let Some(future) = self.instrument_refresh(previous_non_trading) {
                 self.session_tasks
                     .spawn(future)
                     .context("failed to register Binance Futures instrument refresh task")?;
-                log::debug!("Futures instrument refresh started: interval={refresh_secs}s");
+                log::debug!(
+                    "Instrument refresh started: interval={}m",
+                    self.config.update_instruments_interval_mins
+                );
             }
 
             Ok::<(), anyhow::Error>(())
@@ -2246,13 +2335,19 @@ impl DataClient for BinanceFuturesDataClient {
 
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
         let http = self.http_client.clone();
+        let ws = self.ws_client.clone();
+        let ws_public = self.ws_public_client.clone();
         let sender = self.data_sender.clone();
+        let instrument_update_lock = self.instrument_update_lock.clone();
+        let instrument_publish_lock = self.instrument_publish_lock.clone();
+        let cancel = self.command_tasks.cancellation_token();
         let instruments_cache = self.instruments.clone();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let venue = self.venue();
         let start = request.start;
         let end = request.end;
+        let publish = start.is_none() && end.is_none();
         let params = request.params;
         let clock = self.clock;
         let provider = self.config.instrument_provider.clone();
@@ -2260,9 +2355,41 @@ impl DataClient for BinanceFuturesDataClient {
         let end_nanos = datetime_to_unix_nanos(end);
 
         self.spawn_command(async move {
-            match http.request_instruments_with_config(&provider).await {
+            let Some(_update_guard) = cancel
+                .run_until_cancelled(instrument_update_lock.lock())
+                .await
+            else {
+                return;
+            };
+
+            let Some(result) = cancel
+                .run_until_cancelled(Box::pin(http.request_instruments_in_generation(
+                    &provider,
+                    &instrument_publish_lock,
+                    &cancel,
+                    publish,
+                )))
+                .await
+            else {
+                return;
+            };
+
+            let _publish_guard = instrument_publish_lock.lock();
+
+            if cancel.is_cancelled() {
+                return;
+            }
+
+            match result {
                 Ok(instruments) => {
-                    upsert_instruments(&instruments_cache, &instruments);
+                    Self::apply_requested_instruments(
+                        &instruments_cache,
+                        &instruments,
+                        &ws,
+                        &ws_public,
+                        &sender,
+                        publish,
+                    );
 
                     let response = DataResponse::Instruments(InstrumentsResponse::new(
                         request_id,
@@ -2288,13 +2415,19 @@ impl DataClient for BinanceFuturesDataClient {
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
         let http = self.http_client.clone();
+        let ws = self.ws_client.clone();
+        let ws_public = self.ws_public_client.clone();
         let sender = self.data_sender.clone();
+        let instrument_update_lock = self.instrument_update_lock.clone();
+        let instrument_publish_lock = self.instrument_publish_lock.clone();
+        let cancel = self.command_tasks.cancellation_token();
         let instruments = self.instruments.clone();
         let instrument_id = request.single_instrument_id()?;
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let start = request.start;
         let end = request.end;
+        let publish = start.is_none() && end.is_none();
         let params = request.params;
         let clock = self.clock;
         let provider = self.config.instrument_provider.clone();
@@ -2302,9 +2435,41 @@ impl DataClient for BinanceFuturesDataClient {
         let end_nanos = datetime_to_unix_nanos(end);
 
         self.spawn_command(async move {
-            match http.request_instruments_with_config(&provider).await {
+            let Some(_update_guard) = cancel
+                .run_until_cancelled(instrument_update_lock.lock())
+                .await
+            else {
+                return;
+            };
+
+            let Some(result) = cancel
+                .run_until_cancelled(Box::pin(http.request_instruments_in_generation(
+                    &provider,
+                    &instrument_publish_lock,
+                    &cancel,
+                    publish,
+                )))
+                .await
+            else {
+                return;
+            };
+
+            let _publish_guard = instrument_publish_lock.lock();
+
+            if cancel.is_cancelled() {
+                return;
+            }
+
+            match result {
                 Ok(all_instruments) => {
-                    upsert_instruments(&instruments, &all_instruments);
+                    Self::apply_requested_instruments(
+                        &instruments,
+                        &all_instruments,
+                        &ws,
+                        &ws_public,
+                        &sender,
+                        publish,
+                    );
 
                     let instrument = all_instruments
                         .into_iter()
@@ -3465,3 +3630,7 @@ mod tests {
         assert_eq!(classified, expected);
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/integration/futures/data_client.rs"]
+mod data_client_tests;

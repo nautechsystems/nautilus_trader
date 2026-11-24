@@ -15,13 +15,14 @@
 
 //! Instrument status mapping and polling for the Binance adapter.
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use nautilus_common::{live::sender::EventSender, messages::DataEvent};
 use nautilus_core::{UnixNanos, time::AtomicTime};
 use nautilus_model::{
     data::{Data, InstrumentStatus},
     enums::MarketStatusAction,
     identifiers::InstrumentId,
+    instruments::{Instrument, InstrumentAny},
 };
 use parking_lot::Mutex;
 
@@ -36,7 +37,7 @@ const PERPETUAL_DELIVERY_DATE_MS: i64 = 4_133_404_800_000;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SymbolTradingStatus {
     pub(crate) action: MarketStatusAction,
-    is_trading: bool,
+    pub(crate) is_trading: bool,
 }
 
 impl From<MarketStatusAction> for SymbolTradingStatus {
@@ -104,6 +105,40 @@ pub(crate) fn futures_symbol_status(
     }
 
     status
+}
+
+pub(crate) fn publish_refreshed_instruments<S: Copy + Into<SymbolTradingStatus>>(
+    instruments: &[InstrumentAny],
+    previous: &AHashMap<InstrumentId, InstrumentAny>,
+    statuses: &AHashMap<InstrumentId, S>,
+    previous_non_trading: &mut Option<AHashSet<InstrumentId>>,
+    sender: &EventSender<DataEvent>,
+) {
+    let mut non_trading = AHashSet::new();
+
+    for instrument in instruments {
+        let id = instrument.id();
+        if statuses
+            .get(&id)
+            .is_some_and(|status| !(*status).into().is_trading)
+        {
+            non_trading.insert(id);
+            continue;
+        }
+
+        // A status-only poll can observe resumption before the next definition refresh
+        let publish = previous_non_trading
+            .as_ref()
+            .is_none_or(|previous| previous.contains(&id))
+            || previous
+                .get(&id)
+                .is_none_or(|cached| !cached.same_definition(instrument));
+        if publish && let Err(e) = sender.send(DataEvent::Data(instrument.clone().into())) {
+            log::warn!("Failed to send refreshed Binance instrument {id}: {e}");
+        }
+    }
+
+    *previous_non_trading = Some(non_trading);
 }
 
 impl From<SymbolStatus> for MarketStatusAction {
@@ -194,6 +229,8 @@ mod tests {
     use nautilus_model::{
         enums::MarketStatusAction::{Close, PreClose, Trading},
         identifiers::InstrumentId,
+        instruments::stubs::audusd_sim,
+        types::Price,
     };
     use rstest::rstest;
 
@@ -201,6 +238,55 @@ mod tests {
         super::enums::{BinanceContractStatus, BinanceTradingStatus},
         *,
     };
+
+    #[rstest]
+    #[case::unchanged(false, false, false)]
+    #[case::changed(true, false, true)]
+    #[case::resumed(false, true, true)]
+    fn test_refresh_publishes_changed_or_resumed_instrument(
+        #[case] changed: bool,
+        #[case] previously_non_trading: bool,
+        #[case] publishes: bool,
+    ) {
+        let original = InstrumentAny::CurrencyPair(audusd_sim());
+        let mut updated = audusd_sim();
+        updated.ts_init = UnixNanos::from(10);
+        if changed {
+            updated.price_increment = Price::from("0.00002");
+        }
+
+        let updated = InstrumentAny::CurrencyPair(updated);
+        let id = original.id();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut non_trading = Some(if previously_non_trading {
+            AHashSet::from_iter([id])
+        } else {
+            AHashSet::new()
+        });
+
+        publish_refreshed_instruments(
+            std::slice::from_ref(&updated),
+            &AHashMap::from_iter([(id, original)]),
+            &AHashMap::from_iter([(id, MarketStatusAction::Trading)]),
+            &mut non_trading,
+            &tx.into(),
+        );
+
+        assert_eq!(non_trading, Some(AHashSet::new()));
+        let event = rx.try_recv().ok();
+        if publishes {
+            let Some(DataEvent::Data(Data::Instrument(received))) = event else {
+                panic!("expected an instrument for {id}");
+            };
+
+            assert_eq!(received.id(), id);
+            assert_eq!(received.ts_init(), updated.ts_init());
+            assert_eq!(received.price_increment(), updated.price_increment());
+        } else {
+            assert!(event.is_none());
+        }
+    }
 
     #[rstest]
     #[case(SymbolStatus::Trading, MarketStatusAction::Trading)]

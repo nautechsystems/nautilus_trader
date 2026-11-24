@@ -56,7 +56,7 @@ use nautilus_common::{
             SubmitOrderList,
         },
     },
-    msgbus::{self, TypedHandler},
+    msgbus::{self, InstrumentSubscription, TypedHandler, switchboard::get_instruments_pattern},
 };
 use nautilus_core::{
     DurationNanos, UUID4, UnixNanos,
@@ -114,7 +114,10 @@ use crate::{
         },
         parse::{parse_price_from_ticks, parse_quantity_from_ticks, quantity_from_decimal},
         rate_limit::{LighterTxRateLimiter, await_tx_quota, build_tx_rate_limiter, resolve_quota},
-        symbol::{MarketRegistry, product_type_from_instrument_id},
+        symbol::{
+            MARKET_ID_INFO_KEY, MarketRegistry, format_venue_symbol,
+            product_type_from_instrument_id,
+        },
     },
     config::{
         LighterExecutionClientConfig, validate_execution_venue, validate_execution_ws_url,
@@ -234,6 +237,7 @@ pub struct LighterExecutionClient {
     credential: Option<Credential>,
     http_client: LighterHttpClient,
     ws_client: LighterWebSocketClient,
+    instrument_subscription: Option<InstrumentSubscription>,
     tx_rate_limiter: Arc<LighterTxRateLimiter>,
     tx_send_sequencer: TxSendSequencer,
     nonce_submission_gate: Arc<tokio::sync::RwLock<()>>,
@@ -368,6 +372,7 @@ impl LighterExecutionClient {
             credential,
             http_client,
             ws_client,
+            instrument_subscription: None,
             tx_rate_limiter,
             tx_send_sequencer: TxSendSequencer::new(),
             nonce_submission_gate: Arc::new(tokio::sync::RwLock::new(())),
@@ -581,7 +586,13 @@ impl LighterExecutionClient {
         );
         replacement.cache_instruments(ws_cache);
 
-        std::mem::replace(&mut self.ws_client, replacement)
+        let previous = std::mem::replace(&mut self.ws_client, replacement);
+
+        if self.instrument_subscription.take().is_some() {
+            self.subscribe_instruments();
+        }
+
+        previous
     }
 
     fn spawn_task<F>(&self, description: &'static str, fut: F)
@@ -820,26 +831,28 @@ impl LighterExecutionClient {
             return Ok(());
         }
 
-        let instruments = self
+        let requested_at = self.clock.get_time_ns();
+        let response = self
             .http_client
-            .request_instruments()
+            .fetch_instrument_details(None)
             .await
             .context("failed to request Lighter instruments")?;
-
-        let ws_cache: Vec<(i64, InstrumentAny)> = instruments
-            .iter()
-            .filter_map(|instrument| {
-                self.registry
-                    .market_index(&instrument.id())
-                    .map(|market_index| (market_index, instrument.clone()))
-            })
-            .collect();
-        self.ws_client.cache_instruments(ws_cache);
-        cache_instruments_for_reports(&instruments);
+        let instruments = self
+            .http_client
+            .parse_instrument_details(&response, false)?;
+        let count = instruments.len();
+        for (instrument, _) in instruments {
+            let current = LIGHTER_INSTRUMENT_CACHE
+                .get(&instrument.id())
+                .filter(|cached| cached.ts_init() > requested_at)
+                .map(|cached| cached.value().clone())
+                .unwrap_or(instrument);
+            Self::apply_instrument(&self.registry, &self.ws_client, current);
+        }
 
         log::debug!(
             "Bootstrapped {} Lighter instruments ({} registry entries)",
-            instruments.len(),
+            count,
             self.registry.len(),
         );
 
@@ -6220,6 +6233,55 @@ fn format_between_timestamps(
     Some(format!("{start_secs}-{end_secs}"))
 }
 
+impl LighterExecutionClient {
+    fn subscribe_instruments(&mut self) {
+        if self.instrument_subscription.is_some() {
+            return;
+        }
+
+        let registry = Arc::clone(&self.registry);
+        let ws_client = self.ws_client.clone();
+        self.instrument_subscription = Some(InstrumentSubscription::new(
+            get_instruments_pattern(self.venue()),
+            TypedHandler::from(move |instrument: &InstrumentAny| {
+                Self::apply_instrument(&registry, &ws_client, instrument.clone());
+            }),
+        ));
+    }
+
+    fn apply_instrument(
+        registry: &MarketRegistry,
+        ws_client: &LighterWebSocketClient,
+        instrument: InstrumentAny,
+    ) {
+        let id = instrument.id();
+        if id.venue != registry.venue()
+            || LIGHTER_INSTRUMENT_CACHE
+                .get(&id)
+                .is_some_and(|previous| previous.ts_init() > instrument.ts_init())
+        {
+            return;
+        }
+
+        let mut market_index = registry.market_index(&id);
+        if let Some(product_type) = product_type_from_instrument_id(&id)
+            && let Some(venue_index) = instrument
+                .info()
+                .and_then(|info| info.get_i64(MARKET_ID_INFO_KEY))
+            && venue_index >= 0
+            && market_index != Some(venue_index)
+        {
+            registry.insert(venue_index, format_venue_symbol(&id), product_type);
+            market_index = Some(venue_index);
+        }
+
+        if let Some(market_index) = market_index {
+            cache_instruments_for_reports(std::slice::from_ref(&instrument));
+            ws_client.cache_instrument(market_index, instrument);
+        }
+    }
+}
+
 #[async_trait(?Send)]
 impl ExecutionClient for LighterExecutionClient {
     fn is_connected(&self) -> bool {
@@ -6236,6 +6298,10 @@ impl ExecutionClient for LighterExecutionClient {
 
     fn venue(&self) -> Venue {
         self.core.venue
+    }
+
+    fn on_instrument(&mut self, instrument: InstrumentAny) {
+        Self::apply_instrument(&self.registry, &self.ws_client, instrument);
     }
 
     fn oms_type(&self) -> OmsType {
@@ -6264,6 +6330,8 @@ impl ExecutionClient for LighterExecutionClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         let sender = get_exec_event_sender();
         self.emitter.set_sender(sender);
         self.subscribe_applied_fills();
@@ -6286,6 +6354,8 @@ impl ExecutionClient for LighterExecutionClient {
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         if self.core.is_stopped() && self.core.is_disconnected() && self.session_tasks_finished() {
             return Ok(());
         }
@@ -6301,6 +6371,8 @@ impl ExecutionClient for LighterExecutionClient {
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         log::debug!("Resetting Lighter execution client {}", self.core.client_id);
         self.begin_session_shutdown();
         Ok(())
@@ -6312,6 +6384,8 @@ impl ExecutionClient for LighterExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         if self.core.is_connected() && self.pending_tasks.is_open() {
             return Ok(());
         }
@@ -11097,6 +11171,7 @@ mod tests {
         factories::OrderFactory,
         live::runner::replace_exec_event_sender,
         messages::{ExecutionEvent, ExecutionReport as EngineExecutionReport},
+        msgbus::{publish_instrument, switchboard::get_instrument_topic},
         testing::wait_until_async,
     };
     use nautilus_execution::engine::ExecutionEngine;
@@ -12779,7 +12854,7 @@ mod tests {
     }
 
     #[rstest]
-    fn replacing_ws_client_preserves_cached_instruments() {
+    fn replacing_ws_client_preserves_cached_instruments_and_subscription() {
         let (mut client, cache, _rx) = create_execution_client();
         let instrument_id = register_test_instrument(&client, &cache);
         let instrument = cache
@@ -12791,7 +12866,8 @@ mod tests {
             .ws_client
             .cache_instrument(TEST_MARKET_INDEX, instrument.clone());
 
-        let _old_ws_client = client.take_ws_client();
+        client.subscribe_instruments();
+        let old_ws_client = client.take_ws_client();
 
         let cached_instruments = client.ws_client.instruments_cache();
         assert_eq!(
@@ -12800,6 +12876,27 @@ mod tests {
                 .expect("cached instrument")
                 .value(),
             &instrument,
+        );
+
+        let InstrumentAny::CryptoPerpetual(mut updated) = instrument else {
+            panic!("expected perpetual instrument");
+        };
+
+        updated.ts_init = UnixNanos::from(37);
+        updated.price_precision = 3;
+        updated.price_increment = Price::from("0.001");
+        publish_instrument(get_instrument_topic(instrument_id), &updated.into());
+
+        let current = cached_instruments.get(&TEST_MARKET_INDEX).unwrap();
+        assert_eq!(current.ts_init(), UnixNanos::from(37));
+        assert_eq!(current.price_increment(), Price::from("0.001"));
+        assert_eq!(
+            old_ws_client
+                .instruments_cache()
+                .get(&TEST_MARKET_INDEX)
+                .unwrap()
+                .ts_init(),
+            UnixNanos::default(),
         );
     }
 

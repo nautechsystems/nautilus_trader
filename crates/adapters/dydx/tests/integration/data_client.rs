@@ -29,7 +29,10 @@ use nautilus_common::{
     live::runner::replace_data_event_sender,
     messages::{
         DataEvent, DataResponse,
-        data::{RequestBars, RequestBookSnapshot, RequestFundingRates, RequestTrades},
+        data::{
+            RequestBars, RequestBookSnapshot, RequestFundingRates, RequestInstruments,
+            RequestTrades,
+        },
     },
     testing::wait_until_async,
 };
@@ -389,6 +392,58 @@ async fn test_data_client_request_funding_rates_sends_empty_response_on_error() 
         }
         response => panic!("Expected funding rates response, was {response:?}"),
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_reset_cancels_pending_instrument_request() {
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    let (seen, gate) = (Arc::clone(&entered), Arc::clone(&release));
+    let called = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let router = Router::new().route(
+        "/v4/perpetualMarkets",
+        get(move || {
+            let (seen, gate, called) = (Arc::clone(&seen), Arc::clone(&gate), Arc::clone(&called));
+            async move {
+                if called.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                    seen.notify_one();
+                    gate.notified().await;
+                }
+
+                axum::Json(load_test_instruments())
+            }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let (mut client, mut events) = create_dydx_data_client(addr).await;
+    let request_id = UUID4::new();
+    client
+        .request_instruments(RequestInstruments::new(
+            None,
+            None,
+            Some(*DYDX_CLIENT_ID),
+            Some(client.venue()),
+            request_id,
+            UnixNanos::default(),
+            None,
+        ))
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), entered.notified())
+        .await
+        .unwrap();
+
+    client.reset().unwrap();
+    release.notify_one();
+    client.disconnect().await.unwrap();
+    assert_eq!(
+        events.try_recv().unwrap_err(),
+        tokio::sync::mpsc::error::TryRecvError::Empty
+    );
+    server.abort();
 }
 
 #[rstest]

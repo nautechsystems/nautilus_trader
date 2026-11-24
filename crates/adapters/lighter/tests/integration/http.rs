@@ -583,6 +583,36 @@ async fn raw_client_get_next_nonce_sends_query_and_parses_response() {
 }
 
 #[tokio::test]
+async fn domain_client_single_instrument_only_registers_the_requested_market() {
+    let base_url = spawn_server(Router::new().route(
+        "/api/v1/orderBookDetails",
+        get(|| async {
+            let mut payload: serde_json::Value =
+                serde_json::from_str(HTTP_ORDER_BOOK_DETAILS).unwrap();
+            let mut unrelated = payload["order_book_details"][0].clone();
+            unrelated["market_id"] = serde_json::json!(1);
+            unrelated["symbol"] = serde_json::json!("BTC");
+            payload["order_book_details"]
+                .as_array_mut()
+                .unwrap()
+                .push(unrelated);
+            axum::Json(payload)
+        }),
+    ))
+    .await;
+
+    let client =
+        LighterHttpClient::new(LighterEnvironment::Mainnet, Some(base_url), 10, None).unwrap();
+    let id = InstrumentId::from("ETH-PERP.LIGHTER");
+
+    let instrument = client.request_instrument(id).await.unwrap();
+
+    assert_eq!(instrument.id(), id);
+    assert_eq!(client.market_registry().market_index(&id), Some(0));
+    assert_eq!(client.market_registry().instrument_id(1), None);
+}
+
+#[tokio::test]
 async fn domain_client_get_maker_only_api_keys_sends_authorization_header() {
     let base_url = spawn_server(Router::new().route(
         "/api/v1/getMakerOnlyApiKeys",

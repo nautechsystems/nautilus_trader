@@ -1488,13 +1488,14 @@ impl AxHttpClient {
     ///
     /// Returns an error if the HTTP request fails or instrument parsing fails.
     pub async fn request_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
+        let ts_init = self.generate_ts_init();
         let resp = self
             .inner
             .get_instruments()
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
-        let ts_init = self.generate_ts_init();
+        let ts_event = self.generate_ts_init();
 
         let mut instruments: Vec<InstrumentAny> = Vec::new();
         for inst in &resp.instruments {
@@ -1509,7 +1510,7 @@ impl AxHttpClient {
                 continue;
             }
 
-            match parse_instrument(inst, ts_init, ts_init) {
+            match parse_instrument(inst, ts_event, ts_init) {
                 Ok(instrument) => instruments.push(instrument),
                 Err(e) => {
                     log::warn!("Failed to parse instrument {}: {e}", inst.symbol);
@@ -1526,15 +1527,16 @@ impl AxHttpClient {
     ///
     /// Returns an error if the HTTP request fails or instrument parsing fails.
     pub async fn request_instrument(&self, symbol: Ustr) -> anyhow::Result<InstrumentAny> {
+        let ts_init = self.generate_ts_init();
         let resp = self
             .inner
             .get_instrument(symbol)
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
-        let ts_init = self.generate_ts_init();
+        let ts_event = self.generate_ts_init();
 
-        parse_instrument(&resp, ts_init, ts_init)
+        parse_instrument(&resp, ts_event, ts_init)
     }
 
     /// Requests an order book snapshot from Ax and builds a Nautilus [`OrderBook`].
@@ -2616,8 +2618,17 @@ impl AxHttpClient {
         let instrument = self.request_instrument(symbol).await.map_err(|e| {
             anyhow::anyhow!("Failed to resolve AX instrument {symbol} via GET /instrument: {e}")
         })?;
-        self.cache_instrument(instrument.clone());
-        Ok(instrument)
+
+        let mut current = instrument.clone();
+        self.instruments_cache.rcu(|cache| {
+            current = cache
+                .entry(instrument.raw_symbol().inner())
+                .or_insert_with(|| instrument.clone())
+                .clone();
+        });
+
+        self.cache_initialized.store(true, Ordering::Release);
+        Ok(current)
     }
 
     /// Cancels all open orders for an instrument.

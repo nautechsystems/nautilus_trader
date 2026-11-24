@@ -1610,7 +1610,6 @@ impl LiveNode {
                             }
                         }
                         ReportTaskOutcome::TimedOut => {
-                            self.cleanup_cancelled_report_tasks(&[]);
                             log::warn!(
                                 "Open-order report collection expired after {:?}",
                                 self.config.timeout_reconciliation,
@@ -1645,9 +1644,7 @@ impl LiveNode {
 
                     match result {
                         ReportTaskOutcome::Completed(PositionReportTaskResult::Positions(result)) => {
-                            if is_shutting_down {
-                                self.cleanup_cancelled_report_tasks(&[]);
-                            } else {
+                            if !is_shutting_down {
                                 let result = result.finish();
                                 position_report_task = self.handle_position_report_result(result);
                             }
@@ -1660,7 +1657,6 @@ impl LiveNode {
                             });
                         }
                         ReportTaskOutcome::TimedOut => {
-                            self.cleanup_cancelled_report_tasks(&[]);
                             log::warn!(
                                 "Position report collection expired after {:?}",
                                 self.config.timeout_reconciliation,

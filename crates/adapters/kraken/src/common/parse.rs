@@ -39,7 +39,9 @@ use rust_decimal_macros::dec;
 
 use crate::{
     common::{
-        consts::{KRAKEN_ALTNAME_KEY, KRAKEN_PAIR_DECIMALS_KEY, KRAKEN_VENUE},
+        consts::{
+            KRAKEN_ALTNAME_KEY, KRAKEN_LEVERAGE_TIERS_KEY, KRAKEN_PAIR_DECIMALS_KEY, KRAKEN_VENUE,
+        },
         enums::{
             KrakenFuturesOrderEventType, KrakenFuturesOrderLifecycleStatus, KrakenFuturesOrderType,
             KrakenInstrumentType, KrakenOrderSide, KrakenOrderType, KrakenPositionSide,
@@ -267,7 +269,7 @@ pub fn parse_spot_instrument(
         .price_increment(price_increment)
         .size_increment(size_increment)
         .maybe_min_quantity(min_quantity)
-        .maybe_info(pair_info(pair_name, definition, price_increment.precision))
+        .info(pair_info(pair_name, definition, price_increment.precision))
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()
@@ -686,7 +688,7 @@ pub fn parse_millis_timestamp(value: f64, field: &str) -> anyhow::Result<UnixNan
 /// The key is the instrument `raw_symbol`, while `OpenOrders`, `ClosedOrders` and `TradesHistory`
 /// spell the pair with the altname. A client whose instruments arrive through the cache APIs never
 /// sees the `AssetPairs` response, so the alias has to travel with the instrument.
-fn pair_info(pair_name: &str, definition: &AssetPairInfo, price_precision: u8) -> Option<Params> {
+fn pair_info(pair_name: &str, definition: &AssetPairInfo, price_precision: u8) -> Params {
     let mut map = IndexMap::new();
 
     if definition.altname.as_str() != pair_name {
@@ -696,8 +698,12 @@ fn pair_info(pair_name: &str, definition: &AssetPairInfo, price_precision: u8) -
         );
     }
 
+    map.insert(
+        KRAKEN_LEVERAGE_TIERS_KEY.to_owned(),
+        serde_json::json!([definition.leverage_buy, definition.leverage_sell]),
+    );
     insert_price_scale(&mut map, definition, price_precision);
-    (!map.is_empty()).then(|| Params::new(map))
+    Params::new(map)
 }
 
 /// Builds the `info` of a tokenized pair: the wire price scale alone, when it differs from the

@@ -26,7 +26,7 @@ use std::{
     time::Duration,
 };
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use nautilus_common::{
     cache::InstrumentLookupError,
@@ -57,7 +57,7 @@ use nautilus_live::{
     task::{TaskGroup, TaskGroupGuard, TaskSpawner},
 };
 use nautilus_model::{
-    data::{Data, OrderBookDeltas},
+    data::{Data, InstrumentStatus, OrderBookDeltas},
     enums::{BarAggregation, BookAction, BookType},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -83,7 +83,7 @@ use crate::{
     data::poll::DerivPollManager,
     http::{
         client::{CoinbaseHttpClient, data_client_retry_config},
-        models::{CandlesResponse, PriceBook, TickerResponse},
+        models::{CandlesResponse, PriceBook, Product, TickerResponse},
         parse::{parse_bar, parse_product_book_snapshot, parse_trade_tick},
     },
     provider::CoinbaseInstrumentProvider,
@@ -109,9 +109,10 @@ pub struct CoinbaseDataClient {
     shutdown_errors: Vec<String>,
     data_sender: EventSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    instrument_publish_lock: Arc<Mutex<()>>,
     deriv_polls: DerivPollManager,
     clock: &'static AtomicTime,
-    instrument_status_subs: Arc<Mutex<AHashSet<InstrumentId>>>,
+    instrument_status_subs: Arc<Mutex<AHashMap<InstrumentId, Ustr>>>,
     book_sync: BookSyncTracker,
     /// Maps each subscribed book to the wire `product_id` its `level2` subscription uses.
     book_products: Arc<AtomicMap<InstrumentId, Ustr>>,
@@ -193,9 +194,10 @@ impl CoinbaseDataClient {
             shutdown_errors: Vec::new(),
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
+            instrument_publish_lock: Arc::new(Mutex::new(())),
             deriv_polls,
             clock,
-            instrument_status_subs: Arc::new(Mutex::new(AHashSet::new())),
+            instrument_status_subs: Arc::new(Mutex::new(AHashMap::new())),
             book_sync: BookSyncTracker::default(),
             book_products: Arc::new(AtomicMap::new()),
         })
@@ -240,23 +242,54 @@ impl CoinbaseDataClient {
         self.deriv_polls.prepare().await
     }
 
-    async fn bootstrap_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
-        let instruments = self
-            .provider
-            .load_all()
-            .await
-            .context("failed to fetch instruments during bootstrap")?;
+    fn spawn_instrument_refresh(&self) -> anyhow::Result<()> {
+        let minutes = self.config.update_instruments_interval_mins;
+        if minutes == 0 {
+            return Ok(());
+        }
 
-        self.instruments.rcu(|m| {
-            for instrument in &instruments {
-                m.insert(instrument.id(), instrument.clone());
+        let period = Duration::from_secs(minutes.saturating_mul(60));
+        let provider = self.provider.clone();
+        let http = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let instruments_cache = self.instruments.clone();
+        let ws = self.ws_client.clone();
+        let cancel = self.cancellation_token.clone();
+        let instrument_publish_lock = self.instrument_publish_lock.clone();
+
+        self.session_tasks.spawn(async move {
+            let mut interval = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+            loop {
+                tokio::select! {
+                    () = cancel.cancelled() => break,
+                    _ = interval.tick() => {
+                        let result = tokio::select! {
+                            biased;
+                            () = cancel.cancelled() => break,
+                            result = provider.fetch_instruments(None) => result,
+                        };
+
+                        match result {
+                            Ok((instruments, products)) => {
+                                let _guard = instrument_publish_lock.lock();
+                                if cancel.is_cancelled() {
+                                    break;
+                                }
+
+                                apply_instrument_definitions(
+                                    &instruments_cache, &http, &ws, &sender, &instruments, &products, false,
+                                );
+                            }
+                            Err(e) => log::warn!("Failed to refresh Coinbase instruments: {e}"),
+                        }
+                    }
+                }
             }
-        });
+        })?;
 
-        self.ws_client.update_instruments(&instruments).await;
-
-        log::debug!("Bootstrapped {} instruments", instruments.len());
-        Ok(instruments)
+        Ok(())
     }
 
     async fn spawn_ws(&mut self) -> anyhow::Result<()> {
@@ -392,6 +425,75 @@ impl CoinbaseDataClient {
     }
 }
 
+fn apply_instrument_definitions(
+    cache: &AtomicMap<InstrumentId, InstrumentAny>,
+    http: &CoinbaseHttpClient,
+    ws: &CoinbaseWebSocketClient,
+    sender: &EventSender<DataEvent>,
+    instruments: &[InstrumentAny],
+    products: &[Product],
+    publish_unchanged: bool,
+) {
+    let current = cache.load();
+    let mut accepted = Vec::new();
+    let mut changed = Vec::new();
+    let mut symbols = AHashSet::new();
+
+    for instrument in instruments {
+        let previous = current.get(&instrument.id());
+        if previous.is_some_and(|previous| previous.ts_init() > instrument.ts_init()) {
+            continue;
+        }
+
+        if publish_unchanged
+            || previous.is_none_or(|previous| instrument_definition_changed(previous, instrument))
+        {
+            changed.push(instrument);
+        }
+
+        symbols.insert(instrument.id().symbol.inner());
+        accepted.push(instrument.clone());
+    }
+
+    if accepted.is_empty() {
+        return;
+    }
+
+    http.cache_product_aliases(
+        products
+            .iter()
+            .filter(|product| symbols.contains(&product.product_id))
+            .map(|product| (product.product_id, product.alias)),
+    );
+    http.cache_instruments(&accepted);
+    ws.cache_instruments(&accepted);
+    cache.rcu(|map| {
+        for instrument in &accepted {
+            map.insert(instrument.id(), instrument.clone());
+        }
+    });
+
+    for instrument in changed {
+        if let Err(e) = sender.send(DataEvent::Data(instrument.clone().into())) {
+            log::warn!("Failed to send Coinbase instrument: {e}");
+        }
+    }
+}
+
+fn instrument_definition_changed(previous: &InstrumentAny, current: &InstrumentAny) -> bool {
+    previous.raw_symbol() != current.raw_symbol()
+        || previous.price_precision() != current.price_precision()
+        || previous.size_precision() != current.size_precision()
+        || previous.price_increment() != current.price_increment()
+        || previous.size_increment() != current.size_increment()
+        || previous.min_quantity() != current.min_quantity()
+        || previous.max_quantity() != current.max_quantity()
+        || previous.min_notional() != current.min_notional()
+        || previous.max_notional() != current.max_notional()
+        || previous.multiplier() != current.multiplier()
+        || previous.expiration_ns() != current.expiration_ns()
+}
+
 /// Routes `level2` events through book synchronization and starts recovery.
 #[derive(Debug)]
 struct BookRouter {
@@ -484,7 +586,7 @@ impl BookRouter {
 fn dispatch_ws_message(
     msg: NautilusWsMessage,
     data_sender: &EventSender<DataEvent>,
-    status_subs: &Arc<Mutex<AHashSet<InstrumentId>>>,
+    status_subs: &Arc<Mutex<AHashMap<InstrumentId, Ustr>>>,
     books: &BookRouter,
 ) {
     match msg {
@@ -513,13 +615,20 @@ fn dispatch_ws_message(
             }
         }
         NautilusWsMessage::InstrumentStatus(status) => {
-            // Coinbase publishes status for every product on a single feed,
-            // so filter to currently-subscribed instruments before emitting.
-            let subscribed = status_subs.lock().contains(&status.instrument_id);
-            if subscribed
-                && let Err(e) = data_sender.send(DataEvent::Data(Data::InstrumentStatus(*status)))
-            {
-                log::error!("Failed to send instrument status: {e}");
+            let wire_id = status.instrument_id.symbol.inner();
+            for (&instrument_id, &subscribed_wire_id) in status_subs.lock().iter() {
+                if subscribed_wire_id == wire_id {
+                    let status = InstrumentStatus {
+                        instrument_id,
+                        ..*status
+                    };
+
+                    if let Err(e) =
+                        data_sender.send(DataEvent::Data(Data::InstrumentStatus(status)))
+                    {
+                        log::error!("Failed to send instrument status: {e}");
+                    }
+                }
             }
         }
         NautilusWsMessage::Reconnected => {
@@ -564,6 +673,7 @@ impl DataClient for CoinbaseDataClient {
 
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping Coinbase data client {}", self.client_id);
+        let _publish_guard = self.instrument_publish_lock.lock();
         self.session_tasks.begin_shutdown();
         self.command_tasks.begin_shutdown();
         self.deriv_polls.shutdown();
@@ -574,6 +684,7 @@ impl DataClient for CoinbaseDataClient {
 
     fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting Coinbase data client {}", self.client_id);
+        let _publish_guard = self.instrument_publish_lock.lock();
         self.session_tasks.begin_shutdown();
         self.command_tasks.begin_shutdown();
         self.deriv_polls.shutdown();
@@ -612,20 +723,29 @@ impl DataClient for CoinbaseDataClient {
             });
 
         let connect_result = async {
-            let instruments = self
-                .bootstrap_instruments()
+            let (instruments, products) = self
+                .provider
+                .fetch_instruments(None)
                 .await
                 .context("failed to bootstrap instruments")?;
 
-            for instrument in instruments {
-                if let Err(e) = self.data_sender.send(DataEvent::Data(instrument.into())) {
-                    log::warn!("Failed to send instrument: {e}");
-                }
+            {
+                let _guard = self.instrument_publish_lock.lock();
+                apply_instrument_definitions(
+                    &self.instruments,
+                    &self.http_client,
+                    &self.ws_client,
+                    &self.data_sender,
+                    &instruments,
+                    &products,
+                    true,
+                );
             }
 
             self.spawn_ws()
                 .await
                 .context("failed to spawn WebSocket client")?;
+            self.spawn_instrument_refresh()?;
 
             // Re-spawn polling tasks for any derivatives subscriptions that
             // survived a previous disconnect. The data engine's client adapter
@@ -824,30 +944,23 @@ impl DataClient for CoinbaseDataClient {
         cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
-            // Register the canonical-to-subscribed alias so the handler re-keys
-            // inbound status events for aliased products (e.g. caller subscribed
-            // to `BTC-USDC` but the venue reports the canonical `BTC-USD`).
-            // Without this the filter below would drop alias-only subscriptions.
-            let subscribed_id = Self::product_id(instrument_id);
-            let wire_id = self.resolve_wire_product_id(subscribed_id);
-            if wire_id != subscribed_id {
-                self.ws_client
-                    .register_subscription_alias(wire_id, subscribed_id);
-            }
+            let wire_id = self.resolve_wire_product_id(Self::product_id(instrument_id));
 
-            // Coinbase publishes a single product-wide status feed. Only subscribe
-            // to the WS channel once; subsequent calls just record the instrument.
-            let was_empty = {
+            let subscribe = {
                 let mut subs = self.instrument_status_subs.lock();
-                let was_empty = subs.is_empty();
-                subs.insert(instrument_id);
-                was_empty
+                if subs.contains_key(&instrument_id) {
+                    return Ok(());
+                }
+
+                let has_wire_subscription = subs.values().any(|&id| id == wire_id);
+                subs.insert(instrument_id, wire_id);
+                !has_wire_subscription
             };
 
-            if was_empty {
+            if subscribe {
                 let ws = self.ws_client.clone();
                 self.spawn_command(async move {
-                    if let Err(e) = ws.subscribe(CoinbaseWsChannel::Status, &[]).await {
+                    if let Err(e) = ws.subscribe(CoinbaseWsChannel::Status, &[wire_id]).await {
                         log::error!("Failed to subscribe to status channel: {e:?}");
                     }
                 });
@@ -915,8 +1028,10 @@ impl DataClient for CoinbaseDataClient {
             log::debug!("Unsubscribing from book deltas: {instrument_id}");
 
             let ws = self.ws_client.clone();
-            let subscribed_id = Self::product_id(instrument_id);
-            let wire_id = self.resolve_wire_product_id(subscribed_id);
+
+            let Some(wire_id) = self.book_products.get_cloned(&instrument_id) else {
+                return Ok(());
+            };
 
             // Removing the book cancels its recovery and pending snapshot wait
             self.book_products.remove(&instrument_id);
@@ -995,16 +1110,16 @@ impl DataClient for CoinbaseDataClient {
         execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
             log::debug!("Unsubscribing from instrument status: {instrument_id}");
 
-            let now_empty = {
+            let unsubscribe = {
                 let mut subs = self.instrument_status_subs.lock();
-                subs.remove(&instrument_id);
-                subs.is_empty()
+                subs.remove(&instrument_id)
+                    .filter(|wire_id| !subs.values().any(|id| id == wire_id))
             };
 
-            if now_empty {
+            if let Some(wire_id) = unsubscribe {
                 let ws = self.ws_client.clone();
                 self.spawn_command(async move {
-                    if let Err(e) = ws.unsubscribe(CoinbaseWsChannel::Status, &[]).await {
+                    if let Err(e) = ws.unsubscribe(CoinbaseWsChannel::Status, &[wire_id]).await {
                         log::error!("Failed to unsubscribe from status channel: {e:?}");
                     }
                 });
@@ -1034,27 +1149,56 @@ impl DataClient for CoinbaseDataClient {
         log::debug!("Requesting all instruments");
 
         let provider = self.provider.clone();
+        let http = self.http_client.clone();
         let sender = self.data_sender.clone();
         let instruments_cache = self.instruments.clone();
         let ws = self.ws_client.clone();
+        let instrument_publish_lock = self.instrument_publish_lock.clone();
+        let cancel = self.command_tasks.cancellation_token();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let venue = Self::venue(self);
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
+        let publish = request.start.is_none() && request.end.is_none();
         let params = request.params;
         let clock = self.clock;
 
         self.spawn_command(async move {
-            match provider.load_all().await {
-                Ok(instruments) => {
-                    instruments_cache.rcu(|m| {
-                        for instrument in &instruments {
-                            m.insert(instrument.id(), instrument.clone());
-                        }
-                    });
+            let Some(result) = cancel
+                .run_until_cancelled(provider.fetch_instruments(None))
+                .await
+            else {
+                return;
+            };
 
-                    ws.update_instruments(&instruments).await;
+            match result {
+                Ok((mut instruments, products)) => {
+                    let _guard = instrument_publish_lock.lock();
+
+                    if cancel.is_cancelled() {
+                        return;
+                    }
+
+                    if publish {
+                        apply_instrument_definitions(
+                            &instruments_cache,
+                            &http,
+                            &ws,
+                            &sender,
+                            &instruments,
+                            &products,
+                            false,
+                        );
+                        let current = instruments_cache.load();
+                        for instrument in &mut instruments {
+                            if let Some(cached) = current.get(&instrument.id())
+                                && cached.ts_init() > instrument.ts_init()
+                            {
+                                *instrument = cached.clone();
+                            }
+                        }
+                    }
 
                     let response = DataResponse::Instruments(InstrumentsResponse::new(
                         request_id,
@@ -1086,24 +1230,54 @@ impl DataClient for CoinbaseDataClient {
         log::debug!("Requesting instrument: {instrument_id}");
 
         let provider = self.provider.clone();
+        let http = self.http_client.clone();
         let sender = self.data_sender.clone();
         let instruments_cache = self.instruments.clone();
         let ws = self.ws_client.clone();
         let product_id = instrument_id.symbol.to_string();
+        let instrument_publish_lock = self.instrument_publish_lock.clone();
+        let cancel = self.command_tasks.cancellation_token();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
+        let publish = request.start.is_none() && request.end.is_none();
         let params = request.params;
         let clock = self.clock;
 
         self.spawn_command(async move {
-            match provider.load(&product_id).await {
-                Ok(instrument) => {
-                    instruments_cache.rcu(|m| {
-                        m.insert(instrument.id(), instrument.clone());
-                    });
-                    ws.update_instrument(instrument.clone()).await;
+            let Some(result) = cancel
+                .run_until_cancelled(provider.fetch_instrument(&product_id))
+                .await
+            else {
+                return;
+            };
+
+            match result {
+                Ok((mut instrument, product)) => {
+                    let _guard = instrument_publish_lock.lock();
+
+                    if cancel.is_cancelled() {
+                        return;
+                    }
+
+                    if publish {
+                        apply_instrument_definitions(
+                            &instruments_cache,
+                            &http,
+                            &ws,
+                            &sender,
+                            std::slice::from_ref(&instrument),
+                            std::slice::from_ref(&product),
+                            false,
+                        );
+
+                        if let Some(cached) = instruments_cache.get_cloned(&instrument.id())
+                            && cached.ts_init() > instrument.ts_init()
+                        {
+                            instrument = cached;
+                        }
+                    }
 
                     let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
                         request_id,
@@ -1445,7 +1619,7 @@ mod tests {
     }
 
     fn make_status_event(instrument_id: InstrumentId) -> NautilusWsMessage {
-        use nautilus_model::{data::InstrumentStatus, enums::MarketStatusAction};
+        use nautilus_model::enums::MarketStatusAction;
 
         let status = InstrumentStatus::new(
             instrument_id,
@@ -1471,17 +1645,18 @@ mod tests {
         }
     }
 
-    // The dispatch filter is what keeps the venue-wide `status` feed from
-    // leaking every product's events to a subscriber that only cares about
-    // one. A regression that drops the `subs.contains(...)` guard would let
-    // every product's status reach `data_sender`.
     #[rstest]
     fn test_dispatch_ws_message_status_filter_forwards_subscribed() {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let instrument_id = InstrumentId::from("BTC-USD.COINBASE");
-        let mut set = AHashSet::new();
-        set.insert(instrument_id);
-        let subs = Arc::new(Mutex::new(set));
+        let alias_id = InstrumentId::from("BTC-USDC.COINBASE");
+        let wire_id = instrument_id.symbol.inner();
+
+        let subs = Arc::new(Mutex::new(AHashMap::from_iter([
+            (instrument_id, wire_id),
+            (alias_id, wire_id),
+        ])));
+
         let tasks = TaskGroup::new();
 
         dispatch_ws_message(
@@ -1491,12 +1666,18 @@ mod tests {
             &test_book_router(&tasks),
         );
 
-        match rx.try_recv() {
-            Ok(DataEvent::Data(Data::InstrumentStatus(status))) => {
-                assert_eq!(status.instrument_id, instrument_id);
-            }
-            other => panic!("expected DataEvent::Data(Data::InstrumentStatus(...)), was {other:?}"),
+        let mut received = AHashSet::new();
+
+        for _ in 0..2 {
+            let DataEvent::Data(Data::InstrumentStatus(status)) = rx.try_recv().unwrap() else {
+                panic!("expected an instrument status");
+            };
+
+            received.insert(status.instrument_id);
         }
+
+        assert_eq!(received, AHashSet::from_iter([instrument_id, alias_id]));
+        assert!(rx.try_recv().is_err());
     }
 
     #[rstest]
@@ -1504,9 +1685,12 @@ mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let subscribed = InstrumentId::from("BTC-USD.COINBASE");
         let unsubscribed = InstrumentId::from("ETH-USD.COINBASE");
-        let mut set = AHashSet::new();
-        set.insert(subscribed);
-        let subs = Arc::new(Mutex::new(set));
+
+        let subs = Arc::new(Mutex::new(AHashMap::from_iter([(
+            subscribed,
+            subscribed.symbol.inner(),
+        )])));
+
         let tasks = TaskGroup::new();
 
         dispatch_ws_message(
@@ -1522,9 +1706,6 @@ mod tests {
         );
     }
 
-    // First subscribe on an empty set must populate `instrument_status_subs`;
-    // a second subscribe for the same instrument must not add a duplicate or
-    // re-spawn the channel-level WS subscribe. Reset must clear the field.
     #[rstest]
     #[tokio::test]
     async fn test_subscribe_instrument_status_records_and_idempotent() {
@@ -1553,7 +1734,7 @@ mod tests {
             client
                 .instrument_status_subs
                 .lock()
-                .contains(&instrument_id)
+                .contains_key(&instrument_id)
         );
 
         // Duplicate subscribe keeps the set at size 1.
@@ -1565,8 +1746,6 @@ mod tests {
         assert!(client.instrument_status_subs.lock().is_empty());
     }
 
-    // Unsubscribing the last instrument empties the set; intermediate
-    // unsubscribes leave other entries in place.
     #[rstest]
     #[tokio::test]
     async fn test_unsubscribe_instrument_status_emptying_set() {
@@ -1615,13 +1794,11 @@ mod tests {
         client.unsubscribe_instrument_status(&unsub(a)).unwrap();
         {
             let subs = client.instrument_status_subs.lock();
-            assert!(!subs.contains(&a), "a removed");
-            assert!(subs.contains(&b), "b retained");
+            assert!(!subs.contains_key(&a), "a removed");
+            assert!(subs.contains_key(&b), "b retained");
             assert_eq!(subs.len(), 1);
         }
 
-        // Last unsubscribe: set must end up empty so a future first-subscribe
-        // re-arms the channel-level WS subscription.
         client.unsubscribe_instrument_status(&unsub(b)).unwrap();
         assert!(
             client.instrument_status_subs.lock().is_empty(),

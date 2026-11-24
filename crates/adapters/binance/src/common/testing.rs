@@ -15,7 +15,7 @@
 
 //! Test fixtures and utilities for Binance adapter tests.
 
-use std::{fs, path::PathBuf};
+use std::{fs, future::Future, path::PathBuf, time::Duration};
 
 use serde_json::Value;
 
@@ -67,4 +67,23 @@ pub fn load_fixture_bytes(relpath: &str) -> Vec<u8> {
 pub fn load_event_fixture(relpath: &str) -> Value {
     let json = load_json_fixture(relpath);
     json.get("event").cloned().unwrap_or(json)
+}
+
+pub(crate) async fn spawn_instrument_timer(
+    timers: &mut tokio::task::JoinSet<()>,
+    future: impl Future<Output = ()> + Send + 'static,
+) {
+    let (started, ready) = tokio::sync::oneshot::channel();
+    timers.spawn(async move {
+        started.send(()).unwrap();
+        future.await;
+    });
+
+    ready.await.unwrap();
+}
+
+pub(crate) async fn advance_instrument_clock(duration: Duration) {
+    tokio::time::pause();
+    tokio::time::advance(duration).await;
+    tokio::time::resume();
 }
