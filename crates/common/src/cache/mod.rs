@@ -3217,11 +3217,26 @@ impl Cache {
 
     /// Gets the yield curve for the `key`.
     pub fn yield_curve(&self, key: &str) -> Option<Box<dyn Fn(f64) -> f64>> {
-        self.yield_curves.get(key).map(|curve| {
+        self.yield_curve_ref(key).map(|curve| {
             let curve_clone = curve.clone();
             Box::new(move |expiry_in_years: f64| curve_clone.get_rate(expiry_in_years))
                 as Box<dyn Fn(f64) -> f64>
         })
+    }
+
+    pub(crate) fn yield_curve_for_instrument(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> Option<&YieldCurve> {
+        if self.yield_curves.is_empty() {
+            return None;
+        }
+
+        self.yield_curve_ref(&instrument_id.to_string())
+    }
+
+    pub(crate) fn yield_curve_ref(&self, key: &str) -> Option<&YieldCurve> {
+        self.yield_curves.get(key)
     }
 
     /// Adds the `currency` to the cache.

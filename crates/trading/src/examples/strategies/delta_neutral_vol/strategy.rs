@@ -22,7 +22,10 @@ use anyhow::Context;
 use nautilus_common::{actor::DataActor, timer::TimeEvent};
 use nautilus_core::{DurationNanos, params::Params};
 use nautilus_model::{
-    data::{QuoteTick, black_scholes::compute_greeks, option_chain::OptionGreeks},
+    data::{
+        QuoteTick, black_scholes::compute_greeks, greeks::OPTION_PRICING_YEAR,
+        option_chain::OptionGreeks,
+    },
     enums::{OptionKind, OrderSide, TimeInForce},
     events::{
         OrderCanceled, OrderDenied, OrderExpired, OrderFillVoided, OrderFilled, OrderRejected,
@@ -373,7 +376,7 @@ impl DeltaNeutralVol {
             .or_else(|| greeks.mark_iv.filter(|v| *v > 0.0).map(|v| ("mark_iv", v)))
             .with_context(|| format!("missing positive IV for {instrument_id}"))?;
         let years_to_expiry =
-            (expiration_ns - now_ns).as_secs_f64() / (365.25 * 24.0 * 60.0 * 60.0);
+            (expiration_ns - now_ns).as_secs_f64() / OPTION_PRICING_YEAR.as_secs_f64();
         let price = compute_greeks(
             underlying_price as f32,
             strike,

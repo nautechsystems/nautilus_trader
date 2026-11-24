@@ -66,6 +66,7 @@ Released on TBD (UTC).
 - Changed `TickSchemeError` with `TicksNotIncreasing`; update exhaustive matches
 - Changed `OptionValuationError` with `UnsupportedConvention`; update exhaustive matches
 - Changed local Greeks and implied forwards to reject inverse and mixed-currency options
+- Changed `GreeksCalculator::cache_futures_spread` to reject call/put pairs at or after expiry
 - Changed local option valuation to require currency evidence for the underlying price
 - Changed `OrderDeniedReason` and `OrderDeniedCode` with `MarketExitInProgress`; update exhaustive matches
 - Changed `SimulatedExchange::process_liquidations` to return `anyhow::Result<()>` for callers to handle
@@ -137,6 +138,7 @@ Released on TBD (UTC).
 - Fixed `OptionChainSlice` ignoring Greeks in `ts_event` and using trigger timestamps for `ts_init`
 - Fixed option-chain delta selection depending on the arrival order of Greeks conventions
 - Fixed delta option chains missing matching strikes outside the ATM fallback
+- Fixed local option Greeks and implied futures pricing to use fractional time to expiry on a 365-day basis
 - Fixed PostgreSQL cache startup hanging on current-thread Tokio or panicking on connection failure
 - Fixed PostgreSQL cache restoring another trader's OMS type when position IDs overlap
 - Fixed PostgreSQL `FuturesSpread` reloads panicking

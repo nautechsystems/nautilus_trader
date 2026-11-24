@@ -140,7 +140,6 @@ Conventions:
 - Vega is scaled by 0.01 (sensitivity to a 1 percentage point vol change).
 - Theta is scaled by 1/365 (daily decay).
 - Rho is scaled by 0.01 (sensitivity to a 1 percentage point rate change).
-- American-style options are priced as European for Greeks computation.
 
 For the Python pricing functions, `db_dr=0.0` holds carry fixed when the interest rate changes.
 Use `db_dr=1.0` when carry is `r - q` and the dividend yield `q` stays fixed, including when `r == q`.
@@ -190,8 +189,10 @@ cached index price.
 
 ##### Pricing conventions
 
-The model takes the strike, market premium, and underlying price per unit of the underlying. It
-returns price and PnL per unit and carries the contract multiplier separately.
+The calculator uses generalized European Black-Scholes for all exercise styles. For American options,
+the model approximates the value without accounting for early exercise. It takes the strike, market
+premium, and underlying price per unit of the underlying. It returns price and PnL per unit and
+carries the contract multiplier separately.
 
 The `strike_currency`, `quote_currency` (premium), and `settlement_currency` must match the currency
 of the underlying price. Load the underlying definition or use a cached implied futures spread to
@@ -201,17 +202,29 @@ The calculator uses the strike-currency interest rate and the underlying's divid
 a dividend yield or curve, carry is `r - q`. Otherwise, carry stays fixed at zero. See
 [Yield curves](#yield-curves).
 
+Fresh valuations use the exact time to expiry for pricing and curve lookups, measured from `ts_event`
+or the clock time if unset, and expressed as a fraction of a 365-day year.
+Cached valuations use the saved expiry horizon as their starting point. Older cached records can
+use a 365.25-day basis.
+
 ##### Missing data and errors
 
-Python returns `None` when a price is missing during warm-up. Rust returns an error.
+Python returns `None` when a price is missing during warm-up and raises `ValueError` for valuation
+errors. Rust returns an error for missing prices, missing required definitions, invalid shocked inputs
+or results, and failed implied-volatility solves.
 
-Expired options and option spreads raise `ValueError` in Python and return an error in Rust. The same
-applies to missing required definitions, invalid shocked inputs or results, and failed implied-volatility
-solves.
+The calculator reports these `OptionValuationError` variants in Rust.
 
-Inverse pricing and mixed or unknown price currencies produce the Rust error
-`OptionValuationError::UnsupportedConvention`, which Python exposes as `ValueError`. This includes USD
-strikes with BTC or USDC premiums.
+- `Expired` for options at or past expiry.
+- `UnsupportedSpread` for option spreads.
+- `InvalidInput` for invalid valuation inputs, including nonfinite or nonpositive strikes, underlying
+  prices, or premiums.
+- `ImpliedVolatilityUnavailable` when a positive premium is at or outside the model's no-arbitrage
+  bounds or has no finite, positive implied volatility.
+- `InvalidResult` for nonfinite or inconsistent valuation results, including failure to reprice
+  the premium within the model's tolerance.
+- `UnsupportedConvention` for inverse pricing or mixed or unknown price currencies, such as USD
+  strikes with BTC or USDC premiums.
 
 The calculator checks expiration, instrument type, and pricing conventions before using cached Greeks.
 
@@ -223,10 +236,12 @@ The calculator checks expiration, instrument type, and pricing conventions befor
 implied_price = strike + exp(rate * years) * (call_price - put_price)
 ```
 
-The formula assumes European exercise. For American-style pairs, the result is an approximation.
+`years` is the exact time from the calculator's clock to expiry on a 365-day basis. The formula
+assumes European exercise. For American-style pairs, the result is an approximation.
 
 - Both legs must resolve to the same underlying ID. For a same-venue pair with both IDs absent, the
   calculator uses each underlying symbol on that venue. Other pairs use the instrument Greeks lookup.
+- The pair must be before expiry.
 - Use premiums per underlying unit and the same pricing conventions as for instrument Greeks.
 - Use the strike-currency yield curve. When it is missing, the calculation uses its own flat rate of `0.0425`.
 
@@ -250,9 +265,12 @@ greeks = calculator.instrument_greeks(
     instrument_id=option_id,
     spot_shock=10.0,  # +10 points on underlying
     vol_shock=0.02,  # +2 percentage points of volatility
-    time_to_expiry_shock=1 / 365.25,  # roll forward one calendar day
+    time_to_expiry_shock=1 / 365,  # roll forward one calendar day
 )
 ```
+
+The floating-point year fraction limits the precision of time shocks at expiry and whole-day
+boundaries, especially for long horizons.
 
 Cached shocks reuse the saved numeric inputs. Carry rate sensitivity comes from the current call's
 dividend yield or the available dividend curve. After correcting an option's `underlying_instrument_id`,
@@ -289,7 +307,8 @@ greeks = calculator.instrument_greeks(
 
 #### Time-weighted vega
 
-Normalize vega across different expirations:
+Vega time weighting uses `expiry_in_days`. Fresh valuations have a minimum of one whole day.
+A time shock can leave zero whole days, in which case the calculator skips the weighting.
 
 ```python
 greeks = calculator.instrument_greeks(
@@ -347,8 +366,8 @@ and the full option instrument ID.
 | `is_call`          | `bool`         | `True` for a call or non-option result, `False` for a put.              |
 | `strike`           | `float`        | Strike price.                                                           |
 | `expiry`           | `int`          | Expiry date as a `YYYYMMDD` integer.                                    |
-| `expiry_in_days`   | `int`          | Days to expiry.                                                         |
-| `expiry_in_years`  | `float`        | Years to expiry (`expiry_in_days / 365.25`).                            |
+| `expiry_in_days`   | `int`          | Whole days to expiry.                                                   |
+| `expiry_in_years`  | `float`        | Fractional years to expiry.                                             |
 | `multiplier`       | `float`        | Contract multiplier.                                                    |
 | `quantity`         | `float`        | Quantity, set to 1 by `instrument_greeks()`.                            |
 | `underlying_price` | `float`        | Underlying price used in the calculation.                               |
