@@ -125,6 +125,22 @@ struct OrderIdentityBinding {
     fills_inferred: bool,
 }
 
+impl OrderIdentityBinding {
+    fn confirm_venue_order_id(&mut self, venue_order_id: VenueOrderId) -> bool {
+        if self.create_resolution == CreateResolution::Rejected
+            || self
+                .venue_order_id
+                .is_some_and(|existing| existing != venue_order_id)
+        {
+            return false;
+        }
+
+        self.venue_order_id = Some(venue_order_id);
+        self.create_resolution = CreateResolution::Confirmed;
+        true
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct ChildFillBaseline {
     pub(crate) quantity: Quantity,
@@ -324,6 +340,13 @@ impl OrderIdentity {
         self.binding.lock().filled_qty
     }
 
+    pub(crate) fn child_fill_evidence_pending(&self, deferred: &DeferredOrderEvents) -> bool {
+        let binding = self.binding.lock();
+        !binding.fills_inferred
+            && deferred
+                .child_fill_evidence_pending(binding.filled_qty, |id| binding.fill_ids.contains(id))
+    }
+
     pub(crate) fn sync_fills(&self, order: &OrderAny) {
         let inferred = inferred_reconciliation_trade_ids(order);
         let mut binding = self.binding.lock();
@@ -403,27 +426,19 @@ impl OrderIdentity {
             return false;
         }
 
-        match binding.venue_order_id {
-            Some(existing) => {
-                if existing == venue_order_id {
-                    binding.create_resolution = CreateResolution::Confirmed;
-                    true
-                } else {
-                    false
-                }
-            }
-            None => {
-                if binding.external_venue_ids.contains(&venue_order_id)
-                    || binding.submission_nonce.is_none()
-                {
-                    binding.external_venue_ids.insert(venue_order_id);
-                    return false;
-                }
-                binding.venue_order_id = Some(venue_order_id);
-                binding.create_resolution = CreateResolution::Confirmed;
-                true
-            }
+        if binding.venue_order_id.is_none()
+            && (binding.external_venue_ids.contains(&venue_order_id)
+                || binding.submission_nonce.is_none())
+        {
+            binding.external_venue_ids.insert(venue_order_id);
+            return false;
         }
+
+        binding.confirm_venue_order_id(venue_order_id)
+    }
+
+    pub(crate) fn bind_confirmed_venue_order_id(&self, venue_order_id: VenueOrderId) -> bool {
+        self.binding.lock().confirm_venue_order_id(venue_order_id)
     }
 
     pub(crate) fn matches_venue_order_id(&self, venue_order_id: VenueOrderId) -> bool {
@@ -809,6 +824,14 @@ pub(crate) struct DeferredOrderEvents {
     pub(crate) fills: Vec<OrderFilled>,
     pub(crate) fill_sequence: AHashMap<TradeId, u64>,
     pub(crate) recovery_epoch: Option<u64>,
+    observed_filled_qty: Decimal,
+    observed_trade_ids: AHashSet<TradeId>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ObservedChildFill {
+    Order(Decimal),
+    Trade(TradeId),
 }
 
 #[derive(Debug)]
@@ -820,14 +843,59 @@ pub(crate) struct PendingTerminal {
 }
 
 impl DeferredOrderEvents {
-    pub(crate) fn store_order(&mut self, order: &LighterOrder) {
+    pub(crate) fn record_child_recovery_fills(&mut self, observed: ObservedChildFill) {
+        match observed {
+            ObservedChildFill::Order(filled_qty) => {
+                self.observed_filled_qty = self.observed_filled_qty.max(filled_qty);
+            }
+            ObservedChildFill::Trade(trade_id) => {
+                self.observed_trade_ids.insert(trade_id);
+            }
+        }
+
         if self
             .order
             .as_ref()
-            .is_none_or(|prior| !prior.status.is_terminal())
+            .is_some_and(|order| self.conflicts_with_child_fills(order))
+        {
+            self.order = None;
+        }
+    }
+
+    pub(crate) fn child_recovery_has_fills(&self) -> bool {
+        self.observed_filled_qty > Decimal::ZERO
+            || !self.observed_trade_ids.is_empty()
+            || !self.fills.is_empty()
+            || self
+                .order
+                .as_ref()
+                .is_some_and(|order| !order.filled_base_amount.is_zero())
+    }
+
+    pub(crate) fn child_fill_evidence_pending(
+        &self,
+        filled_qty: Decimal,
+        mut has_trade: impl FnMut(&TradeId) -> bool,
+    ) -> bool {
+        self.observed_filled_qty > filled_qty
+            || self.observed_trade_ids.iter().any(|id| !has_trade(id))
+    }
+
+    pub(crate) fn store_order(&mut self, order: &LighterOrder) {
+        if !self.conflicts_with_child_fills(order)
+            && self
+                .order
+                .as_ref()
+                .is_none_or(|prior| !prior.status.is_terminal())
         {
             self.order = Some(order.clone());
         }
+    }
+
+    fn conflicts_with_child_fills(&self, order: &LighterOrder) -> bool {
+        order.status.is_terminal()
+            && (order.filled_base_amount < self.observed_filled_qty
+                || (order.filled_base_amount.is_zero() && !self.observed_trade_ids.is_empty()))
     }
 }
 
@@ -2040,6 +2108,77 @@ impl WsDispatchState {
         }
     }
 
+    pub(crate) fn record_child_fill_evidence(
+        &self,
+        client_order_index: i64,
+        venue_order_id: VenueOrderId,
+        instrument_id: InstrumentId,
+        observed: ObservedChildFill,
+    ) {
+        let Some(cloid) = self
+            .order_restorations
+            .get(&venue_order_id)
+            .map(|order| order.client_order_id())
+            .or_else(|| {
+                self.active_child_fill_cloid(client_order_index, venue_order_id, instrument_id)
+            })
+        else {
+            return;
+        };
+
+        let mut events = self.order_events.lock();
+        if self.order_identities.get(&cloid).is_some_and(|identity| {
+            identity.instrument_id == instrument_id
+                && identity.matches_venue_order_id(venue_order_id)
+                && identity.parent_order_id.is_some()
+                && !identity.has_child_publication()
+        }) || self
+            .order_restorations
+            .get(&venue_order_id)
+            .is_some_and(|order| {
+                order.client_order_id() == cloid
+                    && order.instrument_id() == instrument_id
+                    && order.parent_order_id().is_some()
+                    && !order.is_closed()
+            })
+        {
+            events
+                .entry(cloid)
+                .or_default()
+                .record_child_recovery_fills(observed);
+        }
+    }
+
+    fn active_child_fill_cloid(
+        &self,
+        client_order_index: i64,
+        venue_order_id: VenueOrderId,
+        instrument_id: InstrumentId,
+    ) -> Option<ClientOrderId> {
+        if let Some(cloid) = self.cloid_map.get(&client_order_index).map(|entry| *entry)
+            && let Some(identity) = self.order_identities.get(&cloid)
+            && identity.instrument_id == instrument_id
+            && identity.matches_venue_order_id(venue_order_id)
+        {
+            return identity.parent_order_id.map(|_| cloid);
+        }
+
+        self.order_identities.iter().find_map(|entry| {
+            let identity = entry.value();
+            (identity.parent_order_id.is_some()
+                && identity.instrument_id == instrument_id
+                && identity.matches_venue_order_id(venue_order_id))
+            .then_some(*entry.key())
+        })
+    }
+
+    pub(crate) fn seeded_child_order(&self, cloid: &ClientOrderId) -> Option<OrderAny> {
+        self.order_restorations.iter().find_map(|order| {
+            (order.client_order_id() == *cloid && order.parent_order_id().is_some())
+                .then(|| order.value().clone())
+        })
+    }
+
     pub(crate) fn restore_cached_order(
         &self,
         venue_order_id: VenueOrderId,
@@ -2727,7 +2866,19 @@ impl OrderReportLookup {
             .and_then(|voi| voi.as_str().parse::<i64>().ok())
             .or_else(|| {
                 client_order_id
-                    .and_then(|cloid| dispatch.lookup_venue_order_id(cloid))
+                    .and_then(|cloid| {
+                        dispatch
+                            .order_identity(cloid)
+                            .filter(|identity| identity.instrument_id == instrument_id)
+                            .and_then(|identity| identity.venue_order_id())
+                            .or_else(|| {
+                                dispatch
+                                    .seeded_child_order(cloid)
+                                    .filter(|order| order.instrument_id() == instrument_id)
+                                    .and_then(|order| order.venue_order_id())
+                            })
+                            .or_else(|| dispatch.lookup_venue_order_id(cloid))
+                    })
                     .and_then(|voi| voi.as_str().parse::<i64>().ok())
             });
 
