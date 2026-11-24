@@ -117,9 +117,9 @@ impl CfdSwapModule {
     /// Creates a new CFD swap module.
     ///
     /// Rates are signed daily fractions of settlement notional. Later entries replace earlier
-    /// entries for the same instrument. Booking dates are the weekdays of the rollover time zone. A
-    /// rollover time the zone skips moves forward by the gap, and a repeated one books at its first
-    /// occurrence.
+    /// entries for the same instrument. Booking dates are the weekdays of the rollover time zone. Each
+    /// date books once: a rollover time skipped by a clock change books right after it, and a
+    /// repeated one books the first time.
     #[must_use]
     pub fn new(
         rates: Vec<CfdSwapRate>,
