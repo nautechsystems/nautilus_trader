@@ -1495,17 +1495,17 @@ impl ExecutionAlgorithmConfig {
     #[new]
     #[pyo3(signature = (
         exec_algorithm_id=None,
+        use_hyphens_in_client_order_ids=None,
         log_events=true,
         log_commands=true,
-        use_hyphens_in_client_order_ids=None,
         **_kwargs
     ))]
     fn py_new(
         #[gen_stub(override_type(type_repr = "model.ExecAlgorithmId | str | None"))]
         exec_algorithm_id: Option<&Bound<'_, PyAny>>,
+        use_hyphens_in_client_order_ids: Option<bool>,
         log_events: bool,
         log_commands: bool,
-        use_hyphens_in_client_order_ids: Option<bool>,
         _kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
         let exec_algorithm_id = exec_algorithm_id
@@ -1533,6 +1533,11 @@ impl ExecutionAlgorithmConfig {
     }
 
     #[getter]
+    fn use_hyphens_in_client_order_ids(&self) -> Option<bool> {
+        self.use_hyphens_in_client_order_ids
+    }
+
+    #[getter]
     fn log_events(&self) -> bool {
         self.log_events
     }
@@ -1540,11 +1545,6 @@ impl ExecutionAlgorithmConfig {
     #[getter]
     fn log_commands(&self) -> bool {
         self.log_commands
-    }
-
-    #[getter]
-    fn use_hyphens_in_client_order_ids(&self) -> Option<bool> {
-        self.use_hyphens_in_client_order_ids
     }
 }
 

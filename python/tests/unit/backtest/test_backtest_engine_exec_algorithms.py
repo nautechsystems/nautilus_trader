@@ -128,9 +128,9 @@ class HyphenatedSpawnConfig(ExecutionAlgorithmConfig):
     def __new__(
         cls,
         exec_algorithm_id: ExecAlgorithmId | str,
+        use_hyphens_in_client_order_ids: bool | None = True,
         log_events: bool = True,
         log_commands: bool = True,
-        use_hyphens_in_client_order_ids: bool | None = True,
     ) -> Self:
         """
         Create a config with a subclass-specific hyphen default.
@@ -138,9 +138,9 @@ class HyphenatedSpawnConfig(ExecutionAlgorithmConfig):
         return super().__new__(
             cls,
             exec_algorithm_id=exec_algorithm_id,
+            use_hyphens_in_client_order_ids=use_hyphens_in_client_order_ids,
             log_events=log_events,
             log_commands=log_commands,
-            use_hyphens_in_client_order_ids=use_hyphens_in_client_order_ids,
         )
 
 
@@ -689,15 +689,22 @@ def test_execution_algorithm_config_with_explicit_values() -> None:
     """
     config = ExecutionAlgorithmConfig(
         exec_algorithm_id=ExecAlgorithmId("TWAP-001"),
+        use_hyphens_in_client_order_ids=False,
         log_events=False,
         log_commands=False,
-        use_hyphens_in_client_order_ids=False,
     )
 
+    assert list(inspect.signature(ExecutionAlgorithmConfig).parameters) == [
+        "exec_algorithm_id",
+        "use_hyphens_in_client_order_ids",
+        "log_events",
+        "log_commands",
+        "_kwargs",
+    ]
     assert config.exec_algorithm_id == ExecAlgorithmId("TWAP-001")
+    assert config.use_hyphens_in_client_order_ids is False
     assert config.log_events is False
     assert config.log_commands is False
-    assert config.use_hyphens_in_client_order_ids is False
 
 
 def test_execution_algorithm_derives_default_id_from_runtime_class() -> None:
