@@ -52,6 +52,7 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money},
 };
 use parking_lot::Mutex;
+use rust_decimal::Decimal;
 
 #[derive(Debug)]
 pub(crate) struct StartupActor {
@@ -350,22 +351,28 @@ impl ExecutionClient for StartupMassStatusExecutionClient {
 
 pub(crate) fn add_reconciliation_test_account(node: &LiveNode) {
     let account_id = AccountId::from("BLOCKING-REPORT-001");
+    add_startup_margin_account(node, account_id, Currency::USDT());
+}
+
+pub(crate) fn add_startup_margin_account(
+    node: &LiveNode,
+    account_id: AccountId,
+    currency: Currency,
+) {
+    let total = Money::from_decimal(Decimal::from(1_000_000), currency).unwrap();
+    let zero = Money::zero(currency);
 
     let account = MarginAccount::new(
         AccountState::new(
             account_id,
             AccountType::Margin,
-            vec![AccountBalance::new(
-                Money::from("1000000 USDT"),
-                Money::from("0 USDT"),
-                Money::from("1000000 USDT"),
-            )],
+            vec![AccountBalance::new(total, zero, total)],
             Vec::new(),
             true,
             UUID4::new(),
             UnixNanos::default(),
             UnixNanos::default(),
-            Some(Currency::USDT()),
+            Some(currency),
         ),
         true,
     );

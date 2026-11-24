@@ -415,9 +415,10 @@ CARGO_BUILD_JOBS=4 NEXTEST_TEST_THREADS=2 \
   -E 'test(=startup_reconciliation)' --no-capture
 ```
 
-The scenarios run sequentially on one runtime thread with a fresh node per scenario. A test guard
-disposes the node when the startup step returns or unwinds after a panic. Successful scenarios
-request stop from the strategy start callback and do not prove entry into `Running`.
+The scenarios run sequentially on one runtime thread. A test guard disposes each node when it
+leaves scope, including during panic unwinding. Most successful scenarios request stop from the
+strategy start callback. The late-report and restart replay scenarios assert entry into `Running`.
+Restart replay uses two fresh nodes and carries the recovered orders and position into the second.
 Both `start()` and `run()` use the real execution manager, cache, and portfolio. Missing or ambiguous
 step bindings and failed assertions fail the suite. A filter that selects no scenarios also fails.
 This suite uses the normal runtime; it does not establish deterministic-simulation coverage.
