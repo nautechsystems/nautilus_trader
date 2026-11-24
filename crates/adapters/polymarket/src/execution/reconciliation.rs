@@ -245,6 +245,38 @@ pub(crate) fn checked_venue_order_id(value: &str, evidence: &str) -> anyhow::Res
         .with_context(|| format!("{evidence} has invalid venue order ID {value:?}"))
 }
 
+// Pre-rc9 cache entries preserve the Gamma response without a top-level protocol field.
+// Use that saved evidence, without rewriting instruments or defaulting unknown protocols.
+fn validate_cached_execution_market(instrument: &InstrumentAny) -> anyhow::Result<()> {
+    let info = instrument.info();
+    if let Some(info) = info
+        && !info.contains_key(MARKET_VERSION_KEY)
+        && let Some(raw) = info.get_str("gamma_market")
+    {
+        #[derive(serde::Deserialize)]
+        struct SavedMarket {
+            #[serde(rename = "conditionId")]
+            condition_id: String,
+            version: Option<String>,
+        }
+        let market: SavedMarket =
+            serde_json::from_str(raw).context("Cannot read protocol from saved Gamma market")?;
+        anyhow::ensure!(
+            info.get_str("condition_id")
+                .is_some_and(|id| id.eq_ignore_ascii_case(&market.condition_id)),
+            "Saved Gamma condition does not match cached Polymarket instrument",
+        );
+        return validate_execution_market(
+            market.version.as_deref(),
+            instrument.raw_symbol().as_str(),
+        );
+    }
+    validate_execution_market(
+        info.and_then(|info| info.get_str(MARKET_VERSION_KEY)),
+        instrument.raw_symbol().as_str(),
+    )
+}
+
 pub(crate) fn validate_instrument_binding(
     instrument: &InstrumentAny,
     condition_id: &str,
@@ -254,12 +286,7 @@ pub(crate) fn validate_instrument_binding(
         anyhow::bail!("expected Polymarket BinaryOption instrument, found {instrument:?}");
     };
 
-    validate_execution_market(
-        instrument
-            .info()
-            .and_then(|info| info.get_str(MARKET_VERSION_KEY)),
-        instrument.raw_symbol().as_str(),
-    )?;
+    validate_cached_execution_market(instrument)?;
     let instrument_condition = binary
         .info
         .as_ref()
@@ -1387,12 +1414,7 @@ fn build_reconciliation_position_report(
             ))
         })?;
 
-    validate_execution_market(
-        instrument
-            .info()
-            .and_then(|info| info.get_str(MARKET_VERSION_KEY)),
-        instrument.raw_symbol().as_str(),
-    )?;
+    validate_cached_execution_market(&instrument)?;
 
     Ok(build_position_report_from_reportable_position(
         position, account_id, ts_init,
@@ -1741,12 +1763,7 @@ pub(crate) async fn filter_unsupported_positions(
 }
 
 fn execution_protocol_supported(instrument: &InstrumentAny) -> bool {
-    match validate_execution_market(
-        instrument
-            .info()
-            .and_then(|info| info.get_str(MARKET_VERSION_KEY)),
-        instrument.raw_symbol().as_str(),
-    ) {
+    match validate_cached_execution_market(instrument) {
         Ok(()) => true,
         Err(e) => {
             log::warn!(
@@ -2779,6 +2796,17 @@ mod tests {
 
         let mut info = IndexMap::clone(binary.info.as_ref().unwrap());
         info.insert(MARKET_VERSION_KEY.into(), serde_json::json!(version));
+        // Explicit invalid metadata must not be rescued by a valid saved response.
+        info.insert(
+            "gamma_market".into(),
+            serde_json::json!(
+                serde_json::json!({
+                    "conditionId": TEST_CONDITION_ID,
+                    "version": "v1",
+                })
+                .to_string()
+            ),
+        );
         binary.info = Some(Params::new(info));
         let instrument = InstrumentAny::BinaryOption(binary);
         let error =
@@ -2803,6 +2831,90 @@ mod tests {
             None,
         );
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case::v1("v1", true, true)]
+    #[case::v2("v2", true, true)]
+    #[case::unknown("v3", true, false)]
+    #[case::different_condition("v1", false, false)]
+    fn test_legacy_gamma_protocol_preserves_fill_reconciliation(
+        #[case] version: &str,
+        #[case] matching_condition: bool,
+        #[case] supported: bool,
+    ) {
+        let InstrumentAny::BinaryOption(mut binary) = test_instrument() else {
+            unreachable!()
+        };
+        let mut info = IndexMap::clone(binary.info.as_ref().unwrap());
+        info.shift_remove(MARKET_VERSION_KEY);
+        let saved = serde_json::json!({
+            "conditionId": if matching_condition { TEST_CONDITION_ID } else { "other" },
+            "version": version,
+        });
+        info.insert("gamma_market".into(), serde_json::json!(saved.to_string()));
+        binary.info = Some(Params::new(info));
+        let instrument = InstrumentAny::BinaryOption(binary);
+        let original = serde_json::to_value(&instrument).unwrap();
+        assert_eq!(execution_protocol_supported(&instrument), supported);
+        let instruments = AtomicMap::new();
+        instruments.insert(Ustr::from(TEST_TOKEN_ID), instrument.clone());
+        let ctx = test_fill_context();
+        let trade = confirmed_taker_trade();
+        let result = build_fill_reports_from_trades(
+            std::slice::from_ref(&trade),
+            &ctx,
+            &instruments,
+            FillReportScope::new(None, None),
+            UnixNanos::from(1),
+            None,
+            None,
+        );
+
+        if supported {
+            let (reports, _) = result.unwrap();
+            let (mut expected, _) = build_fill_reports_from_trades(
+                &[trade],
+                &ctx,
+                &test_instruments(),
+                FillReportScope::new(None, None),
+                UnixNanos::from(1),
+                None,
+                None,
+            )
+            .unwrap();
+            assert!(!reports.is_empty());
+            assert_eq!(reports.len(), expected.len());
+            // Report IDs are generated independently; all economic and routing fields must match.
+            for (actual, baseline) in reports.iter().zip(&mut expected) {
+                baseline.report_id = actual.report_id;
+            }
+            assert_eq!(
+                serde_json::to_value(reports).unwrap(),
+                serde_json::to_value(expected).unwrap()
+            );
+        } else {
+            assert!(result.is_err());
+        }
+        assert_eq!(serde_json::to_value(&instrument).unwrap(), original);
+    }
+
+    #[rstest]
+    #[case::malformed(None)]
+    #[case::missing_version(Some(serde_json::json!({"conditionId": TEST_CONDITION_ID})))]
+    #[case::null_version(Some(serde_json::json!({"conditionId": TEST_CONDITION_ID, "version": null})))]
+    fn test_legacy_gamma_protocol_rejects_unusable_evidence(
+        #[case] saved: Option<serde_json::Value>,
+    ) {
+        let raw = saved.map_or_else(|| "{".to_string(), |value| value.to_string());
+        let InstrumentAny::BinaryOption(mut binary) = test_instrument() else {
+            unreachable!()
+        };
+        let mut info = IndexMap::clone(binary.info.as_ref().unwrap());
+        info.shift_remove(MARKET_VERSION_KEY);
+        info.insert("gamma_market".into(), serde_json::json!(raw));
+        binary.info = Some(Params::new(info));
+        assert!(validate_cached_execution_market(&InstrumentAny::BinaryOption(binary)).is_err());
     }
 
     #[rstest]
