@@ -5302,6 +5302,7 @@ fn test_cfd_swap_exact_long_short_and_triple_roll_balances(
         )],
         Time::constant(17, 0, 0, 0),
         Weekday::Friday,
+        TimeZone::UTC,
     );
     let modules = vec![SimulationModuleHandle::from(SimulationModuleAny::CfdSwap(
         module,
@@ -5342,6 +5343,80 @@ fn test_cfd_swap_exact_long_short_and_triple_roll_balances(
 }
 
 #[rstest]
+#[case::new_york_standard_time("America/New_York", 17, 0, "2020-01-15T22:00:00Z", "-1.20 USD")]
+#[case::new_york_daylight_saving_time(
+    "America/New_York",
+    17,
+    0,
+    "2020-07-15T21:00:00Z",
+    "-1.20 USD"
+)]
+#[case::local_date_ahead_of_utc("Asia/Tokyo", 7, 0, "2020-01-14T22:00:00Z", "-1.20 USD")]
+#[case::rollover_time_in_gap("Africa/Cairo", 0, 30, "2024-04-25T22:30:00Z", "-0.40 USD")]
+#[case::rollover_time_in_fold("Africa/Cairo", 23, 30, "2024-10-31T20:30:00Z", "-0.40 USD")]
+fn test_cfd_swap_rolls_over_at_local_time_in_time_zone(
+    #[case] time_zone: &str,
+    #[case] hour: i8,
+    #[case] minute: i8,
+    #[case] rollover: &str,
+    #[case] expected_swap: &str,
+) {
+    let instrument = InstrumentAny::Cfd(cfd_gold());
+    let instrument_id = instrument.id();
+    let module = CfdSwapModule::new(
+        vec![CfdSwapRate::new(
+            instrument_id,
+            Decimal::from_str("-0.0001").unwrap(),
+            Decimal::from_str("0.0002").unwrap(),
+        )],
+        Time::constant(hour, minute, 0, 0),
+        Weekday::Wednesday,
+        get_timezone(time_zone).unwrap(),
+    );
+    let exchange = get_exchange(
+        Venue::new("SIM"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        None,
+    );
+    let cache = exchange.borrow().cache().clone();
+    add_cfd_position(&mut cache.borrow_mut(), &instrument, OrderSide::Buy);
+    exchange
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    add_fx_quote(&exchange, &cache, instrument_id, "1999.00", "2001.00");
+    let instruments = AHashMap::from_iter([(instrument_id, instrument)]);
+    let rollover = UnixNanos::from(rollover);
+
+    let process = |ts_now| {
+        let exchange = exchange.borrow();
+        let cache = cache.borrow();
+        module
+            .process(
+                ts_now,
+                &ExchangeContext {
+                    venue: Venue::new("SIM"),
+                    base_currency: None,
+                    instruments: &instruments,
+                    matching_engines: exchange.get_matching_engines(),
+                    cache: &cache,
+                },
+            )
+            .unwrap()
+    };
+
+    assert_eq!(
+        process(rollover - DurationNanos::from_mins(1)),
+        SimulationModuleResult::NotReady
+    );
+    assert_eq!(
+        process(rollover),
+        SimulationModuleResult::Completed(vec![Money::from(expected_swap)])
+    );
+}
+
+#[rstest]
 fn test_cfd_swap_price_and_acknowledgement_retry_and_reset_isolation() {
     let _guard = CAPTURING_LOGGER_TEST_LOCK.lock();
     let _ = log::set_logger(&CAPTURING_LOGGER);
@@ -5358,6 +5433,7 @@ fn test_cfd_swap_price_and_acknowledgement_retry_and_reset_isolation() {
         )],
         Time::constant(17, 0, 0, 0),
         Weekday::Friday,
+        TimeZone::UTC,
     ));
     let exchange = get_exchange(
         Venue::new("SIM"),
@@ -5485,6 +5561,7 @@ fn test_cfd_swap_converts_to_single_currency_account_base(gbpusd_sim: CurrencyPa
         )],
         Time::constant(17, 0, 0, 0),
         Weekday::Friday,
+        TimeZone::UTC,
     );
     let exchange = exchange.borrow();
     let cache = cache.borrow();

@@ -67,7 +67,7 @@ impl CfdSwapRate {
     }
 }
 
-/// Simulates daily CFD swap adjustments at a configurable UTC rollover time.
+/// Simulates daily CFD swap adjustments at a configurable rollover time and time zone.
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
@@ -85,6 +85,7 @@ pub struct CfdSwapModule {
     rates: AHashMap<InstrumentId, CfdSwapRate>,
     rollover_time: Time,
     triple_roll_weekday: Weekday,
+    rollover_time_zone: TimeZone,
     rollover_completed: Cell<bool>,
     rollover_day: RefCell<Option<RolloverDayState>>,
     swap_totals: RefCell<AHashMap<Currency, Decimal>>,
@@ -116,9 +117,16 @@ impl CfdSwapModule {
     /// Creates a new CFD swap module.
     ///
     /// Rates are signed daily fractions of settlement notional. Later entries replace earlier
-    /// entries for the same instrument.
+    /// entries for the same instrument. Booking dates are the weekdays of the rollover time zone. A
+    /// rollover time the zone skips moves forward by the gap, and a repeated one books at its first
+    /// occurrence.
     #[must_use]
-    pub fn new(rates: Vec<CfdSwapRate>, rollover_time: Time, triple_roll_weekday: Weekday) -> Self {
+    pub fn new(
+        rates: Vec<CfdSwapRate>,
+        rollover_time: Time,
+        triple_roll_weekday: Weekday,
+        rollover_time_zone: TimeZone,
+    ) -> Self {
         Self {
             rates: rates
                 .into_iter()
@@ -126,6 +134,7 @@ impl CfdSwapModule {
                 .collect(),
             rollover_time,
             triple_roll_weekday,
+            rollover_time_zone,
             rollover_completed: Cell::new(false),
             rollover_day: RefCell::new(None),
             swap_totals: RefCell::new(AHashMap::new()),
@@ -144,10 +153,10 @@ impl CfdSwapModule {
     }
 
     fn rollover_time_ns(&self, date: Date) -> anyhow::Result<u64> {
-        let timestamp = date
-            .to_datetime(self.rollover_time)
-            .to_zoned(TimeZone::UTC)?
-            .timestamp()
+        let timestamp = self
+            .rollover_time_zone
+            .to_ambiguous_timestamp(date.to_datetime(self.rollover_time))
+            .compatible()?
             .as_nanosecond();
         Ok(u64::try_from(timestamp)?)
     }
@@ -363,7 +372,10 @@ impl SimulationModule for CfdSwapModule {
         ts_now: UnixNanos,
         ctx: &ExchangeContext,
     ) -> anyhow::Result<SimulationModuleResult> {
-        let observed_date = ts_now.to_datetime_utc().to_zoned(TimeZone::UTC).date();
+        let observed_date = ts_now
+            .to_datetime_utc()
+            .to_zoned(self.rollover_time_zone.clone())
+            .date();
         let initialize_date = {
             let day = self.rollover_day.borrow();
             match day.as_ref() {

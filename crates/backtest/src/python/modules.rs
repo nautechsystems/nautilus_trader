@@ -19,8 +19,9 @@ use std::sync::LazyLock;
 
 use ahash::AHashMap;
 use jiff::civil::{Time, Weekday};
-use nautilus_core::python::{
-    clone_py_object, to_pynotimplemented_err, to_pytype_err, to_pyvalue_err,
+use nautilus_core::{
+    datetime::get_timezone,
+    python::{clone_py_object, to_pynotimplemented_err, to_pytype_err, to_pyvalue_err},
 };
 use nautilus_model::{
     data::Data,
@@ -488,18 +489,26 @@ impl CfdSwapRate {
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl CfdSwapModule {
-    /// Simulates daily CFD swap adjustments at a configurable UTC rollover time.
+    /// Simulates daily CFD swap adjustments at a configurable rollover time and time zone.
     #[new]
     #[gen_stub(override_return_type(type_repr = "typing.Self", imports = ("typing",)))]
-    #[pyo3(signature = (rates, rollover_hour=17, rollover_minute=0, triple_roll_weekday=5))]
+    #[pyo3(signature = (
+        rates,
+        rollover_hour=17,
+        rollover_minute=0,
+        triple_roll_weekday=5,
+        rollover_time_zone="UTC",
+    ))]
     fn py_new(
         rates: Vec<CfdSwapRate>,
         rollover_hour: i8,
         rollover_minute: i8,
         triple_roll_weekday: i8,
+        rollover_time_zone: &str,
     ) -> PyResult<PyClassInitializer<Self>> {
         let rollover_time =
             Time::new(rollover_hour, rollover_minute, 0, 0).map_err(to_pyvalue_err)?;
+        let rollover_time_zone = get_timezone(rollover_time_zone).map_err(to_pyvalue_err)?;
         let triple_roll_weekday =
             Weekday::from_monday_one_offset(triple_roll_weekday).map_err(to_pyvalue_err)?;
         Ok(
@@ -507,6 +516,7 @@ impl CfdSwapModule {
                 rates,
                 rollover_time,
                 triple_roll_weekday,
+                rollover_time_zone,
             )),
         )
     }

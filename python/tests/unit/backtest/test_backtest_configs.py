@@ -29,6 +29,8 @@ from nautilus_trader.backtest import BacktestDataConfig
 from nautilus_trader.backtest import BacktestEngineConfig
 from nautilus_trader.backtest import BacktestRunConfig
 from nautilus_trader.backtest import BacktestVenueConfig
+from nautilus_trader.backtest import CfdSwapModule
+from nautilus_trader.backtest import CfdSwapRate
 from nautilus_trader.backtest import FXRolloverInterestModule
 from nautilus_trader.backtest import InterestRateRecord
 from nautilus_trader.common import CacheConfig
@@ -1144,3 +1146,22 @@ def test_run_config_chunk_size_zero_rejected() -> None:
 
     with pytest.raises(ValueError, match="chunk_size"):
         BacktestRunConfig(venues=[venue], data=[data], chunk_size=0)
+
+
+def test_cfd_swap_module_rollover_time_zone() -> None:
+    """
+    Test CFD swap module rollover time zone.
+    """
+    rates = [
+        CfdSwapRate(
+            instrument_id=InstrumentId.from_str("GOLD-CFD.SIM"),
+            long_rate=Decimal("-0.0001"),
+            short_rate=Decimal("0.0002"),
+        ),
+    ]
+
+    module = CfdSwapModule(rates=rates, rollover_time_zone="America/New_York")
+
+    assert "America/New_York" in repr(module)
+    with pytest.raises(ValueError, match="Not/A_Zone"):
+        CfdSwapModule(rates=rates, rollover_time_zone="Not/A_Zone")
