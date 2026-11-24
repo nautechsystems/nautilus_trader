@@ -1192,11 +1192,11 @@ The polling interval defaults to 3,600 seconds (60 minutes) and is configurable
 via `instrument_status_poll_secs` in the data client config. Set to `0` to
 disable polling entirely.
 
-On initial connect, the adapter seeds its status cache from the exchange info
-response without emitting events. Only subsequent polls that detect a status
-change emit `InstrumentStatus` events. If a symbol disappears from exchange
-info (e.g. after delisting or contract expiry), the adapter emits
-`NotAvailableForTrading`.
+On connect, the adapter caches statuses from exchange info without emitting events. On the first
+status subscription the data engine sends for an instrument, the client emits its cached status
+if available, even with polling disabled.
+Later polls and catalog refreshes emit status changes. If a tracked symbol disappears from exchange
+info after delisting or contract expiry, the adapter emits `NotAvailableForTrading`.
 
 Status polling does not reload instrument definitions. The separate `instrument_refresh_interval_secs` task
 performs a complete filtered catalog load. It atomically replaces the data-client and WebSocket lookup maps.
@@ -1208,6 +1208,8 @@ and reconnect starts one replacement task with a new cancellation token.
 
 Catalog refreshes and status polls serialize their requests and snapshot updates so overlapping responses
 cannot overwrite newer statuses or duplicate `InstrumentStatus` events. Each task keeps its own polling interval.
+The adapter also orders subscription replay with these updates so a replay cannot publish an older cached status
+after a newer one.
 
 ### Status mapping
 
@@ -1264,7 +1266,11 @@ to `Pause`, and every other value to `NotAvailableForTrading`.
 | TradingHalt       | Halt                   |
 | TradingCancelOnly | Halt                   |
 
-Unknown or undocumented Futures status values map to `NotAvailableForTrading`.
+For USD-M and COIN-M, a `TRADING` perpetual with a positive `deliveryDate` before
+2100-12-25 08:00 UTC emits `PreClose` with `is_trading = true`. Binance uses this delivery date
+to announce a scheduled delisting while the contract still trades. A `TRADING` perpetual with
+the placeholder date or a later value maps to `Trading`. Unknown or undocumented Futures
+status values map to `NotAvailableForTrading`.
 
 :::note
 Only instruments that are in a tradable state at connect time are tracked.

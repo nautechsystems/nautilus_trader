@@ -113,6 +113,7 @@ use crate::{
             parse_required_quantity_at_precision, parse_usdm_instrument_with_fees,
             should_warn_on_instrument_parse_error,
         },
+        status::{SymbolTradingStatus, futures_symbol_status},
         symbol::{format_binance_symbol, format_instrument_id},
         urls::get_http_base_url,
     },
@@ -2221,6 +2222,16 @@ impl BinanceFuturesHttpClient {
     pub async fn request_symbol_statuses(
         &self,
     ) -> BinanceFuturesHttpResult<AHashMap<Ustr, MarketStatusAction>> {
+        let statuses = self.request_symbol_trading_statuses().await?;
+        Ok(statuses
+            .into_iter()
+            .map(|(symbol, status)| (symbol, status.action))
+            .collect())
+    }
+
+    pub(crate) async fn request_symbol_trading_statuses(
+        &self,
+    ) -> BinanceFuturesHttpResult<AHashMap<Ustr, SymbolTradingStatus>> {
         let mut statuses = AHashMap::new();
 
         match self.product_type {
@@ -2231,7 +2242,12 @@ impl BinanceFuturesHttpClient {
                     .await?;
 
                 for symbol in &info.symbols {
-                    statuses.insert(symbol.symbol, MarketStatusAction::from(symbol.status));
+                    let status = futures_symbol_status(
+                        MarketStatusAction::from(symbol.status),
+                        &symbol.contract_type,
+                        symbol.delivery_date,
+                    );
+                    statuses.insert(symbol.symbol, status);
                 }
             }
             BinanceProductType::CoinM => {
@@ -2241,10 +2257,14 @@ impl BinanceFuturesHttpClient {
                     .await?;
 
                 for symbol in &info.symbols {
-                    let action = symbol
-                        .contract_status
-                        .map_or(MarketStatusAction::NotAvailableForTrading, Into::into);
-                    statuses.insert(symbol.symbol, action);
+                    let status = futures_symbol_status(
+                        symbol
+                            .contract_status
+                            .map_or(MarketStatusAction::NotAvailableForTrading, Into::into),
+                        &symbol.contract_type,
+                        symbol.delivery_date,
+                    );
+                    statuses.insert(symbol.symbol, status);
                 }
             }
             _ => {

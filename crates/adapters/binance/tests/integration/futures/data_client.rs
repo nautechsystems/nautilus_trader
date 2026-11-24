@@ -61,7 +61,7 @@ use nautilus_common::{
             RequestTrades,
             subscribe::{
                 SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth, SubscribeCustomData,
-                SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
+                SubscribeInstrumentStatus, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
             },
             unsubscribe::{
                 UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeCustomData,
@@ -5547,6 +5547,89 @@ fn expected_l1_deltas(quote: QuoteTick, sequence: u64) -> OrderBookDeltas {
     );
 
     OrderBookDeltas::new(quote.instrument_id, vec![bid, ask])
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_subscribe_instrument_status_replays_scheduled_delisting() {
+    let (request_tx, mut requests) = tokio::sync::mpsc::unbounded_channel();
+
+    let addr = start_data_test_server_with_state(DataTestServerState {
+        exchange_info_requests: Some(request_tx),
+        ..Default::default()
+    })
+    .await;
+
+    let (tx, mut events) = tokio::sync::mpsc::unbounded_channel();
+    set_data_event_sender(tx);
+
+    let config = BinanceDataClientConfig {
+        base_url_http: Some(format!("http://{addr}")),
+        base_url_ws: Some(format!("ws://{addr}/ws")),
+        product_type: BinanceProductType::UsdM,
+        instrument_status_poll_secs: 0,
+        instrument_refresh_interval_secs: 0,
+        ..Default::default()
+    };
+
+    let mut client =
+        BinanceFuturesDataClient::new(*BINANCE_CLIENT_ID, config, BinanceProductType::UsdM)
+            .unwrap();
+
+    let mut info = load_fixture("exchange_info_usdm.json");
+    info["symbols"][0]["deliveryDate"] = json!(1_793_178_000_000_i64);
+
+    let serve_initial = async {
+        for _ in 0..2 {
+            let request = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            request.send(json_response(&info)).unwrap();
+        }
+    };
+
+    let (connected, ()) = tokio::join!(client.connect(), serve_initial);
+    connected.unwrap();
+
+    while let Ok(event) = events.try_recv() {
+        assert!(!matches!(event, DataEvent::Data(Data::InstrumentStatus(_))));
+    }
+
+    let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+
+    let cmd = SubscribeInstrumentStatus::new(
+        instrument_id,
+        Some(*BINANCE_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    client.subscribe_instrument_status(cmd).unwrap();
+
+    let event = recv_data(&mut events, Duration::from_secs(5)).await;
+    client.disconnect().await.unwrap();
+
+    let Some(Data::InstrumentStatus(status)) = event else {
+        panic!("Expected an instrument status event, was {event:?}");
+    };
+
+    let expected = InstrumentStatus::new(
+        instrument_id,
+        MarketStatusAction::PreClose,
+        status.ts_event,
+        status.ts_event,
+        None,
+        None,
+        Some(true),
+        None,
+        None,
+    );
+
+    assert_eq!(status, expected);
 }
 
 #[rstest]

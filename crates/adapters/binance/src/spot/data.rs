@@ -90,7 +90,7 @@ use crate::{
         enums::{BinanceEnvironment, BinanceProductType},
         http_weights::depth_weight_spot as depth_request_weight,
         parse::{bar_spec_to_binance_interval, quote_to_l1_deltas},
-        status::diff_and_emit_statuses,
+        status::InstrumentStatusCache,
         urls::{get_http_base_url_with_us, get_ws_base_url_with_us},
         websocket::{chain_command, send_book_snapshot},
     },
@@ -142,7 +142,7 @@ pub struct BinanceSpotDataClient {
     shutdown_errors: Vec<String>,
     data_sender: EventSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-    status_cache: Arc<AtomicMap<InstrumentId, MarketStatusAction>>,
+    status_cache: Arc<InstrumentStatusCache<MarketStatusAction>>,
     instrument_update_lock: Arc<tokio::sync::Mutex<()>>,
     book_sync: BookSyncTracker,
     book_subscriptions: Arc<AtomicMap<InstrumentId, String>>,
@@ -262,7 +262,7 @@ impl BinanceSpotDataClient {
             shutdown_errors: Vec::new(),
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
-            status_cache: Arc::new(AtomicMap::new()),
+            status_cache: Arc::new(InstrumentStatusCache::new()),
             instrument_update_lock: Arc::new(tokio::sync::Mutex::new(())),
             book_sync,
             book_subscriptions: Arc::new(AtomicMap::new()),
@@ -376,7 +376,7 @@ impl BinanceSpotDataClient {
         provider: &crate::config::BinanceInstrumentProviderConfig,
         us: bool,
         instruments_cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-        status_cache: &Arc<AtomicMap<InstrumentId, MarketStatusAction>>,
+        status_cache: &InstrumentStatusCache<MarketStatusAction>,
         instrument_update_lock: &tokio::sync::Mutex<()>,
         ws: &SpotWsClient,
         sender: &EventSender<DataEvent>,
@@ -406,12 +406,9 @@ impl BinanceSpotDataClient {
         ws.replace_instruments(&instruments);
 
         if emit_status_changes {
-            let mut cached_statuses = (**status_cache.load()).clone();
-            let ts = clock.get_time_ns();
-            diff_and_emit_statuses(&status_map, &mut cached_statuses, sender, ts, ts);
-            status_cache.store(cached_statuses);
+            status_cache.update(&status_map, sender, clock);
         } else {
-            status_cache.store(status_map);
+            status_cache.seed(status_map);
         }
 
         for instrument in &instruments {
@@ -1110,7 +1107,6 @@ impl DataClient for BinanceSpotDataClient {
 
                                 match http.request_symbol_statuses(us).await {
                                     Ok(statuses) => {
-                                        let ts = clock.get_time_ns();
                                         let inst_guard = poll_instruments.load();
                                         let new_statuses = statuses
                                             .into_iter()
@@ -1120,12 +1116,7 @@ impl DataClient for BinanceSpotDataClient {
                                             .collect();
                                         drop(inst_guard);
 
-                                        let mut cache =
-                                            (**poll_status_cache.load()).clone();
-                                        diff_and_emit_statuses(
-                                            &new_statuses, &mut cache, &poll_sender, ts, ts,
-                                        );
-                                        poll_status_cache.store(cache);
+                                        poll_status_cache.update(&new_statuses, &poll_sender, clock);
                                     }
                                     Err(e) => {
                                         log::warn!("Instrument status poll failed: {e}");
@@ -1403,6 +1394,10 @@ impl DataClient for BinanceSpotDataClient {
             log::debug!(
                 "subscribe_instrument_status: {instrument_id} (status changes detected via periodic exchange info polling)",
             );
+
+            self.status_cache
+                .replay(instrument_id, &self.data_sender, self.clock);
+
             Ok(())
         })
     }
