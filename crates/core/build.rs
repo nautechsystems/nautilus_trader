@@ -18,13 +18,17 @@
 //! This script propagates version information through the `NAUTILUS_VERSION` and
 //! `NAUTILUS_USER_AGENT` compile-time environment variables.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=Cargo.toml");
-    println!("cargo:rerun-if-changed=../Cargo.toml");
-    println!("cargo:rerun-if-changed=../../python/pyproject.toml");
+
+    for path in ["../Cargo.toml", "../../python/pyproject.toml"] {
+        if Path::new(path).exists() {
+            println!("cargo:rerun-if-changed={path}");
+        }
+    }
 
     // The Python manifest is unavailable when this crate builds from a published package
     let nautilus_version = "2.0.0";
