@@ -45,7 +45,7 @@ use nautilus_model::{
             option_contract_appl, tokenized_asset_aaplx,
         },
     },
-    orderbook::OrderBook,
+    orderbook::{BookIntegrityError, OrderBook},
     orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
     types::{Currency, Money, Price, Quantity, fixed::FIXED_PRECISION, quantity::QuantityRaw},
 };
@@ -5216,6 +5216,223 @@ fn test_l1_queue_orders_share_exact_trade_budget(
     );
     assert_eq!(second.filled_qty(), second_filled);
     assert_eq!(second.leaves_qty(), Quantity::from("2.000") - second_filled);
+}
+
+#[rstest]
+#[case::late_seller(OrderSide::Sell, "1499.00", OrderSide::Buy, "1498.00", "7.000")]
+#[case::late_buyer(OrderSide::Buy, "1501.00", OrderSide::Buy, "1499.00", "7.000")]
+#[case::bid_restatement(OrderSide::Sell, "1499.00", OrderSide::Buy, "1499.00", "10.000")]
+#[case::ask_restatement(OrderSide::Buy, "1501.00", OrderSide::Sell, "1501.00", "10.000")]
+#[case::deeper_print(OrderSide::Sell, "1498.00", OrderSide::Buy, "1498.00", "10.000")]
+fn test_late_print_consumption_at_touch(
+    #[case] side: OrderSide,
+    #[case] price: &str,
+    #[case] update_side: OrderSide,
+    #[case] update_price: &str,
+    #[case] expected_filled: &str,
+) {
+    // The book is bid 1499.00 x 10 and ask 1501.00 x 10 from ts 1, a level update at
+    // ts 4 arrives before a 3.000 print with ts_event 3 that is received at ts 5
+    let (mut engine, _) = custom_book_engine(BookType::L2_MBP, true, false);
+    let id = engine.instrument.id();
+
+    let (aggressor_side, touch) = match side {
+        OrderSide::Buy => (AggressorSide::Buy, dec!(1501)),
+        OrderSide::Sell => (AggressorSide::Sell, dec!(1499)),
+    };
+
+    let update = OrderBookDelta::new(
+        id,
+        BookAction::Update,
+        BookOrder::new(
+            update_side,
+            Price::from(update_price),
+            Quantity::from("10.000"),
+            0,
+        ),
+        RecordFlag::F_LAST as u8,
+        2,
+        4.into(),
+        4.into(),
+    );
+
+    engine
+        .process_order_book_deltas(&OrderBookDeltas::new(id, vec![update]))
+        .unwrap();
+
+    engine.process_trade_tick(&TradeTick::new(
+        id,
+        Price::from(price),
+        Quantity::from("3.000"),
+        aggressor_side,
+        TradeId::from("LATE-PRINT"),
+        3.into(),
+        5.into(),
+    ));
+
+    let mut ioc = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(id)
+        .side(side)
+        .price(Price::from(price))
+        .quantity(Quantity::from("10.000"))
+        .time_in_force(TimeInForce::Ioc)
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut ioc, AccountId::from("SIM-001"));
+
+    let cache = engine.cache.borrow();
+    let order = cache.order(&ioc.client_order_id()).unwrap();
+    assert_eq!(order.filled_qty(), Quantity::from(expected_filled));
+    assert_eq!(order.avg_px(), Some(touch));
+}
+
+#[rstest]
+#[case::partially_applied(true, "7.000")]
+#[case::no_mutation(false, "10.000")]
+fn test_late_print_consumption_after_book_delta_error(
+    #[case] restates_touch: bool,
+    #[case] expected_book_size: &str,
+) {
+    let (mut engine, _) = custom_book_engine(BookType::L2_MBP, true, false);
+    let id = engine.instrument.id();
+    let price = Price::from("1499.00");
+    let deeper_price = Price::from("1498.00");
+
+    // Advance the book timestamp without restating the best bid
+    engine
+        .process_order_book_delta(&OrderBookDelta::new(
+            id,
+            BookAction::Update,
+            BookOrder::new(OrderSide::Buy, deeper_price, Quantity::from("5.000"), 0),
+            RecordFlag::F_LAST as u8,
+            2,
+            4.into(),
+            4.into(),
+        ))
+        .unwrap();
+
+    let mut deltas = vec![
+        OrderBookDelta::new(
+            id,
+            BookAction::Update,
+            BookOrder::new(OrderSide::Buy, price, Quantity::from("7.000"), 0),
+            0,
+            3,
+            4.into(),
+            4.into(),
+        ),
+        OrderBookDelta::new(
+            id,
+            BookAction::Delete,
+            BookOrder::new(None, deeper_price, Quantity::from("0.000"), 0),
+            0,
+            3,
+            4.into(),
+            4.into(),
+        ),
+    ];
+
+    if !restates_touch {
+        deltas.swap(0, 1);
+    }
+
+    deltas[1].flags = RecordFlag::F_LAST as u8;
+    let error = engine
+        .process_order_book_deltas(&OrderBookDeltas::new(id, deltas))
+        .unwrap_err();
+
+    engine.process_trade_tick(&TradeTick::new(
+        id,
+        price,
+        Quantity::from("3.000"),
+        AggressorSide::Sell,
+        TradeId::from("LATE-PRINT"),
+        3.into(),
+        5.into(),
+    ));
+
+    let mut ioc = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(id)
+        .side(OrderSide::Sell)
+        .price(price)
+        .quantity(Quantity::from("10.000"))
+        .time_in_force(TimeInForce::Ioc)
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut ioc, AccountId::from("SIM-001"));
+
+    assert_eq!(
+        error.downcast_ref::<BookIntegrityError>(),
+        Some(&BookIntegrityError::NoOrderSide)
+    );
+    assert_eq!(
+        engine.book.best_bid_size(),
+        Some(Quantity::from(expected_book_size))
+    );
+    let cache = engine.cache.borrow();
+    let order = cache.order(&ioc.client_order_id()).unwrap();
+    assert_eq!(order.filled_qty(), Quantity::from("7.000"));
+    assert_eq!(order.avg_px(), Some(dec!(1499)));
+}
+
+#[rstest]
+fn test_readded_l2_level_has_fresh_liquidity(#[values(false, true)] batched: bool) {
+    let (mut engine, _) = custom_book_engine(BookType::L2_MBP, true, false);
+    let id = engine.instrument.id();
+    let price = Price::from("1499.00");
+
+    // The print takes the whole bid, which is then deleted and re-added at the same size
+    engine.process_trade_tick(&TradeTick::new(
+        id,
+        price,
+        Quantity::from("10.000"),
+        AggressorSide::Sell,
+        TradeId::from("PRIOR-LEVEL"),
+        2.into(),
+        2.into(),
+    ));
+
+    let deltas = [
+        (3_u64, BookAction::Delete, "0.000"),
+        (4, BookAction::Add, "10.000"),
+    ]
+    .map(|(ts, action, size)| {
+        OrderBookDelta::new(
+            id,
+            action,
+            BookOrder::new(OrderSide::Buy, price, Quantity::from(size), 0),
+            RecordFlag::F_LAST as u8,
+            ts,
+            ts.into(),
+            ts.into(),
+        )
+    });
+
+    if batched {
+        engine
+            .process_order_book_deltas(&OrderBookDeltas::new(id, deltas.to_vec()))
+            .unwrap();
+    } else {
+        for delta in deltas {
+            engine.process_order_book_delta(&delta).unwrap();
+        }
+    }
+
+    let mut ioc = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(id)
+        .side(OrderSide::Sell)
+        .price(price)
+        .quantity(Quantity::from("10.000"))
+        .time_in_force(TimeInForce::Ioc)
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut ioc, AccountId::from("SIM-001"));
+
+    let cache = engine.cache.borrow();
+    assert_eq!(
+        cache.order(&ioc.client_order_id()).unwrap().filled_qty(),
+        Quantity::from("10.000")
+    );
 }
 
 #[rstest]
