@@ -60,6 +60,7 @@ Released on TBD (UTC).
 - Changed PostgreSQL option underlying, exercise, settlement, and spread tick columns; run `nautilus database init`
 - Changed PostgreSQL OMS recovery to restore `UNSPECIFIED` for legacy positions whose OMS metadata has no trader ID
 - Changed PostgreSQL `Cache::add` to persist per trader and skip legacy shared user entries on restore
+- Changed Redis cache startup and PostgreSQL bulk position loads to fail on unreadable records
 - Changed `Cache::add` to reject the reserved `position_oms:` key prefix
 - Changed `Cache::add_order` to reject venue order ID conflicts on insert. Handle `VenueOrderIdOwnershipError`
 - Changed `BinaryOption` Parquet writes to require registered tick schemes; register custom schemes before saving

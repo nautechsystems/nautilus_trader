@@ -2959,28 +2959,34 @@ mod serial_tests {
         pg_cache.close().unwrap();
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_load_positions_skips_duplicate_fill_position() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_postgres_startup_rejects_duplicate_position_fill() {
+        let trader_id = TraderId::default();
         let mut pg_cache = get_test_pg_cache_database().await.unwrap();
+        reset_test_database(&pg_cache).await;
+
+        let build_node = || {
+            LiveNode::builder(trader_id, Environment::Live)
+                .unwrap()
+                .with_delay_post_stop_secs(0)
+                .with_exec_engine_config(LiveExecutionEngineConfig {
+                    reconciliation: false,
+                    ..Default::default()
+                })
+                .with_cache_database_factory(Box::new(PostgresCacheConfig::default()))
+                .build()
+                .unwrap()
+        };
+
+        let mut empty = build_node();
+        empty.start().await.unwrap();
+        assert_eq!(empty.state(), NodeState::Running);
+        empty.stop().await.unwrap();
+        empty.dispose();
+        drop(empty);
 
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
-        pg_cache
-            .add_currency(&instrument.base_currency().unwrap())
-            .unwrap();
-        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
-        pg_cache.add_instrument(&instrument).unwrap();
-
-        wait_until_async(
-            || async {
-                pg_cache
-                    .load_instrument(&instrument.id())
-                    .await
-                    .unwrap()
-                    .is_some()
-            },
-            Duration::from_secs(5),
-        )
-        .await;
+        add_test_instrument(&pg_cache, &instrument).await;
 
         let good_order = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(instrument.id())
@@ -3038,18 +3044,31 @@ mod serial_tests {
             .await
             .unwrap();
 
-        let positions = DatabaseQueries::load_positions(&pg_cache.pool, &TraderId::default())
-            .await
-            .unwrap();
-
-        assert_eq!(positions.len(), 1);
-        assert_eq!(
-            positions[0].events.as_slice(),
-            good_position.events.as_slice()
-        );
+        let instruments = pg_cache.load_instruments().await.unwrap();
+        let healthy = pg_cache.load_position(&good_position_id).await.unwrap();
+        let bulk = pg_cache.load_all().await;
+        let mut node = build_node();
+        let startup = node.start().await;
+        let node_state = node.state();
+        node.dispose();
 
         reset_test_database(&pg_cache).await;
         pg_cache.close().unwrap();
+
+        assert_entirely_equal(&instruments[&instrument.id()], &instrument);
+        assert_entirely_equal(healthy.as_ref().unwrap(), &good_position);
+        let startup_error = startup.unwrap_err();
+        assert_eq!(startup_error.to_string(), "Failed to load persistent cache");
+        assert_eq!(node_state, NodeState::Idle);
+
+        for error in [bulk.unwrap_err(), startup_error] {
+            assert_eq!(
+                error.root_cause().to_string(),
+                format!(
+                    "Duplicate fill event for position {corrupt_position_id}: E-PG-CORRUPT-POSITION"
+                ),
+            );
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -5168,6 +5187,8 @@ mod serial_tests {
     #[rstest]
     #[case::missing_general("general")]
     #[case::invalid_replay_state("replay_state")]
+    #[case::wrong_position_id("id")]
+    #[case::wrong_trader_id("trader_id")]
     #[case::invalid_fill_side("order_side")]
     #[case::invalid_fill_quantity("last_qty")]
     #[case::invalid_oms("oms")]
@@ -5188,7 +5209,7 @@ mod serial_tests {
             .add_position_with_oms(&position, OmsType::Hedging)
             .unwrap();
 
-        if failure == "replay_state" {
+        if matches!(failure, "replay_state" | "id" | "trader_id") {
             writer
                 .add_position_snapshot(&PositionSnapshot::from_replay_state(&position, None))
                 .unwrap();
@@ -5235,6 +5256,36 @@ mod serial_tests {
                     .unwrap();
                 let error = engine.load_cache().await.unwrap_err();
                 assert!(format!("{error:#}").contains("Failed to decode position replay state"));
+            }
+            "id" | "trader_id" => {
+                let (replay_trader, replay_position) = if failure == "id" {
+                    (trader_id, PositionId::new("P-WRONG"))
+                } else {
+                    (TraderId::new("WRONG-001"), position_id)
+                };
+
+                let value = if failure == "id" {
+                    replay_position.as_str()
+                } else {
+                    replay_trader.as_str()
+                };
+
+                sqlx::query(
+                    r#"UPDATE "position"
+                       SET replay_state = jsonb_set(replay_state, ARRAY[$1], to_jsonb($2::text))"#,
+                )
+                .bind(failure)
+                .bind(value)
+                .execute(&pool)
+                .await
+                .unwrap();
+                let error = engine.load_cache().await.unwrap_err();
+                assert_eq!(
+                    error.root_cause().to_string(),
+                    format!(
+                        "Position replay state for {trader_id}/{position_id} contains {replay_trader}/{replay_position}"
+                    ),
+                );
             }
             "order_side" | "last_qty" => {
                 let statement = if failure == "order_side" {
@@ -5382,11 +5433,11 @@ mod serial_tests {
         drop(engine);
         let mut cache = Rc::into_inner(cache).unwrap().into_inner();
         let positions_only = cache.cache_positions().await.unwrap_err();
-        let healthy_positions = DatabaseQueries::load_positions(&pool, &trader_id)
+        let bulk = DatabaseQueries::load_positions(&pool, &trader_id)
             .await
-            .unwrap();
+            .unwrap_err();
 
-        for error in [full, positions_only] {
+        for error in [full, positions_only, bulk] {
             match error.downcast_ref::<sqlx::Error>() {
                 Some(sqlx::Error::ColumnDecode { index, .. }) => {
                     assert_eq!(index, "price_increment");
@@ -5395,7 +5446,10 @@ mod serial_tests {
             }
         }
 
-        assert_entirely_equal(healthy_positions.as_slice(), &[healthy_position]);
+        assert_entirely_equal(
+            &*cache.position(&healthy_position.id).unwrap(),
+            &healthy_position,
+        );
         assert_entirely_equal(&*cache.position(&position.id).unwrap(), &position);
         assert_eq!(cache.oms_type(&position.id), Some(OmsType::Hedging));
 

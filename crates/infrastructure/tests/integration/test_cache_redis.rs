@@ -36,7 +36,7 @@ mod serial_tests {
     };
     use nautilus_live::{
         config::{LiveExecutionEngineConfig, LiveNodeConfig},
-        node::LiveNode,
+        node::{LiveNode, NodeState},
     };
     use nautilus_model::{
         accounts::AccountAny,
@@ -93,6 +93,226 @@ mod serial_tests {
             connection_timeout: 1,
             number_of_retries: 0,
             ..Default::default()
+        }
+    }
+
+    #[rstest]
+    #[case::empty(None)]
+    #[case::currency(Some(("currencies:USD", "RPUSH", "missing value")))]
+    #[case::invalid_currency_code(Some(("currencies:", "SET", "Invalid currency key")))]
+    #[case::instrument(Some(("instruments:BTCUSDT.BINANCE", "RPUSH", "WRONGTYPE")))]
+    #[case::synthetic(Some(("synthetics:desk:Spread.SYNTH", "RPUSH", "WRONGTYPE")))]
+    #[case::account(Some(("accounts:desk:BINANCE-001", "SET", "WRONGTYPE")))]
+    #[case::order(Some(("orders:desk:O-1", "SET", "WRONGTYPE")))]
+    #[case::position(Some(("positions:desk:P-1", "SET", "WRONGTYPE")))]
+    #[case::invalid_id(Some(("orders:", "SET", "Invalid order key")))]
+    #[case::empty_payload(Some(("synthetics:desk:Spread.SYNTH", "SET", "missing record")))]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_redis_startup_cache_read(#[case] bad_record: Option<(&str, &str, &str)>) {
+        let _guard = redis_test_mutex().lock().await;
+        let mut writer = get_redis_cache_adapter().await.unwrap();
+        let mut con = writer.database.con.clone();
+        let control_key = "recovery-control";
+        let control_value = Bytes::from_static(b"readable general entry");
+
+        let bad_record = bad_record.map(|(key, command, expected)| {
+            (
+                format!("{}:{key}", writer.database.trader_key),
+                command,
+                expected,
+            )
+        });
+
+        if let Some((key, command, _)) = &bad_record {
+            writer
+                .add(control_key.to_string(), control_value.clone())
+                .unwrap();
+            redis::cmd(command)
+                .arg(key)
+                .arg("")
+                .query_async::<()>(&mut con)
+                .await
+                .unwrap();
+        }
+
+        writer.close().unwrap();
+        let reader = connect_redis_cache_adapter().await.unwrap();
+
+        let expected_general = bad_record.as_ref().map_or_else(AHashMap::new, |_| {
+            AHashMap::from([(control_key.to_string(), control_value)])
+        });
+
+        assert_eq!(reader.load().unwrap(), expected_general);
+
+        let config = LiveNodeConfig {
+            trader_id: TraderId::from("test-trader"),
+            timeout_connection: Duration::ZERO,
+            timeout_disconnection: Duration::ZERO,
+            delay_post_stop: Duration::ZERO,
+            exec_engine: LiveExecutionEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut node = LiveNode::build("RedisRecoveryNode".to_string(), Some(config)).unwrap();
+        node.set_cache_database(Box::new(reader)).unwrap();
+        let result = node.start().await;
+
+        if let Some((key, _, expected)) = bad_record {
+            con.del::<_, ()>(&key).await.unwrap();
+            let error = result.unwrap_err();
+            assert_eq!(error.to_string(), "Failed to load persistent cache");
+            assert_eq!(node.state(), NodeState::Idle);
+            let chain = format!("{error:#}");
+            assert!(chain.contains(&key) && chain.contains(expected), "{chain}");
+        } else {
+            result.unwrap();
+            assert_eq!(node.state(), NodeState::Running);
+            node.stop().await.unwrap();
+        }
+
+        node.dispose();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_redis_startup_rejects_foreign_position_replay_trader() {
+        let _guard = redis_test_mutex().lock().await;
+        let mut writer = get_redis_cache_adapter().await.unwrap();
+        let trader_id = TraderId::new("test-trader");
+        let foreign_trader = TraderId::new("OTHER-001");
+        let position_id = PositionId::new("P-1");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let fill = OrderFilledSpec::builder()
+            .trader_id(trader_id)
+            .position_id(position_id)
+            .instrument_id(instrument.id())
+            .last_qty(Quantity::from("1.0"))
+            .last_px(Price::from("2000.0"))
+            .currency(instrument.quote_currency())
+            .build();
+        let position = Position::new(&instrument, fill);
+        let mut snapshot = PositionSnapshot::from_replay_state(&position, None);
+        snapshot.replay_state.as_mut().unwrap()["trader_id"] =
+            serde_json::to_value(foreign_trader).unwrap();
+
+        writer.add_instrument(&instrument).unwrap();
+        writer.add_position(&position).unwrap();
+        writer.add_position_snapshot(&snapshot).unwrap();
+        writer.close().unwrap();
+
+        let reader = connect_redis_cache_adapter().await.unwrap();
+
+        let config = LiveNodeConfig {
+            trader_id,
+            exec_engine: LiveExecutionEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut node = LiveNode::build("RedisRecoveryNode".to_string(), Some(config)).unwrap();
+        node.set_cache_database(Box::new(reader)).unwrap();
+        let result = node.start().await;
+        let state = node.state();
+        node.dispose();
+
+        let error = result.unwrap_err();
+        assert_eq!(error.to_string(), "Failed to load persistent cache");
+        assert_eq!(state, NodeState::Idle);
+        assert_eq!(
+            error.root_cause().to_string(),
+            format!(
+                "Position replay state for {trader_id}/{position_id} contains {foreign_trader}/{position_id}"
+            ),
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_delimiter_bearing_keys_round_trip_through_redis_bulk_recovery() {
+        let _guard = redis_test_mutex().lock().await;
+        let mut writer = get_redis_cache_adapter().await.unwrap();
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let mut account_state = cash_account_state_multi();
+        account_state.account_id = AccountId::new("desk:BINANCE-001");
+        let account = AccountAny::from(account_state);
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("2.0"))
+            .client_order_id(ClientOrderId::new("desk:O-1"))
+            .build();
+        let position_id = PositionId::new("desk:P-1");
+
+        let OrderEventAny::Filled(fill) = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(TradeId::new("T-1")),
+            Some(position_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) else {
+            unreachable!();
+        };
+
+        let position = Position::new(&instrument, fill);
+        let mut synthetic = SyntheticInstrument::default();
+        synthetic.id = InstrumentId::from("desk:Spread.SYNTH");
+
+        writer.add_instrument(&instrument).unwrap();
+        writer.add_synthetic(&synthetic).unwrap();
+        writer.add_account(&account).unwrap();
+        writer.add_order(&order, None).unwrap();
+        writer.add_position(&position).unwrap();
+        writer.close().unwrap();
+
+        let mut reader = connect_redis_cache_adapter().await.unwrap();
+        let cache = reader.load_all().await.unwrap();
+        let trader_key = &reader.database.trader_key;
+        let order_key = format!("{trader_key}:orders:{}", order.client_order_id());
+        let wrong_key = format!("{trader_key}:orders:desk:O-2");
+        let mut con = reader.database.con.clone();
+        con.rename::<_, _, ()>(&order_key, &wrong_key)
+            .await
+            .unwrap();
+        let mismatch = reader.load_orders().await.unwrap_err();
+        con.del::<_, ()>(&wrong_key).await.unwrap();
+        reader.close().unwrap();
+
+        assert_eq!(
+            mismatch.to_string(),
+            format!("Redis cache key '{wrong_key}' does not match the record ID")
+        );
+        assert_eq!(cache.synthetics.len(), 1);
+        assert_eq!(cache.accounts.len(), 1);
+        assert_eq!(cache.orders.len(), 1);
+        assert_eq!(cache.positions.len(), 1);
+
+        for (restored, expected) in [
+            (
+                serde_json::to_value(&cache.synthetics[&synthetic.id]).unwrap(),
+                serde_json::to_value(&synthetic).unwrap(),
+            ),
+            (
+                serde_json::to_value(&cache.accounts[&account.id()]).unwrap(),
+                serde_json::to_value(&account).unwrap(),
+            ),
+            (
+                serde_json::to_value(&cache.orders[&order.client_order_id()]).unwrap(),
+                serde_json::to_value(&order).unwrap(),
+            ),
+            (
+                serde_json::to_value(&cache.positions[&position_id]).unwrap(),
+                serde_json::to_value(&position).unwrap(),
+            ),
+        ] {
+            assert_eq!(restored, expected);
         }
     }
 
@@ -2637,7 +2857,7 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_load_position_duplicate_fill_returns_error() {
+    async fn test_load_position_fails_on_duplicate_fill_or_missing_instrument() {
         let _guard = redis_test_mutex().lock().await;
         let adapter = get_redis_cache_adapter()
             .await
@@ -2687,13 +2907,27 @@ mod serial_tests {
         conn.rpush::<_, _, ()>(&key, payload.clone()).await.unwrap();
         conn.rpush::<_, _, ()>(&key, payload).await.unwrap();
 
-        let result = adapter.load_position(&position_id).await;
-
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("E-1"));
+        let duplicate = adapter.load_position(&position_id).await.unwrap_err();
+        let instrument_id = instrument.id();
+        let instrument_key = format!(
+            "{}:instruments:{instrument_id}",
+            adapter.database.trader_key
+        );
+        let removed: usize = conn.del(instrument_key).await.unwrap();
+        let missing = adapter.load_positions().await.unwrap_err();
 
         let mut adapter = adapter;
         adapter.flush().unwrap();
+
+        assert_eq!(
+            duplicate.to_string(),
+            format!("Duplicate fill event for position {position_id}: E-1")
+        );
+        assert_eq!(removed, 1);
+        assert_eq!(
+            missing.root_cause().to_string(),
+            format!("missing instrument {instrument_id} for position {position_id}")
+        );
     }
 
     #[rstest]
@@ -2801,9 +3035,18 @@ mod serial_tests {
         let loaded = restored.positions.get(&position_id).unwrap();
         let snapshots = adapter.database.read(&snapshot_key).await.unwrap();
         let source = adapter.database.read("index:positions_replay_source").await;
+        let full_snapshot_key = format!("{}:{snapshot_key}", adapter.database.trader_key);
+        let mut con = adapter.database.con.clone();
+        let removed: usize = con.del(&full_snapshot_key).await.unwrap();
+        let missing_snapshot = adapter.load_positions().await.unwrap_err();
         clear_test_trader(&adapter).await;
         adapter.close().unwrap();
 
+        assert_eq!(removed, 1);
+        assert_eq!(
+            missing_snapshot.root_cause().to_string(),
+            format!("Missing replay snapshot for position {position_id}")
+        );
         assert_eq!(loaded.quantity, Quantity::from("0.5"));
         assert_eq!(
             restored.currencies.get(&quote_currency.code),
@@ -3223,20 +3466,33 @@ mod serial_tests {
     ///
     /// The key is what the dependents resolve, so the mismatch would register one currency and
     /// index another.
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_load_all_fails_on_a_record_filed_under_another_code() {
+    #[rstest]
+    #[case::record(None)]
+    #[case::bare_code(Some("ZZQ6"))]
+    #[case::empty_bare_code(Some(""))]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_load_all_fails_on_a_record_filed_under_another_code(
+        #[case] bare_code: Option<&str>,
+    ) {
         let _guard = redis_test_mutex().lock().await;
         let adapter = get_redis_cache_adapter()
             .await
             .expect("Failed to create adapter");
         let encoding = adapter.database.get_encoding();
-        let record = serde_json::json!({
-            "code": "ZZQ6",
-            "precision": 4,
-            "iso4217": 0,
-            "name": "ZZQ6",
-            "currency_type": serde_json::to_value(CurrencyType::Crypto).unwrap(),
-        });
+
+        let record = bare_code.map_or_else(
+            || {
+                serde_json::json!({
+                    "code": "ZZQ6",
+                    "precision": 4,
+                    "iso4217": 0,
+                    "name": "ZZQ6",
+                    "currency_type": serde_json::to_value(CurrencyType::Crypto).unwrap(),
+                })
+            },
+            |code| serde_json::json!(code),
+        );
+
         let payload = DatabaseQueries::serialize_payload(encoding, &record).unwrap();
         let key = format!("{}:currencies:ZZQ9X", adapter.database.trader_key);
         let mut con = adapter.database.con.clone();
@@ -3247,10 +3503,11 @@ mod serial_tests {
             .await
             .expect_err("a record under another code's key must fail the load");
 
-        assert!(
-            error.to_string().contains("ZZQ9X") && error.to_string().contains("ZZQ6"),
-            "the error names both codes: {error}"
+        let expected = bare_code.map_or_else(
+            || "Currency record under key ZZQ9X holds code ZZQ6".to_string(),
+            |code| format!("Invalid currency record for ZZQ9X: bare currency code '{code}' does not match key 'ZZQ9X'"),
         );
+        assert_eq!(error.to_string(), expected);
 
         let mut adapter = adapter;
         adapter.flush().unwrap();

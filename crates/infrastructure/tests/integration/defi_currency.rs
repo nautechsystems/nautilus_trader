@@ -907,11 +907,55 @@ mod redis_tests {
             .unwrap();
         let _: () = con.del(keys).await.unwrap();
         database.close().unwrap();
+        let cause = error.downcast_ref::<IntegrityError>().unwrap();
         assert!(
-            error
+            cause
                 .to_string()
                 .contains(&format!("Conflicting DeFi currency definition for {code}")),
             "{error:#}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn mixed_case_instrument_key_cannot_alias_canonical_record() {
+        let key = format!("DEFI-{}", UUID4::new());
+        let mut database = adapter(&key, SerializationEncoding::Json).await;
+
+        let InstrumentAny::CurrencyPair(mut pair) = instrument(823_130, true) else {
+            unreachable!();
+        };
+
+        let mixed_case_id = format!("0x{}.Ethereum:UniswapV4", "Ab".repeat(32));
+        pair.id = InstrumentId::from(mixed_case_id.as_str());
+        let expected = pair.into_any();
+        database.add_instrument(&expected).unwrap();
+        let loaded = database.load_instruments().await.unwrap();
+        assert_eq!(
+            serde_json::to_value(&loaded[&expected.id()]).unwrap(),
+            serde_json::to_value(&expected).unwrap(),
+        );
+
+        let mut con = database.database.con.clone();
+        let mixed_case_key = format!(
+            "{}:instruments:{mixed_case_id}",
+            database.database.trader_key
+        );
+        let _: () = con.rpush(&mixed_case_key, "not a string").await.unwrap();
+        let result = database.load_instruments().await;
+        let keys: Vec<String> = con
+            .keys(format!("{}:*", database.database.trader_key))
+            .await
+            .unwrap();
+        let _: () = con.del(keys).await.unwrap();
+        database.close().unwrap();
+
+        let error = result.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Redis cache key '{mixed_case_key}' does not match canonical ID '{}'",
+                expected.id()
+            ),
         );
     }
 
