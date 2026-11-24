@@ -62,10 +62,7 @@ use nautilus_model::{
         BookOrder, CustomData, Data, DataType, OrderBookDelta, OrderBookDeltas, QuoteTick,
         depth::DEPTH10_LEN,
     },
-    enums::{
-        AggregationSource, BookAction, BookType, MarketStatusAction, OrderSide, PriceType,
-        RecordFlag,
-    },
+    enums::{AggregationSource, BookAction, BookType, OrderSide, PriceType, RecordFlag},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
@@ -96,7 +93,7 @@ use crate::{
             parse_required_price_at_precision, parse_required_quantity_at_precision,
             quote_to_l1_deltas,
         },
-        status::{diff_and_emit_statuses, emit_status},
+        status::{InstrumentStatusCache, SymbolTradingStatus},
         symbol::{format_binance_stream_symbol, format_binance_symbol},
         urls::{get_usdm_ws_route_base_url, get_ws_public_base_url},
         websocket::{chain_command, send_book_snapshot},
@@ -147,7 +144,7 @@ pub struct BinanceFuturesDataClient {
     command_tasks: TaskGroup,
     shutdown_errors: Vec<String>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-    status_cache: Arc<AtomicMap<InstrumentId, MarketStatusAction>>,
+    status_cache: Arc<InstrumentStatusCache<SymbolTradingStatus>>,
     instrument_update_lock: Arc<tokio::sync::Mutex<()>>,
     book_sync: BookSyncTracker,
     book_subscriptions: Arc<AtomicMap<InstrumentId, u32>>,
@@ -293,7 +290,7 @@ impl BinanceFuturesDataClient {
             command_tasks,
             shutdown_errors: Vec::new(),
             instruments: Arc::new(AtomicMap::new()),
-            status_cache: Arc::new(AtomicMap::new()),
+            status_cache: Arc::new(InstrumentStatusCache::new()),
             instrument_update_lock: Arc::new(tokio::sync::Mutex::new(())),
             book_sync,
             book_subscriptions: Arc::new(AtomicMap::new()),
@@ -423,7 +420,7 @@ impl BinanceFuturesDataClient {
         http: &BinanceFuturesHttpClient,
         provider: &crate::config::BinanceInstrumentProviderConfig,
         instruments_cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-        status_cache: &Arc<AtomicMap<InstrumentId, MarketStatusAction>>,
+        status_cache: &InstrumentStatusCache<SymbolTradingStatus>,
         instrument_update_lock: &tokio::sync::Mutex<()>,
         ws: &BinanceFuturesWebSocketClient,
         ws_public: &BinanceFuturesWebSocketClient,
@@ -437,7 +434,7 @@ impl BinanceFuturesDataClient {
             .await
             .context("failed to request Binance Futures instruments")?;
         let venue_statuses = http
-            .request_symbol_statuses()
+            .request_symbol_trading_statuses()
             .await
             .context("failed to request Binance Futures instrument statuses")?;
 
@@ -449,13 +446,14 @@ impl BinanceFuturesDataClient {
             .values()
             .map(|instrument| (instrument.raw_symbol().inner(), instrument.id()))
             .collect::<AHashMap<_, _>>();
+
         let status_map = venue_statuses
             .into_iter()
-            .filter_map(|(symbol, action)| {
+            .filter_map(|(symbol, status)| {
                 raw_to_id
                     .get(&symbol)
                     .copied()
-                    .map(|instrument_id| (instrument_id, action))
+                    .map(|instrument_id| (instrument_id, status))
             })
             .collect::<AHashMap<_, _>>();
 
@@ -464,12 +462,9 @@ impl BinanceFuturesDataClient {
         ws_public.replace_instruments(&instruments);
 
         if emit_status_changes {
-            let mut cached_statuses = (**status_cache.load()).clone();
-            let ts = clock.get_time_ns();
-            diff_and_emit_statuses(&status_map, &mut cached_statuses, sender, ts, ts);
-            status_cache.store(cached_statuses);
+            status_cache.update(&status_map, sender, clock);
         } else {
-            status_cache.store(status_map);
+            status_cache.seed(status_map);
         }
 
         for instrument in &instruments {
@@ -1408,9 +1403,8 @@ impl DataClient for BinanceFuturesDataClient {
                             _ = interval.tick() => {
                                 let _guard = poll_update_lock.lock().await;
 
-                                match poll_http.request_symbol_statuses().await {
+                                match poll_http.request_symbol_trading_statuses().await {
                                     Ok(symbol_statuses) => {
-                                        let ts = poll_clock.get_time_ns();
                                         let inst_guard = poll_instruments.load();
 
                                         let raw_to_id: AHashMap<Ustr, InstrumentId> = inst_guard
@@ -1420,18 +1414,14 @@ impl DataClient for BinanceFuturesDataClient {
 
                                         let mut new_statuses = AHashMap::new();
 
-                                        for (raw_symbol, action) in &symbol_statuses {
+                                        for (raw_symbol, status) in &symbol_statuses {
                                             if let Some(&id) = raw_to_id.get(raw_symbol) {
-                                                new_statuses.insert(id, *action);
+                                                new_statuses.insert(id, *status);
                                             }
                                         }
                                         drop(inst_guard);
 
-                                        let mut cache = (**poll_status_cache.load()).clone();
-                                        diff_and_emit_statuses(
-                                            &new_statuses, &mut cache, &poll_sender, ts, ts,
-                                        );
-                                        poll_status_cache.store(cache);
+                                        poll_status_cache.update(&new_statuses, &poll_sender, poll_clock);
                                     }
                                     Err(e) => {
                                         log::warn!("Futures instrument status poll failed: {e}");
@@ -1895,10 +1885,8 @@ impl DataClient for BinanceFuturesDataClient {
                 "subscribe_instrument_status: {instrument_id} (status changes detected via periodic exchange info polling)",
             );
 
-            if let Some(action) = self.status_cache.load().get(&instrument_id).copied() {
-                let ts = self.clock.get_time_ns();
-                emit_status(&self.data_sender, instrument_id, action, ts, ts);
-            }
+            self.status_cache
+                .replay(instrument_id, &self.data_sender, self.clock);
 
             Ok(())
         })
