@@ -25,7 +25,9 @@ use ustr::Ustr;
 
 use super::{Instrument, any::InstrumentAny, tick_scheme::check_tick_scheme};
 use crate::{
-    enums::{AssetClass, ExerciseStyle, InstrumentClass, OptionKind, SettlementType},
+    enums::{
+        AssetClass, ExerciseStyle, InstrumentClass, OptionKind, OptionPremiumStyle, SettlementType,
+    },
     identifiers::{InstrumentId, Symbol},
     types::{
         currency::Currency,
@@ -68,6 +70,9 @@ pub struct CryptoOption {
     pub settlement_currency: Currency,
     /// If the instrument costing is inverse (quantity expressed in quote currency units).
     pub is_inverse: bool,
+    /// The premium cash flow style; absent when unspecified.
+    #[serde(default)]
+    pub premium_style: Option<OptionPremiumStyle>,
     /// The exercise style; absent when unknown.
     #[serde(default)]
     pub exercise_style: Option<ExerciseStyle>,
@@ -130,6 +135,7 @@ impl CryptoOption {
         quote_currency: Currency,
         settlement_currency: Currency,
         is_inverse: bool,
+        premium_style: Option<OptionPremiumStyle>,
         exercise_style: Option<ExerciseStyle>,
         settlement_type: Option<SettlementType>,
         activation_ns: UnixNanos,
@@ -189,6 +195,7 @@ impl CryptoOption {
             quote_currency,
             settlement_currency,
             is_inverse,
+            premium_style,
             exercise_style,
             settlement_type,
             activation_ns,
@@ -234,6 +241,7 @@ impl CryptoOption {
         quote_currency: Currency,
         settlement_currency: Currency,
         is_inverse: bool,
+        premium_style: Option<OptionPremiumStyle>,
         exercise_style: Option<ExerciseStyle>,
         settlement_type: Option<SettlementType>,
         activation_ns: UnixNanos,
@@ -268,6 +276,7 @@ impl CryptoOption {
             quote_currency,
             settlement_currency,
             is_inverse,
+            premium_style,
             exercise_style,
             settlement_type,
             activation_ns,
@@ -456,7 +465,10 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use crate::{
-        enums::{AssetClass, ExerciseStyle, InstrumentClass, OptionKind, SettlementType},
+        enums::{
+            AssetClass, ExerciseStyle, InstrumentClass, OptionKind, OptionPremiumStyle,
+            SettlementType,
+        },
         identifiers::{InstrumentId, Symbol},
         instruments::{CryptoOption, Instrument, stubs::*},
         types::{Currency, Money, Price, Quantity},
@@ -540,6 +552,7 @@ mod tests {
             false,
             None,
             None,
+            None,
             0.into(),
             0.into(),
             4, // mismatch
@@ -577,6 +590,7 @@ mod tests {
             Currency::USD(),
             Currency::BTC(),
             false,
+            None,
             None,
             None,
             0.into(),
@@ -618,6 +632,7 @@ mod tests {
             Currency::USD(),
             Currency::BTC(),
             false,
+            None,
             None,
             None,
             0.into(),
@@ -672,6 +687,7 @@ mod tests {
             Currency::USDC(),
             Currency::USDT(),
             false,
+            Some(OptionPremiumStyle::FuturesStyle),
             Some(ExerciseStyle::European),
             Some(SettlementType::Cash),
             1.into(),
@@ -708,6 +724,7 @@ mod tests {
             .quote_currency(Currency::USDC())
             .settlement_currency(Currency::USDT())
             .is_inverse(false)
+            .premium_style(OptionPremiumStyle::FuturesStyle)
             .exercise_style(ExerciseStyle::European)
             .settlement_type(SettlementType::Cash)
             .activation_ns(1.into())
@@ -735,6 +752,7 @@ mod tests {
             built.underlying_instrument_id,
             Some(InstrumentId::from("BTCUSDT.BINANCE"))
         );
+        assert_eq!(built.premium_style, Some(OptionPremiumStyle::FuturesStyle));
         assert_eq!(built.exercise_style, Some(ExerciseStyle::European));
         assert_eq!(built.settlement_type, Some(SettlementType::Cash));
         assert_eq!(

@@ -36,11 +36,11 @@ use nautilus_common::{
     msgbus::{self, MessagingSwitchboard, TypedHandler, TypedIntoHandler},
     timer::{TimeEvent, TimeEventCallback},
 };
-use nautilus_core::{DurationNanos, UUID4, UnixNanos, WeakCell};
+use nautilus_core::{DurationNanos, UUID4, UnixNanos, WeakCell, correctness::CorrectnessResult};
 use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{Bar, MarkPriceUpdate, QuoteTick},
-    enums::{OmsType, OrderType, PositionSide, PriceType},
+    enums::{OmsType, OptionPremiumStyle, OrderType, PositionSide, PriceType},
     events::{AccountState, OrderEventAny, PortfolioSnapshot, position::PositionEvent},
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -972,7 +972,13 @@ impl Portfolio {
             self.clear_missing_price_state(*venue, account_id.copied());
         }
 
-        decimal_map_to_money(equity).unwrap_or_default()
+        let amount_to_money = if is_margin {
+            Money::from_decimal_native
+        } else {
+            Money::from_decimal
+        };
+
+        decimal_map_to_money(equity, amount_to_money).unwrap_or_default()
     }
 
     /// Builds a [`PortfolioSnapshot`] for the given account at the current clock time.
@@ -1006,21 +1012,12 @@ impl Portfolio {
             .map(|account| account.clone_without_events())?;
 
         let balances: Vec<AccountBalance> = account.balances().into_values().collect();
-        let margins: Vec<MarginBalance> = match &account {
-            AccountAny::Margin(m) => m
-                .margins
-                .values()
-                .copied()
-                .chain(m.account_margins.values().copied())
-                .collect(),
-            AccountAny::Cash(_) | AccountAny::Betting(_) | AccountAny::Wallet(_) => Vec::new(),
-        };
 
         // Collect venues the account has touched. `open_venues` drives the
         // unrealized PnL and mark-value sums; `all_venues` extends to closed
         // positions so realized PnL on a venue with no open exposure (a
         // multi-venue account where one venue is now flat) still rolls up.
-        let (open_venues, open_instrument_ids, open_price_keys) = {
+        let (open_venues, mut valuation_instrument_ids, open_price_keys) = {
             let cache = self.cache.borrow();
             let positions = cache.positions_open(None, None, None, Some(account_id), None);
             let venues: AHashSet<Venue> = positions
@@ -1037,6 +1034,20 @@ impl Portfolio {
                 .collect();
             (venues, instrument_ids, price_keys)
         };
+
+        let margins: Vec<MarginBalance> = match &account {
+            AccountAny::Margin(margin) => {
+                valuation_instrument_ids.extend(margin.option_variations().map(|(id, _)| id));
+                margin
+                    .margins
+                    .values()
+                    .copied()
+                    .chain(margin.account_margins.values().copied())
+                    .collect()
+            }
+            AccountAny::Cash(_) | AccountAny::Betting(_) | AccountAny::Wallet(_) => Vec::new(),
+        };
+
         let all_venues: AHashSet<Venue> = self
             .cache
             .borrow()
@@ -1113,9 +1124,10 @@ impl Portfolio {
                         .into_iter()
                         .collect()
                 });
+
             let unpriced_instruments: Vec<InstrumentId> = snapshot_unpriced
                 .iter()
-                .filter(|instrument_id| open_instrument_ids.contains(instrument_id))
+                .filter(|instrument_id| valuation_instrument_ids.contains(instrument_id))
                 .copied()
                 .collect();
             (stale_instruments, stale_currencies, unpriced_instruments)
@@ -1179,7 +1191,16 @@ impl Portfolio {
                 .collect::<IndexMap<Currency, Decimal>>()
         });
 
-        for venue in open_venues {
+        let variation_venues = match account {
+            AccountAny::Margin(account) => account
+                .option_variations()
+                .map(|(id, _)| id.venue)
+                .filter(|venue| !open_venues.contains(venue))
+                .collect::<AHashSet<_>>(),
+            _ => AHashSet::new(),
+        };
+
+        for venue in open_venues.iter().chain(&variation_venues) {
             let mut values = IndexMap::new();
             let mut venue_unpriced = AHashSet::new();
 
@@ -1207,17 +1228,19 @@ impl Portfolio {
                 self.update_missing_price_state(*venue, Some(account_id), &venue_unpriced);
             }
 
-            if margin_equity.is_none() {
-                for money in decimal_map_to_money(values)?.into_values() {
-                    checked_add_money_map(&mut equity, money, "snapshot equity")?;
-                }
+            snapshot_unpriced.extend(venue_unpriced);
+
+            if margin_equity.is_some() {
+                continue;
             }
 
-            snapshot_unpriced.extend(venue_unpriced);
+            for money in decimal_map_to_money(values, Money::from_decimal)?.into_values() {
+                checked_add_money_map(&mut equity, money, "snapshot equity")?;
+            }
         }
 
         if let Some(margin_equity) = margin_equity {
-            equity = decimal_map_to_money(margin_equity)?;
+            equity = decimal_map_to_money(margin_equity, Money::from_decimal_native)?;
         }
 
         Some(equity)
@@ -1412,7 +1435,7 @@ impl Portfolio {
             self.clear_missing_price_state(venue, account_id.copied());
         }
 
-        decimal_map_to_money(values).unwrap_or_default()
+        decimal_map_to_money(values, Money::from_decimal).unwrap_or_default()
     }
 
     fn accumulate_margin_equity(
@@ -1438,8 +1461,11 @@ impl Portfolio {
                 .collect();
 
             positions.sort_unstable_by_key(|position| position.id);
-
             for position in &positions {
+                if position_uses_option_variation(position, &cache) {
+                    continue;
+                }
+
                 if position_uses_premium_mark(position, &cache) {
                     has_premium = true;
                 } else if position.instrument_class.is_premium_based() {
@@ -1486,7 +1512,73 @@ impl Portfolio {
             }
         }
 
-        has_positions
+        self.accumulate_option_variation(venue, account_id, values, unpriced) || has_positions
+    }
+
+    fn accumulate_option_variation(
+        &self,
+        venue: Venue,
+        account_id: Option<&AccountId>,
+        values: &mut IndexMap<Currency, Decimal>,
+        unpriced: &mut AHashSet<InstrumentId>,
+    ) -> bool {
+        let cache = self.cache.borrow();
+        let mut accounts: Vec<_> = match account_id {
+            Some(id) => cache.account_ref(id).into_iter().collect(),
+            None => cache.accounts_all_refs().collect(),
+        };
+
+        accounts.sort_unstable_by_key(|account| account.id());
+
+        let variations = accounts
+            .iter()
+            .filter_map(|account| match &**account {
+                AccountAny::Margin(margin) if margin.calculate_account_state => Some(margin),
+                _ => None,
+            })
+            .flat_map(|account| {
+                account
+                    .option_variations()
+                    .filter(move |(id, _)| id.venue == venue)
+                    .map(|(id, variation)| (account.id, id, variation))
+            });
+
+        let mut has_variation = false;
+
+        for (owner, instrument_id, variation) in variations {
+            let Some(instrument) = cache.instrument(&instrument_id) else {
+                unpriced.insert(instrument_id);
+                has_variation = true;
+                continue;
+            };
+
+            let positions =
+                cache.positions_open(None, Some(&instrument_id), None, Some(&owner), None);
+
+            let pnl = variation
+                .pending_equity(instrument, positions.iter().map(|p| &**p), |p| {
+                    self.get_price(p)
+                })
+                .inspect_err(|e| {
+                    log::error!("Cannot value option variation for {instrument_id}: {e}");
+                })
+                .ok()
+                .flatten();
+
+            match pnl {
+                Some(pnl) if !pnl.is_zero() => {
+                    *values.entry(pnl.currency).or_insert(Decimal::ZERO) += pnl.as_decimal();
+                    has_variation = true;
+                }
+                Some(_) => (),
+                None => {
+                    unpriced.insert(instrument_id);
+                    has_variation = true;
+                }
+            }
+        }
+
+        has_variation
     }
 
     // Returns `true` if at least one open position was seen (priced or not),
@@ -3236,17 +3328,17 @@ impl Portfolio {
     }
 
     fn get_price(&self, position: &Position) -> Option<Price> {
-        let cache = self.cache.borrow();
-        let instrument_id = &position.instrument_id;
+        self.price_for_side(&position.instrument_id, position.side)
+    }
 
-        let price_type = match position.side {
+    fn price_for_side(&self, instrument_id: &InstrumentId, side: PositionSide) -> Option<Price> {
+        let cache = self.cache.borrow();
+
+        let price_type = match side {
             PositionSide::Long => PriceType::Bid,
             PositionSide::Short => PriceType::Ask,
             PositionSide::Flat => {
-                log::error!(
-                    "Cannot get price for invalid position side {}",
-                    position.side
-                );
+                log::error!("Cannot get price for invalid position side {side}");
                 return None;
             }
         };
@@ -3289,7 +3381,7 @@ impl Portfolio {
             });
         drop(cache);
 
-        let key = (*instrument_id, position.side);
+        let key = (*instrument_id, side);
         let mut inner = self.inner.borrow_mut();
         if let Some(price) = current {
             inner.last_prices.insert(key, price);
@@ -3429,15 +3521,31 @@ fn pnl_currency_is_compatible(
 
 fn position_uses_premium_mark(position: &Position, cache: &Cache) -> bool {
     position.instrument_class.is_premium_based()
+        && !position_uses_option_variation(position, cache)
         && cache
             .account_ref(&position.account_id)
             .is_some_and(|account| account.calculated_account_state())
 }
 
-fn decimal_map_to_money(map: IndexMap<Currency, Decimal>) -> Option<IndexMap<Currency, Money>> {
+fn position_uses_option_variation(position: &Position, cache: &Cache) -> bool {
+    position.instrument_class.is_premium_based()
+        && cache
+            .instrument(&position.instrument_id)
+            .is_some_and(|instrument| {
+                instrument.premium_style() == Some(OptionPremiumStyle::FuturesStyle)
+            })
+        && cache
+            .account_ref(&position.account_id)
+            .is_some_and(|account| account.calculated_account_state())
+}
+
+fn decimal_map_to_money(
+    map: IndexMap<Currency, Decimal>,
+    amount_to_money: impl Fn(Decimal, Currency) -> CorrectnessResult<Money>,
+) -> Option<IndexMap<Currency, Money>> {
     map.into_iter()
         .map(|(currency, amount)| {
-            Money::from_decimal(amount, currency)
+            amount_to_money(amount, currency)
                 .map(|money| (currency, money))
                 .inspect_err(|e| log::error!("Cannot convert {currency} amount to Money: {e}"))
         })
@@ -4939,6 +5047,7 @@ mod tests {
     use nautilus_common::clock::VirtualClock;
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
+        accounts::MarginAccount,
         enums::{AccountType, OrderSide},
         events::order::spec::OrderFilledSpec,
         identifiers::{AccountId, Symbol},
@@ -4955,7 +5064,181 @@ mod tests {
         let amount = Money::from_raw(MONEY_RAW_MAX / 4 * 3, usd).as_decimal();
         let values = IndexMap::from([(Currency::EUR(), Decimal::ONE), (usd, amount + amount)]);
 
-        assert_eq!(decimal_map_to_money(values), None);
+        assert_eq!(decimal_map_to_money(values, Money::from_decimal), None);
+    }
+
+    #[rstest]
+    fn test_equity_values_hedged_option_positions_on_both_quote_sides(
+        #[values(false, true)] other_owner: bool,
+    ) {
+        let usd = Currency::USD();
+        let venue = Venue::from("SIM");
+
+        let mut portfolio = Portfolio::new(
+            Rc::new(RefCell::new(VirtualClock::new())),
+            Rc::new(RefCell::new(Cache::new(None, None))),
+            None,
+        );
+
+        let account_id = AccountId::from("SIM-001");
+        let cash = Money::from("100 USD");
+
+        let state = AccountState::new(
+            account_id,
+            AccountType::Margin,
+            vec![AccountBalance::new(cash, Money::zero(usd), cash)],
+            vec![],
+            true,
+            UUID4::new(),
+            0.into(),
+            0.into(),
+            Some(usd),
+        );
+
+        let mut account = MarginAccount::new(state.clone(), true);
+        account.initialize_option_variations();
+
+        let mut option = option_contract_appl();
+        option.id = InstrumentId::from("OPTION.SIM");
+        option.premium_style = Some(OptionPremiumStyle::FuturesStyle);
+        let instrument = option.into_any();
+
+        {
+            let mut cache = portfolio.cache.borrow_mut();
+            cache.add_instrument(instrument.clone()).unwrap();
+
+            for (side, price, id) in [
+                (OrderSide::Buy, "110.00", "LONG"),
+                (OrderSide::Sell, "90.00", "SHORT"),
+            ] {
+                let fill = OrderFilledSpec::builder()
+                    .instrument_id(instrument.id())
+                    .account_id(account_id)
+                    .order_side(side)
+                    .last_qty(Quantity::from(1))
+                    .last_px(Price::from(price))
+                    .currency(usd)
+                    .position_id(PositionId::new(id))
+                    .build();
+                account
+                    .record_option_variation_fill(&instrument, &fill)
+                    .unwrap();
+                let position = Position::new(&instrument, fill);
+                cache.add_position(&position, OmsType::Hedging).unwrap();
+            }
+
+            let qty = Quantity::from(1);
+
+            let quote = QuoteTick::new(
+                instrument.id(),
+                Price::from("90.00"),
+                Price::from("110.00"),
+                qty,
+                qty,
+                1.into(),
+                1.into(),
+            );
+
+            cache.add_quote(quote).unwrap();
+            cache.cache_account_owned(AccountAny::Margin(account));
+
+            if other_owner {
+                let mut state = state;
+                state.account_id = AccountId::from("OTHER-001");
+                let mut other = MarginAccount::new(state, true);
+                other.initialize_option_variations();
+                let fill = OrderFilledSpec::builder()
+                    .instrument_id(instrument.id())
+                    .account_id(other.id())
+                    .order_side(OrderSide::Buy)
+                    .last_qty(Quantity::from(1))
+                    .last_px(Price::from("105.00"))
+                    .currency(usd)
+                    .position_id(PositionId::new("OTHER-LONG"))
+                    .build();
+                other
+                    .record_option_variation_fill(&instrument, &fill)
+                    .unwrap();
+                let position = Position::new(&instrument, fill);
+                cache.add_position(&position, OmsType::Hedging).unwrap();
+                cache.cache_account_owned(AccountAny::Margin(other));
+            }
+        }
+
+        assert_eq!(
+            portfolio.equity(&venue, Some(&account_id))[&usd],
+            Money::from("60 USD")
+        );
+        let snapshot = portfolio.build_snapshot(&account_id).unwrap();
+        assert_eq!(snapshot.total_equity, vec![Money::from("60 USD")]);
+        assert!(!snapshot.is_stale);
+
+        let venue_equity = if other_owner { "45 USD" } else { "60 USD" };
+        assert_eq!(
+            portfolio.equity(&venue, None)[&usd],
+            Money::from(venue_equity)
+        );
+    }
+
+    #[rstest]
+    fn test_snapshot_flags_overflowing_flat_option_variation() {
+        let usd = Currency::USD();
+
+        let mut portfolio = Portfolio::new(
+            Rc::new(RefCell::new(VirtualClock::new())),
+            Rc::new(RefCell::new(Cache::new(None, None))),
+            None,
+        );
+
+        let account_id = AccountId::from("SIM-001");
+        let cash = Money::from("100 USD");
+
+        let state = AccountState::new(
+            account_id,
+            AccountType::Margin,
+            vec![AccountBalance::new(cash, Money::zero(usd), cash)],
+            vec![],
+            true,
+            UUID4::new(),
+            0.into(),
+            0.into(),
+            Some(usd),
+        );
+
+        let mut account = MarginAccount::new(state, true);
+        account.initialize_option_variations();
+        let mut option = option_contract_appl();
+        option.id = InstrumentId::from("OPTION.SIM");
+        option.premium_style = Some(OptionPremiumStyle::FuturesStyle);
+        let instrument = option.into_any();
+        let amount = Money::from_raw(MONEY_RAW_MAX / 2, usd)
+            .as_decimal()
+            .round_dp(2);
+        let price = Price::from_decimal(amount).unwrap();
+        for (side, price) in [(OrderSide::Buy, price), (OrderSide::Sell, Price::zero(2))] {
+            let fill = OrderFilledSpec::builder()
+                .instrument_id(instrument.id())
+                .account_id(account_id)
+                .order_side(side)
+                .last_qty(Quantity::from(3))
+                .last_px(price)
+                .currency(usd)
+                .build();
+            account
+                .record_option_variation_fill(&instrument, &fill)
+                .unwrap();
+        }
+
+        {
+            let mut cache = portfolio.cache.borrow_mut();
+            cache.add_instrument(instrument.clone()).unwrap();
+            cache.cache_account_owned(AccountAny::Margin(account));
+        }
+
+        let snapshot = portfolio.build_snapshot(&account_id).unwrap();
+        assert_eq!(snapshot.total_equity, vec![cash]);
+        assert_eq!(snapshot.unpriced_instruments, vec![instrument.id()]);
+        assert!(snapshot.is_stale);
     }
 
     #[rstest]

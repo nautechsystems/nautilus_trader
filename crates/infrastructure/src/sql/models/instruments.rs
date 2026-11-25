@@ -596,6 +596,7 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionRow {
         let info: Option<Json<Params>> = row.try_get("info")?;
 
         let underlying_instrument_id = read_optional_parsed(row, "underlying_instrument_id")?;
+        let premium_style = read_optional_parsed(row, "premium_style")?;
         let exercise_style = read_optional_parsed(row, "exercise_style")?;
         let settlement_type = read_optional_parsed(row, "settlement_type")?;
 
@@ -609,6 +610,7 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionRow {
             .is_inverse(is_inverse)
             .option_kind(option_kind)
             .maybe_underlying_instrument_id(underlying_instrument_id)
+            .maybe_premium_style(premium_style)
             .maybe_exercise_style(exercise_style)
             .maybe_settlement_type(settlement_type)
             .strike_price(strike_price)
@@ -1119,6 +1121,7 @@ impl<'r> FromRow<'r, PgRow> for OptionContractRow {
         let info: Option<Json<Params>> = row.try_get("info")?;
 
         let underlying_instrument_id = read_optional_parsed(row, "underlying_instrument_id")?;
+        let premium_style = read_optional_parsed(row, "premium_style")?;
         let exercise_style = read_optional_parsed(row, "exercise_style")?;
         let settlement_type = read_optional_parsed(row, "settlement_type")?;
 
@@ -1130,6 +1133,7 @@ impl<'r> FromRow<'r, PgRow> for OptionContractRow {
             .underlying(underlying)
             .option_kind(option_kind)
             .maybe_underlying_instrument_id(underlying_instrument_id)
+            .maybe_premium_style(premium_style)
             .maybe_exercise_style(exercise_style)
             .maybe_settlement_type(settlement_type)
             .strike_price(strike_price)

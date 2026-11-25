@@ -38,16 +38,17 @@ JSON, MessagePack, and Arrow records. Apply the updated PostgreSQL schema before
 PostgreSQL appends `strike_currency` to existing tables. Select the currency columns by name when
 exporting data from both fresh and upgraded databases.
 
-Vanilla `OptionContract` and `CryptoOption` also carry three optional contract fields:
+Vanilla `OptionContract` and `CryptoOption` also carry optional contract fields:
 
 - `underlying_instrument_id`: the actual underlying instrument. It is independent of
   `OptionSeriesId.underlying_instrument_id`, which supplies the reference price.
+- `premium_style`: when [option premiums and variation move cash](#premium-style).
 - `exercise_style`: when the holder can exercise the option.
 - `settlement_type`: what the option delivers on exercise.
 
 See [Exercise style and settlement type](#exercise-style-and-settlement-type) for the values.
 
-Adapters set these fields as follows:
+Adapters leave `premium_style` unset. They set the other contract fields as follows:
 
 - **Interactive Brokers**: fills the underlying ID when the provider has already resolved that contract
   to an instrument; unresolved IDs remain `None`. The exercise style and settlement type remain `None`.
@@ -62,9 +63,9 @@ Adapters set these fields as follows:
 - **Databento**: sets the exercise style and settlement type from each
   [option definition](../integrations/databento.md#option-exercise-style-and-settlement-type).
 
-Deribit, Derive, OKX, Bybit, and Tardis instrument definitions carry neither field, so these adapters apply
-each venue's contract specification. Tardis applies the Deribit, OKX, and Bybit rules and leaves both fields
-`None` for other source exchanges.
+Deribit, Derive, OKX, Bybit, and Tardis instrument definitions omit exercise style and settlement type, so
+these adapters apply each venue's contract specification. Tardis applies the Deribit, OKX, and Bybit rules
+and leaves exercise style and settlement type unset for other source exchanges.
 
 Rust builders and Python constructors accept these fields. JSON, dictionaries, Arrow, and PostgreSQL
 preserve them. An otherwise valid JSON or Arrow record loads each omitted field as `None`.
@@ -74,6 +75,16 @@ reference. Equality and hashing depend only on the instrument ID.
 
 [Simulated expiry settlement](#simulated-expiry-settlement) requires `underlying_instrument_id` and
 `settlement_type`.
+
+### Premium style
+
+Premium style is independent of exercise style and settlement type.
+
+| `premium_style` | Cash flow                                |
+| --------------- | ---------------------------------------- |
+| `UPFRONT`       | Exchange the premium at each fill.       |
+| `FUTURES_STYLE` | Settle price changes in clearing cycles. |
+| `None`          | Exchange the premium at each fill.       |
 
 ### Exercise style and settlement type
 
@@ -98,6 +109,26 @@ European-style and cash-settled.
 | `PHYSICAL` | Delivers a position in the underlying.                |
 | `None`     | Unknown, or no single type represents the settlement. |
 
+## Simulated premium and variation
+
+Futures-style options require a simulated margin account with a starting balance in the settlement
+currency. The premium, cost, and settlement currencies must match. Trading fees post on the fill.
+
+- Supply each official option clearing price as an [`InstrumentClose`](data/instrument_close.md)
+  of type `SETTLEMENT`. Place it after any fills at the same replay timestamp that belong to the cycle.
+- Reuse `ts_event` for a repeat of the same price. Replay rejects a conflicting price or an older
+  clearing cycle. Clearing rows at or after scheduled expiry have no cash effect.
+- The first cycle measures variation from the fill price. Later cycles use the previous clearing price
+  for carried quantity and fill prices for new fills. The simulator rounds the value per contract in the
+  settlement currency before multiplying by quantity.
+
+Portfolio equity includes pending variation, even when the position is flat. Position PnL measures
+the full trade from entry. The account balance reflects variation after each clearing row or expiry.
+
+[Cash settlement](#cash-settlement) or [physical settlement](#physical-settlement) determines the
+value of the final option fill. After the expiry fills close the position, the account books the
+remaining cash flow against the last clearing basis.
+
 ## Simulated expiry settlement
 
 The simulator exercises options at expiry for every `exercise_style`.
@@ -116,7 +147,7 @@ A currency mismatch causes a terminal settlement error and leaves positions open
 
 ### Cash settlement
 
-The simulator uses the `InstrumentClose` price when supplied. Otherwise it pays intrinsic value.
+The simulator uses the `CONTRACT_EXPIRED` price when supplied. Otherwise it pays intrinsic value.
 The premium, cost, and settlement currencies must match.
 
 For a linear payout based on intrinsic value, the strike currency must also match the settlement currency.
@@ -134,7 +165,7 @@ client when available.
 Physical settlement requires a deliverable underlying. Reference indexes and spreads are ineligible.
 Delivery also fails if the underlying expired before the settlement attempt.
 
-An out-of-the-money option closes at the supplied `InstrumentClose` price or at zero if no price was supplied.
+An out-of-the-money option closes at the supplied `CONTRACT_EXPIRED` price or at zero if no price was supplied.
 
 For cross-venue netting delivery, an open position owned by another account blocks delivery into that slot.
 Netting positions are keyed by instrument and strategy. Use distinct strategy IDs to keep separate

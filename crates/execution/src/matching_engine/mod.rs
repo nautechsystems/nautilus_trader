@@ -8736,10 +8736,19 @@ impl OrderMatchingEngine {
         order: &OrderAny,
         venue_order_id: VenueOrderId,
     ) -> OrderEventAny {
-        let ts_now = self.clock.borrow().timestamp_ns();
         let account_id = order
             .account_id()
             .unwrap_or(self.account_ids.get(&order.trader_id()).unwrap().to_owned());
+        self.create_order_accepted_for_account(order, venue_order_id, account_id)
+    }
+
+    fn create_order_accepted_for_account(
+        &self,
+        order: &OrderAny,
+        venue_order_id: VenueOrderId,
+        account_id: AccountId,
+    ) -> OrderEventAny {
+        let ts_now = self.clock.borrow().timestamp_ns();
         OrderEventAny::Accepted(OrderAccepted::new(
             order.trader_id(),
             order.strategy_id(),

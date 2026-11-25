@@ -26,7 +26,10 @@ use super::{
     option_spread::OptionSpread, perpetual_contract::PerpetualContract,
     tokenized_asset::TokenizedAsset,
 };
-use crate::types::{Price, Quantity};
+use crate::{
+    enums::OptionPremiumStyle,
+    types::{Price, Quantity},
+};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[enum_dispatch(Instrument)]
@@ -55,6 +58,16 @@ impl InstrumentAny {
     #[must_use]
     pub fn get_base_quantity(&self, quantity: Quantity, last_px: Price) -> Quantity {
         self.calculate_base_quantity(quantity, last_px)
+    }
+
+    /// Returns the premium style specified on a vanilla option.
+    #[must_use]
+    pub const fn premium_style(&self) -> Option<OptionPremiumStyle> {
+        match self {
+            Self::CryptoOption(option) => option.premium_style,
+            Self::OptionContract(option) => option.premium_style,
+            _ => None,
+        }
     }
 
     /// Returns true if the instrument is a spread instrument.

@@ -632,11 +632,13 @@ outputs instead.
   values. Use `activation_ns` and `expiration_ns` when exact nanosecond precision is required.
 - v2 caches `OptionGreeks` for option fee calculation; this extends v1.
 
-`OptionContract` and `CryptoOption` add optional `underlying_instrument_id`, `exercise_style`, and
-`settlement_type` fields:
+`OptionContract` and `CryptoOption` add optional `underlying_instrument_id`, `premium_style`,
+`exercise_style`, and `settlement_type` fields:
 
 - **Rust**: add the fields to struct literals and direct `build_checked` calls; use `None` when unknown.
 - **Defaults**: builders and Python constructors default the fields to `None`.
+- **Python**: `premium_style` precedes `exercise_style` and `settlement_type`.
+  Use keyword arguments for `exercise_style` and later optional parameters when migrating positional calls.
 - **Legacy data**: missing JSON and Arrow fields load as `None`. Parquet files without the columns remain readable.
 - **Consolidation**: Parquet files with and without these columns cannot be consolidated together.
   Read the instruments and write them to a separate catalog with the current schema first.
@@ -1179,8 +1181,8 @@ Postgres-backed deployments must run `nautilus database init` before starting a 
 and `order.slippage` columns move from `double precision` to `NUMERIC`, and the node fails at connect time
 while the old column types remain.
 
-The initialization also adds nullable `instrument.underlying_instrument_id`, `instrument.exercise_style`,
-`instrument.settlement_type`, and `instrument.tick_scheme` columns:
+The initialization also adds nullable `instrument.tick_scheme`, `instrument.underlying_instrument_id`,
+`instrument.premium_style`, `instrument.exercise_style`, and `instrument.settlement_type` columns:
 
 - Existing rows keep `NULL`, which loads as `None`.
 - Cache startup rejects schemas missing any of these columns.

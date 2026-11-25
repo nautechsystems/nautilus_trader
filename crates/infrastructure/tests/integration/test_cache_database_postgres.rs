@@ -1593,8 +1593,9 @@ mod serial_tests {
 
     #[rstest]
     #[case("underlying_instrument_id")]
-    #[case("exercise_style")]
     #[case("strike_currency")]
+    #[case("premium_style")]
+    #[case("exercise_style")]
     #[case("settlement_type")]
     #[case("tick_scheme")]
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1953,13 +1954,18 @@ mod serial_tests {
             _ => unreachable!("option fixtures only"),
         };
 
-        for (known, style, settlement) in [
-            (true, Some("AMERICAN"), Some("CASH")),
-            (true, Some("EUROPEAN"), Some("PHYSICAL")),
-            (false, Some("BERMUDAN"), Some("CASH")),
-            (true, Some("EUROPEAN"), None),
-            (true, None, Some("PHYSICAL")),
-            (false, None, None),
+        for (known, style, settlement, premium) in [
+            (true, Some("AMERICAN"), Some("CASH"), Some("UPFRONT")),
+            (
+                true,
+                Some("EUROPEAN"),
+                Some("PHYSICAL"),
+                Some("FUTURES_STYLE"),
+            ),
+            (false, Some("BERMUDAN"), Some("CASH"), None),
+            (true, Some("EUROPEAN"), None, Some("FUTURES_STYLE")),
+            (true, None, Some("PHYSICAL"), Some("UPFRONT")),
+            (false, None, None, None),
         ] {
             let mut encoded = serde_json::to_value(&instrument).unwrap();
             let fields = encoded
@@ -1972,6 +1978,7 @@ mod serial_tests {
             fields["settlement_currency"] = serde_json::json!(if known { "EUR" } else { "JPY" });
             fields["underlying_instrument_id"] =
                 serde_json::to_value(known.then_some(underlying_id)).unwrap();
+            fields["premium_style"] = serde_json::to_value(premium).unwrap();
             fields["exercise_style"] = serde_json::to_value(style).unwrap();
             fields["settlement_type"] = serde_json::to_value(settlement).unwrap();
             let expected: InstrumentAny = serde_json::from_value(encoded.clone()).unwrap();
@@ -2002,17 +2009,23 @@ mod serial_tests {
 
             let loaded = database.load_instrument(&id).await.unwrap().unwrap();
             let all = database.load_instruments().await.unwrap();
-            let stored: (Option<String>, Option<String>) =
-                sqlx::query_as("SELECT option_kind, exercise_style FROM instrument WHERE id = $1")
-                    .bind(id.to_string())
-                    .fetch_one(&database.pool)
-                    .await
-                    .unwrap();
+            let stored: (Option<String>, Option<String>, Option<String>, Option<String>) = sqlx::query_as(
+                "SELECT option_kind, premium_style, exercise_style, settlement_type FROM instrument WHERE id = $1",
+            )
+            .bind(id.to_string())
+            .fetch_one(&database.pool)
+            .await
+            .unwrap();
             assert_entirely_equal(&loaded, &expected);
             assert_entirely_equal(&all[&id], &expected);
             assert_eq!(
                 stored,
-                (Some(option_kind.to_string()), style.map(str::to_string))
+                (
+                    Some(option_kind.to_string()),
+                    premium.map(str::to_string),
+                    style.map(str::to_string),
+                    settlement.map(str::to_string)
+                )
             );
         }
 

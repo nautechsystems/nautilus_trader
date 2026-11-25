@@ -16,10 +16,10 @@
 use ahash::AHashMap;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
-    accounts::Account,
+    accounts::{Account, AccountAny},
     enums::{
-        LiquiditySide, OmsType, OptionKind, OrderSide, OrderType, PriceType, SettlementType,
-        TimeInForce,
+        LiquiditySide, OmsType, OptionKind, OptionPremiumStyle, OrderSide, OrderType, PriceType,
+        SettlementType, TimeInForce,
     },
     events::{OrderEventAny, OrderFilled},
     identifiers::{
@@ -222,6 +222,12 @@ impl OrderMatchingEngine {
             (None, false) => Price::zero(self.instrument.price_precision()),
         };
 
+        anyhow::ensure!(
+            !price.is_sentinel(),
+            "Invalid option expiry price for {}",
+            self.instrument.id()
+        );
+
         let tag = if should_exercise { "CASH" } else { "OTM" };
         let legs = positions
             .iter()
@@ -231,20 +237,19 @@ impl OrderMatchingEngine {
         Ok(OptionSettlementPlan { legs })
     }
 
-    fn option_apply_settlement_plan(&mut self, plan: OptionSettlementPlan) -> anyhow::Result<()> {
+    fn option_apply_settlement_plan(&self, plan: OptionSettlementPlan) -> anyhow::Result<()> {
         self.option_register_settlement_plan(&plan)?;
-
-        for leg in &plan.legs {
-            self.account_ids
-                .insert(leg.fill.trader_id, leg.fill.account_id);
-        }
-
         for leg in &plan.legs {
             self.publish_order_initialized(&leg.order);
         }
 
         for leg in &plan.legs {
-            self.generate_order_accepted(&leg.order, leg.fill.venue_order_id);
+            let event = self.create_order_accepted_for_account(
+                &leg.order,
+                leg.fill.venue_order_id,
+                leg.fill.account_id,
+            );
+            self.dispatch_order_event(event);
         }
 
         for leg in plan.legs {
@@ -362,15 +367,37 @@ impl OrderMatchingEngine {
         ts_now: UnixNanos,
     ) -> anyhow::Result<[OptionSettlementLeg; 2]> {
         let underlying_id = underlying_instrument.id();
-        let account_type = self
-            .cache
-            .borrow()
-            .account(&position.account_id)
-            .map_or(self.account_type, |account| account.account_type());
+        let futures_style =
+            underlying_instrument.premium_style() == Some(OptionPremiumStyle::FuturesStyle);
+
+        let account_type = {
+            let cache = self.cache.borrow();
+            let account = cache.account_ref(&position.account_id);
+            if futures_style {
+                if let Some(close) = cache.instrument_expiry_close(&underlying_id)
+                    && close.ts_init <= ts_now
+                {
+                    anyhow::bail!(
+                        "Cannot deliver {underlying_id}: underlying expired at {}",
+                        close.ts_init
+                    );
+                }
+
+                let currency = underlying_instrument.settlement_currency();
+                anyhow::ensure!(
+                    matches!(account.as_deref(), Some(AccountAny::Margin(margin)) if margin.balance_total(Some(currency)).is_some()),
+                    "Cannot deliver futures-style option {underlying_id} to {} without a margin account balance in {currency}",
+                    position.account_id
+                );
+            }
+
+            account.map_or(self.account_type, |account| account.account_type())
+        };
+
         Self::validate_account_instrument(account_type, underlying_instrument)?;
         if let Some(expiration) = underlying_instrument.expiration_ns()
             && expiration != UnixNanos::default()
-            && expiration < ts_now
+            && (expiration < ts_now || (futures_style && expiration == ts_now))
         {
             anyhow::bail!("Cannot deliver {underlying_id}: underlying expired at {expiration}");
         }

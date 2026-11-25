@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added `underlying_instrument_id` and `settlement_type` to `OptionContract` and `CryptoOption`
 - Added explicit underlying instrument resolution to `GreeksCalculator`
 - Added `ExerciseStyle` and optional `exercise_style` to `OptionContract` and `CryptoOption`
+- Added `OptionPremiumStyle` and futures-style option variation in backtests
 - Added complete balance snapshot support for `AccountState`, zeroing balances a full snapshot omits
 - Added mark price, last trade, and bar close fallbacks for unrealized PnL without quotes (#5535), thanks @viliamgonda
 - Added `ParquetDataCatalog::builder()` to open catalogs with named, optional settings
@@ -62,6 +63,7 @@ Released on TBD (UTC).
 - Changed option fee pricing. Set `underlying_instrument_id` for market prices or supply option Greeks
 - Changed capped linear option fees to require the declared underlying's quote currency to match the premium currency
 - Changed PostgreSQL option underlying, exercise, settlement, and spread tick columns; run `nautilus database init`
+- Changed PostgreSQL cache startup to require `instrument.premium_style`; run `nautilus database init`
 - Changed PostgreSQL OMS recovery to restore `UNSPECIFIED` for legacy positions whose OMS metadata has no trader ID
 - Changed PostgreSQL `Cache::add` to persist per trader and skip legacy shared user entries on restore
 - Changed Redis cache startup and PostgreSQL bulk position loads to fail on unreadable records
@@ -70,6 +72,7 @@ Released on TBD (UTC).
 - Changed `BinaryOption` Parquet writes to require registered tick schemes; register custom schemes before saving
 - Changed `TickSchemeError` with `TicksNotIncreasing`; update exhaustive matches
 - Changed `OptionValuationError` with `UnsupportedConvention`; update exhaustive matches
+- Changed `InstrumentCloseType` with `Settlement`; update exhaustive matches
 - Changed local Greeks and implied forwards to reject inverse and mixed-currency options
 - Changed `GreeksCalculator::cache_futures_spread` to reject call/put pairs at or after expiry
 - Changed local option valuation to require currency evidence for the underlying price

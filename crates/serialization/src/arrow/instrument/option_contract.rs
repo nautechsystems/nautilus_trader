@@ -56,6 +56,7 @@ impl ArrowSchemaProvider for OptionContract {
             Field::new("strike_currency", DataType::Utf8, false),
             Field::new("quote_currency", DataType::Utf8, false),
             Field::new("settlement_currency", DataType::Utf8, false),
+            Field::new("premium_style", DataType::Utf8, true),
             Field::new("exercise_style", DataType::Utf8, true),
             Field::new("settlement_type", DataType::Utf8, true),
             Field::new("activation_ns", timestamp_data_type(), false),
@@ -101,6 +102,7 @@ impl EncodeToRecordBatch for OptionContract {
         let mut strike_currency_builder = StringBuilder::new();
         let mut quote_currency_builder = StringBuilder::new();
         let mut settlement_currency_builder = StringBuilder::new();
+        let mut premium_style_builder = StringBuilder::new();
         let mut exercise_style_builder = StringBuilder::new();
         let mut settlement_type_builder = StringBuilder::new();
         let mut activation_ns_builder = UInt64Array::builder(data.len());
@@ -139,6 +141,7 @@ impl EncodeToRecordBatch for OptionContract {
             strike_currency_builder.append_value(oc.strike_currency.to_string());
             quote_currency_builder.append_value(oc.quote_currency.to_string());
             settlement_currency_builder.append_value(oc.settlement_currency.to_string());
+            premium_style_builder.append_option(oc.premium_style.map(|style| style.to_string()));
             exercise_style_builder.append_option(oc.exercise_style.map(|style| style.to_string()));
             settlement_type_builder.append_option(oc.settlement_type.map(|kind| kind.to_string()));
             activation_ns_builder.append_value(oc.activation_ns.as_u64());
@@ -216,6 +219,7 @@ impl EncodeToRecordBatch for OptionContract {
                 Arc::new(strike_currency_builder.finish()),
                 Arc::new(quote_currency_builder.finish()),
                 Arc::new(settlement_currency_builder.finish()),
+                Arc::new(premium_style_builder.finish()),
                 Arc::new(exercise_style_builder.finish()),
                 Arc::new(settlement_type_builder.finish()),
                 Arc::new(activation_ns_builder.finish()),
@@ -294,6 +298,8 @@ pub fn decode_option_contract_batch(
         extract_column_by_name::<StringArray>(record_batch, "quote_currency", DataType::Utf8)?;
     let settlement_currency_values =
         extract_column_by_name::<StringArray>(record_batch, "settlement_currency", DataType::Utf8)?;
+    let premium_style_values =
+        extract_optional_string_column_by_name(record_batch, "premium_style")?;
     let exercise_style_values =
         extract_optional_string_column_by_name(record_batch, "exercise_style")?;
     let settlement_type_values =
@@ -346,6 +352,7 @@ pub fn decode_option_contract_batch(
             i,
         )?;
 
+        let premium_style = optional_parsed_value(premium_style_values, "premium_style", i)?;
         let exercise_style = optional_parsed_value(exercise_style_values, "exercise_style", i)?;
 
         let settlement_type = optional_parsed_value(settlement_type_values, "settlement_type", i)?;
@@ -427,6 +434,7 @@ pub fn decode_option_contract_batch(
             .strike_currency(strike_currency)
             .quote_currency(quote_currency)
             .settlement_currency(settlement_currency)
+            .maybe_premium_style(premium_style)
             .maybe_exercise_style(exercise_style)
             .maybe_settlement_type(settlement_type)
             .activation_ns(activation_ns)

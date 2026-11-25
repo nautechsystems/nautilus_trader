@@ -93,8 +93,8 @@ use nautilus_model::{
         option_chain::OptionGreeks,
     },
     enums::{
-        AggregationSource, ContingencyType, InstrumentClass, OmsType, OrderSide, PositionSide,
-        PriceType,
+        AggregationSource, ContingencyType, InstrumentClass, InstrumentCloseType, OmsType,
+        OrderSide, PositionSide, PriceType,
     },
     events::{AccountState, OrderEventAny, OrderFilled, PositionAdjusted},
     identifiers::{
@@ -2920,8 +2920,13 @@ impl Cache {
             )?;
         }
 
-        self.instrument_closes.insert(close.instrument_id, close);
+        self.cache_instrument_close(close);
         Ok(())
+    }
+
+    /// Stores the latest close in memory without writing it to the backing database.
+    pub fn cache_instrument_close(&mut self, close: InstrumentClose) {
+        self.instrument_closes.insert(close.instrument_id, close);
     }
 
     /// Adds the `quote` tick to the cache.
@@ -7874,6 +7879,16 @@ impl Cache {
         self.instrument_closes.get(instrument_id)
     }
 
+    /// Returns the cached contract expiry close for `instrument_id`, if present.
+    #[must_use]
+    pub fn instrument_expiry_close(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> Option<&InstrumentClose> {
+        self.instrument_close(instrument_id)
+            .filter(|close| close.close_type == InstrumentCloseType::ContractExpired)
+    }
+
     /// Returns references to all instrument IDs with a cached close.
     #[must_use]
     pub fn instrument_close_ids(&self) -> Vec<&InstrumentId> {
@@ -8501,10 +8516,16 @@ impl Cache {
     /// Returns owned copies of every account in the cache.
     #[must_use]
     pub fn accounts_all_owned(&self) -> Vec<AccountAny> {
+        self.accounts_all_refs()
+            .map(|account| account.cloned())
+            .collect()
+    }
+
+    /// Iterates over the cached accounts. Drop each borrow before mutating its account.
+    pub fn accounts_all_refs(&self) -> impl Iterator<Item = AccountRef<'_>> {
         self.accounts
             .values()
-            .map(|account_cell| account_cell.borrow().clone())
-            .collect()
+            .map(|account_cell| AccountRef::new(account_cell.borrow()))
     }
 
     /// Updates the own order book with an order.

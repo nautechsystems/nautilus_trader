@@ -97,6 +97,7 @@ BEGIN
 END $$;
 ALTER TABLE "instrument" ADD COLUMN IF NOT EXISTS tick_scheme TEXT;
 ALTER TABLE "instrument" ADD COLUMN IF NOT EXISTS underlying_instrument_id TEXT;
+ALTER TABLE "instrument" ADD COLUMN IF NOT EXISTS premium_style TEXT;
 ALTER TABLE "instrument" ADD COLUMN IF NOT EXISTS exercise_style TEXT;
 ALTER TABLE "instrument" ADD COLUMN IF NOT EXISTS settlement_type TEXT;
 ALTER TABLE "instrument" ADD COLUMN IF NOT EXISTS defi_currency_codes TEXT[];

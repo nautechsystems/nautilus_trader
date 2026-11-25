@@ -729,7 +729,7 @@ fn test_liquidation_checks_money_precision(
         }
         "unrealized PnL" => {
             format!(
-                "unrealized PnL for P-T-LIQUIDATION-FALLBACK ({}, USD)",
+                "value for P-T-LIQUIDATION-FALLBACK ({}, USD)",
                 instrument.id()
             )
         }

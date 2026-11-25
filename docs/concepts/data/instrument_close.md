@@ -1,22 +1,24 @@
 # InstrumentClose
 
 `InstrumentClose` represents a closing price event for an instrument at a venue. It covers
-end-of-session closes and contract-expiry close events.
+end-of-session closes, contract expiry, and official clearing settlement prices.
 
 ## Fields
 
-| Field           | Rust type             | Python type           | Required/default | Notes                                    |
-| --------------- | --------------------- | --------------------- | ---------------- | ---------------------------------------- |
-| `instrument_id` | `InstrumentId`        | `InstrumentId`        | Required         | Instrument being closed.                 |
-| `close_price`   | `Price`               | `Price`               | Required         | Closing or settlement price.             |
-| `close_type`    | `InstrumentCloseType` | `InstrumentCloseType` | Required         | `END_OF_SESSION` or `CONTRACT_EXPIRED`.  |
-| `ts_event`      | `UnixNanos`           | `int`                 | Required         | Event timestamp in nanoseconds.          |
-| `ts_init`       | `UnixNanos`           | `int`                 | Required         | Initialization timestamp in nanoseconds. |
+| Field           | Rust type             | Python type           | Required/default | Notes                                                  |
+| --------------- | --------------------- | --------------------- | ---------------- | ------------------------------------------------------ |
+| `instrument_id` | `InstrumentId`        | `InstrumentId`        | Required         | Instrument being closed.                               |
+| `close_price`   | `Price`               | `Price`               | Required         | Closing or settlement price.                           |
+| `close_type`    | `InstrumentCloseType` | `InstrumentCloseType` | Required         | `END_OF_SESSION`, `CONTRACT_EXPIRED`, or `SETTLEMENT`. |
+| `ts_event`      | `UnixNanos`           | `int`                 | Required         | Event timestamp in nanoseconds.                        |
+| `ts_init`       | `UnixNanos`           | `int`                 | Required         | Initialization timestamp in nanoseconds.               |
 
 ## Behavior
 
 - End-of-session closes provide session-level close prices.
 - Contract-expiry closes mark expiration events for dated contracts.
+- Settlement closes provide the official clearing price for
+  [futures-style option variation](../options.md#simulated-premium-and-variation).
 - The close price is reference data. It does not imply a trade occurred at that price.
 
 ## Example

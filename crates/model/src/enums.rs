@@ -940,6 +940,8 @@ pub enum InstrumentCloseType {
     EndOfSession = 1,
     /// When the instrument expiration was reached.
     ContractExpired = 2,
+    /// An official clearing settlement price during the life of the contract.
+    Settlement = 3,
 }
 
 /// Convert the given `value` to an [`InstrumentCloseType`].
@@ -1203,6 +1205,47 @@ pub enum OptionKind {
     Call = 1,
     /// A Put option gives the holder the right, but not the obligation, to sell an underlying asset at a specified strike price within a specified period of time.
     Put = 2,
+}
+
+/// The timing of an option's premium and variation cash flows.
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    AsRefStr,
+    FromRepr,
+    EnumIter,
+    EnumString,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.model",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.model")
+)]
+pub enum OptionPremiumStyle {
+    /// Transfers the premium at trade execution.
+    Upfront = 1,
+    /// Settles variation at clearing prices and defers the premium until exercise or expiration.
+    FuturesStyle = 2,
 }
 
 /// Selects which option kinds an option chain carries at each strike position.
@@ -2333,6 +2376,7 @@ enum_strum_serde!(MarketStatus);
 enum_strum_serde!(MarketStatusAction);
 enum_strum_serde!(OmsType);
 enum_strum_serde!(OptionKind);
+enum_strum_serde!(OptionPremiumStyle);
 enum_strum_serde!(OptionSideFilter);
 enum_strum_serde!(OrderSide);
 enum_strum_serde!(OrderStatus);
@@ -2792,6 +2836,7 @@ mod tests {
             MarketStatusAction,
             OmsType,
             OptionKind,
+            OptionPremiumStyle,
             OrderSide,
             OrderStatus,
             OrderType,
@@ -2889,6 +2934,7 @@ mod tests {
         "InstrumentClass::Warrant=WARRANT",
         "InstrumentCloseType::ContractExpired=CONTRACT_EXPIRED",
         "InstrumentCloseType::EndOfSession=END_OF_SESSION",
+        "InstrumentCloseType::Settlement=SETTLEMENT",
         "LiquiditySide::Maker=MAKER",
         "LiquiditySide::NoLiquiditySide=NO_LIQUIDITY_SIDE",
         "LiquiditySide::Taker=TAKER",
@@ -2919,6 +2965,8 @@ mod tests {
         "OmsType::Unspecified=UNSPECIFIED",
         "OptionKind::Call=CALL",
         "OptionKind::Put=PUT",
+        "OptionPremiumStyle::FuturesStyle=FUTURES_STYLE",
+        "OptionPremiumStyle::Upfront=UPFRONT",
         "OrderSide::Buy=BUY",
         "OrderSide::Sell=SELL",
         "OrderStatus::Accepted=ACCEPTED",
@@ -3024,6 +3072,7 @@ mod tests {
             MarketStatusAction,
             OmsType,
             OptionKind,
+            OptionPremiumStyle,
             OrderSide,
             OrderStatus,
             OrderType,
@@ -3121,6 +3170,7 @@ mod tests {
             InstrumentCloseType, from_u8, u8,
             1 => InstrumentCloseType::EndOfSession,
             2 => InstrumentCloseType::ContractExpired,
+            3 => InstrumentCloseType::Settlement,
         );
         assert_numeric_mapping!(
             PositionAdjustmentType, from_u8, u8,

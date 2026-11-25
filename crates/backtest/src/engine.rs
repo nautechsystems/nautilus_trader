@@ -1229,6 +1229,7 @@ impl BacktestEngine {
         }
 
         self.settle_venues(ts_now, SettlementScope::All)?;
+        self.settle_expired_option_variations(ts_now)?;
 
         for strategy_id in self.running_strategy_ids() {
             log::error!(
@@ -1995,8 +1996,27 @@ impl BacktestEngine {
             settlement_scope = SettlementScope::All;
         }
 
+        self.settle_expired_option_variations(ts_now)?;
         self.run_venue_modules(ts_now, settlement_scope)?;
         self.run_venue_liquidations(ts_now, settlement_scope)?;
+        Ok(())
+    }
+
+    fn settle_expired_option_variations(&self, ts_now: UnixNanos) -> anyhow::Result<()> {
+        if self
+            .venues
+            .values()
+            .any(|exchange| exchange.borrow().option_variation_due(ts_now))
+        {
+            self.check_balance_error()?;
+
+            for exchange in self.venues.values() {
+                exchange
+                    .borrow_mut()
+                    .settle_expired_option_variations(ts_now)?;
+            }
+        }
+
         Ok(())
     }
 
@@ -3538,6 +3558,7 @@ mod tests {
 
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
         let id = instrument.id();
+        let account_id = AccountId::from(format!("{}-001", id.venue).as_str());
         let mut currency = instrument.settlement_currency();
         currency.precision = 18;
         let balance = Money::from_decimal(1000.into(), currency).unwrap();
@@ -3559,7 +3580,9 @@ mod tests {
             .side(OrderSide::Buy)
             .quantity(Quantity::from("1.000"))
             .build();
-        let fill = OrderFilledTestBuilder::new(&order, &instrument).build();
+        let fill = OrderFilledTestBuilder::new(&order, &instrument)
+            .account_id(account_id)
+            .build();
         let position = Position::new(&instrument, fill.into());
         engine
             .kernel
@@ -3604,8 +3627,7 @@ mod tests {
         assert_eq!(
             error,
             format!(
-                "Cannot check liquidation balance for {}-001 ({currency}): Fixed-point precision 18 exceeds maximum float precision 16",
-                id.venue,
+                "Cannot check liquidation balance for {account_id} ({currency}): Fixed-point precision 18 exceeds maximum float precision 16"
             ),
         );
         assert!(finished.is_some());

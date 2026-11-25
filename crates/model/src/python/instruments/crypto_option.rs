@@ -26,7 +26,7 @@ use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use rust_decimal::Decimal;
 
 use crate::{
-    enums::{ExerciseStyle, OptionKind, SettlementType},
+    enums::{ExerciseStyle, OptionKind, OptionPremiumStyle, SettlementType},
     identifiers::{InstrumentId, Symbol},
     instruments::CryptoOption,
     python::instruments::register_crypto_currencies_from_dict,
@@ -39,7 +39,7 @@ impl CryptoOption {
     /// Represents a generic option contract instrument.
     #[expect(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (instrument_id, raw_symbol, underlying, option_kind, strike_price, strike_currency, quote_currency, settlement_currency, is_inverse, activation_ns, expiration_ns, price_precision, size_precision, price_increment, size_increment, ts_event, ts_init, underlying_instrument_id=None, exercise_style=None, settlement_type=None, multiplier=None, lot_size=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, tick_scheme=None, info=None))]
+    #[pyo3(signature = (instrument_id, raw_symbol, underlying, option_kind, strike_price, strike_currency, quote_currency, settlement_currency, is_inverse, activation_ns, expiration_ns, price_precision, size_precision, price_increment, size_increment, ts_event, ts_init, underlying_instrument_id=None, premium_style=None, exercise_style=None, settlement_type=None, multiplier=None, lot_size=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, tick_scheme=None, info=None))]
     fn py_new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -59,6 +59,7 @@ impl CryptoOption {
         ts_event: u64,
         ts_init: u64,
         underlying_instrument_id: Option<InstrumentId>,
+        premium_style: Option<OptionPremiumStyle>,
         exercise_style: Option<ExerciseStyle>,
         settlement_type: Option<SettlementType>,
         multiplier: Option<Quantity>,
@@ -92,6 +93,7 @@ impl CryptoOption {
             .quote_currency(quote_currency)
             .settlement_currency(settlement_currency)
             .is_inverse(is_inverse)
+            .maybe_premium_style(premium_style)
             .maybe_exercise_style(exercise_style)
             .maybe_settlement_type(settlement_type)
             .activation_ns(activation_ns.into())
@@ -195,6 +197,12 @@ impl CryptoOption {
     #[pyo3(name = "is_inverse")]
     fn py_is_inverse(&self) -> bool {
         self.is_inverse
+    }
+
+    #[getter]
+    #[pyo3(name = "premium_style")]
+    fn py_premium_style(&self) -> Option<OptionPremiumStyle> {
+        self.premium_style
     }
 
     #[getter]
@@ -364,6 +372,10 @@ impl CryptoOption {
             self.settlement_currency.code.to_string(),
         )?;
         dict.set_item("is_inverse", self.is_inverse)?;
+        dict.set_item(
+            "premium_style",
+            self.premium_style.map(|style| style.to_string()),
+        )?;
         dict.set_item(
             "exercise_style",
             self.exercise_style.map(|style| style.to_string()),

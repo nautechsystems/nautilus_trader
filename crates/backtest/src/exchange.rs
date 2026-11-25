@@ -23,7 +23,7 @@ use std::{
     rc::Rc,
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use indexmap::IndexMap;
 use nautilus_common::{
     cache::Cache,
@@ -51,16 +51,22 @@ use nautilus_execution::{
     },
 };
 use nautilus_model::{
-    accounts::{Account, AccountAny, margin_model::MarginModelHandle},
+    accounts::{
+        Account, AccountAny, MarginAccount, margin::OptionVariation,
+        margin_model::MarginModelHandle,
+    },
     data::{
         Bar, BarType, Data, FundingRateUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate,
         OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
     },
     enums::{
-        AccountType, AggregationSource, AggressorSide, BookType, OmsType, OrderStatus,
-        PositionAdjustmentType, PositionSide, PriceType,
+        AccountType, AggregationSource, AggressorSide, BookType, InstrumentCloseType, OmsType,
+        OptionPremiumStyle, OrderStatus, PositionAdjustmentType, PositionSide, PriceType,
     },
-    events::{FundingSettlement, OrderEventAny, OrderUpdated, PositionAdjusted, PositionEvent},
+    events::{
+        AccountState, FundingSettlement, OrderEventAny, OrderUpdated, PositionAdjusted,
+        PositionEvent,
+    },
     identifiers::{AccountId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
@@ -176,7 +182,8 @@ pub struct SimulatedExchange {
     matching_engines: IndexMap<InstrumentId, OrderMatchingEngine>,
     last_raw_id: u32,
     pending_funding_rates: BTreeMap<(UnixNanos, InstrumentId), FundingRateUpdate>,
-    funding_settlements: BTreeSet<(UnixNanos, InstrumentId)>,
+    funding_settlements: AHashSet<(UnixNanos, InstrumentId)>,
+    option_variation_expirations: BTreeSet<(UnixNanos, InstrumentId)>,
     leverages: AHashMap<InstrumentId, Decimal>,
     modules: Vec<SimulationModuleHandle>,
     callback_error: Option<String>,
@@ -269,7 +276,8 @@ impl SimulatedExchange {
             matching_engines: IndexMap::new(),
             last_raw_id: 0,
             pending_funding_rates: BTreeMap::new(),
-            funding_settlements: BTreeSet::new(),
+            funding_settlements: AHashSet::new(),
+            option_variation_expirations: BTreeSet::new(),
             leverages: config.leverages,
             modules: config.modules,
             callback_error: None,
@@ -492,6 +500,7 @@ impl SimulatedExchange {
         }
 
         OrderMatchingEngine::validate_account_instrument(self.account_type, &instrument)?;
+        self.validate_option_variation_instrument(&instrument)?;
 
         let price_protection = if self.price_protection_points == 0 {
             None
@@ -539,6 +548,14 @@ impl SimulatedExchange {
         if let Some(handler) = &self.event_handler {
             matching_engine.set_event_handler(Rc::clone(handler));
         }
+
+        if instrument.premium_style() == Some(OptionPremiumStyle::FuturesStyle)
+            && let Some(expiration) = instrument.expiration_ns().filter(|ts| !ts.is_zero())
+        {
+            self.option_variation_expirations
+                .insert((expiration, instrument_id));
+        }
+
         self.instruments.insert(instrument_id, instrument);
         matching_engine.set_inflight_orders(self.inflight_orders.clone());
         matching_engine.set_matching_orders(self.matching_orders.clone());
@@ -551,6 +568,8 @@ impl SimulatedExchange {
     /// Applies replay definitions using the existing matching engine lifecycle.
     pub(crate) fn update_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
         let instrument_id = instrument.id();
+        self.validate_option_variation_instrument(instrument)?;
+
         if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
             anyhow::ensure!(
                 instrument.expiration_ns() == engine.instrument.expiration_ns()
@@ -563,6 +582,18 @@ impl SimulatedExchange {
                     ),
                 "Cannot change expiration for instrument {instrument_id} during replay"
             );
+            let previous = &engine.instrument;
+            if previous.premium_style() == Some(OptionPremiumStyle::FuturesStyle)
+                || instrument.premium_style() == Some(OptionPremiumStyle::FuturesStyle)
+            {
+                anyhow::ensure!(
+                    previous.premium_style() == instrument.premium_style()
+                        && previous.settlement_currency() == instrument.settlement_currency()
+                        && previous.multiplier() == instrument.multiplier(),
+                    "Cannot change option variation terms for {instrument_id} during replay"
+                );
+            }
+
             self.cache.borrow_mut().add_instrument(instrument.clone())?;
             self.initial_instruments
                 .entry(instrument_id)
@@ -577,6 +608,32 @@ impl SimulatedExchange {
         }
 
         self.drain_oto_commands();
+        Ok(())
+    }
+
+    fn validate_option_variation_instrument(
+        &self,
+        instrument: &InstrumentAny,
+    ) -> anyhow::Result<()> {
+        if instrument.premium_style() == Some(OptionPremiumStyle::FuturesStyle) {
+            let instrument_id = instrument.id();
+            let currency = instrument.settlement_currency();
+            anyhow::ensure!(
+                self.account_type == AccountType::Margin,
+                "Futures-style option {instrument_id} requires a margin account"
+            );
+            anyhow::ensure!(
+                instrument.quote_currency() == currency && instrument.cost_currency() == currency,
+                "An explicit conversion is required to clear futures-style option {instrument_id} in {currency}"
+            );
+            anyhow::ensure!(
+                self.starting_balances
+                    .iter()
+                    .any(|balance| balance.currency == currency),
+                "Futures-style option {instrument_id} requires an account balance in {currency}"
+            );
+        }
+
         Ok(())
     }
 
@@ -1121,13 +1178,124 @@ impl SimulatedExchange {
     ///
     /// # Errors
     ///
-    /// Returns an error if module pre-processing or matching engine processing fails.
+    /// Returns an error if module pre-processing, matching engine processing, or option
+    /// variation settlement fails.
     pub fn process_instrument_close(&mut self, close: InstrumentClose) -> anyhow::Result<()> {
         self.pre_process_modules(&Data::InstrumentClose(close))?;
         self.dispatch_market_data(close.instrument_id, |matching_engine| {
             matching_engine.process_instrument_close(close);
             Ok(())
-        })
+        })?;
+
+        if let Some(instrument) = self.instruments.get(&close.instrument_id)
+            && instrument.premium_style() == Some(OptionPremiumStyle::FuturesStyle)
+        {
+            match close.close_type {
+                InstrumentCloseType::Settlement => {
+                    if instrument
+                        .expiration_ns()
+                        .filter(|ts| !ts.is_zero())
+                        .is_none_or(|ts| close.ts_init < ts)
+                        && self
+                            .cache
+                            .borrow()
+                            .instrument_expiry_close(&close.instrument_id)
+                            .is_none_or(|expiry| close.ts_init < expiry.ts_init)
+                    {
+                        self.settle_option_variation(close)?;
+                    }
+
+                    return Ok(());
+                }
+                InstrumentCloseType::ContractExpired => {
+                    self.cache.borrow_mut().cache_instrument_close(close);
+                    self.option_variation_expirations
+                        .retain(|(_, id)| *id != close.instrument_id);
+                    self.option_variation_expirations
+                        .insert((close.ts_init, close.instrument_id));
+                }
+                InstrumentCloseType::EndOfSession => (),
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn option_variation_due(&self, ts_now: UnixNanos) -> bool {
+        self.option_variation_expirations
+            .first()
+            .is_some_and(|(expiration, _)| *expiration <= ts_now)
+    }
+
+    pub(crate) fn settle_expired_option_variations(
+        &mut self,
+        ts_now: UnixNanos,
+    ) -> anyhow::Result<()> {
+        if !self.option_variation_due(ts_now) {
+            return Ok(());
+        }
+
+        let expired: Vec<_> = self
+            .option_variation_expirations
+            .iter()
+            .copied()
+            .take_while(|(expiration, _)| *expiration <= ts_now)
+            .filter(|(_, id)| self.matching_engines[id].is_expiration_processed())
+            .collect();
+
+        for (expiration, instrument_id) in expired {
+            let option = &self.instruments[&instrument_id];
+            let price = Price::zero(option.price_precision());
+
+            let close = InstrumentClose::new(
+                instrument_id,
+                price,
+                InstrumentCloseType::ContractExpired,
+                ts_now,
+                ts_now,
+            );
+
+            self.settle_option_variation(close)?;
+            self.option_variation_expirations
+                .remove(&(expiration, instrument_id));
+        }
+
+        Ok(())
+    }
+
+    fn settle_option_variation(&self, close: InstrumentClose) -> anyhow::Result<()> {
+        let instrument_id = close.instrument_id;
+        let instrument = &self.instruments[&instrument_id];
+
+        let client = self.exec_client.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("No execution client for option clearing of {instrument_id}")
+        })?;
+
+        let account_id = client.account_id();
+
+        let states = {
+            let mut cache = self.cache.borrow_mut();
+            let accounts = prepare_option_clearing(&cache, account_id, instrument, close)?;
+            let mut states = Vec::new();
+
+            for (account, state) in accounts {
+                if let Some(state) = state {
+                    cache.update_account_owned(account)?;
+                    states.push(state);
+                } else {
+                    cache.cache_account_owned(account);
+                }
+            }
+
+            states
+        };
+
+        let endpoint = MessagingSwitchboard::portfolio_update_account();
+        for state in states {
+            msgbus::send_account_state(endpoint, &state);
+        }
+
+        Ok(())
     }
 
     fn dispatch_market_data(
@@ -1713,6 +1881,29 @@ impl SimulatedExchange {
 
         self.pending_funding_rates.clear();
         self.funding_settlements.clear();
+        self.option_variation_expirations = self
+            .instruments
+            .values()
+            .filter(|instrument| {
+                instrument.premium_style() == Some(OptionPremiumStyle::FuturesStyle)
+            })
+            .filter_map(|instrument| {
+                instrument
+                    .expiration_ns()
+                    .filter(|ts| !ts.is_zero())
+                    .map(|ts| (ts, instrument.id()))
+            })
+            .collect();
+
+        if let Some(account_id) = self.exec_client.as_ref().map(|client| client.account_id()) {
+            let mut cache = self.cache.borrow_mut();
+            if let Some(mut account) = cache.account_mut(&account_id)
+                && let AccountAny::Margin(margin) = &mut *account
+            {
+                margin.initialize_option_variations();
+            }
+        }
+
         self.message_queue.clear();
         self.inflight_queue.clear();
         self.inflight_orders.clear();
@@ -1789,7 +1980,7 @@ impl SimulatedExchange {
         let open_positions: Vec<Position> = {
             let cache = self.cache.borrow();
             cache
-                .positions_open(Some(&self.id), None, None, None, None)
+                .positions_open(None, None, None, Some(&account_id), None)
                 .into_iter()
                 .map(|p| p.cloned())
                 .collect()
@@ -1823,16 +2014,22 @@ impl SimulatedExchange {
                     )
                 })?;
 
-            let upnl = {
+            let adjustment = {
                 let cache = self.cache.borrow();
-                liquidation_unrealized_total(&cache, &open_positions, indices)?
+                liquidation_equity_adjustment(
+                    &cache,
+                    &margin_account,
+                    currency,
+                    &open_positions,
+                    indices,
+                )?
             };
 
-            let Some(upnl) = upnl else {
+            let Some(adjustment) = adjustment else {
                 continue; // defer until all positions are priced
             };
 
-            let equity = i128::from(balance.total.raw()).checked_add(upnl).ok_or_else(|| {
+            let equity = i128::from(balance.total.raw()).checked_add(adjustment).ok_or_else(|| {
                 anyhow::anyhow!("Cannot calculate liquidation equity for {account_id} ({currency}): overflow")
             })?;
 
@@ -2116,6 +2313,7 @@ impl SimulatedExchange {
 
             match &mut account {
                 AccountAny::Margin(margin_account) => {
+                    margin_account.initialize_option_variations();
                     margin_account.set_default_leverage(self.default_leverage);
                     for (instrument_id, leverage) in &self.leverages {
                         margin_account.set_leverage(*instrument_id, *leverage);
@@ -2134,6 +2332,88 @@ impl SimulatedExchange {
             self.cache.borrow_mut().update_account(&account).unwrap();
         }
     }
+}
+
+fn prepare_option_clearing(
+    cache: &Cache,
+    listing_account_id: AccountId,
+    instrument: &InstrumentAny,
+    close: InstrumentClose,
+) -> anyhow::Result<Vec<(AccountAny, Option<AccountState>)>> {
+    let listing_account = cache.account_ref(&listing_account_id);
+
+    let Some(AccountAny::Margin(listing_account)) = listing_account.as_deref() else {
+        anyhow::bail!("No margin account {listing_account_id} for option clearing");
+    };
+
+    // The listing account sees every cycle, including marks before another account receives delivery
+    if listing_account.option_settlement_is_duplicate(close)? {
+        return Ok(Vec::new());
+    }
+
+    let mut quantities = option_clearing_quantities(cache, close)?;
+    let mut accounts: Vec<_> = cache.accounts_all_refs().collect();
+    accounts.sort_unstable_by_key(|account| account.id());
+    let mut prepared = Vec::new();
+
+    for account in accounts {
+        let account_id = account.id();
+        let quantity = quantities.remove(&account_id);
+
+        let AccountAny::Margin(margin) = &*account else {
+            anyhow::ensure!(
+                quantity.is_none(),
+                "Account {account_id} cannot clear options"
+            );
+            continue;
+        };
+
+        let recorded = margin
+            .option_variation(&close.instrument_id)
+            .map(OptionVariation::quantity);
+        let quantity = quantity.filter(|_| margin.calculate_account_state);
+        if account_id != listing_account_id && recorded.is_none() && quantity.is_none() {
+            continue;
+        }
+
+        anyhow::ensure!(
+            quantity.unwrap_or_default() == recorded.unwrap_or_default(),
+            "Option clearing quantity mismatch for {} in account {account_id}: ledger {recorded:?}, positions {quantity:?}",
+            close.instrument_id
+        );
+        let mut margin = margin.clone();
+        let state = margin.settle_option_variation(instrument, close)?;
+        prepared.push((AccountAny::Margin(margin), state));
+    }
+
+    anyhow::ensure!(
+        quantities.is_empty(),
+        "Missing position owner for option clearing of {}",
+        close.instrument_id
+    );
+    Ok(prepared)
+}
+
+fn option_clearing_quantities(
+    cache: &Cache,
+    close: InstrumentClose,
+) -> anyhow::Result<AHashMap<AccountId, Decimal>> {
+    let instrument_id = close.instrument_id;
+    let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
+    anyhow::ensure!(
+        close.close_type != InstrumentCloseType::ContractExpired || positions.is_empty(),
+        "Cannot clear final option variation for {instrument_id} before all expiry fills apply"
+    );
+
+    let mut quantities = AHashMap::<_, Decimal>::new();
+    for position in positions {
+        let quantity = quantities.entry(position.account_id).or_default();
+        *quantity = quantity.checked_add(position.signed_qty).ok_or_else(|| {
+            anyhow::anyhow!("Option position quantity overflow for {instrument_id}")
+        })?;
+    }
+
+    Ok(quantities)
 }
 
 #[derive(Clone, Copy)]
@@ -2416,35 +2696,112 @@ impl LiquidationRatio {
     clippy::useless_conversion,
     reason = "i128::from widens MoneyRaw in standard-precision builds"
 )]
-fn liquidation_unrealized_total(
+fn liquidation_equity_adjustment(
     cache: &Cache,
+    account: &MarginAccount,
+    currency: Currency,
     positions: &[Position],
     indices: &[usize],
 ) -> anyhow::Result<Option<i128>> {
-    let mut upnl = 0_i128;
+    let mut adjustment = 0_i128;
     let mut bar_types = None;
+    let mut option_positions = AHashMap::<_, Vec<_>>::new();
 
     for &i in indices {
         let position = &positions[i];
+        if cache
+            .instrument(&position.instrument_id)
+            .is_some_and(|instrument| {
+                instrument.premium_style() == Some(OptionPremiumStyle::FuturesStyle)
+            })
+        {
+            if position.account_id == account.id() {
+                option_positions
+                    .entry(position.instrument_id)
+                    .or_default()
+                    .push(position);
+            }
 
-        let Some(pnl) = liquidation_unrealized_pnl(cache, position, &mut bar_types) else {
+            continue;
+        }
+
+        let Some(value) = liquidation_position_value(
+            cache,
+            position,
+            account.calculate_account_state,
+            &mut bar_types,
+        ) else {
             return Ok(None);
         };
 
-        check_float_precision(pnl.currency.precision).map_err(|e| {
+        check_float_precision(value.currency.precision).map_err(|e| {
             anyhow::anyhow!(
-                "Cannot check liquidation unrealized PnL for {} ({}, {}): {e}",
+                "Cannot check liquidation value for {} ({}, {}): {e}",
                 position.id,
                 position.instrument_id,
-                pnl.currency
+                value.currency
             )
         })?;
 
+        adjustment = adjustment
+            .checked_add(i128::from(value.raw()))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Cannot sum liquidation position values for {}: overflow",
+                    position.id
+                )
+            })?;
+    }
+
+    let Some(option_variation) =
+        liquidation_option_variation(cache, account, currency, &option_positions, &mut bar_types)?
+    else {
+        return Ok(None);
+    };
+
+    let adjustment = adjustment.checked_add(option_variation).ok_or_else(|| {
+        anyhow::anyhow!(
+            "Cannot sum liquidation equity adjustments for {}: overflow",
+            account.id()
+        )
+    })?;
+
+    Ok(Some(adjustment))
+}
+
+#[allow(
+    clippy::useless_conversion,
+    reason = "i128::from widens MoneyRaw in standard-precision builds"
+)]
+fn liquidation_option_variation(
+    cache: &Cache,
+    account: &MarginAccount,
+    currency: Currency,
+    positions: &AHashMap<InstrumentId, Vec<&Position>>,
+    bar_types: &mut Option<AHashMap<InstrumentId, Vec<BarType>>>,
+) -> anyhow::Result<Option<i128>> {
+    let mut upnl = 0_i128;
+
+    for (instrument_id, variation) in account.option_variations() {
+        let Some(instrument) = cache.instrument(&instrument_id) else {
+            return Ok(None);
+        };
+
+        if instrument.settlement_currency() != currency {
+            continue;
+        }
+
+        let positions = positions.get(&instrument_id).into_iter().flatten().copied();
+
+        let Some(pnl) = variation.pending_equity(instrument, positions, |position| {
+            liquidation_price(cache, &instrument_id, position.side, bar_types)
+        })?
+        else {
+            return Ok(None);
+        };
+
         upnl = upnl.checked_add(i128::from(pnl.raw())).ok_or_else(|| {
-            anyhow::anyhow!(
-                "Cannot sum liquidation unrealized PnL for {}: overflow",
-                position.id
-            )
+            anyhow::anyhow!("Cannot sum liquidation option variation for {instrument_id}: overflow")
         })?;
     }
 
@@ -2470,16 +2827,55 @@ fn revert_funding_adjustments(
 
 // Values a position for the liquidation check with the portfolio's price fallback: mark price,
 // then the side-appropriate quote, then the last trade, then the most recent bar close.
-fn liquidation_unrealized_pnl(
+fn liquidation_position_value(
     cache: &Cache,
     position: &Position,
+    calculated_account: bool,
     bar_types: &mut Option<AHashMap<InstrumentId, Vec<BarType>>>,
 ) -> Option<Money> {
+    if position.side == PositionSide::Flat {
+        return Some(Money::zero(position.settlement_currency));
+    }
+
     let instrument_id = &position.instrument_id;
-    let price_type = match position.side {
+
+    let Some(price) = liquidation_price(cache, instrument_id, position.side, bar_types) else {
+        log::warn!(
+            "Cannot value {} for liquidation, no mark, quote, trade or bar for {instrument_id}",
+            position.id,
+        );
+        return None;
+    };
+
+    let value = if calculated_account && position.instrument_class.is_premium_based() {
+        position.try_notional_value(price).map(|value| {
+            if position.side == PositionSide::Short {
+                -value
+            } else {
+                value
+            }
+        })
+    } else {
+        position.try_unrealized_pnl(price).map_err(Into::into)
+    };
+
+    value
+        .inspect_err(|e| {
+            log::warn!("Cannot value {} for liquidation: {e}", position.id);
+        })
+        .ok()
+}
+
+fn liquidation_price(
+    cache: &Cache,
+    instrument_id: &InstrumentId,
+    side: PositionSide,
+    bar_types: &mut Option<AHashMap<InstrumentId, Vec<BarType>>>,
+) -> Option<Price> {
+    let price_type = match side {
         PositionSide::Long => PriceType::Bid,
         PositionSide::Short => PriceType::Ask,
-        PositionSide::Flat => return Some(Money::zero(position.settlement_currency)),
+        PositionSide::Flat => return None,
     };
 
     let allows_non_positive = || {
@@ -2487,10 +2883,9 @@ fn liquidation_unrealized_pnl(
             .instrument(instrument_id)
             .is_some_and(Instrument::allows_negative_price)
     };
+
     let is_valid = |price: &Price| {
-        !price.is_undefined()
-            && !price.is_error()
-            && (price.as_decimal() > Decimal::ZERO || allows_non_positive())
+        !price.is_sentinel() && (price.as_decimal() > Decimal::ZERO || allows_non_positive())
     };
     let quote_price = || {
         cache.quote(instrument_id).and_then(|quote| {
@@ -2527,26 +2922,12 @@ fn liquidation_unrealized_pnl(
             .map(|bar| bar.close)
     };
 
-    let Some(price) = cache
+    cache
         .price(instrument_id, PriceType::Mark)
         .filter(is_valid)
         .or_else(quote_price)
         .or_else(|| cache.price(instrument_id, PriceType::Last).filter(is_valid))
         .or_else(bar_close)
-    else {
-        log::warn!(
-            "Cannot value {} for liquidation, no mark, quote, trade or bar for {instrument_id}",
-            position.id,
-        );
-        return None;
-    };
-
-    position
-        .try_unrealized_pnl(price)
-        .inspect_err(|e| {
-            log::error!("Cannot calculate unrealized PnL for {}: {e}", position.id);
-        })
-        .ok()
 }
 
 fn liquidation_bar_types(cache: &Cache) -> AHashMap<InstrumentId, Vec<BarType>> {
@@ -2601,11 +2982,11 @@ mod tests {
         accounts::MarginAccount,
         data::BarSpecification,
         enums::{AccountType, BarAggregation, BookType, OrderSide, OrderType},
-        events::AccountState,
+        events::{AccountState, account::stubs::margin_account_state},
         identifiers::{ClientOrderId, StrategyId, TradeId, TraderId},
         instruments::{
             CurrencyPair, InstrumentAny,
-            stubs::{audusd_sim, futures_contract_es, gbpusd_sim},
+            stubs::{audusd_sim, futures_contract_es, gbpusd_sim, option_contract_appl},
         },
         orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
         stubs::TestDefault,
@@ -2730,7 +3111,7 @@ mod tests {
         }
 
         let mut bar_types = None;
-        let actual = liquidation_unrealized_pnl(&cache, &position, &mut bar_types);
+        let actual = liquidation_position_value(&cache, &position, false, &mut bar_types);
 
         let expected = has_fallback.then(|| {
             let amount = dec!(-10) * instrument.multiplier().as_decimal();
@@ -2803,7 +3184,9 @@ mod tests {
         let mut bar_types = None;
         let actual: Vec<_> = positions
             .iter()
-            .map(|(position, _)| liquidation_unrealized_pnl(&cache, position, &mut bar_types))
+            .map(|(position, _)| {
+                liquidation_position_value(&cache, position, false, &mut bar_types)
+            })
             .collect();
         let expected: Vec<_> = positions
             .iter()
@@ -2811,6 +3194,84 @@ mod tests {
             .collect();
 
         assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    #[case::long(false, false, "2 USD")]
+    #[case::hedged(true, false, "-20 USD")]
+    #[case::different_account(false, true, "2 USD")]
+    fn test_futures_style_liquidation_uses_pending_variation(
+        #[case] hedged: bool,
+        #[case] different_account: bool,
+        #[case] expected: &str,
+    ) {
+        let mut option = option_contract_appl();
+        option.premium_style = Some(OptionPremiumStyle::FuturesStyle);
+        let instrument = option.into_any();
+        let instrument_id = instrument.id();
+        let mut positions = vec![liquidation_position(&instrument, OrderSide::Buy)];
+        if hedged {
+            positions.push(liquidation_position(&instrument, OrderSide::Sell));
+        }
+
+        let mut account = MarginAccount::new(margin_account_state(), true);
+        account.initialize_option_variations();
+        for position in &positions {
+            account
+                .record_option_variation_fill(&instrument, &position.events[0])
+                .unwrap();
+        }
+
+        let clearing = InstrumentClose::new(
+            instrument_id,
+            Price::from("101.00"),
+            InstrumentCloseType::Settlement,
+            1.into(),
+            1.into(),
+        );
+
+        account
+            .settle_option_variation(&instrument, clearing)
+            .unwrap();
+
+        if different_account {
+            let mut fill = positions[0].events[0].clone();
+            fill.account_id = AccountId::from("OTHER-001");
+            positions.push(Position::new(&instrument, fill));
+        }
+
+        let mut cache = Cache::default();
+        cache.add_instrument(instrument).unwrap();
+        let qty = Quantity::from(1);
+
+        let (bid, ask) = if hedged {
+            ("90.00", "110.00")
+        } else {
+            ("103.00", "104.00")
+        };
+
+        let quote = QuoteTick::new(
+            instrument_id,
+            Price::from(bid),
+            Price::from(ask),
+            qty,
+            qty,
+            2.into(),
+            2.into(),
+        );
+
+        cache.add_quote(quote).unwrap();
+
+        let currency = Currency::USD();
+        #[allow(
+            clippy::useless_conversion,
+            reason = "i128::from widens MoneyRaw in standard-precision builds"
+        )]
+        let expected = i128::from(Money::from(expected).raw());
+        let indices: Vec<_> = (0..positions.len()).collect();
+        let pnl = liquidation_equity_adjustment(&cache, &account, currency, &positions, &indices)
+            .unwrap();
+        assert_eq!(pnl, Some(expected));
     }
 
     fn liquidation_position(instrument: &InstrumentAny, side: OrderSide) -> Position {
@@ -2833,6 +3294,88 @@ mod tests {
             None,
         );
         Position::new(instrument, fill.into())
+    }
+
+    #[rstest]
+    #[case::future(false, None, OrderSide::Buy, "3 USD")]
+    #[case::futures_style(true, Some(OptionPremiumStyle::FuturesStyle), OrderSide::Buy, "3 USD")]
+    #[case::upfront_long(true, Some(OptionPremiumStyle::Upfront), OrderSide::Buy, "103 USD")]
+    #[case::legacy_short(true, None, OrderSide::Sell, "-104 USD")]
+    fn test_liquidation_equity_marks_owned_positions_listed_on_another_venue(
+        #[case] option_instrument: bool,
+        #[case] premium_style: Option<OptionPremiumStyle>,
+        #[case] side: OrderSide,
+        #[case] expected_value: &str,
+    ) {
+        let mut exchange = setup_exchange(Dispatch::Queued);
+        let instrument_id = InstrumentId::from("DELIVERED.OTHER");
+
+        let instrument = if option_instrument {
+            let mut option = option_contract_appl();
+            option.id = instrument_id;
+            option.premium_style = premium_style;
+            option.into_any()
+        } else {
+            let mut future = futures_contract_es(None, None);
+            future.id = instrument_id;
+            future.multiplier = Quantity::from(1);
+            future.into_any()
+        };
+
+        let mut state = margin_account_state();
+        state.account_id = AccountId::from("SIM-001");
+
+        let mut account = MarginAccount::new(state, true);
+        account.initialize_option_variations();
+        account.update_maintenance_margin(instrument_id, Money::from("1000000 USD"));
+        let mut fill = liquidation_position(&instrument, side).events.remove(0);
+        fill.account_id = account.id();
+        let position = Position::new(&instrument, fill);
+
+        if premium_style == Some(OptionPremiumStyle::FuturesStyle) {
+            account
+                .record_option_variation_fill(&instrument, &position.events[0])
+                .unwrap();
+        }
+
+        let expected_equity =
+            account.balance_total(Some(Currency::USD())).unwrap() + Money::from(expected_value);
+        #[allow(
+            clippy::useless_conversion,
+            reason = "i128::from widens MoneyRaw in standard-precision builds"
+        )]
+        let expected_equity = i128::from(expected_equity.raw());
+
+        {
+            let mut cache = exchange.cache.borrow_mut();
+            cache.add_account(AccountAny::Margin(account)).unwrap();
+            cache.add_instrument(instrument).unwrap();
+            cache
+                .add_position_without_order(&position, OmsType::Netting)
+                .unwrap();
+            cache
+                .add_quote(QuoteTick::new(
+                    instrument_id,
+                    Price::from("103.00"),
+                    Price::from("104.00"),
+                    Quantity::from(1),
+                    Quantity::from(1),
+                    1.into(),
+                    1.into(),
+                ))
+                .unwrap();
+        }
+
+        exchange.liquidation_trigger_ratio = Some(LiquidationRatio::new(2.0).unwrap());
+        let plan = exchange.plan_liquidations().unwrap().unwrap();
+
+        let [trigger] = plan.triggers.as_slice() else {
+            panic!("expected one liquidation trigger");
+        };
+
+        assert_eq!(plan.account_id, position.account_id);
+        assert_eq!(trigger.currency, Currency::USD());
+        assert_eq!(trigger.equity, expected_equity);
     }
 
     #[rstest]
@@ -3087,6 +3630,43 @@ mod tests {
         ] {
             assert_eq!(instrument.expiration_ns(), original.expiration_ns());
         }
+    }
+
+    #[rstest]
+    #[case::cash_account(
+        AccountType::Cash,
+        Currency::USD(),
+        Currency::USD(),
+        "Futures-style option TEST.SIM requires a margin account"
+    )]
+    #[case::different_currency(
+        AccountType::Margin,
+        Currency::EUR(),
+        Currency::EUR(),
+        "An explicit conversion is required to clear futures-style option TEST.SIM in EUR"
+    )]
+    #[case::unseeded_currency(
+        AccountType::Margin,
+        Currency::USD(),
+        Currency::EUR(),
+        "Futures-style option TEST.SIM requires an account balance in USD"
+    )]
+    fn test_futures_style_option_rejects_incompatible_terms(
+        #[case] account_type: AccountType,
+        #[case] settlement_currency: Currency,
+        #[case] account_currency: Currency,
+        #[case] expected: &str,
+    ) {
+        let mut exchange = setup_exchange(Dispatch::Queued);
+        exchange.account_type = account_type;
+        exchange.starting_balances = vec![Money::zero(account_currency)];
+        let mut option = option_contract_appl();
+        option.id = InstrumentId::from("TEST.SIM");
+        option.premium_style = Some(OptionPremiumStyle::FuturesStyle);
+        option.settlement_currency = settlement_currency;
+        let e = exchange.add_instrument(option.into_any()).unwrap_err();
+        assert_eq!(e.to_string(), expected);
+        assert!(exchange.instruments.is_empty());
     }
 
     #[rstest]
