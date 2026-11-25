@@ -61,7 +61,7 @@ def main() -> None:
         trader_id,
         Environment.LIVE,
     )
-    builder = builder.with_timeout_connection(env_int("IB_V2_NODE_CONNECTION_TIMEOUT", 15))
+    builder = builder.with_timeout_connection_secs(env_int("IB_V2_NODE_CONNECTION_TIMEOUT", 15))
     builder = builder.with_reconciliation(reconciliation=False)
     builder = builder.add_data_client(
         "DATABENTO",

@@ -250,12 +250,11 @@ def margin_account_factory(request: pytest.FixtureRequest, tmp_path: Path) -> Ca
         node = (
             LiveNode.builder("PY-MARGIN", TraderId("TESTER-001"), Environment.SANDBOX)
             .with_reconciliation(reconciliation=False)
-            .with_timeout_connection(5)
-            .with_timeout_reconciliation(0)
-            .with_timeout_portfolio(0)
+            .with_timeout_connection_secs(5)
+            .with_timeout_reconciliation_secs(0)
+            .with_timeout_portfolio_secs(0)
             .with_timeout_disconnection_secs(0)
             .with_delay_post_stop_secs(0)
-            .with_delay_shutdown_secs(0)
             .add_simulated_exec_client(
                 None,
                 SandboxExecutionClientFactory(),

@@ -766,19 +766,22 @@ then supply `data_factories` and `exec_factories` to `LiveNode.build(...)` or `L
 
 ### Timeouts
 
-On `LiveNodeConfig`, timeout names now state their unit and the post-stop wait is a delay:
+In Python, `LiveNodeConfig` and `BacktestEngineConfig` use these names for timeouts and the post-stop delay.
 
-| v1 field                 | v2 `LiveNodeConfig` field     |
+| v1 field                 | v2 Python field               |
 | ------------------------ | ----------------------------- |
 | `timeout_connection`     | `timeout_connection_secs`     |
 | `timeout_reconciliation` | `timeout_reconciliation_secs` |
 | `timeout_portfolio`      | `timeout_portfolio_secs`      |
 | `timeout_disconnection`  | `timeout_disconnection_secs`  |
 | `timeout_post_stop`      | `delay_post_stop_secs`        |
-| `timeout_shutdown`       | `timeout_shutdown_secs`       |
 
-`BacktestEngineConfig` keeps the v1 timeout names without the `_secs` suffix, except that `timeout_post_stop`
-becomes `delay_post_stop`.
+Remove `timeout_shutdown` or `timeout_shutdown_secs` from existing live-node and backtest configs.
+If you used `delay_post_stop` in a v2 prerelease, rename it to `delay_post_stop_secs`.
+
+For `NautilusKernelBuilder`, drop calls to `with_timeout_shutdown` and append `_secs` to the remaining
+timeout and post-stop delay setter names.
+Remove `timeout_shutdown` from Rust `KernelConfig` and `BacktestEngineConfig` struct literals.
 
 ### Backtest models and settlement
 

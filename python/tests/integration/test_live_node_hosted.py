@@ -64,7 +64,6 @@ def build_node(trader_id: str) -> LiveNode:
             timeout_portfolio_secs=0,
             timeout_disconnection_secs=0,
             delay_post_stop_secs=0,
-            timeout_shutdown_secs=0,
         ),
     )
 
@@ -534,7 +533,7 @@ async def test_cache_database_backing_is_rejected_on_a_host_loop() -> None:
         LiveNode.builder("TEST", TraderId("HOSTED-020"), Environment.SANDBOX)
         .with_cache_database_factory(RedisCacheConfig())
         .with_reconciliation(reconciliation=False)
-        .with_timeout_connection(0)
+        .with_timeout_connection_secs(0)
         .build()
     )
 

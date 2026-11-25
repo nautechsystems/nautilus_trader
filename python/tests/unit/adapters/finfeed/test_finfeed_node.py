@@ -177,10 +177,9 @@ def test_discovery_replay_subscriptions_and_fresh_node_restart() -> None:  # noq
             node = (
                 LiveNode.builder("FINFEED-NODE", TraderId("TESTER-001"), Environment.LIVE)
                 .with_reconciliation(False)
-                .with_timeout_connection(5)
-                .with_timeout_portfolio(0)
+                .with_timeout_connection_secs(5)
+                .with_timeout_portfolio_secs(0)
                 .with_delay_post_stop_secs(0)
-                .with_delay_shutdown_secs(0)
                 .add_data_client(None, FinFeedDataClientFactory(), config)
                 .build()
             )
@@ -723,10 +722,9 @@ def polling_node() -> Iterator[tuple[LiveNode, Queue, list]]:
     node = (
         LiveNode.builder("FINFEED-POLLING", TraderId("TESTER-001"), Environment.LIVE)
         .with_reconciliation(False)
-        .with_timeout_connection(5)
-        .with_timeout_portfolio(0)
+        .with_timeout_connection_secs(5)
+        .with_timeout_portfolio_secs(0)
         .with_delay_post_stop_secs(0)
-        .with_delay_shutdown_secs(0)
         .with_controller(
             ImportableControllerConfig(
                 controller_path=f"{__name__}:PollingController",
@@ -828,10 +826,9 @@ def test_failed_instrument_list_refresh_keeps_node_cache_ownership() -> None:
         node = (
             LiveNode.builder("FINFEED-REFRESH", TraderId("TESTER-001"), Environment.LIVE)
             .with_reconciliation(False)
-            .with_timeout_connection(5)
-            .with_timeout_portfolio(0)
+            .with_timeout_connection_secs(5)
+            .with_timeout_portfolio_secs(0)
             .with_delay_post_stop_secs(0)
-            .with_delay_shutdown_secs(0)
             .add_data_client(None, FinFeedDataClientFactory(), config)
             .build()
         )

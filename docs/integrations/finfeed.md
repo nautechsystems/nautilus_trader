@@ -783,8 +783,8 @@ config = FinFeedDataClientConfig(
 node = (
     LiveNode.builder("FINFEED-DATA-TESTER", TraderId("TESTER-001"), Environment.LIVE)
     .with_reconciliation(False)
-    .with_timeout_connection(60)
-    .with_timeout_portfolio(0)
+    .with_timeout_connection_secs(60)
+    .with_timeout_portfolio_secs(0)
     .add_data_client(None, FinFeedDataClientFactory(), config)
     .build()
 )
@@ -896,7 +896,7 @@ allowances reserve extra room:
 For the first row, retain the [tester](#defaults-and-request-cost) selection and subscriptions, set
 `attempt_budget=3200`, and keep `poll_interval_ms=60000`, `http_timeout_secs=10`,
 `max_concurrent_requests=1`, `max_retries=0`, `connect_timeout_secs=45`, and node
-`.with_timeout_connection(60)`. Set `RUN_SECONDS` to 86400 plus allowed startup time: its timer includes startup.
+`.with_timeout_connection_secs(60)`. Set `RUN_SECONDS` to 86400 plus allowed startup time: its timer includes startup.
 
 For larger selections, replace the IDs, subscriptions, poll delay, allowance, and both deadlines with the
 chosen row. See [public controls](#public-controls-and-defaults) for equivalent Rust fields.

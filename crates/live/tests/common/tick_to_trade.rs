@@ -160,7 +160,6 @@ pub(crate) fn node_config(case: Case) -> LiveNodeConfig {
         timeout_portfolio: Duration::from_secs(5),
         timeout_reconciliation: Duration::from_secs(5),
         timeout_disconnection: Duration::from_secs(5),
-        timeout_shutdown: Duration::from_secs(5),
         ..Default::default()
     }
 }

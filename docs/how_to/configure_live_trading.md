@@ -81,7 +81,6 @@ config = LiveNodeConfig(
 | `timeout_portfolio_secs`      | 10.0         | Portfolio initialization timeout.                                                |
 | `timeout_disconnection_secs`  | 10.0         | Disconnection timeout.                                                           |
 | `delay_post_stop_secs`        | 10.0         | Delay for residual events after stopping.                                        |
-| `timeout_shutdown_secs`       | 5.0          | Pending-task shutdown timeout in seconds.                                        |
 
 :::warning[Trader ID tag uniqueness]
 The tag after the final hyphen is what reaches generated client order IDs, order list IDs, and

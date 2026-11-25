@@ -42,6 +42,8 @@ Released on TBD (UTC).
 - Removed `ProxyKind` from the network crate; parse proxy URLs with `ProxyTarget::parse`
 - Removed `nautilus_cryptography::signing` and Python `nautilus_trader.cryptography`; use crypto libraries directly
 - Removed `nautilus-cryptography` features `python` and `extension-module`; drop them from dependent manifests
+- Removed `with_delay_shutdown_secs` from `LiveNodeBuilder` (#5767), thanks for reporting @bayquant
+- Removed `LiveNodeConfig.timeout_shutdown`, `timeout_shutdown_secs`, and `NautilusKernelConfig::timeout_shutdown`
 - Removed blockchain cache `toggle_performance_settings` and `toggle_perf_sync_settings`; sync uses server settings
 - Removed Bybit `api_key` Python getters; use `api_key_masked` to correlate credentials
 - Removed OKX spot margin position reports derived from `spotInUseAmt`, a Portfolio margin hedging amount
@@ -49,6 +51,7 @@ Released on TBD (UTC).
 - Renamed `CacheConfig.tick_capacity` to `data_capacity`; serialized configs must use the new key
 - Renamed `ParquetDataCatalog` `quote_ticks` and `trade_ticks` queries to `quotes` and `trades`
 - Renamed Python `ParquetDataCatalog` `*_quote_ticks` and `*_trade_ticks` methods to `*_quotes` and `*_trades`
+- Renamed `LiveNodeBuilder` connection, reconciliation, and portfolio timeout setters to end in `_secs`
 - Renamed Binance `instrument_refresh_interval_secs` to `update_instruments_interval_mins`. Convert seconds to minutes
 - Changed `Position` layout. Use `PositionReplayEvents` for `replay_events` via `.into()` (#5551), thanks @Milchstrassse
 - Changed `Position` literals to require `allows_negative_price`. Use `None` if unknown (#5535)

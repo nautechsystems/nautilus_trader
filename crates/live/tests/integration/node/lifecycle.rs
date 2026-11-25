@@ -107,7 +107,6 @@ async fn test_stop_processes_residual_exec_event_during_grace_period() {
         timeout_portfolio: Duration::ZERO,
         timeout_disconnection: Duration::ZERO,
         delay_post_stop: Duration::from_millis(20),
-        timeout_shutdown: Duration::ZERO,
         ..Default::default()
     };
 
@@ -177,7 +176,6 @@ async fn test_live_state_persistence_loads_before_start_and_saves_after_stop() {
         timeout_portfolio: Duration::ZERO,
         timeout_disconnection: Duration::ZERO,
         delay_post_stop: Duration::ZERO,
-        timeout_shutdown: Duration::ZERO,
         ..Default::default()
     };
 
@@ -241,7 +239,6 @@ async fn test_live_state_persistence_reports_callback_errors_after_shutdown() {
         timeout_portfolio: Duration::ZERO,
         timeout_disconnection: Duration::ZERO,
         delay_post_stop: Duration::ZERO,
-        timeout_shutdown: Duration::ZERO,
         ..Default::default()
     };
 
@@ -292,7 +289,6 @@ async fn test_stop_drains_queued_exec_event_after_zero_grace() {
         timeout_portfolio: Duration::ZERO,
         timeout_disconnection: Duration::ZERO,
         delay_post_stop: Duration::ZERO,
-        timeout_shutdown: Duration::ZERO,
         ..Default::default()
     };
 

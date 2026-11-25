@@ -49,7 +49,6 @@ _NODE_CONFIG = LiveNodeConfig(
     timeout_portfolio_secs=0,
     timeout_disconnection_secs=0,
     delay_post_stop_secs=0,
-    timeout_shutdown_secs=0,
 )
 
 _ACTOR_CONFIG = ImportableActorConfig(

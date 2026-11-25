@@ -336,7 +336,6 @@ async def test_live_node_start_stop_dispose_local() -> None:
             timeout_portfolio_secs=0,
             timeout_disconnection_secs=0,
             delay_post_stop_secs=0,
-            timeout_shutdown_secs=0,
         ),
     )
     node.add_strategy_from_config(
@@ -423,7 +422,6 @@ async def test_live_node_run_after_dispose_raises() -> None:
             timeout_portfolio_secs=0,
             timeout_disconnection_secs=0,
             delay_post_stop_secs=0,
-            timeout_shutdown_secs=0,
         ),
     )
     node.dispose()
@@ -948,7 +946,6 @@ async def test_add_exec_algorithm_rejects_running_node() -> None:
             timeout_portfolio_secs=0,
             timeout_disconnection_secs=0,
             delay_post_stop_secs=0,
-            timeout_shutdown_secs=0,
         ),
     )
 

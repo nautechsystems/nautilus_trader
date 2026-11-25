@@ -57,7 +57,6 @@ pub struct NautilusKernelBuilder {
     timeout_portfolio: Duration,
     timeout_disconnection: Duration,
     delay_post_stop: Duration,
-    timeout_shutdown: Duration,
     clock_factory: Option<ClockFactory>,
     cache: Option<CacheConfig>,
     cache_database: Option<Box<dyn CacheDatabaseAdapter>>,
@@ -87,7 +86,6 @@ impl Debug for NautilusKernelBuilder {
             .field("timeout_portfolio", &self.timeout_portfolio)
             .field("timeout_disconnection", &self.timeout_disconnection)
             .field("delay_post_stop", &self.delay_post_stop)
-            .field("timeout_shutdown", &self.timeout_shutdown)
             .field("clock_factory", &self.clock_factory.is_some())
             .field("cache", &self.cache)
             .field("cache_database", &self.cache_database.is_some())
@@ -127,7 +125,6 @@ impl NautilusKernelBuilder {
             timeout_portfolio: Duration::from_secs(10),
             timeout_disconnection: Duration::from_secs(10),
             delay_post_stop: Duration::from_secs(10),
-            timeout_shutdown: Duration::from_secs(5),
             clock_factory: None,
             cache: None,
             cache_database: None,
@@ -181,43 +178,36 @@ impl NautilusKernelBuilder {
 
     /// Set the connection timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_connection(mut self, timeout_secs: u64) -> Self {
+    pub const fn with_timeout_connection_secs(mut self, timeout_secs: u64) -> Self {
         self.timeout_connection = Duration::from_secs(timeout_secs);
         self
     }
 
     /// Set the reconciliation timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_reconciliation(mut self, timeout_secs: u64) -> Self {
+    pub const fn with_timeout_reconciliation_secs(mut self, timeout_secs: u64) -> Self {
         self.timeout_reconciliation = Duration::from_secs(timeout_secs);
         self
     }
 
     /// Set the portfolio initialization timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_portfolio(mut self, timeout_secs: u64) -> Self {
+    pub const fn with_timeout_portfolio_secs(mut self, timeout_secs: u64) -> Self {
         self.timeout_portfolio = Duration::from_secs(timeout_secs);
         self
     }
 
     /// Set the disconnection timeout in seconds.
     #[must_use]
-    pub const fn with_timeout_disconnection(mut self, timeout_secs: u64) -> Self {
+    pub const fn with_timeout_disconnection_secs(mut self, timeout_secs: u64) -> Self {
         self.timeout_disconnection = Duration::from_secs(timeout_secs);
         self
     }
 
     /// Set the post-stop delay in seconds.
     #[must_use]
-    pub const fn with_delay_post_stop(mut self, delay_secs: u64) -> Self {
+    pub const fn with_delay_post_stop_secs(mut self, delay_secs: u64) -> Self {
         self.delay_post_stop = Duration::from_secs(delay_secs);
-        self
-    }
-
-    /// Set the shutdown timeout in seconds.
-    #[must_use]
-    pub const fn with_timeout_shutdown(mut self, timeout_secs: u64) -> Self {
-        self.timeout_shutdown = Duration::from_secs(timeout_secs);
         self
     }
 
@@ -363,7 +353,6 @@ impl NautilusKernelBuilder {
             timeout_portfolio: self.timeout_portfolio,
             timeout_disconnection: self.timeout_disconnection,
             delay_post_stop: self.delay_post_stop,
-            timeout_shutdown: self.timeout_shutdown,
             cache: self.cache,
             msgbus: self.msgbus,
             data_engine: self.data_engine,
@@ -487,7 +476,7 @@ mod tests {
                 .with_instance_id(instance_id)
                 .with_load_state(false)
                 .with_save_state(false)
-                .with_timeout_connection(30);
+                .with_timeout_connection_secs(30);
 
         assert_eq!(builder.name, "TestKernel");
         assert_eq!(builder.trader_id, trader_id);
@@ -781,19 +770,17 @@ mod tests {
     #[rstest]
     fn test_builder_with_all_timeouts() {
         let builder = NautilusKernelBuilder::default()
-            .with_timeout_connection(10)
-            .with_timeout_reconciliation(20)
-            .with_timeout_portfolio(30)
-            .with_timeout_disconnection(40)
-            .with_delay_post_stop(50)
-            .with_timeout_shutdown(60);
+            .with_timeout_connection_secs(10)
+            .with_timeout_reconciliation_secs(20)
+            .with_timeout_portfolio_secs(30)
+            .with_timeout_disconnection_secs(40)
+            .with_delay_post_stop_secs(50);
 
         assert_eq!(builder.timeout_connection, Duration::from_secs(10));
         assert_eq!(builder.timeout_reconciliation, Duration::from_secs(20));
         assert_eq!(builder.timeout_portfolio, Duration::from_secs(30));
         assert_eq!(builder.timeout_disconnection, Duration::from_secs(40));
         assert_eq!(builder.delay_post_stop, Duration::from_secs(50));
-        assert_eq!(builder.timeout_shutdown, Duration::from_mins(1));
     }
 
     #[rstest]
@@ -805,7 +792,6 @@ mod tests {
         assert_eq!(builder.timeout_portfolio, Duration::from_secs(10));
         assert_eq!(builder.timeout_disconnection, Duration::from_secs(10));
         assert_eq!(builder.delay_post_stop, Duration::from_secs(10));
-        assert_eq!(builder.timeout_shutdown, Duration::from_secs(5));
     }
 
     #[derive(Debug)]

@@ -799,9 +799,6 @@ pub struct LiveNodeConfig {
     /// Retained submissions still unresolved at this boundary cause shutdown to return an error.
     #[builder(default = Duration::from_secs(10))]
     pub delay_post_stop: Duration,
-    /// The timeout to await pending tasks cancellation during shutdown.
-    #[builder(default = Duration::from_secs(5))]
-    pub timeout_shutdown: Duration,
     /// The cache configuration.
     pub cache: Option<CacheConfig>,
     /// The message bus configuration.
@@ -1166,10 +1163,6 @@ impl NautilusKernelConfig for LiveNodeConfig {
 
     fn delay_post_stop(&self) -> Duration {
         self.delay_post_stop
-    }
-
-    fn timeout_shutdown(&self) -> Duration {
-        self.timeout_shutdown
     }
 
     fn cache(&self) -> Option<CacheConfig> {
