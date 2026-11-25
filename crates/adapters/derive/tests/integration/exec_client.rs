@@ -166,6 +166,8 @@ struct WsState {
     subscribe_frames: Arc<tokio::sync::Mutex<Vec<Value>>>,
     subscribe_status: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
     reject_first_login: Arc<AtomicBool>,
+    reject_next_recovery_login: Arc<AtomicBool>,
+    drop_next_recovery_login_reply: Arc<AtomicBool>,
     login_failures_after_first: Arc<AtomicUsize>,
     disconnect_after_subscribe: Arc<AtomicBool>,
     // Order entry now flows over the WebSocket Trading API. Each vector holds
@@ -213,6 +215,8 @@ impl Default for WsState {
             subscribe_frames: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             subscribe_status: Arc::new(tokio::sync::Mutex::new(None)),
             reject_first_login: Arc::new(AtomicBool::new(false)),
+            reject_next_recovery_login: Arc::new(AtomicBool::new(false)),
+            drop_next_recovery_login_reply: Arc::new(AtomicBool::new(false)),
             login_failures_after_first: Arc::new(AtomicUsize::new(0)),
             disconnect_after_subscribe: Arc::new(AtomicBool::new(false)),
             submitted_orders: Arc::new(tokio::sync::Mutex::new(Vec::new())),
@@ -590,6 +594,12 @@ async fn handle_ws(mut socket: WebSocket, state: WsState) {
                                     frames.push(payload.clone());
                                     frames.len()
                                 };
+                                if login_count > 1
+                                    && state.drop_next_recovery_login_reply.swap(false, Ordering::SeqCst)
+                                {
+                                    continue;
+                                }
+
                                 let reject_login = if login_count == 1 {
                                     state.reject_first_login.load(Ordering::SeqCst)
                                 } else {
@@ -603,7 +613,14 @@ async fn handle_ws(mut socket: WebSocket, state: WsState) {
                                         .is_ok()
                                 };
 
-                                if reject_login {
+                                if login_count > 1
+                                    && state.reject_next_recovery_login.swap(false, Ordering::SeqCst)
+                                {
+                                    json!({
+                                        "id": id,
+                                        "error": {"code": 14026, "message": "session_key_not_found"},
+                                    })
+                                } else if reject_login {
                                     json!({
                                         "id": id,
                                         "error": {"code": 9002, "message": "Backend unavailable"},
@@ -1387,6 +1404,14 @@ async fn build_client_with_config(
     TestClient { client, cache, rx }
 }
 
+fn request_execution_reconnect(registry: &SocketReconnectRegistry) {
+    let outcome = registry
+        .handle(ClientId::from("DERIVE"), Ustr::from("derive-user-streams"))
+        .unwrap()
+        .request_reconnect();
+    assert_eq!(outcome, SocketReconnectRequestOutcome::Accepted);
+}
+
 fn register_test_account(cache: &Rc<RefCell<Cache>>, account_id: AccountId) {
     let account_state = AccountState::new(
         account_id,
@@ -2042,7 +2067,10 @@ async fn test_cancel_on_disconnect_setup_cannot_authorize_pending_order() {
     };
 
     assert_eq!(rejected.client_order_id, client_order_id);
-    assert_eq!(rejected.reason.as_str(), "Session authentication failed");
+    assert_eq!(
+        rejected.reason.as_str(),
+        "WebSocket execution session is unavailable"
+    );
     assert!(ws_state.submitted_orders.lock().await.is_empty());
     assert_eq!(
         *ws_state.request_methods.lock().await,
@@ -2238,21 +2266,24 @@ async fn test_cancel_on_disconnect_execution_login_failure_keeps_setting_enabled
 async fn test_cancel_on_disconnect_recovery_does_not_repeat_setup() {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
-    ws_state
-        .disconnect_after_subscribe
-        .store(true, Ordering::SeqCst);
+    let registry = SocketReconnectRegistry::default();
 
-    let mut tc =
-        build_client_with_config(rest_state.clone(), ws_state.clone(), None, |mut config| {
+    let mut tc = build_client_with_config(
+        rest_state.clone(),
+        ws_state.clone(),
+        Some(&registry),
+        |mut config| {
             config.cancel_on_disconnect = true;
             config
-        })
-        .await;
+        },
+    )
+    .await;
 
     let instrument: DeriveInstrument = serde_json::from_value(sample_instrument_json()).unwrap();
     tc.client.cache_instrument(instrument).unwrap();
 
     tc.client.connect().await.unwrap();
+    request_execution_reconnect(&registry);
     drain_until(
         &mut tc.rx,
         |event| {
@@ -2320,23 +2351,119 @@ async fn test_exec_client_connect_fails_when_private_channel_is_rejected() {
 }
 
 #[rstest]
-#[case("SM")]
-#[case("PM2")]
+#[case::recovers(3, false, true)]
+#[case::deadline(usize::MAX, false, false)]
+#[case::rejected(0, true, false)]
+#[tokio::test]
+async fn test_exec_client_waits_for_private_session_during_startup(
+    #[case] retryable_failures: usize,
+    #[case] reject_recovery_login: bool,
+    #[case] expect_connected: bool,
+) {
+    let rest = RestState::default();
+    let ws = WsState::default();
+    ws.disconnect_after_subscribe.store(true, Ordering::SeqCst);
+    ws.login_failures_after_first
+        .store(retryable_failures, Ordering::SeqCst);
+    ws.reject_next_recovery_login
+        .store(reject_recovery_login, Ordering::SeqCst);
+
+    let mut tc = build_client_with_config(rest.clone(), ws.clone(), None, |mut config| {
+        config.ws_timeout_secs = Some(4);
+        config
+    })
+    .await;
+
+    let subscribe_reply = ws.subscribe_status.lock().await;
+
+    let interrupt = async {
+        wait_until(
+            || async { ws.subscribe_frames.lock().await.len() == 1 },
+            "initial private subscription in flight",
+        )
+        .await;
+        let portfolio_reply = rest.subaccount_response.lock().await;
+        drop(subscribe_reply);
+        wait_until(
+            || async {
+                rest.get_subaccount_calls.lock().await.len() == 2
+                    && ws.login_frames.lock().await.len() >= 2
+            },
+            "subscribed portfolio refresh in flight with recovery login attempted",
+        )
+        .await;
+
+        drop(portfolio_reply);
+    };
+
+    let (result, ()) = tokio::join!(tc.client.connect(), interrupt);
+    if expect_connected {
+        result.expect("startup must allow the replacement session to recover");
+        assert!(tc.client.is_connected());
+        assert_eq!(ws.login_frames.lock().await.len(), 5);
+        assert_eq!(ws.subscribe_frames.lock().await.len(), 2);
+        tc.client.disconnect().await.unwrap();
+        return;
+    }
+
+    let error = result.expect_err("startup must fail without a usable private session");
+
+    assert_eq!(
+        error.to_string(),
+        "Derive execution WebSocket session unavailable at startup"
+    );
+    assert!(!tc.client.is_connected());
+    wait_until(
+        || async { ws.connection_count.load(Ordering::SeqCst) == 0 },
+        "failed startup closes the WebSocket",
+    )
+    .await;
+}
+
+#[rstest]
+#[case::sm("SM", 0, false)]
+#[case::pm2("PM2", 0, false)]
+#[case::retry_exhaustion("SM", 3, false)]
+#[case::login_timeout("SM", 1, true)]
 #[tokio::test]
 async fn test_exec_client_reconnect_refreshes_account_and_submits_mass_status(
     #[case] margin_type: &str,
+    #[case] failed_logins: usize,
+    #[case] drop_reply: bool,
 ) {
     let rest_state = RestState::default();
     let mut subaccount = sample_subaccount_json();
     subaccount["margin_type"] = json!(margin_type);
     *rest_state.subaccount_response.lock().await = subaccount;
     let ws_state = WsState::default();
-    ws_state
-        .disconnect_after_subscribe
-        .store(true, Ordering::SeqCst);
-    let mut tc = build_report_client(rest_state.clone(), ws_state.clone()).await;
+    if drop_reply {
+        ws_state
+            .drop_next_recovery_login_reply
+            .store(true, Ordering::SeqCst);
+    } else {
+        ws_state
+            .login_failures_after_first
+            .store(failed_logins, Ordering::SeqCst);
+    }
+
+    let registry = SocketReconnectRegistry::default();
+
+    let mut tc = build_report_client_with_config(
+        rest_state.clone(),
+        ws_state.clone(),
+        Some(&registry),
+        |mut config| {
+            if drop_reply {
+                config.ws_timeout_secs = Some(1);
+            }
+
+            config
+        },
+    )
+    .await;
 
     tc.client.connect().await.expect("connect succeeds");
+    request_execution_reconnect(&registry);
 
     let event = drain_until(
         &mut tc.rx,
@@ -2363,15 +2490,16 @@ async fn test_exec_client_reconnect_refreshes_account_and_submits_mass_status(
     assert!(!rest_state.order_history_calls.lock().await.is_empty());
     assert!(!rest_state.trade_history_calls.lock().await.is_empty());
     assert!(!rest_state.positions_calls.lock().await.is_empty());
-    assert_eq!(ws_state.login_frames.lock().await.len(), 2);
+    assert_eq!(ws_state.login_frames.lock().await.len(), 2 + failed_logins);
     assert_eq!(ws_state.subscribe_frames.lock().await.len(), 2);
-    assert_eq!(
-        *ws_state.request_methods.lock().await,
-        vec![
-            vec!["public/login", "subscribe"],
-            vec!["public/login", "subscribe"],
-        ]
-    );
+    let authenticated_session = vec!["public/login", "subscribe"];
+    let mut expected = vec![authenticated_session.clone()];
+    if failed_logins > 0 {
+        expected.push(vec!["public/login"; failed_logins]);
+    }
+
+    expected.push(authenticated_session);
+    assert_eq!(*ws_state.request_methods.lock().await, expected);
 
     for frame in ws_state.subscribe_frames.lock().await.iter() {
         let mut channels: Vec<String> =
@@ -2744,7 +2872,7 @@ async fn test_incomplete_reconnect_keeps_coverage_for_next_session(#[case] rebui
     tc.client.cache_instrument(definition).unwrap();
 
     if rebuild {
-        ws.login_failures_after_first.store(3, Ordering::SeqCst);
+        ws.reject_next_recovery_login.store(true, Ordering::SeqCst);
     }
 
     assert_eq!(
@@ -2755,7 +2883,7 @@ async fn test_incomplete_reconnect_keeps_coverage_for_next_session(#[case] rebui
     if rebuild {
         wait_until(
             || async { !tc.client.is_connected() },
-            "reconnect login retries exhausted",
+            "reconnect login rejected",
         )
         .await;
         tc.client.connect().await.unwrap();
@@ -3456,7 +3584,7 @@ async fn test_reconnect_rebuild_rejects_unsent_modify() {
     )
     .await;
 
-    ws.login_failures_after_first.store(3, Ordering::SeqCst);
+    ws.reject_next_recovery_login.store(true, Ordering::SeqCst);
     let socket = registry
         .handle(ClientId::from("DERIVE"), Ustr::from("derive-user-streams"))
         .unwrap();
@@ -3466,7 +3594,7 @@ async fn test_reconnect_rebuild_rejects_unsent_modify() {
     );
     wait_until(
         || async { !tc.client.is_connected() },
-        "private stream exhausted login retries",
+        "private stream login rejected",
     )
     .await;
 
@@ -3498,28 +3626,25 @@ async fn test_reconnect_rebuild_rejects_unsent_modify() {
 
 #[rstest]
 #[tokio::test]
-async fn test_exec_client_marks_disconnected_after_reconnect_auth_exhaustion() {
+async fn test_exec_client_rejects_orders_after_terminal_session_failure() {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
     ws_state
-        .login_failures_after_first
-        .store(10, Ordering::SeqCst);
-    ws_state
-        .disconnect_after_subscribe
+        .reject_next_recovery_login
         .store(true, Ordering::SeqCst);
-    let mut tc = build_client(rest_state, ws_state.clone()).await;
+    let registry = SocketReconnectRegistry::default();
+    let mut tc =
+        build_client_with_config(rest_state, ws_state.clone(), Some(&registry), |c| c).await;
 
     tc.client.connect().await.expect("initial connect succeeds");
-    tokio::time::timeout(Duration::from_secs(5), async {
-        while tc.client.is_connected() {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .expect("execution client remained connected after auth exhaustion");
+    request_execution_reconnect(&registry);
+    wait_until(
+        || async { !tc.client.is_connected() },
+        "terminal login rejection disconnects the execution client",
+    )
+    .await;
 
     assert!(!tc.client.is_connected());
-    assert_eq!(ws_state.login_frames.lock().await.len(), 4);
     wait_until(
         || {
             let state = ws_state.clone();
@@ -3528,6 +3653,39 @@ async fn test_exec_client_marks_disconnected_after_reconnect_auth_exhaustion() {
         "failed session recovery closes transport",
     )
     .await;
+
+    let client_order_id = ClientOrderId::from("SESSION-DOWN");
+    let order = build_limit_order(
+        InstrumentId::from("ETH-PERP.DERIVE"),
+        client_order_id,
+        OrderSide::Buy,
+        Price::from("3500.00"),
+        Quantity::from("1.000"),
+    );
+    add_order_to_cache(&tc.cache, order.clone(), Some(ClientId::from("DERIVE")));
+    tc.client.submit_order(submit_cmd(&order)).unwrap();
+
+    let event = drain_until(
+        &mut tc.rx,
+        |event| matches!(event, ExecutionEvent::Order(OrderEventAny::Rejected(_))),
+        "order rejected while the private session is offline",
+    )
+    .await;
+
+    let ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) = event else {
+        unreachable!();
+    };
+
+    assert_eq!(rejected.client_order_id, client_order_id);
+    assert_eq!(
+        rejected.reason,
+        "WebSocket execution session is unavailable"
+    );
+    assert_eq!(
+        *ws_state.request_methods.lock().await,
+        vec![vec!["public/login", "subscribe"], vec!["public/login"]]
+    );
+    tc.client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -9106,15 +9264,16 @@ async fn test_balance_subscription_refreshes_authoritative_account_state(
 }
 
 async fn build_report_client(rest_state: RestState, ws_state: WsState) -> TestClient {
-    build_report_client_with_config(rest_state, ws_state, |config| config).await
+    build_report_client_with_config(rest_state, ws_state, None, |config| config).await
 }
 
 async fn build_report_client_with_config(
     rest_state: RestState,
     ws_state: WsState,
+    registry: Option<&SocketReconnectRegistry>,
     configure: impl FnOnce(DeriveExecutionClientConfig) -> DeriveExecutionClientConfig,
 ) -> TestClient {
-    let tc = build_client_with_config(rest_state, ws_state, None, configure).await;
+    let tc = build_client_with_config(rest_state, ws_state, registry, configure).await;
     let mut definitions = Vec::new();
 
     for symbol in ["ETH-PERP", "BTC-PERP", "SOL-PERP"] {
@@ -16362,7 +16521,7 @@ async fn test_startup_refuses_unproved_replacement_before_private_connection(
     *state.open_orders_response.lock().await = json!({"orders": if scenario == "open" { children.clone() } else { vec![] }, "subaccount_id": TEST_SUBACCOUNT});
     *state.order_history_response.lock().await = json!({"orders": if scenario == "open" { vec![] } else { children.clone() }, "pagination": {"count": if scenario == "open" { 0 } else { children.len() }, "num_pages": i32::from(scenario != "open" && !children.is_empty())}, "subaccount_id": TEST_SUBACCOUNT});
 
-    let mut tc = build_report_client_with_config(state.clone(), ws.clone(), |mut config| {
+    let mut tc = build_report_client_with_config(state.clone(), ws.clone(), None, |mut config| {
         config.load_ids = scoped.then(|| vec![InstrumentId::from("BTC-PERP.DERIVE")]);
         config
     })
@@ -19134,11 +19293,14 @@ async fn test_reports_leave_uncached_replacement_unprojected(#[values(0, 1, 2, 3
         .lock()
         .await
         .insert("foreign-current".to_string(), current);
-    let ws_state = WsState::default();
-    ws_state
-        .disconnect_after_subscribe
-        .store(request == 4, Ordering::SeqCst);
-    let mut tc = build_report_client(state.clone(), ws_state).await;
+    let registry = SocketReconnectRegistry::default();
+    let mut tc = build_report_client_with_config(
+        state.clone(),
+        WsState::default(),
+        (request == 4).then_some(&registry),
+        |config| config,
+    )
+    .await;
     tc.client.connect().await.unwrap();
 
     let cmd = GenerateOrderStatusReports::new(
@@ -19153,6 +19315,8 @@ async fn test_reports_leave_uncached_replacement_unprojected(#[values(0, 1, 2, 3
     );
 
     let result = if request == 4 {
+        request_execution_reconnect(&registry);
+
         let event = drain_until(
             &mut tc.rx,
             |event| {

@@ -246,7 +246,7 @@ impl DeriveExecutionClient {
                 Some(*DERIVE_VENUE),
                 "derive-user-streams",
             ))
-            .with_reconnect_coverage();
+            .with_execution_recovery();
 
         // The handle shares the client's command channel, which survives the
         // reconnect swap, so it stays valid for the client's lifetime.
@@ -827,6 +827,25 @@ impl DeriveExecutionClient {
         }
     }
 
+    async fn finish_ws_startup(
+        &self,
+        rx: tokio::sync::mpsc::UnboundedReceiver<DeriveWsMessage>,
+        emitted_instruments: &mut AHashSet<InstrumentId>,
+    ) -> anyhow::Result<()> {
+        self.initialize_portfolio(emitted_instruments)
+            .await
+            .context("failed subscribed Derive portfolio refresh")?;
+        anyhow::ensure!(
+            self.ws_client.wait_for_authenticated_session().await,
+            "Derive execution WebSocket session unavailable at startup"
+        );
+
+        self.core.set_connected();
+        self.is_connected.store(true, Ordering::Release);
+        self.start_ws_dispatch(rx)
+            .context("failed to register Derive execution WebSocket dispatch task")
+    }
+
     fn start_ws_dispatch(
         &self,
         rx: tokio::sync::mpsc::UnboundedReceiver<DeriveWsMessage>,
@@ -1260,7 +1279,7 @@ impl ExecutionClient for DeriveExecutionClient {
             DeriveWsChannel::balances(subaccount_id),
         ];
 
-        if let Err(e) = self.ws_client.subscribe_channels(channels).await {
+        if let Err(e) = self.ws_client.subscribe_initial_channels(channels).await {
             log::warn!(
                 "Derive private WS subscriptions failed: {}; tearing down",
                 e.redacted_message()
@@ -1275,22 +1294,16 @@ impl ExecutionClient for DeriveExecutionClient {
             return Err(anyhow::Error::new(e).context("failed Derive private WS subscriptions"));
         }
 
-        self.initialize_portfolio(&mut emitted_instruments)
-            .await
-            .context("failed subscribed Derive portfolio refresh")?;
-
-        if let Err(e) = self.start_ws_dispatch(rx) {
+        if let Err(e) = self.finish_ws_startup(rx, &mut emitted_instruments).await {
             if let Err(teardown_error) = self.teardown_partial_connect().await {
                 return Err(e.context(format!(
                     "Derive execution startup teardown failed: {teardown_error}"
                 )));
             }
 
-            return Err(e.context("failed to register Derive execution WebSocket dispatch task"));
+            return Err(e);
         }
 
-        self.core.set_connected();
-        self.is_connected.store(true, Ordering::Release);
         setup_guard.disarm();
         log::info!(
             "Connected Derive execution client ({:?})",
@@ -5062,9 +5075,11 @@ fn ws_rejection_reason(error: &DeriveWsError) -> (String, bool) {
             derive_rejection_due_post_only(Some(*code), message),
         ),
         DeriveWsError::NotConnected => ("WebSocket client is not connected".to_string(), false),
-        DeriveWsError::Auth(_) | DeriveWsError::Authentication { .. } => {
-            ("Session authentication failed".to_string(), false)
-        }
+        DeriveWsError::Auth(_) => ("Session authentication failed".to_string(), false),
+        DeriveWsError::Authentication { .. } => (
+            "WebSocket execution session is unavailable".to_string(),
+            false,
+        ),
         DeriveWsError::MissingCredentials { .. } => {
             ("Session credentials are missing".to_string(), false)
         }
@@ -6866,7 +6881,7 @@ mod tests {
         false
     )]
     #[case::credentials(DeriveWsError::MissingCredentials { operation: "private/order".into() }, CommandFailure::not_sent("Session credentials are missing"), false)]
-    #[case::authentication(DeriveWsError::Authentication { operation: "private/order".into(), reason: "opaque sensitive detail".into() }, CommandFailure::not_sent("Session authentication failed"), false)]
+    #[case::session_unavailable(DeriveWsError::Authentication { operation: "private/order".into(), reason: "opaque sensitive detail".into() }, CommandFailure::not_sent("WebSocket execution session is unavailable"), false)]
     #[case::transport(
         DeriveWsError::transport("opaque sensitive URL"),
         CommandFailure::ambiguous("Transport outcome is unconfirmed"),

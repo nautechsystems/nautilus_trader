@@ -929,6 +929,9 @@ State-changing writes (`submit_order`, `modify_order`, `cancel_order`) are sent 
 WebSocket and **are not replayed**. The WebSocket request outcome determines whether the
 adapter emits a rejection or waits for reconciliation.
 
+If the private WebSocket session is unavailable, the adapter can reject commands before sending them
+with `WebSocket execution session is unavailable`.
+
 #### Definitive failures
 
 The adapter emits `OrderRejected`, `OrderModifyRejected`, or `OrderCancelRejected` for definitive venue
@@ -1072,9 +1075,10 @@ frame as a dead connection. The selected transport can report a missed Pong soon
    disconnect occurs, recovery follows the latest connection.
 1. **Restore subscriptions.** Credentialed sessions log in again. Every session then replays its confirmed
    and pending subscriptions in channel order. The client skips pending and acknowledged unsubscriptions.
-1. **Reconcile execution state.** The execution client captures owned order context and open position
-   instruments on the runner thread. It refreshes account state, then generates mass status for orders,
-   fills, and positions. If recovery fails, the client logs a diagnostic and skips mass-status reconciliation.
+1. **Reconcile execution state.** After login and subscription recovery succeed, the execution client
+   captures owned order context and open position instruments on the runner thread. It refreshes account
+   state, then generates mass status for orders, fills, and positions. If account refresh fails, the client
+   logs the error and skips the snapshot.
 
 ### Reconnect snapshots
 
@@ -1096,11 +1100,17 @@ frame as a dead connection. The selected transport can report a missed Pong soon
   reconnect. Without a time-event sender, the client retains its initial context and refuses reconciliation
   after terminal binding eviction.
 - **Operation timeout.** `ws_timeout_secs` sets the deadline for individual WebSocket operations and reconnect
-  cache refresh. Heartbeat detection and reconnect backoff use separate timing.
+  cache refresh. The initial private subscription deadline includes waiting for session recovery. After the
+  subscribed account refresh, startup requires an authenticated session on the current socket within
+  `ws_timeout_secs`. Heartbeat detection and reconnect backoff use separate timing.
 - **State-changing requests.** The adapter sends them once and never replays them. See
   [Order rejection semantics](#order-rejection-semantics).
-- **Session failure.** After three failed login or subscription recovery attempts, the client logs the error,
-  marks itself disconnected, and stops that WebSocket session.
+- **Execution session recovery.** After three retryable failures on one connection or a recovery request
+  timeout, the execution client replaces the socket and keeps retrying. The delay between attempts to replace the
+  socket uses exponential backoff with jitter and a 30-second cap. The client stops the session and reports
+  itself disconnected on a non-retryable login or subscription error.
+- **Data and standalone sessions.** The data client and standalone `DeriveWebSocketClient` instances stop the
+  session after up to three failed recovery attempts.
 
 ### Order book recovery
 

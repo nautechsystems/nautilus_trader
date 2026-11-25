@@ -220,6 +220,7 @@ Released on TBD (UTC).
 - Fixed Bybit WebSocket authentication failures dropping the venue's rejection reason
 - Fixed Databento OPRA option multipliers defaulting to 1 when unset (#5672), thanks @madebymlai
 - Fixed Derive reconnect ignoring the startup reconciliation lookback (#5709), thanks for reporting @Aviksaikat
+- Fixed Derive execution staying offline after transient WebSocket failures (#5759), thanks for reporting @Aviksaikat
 - Fixed Derive startup timing out on orders or positions in instruments not yet in the cache
 - Fixed FinFeed dropping `Retry-After` on failed reads and missing HTTP dates and retryable 5xx cooldowns
 - Fixed FinFeed resetting request spacing on reconnect
