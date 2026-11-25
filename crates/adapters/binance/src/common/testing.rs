@@ -87,3 +87,27 @@ pub(crate) async fn advance_instrument_clock(duration: Duration) {
     tokio::time::advance(duration).await;
     tokio::time::resume();
 }
+
+pub(crate) async fn publish_instrument_snapshots(
+    requests: &mut tokio::sync::mpsc::UnboundedReceiver<
+        tokio::sync::oneshot::Sender<axum::response::Response>,
+    >,
+    update_lock: &tokio::sync::Mutex<()>,
+    count: usize,
+    response: impl Fn() -> axum::response::Response,
+) {
+    for _ in 0..count {
+        let request = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        request.send(response()).unwrap();
+    }
+
+    // Wait for publication before advancing virtual time or disconnecting
+    drop(
+        tokio::time::timeout(Duration::from_secs(5), update_lock.lock())
+            .await
+            .unwrap(),
+    );
+}

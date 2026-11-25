@@ -83,7 +83,7 @@ use crate::{
         bar::BinanceBar,
         consts::{BINANCE_CLIENT_ID, BINANCE_VENUE},
         enums::{BinanceEnvironment, BinanceProductType},
-        testing::{advance_instrument_clock, spawn_instrument_timer},
+        testing::{advance_instrument_clock, publish_instrument_snapshots, spawn_instrument_timer},
     },
     config::{BinanceDataClientConfig, BinanceInstrumentProviderConfig},
     data_types::{
@@ -5785,8 +5785,22 @@ async fn test_instrument_status_updates_do_not_overlap(#[case] poll_first: bool)
         request.send(response("BTCUSDT", "BTC", false)).unwrap();
     };
 
-    let (connected, ()) = tokio::join!(client.connect(), serve_initial);
-    connected.unwrap();
+    let mut previous_non_trading = None;
+    let refresh = BinanceFuturesDataClient::refresh_instrument_catalog(
+        &client.http_client,
+        &client.config.instrument_provider,
+        &client.instruments,
+        &client.status_cache,
+        &client.instrument_update_lock,
+        (&client.instrument_publish_lock, &client.cancellation_token),
+        &client.ws_client,
+        &client.ws_public_client,
+        &client.data_sender,
+        client.clock,
+        &mut previous_non_trading,
+    );
+    let (refreshed, ()) = tokio::join!(refresh, serve_initial);
+    refreshed.unwrap();
 
     let poll_secs = if poll_first { 59 } else { 61 };
     client.config.instrument_status_poll_secs = poll_secs;
@@ -5795,7 +5809,7 @@ async fn test_instrument_status_updates_do_not_overlap(#[case] poll_first: bool)
     spawn_instrument_timer(&mut timers, client.instrument_status_poll().unwrap()).await;
     spawn_instrument_timer(
         &mut timers,
-        client.instrument_refresh(Some(Default::default())).unwrap(),
+        client.instrument_refresh(previous_non_trading).unwrap(),
     )
     .await;
     advance_instrument_clock(Duration::from_secs(poll_secs.min(60))).await;
@@ -5828,35 +5842,24 @@ async fn test_instrument_status_updates_do_not_overlap(#[case] poll_first: bool)
 
     blocked.send(response("BTCUSDT", "BTC", true)).unwrap();
 
-    if poll_first {
-        let catalog = tokio::time::timeout(Duration::from_secs(5), requests.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        catalog.send(response("ETHUSDT", "ETH", false)).unwrap();
-    }
-
-    if !poll_first {
-        let request = tokio::time::timeout(Duration::from_secs(5), requests.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        request.send(response("ETHUSDT", "ETH", false)).unwrap();
-    }
+    let eth_snapshot = || response("ETHUSDT", "ETH", false);
+    publish_instrument_snapshots(
+        &mut requests,
+        &client.instrument_update_lock,
+        if poll_first { 1 } else { 2 },
+        eth_snapshot,
+    )
+    .await;
 
     advance_instrument_clock(Duration::from_secs(62)).await;
-    let status = tokio::time::timeout(Duration::from_secs(5), requests.recv())
-        .await
-        .unwrap()
-        .unwrap();
-    status.send(response("ETHUSDT", "ETH", false)).unwrap();
+    publish_instrument_snapshots(
+        &mut requests,
+        &client.instrument_update_lock,
+        2,
+        eth_snapshot,
+    )
+    .await;
 
-    // The next request proves that the preceding update has published its snapshot
-    let next = tokio::time::timeout(Duration::from_secs(5), requests.recv())
-        .await
-        .unwrap()
-        .unwrap();
-    next.send(response("ETHUSDT", "ETH", false)).unwrap();
     tokio::select! {
         result = client.disconnect() => result.unwrap(),
         () = async {
@@ -5883,11 +5886,18 @@ async fn test_instrument_status_updates_do_not_overlap(#[case] poll_first: bool)
         }
     }
 
-    let changes = [
+    let mut changes = [
         (btc, MarketStatusAction::Halt),
         (eth, MarketStatusAction::Trading),
         (btc, MarketStatusAction::NotAvailableForTrading),
     ];
+
+    assert_eq!(statuses.len(), 3);
+
+    // The poll may remove BTC before the explicit request adds ETH to the catalog
+    if !poll_first && statuses[1].instrument_id == btc {
+        changes.swap(1, 2);
+    }
 
     let expected = changes
         .into_iter()
@@ -5907,7 +5917,6 @@ async fn test_instrument_status_updates_do_not_overlap(#[case] poll_first: bool)
         })
         .collect::<Vec<_>>();
 
-    assert_eq!(statuses.len(), 3);
     assert_eq!(statuses, expected);
     assert!(instruments.len() >= 2);
     assert_eq!(instruments[0], btc);
