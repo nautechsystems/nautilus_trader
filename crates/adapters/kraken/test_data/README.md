@@ -108,3 +108,11 @@ not certify venue activation, feed ordering, margin reservation, REST response e
 `http_amend_order_spot.json` is the successful response example from Kraken's
 [Amend Order reference](https://docs.kraken.com/api-reference/trading/amend-order),
 retrieved on 2026-11-16, with two-space indentation.
+
+## Spot WebSocket batch_add response
+
+`ws_batch_add_response_doc_example.json` is the response example from Kraken's
+[Spot WebSocket v2 `batch_add` reference](https://docs.kraken.com/exchange/api-reference/spot-websocket-v2/batch_add),
+retrieved on 2026-11-22, with its `time_out` as published. No WebSocket `batch_add` response has
+been captured. `ws_batch_add_response_partial.json` is synthetic: it nests per-order results, each
+with its own `success`, under `result.orders`, a shape the reference does not describe.

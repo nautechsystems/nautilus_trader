@@ -33,7 +33,7 @@ use axum::{
 };
 use futures_util::StreamExt;
 use nautilus_common::testing::wait_until_async;
-use nautilus_core::string::secret::SecretString;
+use nautilus_core::{string::secret::SecretString, time::get_atomic_clock_realtime};
 use nautilus_kraken::{
     KrakenDataClientConfig, KrakenSpotWebSocketClient,
     common::enums::{KrakenOrderSide, KrakenOrderType},
@@ -45,8 +45,11 @@ use nautilus_kraken::{
         spot_v2::messages::KrakenWsAddOrderParams,
     },
 };
-use nautilus_live::task::TaskGroup;
-use nautilus_model::identifiers::{AccountId, ClientOrderId, TraderId};
+use nautilus_live::{ExecutionEventEmitter, task::TaskGroup};
+use nautilus_model::{
+    enums::AccountType,
+    identifiers::{AccountId, ClientOrderId, TraderId},
+};
 use rstest::rstest;
 use rust_decimal_macros::dec;
 use tokio_util::sync::CancellationToken;
@@ -147,23 +150,27 @@ fn build_order_request_state(
         >,
     >,
 ) -> (Arc<OrderRequestState>, TaskGroup) {
-    let (event_tx, _event_rx) = tokio::sync::mpsc::unbounded_channel();
     let dispatch_state = Arc::new(WsDispatchState::new());
     let req_id_counter = Arc::new(std::sync::atomic::AtomicU64::new(0));
 
     let pending_tasks = TaskGroup::new();
     let pending_spawner = pending_tasks.spawner().expect("pending task spawner");
+    let clock = get_atomic_clock_realtime();
+    let trader_id = TraderId::new("TESTER-001");
+    let account_id = AccountId::new("KRAKEN-001");
+    let emitter = ExecutionEventEmitter::new(clock, trader_id, account_id, AccountType::Cash, None);
+
     let state = Arc::new(OrderRequestState::new(
         cmd_tx_handle,
-        event_tx,
+        emitter,
         dispatch_state,
         req_id_counter,
         Duration::from_secs(5),
-        TraderId::new("TESTER-001"),
-        AccountId::new("KRAKEN-001"),
+        trader_id,
+        account_id,
         Arc::new(tokio::sync::RwLock::new(None)),
         pending_spawner,
-        nautilus_core::time::get_atomic_clock_realtime(),
+        clock,
     ));
 
     (state, pending_tasks)

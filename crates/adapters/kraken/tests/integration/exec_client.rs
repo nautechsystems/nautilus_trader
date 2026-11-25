@@ -328,7 +328,27 @@ fn ws_reply(payload: &Value) -> Option<Value> {
         }));
     }
 
+    // Kraken's documented shape: one result per order, in request order, without `success`
+    if payload.get("method").and_then(Value::as_str) == Some("batch_add") {
+        let orders = payload["params"]["orders"].as_array().map_or(0, Vec::len);
+        let result: Vec<Value> = (0..orders)
+            .map(|index| json!({"order_id": spot_ws_batch_venue_order_id(index)}))
+            .collect();
+        return Some(json!({
+            "method": "batch_add",
+            "req_id": payload["req_id"],
+            "success": true,
+            "result": result,
+            "time_in": "2026-05-05T10:00:00.123Z",
+            "time_out": "2026-05-05T10:00:00.125Z",
+        }));
+    }
+
     None
+}
+
+fn spot_ws_batch_venue_order_id(index: usize) -> String {
+    format!("OWSBAT-{index:05}-ACCEPT")
 }
 
 async fn handle_http_request(State(state): State<TestServerState>, req: Request) -> Response {
@@ -7283,6 +7303,53 @@ async fn test_spot_ws_order_response_reaches_engine(#[case] reconnects: usize) {
         accepted.venue_order_id,
         VenueOrderId::from(SPOT_WS_VENUE_ORDER_ID)
     );
+}
+
+/// A same-instrument order list goes out as one WebSocket `batch_add`, and Kraken's documented
+/// response accepts each order with its venue order ID.
+#[rstest]
+#[tokio::test]
+async fn test_spot_ws_batch_add_response_reaches_engine() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) =
+        create_test_spot_execution_client_with(addr, |config| config.use_ws_trade = true);
+    add_test_spot_account_to_cache(&cache);
+    client.connect().await.unwrap();
+    let ids = [
+        ClientOrderId::new("spot-ws-batch-001"),
+        ClientOrderId::new("spot-ws-batch-002"),
+    ];
+    let orders: Vec<OrderAny> = ids
+        .iter()
+        .map(|id| add_spot_limit_order_to_cache(&cache, *id))
+        .collect();
+
+    client
+        .submit_order_list(submit_order_list_command(
+            "SPOT-WS-BATCH",
+            test_spot_instrument_id(),
+            &orders,
+        ))
+        .unwrap();
+
+    for (index, client_order_id) in ids.iter().enumerate() {
+        let event = recv_until(&mut rx, |event| {
+            matches!(
+                event,
+                ExecutionEvent::Order(OrderEventAny::Accepted(accepted))
+                    if accepted.client_order_id == *client_order_id
+            )
+        })
+        .await;
+        let ExecutionEvent::Order(OrderEventAny::Accepted(accepted)) = event else {
+            panic!("Expected OrderAccepted event, was {event:?}");
+        };
+        assert_eq!(
+            accepted.venue_order_id,
+            VenueOrderId::from(spot_ws_batch_venue_order_id(index).as_str())
+        );
+    }
+    assert_eq!(state.batch_submit_request_count.load(Ordering::Relaxed), 0);
 }
 
 #[rstest]

@@ -372,7 +372,7 @@ impl SpotFeedHandler {
             match parse_order_response(text) {
                 Ok(Some(msg)) => return Some(msg),
                 Ok(None) => {}
-                Err(e) => log::warn!("Failed to parse order response: {e}"),
+                Err(e) => log::warn!("Failed to parse order response: {e:#}"),
             }
             return self.handle_control_message(value);
         }

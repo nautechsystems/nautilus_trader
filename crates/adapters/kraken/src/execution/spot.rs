@@ -206,12 +206,10 @@ impl KrakenSpotExecutionClient {
         // Connect() swaps in a live cmd_tx; capture the shared handle so the
         // dispatcher reads the current sender, not the dropped placeholder.
         let cmd_tx_handle = ws.handler_command_handle();
-        // Placeholder: each connect installs the sender for that session's channel
-        let (order_event_tx, _) = tokio::sync::mpsc::unbounded_channel();
 
         let order_request_state = Arc::new(OrderRequestState::new(
             cmd_tx_handle,
-            order_event_tx,
+            emitter.clone(),
             Arc::clone(&ws_dispatch_state),
             ws.req_id_counter(),
             Duration::from_secs(config.ws_request_timeout_secs),
@@ -582,9 +580,6 @@ impl KrakenSpotExecutionClient {
         let clock = self.clock;
         let cancellation_token = self.cancellation_token.clone();
 
-        let (order_event_tx, mut order_event_rx) = tokio::sync::mpsc::unbounded_channel();
-        self.order_request_state.reset_event_sender(order_event_tx);
-
         let future = async move {
             tokio::pin!(stream);
 
@@ -621,36 +616,7 @@ impl KrakenSpotExecutionClient {
 
         self.session_tasks
             .spawn(future)
-            .context("failed to register Kraken Spot execution stream task")?;
-
-        let emitter = self.emitter.clone();
-        let cancellation_token = self.cancellation_token.clone();
-
-        let future = async move {
-            loop {
-                tokio::select! {
-                    () = cancellation_token.cancelled() => {
-                        log::debug!("Spot execution order-event forwarder cancelled");
-                        break;
-                    }
-                    event = order_event_rx.recv() => {
-                        match event {
-                            Some(event) => emitter.send_order_event(event),
-                            None => {
-                                log::debug!("Spot execution order-event channel closed");
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        };
-
-        self.session_tasks
-            .spawn(future)
-            .context("failed to register Kraken Spot order event task")?;
-
-        Ok(())
+            .context("failed to register Kraken Spot execution stream task")
     }
 
     fn modify_single_order(&self, cmd: &ModifyOrder) {
