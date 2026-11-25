@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Backtests order book imbalance on Lighter ANTHROPIC pre-IPO book data from CoinAPI.
+//! Backtests order book imbalance on Lighter ANT equity perpetual book data from CoinAPI.
 //!
-//! Companion program for the "Backtest with Pre-IPO Order Book Data (CoinAPI)" tutorial.
+//! Companion program for the "Backtest with Equity Perpetual Order Book Data (CoinAPI)" tutorial.
 //! The first run downloads one Flat Files export and reads `COINAPI_API_KEY`. It stores the
 //! file and a Parquet catalog under `NAUTILUS_DATA_DIR/CoinAPI`, or `~/Downloads/Data/CoinAPI`
 //! when `NAUTILUS_DATA_DIR` is unset. Later runs reuse the catalog.
@@ -32,9 +32,12 @@ use nautilus_backtest::{
     node::BacktestNode,
 };
 use nautilus_coinapi::loaders::CoinApiDataLoader;
-use nautilus_core::{UnixNanos, hex};
+use nautilus_core::{DurationNanos, UnixNanos, hex};
 use nautilus_data::engine::config::DataEngineConfig;
-use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
+use nautilus_execution::models::{
+    fee::{FeeModelAny, MakerTakerFeeModel},
+    latency::{LatencyModelAny, StaticLatencyModel},
+};
 use nautilus_model::{
     accounts::margin_model::{MarginModelAny, StandardMarginModel},
     data::NautilusDataType,
@@ -51,13 +54,14 @@ use nautilus_trading::examples::strategies::{OrderBookImbalance, OrderBookImbala
 use rust_decimal_macros::dec;
 
 const BUCKET: &str = "coinapi";
-const OBJECT_KEY: &str = "T-LIMITBOOK_FULL/D-2026100100/E-LIGHTER/IDDI-47534074+SC-LIGHTER_PERP_ANTHROPIC_USD+S-ANTHROPIC.csv.gz";
-const FILE_SHA256: &str = "2ed141be6480c56ff16322e08bbc43398edc710875fe81093e0635ff672e48e4";
+const OBJECT_KEY: &str =
+    "T-LIMITBOOK_FULL/D-2026112315/E-LIGHTER/IDDI-48047693+SC-LIGHTER_PERP_ANT_USD+S-ANT.csv.gz";
+const FILE_SHA256: &str = "5a05a328f1622c88091238ad190d7e63c370d1d3e845f5b5d0f5b49401ccf8e1";
 const RUN_ID: &str = "coinapi-lighter";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let instrument_id = InstrumentId::from("ANTHROPIC-PERP.LIGHTER");
+    let instrument_id = InstrumentId::from("ANT-PERP.LIGHTER");
     let book_type = BookType::L2_MBP;
 
     let data_dir = match std::env::var_os("NAUTILUS_DATA_DIR") {
@@ -70,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
     .join("CoinAPI");
 
     let filepath = data_dir.join(OBJECT_KEY);
-    let catalog_path = data_dir.join("lighter-anthropic-20261001-00");
+    let catalog_path = data_dir.join("lighter-ant-20261123-15");
     if !catalog_path.exists() {
         let loader = CoinApiDataLoader::new(None); // Reads COINAPI_API_KEY to download
         if !filepath.is_file() {
@@ -89,11 +93,11 @@ async fn main() -> anyhow::Result<()> {
         );
 
         let usdc = Currency::USDC();
-        let raw_symbol = Symbol::from("ANTHROPIC");
-        let base_currency = Currency::get_or_create_crypto("ANTHROPIC");
-        let price_increment = Price::from("0.1");
-        let size_increment = Quantity::from("0.00001");
-        let min_quantity = Quantity::from("0.00250");
+        let raw_symbol = Symbol::from("ANT");
+        let base_currency = Currency::get_or_create_crypto("ANT");
+        let price_increment = Price::from("0.01");
+        let size_increment = Quantity::from("0.0001");
+        let min_quantity = Quantity::from("0.1000");
         let min_notional = Money::from_decimal(dec!(10), usdc)?;
         let instrument = CryptoPerpetual::builder()
             .instrument_id(instrument_id)
@@ -102,14 +106,14 @@ async fn main() -> anyhow::Result<()> {
             .quote_currency(usdc)
             .settlement_currency(usdc)
             .is_inverse(false)
-            .price_precision(1)
-            .size_precision(5)
+            .price_precision(2)
+            .size_precision(4)
             .price_increment(price_increment)
             .size_increment(size_increment)
             .min_quantity(min_quantity)
             .min_notional(min_notional)
-            .margin_init(dec!(0.20))
-            .margin_maint(dec!(0.12))
+            .margin_init(dec!(0.10))
+            .margin_maint(dec!(0.06))
             .ts_event(UnixNanos::default())
             .ts_init(UnixNanos::default())
             .build()?;
@@ -187,6 +191,9 @@ async fn main() -> anyhow::Result<()> {
         .build();
 
     let fees = MakerTakerFeeModel::zero();
+    let order_delay = DurationNanos::from_millis(300);
+    let latency =
+        StaticLatencyModel::new(DurationNanos::ZERO, order_delay, order_delay, order_delay);
     let venue = BacktestVenueConfig::builder()
         .name(instrument_id.venue.as_str())
         .oms_type(OmsType::Netting)
@@ -195,6 +202,7 @@ async fn main() -> anyhow::Result<()> {
         .book_type(book_type)
         .margin_model(MarginModelAny::Standard(StandardMarginModel))
         .fee_model(FeeModelAny::MakerTaker(fees))
+        .latency_model(LatencyModelAny::Static(latency))
         .build()?;
 
     let catalog_location = catalog_path.display().to_string();
@@ -213,7 +221,7 @@ async fn main() -> anyhow::Result<()> {
         .raise_exception(true)
         .build()?;
 
-    let max_trade_size = Quantity::from("0.01000");
+    let max_trade_size = Quantity::from("0.2500");
     let strategy_config = OrderBookImbalanceConfig::builder()
         .instrument_id(instrument_id)
         .book_type(book_type)

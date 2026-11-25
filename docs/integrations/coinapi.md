@@ -22,7 +22,7 @@ The Rust crate also exposes `CoinApiHttpClient` and `CoinApiWebSocketClient` for
 
 ## Examples
 
-- [Backtest with Pre-IPO Order Book Data (CoinAPI)](../tutorials/backtest_orderbook_coinapi.md)
+- [Backtest with Equity Perpetual Order Book Data (CoinAPI)](../tutorials/backtest_orderbook_coinapi.md)
 - [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/coinapi/)
 - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/coinapi/examples/)
 
@@ -630,7 +630,7 @@ CoinAPI [Flat Files](https://www.coinapi.io/products/flat-files?ref=nautilus) ar
 exports served over an S3-compatible API. `CoinApiDataLoader` downloads selected objects and reads local
 files using registered instrument definitions. It does not list S3 objects.
 A registered definition can describe an exchange outside the [symbol mappings](#symbol-mappings),
-such as Lighter. See the [pre-IPO order book tutorial](../tutorials/backtest_orderbook_coinapi.md).
+such as Lighter. See the [equity perpetual order book tutorial](../tutorials/backtest_orderbook_coinapi.md).
 Each `load_*` method returns a whole file, and each `stream_*` method yields chunks. Both accept a record
 `limit`.
 
@@ -733,14 +733,14 @@ hold one symbol under
 `T-{SCHEMA}/D-{YYYYMMDD|YYYYMMDDHH}/E-{EXCHANGE}/IDDI-{ID}+SC-{SYMBOL_ID}+S-{EXCHANGE_SYMBOL}.csv.gz`.
 Pass an explicit `instrument_id` for each file.
 
-| Key part              | Example                         | Meaning                                                         |
-| --------------------- | ------------------------------- | --------------------------------------------------------------- |
-| `T-{SCHEMA}`          | `T-LIMITBOOK_FULL`              | Full-book dataset: a snapshot followed by all recorded updates. |
-| `D-{YYYYMMDDHH}`      | `D-2026100100`                  | UTC date and hour: `[00:00, 01:00)` on 2026-10-01.              |
-| `E-{EXCHANGE}`        | `E-LIGHTER`                     | Exchange.                                                       |
-| `IDDI-{ID}`           | `IDDI-47534074`                 | CoinAPI numeric symbol ID.                                      |
-| `SC-{SYMBOL_ID}`      | `SC-LIGHTER_PERP_ANTHROPIC_USD` | CoinAPI symbol ID.                                              |
-| `S-{EXCHANGE_SYMBOL}` | `S-ANTHROPIC`                   | Exchange symbol.                                                |
+| Key part              | Example                   | Meaning                                                         |
+| --------------------- | ------------------------- | --------------------------------------------------------------- |
+| `T-{SCHEMA}`          | `T-LIMITBOOK_FULL`        | Full-book dataset: a snapshot followed by all recorded updates. |
+| `D-{YYYYMMDDHH}`      | `D-2026112315`            | UTC date and hour: `[15:00, 16:00)` on 2026-11-23.              |
+| `E-{EXCHANGE}`        | `E-LIGHTER`               | Exchange.                                                       |
+| `IDDI-{ID}`           | `IDDI-48047693`           | CoinAPI numeric symbol ID.                                      |
+| `SC-{SYMBOL_ID}`      | `SC-LIGHTER_PERP_ANT_USD` | CoinAPI symbol ID.                                              |
+| `S-{EXCHANGE_SYMBOL}` | `S-ANT`                   | Exchange symbol.                                                |
 
 The loaders accept named book updates and numeric codes: `0=ADD`, `1=SUB`, `2=SET`, `3=DELETE`, and
 `4=MATCH`. Snapshots require the named `SNAPSHOT` update. CoinAPI also documents export variants with comma

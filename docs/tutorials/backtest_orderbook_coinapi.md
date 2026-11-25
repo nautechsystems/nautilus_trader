@@ -1,14 +1,12 @@
-# Backtest with Pre-IPO Order Book Data (CoinAPI)
+# Backtest with Equity Perpetual Order Book Data (CoinAPI)
 
-Download one hour of Lighter ANTHROPIC pre-IPO perpetual order book data from CoinAPI, store it in a
-Parquet catalog, and backtest an order book imbalance strategy on it. The download is cached
-locally, so later runs work offline.
+Download one hour of Lighter's `ANT` equity perpetual order book from CoinAPI. Store it in a
+Parquet catalog and replay it to backtest an order book imbalance strategy. Later runs reuse the
+catalog and work offline.
 
-This market gives synthetic exposure to Anthropic's pre-IPO valuation. Lighter normalizes the
-contract with an assumed share count of one billion and uses an internal pricing mechanism. The
-perpetual does not give ownership of company shares. See Lighter's
-[market specifications](https://docs.lighter.xyz/trading/real-world-assets-rwas/market-specifications)
-and [pre-IPO market rules](https://docs.lighter.xyz/trading/real-world-assets-rwas/pre-ipo-markets).
+The Lighter Core perpetual gives synthetic exposure to Anthropic's publicly traded stock
+(`ANT` on Nasdaq). The contract settles in USDC. See
+[Lighter's equity market rules](https://docs.lighter.xyz/trading/real-world-assets-rwas).
 
 Each step shows the Rust and Python code side by side. The complete programs are
 [`coinapi_lighter_book_imbalance.rs`][rust-program] and
@@ -23,16 +21,18 @@ exchange, and the symbol; see the [file layout](../integrations/coinapi.md#file-
 
 The rows have empty order IDs, so they describe price levels: an L2 market-by-price (MBP) book. The
 loader converts the rows to `OrderBookDelta` values and groups them into batches. Each batch is one
-book event:
+replay event.
 
 | Batch                  | Contents                                                                               |
 | ---------------------- | -------------------------------------------------------------------------------------- |
 | First                  | `CLEAR`, then one `ADD` per price level, all `F_SNAPSHOT`: the book at the hour start. |
-| Later                  | Level updates that share one exchange timestamp.                                       |
-| Last delta of each one | Carries the `F_LAST` flag. The book is complete only after this delta.                 |
+| Later                  | Consecutive rows with the same `time_exchange` value.                                  |
+| Last delta of each one | Carries the `F_LAST` flag, which marks the end of the loader batch.                    |
 
-Each delta's `ts_event` is the exchange time (`time_exchange`) and its `ts_init` is the time CoinAPI
-received the update (`time_coinapi`). See the [timestamp rules](../integrations/coinapi.md#timestamps).
+The loader takes `ts_event` from CoinAPI's `time_exchange` field and `ts_init` from `time_coinapi`.
+Every update row after the snapshot has a distinct `time_exchange` in this file, so each forms
+its own batch. The export gives no venue message boundaries for those rows. See the
+[timestamp rules](../integrations/coinapi.md#timestamps).
 
 ```mermaid
 flowchart LR
@@ -51,8 +51,8 @@ only when the catalog path does not exist, so later runs need no API key or netw
 
 ## Prerequisites
 
-- A CoinAPI key with Flat Files access and usage credits. CoinAPI charges for listing and for
-  downloading files; the first run downloads one file of about 279 KB. See
+- A CoinAPI key with Flat Files access and usage credits. CoinAPI charges for listing and
+  downloading files. The first run downloads one compressed file of about 13.3 MB. See
   [Flat Files access](https://www.coinapi.io/products/flat-files/docs?ref=nautilus).
 - **Rust**: A source checkout. To use the crates in your own project, see
   [Run a Backtest (Rust)](../how_to/run_rust_backtest.md) for setup and dependencies.
@@ -79,21 +79,22 @@ key, without echoing it, when the variable is unset.
 | Name           | Value                                         | Purpose                                                          |
 | -------------- | --------------------------------------------- | ---------------------------------------------------------------- |
 | `BUCKET`       | `coinapi`                                     | CoinAPI bucket that holds historical files, including this hour. |
-| `OBJECT_KEY`   | `T-LIMITBOOK_FULL/D-2026100100/E-LIGHTER/...` | Full-book file for `LIGHTER_PERP_ANTHROPIC_USD`, about 279 KB.   |
-| `FILE_SHA256`  | `2ed141be...`                                 | SHA-256 of the export behind the reference run.                  |
-| Instrument ID  | `ANTHROPIC-PERP.LIGHTER`                      | Native Lighter adapter ID for the contract.                      |
+| `OBJECT_KEY`   | `T-LIMITBOOK_FULL/D-2026112315/E-LIGHTER/...` | Full-book file for `LIGHTER_PERP_ANT_USD`.                       |
+| `FILE_SHA256`  | `5a05a328...`                                 | SHA-256 of the export behind the reference run.                  |
+| Instrument ID  | `ANT-PERP.LIGHTER`                            | Native Lighter adapter ID for the contract.                      |
 | Book type      | `L2_MBP`                                      | Price-level book, which matches the file's empty order IDs.      |
 | Data directory | `NAUTILUS_DATA_DIR/CoinAPI`                   | Storage root. The default is `~/Downloads/Data/CoinAPI`.         |
 | File path      | `<data directory>/<OBJECT_KEY>`               | Downloaded file. Its `D-` directory gives the loader the date.   |
-| Catalog path   | `lighter-anthropic-20261001-00`               | Catalog for this file. Rename it for another hour.               |
+| Catalog path   | `lighter-ant-20261123-15`                     | Catalog for this file. Rename it for another hour.               |
 
 ```rust tab="Rust"
 const BUCKET: &str = "coinapi";
-const OBJECT_KEY: &str = "T-LIMITBOOK_FULL/D-2026100100/E-LIGHTER/IDDI-47534074+SC-LIGHTER_PERP_ANTHROPIC_USD+S-ANTHROPIC.csv.gz";
-const FILE_SHA256: &str = "2ed141be6480c56ff16322e08bbc43398edc710875fe81093e0635ff672e48e4";
+const OBJECT_KEY: &str =
+    "T-LIMITBOOK_FULL/D-2026112315/E-LIGHTER/IDDI-48047693+SC-LIGHTER_PERP_ANT_USD+S-ANT.csv.gz";
+const FILE_SHA256: &str = "5a05a328f1622c88091238ad190d7e63c370d1d3e845f5b5d0f5b49401ccf8e1";
 const RUN_ID: &str = "coinapi-lighter";
 
-let instrument_id = InstrumentId::from("ANTHROPIC-PERP.LIGHTER");
+let instrument_id = InstrumentId::from("ANT-PERP.LIGHTER");
 let book_type = BookType::L2_MBP;
 
 let data_dir = match std::env::var_os("NAUTILUS_DATA_DIR") {
@@ -106,22 +107,21 @@ let data_dir = match std::env::var_os("NAUTILUS_DATA_DIR") {
 .join("CoinAPI");
 
 let filepath = data_dir.join(OBJECT_KEY);
-let catalog_path = data_dir.join("lighter-anthropic-20261001-00");
+let catalog_path = data_dir.join("lighter-ant-20261123-15");
 ```
 
 ```python tab="Python"
 BUCKET = "coinapi"
 OBJECT_KEY = (
-    "T-LIMITBOOK_FULL/D-2026100100/E-LIGHTER/"
-    "IDDI-47534074+SC-LIGHTER_PERP_ANTHROPIC_USD+S-ANTHROPIC.csv.gz"
+    "T-LIMITBOOK_FULL/D-2026112315/E-LIGHTER/IDDI-48047693+SC-LIGHTER_PERP_ANT_USD+S-ANT.csv.gz"
 )
-FILE_SHA256 = "2ed141be6480c56ff16322e08bbc43398edc710875fe81093e0635ff672e48e4"
-INSTRUMENT_ID = InstrumentId.from_str("ANTHROPIC-PERP.LIGHTER")
+FILE_SHA256 = "5a05a328f1622c88091238ad190d7e63c370d1d3e845f5b5d0f5b49401ccf8e1"
+INSTRUMENT_ID = InstrumentId.from_str("ANT-PERP.LIGHTER")
 BOOK_TYPE = BookType.L2_MBP
 
 DATA_DIR = Path(os.environ.get("NAUTILUS_DATA_DIR", "~/Downloads/Data")).expanduser() / "CoinAPI"
 FILEPATH = DATA_DIR / OBJECT_KEY
-CATALOG_PATH = DATA_DIR / "lighter-anthropic-20261001-00"
+CATALOG_PATH = DATA_DIR / "lighter-ant-20261123-15"
 ```
 
 ## 2. Download the full-book file
@@ -177,30 +177,30 @@ running event loop, use `await download(api_key)` instead.
 need the live client's instrument mapper, which does not support Lighter. `CryptoPerpetual` matches
 the native Lighter adapter's model for this contract.
 
-| Setting                                 | Value                    | Meaning                                                                |
-| --------------------------------------- | ------------------------ | ---------------------------------------------------------------------- |
-| `instrument_id`                         | `ANTHROPIC-PERP.LIGHTER` | Native Lighter adapter ID.                                             |
-| `raw_symbol`, `base_currency`           | `ANTHROPIC`              | Lighter market symbol.                                                 |
-| `quote_currency`, `settlement_currency` | `USDC`                   | Native settlement currency. CoinAPI's `USD` suffix does not change it. |
-| `is_inverse`                            | `false`                  | Sizes are contract units, not USDC amounts.                            |
-| `price_precision`, `price_increment`    | 1, `0.1`                 | Venue tick size. The export's prices have one decimal place.           |
-| `size_precision`, `size_increment`      | 5, `0.00001`             | Venue lot size. The export's sizes have five decimal places.           |
-| `min_quantity`                          | `0.00250`                | Minimum order quantity, in contract units.                             |
-| `min_notional`                          | 10 USDC                  | Minimum order value, checked separately from the quantity.             |
-| `margin_init`                           | 0.20                     | Initial margin: 20% of the order value.                                |
-| `margin_maint`                          | 0.12                     | Maintenance margin: 12% of the position value.                         |
+| Setting                                 | Value              | Meaning                                                                |
+| --------------------------------------- | ------------------ | ---------------------------------------------------------------------- |
+| `instrument_id`                         | `ANT-PERP.LIGHTER` | Native Lighter adapter ID.                                             |
+| `raw_symbol`, `base_currency`           | `ANT`              | Lighter market symbol.                                                 |
+| `quote_currency`, `settlement_currency` | `USDC`             | Native settlement currency. CoinAPI's `USD` suffix does not change it. |
+| `is_inverse`                            | `false`            | Sizes are in contract units.                                           |
+| `price_precision`, `price_increment`    | 2, `0.01`          | Venue tick size. Export prices use up to two decimal places.           |
+| `size_precision`, `size_increment`      | 4, `0.0001`        | Venue lot size. Export sizes use up to four decimal places.            |
+| `min_quantity`                          | `0.1000`           | Minimum order quantity, in contract units.                             |
+| `min_notional`                          | 10 USDC            | Minimum order value, checked separately from the quantity.             |
+| `margin_init`                           | 0.10               | Initial margin of 10% of the order value.                              |
+| `margin_maint`                          | 0.06               | Maintenance margin of 6% of the position value.                        |
 
-**Assumed terms**: The minimum order, minimum notional, and margin rates are assumptions based on
-native metadata, not a reconstruction of historical venue rules. Verify the terms for your research
-period before you draw conclusions from PnL.
+The minimum quantity, minimum notional, and margin rates use
+[Lighter's ANT market metadata](https://mainnet.zklighter.elliot.ai/api/v1/orderBookDetails?market_id=10902)
+as assumptions for this hour. Verify the historical terms for your research period.
 
 ```rust tab="Rust"
 let usdc = Currency::USDC();
-let raw_symbol = Symbol::from("ANTHROPIC");
-let base_currency = Currency::get_or_create_crypto("ANTHROPIC");
-let price_increment = Price::from("0.1");
-let size_increment = Quantity::from("0.00001");
-let min_quantity = Quantity::from("0.00250");
+let raw_symbol = Symbol::from("ANT");
+let base_currency = Currency::get_or_create_crypto("ANT");
+let price_increment = Price::from("0.01");
+let size_increment = Quantity::from("0.0001");
+let min_quantity = Quantity::from("0.1000");
 let min_notional = Money::from_decimal(dec!(10), usdc)?;
 let instrument = CryptoPerpetual::builder()
     .instrument_id(instrument_id)
@@ -209,14 +209,14 @@ let instrument = CryptoPerpetual::builder()
     .quote_currency(usdc)
     .settlement_currency(usdc)
     .is_inverse(false)
-    .price_precision(1)
-    .size_precision(5)
+    .price_precision(2)
+    .size_precision(4)
     .price_increment(price_increment)
     .size_increment(size_increment)
     .min_quantity(min_quantity)
     .min_notional(min_notional)
-    .margin_init(dec!(0.20))
-    .margin_maint(dec!(0.12))
+    .margin_init(dec!(0.10))
+    .margin_maint(dec!(0.06))
     .ts_event(UnixNanos::default())
     .ts_init(UnixNanos::default())
     .build()?;
@@ -226,19 +226,19 @@ let instrument = CryptoPerpetual::builder()
 usdc = Currency.from_str("USDC")
 instrument = CryptoPerpetual(
     instrument_id=INSTRUMENT_ID,
-    raw_symbol=Symbol("ANTHROPIC"),
-    base_currency=Currency.from_str("ANTHROPIC"),
+    raw_symbol=Symbol("ANT"),
+    base_currency=Currency.from_str("ANT"),
     quote_currency=usdc,
     settlement_currency=usdc,
     is_inverse=False,
-    price_precision=1,
-    size_precision=5,
-    price_increment=Price.from_str("0.1"),
-    size_increment=Quantity.from_str("0.00001"),
-    min_quantity=Quantity.from_str("0.00250"),
+    price_precision=2,
+    size_precision=4,
+    price_increment=Price.from_str("0.01"),
+    size_increment=Quantity.from_str("0.0001"),
+    min_quantity=Quantity.from_str("0.1000"),
     min_notional=Money.from_decimal(Decimal(10), usdc),
-    margin_init=Decimal("0.20"),
-    margin_maint=Decimal("0.12"),
+    margin_init=Decimal("0.10"),
+    margin_maint=Decimal("0.06"),
     ts_event=0,
     ts_init=0,
 )
@@ -375,10 +375,10 @@ print(f"Locked or crossed books: {locked_or_crossed:,}")
 print(book.pprint(3))
 ```
 
-**Locked and crossed books**: This file has none, but other partitions can briefly produce locked
-or crossed books while level changes apply. Keep every delta in the catalog. The integrity check
-fails on a crossed book, so the programs check only snapshot batches and the final book. The
-strategy and the figures skip books without a positive spread.
+The replay encounters 12,418 batches with a locked or crossed book. Level changes can arrive
+separately, so a completed loader batch can still show an intermediate venue book. Keep every
+delta in the catalog. The integrity check rejects crossed books, so the programs run it after
+each snapshot and at the end. The strategy and the figures skip books without a positive spread.
 
 ## 6. Configure the backtest
 
@@ -388,13 +388,28 @@ sends a fill-or-kill (FOK) limit order against the thinner side: it buys at the 
 bid side is larger, and sells at the best bid when the ask side is larger. It skips books without a
 positive spread and closes its position when it stops.
 
-| Strategy setting               | Value     | Effect                                                                                   |
-| ------------------------------ | --------- | ---------------------------------------------------------------------------------------- |
-| `trigger_min_size`             | 1.0       | The larger best-quote size must exceed one contract unit.                                |
-| `trigger_imbalance_ratio`      | 0.20      | The smaller size must be below 20% of the larger size.                                   |
-| `max_trade_size`               | `0.01000` | Each signal order is for the smaller of 0.01 contract units and the thinner side's size. |
-| `min_seconds_between_triggers` | 1.0       | At least one second passes between signals.                                              |
-| `book_type`                    | `L2_MBP`  | The strategy subscribes to the same book type as the data.                               |
+The venue uses a fixed 300 ms delay for order submission, modification, and cancellation. This
+matches [Lighter Core's Standard-tier settings](https://docs.lighter.xyz/trading/trading-fees)
+for taker orders and keeps the regular-order fee at zero. Orders in this strategy take liquidity.
+The model is optimistic because it adds no client processing time, network transit, or jitter.
+The simulator uses FOK for this example. The [live Lighter adapter](../integrations/lighter.md#time-in-force)
+rejects FOK orders.
+
+The delay lets you test whether a signal's price and size are still executable when the order
+is processed. The 300 ms delay sets the earliest time an order is eligible. During the replay,
+the engine applies the next book update before matching eligible orders. A FOK order fills only
+if the updated book can satisfy the full quantity at the limit price or better.
+
+To compare with zero delay, set `order_delay` in Rust or `order_delay_ns` in Python to zero and
+replay the same catalog.
+
+| Strategy setting               | Value    | Effect                                                                                   |
+| ------------------------------ | -------- | ---------------------------------------------------------------------------------------- |
+| `trigger_min_size`             | 1.0      | The larger best-quote size must exceed one contract unit.                                |
+| `trigger_imbalance_ratio`      | 0.20     | The smaller size must be below 20% of the larger size.                                   |
+| `max_trade_size`               | `0.2500` | Each signal order is for the smaller of 0.25 contract units and the thinner side's size. |
+| `min_seconds_between_triggers` | 1.0      | At least one second passes between signals.                                              |
+| `book_type`                    | `L2_MBP` | The strategy subscribes to the same book type as the data.                               |
 
 | Venue setting       | Value                 | Effect                                                         |
 | ------------------- | --------------------- | -------------------------------------------------------------- |
@@ -402,9 +417,10 @@ positive spread and closes its position when it stops.
 | `account_type`      | `MARGIN`              | Positions need only margin, so the strategy can sell short.    |
 | `oms_type`          | `NETTING`             | One position per instrument.                                   |
 | `starting_balances` | 100,000 USDC          | Balance available for margin and PnL.                          |
-| `margin_model`      | `StandardMarginModel` | Applies the 20% and 12% rates without a leverage reduction.    |
+| `margin_model`      | `StandardMarginModel` | Applies the instrument's margin rates to full notional.        |
 | `book_type`         | `L2_MBP`              | The matching engine fills orders against the price-level book. |
 | `fee_model`         | Zero maker and taker  | This teaching run charges no fees.                             |
+| `latency_model`     | `StaticLatencyModel`  | Makes order commands eligible for processing after 300 ms.     |
 
 | Run setting             | Value                                   | Effect                                                                                           |
 | ----------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------ |
@@ -415,9 +431,10 @@ positive spread and closes its position when it stops.
 | `dispose_on_completion` | `true` (Rust default), `False` (Python) | Python keeps the engine after the run to generate reports; Rust disposes it.                     |
 | Log level               | `ERROR` (Python only)                   | Keeps the printed reports readable; Rust keeps the default log output.                           |
 
-**Simulation limits**: The run omits funding, network latency, transaction costs, and IPO conversion
-or settlement. L2 data cannot establish individual order queue positions, and simulated fills do not
-predict live execution. The strategy demonstrates the data workflow; it has no demonstrated edge.
+**Simulation limits**: Matching against the book captures the cost of crossing the spread and filling
+across multiple price levels. The run omits funding. The export does not establish venue-message
+boundaries or individual queue positions. The strategy demonstrates the data workflow and has no
+demonstrated edge.
 
 ```rust tab="Rust"
 let data_engine = DataEngineConfig::builder()
@@ -428,6 +445,9 @@ let engine = BacktestEngineConfig::builder()
     .build();
 
 let fees = MakerTakerFeeModel::zero();
+let order_delay = DurationNanos::from_millis(300);
+let latency =
+    StaticLatencyModel::new(DurationNanos::ZERO, order_delay, order_delay, order_delay);
 let venue = BacktestVenueConfig::builder()
     .name(instrument_id.venue.as_str())
     .oms_type(OmsType::Netting)
@@ -436,6 +456,7 @@ let venue = BacktestVenueConfig::builder()
     .book_type(book_type)
     .margin_model(MarginModelAny::Standard(StandardMarginModel))
     .fee_model(FeeModelAny::MakerTaker(fees))
+    .latency_model(LatencyModelAny::Static(latency))
     .build()?;
 
 let catalog_location = catalog_path.display().to_string();
@@ -454,7 +475,7 @@ let config = BacktestRunConfig::builder()
     .raise_exception(true)
     .build()?;
 
-let max_trade_size = Quantity::from("0.01000");
+let max_trade_size = Quantity::from("0.2500");
 let strategy_config = OrderBookImbalanceConfig::builder()
     .instrument_id(instrument_id)
     .book_type(book_type)
@@ -466,6 +487,13 @@ let strategy_config = OrderBookImbalanceConfig::builder()
 ```
 
 ```python tab="Python"
+order_delay_ns = 300_000_000
+latency = StaticLatencyModel(
+    base_latency_nanos=0,
+    insert_latency_nanos=order_delay_ns,
+    update_latency_nanos=order_delay_ns,
+    cancel_latency_nanos=order_delay_ns,
+)
 config = BacktestRunConfig(
     engine=BacktestEngineConfig(
         logging=LoggerConfig(stdout_level=LogLevel.ERROR),
@@ -480,6 +508,7 @@ config = BacktestRunConfig(
             book_type=BOOK_TYPE,
             margin_model=StandardMarginModel(),
             fee_model=MakerTakerFeeModel(maker_rate=Decimal(0), taker_rate=Decimal(0)),
+            latency_model=latency,
         ),
     ],
     data=[
@@ -496,7 +525,7 @@ config = BacktestRunConfig(
 strategy_config = OrderBookImbalanceConfig(
     instrument_id=instrument.id,
     book_type=BOOK_TYPE,
-    max_trade_size=Quantity.from_str("0.01000"),
+    max_trade_size=Quantity.from_str("0.2500"),
     trigger_min_size=Decimal("1.0"),
     trigger_imbalance_ratio=Decimal("0.20"),
     min_seconds_between_triggers=1.0,
@@ -506,11 +535,14 @@ strategy_config = OrderBookImbalanceConfig(
 ## 7. Run the backtest from the catalog
 
 `BacktestNode` builds the engine from the configuration, loads the deltas from the catalog, and
-runs the strategy on them. With `batch_deltas` at its default of `true`, it groups the deltas into
-batches that end at each `F_LAST` delta, so the strategy only acts on complete books. The data
-configuration sets no start or end time, so the replay begins with the opening snapshot and the
-strategy starts with a complete book. A later start would skip that snapshot and replay updates onto
-an empty book.
+runs the strategy on them. With `batch_deltas` at its default of `true`, it groups deltas into
+batches ending at `F_LAST`. The engine applies the whole batch before the strategy sees the book.
+After the snapshot, that means one row at a time for this export. The strategy can act before
+the next price-level update if the resulting book has a positive spread.
+
+The data configuration sets no start or end time, so the replay begins with the opening snapshot and
+the strategy starts with a complete book. A later start would skip that snapshot and replay updates
+onto an empty book.
 
 ```rust tab="Rust"
 let mut node = BacktestNode::new(vec![config])?;
@@ -587,73 +619,70 @@ assert positions["quantity"].map(Decimal).eq(Decimal(0)).all()
 
 ### Reference run
 
-Compare the data counts first.
+| Result        | Reference value                                                      |
+| ------------- | -------------------------------------------------------------------- |
+| Data window   | 2026-11-23, `[15:00, 16:00)` UTC                                     |
+| Deltas loaded | 721,355 in 721,026 batches, including the 330-delta opening snapshot |
+| Iterations    | 721,026, one per batch                                               |
+| Orders        | 3,074 total, with 2,033 filled, 1,035 canceled, and 6 denied         |
+| Filled orders | 842 FOK buys, 1,190 FOK sells, and one market buy                    |
+| Positions     | 10, all closed                                                       |
+| Realized PnL  | -119.938540 USDC with zero fees                                      |
+| Final balance | 99,880.06146000 USDC                                                 |
 
-| Result         | Reference value                                               |
-| -------------- | ------------------------------------------------------------- |
-| Deltas loaded  | 15,047 in 14,814 batches; the 234-delta snapshot is one batch |
-| Iterations     | 14,814 backtest iterations, one per batch                     |
-| Window         | 2026-10-01, `[00:00, 01:00)` UTC                              |
-| Orders         | 234, all filled                                               |
-| Order types    | 233 FOK limit orders: 232 sells and one buy; one market buy   |
-| Peak short     | 2.30689 contract units                                        |
-| Average prices | About 2120.30 USDC to open and 2120.80 USDC to close          |
-| Realized PnL   | -1.157298 USDC, with zero fees                                |
-| Final balance  | 99,998.84270200 USDC                                          |
+The strategy sizes each FOK order from the thinner quote, so a signal can produce an order
+below the venue minimums. The risk engine denies five orders below the minimum quantity and
+one below the minimum notional.
 
-The Python fill counts show the closing market buy as six fills. A successful replay shows that the
-data pipeline works, not that this strategy is profitable.
+The strategy triggers 3,073 times in the hour with a one-second cooldown. With no delay, 3,067
+FOK orders fill. With 300 ms of delay, 2,032 fill and 1,035 cancel. For example, at 15:00:01.192149
+UTC the strategy submits a buy at the best ask of 89.33 USDC. When the replay processes the
+order at 15:00:01.527446 UTC, the best ask is 89.34 USDC and the order cancels unfilled.
 
-The FOK orders build the short position. The final market buy closes it at 00:59:58.300495500 UTC
-and fills against six ask levels at the same simulated timestamp:
+The fill report counts 2,036 executions. Two FOK orders and the closing buy each fill at
+two price levels.
+
+After the last update, the strategy submits a market buy to close a short of 86.8989 contract
+units. The backtest settles the order after the 300 ms delay, at 16:00:00.217869800 UTC.
+The data ends before that timestamp, so the two fills consume the final available book.
 
 | Level | Quantity | Price (USDC) |
 | ----- | -------- | ------------ |
-| 1     | 0.23177  | 2120.5       |
-| 2     | 0.11033  | 2120.7       |
-| 3     | 1.55518  | 2120.8       |
-| 4     | 0.12877  | 2120.9       |
-| 5     | 0.16205  | 2121.0       |
-| 6     | 0.11879  | 2121.1       |
+| 1     | 52.2888  | 88.80        |
+| 2     | 34.6101  | 88.81        |
 
-The first three levels match the asks that step 5 prints for the final book. The order consumes
-several levels, so most of it fills above the best ask of 2120.5.
+The prices match the two best asks printed in step 5. The order consumes all 52.2888 units
+at the best ask and fills the rest one tick higher, for an average price of about 88.80398 USDC.
 
 ### Figures
 
-The figures use the same data and reports as the Python program. They show the best bid and ask
-after each completed batch, and skip books with an empty side or without a positive spread. Lines
-step from one book state to the next; markers show individual fills.
+The figures use the Python program's data and reports. They show changes to the best quotes and
+skip batches with an empty side or without a positive spread. Markers show individual fills.
 
-![ANTHROPIC best bid and ask with the FOK fills and the closing market fills](./assets/backtest_orderbook_coinapi/panel_a_top_book.png)
+![ANT best ask over the full hour, with both quotes and fills near the end of the replay](./assets/backtest_orderbook_coinapi/panel_a_top_book.png)
 
-**Figure 1.** The FOK sells build the short position, and one FOK buy reduces it. The diamonds at
-the end mark the six closing fills from the table above. Sharp quote spikes include intermediate
-states that last microseconds between recorded level updates. This zero-latency strategy can fill at
-these prices.
+**Figure 1.** The upper panel shows the best ask over the hour. The lower panel uses a finer
+price and time scale to show both quotes and fills near the end of the replay. The two diamonds
+show where the closing buy fills after the final quote.
 
-![Full-hour spread and best-quote sizes on a logarithmic depth axis](./assets/backtest_orderbook_coinapi/panel_b_liquidity.png)
+![Full-hour spread, best bid size, and best ask size on separate axes](./assets/backtest_orderbook_coinapi/panel_b_liquidity.png)
 
-**Figure 2.** Across all states, the spread is in `[0.1, 2.1]` USDC. For states that last at least
-one millisecond, it is in `[0.1, 0.9]` USDC. Durations use receipt time (`ts_init`) until the next
-recorded update: 7,342 of 14,813 measured intervals are shorter than 10 microseconds. Best-quote
-sizes vary across several orders of magnitude, so depth uses a logarithmic axis. Sizes are contract
-units, not company shares.
+**Figure 2.** The positive spread is in `[0.01, 0.30]` USDC, including among states that last at
+least one millisecond. Of 708,607 measured intervals with a positive spread, 642,534 are shorter
+than 10 microseconds. Each interval runs from receipt time (`ts_init`) to the next batch.
+Best-quote sizes span `[0.0001, 1404.7683]` contract units. The bid and ask panels use the same
+logarithmic scale.
 
-![Net short position above PnL with the open position marked at the midpoint](./assets/backtest_orderbook_coinapi/panel_c_position_pnl.png)
+![Net position and midpoint-marked PnL through the final close](./assets/backtest_orderbook_coinapi/panel_c_position_pnl.png)
 
-**Figure 3.** Position and PnL over the hour:
+**Figure 3.** Cumulative signed fills take the position from a peak long of 9.2500 units to a
+peak short of 103.8989 units. The closing market buy brings the remaining position back to zero.
+With the open position marked at the midpoint, total PnL peaks at about 85.95 USDC around 15:43.
+The account balance records PnL when fills reduce or close positions.
 
-- **Position**: The top panel shows cumulative signed fill quantities. The short reaches 2.30689
-  units, and the final market buy returns it to zero.
-- **Marked PnL**: The bottom panel marks the open position at the midpoint, so it shows realized and
-  unrealized PnL together. PnL peaks near 1.7 USDC around 00:22, after the price falls while the
-  strategy holds 0.68689 units short. It falls below -2 USDC near 00:58 with the full short.
-- **Closing cost**: Just before the close, the short marked at the midpoint of 2120.4 is down
-  0.234182 USDC. The six closing fills cost another 0.923116 USDC against that midpoint; their
-  volume-weighted price is about 0.40 above it.
-- **Realized PnL**: Once flat, PnL equals the account's balance change of -1.157298 USDC. The
-  balance changes only when fills reduce or close the position, so it does not show these swings.
+At the final midpoint of 88.785 USDC, total PnL before the closing fills is -118.2889555
+USDC. Buying across two ask levels costs 1.6495845 USDC against that mark. Once flat, the
+marked PnL equals the account's realized balance change of -119.938540 USDC.
 
 ## Regenerate the figures
 
@@ -671,7 +700,7 @@ Its docstring gives the command that installs a browser for Kaleido.
 
 The loader downloads objects but does not list them. To test another hour, list the available
 objects with CoinAPI's [S3 SDK guide](https://www.coinapi.io/products/flat-files/docs/s3-api/sdk?ref=nautilus)
-and select the ANTHROPIC file. Update `OBJECT_KEY` and `FILE_SHA256` together after you verify the
+and select the `LIGHTER_PERP_ANT_USD` file. Update `OBJECT_KEY` and `FILE_SHA256` after you verify the
 new file, and change the catalog path. Check the file schema, the opening snapshot, and the
 instrument precision before you load it. The [CoinAPI integration guide](../integrations/coinapi.md#flat-files)
 describes the buckets, the accepted CSV layout, and the timestamp rules.
