@@ -15,6 +15,7 @@ feature-depth = 1
 # Security Advisories
 # =============================================================================
 [advisories]
+unmaintained = "all"
 unused-ignored-advisory = "deny"
 # Ignored advisories (use sparingly - document the reason)
 ignore = [

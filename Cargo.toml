@@ -145,7 +145,7 @@ blake3 = { version = "1.8.7", default-features = false, features = ["std"] }
 # Pinned: 3.10.1 pulls prettyplease 0.3 while prost-build still requires 0.2.
 bon = "=3.9.3"
 bytes = { version = "1.12.2", features = ["serde"] }
-clap = { version = "4.6.8", features = ["derive", "env"] }
+clap = { version = "4.6.9", features = ["derive", "env"] }
 dashmap = "6.2.1"
 datafusion = { version = "55.3.0", default-features = false, features = [
   "parquet",
@@ -311,7 +311,7 @@ tokio-tungstenite = { version = "0.30.0", features = [
   "rustls-tls-webpki-roots",
 ] }
 tokio-util = { version = "0.7.20", default-features = false, features = ["io"] }
-toml = { version = "1.2.1", default-features = false, features = [
+toml = { version = "1.2.2", default-features = false, features = [
   "parse",
   "serde",
 ] }
@@ -396,7 +396,7 @@ pyo3-stub-gen = { path = "patches/pyo3-stub-gen" }
 # Tools (for cargo install, used by Makefile and CI)
 # -----------------------------------------------------------------------------
 [workspace.metadata.tools]
-cargo-codspeed = "6.0.0"
+cargo-codspeed = "6.1.0"
 cbindgen = "0.29.4"
 flamegraph = "0.6.15"
 lychee = "0.24.2"
@@ -410,12 +410,6 @@ store = { path = '.supply-chain' }
 [workspace.metadata.cooldown]
 days = 3
 trusted-base = "origin/develop"
-
-# RUSTSEC-2026-0592 is fixed in url 2.5.9, which requires form_urlencoded 1.2.3.
-# Both deltas are audited. Remove this exception after 2026-11-23 23:04 UTC.
-[workspace.metadata.cooldown.allow]
-form_urlencoded = "1.2.3"
-url = "2.5.9"
 
 # -----------------------------------------------------------------------------
 # Profiles

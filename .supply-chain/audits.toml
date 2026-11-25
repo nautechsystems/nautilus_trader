@@ -2071,6 +2071,12 @@ criteria = "safe-to-deploy"
 delta = "1.11.1 -> 1.11.2"
 notes = "Reviewed checksum-verified published source. Passes a fixed GCC code-folding flag when address sanitizer is requested and updates two UEFI target mappings. Compiler selection and command inputs are unchanged."
 
+[[audits.cc]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.11.2 -> 1.11.3"
+notes = "Documents Unix command debug logging and MSVC archiver argument conventions. Published build and compiler invocation code remains the same."
+
 [[audits.cfg-if]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2125,6 +2131,12 @@ criteria = "safe-to-deploy"
 delta = "4.6.7 -> 4.6.8"
 notes = "Updates derive wiring and documentation. Runtime parser implementation remains in clap_builder at its existing version."
 
+[[audits.clap]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "4.6.8 -> 4.6.9"
+notes = "Updates the documentation link and pins the matching reviewed clap_derive release. Published runtime code remains the same."
+
 [[audits.clap_builder]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2148,6 +2160,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "4.6.7 -> 4.6.8"
 notes = "Updates syn and reconstructs generated command arguments through explicit reassignment. Changes operate on input tokens and emit builder calls."
+
+[[audits.clap_derive]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "4.6.8 -> 4.6.9"
+notes = "Discards the unused result of the generated group_id assertion with let _. The assertion and generated argument handling keep their behavior."
 
 [[audits.clap_lex]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2237,6 +2255,13 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.4.46 -> 0.4.47"
 notes = "Reviewed published source. Gzip CRC parsing retains header state until checksum bytes arrive and validation succeeds. No new unsafe or ambient access."
+
+[[audits.compression-codecs]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.47 -> 0.4.48"
+importable = false
+notes = "Adds a zrip backend behind the zstd-zrip feature and async_compression_unstable cfg. The NautilusTrader graph enables the existing libzstd backend only."
 
 [[audits.compression-core]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -4123,6 +4148,13 @@ criteria = "safe-to-deploy"
 delta = "0.2.44 -> 0.2.46"
 notes = "Updates bounded date and span arithmetic, strptime, and IANA time-zone data. TZif equality uses representation-specific access after checking the active tag."
 
+[[audits.jiff]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.2.46 -> 1.0.2"
+importable = false
+notes = "The major release enters Cargo.lock through serde_with's optional jiff_1 feature. Cargo tree with all workspace features and targets excludes this version; the compiled Jiff dependency stays on 0.2."
+
 [[audits.jiff-core]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -4154,6 +4186,13 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.1.6 -> 0.1.8"
 notes = "Corrects timestamp and civil time calculations and restricts ArrayStr construction to valid UTF-8."
+
+[[audits.jiff-core]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.1.8 -> 1.0.1"
+importable = false
+notes = "Updates the calendar and TZif internals for Jiff 1. This version is reachable only through the disabled serde_with jiff_1 feature in the resolved workspace."
 
 [[audits.jiff-static]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -4192,6 +4231,13 @@ criteria = "safe-to-deploy"
 delta = "0.2.44 -> 0.2.46"
 notes = "Checksum-verified published source and build files are unchanged. Updates coordinated dependency versions and release metadata."
 
+[[audits.jiff-static]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.2.46 -> 1.0.2"
+importable = false
+notes = "Advances the companion dependencies for Jiff 1 and updates the proc-macro diagnostic text. The Jiff 1 feature stays disabled in the workspace."
+
 [[audits.jiff-tzdb]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -4203,6 +4249,20 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.1.9 -> 0.1.10"
 notes = "Reviewed checksum-verified published source. Updates the bundled IANA 2026f TZif data and its offsets. No parser, build script, or executable logic changes."
+
+[[audits.jiff-tzdb]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.1.10 -> 1.0.0"
+importable = false
+notes = "Publishes the companion zone data crate for Jiff 1 and updates data lookup code. The new version enters the lockfile through the disabled jiff_1 feature."
+
+[[audits.jiff-tzdb-platform]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.1.3 -> 1.0.0"
+importable = false
+notes = "Updates its Jiff time-zone database dependency. The Jiff 1 path remains outside the compiled workspace graph on all targets."
 
 [[audits.js-sys]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -4257,6 +4317,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.2.5 -> 0.2.6"
 notes = "Reviewed published source. Compression loops use bounded slice iterators; output write removes a redundant pointer cast. Allocation and write-length invariants are unchanged."
+
+[[audits.libbz2-rs-sys]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.2.6 -> 0.2.7"
+notes = "Tracks the current coding table, symbol, and read state in the decoder fast path before reads that can yield. The existing group and code-length bounds still apply."
 
 [[audits.libc]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -4597,6 +4663,24 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.0.0 -> 1.0.1"
 notes = "Reviewed published source. Implementation is unchanged; manifest relaxes the psm exact pin and fixes author metadata. The resolved psm/archive-writing chain is reviewed separately."
+
+[[audits.pin-project]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.1.13 -> 1.2.0"
+notes = "Pins the matching reviewed proc macro with updated unsized Drop checks and syn 3 support. The facade's runtime code is unchanged."
+
+[[audits.pin-project-internal]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.1.13 -> 1.2.0"
+notes = "Includes unsized types in the generated Drop coherence check. Adapts pinned_drop parsing to syn 3 while requiring the same typed Pin<&mut Self> receiver."
+
+[[audits.pin-project-lite]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.2.17 -> 0.2.18"
+notes = "Includes unsized types in the generated Drop coherence check. Existing field projections stay the same."
 
 [[audits.pin-utils]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -5367,6 +5451,13 @@ criteria = "safe-to-deploy"
 delta = "3.23.0 -> 3.24.0"
 notes = "Reviewed the published crate delta. Converts out-of-range chrono/time timestamp arithmetic from panics to deserialization errors, adds NoneAsEmptyString schema forwarding, and enables existing prefix/suffix modules with alloc. No new unsafe code or runtime filesystem, network, or process capability."
 
+[[audits.serde_with]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "3.24.0 -> 3.25.0"
+importable = false
+notes = "Adds optional Jiff 1 conversions and related schema adapters. The workspace selects alloc, macros, and std, leaving the new integrations disabled."
+
 [[audits.serde_with_macros]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -5390,6 +5481,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "3.23.0 -> 3.24.0"
 notes = "Reviewed the published crate delta. Version, changelog, and documentation links only; procedural macro implementation and generated code remain unchanged."
+
+[[audits.serde_with_macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "3.24.0 -> 3.25.0"
+notes = "Updates documentation links and a lint name. Published proc-macro behavior is unchanged."
 
 [[audits.sha2]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -6050,6 +6147,12 @@ criteria = "safe-to-deploy"
 delta = "1.13.2 -> 1.14.1"
 notes = "Extends error capture to core::error behind a new feature and updates feature gates consistently. No unsafe, build script, dependency, or ambient capability changes."
 
+[[audits.walkdir]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.5.0 -> 2.5.1"
+notes = "When following links, seeds cycle detection with canonical root ancestors. The traversal still follows links to non-ancestor directories and preserves stack ownership."
+
 [[audits.want]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -6342,6 +6445,13 @@ criteria = "safe-to-deploy"
 delta = "0.8.59 -> 0.8.63"
 notes = "Reviewed the src pointer, layout, ref, split_at, and error delta from 0.8.59 to 0.8.63. The bulk of the published crate diff is benchmarks and CI. Unsafe remains in the existing pointer and transmute paths. No new network, filesystem, process, or credential capability."
 
+[[audits.zerocopy]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.8.63 -> 0.8.64"
+importable = false
+notes = "Validates typed prefix and suffix extents and alignment before splitting the source. The byte projection computes the layout from validated pointer metadata. The workspace enables derive and simd; the allocator API is outside that feature set."
+
 [[audits.zerocopy-derive]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -6371,6 +6481,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.8.59 -> 0.8.63"
 notes = "Reviewed the derive, repr, and invariant delta. Generated trait implementations and UI tests change; the diff adds no unsafe blocks. No runtime dependency, build script, filesystem, network, or process capability."
+
+[[audits.zerocopy-derive]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.8.63 -> 0.8.64"
+notes = "Updates test assertions and snapshots. The published proc-macro implementation is unchanged."
 
 [[audits.zerofrom-derive]]
 who = "Nautech Systems <info@nautechsystems.io>"

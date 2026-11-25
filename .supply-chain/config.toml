@@ -1016,10 +1016,6 @@ version = "54.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.dbn]]
-version = "0.58.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.dbn]]
 version = "0.74.0"
 criteria = "safe-to-deploy"
 suggest = false

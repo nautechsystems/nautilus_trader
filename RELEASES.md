@@ -285,28 +285,30 @@ Released on TBD (UTC).
 - Optimized memory used by pending Polymarket subscription changes (#5657), thanks @imbolc
 - Upgraded Rust (MSRV) to 1.100.0
 - Upgraded `cargo-audit` tool to v0.23.0
-- Upgraded `cargo-binstall` tool to v1.27.0
-- Upgraded `cargo-deny` tool to v0.21.0
+- Upgraded `cargo-binstall` tool to v1.28.0
+- Upgraded `cargo-codspeed` tool to v6.1.0
+- Upgraded `cargo-deny` tool to v0.22.0
 - Upgraded `cargo-hack` tool to v0.6.46
 - Upgraded `cargo-hawk` tool to v0.1.18
+- Upgraded `cargo-llvm-cov` tool to v0.9.2
 - Upgraded `cargo-machete` tool to v0.10.1
 - Upgraded `cargo-nextest` tool to v0.9.152
 - Upgraded `flamegraph` tool to v0.6.15
 - Upgraded `OSV Scanner` tool to v2.7.1
 - Upgraded `prek` tool to v0.5.11
 - Upgraded `pypi-attestations` tool to v0.0.31
-- Upgraded `Socket CLI` tool to v1.15.0
-- Upgraded `uv` tool to v0.13.8
-- Upgraded `markdownlint-cli2` pre-commit hook to v0.24.1
+- Upgraded `Socket CLI` tool to v1.16.0
+- Upgraded `uv` tool to v0.13.9
+- Upgraded `markdownlint-cli2` pre-commit hook to v0.24.2
 - Upgraded `nbstripout` pre-commit hook to v0.9.2
 - Upgraded `typos` pre-commit hook to v1.52.2
-- Upgraded `uv` pre-commit hook to v0.13.8
+- Upgraded `uv` pre-commit hook to v0.13.9
 - Upgraded `zizmor` pre-commit hook to v1.32.0
 - Upgraded `alloy` crate to v2.6.1
 - Upgraded `arc-swap` crate to v1.9.5
 - Upgraded `arrow` and `parquet` crates to v59.3.3
 - Upgraded `bytes` crate to v1.12.2
-- Upgraded `clap` crate to v4.6.8
+- Upgraded `clap` crate to v4.6.9
 - Upgraded `databento` crate to v0.65.0
 - Upgraded `datafusion` crate to v55.3.0
 - Upgraded `flate2` crate to v1.1.11
@@ -319,7 +321,7 @@ Released on TBD (UTC).
 - Upgraded `sockudo-ws` crate to v3.1.1
 - Upgraded `syn` crate to v3.0.10
 - Upgraded `sysinfo` crate to v0.40.4
-- Upgraded `toml` crate to v1.2.1
+- Upgraded `toml` crate to v1.2.2
 - Upgraded `uuid` crate to v1.29.3
 - Upgraded `webpki-roots` crate to v1.0.12
 - Upgraded `zeroize` crate to v1.9.2
@@ -329,9 +331,9 @@ Released on TBD (UTC).
 - Upgraded `polars` package (dev) to v2.1.0
 - Upgraded `pyarrow` package (dev) to v26.0.1
 - Upgraded `pytest-asyncio` package (dev) to v1.5.0
-- Upgraded `ruff` package (dev) and pre-commit hook to v0.17.5
+- Upgraded `ruff` package (dev) and pre-commit hook to v0.17.6
 - Upgraded `simplejson` package to v4.3.0
-- Upgraded `ty` package (dev) to v0.0.104
+- Upgraded `ty` package (dev) to v0.0.105
 
 ### Documentation Updates
 

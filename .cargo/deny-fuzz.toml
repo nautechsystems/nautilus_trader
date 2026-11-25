@@ -9,6 +9,7 @@ no-default-features = false
 feature-depth = 1
 
 [advisories]
+unmaintained = "all"
 unused-ignored-advisory = "deny"
 ignore = []
 
