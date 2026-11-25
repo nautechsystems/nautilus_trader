@@ -1225,6 +1225,18 @@ impl InteractiveBrokersExecutionClient {
                     return Ok(());
                 }
 
+                // A replay of an execution already emitted at zero commission is not a new fill
+                if pending_live_exec_data
+                    .lock()
+                    .was_emitted_without_commission(&exec_data.execution.execution_id)
+                {
+                    tracing::debug!(
+                        "Ignoring IB execution {} replayed after its fill was emitted",
+                        exec_data.execution.execution_id
+                    );
+                    return Ok(());
+                }
+
                 Self::execution_context(exec_data, orders, instrument_provider, account_id)?;
                 // Record the own-fill delta immediately so the position stream cannot
                 // observe the post-fill quantity before the fill is known; the id
@@ -1293,14 +1305,14 @@ impl InteractiveBrokersExecutionClient {
                 let (pending_exec_data, emitted_without_commission) = {
                     let mut pending = pending_live_exec_data.lock();
                     let exec_data = pending.remove(&commission.execution_id);
-                    let emitted = exec_data.is_none()
-                        && pending.was_emitted_without_commission(&commission.execution_id);
+                    let emitted = pending.was_emitted_without_commission(&commission.execution_id);
                     (exec_data, emitted)
                 };
 
                 // The fill already went out at zero commission, and nothing amends an emitted
-                // fill, so the commission is reported rather than cached where nothing reads it.
-                // IB's pending sentinel carries no commission to report.
+                // fill, so the commission is reported rather than cached where nothing reads it,
+                // and a replay of the execution still pending is discarded with it. IB's pending
+                // sentinel carries no commission to report.
                 if emitted_without_commission {
                     if commission.commission != -1.0_f64 {
                         tracing::warn!(

@@ -4728,6 +4728,127 @@ async fn test_commission_report_after_zero_commission_flush_is_not_cached() {
     assert!(commission_cache.lock().is_empty());
 }
 
+// IB can replay an execDetails after its fill went out at zero commission. Whether the replay
+// comes before or after the late fee, only the original fill is emitted and the fee is reported
+// as not applied rather than cached.
+#[rstest]
+#[case::replay_before_late_fee(true)]
+#[case::replay_after_late_fee(false)]
+#[tokio::test(start_paused = true)]
+async fn test_exec_details_replay_after_zero_commission_flush_emits_no_fill(
+    #[case] replay_first: bool,
+) {
+    let instrument_provider = create_test_instrument_provider();
+    let equity = equity_aapl();
+    let order_id = 7011;
+    let contract_id = 12352;
+    let client_order_id = ClientOrderId::from("O-STREAM-REPLAYED-EXECUTION");
+    let position_tracker = create_position_tracker();
+    let orders = OrderTracker::new(NATIVE_CLIENT_ID);
+    let commission_cache = Arc::new(Mutex::new(CommissionCache::new()));
+    let pending_execution_cache = Arc::new(Mutex::new(PendingExecutionCache::new()));
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let exec_sender: EventSender<ExecutionEvent> = exec_sender.into();
+    let clock = nautilus_core::time::get_atomic_clock_realtime();
+    let account_id = AccountId::from("IB-001");
+    let ib_account = Ustr::from("001");
+    let instrument_id = equity.id();
+    instrument_provider.insert_test_instrument(InstrumentAny::from(equity), contract_id, 1);
+    insert_tracked_order(
+        &orders,
+        order_id,
+        create_tracked_order_context(client_order_id, instrument_id),
+    );
+
+    let mut exec_data = create_test_execution_data(order_id, "exec-replayed", 1.0, 50.0, "BOT");
+    exec_data.contract.contract_id = contract_id;
+    exec_data.contract.security_type = SecurityType::Stock;
+    exec_data.contract.symbol = IBSymbol::from("AAPL");
+    exec_data.contract.exchange = Exchange::from("SMART");
+    exec_data.contract.currency = IBCurrency::from("USD");
+    pending_execution_cache.lock().insert(
+        exec_data.execution.execution_id.clone(),
+        (tokio::time::Instant::now(), exec_data.clone()),
+    );
+    tokio::time::advance(Duration::from_secs(6)).await;
+    InteractiveBrokersExecutionClient::flush_executions_without_commission(
+        &orders,
+        &instrument_provider,
+        &exec_sender,
+        clock,
+        account_id,
+        ib_account,
+        &commission_cache,
+        &pending_execution_cache,
+        &position_tracker,
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(
+        exec_receiver.try_recv().unwrap(),
+        ExecutionEvent::Order(OrderEventAny::Accepted(_))
+    ));
+    assert!(matches!(
+        exec_receiver.try_recv().unwrap(),
+        ExecutionEvent::Order(OrderEventAny::Filled(event))
+            if event.commission == Some(Money::new(0.0, Currency::USD()))
+    ));
+
+    let replay = OrderUpdate::ExecutionData(exec_data);
+    let late_fee = OrderUpdate::CommissionReport(CommissionReport {
+        execution_id: String::from("exec-replayed"),
+        commission: 1.25,
+        currency: String::from("USD"),
+        realized_pnl: None,
+        yields: None,
+        yield_redemption_date: String::new(),
+    });
+    let updates = if replay_first {
+        [&replay, &late_fee]
+    } else {
+        [&late_fee, &replay]
+    };
+
+    for update in updates {
+        InteractiveBrokersExecutionClient::handle_order_update(
+            update,
+            &orders,
+            &instrument_provider,
+            &exec_sender,
+            clock,
+            account_id,
+            ib_account,
+            &commission_cache,
+            &pending_execution_cache,
+            &position_tracker,
+            None,
+        )
+        .await
+        .unwrap();
+    }
+    tokio::time::advance(Duration::from_secs(6)).await;
+    InteractiveBrokersExecutionClient::flush_executions_without_commission(
+        &orders,
+        &instrument_provider,
+        &exec_sender,
+        clock,
+        account_id,
+        ib_account,
+        &commission_cache,
+        &pending_execution_cache,
+        &position_tracker,
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert!(exec_receiver.try_recv().is_err());
+    assert!(pending_execution_cache.lock().executions.is_empty());
+    assert!(commission_cache.lock().is_empty());
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_process_order_update_stream_pairs_commission_report_before_execution() {
