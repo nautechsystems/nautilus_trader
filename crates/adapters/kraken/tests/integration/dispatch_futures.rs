@@ -1151,14 +1151,25 @@ fn test_futures_partial_fill_does_not_double_count_via_delta_and_fill() {
         UnixNanos::default(),
     );
 
-    // Drain placement Accepted (1) + the fill OrderFilled (1).
+    // Drain placement Accepted (1) + the fill OrderFilled (1) — no spurious OrderUpdated.
     let events = drain_events(&mut rx);
     assert_eq!(events.len(), 2);
+    assert!(matches!(
+        events[0],
+        ExecutionEvent::Order(OrderEventAny::Accepted(_))
+    ));
+    assert!(matches!(
+        events[1],
+        ExecutionEvent::Order(OrderEventAny::Filled(_))
+    ));
 
-    // Identity must still exist (order is half-filled, not terminal).
-    assert!(
-        state.lookup_identity(&cid).is_some(),
-        "identity should not be cleaned up after a half fill",
+    // Identity must still exist with full original size (order is half-filled, not terminal).
+    assert_eq!(
+        state
+            .lookup_identity(&cid)
+            .expect("identity should not be cleaned up after a half fill")
+            .quantity,
+        Quantity::from("0.001"),
     );
     assert!(
         !state.filled_orders.contains(&cid),
@@ -1168,6 +1179,34 @@ fn test_futures_partial_fill_does_not_double_count_via_delta_and_fill() {
     // The fill side recorded cumulative = 0.0005 (not 0.0010).
     let cumulative = state.previous_filled_qty(&cid).expect("cumulative tracked");
     assert_eq!(cumulative, Quantity::from("0.0005"));
+
+    // Final fill for the remaining 0.0005 must complete the order rather than
+    // being rejected or stale-suppressed.
+    let final_fill = make_fills_delta_with_qty(
+        Some("uuid-no-double"),
+        "v-no-double",
+        "trade-final",
+        dec!(0.0005),
+    );
+    dispatch::futures::fills_delta(
+        &final_fill,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_string_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+    assert!(matches!(
+        events[0],
+        ExecutionEvent::Order(OrderEventAny::Filled(_))
+    ));
+    assert!(state.lookup_identity(&cid).is_none());
+    assert!(state.filled_orders.contains(&cid));
 }
 
 #[rstest]
