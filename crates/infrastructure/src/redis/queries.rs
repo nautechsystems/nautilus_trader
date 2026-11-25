@@ -25,7 +25,7 @@ use nautilus_common::{
     cache::database::{CacheMap, register_loaded_currencies},
     enums::SerializationEncoding,
 };
-use nautilus_core::serialization::timestamps;
+use nautilus_core::{UUID4, serialization::timestamps};
 use nautilus_model::{
     accounts::AccountAny,
     data::{CustomData, DataType, HasTsInit, InstrumentClose},
@@ -35,7 +35,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orders::{Order, OrderAny},
     position::Position,
-    types::Currency,
+    types::{Currency, Price},
 };
 #[cfg(feature = "defi")]
 use nautilus_model::{
@@ -47,7 +47,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use ustr::Ustr;
 
-use super::get_index_key;
+use super::{ORDER_ACTIVATIONS, get_index_key};
 #[cfg(feature = "defi")]
 use crate::defi::{contract_conflict, integrity_error, redis_read_error, validate_marker};
 use crate::order_replay::transform_order;
@@ -127,6 +127,12 @@ enum CurrencyDecode {
     InvalidRecord(anyhow::Error),
     /// A bare code that is not registered, so the entry holds nothing recoverable.
     Undecodable(anyhow::Error),
+}
+
+#[derive(Serialize, Deserialize)]
+pub(super) struct OrderActivationRecord {
+    pub init_id: UUID4,
+    pub activation_price: Price,
 }
 
 // Collection keys
@@ -1479,13 +1485,41 @@ impl DatabaseQueries {
         client_order_id: &ClientOrderId,
         encoding: SerializationEncoding,
     ) -> anyhow::Result<Option<OrderAny>> {
-        let key = format!("{ORDERS}{REDIS_DELIMITER}{client_order_id}");
-        let result = Self::read(con, trader_key, &key).await?;
+        let key =
+            format!("{trader_key}{REDIS_DELIMITER}{ORDERS}{REDIS_DELIMITER}{client_order_id}");
+        let activations = format!("{trader_key}{REDIS_DELIMITER}{ORDER_ACTIVATIONS}");
+        let mut con = con.clone();
+        let (result, activation): (Vec<Bytes>, Option<Bytes>) = redis::pipe()
+            .atomic()
+            .lrange(&key, 0, -1)
+            .hget(activations, &key)
+            .query_async(&mut con)
+            .await?;
+
         if result.is_empty() {
             return Ok(None);
         }
 
-        let order = Self::deserialize_order(encoding, &result)?;
+        let mut order = Self::deserialize_order(encoding, &result)?;
+        if let Some(payload) = activation {
+            let init_id = order.init_id();
+            let (price, is_activated) = match &mut order {
+                OrderAny::TrailingStopMarket(order) => {
+                    (&mut order.activation_price, &mut order.is_activated)
+                }
+                OrderAny::TrailingStopLimit(order) => {
+                    (&mut order.activation_price, &mut order.is_activated)
+                }
+                _ => return Ok(Some(order)),
+            };
+
+            let activation: OrderActivationRecord = Self::deserialize_payload(encoding, &payload)?;
+            if activation.init_id == init_id {
+                *price = Some(activation.activation_price);
+                *is_activated = true;
+            }
+        }
+
         Ok(Some(order))
     }
 

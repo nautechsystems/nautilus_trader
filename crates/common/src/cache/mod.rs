@@ -4604,6 +4604,43 @@ impl Cache {
         Ok(snapshot)
     }
 
+    /// Records runtime activation on the cached trailing stop and in backends that support it.
+    ///
+    /// Activation preserves lifecycle events. Ignores other order types and logs an error if the
+    /// order is missing.
+    pub fn store_trailing_stop_activation(
+        &mut self,
+        client_order_id: ClientOrderId,
+        activation_price: Price,
+    ) {
+        let Some(mut order) = self.order_mut(&client_order_id) else {
+            log::error!("Cannot store trailing stop activation: order {client_order_id} not found");
+            return;
+        };
+
+        let init_id = order.init_id();
+        let (price, is_activated) = match &mut *order {
+            OrderAny::TrailingStopMarket(order) => {
+                (&mut order.activation_price, &mut order.is_activated)
+            }
+            OrderAny::TrailingStopLimit(order) => {
+                (&mut order.activation_price, &mut order.is_activated)
+            }
+            _ => return,
+        };
+
+        *price = Some(activation_price);
+        *is_activated = true;
+        drop(order);
+
+        if let Some(database) = &self.database
+            && let Err(e) =
+                database.store_trailing_stop_activation(client_order_id, init_id, activation_price)
+        {
+            log::error!("Failed to persist trailing stop activation for {client_order_id}: {e:#}");
+        }
+    }
+
     fn reindex_order_position_after_fill_void(&mut self, client_order_id: ClientOrderId) {
         match self.recover_hedging_position_link(client_order_id) {
             Ok(HedgingPositionLink::ProvenRoute { current, .. }) => {

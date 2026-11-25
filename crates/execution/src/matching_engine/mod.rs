@@ -93,7 +93,7 @@ use crate::{
         fill::{FillModel, FillModelHandle, is_price_tradable},
     },
     protection::protection_price_calculate,
-    trailing::{store_trailing_stop_activation, trailing_stop_calculate},
+    trailing::trailing_stop_calculate,
 };
 
 /// An order matching engine for a single market.
@@ -1458,6 +1458,23 @@ impl OrderMatchingEngine {
     #[must_use]
     pub const fn get_core(&self) -> &OrderMatchingCore {
         &self.core
+    }
+
+    /// Returns the last price and whether it is stale after reopen.
+    #[must_use]
+    pub const fn last_price_state(&self) -> (Option<Price>, bool) {
+        (self.core.last, self.trailing_reopen_prices.last_stale)
+    }
+
+    /// Seeds the matching core's last price and freshness during recovery.
+    ///
+    /// Preserves a last price the engine has already observed. Seeding does not update the book
+    /// or run matching.
+    pub const fn restore_last_price(&mut self, last: Option<Price>, last_stale: bool) {
+        if self.core.last.is_none() {
+            self.core.last = last;
+            self.trailing_reopen_prices.last_stale = last_stale;
+        }
     }
 
     pub fn set_fill_at_market(&mut self, value: bool) {
@@ -5167,7 +5184,9 @@ impl OrderMatchingEngine {
             _ => unreachable!("only trailing orders require activation"),
         }
 
-        store_trailing_stop_activation(&mut self.cache.borrow_mut(), order);
+        self.cache
+            .borrow_mut()
+            .store_trailing_stop_activation(order.client_order_id(), activation_price);
         true
     }
 

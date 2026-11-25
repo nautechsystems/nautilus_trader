@@ -259,6 +259,7 @@ Released on TBD (UTC).
 - Fixed Polymarket book recovery stalling on older snapshots with matching book hashes (#5659), thanks @imbolc
 - Fixed Polymarket exhausting its fast recovery budget on books with no initial snapshot
 - Fixed Polymarket resolution fallbacks retrying every poll after a failure (#5660), thanks @imbolc
+- Fixed Sandbox trailing stops losing activation on Redis reload (#5695)
 
 ### Internal Improvements
 

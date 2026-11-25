@@ -79,6 +79,7 @@ nautilus-execution = { workspace = true }
 nautilus-live = { workspace = true, features = ["node"] }
 nautilus-model = { workspace = true, features = ["test-support"] }
 nautilus-persistence = { workspace = true }
+nautilus-sandbox = { workspace = true }
 nautilus-serialization = { workspace = true }
 
 criterion = { workspace = true }

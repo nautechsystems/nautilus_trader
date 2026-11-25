@@ -2891,6 +2891,12 @@ mod tests {
             ],
         ),
         cache_mutation(
+            // Redis restores activation independently of the event-store tail
+            "store_trailing_stop_activation",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
             "update_order_pending_cancel_local",
             CacheMutationRecoveryClass::MissingLiveRecovery,
             &[],
