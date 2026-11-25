@@ -348,6 +348,7 @@ Released on TBD (UTC).
 
 - Documented backtest account-history purging and its effect on balance reports
 - Added Rust program to the CoinAPI Lighter pre-IPO order book backtest tutorial
+- Added a latency comparison and replay input checks to the FinFeed Polymarket backtest tutorial
 - Documented Polymarket order message size units for resting and market order types
 
 ---

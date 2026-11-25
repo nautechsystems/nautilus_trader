@@ -88,14 +88,15 @@ when the variable is unset.
 | Start          | 2026-11-02 20:00:05 UTC                   | Window start. The book at this time seeds the replay.                         |
 | End            | 2026-11-02 20:02:00 UTC                   | Window end, inclusive.                                                        |
 | Book type      | `L2_MBP`                                  | Price-level book (market by price), the only book FinFeed supplies.           |
+| Order delay    | 0 ms                                      | Reference value of `ORDER_DELAY_MS`.                                          |
 | Data directory | `NAUTILUS_DATA_DIR/FinFeed`               | Storage root. The default is `~/Downloads/Data/FinFeed`.                      |
 | Catalog path   | `btc-above-76k-nov3-no-20261102-20`       | Catalog for this outcome and window. Rename it for another outcome or window. |
 
 **Window start**: The loader needs a book snapshot at or before the start in the same UTC hour. The
 window starts a few seconds after 20:00 for this reason.
 
-**Window date**: The instrument expires at 00:00 UTC on November 3, from FinFeed's `EndDateIso`.
-Simulated trading stops at that time, so the window falls on November 2.
+**Window date**: The reference instrument definition from FinFeed sets expiry to 00:00 UTC on
+November 3. Simulated trading stops at expiry, so the window falls on November 2.
 
 **Instrument ID**: `finfeed_instrument_id` in Python and `to_instrument_id` in Rust build the ID from
 the exchange and `MARKET_ID`. Keep this `FINFEED_POLYMARKET` ID; the native Polymarket adapter uses
@@ -104,6 +105,7 @@ different instrument IDs.
 ```rust tab="Rust"
 const MARKET_ID: &str = "BITCOIN-ABOVE-76K-ON-NOVEMBER-3-2026_NO";
 const RUN_ID: &str = "finfeed-polymarket";
+const ORDER_DELAY_MS: u64 = 0;
 
 let instrument_id = to_instrument_id("POLYMARKET", MARKET_ID)?;
 let start = UnixNanos::from("2026-11-02T20:00:05Z");
@@ -128,6 +130,7 @@ INSTRUMENT_ID = finfeed_instrument_id("POLYMARKET", MARKET_ID)
 START = datetime(2026, 11, 2, 20, 0, 5, tzinfo=UTC)
 END = datetime(2026, 11, 2, 20, 2, tzinfo=UTC)
 BOOK_TYPE = BookType.L2_MBP
+ORDER_DELAY_MS = 0
 
 DATA_DIR = Path(os.environ.get("NAUTILUS_DATA_DIR", "~/Downloads/Data")).expanduser() / "FinFeed"
 CATALOG_PATH = DATA_DIR / "btc-above-76k-nov3-no-20261102-20"
@@ -196,22 +199,54 @@ The backtest engine rebuilds the book from the deltas itself. Rebuilding it here
 data before any strategy runs. The code reads the instrument and deltas back from the catalog, so it
 checks the same data the backtest uses.
 
-Apply the deltas in their original order and check the book's integrity at the end of each batch
-(`F_LAST`). Both programs then print the delta and batch counts and the top three levels of the final
-book.
+Check that the catalog opens with a `CLEAR` delta flagged `F_SNAPSHOT` at the selected start.
+Every remaining delta in the opening batch must be a snapshot `ADD` at that time. The last delta
+in the catalog must be within the selected window and end a batch (`F_LAST`). Apply the deltas in
+order and check the book's integrity at the end of each batch. Both programs print the delta and
+batch counts and the top three levels of the final book.
 
 ```rust tab="Rust"
 let mut catalog = ParquetDataCatalog::builder().uri(&catalog_path).build()?;
 let instrument_ids = vec![instrument_id.to_string()];
-let instrument = catalog
+let Some(InstrumentAny::BinaryOption(instrument)) = catalog
     .instruments(Some(&instrument_ids), None, None)?
     .into_iter()
     .next()
-    .context("instrument missing from catalog")?;
+else {
+    anyhow::bail!("binary option missing from catalog");
+};
 let deltas = catalog
     .order_book_deltas()
     .identifiers(instrument_ids)
     .execute()?;
+
+let first = deltas.first().context("catalog has no book deltas")?;
+let last = deltas.last().context("catalog has no book deltas")?;
+anyhow::ensure!(
+    first.action == BookAction::Clear && RecordFlag::F_SNAPSHOT.matches(first.flags),
+    "book deltas do not open with a snapshot"
+);
+anyhow::ensure!(
+    first.ts_init == start && last.ts_init <= end,
+    "catalog book deltas do not match the selected window"
+);
+anyhow::ensure!(
+    RecordFlag::F_LAST.matches(last.flags),
+    "catalog ends with an incomplete book batch"
+);
+
+let snapshot_end = deltas
+    .iter()
+    .position(|delta| RecordFlag::F_LAST.matches(delta.flags))
+    .context("catalog has no complete book batch")?;
+anyhow::ensure!(
+    deltas[1..=snapshot_end].iter().all(|delta| {
+        delta.action == BookAction::Add
+            && RecordFlag::F_SNAPSHOT.matches(delta.flags)
+            && delta.ts_init == first.ts_init
+    }),
+    "catalog opens with an incomplete book snapshot"
+);
 
 let mut book = OrderBook::new(instrument_id, book_type);
 let mut batches = 0;
@@ -234,6 +269,26 @@ catalog = ParquetDataCatalog(str(CATALOG_PATH))
 [instrument] = catalog.instruments(instrument_ids=[str(INSTRUMENT_ID)])
 deltas = catalog.query_order_book_deltas(identifiers=[str(INSTRUMENT_ID)])
 
+if not deltas:
+    raise ValueError("Catalog has no book deltas")
+
+first, last = deltas[0], deltas[-1]
+if first.action != BookAction.CLEAR or not RecordFlag.F_SNAPSHOT.matches(first.flags):
+    raise ValueError("Book deltas do not open with a snapshot")
+if first.ts_init != dt_to_unix_nanos(START) or last.ts_init > dt_to_unix_nanos(END):
+    raise ValueError("Catalog book deltas do not match the selected window")
+if not RecordFlag.F_LAST.matches(last.flags):
+    raise ValueError("Catalog ends with an incomplete book batch")
+
+snapshot_end = next(i for i, delta in enumerate(deltas) if RecordFlag.F_LAST.matches(delta.flags))
+if any(
+    delta.action != BookAction.ADD
+    or not RecordFlag.F_SNAPSHOT.matches(delta.flags)
+    or delta.ts_init != first.ts_init
+    for delta in deltas[1 : snapshot_end + 1]
+):
+    raise ValueError("Catalog opens with an incomplete book snapshot")
+
 book = OrderBook(INSTRUMENT_ID, BOOK_TYPE)
 batches = 0
 
@@ -247,8 +302,19 @@ print(f"Loaded {len(deltas):,} deltas in {batches:,} batches")
 print(book.pprint(3))
 ```
 
-A clean rebuild shows that the returned events form a valid book, not that FinFeed recorded every
-venue event.
+The complete programs also print `Replay input SHA-256`. It covers each delta in replay order
+and these instrument fields:
+
+- Instrument ID, currency, activation time, and expiration time.
+- Price and size increments and the tick scheme.
+- Minimum and maximum quantity, notional, and price.
+
+The fingerprint excludes the metadata fetch time. Compare it with the [reference run](#reference-run)
+to tell whether you replayed the same inputs. Archive the entire catalog to repeat the run if
+FinFeed revises the data or metadata.
+
+A clean rebuild checks the consistency of the recorded events. FinFeed can omit venue events even
+when the book rebuilds cleanly.
 
 ## 5. Configure the backtest
 
@@ -275,6 +341,7 @@ stops.
 | `starting_balances` | 1,000 pUSD           | Cash available for buying shares.                              |
 | `book_type`         | `L2_MBP`             | The matching engine fills orders against the price-level book. |
 | `fee_model`         | Zero maker and taker | This teaching run charges no fees.                             |
+| `latency_model`     | `StaticLatencyModel` | Delays order commands by `ORDER_DELAY_MS` (default 0).         |
 
 | Run setting             | Value                                   | Effect                                                                       |
 | ----------------------- | --------------------------------------- | ---------------------------------------------------------------------------- |
@@ -290,9 +357,12 @@ window the two books are close complements: a No bid at price `p` matches a Yes 
 `1 - p`. The No book gives mostly buy signals, so the Yes book gives mostly sell signals that this
 account cannot fill.
 
-**Simulation limits**: The run assumes zero execution latency and does not model live order
-routing, venue fees, queue position, or settlement. Simulated fills and PnL do not show an edge or
-predict live results.
+`ORDER_DELAY_MS` determines when the simulated exchange can first process an order command.
+With a positive delay, the exchange can process the order against a later book state. A FOK order
+then cancels if the book can no longer fill the whole quantity at its limit price or better.
+
+The simulation omits live routing, venue fees, queue position, and settlement. Its fills and PnL
+do not predict live results.
 
 ```rust tab="Rust"
 let data_engine = DataEngineConfig::builder()
@@ -303,14 +373,18 @@ let engine = BacktestEngineConfig::builder()
     .build();
 
 let fees = MakerTakerFeeModel::zero();
+let order_delay = DurationNanos::from_millis(ORDER_DELAY_MS);
+let latency =
+    StaticLatencyModel::new(DurationNanos::ZERO, order_delay, order_delay, order_delay);
 let venue = BacktestVenueConfig::builder()
     .name(instrument_id.venue.as_str())
     .oms_type(OmsType::Netting)
     .account_type(AccountType::Cash)
-    .base_currency(instrument.quote_currency())
+    .base_currency(instrument.currency)
     .starting_balances(vec!["1000 pUSD".to_string()])
     .book_type(book_type)
     .fee_model(FeeModelAny::MakerTaker(fees))
+    .latency_model(LatencyModelAny::Static(latency))
     .build()?;
 
 let catalog_location = catalog_path.display().to_string();
@@ -341,6 +415,14 @@ let strategy_config = OrderBookImbalanceConfig::builder()
 ```
 
 ```python tab="Python"
+order_delay_ns = ORDER_DELAY_MS * 1_000_000
+latency = StaticLatencyModel(
+    base_latency_nanos=0,
+    insert_latency_nanos=order_delay_ns,
+    update_latency_nanos=order_delay_ns,
+    cancel_latency_nanos=order_delay_ns,
+)
+
 config = BacktestRunConfig(
     engine=BacktestEngineConfig(
         logging=LoggerConfig(stdout_level=LogLevel.ERROR),
@@ -355,6 +437,7 @@ config = BacktestRunConfig(
             starting_balances=["1000 pUSD"],
             book_type=BOOK_TYPE,
             fee_model=MakerTakerFeeModel(maker_rate=Decimal(0), taker_rate=Decimal(0)),
+            latency_model=latency,
         ),
     ],
     data=[
@@ -420,7 +503,8 @@ finally:
 ## 7. Review the results
 
 The Rust program prints the run totals and PnL statistics. The Python program prints the order,
-fill, position, and account reports, then checks that the final position is flat.
+fill, position, and account reports, then checks that the final position is flat. If no position
+opens, it reports that outcome before reading the report columns.
 
 ```rust tab="Rust"
 for result in &results {
@@ -433,6 +517,11 @@ for result in &results {
 ```
 
 ```python tab="Python"
+if positions.empty:
+    raise ValueError(
+        "No positions opened, check the replay window, signal thresholds, and order delay",
+    )
+
 print(orders["status"].value_counts().to_string())
 print(executions.groupby(["order_type", "order_side"]).size().to_string())
 print(
@@ -447,7 +536,6 @@ print(
 )
 print(account[["total", "locked", "free", "currency"]].tail().to_string())
 
-assert not positions.empty, "No positions opened; inspect the selected window and signal"
 assert positions["ts_closed"].notna().all(), "The strategy left an open position"
 assert positions["side"].eq("FLAT").all()
 assert positions["quantity"].map(Decimal).eq(Decimal(0)).all()
@@ -455,19 +543,21 @@ assert positions["quantity"].map(Decimal).eq(Decimal(0)).all()
 
 ### Reference run
 
-Compare the data counts first. If FinFeed refreshes its history or metadata, the data and every
-result below can change.
+Compare the printed replay input SHA-256 with
+`3712f0b79ee56bd8df534acd02c84e4e8f6f838264dea51115c29bcdfc6a5e2b`.
+A different fingerprint means the inputs differ and the results may change. The reference results
+and figures below use a delay of 0 ms.
 
-| Result         | Reference value                                               |
-| -------------- | ------------------------------------------------------------- |
-| Deltas loaded  | 13,901 in 13,777 batches; the 125-delta snapshot is one batch |
-| Window         | 2026-11-02, 20:00:05 to 20:02:00 UTC                          |
-| Orders         | 38, all filled                                                |
-| Order types    | 37 FOK limit orders: 36 buys and one sell; one market sell    |
-| Peak position  | 35 shares                                                     |
-| Average prices | About 0.2562 pUSD to open and 0.2540 pUSD to close            |
-| Realized PnL   | -0.083000 pUSD, with zero fees                                |
-| Final balance  | 999.917000 pUSD                                               |
+| Result        | Reference value                                               |
+| ------------- | ------------------------------------------------------------- |
+| Deltas loaded | 13,901 in 13,777 batches; the 125-delta snapshot is one batch |
+| Window        | 2026-11-02, 20:00:05 to 20:02:00 UTC                          |
+| Orders        | 38, all filled                                                |
+| Order types   | 37 FOK limit orders: 36 buys and one sell; one market sell    |
+| Peak position | 35 shares                                                     |
+| Report prices | Average open 0.2562 pUSD, average close 0.2540 pUSD           |
+| Realized PnL  | -0.083000 pUSD, with zero fees                                |
+| Final balance | 999.917000 pUSD                                               |
 
 The FOK buys build the position one share at a time, and the FOK sell at 20:00:58 reduces it by one
 share. The final market sell closes 35 shares at 20:01:59.913902100 UTC and fills against two bid
@@ -479,8 +569,31 @@ levels:
 | 2     | 20.000000 | 0.2540       |
 
 These levels match the bids that step 4 prints for the final book. The best bid holds only 15
-shares, so most of the order fills below it. A successful replay shows that the data pipeline
-works, not that this strategy is profitable.
+shares, so most of the order fills below it. The average price for the market sell alone is about
+0.25443 pUSD.
+
+### Compare order delays
+
+Set `ORDER_DELAY_MS` to 100 in either program and rerun it against the same catalog. This is an
+illustrative delay. The historical data does not measure how long a live order takes to reach
+Polymarket. Both programs report total orders and PnL. Use the Python order report for the FOK
+breakdown.
+
+| Result              | 0 ms           | 100 ms         |
+| ------------------- | -------------- | -------------- |
+| Total orders        | 38             | 37             |
+| FOK orders          | 37             | 36             |
+| FOK orders filled   | 37             | 35             |
+| FOK orders canceled | 0              | 1              |
+| Realized PnL        | -0.083000 pUSD | -0.079000 pUSD |
+
+At 20:01:04.413080500 UTC, the strategy submits a one-share FOK buy at the best ask of
+0.2560 pUSD. At zero delay, it fills immediately. With 100 ms of delay, the replay processes the
+order at 20:01:04.521425600 UTC, when the best ask is 0.2580 pUSD. The ask exceeds the limit
+price, so the order cancels unfilled.
+
+Both runs close their position. The delay changes which orders fill and the position the strategy
+holds before the close.
 
 ### Figures
 
@@ -516,7 +629,8 @@ size with the larger size.
 
 ## Regenerate the figures
 
-From a source checkout, with a Chrome-compatible browser for Kaleido:
+Set `ORDER_DELAY_MS` to 0 in the Python program to reproduce the reference figures. Run the
+renderer from a source checkout with a Chrome-compatible browser for Kaleido.
 
 ```bash
 uv run --project python --no-sync --with pandas --with plotly --with kaleido \
@@ -525,6 +639,25 @@ uv run --project python --no-sync --with pandas --with plotly --with kaleido \
 
 The renderer runs the Python program, so it reuses the catalog or downloads the data as in step 2.
 Its docstring gives the command that installs a browser for Kaleido.
+
+## Use another outcome or window
+
+If FinFeed no longer serves the reference window or you want to try another market, find a
+Polymarket outcome with `get_listings` in the [FinFeed REST guide](../integrations/finfeed.md#python-rest-access).
+Use its FinFeed outcome ID, ending in `_YES` or `_NO`.
+
+Update `MARKET_ID`, the start, and the end in step 1. Pick a window before the instrument's
+expiration. Start at or after a book snapshot in the same UTC hour. Give the new window its own
+catalog path so the program collects the matching definition and deltas. If the strategy opens no
+position, compare the fills at zero delay and check the signal thresholds against the book sizes.
+
+With a positive delay, the strategy needs book updates that advance the replay clock beyond the
+last signal by at least `ORDER_DELAY_MS`. A pending order can otherwise fill after the strategy
+has tried to close its position. Check that the Python position report ends flat. If it leaves
+an open position, extend the replay past the last signal and use a new catalog.
+
+Leave more than `ORDER_DELAY_MS` between the final book update and expiration so the closing
+market order can reach the simulated exchange before trading stops.
 
 [rust-program]: https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/tutorials/src/bin/finfeed_polymarket_book_imbalance.rs
 [python-program]: https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/backtest/finfeed_polymarket_book_imbalance.py
