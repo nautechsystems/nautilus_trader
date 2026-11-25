@@ -870,7 +870,40 @@ page, with a cap of 500 pages per read. Reaching the cap logs a warning:
   `LimitIfTouched` order, so the row fails naming both prices. An open row fails the read; a closed
   row is skipped and leaves the set incomplete.
 - An executions frame states the order's price only when it carries `limit_price`, never at a
-  fill price.
+  fill price. Its trigger is `triggers.price` when `triggers.price_type` is `static`, tracking the
+  `last` or `index` price. A relative or trailing trigger reads as none. A frame without
+  `order_type` reads the trigger of an order the node submitted by the type it was submitted as.
+
+#### Orders placed outside the node
+
+The executions channel covers the whole account, so an order another client places while the node
+runs reaches the adapter as an order it does not track. Kraken states the order's side, type,
+quantity, limit, and trigger on its `pending_new` frame and only some of them on later frames.
+The adapter keeps these terms, including GTD expiry and iceberg display quantity when present,
+by venue order ID until the order's `filled`, `canceled`, or `expired` frame. It keeps at most
+10,000 orders and drops the oldest first. Later reports use the retained terms:
+
+- `pending_new` reports `ACCEPTED`, so the engine creates the external order.
+- Once a frame reports the order triggered, a later frame that states the order open reports
+  `TRIGGERED` until the order has a fill.
+- A valid `trade` frame reports its status and fill together. The reported fill quantity and
+  average price use the trades the stream delivered. A failed parse leaves the trade available
+  for a valid replay or REST reconciliation.
+- Reports use `FILLED` when the stream accounts for the full order quantity. REST reconciliation
+  can supply fills from before the stream first observed the order or during a disconnect.
+
+The execution client resubscribes with `snap_orders` after a WebSocket reconnect. Kraken restates
+each open order's side, type, quantity, and limit. An entry refreshes the retained terms or
+initializes an order the stream first sees in the snapshot. The snapshot supplies order terms.
+Fills missed during the gap stay eligible for REST reconciliation under their venue trade IDs.
+The initial connection omits the snapshot and clears terms from any prior session.
+
+Each frame reports alone, and a trade's fill arrives as its own report, for an order the adapter
+keeps nothing of or one the engine cannot rebuild from its `pending_new` frame or snapshot entry.
+That covers orders open before the node connected, including orders resting across a restart,
+until a reconnect restates them, orders whose trigger `price_type` is not `static`,
+take-profit-limit orders whose trigger sits above a buy limit or below a sell limit, and GTD
+orders whose expiry is absent.
 
 #### Fill reports
 

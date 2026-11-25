@@ -1753,6 +1753,23 @@ impl KrakenSpotWebSocketClient {
         snap_orders: bool,
         snap_trades: bool,
     ) -> Result<(), KrakenWsError> {
+        self.subscribe_executions_with_replay(snap_orders, snap_trades, false)
+            .await
+    }
+
+    pub(crate) async fn subscribe_executions_for_reconciliation(
+        &self,
+    ) -> Result<(), KrakenWsError> {
+        self.subscribe_executions_with_replay(false, false, true)
+            .await
+    }
+
+    async fn subscribe_executions_with_replay(
+        &self,
+        snap_orders: bool,
+        snap_trades: bool,
+        recover_open_orders: bool,
+    ) -> Result<(), KrakenWsError> {
         let req_id = self.get_next_req_id();
 
         let token = self.auth_token().await.ok_or_else(|| {
@@ -1779,6 +1796,11 @@ impl KrakenSpotWebSocketClient {
         };
 
         let payload = self.send_command(&request).await?;
+        let payload = if recover_open_orders {
+            request_order_snapshot_in_payload(payload.expose_secret())?
+        } else {
+            payload
+        };
 
         let key = "executions";
         if self.subscriptions.add_reference(key) {
@@ -2164,6 +2186,20 @@ fn update_auth_token_in_payload(
 
     if let Some(params) = value.get_mut("params") {
         params["token"] = serde_json::Value::String(new_token.to_string());
+    }
+
+    serde_json::to_string(&value)
+        .map(SecretString::from)
+        .map_err(|e| KrakenWsError::JsonError(e.to_string()))
+}
+
+/// Returns an executions subscribe `payload` that requests a snapshot of the open orders.
+fn request_order_snapshot_in_payload(payload: &str) -> Result<SecretString, KrakenWsError> {
+    let mut value: serde_json::Value =
+        serde_json::from_str(payload).map_err(|e| KrakenWsError::JsonError(e.to_string()))?;
+
+    if let Some(params) = value.get_mut("params") {
+        params["snap_orders"] = serde_json::Value::Bool(true);
     }
 
     serde_json::to_string(&value)
@@ -3028,6 +3064,25 @@ mod tests {
             .await
             .expect_err("generic unsubscribe must reject Level3");
         assert!(matches!(err, KrakenWsError::InvalidMessage(_)));
+    }
+
+    /// An executions subscribe replayed after a reconnect asks for the open orders and keeps its
+    /// other params.
+    #[rstest]
+    fn test_request_order_snapshot_in_payload_for_executions() {
+        let original = r#"{"method":"subscribe","params":{"channel":"executions","token":"T","snap_orders":false,"snap_trades":false},"req_id":7}"#;
+
+        let rewritten = request_order_snapshot_in_payload(original).unwrap();
+
+        let value: serde_json::Value = serde_json::from_str(rewritten.expose_secret()).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "method": "subscribe",
+                "params": {"channel": "executions", "token": "T", "snap_orders": true, "snap_trades": false},
+                "req_id": 7,
+            })
+        );
     }
 
     #[rstest]
