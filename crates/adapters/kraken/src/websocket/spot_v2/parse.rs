@@ -654,7 +654,10 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::{common::consts::KRAKEN_VENUE, websocket::spot_v2::messages::KrakenWsRawMessage};
+    use crate::{
+        common::consts::KRAKEN_VENUE,
+        websocket::spot_v2::messages::{KrakenWsOrderResponseResult, KrakenWsRawMessage},
+    };
 
     const TS: UnixNanos = UnixNanos::new(1_700_000_000_000_000_000);
 
@@ -1163,16 +1166,16 @@ mod tests {
                 assert_eq!(resp.method, KrakenWsMethod::BatchAdd);
                 assert_eq!(resp.req_id, Some(1_234_567_890));
                 assert!(resp.success);
-                let orders = resp
-                    .result
-                    .and_then(|r| r.orders)
-                    .expect("per-order results");
+
+                let Some(KrakenWsOrderResponseResult::Batch(orders)) = resp.result else {
+                    panic!("Expected batch results array");
+                };
+
                 let order_ids: Vec<_> = orders.iter().map(|o| o.order_id.as_deref()).collect();
                 assert_eq!(
                     order_ids,
                     [Some("ORDERX-IDXXX-XXXXX1"), Some("ORDERX-IDXXX-XXXXX2")]
                 );
-                assert!(orders.iter().all(|o| o.success.is_none()));
             }
             other => panic!("expected OrderResponse, was {other:?}"),
         }

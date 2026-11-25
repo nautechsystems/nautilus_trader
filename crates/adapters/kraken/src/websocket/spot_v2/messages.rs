@@ -320,44 +320,31 @@ pub struct KrakenWsOrderResponse {
     /// Error message when `success` is `false`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
-    /// Result payload when `success` is `true`. Kraken returns a `batch_add` result as an array,
-    /// read into [`KrakenWsOrderResult::orders`].
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_order_result"
-    )]
-    pub result: Option<KrakenWsOrderResult>,
+    /// Result payload when `success` is `true`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<KrakenWsOrderResponseResult>,
 }
 
-/// Reads an order response `result`: an object for a single-order method, or the per-order array
-/// Kraken returns for `batch_add`.
-fn deserialize_order_result<'de, D>(
-    deserializer: D,
-) -> Result<Option<KrakenWsOrderResult>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    match Option::<Value>::deserialize(deserializer)? {
-        None | Some(Value::Null) => Ok(None),
-        Some(value @ Value::Array(_)) => serde_json::from_value(value)
-            .map(|orders| {
-                Some(KrakenWsOrderResult {
-                    order_id: None,
-                    cl_ord_id: None,
-                    order_userref: None,
-                    warning: None,
-                    orders: Some(orders),
-                })
-            })
-            .map_err(serde::de::Error::custom),
-        Some(value) => serde_json::from_value(value)
-            .map(Some)
-            .map_err(serde::de::Error::custom),
+/// Wire shapes for order-method results.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum KrakenWsOrderResponseResult {
+    /// Kraken's `batch_add` result, including an empty array.
+    Batch(Vec<KrakenWsBatchOrderAck>),
+    /// Single-order result or legacy batch result with nested `orders`.
+    Order(KrakenWsOrderResult),
+}
+
+impl KrakenWsOrderResponseResult {
+    pub(crate) fn order(&self) -> Option<&KrakenWsOrderResult> {
+        match self {
+            Self::Order(result) => Some(result),
+            Self::Batch(_) => None,
+        }
     }
 }
 
-/// Result payload of an order-method response. A `batch_add` result fills only `orders`.
+/// Object-shaped result for an order-method response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KrakenWsOrderResult {
     /// Kraken-assigned order ID.
@@ -377,20 +364,32 @@ pub struct KrakenWsOrderResult {
     pub orders: Option<Vec<KrakenWsBatchOrderResult>>,
 }
 
-/// Per-order outcome within a `batch_add` response. Kraken documents no per-order `success`; the
-/// response envelope carries it.
+/// Per-order outcome in a legacy `batch_add` result object.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KrakenWsBatchOrderResult {
-    /// Whether this individual order succeeded, when the response states it per order.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub success: Option<bool>,
+    /// Whether this individual order succeeded.
+    pub success: bool,
     /// Kraken-assigned order ID.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_id: Option<String>,
-    /// Client-assigned order ID.
+    /// Client-assigned order ID echoed back.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cl_ord_id: Option<String>,
     /// Error message (present when `success` is `false`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Per-order acknowledgment in Kraken's `batch_add` result array.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KrakenWsBatchOrderAck {
+    /// Kraken-assigned order ID when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_id: Option<String>,
+    /// Client-assigned order ID echoed back.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cl_ord_id: Option<String>,
+    /// Error detail when present.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
@@ -1161,7 +1160,10 @@ mod tests {
         assert!(response.success);
         assert!(response.error.is_none());
 
-        let result = response.result.expect("Expected result");
+        let Some(KrakenWsOrderResponseResult::Order(result)) = response.result else {
+            panic!("Expected object result");
+        };
+
         assert_eq!(result.order_id.as_deref(), Some("OABCDE-12345-FGHIJ"));
         assert_eq!(result.cl_ord_id.as_deref(), Some("O-20260505-000001"));
         assert_eq!(result.order_userref, Some(0));
@@ -1190,16 +1192,19 @@ mod tests {
         assert_eq!(response.req_id, Some(45));
         assert!(response.success);
 
-        let result = response.result.expect("Expected result");
+        let Some(KrakenWsOrderResponseResult::Order(result)) = response.result else {
+            panic!("Expected object result");
+        };
+
         let orders = result.orders.expect("Expected orders");
         assert_eq!(orders.len(), 2);
 
-        assert_eq!(orders[0].success, Some(true));
+        assert!(orders[0].success);
         assert_eq!(orders[0].order_id.as_deref(), Some("O1"));
         assert_eq!(orders[0].cl_ord_id.as_deref(), Some("O-A"));
         assert!(orders[0].error.is_none());
 
-        assert_eq!(orders[1].success, Some(false));
+        assert!(!orders[1].success);
         assert!(orders[1].order_id.is_none());
         assert_eq!(orders[1].cl_ord_id.as_deref(), Some("O-B"));
         assert_eq!(orders[1].error.as_deref(), Some("EOrder:Invalid price"));

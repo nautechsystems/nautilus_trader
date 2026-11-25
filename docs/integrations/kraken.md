@@ -702,12 +702,12 @@ For Spot margin orders, use REST as described under [Spot margin trading](#spot-
 A same-instrument order list goes out as one `batch_add` request, and Kraken
 returns its results in request order. The adapter accepts an order whose
 result carries a venue order ID, matching the result by the client order ID
-Kraken echoes or, when the response holds exactly one result per order, by
-position. When the response carries results, an order whose result has no
-venue order ID or has an error, or that no result names, stays in flight until
-the executions stream or reconciliation resolves it. When the response reports
-that the batch failed and carries no results, each order is rejected with
-Kraken's error.
+Kraken echoes. The adapter matches by position when the response holds exactly
+one result per order and every echoed ID agrees with its position. An order
+stays in flight when the result array does not identify it, has no venue order
+ID for it, or includes an error for it. The executions stream or reconciliation
+resolves those orders. When the response reports a batch failure without a result
+array or any per-order results, each order is rejected with Kraken's error.
 
 The per-call `params={"use_ws_trade": False}` override forces a single
 command through REST regardless of the configured default. Set it on
