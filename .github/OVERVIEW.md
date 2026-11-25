@@ -17,8 +17,6 @@ integration, scheduled checks, and publication.
   large test data set.
 - [`generate-sbom-retry`](actions/generate-sbom-retry/action.yml): retries SPDX SBOM generation
   after transient failures.
-- [`install-capnp`](actions/install-capnp/action.yml): installs the Cap'n Proto compiler across
-  supported platforms.
 - [`publish-wheels`](actions/publish-wheels/action.yml): publishes wheels and maintains the
   Cloudflare R2 package index.
 - [`upload-artifact-wheel`](actions/upload-artifact-wheel/action.yml): uploads wheel artifacts to

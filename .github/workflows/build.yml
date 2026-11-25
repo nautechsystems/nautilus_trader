@@ -1189,7 +1189,6 @@ jobs:
           free-disk-space: "true"
           uv-cache-enabled: "false"
           prek-cache-enabled: "false"
-          capnp-cache-enabled: "false"
           rust-cache-enabled: "false"
           rust-cache-save-if: "false"
 
@@ -1381,7 +1380,6 @@ jobs:
           free-disk-space: "true"
           uv-cache-enabled: "false"
           prek-cache-enabled: "false"
-          capnp-cache-enabled: "false"
           rust-cache-enabled: "false"
 
       - name: Build sdist
@@ -1647,7 +1645,6 @@ jobs:
           build-type: "release"
           uv-cache-enabled: "false"
           prek-cache-enabled: "false"
-          capnp-cache-enabled: "false"
           rust-cache-enabled: "false"
           rust-cache-save-if: "false"
 

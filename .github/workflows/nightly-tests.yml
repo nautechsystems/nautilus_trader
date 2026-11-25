@@ -345,7 +345,6 @@ jobs:
           free-disk-space: "true"
           uv-cache-enabled: "false"
           prek-cache-enabled: "false"
-          capnp-cache-enabled: "false"
           rust-cache-enabled: "false"
           rust-cache-save-if: "false"
 

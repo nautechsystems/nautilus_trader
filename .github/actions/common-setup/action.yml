@@ -52,10 +52,6 @@ inputs:
       auto (enabled on GitHub-hosted runners, disabled on self-hosted runners).
     required: false
     default: "auto"
-  capnp-cache-enabled:
-    description: Whether to restore/save the Cap'n Proto compiler cache
-    required: false
-    default: "true"
 
 runs:
   using: "composite"
@@ -138,12 +134,6 @@ runs:
         sudo apt-get install -y python3-dev libpython3-dev -o Acquire::Retries=5
         sudo apt-get clean
         sudo rm -rf /var/lib/apt/lists/*
-
-    - name: Install Cap'n Proto
-      # Depot Windows/ARM runners need ./ until they support runner >=2.336.0
-      uses: ./.github/actions/install-capnp # zizmor: ignore[self-repository]
-      with:
-        cache-enabled: ${{ inputs.capnp-cache-enabled }}
 
     # > --------------------------------------------------
     # > Rust
