@@ -1151,7 +1151,7 @@ fn test_futures_partial_fill_does_not_double_count_via_delta_and_fill() {
         UnixNanos::default(),
     );
 
-    // Drain placement Accepted (1) + the fill OrderFilled (1) — no spurious OrderUpdated.
+    // Drain placement Accepted (1) + the fill OrderFilled (1) - no spurious OrderUpdated.
     let events = drain_events(&mut rx);
     assert_eq!(events.len(), 2);
     assert!(matches!(
