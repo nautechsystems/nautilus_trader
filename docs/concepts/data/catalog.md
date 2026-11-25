@@ -435,8 +435,8 @@ transitive `chrono-tz` 0.10.4 database (IANA 2025b). Rust core time-zone operati
 with its bundled IANA 2026e database. Zone results can differ when zone rules change or historical
 data is corrected after 2025b until DataFusion migrates.
 
-If RustSec files unmaintained advisories for `chrono` or `chrono-tz`, maintain matching documented
-ignores in `.cargo/audit.toml` and `deny.toml` until DataFusion migrates.
+Maintain the `chrono` and `chrono-tz` unmaintained advisory exceptions in `.cargo/audit.toml` and
+`osv-scanner.toml` until DataFusion migrates.
 :::
 
 ## Catalog operations

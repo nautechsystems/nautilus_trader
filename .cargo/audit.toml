@@ -1,14 +1,8 @@
 # cargo-audit configuration
 # https://github.com/rustsec/rustsec/blob/main/cargo-audit/audit.toml.example
 #
-# Mirrors deny.toml [advisories] ignore list, plus advisories that cargo-audit
-# surfaces but cargo-deny does not match against the resolved feature graph:
-#   - RUSTSEC-2024-0388 (derivative, unmaintained via alloy-primitives -> ruint -> ark-ff)
-#
-# Chrono and chrono-tz remain transitive via Arrow/DataFusion; object_store also
-# depends on chrono. Core time zones use jiff with bundled data. Their
-# unmaintained advisories are ignored below and in deny.toml and osv-scanner.toml
-# pending upstream migration.
+# cargo-audit scans lockfiles. cargo-deny uses the resolved dependency graph to
+# enforce unmaintained advisories for direct dependencies.
 
 [advisories]
 ignore = [

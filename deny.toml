@@ -15,42 +15,14 @@ feature-depth = 1
 # Security Advisories
 # =============================================================================
 [advisories]
-unmaintained = "all"
+unmaintained = "workspace"
 unused-ignored-advisory = "deny"
 # Ignored advisories (use sparingly - document the reason)
 ignore = [
-  # paste unmaintained, transitive via alloy
-  # TODO: Monitor https://github.com/alloy-rs/alloy for migration to pastey or alternative
-  { id = "RUSTSEC-2024-0436", reason = "paste unmaintained, transitive via alloy" },
-
-  # unsafe-libyaml is build-only via dydx-proto -> tonic-buf-build -> serde_yaml,
-  # YAML parsing runs only when V4_PROTO_REBUILD requests protobuf regeneration.
-  # No fixed release exists; remove this exception when upstream replaces the parser
-  { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml unmaintained, build-only via dydx-proto, parsing requires V4_PROTO_REBUILD" },
-
-  # unic-* unmaintained, transitive via pyo3-stub-gen -> rustpython-parser (dev tool only).
-  # TODO: Monitor https://github.com/Jij-Inc/pyo3-stub-gen for migration away from rustpython-parser
-  { id = "RUSTSEC-2025-0075", reason = "unic-char-range unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
-  { id = "RUSTSEC-2025-0080", reason = "unic-common unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
-  { id = "RUSTSEC-2025-0081", reason = "unic-char-property unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
-  { id = "RUSTSEC-2025-0090", reason = "unic-emoji-char unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
-  { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
-  { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
-
   # crypto-bigint timing leaks affect secret arithmetic in transaction signing.
   # Alloy and cosmrs require k256 0.13 -> elliptic-curve 0.13 -> crypto-bigint 0.5.
   # Accept this risk until upstream permits crypto-bigint >=0.7.6 or backports the fix.
   { id = "RUSTSEC-2026-0387", reason = "crypto-bigint timing leaks in signing, accepted pending an upstream-compatible fix" },
-
-  # Arrow/DataFusion and object_store retain these unmaintained dependencies,
-  # no fixed releases exist; remove the ignores when upstream migrates.
-  { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained, transitive via Arrow/DataFusion and object_store, no fixed release" },
-  { id = "RUSTSEC-2026-0555", reason = "chrono-tz unmaintained, transitive via Arrow/DataFusion, no fixed release" },
-  { id = "RUSTSEC-2026-0542", reason = "humantime unmaintained, transitive via object_store, no fixed release" },
-
-  # NOTE: lockfile scanners also flag RUSTSEC-2024-0388 (derivative), which cargo-deny
-  # does not surface. Its scanner-specific ignores are in .cargo/audit.toml and
-  # osv-scanner.toml.
 ]
 
 # =============================================================================
@@ -129,7 +101,7 @@ external-default-features = "allow"
 allow = []
 
 # Explicitly denied crates
-deny = []
+deny = [{ crate = "ring", use-instead = "aws-lc-rs" }]
 
 # Skip certain crates during duplicate detection.
 # These are transitive duplicates from upstream crates outside our control.
