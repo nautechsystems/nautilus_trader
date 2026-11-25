@@ -204,6 +204,7 @@ Released on TBD (UTC).
 - Fixed daily return statistics losing tiny values or reporting dispersion for constant returns
 - Fixed trade PnL statistics counting closes that a fill void changed or removed
 - Fixed trade PnL statistics dropping NETTING cycles that share a close time
+- Fixed unnecessary rebuilds of vendored `nautilus-core` (#5757), thanks for reporting @jmmaloney4
 - Fixed Architect AX funding subscriptions publishing the oldest rate in the lookback window
 - Fixed Architect AX order history requests failing on an empty page with a continuation cursor
 - Fixed Betfair instrument loading failures when a runner name is missing (#5718), thanks for reporting @nstkhv

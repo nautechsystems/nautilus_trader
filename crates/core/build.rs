@@ -18,13 +18,11 @@
 //! This script propagates version information through the `NAUTILUS_VERSION` and
 //! `NAUTILUS_USER_AGENT` compile-time environment variables.
 
-use std::path::PathBuf;
+use std::path::Path;
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=Cargo.toml");
-    println!("cargo:rerun-if-changed=../Cargo.toml");
-    println!("cargo:rerun-if-changed=../../python/pyproject.toml");
 
     // The Python manifest is unavailable when this crate builds from a published package
     let nautilus_version = "2.0.0";
@@ -42,22 +40,18 @@ fn main() {
 }
 
 fn try_read_pyproject_version() -> Option<String> {
-    let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let path = crate_dir
-        .parent()
-        .and_then(|p| p.parent())
-        .map(|p| p.join("python/pyproject.toml"))?;
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let path = Path::new("../../python/pyproject.toml");
 
-    if path.exists()
-        && let Ok(contents) = std::fs::read_to_string(path)
-        && let Ok(value) = toml::from_str::<toml::Value>(&contents)
-        && let Some(version) = value
-            .get("project")
-            .and_then(|p| p.get("version"))
-            .and_then(|v| v.as_str())
-    {
-        return Some(version.to_string());
+    // In a vendor directory, the relative path can point into the downstream project
+    if !crate_dir.ends_with("crates/core") || !path.is_file() {
+        return None;
     }
 
-    None
+    println!("cargo:rerun-if-changed={}", path.display());
+
+    let contents = std::fs::read_to_string(path).ok()?;
+    let value = toml::from_str::<toml::Value>(&contents).ok()?;
+    let version = value.get("project")?.get("version")?.as_str()?;
+    Some(version.to_owned())
 }
