@@ -650,6 +650,10 @@ const FUTURES_MONTH_CODES: &[(char, &str)] = &[
 ];
 
 /// Returns the venue `symbol_to_mic_venue` maps the contract's symbol to, by prefix match.
+///
+/// When several prefixes match (for example `SP` and `SPY` for the symbol `SPY`), the longest
+/// prefix wins. The map is unordered, so without this the result would depend on hash iteration
+/// order and could differ from run to run.
 #[must_use]
 pub fn symbol_mic_venue(
     contract: &Contract,
@@ -658,7 +662,8 @@ pub fn symbol_mic_venue(
     let symbol = contract.symbol.as_str();
     symbol_to_mic_venue
         .iter()
-        .find(|(symbol_prefix, _)| symbol.starts_with(symbol_prefix.as_str()))
+        .filter(|(symbol_prefix, _)| symbol.starts_with(symbol_prefix.as_str()))
+        .max_by_key(|(symbol_prefix, _)| symbol_prefix.len())
         .map(|(_, symbol_venue)| symbol_venue.clone())
 }
 
@@ -1384,6 +1389,7 @@ mod tests {
 
     use super::{
         Symbology, exchange_to_mic_venue, instrument_id_to_contract, possible_exchanges_for_venue,
+        symbol_mic_venue,
     };
     use crate::config::SymbologyMethod;
 
@@ -1719,6 +1725,32 @@ mod tests {
     #[rstest]
     fn test_opra_route_does_not_create_reverse_smart_mapping() {
         assert_eq!(exchange_to_mic_venue("SMART"), None);
+    }
+
+    #[rstest]
+    fn test_overlapping_symbol_prefixes_resolve_to_the_longest_match() {
+        let contract = Contract {
+            symbol: Symbol::from("SPY"),
+            security_type: SecurityType::Stock,
+            ..Default::default()
+        };
+
+        // `symbol_mic_venue` takes a std `HashMap`, whose `RandomState` cannot be seeded,
+        // so each map below gets a random iteration order. The fix is order-independent,
+        // so this cannot flake. The old first-match code would pass only if all 64 maps
+        // happened to iterate `SPY` first.
+        for _ in 0..64 {
+            let overrides = std::collections::HashMap::from([
+                ("SP".to_string(), "SHORT".to_string()),
+                ("SPY".to_string(), "LONG".to_string()),
+                ("S".to_string(), "SHORTER".to_string()),
+            ]);
+
+            assert_eq!(
+                symbol_mic_venue(&contract, &overrides),
+                Some("LONG".to_string())
+            );
+        }
     }
 
     #[rstest]
