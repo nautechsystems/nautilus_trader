@@ -48,7 +48,11 @@ printf '%s\n' \
   '' \
   'set -euo pipefail' \
   '' \
-  'printf "rustflags=%s args=%s\n" "${RUSTFLAGS:-}" "$*" >> "${CARGO_LOG:?}"' > "$MOCK_BIN/cargo"
+  'printf "rustflags=%s args=%s\n" "${RUSTFLAGS:-}" "$*" >> "${CARGO_LOG:?}"' \
+  'if [ -n "${CARGO_PLATFORM_LOG:-}" ]; then' \
+  '  printf "%s\n" "${CARGO_BUILD_TARGET:-}" "${CARGO_TARGET_DIR:-}" "${SDKROOT:-}" "${PYO3_CROSS_PYTHON_VERSION:-}" > "$CARGO_PLATFORM_LOG"' \
+  'fi' \
+  'exit "${CARGO_EXIT_STATUS:-0}"' > "$MOCK_BIN/cargo"
 
 chmod +x "$MOCK_BIN/uv" "$MOCK_BIN/cargo"
 
@@ -133,6 +137,43 @@ isolated_commands=$(make -C "$REPO_ROOT" -n --no-print-directory pytest-isolated
   fail "Python isolation must only check the existing build with adapter variables unset"
 [[ "$pre_flight_recipe" != *'cargo-test-doc'* ]] ||
   fail "Pre-flight still runs Rust doctests"
+
+sdk_dir="$CASE_ROOT/macOS SDK"
+mkdir -p "$sdk_dir"
+run_macos_check() (
+  unset CARGO_BUILD_TARGET SDKROOT PYO3_CROSS_PYTHON_VERSION
+  : > "$CARGO_LOG"
+  PATH="$MOCK_BIN:$PATH" CARGO_LOG="$CARGO_LOG" CARGO_PLATFORM_LOG="$CASE_ROOT/platform.log" \
+    "$MAKE_BIN" -C "$REPO_ROOT" --no-print-directory MAKE="\"$MAKE_BIN\" -o check-cargo-cooldown" \
+    TARGET_DIR="$TARGET_DIR" CARGO_TARGET_DIR="$TARGET_DIR" check-all-targets-macos "$@"
+)
+
+skip_output=$(run_macos_check HOST_OS=Linux MACOS_SDKROOT=)
+[[ "$skip_output" == *'Set MACOS_SDKROOT to enable it on Linux.'* && ! -s "$CARGO_LOG" ]] ||
+  fail "An unconfigured Linux host did not report the macOS check skip"
+if run_macos_check HOST_OS=Linux "MACOS_SDKROOT=$CASE_ROOT/missing-sdk" > /dev/null 2>&1; then
+  fail "The macOS check accepted a missing configured SDK"
+fi
+[[ ! -s "$CARGO_LOG" ]] || fail "A missing configured SDK reached Cargo"
+
+run_macos_check HOST_OS=Linux "MACOS_SDKROOT=$sdk_dir" \
+  CARGO_BUILD_TARGET=host-tuple "SDKROOT=$CASE_ROOT/host-sdk" PYO3_CROSS_PYTHON_VERSION=3.15 > /dev/null
+printf '%s\n' aarch64-apple-darwin "$TARGET_DIR/macos" "$sdk_dir" 3.13 > "$CASE_ROOT/expected-platform.log"
+cmp -s "$CASE_ROOT/platform.log" "$CASE_ROOT/expected-platform.log" ||
+  fail "The Linux macOS check did not use the isolated target, SDK, and Python configuration"
+grep -Fq 'args=clippy --locked --workspace --all-targets' "$CARGO_LOG" ||
+  fail "The macOS check did not lint all workspace targets"
+if CARGO_EXIT_STATUS=17 run_macos_check HOST_OS=Linux "MACOS_SDKROOT=$sdk_dir" > /dev/null 2>&1; then
+  fail "The macOS check did not propagate a Clippy failure"
+fi
+grep -Fq 'args=clippy --locked --workspace --all-targets' "$CARGO_LOG" ||
+  fail "The macOS failure test did not reach Clippy"
+
+run_macos_check HOST_OS=Darwin MACOS_SDKROOT= CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu \
+  SDKROOT= PYO3_CROSS_PYTHON_VERSION= > /dev/null
+printf '%s\n' host-tuple "$TARGET_DIR/macos" '' '' > "$CASE_ROOT/expected-platform.log"
+cmp -s "$CASE_ROOT/platform.log" "$CASE_ROOT/expected-platform.log" ||
+  fail "The native macOS check did not use the isolated cache with the host configuration"
 
 for workflow in build.yml test.yml; do
   if grep -Fq 'make cargo-test-doc' "$REPO_ROOT/.github/workflows/$workflow"; then
@@ -490,8 +531,43 @@ printf '%s\n' \
   '' \
   'set -euo pipefail' \
   '' \
-  'printf "%s\n" "$*" >> "${MAKE_LOG:?}"' > "$MOCK_BIN/make"
+  'printf "%s\n" "$*" >> "${MAKE_LOG:?}"' \
+  'if [ -n "${MAKE_FAIL_TARGET:-}" ] && [ "${2:-}" = "$MAKE_FAIL_TARGET" ]; then' \
+  '  exit 17' \
+  'fi' > "$MOCK_BIN/make"
 chmod +x "$MOCK_BIN/git" "$MOCK_BIN/make"
+
+run_pre_flight() {
+  : > "$MAKE_LOG"
+  MAKE_LOG="$MAKE_LOG" MAKE_FAIL_TARGET="${2:-}" \
+    "$MAKE_BIN" -C "$REPO_ROOT" --no-print-directory MAKE="$MOCK_BIN/make" HOST_OS="$1" \
+    pre-flight-steps > /dev/null 2>&1
+}
+
+pre_flight_lint_steps() {
+  sed -n '/^--no-print-directory check-cargo-cooldown$/,/^--no-print-directory check-code-sim$/p' \
+    "$MAKE_LOG" | awk '{print $2}'
+}
+
+run_pre_flight Linux
+grep -Fxq -- '--no-print-directory check-jiff-features' "$MAKE_LOG" ||
+  fail "Pre-flight did not check the workspace's resolved Jiff features"
+[[ "$(pre_flight_lint_steps)" == $'check-cargo-cooldown\ncheck-all-targets\nruff\ncheck-all-targets-macos\ncheck-code-sim' ]] ||
+  fail "Linux pre-flight does not run the host and macOS checks in order before DST linting"
+grep -Fxq -- '--no-print-directory check-all-targets CARGO_BUILD_TARGET=host-tuple EXTRA_FEATURES=hypersync,nautilus-common/sbe' "$MAKE_LOG" ||
+  fail "Pre-flight did not check all host targets with HyperSync and SBE"
+
+run_pre_flight Darwin
+[[ "$(pre_flight_lint_steps)" == $'check-cargo-cooldown\ncheck-all-targets\nruff\ncheck-code-sim' ]] ||
+  fail "macOS pre-flight did not run a single native all-targets check before DST linting"
+
+for target in check-jiff-features check-all-targets ruff check-all-targets-macos; do
+  pre_flight_status=0
+  run_pre_flight Linux "$target" || pre_flight_status=$?
+  [[ "$pre_flight_status" -eq 2 ]] || fail "Pre-flight did not propagate the $target failure"
+  last_target=$(tail -n 1 "$MAKE_LOG" | awk '{print $2}')
+  [[ "$last_target" == "$target" ]] || fail "Pre-flight did not stop at $target"
+done
 
 : > "$GIT_LOG"
 : > "$MAKE_LOG"

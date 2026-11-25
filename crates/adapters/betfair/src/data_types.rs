@@ -550,7 +550,8 @@ mod tests {
                 .is_null(0)
         );
 
-        let decoded = BetfairTicker::decode_data_batch(schema.metadata(), batch).unwrap();
+        let decoded = BetfairTicker::decode_data_batch(&schema.metadata().into(), batch).unwrap();
+
         let Data::Custom(custom) = &decoded[0] else {
             panic!("expected custom data");
         };

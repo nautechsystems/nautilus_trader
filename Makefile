@@ -480,6 +480,30 @@ check-all-targets: check-cargo-cooldown  #-- Run clippy on all targets including
 	@cargo clippy --locked --workspace --all-targets --features "$(CARGO_FEATURES),examples" --profile nextest -- -D warnings
 	@printf "$(GREEN)All-targets check passed$(RESET)\n"
 
+.PHONY: check-all-targets-macos
+check-all-targets-macos:  #-- Check all Rust targets for macOS (Linux requires MACOS_SDKROOT)
+ifeq ($(HOST_OS),Darwin)
+	@$(MAKE) --no-print-directory check-all-targets \
+		CARGO_BUILD_TARGET=host-tuple CARGO_TARGET_DIR="$(TARGET_DIR)/macos"
+else ifeq ($(HOST_OS),Linux)
+ifneq ($(strip $(MACOS_SDKROOT)),)
+	@if [ ! -d "$$MACOS_SDKROOT" ]; then \
+		printf 'macOS SDK directory not found: %s\n' "$$MACOS_SDKROOT" >&2; \
+		exit 1; \
+	fi
+	@CC_aarch64_apple_darwin="$${CC_aarch64_apple_darwin:-clang}" \
+		CXX_aarch64_apple_darwin="$${CXX_aarch64_apple_darwin:-clang++}" \
+		AR_aarch64_apple_darwin="$${AR_aarch64_apple_darwin:-llvm-ar}" \
+		$(MAKE) --no-print-directory check-all-targets \
+		CARGO_BUILD_TARGET=aarch64-apple-darwin CARGO_TARGET_DIR="$(TARGET_DIR)/macos" \
+		PYO3_CROSS_PYTHON_VERSION=3.13 SDKROOT="$$MACOS_SDKROOT"
+else
+	@printf '%s\n' 'Skipping macOS all-targets check. Set MACOS_SDKROOT to enable it on Linux.'
+endif
+else
+	@printf '%s\n' 'Skipping macOS all-targets check. It runs on macOS or a configured Linux host.'
+endif
+
 # Time a block of make sub-targets. Use as:
 #   @$(timer_start) \
 #       $(MAKE) ... \
@@ -513,9 +537,13 @@ pre-flight-steps:
 	@$(timer_start) \
 		$(MAKE) --no-print-directory sync \
 		&& $(MAKE) --no-print-directory format \
+		&& $(MAKE) --no-print-directory check-jiff-features \
 		&& $(MAKE) --no-print-directory test-scripts-quiet \
 		&& $(MAKE) --no-print-directory check-cargo-cooldown \
-		&& $(MAKE) --no-print-directory check-code EXTRA_FEATURES="hypersync,nautilus-common/sbe" \
+		&& $(MAKE) --no-print-directory check-all-targets \
+			CARGO_BUILD_TARGET=host-tuple EXTRA_FEATURES="hypersync,nautilus-common/sbe" \
+		&& $(MAKE) --no-print-directory ruff \
+		&& { [ "$(HOST_OS)" = Darwin ] || $(MAKE) --no-print-directory check-all-targets-macos; } \
 		&& $(MAKE) --no-print-directory check-code-sim \
 		&& $(MAKE) --no-print-directory cargo-test-sim \
 		&& $(MAKE) --no-print-directory cargo-test-extras \

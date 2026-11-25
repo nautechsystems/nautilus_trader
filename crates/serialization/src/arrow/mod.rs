@@ -64,7 +64,7 @@ use arrow::{
         UInt64Array,
     },
     buffer::NullBuffer,
-    datatypes::{DataType, Field, Int8Type, Int32Type, Schema, TimeUnit},
+    datatypes::{DataType, Field, Int8Type, Int32Type, Metadata, Schema, TimeUnit},
     error::ArrowError,
     ipc::writer::StreamWriter,
     record_batch::RecordBatch,
@@ -245,7 +245,7 @@ pub fn record_batch_with_timestamps(
 // precisions (for example wei at 17 or 18) store raws at their own native scale, so encoding
 // them bit-for-bit into `Decimal128(38, 16)` columns would inflate the externally visible
 // values; mirror the SBE and custom-data macro encode guards and fail the write instead.
-fn validate_encode_precisions(metadata: &HashMap<String, String>) -> Result<(), ArrowError> {
+fn validate_encode_precisions(metadata: &Metadata) -> Result<(), ArrowError> {
     for key in [KEY_PRICE_PRECISION, KEY_SIZE_PRECISION] {
         if let Some(value) = metadata.get(key)
             && let Ok(precision) = value.parse::<u8>()
@@ -2150,7 +2150,7 @@ mod tests {
         let expected = vec![first, second, third];
 
         let batch = book_deltas_to_arrow_record_batch_bytes(&expected).unwrap();
-        let metadata = batch.schema().metadata().clone();
+        let metadata = HashMap::from(batch.schema_ref().metadata());
         assert_eq!(
             metadata.get(KEY_PRICE_PRECISION).map(String::as_str),
             Some("2")
@@ -2176,7 +2176,7 @@ mod tests {
         ];
 
         let batch = book_deltas_to_arrow_record_batch_bytes(&expected).unwrap();
-        let metadata = batch.schema().metadata().clone();
+        let metadata = batch.schema().metadata().into();
         let decoded = OrderBookDelta::decode_batch(&metadata, batch).unwrap();
 
         assert_eq!(decoded, expected);

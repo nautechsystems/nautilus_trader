@@ -218,7 +218,7 @@ mod tests {
                 false,
             ),
         ];
-        let decoded = StubRemoteData::decode_data_batch(schema.metadata(), batch).unwrap();
+        let decoded = StubRemoteData::decode_data_batch(&schema.metadata().into(), batch).unwrap();
 
         let [Data::Custom(custom)] = decoded.as_slice() else {
             panic!("expected one native custom data value");

@@ -93,7 +93,7 @@ pub fn py_databento_imbalance_from_arrow_record_batch_bytes(
 
     for batch_result in reader {
         let batch = batch_result.map_err(to_pyruntime_err)?;
-        let metadata = batch.schema().metadata().clone();
+        let metadata = batch.schema_ref().metadata().into();
         let decoded = decode_imbalance_batch(&metadata, &batch).map_err(to_pyvalue_err)?;
         results.extend(decoded);
     }
@@ -135,7 +135,7 @@ pub fn py_databento_statistics_from_arrow_record_batch_bytes(
 
     for batch_result in reader {
         let batch = batch_result.map_err(to_pyruntime_err)?;
-        let metadata = batch.schema().metadata().clone();
+        let metadata = batch.schema_ref().metadata().into();
         let decoded = decode_statistics_batch(&metadata, &batch).map_err(to_pyvalue_err)?;
         results.extend(decoded);
     }

@@ -276,7 +276,8 @@ mod tests {
         let batch =
             OrderStatusReport::encode_batch(&metadata, std::slice::from_ref(&report)).unwrap();
         let decoded =
-            OrderStatusReport::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+            OrderStatusReport::decode_typed_batch(&batch.schema().metadata().into(), batch)
+                .unwrap();
 
         assert_eq!(decoded, vec![report]);
     }
@@ -307,7 +308,8 @@ mod tests {
         let batch =
             PositionStatusReport::encode_batch(&metadata, std::slice::from_ref(&report)).unwrap();
         let decoded =
-            PositionStatusReport::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+            PositionStatusReport::decode_typed_batch(&batch.schema().metadata().into(), batch)
+                .unwrap();
 
         assert_eq!(decoded, vec![report]);
     }
@@ -369,7 +371,8 @@ mod tests {
         };
 
         let decoded =
-            PositionStatusReport::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+            PositionStatusReport::decode_typed_batch(&batch.schema().metadata().into(), batch)
+                .unwrap();
 
         assert_eq!(decoded, vec![report]);
     }

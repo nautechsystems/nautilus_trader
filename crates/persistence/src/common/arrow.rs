@@ -346,7 +346,7 @@ where
     let decoded = batches
         .into_iter()
         .map(|batch| {
-            let metadata = batch.schema().metadata().clone();
+            let metadata = batch.schema_ref().metadata().into();
             T::decode_typed_batch(&metadata, batch)
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -494,7 +494,7 @@ mod tests {
         let decoded = batches
             .into_iter()
             .flat_map(|batch| {
-                let metadata = batch.schema().metadata().clone();
+                let metadata = batch.schema().metadata().into();
                 QuoteTick::decode_batch(&metadata, batch).unwrap()
             })
             .collect::<Vec<_>>();

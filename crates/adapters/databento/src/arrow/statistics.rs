@@ -487,7 +487,7 @@ mod tests {
         let data = vec![none_stats, some_stats];
 
         let batch = statistics_to_arrow_record_batch(&data).unwrap();
-        let metadata = batch.schema().metadata().clone();
+        let metadata = batch.schema_ref().metadata().into();
         let decoded = decode_statistics_batch(&metadata, &batch).unwrap();
 
         assert_eq!(decoded.len(), 2);
@@ -554,7 +554,7 @@ mod tests {
         let instrument_id = InstrumentId::from("ESM4.GLBX");
         let original = vec![test_statistics(instrument_id)];
         let batch = statistics_to_arrow_record_batch(&original).unwrap();
-        let metadata = batch.schema().metadata().clone();
+        let metadata = batch.schema_ref().metadata().into();
         let decoded = decode_statistics_batch(&metadata, &batch).unwrap();
 
         assert_eq!(decoded.len(), 1);
@@ -676,7 +676,8 @@ mod tests {
         let batch = encode_custom_to_arrow("DatabentoStatistics", &custom)
             .unwrap()
             .unwrap();
-        let decoded = decode_statistics_batch(batch.schema().metadata(), &batch).unwrap();
+        let decoded =
+            decode_statistics_batch(&batch.schema_ref().metadata().into(), &batch).unwrap();
 
         let mut expected = original;
         expected[0].price = None;
@@ -893,7 +894,7 @@ mod tests {
 
         for batch_result in reader {
             let batch = batch_result.unwrap();
-            let metadata = batch.schema().metadata().clone();
+            let metadata = batch.schema_ref().metadata().into();
             decoded.extend(decode_statistics_batch(&metadata, &batch).unwrap());
         }
 

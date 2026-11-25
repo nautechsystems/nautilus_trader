@@ -828,6 +828,7 @@ impl CustomDataWrite {
 #[cfg(test)]
 mod tests {
     use std::{
+        collections::HashMap,
         fmt::Display,
         fs::File,
         sync::{
@@ -887,7 +888,7 @@ mod tests {
             File::open(directory.path().join(path)).unwrap(),
         )
         .unwrap();
-        let metadata = builder.schema().metadata().clone();
+        let metadata = HashMap::from(builder.schema().metadata());
         let batches = builder
             .build()
             .unwrap()
@@ -934,7 +935,7 @@ mod tests {
             File::open(directory.path().join(&path)).unwrap(),
         )
         .unwrap();
-        let metadata = builder.schema().metadata().clone();
+        let metadata = HashMap::from(builder.schema().metadata());
         let decoded = builder
             .build()
             .unwrap()

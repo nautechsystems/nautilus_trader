@@ -155,7 +155,7 @@ fn round_trip<T>(batch: RecordBatch) -> anyhow::Result<RecordBatch>
 where
     T: DecodeFromRecordBatch + EncodeToRecordBatch,
 {
-    let metadata = batch.schema().metadata().clone();
+    let metadata = batch.schema().metadata().into();
     let values = T::decode_batch(&metadata, batch)?;
     let batch = T::encode_batch(&T::chunk_metadata(&values), &values)?;
     Ok(record_batch_without_identifier_column(batch)?)

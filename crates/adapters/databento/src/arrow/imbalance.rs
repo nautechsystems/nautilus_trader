@@ -411,7 +411,7 @@ mod tests {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let original = vec![test_imbalance(instrument_id)];
         let batch = imbalance_to_arrow_record_batch(&original).unwrap();
-        let metadata = batch.schema().metadata().clone();
+        let metadata = batch.schema_ref().metadata().into();
         let decoded = decode_imbalance_batch(&metadata, &batch).unwrap();
 
         assert_eq!(decoded.len(), 1);
@@ -531,7 +531,7 @@ mod tests {
 
         for batch_result in reader {
             let batch = batch_result.unwrap();
-            let metadata = batch.schema().metadata().clone();
+            let metadata = batch.schema_ref().metadata().into();
             decoded.extend(decode_imbalance_batch(&metadata, &batch).unwrap());
         }
 

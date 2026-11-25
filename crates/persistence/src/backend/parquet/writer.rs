@@ -1868,7 +1868,7 @@ mod tests {
             .into_iter()
             .flat_map(|batch| {
                 let schema = batch.schema();
-                T::decode_typed_batch(schema.metadata(), batch).unwrap()
+                T::decode_typed_batch(&schema.metadata().into(), batch).unwrap()
             })
             .map(|record| serde_json::to_value(record).unwrap())
             .collect::<Vec<_>>();
@@ -1916,7 +1916,8 @@ mod tests {
         let mut rows = Vec::new();
         for batch in batches {
             rows.extend(
-                OrderFillVoided::decode_typed_batch(batch.schema().metadata(), batch).unwrap(),
+                OrderFillVoided::decode_typed_batch(&batch.schema().metadata().into(), batch)
+                    .unwrap(),
             );
         }
 

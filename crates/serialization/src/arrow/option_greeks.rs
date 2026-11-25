@@ -287,7 +287,7 @@ mod tests {
         let metadata = original[0].metadata();
         let record_batch = OptionGreeks::encode_batch(&metadata, &original).unwrap();
         let schema = record_batch.schema();
-        let decoded = OptionGreeks::decode_batch(schema.metadata(), record_batch).unwrap();
+        let decoded = OptionGreeks::decode_batch(&schema.metadata().into(), record_batch).unwrap();
 
         assert_eq!(
             schema

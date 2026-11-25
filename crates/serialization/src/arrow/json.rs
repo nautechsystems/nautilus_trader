@@ -914,7 +914,7 @@ mod tests {
         let batch = encode_batch("Record", &metadata, &rows, &fields).unwrap();
         let schema = batch.schema();
         let decoded = decode_batch_with_metadata_fields::<Map<String, Value>>(
-            schema.metadata(),
+            &schema.metadata().into(),
             &batch,
             &fields,
             &["venue"],
