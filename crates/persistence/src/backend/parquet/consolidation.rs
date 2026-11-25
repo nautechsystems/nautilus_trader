@@ -1508,7 +1508,9 @@ mod tests {
 
             let actual = stored_batches
                 .into_iter()
-                .flat_map(|batch| TradeTick::decode_batch(schema.metadata(), batch).unwrap())
+                .flat_map(|batch| {
+                    TradeTick::decode_batch(&schema.metadata().into(), batch).unwrap()
+                })
                 .collect::<Vec<_>>();
 
             assert_eq!(target, stored);

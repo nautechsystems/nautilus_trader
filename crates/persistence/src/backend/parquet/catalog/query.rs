@@ -163,7 +163,7 @@ impl ParquetDataCatalog {
             })?;
 
             validate_catalog_schema(&builder_schema)?;
-            let metadata = builder_schema.metadata().clone();
+            let metadata = HashMap::from(builder_schema.metadata());
             let target_schema = InstrumentAny::get_schema(Some(metadata.clone()));
 
             let table_name = format!(
@@ -280,7 +280,7 @@ impl ParquetDataCatalog {
             })?;
 
             validate_catalog_schema(&builder_schema)?;
-            let metadata = builder_schema.metadata().clone();
+            let metadata = HashMap::from(builder_schema.metadata());
             let target_schema = InstrumentAny::get_schema(Some(metadata.clone()));
 
             for batch in batches {
@@ -563,10 +563,10 @@ impl ParquetDataCatalog {
             )?;
 
             for batch in batches {
+                let metadata = batch.schema_ref().metadata().into();
                 let identifier =
-                    display_batch_identifier(data_type, &batch, path_identifier.as_deref());
+                    display_batch_identifier(data_type, &metadata, path_identifier.as_deref());
                 let batch = record_batch_with_identifier_column(batch, identifier.as_deref())?;
-                let metadata = batch.schema().metadata().clone();
                 display_batches.push(catalog_record_batch_to_display(
                     data_type, &metadata, &batch,
                 )?);
@@ -763,7 +763,7 @@ impl ParquetDataCatalog {
                     read_parquet_schema_from_object_store(self.object_store.clone(), &object_path)
                         .await?;
                 validate_catalog_schema(&schema)?;
-                Ok::<HashMap<String, String>, anyhow::Error>(schema.metadata().clone())
+                Ok::<HashMap<String, String>, anyhow::Error>(schema.metadata().into())
             })?;
 
             decode_metadata.extend(lookup_metadata.clone());
@@ -1190,13 +1190,12 @@ fn display_identifier(data_type: &NautilusDataType, directory: &str) -> Option<S
 
 fn display_batch_identifier(
     data_type: &NautilusDataType,
-    batch: &RecordBatch,
+    metadata: &HashMap<String, String>,
     path_identifier: Option<&str>,
 ) -> Option<String> {
     if matches!(data_type, NautilusDataType::Custom { .. }) {
         path_identifier.map(str::to_string)
     } else {
-        catalog_identifier_from_metadata(batch.schema().metadata())
-            .or_else(|| path_identifier.map(str::to_string))
+        catalog_identifier_from_metadata(metadata).or_else(|| path_identifier.map(str::to_string))
     }
 }

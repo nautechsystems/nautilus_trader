@@ -45,14 +45,6 @@ ignore = [
   # Generated code supplies static schema metadata; no remote schema input path is known.
   { id = "RUSTSEC-2025-0143", reason = "capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix" },
 
-  # quick-xml duplicate-attribute check DoS, transitive via object_store 0.13.2.
-  # object_store 0.14 is fixed, but the current DataFusion release requires object_store 0.13.
-  { id = "RUSTSEC-2026-0194", reason = "quick-xml DoS via DataFusion-aligned object_store 0.13.2" },
-
-  # quick-xml NsReader namespace-allocation DoS, transitive via object_store 0.13.2.
-  # object_store 0.14 is fixed, but the current DataFusion release requires object_store 0.13.
-  { id = "RUSTSEC-2026-0195", reason = "quick-xml NsReader DoS via DataFusion-aligned object_store 0.13.2" },
-
   # crypto-bigint timing leaks affect secret arithmetic in transaction signing.
   # Alloy and cosmrs require k256 0.13 -> elliptic-curve 0.13 -> crypto-bigint 0.5.
   # Accept this risk until upstream permits crypto-bigint >=0.7.6 or backports the fix.
@@ -158,7 +150,6 @@ skip = [
   { crate = "crypto-common:<0.2" },
   { crate = "digest:<0.11" },
   { crate = "hmac:<0.13" },
-  { crate = "md-5:<0.11" },
   { crate = "sha2:<0.11" },
 
   # RNG ecosystem - version-locked together, pulled by crypto and blockchain crates
@@ -220,7 +211,7 @@ skip = [
   # CPU feature detection - cpufeatures 0.2 vs 0.3 (const-hex vs chacha20/rand)
   { crate = "cpufeatures:<0.3" },
 
-  # HTTP client - reqwest 0.12 vs 0.13 transition (databento, hypersync, object_store on 0.12)
+  # Databento and HyperSync still use reqwest 0.12
   { crate = "reqwest:<0.13" },
   { crate = "wasm-streams:<0.5" },
 
@@ -241,6 +232,31 @@ skip = [
 
   # Windows platform crates - notoriously fragmented across Windows SDK versions
   { crate = "windows-sys:<0.61" },
+
+  # HyperSync uses Arrow and Parquet 59 alongside the DataFusion stack on 60
+  { crate = "arrow:=59.3.3" },
+  { crate = "arrow-arith:=59.3.3" },
+  { crate = "arrow-array:=59.3.3" },
+  { crate = "arrow-buffer:=59.3.3" },
+  { crate = "arrow-cast:=59.3.3" },
+  { crate = "arrow-csv:=59.3.3" },
+  { crate = "arrow-data:=59.3.3" },
+  { crate = "arrow-ipc:=59.3.3" },
+  { crate = "arrow-json:=59.3.3" },
+  { crate = "arrow-ord:=59.3.3" },
+  { crate = "arrow-row:=59.3.3" },
+  { crate = "arrow-schema:=59.3.3" },
+  { crate = "arrow-select:=59.3.3" },
+  { crate = "arrow-string:=59.3.3" },
+  { crate = "atoi:=2.0.0" },
+  { crate = "parquet:=59.3.3" },
+
+  # Parquet 59 and 60 use different Brotli and lazy-initialization dependencies
+  { crate = "alloc-no-stdlib:=2.0.4" },
+  { crate = "alloc-stdlib:=0.2.4" },
+  { crate = "brotli:=8.0.4" },
+  { crate = "brotli-decompressor:=5.0.3" },
+  { crate = "spin:=0.9.9" },
 
   # Arrow and Parquet retain zstd 0.13 while compression-codecs and Databento use 0.14
   { crate = "zstd:=0.13.5" },

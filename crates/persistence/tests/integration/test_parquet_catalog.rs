@@ -2059,7 +2059,7 @@ fn test_rust_write_and_read_account_state() {
     .into_iter()
     .flat_map(|batch| {
         let schema = batch.schema();
-        AccountState::decode_typed_batch(schema.metadata(), batch).unwrap()
+        AccountState::decode_typed_batch(&schema.metadata().into(), batch).unwrap()
     })
     .collect();
 

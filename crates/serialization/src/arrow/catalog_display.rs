@@ -29,7 +29,7 @@ use arrow::{
         UInt64Builder,
     },
     compute::cast,
-    datatypes::{DataType, Field, Schema},
+    datatypes::{DataType, Field, Metadata, Schema},
     record_batch::RecordBatch,
 };
 use nautilus_model::{
@@ -215,8 +215,12 @@ pub fn catalog_display_schema(data_type: &NautilusDataType) -> Result<Schema, En
     if matches!(data_type, NautilusDataType::Custom { .. }) {
         let schema = catalog_raw_schema(data_type)?;
         let batch = RecordBatch::new_empty(Arc::new(schema));
-        return catalog_record_batch_to_display(data_type, batch.schema().metadata(), &batch)
-            .map(|batch| batch.schema().as_ref().clone());
+        return catalog_record_batch_to_display(
+            data_type,
+            &batch.schema().metadata().into(),
+            &batch,
+        )
+        .map(|batch| batch.schema().as_ref().clone());
     }
 
     builtin_catalog_display(data_type)
@@ -545,10 +549,7 @@ fn fixed_precision_field_to_f64(
     Ok(Arc::new(builder.finish()))
 }
 
-fn custom_fixed_precision(
-    field_name: &str,
-    metadata: &HashMap<String, String>,
-) -> Option<(u8, bool)> {
+fn custom_fixed_precision(field_name: &str, metadata: &Metadata) -> Option<(u8, bool)> {
     let normalized = field_name.to_ascii_lowercase();
     let field_precision = metadata
         .get(&format!("{field_name}_precision"))
@@ -1805,7 +1806,7 @@ mod tests {
         let raw = book_deltas_to_arrow_record_batch_bytes(&deltas).unwrap();
         let display = catalog_record_batch_to_display(
             &NautilusDataType::OrderBookDelta,
-            raw.schema().metadata(),
+            &raw.schema().metadata().into(),
             &raw,
         )
         .unwrap();
@@ -1873,7 +1874,7 @@ mod tests {
 
         let display = catalog_record_batch_to_display(
             &NautilusDataType::OrderBookDelta,
-            raw.schema().metadata(),
+            &raw.schema().metadata().into(),
             &raw,
         )
         .unwrap();
@@ -1900,7 +1901,7 @@ mod tests {
 
         let error = catalog_record_batch_to_display(
             &NautilusDataType::OrderBookDelta,
-            raw.schema().metadata(),
+            &raw.schema().metadata().into(),
             &raw,
         )
         .unwrap_err();
@@ -2308,7 +2309,7 @@ mod tests {
             &NautilusDataType::Custom {
                 type_name: "ViewCustom".to_string(),
             },
-            batch.schema().metadata(),
+            &batch.schema().metadata().into(),
             &batch,
         )
         .unwrap();
@@ -2495,7 +2496,8 @@ mod tests {
         };
 
         let displayed =
-            catalog_record_batch_to_display(&data_type, raw.schema().metadata(), &raw).unwrap();
+            catalog_record_batch_to_display(&data_type, &raw.schema().metadata().into(), &raw)
+                .unwrap();
         let identifier = Arc::clone(displayed.column_by_name(KEY_IDENTIFIER).unwrap());
         let without_identifier = record_batch_without_identifier_column(displayed).unwrap();
 

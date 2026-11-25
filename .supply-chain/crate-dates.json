@@ -16,9 +16,17 @@
       "published": "2022-09-12T05:29:48.261627Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
+    "alloc-no-stdlib@3.0.0": {
+      "published": "2026-06-14T07:37:22.713662Z",
+      "verified_at": "2026-11-25T02:03:08Z"
+    },
     "alloc-stdlib@0.2.4": {
       "published": "2026-06-14T17:59:00.828151Z",
       "verified_at": "2026-09-13T06:09:27Z"
+    },
+    "alloc-stdlib@0.3.0": {
+      "published": "2026-06-14T18:42:03.107883Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
     "allocator-api2@0.2.21": {
       "published": "2024-12-01T14:49:16.555989Z",
@@ -320,57 +328,117 @@
       "published": "2026-11-17T11:21:13.475109Z",
       "verified_at": "2026-11-21T23:02:06Z"
     },
+    "arrow-arith@60.2.0": {
+      "published": "2026-11-21T16:10:03.840257Z",
+      "verified_at": "2026-11-25T02:03:08Z"
+    },
     "arrow-array@59.3.3": {
       "published": "2026-11-17T11:20:35.599644Z",
       "verified_at": "2026-11-21T23:02:06Z"
+    },
+    "arrow-array@60.2.0": {
+      "published": "2026-11-21T16:09:21.962969Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
     "arrow-buffer@59.3.3": {
       "published": "2026-11-17T11:19:50.340535Z",
       "verified_at": "2026-11-21T23:02:06Z"
     },
+    "arrow-buffer@60.2.0": {
+      "published": "2026-11-21T16:08:49.106215Z",
+      "verified_at": "2026-11-25T02:03:08Z"
+    },
     "arrow-cast@59.3.3": {
       "published": "2026-11-17T11:20:56.125372Z",
       "verified_at": "2026-11-21T23:02:06Z"
+    },
+    "arrow-cast@60.2.0": {
+      "published": "2026-11-21T16:09:46.688870Z",
+      "verified_at": "2026-11-25T02:03:08Z"
+    },
+    "arrow-cmp@60.2.0": {
+      "published": "2026-11-21T16:09:27.383064Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
     "arrow-csv@59.3.3": {
       "published": "2026-11-17T11:21:06.010913Z",
       "verified_at": "2026-11-21T23:02:06Z"
     },
+    "arrow-csv@60.2.0": {
+      "published": "2026-11-21T16:09:56.008697Z",
+      "verified_at": "2026-11-25T02:03:08Z"
+    },
     "arrow-data@59.3.3": {
       "published": "2026-11-17T11:20:28.351889Z",
       "verified_at": "2026-11-21T23:02:06Z"
+    },
+    "arrow-data@60.2.0": {
+      "published": "2026-11-21T16:09:16.311214Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
     "arrow-ipc@59.3.3": {
       "published": "2026-11-17T11:21:00.656430Z",
       "verified_at": "2026-11-21T23:02:06Z"
     },
+    "arrow-ipc@60.2.0": {
+      "published": "2026-11-21T16:09:50.540649Z",
+      "verified_at": "2026-11-25T02:03:08Z"
+    },
     "arrow-json@59.3.3": {
       "published": "2026-11-17T11:21:09.503325Z",
       "verified_at": "2026-11-21T23:02:06Z"
+    },
+    "arrow-json@60.2.0": {
+      "published": "2026-11-21T16:10:00.011011Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
     "arrow-ord@59.3.3": {
       "published": "2026-11-17T11:20:49.424222Z",
       "verified_at": "2026-11-21T23:02:06Z"
     },
+    "arrow-ord@60.2.0": {
+      "published": "2026-11-21T16:09:39.786680Z",
+      "verified_at": "2026-11-25T02:03:08Z"
+    },
     "arrow-row@59.3.3": {
       "published": "2026-11-17T11:21:20.627915Z",
       "verified_at": "2026-11-21T23:02:06Z"
+    },
+    "arrow-row@60.2.0": {
+      "published": "2026-11-21T16:10:11.850623Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
     "arrow-schema@59.3.3": {
       "published": "2026-11-17T11:20:24.026649Z",
       "verified_at": "2026-11-21T23:02:06Z"
     },
+    "arrow-schema@60.2.0": {
+      "published": "2026-11-21T16:09:11.630391Z",
+      "verified_at": "2026-11-25T02:03:08Z"
+    },
     "arrow-select@59.3.3": {
       "published": "2026-11-17T11:20:42.982353Z",
       "verified_at": "2026-11-21T23:02:06Z"
+    },
+    "arrow-select@60.2.0": {
+      "published": "2026-11-21T16:09:33.355370Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
     "arrow-string@59.3.3": {
       "published": "2026-11-17T11:21:16.988714Z",
       "verified_at": "2026-11-21T23:02:06Z"
     },
+    "arrow-string@60.2.0": {
+      "published": "2026-11-21T16:10:07.983574Z",
+      "verified_at": "2026-11-25T02:03:08Z"
+    },
     "arrow@59.3.3": {
       "published": "2026-11-17T11:21:30.775026Z",
       "verified_at": "2026-11-21T23:02:06Z"
+    },
+    "arrow@60.2.0": {
+      "published": "2026-11-21T16:10:22.675957Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
     "asn1-rs-derive@0.6.0": {
       "published": "2025-01-16T16:52:21.067659Z",
@@ -415,6 +483,10 @@
     "atoi@2.0.0": {
       "published": "2022-10-11T17:21:42.722566Z",
       "verified_at": "2026-09-13T06:09:27Z"
+    },
+    "atoi@3.1.1": {
+      "published": "2026-10-16T19:05:15.187984Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
     "atomic-waker@1.1.2": {
       "published": "2023-09-25T17:45:09.388277Z",
@@ -548,9 +620,17 @@
       "published": "2026-06-14T18:10:09.204091Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
+    "brotli-decompressor@6.4.0": {
+      "published": "2026-11-24T07:45:07.496537Z",
+      "verified_at": "2026-11-25T02:03:08Z"
+    },
     "brotli@8.0.4": {
       "published": "2026-06-14T19:26:42.108285Z",
       "verified_at": "2026-09-13T06:09:27Z"
+    },
+    "brotli@9.1.3": {
+      "published": "2026-11-15T17:56:30.887046Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
     "bs58@0.5.1": {
       "published": "2024-03-19T12:50:23.529199Z",
@@ -680,9 +760,9 @@
       "published": "2026-10-15T13:17:58.967822Z",
       "verified_at": "2026-10-19T22:11:10Z"
     },
-    "comfy-table@7.2.2": {
-      "published": "2026-01-13T02:28:25.932933Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "comfy-table@8.0.1": {
+      "published": "2026-09-25T15:21:37.465536Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
     "compression-codecs@0.4.48": {
       "published": "2026-11-21T04:19:33.662727Z",
@@ -771,6 +851,10 @@
     "crc-catalog@2.5.0": {
       "published": "2026-04-24T18:44:55.973498Z",
       "verified_at": "2026-09-13T06:09:27Z"
+    },
+    "crc-fast@1.10.0": {
+      "published": "2025-12-31T19:34:28.092669Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
     "crc32fast@1.5.5": {
       "published": "2026-11-10T03:41:10.884830Z",
@@ -912,129 +996,129 @@
       "published": "2026-11-18T15:09:24.255882Z",
       "verified_at": "2026-11-23T02:30:54Z"
     },
-    "datafusion-catalog-listing@55.3.0": {
-      "published": "2026-11-17T18:24:39.523324Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-catalog-listing@56.0.0": {
+      "published": "2026-11-24T00:26:29.126895Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-catalog@55.3.0": {
-      "published": "2026-11-17T18:23:33.366593Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-catalog@56.0.0": {
+      "published": "2026-11-24T00:26:11.536327Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-common-runtime@55.3.0": {
-      "published": "2026-11-17T17:57:54.782777Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-common-runtime@56.0.0": {
+      "published": "2026-11-22T12:22:55.552804Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-common@55.3.0": {
-      "published": "2026-11-17T17:57:50.271665Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-common@56.0.0": {
+      "published": "2026-11-22T12:22:54.305863Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-datasource-arrow@55.3.0": {
-      "published": "2026-11-17T18:23:38.269850Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-datasource-arrow@56.0.0": {
+      "published": "2026-11-24T00:26:12.923396Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-datasource-csv@55.3.0": {
-      "published": "2026-11-17T18:23:47.960503Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-datasource-csv@56.0.0": {
+      "published": "2026-11-24T00:26:15.317922Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-datasource-json@55.3.0": {
-      "published": "2026-11-17T18:23:51.501867Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-datasource-json@56.0.0": {
+      "published": "2026-11-24T00:26:16.660039Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-datasource-parquet@55.3.0": {
-      "published": "2026-11-17T18:24:19.634067Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-datasource-parquet@56.0.0": {
+      "published": "2026-11-24T00:26:22.657594Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-datasource@55.3.0": {
-      "published": "2026-11-17T18:23:05.761471Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-datasource@56.0.0": {
+      "published": "2026-11-24T00:26:07.061492Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-doc@55.3.0": {
-      "published": "2026-11-17T17:57:57.492261Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-doc@56.0.0": {
+      "published": "2026-11-22T12:22:56.347685Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-execution@55.3.0": {
-      "published": "2026-11-17T18:20:53.482628Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-execution@56.0.0": {
+      "published": "2026-11-24T00:25:42.757996Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-expr-common@55.3.0": {
-      "published": "2026-11-17T17:58:03.920469Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-expr-common@56.0.0": {
+      "published": "2026-11-22T12:23:01.476766Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-expr@55.3.0": {
-      "published": "2026-11-17T18:20:34.230420Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-expr@56.0.0": {
+      "published": "2026-11-24T00:25:39.996992Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-functions-aggregate-common@55.3.0": {
-      "published": "2026-11-17T18:20:17.045213Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-functions-aggregate-common@56.0.0": {
+      "published": "2026-11-24T00:25:35.731240Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-functions-aggregate@55.3.0": {
-      "published": "2026-11-17T18:21:30.655915Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-functions-aggregate@56.0.0": {
+      "published": "2026-11-24T00:25:50.946187Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-functions-nested@55.3.0": {
-      "published": "2026-11-17T18:22:06.387720Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-functions-nested@56.0.0": {
+      "published": "2026-11-24T00:25:56.905579Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-functions-table@55.3.0": {
-      "published": "2026-11-17T18:24:28.910847Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-functions-table@56.0.0": {
+      "published": "2026-11-24T00:26:24.196083Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-functions-window-common@55.3.0": {
-      "published": "2026-11-17T18:20:20.314914Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-functions-window-common@56.0.0": {
+      "published": "2026-11-24T00:25:37.125906Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-functions-window@55.3.0": {
-      "published": "2026-11-17T18:21:38.820426Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-functions-window@56.0.0": {
+      "published": "2026-11-24T00:25:52.448491Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-functions@55.3.0": {
-      "published": "2026-11-17T18:21:09.027183Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-functions@56.0.0": {
+      "published": "2026-11-24T00:25:45.525693Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-macros@55.3.0": {
-      "published": "2026-11-17T17:58:08.557726Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-macros@56.0.0": {
+      "published": "2026-11-22T12:23:02.622075Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-optimizer@55.3.0": {
-      "published": "2026-11-17T18:23:21.239759Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-optimizer@56.0.0": {
+      "published": "2026-11-24T00:26:09.048258Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-physical-expr-adapter@55.3.0": {
-      "published": "2026-11-17T18:21:46.092199Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-physical-expr-adapter@56.0.0": {
+      "published": "2026-11-24T00:25:53.756904Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-physical-expr-common@55.3.0": {
-      "published": "2026-11-17T18:20:10.242131Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-physical-expr-common@56.0.0": {
+      "published": "2026-11-24T00:25:33.266660Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-physical-expr@55.3.0": {
-      "published": "2026-11-17T18:21:18.735497Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-physical-expr@56.0.0": {
+      "published": "2026-11-24T00:25:48.225823Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-physical-optimizer@55.3.0": {
-      "published": "2026-11-17T18:24:33.285055Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-physical-optimizer@56.0.0": {
+      "published": "2026-11-24T00:26:26.647715Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-physical-plan@55.3.0": {
-      "published": "2026-11-17T18:22:18.926869Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-physical-plan@56.0.0": {
+      "published": "2026-11-24T00:25:59.408212Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-pruning@55.3.0": {
-      "published": "2026-11-17T18:23:54.463949Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-pruning@56.0.0": {
+      "published": "2026-11-24T00:26:18.513547Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-session@55.3.0": {
-      "published": "2026-11-17T18:22:29.589474Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-session@56.0.0": {
+      "published": "2026-11-24T00:26:02.067671Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion-sql@55.3.0": {
-      "published": "2026-11-17T18:22:46.608513Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion-sql@56.0.0": {
+      "published": "2026-11-24T00:26:04.310689Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "datafusion@55.3.0": {
-      "published": "2026-11-17T18:26:36.050715Z",
-      "verified_at": "2026-11-21T23:02:06Z"
+    "datafusion@56.0.0": {
+      "published": "2026-11-24T00:26:31.996934Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
     "dbn-macros@0.74.0": {
       "published": "2026-11-17T21:20:30.402475Z",
@@ -1872,10 +1956,6 @@
       "published": "2024-07-11T07:22:03.735375Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "md-5@0.10.6": {
-      "published": "2023-09-22T14:19:04.384162Z",
-      "verified_at": "2026-09-13T06:09:27Z"
-    },
     "md-5@0.11.0": {
       "published": "2026-03-27T14:59:39.677170Z",
       "verified_at": "2026-09-13T06:09:27Z"
@@ -1996,9 +2076,9 @@
       "published": "2026-04-21T08:41:10.871144Z",
       "verified_at": "2026-11-15T21:13:02Z"
     },
-    "object_store@0.13.2": {
-      "published": "2026-03-24T14:17:29.691176Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "object_store@0.14.2": {
+      "published": "2026-09-15T15:15:46.622836Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
     "oid-registry@0.8.1": {
       "published": "2025-02-10T12:58:00.890947Z",
@@ -2063,6 +2143,10 @@
     "parquet@59.3.3": {
       "published": "2026-11-17T11:22:19.531202Z",
       "verified_at": "2026-11-21T23:02:06Z"
+    },
+    "parquet@60.2.0": {
+      "published": "2026-11-21T16:11:21.681954Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
     "parse-zoneinfo@0.3.1": {
       "published": "2024-05-02T15:53:25.884665Z",
@@ -2280,9 +2364,9 @@
       "published": "2026-09-27T15:26:48.966064Z",
       "verified_at": "2026-10-09T04:01:43Z"
     },
-    "quick-xml@0.39.4": {
-      "published": "2026-05-08T19:31:15.163358Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "quick-xml@0.41.0": {
+      "published": "2026-06-29T18:04:43.720155Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
     "quinn-proto@0.11.19": {
       "published": "2026-09-30T09:13:59.040527Z",
@@ -2792,6 +2876,10 @@
       "published": "2026-11-04T19:13:20.809182Z",
       "verified_at": "2026-11-10T21:51:09Z"
     },
+    "spin@0.10.1": {
+      "published": "2026-07-13T19:46:55.901112Z",
+      "verified_at": "2026-11-25T02:03:08Z"
+    },
     "spin@0.9.9": {
       "published": "2026-07-13T19:44:05.786736Z",
       "verified_at": "2026-09-13T06:09:27Z"
@@ -2804,13 +2892,13 @@
       "published": "2026-10-05T22:12:26.781743Z",
       "verified_at": "2026-11-18T01:12:29Z"
     },
-    "sqlparser@0.62.0": {
-      "published": "2026-05-07T20:28:05.419959Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "sqlparser@0.63.0": {
+      "published": "2026-09-13T20:07:26.055155Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
-    "sqlparser_derive@0.5.0": {
-      "published": "2026-02-10T15:54:47.574676Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "sqlparser_derive@0.6.0": {
+      "published": "2026-09-13T20:07:10.259354Z",
+      "verified_at": "2026-11-25T02:03:08Z"
     },
     "sqlx-core@0.9.0": {
       "published": "2026-05-21T17:33:20.890999Z",

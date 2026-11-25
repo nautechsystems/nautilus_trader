@@ -308,13 +308,14 @@ Released on TBD (UTC).
 - Upgraded `zizmor` pre-commit hook to v1.32.0
 - Upgraded `alloy` crate to v2.6.1
 - Upgraded `arc-swap` crate to v1.9.5
-- Upgraded `arrow` and `parquet` crates to v59.3.3
+- Upgraded `arrow` and `parquet` crates to v60.2.0
 - Upgraded `bytes` crate to v1.12.2
 - Upgraded `clap` crate to v4.6.9
 - Upgraded `databento` crate to v0.65.0
-- Upgraded `datafusion` crate to v55.3.0
+- Upgraded `datafusion` crate to v56.0.0
 - Upgraded `flate2` crate to v1.1.11
 - Upgraded `jiff` crate to v0.2.46
+- Upgraded `object_store` crate to v0.14.2
 - Upgraded `rand` crate to v0.10.4
 - Upgraded `redb` crate to v5.0.0
 - Upgraded `redis` crate to v1.8.2

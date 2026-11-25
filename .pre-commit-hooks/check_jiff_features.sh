@@ -7,7 +7,7 @@ REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$REPO_ROOT"
 
 resolved_features() {
-  cargo tree --locked -p "$1" -e features -i jiff --prefix none |
+  cargo tree --locked -p "$1" -e features -i jiff@0.2 --prefix none |
     sed -n 's/^jiff feature "\([^"]*\)".*/\1/p' |
     sort -u
 }

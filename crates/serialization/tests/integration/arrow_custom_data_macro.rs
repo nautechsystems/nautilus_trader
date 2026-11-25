@@ -205,7 +205,7 @@ fn registered_encoding_round_trips_nullable_fixed_fields(
     let batch = encode_custom_to_arrow(ManualCustomData::type_name_static(), &custom)
         .unwrap()
         .unwrap();
-    let metadata = batch.schema().metadata().clone();
+    let metadata = batch.schema().metadata().into();
     let decoded = ManualCustomData::decode_data_batch(&metadata, batch).unwrap();
 
     assert_eq!(decoded.len(), original.len());
@@ -272,7 +272,7 @@ fn arrow_custom_data_supports_manual_model_implementations() {
     let metadata = original.metadata();
     let borrowed = [&original];
     let batch = ManualCustomData::encode_batch(&metadata, &borrowed).unwrap();
-    let metadata = batch.schema().metadata().clone();
+    let metadata = batch.schema().metadata().into();
     let decoded = ManualCustomData::decode_data_batch(&metadata, batch.clone()).unwrap();
 
     assert_eq!(
@@ -433,7 +433,7 @@ fn arrow_custom_data_round_trips_all_optional_some_fields() {
     };
 
     let batch = ManualCustomData::encode_batch(&original.metadata(), &[&original]).unwrap();
-    let metadata = batch.schema().metadata().clone();
+    let metadata = batch.schema().metadata().into();
     let decoded = ManualCustomData::decode_data_batch(&metadata, batch).unwrap();
     let Data::Custom(custom) = &decoded[0] else {
         panic!("expected custom data");
@@ -469,7 +469,7 @@ fn arrow_custom_data_rejects_out_of_range_u32() {
     let mut columns = batch.columns().to_vec();
     columns[index] = Arc::new(UInt64Array::from(vec![Some(u64::from(u32::MAX) + 1)]));
     let batch = RecordBatch::try_new(batch.schema(), columns).unwrap();
-    let metadata = batch.schema().metadata().clone();
+    let metadata = batch.schema().metadata().into();
 
     let error = ManualCustomData::decode_data_batch(&metadata, batch).unwrap_err();
 
@@ -489,7 +489,7 @@ fn arrow_custom_data_rejects_null_float_list_element() {
         vec![Some(1.0), None],
     )]));
     let batch = RecordBatch::try_new(batch.schema(), columns).unwrap();
-    let metadata = batch.schema().metadata().clone();
+    let metadata = batch.schema().metadata().into();
 
     let error = ManualCustomData::decode_data_batch(&metadata, batch).unwrap_err();
 
@@ -590,7 +590,8 @@ fn arrow_custom_data_round_trips_identifier_runs(#[case] keys: Vec<Option<usize>
         .collect();
     let batch = IdentifierData::encode_batch(&Default::default(), &original).unwrap();
     let decoded =
-        IdentifierData::decode_data_batch(batch.schema().metadata(), batch.clone()).unwrap();
+        IdentifierData::decode_data_batch(&batch.schema().metadata().into(), batch.clone())
+            .unwrap();
     let expected_type = CustomDataType::new("IdentifierData", None, None);
 
     assert_eq!(batch.num_rows(), original.len());
@@ -651,7 +652,8 @@ fn arrow_custom_data_rejects_invalid_identifier_after_run(
         _ => invalid.parse::<BarType>().unwrap_err().to_string(),
     };
 
-    let error = IdentifierData::decode_data_batch(batch.schema().metadata(), batch).unwrap_err();
+    let error =
+        IdentifierData::decode_data_batch(&batch.schema().metadata().into(), batch).unwrap_err();
 
     assert_eq!(
         error.to_string(),

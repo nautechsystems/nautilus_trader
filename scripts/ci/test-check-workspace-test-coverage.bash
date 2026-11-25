@@ -2,31 +2,18 @@
 
 set -euo pipefail
 
-if ! command -v rg &> /dev/null; then
-  echo "ERROR: ripgrep is required for workspace test coverage script tests" >&2
-  echo "       install from: https://github.com/BurntSushi/ripgrep#installation" >&2
-  exit 1
-fi
+for command in cargo rg; do
+  if ! command -v "$command" &> /dev/null; then
+    echo "ERROR: $command is required for workspace test coverage script tests" >&2
+    exit 1
+  fi
+done
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
 CHECKER="$REPO_ROOT/scripts/ci/check-workspace-test-coverage.sh"
 
 CASE_ROOT=$(mktemp -d)
 trap 'rm -rf "$CASE_ROOT"' EXIT
-
-mkdir -p "$CASE_ROOT/bin"
-printf '%s\n' \
-  '#!/usr/bin/env bash' \
-  '' \
-  'set -euo pipefail' \
-  '' \
-  "if [ \"\$*\" != \"metadata --no-deps --format-version 1\" ]; then" \
-  "  echo \"Unexpected cargo arguments: \$*\" >&2" \
-  '  exit 2' \
-  'fi' \
-  '' \
-  "cat \"\$MOCK_CARGO_METADATA\"" > "$CASE_ROOT/bin/cargo"
-chmod +x "$CASE_ROOT/bin/cargo"
 
 write_makefile() {
   local case_dir="$1"
@@ -40,69 +27,40 @@ write_makefile() {
     "NO_TEST_CRATES := $no_test_crates" > "$case_dir/Makefile"
 }
 
-write_metadata() {
-  local case_dir="$1"
-  local mode="$2"
-  local gamma_target_kind="lib"
-  local gamma_target_name="gamma"
-
-  if [ "$mode" = "test-target" ]; then
-    gamma_target_kind="test"
-    gamma_target_name="gamma-tests"
-  fi
-
-  if [ "$mode" = "nested" ]; then
-    printf '%s\n' \
-      '{' \
-      '  "workspace_members": ["alpha", "beta", "gamma", "nested"],' \
-      '  "packages": [' \
-      "    {\"id\": \"alpha\", \"name\": \"alpha\", \"manifest_path\": \"$case_dir/crates/alpha/Cargo.toml\", \"targets\": [{\"name\": \"alpha\", \"kind\": [\"lib\"]}]}," \
-      "    {\"id\": \"beta\", \"name\": \"beta\", \"manifest_path\": \"$case_dir/crates/beta/Cargo.toml\", \"targets\": [{\"name\": \"beta\", \"kind\": [\"lib\"]}]}," \
-      "    {\"id\": \"gamma\", \"name\": \"gamma\", \"manifest_path\": \"$case_dir/crates/gamma/Cargo.toml\", \"targets\": [{\"name\": \"gamma\", \"kind\": [\"lib\"]}]}," \
-      "    {\"id\": \"nested\", \"name\": \"nested\", \"manifest_path\": \"$case_dir/crates/gamma/nested/Cargo.toml\", \"targets\": [{\"name\": \"nested\", \"kind\": [\"lib\"]}]}" \
-      '  ]' \
-      '}' > "$case_dir/metadata.json"
-  else
-    printf '%s\n' \
-      '{' \
-      '  "workspace_members": ["alpha", "beta", "gamma"],' \
-      '  "packages": [' \
-      "    {\"id\": \"alpha\", \"name\": \"alpha\", \"manifest_path\": \"$case_dir/crates/alpha/Cargo.toml\", \"targets\": [{\"name\": \"alpha\", \"kind\": [\"lib\"]}]}," \
-      "    {\"id\": \"beta\", \"name\": \"beta\", \"manifest_path\": \"$case_dir/crates/beta/Cargo.toml\", \"targets\": [{\"name\": \"beta\", \"kind\": [\"lib\"]}]}," \
-      "    {\"id\": \"gamma\", \"name\": \"gamma\", \"manifest_path\": \"$case_dir/crates/gamma/Cargo.toml\", \"targets\": [{\"name\": \"$gamma_target_name\", \"kind\": [\"$gamma_target_kind\"]}]}" \
-      '  ]' \
-      '}' > "$case_dir/metadata.json"
-  fi
-}
-
 create_case() {
-  local name="$1"
-  local mode="${2:-default}"
-  local case_dir="$CASE_ROOT/$name"
+  local case_dir="$CASE_ROOT/$1"
+  shift
 
-  mkdir -p "$case_dir"
-  case_dir=$(cd "$case_dir" && pwd -P)
-  mkdir -p "$case_dir/scripts/ci" "$case_dir/crates"/{alpha,beta,gamma}/src
-  cp "$CHECKER" "$case_dir/scripts/ci/check-workspace-test-coverage.sh"
-  : > "$case_dir/crates/alpha/Cargo.toml"
-  : > "$case_dir/crates/beta/Cargo.toml"
-  : > "$case_dir/crates/gamma/Cargo.toml"
+  local members=(crates/alpha crates/beta crates/gamma "$@")
+  local member
+
+  mkdir -p "$case_dir/scripts/ci"
+  cp "$CHECKER" "$case_dir/scripts/ci/"
+  cp "$REPO_ROOT/rust-toolchain.toml" "$case_dir/"
+
+  {
+    printf '%s\n' '[workspace]' 'resolver = "3"' 'members = ['
+    printf '  "%s",\n' "${members[@]}"
+    printf '%s\n' ']'
+  } > "$case_dir/Cargo.toml"
+
+  for member in "${members[@]}"; do
+    mkdir -p "$case_dir/$member/src"
+    printf '[package]\nname = "%s"\nversion = "0.1.0"\nedition = "2024"\n' \
+      "${member##*/}" > "$case_dir/$member/Cargo.toml"
+    : > "$case_dir/$member/src/lib.rs"
+  done
+
   write_makefile "$case_dir" "alpha" "beta" "gamma"
-  write_metadata "$case_dir" "$mode"
-
-  printf '%s' "$case_dir"
+  printf '%s\n' "$case_dir"
 }
 
 run_checker() {
   local case_dir="$1"
 
-  set +e
-  PATH="$CASE_ROOT/bin:$PATH" \
-    MOCK_CARGO_METADATA="$case_dir/metadata.json" \
-    bash "$case_dir/scripts/ci/check-workspace-test-coverage.sh" \
-    > "$case_dir/stdout.txt" 2> "$case_dir/stderr.txt"
-  RUN_STATUS=$?
-  set -e
+  RUN_STATUS=0
+  CARGO_NET_OFFLINE=true bash "$case_dir/scripts/ci/check-workspace-test-coverage.sh" \
+    > "$case_dir/stdout.txt" 2> "$case_dir/stderr.txt" || RUN_STATUS=$?
 }
 
 expect_success() {
@@ -157,7 +115,9 @@ unknown_case=$(create_case "unknown")
 write_makefile "$unknown_case" "alpha unknown" "beta" "gamma"
 expect_failure "$unknown_case" "inventory entries not found in the workspace: unknown"
 
-test_target_case=$(create_case "test-target" "test-target")
+test_target_case=$(create_case "test-target")
+mkdir -p "$test_target_case/crates/gamma/tests"
+: > "$test_target_case/crates/gamma/tests/gamma-tests.rs"
 expect_failure "$test_target_case" "no-test crate gamma defines test targets: gamma-tests"
 
 rust_test_case=$(create_case "rust-test")
@@ -166,9 +126,8 @@ printf '%s\n' \
   'fn rejects_no_test_inventory() {}' > "$rust_test_case/crates/gamma/src/lib.rs"
 expect_failure "$rust_test_case" "no-test crate gamma contains Rust tests: crates/gamma/src/lib.rs"
 
-nested_case=$(create_case "nested-and-cache" "nested")
-mkdir -p "$nested_case/crates/gamma/nested/src" "$nested_case/crates/gamma/cache/src"
-: > "$nested_case/crates/gamma/nested/Cargo.toml"
+nested_case=$(create_case "nested-and-cache" "crates/gamma/nested")
+mkdir -p "$nested_case/crates/gamma/cache/src"
 : > "$nested_case/crates/gamma/cache/CACHEDIR.TAG"
 printf '%s\n' '#[test]' 'fn nested_test() {}' > "$nested_case/crates/gamma/nested/src/lib.rs"
 printf '%s\n' '#[test]' 'fn cached_test() {}' > "$nested_case/crates/gamma/cache/src/lib.rs"

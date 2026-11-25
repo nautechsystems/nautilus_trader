@@ -104,7 +104,8 @@ mod tests {
         let state = cash_account_state.with_info(Some(info));
         let metadata = state.metadata();
         let batch = AccountState::encode_batch(&metadata, std::slice::from_ref(&state)).unwrap();
-        let decoded = AccountState::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+        let decoded =
+            AccountState::decode_typed_batch(&batch.schema().metadata().into(), batch).unwrap();
 
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].account_id, state.account_id);
@@ -125,7 +126,8 @@ mod tests {
         let batch =
             AccountState::encode_batch(&metadata, std::slice::from_ref(&cash_account_state))
                 .unwrap();
-        let decoded = AccountState::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+        let decoded =
+            AccountState::decode_typed_batch(&batch.schema().metadata().into(), batch).unwrap();
 
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].balances, cash_account_state.balances);
@@ -146,7 +148,8 @@ mod tests {
             legacy_fields,
         )
         .unwrap();
-        let decoded = AccountState::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+        let decoded =
+            AccountState::decode_typed_batch(&batch.schema().metadata().into(), batch).unwrap();
 
         assert_eq!(decoded.len(), 1);
         assert!(decoded[0].info.is_none());

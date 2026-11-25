@@ -546,7 +546,7 @@ fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
         .into_iter()
         .flat_map(|batch| {
             let schema = batch.schema();
-            AccountState::decode_typed_batch(schema.metadata(), batch).unwrap()
+            AccountState::decode_typed_batch(&schema.metadata().into(), batch).unwrap()
         })
         .collect::<Vec<_>>();
 

@@ -49,7 +49,8 @@ fn account_ids_round_trip(#[case] optional: Vec<Option<&str>>) {
         .map(|(i, account)| account_data(i, account))
         .collect();
     let batch = AccountData::encode_batch(&Default::default(), &original).unwrap();
-    let decoded = AccountData::decode_data_batch(batch.schema().metadata(), batch.clone()).unwrap();
+    let decoded =
+        AccountData::decode_data_batch(&batch.schema().metadata().into(), batch.clone()).unwrap();
     let expected_type = serde_json::to_value(DataType::new("AccountData", None, None)).unwrap();
 
     assert_eq!(batch.schema().field(0).data_type(), &ArrowDataType::Utf8);
@@ -100,7 +101,8 @@ fn invalid_account_id_returns_parse_error(
     columns[index] = Arc::new(StringArray::from(values));
     let batch = RecordBatch::try_new(batch.schema(), columns).unwrap();
     let expected = AccountId::new_checked(invalid).unwrap_err();
-    let error = AccountData::decode_data_batch(batch.schema().metadata(), batch).unwrap_err();
+    let error =
+        AccountData::decode_data_batch(&batch.schema().metadata().into(), batch).unwrap_err();
 
     assert_eq!(
         error.to_string(),

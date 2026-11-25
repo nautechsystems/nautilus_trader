@@ -13237,11 +13237,12 @@ mod tests {
     }
 
     mod shutdown {
+        #[cfg(target_os = "linux")]
+        use nautilus_common::live::dst::time;
         use nautilus_common::{
             clients::ExecutionReportTask,
             component::component_state,
             enums::ComponentState,
-            live::dst::time,
             messages::{
                 data::UnsubscribeCommand,
                 execution::{CancelOrder, QueryOrder},
