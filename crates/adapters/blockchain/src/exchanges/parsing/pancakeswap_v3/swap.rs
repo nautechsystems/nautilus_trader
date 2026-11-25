@@ -78,7 +78,6 @@ pub fn parse_swap_event_hypersync(dex: SharedDex, log: &HypersyncLog) -> anyhow:
         };
         let pool_address = Address::from_slice(
             log.address
-                .clone()
                 .expect("Contract address should be set in logs")
                 .as_ref(),
         );

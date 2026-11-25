@@ -20,10 +20,6 @@ id = "RUSTSEC-2024-0449"
 reason = "unsafe-libyaml unmaintained, build-only via dydx-proto, parsing requires V4_PROTO_REBUILD"
 
 [[IgnoredVulns]]
-id = "RUSTSEC-2025-0143"
-reason = "capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix"
-
-[[IgnoredVulns]]
 id = "RUSTSEC-2025-0075"
 reason = "unic-char-range unmaintained, transitive via pyo3-stub-gen (dev tool only)"
 
@@ -46,14 +42,6 @@ reason = "unic-ucd-version unmaintained, transitive via pyo3-stub-gen (dev tool 
 [[IgnoredVulns]]
 id = "RUSTSEC-2025-0100"
 reason = "unic-ucd-ident unmaintained, transitive via pyo3-stub-gen (dev tool only)"
-
-[[IgnoredVulns]]
-id = "RUSTSEC-2025-0141"
-reason = "bincode unmaintained, transitive via hypersync-client (not a security vulnerability)"
-
-[[IgnoredVulns]]
-id = "RUSTSEC-2026-0306"
-reason = "faster-hex unsound hex_decode_unchecked, transitive via hypersync, no in-graph caller"
 
 # SQLx 0.9 resolves SQLite into Cargo.lock but no workspace feature builds it.
 # Its libsqlite3-sys requirement excludes the fixed 0.39 release. Keep cargo-deny

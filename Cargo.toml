@@ -346,7 +346,6 @@ csv = "1.4.0"
 databento = { version = "0.65.0" }
 dydx-proto = { version = "0.4.0", default-features = false }
 fallible-streaming-iterator = "0.1.9"
-hypersync-client = { version = "2.0.0" }
 ibapi = "=5.0.0"
 ryu = "1.0.23"
 serde_repr = "0.1.21"

@@ -26,7 +26,7 @@ This crate provides feature flags to control source code inclusion during compil
 - `defi`: Enables DeFi (Decentralized Finance) support, including blockchain adapters.
 - `extension-module`: Builds as a Python extension module and is automatically enabled by `maturin`.
 - `high-precision`: Uses 128-bit value types throughout the workspace.
-- `hypersync`: Enables [`hypersync-client`](https://crates.io/crates/hypersync-client) support for the blockchain adapter.
+- `hypersync`: Enables HyperSync support for the blockchain adapter.
 - `mimalloc`: Sets [mimalloc](https://crates.io/crates/mimalloc) as Rust's global allocator.
 - `postgres`: Enables PostgreSQL (sqlx) back-ends in dependent crates.
 - `redis`: Enables Redis based infrastructure in dependent crates.
@@ -66,6 +66,8 @@ dictionary empty.
 ## License
 
 The source code for NautilusTrader is available on GitHub under the [GNU Lesser General Public License v3.0](https://www.gnu.org/licenses/lgpl-3.0.en.html).
+
+The `hypersync` feature includes MPL-2.0 code. See the [blockchain adapter notices](../adapters/blockchain/licenses/THIRD_PARTY_LICENSES.md).
 
 ---
 

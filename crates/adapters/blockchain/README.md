@@ -32,7 +32,7 @@ credentials, and connection setup.
 Feature flags control code inclusion for Rust builds and Python bindings:
 
 - `extension-module`: Builds as a Python extension module.
-- `hypersync`: Enables the [`hypersync-client`](https://crates.io/crates/hypersync-client) integration.
+- `hypersync`: Enables the HyperSync JSON integration.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 - `turmoil`: Enables deterministic network simulation testing with [turmoil](https://crates.io/crates/turmoil).
 
@@ -107,6 +107,8 @@ The turmoil tests simulate various network conditions (reconnections, partitions
 ## License
 
 The source code for NautilusTrader is available on GitHub under the [GNU Lesser General Public License v3.0](https://www.gnu.org/licenses/lgpl-3.0.en.html).
+
+The `hypersync` feature includes MPL-2.0 code. See the [third-party notices](licenses/THIRD_PARTY_LICENSES.md).
 
 ---
 

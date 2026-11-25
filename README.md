@@ -675,6 +675,12 @@ remain welcome. Keep those reports focused on the core behavior.
 ## License
 
 The source code for NautilusTrader is available on GitHub under the [GNU Lesser General Public License v3.0](https://www.gnu.org/licenses/lgpl-3.0.en.html).
+
+Python wheels and other builds with the `hypersync` feature include code from Envio's HyperSync SDK under MPL-2.0.
+Use the [NautilusTrader source release](https://github.com/nautechsystems/nautilus_trader/releases)
+that matches your build to obtain the modified source in `crates/adapters/blockchain/src/hypersync/types.rs`
+and the license in `crates/adapters/blockchain/licenses/`.
+
 Contributions to the project are welcome and require the completion of a standard [Contributor License Agreement (CLA)](https://github.com/nautechsystems/nautilus_trader/blob/develop/CLA.md).
 
 ---

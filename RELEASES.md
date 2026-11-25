@@ -115,6 +115,7 @@ Released on TBD (UTC).
 - Changed `KrakenSpotHttpClient::modify_order` to return `Result<Option<VenueOrderId>>`. Handle `None` (#5661)
 - Changed `KrakenDataClientConfig` literals; add `book_snapshot_timeout_secs` or `..Default::default()` (#5300)
 - Changed Kraken Spot checksum recovery to retain the last book and keep validating checksums (#5300)
+- Changed `HypersyncLog` and `transform_hypersync_block` to use adapter types with Alloy primitives
 - Changed Lighter `From<LighterTradeType>` for `LighterTradeQueryType` to `TryFrom`; handle the error
 - Changed Lighter position and asset frame literals; add `transaction_time: None` and update exhaustive matches
 - Changed Lighter venue enums with fallback and settlement variants; update exhaustive matches
@@ -281,6 +282,7 @@ Released on TBD (UTC).
 - Improved portfolio position-event benchmark coverage
 - Improved Kraken logging for subscription commands dropped without an active WebSocket client
 - Improved Polymarket price-change benchmark coverage for local book application
+- Replaced the Envio HyperSync SDK with its JSON API
 - Optimized socket client framing to search only unscanned bytes on each read
 - Optimized cache position queries, speeding up portfolio updates with many HEDGING positions
 - Optimized order fill processing for orders with many fills

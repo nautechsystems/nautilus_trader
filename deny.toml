@@ -37,14 +37,6 @@ ignore = [
   { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
   { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
 
-  # bincode 1.3.3 unmaintained, transitive via madsim and hypersync-client. Not a vulnerability.
-  # TODO: Monitor madsim and hypersync-client upstreams for migration
-  { id = "RUSTSEC-2025-0141", reason = "bincode unmaintained, transitive via madsim and hypersync-client (not a vulnerability)" },
-
-  # capnp unsound APIs in constant::Reader and StructSchema, transitive via hypersync-client.
-  # Generated code supplies static schema metadata; no remote schema input path is known.
-  { id = "RUSTSEC-2025-0143", reason = "capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix" },
-
   # crypto-bigint timing leaks affect secret arithmetic in transaction signing.
   # Alloy and cosmrs require k256 0.13 -> elliptic-curve 0.13 -> crypto-bigint 0.5.
   # Accept this risk until upstream permits crypto-bigint >=0.7.6 or backports the fix.
@@ -169,19 +161,10 @@ skip = [
   { crate = "darling:<0.24" },
   { crate = "darling_core:<0.24" },
   { crate = "darling_macro:<0.24" },
-  { crate = "derive_more:<2" },
-  { crate = "derive_more-impl:<2" },
 
   # syn 1 and strsim 0.10 - transitive via madsim -> darling 0.14 (dev-only simulator)
   { crate = "syn:<3" },
   { crate = "strsim:<0.11" },
-
-  # Enum derive macros - strum 0.27 (alloy, hypersync) vs 0.28 (nautilus)
-  { crate = "strum:<0.28" },
-  { crate = "strum_macros:<0.28" },
-
-  # Case conversion - version fragmentation via derive_more
-  { crate = "convert_case:<0.10" },
 
   # Common utility crates with version fragmentation across ecosystem
   # base64 0.23 is used directly; upstream dependencies still require 0.22
@@ -211,10 +194,6 @@ skip = [
   # CPU feature detection - cpufeatures 0.2 vs 0.3 (const-hex vs chacha20/rand)
   { crate = "cpufeatures:<0.3" },
 
-  # Databento and HyperSync still use reqwest 0.12
-  { crate = "reqwest:<0.13" },
-  { crate = "wasm-streams:<0.5" },
-
   # Reqwest requires tower-http 0.6; the direct HTTP transport uses 0.7
   { crate = "tower-http:<0.7" },
 
@@ -233,34 +212,11 @@ skip = [
   # Windows platform crates - notoriously fragmented across Windows SDK versions
   { crate = "windows-sys:<0.61" },
 
-  # HyperSync uses Arrow and Parquet 59 alongside the DataFusion stack on 60
-  { crate = "arrow:=59.3.3" },
-  { crate = "arrow-arith:=59.3.3" },
-  { crate = "arrow-array:=59.3.3" },
-  { crate = "arrow-buffer:=59.3.3" },
-  { crate = "arrow-cast:=59.3.3" },
-  { crate = "arrow-csv:=59.3.3" },
-  { crate = "arrow-data:=59.3.3" },
-  { crate = "arrow-ipc:=59.3.3" },
-  { crate = "arrow-json:=59.3.3" },
-  { crate = "arrow-ord:=59.3.3" },
-  { crate = "arrow-row:=59.3.3" },
-  { crate = "arrow-schema:=59.3.3" },
-  { crate = "arrow-select:=59.3.3" },
-  { crate = "arrow-string:=59.3.3" },
+  # SQLx 0.9 uses atoi 2 alongside atoi 3
   { crate = "atoi:=2.0.0" },
-  { crate = "parquet:=59.3.3" },
 
-  # Parquet 59 and 60 use different Brotli and lazy-initialization dependencies
-  { crate = "alloc-no-stdlib:=2.0.4" },
-  { crate = "alloc-stdlib:=0.2.4" },
-  { crate = "brotli:=8.0.4" },
-  { crate = "brotli-decompressor:=5.0.3" },
+  # Flume and madsim use spin 0.9 alongside spin 0.10
   { crate = "spin:=0.9.9" },
-
-  # Arrow and Parquet retain zstd 0.13 while compression-codecs and Databento use 0.14
-  { crate = "zstd:=0.13.5" },
-  { crate = "zstd-safe:=7.4.1" },
 ]
 
 skip-tree = []

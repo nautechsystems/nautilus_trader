@@ -34,8 +34,7 @@
 //! Feature flags control code inclusion for Rust builds and Python bindings:
 //!
 //! - `extension-module`: Builds as a Python extension module.
-//! - `hypersync`: Enables the
-//!   [`hypersync-client`](https://crates.io/crates/hypersync-client) integration.
+//! - `hypersync`: Enables the HyperSync JSON integration.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `turmoil`: Enables deterministic network simulation testing with
 //!   [turmoil](https://crates.io/crates/turmoil).

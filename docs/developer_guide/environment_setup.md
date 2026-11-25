@@ -10,10 +10,6 @@ For VS Code, see [Python editor settings](#python-editor-settings).
 Source builds and the Rust crates require [Rust](https://www.rust-lang.org)
 ([installation guide](https://www.rust-lang.org/tools/install)).
 
-[Cap'n Proto](https://capnproto.org) tooling is retained for HyperSync development. Its pinned version
-is specified in `.nautilus-engineering/tools.toml`. Ubuntu's default package is typically too old,
-so you may need to install from source (see below).
-
 :::info
 NautilusTrader *must* compile and run on **Linux, macOS, and Windows**. Please keep portability in
 mind: use `std::path::Path` in code and follow the
@@ -54,7 +50,6 @@ export PATH="$HOME/.local/bin:$PATH"
 
 cargo install cargo-binstall --version "$(bash scripts/cargo-tool-version.sh cargo-binstall)" --locked
 make install-tools
-./scripts/install-capnp.sh
 
 make sync
 source python/.venv/bin/activate
@@ -440,13 +435,12 @@ measurements.
 Use the command that updates the affected artifact. The build targets call their prerequisites, so
 `make build-debug` also syncs Python dependencies and regenerates Python type stubs.
 
-| Changed input                                       | Command                      | Updated artifact                                  |
-| --------------------------------------------------- | ---------------------------- | ------------------------------------------------- |
-| `python/pyproject.toml` or `python/uv.lock`         | `make sync`                  | Dependencies in `python/.venv`.                   |
-| Rust bindings, Python package code, or stub sources | `make build-debug`           | Debug Python package and generated type stubs.    |
-| CLI code, SQL initialization code, or `schema/sql`  | `make install-cli`           | Standalone `nautilus` binary in Cargo's bin path. |
-| Cargo, uv, `prek`, or OSV Scanner tool pins         | `make install-tools`         | Pinned development tools.                         |
-| Cap'n Proto version in the shared catalog           | `./scripts/install-capnp.sh` | Cap'n Proto compiler.                             |
+| Changed input                                       | Command              | Updated artifact                                  |
+| --------------------------------------------------- | -------------------- | ------------------------------------------------- |
+| `python/pyproject.toml` or `python/uv.lock`         | `make sync`          | Dependencies in `python/.venv`.                   |
+| Rust bindings, Python package code, or stub sources | `make build-debug`   | Debug Python package and generated type stubs.    |
+| CLI code, SQL initialization code, or `schema/sql`  | `make install-cli`   | Standalone `nautilus` binary in Cargo's bin path. |
+| Cargo, uv, `prek`, or OSV Scanner tool pins         | `make install-tools` | Pinned development tools.                         |
 
 The environment variables in [Configure environment variables](#4-configure-environment-variables)
 contain checkout-specific paths. After switching checkouts, changing the selected Python version,
@@ -464,10 +458,8 @@ In Fish, use `source python/.venv/bin/activate.fish` for activation. Activation 
 
 ## Cap'n Proto
 
-[Cap'n Proto](https://capnproto.org) tooling remains available for HyperSync development. The pinned
-HyperSync dependencies ship generated Rust bindings, so normal builds do not regenerate their schemas.
-NautilusTrader does not provide Cap'n Proto codecs.
-The required version is defined in `.nautilus-engineering/tools.toml`.
+The shared tool catalog pins an optional [Cap'n Proto](https://capnproto.org) compiler.
+HyperSync uses the JSON API. NautilusTrader builds do not require the compiler.
 
 Install the correct version for your platform:
 
