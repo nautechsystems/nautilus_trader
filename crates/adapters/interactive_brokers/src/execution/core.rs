@@ -366,10 +366,24 @@ pub(super) struct PendingModifyValues {
     pub(super) trail_stop_price: Option<f64>,
 }
 
+/// Absolute floor of the amendment comparison, far below any real lot or tick.
+const AMENDMENT_TOLERANCE: f64 = 1e-9;
+
+/// Tolerance for comparing a requested order term with the `f64` IB reports.
+///
+/// A fixed absolute tolerance is smaller than one ULP above 2^23 (8,388,608), and an FX order is
+/// denominated in currency units, so a size in the millions is ordinary. Two values that differ
+/// by a single representable step would then compare unequal, `pending_modify` would never clear,
+/// and a later unrelated notice would report a correctly applied amendment as rejected. Adding
+/// eight machine epsilons of the operands' magnitude keeps the comparison exact at the top of the
+/// range without loosening it at the bottom, where prices live.
+fn amendment_tolerance(scale: f64) -> f64 {
+    AMENDMENT_TOLERANCE + 8.0 * f64::EPSILON * scale.max(1.0)
+}
+
 impl PendingModifyValues {
     pub(super) fn matches(&self, order: &ibapi::orders::Order) -> bool {
-        const EPS: f64 = 1e-9;
-        let approx = |a: f64, b: f64| (a - b).abs() <= EPS;
+        let approx = |a: f64, b: f64| (a - b).abs() <= amendment_tolerance(a.abs().max(b.abs()));
 
         let reflects = |requested: Option<f64>, reported: Option<f64>| {
             requested.is_none_or(|requested| {
