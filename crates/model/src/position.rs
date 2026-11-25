@@ -183,6 +183,15 @@ pub struct PositionFillVoid {
     pub commission_voided: Option<Money>,
 }
 
+/// Whether the position applied a fill or ignored it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PositionFillOutcome {
+    /// The fill was applied; a live application also records it in replay history.
+    Applied,
+    /// The fill did not change the position or replay history.
+    Ignored,
+}
+
 impl Position {
     /// Creates a new [`Position`] instance.
     ///
@@ -524,6 +533,19 @@ impl Position {
     /// - `fill.trade_id` is already in `trade_ids` and this fill is not a restatement of that
     ///   order.
     pub fn try_apply(&mut self, fill: &OrderFilled) -> CorrectnessResult<()> {
+        self.try_apply_with_outcome(fill).map(|_| ())
+    }
+
+    /// Applies a fill and reports whether it changed the position and appended replay history.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if fill identity or accounting validation fails, or if a duplicate trade
+    /// in the current cycle is not an accepted restatement. See [`Self::try_apply`].
+    pub fn try_apply_with_outcome(
+        &mut self,
+        fill: &OrderFilled,
+    ) -> CorrectnessResult<PositionFillOutcome> {
         Self::check_fill_instrument(self.instrument_id, "self.instrument_id", fill)?;
         let position_id = Self::fill_position_id(fill)?;
         check_equal(&self.id, &position_id, "self.id", "fill.position_id")?;
@@ -608,21 +630,32 @@ impl Position {
         Ok(())
     }
 
-    fn apply_fill(&mut self, fill: &OrderFilled, record_replay: bool) -> CorrectnessResult<()> {
+    fn apply_fill(
+        &mut self,
+        fill: &OrderFilled,
+        record_replay: bool,
+    ) -> CorrectnessResult<PositionFillOutcome> {
         if record_replay
             && self.trade_ids.contains(&fill.trade_id)
             && self.replay_has_event(fill.event_id)
         {
-            return Ok(());
+            return Ok(PositionFillOutcome::Ignored);
         }
 
         let (last_px, last_qty) = self.check_fill_accounting(fill)?;
 
         if self.is_price_restatement(fill) {
+            // A restatement may retain its original quantity after a partial void.
+            if record_replay
+                && self.uses_adjusted_inverse_basis()
+                && !self.matches_recorded_fill(fill)
+            {
+                return Ok(PositionFillOutcome::Ignored);
+            }
             let mut next = self.clone();
             next.apply_price_restatement(fill, record_replay)?;
             *self = next;
-            return Ok(());
+            return Ok(PositionFillOutcome::Applied);
         }
 
         if record_replay
@@ -634,7 +667,7 @@ impl Position {
                 fill.trade_id,
                 self.id,
             );
-            return Ok(());
+            return Ok(PositionFillOutcome::Ignored);
         }
 
         if fill.ts_event < self.ts_opened {
@@ -675,7 +708,7 @@ impl Position {
 
         next.debug_assert_invariants();
         *self = next;
-        Ok(())
+        Ok(PositionFillOutcome::Applied)
     }
 
     fn prepare_fill(
@@ -862,12 +895,6 @@ impl Position {
         fill: &OrderFilled,
         record_replay: bool,
     ) -> CorrectnessResult<()> {
-        // Replayed restatements can retain the original quantity after a partial void
-        if record_replay && self.uses_adjusted_inverse_basis() && !self.matches_recorded_fill(fill)
-        {
-            return Ok(());
-        }
-
         if self.side != PositionSide::Flat && !self.quantity.is_zero() {
             self.restate_open_average(fill)?;
         }
@@ -1904,7 +1931,7 @@ impl Position {
         let mut effective = fill.clone();
         effective.last_qty = effective_qty;
         effective.commission = effective_commission;
-        self.apply_fill(&effective, false)
+        self.apply_fill(&effective, false).map(|_| ())
     }
 
     fn allocate_fill_void(
@@ -3462,7 +3489,10 @@ mod tests {
         let restatement = fill("T-1", OrderSide::Buy, "50", "40000.0");
 
         assert!(position.accepts_price_restatement(&restatement));
-        position.try_apply(&restatement).unwrap();
+        assert_eq!(
+            position.try_apply_with_outcome(&restatement).unwrap(),
+            PositionFillOutcome::Applied
+        );
         assert!(!position.accepts_price_restatement(&restatement));
         assert!(!position.is_price_restatement(&opening));
         assert!(position.is_price_restatement(&restatement));
@@ -3471,7 +3501,12 @@ mod tests {
         let replay_len = position.replay_events.len();
 
         assert!(!position.accepts_price_restatement(&restatement_with_wrong_side));
-        position.try_apply(&restatement_with_wrong_side).unwrap();
+        assert_eq!(
+            position
+                .try_apply_with_outcome(&restatement_with_wrong_side)
+                .unwrap(),
+            PositionFillOutcome::Ignored
+        );
 
         assert_eq!(position.replay_events.len(), replay_len);
         assert_eq!(position.side, PositionSide::Short);
@@ -4254,9 +4289,15 @@ mod tests {
             .event_id(UUID4::new())
             .build();
         let mut position = Position::new(&instrument, opening);
-        position.apply(&restatement);
+        assert_eq!(
+            position.try_apply_with_outcome(&restatement).unwrap(),
+            PositionFillOutcome::Applied
+        );
         let replay_len = position.replay_events.len();
-        position.apply(&restatement);
+        assert_eq!(
+            position.try_apply_with_outcome(&restatement).unwrap(),
+            PositionFillOutcome::Ignored
+        );
 
         assert_eq!(position.avg_px_open, Price::from("9.47").as_decimal());
         assert_eq!(position.replay_events.len(), replay_len);

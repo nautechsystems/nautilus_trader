@@ -51,6 +51,11 @@ parser.add_argument("--baseline-allocations", type=pathlib.Path)
 parser.add_argument("--head-allocations", type=pathlib.Path)
 parser.add_argument("--redis-server", default=shutil.which("redis-server"))
 parser.add_argument(
+    "--legacy-duplicate-reload",
+    choices=("baseline", "head", "both"),
+    help="Expect the historical nonvirtual duplicate reload failure for these older binaries only",
+)
+parser.add_argument(
     "--smoke",
     action="store_true",
     help="Run only small correctness fixtures and memory probes",
@@ -90,6 +95,7 @@ ENV = dict(os.environ, NAUTILUS_WORKER_THREADS="1")
     json.dumps(
         {
             "smoke": options.smoke,
+            "legacy_duplicate_reload": options.legacy_duplicate_reload,
             "allocation_binaries": {
                 variant: hashlib.sha256(path.read_bytes()).hexdigest()
                 for variant, path in ALLOCATIONS.items()
@@ -331,7 +337,11 @@ try:
         args = [n, backend, 0, start, first, 3, "full", mode]
         code = run(variant + "-engine", args, tag)
         expected = (
-            DUPLICATE_RELOAD_EXIT if backend == "redis-nonvirtual" and first == "duplicate" else 0
+            DUPLICATE_RELOAD_EXIT
+            if backend == "redis-nonvirtual"
+            and first == "duplicate"
+            and options.legacy_duplicate_reload in (variant, "both")
+            else 0
         )
         results.append({"tag": tag, "code": code, "expected": expected})
         if code != expected:

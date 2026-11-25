@@ -7586,13 +7586,27 @@ fn test_update_position_from_fill_duplicate_leaves_canonical_state_unchanged(
         .build();
     let position = Position::new(&instrument, fill.clone());
     cache.add_position(&position, OmsType::Netting).unwrap();
+    let (database, calls) = SnapshotBlobTestDatabase::database_recorder();
+    cache.set_database(Box::new(database));
 
-    cache.update_position_from_fill(position_id, &fill).unwrap();
+    let summary = cache.update_position_from_fill(position_id, &fill).unwrap();
+    assert_eq!(
+        serde_json::to_value(summary).unwrap(),
+        serde_json::to_value(position.clone_without_events()).unwrap(),
+    );
+    assert!(
+        cache
+            .update_position_from_fill_if_applied(position_id, &fill)
+            .unwrap()
+            .is_none()
+    );
+
     let cached = cache.position(&position_id).unwrap();
     assert_eq!(
         serde_json::to_value(&*cached).unwrap(),
         serde_json::to_value(&position).unwrap(),
     );
+    assert_eq!(calls.lock().position_updates, 0);
     assert!(cache.is_position_open(&position_id));
     assert!(!cache.is_position_closed(&position_id));
 }
@@ -15020,6 +15034,7 @@ struct CacheDatabaseCallLog {
     actor_updates: Vec<(ActorId, AHashMap<String, Bytes>)>,
     strategy_updates: Vec<(StrategyId, AHashMap<String, Bytes>)>,
     order_snapshots: Vec<OrderAny>,
+    position_updates: usize,
     position_snapshots: Vec<(Position, UnixNanos, Option<Money>)>,
     currencies: Vec<Currency>,
 }
@@ -15642,6 +15657,8 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     fn update_position(&self, _position: &Position) -> anyhow::Result<()> {
+        self.database_calls.lock().position_updates += 1;
+
         if self.fail_update_position {
             anyhow::bail!("update position failed");
         }

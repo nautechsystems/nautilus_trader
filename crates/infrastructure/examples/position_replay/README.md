@@ -54,16 +54,26 @@ Use `full` for correctness checks, including serialized position-state compariso
 adapter submission. Measure Redis drain and reload separately. A historical duplicate submitted
 through a fresh order checks the position state, and `unique-only` skips duplicate probes.
 
-Nonvirtual Redis has two known reload failures. The historical-duplicate case reports exit code 2.
-The plain-fill `reopen-carry` case reports `RELOAD_HISTORY_MISMATCH` because only the new cycle
-reloads. Both failures also reproduce on the unindexed baseline.
+The historical-duplicate flip originally failed with exit code 2 on nonvirtual Redis. The full flip
+fixture now checks that no-op fills do not emit position events or snapshots and that direct and
+bulk reload agree. It does not repair databases already containing duplicate entries. The distinct
+plain-fill `reopen-carry` case still reports `RELOAD_HISTORY_MISMATCH` because only the new cycle
+reloads; this change does not alter that behavior.
 
 ## Performance comparison
 
-Use `bench-lto` and a separate `CARGO_TARGET_DIR` for each revision. For a new comparison, copy this
-directory and the manifest entries for `replay_latest_comparison`, `replay_latest_memory`, and
-`replay_latest_allocations` into both checkouts. Preserve the target paths and feature requirements.
-Verify the executable identities before running `scripts/benchmark-position-replay.py`.
+Use `bench-lto` and a separate `CARGO_TARGET_DIR` for each revision. For separate timing-only
+invocations of the measurement workloads, use identical fixture sources in both checkouts. If
+copying this directory and the three `replay_latest_*` manifest entries for those invocations,
+preserve the target paths and feature requirements.
+
+The combined runner has no timing-only mode: it performs correctness checks before timing. By
+default both binaries must pass duplicate-flip reload. To reproduce the historical failure, build
+the affected revision with its
+original matching comparison source and pass `--legacy-duplicate-reload baseline` (or `both` when
+both binaries predate the fix). The current fixture adds event assertions that can stop an old
+engine before reload, so it cannot be used to reproduce the original exit-2 signature. Verify the
+executables before running `scripts/benchmark-position-replay.py`.
 See the [benchmark policy](../../../../BENCHMARKING.md) and the [recorded comparison][report]
 for measurement limits and commands for the archived layout.
 
