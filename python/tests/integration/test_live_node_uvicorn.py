@@ -35,6 +35,7 @@ from nautilus_trader.live import LiveNode
 from nautilus_trader.live import LiveNodeConfig
 from nautilus_trader.live import NodeState
 from nautilus_trader.model import TraderId
+from nautilus_trader.testkit.functions import eventually
 
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.usefixtures("collect_node_cycles")]
@@ -77,12 +78,14 @@ def make_app(node: LiveNode, record: dict) -> object:
                 message = await receive()
                 if message["type"] == "lifespan.startup":
                     record["task"] = asyncio.create_task(node.run_async())
-                    await asyncio.sleep(0.1)
+                    try:
+                        await eventually(lambda: handle.is_running, timeout_secs=10.0)
+                    except TimeoutError:
+                        await stop_node()
+                        raise
                     await send({"type": "lifespan.startup.complete"})
                 elif message["type"] == "lifespan.shutdown":
-                    handle.stop()
-                    async with asyncio.timeout(10.0):
-                        await record["task"]
+                    await stop_node()
                     await send({"type": "lifespan.shutdown.complete"})
                     return
         elif scope["type"] == "http":
@@ -103,6 +106,11 @@ def make_app(node: LiveNode, record: dict) -> object:
             )
             await send({"type": "http.response.body", "body": body})
 
+    async def stop_node() -> None:
+        handle.stop()
+        async with asyncio.timeout(10.0):
+            await record["task"]
+
     return app
 
 
@@ -114,11 +122,17 @@ async def serve(app: object) -> tuple:
     server = uvicorn.Server(config)
     server.install_signal_handlers = lambda: None  # The test owns the loop and its signals
 
-    task = asyncio.create_task(server.serve())
+    async def run_server() -> None:
+        try:
+            await server.serve()
+        except SystemExit as e:
+            raise RuntimeError("Uvicorn failed to start") from e
 
-    async with asyncio.timeout(20.0):
-        while not server.started:
-            await asyncio.sleep(0.01)
+    task = asyncio.create_task(run_server())
+    await eventually(lambda: server.started or task.done(), timeout_secs=20.0)
+    if not server.started:
+        await task
+        raise RuntimeError("Uvicorn stopped before it started")
 
     port = server.servers[0].sockets[0].getsockname()[1]
     return server, task, port

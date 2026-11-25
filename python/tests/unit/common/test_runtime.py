@@ -37,6 +37,7 @@ from nautilus_trader.common import Signal
 from nautilus_trader.common import get_exchange_rate
 from nautilus_trader.model import DataType
 from nautilus_trader.model import PriceType
+from nautilus_trader.testkit.functions import eventually
 
 
 @pytest.mark.parametrize(
@@ -188,16 +189,17 @@ def test_message_bus_listener_stream_yields_bus_message() -> None:
         listener = MessageBusListener()
         received = []
 
-        listener.stream(received.append)
+        stream = listener.stream(received.append)
         listener.publish("topic", b"abc")
 
-        for _ in range(10):
-            if received:
-                break
-            await asyncio.sleep(0.01)
+        await eventually(lambda: bool(received))
 
         assert listener.is_active() is True
         assert listener.is_closed() is False
+
+        listener.close()
+        await asyncio.wait_for(stream, timeout=2.0)
+
         assert len(received) == 1
 
         message = received[0]
@@ -205,9 +207,6 @@ def test_message_bus_listener_stream_yields_bus_message() -> None:
         assert isinstance(message, BusMessage)
         assert message.topic == "topic"
         assert message.payload == b"abc"
-
-        listener.close()
-        await asyncio.sleep(0.1)
 
         assert listener.is_active() is False
         assert listener.is_closed() is True

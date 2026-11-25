@@ -41,6 +41,7 @@ from nautilus_trader.model import OrderSide
 from nautilus_trader.model import OrderStatus
 from nautilus_trader.model import TraderId
 from nautilus_trader.portfolio import Portfolio
+from nautilus_trader.testkit.functions import eventually
 
 
 STOP_TIMEOUT_SECS = 10.0
@@ -89,7 +90,7 @@ async def test_run_async_completes_after_handle_stop() -> None:
     assert handle.is_stopping is False
 
     task = asyncio.create_task(node.run_async())
-    await asyncio.sleep(0.1)
+    await eventually(lambda: handle.is_running, timeout_secs=10.0)
 
     assert handle.is_running is True
     assert handle.state == NodeState.RUNNING
@@ -111,13 +112,14 @@ async def test_run_async_requires_the_node_and_rejects_a_second_run() -> None:
     handle = node.handle()
 
     task = asyncio.create_task(node.run_async())
-    await asyncio.sleep(0.1)
+    try:
+        await eventually(lambda: handle.is_running, timeout_secs=10.0)
 
-    # The run owns the node, so a concurrent run is refused.
-    with pytest.raises(RuntimeError, match="run_async"):
-        node.run_async()
-
-    await stop_and_await(handle, task)
+        # The run owns the node, so a concurrent run is refused.
+        with pytest.raises(RuntimeError, match="run_async"):
+            node.run_async()
+    finally:
+        await stop_and_await(handle, task)
 
     # The node comes back once the run finishes, but a node runs only once.
     with pytest.raises(RuntimeError, match="cannot be run from state Stopped"):
@@ -132,7 +134,7 @@ async def test_node_accessors_fail_clearly_once_the_run_owns_the_node() -> None:
     handle = node.handle()
 
     task = asyncio.create_task(node.run_async())
-    await asyncio.sleep(0.1)
+    await eventually(lambda: handle.is_running, timeout_secs=10.0)
 
     for accessor in ("cache", "portfolio", "trader_id", "environment"):
         with pytest.raises(RuntimeError, match="run_async"):
@@ -160,7 +162,7 @@ async def test_handles_captured_before_the_run_stay_usable_during_it() -> None:
     assert isinstance(portfolio, Portfolio)
 
     task = asyncio.create_task(node.run_async())
-    await asyncio.sleep(0.1)
+    await eventually(lambda: handle.is_running, timeout_secs=10.0)
 
     assert cache.orders() == []
     assert cache.positions() == []
@@ -184,9 +186,10 @@ async def test_run_async_returns_a_coroutine_accepted_by_create_task() -> None:
 
     # `create_task` rejects non-coroutine awaitables, so this is the contract users rely on.
     task = asyncio.create_task(run)
-    await asyncio.sleep(0.1)
-
-    await stop_and_await(handle, task)
+    try:
+        await eventually(lambda: handle.is_running, timeout_secs=10.0)
+    finally:
+        await stop_and_await(handle, task)
 
 
 async def test_cancellation_shuts_down_then_propagates() -> None:
@@ -197,7 +200,7 @@ async def test_cancellation_shuts_down_then_propagates() -> None:
     handle = node.handle()
 
     task = asyncio.create_task(node.run_async())
-    await asyncio.sleep(0.1)
+    await eventually(lambda: handle.is_running, timeout_secs=10.0)
     assert handle.state == NodeState.RUNNING
 
     task.cancel()
@@ -220,7 +223,11 @@ async def test_repeated_cancellation_does_not_abandon_the_node() -> None:
     handle = node.handle()
 
     task = asyncio.create_task(node.run_async())
-    await asyncio.sleep(0.1)
+    try:
+        await eventually(lambda: handle.is_running, timeout_secs=10.0)
+    except TimeoutError:
+        await stop_and_await(handle, task)
+        raise
 
     for _ in range(3):
         task.cancel()
@@ -241,7 +248,11 @@ async def test_asyncio_timeout_around_a_run_reports_timeout() -> None:
     handle = node.handle()
 
     task = asyncio.create_task(node.run_async())
-    await asyncio.sleep(0.1)
+    try:
+        await eventually(lambda: handle.is_running, timeout_secs=10.0)
+    except TimeoutError:
+        await stop_and_await(handle, task)
+        raise
 
     # `asyncio.timeout` cancels the task and needs the cancellation back to raise TimeoutError.
     with pytest.raises(TimeoutError):
@@ -280,13 +291,14 @@ async def test_second_node_construction_is_rejected_while_hosted() -> None:
     handle = first.handle()
 
     task = asyncio.create_task(first.run_async())
-    await asyncio.sleep(0.1)
+    try:
+        await eventually(lambda: handle.is_running, timeout_secs=10.0)
 
-    # Thread-local runner senders and msgbus mean two hosted nodes would cross-wire silently.
-    with pytest.raises(RuntimeError, match="A LiveNode already exists"):
-        build_node("HOSTED-016")
-
-    await stop_and_await(handle, task)
+        # Thread-local runner senders and msgbus mean two hosted nodes would cross-wire silently.
+        with pytest.raises(RuntimeError, match="A LiveNode already exists"):
+            build_node("HOSTED-016")
+    finally:
+        await stop_and_await(handle, task)
 
     first.dispose()
     del first
@@ -294,11 +306,11 @@ async def test_second_node_construction_is_rejected_while_hosted() -> None:
     second = build_node("HOSTED-016")
     second_handle = second.handle()
     second_task = asyncio.create_task(second.run_async())
-    await asyncio.sleep(0.1)
-
-    assert second_handle.state == NodeState.RUNNING
-
-    await stop_and_await(second_handle, second_task)
+    try:
+        await eventually(lambda: second_handle.is_running, timeout_secs=10.0)
+        assert second_handle.state == NodeState.RUNNING
+    finally:
+        await stop_and_await(second_handle, second_task)
 
     assert second_handle.state == NodeState.STOPPED
 
@@ -310,7 +322,7 @@ async def test_handle_remains_available_while_the_run_owns_the_node() -> None:
     node = build_node("HOSTED-017")
 
     task = asyncio.create_task(node.run_async())
-    await asyncio.sleep(0.1)
+    await eventually(lambda: node.is_running, timeout_secs=10.0)
 
     # The consumed-node error tells users to reach for `handle()`, so it must not fail too.
     handle = node.handle()
@@ -328,11 +340,11 @@ async def test_hosted_run_leaves_the_python_sigint_handler_untouched() -> None:
     original = signal.getsignal(signal.SIGINT)
 
     task = asyncio.create_task(node.run_async())
-    await asyncio.sleep(0.1)
-
-    assert signal.getsignal(signal.SIGINT) is original
-
-    await stop_and_await(handle, task)
+    try:
+        await eventually(lambda: handle.is_running, timeout_secs=10.0)
+        assert signal.getsignal(signal.SIGINT) is original
+    finally:
+        await stop_and_await(handle, task)
 
     assert signal.getsignal(signal.SIGINT) is original
 
@@ -358,11 +370,12 @@ async def test_host_loop_keeps_running_while_the_node_runs() -> None:
     worker = asyncio.create_task(host_work())
     task = asyncio.create_task(node.run_async())
 
-    await asyncio.sleep(0.3)
-    assert ticks > 5, "the node starved the host loop"
-
-    await stop_and_await(handle, task)
-    worker.cancel()
+    try:
+        await asyncio.sleep(0.3)
+        assert ticks > 5, "the node starved the host loop"
+    finally:
+        worker.cancel()
+        await stop_and_await(handle, task)
 
 
 async def test_strategy_timers_and_orders_are_serviced_by_the_host_loop() -> None:
@@ -385,9 +398,7 @@ async def test_strategy_timers_and_orders_are_serviced_by_the_host_loop() -> Non
 
     task = asyncio.create_task(node.run_async())
 
-    async with asyncio.timeout(10.0):
-        while not (strategy.fired_a and strategy.fired_b):
-            await asyncio.sleep(0.01)
+    await eventually(lambda: strategy.fired_a and strategy.fired_b, timeout_secs=10.0)
 
     orders = cache.orders(strategy_id=strategy.strategy_id)
 
@@ -469,7 +480,7 @@ async def test_handle_stop_from_a_foreign_thread() -> None:
     handle = node.handle()
 
     task = asyncio.create_task(node.run_async())
-    await asyncio.sleep(0.1)
+    await eventually(lambda: handle.is_running, timeout_secs=10.0)
     assert handle.state == NodeState.RUNNING
 
     stopper = threading.Thread(target=handle.stop)
@@ -677,17 +688,17 @@ async def test_late_run_collection_does_not_release_another_nodes_thread() -> No
     # Keep a strong reference so the completed run is not collected yet.
     first_run = first.run_async()
     first_task = asyncio.create_task(first_run)
-    await asyncio.sleep(0.1)
-    first_handle.stop()
-    async with asyncio.timeout(10.0):
-        await first_task
+    try:
+        await eventually(lambda: first_handle.is_running, timeout_secs=10.0)
+    finally:
+        await stop_and_await(first_handle, first_task)
 
     first.dispose()
     del first
     second = build_node("HOSTED-028")
     second_handle = second.handle()
     second_task = asyncio.create_task(second.run_async())
-    await asyncio.sleep(0.1)
+    await eventually(lambda: second_handle.is_running, timeout_secs=10.0)
     assert second_handle.state == NodeState.RUNNING
 
     # Collect the first run now, while the second is live.
@@ -721,7 +732,7 @@ async def test_concurrent_stop_calls_from_many_threads_resolve_once() -> None:
 
     try:
         task = asyncio.create_task(node.run_async())
-        await asyncio.sleep(0.1)
+        await eventually(lambda: handle.is_running, timeout_secs=10.0)
         assert handle.state == NodeState.RUNNING
 
         def spam_stop() -> None:
@@ -768,9 +779,7 @@ async def test_repeated_node_lifecycles_on_one_loop() -> None:
         handle = node.handle()
 
         task = asyncio.create_task(node.run_async())
-        async with asyncio.timeout(15.0):
-            while not handle.is_running:
-                await asyncio.sleep(0.01)
+        await eventually(lambda handle=handle: handle.is_running, timeout_secs=15.0)
 
         running = handle.state
         handle.stop()

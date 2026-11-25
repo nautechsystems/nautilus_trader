@@ -57,6 +57,7 @@ from nautilus_trader.model import StandardMarginModel
 from nautilus_trader.model import TraderId
 from nautilus_trader.model import Venue
 from nautilus_trader.persistence import ParquetDataCatalog
+from nautilus_trader.testkit.functions import eventually
 from nautilus_trader.trading import Strategy
 from tests.providers import TestInstrumentProvider
 
@@ -245,6 +246,7 @@ def margin_account_factory(request: pytest.FixtureRequest, tmp_path: Path) -> Ca
             if isinstance(model, RecordingMargin):
                 assert node.configs[0].venues[0].margin_model is model
             return node.get_engine_cache(config.id).account_for_venue(Venue("SIM"))
+        venue = Venue("SIM")
         node = (
             LiveNode.builder("PY-MARGIN", TraderId("TESTER-001"), Environment.SANDBOX)
             .with_reconciliation(reconciliation=False)
@@ -258,7 +260,7 @@ def margin_account_factory(request: pytest.FixtureRequest, tmp_path: Path) -> Ca
                 None,
                 SandboxExecutionClientFactory(),
                 SandboxExecutionClientConfig(
-                    venue=Venue("SIM"),
+                    venue=venue,
                     starting_balances=[Money.from_str("100000 USD")],
                     account_type=account_type,
                     default_leverage=Decimal("3.25"),
@@ -275,12 +277,14 @@ def margin_account_factory(request: pytest.FixtureRequest, tmp_path: Path) -> Ca
         async def connect() -> object:
             task = asyncio.create_task(node.run_async())
             try:
-                async with asyncio.timeout(10):
-                    while (account := cache.account_for_venue(Venue("SIM"))) is None:
-                        if task.done():
-                            await task
-                            raise AssertionError("Sandbox stopped before creating the account")
-                        await asyncio.sleep(0.001)
+                await eventually(
+                    lambda: cache.account_for_venue(venue) is not None or task.done(),
+                    timeout_secs=10,
+                )
+                account = cache.account_for_venue(venue)
+                if account is None:
+                    await task
+                    raise AssertionError("Sandbox stopped before creating the account")
                 return account
             finally:
                 handle.stop()

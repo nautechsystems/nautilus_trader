@@ -33,6 +33,7 @@ from nautilus_trader.live import LiveNode
 from nautilus_trader.live import LiveNodeConfig
 from nautilus_trader.live import NodeState
 from nautilus_trader.model import TraderId
+from nautilus_trader.testkit.functions import eventually
 
 
 pytestmark = pytest.mark.usefixtures("collect_node_cycles")
@@ -86,9 +87,7 @@ def test_node_runs_on_a_uvloop_event_loop() -> None:
         """
         observed["loop"] = type(asyncio.get_running_loop()).__module__
         task = asyncio.create_task(node.run_async())
-        async with asyncio.timeout(15.0):
-            while not handle.is_running:
-                await asyncio.sleep(0.01)
+        await eventually(lambda: handle.is_running, timeout_secs=15.0)
 
         observed["running"] = handle.is_running
         handle.stop()
@@ -112,11 +111,11 @@ def test_uvloop_host_stays_responsive_while_the_node_runs() -> None:
     running: list[bool] = []
 
     async def main() -> None:
+        observation_timeout_secs = 15.0
         task = asyncio.create_task(node.run_async())
         try:
-            async with asyncio.timeout(15.0):
-                while not handle.is_running:
-                    await asyncio.sleep(0.01)
+            async with asyncio.timeout(observation_timeout_secs):
+                await eventually(lambda: handle.is_running, timeout_secs=observation_timeout_secs)
 
                 for _ in range(200):
                     await asyncio.sleep(0)
@@ -145,9 +144,7 @@ def test_loop_closed_with_a_pending_run_still_stops_the_node() -> None:
         """
         task = asyncio.create_task(node.run_async())
         assert task is not None
-        async with asyncio.timeout(15.0):
-            while not handle.is_running:
-                await asyncio.sleep(0.01)
+        await eventually(lambda: handle.is_running, timeout_secs=15.0)
 
         assert handle.is_running is True
 
@@ -172,9 +169,7 @@ def test_loop_closed_with_a_pending_run_on_uvloop() -> None:
         """
         task = asyncio.create_task(node.run_async())
         assert task is not None
-        async with asyncio.timeout(15.0):
-            while not handle.is_running:
-                await asyncio.sleep(0.01)
+        await eventually(lambda: handle.is_running, timeout_secs=15.0)
 
         assert handle.is_running is True
 
@@ -228,11 +223,11 @@ def test_host_loop_progresses_during_a_timer_burst(loop_runner: Callable[..., No
     node.add_actor(actor)
 
     async def main() -> None:
+        observation_timeout_secs = 15.0
         task = asyncio.create_task(node.run_async())
         try:
-            async with asyncio.timeout(15.0):
-                while not handle.is_running:
-                    await asyncio.sleep(0.01)
+            async with asyncio.timeout(observation_timeout_secs):
+                await eventually(lambda: handle.is_running, timeout_secs=observation_timeout_secs)
 
                 actor._queue_burst(burst)
                 await actor.completed.wait()
