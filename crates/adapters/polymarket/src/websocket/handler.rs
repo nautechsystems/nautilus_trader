@@ -16,6 +16,7 @@
 //! WebSocket message handler for the Polymarket CLOB API.
 
 use std::{
+    collections::VecDeque,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -106,7 +107,7 @@ pub(super) struct FeedHandler {
     // Assets awaiting first authoritative data, keyed by the connection that wrote the subscribe.
     market_subscription_epochs: AHashMap<String, u64>,
     // Overflow buffer for batched frames, drained before reading the next raw message
-    message_buffer: Vec<PolymarketWsMessage>,
+    message_buffer: VecDeque<PolymarketWsMessage>,
     // Whether to include `custom_feature_enabled: true` in the initial subscribe
     subscribe_new_markets: bool,
 }
@@ -143,7 +144,7 @@ impl FeedHandler {
             user_subscribed,
             market_heartbeat_next: None,
             market_subscription_epochs: AHashMap::new(),
-            message_buffer: Vec::new(),
+            message_buffer: VecDeque::new(),
             subscribe_new_markets,
         }
     }
@@ -494,7 +495,7 @@ impl FeedHandler {
 
     pub(super) async fn next(&mut self) -> Option<PolymarketWsMessage> {
         if !self.message_buffer.is_empty() {
-            return Some(self.message_buffer.remove(0));
+            return self.message_buffer.pop_front();
         }
 
         if let Some((asset_ids, connection_epoch)) = self.initial_market_replay.take() {
@@ -698,6 +699,24 @@ mod tests {
         feed_handler(WsChannel::User)
     }
 
+    #[rstest]
+    #[tokio::test]
+    async fn message_buffer_drains_in_arrival_order(mut market_handler: FeedHandler) {
+        market_handler.message_buffer = VecDeque::from([
+            PolymarketWsMessage::Reconnected { shard_id: Some(1) },
+            PolymarketWsMessage::Reconnected { shard_id: Some(2) },
+        ]);
+
+        assert!(matches!(
+            market_handler.next().await,
+            Some(PolymarketWsMessage::Reconnected { shard_id: Some(1) })
+        ));
+        assert!(matches!(
+            market_handler.next().await,
+            Some(PolymarketWsMessage::Reconnected { shard_id: Some(2) })
+        ));
+    }
+
     fn feed_handler(channel: WsChannel) -> FeedHandler {
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -896,7 +915,7 @@ mod tests {
     }
 
     #[rstest]
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn market_text_heartbeat_follows_initial_subscription() {
         let (url, messages) = recording_server().await;
         let client = recording_client(url).await;
@@ -924,6 +943,8 @@ mod tests {
             .send_subscribe_market(&[MARKET_ASSET_ID.to_string()], None)
             .await;
         wait_for_recorded_messages(&messages, 1).await;
+
+        tokio::time::pause();
 
         let task = tokio::spawn(async move {
             let message = handler.next().await;
@@ -977,13 +998,14 @@ mod tests {
     }
 
     #[rstest]
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn incremental_market_subscription_preserves_heartbeat_deadline() {
         let (url, messages) = recording_server().await;
         let client = recording_client(url).await;
         let connection_epoch = client.connection_epoch();
         let (mut handler, _raw_tx, _) = market_handler_with(client);
 
+        tokio::time::pause();
         handler
             .try_send_subscribe_market(&[MARKET_ASSET_ID.to_string()], None)
             .await
