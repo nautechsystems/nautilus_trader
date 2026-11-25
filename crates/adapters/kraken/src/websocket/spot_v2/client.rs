@@ -1753,6 +1753,23 @@ impl KrakenSpotWebSocketClient {
         snap_orders: bool,
         snap_trades: bool,
     ) -> Result<(), KrakenWsError> {
+        self.subscribe_executions_with_replay(snap_orders, snap_trades, false)
+            .await
+    }
+
+    pub(crate) async fn subscribe_executions_for_reconciliation(
+        &self,
+    ) -> Result<(), KrakenWsError> {
+        self.subscribe_executions_with_replay(false, false, true)
+            .await
+    }
+
+    async fn subscribe_executions_with_replay(
+        &self,
+        snap_orders: bool,
+        snap_trades: bool,
+        recover_open_orders: bool,
+    ) -> Result<(), KrakenWsError> {
         let req_id = self.get_next_req_id();
 
         let token = self.auth_token().await.ok_or_else(|| {
@@ -1779,6 +1796,11 @@ impl KrakenSpotWebSocketClient {
         };
 
         let payload = self.send_command(&request).await?;
+        let payload = if recover_open_orders {
+            request_order_snapshot_in_payload(payload.expose_secret())?
+        } else {
+            payload
+        };
 
         let key = "executions";
         if self.subscriptions.add_reference(key) {
@@ -2053,16 +2075,6 @@ impl SpotReplay {
                 .ok()?
         } else {
             payload.clone()
-        };
-
-        // The frames sent while the connection was down are lost, and a snapshot restates the
-        // open orders they may have changed
-        let payload = if topic == "executions" {
-            request_order_snapshot_in_payload(payload.expose_secret())
-                .inspect_err(|e| log::error!("Failed to request an order snapshot: {e}"))
-                .ok()?
-        } else {
-            payload
         };
 
         if let Some(symbol) = topic.strip_prefix("book:") {

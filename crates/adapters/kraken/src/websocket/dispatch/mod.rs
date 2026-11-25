@@ -365,12 +365,31 @@ impl WsDispatchState {
             return true;
         }
 
+        Self::remember_trade(&mut set, trade_id);
+        false
+    }
+
+    pub(crate) fn route_trade(
+        &self,
+        trade_id: TradeId,
+        route: impl FnOnce() -> anyhow::Result<()>,
+    ) -> anyhow::Result<bool> {
+        let mut set = self.emitted_trades.lock();
+        if set.contains(&trade_id) {
+            return Ok(false);
+        }
+
+        route()?;
+        Self::remember_trade(&mut set, trade_id);
+        Ok(true)
+    }
+
+    fn remember_trade(set: &mut IndexSet<TradeId>, trade_id: TradeId) {
         if set.len() >= DEDUP_CAPACITY {
             set.shift_remove_index(0);
         }
 
         set.insert(trade_id);
-        false
     }
 
     /// Removes all dispatch state for an order that has reached a terminal state.

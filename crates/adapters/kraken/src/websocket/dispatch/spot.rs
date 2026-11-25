@@ -22,6 +22,7 @@
 
 use std::sync::Arc;
 
+use nautilus_common::messages::ExecutionReport;
 use nautilus_core::{AtomicMap, UUID4, UnixNanos};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
@@ -278,32 +279,23 @@ fn shaped_execution(
         return false;
     };
 
-    // A replayed trade is already applied and states a stale cumulative, so it reaches neither
-    // the shape nor the engine.
-    let fill = match exec
-        .exec_id
-        .is_some()
-        .then(|| parse_ws_fill_report(exec, instrument, account_id, ts_init))
-    {
-        Some(Ok(mut fill)) => {
-            if let Some(cid) = resolved_id {
-                fill.client_order_id = Some(cid);
-            }
+    let fill = if exec.exec_type == KrakenExecType::Trade {
+        match parse_ws_fill_report(exec, instrument, account_id, ts_init) {
+            Ok(mut fill) => {
+                if let Some(cid) = resolved_id {
+                    fill.client_order_id = Some(cid);
+                }
 
-            if state.check_and_insert_trade(fill.trade_id) {
-                log::debug!(
-                    "Skipping duplicate external spot fill: trade_id={}",
-                    fill.trade_id
-                );
+                shape.retained.record_fill(&fill);
+                Some(fill)
+            }
+            Err(e) => {
+                log::error!("Failed to parse fill report: {e}");
                 return true;
             }
-            Some(fill)
         }
-        Some(Err(e)) => {
-            log::error!("Failed to parse fill report: {e}");
-            None
-        }
-        None => None,
+    } else {
+        None
     };
 
     shape.retained.merge(exec);
@@ -322,24 +314,40 @@ fn shaped_execution(
             }
             report.order_status = untracked_order_status(&report, &shape);
             shape.triggered |= report.order_status == OrderStatus::Triggered;
-            Some(report)
+            report
         }
         Err(e) => {
             log::error!("Failed to parse order status report: {e}");
-            None
+            return true;
         }
     };
-    state.store_spot_order_shape(&exec.order_id, shape);
 
-    // The engine can create a shaped order from its `pending_new` report, so a trade's fill goes
-    // with the status even after an amendment leaves a status it could not create from.
-    match (status, fill) {
-        (Some(status), Some(fill)) => emitter.send_order_with_fills(status, vec![fill]),
-        (Some(status), None) => emitter.send_order_status_report(status),
-        (None, Some(fill)) => emitter.send_fill_report(fill),
-        (None, None) => {}
-    }
+    route_shaped_report(exec, status, fill, shape, state, emitter);
     true
+}
+
+fn route_shaped_report(
+    exec: &KrakenWsExecutionData,
+    status: OrderStatusReport,
+    fill: Option<FillReport>,
+    shape: SpotOrderShape,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+) {
+    let trade_id = fill.as_ref().map(|fill| fill.trade_id);
+    // Apply order terms before fills even when REST has already booked fills this stream missed
+    let report = ExecutionReport::OrderWithFills(Box::new(status), fill.into_iter().collect());
+    let route = || emitter.try_send_execution_report(report);
+    let result = match trade_id {
+        Some(trade_id) => state.route_trade(trade_id, route),
+        None => route().map(|()| true),
+    };
+
+    match result {
+        Ok(true) => state.store_spot_order_shape(&exec.order_id, shape),
+        Ok(false) => log::debug!("Skipping duplicate external spot fill: {trade_id:?}"),
+        Err(e) => log::warn!("{e}"),
+    }
 }
 
 /// Returns the shape of an untracked order from its `pending_new` frame or its open-orders
@@ -387,6 +395,7 @@ fn untracked_order_status(report: &OrderStatusReport, shape: &SpotOrderShape) ->
         }
         // A trade can state `partially_filled` for the fill that completes the order
         OrderStatus::PartiallyFilled if report.filled_qty >= report.quantity => OrderStatus::Filled,
+        OrderStatus::Filled if report.filled_qty < report.quantity => OrderStatus::PartiallyFilled,
         status => status,
     }
 }
@@ -398,12 +407,13 @@ fn can_create_order(report: &OrderStatusReport) -> bool {
         return false;
     };
 
-    if !report.quantity.is_positive() {
+    if !report.quantity.is_positive() || report.display_qty.is_some_and(|qty| qty > report.quantity)
+    {
         return false;
     }
 
     if report.time_in_force == TimeInForce::Gtd
-        && (report.order_type == OrderType::Market || report.expire_time.is_none())
+        && (report.order_type == OrderType::Market || report.expire_time.unwrap_or_default() == 0)
     {
         return false;
     }

@@ -61,12 +61,15 @@ use nautilus_kraken::{
         enums::{KrakenEnvironment, KrakenProductType},
         parse::{parse_spot_instrument, parse_tokenized_instrument},
     },
-    config::KrakenExecutionClientConfig,
+    config::{KrakenDataClientConfig, KrakenExecutionClientConfig},
     execution::{KrakenFuturesExecutionClient, KrakenSpotExecutionClient},
     http::spot::models::{AssetPairInfo, AssetPairsResponse, KrakenResponse},
     websocket::{
         dispatch::{OrderIdentity, WsDispatchState},
-        spot_v2::messages::KrakenWsExecutionData,
+        spot_v2::{
+            client::KrakenSpotWebSocketClient, messages::KrakenWsExecutionData,
+            parse::parse_ws_fill_report,
+        },
     },
 };
 use nautilus_live::{
@@ -101,6 +104,7 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use crate::common::{
@@ -12293,5 +12297,210 @@ async fn test_spot_connect_drops_order_shapes_kept_before() {
     assert!(
         matches!(&traded, ExecutionEvent::Report(ExecutionReport::Order(_))),
         "expected the trade's status alone, received {traded:?}"
+    );
+}
+
+#[rstest]
+fn test_spot_external_reconnect_leaves_missed_fill_for_rest() {
+    let instrument = usdc_eur_pair();
+    let harness = usdc_eur_harness();
+    let state = WsDispatchState::new();
+    let captured = captured_snapshot_frames();
+    let snapshot = patched_spot_frame(
+        &captured[3],
+        json!({"order_qty": 10.0, "order_status": "partially_filled", "cum_qty": 2.0}),
+    );
+    let trade = patched_spot_frame(
+        &captured_spot_frames(CAPTURED_STOP_ORDER_ID)[3],
+        json!({
+            "order_id": CAPTURED_LIMIT_ORDER_ID,
+            "order_type": "limit",
+            "exec_id": "TGAP02-AAAAA-000002",
+            "last_qty": 2.0,
+            "last_price": 0.4571,
+            "cum_qty": 4.0,
+            "cum_cost": 1.8284,
+            "avg_price": 0.4571,
+            "timestamp": "2026-01-01T00:00:10.000000Z"
+        }),
+    );
+
+    let frames = [
+        captured[0].clone(),
+        captured[1].clone(),
+        snapshot,
+        trade.clone(),
+    ];
+
+    replay_spot_events(&harness, dispatch_spot_frames(&frames, &state, &instrument));
+    let before_rest = only_order(&harness);
+
+    let missed = patched_spot_frame(
+        &trade,
+        json!({
+            "exec_id": "TGAP01-AAAAA-000001",
+            "cum_qty": 2.0,
+            "cum_cost": 0.9142,
+            "timestamp": "2026-01-01T00:00:03.000000Z"
+        }),
+    );
+    let missed = parse_ws_fill_report(
+        &missed,
+        &instrument,
+        test_account_id(),
+        UnixNanos::default(),
+    )
+    .unwrap();
+    harness
+        .exec_engine()
+        .borrow_mut()
+        .reconcile_execution_report(&ExecutionReport::Fill(Box::new(missed)));
+
+    let amend = spot_frame(json!({
+        "order_id": CAPTURED_LIMIT_ORDER_ID,
+        "exec_type": "amended",
+        "order_status": "partially_filled",
+        "order_qty": 12.0,
+        "limit_price": 0.4572,
+        "timestamp": "2026-01-01T00:00:11.000000Z",
+    }));
+    replay_spot_events(
+        &harness,
+        dispatch_spot_frames(&[amend], &state, &instrument),
+    );
+    let after_rest = only_order(&harness);
+
+    assert_eq!(before_rest.filled_qty(), Quantity::from("2.00000000"));
+    assert_eq!(
+        before_rest.trade_ids(),
+        vec![&TradeId::from("TGAP02-AAAAA-000002")]
+    );
+    assert_eq!(
+        (
+            after_rest.filled_qty(),
+            after_rest.quantity(),
+            after_rest.price()
+        ),
+        (
+            Quantity::from("4.00000000"),
+            Quantity::from("12.00000000"),
+            Some(Price::from("0.4572"))
+        )
+    );
+    assert_eq!(
+        after_rest.trade_ids(),
+        vec![
+            &TradeId::from("TGAP02-AAAAA-000002"),
+            &TradeId::from("TGAP01-AAAAA-000001")
+        ]
+    );
+}
+
+#[rstest]
+#[case::missing_side("side")]
+#[case::missing_exec_id("exec_id")]
+fn test_spot_external_failed_trade_parse_can_retry(#[case] field: &str) {
+    let instrument = usdc_eur_pair();
+    let harness = usdc_eur_harness();
+    let state = WsDispatchState::new();
+    let captured = captured_spot_frames(CAPTURED_MARKET_ORDER_ID);
+    let invalid = patched_spot_frame(&captured[2], json!({ (field): null }));
+    let frames = [captured[0].clone(), captured[1].clone(), invalid];
+    replay_spot_events(&harness, dispatch_spot_frames(&frames, &state, &instrument));
+    let before_retry = only_order(&harness);
+
+    replay_spot_events(
+        &harness,
+        dispatch_spot_frames(&captured[2..], &state, &instrument),
+    );
+    let after_retry = only_order(&harness);
+
+    assert_eq!(before_retry.status(), OrderStatus::Accepted);
+    assert_eq!(before_retry.filled_qty(), Quantity::from("0.00000000"));
+    assert!(before_retry.trade_ids().is_empty());
+    assert_eq!(after_retry.status(), OrderStatus::Filled);
+    assert_eq!(after_retry.filled_qty(), Quantity::from("5.00000000"));
+    assert_eq!(
+        after_retry.trade_ids(),
+        vec![&TradeId::from("TCAP15-MARKT-000015")]
+    );
+}
+
+#[rstest]
+fn test_spot_external_snapshot_preserves_iceberg_display_and_gtd_expiry() {
+    let instrument = usdc_eur_pair();
+    let harness = usdc_eur_harness();
+    let captured = captured_snapshot_frames();
+    let snapshot = patched_spot_frame(
+        &captured[3],
+        json!({
+            "order_type": "iceberg",
+            "time_in_force": "GTD",
+            "expire_time": "2026-01-02T00:00:00Z",
+            "post_only": true,
+            "display_qty": 1.5,
+        }),
+    );
+    let frames = [snapshot, captured[4].clone()];
+    replay_spot_events(
+        &harness,
+        dispatch_spot_frames(&frames, &WsDispatchState::new(), &instrument),
+    );
+    let order = only_order(&harness);
+
+    assert_eq!(order.status(), OrderStatus::Canceled);
+    assert_eq!(order.quantity(), Quantity::from("6.00000000"));
+    assert_eq!(order.time_in_force(), TimeInForce::Gtd);
+    assert_eq!(
+        order.expire_time(),
+        Some(UnixNanos::from(1_767_312_000_000_000_000_u64))
+    );
+    assert_eq!(order.display_qty(), Some(Quantity::from("1.50000000")));
+    assert!(order.is_post_only());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_ws_reconnect_preserves_snapshot_opt_out() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let config = create_test_spot_exec_config(addr);
+
+    let mut client = KrakenSpotWebSocketClient::new(
+        KrakenDataClientConfig {
+            api_key: Some(config.api_key.clone()),
+            api_secret: Some(config.api_secret.clone()),
+            base_url: config.base_url.clone(),
+            ws_private_url: Some(config.ws_url()),
+            ..Default::default()
+        },
+        CancellationToken::new(),
+        None,
+    )
+    .unwrap();
+
+    client.connect().await.unwrap();
+    client.authenticate().await.unwrap();
+    client.subscribe_executions(false, false).await.unwrap();
+
+    wait_until_async(
+        || async { state.ws_execution_subscriptions.lock().unwrap().len() == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+    state.ws_message_tx.send(WS_DROP.to_string()).unwrap();
+    wait_until_async(
+        || async { state.ws_execution_subscriptions.lock().unwrap().len() >= 2 },
+        Duration::from_secs(5),
+    )
+    .await;
+    client.close().await.unwrap();
+
+    let subscriptions = state.ws_execution_subscriptions.lock().unwrap();
+    assert_eq!(
+        subscriptions
+            .iter()
+            .map(|params| (params["snap_orders"].clone(), params["snap_trades"].clone()))
+            .collect::<Vec<_>>(),
+        vec![(json!(false), json!(false)), (json!(false), json!(false))],
     );
 }

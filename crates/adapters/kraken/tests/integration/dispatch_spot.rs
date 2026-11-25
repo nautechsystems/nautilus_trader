@@ -94,6 +94,7 @@ fn make_spot_execution(
         side: Some(KrakenOrderSide::Buy),
         order_type: Some(KrakenOrderType::Limit),
         order_qty: Some(dec!(0.0001)),
+        display_qty: None,
         limit_price: Some(dec!(70000)),
         order_status: match exec_type {
             KrakenExecType::Filled => Some(KrakenWsOrderStatus::Filled),
@@ -106,6 +107,7 @@ fn make_spot_execution(
         cum_cost: None,
         avg_price: None,
         time_in_force: Some(KrakenTimeInForce::GoodTilCancelled),
+        expire_time: None,
         post_only: Some(true),
         reduce_only: Some(false),
         triggers: None,
@@ -701,12 +703,14 @@ fn make_spot_execution_delta(
         side: None,
         order_type: None,
         order_qty: None,
+        display_qty: None,
         limit_price: None,
         order_status: Some(order_status),
         cum_qty: None,
         cum_cost: None,
         avg_price: None,
         time_in_force: None,
+        expire_time: None,
         post_only: None,
         reduce_only: None,
         triggers: None,
@@ -1356,7 +1360,8 @@ fn test_spot_external_new_frame_after_trigger_reports_triggered_until_filled(
 #[case::stop_loss_without_price_type(
     r#"{"order_type":"stop-loss","triggers":{"reference":"last","price":69000.0}}"#
 )]
-#[case::gtd_limit(r#"{"time_in_force":"GTD","post_only":false}"#)]
+#[case::gtd_limit_without_expiry(r#"{"time_in_force":"GTD","post_only":false}"#)]
+#[case::post_only_gtd_without_expiry(r#"{"time_in_force":"GTD","post_only":true}"#)]
 #[case::take_profit_limit_inverted(
     r#"{"order_type":"take-profit-limit","triggers":{"reference":"last","price":71000.0,"price_type":"static"}}"#
 )]

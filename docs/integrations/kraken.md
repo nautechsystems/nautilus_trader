@@ -878,33 +878,32 @@ page, with a cap of 500 pages per read. Reaching the cap logs a warning:
 
 The executions channel covers the whole account, so an order another client places while the node
 runs reaches the adapter as an order it does not track. Kraken states the order's side, type,
-quantity, limit and trigger on its `pending_new` frame and only some of them on later frames. The
-adapter keeps them by venue order ID from that frame until the order's `filled`, `canceled` or
-`expired` frame, for at most 10,000 orders, dropping the oldest first, and completes each later
-frame from them:
+quantity, limit, and trigger on its `pending_new` frame and only some of them on later frames.
+The adapter keeps these terms, including GTD expiry and iceberg display quantity when present,
+by venue order ID until the order's `filled`, `canceled`, or `expired` frame. It keeps at most
+10,000 orders and drops the oldest first. Later reports use the retained terms:
 
 - `pending_new` reports `ACCEPTED`, so the engine creates the external order.
 - Once a frame reports the order triggered, a later frame that states the order open reports
   `TRIGGERED` until the order has a fill.
-- A `trade` frame reports its status and fill together, so the engine applies the trade's fill
-  rather than inferring one. A frame whose cumulative quantity reaches the order quantity reports
-  `FILLED`, although a trade can state `partially_filled`.
-- A `trade` frame without `cum_qty` adds its fill to the kept cumulative quantity, which a later
-  frame that states none reports.
+- A valid `trade` frame reports its status and fill together. The reported fill quantity and
+  average price use the trades the stream delivered. A failed parse leaves the trade available
+  for a valid replay or REST reconciliation.
+- Reports use `FILLED` when the stream accounts for the full order quantity. REST reconciliation
+  can supply fills from before the stream first observed the order or during a disconnect.
 
-The frames sent while the executions stream reconnects are lost, so the client resubscribes with
-`snap_orders`: Kraken then restates each open order with its side, type, quantity and limit. A kept
-order takes the fields the entry states, and keeps its cumulative quantity when the entry states no
-`cum_qty`. An order the adapter does not keep is kept from its entry, as from a `pending_new`
-frame. The snapshot asks for no trades, so it restates no fill made while the stream was down. A
-shape kept before the client last connected is dropped, since that subscription restates no order.
+The execution client resubscribes with `snap_orders` after a WebSocket reconnect. Kraken restates
+each open order's side, type, quantity, and limit. An entry refreshes the retained terms or
+initializes an order the stream first sees in the snapshot. The snapshot supplies order terms.
+Fills missed during the gap stay eligible for REST reconciliation under their venue trade IDs.
+The initial connection omits the snapshot and clears terms from any prior session.
 
 Each frame reports alone, and a trade's fill arrives as its own report, for an order the adapter
 keeps nothing of or one the engine cannot rebuild from its `pending_new` frame or snapshot entry.
 That covers orders open before the node connected, including orders resting across a restart,
 until a reconnect restates them, orders whose trigger `price_type` is not `static`,
-take-profit-limit orders whose trigger sits above a buy limit or below a sell limit, and GTD orders
-that are not post-only. A post-only GTD order reports as GTC.
+take-profit-limit orders whose trigger sits above a buy limit or below a sell limit, and GTD
+orders whose expiry is absent.
 
 #### Fill reports
 

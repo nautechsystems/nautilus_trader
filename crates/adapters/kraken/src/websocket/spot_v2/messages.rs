@@ -572,6 +572,13 @@ pub struct KrakenWsExecutionData {
         with = "optional_decimal"
     )]
     pub order_qty: Option<Decimal>,
+    /// Displayed quantity of an iceberg order.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "optional_decimal"
+    )]
+    pub display_qty: Option<Decimal>,
     /// Limit price.
     #[serde(
         default,
@@ -606,6 +613,9 @@ pub struct KrakenWsExecutionData {
     /// Time in force.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub time_in_force: Option<KrakenTimeInForce>,
+    /// Expiration time for a good-till-date order.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expire_time: Option<Timestamp>,
     /// Post only flag.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub post_only: Option<bool>,
