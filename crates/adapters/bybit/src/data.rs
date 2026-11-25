@@ -51,6 +51,7 @@ use nautilus_common::{
 use nautilus_core::{
     AtomicMap, AtomicSet, UnixNanos,
     datetime::datetime_to_unix_nanos,
+    string::secret::SecretString,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -80,12 +81,13 @@ use crate::{
             BYBIT_BOOK_DEPTHS, BYBIT_DEFAULT_ORDERBOOK_DEPTH, BYBIT_OPTION_BOOK_DEPTHS,
             BYBIT_OPTION_DEFAULT_ORDERBOOK_DEPTH, BYBIT_QUOTE_DEPTH, BYBIT_VENUE,
         },
+        credential::credential_env_vars,
         enums::BybitProductType,
         instruments::economics_differ,
         parse::{extract_raw_symbol, make_bybit_symbol},
         status::{diff_and_emit_statuses, emit_status},
     },
-    config::BybitDataClientConfig,
+    config::{BybitDataClientConfig, diagnostic_credential},
     data_types::register_bybit_custom_data,
     http::client::BybitHttpClient,
     websocket::{
@@ -154,29 +156,37 @@ impl BybitDataClient {
             .as_ref()
             .map(|value| value.expose_secret().to_owned());
 
-        let http_client = if let Some((api_key, api_secret)) = config.resolved_api_credentials() {
-            BybitHttpClient::with_credentials(
-                api_key,
-                api_secret,
-                Some(config.http_base_url()),
-                config.http_timeout_secs,
-                config.max_retries,
-                config.retry_delay_initial_ms,
-                config.retry_delay_max_ms,
-                config.recv_window_ms,
-                proxy_url.clone(),
-            )?
-        } else {
-            BybitHttpClient::new(
-                Some(config.http_base_url()),
-                config.http_timeout_secs,
-                config.max_retries,
-                config.retry_delay_initial_ms,
-                config.retry_delay_max_ms,
-                config.recv_window_ms,
-                proxy_url.clone(),
-            )?
-        };
+        let (key_var, secret_var) = credential_env_vars(config.environment);
+        let api_key = diagnostic_credential(config.api_key.as_ref(), key_var);
+        let api_secret = diagnostic_credential(config.api_secret.as_ref(), secret_var);
+        let http_client =
+            if let (Some(api_key), Some(api_secret)) = (api_key.clone(), api_secret.clone()) {
+                BybitHttpClient::with_credentials(
+                    api_key.into_inner(),
+                    api_secret.into_inner(),
+                    Some(config.http_base_url()),
+                    config.http_timeout_secs,
+                    config.max_retries,
+                    config.retry_delay_initial_ms,
+                    config.retry_delay_max_ms,
+                    config.recv_window_ms,
+                    proxy_url.clone(),
+                )?
+            } else {
+                BybitHttpClient::new(
+                    Some(config.http_base_url()),
+                    config.http_timeout_secs,
+                    config.max_retries,
+                    config.retry_delay_initial_ms,
+                    config.retry_delay_max_ms,
+                    config.recv_window_ms,
+                    proxy_url.clone(),
+                )?
+                .redact_secret_origin(
+                    api_key.as_ref().map(SecretString::expose_secret),
+                    api_secret.as_ref().map(SecretString::expose_secret),
+                )?
+            };
 
         // Create a WebSocket client for each product type (default to Linear if empty)
         let product_types = if config.product_types.is_empty() {
@@ -195,6 +205,10 @@ impl BybitDataClient {
                     config.heartbeat_interval_secs,
                     config.transport_backend,
                     proxy_url.clone(),
+                )
+                .redact_secret_origin(
+                    api_key.as_ref().map(SecretString::expose_secret),
+                    api_secret.as_ref().map(SecretString::expose_secret),
                 )
                 .with_socket_control(
                     socket_factory.control(format!("bybit-{}-data-streams", product_type.as_str())),
@@ -2832,6 +2846,26 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn data_client_redacts_override_when_only_the_key_is_configured() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+
+        let config = BybitDataClientConfig {
+            api_key: Some("secret99".into()),
+            base_url_http: Some("https://secret99.example.com/v5".to_string()),
+            base_url_ws_public: Some("wss://secret99.example.com/v5/public/linear".to_string()),
+            product_types: vec![BybitProductType::Linear],
+            ..Default::default()
+        };
+
+        let client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
+        let debug = format!("{client:?}");
+
+        assert!(debug.contains("<redacted>"));
+        assert!(!debug.contains("secret99"), "{debug}");
+    }
+
+    #[tokio::test]
     async fn test_failed_book_subscription_releases_registration() {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         set_data_event_sender(tx);
@@ -4696,6 +4730,10 @@ pub(crate) mod tests {
                 "explicit_key_with_env_secret",
                 &[("BYBIT_API_SECRET", MAINNET_SECRET)],
             ),
+            (
+                "debug_redacts_env_host",
+                &[("BYBIT_DEMO_API_KEY", DEMO_KEY)],
+            ),
         ];
 
         for (case, env) in cases {
@@ -4754,6 +4792,21 @@ pub(crate) mod tests {
                 CONFIG_KEY,
                 MAINNET_SECRET,
             ),
+            "debug_redacts_env_host" => {
+                let config = BybitDataClientConfig {
+                    environment: BybitEnvironment::Demo,
+                    base_url_ws_public: Some(format!("wss://{DEMO_KEY}.example.com/public")),
+                    ..Default::default()
+                };
+
+                let debug = format!("{config:?}");
+
+                assert!(
+                    debug.contains("base_url_ws_public: Some(\"<redacted>\")"),
+                    "{debug}"
+                );
+                assert!(!debug.contains(DEMO_KEY), "{debug}");
+            }
             #[cfg(feature = "python")]
             "python_explicit" => assert_credential(
                 &python_client(

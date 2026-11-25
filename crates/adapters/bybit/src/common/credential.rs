@@ -83,6 +83,14 @@ impl Credential {
         &self.api_key
     }
 
+    /// Returns the API secret when it is valid UTF-8.
+    ///
+    /// Use only to decide whether a URL origin contains this secret. Do not log the result.
+    #[must_use]
+    pub(crate) fn api_secret_str(&self) -> Option<&str> {
+        std::str::from_utf8(&self.api_secret).ok()
+    }
+
     /// Returns a masked version of the API key for logging purposes.
     ///
     /// Shows first 4 and last 4 characters with ellipsis in between.

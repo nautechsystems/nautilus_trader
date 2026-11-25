@@ -42,6 +42,7 @@ Released on TBD (UTC).
 - Removed `nautilus_cryptography::signing` and Python `nautilus_trader.cryptography`; use crypto libraries directly
 - Removed `nautilus-cryptography` features `python` and `extension-module`; drop them from dependent manifests
 - Removed blockchain cache `toggle_performance_settings` and `toggle_perf_sync_settings`; sync uses server settings
+- Removed Bybit `api_key` Python getters; use `api_key_masked` to correlate credentials
 - Removed OKX spot margin position reports derived from `spotInUseAmt`, a Portfolio margin hedging amount
 - Removed `OKXHttpClient::request_spot_margin_position_reports` and `parse_spot_margin_position_from_balance`
 - Renamed `CacheConfig.tick_capacity` to `data_capacity`; serialized configs must use the new key
@@ -127,6 +128,7 @@ Released on TBD (UTC).
 
 - Fixed cross-origin HTTP redirects leaking venue API keys and other custom credential headers
 - Fixed failed blockchain pool snapshot writes leaving inconsistent snapshots that pool profiler restores could load
+- Fixed Bybit diagnostics exposing endpoint credentials, API keys, and authentication frames
 - Fixed Coinbase authentication errors exposing private key data from malformed PEM credentials
 - Hardened Lighter signing with uniform nonzero OS nonces; no specific NautilusTrader vulnerability was fixed
 - Hardened the Lighter signing API to reject zero and non-canonical caller-supplied Schnorr nonces

@@ -1647,9 +1647,10 @@ impl BybitAccountDetails {
     }
 
     #[getter]
+    #[pyo3(name = "api_key_masked")]
     #[must_use]
-    pub fn api_key(&self) -> &str {
-        self.api_key.expose_secret()
+    pub fn py_api_key_masked(&self) -> String {
+        nautilus_core::string::secret::mask_api_key(self.api_key.expose_secret())
     }
 
     #[getter]

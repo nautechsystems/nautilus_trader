@@ -519,7 +519,7 @@ fn shared_session_generation(scope: &TransportScope) -> Arc<AtomicU64> {
 
 fn transport_scope(url: &str, proxy_url: Option<&str>) -> TransportScope {
     TransportScope {
-        host: host(url),
+        host: authority_without_userinfo(url),
         proxy_url_digest: proxy_url.map(sha256),
     }
 }
@@ -538,17 +538,17 @@ fn sha256(value: &str) -> [u8; 32] {
         .expect("SHA-256 digest must contain 32 bytes")
 }
 
-fn host(url: &str) -> String {
-    url.split_once("://")
-        .map_or(url, |(_, remainder)| remainder)
-        .split('/')
-        .next()
-        .unwrap_or(url)
-        .to_ascii_lowercase()
+fn authority_without_userinfo(url: &str) -> String {
+    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or(rest);
+    let host = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    host.to_ascii_lowercase()
 }
 
 fn environment_scope(url: &str) -> String {
-    match host(url).as_str() {
+    match authority_without_userinfo(url).as_str() {
         "api.bybit.com" | "stream.bybit.com" => "mainnet".to_string(),
         "api-testnet.bybit.com" | "stream-testnet.bybit.com" => "testnet".to_string(),
         "api-demo.bybit.com" | "stream-demo.bybit.com" => "demo".to_string(),
@@ -628,6 +628,50 @@ mod tests {
         assert!(!debug.contains(proxy_url));
         assert_eq!(scope, matching);
         assert_ne!(scope, different);
+    }
+
+    #[rstest]
+    fn transport_scope_omits_url_userinfo_path_and_query() {
+        let url = "https://user:password-secret@api.bybit.com/path-secret?token=query-secret#frag";
+        let scope = transport_scope(url, None);
+        let debug = format!("{scope:?}");
+
+        assert!(!debug.contains("password-secret"));
+        assert!(!debug.contains("path-secret"));
+        assert!(!debug.contains("query-secret"));
+        assert!(debug.contains("api.bybit.com"));
+    }
+
+    #[rstest]
+    fn transport_scope_uses_authority_without_caller_credentials() {
+        let shaped = "https://ab12cd34ef56gh78.example.com/v5";
+        let rest = transport_scope(shaped, None);
+        let trade = transport_scope("wss://ab12cd34ef56gh78.example.com/v5/trade", None);
+        let with_port =
+            transport_scope("https://user:password-secret@api.example.com:8443/v5", None);
+        let other_port = transport_scope("https://api.example.com:9443/v5", None);
+
+        assert_eq!(rest, trade);
+        assert_eq!(rest.host, "ab12cd34ef56gh78.example.com");
+        assert_eq!(with_port.host, "api.example.com:8443");
+        assert_ne!(with_port.host, other_port.host);
+        assert!(!with_port.host.contains("password-secret"));
+    }
+
+    #[rstest]
+    fn ip_scope_ignores_which_credential_matches_the_host() {
+        let url = "https://secret99.example.com/v5";
+        let with_key = BybitRateLimiter::for_http(url, Some("secret99"), None);
+        let generation = with_key.reset_http_sessions();
+        let other_key = BybitRateLimiter::for_http(url, Some("otherkey1"), None);
+        let no_key = BybitRateLimiter::for_http(url, None, None);
+        let other_host =
+            BybitRateLimiter::for_http("https://other99.example.com/v5", Some("secret99"), None);
+
+        assert_ne!(generation, 0);
+        assert_eq!(other_key.http_session_generation(), generation);
+        assert_eq!(no_key.http_session_generation(), generation);
+        assert_ne!(other_host.http_session_generation(), generation);
     }
 
     #[tokio::test(start_paused = true)]
