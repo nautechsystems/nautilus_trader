@@ -344,9 +344,7 @@ jobs:
           build-type: "test"
           free-disk-space: "true"
           uv-cache-enabled: "false"
-          prek-cache-enabled: "false"
           rust-cache-enabled: "false"
-          rust-cache-save-if: "false"
 
       - name: Check Cargo crate publish plan
         run: bash scripts/ci/publish-cargo-crates.sh --check

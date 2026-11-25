@@ -63,7 +63,6 @@ jobs:
       github-changed: ${{ steps.plan.outputs.github_changed }}
       untrusted_pr: ${{ steps.policy.outputs.untrusted_pr }}
       publish_r2: ${{ steps.wheel-publication.outputs.publish_r2 }}
-      publish_development: ${{ steps.wheel-publication.outputs.publish_development }}
       publish_environment: ${{ steps.wheel-publication.outputs.publish_environment }}
       wheel_matrix: ${{ steps.wheel-publication.outputs.wheel_matrix }}
       wheel_version: ${{ steps.wheel-publication.outputs.wheel_version }}
@@ -705,8 +704,7 @@ jobs:
           persist-credentials: false
 
       - name: Common setup
-        # Depot Windows/ARM runners need ./ until they support runner >=2.336.0
-        uses: ./.github/actions/common-setup # zizmor: ignore[self-repository]
+        uses: $/.github/actions/common-setup
         with:
           python-version: ${{ matrix.python-version }}
           free-disk-space: "true"
@@ -733,8 +731,7 @@ jobs:
         run: bash ../scripts/ci/test-wheel.bash
 
       - name: Upload wheel artifact
-        # Depot Windows/ARM runners need ./ until they support runner >=2.336.0
-        uses: ./.github/actions/upload-artifact-wheel # zizmor: ignore[self-repository]
+        uses: $/.github/actions/upload-artifact-wheel
         with:
           retention-days: ${{ github.ref_name == 'master' && '7' || '1' }}
 
@@ -846,8 +843,7 @@ jobs:
           persist-credentials: false
 
       - name: Common setup
-        # Depot Windows/ARM runners need ./ until they support runner >=2.336.0
-        uses: ./.github/actions/common-setup # zizmor: ignore[self-repository]
+        uses: $/.github/actions/common-setup
         with:
           python-version: ${{ matrix.python-version }}
           free-disk-space: "true"
@@ -877,8 +873,7 @@ jobs:
         run: bash ../scripts/ci/test-wheel.bash
 
       - name: Upload wheel artifact
-        # Depot Windows/ARM runners need ./ until they support runner >=2.336.0
-        uses: ./.github/actions/upload-artifact-wheel # zizmor: ignore[self-repository]
+        uses: $/.github/actions/upload-artifact-wheel
         with:
           retention-days: ${{ github.ref_name == 'master' && '7' || '1' }}
 
@@ -1188,9 +1183,7 @@ jobs:
           build-type: "test"
           free-disk-space: "true"
           uv-cache-enabled: "false"
-          prek-cache-enabled: "false"
           rust-cache-enabled: "false"
-          rust-cache-save-if: "false"
 
       - name: Check Cargo crate publish plan
         run: bash scripts/ci/publish-cargo-crates.sh --check
@@ -1336,7 +1329,6 @@ jobs:
           fi
 
       - name: Create draft GitHub release
-        id: create-release
         # zizmor: ignore[superfluous-actions] Retains idempotent draft updates and retries
         # https://github.com/softprops/action-gh-release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
@@ -1379,7 +1371,6 @@ jobs:
           python-version: "3.13"
           free-disk-space: "true"
           uv-cache-enabled: "false"
-          prek-cache-enabled: "false"
           rust-cache-enabled: "false"
 
       - name: Build sdist
@@ -1644,9 +1635,7 @@ jobs:
           python-version: "3.13"
           build-type: "release"
           uv-cache-enabled: "false"
-          prek-cache-enabled: "false"
           rust-cache-enabled: "false"
-          rust-cache-save-if: "false"
 
       - name: Check Cargo crate publish plan
         run: bash scripts/ci/publish-cargo-crates.sh --check

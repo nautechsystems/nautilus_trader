@@ -15,6 +15,8 @@ integration, scheduled checks, and publication.
   toolchains, caches, and optional disk or swap preparation.
 - [`common-test-data`](actions/common-test-data/action.yml): downloads, verifies, and caches the
   large test data set.
+- [`download-artifact-wheel`](actions/download-artifact-wheel/action.yml): downloads wheel artifacts
+  from the current workflow run, verifies their digests, and retries failed downloads.
 - [`generate-sbom-retry`](actions/generate-sbom-retry/action.yml): retries SPDX SBOM generation
   after transient failures.
 - [`publish-wheels`](actions/publish-wheels/action.yml): publishes wheels and maintains the
