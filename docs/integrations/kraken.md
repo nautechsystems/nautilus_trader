@@ -500,6 +500,11 @@ size, so the adapter sends `qtyMode=ABSOLUTE` with every futures edit that resiz
 the order, single or batch. Kraken Futures does not document its answer to a
 total at or below the filled quantity.
 
+A modify's new trigger price goes to Kraken Futures as the edit's `stopPrice`,
+and the open-orders update that follows emits `OrderUpdated` with the new
+trigger. Kraken Spot receives it as the WebSocket amend's `trigger_price`. A
+Spot amend sent over REST does not carry a new trigger price.
+
 Kraken Futures reports each edit's outcome in `editStatus.status`. `edited` and `filled` confirm the
 edit, and the private feeds carry the update or the fills. These statuses refuse the edit and emit
 `OrderModifyRejected`: `invalidSize`, `invalidPrice`, `insufficientAvailableFunds`,

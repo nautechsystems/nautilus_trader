@@ -567,6 +567,7 @@ impl KrakenFuturesExecutionClient {
         let instrument_id = cmd.instrument_id;
         let quantity = cmd.quantity;
         let price = cmd.price;
+        let trigger_price = cmd.trigger_price;
 
         log::debug!(
             "Modifying order: venue_order_id={venue_order_id:?}, client_order_id={client_order_id}"
@@ -584,7 +585,7 @@ impl KrakenFuturesExecutionClient {
                     venue_order_id,
                     quantity,
                     price,
-                    None,
+                    trigger_price,
                 )
                 .await
             {
