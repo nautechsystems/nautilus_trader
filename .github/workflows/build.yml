@@ -657,9 +657,12 @@ jobs:
         run: bash scripts/ci/report-disk-space.bash "before Rust tests"
 
       - name: Run Rust tests
-        run: >-
-          make cargo-test NEXTEST_PROFILE=ci
-          EXTRA_FEATURES="hypersync,nautilus-common/sbe,nautilus-infrastructure/postgres"
+        run: |
+          if [[ "$RUNNER_ENVIRONMENT" == "self-hosted" ]]; then
+            export NEXTEST_TEST_THREADS=8
+          fi
+          make cargo-test NEXTEST_PROFILE=ci \
+            EXTRA_FEATURES="hypersync,nautilus-common/sbe,nautilus-infrastructure/postgres"
 
       - name: Report disk space after Rust tests
         if: always()
