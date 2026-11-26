@@ -720,11 +720,71 @@ fn test_futures_fills_delta_keeps_the_sibling_of_an_invalid_venue_order_id() {
 }
 
 #[rstest]
-fn test_futures_delta_external_emits_status_report() {
+#[case::negative_remainder(dec!(-1), dec!(2))]
+#[case::negative_fill(dec!(2), dec!(-1))]
+#[case::overflow(Decimal::ONE, Decimal::MAX)]
+fn test_futures_delta_drops_invalid_quantities_before_side_caches(
+    #[case] qty: Decimal,
+    #[case] filled: Decimal,
+) {
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::new();
+    let cid = ClientOrderId::new("uuid-invalid-qty");
+    state.register_identity(
+        cid,
+        make_identity(FUTURES_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
+    );
+    let order_instrument_map = empty_instrument_id_map();
+    let venue_client_map = empty_string_map();
+    let venue_order_qty = empty_quantity_map();
+    let delta = make_open_orders_delta(
+        false,
+        None,
+        qty,
+        filled,
+        Some(cid.as_str()),
+        "v-invalid-qty",
+    );
+    dispatch::futures::open_orders_delta(
+        &delta,
+        &state,
+        &emitter,
+        &instruments_with(make_futures_perpetual()),
+        &empty_string_map(),
+        &order_instrument_map,
+        &venue_client_map,
+        &venue_order_qty,
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    assert!(drain_events(&mut rx).is_empty());
+    assert!(order_instrument_map.load().is_empty());
+    assert!(venue_client_map.load().is_empty());
+    assert!(venue_order_qty.load().is_empty());
+}
+
+#[rstest]
+#[case::accepted(dec!(0.0001), Decimal::ZERO, "0.0001", "0.0000", OrderStatus::Accepted)]
+#[case::partial_fill_rounded(
+    dec!(0.00015),
+    dec!(0.00015),
+    "0.0003",
+    "0.0002",
+    OrderStatus::PartiallyFilled
+)]
+fn test_futures_delta_external_emits_status_report(
+    #[case] qty: Decimal,
+    #[case] filled: Decimal,
+    #[case] expected_qty: Quantity,
+    #[case] expected_filled: Quantity,
+    #[case] expected_status: OrderStatus,
+) {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
+    let venue_order_qty = empty_quantity_map();
 
-    let delta = make_open_orders_delta(false, None, dec!(0.0001), Decimal::ZERO, None, "v-ext-2");
+    let delta = make_open_orders_delta(false, None, qty, filled, None, "v-ext-2");
     dispatch::futures::open_orders_delta(
         &delta,
         &state,
@@ -733,14 +793,23 @@ fn test_futures_delta_external_emits_status_report() {
         &empty_string_map(),
         &empty_instrument_id_map(),
         &empty_string_map(),
-        &empty_quantity_map(),
+        &venue_order_qty,
         account_id(),
         UnixNanos::default(),
     );
 
     let events = drain_events(&mut rx);
     assert_eq!(events.len(), 1);
-    assert!(matches!(events[0], ExecutionEvent::Report(_)));
+
+    let ExecutionEvent::Report(ExecutionReport::Order(report)) = &events[0] else {
+        panic!("expected an order status report, was {:?}", events[0]);
+    };
+
+    assert_eq!(report.venue_order_id, VenueOrderId::from("v-ext-2"));
+    assert_eq!(report.order_status, expected_status);
+    assert_eq!(report.quantity, expected_qty);
+    assert_eq!(report.filled_qty, expected_filled);
+    assert_eq!(venue_order_qty.load().get("v-ext-2"), Some(&expected_qty));
 }
 
 #[rstest]
@@ -899,10 +968,11 @@ fn test_futures_delta_partial_fill_does_not_emit_updated() {
     let _ = drain_events(&mut rx);
 
     // Follow-up delta announcing a partial fill (filled > previous).
+    // Kraken Futures reports open remainder in qty (0.0001) and cumulative filled (0.0001).
     let partial = make_open_orders_delta(
         false,
         None,
-        dec!(0.0002),
+        dec!(0.0001),
         dec!(0.0001),
         Some("uuid-partial-fill"),
         "v-partial",
@@ -1031,11 +1101,11 @@ fn test_futures_partial_fill_does_not_double_count_via_delta_and_fill() {
         account_id(),
         UnixNanos::default(),
     );
-    // Partial-fill delta - filled=0.0005
+    // Partial-fill delta: open remainder qty=0.0005, filled=0.0005
     let partial = make_open_orders_delta(
         false,
         None,
-        dec!(0.001),
+        dec!(0.0005),
         dec!(0.0005),
         Some("uuid-no-double"),
         "v-no-double",
@@ -1081,14 +1151,25 @@ fn test_futures_partial_fill_does_not_double_count_via_delta_and_fill() {
         UnixNanos::default(),
     );
 
-    // Drain placement Accepted (1) + the fill OrderFilled (1).
+    // Drain placement Accepted (1) + the fill OrderFilled (1) - no spurious OrderUpdated.
     let events = drain_events(&mut rx);
     assert_eq!(events.len(), 2);
+    assert!(matches!(
+        events[0],
+        ExecutionEvent::Order(OrderEventAny::Accepted(_))
+    ));
+    assert!(matches!(
+        events[1],
+        ExecutionEvent::Order(OrderEventAny::Filled(_))
+    ));
 
-    // Identity must still exist (order is half-filled, not terminal).
-    assert!(
-        state.lookup_identity(&cid).is_some(),
-        "identity should not be cleaned up after a half fill",
+    // Identity must still exist with full original size (order is half-filled, not terminal).
+    assert_eq!(
+        state
+            .lookup_identity(&cid)
+            .expect("identity should not be cleaned up after a half fill")
+            .quantity,
+        Quantity::from("0.001"),
     );
     assert!(
         !state.filled_orders.contains(&cid),
@@ -1098,6 +1179,34 @@ fn test_futures_partial_fill_does_not_double_count_via_delta_and_fill() {
     // The fill side recorded cumulative = 0.0005 (not 0.0010).
     let cumulative = state.previous_filled_qty(&cid).expect("cumulative tracked");
     assert_eq!(cumulative, Quantity::from("0.0005"));
+
+    // Final fill for the remaining 0.0005 must complete the order rather than
+    // being rejected or stale-suppressed.
+    let final_fill = make_fills_delta_with_qty(
+        Some("uuid-no-double"),
+        "v-no-double",
+        "trade-final",
+        dec!(0.0005),
+    );
+    dispatch::futures::fills_delta(
+        &final_fill,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_string_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+    assert!(matches!(
+        events[0],
+        ExecutionEvent::Order(OrderEventAny::Filled(_))
+    ));
+    assert!(state.lookup_identity(&cid).is_none());
+    assert!(state.filled_orders.contains(&cid));
 }
 
 #[rstest]
@@ -1166,6 +1275,112 @@ fn test_futures_modify_ack_refreshes_tracked_quantity() {
     // Identity now reflects the new size.
     let updated_identity = state.lookup_identity(&cid).expect("identity present");
     assert_eq!(updated_identity.quantity, Quantity::from("0.002"));
+}
+
+#[rstest]
+fn test_futures_amend_quantity_on_partially_filled_order_updates_tracked_size() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("uuid-amend-part");
+    state.register_identity(
+        cid,
+        OrderIdentity {
+            strategy_id: StrategyId::from("EXEC_TESTER-001"),
+            instrument_id: InstrumentId::from(FUTURES_INSTRUMENT_ID),
+            order_side: OrderSide::Buy,
+            order_type: OrderType::Limit,
+            quantity: Quantity::from("0.002"),
+        },
+    );
+    let instruments = instruments_with(make_futures_perpetual());
+
+    // 1. Placement delta: qty=0.002, filled=0
+    let placement = make_open_orders_delta(
+        false,
+        None,
+        dec!(0.002),
+        dec!(0.0),
+        Some("uuid-amend-part"),
+        "v-amend-part",
+    );
+    dispatch::futures::open_orders_delta(
+        &placement,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_instrument_id_map(),
+        &empty_string_map(),
+        &empty_quantity_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+    let _ = drain_events(&mut rx);
+
+    // 2. Partial fill: remainder qty=0.001, filled=0.001 (total size unchanged: 0.002)
+    let partial = make_open_orders_delta(
+        false,
+        None,
+        dec!(0.001),
+        dec!(0.001),
+        Some("uuid-amend-part"),
+        "v-amend-part",
+    );
+    dispatch::futures::open_orders_delta(
+        &partial,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_instrument_id_map(),
+        &empty_string_map(),
+        &empty_quantity_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+    let events = drain_events(&mut rx);
+    assert!(
+        events.is_empty(),
+        "partial fill should not emit OrderUpdated; saw {events:?}",
+    );
+    assert_eq!(
+        state.lookup_identity(&cid).unwrap().quantity,
+        Quantity::from("0.002"),
+    );
+
+    // 3. User amends remaining size from 0.001 to 0.0015 (new total size: 0.0015 + 0.001 = 0.0025)
+    let amend = make_open_orders_delta(
+        false,
+        None,
+        dec!(0.0015),
+        dec!(0.001),
+        Some("uuid-amend-part"),
+        "v-amend-part",
+    );
+    dispatch::futures::open_orders_delta(
+        &amend,
+        &state,
+        &emitter,
+        &instruments,
+        &empty_string_map(),
+        &empty_instrument_id_map(),
+        &empty_string_map(),
+        &empty_quantity_map(),
+        account_id(),
+        UnixNanos::default(),
+    );
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1, "expected OrderUpdated, saw {events:?}");
+    let ExecutionEvent::Order(OrderEventAny::Updated(updated)) = &events[0] else {
+        panic!("expected OrderUpdated, was {:?}", events[0]);
+    };
+    assert_eq!(updated.quantity, Quantity::from("0.0025"));
+
+    // Tracked identity quantity must be updated to 0.0025
+    assert_eq!(
+        state.lookup_identity(&cid).unwrap().quantity,
+        Quantity::from("0.0025"),
+    );
 }
 
 #[rstest]

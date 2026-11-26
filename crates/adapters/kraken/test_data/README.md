@@ -101,11 +101,9 @@ the immediate size reduction and delayed reprice described in the
 [Maker Protection guide](https://docs.kraken.com/exchange/guides/futures/maker-protection).
 These sources were retrieved on 2026-10-31. No source supplies this exact split-amend WebSocket sequence.
 
-The fixture treats open-orders `qty` as the current total size and `filled` as cumulative fills.
-The open-orders reference calls `qty` the order's quantity without explicitly distinguishing total
-from remaining size. The fills reference separately defines `remaining_order_qty` as unfilled size.
-This interpretation matches the adapter; the synthetic sequence does not independently verify it
-against venue messages.
+The fixture follows the [live report in #5694](https://github.com/nautechsystems/nautilus_trader/issues/5694).
+On a resting partial fill, `qty` is the open remainder and `filled` is the cumulative fill.
+The total order size is `qty + filled`.
 
 The five frames describe one `PF_APEUSD` buy order: placement of 0.0040 at 70000.0, reduction to
 0.0025 at 70000.0, a maker fill of 0.0007 at the old price, its cumulative open-order update, and
