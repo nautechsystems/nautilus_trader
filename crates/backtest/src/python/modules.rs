@@ -512,7 +512,7 @@ impl CfdSwapModule {
         let triple_roll_weekday =
             Weekday::from_monday_one_offset(triple_roll_weekday).map_err(to_pyvalue_err)?;
         Ok(
-            PyClassInitializer::from(PySimulationModule).add_subclass(Self::new(
+            PyClassInitializer::from(PySimulationModule).add_subclass(Self::new_with_time_zone(
                 rates,
                 rollover_time,
                 triple_roll_weekday,

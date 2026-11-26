@@ -5302,7 +5302,6 @@ fn test_cfd_swap_exact_long_short_and_triple_roll_balances(
         )],
         Time::constant(17, 0, 0, 0),
         Weekday::Friday,
-        TimeZone::UTC,
     );
     let modules = vec![SimulationModuleHandle::from(SimulationModuleAny::CfdSwap(
         module,
@@ -5363,7 +5362,7 @@ fn test_cfd_swap_rolls_over_at_local_time_in_time_zone(
 ) {
     let instrument = InstrumentAny::Cfd(cfd_gold());
     let instrument_id = instrument.id();
-    let module = CfdSwapModule::new(
+    let module = CfdSwapModule::new_with_time_zone(
         vec![CfdSwapRate::new(
             instrument_id,
             Decimal::from_str("-0.0001").unwrap(),
@@ -5433,7 +5432,6 @@ fn test_cfd_swap_price_and_acknowledgement_retry_and_reset_isolation() {
         )],
         Time::constant(17, 0, 0, 0),
         Weekday::Friday,
-        TimeZone::UTC,
     ));
     let exchange = get_exchange(
         Venue::new("SIM"),
@@ -5561,7 +5559,6 @@ fn test_cfd_swap_converts_to_single_currency_account_base(gbpusd_sim: CurrencyPa
         )],
         Time::constant(17, 0, 0, 0),
         Weekday::Friday,
-        TimeZone::UTC,
     );
     let exchange = exchange.borrow();
     let cache = cache.borrow();
