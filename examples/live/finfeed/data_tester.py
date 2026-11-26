@@ -23,27 +23,27 @@ For longer runs or more outcomes, size the finite allowance and both connection 
 using `docs/integrations/finfeed.md`; this example keeps its bounded one-outcome defaults.
 
 Run from the repository root:
-`uv run --project python --no-sync python examples/live/finfeed/data_tester.py`
+`uv run --project python --no-sync python examples/live/finfeed/data_tester.py <MARKET_ID>`
+Pass an active Polymarket outcome ID.
 
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 
 from nautilus_trader.adapters.finfeed import FINFEED_CLIENT_ID
 from nautilus_trader.adapters.finfeed import FinFeedDataClientConfig
 from nautilus_trader.adapters.finfeed import FinFeedDataClientFactory
 from nautilus_trader.adapters.finfeed import FinFeedInstrumentSelection
+from nautilus_trader.adapters.finfeed import finfeed_instrument_id
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
-from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import TraderId
 from nautilus_trader.testkit import DataTesterConfig
 
 
-MARKET_ID = "2026-BALANCE-OF-POWER-D-SENATE-D-HOUSE-949_NO"
-INSTRUMENT_ID = InstrumentId.from_str(f"{MARKET_ID}.FINFEED_POLYMARKET")
 RUN_SECONDS = 60
 ATTEMPT_BUDGET = 8
 HTTP_TIMEOUT_SECS = 10
@@ -58,12 +58,14 @@ CONNECT_TIMEOUT_SECS = 45
 NODE_CONNECTION_TIMEOUT_SECS = 60
 
 
-async def main() -> None:
+async def main(market_id: str) -> None:
     """
     Run the bounded data example.
     """
+    instrument_id = finfeed_instrument_id("POLYMARKET", market_id)
+
     config = FinFeedDataClientConfig(
-        instruments=[FinFeedInstrumentSelection("POLYMARKET", [MARKET_ID])],
+        instruments=[FinFeedInstrumentSelection("POLYMARKET", [market_id])],
         attempt_budget=ATTEMPT_BUDGET,
         http_timeout_secs=HTTP_TIMEOUT_SECS,
         max_concurrent_requests=MAX_CONCURRENT_REQUESTS,
@@ -91,7 +93,7 @@ async def main() -> None:
         "DataTester",
         DataTesterConfig(
             client_id=FINFEED_CLIENT_ID,
-            instrument_ids=[INSTRUMENT_ID],
+            instrument_ids=[instrument_id],
             subscribe_quotes=True,
             subscribe_trades=True,
             subscribe_book_deltas=True,
@@ -111,4 +113,6 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description="Poll one Polymarket outcome through FinFeed.")
+    parser.add_argument("market_id", metavar="MARKET_ID", help="Active Polymarket outcome ID")
+    asyncio.run(main(parser.parse_args().market_id))

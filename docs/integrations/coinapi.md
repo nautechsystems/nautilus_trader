@@ -175,15 +175,8 @@ requests and subscriptions.
 
 ### Unsupported contracts
 
-Other exchanges and symbol types are unsupported. This includes Binance COIN-M (`BINANCEFTSC`):
-CoinAPI reports a one-coin contract unit for `BTCUSD_PERP`, while the native Binance contract is
-100 USD.
-
-Kraken dated futures (`KRAKENFTS` `FUTURES`) are also unsupported. CoinAPI reports midnight UTC on the
-delivery date. Kraken's last trading time varies by product: 08:00 UTC for `FF_`, for example. For `FI_`
-contracts, it is 15:00 or 16:00 UTC.
-
-Other rejected forms include Bybit USDC contracts, OKX USD-margined futures such as
+The adapter rejects Binance COIN-M (`BINANCEFTSC`), Kraken dated futures (`KRAKENFTS` `FUTURES`),
+Bybit USDC contracts, OKX USD-margined futures such as
 `BTC-USD_UM-261225`, and ambiguous Binance delivery IDs with a `USD` quote, such as
 `BTCUSD_261225.BINANCE`. A symbol that resembles a supported native ID does not by itself establish
 that its product is supported.
@@ -469,6 +462,9 @@ Set a positive `min_request_interval_ms` to space REST attempts across endpoints
 history pages on one client. Pacing is off by default. With a 10-request-per-minute organization
 limit, `7_000` ms allows at most nine starts per rolling minute per client. Divide that limit among
 clients and jobs.
+
+The Rust and Python live testers use this interval and cap each historical request at 60 records
+from the last hour. Adjust the pacing to fit the quota shared by your clients and jobs.
 
 The client backs off on HTTP 429 and fails promptly on HTTP 403. For HTTP 429, 500, 502, 503, or 504,
 `Retry-After` in seconds or HTTP-date format starts a REST cooldown if the deadline fits the local

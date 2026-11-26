@@ -977,7 +977,8 @@ impl log::Log for SaturationLogs {
         metadata.level() <= log::Level::Debug
             && matches!(
                 metadata.target(),
-                "nautilus_finfeed::data::poll"
+                "nautilus_finfeed::data"
+                    | "nautilus_finfeed::data::poll"
                     | "nautilus_finfeed::parse"
                     | "nautilus_finfeed::http::parse"
                     | "nautilus_finfeed::http::client"

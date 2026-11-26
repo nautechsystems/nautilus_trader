@@ -22,7 +22,8 @@
 //! using `docs/integrations/finfeed.md`; this example keeps its bounded one-outcome defaults.
 //!
 //! Run from the repository root:
-//! `CARGO_BUILD_JOBS=8 cargo run --locked -p nautilus-finfeed --example node_data_tester`
+//! `CARGO_BUILD_JOBS=8 cargo run --locked -p nautilus-finfeed --example node_data_tester -- <MARKET_ID>`
+//! Pass an active Polymarket outcome ID.
 
 use std::time::Duration;
 
@@ -38,18 +39,28 @@ use nautilus_live::node::LiveNode;
 use nautilus_model::identifiers::TraderId;
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
-const MARKET_ID: &str = "2026-BALANCE-OF-POWER-D-SENATE-D-HOUSE-949_NO";
 const RUN_SECONDS: u64 = 60;
+const USAGE: &str = "Usage: node_data_tester MARKET_ID (an active Polymarket outcome ID)";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let args: Vec<_> = std::env::args().skip(1).collect();
+    let market_id = match args.as_slice() {
+        [help] if matches!(help.as_str(), "-h" | "--help") => {
+            println!("{USAGE}");
+            return Ok(());
+        }
+        [market_id] if !market_id.starts_with('-') => market_id,
+        _ => anyhow::bail!("{USAGE}"),
+    };
+
     let exchange_id = "POLYMARKET";
-    let instrument_id = to_instrument_id(exchange_id, MARKET_ID)?;
+    let instrument_id = to_instrument_id(exchange_id, market_id)?;
 
     let mut config = FinFeedDataClientConfig {
         instruments: vec![FinFeedInstrumentSelection {
             exchange_id: exchange_id.into(),
-            market_ids: vec![MARKET_ID.into()],
+            market_ids: vec![market_id.as_str().into()],
         }],
         http: FinFeedHttpConfig {
             attempt_budget: 8,

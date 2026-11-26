@@ -64,15 +64,16 @@ Before running:
   see [installation](../getting_started/installation.md).
 - Check provider retention for the historical examples' fixed past windows.
 
-Set `MARKET_ID` in the example you plan to run to an [active Polymarket outcome ID](#selecting-an-outcome).
-Run from the repository root:
+Use the [Python discovery example](#discovering-an-outcome-in-python) or the
+[active-market endpoint](#selecting-an-outcome) to find an active Polymarket outcome ID. Set the shell
+variable `MARKET_ID` to that exact ID, then pass it to the tester from the repository root.
 
 ```bash tab="Rust"
-CARGO_BUILD_JOBS=8 cargo run --locked -p nautilus-finfeed --example node_data_tester
+CARGO_BUILD_JOBS=8 cargo run --locked -p nautilus-finfeed --example node_data_tester -- "$MARKET_ID"
 ```
 
 ```bash tab="Python"
-uv run --project python --no-sync python examples/live/finfeed/data_tester.py
+uv run --project python --no-sync python examples/live/finfeed/data_tester.py "$MARKET_ID"
 ```
 
 The [Rust](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/finfeed/examples/node_data_tester.rs)
@@ -83,7 +84,7 @@ examples register the factory with `LiveNode` and route `DataTester` through `FI
 
 | Setting           | Example value                                             |
 | ----------------- | --------------------------------------------------------- |
-| Outcome           | Active Polymarket outcome ID set in `MARKET_ID`.          |
+| Outcome           | Active Polymarket outcome ID passed at launch.            |
 | Subscriptions     | Quotes, trades, L2 book replacements; logs incoming data. |
 | Stop timer        | 60 seconds including startup; shutdown can take longer.   |
 | Managed allowance | Eight attempts; no application retries.                   |
