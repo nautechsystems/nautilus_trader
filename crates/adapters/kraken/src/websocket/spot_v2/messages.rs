@@ -158,7 +158,11 @@ pub struct KrakenWsAddOrderParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reduce_only: Option<bool>,
     /// Trigger parameters for stop/take-profit orders.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "triggers",
+        alias = "trigger",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub trigger: Option<KrakenWsTriggerParams>,
     /// Leverage multiplier for margin orders; omit for non-margin (cash) orders.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -263,7 +267,11 @@ pub struct KrakenWsBatchAddOrder {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub leverage: Option<u16>,
     /// Trigger parameters for stop-loss and take-profit order types.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "triggers",
+        alias = "trigger",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub trigger: Option<KrakenWsTriggerParams>,
 }
 
@@ -322,10 +330,29 @@ pub struct KrakenWsOrderResponse {
     pub error: Option<String>,
     /// Result payload when `success` is `true`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub result: Option<KrakenWsOrderResult>,
+    pub result: Option<KrakenWsOrderResponseResult>,
 }
 
-/// Result payload for single-order responses (`add_order`, `amend_order`, `cancel_order`).
+/// Wire shapes for order-method results.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum KrakenWsOrderResponseResult {
+    /// Kraken's `batch_add` result, including an empty array.
+    Batch(Vec<KrakenWsBatchOrderAck>),
+    /// Single-order result or legacy batch result with nested `orders`.
+    Order(KrakenWsOrderResult),
+}
+
+impl KrakenWsOrderResponseResult {
+    pub(crate) fn order(&self) -> Option<&KrakenWsOrderResult> {
+        match self {
+            Self::Order(result) => Some(result),
+            Self::Batch(_) => None,
+        }
+    }
+}
+
+/// Object-shaped result for an order-method response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KrakenWsOrderResult {
     /// Kraken-assigned order ID.
@@ -345,18 +372,32 @@ pub struct KrakenWsOrderResult {
     pub orders: Option<Vec<KrakenWsBatchOrderResult>>,
 }
 
-/// Per-order outcome within a `batch_add` response.
+/// Per-order outcome in a legacy `batch_add` result object.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KrakenWsBatchOrderResult {
     /// Whether this individual order succeeded.
     pub success: bool,
-    /// Kraken-assigned order ID (present when `success` is `true`).
+    /// Kraken-assigned order ID.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_id: Option<String>,
-    /// Client-assigned order ID.
+    /// Client-assigned order ID echoed back.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cl_ord_id: Option<String>,
     /// Error message (present when `success` is `false`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Per-order acknowledgment in Kraken's `batch_add` result array.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KrakenWsBatchOrderAck {
+    /// Kraken-assigned order ID when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_id: Option<String>,
+    /// Client-assigned order ID echoed back.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cl_ord_id: Option<String>,
+    /// Error detail when present.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
@@ -539,6 +580,13 @@ pub struct KrakenWsExecutionData {
         with = "optional_decimal"
     )]
     pub order_qty: Option<Decimal>,
+    /// Displayed quantity of an iceberg order.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "optional_decimal"
+    )]
+    pub display_qty: Option<Decimal>,
     /// Limit price.
     #[serde(
         default,
@@ -573,12 +621,18 @@ pub struct KrakenWsExecutionData {
     /// Time in force.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub time_in_force: Option<KrakenTimeInForce>,
+    /// Expiration time for a good-till-date order.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expire_time: Option<Timestamp>,
     /// Post only flag.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub post_only: Option<bool>,
     /// Reduce only flag.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reduce_only: Option<bool>,
+    /// Trigger of a stop, take-profit or trailing order.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub triggers: Option<KrakenWsExecutionTriggers>,
     /// Event timestamp.
     pub timestamp: Timestamp,
     /// Execution/trade ID.
@@ -621,6 +675,25 @@ pub struct KrakenWsExecutionData {
     /// Cancel reason (when exec_type is Canceled/Expired).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+}
+
+/// Trigger of a stop, take-profit or trailing order on an executions frame. A frame after the
+/// order's first can carry only some of these fields.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct KrakenWsExecutionTriggers {
+    /// Reference price the trigger tracks, as Kraken names it (`last` or `index`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reference: Option<String>,
+    /// Trigger price, in the units `price_type` names.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "optional_decimal"
+    )]
+    pub price: Option<Decimal>,
+    /// `static` for a market price; `pct` and `quote` are offsets from the reference price.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price_type: Option<String>,
 }
 
 /// Fee information from execution messages.
@@ -774,6 +847,40 @@ mod tests {
         assert_eq!(
             (amend.order_qty, amend.limit_price, amend.trigger_price),
             (None, None, None)
+        );
+    }
+
+    /// An executions frame decodes whichever trigger fields it states, and a `reference` outside
+    /// Kraken's catalog decodes rather than failing the frame.
+    #[rstest]
+    fn test_execution_frame_decodes_partial_triggers() {
+        let messages: Vec<KrakenWsRawMessage> =
+            serde_json::from_str(&load_test_data("ws_executions_external_orders.json")).unwrap();
+        let execution = |index: usize| -> KrakenWsExecutionData {
+            serde_json::from_str(messages[index].data[0].get()).unwrap()
+        };
+        let fields = |triggers: KrakenWsExecutionTriggers| {
+            (triggers.reference, triggers.price, triggers.price_type)
+        };
+
+        assert_eq!(
+            fields(execution(0).triggers.unwrap()),
+            (
+                Some("last".to_string()),
+                Some(dec!(0.9121)),
+                Some("static".to_string())
+            )
+        );
+        assert_eq!(fields(execution(1).triggers.unwrap()), (None, None, None));
+        assert_eq!(fields(execution(4).triggers.unwrap()), (None, None, None));
+        assert!(execution(5).triggers.is_none());
+
+        let mut unknown: Value = serde_json::from_str(messages[0].data[0].get()).unwrap();
+        unknown["triggers"]["reference"] = Value::from("mark");
+        let execution: KrakenWsExecutionData = serde_json::from_str(&unknown.to_string()).unwrap();
+        assert_eq!(
+            execution.triggers.unwrap().reference.as_deref(),
+            Some("mark")
         );
     }
 
@@ -1081,11 +1188,15 @@ mod tests {
             "leverage must be serialized for margin batch legs",
         );
         assert!(
-            value.get("trigger").is_some(),
-            "trigger must be serialized for conditional batch legs",
+            value.get("triggers").is_some(),
+            "triggers must be serialized for conditional batch legs",
         );
-        assert_eq!(value["trigger"]["reference"], "last");
-        assert_eq!(value["trigger"]["price"].to_string(), "30500.0");
+        assert!(
+            value.get("trigger").is_none(),
+            "deprecated trigger field must not be serialized",
+        );
+        assert_eq!(value["triggers"]["reference"], "last");
+        assert_eq!(value["triggers"]["price"].to_string(), "30500.0");
     }
 
     #[rstest]
@@ -1111,9 +1222,82 @@ mod tests {
             "leverage must be omitted when None"
         );
         assert!(
+            value.get("triggers").is_none(),
+            "triggers must be omitted when None"
+        );
+        assert!(
             value.get("trigger").is_none(),
             "trigger must be omitted when None"
         );
+    }
+
+    #[rstest]
+    fn test_add_order_serializes_triggers_for_stop_order() {
+        let params = KrakenWsAddOrderParams {
+            order_type: KrakenOrderType::StopLossLimit,
+            side: KrakenOrderSide::Buy,
+            order_qty: dec!(1.5),
+            symbol: "USDC/EUR".to_string(),
+            token: SecretString::from("token123"),
+            limit_price: Some(dec!(0.9132)),
+            time_in_force: None,
+            expire_time: None,
+            cl_ord_id: Some("client-order-id".to_string()),
+            post_only: None,
+            reduce_only: None,
+            trigger: Some(KrakenWsTriggerParams {
+                reference: KrakenSpotTrigger::Last,
+                price: dec!(0.9121),
+                price_type: None,
+            }),
+            leverage: None,
+            conditional: None,
+        };
+        let value: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string(&params).expect("serialize"))
+                .expect("json");
+
+        assert!(
+            value.get("triggers").is_some(),
+            "triggers object must be serialized for single stop order",
+        );
+        assert!(
+            value.get("trigger").is_none(),
+            "deprecated trigger field must not be serialized",
+        );
+        assert_eq!(value["triggers"]["reference"], "last");
+        assert_eq!(value["triggers"]["price"].to_string(), "0.9121");
+    }
+
+    #[rstest]
+    fn test_batch_add_order_deserializes_triggers_and_legacy_trigger_alias() {
+        let json_with_triggers = r#"{
+            "order_type": "stop-loss-limit",
+            "side": "buy",
+            "order_qty": "0.01",
+            "triggers": {
+                "reference": "last",
+                "price": "30500.0"
+            }
+        }"#;
+        let parsed: KrakenWsBatchAddOrder =
+            serde_json::from_str(json_with_triggers).expect("parse triggers");
+        assert!(parsed.trigger.is_some());
+        assert_eq!(parsed.trigger.as_ref().unwrap().price, dec!(30500.0));
+
+        let json_with_legacy_trigger = r#"{
+            "order_type": "stop-loss-limit",
+            "side": "buy",
+            "order_qty": "0.01",
+            "trigger": {
+                "reference": "last",
+                "price": "30500.0"
+            }
+        }"#;
+        let parsed_legacy: KrakenWsBatchAddOrder =
+            serde_json::from_str(json_with_legacy_trigger).expect("parse legacy trigger");
+        assert!(parsed_legacy.trigger.is_some());
+        assert_eq!(parsed_legacy.trigger.as_ref().unwrap().price, dec!(30500.0));
     }
 
     #[rstest]
@@ -1127,7 +1311,10 @@ mod tests {
         assert!(response.success);
         assert!(response.error.is_none());
 
-        let result = response.result.expect("Expected result");
+        let Some(KrakenWsOrderResponseResult::Order(result)) = response.result else {
+            panic!("Expected object result");
+        };
+
         assert_eq!(result.order_id.as_deref(), Some("OABCDE-12345-FGHIJ"));
         assert_eq!(result.cl_ord_id.as_deref(), Some("O-20260505-000001"));
         assert_eq!(result.order_userref, Some(0));
@@ -1156,7 +1343,10 @@ mod tests {
         assert_eq!(response.req_id, Some(45));
         assert!(response.success);
 
-        let result = response.result.expect("Expected result");
+        let Some(KrakenWsOrderResponseResult::Order(result)) = response.result else {
+            panic!("Expected object result");
+        };
+
         let orders = result.orders.expect("Expected orders");
         assert_eq!(orders.len(), 2);
 

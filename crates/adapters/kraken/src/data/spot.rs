@@ -30,7 +30,7 @@ use async_trait::async_trait;
 use futures_util::StreamExt;
 use nautilus_common::{
     clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
-    live::{get_data_event_sender, sender::EventSender},
+    live::{dst::time::Instant, get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
         data::{
@@ -51,6 +51,7 @@ use nautilus_core::{
 };
 use nautilus_live::{
     SocketControlFactory,
+    book::BookSequenceOutcome,
     task::{TaskGroup, TaskRef, TaskSpawner},
 };
 use nautilus_model::{
@@ -63,23 +64,24 @@ use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
+use super::{apply_instrument_definitions, instrument_refresh_interval};
 use crate::{
+    book::sync::{BookSyncTracker, spawn_recovery},
     common::{consts::KRAKEN_VENUE, lookup_instrument_in_snapshot},
     config::KrakenDataClientConfig,
     http::{KrakenSpotHttpClient, spot::client::KRAKEN_SPOT_DEFAULT_RATE_LIMIT_PER_SECOND},
-    websocket::spot_v2::{
-        client::KrakenSpotWebSocketClient,
-        level_2::{
-            L2BookRequest, L2BookRequests, L2BookState, L2Depths, L2ResyncRequest, L2Subscription,
-            clear_deltas,
+    websocket::{
+        error::KrakenWsError,
+        spot_v2::{
+            client::KrakenSpotWebSocketClient,
+            level_2::{BookRequests, L2BookState, L2Depths, L2ResyncRequest, L2Subscription},
+            level_3::{
+                BookOrderIdHasher, KrakenL3WsMessage,
+                runtime::{L3Sink, L3State, process_l3_message},
+            },
+            messages::KrakenSpotWsMessage,
+            parse::{parse_quote_tick, parse_trade_tick, parse_ws_bar},
         },
-        level_3::{
-            BookOrderIdHasher, KrakenL3WsMessage,
-            resync::retry_l3_resync,
-            runtime::{L3Sink, L3State, process_l3_message},
-        },
-        messages::KrakenSpotWsMessage,
-        parse::{parse_quote_tick, parse_trade_tick, parse_ws_bar},
     },
 };
 
@@ -97,11 +99,13 @@ pub struct KrakenSpotDataClient {
     ws_l3: Option<KrakenSpotWebSocketClient>,
     socket_factory: SocketControlFactory,
     l3_handler_task: Option<TaskRef>,
+    l3_admissions: L3Admissions,
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
     session_tasks: TaskGroup,
     command_tasks: TaskGroup,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    instrument_publish_lock: Arc<Mutex<()>>,
     data_sender: EventSender<DataEvent>,
 }
 
@@ -164,11 +168,13 @@ impl KrakenSpotDataClient {
             ws_l3: None,
             socket_factory,
             l3_handler_task: None,
+            l3_admissions: L3Admissions::default(),
             is_connected: AtomicBool::new(false),
             cancellation_token,
             session_tasks,
             command_tasks,
             instruments: Arc::new(AtomicMap::new()),
+            instrument_publish_lock: Arc::new(Mutex::new(())),
             data_sender: get_data_event_sender(),
         })
     }
@@ -185,28 +191,50 @@ impl KrakenSpotDataClient {
         self.instruments.load().get(instrument_id).cloned()
     }
 
-    async fn load_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
-        let instruments = self
-            .http
-            .request_instruments(None)
-            .await
-            .context("Failed to load spot instruments")?;
+    fn spawn_instrument_refresh(&self) -> anyhow::Result<()> {
+        let http = self.http.clone();
+        let sender = self.data_sender.clone();
+        let cache = self.instruments.clone();
+        let instrument_publish_lock = self.instrument_publish_lock.clone();
+        let cancel = self.cancellation_token.clone();
 
-        self.instruments.rcu(|m| {
-            for instrument in &instruments {
-                m.insert(instrument.id(), instrument.clone());
+        self.session_tasks.spawn(async move {
+            let mut interval = instrument_refresh_interval();
+
+            loop {
+                tokio::select! {
+                    biased;
+                    () = cancel.cancelled() => break,
+                    _ = interval.tick() => {}
+                }
+
+                let Some(result) = cancel
+                    .run_until_cancelled(Box::pin(http.fetch_instruments(None)))
+                    .await
+                else {
+                    break;
+                };
+
+                let _publish_guard = instrument_publish_lock.lock();
+
+                if cancel.is_cancelled() {
+                    break;
+                }
+
+                match result {
+                    Ok(snapshot) => apply_instrument_definitions(
+                        |accepted| http.cache_instrument_snapshot(&snapshot, accepted),
+                        &cache,
+                        &sender,
+                        &snapshot.instruments,
+                        false,
+                    ),
+                    Err(e) => log::warn!("Failed to refresh Kraken Spot instruments: {e}"),
+                }
             }
-        });
+        })?;
 
-        self.http.cache_instruments(&instruments);
-
-        log::debug!(
-            "Loaded instruments: client_id={}, count={}",
-            self.client_id,
-            instruments.len()
-        );
-
-        Ok(instruments)
+        Ok(())
     }
 
     fn spawn_ws<F>(&self, fut: F, context: &'static str)
@@ -240,6 +268,7 @@ impl KrakenSpotDataClient {
             self.command_tasks
                 .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2)),
         );
+        self.l3_admissions.lock().clear();
         session_result.context("failed to finish Kraken Spot data session tasks")?;
         command_result.context("failed to finish Kraken Spot data command tasks")?;
         Ok(())
@@ -348,25 +377,66 @@ impl KrakenSpotDataClient {
             .expect("ws_l3 initialized above")
             .clone();
 
-        self.spawn_ws(
-            async move {
-                ws_l3
-                    .wait_until_active(10.0)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("L3 WebSocket failed to become active: {e}"))?;
-                ws_l3
-                    .wait_until_authenticated(10.0)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("L3 WebSocket failed to authenticate: {e}"))?;
-                ws_l3
-                    .subscribe_book_l3(symbol_ustr, depth)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))
-            },
-            "subscribe l3 book",
-        );
+        let cancellation = Arc::new(CancellationToken::new());
+        let (admitted, admission) = tokio::sync::oneshot::channel();
+        self.l3_admissions
+            .lock()
+            .entry(instrument_id)
+            .or_default()
+            .push(L3Admission {
+                cancellation: cancellation.clone(),
+                admitted: admission,
+            });
+
+        let admissions = self.l3_admissions.clone();
+        let task_cancellation = cancellation.clone();
+
+        let task = async move {
+            let result =
+                Self::finish_l3_subscribe(&ws_l3, symbol_ustr, depth, &task_cancellation).await;
+            remove_l3_admission(&admissions, instrument_id, &task_cancellation);
+            let _ = admitted.send(matches!(&result, Ok(true)));
+
+            if let Err(e) = result {
+                log::error!("subscribe L3 book: {e:#}");
+            }
+        };
+
+        if let Err(e) = self.command_tasks.spawn(task) {
+            remove_l3_admission(&self.l3_admissions, instrument_id, &cancellation);
+            return Err(anyhow::Error::new(e));
+        }
 
         Ok(())
+    }
+
+    async fn finish_l3_subscribe(
+        ws_l3: &KrakenSpotWebSocketClient,
+        symbol: Ustr,
+        depth: u32,
+        cancellation: &CancellationToken,
+    ) -> anyhow::Result<bool> {
+        let ready = async {
+            ws_l3
+                .wait_until_active(10.0)
+                .await
+                .context("L3 WebSocket failed to become active")?;
+            ws_l3
+                .wait_until_authenticated(10.0)
+                .await
+                .context("L3 WebSocket failed to authenticate")
+        };
+
+        tokio::select! {
+            biased;
+            () = cancellation.cancelled() => return Ok(false),
+            result = ready => result?,
+        }
+
+        ws_l3
+            .subscribe_book_l3_guarded(symbol, depth, Some(cancellation))
+            .await
+            .map_err(anyhow::Error::new)
     }
 
     fn spawn_l3_handler_task(
@@ -378,6 +448,8 @@ impl KrakenSpotDataClient {
         let instruments = self.instruments.clone();
         let cancellation_token = self.cancellation_token.clone();
         let clock = self.clock;
+        let timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
+
         let session_spawner = match self.session_tasks.spawner() {
             Ok(spawner) => spawner,
             Err(e) => {
@@ -418,73 +490,31 @@ impl KrakenSpotDataClient {
             };
             tokio::pin!(stream);
 
-            let mut states: AHashMap<String, L3State> = AHashMap::new();
-            let hasher = BookOrderIdHasher::new();
-            let l3_depths = handler_client.l3_depths_handle();
-            let validate_checksum = handler_client.validate_l3_checksum();
-            let resync_client = handler_client.clone();
+            let mut books = L3Books::new(
+                handler_client.l3_depths_handle(),
+                handler_client.l3_subscriptions(),
+                handler_client.book_requests_handle(),
+                timeout,
+                handler_client.validate_l3_checksum(),
+            );
+
+            let mut watchdog = tokio::time::interval(Duration::from_millis(100));
+            watchdog.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
             loop {
                 tokio::select! {
                     () = cancellation_token.cancelled() => break,
+                    _ = watchdog.tick() => {
+                        for (id, symbol, sub) in books.expired(&instruments, Instant::now()) {
+                            Self::spawn_l3_resync(&mut books.sync, id, symbol, sub, &handler_client, &session_spawner, timeout);
+                        }
+                    }
                     msg = stream.next() => {
                         let Some(msg) = msg else { break };
-                        let ts_init = clock.get_time_ns();
-
-                        let runtime_msg = match msg {
-                            KrakenSpotWsMessage::L3Snapshot(snap) => {
-                                KrakenL3WsMessage::Snapshot(snap)
-                            }
-                            KrakenSpotWsMessage::L3Update(update) => {
-                                KrakenL3WsMessage::Update(update)
-                            }
-                            KrakenSpotWsMessage::Reconnected => {
-                                log::info!("L3 WebSocket reconnected");
-
-                                for state in states.values_mut() {
-                                    state.open_orders.clear();
-                                    state.awaiting_snapshot = true;
-                                }
-                                continue;
-                            }
-                            _ => continue,
-                        };
-
-                        let mut sink = DataEventSink { sender: &data_sender };
-                        let resync = process_l3_message(
-                            runtime_msg,
-                            &mut sink,
-                            &instruments,
-                            &l3_depths,
-                            &mut states,
-                            &hasher,
-                            validate_checksum,
-                            ts_init,
-                        );
-
-                        if let Some(request) = resync {
-                            log::info!(
-                                "Resyncing Kraken L3 book: symbol={}, depth={}, reason={}",
-                                request.symbol,
-                                request.depth,
-                                request.reason,
-                            );
-                            let symbol_ustr = Ustr::from(&request.symbol);
-                            let client_for_resync = resync_client.clone();
-
-                            if let Err(e) = session_spawner.spawn_named(
-                                "kraken-spot-l3-resync",
-                                async move {
-                                    retry_l3_resync(
-                                        &client_for_resync,
-                                        symbol_ustr,
-                                        request.depth,
-                                    )
-                                    .await;
-                                },
-                            ) {
-                                log::warn!("Skipping Kraken L3 resync after shutdown began: {e}");
-                            }
+                        if let Some((id, symbol, sub)) = books.process(
+                            msg, &instruments, &data_sender, Instant::now(), clock.get_time_ns(),
+                        ) {
+                            Self::spawn_l3_resync(&mut books.sync, id, symbol, sub, &handler_client, &session_spawner, timeout);
                         }
                     }
                 }
@@ -503,6 +533,40 @@ impl KrakenSpotDataClient {
         }
     }
 
+    fn spawn_l3_resync(
+        books: &mut BookSyncTracker,
+        id: InstrumentId,
+        symbol: Ustr,
+        subscription: L2Subscription,
+        ws_client: &KrakenSpotWebSocketClient,
+        spawner: &TaskSpawner,
+        timeout: Duration,
+    ) {
+        let Some(recovery) = books.get_mut(id).and_then(|book| book.claim()) else {
+            return;
+        };
+
+        ws_client
+            .l3_subscriptions()
+            .register_recovery(symbol, subscription.generation, &recovery);
+        let ws_client = ws_client.clone();
+        spawn_recovery(
+            spawner,
+            recovery,
+            id,
+            timeout,
+            Duration::ZERO,
+            move |cancel, _| {
+                let ws_client = ws_client.clone();
+                async move {
+                    ws_client
+                        .recover_l3_book(symbol, subscription.generation, cancel)
+                        .await
+                }
+            },
+        );
+    }
+
     fn spawn_message_handler(&mut self) -> anyhow::Result<()> {
         let stream = self.ws.stream().map_err(|e| anyhow::anyhow!("{e}"))?;
         let data_sender = self.data_sender.clone();
@@ -512,7 +576,8 @@ impl KrakenSpotDataClient {
         let l2_depths = self.ws.l2_depths_handle();
         let book_requests = self.ws.book_requests_handle();
         let validate_l2_checksum = self.ws.validate_l2_checksum();
-        let resync_client = self.ws.clone();
+        let ws_client = self.ws.clone();
+        let snapshot_timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
         let session_spawner = self
             .session_tasks
             .spawner()
@@ -522,11 +587,9 @@ impl KrakenSpotDataClient {
 
         let future = async move {
             tokio::pin!(stream);
-            let mut l2_books = L2BookState::new(validate_l2_checksum);
-            // The venue answers a `book` subscribe with a snapshot; a send the transport dropped or
-            // a subscribe the venue rejected leaves a cleared book waiting for one that never comes
-            // while other traffic keeps the connection alive, so the wait is checked on a timer.
-            let mut watchdog = tokio::time::interval(Duration::from_secs(1));
+            let mut l2_books =
+                L2BookState::new(validate_l2_checksum).with_snapshot_timeout(snapshot_timeout);
+            let mut watchdog = tokio::time::interval(Duration::from_millis(100));
             watchdog.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
             loop {
@@ -552,14 +615,7 @@ impl KrakenSpotDataClient {
                                 let resyncs =
                                     Self::handle_ws_message(ws_msg, &context, &mut l2_books);
 
-                                for request in &resyncs {
-                                    log::info!(
-                                        "Resyncing Kraken L2 book after checksum mismatch: {}",
-                                        request.instrument_id
-                                    );
-                                }
-
-                                Self::spawn_l2_resyncs(&session_spawner, &resync_client, resyncs);
+                                Self::spawn_l2_resyncs(&session_spawner, &ws_client, &mut l2_books, snapshot_timeout, resyncs);
                             }
                             None => {
                                 log::debug!("Spot WebSocket stream ended");
@@ -570,7 +626,7 @@ impl KrakenSpotDataClient {
                     }
                     _ = watchdog.tick() => {
                         let resyncs = Self::check_l2_snapshots(&context, &mut l2_books);
-                        Self::spawn_l2_resyncs(&session_spawner, &resync_client, resyncs);
+                        Self::spawn_l2_resyncs(&session_spawner, &ws_client, &mut l2_books, snapshot_timeout, resyncs);
                     }
                 }
             }
@@ -581,57 +637,48 @@ impl KrakenSpotDataClient {
             .context("failed to register Kraken Spot message handler")
     }
 
-    /// Sends each recovery once: `resync_book` fails only when the command channel is closed,
-    /// which no retry can mend, and the snapshot watchdog asks again for a snapshot that does not
-    /// arrive, so a retry chain here would only overlap its requests.
     fn spawn_l2_resyncs(
         spawner: &TaskSpawner,
-        client: &KrakenSpotWebSocketClient,
+        ws_client: &KrakenSpotWebSocketClient,
+        books: &mut L2BookState,
+        timeout: Duration,
         requests: Vec<L2ResyncRequest>,
     ) {
         for request in requests {
-            let client = client.clone();
+            let id = request.instrument_id;
 
-            if let Err(e) = spawner.spawn_named("kraken-spot-l2-resync", async move {
-                if let Err(e) = client
-                    .resync_book(request.instrument_id, request.generation, request.epoch)
-                    .await
-                {
-                    log::error!(
-                        "Failed to send the L2 resync for {}: {e}; the snapshot watchdog asks \
-                         again if the book stays cleared",
-                        request.instrument_id
-                    );
+            let Some(recovery) = books
+                .sync
+                .get_mut(id)
+                .filter(|book| book.position().is_none())
+                .and_then(|book| book.claim())
+            else {
+                continue;
+            };
+
+            ws_client.register_l2_recovery(id, request.generation, &recovery);
+            let ws_client = ws_client.clone();
+            spawn_recovery(spawner, recovery, id, timeout, timeout, move |cancel, _| {
+                let ws_client = ws_client.clone();
+                async move {
+                    ws_client
+                        .recover_l2_book(id, request.generation, cancel)
+                        .await
                 }
-            }) {
-                log::warn!("Skipping Kraken L2 resync after shutdown began: {e}");
-            }
+            });
         }
     }
 
-    /// Requests the snapshot again for every held `book` subscription whose book is overdue, and
-    /// clears the consumer's book for every held instrument whose shadow book the check dropped.
-    ///
-    /// A held symbol without an instrument cannot be processed when its snapshot arrives either,
-    /// so it is left out.
     fn check_l2_snapshots(
         context: &SpotMessageContext,
         l2_books: &mut L2BookState,
     ) -> Vec<L2ResyncRequest> {
-        let now = context.clock.get_time_ns();
-        let held = Self::held_l2_subscriptions(context);
-        let check = l2_books.overdue_snapshots(now, &held);
-
-        for instrument_id in check.cleared {
-            Self::emit_book_clear(context, instrument_id, now);
-        }
-
-        check.requests
+        l2_books.overdue_snapshots(Instant::now(), &Self::held_l2_subscriptions(context))
     }
 
-    /// Every held `book` subscription by instrument; a held symbol without an instrument is left
-    /// out.
-    fn held_l2_subscriptions(context: &SpotMessageContext) -> Vec<(InstrumentId, L2Subscription)> {
+    fn held_l2_subscriptions(
+        context: &SpotMessageContext,
+    ) -> AHashMap<InstrumentId, L2Subscription> {
         let instruments = context.instruments.load();
         context
             .l2_depths
@@ -642,23 +689,6 @@ impl KrakenSpotDataClient {
                     .map(|instrument| (instrument.id(), subscription))
             })
             .collect()
-    }
-
-    /// Clears the consumer's book for `instrument_id` once its shadow book is dropped off the
-    /// frame path, under the shared book sequence like the deltas the `book` arm sends.
-    fn emit_book_clear(context: &SpotMessageContext, instrument_id: InstrumentId, now: UnixNanos) {
-        let sequence = context.book_sequence.load(Ordering::Relaxed);
-        let (deltas, next_sequence) = clear_deltas(instrument_id, sequence, now, now);
-        context
-            .book_sequence
-            .store(next_sequence, Ordering::Relaxed);
-
-        if let Err(e) = context
-            .sender
-            .send(DataEvent::Data(Data::BookDeltas(Box::new(deltas))))
-        {
-            log::error!("Failed to send deltas: {e}");
-        }
     }
 
     fn flush_ohlc_buffer(ohlc_buffer: &OhlcBuffer, sender: &EventSender<DataEvent>) {
@@ -745,24 +775,11 @@ impl KrakenSpotDataClient {
                         ts_init,
                     ) {
                         Ok(outcome) => {
-                            if let Some((deltas, next_sequence)) = outcome.deltas {
-                                context
-                                    .book_sequence
-                                    .store(next_sequence, Ordering::Relaxed);
-
-                                if let Err(e) = context
-                                    .sender
-                                    .send(DataEvent::Data(Data::BookDeltas(Box::new(deltas))))
-                                {
-                                    log::error!("Failed to send deltas: {e}");
-                                }
+                            if let Some(batch) = outcome.deltas {
+                                Self::publish_l2_book(context, book.symbol.as_str(), batch);
                             }
 
-                            // One recovery per instrument per message, the latest: a second request
-                            // for the same subscription would cost a second unsubscribe and
-                            // subscribe cycle and a second snapshot, and only the latest carries
-                            // the epoch the message's last accepted snapshot moved to, so an earlier
-                            // one would be skipped as already served.
+                            // Keep the latest recovery request for each instrument in the message
                             if let Some(request) = outcome.resync {
                                 match resyncs.iter_mut().find(|r: &&mut L2ResyncRequest| {
                                     r.instrument_id == request.instrument_id
@@ -826,34 +843,28 @@ impl KrakenSpotDataClient {
                 // under the subscribe method all match nothing and are left to their log line.
                 let request = req_id.and_then(|req_id| {
                     let request = context.book_requests.lock().remove(&req_id);
-                    request.map(|request| (req_id, request))
+                    request.map(|request| (req_id, request.symbol))
                 });
 
                 match request {
                     Some((req_id, request)) if success => {
-                        Self::handle_book_confirmation(context, l2_books, req_id, request, ts_init);
+                        Self::handle_book_confirmation(context, l2_books, req_id, request);
                     }
                     Some((req_id, request)) => {
-                        Self::handle_book_rejection(
+                        resyncs.extend(Self::handle_book_rejection(
                             context,
                             l2_books,
                             req_id,
                             request,
                             symbol,
                             error.as_deref(),
-                            ts_init,
-                        );
+                        ));
                     }
                     None => {}
                 }
             }
             KrakenSpotWsMessage::Reconnected => {
-                let held = Self::held_l2_subscriptions(context);
-
-                for instrument_id in l2_books.reset_after_reconnect(ts_init, &held) {
-                    Self::emit_book_clear(context, instrument_id, ts_init);
-                }
-
+                l2_books.reset_after_reconnect(Instant::now());
                 log::info!("Spot WebSocket reconnected");
             }
         }
@@ -861,100 +872,68 @@ impl KrakenSpotDataClient {
         resyncs
     }
 
-    /// Opens the stream of a `book` subscribe the venue confirmed and clears the consumer's book
-    /// when that drops a shadow book.
-    ///
-    /// Only the symbol's latest request opens a stream: a confirmation of one a later request has
-    /// superseded, or of one whose subscription is canceled, starts nothing, since its stream is
-    /// retired before it begins.
+    fn publish_l2_book(
+        context: &SpotMessageContext<'_>,
+        symbol: &str,
+        (deltas, next_sequence, subscription): (OrderBookDeltas, u64, L2Subscription),
+    ) {
+        let error = context
+            .l2_depths
+            .with_current_request(symbol, subscription.latest_request, |_| {
+                context
+                    .book_sequence
+                    .store(next_sequence, Ordering::Relaxed);
+                context
+                    .sender
+                    .send(DataEvent::Data(Data::BookDeltas(Box::new(deltas))))
+                    .err()
+                    .map(|e| e.to_string())
+            })
+            .flatten();
+
+        if let Some(e) = error {
+            log::error!("Failed to send deltas: {e}");
+        }
+    }
+
     fn handle_book_confirmation(
         context: &SpotMessageContext,
         l2_books: &mut L2BookState,
         req_id: u64,
-        request: L2BookRequest,
-        now: UnixNanos,
+        request_symbol: Ustr,
     ) {
-        let held = context.l2_depths.subscription(request.symbol.as_str());
-        let Some(subscription) = held.filter(|held| held.latest_request == req_id) else {
-            log::debug!(
-                "Ignoring the confirmation of a superseded L2 subscribe: symbol={}, \
-                 req_id={req_id}",
-                request.symbol
-            );
+        let Some(subscription) = context.l2_depths.confirm_recovery(request_symbol, req_id) else {
             return;
         };
 
         let instruments = context.instruments.load();
-        let Some(instrument) = lookup_instrument_in_snapshot(&instruments, request.symbol.as_str())
-        else {
-            log::debug!(
-                "No instrument for the confirmed L2 subscribe of {}, so its frames are dropped",
-                request.symbol
-            );
-            return;
-        };
 
-        if l2_books.start_stream(instrument.id(), subscription, now) {
-            Self::emit_book_clear(context, instrument.id(), now);
+        if let Some(instrument) =
+            lookup_instrument_in_snapshot(&instruments, request_symbol.as_str())
+        {
+            l2_books.start_stream(instrument.id(), subscription, Instant::now());
         }
     }
 
-    /// Counts a `book` subscribe the venue rejected against its wait and clears the consumer's
-    /// book when the rejection drops a shadow book.
-    ///
-    /// The rejection acts only when it answers the symbol's latest request, matched by request id
-    /// alone: one a later request has superseded is ignored, since that request's own answer
-    /// decides, and one for a canceled subscription has nothing to clear. A rejection of the latest
-    /// request acts even while a book is held, since that book is a retired stream's.
     fn handle_book_rejection(
         context: &SpotMessageContext,
         l2_books: &mut L2BookState,
         req_id: u64,
-        request: L2BookRequest,
+        request_symbol: Ustr,
         symbol: Option<Ustr>,
         error: Option<&str>,
-        now: UnixNanos,
-    ) {
-        let symbol = symbol.unwrap_or(request.symbol);
-        let reason = error.unwrap_or("no reason given");
-        let held = context.l2_depths.subscription(request.symbol.as_str());
-
-        let Some(subscription) = held.filter(|held| held.latest_request == req_id) else {
-            log::debug!(
-                "Ignoring a rejected L2 subscribe superseded by a later request or a canceled \
-                 subscription: symbol={symbol}, req_id={req_id}, error={reason}"
-            );
-            return;
-        };
-
+    ) -> Option<L2ResyncRequest> {
         let instruments = context.instruments.load();
-        let Some(instrument) = lookup_instrument_in_snapshot(&instruments, request.symbol.as_str())
-        else {
-            log::error!(
-                "Kraken rejected the L2 book subscribe for {symbol}: {reason}; no instrument \
-                 for the symbol, so there is no book to clear"
-            );
-            return;
-        };
-
-        let rejection = l2_books.reject_subscription(instrument.id(), subscription.generation, now);
-
-        if rejection.cleared {
-            Self::emit_book_clear(context, instrument.id(), now);
-        }
-
-        match rejection.next_request_due {
-            Some(due) => log::error!(
-                "Kraken rejected the L2 book subscribe for {symbol}: {reason}; the book stays \
-                 cleared, asking again in {} s",
-                due.saturating_duration_since(now).as_u64() / 1_000_000_000
-            ),
-            None => log::error!(
-                "Kraken rejected the L2 book subscribe for {symbol}: {reason}; the snapshot \
-                 request cap is reached, so the book stays cleared until the next subscription \
-                 change or reconnect"
-            ),
-        }
+        let instrument = lookup_instrument_in_snapshot(&instruments, request_symbol.as_str())?;
+        let symbol = symbol.unwrap_or(request_symbol);
+        let reason = error.unwrap_or("no reason given");
+        context
+            .l2_depths
+            .with_current_request(request_symbol.as_str(), req_id, |subscription| {
+                log::warn!("Kraken rejected the L2 book subscription for {symbol}: {reason}");
+                l2_books.reject_subscription(instrument.id(), subscription, Instant::now(), reason)
+            })
+            .flatten()
     }
 }
 
@@ -979,6 +958,7 @@ impl DataClient for KrakenSpotDataClient {
 
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping Spot data client: {}", self.client_id);
+        let _publish_guard = self.instrument_publish_lock.lock();
         self.session_tasks.begin_shutdown();
         self.command_tasks.begin_shutdown();
         self.ws.begin_shutdown();
@@ -988,6 +968,7 @@ impl DataClient for KrakenSpotDataClient {
 
     fn reset(&mut self) -> anyhow::Result<()> {
         log::info!("Resetting Spot data client: {}", self.client_id);
+        let _publish_guard = self.instrument_publish_lock.lock();
         self.session_tasks.begin_shutdown();
         self.command_tasks.begin_shutdown();
         self.ws.begin_shutdown();
@@ -1017,7 +998,11 @@ impl DataClient for KrakenSpotDataClient {
 
         self.prepare_task_groups().await?;
 
-        let instruments = self.load_instruments().await?;
+        let snapshot = self
+            .http
+            .fetch_instruments(None)
+            .await
+            .context("Failed to load spot instruments")?;
 
         let session_result = async {
             self.ws
@@ -1030,6 +1015,7 @@ impl DataClient for KrakenSpotDataClient {
                 .context("Spot WebSocket failed to become active")?;
 
             self.spawn_message_handler()?;
+            self.spawn_instrument_refresh()?;
 
             Ok::<(), anyhow::Error>(())
         }
@@ -1044,10 +1030,15 @@ impl DataClient for KrakenSpotDataClient {
             return Err(e);
         }
 
-        for instrument in instruments {
-            if let Err(e) = self.data_sender.send(DataEvent::Data(instrument.into())) {
-                log::error!("Failed to send instrument: {e}");
-            }
+        {
+            let _publish_guard = self.instrument_publish_lock.lock();
+            apply_instrument_definitions(
+                |accepted| self.http.cache_instrument_snapshot(&snapshot, accepted),
+                &self.instruments,
+                &self.data_sender,
+                &snapshot.instruments,
+                true,
+            );
         }
 
         self.is_connected.store(true, Ordering::Release);
@@ -1064,12 +1055,12 @@ impl DataClient for KrakenSpotDataClient {
     }
 
     fn subscribe_instruments(&mut self, _cmd: SubscribeInstruments) -> anyhow::Result<()> {
-        log::debug!("subscribe_instruments: Kraken instruments are fetched via HTTP on connect");
+        log::debug!("subscribe_instruments: Kraken Spot instruments refresh periodically");
         Ok(())
     }
 
     fn subscribe_instrument(&mut self, _cmd: SubscribeInstrument) -> anyhow::Result<()> {
-        log::debug!("subscribe_instrument: Kraken instruments are fetched via HTTP on connect");
+        log::debug!("subscribe_instrument: Kraken Spot instruments refresh periodically");
         Ok(())
     }
 
@@ -1200,23 +1191,40 @@ impl DataClient for KrakenSpotDataClient {
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
         execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
-            if self.ws_l3.as_ref().is_some_and(|ws| {
-                ws.subscriptions_contains(&format!("level3:{}", instrument_id.symbol))
-            }) {
-                let symbol_ustr = instrument_id.symbol.inner();
+            let admission = self
+                .l3_admissions
+                .lock()
+                .get_mut(&instrument_id)
+                .and_then(Vec::pop);
 
-                if let Some(ws_l3) = self.ws_l3.clone() {
-                    self.spawn_ws(
-                        async move {
-                            ws_l3
-                                .unsubscribe_book_l3(symbol_ustr)
-                                .await
-                                .map_err(|e| anyhow::anyhow!("{e}"))?;
-                            Ok(())
-                        },
-                        "unsubscribe l3 book",
-                    );
+            if let Some(ws_l3) = self
+                .ws_l3
+                .as_ref()
+                .filter(|ws| {
+                    admission.is_some()
+                        || ws.subscriptions_contains(&format!("level3:{}", instrument_id.symbol))
+                })
+                .cloned()
+            {
+                if let Some(admission) = &admission {
+                    admission.cancellation.cancel();
                 }
+
+                self.spawn_ws(
+                    async move {
+                        if let Some(admission) = admission
+                            && !admission.admitted.await.unwrap_or(false)
+                        {
+                            return Ok(());
+                        }
+
+                        ws_l3
+                            .unsubscribe_book_l3(instrument_id.symbol.inner())
+                            .await
+                            .map_err(anyhow::Error::new)
+                    },
+                    "unsubscribe l3 book",
+                );
 
                 return Ok(());
             }
@@ -1302,29 +1310,48 @@ impl DataClient for KrakenSpotDataClient {
         let http = self.http.clone();
         let sender = self.data_sender.clone();
         let instruments_cache = self.instruments.clone();
+        let instrument_publish_lock = self.instrument_publish_lock.clone();
+        let cancel = self.command_tasks.cancellation_token();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let venue = *KRAKEN_VENUE;
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
+        let publish = request.start.is_none() && request.end.is_none();
         let params = request.params;
         let clock = self.clock;
 
         self.spawn_command(async move {
-            match http.request_instruments(None).await {
-                Ok(instruments) => {
-                    instruments_cache.rcu(|m| {
-                        for instrument in &instruments {
-                            m.insert(instrument.id(), instrument.clone());
-                        }
-                    });
-                    http.cache_instruments(&instruments);
+            let Some(result) = cancel
+                .run_until_cancelled(Box::pin(http.fetch_instruments(None)))
+                .await
+            else {
+                return;
+            };
+
+            match result {
+                Ok(snapshot) => {
+                    let _publish_guard = instrument_publish_lock.lock();
+
+                    if cancel.is_cancelled() {
+                        return;
+                    }
+
+                    if publish {
+                        apply_instrument_definitions(
+                            |accepted| http.cache_instrument_snapshot(&snapshot, accepted),
+                            &instruments_cache,
+                            &sender,
+                            &snapshot.instruments,
+                            false,
+                        );
+                    }
 
                     let response = DataResponse::Instruments(InstrumentsResponse::new(
                         request_id,
                         client_id,
                         venue,
-                        instruments,
+                        snapshot.instruments,
                         start_nanos,
                         end_nanos,
                         clock.get_time_ns(),
@@ -1348,24 +1375,44 @@ impl DataClient for KrakenSpotDataClient {
         let http = self.http.clone();
         let sender = self.data_sender.clone();
         let instruments = self.instruments.clone();
+        let instrument_publish_lock = self.instrument_publish_lock.clone();
+        let cancel = self.command_tasks.cancellation_token();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
+        let publish = request.start.is_none() && request.end.is_none();
         let params = request.params;
         let clock = self.clock;
 
         self.spawn_command(async move {
-            match http.request_instruments(None).await {
-                Ok(all_instruments) => {
-                    instruments.rcu(|m| {
-                        for instrument in &all_instruments {
-                            m.insert(instrument.id(), instrument.clone());
-                        }
-                    });
-                    http.cache_instruments(&all_instruments);
+            let Some(result) = cancel
+                .run_until_cancelled(Box::pin(http.fetch_instruments(None)))
+                .await
+            else {
+                return;
+            };
 
-                    let instrument = all_instruments
+            match result {
+                Ok(snapshot) => {
+                    let _publish_guard = instrument_publish_lock.lock();
+
+                    if cancel.is_cancelled() {
+                        return;
+                    }
+
+                    if publish {
+                        apply_instrument_definitions(
+                            |accepted| http.cache_instrument_snapshot(&snapshot, accepted),
+                            &instruments,
+                            &sender,
+                            &snapshot.instruments,
+                            false,
+                        );
+                    }
+
+                    let instrument = snapshot
+                        .instruments
                         .into_iter()
                         .find(|i| i.id() == instrument_id);
 
@@ -1514,10 +1561,270 @@ impl DataClient for KrakenSpotDataClient {
 type OhlcBufferKey = (Ustr, u32);
 type OhlcBuffer = Arc<Mutex<AHashMap<OhlcBufferKey, (Bar, UnixNanos)>>>;
 
+type L3Admissions = Arc<Mutex<AHashMap<InstrumentId, Vec<L3Admission>>>>;
+
+#[derive(Debug)]
+struct L3Admission {
+    cancellation: Arc<CancellationToken>,
+    admitted: tokio::sync::oneshot::Receiver<bool>,
+}
+
+fn remove_l3_admission(
+    admissions: &L3Admissions,
+    id: InstrumentId,
+    cancellation: &Arc<CancellationToken>,
+) {
+    let mut admissions = admissions.lock();
+    if let Some(attempts) = admissions.get_mut(&id) {
+        attempts.retain(|attempt| !Arc::ptr_eq(&attempt.cancellation, cancellation));
+        if attempts.is_empty() {
+            admissions.remove(&id);
+        }
+    }
+}
+
+struct L3Books {
+    depths: Arc<Mutex<AHashMap<String, u32>>>,
+    subscriptions: L2Depths,
+    requests: BookRequests,
+    states: AHashMap<String, L3State>,
+    live_requests: AHashMap<InstrumentId, u64>,
+    sync: BookSyncTracker,
+    hasher: BookOrderIdHasher,
+    validate_checksum: bool,
+}
+
+type L3Recovery = (InstrumentId, Ustr, L2Subscription);
+
+impl L3Books {
+    fn new(
+        depths: Arc<Mutex<AHashMap<String, u32>>>,
+        subscriptions: L2Depths,
+        requests: BookRequests,
+        timeout: Duration,
+        validate_checksum: bool,
+    ) -> Self {
+        Self {
+            depths,
+            subscriptions,
+            requests,
+            states: AHashMap::new(),
+            live_requests: AHashMap::new(),
+            sync: BookSyncTracker::new(timeout),
+            hasher: BookOrderIdHasher::new(),
+            validate_checksum,
+        }
+    }
+
+    fn expired(
+        &mut self,
+        instruments: &AtomicMap<InstrumentId, InstrumentAny>,
+        now: Instant,
+    ) -> Vec<L3Recovery> {
+        let instruments = instruments.load();
+        let held: AHashMap<_, _> = self
+            .subscriptions
+            .held()
+            .into_iter()
+            .filter_map(|(symbol, sub)| {
+                let instrument = lookup_instrument_in_snapshot(&instruments, &symbol)?;
+                Some((instrument.id(), (Ustr::from(&symbol), sub)))
+            })
+            .collect();
+
+        self.sync.retain(|id| held.contains_key(&id));
+        self.live_requests.retain(|id, _| held.contains_key(id));
+
+        for (symbol, state) in &mut self.states {
+            if self.subscriptions.subscription(symbol).is_none() {
+                // The data engine keeps the cached book across a resubscribe
+                state.await_snapshot();
+                state.open_orders.shrink_to_fit();
+            }
+        }
+
+        for (&id, (_, sub)) in &held {
+            self.sync.track(id, sub.generation, now);
+        }
+
+        self.sync
+            .expired(now)
+            .into_iter()
+            .map(|id| {
+                let (symbol, sub) = held[&id];
+                (id, symbol, sub)
+            })
+            .collect()
+    }
+
+    fn process(
+        &mut self,
+        msg: KrakenSpotWsMessage,
+        instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+        sender: &EventSender<DataEvent>,
+        now: Instant,
+        ts_init: UnixNanos,
+    ) -> Option<L3Recovery> {
+        let (msg, symbol, position, is_snapshot) = match msg {
+            KrakenSpotWsMessage::L3Snapshot(snap) => {
+                let symbol = Ustr::from(&snap.symbol);
+                let position = i64::try_from(snap.timestamp.as_nanosecond()).ok()?;
+                (KrakenL3WsMessage::Snapshot(snap), symbol, position, true)
+            }
+            KrakenSpotWsMessage::L3Update(update) => {
+                let symbol = Ustr::from(&update.symbol);
+                let position = i64::try_from(update.timestamp.as_nanosecond()).ok()?;
+                (KrakenL3WsMessage::Update(update), symbol, position, false)
+            }
+            KrakenSpotWsMessage::Reconnected => {
+                log::info!("L3 WebSocket reconnected");
+
+                for state in self.states.values_mut() {
+                    state.await_snapshot();
+                }
+
+                self.live_requests.clear();
+                self.sync.reset_on_reconnect(now);
+                return None;
+            }
+            KrakenSpotWsMessage::SubscriptionAck {
+                req_id: Some(req_id),
+                success,
+                error,
+                ..
+            } => {
+                return self.confirm(instruments, req_id, success, error, now);
+            }
+            _ => return None,
+        };
+
+        let sub = self.subscriptions.subscription(symbol.as_str())?;
+        let instrument_snapshot = instruments.load();
+        let instrument = lookup_instrument_in_snapshot(&instrument_snapshot, symbol.as_str())?;
+        let id = instrument.id();
+        let book = self.sync.track(id, sub.generation, now);
+        if self.live_requests.get(&id) != Some(&sub.latest_request) {
+            return None;
+        }
+
+        match book.position() {
+            Some(previous) if position < *previous => return None,
+            None if !is_snapshot => {
+                return (book.gap() == BookSequenceOutcome::Recover).then_some((id, symbol, sub));
+            }
+            _ => {}
+        }
+
+        let mut sink = BufferedBookDeltas(None);
+
+        if let Some(request) = process_l3_message(
+            msg,
+            &mut sink,
+            instruments,
+            &self.depths,
+            &mut self.states,
+            &self.hasher,
+            self.validate_checksum,
+            ts_init,
+        ) {
+            return self
+                .subscriptions
+                .with_current_request(symbol.as_str(), sub.latest_request, |_| {
+                    log::warn!(
+                        "Invalid Kraken Spot L3 book for {} at depth {}: {}",
+                        request.symbol,
+                        request.depth,
+                        request.reason
+                    );
+                    book.reject(KrakenWsError::InvalidMessage(request.reason.to_owned()));
+                    (book.gap() == BookSequenceOutcome::Recover).then_some((id, symbol, sub))
+                })
+                .flatten();
+        }
+
+        let deltas = sink.0?;
+
+        let publish = |accepted| {
+            if accepted
+                && let Err(e) = sender.send(DataEvent::Data(Data::BookDeltas(Box::new(deltas))))
+            {
+                log::error!("Failed to send L3 deltas: {e}");
+            }
+
+            accepted
+        };
+
+        if is_snapshot {
+            self.subscriptions
+                .accept_snapshot(symbol.as_str(), sub.latest_request, || {
+                    publish(book.accept_snapshot(position, now))
+                });
+        } else {
+            self.subscriptions
+                .with_current_request(symbol.as_str(), sub.latest_request, |_| {
+                    publish(book.advance(position, now))
+                });
+        }
+
+        None
+    }
+
+    fn confirm(
+        &mut self,
+        instruments: &AtomicMap<InstrumentId, InstrumentAny>,
+        req_id: u64,
+        success: bool,
+        error: Option<String>,
+        now: Instant,
+    ) -> Option<L3Recovery> {
+        let symbol = self.requests.lock().remove(&req_id)?.symbol;
+        let instruments = instruments.load();
+        let instrument = lookup_instrument_in_snapshot(&instruments, symbol.as_str())?;
+        let id = instrument.id();
+
+        if success {
+            let sub = self.subscriptions.confirm_recovery(symbol, req_id)?;
+            self.sync.track(id, sub.generation, now);
+            if self.live_requests.insert(id, req_id) != Some(req_id)
+                && let Some(state) = self.states.get_mut(symbol.as_str())
+            {
+                state.await_snapshot();
+            }
+
+            return None;
+        }
+
+        self.subscriptions
+            .with_current_request(symbol.as_str(), req_id, |sub| {
+                self.live_requests.remove(&id);
+
+                if let Some(state) = self.states.get_mut(symbol.as_str()) {
+                    state.await_snapshot();
+                }
+
+                let book = self.sync.track(id, sub.generation, now);
+                let reason = error.unwrap_or_else(|| "Subscription rejected".into());
+                book.reject(KrakenWsError::SubscriptionError(reason));
+                (book.gap() == BookSequenceOutcome::Recover).then_some((id, symbol, sub))
+            })
+            .flatten()
+    }
+}
+
+struct BufferedBookDeltas(Option<OrderBookDeltas>);
+
+impl L3Sink for BufferedBookDeltas {
+    fn emit_deltas(&mut self, deltas: OrderBookDeltas) {
+        self.0 = Some(deltas);
+    }
+}
+
+#[cfg(test)]
 struct DataEventSink<'a> {
     sender: &'a EventSender<DataEvent>,
 }
 
+#[cfg(test)]
 impl L3Sink for DataEventSink<'_> {
     fn emit_deltas(&mut self, deltas: OrderBookDeltas) {
         if let Err(e) = self
@@ -1534,14 +1841,17 @@ struct SpotMessageContext<'a> {
     instruments: &'a Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     book_sequence: &'a Arc<AtomicU64>,
     l2_depths: &'a L2Depths,
-    book_requests: &'a L2BookRequests,
+    book_requests: &'a BookRequests,
     ohlc_buffer: &'a OhlcBuffer,
     clock: &'static AtomicTime,
 }
 
 #[cfg(test)]
 mod tests {
+    use axum::{Json, Router, routing::post};
+    use futures_util::StreamExt;
     use nautilus_common::{live::runner::set_data_event_sender, messages::DataEvent};
+    use nautilus_core::{UUID4, string::secret::SecretString};
     use nautilus_model::{
         enums::{BookAction, RecordFlag},
         identifiers::Symbol,
@@ -1551,12 +1861,14 @@ mod tests {
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
+    use serde_json::{Value, json};
 
     use super::*;
     use crate::{
         common::consts::KRAKEN_CLIENT_ID,
         config::KrakenDataClientConfig,
         websocket::spot_v2::{
+            level_2::BookRequest,
             level_3::messages::KrakenL3Snapshot,
             messages::{KrakenWsBookData, KrakenWsBookLevel},
         },
@@ -1565,6 +1877,310 @@ mod tests {
     fn setup_test_env() {
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         set_data_event_sender(sender);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_l3_final_unsubscribe_before_initial_authentication() {
+        setup_test_env();
+        let http = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let websocket = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let config = l3_test_config(&http, &websocket);
+        let requested = Arc::new(tokio::sync::Notify::new());
+        let release_auth = Arc::new(tokio::sync::Notify::new());
+
+        let auth = Router::new().route(
+            "/0/private/GetWebSocketsToken",
+            post({
+                let requested = requested.clone();
+                let release_auth = release_auth.clone();
+                move || {
+                    let requested = requested.clone();
+                    let release_auth = release_auth.clone();
+
+                    async move {
+                        requested.notify_one();
+                        release_auth.notified().await;
+                        Json(
+                            json!({"error": [], "result": {"token": "test-token", "expires": 900}}),
+                        )
+                    }
+                }
+            }),
+        );
+
+        let auth = tokio::spawn(async move { axum::serve(http, auth).await.unwrap() });
+        let (sent, mut frames) = tokio::sync::mpsc::unbounded_channel();
+
+        let server = tokio::spawn(async move {
+            let (tcp, _) = websocket.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(tcp).await.unwrap();
+            while let Some(Ok(frame)) = socket.next().await {
+                if frame.is_text() {
+                    sent.send(serde_json::from_str::<Value>(frame.to_text().unwrap()).unwrap())
+                        .unwrap();
+                }
+            }
+        });
+
+        let mut client = KrakenSpotDataClient::new(*KRAKEN_CLIENT_ID, config).unwrap();
+        let retired = InstrumentId::from("BTC/USD.KRAKEN");
+        let active = InstrumentId::from("ETH/USD.KRAKEN");
+        client
+            .subscribe_book_deltas(l3_test_subscription(retired))
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(3), requested.notified())
+            .await
+            .unwrap();
+        client
+            .unsubscribe_book_deltas(&UnsubscribeBookDeltas::new(
+                retired,
+                Some(*KRAKEN_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        client
+            .subscribe_book_deltas(l3_test_subscription(active))
+            .unwrap();
+        release_auth.notify_one();
+
+        let first = tokio::time::timeout(Duration::from_secs(3), frames.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(first["method"], "subscribe");
+        assert_eq!(first["params"]["symbol"], json!(["ETH/USD"]));
+        assert_eq!(first["params"]["channel"], "level3");
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), frames.recv())
+                .await
+                .is_err()
+        );
+        assert!(client.l3_admissions.lock().is_empty());
+
+        client.disconnect().await.unwrap();
+        server.await.unwrap();
+        auth.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_l3_reconnect_retries_failed_refresh_with_snapshot_deadline_disabled() {
+        use futures_util::SinkExt;
+        use tokio_tungstenite::tungstenite::Message;
+
+        tokio::time::timeout(Duration::from_secs(8), async {
+            let (sender, mut data) = tokio::sync::mpsc::unbounded_channel();
+            set_data_event_sender(sender);
+            let http = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let websocket = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let config = l3_test_config(&http, &websocket);
+            let auth_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let calls = auth_calls.clone();
+            let auth = Router::new().route("/0/private/GetWebSocketsToken", post(move || {
+                let call = calls.fetch_add(1, Ordering::Relaxed);
+                async move {
+                    if call == 1 {
+                        return Json(json!({"error": ["EAPI:Invalid key"]}));
+                    }
+
+                    Json(json!({"error": [], "result": {"token": format!("token-{call}"), "expires": 900}}))
+                }
+            }));
+
+            let auth = tokio::spawn(async move { axum::serve(http, auth).await.unwrap() });
+            let (cut_first, first_cut) = tokio::sync::oneshot::channel();
+            let (cut_second, second_cut) = tokio::sync::oneshot::channel();
+            let server = tokio::spawn(async move {
+                for (connection, cut) in [Some(first_cut), Some(second_cut), None].into_iter().enumerate() {
+                    let (tcp, _) = websocket.accept().await.unwrap();
+                    let mut socket = tokio_tungstenite::accept_async(tcp).await.unwrap();
+                    if connection != 1 {
+                        let frame = socket.next().await.unwrap().unwrap();
+                        let subscribe: Value = serde_json::from_str(frame.to_text().unwrap()).unwrap();
+                        assert_eq!(subscribe["method"], "subscribe");
+                        assert_eq!(subscribe["params"]["symbol"], json!(["BTC/USD"]));
+                        assert_eq!(subscribe["params"]["token"], format!("token-{connection}"));
+                        let ack = json!({"method":"subscribe", "success":true, "req_id":subscribe["req_id"]});
+                        socket.send(Message::text(ack.to_string())).await.unwrap();
+                        let snapshot = json!({"channel":"level3", "type":"snapshot", "data":[{
+                            "symbol":"BTC/USD", "bids":[], "asks":[], "checksum":0,
+                            "timestamp": format!("2024-01-01T00:00:0{connection}Z"),
+                        }]});
+                        socket.send(Message::text(snapshot.to_string())).await.unwrap();
+                    }
+
+                    if let Some(cut) = cut {
+                        cut.await.unwrap();
+                    } else {
+                        let _ = socket.next().await;
+                    }
+                }
+            });
+
+            let mut client = KrakenSpotDataClient::new(*KRAKEN_CLIENT_ID, config).unwrap();
+            let instrument = make_instrument();
+            let id = instrument.id();
+            client.instruments.insert(id, instrument);
+            client.subscribe_book_deltas(l3_test_subscription(id)).unwrap();
+            let DataEvent::Data(Data::BookDeltas(first)) = data.recv().await.unwrap() else { panic!("expected initial snapshot") };
+            assert_eq!(first.instrument_id, id);
+            assert_eq!(first.sequence, 0);
+            cut_first.send(()).unwrap();
+
+            let ws_l3 = client.ws_l3.as_ref().unwrap();
+            while ws_l3.auth_token().await.is_some() {
+                tokio::task::yield_now().await;
+            }
+
+            assert_eq!(auth_calls.load(Ordering::Relaxed), 2);
+            assert!(data.try_recv().is_err());
+            cut_second.send(()).unwrap();
+
+            let DataEvent::Data(Data::BookDeltas(replayed)) = data.recv().await.unwrap() else { panic!("expected replayed snapshot") };
+            assert_eq!(replayed.instrument_id, id);
+            assert_eq!(replayed.sequence, 1);
+            assert!(RecordFlag::F_SNAPSHOT.matches(replayed.flags));
+            assert_eq!(auth_calls.load(Ordering::Relaxed), 3);
+            client.disconnect().await.unwrap();
+            server.await.unwrap();
+            auth.abort();
+        }).await.expect("L3 snapshot arrives after authentication recovers");
+    }
+
+    fn l3_test_config(
+        http: &tokio::net::TcpListener,
+        websocket: &tokio::net::TcpListener,
+    ) -> KrakenDataClientConfig {
+        KrakenDataClientConfig {
+            base_url: Some(format!("http://{}", http.local_addr().unwrap())),
+            ws_l3_url: Some(format!("ws://{}", websocket.local_addr().unwrap())),
+            api_key: Some(SecretString::from("test-api-key")),
+            api_secret: Some(SecretString::from("dGVzdF9hcGlfc2VjcmV0")),
+            timeout_secs: 3,
+            book_snapshot_timeout_secs: 0,
+            ..Default::default()
+        }
+    }
+
+    fn l3_test_subscription(id: InstrumentId) -> SubscribeBookDeltas {
+        SubscribeBookDeltas::new(
+            id,
+            BookType::L3_MBO,
+            Some(*KRAKEN_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            std::num::NonZeroUsize::new(10),
+            true,
+            None,
+            None,
+        )
+    }
+
+    #[tokio::test]
+    async fn test_l3_recovery_allows_slow_token_refresh_and_unblocks_new_subscriptions() {
+        let auth_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let ws_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+
+        let config = KrakenDataClientConfig {
+            base_url: Some(format!("http://{}", auth_listener.local_addr().unwrap())),
+            ws_l3_url: Some(format!("ws://{}", ws_listener.local_addr().unwrap())),
+            api_key: Some(SecretString::from("test-api-key")),
+            api_secret: Some(SecretString::from("dGVzdF9hcGlfc2VjcmV0")),
+            timeout_secs: 3,
+            ..Default::default()
+        };
+
+        let timeout = Duration::from_millis(20);
+        let requests = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let auth = Router::new().route(
+            "/0/private/GetWebSocketsToken",
+            post(move || {
+                let request = requests.fetch_add(1, Ordering::Relaxed);
+                async move {
+                    if request == 0 {
+                        Json(json!({"error": ["EAPI:Invalid key"]}))
+                    } else {
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        Json(
+                            json!({"error": [], "result": {"token": "test-token", "expires": 900}}),
+                        )
+                    }
+                }
+            }),
+        );
+
+        let auth_server =
+            tokio::spawn(async move { axum::serve(auth_listener, auth).await.unwrap() });
+        let (observed, mut frames) = tokio::sync::mpsc::unbounded_channel();
+
+        let ws_server = tokio::spawn(async move {
+            let (tcp, _) = ws_listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(tcp).await.unwrap();
+            while let Some(Ok(frame)) = socket.next().await {
+                if frame.is_text() {
+                    let message: Value = serde_json::from_str(frame.to_text().unwrap()).unwrap();
+                    observed.send(message).unwrap();
+                }
+            }
+        });
+
+        let mut ws_client =
+            KrakenSpotWebSocketClient::l3(config, CancellationToken::new(), None).unwrap();
+        ws_client.connect().await.unwrap();
+        assert!(ws_client.authenticate().await.is_err());
+        assert!(!ws_client.is_authenticated());
+
+        let id = InstrumentId::from("BTC/USD.KRAKEN");
+        let symbol = id.symbol.inner();
+        let held = ws_client.l3_subscriptions();
+        let generation = held.insert(symbol.as_str(), 10, 1);
+        let subscription = held.subscription(symbol.as_str()).unwrap();
+        let mut books = BookSyncTracker::new(timeout);
+        books.track(id, generation, Instant::now());
+        let tasks = TaskGroup::new();
+        KrakenSpotDataClient::spawn_l3_resync(
+            &mut books,
+            id,
+            symbol,
+            subscription,
+            &ws_client,
+            &tasks.spawner().unwrap(),
+            timeout,
+        );
+
+        for method in ["unsubscribe", "subscribe"] {
+            let message = tokio::time::timeout(Duration::from_secs(3), frames.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(message["method"], method);
+            assert_eq!(message["params"]["symbol"], json!(["BTC/USD"]));
+            assert_eq!(message["params"]["token"], "test-token");
+        }
+
+        ws_client.wait_until_authenticated(0.1).await.unwrap();
+        ws_client
+            .subscribe_book_l3(Ustr::from("ETH/USD"), 10)
+            .await
+            .unwrap();
+        let message = tokio::time::timeout(Duration::from_secs(3), frames.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(message["method"], "subscribe");
+        assert_eq!(message["params"]["symbol"], json!(["ETH/USD"]));
+        assert_eq!(message["params"]["token"], "test-token");
+
+        books.clear();
+        ws_client.close().await.unwrap();
+        ws_server.await.unwrap();
+        auth_server.abort();
     }
 
     fn make_instrument() -> InstrumentAny {
@@ -1631,7 +2247,77 @@ mod tests {
     }
 
     #[rstest]
-    fn test_l3_snapshot_checksum_mismatch_emits_clear_and_requests_resync() {
+    fn test_l3_replay_accepts_snapshot_after_current_acknowledgement() {
+        let instruments = Arc::new(AtomicMap::new());
+        let instrument = make_instrument();
+        let id = instrument.id();
+        instruments.insert(id, instrument);
+        let symbol = Ustr::from("BTC/USD");
+        let depths = Arc::new(Mutex::new(AHashMap::from([(symbol.to_string(), 10)])));
+        let held = L2Depths::default();
+        let requests = BookRequests::default();
+        let now = Instant::now();
+        let ts = UnixNanos::new(1_704_067_200_000_000_000);
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let sender = sender.into();
+        let mut books = L3Books::new(depths, held.clone(), requests.clone(), Duration::ZERO, true);
+        let generation = held.insert(symbol.as_str(), 10, 41);
+        let recovery = books.sync.track(id, generation, now).claim().unwrap();
+        held.register_recovery(symbol, generation, &recovery);
+        assert!(recovery.begin_replacement());
+        requests.lock().insert(41, BookRequest::new(symbol));
+
+        let snap = || {
+            KrakenSpotWsMessage::L3Snapshot(serde_json::from_str(
+            r#"{"symbol":"BTC/USD","bids":[],"asks":[],"checksum":0,"timestamp":"2024-01-01T00:00:00Z"}"#,
+        ).unwrap())
+        };
+
+        let ack = |req_id| KrakenSpotWsMessage::SubscriptionAck {
+            req_id: Some(req_id),
+            symbol: Some(symbol),
+            success: true,
+            error: None,
+        };
+
+        assert_eq!(books.process(ack(41), &instruments, &sender, now, ts), None);
+        assert!(!recovery.gate.lock().is_closed());
+        held.retire_requests(42);
+        assert_eq!(books.process(snap(), &instruments, &sender, now, ts), None);
+        assert!(receiver.try_recv().is_err());
+        assert!(!recovery.is_accepted());
+
+        assert!(recovery.begin_replacement());
+        held.begin_resync(symbol.as_str(), generation, 1, 43)
+            .unwrap();
+        requests.lock().insert(43, BookRequest::new(symbol));
+
+        for frame in [KrakenSpotWsMessage::Reconnected, ack(41), snap()] {
+            assert_eq!(books.process(frame, &instruments, &sender, now, ts), None);
+        }
+
+        assert!(receiver.try_recv().is_err());
+        assert!(!recovery.is_accepted());
+        assert!(recovery.gate.lock().is_closed());
+
+        assert_eq!(books.process(ack(43), &instruments, &sender, now, ts), None);
+        assert!(!recovery.gate.lock().is_closed());
+        assert_eq!(books.process(snap(), &instruments, &sender, now, ts), None);
+
+        let DataEvent::Data(Data::BookDeltas(deltas)) = receiver.try_recv().unwrap() else {
+            panic!("expected an L3 snapshot");
+        };
+
+        assert_eq!(deltas.instrument_id, id);
+        assert_eq!(deltas.deltas.len(), 1);
+        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert!(RecordFlag::F_SNAPSHOT.matches(deltas.flags));
+        assert!(recovery.is_accepted());
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_l3_snapshot_checksum_mismatch_suppresses_output_and_requests_resync() {
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let instruments = Arc::new(AtomicMap::new());
         let instrument = make_instrument();
@@ -1684,33 +2370,81 @@ mod tests {
         assert_eq!(request.depth, 1000);
         assert_eq!(request.reason, "snapshot checksum mismatch");
 
-        let event = receiver.try_recv().expect("expected clear event");
-        let DataEvent::Data(Data::BookDeltas(deltas)) = event else {
-            panic!("expected deltas event");
-        };
-
-        assert_eq!(deltas.deltas.len(), 1);
-        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
         assert!(states["BTC/USD"].awaiting_snapshot);
         assert!(states["BTC/USD"].open_orders.is_empty());
         assert!(receiver.try_recv().is_err());
     }
 
+    #[rstest]
+    fn test_l3_snapshot_sequence_continues_after_unsubscribe() {
+        let instrument = make_instrument();
+        let id = instrument.id();
+        let instruments = Arc::new(AtomicMap::new());
+        instruments.insert(id, instrument);
+        let symbol = Ustr::from("BTC/USD");
+        let depths = Arc::new(Mutex::new(AHashMap::from([(symbol.to_string(), 10)])));
+        let held = L2Depths::default();
+        let requests = BookRequests::default();
+        let now = Instant::now();
+        let ts = UnixNanos::new(1_704_067_200_000_000_000);
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let sender = sender.into();
+
+        let mut books = L3Books::new(
+            depths,
+            held.clone(),
+            requests.clone(),
+            Duration::ZERO,
+            false,
+        );
+
+        let snap = r#"{"symbol":"BTC/USD","bids":[{"order_id":"bid-1","limit_price":100.0,"order_qty":1.0,"timestamp":"2024-01-01T00:00:00Z"}],"asks":[],"checksum":0,"timestamp":"2024-01-01T00:00:00Z"}"#;
+
+        for (req_id, expected_sequence) in [(41, 1), (42, 3)] {
+            held.insert(symbol.as_str(), 10, req_id);
+            requests.lock().insert(req_id, BookRequest::new(symbol));
+
+            let ack = KrakenSpotWsMessage::SubscriptionAck {
+                req_id: Some(req_id),
+                symbol: Some(symbol),
+                success: true,
+                error: None,
+            };
+
+            assert_eq!(books.process(ack, &instruments, &sender, now, ts), None);
+
+            let snapshot = KrakenSpotWsMessage::L3Snapshot(serde_json::from_str(snap).unwrap());
+            assert_eq!(
+                books.process(snapshot, &instruments, &sender, now, ts),
+                None
+            );
+
+            let DataEvent::Data(Data::BookDeltas(deltas)) = receiver.try_recv().unwrap() else {
+                panic!("expected an L3 snapshot");
+            };
+
+            assert_eq!(deltas.instrument_id, id);
+            assert_eq!(deltas.deltas.len(), 2);
+            assert_eq!(deltas.sequence, expected_sequence);
+
+            held.remove(symbol.as_str());
+            assert!(books.expired(&instruments, now).is_empty());
+            assert!(books.states[symbol.as_str()].open_orders.is_empty());
+        }
+    }
+
     const BTC: &str = "BTC/USD";
 
-    /// A data client's L2 state with BTC/USD loaded and a settable clock, driving
-    /// `handle_ws_message` and `check_l2_snapshots` as the message loop does.
     struct L2Harness {
         sender: EventSender<DataEvent>,
         receiver: tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
         instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         book_sequence: Arc<AtomicU64>,
         l2_depths: L2Depths,
-        book_requests: L2BookRequests,
+        book_requests: BookRequests,
         ohlc_buffer: OhlcBuffer,
         clock: &'static AtomicTime,
         l2_books: L2BookState,
-        start: UnixNanos,
     }
 
     impl L2Harness {
@@ -1731,7 +2465,6 @@ mod tests {
                 ohlc_buffer: Arc::new(Mutex::new(AHashMap::new())),
                 clock: Box::leak(Box::new(AtomicTime::new(false, start))),
                 l2_books: L2BookState::new(validate_checksum),
-                start,
             }
         }
 
@@ -1748,53 +2481,15 @@ mod tests {
             KrakenSpotDataClient::handle_ws_message(msg, &context, &mut self.l2_books)
         }
 
-        fn check(&mut self) -> Vec<L2ResyncRequest> {
-            let context = SpotMessageContext {
-                sender: &self.sender,
-                instruments: &self.instruments,
-                book_sequence: &self.book_sequence,
-                l2_depths: &self.l2_depths,
-                book_requests: &self.book_requests,
-                ohlc_buffer: &self.ohlc_buffer,
-                clock: self.clock,
-            };
-            KrakenSpotDataClient::check_l2_snapshots(&context, &mut self.l2_books)
-        }
-
-        /// Moves the clock to `secs` seconds after the start.
-        fn at(&self, secs: u64) {
-            self.clock
-                .set_time(UnixNanos::new(self.start.as_u64() + secs * 1_000_000_000));
-        }
-
-        fn held(&self) -> L2Subscription {
-            self.l2_depths
-                .subscription(BTC)
-                .expect("a held subscription")
-        }
-
         fn record(&self, request: u64) {
-            self.book_requests.lock().insert(
-                request,
-                L2BookRequest {
-                    symbol: Ustr::from(BTC),
-                },
-            );
+            self.book_requests
+                .lock()
+                .insert(request, BookRequest::new(Ustr::from(BTC)));
         }
 
         /// Sends a BTC/USD `book` subscribe at `depth` as `request`, as `subscribe_book` does.
-        fn subscribe(&self, depth: u32, request: u64) -> L2Subscription {
+        fn subscribe(&self, depth: u32, request: u64) {
             self.l2_depths.insert(BTC, depth, request);
-            self.record(request);
-            self.held()
-        }
-
-        /// Sends a recovery's resubscribe as `request`, as `resync_book` does.
-        fn resubscribe(&self, request: u64) {
-            let live = self.held();
-            self.l2_depths
-                .begin_resync(BTC, live.generation, live.snapshot_epoch, request)
-                .expect("the recovery is admitted");
             self.record(request);
         }
 
@@ -1806,37 +2501,6 @@ mod tests {
                 success: error.is_none(),
                 error: error.map(str::to_string),
             })
-        }
-
-        fn snapshot(&mut self) -> Vec<L2ResyncRequest> {
-            self.handle(KrakenSpotWsMessage::Book {
-                data: vec![btc_book(None)],
-                is_snapshot: true,
-            })
-        }
-
-        fn update(&mut self, checksum: Option<u32>) -> Vec<L2ResyncRequest> {
-            let mut update = btc_book(checksum);
-            update.bids = Some(vec![book_level(dec!(100), dec!(2))]);
-            update.asks = Some(vec![]);
-            self.handle(KrakenSpotWsMessage::Book {
-                data: vec![update],
-                is_snapshot: false,
-            })
-        }
-
-        /// The recovery the held subscription calls for: its generation and current epoch.
-        fn recovery(&self) -> L2ResyncRequest {
-            let live = self.held();
-            L2ResyncRequest {
-                instrument_id: make_instrument().id(),
-                generation: live.generation,
-                epoch: live.snapshot_epoch,
-            }
-        }
-
-        fn has_book(&self) -> bool {
-            self.l2_books.books.contains_key(&make_instrument().id())
         }
 
         /// The book deltas emitted since the last call.
@@ -1864,464 +2528,155 @@ mod tests {
         }
     }
 
-    fn is_clear(deltas: &OrderBookDeltas) -> bool {
-        deltas.deltas.len() == 1
-            && deltas.deltas[0].action == BookAction::Clear
-            && RecordFlag::F_LAST.matches(deltas.deltas[0].flags)
+    #[rstest]
+    fn test_spot_l2_turnover_discards_an_incremental_prepared_before_unsubscribe() {
+        let mut harness = L2Harness::new(false);
+        harness.subscribe(10, 1);
+        harness.answer(1, None);
+        harness.handle(KrakenSpotWsMessage::Book {
+            data: vec![btc_book(None)],
+            is_snapshot: true,
+        });
+
+        assert_eq!(harness.events().len(), 1);
+
+        let instrument = make_instrument();
+        let mut incremental = btc_book(None);
+        incremental.bids = Some(vec![book_level(dec!(100), dec!(2))]);
+        incremental.asks = None;
+        let sequence = harness.book_sequence.load(Ordering::Relaxed);
+        let batch = harness
+            .l2_books
+            .process_book(
+                &incremental,
+                &instrument,
+                sequence,
+                false,
+                &harness.l2_depths,
+                harness.clock.get_time_ns(),
+            )
+            .unwrap()
+            .deltas
+            .unwrap();
+
+        harness.l2_depths.remove(BTC);
+        harness.subscribe(10, 2);
+
+        let context = SpotMessageContext {
+            sender: &harness.sender,
+            instruments: &harness.instruments,
+            book_sequence: &harness.book_sequence,
+            l2_depths: &harness.l2_depths,
+            book_requests: &harness.book_requests,
+            ohlc_buffer: &harness.ohlc_buffer,
+            clock: harness.clock,
+        };
+
+        KrakenSpotDataClient::publish_l2_book(&context, BTC, batch);
+
+        assert_eq!(harness.book_sequence.load(Ordering::Relaxed), sequence);
+        assert!(harness.events().is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_spot_l2_valid_snapshot_satisfies_earlier_recovery_request() {
+        setup_test_env();
+        let client =
+            KrakenSpotDataClient::new(*KRAKEN_CLIENT_ID, KrakenDataClientConfig::default())
+                .unwrap();
+        let mut harness = L2Harness::new(true);
+        harness.subscribe(10, 1);
+        harness.answer(1, None);
+        harness.handle(KrakenSpotWsMessage::Book {
+            data: vec![btc_book(None)],
+            is_snapshot: true,
+        });
+
+        let requests = harness.handle(KrakenSpotWsMessage::Book {
+            data: vec![btc_book(Some(0)), btc_book(None)],
+            is_snapshot: true,
+        });
+
+        assert_eq!(requests.len(), 1);
+        let id = requests[0].instrument_id;
+        let previous = *harness
+            .l2_books
+            .sync
+            .get_mut(id)
+            .unwrap()
+            .position()
+            .unwrap();
+
+        KrakenSpotDataClient::spawn_l2_resyncs(
+            &client.session_tasks.spawner().unwrap(),
+            &client.ws,
+            &mut harness.l2_books,
+            Duration::from_secs(1),
+            requests,
+        );
+
+        assert_eq!(
+            harness.l2_books.sync.get_mut(id).unwrap().position(),
+            Some(&previous)
+        );
+        assert_eq!(harness.events().len(), 2);
     }
 
     /// Every instrument in a message that mismatches gets one resync request, carrying the epoch of
     /// its last accepted snapshot.
     #[rstest]
-    fn test_l2_handler_returns_one_resync_request_per_mismatching_instrument() {
-        let mut harness = L2Harness::new(true);
+    fn test_l2_routes_only_current_subscribe_responses() {
+        let mut harness = L2Harness::new(false);
         harness.subscribe(10, 1);
         harness.answer(1, None);
-        let bad_snapshot = btc_book(Some(1));
-
-        let resyncs = harness.handle(KrakenSpotWsMessage::Book {
-            data: vec![bad_snapshot.clone(), bad_snapshot],
+        harness.handle(KrakenSpotWsMessage::Book {
+            data: vec![btc_book(None)],
             is_snapshot: true,
         });
 
-        assert_eq!(
-            resyncs.len(),
-            1,
-            "one request per mismatching instrument: {resyncs:?}"
-        );
-        assert!(
-            resyncs
-                .iter()
-                .all(|r| r.instrument_id == make_instrument().id())
-        );
-        assert_eq!(
-            resyncs[0].epoch,
-            harness
-                .l2_depths
-                .subscription("BTC/USD")
-                .unwrap()
-                .snapshot_epoch,
-            "the surviving request carries the latest epoch, so it is not skipped as served"
-        );
-    }
-
-    /// The watchdog requests the snapshot for a held book that is overdue and leaves a book whose
-    /// wait has only just started alone.
-    #[rstest]
-    fn test_check_l2_snapshots_requests_only_the_overdue_book() {
-        let mut harness = L2Harness::new(true);
-        let eth = make_instrument_for("ETH/USD");
-        harness.instruments.insert(eth.id(), eth);
-        harness.subscribe(10, 1);
-
-        assert!(
-            harness.check().is_empty(),
-            "the first check starts the wait"
-        );
-
-        harness.l2_depths.insert("ETH/USD", 25, 2);
-        harness.at(10);
-
-        assert_eq!(harness.check(), vec![harness.recovery()]);
-    }
-
-    /// A rejected `book` subscribe counts as one failed request for the subscription behind it,
-    /// matched by request id whether or not the rejection names the pair: no request before the
-    /// doubled base wait, one at it, while a new generation is waited for and requested as usual.
-    #[rstest]
-    #[case::unsupported_pair(Some(BTC), "Currency pair not supported BTC/USD")]
-    #[case::rate_limit_without_a_pair(None, "Exceeded msg rate")]
-    fn test_a_rejected_book_subscribe_is_requested_again_after_the_doubled_wait(
-        #[case] symbol: Option<&str>,
-        #[case] error: &str,
-    ) {
-        let mut harness = L2Harness::new(true);
-        let rejected = harness.subscribe(10, 7);
-
-        assert!(harness.check().is_empty());
-
-        let resyncs = harness.handle(KrakenSpotWsMessage::SubscriptionAck {
-            req_id: Some(7),
-            symbol: symbol.map(Ustr::from),
-            success: false,
-            error: Some(error.to_string()),
-        });
-        assert!(resyncs.is_empty());
-        assert!(
-            harness.book_requests.lock().is_empty(),
-            "the answered request is retired"
-        );
-
-        harness.at(19);
-        assert!(
-            harness.check().is_empty(),
-            "no request before the doubled base wait"
-        );
-
-        harness.at(20);
-        assert_eq!(
-            harness.check(),
-            vec![L2ResyncRequest {
-                instrument_id: make_instrument().id(),
-                generation: rejected.generation,
-                epoch: 0,
-            }],
-            "the rejected subscribe is asked again after 20 s"
-        );
-
-        let replacement = harness.subscribe(10, 8);
-        assert!(
-            harness.check().is_empty(),
-            "the new generation's wait starts at this tick"
-        );
-        harness.at(30);
-        assert_eq!(
-            harness.check(),
-            vec![L2ResyncRequest {
-                instrument_id: make_instrument().id(),
-                generation: replacement.generation,
-                epoch: 0,
-            }]
-        );
-    }
-
-    /// A rejection of a request a later one has superseded is stale: the consumer's book is kept,
-    /// nothing is emitted, and the shadow book stays.
-    #[rstest]
-    fn test_a_superseded_requests_rejection_leaves_a_fed_book_alone() {
-        let mut harness = L2Harness::new(true);
-        harness.subscribe(10, 1);
-        harness.resubscribe(2);
-        harness.answer(2, None);
-        harness.snapshot();
-        assert_eq!(harness.events().len(), 1, "the snapshot is emitted");
-        let sequence = harness.book_sequence.load(Ordering::Relaxed);
-
-        harness.answer(1, Some("Already subscribed"));
-
-        assert!(
-            harness.events().is_empty(),
-            "a stale rejection emits nothing to the consumer"
-        );
-        assert!(harness.has_book(), "the fed book is kept");
-        assert_eq!(harness.book_sequence.load(Ordering::Relaxed), sequence);
-    }
-
-    /// A rejection of the latest request acts even while a book is held, since the book is the
-    /// older stream's: the consumer's book is cleared, the older stream's frames stay dropped, and
-    /// the watchdog asks again after the doubled base wait.
-    #[rstest]
-    fn test_a_rejection_of_the_latest_request_clears_a_fed_book() {
-        let mut harness = L2Harness::new(true);
-        harness.subscribe(10, 1);
-        harness.answer(1, None);
-        harness.snapshot();
-        harness.events();
-        // The user's replacement; the older stream still runs, as when the unsubscribe was
-        // rate-limited and the venue answers the subscribe with "Already subscribed".
-        let replacement = harness.subscribe(25, 2);
-        harness.at(1);
-
-        harness.answer(2, Some("Already subscribed"));
-
-        let events = harness.events();
-        assert_eq!(events.len(), 1);
-        assert!(is_clear(&events[0]));
-        assert!(!harness.has_book());
-
-        harness.update(None);
-        assert!(
-            harness.events().is_empty(),
-            "the older stream's frames stay dropped"
-        );
-
-        harness.at(20);
-        assert!(harness.check().is_empty());
-        harness.at(21);
-        assert_eq!(
-            harness.check(),
-            vec![harness.recovery()],
-            "the watchdog keeps asking"
-        );
-        assert_eq!(harness.recovery().generation, replacement.generation);
-    }
-
-    /// A reconnect drops every shadow book and clears the consumer's books: one `Clear` delta per
-    /// book under the shared sequence, flagged last. The replay's answers to a request already
-    /// answered are not acted on, and the replayed snapshot is accepted.
-    #[rstest]
-    fn test_a_reconnect_clears_the_consumers_books() {
-        let mut harness = L2Harness::new(true);
-        harness.subscribe(10, 1);
-        harness.answer(1, None);
-        harness.snapshot();
-        assert_eq!(harness.events().len(), 1, "the snapshot is emitted");
-        let sequence = harness.book_sequence.load(Ordering::Relaxed);
-
-        harness.handle(KrakenSpotWsMessage::Reconnected);
-
-        let events = harness.events();
-        assert_eq!(events.len(), 1, "the consumer's book is cleared");
-        assert_eq!(events[0].instrument_id, make_instrument().id());
-        assert!(is_clear(&events[0]));
-        assert_eq!(events[0].deltas[0].sequence, sequence);
-        assert_eq!(harness.book_sequence.load(Ordering::Relaxed), sequence + 1);
-        assert!(harness.l2_books.books.is_empty());
-
-        harness.answer(1, None);
-        harness.answer(1, Some("Already subscribed"));
-        assert!(harness.events().is_empty());
-
-        harness.snapshot();
-        assert_eq!(
-            harness.events().len(),
-            1,
-            "the replayed snapshot is emitted"
-        );
-        assert!(harness.has_book());
-    }
-
-    /// The tick that drops the book of a superseded stream clears the consumer's book, the
-    /// replacement's confirmation then sends no second `Clear`, and a book dropped with its
-    /// canceled subscription sends nothing.
-    #[rstest]
-    fn test_the_tick_that_drops_a_retired_book_clears_the_consumers_book() {
-        let mut harness = L2Harness::new(true);
-        harness.subscribe(10, 1);
-        harness.answer(1, None);
-        harness.snapshot();
-        harness.events();
-        let sequence = harness.book_sequence.load(Ordering::Relaxed);
-
-        harness.subscribe(25, 2);
-        harness.at(1);
-        assert!(
-            harness.check().is_empty(),
-            "the replacement's wait starts at this tick"
-        );
-
-        let events = harness.events();
-        assert_eq!(events.len(), 1, "the retired book is cleared downstream");
-        assert!(is_clear(&events[0]));
-        assert_eq!(events[0].deltas[0].sequence, sequence);
-        assert_eq!(
-            events[0].deltas[0].ts_event,
-            UnixNanos::new(harness.start.as_u64() + 1_000_000_000)
-        );
-        assert_eq!(harness.book_sequence.load(Ordering::Relaxed), sequence + 1);
-
-        harness.answer(2, None);
-        assert!(harness.events().is_empty(), "the book is already cleared");
-
-        // Control: a book dropped with its canceled subscription has no consumer to clear.
-        harness.snapshot();
-        assert_eq!(harness.events().len(), 1, "the snapshot is emitted");
-        harness.l2_depths.remove(BTC);
-        assert!(harness.check().is_empty());
-        assert!(
-            harness.events().is_empty(),
-            "no clear for an unsubscribed book"
-        );
-    }
-
-    /// Answers other than the first one to the symbol's latest request change nothing: a
-    /// confirmation or a rejection of a superseded request, a rejection with an unrecorded id such
-    /// as a reconnect replay's, a failed unsubscribe the venue reports under the subscribe method,
-    /// and a confirmation for a canceled subscription. The latest request opens no stream, and its
-    /// snapshot is asked for after the base wait.
-    #[rstest]
-    fn test_answers_other_than_the_latest_requests_change_nothing() {
-        let mut harness = L2Harness::new(true);
-        harness.subscribe(10, 6);
-        harness.subscribe(10, 7);
-        let live = harness.subscribe(10, 8);
-        harness.book_requests.lock().insert(
-            11,
-            L2BookRequest {
-                symbol: Ustr::from("ETH/USD"),
-            },
-        );
-        assert!(harness.check().is_empty());
-
-        harness.answer(6, Some("Already subscribed"));
-        harness.answer(7, None);
-        harness.answer(9, Some("Currency pair not supported BTC/USD"));
-        harness.handle(KrakenSpotWsMessage::SubscriptionAck {
-            req_id: Some(10),
-            symbol: Some(Ustr::from(BTC)),
-            success: false,
-            error: Some("Subscription with depth 10 not Found BTC/USD".to_string()),
-        });
-        harness.answer(11, None);
-
-        assert!(harness.events().is_empty());
-        assert_eq!(
-            harness
-                .book_requests
-                .lock()
-                .keys()
-                .copied()
-                .collect::<Vec<_>>(),
-            vec![8]
-        );
-
-        harness.snapshot();
-        assert!(
-            harness.events().is_empty(),
-            "no answer opened the latest request's stream"
-        );
-
-        harness.at(10);
-        assert_eq!(harness.check(), vec![harness.recovery()]);
-        assert_eq!(harness.recovery().generation, live.generation);
-    }
-
-    /// A replacement's confirmation clears a fed book exactly once, and a snapshot of the
-    /// retired stream consumed before that confirmation is dropped, so the watchdog still asks for
-    /// the replacement's snapshot when it does not come.
-    #[rstest]
-    fn test_a_replacements_confirmation_clears_the_consumers_book_once() {
-        let mut harness = L2Harness::new(true);
-        harness.subscribe(10, 1);
-        harness.answer(1, None);
-        harness.snapshot();
-        harness.events();
-
-        harness.l2_depths.remove(BTC);
-        let replacement = harness.subscribe(100, 2);
-        harness.snapshot();
-        assert!(
-            harness.events().is_empty(),
-            "the retired stream's snapshot is dropped"
-        );
-
-        harness.at(1);
-        harness.answer(2, None);
-        let events = harness.events();
-        assert_eq!(events.len(), 1);
-        assert!(is_clear(&events[0]));
-
-        assert!(harness.check().is_empty());
-        assert!(harness.events().is_empty(), "no second clear");
-
-        harness.at(11);
-        assert_eq!(harness.check(), vec![harness.recovery()]);
-        assert_eq!(harness.recovery().generation, replacement.generation);
-    }
-
-    /// Of two recoveries sent back to back, only the later one opens a stream: the earlier one's
-    /// confirmation and snapshot are dropped, and the later one's snapshot feeds the book.
-    #[rstest]
-    fn test_back_to_back_recoveries_accept_only_the_latest() {
-        let mut harness = L2Harness::new(true);
-        harness.subscribe(10, 1);
-        harness.answer(1, None);
-        harness.snapshot();
-        harness.events();
-        assert_eq!(harness.update(Some(1)).len(), 1, "the mismatch recovers");
-        assert!(is_clear(&harness.events()[0]));
-
-        harness.resubscribe(2);
-        harness.resubscribe(3);
-        harness.answer(2, None);
-        harness.snapshot();
-        assert!(
-            harness.events().is_empty(),
-            "the superseded recovery's stream is dropped"
-        );
-
-        harness.answer(3, None);
-        assert!(harness.events().is_empty(), "no book to clear");
-        harness.snapshot();
-        assert_eq!(harness.events().len(), 1);
-        assert!(harness.has_book());
-    }
-
-    /// Each request is answered once: a second answer to a confirmed request, such as the
-    /// "Already subscribed" a duplicate send draws, leaves the stream and its book alone.
-    #[rstest]
-    fn test_a_second_answer_to_one_request_is_ignored() {
-        let mut harness = L2Harness::new(true);
-        harness.subscribe(10, 1);
-        harness.answer(1, None);
-        harness.snapshot();
         assert_eq!(harness.events().len(), 1);
 
-        harness.answer(1, Some("Already subscribed"));
+        let id = InstrumentId::from("BTC/USD.KRAKEN");
+        let previous = harness.l2_depths.subscription(BTC).unwrap();
+        let recovery = harness.l2_books.sync.get_mut(id).unwrap().claim().unwrap();
+        harness
+            .l2_depths
+            .register_recovery(Ustr::from(BTC), previous.generation, &recovery);
+        assert!(recovery.begin_replacement());
+
+        harness.handle(KrakenSpotWsMessage::Reconnected);
+        harness.handle(KrakenSpotWsMessage::Book {
+            data: vec![btc_book(None)],
+            is_snapshot: true,
+        });
 
         assert!(harness.events().is_empty());
-        assert!(harness.has_book());
-        harness.at(100);
-        assert!(harness.check().is_empty());
-    }
 
-    /// A recovery whose subscribe is recorded after the reconnect replay began, so the venue
-    /// answers its id twice, feeds the book: the reconnect makes the request live, its
-    /// confirmation changes nothing, its snapshot is accepted, and the replay's "Already
-    /// subscribed" is ignored.
-    #[rstest]
-    fn test_a_recovery_queued_across_a_reconnect_feeds_the_book() {
-        let mut harness = L2Harness::new(true);
-        harness.subscribe(10, 1);
+        harness.l2_depths.retire_requests(3);
+        let previous = harness.l2_depths.subscription(BTC).unwrap();
+        harness
+            .l2_depths
+            .begin_resync(BTC, previous.generation, previous.snapshot_epoch, 2)
+            .unwrap();
+        harness.record(2);
         harness.answer(1, None);
-        harness.snapshot();
-        harness.update(Some(1));
-        harness.events();
+        harness.handle(KrakenSpotWsMessage::Book {
+            data: vec![btc_book(None)],
+            is_snapshot: true,
+        });
 
-        harness.resubscribe(2);
-        harness.handle(KrakenSpotWsMessage::Reconnected);
-        assert!(harness.events().is_empty(), "the mismatch dropped the book");
+        assert!(harness.events().is_empty());
+        assert!(recovery.gate.lock().is_closed());
 
         harness.answer(2, None);
-        assert!(harness.events().is_empty());
-        harness.snapshot();
-        assert_eq!(harness.events().len(), 1);
-
-        harness.answer(2, Some("Already subscribed"));
-        assert!(harness.events().is_empty());
-        assert!(harness.has_book());
-    }
-
-    /// A reconnect replay that lands between a recovery's unsubscribe and subscribe costs one
-    /// spurious clear: the replayed stream's snapshot is accepted under the recovery's request,
-    /// the venue rejects that request as already subscribed, and the watchdog resubscribes within
-    /// the doubled base wait.
-    #[rstest]
-    fn test_a_replay_between_the_recovery_commands_recovers_within_the_doubled_wait() {
-        let mut harness = L2Harness::new(true);
-        harness.subscribe(10, 1);
-        harness.answer(1, None);
-        harness.snapshot();
-        harness.update(Some(1));
-        harness.events();
-
-        harness.resubscribe(2);
-        harness.l2_depths.advance_epochs();
-        harness.handle(KrakenSpotWsMessage::Reconnected);
-        harness.handle(KrakenSpotWsMessage::SubscriptionAck {
-            req_id: Some(500),
-            symbol: Some(Ustr::from(BTC)),
-            success: false,
-            error: Some("Subscription with depth 10 not Found BTC/USD".to_string()),
+        harness.handle(KrakenSpotWsMessage::Book {
+            data: vec![btc_book(None)],
+            is_snapshot: true,
         });
-        harness.answer(1, None);
-        harness.snapshot();
-        assert_eq!(
-            harness.events().len(),
-            1,
-            "the replayed snapshot is accepted"
-        );
 
-        harness.at(1);
-        harness.answer(2, Some("Already subscribed"));
-        let events = harness.events();
-        assert_eq!(events.len(), 1);
-        assert!(is_clear(&events[0]), "the spurious clear");
-
-        harness.at(20);
-        assert!(harness.check().is_empty());
-        harness.at(21);
-        assert_eq!(harness.check(), vec![harness.recovery()]);
+        assert_eq!(harness.events().len(), 1);
+        assert!(recovery.is_accepted());
     }
 
     #[rstest]

@@ -171,9 +171,8 @@ pub(crate) fn parse_l3_snapshot(
 /// Parses a Kraken L3 incremental update into an optional `OrderBookDeltas` batch.
 ///
 /// Returns the parsed `OrderBookDeltas` (or `None` when no deltas were produced) paired
-/// with the update's `ts_event`. The `ts_event` is returned in both cases so callers can
-/// run checksum verification and emit clear deltas even when the update produced no
-/// outward changes (for example, a batch consisting only of `modify` events for orders
+/// with the update's `ts_event`. An update can produce no outward changes, for example
+/// a batch consisting only of `modify` events for orders
 /// that were depth-pruned locally).
 ///
 /// Kraken queues each price level by order timestamp, so an order can join ahead of orders

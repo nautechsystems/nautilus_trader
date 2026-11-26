@@ -543,7 +543,7 @@ impl ParquetDataCatalog {
                 },
             )?;
 
-            let metadata = batch.schema().metadata().clone();
+            let metadata = batch.schema_ref().metadata().into();
 
             let data_vec = T::decode_data_batch(&metadata, batch)
                 .map_err(|e| anyhow::anyhow!("Failed to decode batch: {e}"))?;
@@ -565,7 +565,7 @@ impl ParquetDataCatalog {
         let mut all_data = Vec::new();
 
         for batch in batches {
-            let metadata = batch.schema().metadata().clone();
+            let metadata = batch.schema_ref().metadata().into();
             let decoded = T::decode_typed_batch(&metadata, batch)
                 .map_err(|e| anyhow::anyhow!("Failed to decode batch: {e}"))?;
             all_data.extend(decoded);

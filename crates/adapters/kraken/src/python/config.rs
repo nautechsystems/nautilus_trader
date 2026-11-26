@@ -47,6 +47,7 @@ impl KrakenDataClientConfig {
         max_requests_per_second = None,
         transport_backend = None,
         validate_l2_checksum = None,
+        book_snapshot_timeout_secs = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -65,9 +66,8 @@ impl KrakenDataClientConfig {
         ws_idle_timeout_ms: Option<u64>,
         max_requests_per_second: Option<u32>,
         transport_backend: Option<TransportBackend>,
-        // Stays the last positional parameter: Python callers bind `proxy_url` and the arguments
-        // after it by position.
         validate_l2_checksum: Option<bool>,
+        book_snapshot_timeout_secs: Option<u64>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -88,6 +88,8 @@ impl KrakenDataClientConfig {
             ws_idle_timeout_ms: ws_idle_timeout_ms.unwrap_or(defaults.ws_idle_timeout_ms),
             max_requests_per_second,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
+            book_snapshot_timeout_secs: book_snapshot_timeout_secs
+                .unwrap_or(defaults.book_snapshot_timeout_secs),
         }
     }
 

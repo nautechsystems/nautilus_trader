@@ -16,6 +16,8 @@
 //! Live execution client implementation for the Hyperliquid adapter.
 
 use std::{
+    cell::RefCell,
+    rc::Rc,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -32,6 +34,7 @@ use nautilus_common::{
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
         ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
+    msgbus::{InstrumentSubscription, TypedHandler, switchboard::get_instruments_pattern},
 };
 use nautilus_core::{
     DurationNanos, Params, UUID4, UnixNanos,
@@ -65,7 +68,8 @@ use crate::{
     common::{
         consts::{
             HYPERLIQUID_BUILDER_APPROVAL_DOCS_URL, HYPERLIQUID_BUILDER_FEE_NOT_APPROVED,
-            HYPERLIQUID_POST_ONLY_WOULD_MATCH, HYPERLIQUID_VENUE,
+            HYPERLIQUID_POST_ONLY_WOULD_MATCH, HYPERLIQUID_SUPPORTED_ORDER_TYPES,
+            HYPERLIQUID_VENUE,
         },
         credential::Secrets,
         enums::{HyperliquidAccountAbstraction, HyperliquidProductType},
@@ -118,7 +122,8 @@ pub struct HyperliquidExecutionClient {
     emitter: ExecutionEventEmitter,
     http_client: HyperliquidHttpClient,
     ws_client: HyperliquidWebSocketClient,
-    instruments_pending: Vec<InstrumentAny>,
+    instrument_subscription: Option<InstrumentSubscription>,
+    instruments_pending: Rc<RefCell<Option<Vec<InstrumentAny>>>>,
     session_tasks: TaskGroup,
     pending_tasks: TaskGroup,
     shutdown_errors: Vec<String>,
@@ -487,7 +492,8 @@ impl HyperliquidExecutionClient {
             emitter,
             http_client,
             ws_client,
-            instruments_pending: Vec::new(),
+            instrument_subscription: None,
+            instruments_pending: Rc::new(RefCell::new(Some(Vec::new()))),
             session_tasks,
             pending_tasks,
             shutdown_errors: Vec::new(),
@@ -497,11 +503,12 @@ impl HyperliquidExecutionClient {
         })
     }
 
-    async fn ensure_instruments_initialized_async(&mut self) -> anyhow::Result<()> {
-        if self.core.instruments_initialized() {
+    async fn ensure_instruments_initialized_async(&self) -> anyhow::Result<()> {
+        if self.instruments_pending.borrow().is_none() {
             return Ok(());
         }
 
+        let requested_at = self.clock.get_time_ns();
         let instruments = self
             .http_client
             .request_instruments()
@@ -516,13 +523,17 @@ impl HyperliquidExecutionClient {
             log::debug!("Initialized {} instruments", instruments.len());
         }
 
-        // Preserve arrival order for spot aliases, then let fetched definitions replace updates
-        let mut pending = std::mem::take(&mut self.instruments_pending);
-        pending.extend(instruments);
-        self.http_client.merge_instruments(&pending);
-        self.ws_client.merge_instruments(&pending);
+        let (mut earlier, later): (Vec<_>, Vec<_>) = self
+            .instruments_pending
+            .take()
+            .unwrap_or_default()
+            .into_iter()
+            .partition(|instrument| instrument.ts_init() <= requested_at);
+        earlier.extend(instruments);
+        earlier.extend(later);
+        self.http_client.merge_instruments(&earlier);
+        self.ws_client.merge_instruments(&earlier);
 
-        self.core.set_instruments_initialized();
         Ok(())
     }
 
@@ -623,8 +634,10 @@ impl HyperliquidExecutionClient {
 
     fn report_client(&self) -> anyhow::Result<HyperliquidReportClient> {
         // Reports can be collected before connect() initializes the transport caches
-        self.http_client
-            .merge_instruments(&self.instruments_pending);
+        if let Some(pending) = self.instruments_pending.borrow().as_ref() {
+            self.http_client.merge_instruments(pending);
+        }
+
         Ok(HyperliquidReportClient {
             http_client: self.http_client.clone(),
             account_address: self.get_account_address()?,
@@ -862,6 +875,51 @@ impl HyperliquidExecutionClient {
     }
 }
 
+impl HyperliquidExecutionClient {
+    fn subscribe_instruments(&mut self) {
+        if self.instrument_subscription.is_some() {
+            return;
+        }
+
+        let http_client = self.http_client.clone();
+        let ws_client = self.ws_client.clone();
+        let instruments_pending = Rc::clone(&self.instruments_pending);
+        self.instrument_subscription = Some(InstrumentSubscription::new(
+            get_instruments_pattern(self.venue()),
+            TypedHandler::from(move |instrument: &InstrumentAny| {
+                Self::apply_instrument(
+                    &http_client,
+                    &ws_client,
+                    &instruments_pending,
+                    instrument.clone(),
+                );
+            }),
+        ));
+    }
+
+    fn apply_instrument(
+        http_client: &HyperliquidHttpClient,
+        ws_client: &HyperliquidWebSocketClient,
+        instruments_pending: &RefCell<Option<Vec<InstrumentAny>>>,
+        instrument: InstrumentAny,
+    ) {
+        if let Some(pending) = instruments_pending.borrow_mut().as_mut() {
+            // Batch the startup drain to avoid cloning growing caches for every instrument
+            pending.push(instrument);
+            return;
+        }
+
+        // this is the only step that makes a market listed after our bootstrap
+        // submittable, so it is traceable rather than silent
+        log::debug!(
+            "Applying instrument update: instrument_id={}",
+            instrument.id()
+        );
+        http_client.cache_instrument(&instrument);
+        ws_client.cache_instrument(instrument);
+    }
+}
+
 #[async_trait(?Send)]
 impl ExecutionClient for HyperliquidExecutionClient {
     fn provides_bulk_position_coverage(&self, instrument_id: InstrumentId) -> bool {
@@ -914,23 +972,17 @@ impl ExecutionClient for HyperliquidExecutionClient {
     /// map. WebSocket submissions sign through `&self.http_client`, so that one
     /// write serves both submission paths.
     fn on_instrument(&mut self, instrument: InstrumentAny) {
-        if !self.core.instruments_initialized() {
-            // Batch the startup drain to avoid cloning growing caches for every instrument
-            self.instruments_pending.push(instrument);
-            return;
-        }
-
-        // this is the only step that makes a market listed after our bootstrap
-        // submittable, so it is traceable rather than silent
-        log::debug!(
-            "Applying instrument update: instrument_id={}",
-            instrument.id()
+        Self::apply_instrument(
+            &self.http_client,
+            &self.ws_client,
+            &self.instruments_pending,
+            instrument,
         );
-        self.http_client.cache_instrument(&instrument);
-        self.ws_client.cache_instrument(instrument);
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         if self.core.is_started() {
             return Ok(());
         }
@@ -952,6 +1004,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         if self.core.is_stopped() {
             return Ok(());
         }
@@ -978,13 +1032,9 @@ impl ExecutionClient for HyperliquidExecutionClient {
         }
 
         if let Err(e) = self.validate_order_submission(&order) {
-            self.emitter.emit_order_denied(
-                &order,
-                &OrderDeniedReason::ValidationFailed {
-                    detail: e.to_string(),
-                }
-                .to_string(),
-            );
+            let reason = submission_validation_reason(&e, ToString::to_string);
+
+            self.emitter.emit_order_denied(&order, &reason);
             return Ok(());
         }
 
@@ -1194,13 +1244,11 @@ impl ExecutionClient for HyperliquidExecutionClient {
                     valid_orders.push(order.clone());
                 }
                 Err(e) => {
-                    self.emitter.emit_order_denied(
-                        order,
-                        &OrderDeniedReason::ValidationFailed {
-                            detail: format!("Order conversion failed: {e}"),
-                        }
-                        .to_string(),
-                    );
+                    let reason = submission_validation_reason(&e, |e| {
+                        format!("Order conversion failed: {e}")
+                    });
+
+                    self.emitter.emit_order_denied(order, &reason);
                 }
             }
         }
@@ -2135,6 +2183,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         if self.core.is_connected() && self.pending_tasks.is_open() && self.session_tasks.is_open()
         {
             return Ok(());
@@ -2343,8 +2393,10 @@ impl ExecutionClient for HyperliquidExecutionClient {
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         let ts_init = self.clock.get_time_ns();
         let account_address = self.get_account_address()?;
-        self.http_client
-            .merge_instruments(&self.instruments_pending);
+
+        if let Some(pending) = self.instruments_pending.borrow().as_ref() {
+            self.http_client.merge_instruments(pending);
+        }
 
         let lookback_start = lookback_mins
             .map(DurationNanos::try_from_mins)
@@ -4233,6 +4285,21 @@ fn order_normal_tpsl_submission(
     pairs.into_iter().unzip()
 }
 
+fn submission_validation_reason(
+    error: &anyhow::Error,
+    detail: impl FnOnce(&anyhow::Error) -> String,
+) -> String {
+    error.downcast_ref::<OrderDeniedReason>().map_or_else(
+        || {
+            OrderDeniedReason::ValidationFailed {
+                detail: detail(error),
+            }
+            .to_string()
+        },
+        ToString::to_string,
+    )
+}
+
 /// Validates that an order is acceptable for submission to Hyperliquid.
 ///
 /// Checks symbol format, order type support, and HIP-4-specific restrictions
@@ -4251,18 +4318,12 @@ pub fn validate_order_for_hyperliquid(order: &OrderAny) -> anyhow::Result<()> {
         )
     })?;
 
-    match order.order_type() {
-        OrderType::Market
-        | OrderType::Limit
-        | OrderType::StopMarket
-        | OrderType::StopLimit
-        | OrderType::MarketIfTouched
-        | OrderType::LimitIfTouched => {}
-        _ => anyhow::bail!(
-            "Unsupported order type for Hyperliquid: {:?}",
-            order.order_type()
-        ),
-    }
+    let order_type = order.order_type();
+    let unsupported_type = OrderDeniedReason::UnsupportedOrderType { order_type };
+    anyhow::ensure!(
+        HYPERLIQUID_SUPPORTED_ORDER_TYPES.contains(&order_type),
+        unsupported_type,
+    );
 
     // HIP-4 outcomes are fully-collateralized side tokens with no margin,
     // funding, or trigger machinery. Reject features that don't apply.
@@ -4271,13 +4332,10 @@ pub fn validate_order_for_hyperliquid(order: &OrderAny) -> anyhow::Result<()> {
             anyhow::bail!("Reduce-only is not supported for Hyperliquid HIP-4 outcomes: {symbol}");
         }
 
-        if !matches!(order.order_type(), OrderType::Market | OrderType::Limit) {
-            anyhow::bail!(
-                "Trigger order types are not supported for Hyperliquid HIP-4 outcomes: \
-                 {symbol} (received {:?})",
-                order.order_type()
-            );
-        }
+        anyhow::ensure!(
+            matches!(order_type, OrderType::Market | OrderType::Limit),
+            unsupported_type
+        );
     }
 
     if matches!(
@@ -5031,6 +5089,7 @@ mod tests {
         cache::Cache,
         clock::VirtualClock,
         messages::{ExecutionEvent, ExecutionReport as EngineExecutionReport},
+        msgbus::{publish_instrument, switchboard::get_instrument_topic},
     };
     use nautilus_core::{
         DurationNanos, UUID4, UnixNanos,
@@ -5273,8 +5332,10 @@ mod tests {
                 error.to_string(),
                 "failed to request Hyperliquid instruments"
             );
-            assert!(!client.core.instruments_initialized());
-            assert_eq!(client.instruments_pending.len(), 3);
+            assert_eq!(
+                client.instruments_pending.borrow().as_ref().unwrap().len(),
+                3
+            );
             assert!(client.ws_client.instruments_cache().is_empty());
             failing.store(false, std::sync::atomic::Ordering::Relaxed);
         }
@@ -5291,8 +5352,7 @@ mod tests {
         let snapshot = cache.load();
         let btc = snapshot.get(&Ustr::from("BTC")).unwrap();
 
-        assert!(client.core.instruments_initialized());
-        assert!(client.instruments_pending.is_empty());
+        assert!(client.instruments_pending.borrow().is_none());
         assert_eq!(snapshot.len(), if empty_universe { 2 } else { 4 });
         assert_eq!(client.http_client.get_asset_index("NEW-USD-PERP"), Some(42));
         assert_eq!(
@@ -5378,8 +5438,7 @@ mod tests {
             )
             .unwrap();
 
-            assert!(client.core.instruments_initialized());
-            assert!(client.instruments_pending.is_empty());
+            assert!(client.instruments_pending.borrow().is_none());
             assert!(client.ws_client.is_active());
             assert!(parsed.complete);
             assert_eq!(parsed.reports.len(), 1);
@@ -5401,10 +5460,9 @@ mod tests {
 
     #[rstest]
     fn test_on_instrument_registers_asset_index_for_a_new_market() {
-        // A market listed after the client bootstrapped arrives through the
-        // message bus, and must become submittable without a restart.
         let mut client = make_execution_client();
-        client.core.set_instruments_initialized();
+        client.instruments_pending.take();
+        client.subscribe_instruments();
         let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
         let defs = parse_perp_instruments(&meta, 0).unwrap();
         let def = &defs[1];
@@ -5414,19 +5472,34 @@ mod tests {
             client.http_client.get_asset_index(def.symbol.as_str()),
             None
         );
-
-        client.on_instrument(instrument);
-
+        publish_instrument(get_instrument_topic(instrument.id()), &instrument);
         assert_eq!(
             client.http_client.get_asset_index(def.symbol.as_str()),
             Some(def.asset_index),
+        );
+
+        client.stop().unwrap();
+        let other = &defs[0];
+        let instrument = create_instrument_from_def(other, UnixNanos::default()).unwrap();
+        let topic = get_instrument_topic(instrument.id());
+        publish_instrument(topic, &instrument);
+        assert_eq!(
+            client.http_client.get_asset_index(other.symbol.as_str()),
+            None
+        );
+
+        client.subscribe_instruments();
+        publish_instrument(topic, &instrument);
+        assert_eq!(
+            client.http_client.get_asset_index(other.symbol.as_str()),
+            Some(other.asset_index),
         );
     }
 
     #[rstest]
     fn test_on_instrument_replaces_asset_index_and_precision() {
         let mut client = make_execution_client();
-        client.core.set_instruments_initialized();
+        client.instruments_pending.take();
         let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
         let mut defs = parse_perp_instruments(&meta, 0).unwrap();
         let def = &mut defs[0];
@@ -8105,11 +8178,7 @@ mod tests {
     fn test_validate_rejects_outcome_trigger_order() {
         let order = outcome_stop_order("O-VAL-TRIG");
         let err = validate_order_for_hyperliquid(&order).unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("Trigger order types are not supported"),
-            "unexpected error: {err}",
-        );
+        assert_eq!(err.to_string(), "UNSUPPORTED_ORDER_TYPE: STOP_MARKET");
     }
 
     #[rstest]

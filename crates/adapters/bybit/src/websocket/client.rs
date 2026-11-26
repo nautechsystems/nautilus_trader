@@ -31,7 +31,10 @@ use std::{
 use arc_swap::ArcSwap;
 #[cfg(test)]
 use nautilus_common::live::get_runtime;
-use nautilus_core::{AtomicMap, AtomicSet, UUID4, string::secret::SecretString};
+use nautilus_core::{
+    AtomicMap, AtomicSet, UUID4,
+    string::secret::{REDACTED, SecretString},
+};
 use nautilus_live::{
     SocketControl,
     book::snapshot::SnapshotGate,
@@ -77,7 +80,7 @@ use crate::{
             websocket_connection_key, websocket_connection_limiter,
         },
         symbol::BybitSymbol,
-        urls::{bybit_ws_private_url, bybit_ws_public_url, bybit_ws_trade_url},
+        urls::{bybit_ws_private_url, bybit_ws_public_url, bybit_ws_trade_url, diagnostic_origin},
     },
     http::client::BybitHttpClient,
     websocket::{
@@ -127,6 +130,7 @@ pub struct BybitWebSocketClient {
     cancellation_token: Arc<ArcSwap<CancellationToken>>,
     proxy_url: Option<SecretString>,
     socket_control: Option<SocketControl>,
+    redact_origin: bool,
 }
 
 struct ConnectRollback {
@@ -164,7 +168,7 @@ impl Drop for ConnectRollback {
 impl Debug for BybitWebSocketClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(BybitWebSocketClient))
-            .field("url", &self.url)
+            .field("url", &self.diagnostic_url())
             .field("environment", &self.environment)
             .field("product_type", &self.product_type)
             .field("requires_auth", &self.requires_auth)
@@ -205,6 +209,7 @@ impl Clone for BybitWebSocketClient {
             cancellation_token: Arc::clone(&self.cancellation_token),
             proxy_url: self.proxy_url.clone(),
             socket_control: self.socket_control.clone(),
+            redact_origin: self.redact_origin,
         }
     }
 }
@@ -294,7 +299,38 @@ impl BybitWebSocketClient {
             cancellation_token: Arc::new(ArcSwap::from_pointee(CancellationToken::new())),
             proxy_url: proxy_url.map(SecretString::from),
             socket_control: None,
+            redact_origin: false,
         }
+    }
+
+    /// Marks diagnostics redacted when configured credentials make this origin secret.
+    ///
+    /// Public clients do not store those credentials, so the caller that has them
+    /// applies the same classification as config `Debug`.
+    #[must_use]
+    pub(crate) fn redact_secret_origin(
+        mut self,
+        api_key: Option<&str>,
+        api_secret: Option<&str>,
+    ) -> Self {
+        if diagnostic_origin(self.url.expose(), api_key, api_secret) == REDACTED {
+            self.redact_origin = true;
+        }
+
+        self
+    }
+
+    fn diagnostic_url(&self) -> String {
+        if self.redact_origin {
+            return REDACTED.to_string();
+        }
+
+        let api_key = self.credential.as_ref().map(Credential::api_key);
+        let api_secret = self
+            .credential
+            .as_ref()
+            .and_then(Credential::api_secret_str);
+        diagnostic_origin(self.url.expose(), api_key, api_secret)
     }
 
     /// Configures socket state reporting and reconnect control.
@@ -363,6 +399,7 @@ impl BybitWebSocketClient {
             cancellation_token: Arc::new(ArcSwap::from_pointee(CancellationToken::new())),
             proxy_url: proxy_url.map(SecretString::from),
             socket_control: None,
+            redact_origin: false,
         }
     }
 
@@ -421,6 +458,7 @@ impl BybitWebSocketClient {
             cancellation_token: Arc::new(ArcSwap::from_pointee(CancellationToken::new())),
             proxy_url: proxy_url.map(SecretString::from),
             socket_control: None,
+            redact_origin: false,
         }
     }
 
@@ -500,6 +538,7 @@ impl BybitWebSocketClient {
             self.proxy_url.as_ref().map(SecretString::expose_secret),
         );
         let connection_rate_keys: Arc<[Ustr]> = Arc::from([websocket_connection_key()]);
+
         let client = WebSocketClient::builder()
             .config(config.clone())
             .message_handler(raw_handler.clone())
@@ -514,7 +553,7 @@ impl BybitWebSocketClient {
             .map_err(|e| {
                 BybitWsError::Transport(format!(
                     "WebSocket connection failed: {}: {}",
-                    self.url.origin(),
+                    self.diagnostic_url(),
                     e.redacted_message()
                 ))
             })?;
@@ -2345,11 +2384,24 @@ mod tests {
         "wss://SYN-user:SYN-password@stream.example.com:9443/SYN-path?token=SYN-query#SYN-fragment",
         "wss://stream.example.com:9443"
     )]
+    #[case("https://ab12cd34ef56gh78.example.com/SYN-path", "<redacted>")]
     fn test_debug_preserves_url_origin(#[case] url: &str, #[case] origin: &str) {
         let client = BybitWebSocketClient::new_public(Some(url.to_string()), 30);
         let debug = format!("{client:?}");
         assert!(debug.contains(&format!("url: {origin:?}")));
         assert!(!debug.contains("SYN-"));
+        assert_eq!(client.url.expose(), url);
+    }
+
+    #[rstest]
+    fn test_debug_keeps_configured_secret_origin_redacted_without_stored_credential() {
+        let url = "wss://secret99.example.com/v5/public/linear";
+        let client = BybitWebSocketClient::new_public(Some(url.to_string()), 30)
+            .redact_secret_origin(Some("secret99"), None);
+        let debug = format!("{client:?}");
+
+        assert!(debug.contains("url: \"<redacted>\""));
+        assert!(!debug.contains("secret99"));
         assert_eq!(client.url.expose(), url);
     }
 

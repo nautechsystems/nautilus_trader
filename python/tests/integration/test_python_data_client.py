@@ -195,8 +195,8 @@ def build_node(factory=Factory, config=None, *, timeout_connection=2) -> object:
     return (
         LiveNode.builder("PYTHON", TraderId("PYTHON-001"), Environment.SANDBOX)
         .with_reconciliation(False)
-        .with_timeout_connection(timeout_connection)
-        .with_timeout_portfolio(0)
+        .with_timeout_connection_secs(timeout_connection)
+        .with_timeout_portfolio_secs(0)
         .with_delay_post_stop_secs(0)
         .with_timeout_disconnection_secs(1)
         .add_data_client(
@@ -482,8 +482,8 @@ def test_python_factory_quote_reaches_engine_cache_and_strategy(launch) -> None:
     node = (
         LiveNode.builder("PYTHON", TraderId("PYTHON-001"), Environment.SANDBOX)
         .with_reconciliation(False)
-        .with_timeout_connection(2)
-        .with_timeout_portfolio(0)
+        .with_timeout_connection_secs(2)
+        .with_timeout_portfolio_secs(0)
         .with_delay_post_stop_secs(0)
         .with_timeout_disconnection_secs(2)
         .add_data_client("PYTHON", Factory, config)
@@ -921,9 +921,9 @@ def test_python_execution_client_reconciles_and_fills_through_core(launch) -> No
     config = ConfigExecution(label="retained-execution-config")
     node = (
         LiveNode.builder("PYTHON", TraderId("PYTHON-001"), Environment.SANDBOX)
-        .with_timeout_connection(2)
-        .with_timeout_portfolio(2)
-        .with_timeout_reconciliation(2)
+        .with_timeout_connection_secs(2)
+        .with_timeout_portfolio_secs(2)
+        .with_timeout_reconciliation_secs(2)
         .with_delay_post_stop_secs(0)
         .with_timeout_disconnection_secs(1)
         .add_data_client("PYTHON", Factory, Config(label="execution-instrument"))

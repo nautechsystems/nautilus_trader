@@ -125,8 +125,8 @@ user-login = "epage"
 user-name = "Ed Page"
 
 [[publisher.toml]]
-version = "1.2.1+spec-1.1.0"
-when = "2026-11-06"
+version = "1.2.2+spec-1.1.0"
+when = "2026-11-21"
 user-id = 6743
 user-login = "epage"
 user-name = "Ed Page"
@@ -139,15 +139,15 @@ user-login = "epage"
 user-name = "Ed Page"
 
 [[publisher.toml_edit]]
-version = "0.25.19+spec-1.1.0"
-when = "2026-11-06"
+version = "0.25.20+spec-1.1.0"
+when = "2026-11-21"
 user-id = 6743
 user-login = "epage"
 user-name = "Ed Page"
 
 [[publisher.toml_parser]]
-version = "1.1.5+spec-1.1.0"
-when = "2026-10-09"
+version = "1.1.6+spec-1.1.0"
+when = "2026-11-21"
 user-id = 6743
 user-login = "epage"
 user-name = "Ed Page"

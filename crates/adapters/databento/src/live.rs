@@ -38,7 +38,7 @@ use std::{
 
 use ahash::{AHashMap, HashSet, HashSetExt};
 use databento::{
-    dbn::{self, PitSymbolMap, SymbolIndex},
+    dbn::{self, PitSymbolMap, SymbolIndex, SymbolMappingRec, SystemRec},
     live::Subscription,
 };
 use indexmap::IndexMap;
@@ -64,7 +64,7 @@ use super::{
 };
 use crate::{
     common::{Credential, build_publisher_venue_map, load_publishers},
-    decode::{decode_instrument_def_msg, decode_record},
+    decode::{decode_instrument_def_msg, decode_record, skip_glbx_outright_without_multiplier},
     symbology::{
         check_consistent_symbology, dataset_uses_futures_symbology, infer_symbology_type,
         nautilus_symbol, raw_symbol, resolve_futures_instrument_id,
@@ -1024,6 +1024,10 @@ impl DatabentoFeedHandler {
         instrument_id_map: &mut AHashMap<u32, CachedInstrumentId>,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Option<InstrumentAny>> {
+        if skip_glbx_outright_without_multiplier(msg) {
+            return Ok(None);
+        }
+
         instrument_id_map.remove(&msg.hd.instrument_id);
         let exchange = if self.use_exchange_as_venue {
             msg.exchange()?

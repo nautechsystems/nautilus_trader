@@ -1214,7 +1214,7 @@ cached orders. Keep clients active until their positions settle.
 | `http_timeout_secs`                | `60`         | REST attempt timeout in seconds.                                                 |
 | `ws_timeout_secs`                  | `30`         | WebSocket connection, subscription-restoration, and lifecycle-bootstrap timeout. |
 | `book_snapshot_timeout_secs`       | `10`         | Initial and recovery snapshot deadline; `0` disables deadlines.                  |
-| `update_instruments_interval_mins` | `60`         | Delay between completed instrument refreshes.                                    |
+| `update_instruments_interval_mins` | `60`         | Interval (minutes) after each instrument refresh completes.                      |
 | `transport_backend`                | `Sockudo`    | Required WebSocket backend; `Tungstenite` is rejected.                           |
 
 ### Execution client configuration options

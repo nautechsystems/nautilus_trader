@@ -27,7 +27,7 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
-    enums::{AssetClass, ExerciseStyle, OptionKind, SettlementType},
+    enums::{AssetClass, ExerciseStyle, OptionKind, OptionPremiumStyle, SettlementType},
     identifiers::{InstrumentId, Symbol},
     instruments::OptionContract,
     types::{Currency, Price, Quantity},
@@ -39,7 +39,7 @@ impl OptionContract {
     /// Represents a generic option contract instrument.
     #[expect(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (instrument_id, raw_symbol, asset_class, underlying, option_kind, strike_price, strike_currency, quote_currency, settlement_currency, activation_ns, expiration_ns, price_precision, price_increment, multiplier, lot_size, ts_event, ts_init, exchange=None, underlying_instrument_id=None, exercise_style=None, settlement_type=None, max_quantity=None, min_quantity=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, tick_scheme=None, info=None))]
+    #[pyo3(signature = (instrument_id, raw_symbol, asset_class, underlying, option_kind, strike_price, strike_currency, quote_currency, settlement_currency, activation_ns, expiration_ns, price_precision, price_increment, multiplier, lot_size, ts_event, ts_init, exchange=None, underlying_instrument_id=None, premium_style=None, exercise_style=None, settlement_type=None, max_quantity=None, min_quantity=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, tick_scheme=None, info=None))]
     fn py_new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -60,6 +60,7 @@ impl OptionContract {
         ts_init: u64,
         exchange: Option<String>,
         underlying_instrument_id: Option<InstrumentId>,
+        premium_style: Option<OptionPremiumStyle>,
         exercise_style: Option<ExerciseStyle>,
         settlement_type: Option<SettlementType>,
         max_quantity: Option<Quantity>,
@@ -90,6 +91,7 @@ impl OptionContract {
             .strike_currency(strike_currency)
             .quote_currency(quote_currency)
             .settlement_currency(settlement_currency)
+            .maybe_premium_style(premium_style)
             .maybe_exercise_style(exercise_style)
             .maybe_settlement_type(settlement_type)
             .activation_ns(activation_ns.into())
@@ -189,6 +191,12 @@ impl OptionContract {
     #[pyo3(name = "settlement_currency")]
     fn py_settlement_currency(&self) -> Currency {
         self.settlement_currency
+    }
+
+    #[getter]
+    #[pyo3(name = "premium_style")]
+    fn py_premium_style(&self) -> Option<OptionPremiumStyle> {
+        self.premium_style
     }
 
     #[getter]
@@ -349,6 +357,10 @@ impl OptionContract {
         dict.set_item(
             "settlement_currency",
             self.settlement_currency.code.to_string(),
+        )?;
+        dict.set_item(
+            "premium_style",
+            self.premium_style.map(|style| style.to_string()),
         )?;
         dict.set_item(
             "exercise_style",

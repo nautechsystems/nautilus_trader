@@ -31,7 +31,7 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use tokio_util::sync::CancellationToken;
 
-use super::{account, context::PrivateState};
+use super::{account, context::PrivateState, stream::PrivateStreamCommand};
 use crate::{
     common::{
         enums::{MarketStatus, MarketType},
@@ -49,6 +49,8 @@ use crate::{
     websocket::client::KalshiWebSocketClient,
 };
 
+const KALSHI_SUPPORTED_ORDER_TYPES: &[OrderType] = &[OrderType::Limit];
+
 pub(super) struct Submission {
     pub(super) order: OrderAny,
     pub(super) position_qty: Option<Decimal>,
@@ -59,7 +61,7 @@ pub(super) struct Submission {
     pub(super) emitter: ExecutionEventEmitter,
     pub(super) ready: Arc<AtomicBool>,
     pub(super) ws_client: KalshiWebSocketClient,
-    pub(super) refresh: tokio::sync::mpsc::UnboundedSender<()>,
+    pub(super) refresh: tokio::sync::mpsc::UnboundedSender<PrivateStreamCommand>,
     pub(super) session: String,
     pub(super) cancellation: CancellationToken,
 }
@@ -148,7 +150,9 @@ impl Submission {
             }
         }
 
-        if !self.cancellation.is_cancelled() && self.refresh.send(()).is_err() {
+        if !self.cancellation.is_cancelled()
+            && self.refresh.send(PrivateStreamCommand::Refresh).is_err()
+        {
             log::warn!("Kalshi submission recovery stopped");
         }
 
@@ -353,7 +357,7 @@ pub fn request(
     shard: u32,
     subaccount: u32,
 ) -> Result<CreateOrderRequest, OrderDeniedReason> {
-    if order.order_type() != OrderType::Limit {
+    if !KALSHI_SUPPORTED_ORDER_TYPES.contains(&order.order_type()) {
         return Err(OrderDeniedReason::UnsupportedOrderType {
             order_type: order.order_type(),
         });

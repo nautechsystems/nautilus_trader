@@ -64,15 +64,16 @@ Before running:
   see [installation](../getting_started/installation.md).
 - Check provider retention for the historical examples' fixed past windows.
 
-Set `MARKET_ID` in the example you plan to run to an [active Polymarket outcome ID](#selecting-an-outcome).
-Run from the repository root:
+Use the [Python discovery example](#discovering-an-outcome-in-python) or the
+[active-market endpoint](#selecting-an-outcome) to find an active Polymarket outcome ID. Set the shell
+variable `MARKET_ID` to that exact ID, then pass it to the tester from the repository root.
 
 ```bash tab="Rust"
-CARGO_BUILD_JOBS=8 cargo run --locked -p nautilus-finfeed --example node_data_tester
+CARGO_BUILD_JOBS=8 cargo run --locked -p nautilus-finfeed --example node_data_tester -- "$MARKET_ID"
 ```
 
 ```bash tab="Python"
-uv run --project python --no-sync python examples/live/finfeed/data_tester.py
+uv run --project python --no-sync python examples/live/finfeed/data_tester.py "$MARKET_ID"
 ```
 
 The [Rust](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/finfeed/examples/node_data_tester.rs)
@@ -83,7 +84,7 @@ examples register the factory with `LiveNode` and route `DataTester` through `FI
 
 | Setting           | Example value                                             |
 | ----------------- | --------------------------------------------------------- |
-| Outcome           | Active Polymarket outcome ID set in `MARKET_ID`.          |
+| Outcome           | Active Polymarket outcome ID passed at launch.            |
 | Subscriptions     | Quotes, trades, L2 book replacements; logs incoming data. |
 | Stop timer        | 60 seconds including startup; shutdown can take longer.   |
 | Managed allowance | Eight attempts; no application retries.                   |
@@ -783,8 +784,8 @@ config = FinFeedDataClientConfig(
 node = (
     LiveNode.builder("FINFEED-DATA-TESTER", TraderId("TESTER-001"), Environment.LIVE)
     .with_reconciliation(False)
-    .with_timeout_connection(60)
-    .with_timeout_portfolio(0)
+    .with_timeout_connection_secs(60)
+    .with_timeout_portfolio_secs(0)
     .add_data_client(None, FinFeedDataClientFactory(), config)
     .build()
 )
@@ -807,7 +808,7 @@ and a 60-second stop timer. For general setup, see [Configure live trading](../h
 | `http_timeout_secs`       | `http.timeout_secs`            | `300`                     | Transport timeout per request, in seconds.                                      |
 | `max_concurrent_requests` | `http.max_concurrent_requests` | `1`                       | Managed requests in flight on this instance.                                    |
 | `attempt_budget`          | `http.attempt_budget`          | `100`                     | Lifetime FinFeed managed attempts per connection generation.                    |
-| `min_request_interval_ms` | `http.min_request_interval_ms` | `10000`                   | Shared spacing between attempt starts, in milliseconds.                         |
+| `min_request_interval_ms` | `http.min_request_interval_ms` | `10000`                   | Shared minimum interval (milliseconds) between request attempt starts.          |
 | `connect_timeout_secs`    | `connect_timeout_secs`         | `120`                     | Entire bootstrap deadline in seconds.                                           |
 
 Each `FinFeedInstrumentSelection` requires `exchange_id` and `market_ids`, with no selection defaults.
@@ -818,10 +819,10 @@ concurrency and attempt allowance must be positive.
 
 #### Polling
 
-| Python keyword     | Rust field         | Default | Meaning                                    |
-| ------------------ | ------------------ | ------- | ------------------------------------------ |
-| `poll_interval_ms` | `poll_interval_ms` | `10000` | Delay after each endpoint poll completes.  |
-| `poll_limit`       | `poll_limit`       | `100`   | Maximum latest quotes and trades per list. |
+| Python keyword     | Rust field         | Default | Meaning                                                     |
+| ------------------ | ------------------ | ------- | ----------------------------------------------------------- |
+| `poll_interval_ms` | `poll_interval_ms` | `10000` | Interval (milliseconds) after each endpoint poll completes. |
+| `poll_limit`       | `poll_limit`       | `100`   | Maximum latest quotes and trades per list.                  |
 
 Polling accepts `[100, 86400000]` milliseconds and a `poll_limit` in `[1, 10000]`.
 OHLCV requests use `poll_limit + 1` rows for a running period: at most 10001, within the market
@@ -896,7 +897,7 @@ allowances reserve extra room:
 For the first row, retain the [tester](#defaults-and-request-cost) selection and subscriptions, set
 `attempt_budget=3200`, and keep `poll_interval_ms=60000`, `http_timeout_secs=10`,
 `max_concurrent_requests=1`, `max_retries=0`, `connect_timeout_secs=45`, and node
-`.with_timeout_connection(60)`. Set `RUN_SECONDS` to 86400 plus allowed startup time: its timer includes startup.
+`.with_timeout_connection_secs(60)`. Set `RUN_SECONDS` to 86400 plus allowed startup time: its timer includes startup.
 
 For larger selections, replace the IDs, subscriptions, poll delay, allowance, and both deadlines with the
 chosen row. See [public controls](#public-controls-and-defaults) for equivalent Rust fields.

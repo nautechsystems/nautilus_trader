@@ -2696,6 +2696,11 @@ mod tests {
             &[],
         ),
         cache_mutation(
+            "cache_instrument_close",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
             "add_quote",
             CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
             &[PAYLOAD_TYPE_QUOTES_RESPONSE],
@@ -2884,6 +2889,12 @@ mod tests {
                 PAYLOAD_TYPE_ORDER_FILLED,
                 PAYLOAD_TYPE_ORDER_FILL_VOIDED,
             ],
+        ),
+        cache_mutation(
+            // Redis restores activation independently of the event-store tail
+            "store_trailing_stop_activation",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
         ),
         cache_mutation(
             "update_order_pending_cancel_local",

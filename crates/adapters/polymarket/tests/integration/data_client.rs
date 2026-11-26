@@ -63,7 +63,7 @@ use nautilus_model::{
     data::{Data as NautilusData, DataType},
     enums::BookType,
     identifiers::InstrumentId,
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{retry::RetryConfig, websocket::TransportBackend};
 use nautilus_polymarket::{
@@ -1045,6 +1045,59 @@ async fn test_request_instrument_not_found_emits_no_publish() {
 
 #[rstest]
 #[tokio::test]
+async fn test_bulk_request_publishes_definitions_only_when_unbounded(
+    #[values(false, true)] bounded: bool,
+) {
+    let state = TestServerState::default();
+    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_request_fixture()]));
+    let addr = start_mock_server(state).await;
+    let (client, mut rx) = create_test_data_client(addr);
+    let request_id = UUID4::new();
+    let start = bounded.then(|| nautilus_core::UnixNanos::default().to_datetime_utc());
+    client
+        .request_instruments(RequestInstruments::new(
+            start,
+            None,
+            Some(*POLYMARKET_CLIENT_ID),
+            None,
+            request_id,
+            nautilus_core::UnixNanos::default(),
+            None,
+        ))
+        .unwrap();
+
+    let events =
+        collect_data_events_until_response(&mut rx, request_id, Duration::from_secs(5)).await;
+
+    let Some(DataEvent::Response(DataResponse::Instruments(response))) = events.last() else {
+        panic!("expected instrument response");
+    };
+
+    assert_eq!(response.data.len(), 2);
+    assert!(
+        response
+            .data
+            .iter()
+            .any(|instrument| instrument.id() == yes_instrument_id())
+    );
+
+    if bounded {
+        assert_eq!(events.len(), 1);
+    } else {
+        assert_eq!(events.len(), 3);
+
+        for (event, expected) in events.iter().zip(&response.data) {
+            let DataEvent::Data(NautilusData::Instrument(instrument)) = event else {
+                panic!("expected routed instrument before the reply");
+            };
+
+            assert!(instrument.same_definition(expected));
+        }
+    }
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_request_instruments_emits_response() {
     let state = TestServerState::default();
     *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_request_fixture()]));
@@ -1102,8 +1155,7 @@ async fn test_request_instruments_emits_response() {
         .count();
     assert_eq!(
         publish_count, 0,
-        "request_instruments does not currently publish per-instrument events; \
-         if it ever does, update this test deliberately",
+        "an empty REST response publishes no definitions",
     );
 
     let response = events

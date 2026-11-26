@@ -454,33 +454,17 @@ impl DeribitWebSocketClient {
 
     /// Caches instruments for use during message parsing.
     pub fn cache_instruments(&self, instruments: &[InstrumentAny]) {
-        let tx = self.command_sender();
-
-        self.instruments_cache.rcu(|m| {
-            for inst in instruments {
-                m.insert(inst.raw_symbol().inner(), inst.clone());
+        self.instruments_cache.rcu(|cache| {
+            for instrument in instruments {
+                cache.insert(instrument.raw_symbol().inner(), instrument.clone());
             }
         });
-        log::debug!("Cached {} instruments", self.instruments_cache.len());
-
-        // Send per-instrument updates to the live handler rather than a full snapshot, avoiding
-        // out-of-order snapshot races, in every mode since the handler outlives a reconnect and
-        // connect() replays the cache via InitializeInstruments when no handler is running.
-        for inst in instruments {
-            let _ = tx.send(HandlerCommand::UpdateInstrument(Box::new(inst.clone())));
-        }
     }
 
     /// Caches a single instrument.
     pub fn cache_instrument(&self, instrument: InstrumentAny) {
-        let tx = self.command_sender();
-        let symbol = instrument.raw_symbol().inner();
-        self.instruments_cache.insert(symbol, instrument);
-
-        // Send in every mode, see `cache_instruments`
-        if let Some(inst) = self.instruments_cache.get_cloned(&symbol) {
-            let _ = tx.send(HandlerCommand::UpdateInstrument(Box::new(inst)));
-        }
+        self.instruments_cache
+            .insert(instrument.raw_symbol().inner(), instrument);
     }
 
     /// Sets the shared option greeks subscription set for handler-side gating.
@@ -640,7 +624,8 @@ impl DeribitWebSocketClient {
             self.account_id,
             self.bars_timestamp_on_close,
             self.subscribe_errors.clone(),
-        );
+        )
+        .with_instruments_cache(Arc::clone(&self.instruments_cache));
 
         handler.set_book_depth_subs(self.book_depth_subs.clone());
         handler.set_book_sync(
@@ -653,23 +638,9 @@ impl DeribitWebSocketClient {
             control.register(move || reconnect_handle.request_reconnect());
         }
 
-        // Cache updates hold a read guard while mutating the central cache. Publishing the new
-        // sender under the write guard ensures later subscriptions follow this cache snapshot.
         {
             let mut command_sender = self.cmd_tx.write();
             let _ = cmd_tx.send(HandlerCommand::SetClient(ws_client));
-
-            let instruments: Vec<InstrumentAny> =
-                self.instruments_cache.load().values().cloned().collect();
-
-            if !instruments.is_empty() {
-                log::debug!(
-                    "Sending {} cached instruments to handler",
-                    instruments.len()
-                );
-                let _ = cmd_tx.send(HandlerCommand::InitializeInstruments(instruments));
-            }
-
             if let Some(interval) = self.heartbeat_interval {
                 let _ = cmd_tx.send(HandlerCommand::SetHeartbeat { interval });
             }
@@ -1936,10 +1907,6 @@ mod tests {
         let instrument_id = instrument.id();
         ws_client.cache_instruments(std::slice::from_ref(&instrument));
 
-        let HandlerCommand::UpdateInstrument(updated) = rx.try_recv().unwrap() else {
-            panic!("expected instrument update");
-        };
-
         let trades_error = ws_client
             .subscribe_trades(instrument_id, None)
             .await
@@ -1954,9 +1921,6 @@ mod tests {
             .unwrap_err();
         ws_client.subscribe_book(instrument_id, None).await.unwrap();
         let command = rx.try_recv().unwrap();
-
-        assert_eq!(updated.id(), instrument_id);
-        assert_eq!(updated.info(), instrument.info());
 
         for error in [trades_error, chart_error, bars_error] {
             assert_eq!(
@@ -2303,7 +2267,7 @@ mod tests {
     #[rstest]
     #[case::active(ConnectionMode::Active)]
     #[case::reconnect(ConnectionMode::Reconnect)]
-    fn test_cache_instruments_updates_handler(#[case] mode: ConnectionMode) {
+    fn test_cache_instruments_updates_shared_snapshot(#[case] mode: ConnectionMode) {
         let client = DeribitWebSocketClient::new_public(DeribitEnvironment::Testnet, None).unwrap();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         *client.cmd_tx.write() = tx;
@@ -2321,12 +2285,11 @@ mod tests {
         client.cache_instruments(std::slice::from_ref(&instrument));
         client.cache_instrument(instrument.clone());
 
-        for _ in 0..2 {
-            let HandlerCommand::UpdateInstrument(update) = rx.try_recv().unwrap() else {
-                panic!("expected instrument update");
-            };
-            assert_eq!(update.id(), instrument.id());
-        }
+        let cached = client
+            .instruments_cache
+            .get_cloned(&instrument.raw_symbol().inner())
+            .unwrap();
+        assert!(cached.same_definition(&instrument));
         assert!(rx.try_recv().is_err());
     }
 

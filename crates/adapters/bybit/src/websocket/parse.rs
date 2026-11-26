@@ -68,24 +68,28 @@ use crate::{
 /// Returns `Unknown(value)` if no specific type matches.
 pub fn parse_bybit_ws_frame(value: serde_json::Value) -> BybitWsFrame {
     if let Some(op_val) = value.get("op") {
-        if let Ok(op) = serde_json::from_value::<BybitWsOperation>(op_val.clone())
-            && op == BybitWsOperation::Auth
-            && let Ok(auth) = serde_json::from_value::<BybitWsAuthResponse>(value.clone())
+        if op_val
+            .as_str()
+            .is_some_and(|op| op.eq_ignore_ascii_case("auth"))
         {
-            let is_success = auth.success.unwrap_or(false) || auth.ret_code.unwrap_or(-1) == 0;
-            if is_success {
-                return BybitWsFrame::Auth(auth);
+            if let Ok(auth) = serde_json::from_value::<BybitWsAuthResponse>(value.clone()) {
+                let is_success = auth.success.unwrap_or(false) || auth.ret_code.unwrap_or(-1) == 0;
+                if is_success {
+                    return BybitWsFrame::Auth(auth);
+                }
+
+                return BybitWsFrame::ErrorResponse(BybitWsResponse {
+                    op: Some(auth.op),
+                    topic: None,
+                    success: auth.success,
+                    conn_id: auth.conn_id,
+                    req_id: None,
+                    ret_code: auth.ret_code,
+                    ret_msg: auth.ret_msg,
+                });
             }
-            let resp = BybitWsResponse {
-                op: Some(auth.op.clone()),
-                topic: None,
-                success: auth.success,
-                conn_id: auth.conn_id.clone(),
-                req_id: None,
-                ret_code: auth.ret_code,
-                ret_msg: auth.ret_msg,
-            };
-            return BybitWsFrame::ErrorResponse(resp);
+
+            return BybitWsFrame::ErrorResponse(malformed_auth_response());
         }
 
         if let Some(op_str) = op_val.as_str()
@@ -183,6 +187,18 @@ pub fn parse_bybit_ws_frame(value: serde_json::Value) -> BybitWsFrame {
     }
 
     BybitWsFrame::Unknown(value)
+}
+
+fn malformed_auth_response() -> BybitWsResponse {
+    BybitWsResponse {
+        op: Some(BybitWsOperation::Auth),
+        topic: None,
+        success: Some(false),
+        conn_id: None,
+        req_id: None,
+        ret_code: None,
+        ret_msg: Some("malformed authentication response".to_string()),
+    }
 }
 
 /// Parses a Bybit WebSocket topic string into its components.
@@ -1295,6 +1311,26 @@ mod tests {
     };
 
     const TS: UnixNanos = UnixNanos::new(1_700_000_000_000_000_000);
+
+    #[rstest]
+    fn auth_frame_with_unparsed_args_does_not_retain_credentials() {
+        let value = serde_json::json!({
+            "op": "Auth",
+            "success": "no",
+            "args": ["SECRETKEY12345678", "signature-secret"]
+        });
+
+        let frame = parse_bybit_ws_frame(value);
+        let debug = format!("{frame:?}");
+
+        assert!(matches!(
+            frame,
+            BybitWsFrame::ErrorResponse(ref response)
+                if response.op == Some(BybitWsOperation::Auth)
+        ));
+        assert!(!debug.contains("SECRETKEY12345678"));
+        assert!(!debug.contains("signature-secret"));
+    }
 
     use ustr::Ustr;
 

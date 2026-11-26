@@ -6,9 +6,8 @@ The blockchain adapter ingests DeFi data from EVM chains and exposes it through 
 NautilusTrader data model. It also includes an execution client for locally signed Uniswap V3
 market swaps. The execution client is not production-ready. The adapter uses three backends:
 
-- HyperSync: high-throughput historical blocks and contract logs. See the
-  [Envio HyperSync docs](https://docs.envio.dev/docs/HyperSync/hypersync-usage) for query shape,
-  pagination, and tuning.
+- HyperSync: historical blocks and contract logs over the JSON API. See the
+  [Envio HyperSync docs](https://docs.envio.dev/docs/HyperSync/hypersync-usage) for the query format.
 - HTTP RPC: contract calls, Multicall reads, and final on-chain state hydration.
 - Postgres: optional durable cache state, pool metadata, decoded events, and snapshots.
 

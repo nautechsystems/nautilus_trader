@@ -53,8 +53,8 @@ use nautilus_common::{
         system::{QueueStateChanged, ShutdownSystem},
     },
     msgbus::{
-        self, BusMessage, MessageBusExternalIngress, MessagingSwitchboard, ShareableMessageHandler,
-        switchboard,
+        self, BusMessage, InstrumentSubscription, MessageBusExternalIngress, MessagingSwitchboard,
+        ShareableMessageHandler, TypedHandler, switchboard, switchboard::get_instruments_pattern,
     },
     nautilus_actor,
     runner::{TimeEventMessage, TimeEventSender, get_time_event_sender},
@@ -104,6 +104,11 @@ use proptest::{
 use rstest::rstest;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+
+mod dispatch;
+mod external_msgbus;
+mod lifecycle;
+mod routing;
 
 #[derive(Debug)]
 struct TestActor {
@@ -270,78 +275,6 @@ nautilus_execution_algorithm!(TestExecutionAlgorithm, {
         Ok(())
     }
 });
-
-#[rstest]
-fn test_handle_initial_state() {
-    let handle = LiveNodeHandle::new();
-
-    assert_eq!(handle.state(), NodeState::Idle);
-    assert!(!handle.should_stop());
-    assert!(!handle.is_running());
-}
-
-#[rstest]
-fn test_handle_stop_sets_flag() {
-    let handle = LiveNodeHandle::new();
-
-    handle.stop();
-
-    assert!(handle.should_stop());
-}
-
-#[rstest]
-fn test_handle_clone_shares_state() {
-    let handle1 = LiveNodeHandle::new();
-    let handle2 = handle1.clone();
-
-    handle1.stop();
-
-    assert!(handle2.should_stop());
-}
-
-#[rstest]
-fn test_node_state_values() {
-    assert_eq!(NodeState::Idle.as_u8(), 0);
-    assert_eq!(NodeState::Starting.as_u8(), 1);
-    assert_eq!(NodeState::Running.as_u8(), 2);
-    assert_eq!(NodeState::ShuttingDown.as_u8(), 3);
-    assert_eq!(NodeState::Stopped.as_u8(), 4);
-}
-
-#[rstest]
-fn test_node_state_is_running() {
-    assert!(!NodeState::Idle.is_running());
-    assert!(!NodeState::Starting.is_running());
-    assert!(NodeState::Running.is_running());
-    assert!(!NodeState::ShuttingDown.is_running());
-    assert!(!NodeState::Stopped.is_running());
-}
-
-#[rstest]
-fn test_builder_rejects_backtest_environment() {
-    let result = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Backtest);
-
-    assert!(result.is_err());
-    let err = result.unwrap_err().to_string();
-    assert!(
-        err.contains("Backtest"),
-        "Expected Backtest error, was: {err}"
-    );
-}
-
-#[rstest]
-fn test_builder_accepts_sandbox() {
-    let result = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox);
-
-    assert!(result.is_ok());
-}
-
-#[rstest]
-fn test_builder_accepts_live() {
-    let result = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Live);
-
-    assert!(result.is_ok());
-}
 
 // -- LiveNode construction tests (require process isolation via nextest) --------------------------
 // These tests initialize global logging state and require isolated processes.
@@ -915,6 +848,7 @@ pub(crate) mod serial_tests {
         account_id: AccountId,
         venue: Venue,
         state: BlockingReportClientState,
+        instrument_subscription: Option<InstrumentSubscription>,
         fill_report_release: Option<Arc<tokio::sync::Notify>>,
         fill_report_responses: Arc<Mutex<VecDeque<Vec<FillReport>>>>,
         fill_reports_at_window_end: bool,
@@ -938,6 +872,7 @@ pub(crate) mod serial_tests {
                 account_id: factory.account_id,
                 venue: factory.venue,
                 state: factory.state.clone(),
+                instrument_subscription: None,
                 fill_report_release: factory.fill_report_release.clone(),
                 fill_report_responses: factory.fill_report_responses.clone(),
                 fill_reports_at_window_end: factory.fill_reports_at_window_end,
@@ -1193,10 +1128,20 @@ pub(crate) mod serial_tests {
         }
 
         fn start(&mut self) -> anyhow::Result<()> {
+            let state = self.state.clone();
+            let handler = TypedHandler::from(move |_: &InstrumentAny| {
+                state.instrument_received.store(true, Ordering::Relaxed);
+            });
+
+            self.instrument_subscription = Some(InstrumentSubscription::new(
+                get_instruments_pattern(self.venue),
+                handler,
+            ));
             Ok(())
         }
 
         fn stop(&mut self) -> anyhow::Result<()> {
+            self.instrument_subscription.take();
             Ok(())
         }
 
@@ -1206,12 +1151,6 @@ pub(crate) mod serial_tests {
                 .store(true, Ordering::Relaxed);
             self.state.query_order_ids.lock().push(cmd.client_order_id);
             Ok(())
-        }
-
-        fn on_instrument(&mut self, _instrument: InstrumentAny) {
-            self.state
-                .instrument_received
-                .store(true, Ordering::Relaxed);
         }
 
         async fn connect(&mut self) -> anyhow::Result<()> {
@@ -1931,21 +1870,6 @@ pub(crate) mod serial_tests {
 
         assert_eq!(handle.state(), NodeState::Idle);
         assert!(!handle.should_stop());
-    }
-
-    #[rstest]
-    fn test_live_node_config_with_disabled_reconciliation() {
-        let config = LiveNodeConfig {
-            exec_engine: LiveExecutionEngineConfig {
-                reconciliation: false,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        let node = LiveNode::build("TestNode".to_string(), Some(config)).unwrap();
-
-        assert_eq!(node.state(), NodeState::Idle);
     }
 
     #[rstest]
@@ -4159,6 +4083,96 @@ pub(crate) mod serial_tests {
     }
 
     #[rstest]
+    #[case::start(false)]
+    #[case::run(true)]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_startup_reconciliation_shares_deadline_across_clients(#[case] run: bool) {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecutionEngineConfig {
+                reconciliation: true,
+                ..Default::default()
+            },
+            timeout_reconciliation: Duration::from_millis(100),
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+
+        let mut builder = LiveNodeBuilder::from_config(config).unwrap();
+
+        let states = [("ALPHA", "ALPHA-001"), ("BETA", "BETA-001")].map(|(venue, account_id)| {
+            let state = StartupMassStatusClientState {
+                mass_status_delay: Duration::from_millis(60),
+                ..Default::default()
+            };
+
+            (Venue::from(venue), AccountId::from(account_id), state)
+        });
+
+        for (venue, account_id, state) in &states {
+            let factory = StartupMassStatusExecutionClientFactory::new(
+                state.clone(),
+                StartupMassStatusBehavior::Unavailable,
+            )
+            .with_identity(ClientId::from(venue.as_str()), *account_id, *venue);
+
+            builder = builder
+                .add_exec_client(
+                    Some(venue.to_string()),
+                    Box::new(factory),
+                    Box::new(StartupMassStatusExecutionClientConfig),
+                )
+                .unwrap();
+        }
+
+        let mut node = builder.build().unwrap();
+        let [_, last_client]: [ClientId; 2] = node
+            .kernel()
+            .exec_engine
+            .borrow()
+            .client_ids()
+            .try_into()
+            .unwrap();
+
+        let quantity_on_start = Rc::new(Cell::new(None));
+        node.add_strategy(PositionStartupStrategy {
+            core: StrategyCore::new(StrategyConfig::default()),
+            handle: node.handle(),
+            quantity_on_start: quantity_on_start.clone(),
+        })
+        .unwrap();
+
+        let error = dst::time::timeout(Duration::from_secs(1), async {
+            if run {
+                node.run().await
+            } else {
+                node.start().await
+            }
+        })
+        .await
+        .expect("startup should finish within the test timeout")
+        .expect_err("both requests must share the startup reconciliation deadline");
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Startup reconciliation timeout reached while requesting mass status from {last_client}"
+            )
+        );
+        assert_eq!(quantity_on_start.get(), None);
+        assert_eq!(node.state(), NodeState::Stopped);
+
+        for (_, _, state) in states {
+            assert!(state.mass_status_requested.load(Ordering::Relaxed));
+            assert!(state.disconnect_attempted.load(Ordering::Relaxed));
+            assert!(!state.connected.load(Ordering::Relaxed));
+        }
+    }
+
+    #[rstest]
     #[tokio::test(flavor = "current_thread")]
     async fn test_maintenance_dispatcher_audits_stale_own_book_orders() {
         let config = LiveNodeConfig {
@@ -4600,13 +4614,8 @@ pub(crate) mod serial_tests {
             let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
             let topic = switchboard::get_instrument_topic(instrument.id());
             msgbus::publish_instrument(topic, &instrument);
+            assert!(instrument_observed.load(Ordering::Relaxed));
             order_report_release.notify_one();
-
-            wait_until_async(
-                || async { instrument_observed.load(Ordering::Relaxed) },
-                Duration::from_secs(5),
-            )
-            .await;
             stop_handle.stop();
         });
 
@@ -4618,7 +4627,7 @@ pub(crate) mod serial_tests {
         );
         assert!(
             result.unwrap().is_ok(),
-            "run() should stop cleanly after flushing deferred instrument updates"
+            "run() should stop cleanly after delivering instrument updates"
         );
         assert!(blocking_order_report_requested.load(Ordering::Relaxed));
         assert!(instrument_received.load(Ordering::Relaxed));
@@ -4676,13 +4685,8 @@ pub(crate) mod serial_tests {
             let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
             let topic = switchboard::get_instrument_topic(instrument.id());
             msgbus::publish_instrument(topic, &instrument);
+            assert!(instrument_observed.load(Ordering::Relaxed));
             position_report_release.notify_one();
-
-            wait_until_async(
-                || async { instrument_observed.load(Ordering::Relaxed) },
-                Duration::from_secs(5),
-            )
-            .await;
             stop_handle.stop();
         });
 
@@ -4694,7 +4698,7 @@ pub(crate) mod serial_tests {
         );
         assert!(
             result.unwrap().is_ok(),
-            "run() should stop cleanly after flushing deferred instrument updates"
+            "run() should stop cleanly after delivering instrument updates"
         );
         assert!(position_report_requested.load(Ordering::Relaxed));
         assert!(instrument_received.load(Ordering::Relaxed));
@@ -5793,7 +5797,7 @@ pub(crate) mod serial_tests {
 
     #[rstest]
     #[tokio::test(start_paused = true)]
-    async fn test_timed_out_report_task_flushes_deferred_instrument_update() {
+    async fn test_instrument_update_is_delivered_while_report_task_is_pending() {
         let config = LiveNodeConfig {
             exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
@@ -5814,7 +5818,7 @@ pub(crate) mod serial_tests {
         );
         let mut node = LiveNodeBuilder::from_config(config)
             .unwrap()
-            .with_name("ReportTimeoutInstrumentFlushNode")
+            .with_name("ReportPendingInstrumentUpdateNode")
             .add_exec_client(
                 Some("blocking-report".to_string()),
                 Box::new(factory),
@@ -5837,11 +5841,7 @@ pub(crate) mod serial_tests {
             let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
             let topic = switchboard::get_instrument_topic(instrument.id());
             msgbus::publish_instrument(topic, &instrument);
-            wait_until_async(
-                || async { instrument_received.load(Ordering::Relaxed) },
-                Duration::from_secs(1),
-            )
-            .await;
+            assert!(instrument_received.load(Ordering::Relaxed));
             stop_handle.stop();
         });
 
@@ -5849,7 +5849,7 @@ pub(crate) mod serial_tests {
 
         assert!(
             result.is_ok(),
-            "timeout cancellation should flush deferred instruments"
+            "instrument delivery should succeed while a report task is pending"
         );
         assert!(result.unwrap().is_ok());
         assert!(state.bulk_order_report_requested.load(Ordering::Relaxed));

@@ -95,7 +95,9 @@ use nautilus_model::{
         VenueOrderId,
     },
     instruments::{CryptoPerpetual, CurrencyPair, InstrumentAny},
-    orders::{LimitOrder, MarketOrder, Order, OrderAny, OrderList, StopMarketOrder},
+    orders::{
+        LimitOrder, MarketOrder, Order, OrderAny, OrderList, OrderTestBuilder, StopMarketOrder,
+    },
     reports::{FillReport, OrderStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
@@ -9773,6 +9775,81 @@ fn make_outcome_limit_order(id: &str, reduce_only: bool) -> OrderAny {
         UUID4::new(),
         UnixNanos::default(),
     ))
+}
+
+#[rstest]
+#[case::single(false)]
+#[case::list(true)]
+#[tokio::test]
+async fn test_submit_denies_unsupported_outcome_order_type(#[case] batch: bool) {
+    let state = TestServerState::default();
+    let exchange_count = state.exchange_request_count.clone();
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+    let instrument_id = InstrumentId::from("+50.HYPERLIQUID");
+    let order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("O-OUTCOME-STOP"))
+        .quantity(Quantity::from("1"))
+        .trigger_price(Price::from("0.5"))
+        .trigger_type(TriggerType::LastPrice)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    if batch {
+        let list = OrderList::new(
+            OrderListId::from("OL-OUTCOME-STOP"),
+            instrument_id,
+            order.strategy_id(),
+            vec![order.client_order_id()],
+            UnixNanos::default(),
+        );
+
+        client
+            .submit_order_list(SubmitOrderList::new(
+                order.trader_id(),
+                Some(*HYPERLIQUID_CLIENT_ID),
+                order.strategy_id(),
+                list,
+                vec![order.init_event().clone()],
+                None,
+                None,
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+            ))
+            .unwrap();
+    } else {
+        client
+            .submit_order(SubmitOrder::from_order(
+                &order,
+                order.trader_id(),
+                Some(*HYPERLIQUID_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+            ))
+            .unwrap();
+    }
+
+    let event = rx.try_recv().unwrap();
+
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+        panic!("Expected OrderDenied, was {event:?}");
+    };
+
+    assert_eq!(denied.client_order_id, order.client_order_id());
+    assert_eq!(denied.reason, "UNSUPPORTED_ORDER_TYPE: STOP_MARKET");
+    assert_eq!(
+        rx.try_recv().unwrap_err(),
+        tokio::sync::mpsc::error::TryRecvError::Empty
+    );
+    assert_eq!(*exchange_count.lock().await, 0);
 }
 
 #[rstest]

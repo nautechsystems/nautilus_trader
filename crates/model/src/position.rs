@@ -2661,16 +2661,25 @@ pub(crate) fn proportion(
     Err(invalid("position proportional allocation overflow"))
 }
 
-fn decimal_quotient(dividend: U512, divisor: U512, scale: u32, negative: bool) -> Option<Decimal> {
+pub(crate) fn decimal_quotient(
+    dividend: U512,
+    divisor: U512,
+    scale: u32,
+    negative: bool,
+) -> Option<Decimal> {
+    let mantissa = u128::try_from(rounded_quotient(dividend, divisor)).ok()?;
+    let mantissa = i128::try_from(mantissa).ok()?;
+    from_raw(if negative { -mantissa } else { mantissa }, scale).ok()
+}
+
+pub(crate) fn rounded_quotient(dividend: U512, divisor: U512) -> U512 {
     let mut quotient = dividend / divisor;
     let doubled = (dividend % divisor) * U512::from(2_u8);
     if doubled > divisor || (doubled == divisor && quotient % U512::from(2_u8) != U512::ZERO) {
         quotient += U512::ONE;
     }
 
-    let mantissa = u128::try_from(quotient).ok()?;
-    let mantissa = i128::try_from(mantissa).ok()?;
-    from_raw(if negative { -mantissa } else { mantissa }, scale).ok()
+    quotient
 }
 
 /// Returns the inverse average price after `qty` of `open_qty` at `avg_px` moves from

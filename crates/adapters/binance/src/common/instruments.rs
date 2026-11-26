@@ -23,6 +23,8 @@ use nautilus_model::identifiers::InstrumentId;
 
 use crate::{common::enums::BinanceProductType, config::BinanceInstrumentProviderConfig};
 
+pub(crate) const CONTRACT_TYPE_INFO_KEY: &str = "contract_type";
+
 /// Normalized Binance instrument selector.
 #[derive(Debug, Clone)]
 pub struct BinanceInstrumentSelector {

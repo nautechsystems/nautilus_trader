@@ -39,7 +39,9 @@ use rust_decimal_macros::dec;
 
 use crate::{
     common::{
-        consts::{KRAKEN_ALTNAME_KEY, KRAKEN_PAIR_DECIMALS_KEY, KRAKEN_VENUE},
+        consts::{
+            KRAKEN_ALTNAME_KEY, KRAKEN_LEVERAGE_TIERS_KEY, KRAKEN_PAIR_DECIMALS_KEY, KRAKEN_VENUE,
+        },
         enums::{
             KrakenFuturesOrderEventType, KrakenFuturesOrderLifecycleStatus, KrakenFuturesOrderType,
             KrakenInstrumentType, KrakenOrderSide, KrakenOrderType, KrakenPositionSide,
@@ -160,7 +162,7 @@ pub fn parse_decimal_opt(value: Option<&str>) -> anyhow::Result<Option<Decimal>>
 }
 
 /// Parse Kraken spot trigger to Nautilus TriggerType.
-fn parse_trigger_type(
+pub(crate) fn parse_trigger_type(
     order_type: OrderType,
     trigger: Option<KrakenSpotTrigger>,
 ) -> Option<TriggerType> {
@@ -267,7 +269,7 @@ pub fn parse_spot_instrument(
         .price_increment(price_increment)
         .size_increment(size_increment)
         .maybe_min_quantity(min_quantity)
-        .maybe_info(pair_info(pair_name, definition, price_increment.precision))
+        .info(pair_info(pair_name, definition, price_increment.precision))
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()
@@ -686,7 +688,7 @@ pub fn parse_millis_timestamp(value: f64, field: &str) -> anyhow::Result<UnixNan
 /// The key is the instrument `raw_symbol`, while `OpenOrders`, `ClosedOrders` and `TradesHistory`
 /// spell the pair with the altname. A client whose instruments arrive through the cache APIs never
 /// sees the `AssetPairs` response, so the alias has to travel with the instrument.
-fn pair_info(pair_name: &str, definition: &AssetPairInfo, price_precision: u8) -> Option<Params> {
+fn pair_info(pair_name: &str, definition: &AssetPairInfo, price_precision: u8) -> Params {
     let mut map = IndexMap::new();
 
     if definition.altname.as_str() != pair_name {
@@ -696,8 +698,12 @@ fn pair_info(pair_name: &str, definition: &AssetPairInfo, price_precision: u8) -
         );
     }
 
+    map.insert(
+        KRAKEN_LEVERAGE_TIERS_KEY.to_owned(),
+        serde_json::json!([definition.leverage_buy, definition.leverage_sell]),
+    );
     insert_price_scale(&mut map, definition, price_precision);
-    (!map.is_empty()).then(|| Params::new(map))
+    Params::new(map)
 }
 
 /// Builds the `info` of a tokenized pair: the wire price scale alone, when it differs from the
@@ -799,7 +805,9 @@ pub fn parse_order_status_report(
     let row_price =
         |value: &str, field: &str| parse_spot_order_price(order_id, value, price_precision, field);
     let price = match order.descr.ordertype {
-        KrakenOrderType::Limit => row_price(&order.descr.price, "descr.price")?,
+        KrakenOrderType::Limit | KrakenOrderType::Iceberg => {
+            row_price(&order.descr.price, "descr.price")?
+        }
         KrakenOrderType::StopLossLimit | KrakenOrderType::TakeProfitLimit => {
             row_price(&order.descr.price2, "descr.price2")?
         }
@@ -819,28 +827,25 @@ pub fn parse_order_status_report(
         | KrakenOrderType::TrailingStopLimit => None,
     };
 
-    let stop_price = order
-        .stopprice
-        .as_deref()
-        .map(|value| row_price(value, "stopprice"))
-        .transpose()?
-        .flatten();
-
     // AddOrder takes a non-trailing conditional order's trigger as its `price`, which the
-    // description holds, so it stands in for a zero `stopprice`
+    // description holds. Its `stopprice` reads zero until the order triggers and then holds the
+    // market price that triggered it, which can differ from the trigger, so it is not read.
     let trigger_price = match order.descr.ordertype {
         KrakenOrderType::StopLoss
         | KrakenOrderType::TakeProfit
         | KrakenOrderType::StopLossLimit
-        | KrakenOrderType::TakeProfitLimit => match stop_price {
-            Some(price) => Some(price),
-            None => row_price(&order.descr.price, "descr.price")?,
-        },
+        | KrakenOrderType::TakeProfitLimit => row_price(&order.descr.price, "descr.price")?,
         KrakenOrderType::Market
         | KrakenOrderType::Limit
+        | KrakenOrderType::Iceberg
         | KrakenOrderType::SettlePosition
         | KrakenOrderType::TrailingStop
-        | KrakenOrderType::TrailingStopLimit => stop_price,
+        | KrakenOrderType::TrailingStopLimit => order
+            .stopprice
+            .as_deref()
+            .map(|value| row_price(value, "stopprice"))
+            .transpose()?
+            .flatten(),
     };
 
     // A LimitIfTouched row with its trigger on the wrong side of its limit states an order
@@ -2080,8 +2085,9 @@ mod tests {
     /// the average fill price. The limit comes from `descr.price` for a limit order and from
     /// `descr.price2` for a stop-loss-limit or take-profit-limit order, or a trailing-stop-limit
     /// order once `misc` marks it `stopped`; a trailing-stop-limit's `limitprice`, the peak price,
-    /// never stands in. The trigger comes from `stopprice`, which a non-trailing order fills only
-    /// once triggered, so `descr.price` stands in before. Each row is a Kraken response listed in
+    /// never stands in. A non-trailing order's trigger comes from `descr.price`, never from
+    /// `stopprice`, which a triggered order fills with the market price that triggered it; a
+    /// trailing order's trigger comes from `stopprice`. Each row is a Kraken response listed in
     /// `test_data/README.md`.
     #[rstest]
     #[case::untriggered_open_orders(
@@ -2122,6 +2128,11 @@ mod tests {
             ("OCAP11-STLMT-000011", Some("0.4464"), Some("0.8929"), None),
             ("OCAP13-TRLMT-000013", Some("0.4465"), Some("0.8930"), None),
         ]
+    )]
+    #[case::stop_loss_limit_filled_past_its_trigger(
+        "http_query_orders_stop_loss_limit_filled.json",
+        usdc_eur_instrument(),
+        &[("OCAP14-STLMT-000014", Some("0.9132"), Some("0.9121"), Some(dec!(0.9122)))]
     )]
     #[case::documented_open_limit_orders(
         "http_open_orders_doc_example.json",
@@ -2185,15 +2196,15 @@ mod tests {
     }
 
     /// An empty price or a relative expression reads as none rather than failing the row. The
-    /// inputs are synthetic: a captured stop-loss row with its `stopprice` replaced, so
-    /// `descr.price` stands in.
+    /// inputs are synthetic: a captured trailing-stop row, whose trigger is its `stopprice`, with
+    /// its `stopprice` replaced.
     #[rstest]
     #[case::empty("")]
     #[case::relative("+1.5%")]
     fn test_parse_order_status_report_reads_an_unpriced_stop_price_as_none(
         #[case] stop_price: &str,
     ) {
-        let order_id = "OCAP02-STOPL-000002";
+        let order_id = "OCAP06-TRAIL-000006";
         let mut order = spot_order_rows("http_open_orders_conditional.json")
             .swap_remove(order_id)
             .unwrap();
@@ -2208,7 +2219,83 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(report.trigger_price, Some(Price::from("1.3402")));
+        assert_eq!(report.trigger_price, None);
+    }
+
+    /// A non-trailing order's trigger reads as none rather than failing the row when its
+    /// `descr.price` is empty or a relative expression. The inputs are synthetic: a captured
+    /// stop-loss row with its `descr.price` replaced.
+    #[rstest]
+    #[case::empty("")]
+    #[case::relative("+1.5%")]
+    fn test_parse_order_status_report_reads_an_unpriced_description_trigger_as_none(
+        #[case] description_price: &str,
+    ) {
+        let order_id = "OCAP02-STOPL-000002";
+        let mut order = spot_order_rows("http_open_orders_conditional.json")
+            .swap_remove(order_id)
+            .unwrap();
+        order.descr.price = description_price.to_string();
+
+        let report = parse_order_status_report(
+            order_id,
+            &order,
+            &usdc_eur_instrument(),
+            AccountId::new("KRAKEN-001"),
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.order_type, OrderType::StopMarket);
+        assert_eq!(report.trigger_price, None);
+    }
+
+    /// A non-trailing order's `stopprice` is not read, so a malformed one cannot fail its row. The
+    /// input is synthetic: the captured filled stop-loss-limit row with its `stopprice` replaced.
+    #[rstest]
+    fn test_parse_order_status_report_ignores_a_non_trailing_stop_price() {
+        let order_id = "OCAP14-STLMT-000014";
+        let mut order = spot_order_rows("http_query_orders_stop_loss_limit_filled.json")
+            .swap_remove(order_id)
+            .unwrap();
+        order.stopprice = Some("abc".to_string());
+
+        let report = parse_order_status_report(
+            order_id,
+            &order,
+            &usdc_eur_instrument(),
+            AccountId::new("KRAKEN-001"),
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.trigger_price, Some(Price::from("0.9121")));
+    }
+
+    /// Kraken documents `iceberg` among the order types of an order row, and an iceberg order is a
+    /// limit order showing part of its quantity, so its row reports a limit at `descr.price`. The
+    /// input is synthetic: a captured limit row with its order type replaced.
+    #[rstest]
+    fn test_parse_order_status_report_reads_an_iceberg_row_as_a_limit_order() {
+        let order_id = "OCAP08-LIMIT-000008";
+        let mut json: serde_json::Value =
+            serde_json::from_str(&load_test_json("http_open_orders_conditional.json")).unwrap();
+        json["result"]["open"][order_id]["descr"]["ordertype"] = "iceberg".into();
+        let response: KrakenResponse<SpotOpenOrdersResult> = serde_json::from_value(json).unwrap();
+        let order = &response.result.unwrap().open[order_id];
+
+        let report = parse_order_status_report(
+            order_id,
+            order,
+            &usdc_eur_instrument(),
+            AccountId::new("KRAKEN-001"),
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.order_type, OrderType::Limit);
+        assert_eq!(report.price, Some(Price::from("0.4467")));
+        assert_eq!(report.trigger_price, None);
     }
 
     /// An untriggered trailing-stop-limit carries no price whatever its `descr.price2` holds, so an

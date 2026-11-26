@@ -482,7 +482,7 @@ fn bench_stream<T>(
     filename: &str,
     records: u64,
 ) where
-    T: dbn::Record + dbn::HasRType + 'static,
+    T: dbn::v3::HasRType + 'static,
 {
     let path = common::data_path(filename);
     bench_stream_path::<T>(group, name, &path, records);
@@ -494,7 +494,7 @@ fn bench_stream_path<T>(
     path: &Path,
     records: u64,
 ) where
-    T: dbn::Record + dbn::HasRType + 'static,
+    T: dbn::v3::HasRType + 'static,
 {
     group.throughput(Throughput::Elements(records));
     group.bench_function(name, |b| {

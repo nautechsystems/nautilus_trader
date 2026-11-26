@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-for command in jq rg; do
+for command in cargo jq rg; do
   if ! command -v "$command" &> /dev/null; then
     echo "ERROR: $command is required for Jiff feature hook tests" >&2
     exit 1
@@ -14,102 +14,116 @@ HOOK="$REPO_ROOT/.pre-commit-hooks/check_jiff_features.sh"
 
 CASE_ROOT=$(mktemp -d)
 trap 'rm -rf "$CASE_ROOT"' EXIT
+export CARGO_NET_OFFLINE=true
 
-mkdir -p "$CASE_ROOT/bin"
-printf '%s\n' \
-  '#!/usr/bin/env bash' \
-  '' \
-  'set -euo pipefail' \
-  '' \
-  "if [ \"\$1\" = \"metadata\" ]; then" \
-  "  if [ \"\${MOCK_JIFF_MODE:-valid}\" = \"patch-violation\" ]; then" \
-  '    printf '\''%s\n'\'' '\''{"packages":[{"manifest_path":"/fixture/patches/example/Cargo.toml","dependencies":[{"name":"jiff","rename":null,"uses_default_features":true,"features":[]}]}]}'\''' \
-  '  else' \
-  '    printf '\''%s\n'\'' '\''{"packages":[]}'\''' \
-  '  fi' \
-  '  exit 0' \
-  'fi' \
-  '' \
-  "if [ \"\$1\" != \"tree\" ]; then" \
-  "  echo \"Unexpected cargo command: \$*\" >&2" \
-  '  exit 2' \
-  'fi' \
-  '' \
-  "case \"\$*\" in" \
-  '  *"-p nautilus-trading"*)' \
-  '    printf '\''jiff feature "%s"\n'\'' alloc perf-inline serde std tz-fat tzdb-bundle-always' \
-  "    if [ \"\${MOCK_JIFF_MODE:-valid}\" = \"feature-violation\" ]; then" \
-  '      printf '\''jiff feature "%s"\n'\'' tz-system' \
-  '    fi' \
-  '    ;;' \
-  '  *"-p nautilus-pyo3"*)' \
-  '    printf '\''jiff feature "%s"\n'\'' alloc default perf-inline serde std tz-fat tz-system tzdb-bundle-always tzdb-bundle-platform tzdb-concatenated tzdb-zoneinfo' \
-  '    ;;' \
-  '  *)' \
-  "    echo \"Unexpected cargo tree package: \$*\" >&2" \
-  '    exit 2' \
-  '    ;;' \
-  'esac' > "$CASE_ROOT/bin/cargo"
-chmod +x "$CASE_ROOT/bin/cargo"
+write_package() {
+  local directory="$1"
+  local name="$2"
+  local version="$3"
+
+  mkdir -p "$directory/src"
+  touch "$directory/src/lib.rs"
+  printf '[package]\nname = "%s"\nversion = "%s"\nedition = "2024"\n' \
+    "$name" "$version" > "$directory/Cargo.toml"
+}
 
 create_case() {
   local name="$1"
-  local declaration="$2"
   local case_dir="$CASE_ROOT/$name"
+  local workspace="$case_dir/workspace"
+  local jiff_declaration='jiff = { workspace = true }'
+  local extra_features=''
 
-  mkdir -p "$case_dir/.pre-commit-hooks" "$case_dir/crates/example" "$case_dir/patches"
-  cp "$HOOK" "$case_dir/.pre-commit-hooks/check_jiff_features.sh"
-  printf '%s\n' '[dependencies]' "$declaration" > "$case_dir/crates/example/Cargo.toml"
+  case "$name" in
+    workspace-violation) jiff_declaration='jiff = { workspace = true, features = ["std"] }' ;;
+    feature-violation) extra_features=', "tz-system"' ;;
+  esac
 
-  printf '%s' "$case_dir"
-}
+  mkdir -p "$workspace/.pre-commit-hooks"
+  cp "$HOOK" "$workspace/.pre-commit-hooks/"
+  cp "$REPO_ROOT/rust-toolchain.toml" "$workspace/"
+  cat > "$workspace/Cargo.toml" << MANIFEST
+[workspace]
+members = ["crates/*"]
+resolver = "3"
 
-run_hook() {
-  local case_dir="$1"
-  local mode="$2"
+[workspace.dependencies]
+jiff = { path = "../jiff-02", default-features = false, features = [
+  "alloc", "perf-inline", "serde", "std", "tz-fat", "tzdb-bundle-always"${extra_features},
+] }
+MANIFEST
 
-  set +e
-  PATH="$CASE_ROOT/bin:$PATH" MOCK_JIFF_MODE="$mode" \
-    bash "$case_dir/.pre-commit-hooks/check_jiff_features.sh" \
-    > "$case_dir/stdout.txt" 2> "$case_dir/stderr.txt"
-  RUN_STATUS=$?
-  set -e
+  write_package "$case_dir/jiff-02" jiff 0.2.0
+  cat >> "$case_dir/jiff-02/Cargo.toml" << 'MANIFEST'
+
+[features]
+default = ["tz-system", "tzdb-bundle-platform", "tzdb-concatenated", "tzdb-zoneinfo"]
+alloc = []
+perf-inline = []
+serde = []
+std = []
+tz-fat = []
+tz-system = []
+tzdb-bundle-always = []
+tzdb-bundle-platform = []
+tzdb-concatenated = []
+tzdb-zoneinfo = []
+MANIFEST
+
+  write_package "$case_dir/jiff-1" jiff 1.0.0
+  write_package "$case_dir/python-time" python-time 0.1.0
+  cat >> "$case_dir/python-time/Cargo.toml" << 'MANIFEST'
+
+[dependencies]
+jiff = { path = "../jiff-02" }
+jiff-next = { package = "jiff", path = "../jiff-1" }
+MANIFEST
+
+  write_package "$workspace/crates/nautilus-trading" nautilus-trading 0.1.0
+  printf '\n[dependencies]\n%s\n' "$jiff_declaration" >> "$workspace/crates/nautilus-trading/Cargo.toml"
+
+  write_package "$workspace/crates/nautilus-pyo3" nautilus-pyo3 0.1.0
+  cat >> "$workspace/crates/nautilus-pyo3/Cargo.toml" << 'MANIFEST'
+
+[dependencies]
+jiff = { workspace = true }
+python-time = { path = "../../../python-time" }
+MANIFEST
+
+  if [[ "$name" == patch-violation ]]; then
+    write_package "$case_dir/patches/example" patched-example 0.1.0
+    printf '\n[dependencies]\njiff = { path = "../../jiff-02" }\n' \
+      >> "$case_dir/patches/example/Cargo.toml"
+    printf 'patched-example = { path = "../../../patches/example" }\n' \
+      >> "$workspace/crates/nautilus-pyo3/Cargo.toml"
+  fi
+
+  (cd "$workspace" && cargo generate-lockfile --offline)
+  printf '%s\n' "$workspace"
 }
 
 expect_failure() {
-  local case_dir="$1"
-  local mode="$2"
-  local reason="$3"
+  local workspace="$1"
+  local reason="$2"
+  local status=0
 
-  run_hook "$case_dir" "$mode"
-  if [ "$RUN_STATUS" -ne 1 ]; then
-    echo "Expected Jiff feature hook to fail in $case_dir"
-    cat "$case_dir/stdout.txt" "$case_dir/stderr.txt"
-    exit 1
-  fi
-  if ! rg -Fq "$reason" "$case_dir/stderr.txt"; then
-    echo "Expected Jiff failure reason not found: $reason"
-    cat "$case_dir/stderr.txt"
+  bash "$workspace/.pre-commit-hooks/check_jiff_features.sh" \
+    > "$workspace/stdout.txt" 2> "$workspace/stderr.txt" || status=$?
+  if [[ "$status" != 1 ]] || ! rg -Fq "$reason" "$workspace/stderr.txt"; then
+    echo "Expected Jiff feature check to fail with: $reason" >&2
+    cat "$workspace/stdout.txt" "$workspace/stderr.txt" >&2
     exit 1
   fi
 }
 
-valid_case=$(create_case "valid" 'jiff = { workspace = true }')
-run_hook "$valid_case" "valid"
-if [ "$RUN_STATUS" -ne 0 ]; then
-  echo "Expected Jiff feature hook to pass valid input"
-  cat "$valid_case/stdout.txt" "$valid_case/stderr.txt"
-  exit 1
-fi
-rg -Fq "Jiff feature policy checks passed" "$valid_case/stdout.txt"
+valid_case=$(create_case valid)
+bash "$valid_case/.pre-commit-hooks/check_jiff_features.sh"
 
-workspace_case=$(create_case "workspace-violation" 'jiff = { workspace = true, features = ["std"] }')
-expect_failure "$workspace_case" "valid" "Workspace crates must inherit Jiff without adding features"
-
-patch_case=$(create_case "patch-violation" 'jiff = { workspace = true }')
-expect_failure "$patch_case" "patch-violation" "Maintained patches must keep Jiff independent of system time zone sources"
-
-feature_case=$(create_case "feature-violation" 'jiff = { workspace = true }')
-expect_failure "$feature_case" "feature-violation" "Jiff feature policy changed for nautilus-trading"
+expect_failure "$(create_case workspace-violation)" \
+  "Workspace crates must inherit Jiff without adding features"
+expect_failure "$(create_case patch-violation)" \
+  "Maintained patches must keep Jiff independent of system time zone sources"
+expect_failure "$(create_case feature-violation)" \
+  "Jiff feature policy changed for nautilus-trading"
 
 echo "Jiff feature hook tests passed"

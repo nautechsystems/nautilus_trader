@@ -81,6 +81,9 @@ use crate::{
     websocket::{enums::OKXWsChannel, messages::OKXFundingRateMsg},
 };
 
+pub(crate) const INST_ID_CODE_INFO_KEY: &str = "inst_id_code";
+pub(crate) const TRADE_QUOTE_CCY_LIST_INFO_KEY: &str = "okx_trade_quote_ccy_list";
+
 pub(crate) fn prefer_rpi_response_fields(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::Object(fields) => {
@@ -2031,7 +2034,7 @@ impl InstrumentParser for SpotInstrumentParser {
 
         // Parse multiplier as product of ct_mult and ct_val
         let multiplier = parse_multiplier_product(definition)?;
-        let info = build_price_limit_info(definition).map(Params::new);
+        let info = build_instrument_info(definition).map(Params::new);
 
         let instrument = CurrencyPair::builder()
             .instrument_id(common.instrument_id)
@@ -2192,7 +2195,7 @@ pub fn parse_swap_instrument(
     let min_notional: Option<Money> = None;
     let max_price = None; // TBD
     let min_price = None; // TBD
-    let info = build_price_limit_info(definition).map(Params::new);
+    let info = build_instrument_info(definition).map(Params::new);
 
     let instrument = CryptoPerpetual::builder()
         .instrument_id(instrument_id)
@@ -2374,8 +2377,7 @@ pub fn is_xperp_rule_type(rule_type: &str) -> bool {
 }
 
 fn build_futures_info(definition: &OKXInstrument) -> Option<Params> {
-    let mut info = build_price_limit_info(definition).unwrap_or_default();
-
+    let mut info = build_instrument_info(definition).unwrap_or_default();
     if !definition.rule_type.is_empty() {
         info.insert(
             "rule_type".to_string(),
@@ -2386,10 +2388,13 @@ fn build_futures_info(definition: &OKXInstrument) -> Option<Params> {
     (!info.is_empty()).then(|| Params::new(info))
 }
 
-fn build_price_limit_info(
+fn build_instrument_info(
     definition: &OKXInstrument,
 ) -> Option<IndexMap<String, serde_json::Value>> {
     let mut info = IndexMap::new();
+    if let Some(code) = definition.inst_id_code {
+        info.insert(INST_ID_CODE_INFO_KEY.to_owned(), code.into());
+    }
 
     insert_non_empty_info(
         &mut info,
@@ -2418,7 +2423,7 @@ fn build_price_limit_info(
 
     if !definition.trade_quote_ccy_list.is_empty() {
         info.insert(
-            "okx_trade_quote_ccy_list".to_string(),
+            TRADE_QUOTE_CCY_LIST_INFO_KEY.to_owned(),
             serde_json::json!(
                 definition
                     .trade_quote_ccy_list
@@ -2592,6 +2597,7 @@ pub fn parse_option_instrument(
         .maybe_margin_maint(margin_maint)
         .exercise_style(ExerciseStyle::European)
         .settlement_type(SettlementType::Cash)
+        .maybe_info(build_instrument_info(definition).map(Params::new))
         .ts_event(ts_init)
         .ts_init(ts_init)
         .build()
@@ -2652,7 +2658,7 @@ fn build_event_contract_info(definition: &OKXInstrument) -> anyhow::Result<Param
 
     if let Some(inst_id_code) = definition.inst_id_code {
         map.insert(
-            "inst_id_code".to_string(),
+            INST_ID_CODE_INFO_KEY.to_owned(),
             serde_json::Value::Number(inst_id_code.into()),
         );
     }
@@ -2865,34 +2871,6 @@ pub(crate) fn parse_account_state_with_completeness(
 /// Converts an optional `UnixNanos` to an optional `Timestamp`.
 pub fn nanos_to_datetime(value: Option<UnixNanos>) -> Option<jiff::Timestamp> {
     value.map(|nanos| nanos.to_datetime_utc())
-}
-
-/// Returns `true` when two instruments carry the same tradable definition,
-/// ignoring event timestamps.
-///
-/// Comparison runs on the serialized form so every venue field, including
-/// the free-form `info` metadata, participates without listing each field.
-pub(crate) fn instrument_definitions_match(a: &InstrumentAny, b: &InstrumentAny) -> bool {
-    fn normalized(instrument: &InstrumentAny) -> Option<serde_json::Value> {
-        let mut value = serde_json::to_value(instrument).ok()?;
-
-        if let Some(definition) = value
-            .as_object_mut()
-            .and_then(|obj| obj.values_mut().next())
-            .and_then(serde_json::Value::as_object_mut)
-        {
-            definition.remove("ts_event");
-            definition.remove("ts_init");
-        }
-
-        Some(value)
-    }
-
-    // A serialization failure compares as changed so updates are never suppressed
-    match (normalized(a), normalized(b)) {
-        (Some(a), Some(b)) => a == b,
-        _ => false,
-    }
 }
 
 #[cfg(test)]

@@ -482,10 +482,9 @@ pub trait ExecutionClient {
         // Default no-op implementation
     }
 
-    /// Handles an instrument update received via the message bus.
+    /// Applies an explicitly supplied instrument definition to the client's local state.
     ///
-    /// Exec clients that need live instrument updates (e.g. for internal maps)
-    /// can override this to process instruments for their venue.
+    /// Clients with local instrument state subscribe to the message bus for live updates.
     fn on_instrument(&mut self, _instrument: InstrumentAny) {
         // Default no-op
     }

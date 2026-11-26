@@ -35,11 +35,90 @@
 //! - Mark prices
 //! - Index prices
 
+use std::time::Duration;
+
+use nautilus_common::{live::sender::EventSender, messages::DataEvent};
+use nautilus_core::AtomicMap;
+use nautilus_model::{
+    identifiers::InstrumentId,
+    instruments::{Instrument, InstrumentAny},
+};
+
 mod futures;
 mod spot;
 
 pub use futures::KrakenFuturesDataClient;
 pub use spot::KrakenSpotDataClient;
+
+fn instrument_refresh_interval() -> tokio::time::Interval {
+    let period = Duration::from_secs(60);
+    let mut interval = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    interval
+}
+
+fn apply_instrument_definitions(
+    cache_http: impl FnOnce(&[InstrumentAny]),
+    cache: &AtomicMap<InstrumentId, InstrumentAny>,
+    sender: &EventSender<DataEvent>,
+    instruments: &[InstrumentAny],
+    publish_unchanged: bool,
+) {
+    let current = cache.load();
+    let mut accepted = Vec::new();
+    let mut published = Vec::new();
+
+    for instrument in instruments {
+        let previous = current.get(&instrument.id());
+        if previous.is_some_and(|previous| previous.ts_init() > instrument.ts_init()) {
+            continue;
+        }
+
+        if publish_unchanged
+            || previous.is_none_or(|previous| instrument_definition_changed(previous, instrument))
+        {
+            published.push(instrument);
+        }
+
+        accepted.push(instrument.clone());
+    }
+
+    if accepted.is_empty() {
+        return;
+    }
+
+    // An unchanged snapshot still advances freshness against overlapping requests
+    cache.rcu(|map| {
+        for instrument in &accepted {
+            map.insert(instrument.id(), instrument.clone());
+        }
+    });
+
+    cache_http(&accepted);
+
+    for instrument in published {
+        if let Err(e) = sender.send(DataEvent::Data(instrument.clone().into())) {
+            log::error!("Failed to send instrument: {e}");
+        }
+    }
+}
+
+fn instrument_definition_changed(previous: &InstrumentAny, current: &InstrumentAny) -> bool {
+    previous.price_precision() != current.price_precision()
+        || previous.size_precision() != current.size_precision()
+        || previous.price_increment() != current.price_increment()
+        || previous.size_increment() != current.size_increment()
+        || previous.multiplier() != current.multiplier()
+        || previous.margin_init() != current.margin_init()
+        || previous.margin_maint() != current.margin_maint()
+        || previous.base_currency() != current.base_currency()
+        || previous.quote_currency() != current.quote_currency()
+        || previous.settlement_currency() != current.settlement_currency()
+        || previous.is_inverse() != current.is_inverse()
+        || previous.min_quantity() != current.min_quantity()
+        || previous.raw_symbol() != current.raw_symbol()
+        || previous.info() != current.info()
+}
 
 #[cfg(test)]
 pub(crate) mod tests {

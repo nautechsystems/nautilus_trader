@@ -69,9 +69,9 @@ def main() -> None:
         )
         .with_reconciliation(reconciliation=True)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
-        .with_timeout_connection(20)
-        .with_timeout_reconciliation(10)
-        .with_timeout_portfolio(10)
+        .with_timeout_connection_secs(20)
+        .with_timeout_reconciliation_secs(10)
+        .with_timeout_portfolio_secs(10)
         .with_timeout_disconnection_secs(10)
         .with_delay_post_stop_secs(5)
         .add_data_client(

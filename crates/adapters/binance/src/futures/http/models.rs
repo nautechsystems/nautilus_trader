@@ -1174,7 +1174,8 @@ impl BinanceFuturesOrder {
                 )
             }
         };
-        let avg_px = parse_avg_px(self.avg_price.as_deref(), filled_qty, price_precision)?;
+
+        let avg_px = parse_avg_px(self.avg_price.as_deref(), filled_qty)?;
 
         let mut report = OrderStatusReport::new(
             account_id,
@@ -1546,7 +1547,8 @@ impl BinanceFuturesAlgoOrder {
         } else {
             None
         };
-        let avg_px = parse_avg_px(self.avg_price.as_deref(), filled_qty, price_precision)?;
+
+        let avg_px = parse_avg_px(self.avg_price.as_deref(), filled_qty)?;
         let trigger_price = self.parse_trigger_price(price_precision)?;
         let trailing_offset = self.parse_trailing_offset()?;
 
@@ -1761,19 +1763,15 @@ impl BinanceFuturesAlgoOrder {
     }
 }
 
-fn parse_avg_px(
-    raw: Option<&str>,
-    filled_qty: Decimal,
-    price_precision: u8,
-) -> anyhow::Result<Option<Decimal>> {
+fn parse_avg_px(raw: Option<&str>, filled_qty: Decimal) -> anyhow::Result<Option<Decimal>> {
     if filled_qty <= Decimal::ZERO {
         return Ok(None);
     }
 
     raw.filter(|price| !price.is_empty())
-        .map(|price| parse_positive_price_at_precision(price, price_precision, "avg_price"))
+        .map(|price| parse_required_decimal(price, "avg_price"))
         .transpose()
-        .map(|price| price.flatten().map(|price| price.as_decimal()))
+        .map(|price| price.filter(|price| *price > Decimal::ZERO))
 }
 
 fn parse_positive_price_at_precision(
@@ -2613,7 +2611,7 @@ mod tests {
         order.status = BinanceOrderStatus::Filled;
         order.executed_qty = "0.001".to_string();
         order.cum_quote = "50.00".to_string();
-        order.avg_price = Some("50000.00".to_string());
+        order.avg_price = Some("50000.005".to_string());
         let account_id = AccountId::from("BINANCE-FUTURES-001");
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
         let ts_init = UnixNanos::from(1_000_000_000_u64);
@@ -2625,14 +2623,14 @@ mod tests {
         assert_eq!(report.price, None);
         assert_eq!(
             report.avg_px,
-            Some(Decimal::from_str_exact("50000.00").unwrap())
+            Some(Decimal::from_str_exact("50000.005").unwrap())
         );
     }
 
     #[rstest]
     fn test_order_to_report_omits_avg_px_without_fills() {
         let mut order = order_with_price("0");
-        order.avg_price = Some("50000.00".to_string());
+        order.avg_price = Some("50000.005".to_string());
         let account_id = AccountId::from("BINANCE-FUTURES-001");
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
         let ts_init = UnixNanos::from(1_000_000_000_u64);

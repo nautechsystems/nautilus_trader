@@ -18,10 +18,14 @@
 use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
 
 use ahash::AHashMap;
-use nautilus_core::UnixNanos;
+use jiff::tz::Offset;
+use nautilus_core::{
+    UnixNanos,
+    datetime::{NANOSECONDS_IN_DAY, NANOSECONDS_IN_SECOND, SECONDS_IN_DAY},
+};
 use nautilus_model::{
     data::greeks::{
-        GreeksData, OptionGreekValues, OptionValuationError, PortfolioGreeks,
+        GreeksData, OPTION_PRICING_YEAR, OptionGreekValues, OptionValuationError, PortfolioGreeks,
         black_scholes_greeks_checked, check_option_inputs, imply_vol_and_greeks_checked,
     },
     enums::{AssetClass, InstrumentClass, OptionKind, PositionSide, PriceType},
@@ -41,6 +45,10 @@ use crate::{
 };
 
 const DEFAULT_INTEREST_RATE: f64 = 0.0425;
+const SECONDS_PER_YEAR: f64 = OPTION_PRICING_YEAR.as_secs_f64();
+const NANOSECONDS_PER_YEAR: f64 = OPTION_PRICING_YEAR.as_u64() as f64;
+const DAYS_PER_YEAR: f64 = SECONDS_PER_YEAR / SECONDS_IN_DAY as f64;
+const LEGACY_DAYS_PER_YEAR: f64 = 365.25;
 
 /// Type alias for a greeks filter function.
 pub type GreeksFilter = Box<dyn Fn(&GreeksData) -> bool>;
@@ -314,7 +322,8 @@ impl PortfolioGreeksParams {
 /// Rho is expressed per percentage point of interest rate ((dV / dRate) / 100).
 /// Theta is expressed in terms of daily changes ((dV / d(T-t)) / 365, where T is the expiry of an option and t is the current time).
 ///
-/// Also note that for ease of implementation we consider that american options (for stock options for example) are european for the computation of greeks.
+/// Uses generalized European Black-Scholes for all exercise styles. For American options,
+/// the model approximates the value without accounting for early exercise.
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct GreeksCalculator {
@@ -353,11 +362,16 @@ impl GreeksCalculator {
     ///
     /// Checks expiration and the option's pricing convention before using cached Greeks.
     /// The option's `underlying_instrument_id`, when set, overrides symbol-based resolution.
-    /// Fresh valuations use the strike-currency curve for discounting.
+    ///
+    /// Fresh valuations use the exact time from `ts_event`, or the clock if unset, to expiry
+    /// on a 365-day basis. Vega time weighting uses `expiry_in_days`.
+    ///
+    /// Discounting uses the strike-currency curve.
     /// Rho holds carry fixed unless a dividend yield or dividend curve defines carry as
     /// `r - q`. Equal interest and dividend rates still use that rate sensitivity.
     /// Shocked cached valuations retain their cached inputs and select carry rate sensitivity
     /// from the current call's dividend yield or available dividend curve.
+    ///
     /// Requested caching and publication use the unshocked option valuation after validation succeeds.
     /// Cached valuations bypass caching and publication, including when shocks are applied.
     ///
@@ -426,7 +440,7 @@ impl GreeksCalculator {
             );
         }
 
-        let ts_event = self.check_option_valuation(
+        let (valuation_time, expiration) = self.check_option_valuation(
             &instrument,
             ts_event,
             spot_shock,
@@ -445,9 +459,10 @@ impl GreeksCalculator {
             check_option_greeks_data(&cached_greeks)?;
             if let Some(pos) = position {
                 cached_greeks.pnl = cached_greeks.price - pos.avg_px_open.as_f64();
+                if !cached_greeks.pnl.is_finite() {
+                    return Err(OptionValuationError::InvalidResult.into());
+                }
             }
-
-            check_option_greeks_data(&cached_greeks)?;
 
             return Ok(cached_greeks);
         }
@@ -462,7 +477,8 @@ impl GreeksCalculator {
             flat_dividend_yield,
             use_cached_greeks,
             update_vol,
-            ts_event,
+            valuation_time,
+            expiration,
             percent_greeks,
             index_instrument_id,
             beta_weights,
@@ -472,8 +488,9 @@ impl GreeksCalculator {
         )?;
 
         let shocked_greeks = if has_shocks {
-            Some(self.apply_option_greeks_shocks(
+            let shocked = self.apply_option_greeks_shocks(
                 &greeks_data,
+                expiration,
                 underlying_instrument_id,
                 db_dr,
                 spot_shock,
@@ -485,18 +502,21 @@ impl GreeksCalculator {
                 vega_time_weight_base,
                 vol_index_instrument_id,
                 vol_beta_weights,
-            )?)
+            )?;
+            check_option_greeks_data(&shocked)?;
+            Some(shocked)
         } else {
             None
         };
 
         let final_greeks = shocked_greeks.as_ref().unwrap_or(&greeks_data);
-        check_option_greeks_data(final_greeks)?;
         let pnl = position.map_or(final_greeks.pnl, |pos| {
             final_greeks.price - pos.avg_px_open.as_f64()
         });
 
-        check_greeks_values(pnl, final_greeks.price, final_greeks.greeks)?;
+        if !pnl.is_finite() {
+            return Err(OptionValuationError::InvalidResult.into());
+        }
 
         if is_fresh {
             self.store_option_greeks(
@@ -520,20 +540,14 @@ impl GreeksCalculator {
         spot_shock: f64,
         vol_shock: f64,
         time_to_expiry_shock: f64,
-    ) -> Result<UnixNanos, OptionValuationError> {
+    ) -> Result<(UnixNanos, UnixNanos), OptionValuationError> {
         let valuation_time = if ts_event == UnixNanos::default() {
             self.clock.borrow().timestamp_ns()
         } else {
             ts_event
         };
 
-        let expiration = instrument
-            .expiration_ns()
-            .ok_or(OptionValuationError::InvalidInput("expiration"))?;
-
-        if valuation_time >= expiration {
-            return Err(OptionValuationError::Expired(instrument.id()));
-        }
+        let expiration = option_expiration(instrument, valuation_time)?;
 
         for (name, value) in [
             ("spot shock", spot_shock),
@@ -545,7 +559,7 @@ impl GreeksCalculator {
             }
         }
 
-        Ok(valuation_time)
+        Ok((valuation_time, expiration))
     }
 
     fn store_option_greeks(&self, data: &GreeksData, underlying: &str, cache: bool, publish: bool) {
@@ -684,7 +698,8 @@ impl GreeksCalculator {
         flat_dividend_yield: Option<f64>,
         use_cached_greeks: bool,
         update_vol: bool,
-        ts_event: UnixNanos,
+        valuation_time: UnixNanos,
+        expiration: UnixNanos,
         percent_greeks: bool,
         index_instrument_id: Option<InstrumentId>,
         beta_weights: Option<&HashMap<InstrumentId, f64>>,
@@ -701,48 +716,32 @@ impl GreeksCalculator {
                 let db_dr = f64::from(u8::from(
                     flat_dividend_yield.is_some()
                         || cache
-                            .yield_curve(&underlying_instrument_id.to_string())
+                            .yield_curve_for_instrument(&underlying_instrument_id)
                             .is_some(),
                 ));
                 return Ok((cached_greeks, db_dr, false));
             }
         }
 
-        let utc_now_ns = if ts_event == UnixNanos::default() {
-            self.clock.borrow().timestamp_ns()
-        } else {
-            ts_event
-        };
-
-        let utc_now = utc_now_ns.to_datetime_utc();
-        let expiry_utc = instrument
-            .expiration_ns()
-            .map_or_default(|ns| ns.to_datetime_utc());
-        let expiry_int = expiry_utc
-            .strftime("%Y%m%d")
-            .to_string()
-            .parse::<i32>()
-            .unwrap_or(0);
-        let raw_days = utc_now.duration_until(expiry_utc).as_hours() / 24;
-        let expiry_in_days = raw_days.max(1) as i32;
-        let expiry_in_years = expiry_in_days as f64 / 365.25;
+        let expiry_date = Offset::UTC.to_datetime(expiration.to_datetime_utc()).date();
+        let expiry_int = i32::from(expiry_date.year()) * 10_000
+            + i32::from(expiry_date.month()) * 100
+            + i32::from(expiry_date.day());
+        let remaining = expiration - valuation_time;
+        let expiry_in_days = remaining.as_days().max(1) as i32;
+        let expiry_in_years = remaining.as_secs_f64() / SECONDS_PER_YEAR;
         let cache = self.cache.borrow();
-        let yield_curve = cache.yield_curve(currency.code.as_str());
-        let interest_rate = match yield_curve {
-            Some(yield_curve) => yield_curve(expiry_in_years),
-            None => flat_interest_rate,
-        };
-
-        let dividend_curve = cache.yield_curve(&underlying_instrument_id.to_string());
+        let interest_rate = cache
+            .yield_curve_ref(currency.code.as_str())
+            .map_or(flat_interest_rate, |curve| curve.get_rate(expiry_in_years));
+        let dividend_yield = cache
+            .yield_curve_for_instrument(&underlying_instrument_id)
+            .map(|curve| curve.get_rate(expiry_in_years))
+            .or(flat_dividend_yield);
         drop(cache);
 
-        let (cost_of_carry, db_dr) = if let Some(dividend_curve) = dividend_curve {
-            (interest_rate - dividend_curve(expiry_in_years), 1.0)
-        } else if let Some(div_yield) = flat_dividend_yield {
-            (interest_rate - div_yield, 1.0)
-        } else {
-            (0.0, 0.0)
-        };
+        let (cost_of_carry, db_dr) =
+            dividend_yield.map_or((0.0, 0.0), |yield_rate| (interest_rate - yield_rate, 1.0));
 
         let multiplier = instrument.multiplier();
         check_float_precision(multiplier.precision)
@@ -829,8 +828,8 @@ impl GreeksCalculator {
                 rho: greeks.rho,
             },
             greeks.itm_prob,
-            utc_now_ns,
-            utc_now_ns,
+            valuation_time,
+            valuation_time,
         );
 
         check_option_greeks_data(&greeks_data)?;
@@ -842,6 +841,7 @@ impl GreeksCalculator {
     fn apply_option_greeks_shocks(
         &self,
         greeks_data: &GreeksData,
+        expiration: UnixNanos,
         underlying_instrument_id: InstrumentId,
         db_dr: f64,
         spot_shock: f64,
@@ -857,9 +857,8 @@ impl GreeksCalculator {
         let underlying_price = greeks_data.underlying_price;
         let shocked_underlying_price = underlying_price + spot_shock;
         let shocked_vol = greeks_data.vol + vol_shock;
-        let shocked_time_to_expiry = greeks_data.expiry_in_years - time_to_expiry_shock;
-        let shocked_expiry_in_days = (shocked_time_to_expiry * 365.25) as i32;
-
+        let (shocked_time_to_expiry, shocked_expiry_in_days) =
+            expiry_after_shock(greeks_data, expiration, time_to_expiry_shock);
         let greeks = black_scholes_greeks_checked(
             shocked_underlying_price,
             greeks_data.interest_rate,
@@ -870,6 +869,7 @@ impl GreeksCalculator {
             shocked_time_to_expiry,
             db_dr,
         )?;
+
         let (delta, gamma, vega) = self.modify_greeks(
             greeks.delta,
             greeks.gamma,
@@ -1205,14 +1205,18 @@ impl GreeksCalculator {
 
     /// Cache a futures spread derived from a call/put pair against a reference future.
     ///
-    /// Both legs must resolve to the same underlying ID. Uses the shared strike-currency yield
-    /// curve rate, with a flat rate of 0.0425 when the curve is absent.
+    /// Both legs must resolve to the same underlying ID. Put-call parity measures the time from
+    /// the clock to expiry on a 365-day basis. It uses the shared strike-currency yield curve
+    /// rate, with a flat rate of 0.0425 when the curve is absent.
     ///
     /// # Errors
     ///
-    /// Returns an error if instruments or prices are missing or inconsistent, the currency convention
-    /// is unsupported, a price exceeds the supported float precision, or the calculated spread
-    /// cannot be applied to the reference price.
+    /// Returns an error if:
+    /// - The pair is at or past expiry.
+    /// - Instruments or prices are missing or inconsistent.
+    /// - The currency convention is unsupported.
+    /// - A price exceeds the supported float precision.
+    /// - The calculated spread cannot be applied to the reference price.
     pub fn cache_futures_spread(
         &self,
         call_instrument_id: InstrumentId,
@@ -1357,8 +1361,13 @@ impl GreeksCalculator {
             && explicit_underlying_id(put_instrument).is_none();
 
         let (call_underlying_id, put_underlying_id) = if same_venue_legacy_pair {
+            let call_underlying_id = spread_underlying_id_on_option_venue(call_instrument)?;
+            if call_instrument.underlying() == put_instrument.underlying() {
+                return Ok(call_underlying_id);
+            }
+
             (
-                spread_underlying_id_on_option_venue(call_instrument)?,
+                call_underlying_id,
                 spread_underlying_id_on_option_venue(put_instrument)?,
             )
         } else {
@@ -1384,18 +1393,15 @@ impl GreeksCalculator {
         call_price: f64,
         put_price: f64,
     ) -> anyhow::Result<f64> {
-        let expiry_utc = call_instrument
-            .expiration_ns()
-            .map_or_default(|ns| ns.to_datetime_utc());
-        let now = self.clock.borrow().timestamp_ns().to_datetime_utc();
-        let expiry_in_days = (now.duration_until(expiry_utc).as_hours() / 24).max(1) as i32;
-        let expiry_in_years = expiry_in_days as f64 / 365.25;
+        let now = self.clock.borrow().timestamp_ns();
+        let expiration = option_expiration(call_instrument, now)?;
+        let expiry_in_years = (expiration - now).as_secs_f64() / SECONDS_PER_YEAR;
         let interest_rate = self
             .cache
             .borrow()
-            .yield_curve(currency.code.as_str())
-            .map_or(DEFAULT_INTEREST_RATE, |yield_curve| {
-                yield_curve(expiry_in_years)
+            .yield_curve_ref(currency.code.as_str())
+            .map_or(DEFAULT_INTEREST_RATE, |curve| {
+                curve.get_rate(expiry_in_years)
             });
 
         let strike = price_as_f64(
@@ -1561,6 +1567,92 @@ fn spread_underlying_id_on_option_venue(
     )))
 }
 
+fn option_expiration(
+    instrument: &InstrumentAny,
+    valuation_time: UnixNanos,
+) -> Result<UnixNanos, OptionValuationError> {
+    let expiration = instrument
+        .expiration_ns()
+        .ok_or(OptionValuationError::InvalidInput("expiration"))?;
+
+    if valuation_time >= expiration {
+        return Err(OptionValuationError::Expired(instrument.id()));
+    }
+
+    Ok(expiration)
+}
+
+#[expect(
+    clippy::float_cmp,
+    reason = "the inferred year basis must reproduce the saved horizon exactly"
+)]
+fn expiry_after_shock(greeks: &GreeksData, expiration: UnixNanos, shock_years: f64) -> (f64, i32) {
+    if shock_years == 0.0 {
+        return (greeks.expiry_in_years, greeks.expiry_in_days);
+    }
+
+    let shocked_years = greeks.expiry_in_years - shock_years;
+
+    let Some(remaining) = expiration
+        .duration_since(&greeks.ts_event)
+        .filter(|remaining| remaining.as_secs_f64() / SECONDS_PER_YEAR == greeks.expiry_in_years)
+    else {
+        let days_per_year =
+            if greeks.expiry_in_years == f64::from(greeks.expiry_in_days) / LEGACY_DAYS_PER_YEAR {
+                LEGACY_DAYS_PER_YEAR
+            } else {
+                DAYS_PER_YEAR
+            };
+
+        return (shocked_years, (shocked_years * days_per_year) as i32);
+    };
+
+    if let Some(shock_nanos) = exact_shock_nanos(shock_years) {
+        let remaining_nanos = i128::from(remaining.as_u64()) - shock_nanos;
+        let days = (remaining_nanos / i128::from(NANOSECONDS_IN_DAY)).clamp(0, i128::from(i32::MAX))
+            as i32;
+        return (remaining_nanos as f64 / NANOSECONDS_PER_YEAR, days);
+    }
+
+    // Use the timestamp boundary to correct rounding in the shocked year fraction
+    let nearest_day = (shocked_years * DAYS_PER_YEAR).round().max(0.0) as i32;
+    let boundary_nanos =
+        i128::from(remaining.as_u64()) - i128::from(nearest_day) * i128::from(NANOSECONDS_IN_DAY);
+    let offset_nanos = shock_remaining_nanos(shock_years, boundary_nanos);
+    if nearest_day == 0 {
+        return (offset_nanos / NANOSECONDS_PER_YEAR, 0);
+    }
+
+    let shocked_days = nearest_day - i32::from(offset_nanos < 0.0);
+    (shocked_years, shocked_days)
+}
+
+#[expect(
+    clippy::float_cmp,
+    reason = "shocks expressed in exact time units must round-trip through years exactly"
+)]
+fn exact_shock_nanos(shock_years: f64) -> Option<i128> {
+    // Multiples of 1/512 second are both exact binary fractions and whole nanoseconds
+    const FRACTIONS_PER_SECOND: u64 = 1 << NANOSECONDS_IN_SECOND.trailing_zeros();
+    const FRACTIONS_PER_YEAR: f64 = SECONDS_PER_YEAR * FRACTIONS_PER_SECOND as f64;
+    const NANOSECONDS_PER_FRACTION: i128 = (NANOSECONDS_IN_SECOND / FRACTIONS_PER_SECOND) as i128;
+
+    let fractions = (shock_years * FRACTIONS_PER_YEAR).round() as i64;
+    (shock_years == fractions as f64 / FRACTIONS_PER_YEAR)
+        .then(|| i128::from(fractions) * NANOSECONDS_PER_FRACTION)
+}
+
+fn shock_remaining_nanos(shock_years: f64, boundary_nanos: i128) -> f64 {
+    let nanos_per_second = i128::from(NANOSECONDS_IN_SECOND);
+    let boundary_seconds = boundary_nanos.div_euclid(nanos_per_second) as f64;
+    let boundary_offset_nanos = boundary_nanos.rem_euclid(nanos_per_second) as f64;
+    let shock_offset_nanos =
+        shock_years.mul_add(SECONDS_PER_YEAR, -boundary_seconds) * NANOSECONDS_IN_SECOND as f64;
+
+    // Resolve the boundary at the clock's nanosecond resolution
+    (boundary_offset_nanos - shock_offset_nanos).round()
+}
+
 fn option_valuation_currency(instrument: &InstrumentAny) -> Result<Currency, OptionValuationError> {
     let currency = instrument
         .strike_currency()
@@ -1704,6 +1796,7 @@ mod tests {
     use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
     use jiff::{Timestamp, civil::Date, tz::Offset};
+    use nautilus_core::DurationNanos;
     #[cfg(feature = "defi")]
     use nautilus_model::{data::TradeTick, enums::AggressorSide};
     use nautilus_model::{
@@ -3555,47 +3648,97 @@ mod tests {
             .unwrap();
 
         assert_eq!(greeks.expiry_in_days, 30);
-        assert!((greeks.expiry_in_years - 30.0 / 365.25).abs() < 1e-9);
+        assert_eq!(greeks.expiry, 20_250_407);
+        assert!((greeks.expiry_in_years - 30.0 / 365.0).abs() < 1e-9);
     }
 
     #[rstest]
-    fn test_expiry_in_days_same_day_clamped_to_one() {
-        let now = utc_timestamp(2025, 3, 8, 12, 0, 0);
-        let expiry_same_day = utc_timestamp(2025, 3, 8, 18, 0, 0);
-        let now_ns = UnixNanos::from(now);
-        let expiry_ns = UnixNanos::from(expiry_same_day);
-        let option = option_with_expiration("AAPL250308C00150000.OPRA", expiry_ns);
+    #[case::one_hour(3_600_000_000_000)]
+    #[case::one_day(86_400_000_000_000)]
+    #[case::forty_seven_hours(169_200_000_000_000)]
+    #[case::one_nanosecond(1)]
+    fn test_instrument_greeks_uses_fractional_expiry(#[case] remaining_ns: u64) {
+        let now = UnixNanos::from(utc_timestamp(2025, 3, 8, 12, 0, 0));
+        let expiration = now + DurationNanos::new(remaining_ns);
+        let option = option_with_expiration("AAPL250308C00150000.OPRA", expiration);
         let option_id = option.id();
         let underlying_id = InstrumentId::from("AAPL.OPRA");
-        let cache = setup_cache_with_option_and_quotes(option, underlying_id, now_ns);
+        let cache = setup_cache_with_option_and_quotes(option, underlying_id, now);
+        let tenors = vec![0.0, 0.002, 0.006];
+
+        let interest_curve = YieldCurve::new(
+            "USD".to_string(),
+            tenors.clone(),
+            vec![0.02, 0.04, 0.05],
+            now,
+            now,
+        );
+
+        let dividend_curve = YieldCurve::new(
+            underlying_id.to_string(),
+            tenors,
+            vec![0.005, 0.01, 0.03],
+            now,
+            now,
+        );
+
+        cache
+            .borrow_mut()
+            .add_yield_curve(interest_curve.clone())
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_yield_curve(dividend_curve.clone())
+            .unwrap();
         let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let calculator = GreeksCalculator::new(cache, clock);
 
-        let greeks = calculator
-            .instrument_greeks(
-                option_id,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(now_ns),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap();
+        let mut params = InstrumentGreeksParams::builder()
+            .instrument_id(option_id)
+            .ts_event(now)
+            .vega_time_weight_base(4)
+            .build();
+        let greeks = params.calculate(&calculator).unwrap();
+        params.spot_shock = 1.0;
+        let shocked = params.calculate(&calculator).unwrap();
+        let years = remaining_ns as f64 / 31_536_000_000_000_000.0;
+        let rate = interest_curve.get_rate(years);
+        let carry = rate - dividend_curve.get_rate(years);
+        let expected =
+            imply_vol_and_greeks_checked(150.05, rate, carry, true, 149.0, years, 10.55, 1.0, None)
+                .unwrap();
+        let expected_shocked = black_scholes_greeks_checked(
+            151.05,
+            rate,
+            carry,
+            expected.vol,
+            true,
+            149.0,
+            years,
+            1.0,
+        )
+        .unwrap();
 
         assert_eq!(greeks.expiry_in_days, 1);
-        assert!((greeks.expiry_in_years - 1.0 / 365.25).abs() < 1e-9);
+        assert_eq!(greeks.expiry_in_years, years);
+        assert_eq!(greeks.interest_rate, rate);
+        assert_eq!(greeks.cost_of_carry, carry);
+        assert_eq!(greeks.vol, expected.vol);
+        assert_eq!(greeks.price, expected.price);
+        assert_eq!(greeks.itm_prob, expected.itm_prob);
+        assert_eq!(
+            greeks.greeks,
+            OptionGreekValues {
+                delta: expected.delta,
+                gamma: expected.gamma,
+                vega: expected.vega * 2.0,
+                theta: expected.theta,
+                rho: expected.rho,
+            }
+        );
+        assert_eq!(shocked.expiry_in_days, 1);
+        assert_eq!(shocked.expiry_in_years, years);
+        assert_eq!(shocked.vega, expected_shocked.vega * 2.0);
     }
 
     #[rstest]
@@ -4081,7 +4224,7 @@ mod tests {
             return;
         }
 
-        let expected_underlying = 150.0 + (0.0425_f64 * (30.0 / 365.25)).exp() * (8.50 - 3.33);
+        let expected_underlying = 150.0 + (0.0425_f64 * (30.0 / 365.0)).exp() * (8.50 - 3.33);
         let expected_cached_underlying = reference_future.make_price(expected_underlying);
         assert_eq!(result.unwrap(), expected_cached_underlying);
         assert_eq!(
@@ -4224,7 +4367,7 @@ mod tests {
             .unwrap();
 
         let expected_underlying = reference_future
-            .make_price(150.0 + (0.0425_f64 * (30.0 / 365.25)).exp() * (8.50 - 3.33))
+            .make_price(150.0 + (0.0425_f64 * (30.0 / 365.0)).exp() * (8.50 - 3.33))
             .as_f64();
         assert_eq!(greeks.underlying_price, expected_underlying);
     }
@@ -4399,10 +4542,14 @@ mod tests {
     /// Builds a calculator over the standard option/underlying quote pair used by the
     /// `instrument_greeks` tests, plus the option id to price.
     fn option_calculator() -> (GreeksCalculator, InstrumentId, UnixNanos) {
-        let now = utc_timestamp(2025, 3, 8, 12, 0, 0);
-        let expiry = now + jiff::SignedDuration::from_hours(24 * 30);
-        let now_ns = UnixNanos::from(now);
-        let option = option_with_expiration("AAPL250417C00150000.OPRA", UnixNanos::from(expiry));
+        option_calculator_with_time_to_expiry(DurationNanos::from_days(30))
+    }
+
+    fn option_calculator_with_time_to_expiry(
+        remaining: DurationNanos,
+    ) -> (GreeksCalculator, InstrumentId, UnixNanos) {
+        let now_ns = UnixNanos::from(utc_timestamp(2025, 3, 8, 12, 0, 0));
+        let option = option_with_expiration("AAPL250417C00150000.OPRA", now_ns + remaining);
         let option_id = option.id();
         let cache =
             setup_cache_with_option_and_quotes(option, InstrumentId::from("AAPL.OPRA"), now_ns);
@@ -4541,18 +4688,94 @@ mod tests {
     }
 
     #[rstest]
-    fn test_instrument_greeks_records_the_shocked_market_state() {
-        let (calculator, option_id, now_ns) = option_calculator();
+    #[case::multiple_days(DurationNanos::from_days(30), 0.01, 26)]
+    #[case::whole_day(DurationNanos::from_days(30), 29.0 / 365.0, 1)]
+    #[case::below_whole_day(DurationNanos::from_days(30), 2_505_600.000_000_001 / 31_536_000.0, 0)]
+    #[case::subday(DurationNanos::from_days(30), 29.5 / 365.0, 0)]
+    #[case::decimal_day_shock_preserves_day_boundary(DurationNanos::from_hours(26) + DurationNanos::from_mins(24), 0.1 / 365.0, 1)]
+    #[case::whole_day_after_47_day_shock(DurationNanos::from_days(48), 47.0 / 365.0, 1)]
+    #[case::whole_day_after_91_day_shock(DurationNanos::from_days(92), 91.0 / 365.0, 1)]
+    #[case::long_horizon_one_day_shock(DurationNanos::from_days(184), 1.0 / 365.0, 183)]
+    #[case::whole_day_after_half_year_shock(DurationNanos::new(15_854_400_000_000_000), 0.5, 1)]
+    #[case::whole_day_after_exact_fractional_shock(
+        DurationNanos::new(15_977_587_500_000_000),
+        0.50390625,
+        1
+    )]
+    #[case::below_whole_day_after_exact_fractional_shock(
+        DurationNanos::new(15_977_587_499_999_999),
+        0.50390625,
+        0
+    )]
+    #[case::whole_day_after_subsecond_shock(DurationNanos::new(8_121_600_500_000_000), 8_035_200.5 / 31_536_000.0, 1)]
+    #[case::whole_day_after_105_day_subsecond_shock(
+        DurationNanos::new(9_158_400_500_000_000),
+        9_072_000.5 / 31_536_000.0,
+        1
+    )]
+    #[case::below_whole_day_after_105_day_subsecond_shock(
+        DurationNanos::new(9_158_400_499_999_999),
+        9_072_000.5 / 31_536_000.0,
+        0
+    )]
+    #[case::below_whole_day_after_106_day_subsecond_shock(
+        DurationNanos::new(9_244_800_499_999_999),
+        9_158_400.5 / 31_536_000.0,
+        0
+    )]
+    #[case::whole_day_after_200_day_subsecond_shock(
+        DurationNanos::new(17_366_400_500_000_000),
+        17_280_000.5 / 31_536_000.0,
+        1
+    )]
+    #[case::below_whole_day_after_200_day_subsecond_shock(
+        DurationNanos::new(17_366_400_499_999_999),
+        17_280_000.5 / 31_536_000.0,
+        0
+    )]
+    #[case::below_whole_day_after_half_year_shock(
+        DurationNanos::new(15_854_399_999_999_999),
+        0.5,
+        0
+    )]
+    fn test_instrument_greeks_records_the_shocked_market_state(
+        #[case] remaining: DurationNanos,
+        #[case] time_shock: f64,
+        #[case] expiry_in_days: i32,
+        #[values(false, true)] use_cached: bool,
+    ) {
+        let (calculator, option_id, now_ns) = option_calculator_with_time_to_expiry(remaining);
 
-        let unshocked = option_greeks_with_shocks(&calculator, option_id, now_ns, None, None, None);
-        let shocked = option_greeks_with_shocks(
-            &calculator,
-            option_id,
-            now_ns,
-            Some(5.0),
-            Some(0.05),
-            Some(0.01),
-        );
+        let mut params = InstrumentGreeksParams::builder()
+            .instrument_id(option_id)
+            .ts_event(now_ns)
+            .cache_greeks(true)
+            .vega_time_weight_base(4)
+            .build();
+        let unshocked = params.calculate(&calculator).unwrap();
+        params.cache_greeks = false;
+        params.use_cached_greeks = use_cached;
+        params.spot_shock = 5.0;
+        params.vol_shock = 0.05;
+        params.time_to_expiry_shock = time_shock;
+        let shocked = params.calculate(&calculator).unwrap();
+        let expected = black_scholes_greeks_checked(
+            155.05,
+            unshocked.interest_rate,
+            unshocked.cost_of_carry,
+            unshocked.vol + 0.05,
+            true,
+            149.0,
+            unshocked.expiry_in_years - time_shock,
+            0.0,
+        )
+        .unwrap();
+
+        let vega_weight = if expiry_in_days == 0 {
+            1.0
+        } else {
+            (4.0 / f64::from(expiry_in_days)).sqrt()
+        };
 
         // The underlying mid of the 150.00 / 150.10 quote plus the spot shock.
         assert_eq!(scaled(unshocked.underlying_price), 150_050_000_000_000.0);
@@ -4560,10 +4783,116 @@ mod tests {
         assert_eq!(scaled(shocked.vol), scaled(unshocked.vol + 0.05));
         assert_eq!(
             scaled(shocked.expiry_in_years),
-            scaled(unshocked.expiry_in_years - 0.01)
+            scaled(unshocked.expiry_in_years - time_shock)
         );
-        assert_eq!(unshocked.expiry_in_days, 30);
-        assert_eq!(shocked.expiry_in_days, 26);
+        assert_eq!(unshocked.expiry_in_days, remaining.as_days() as i32);
+        assert_eq!(shocked.expiry_in_days, expiry_in_days);
+        assert_eq!(shocked.vega, expected.vega * vega_weight);
+    }
+
+    #[rstest]
+    #[case::decimal_day_shock_at_expiry(
+        25_920_000_000_000,
+        0.3 / 365.0,
+        Err(OptionValuationError::InvalidInput("time to expiry"))
+    )]
+    #[case::decimal_second_shock_before_expiry(
+        17_280_000_200_000_001,
+        17_280_000.2 / 31_536_000.0,
+        Ok((2.0 / 31_536_000_000_000_000.0, 0))
+    )]
+    #[case::whole_seconds_at_expiry(
+        31_536_000_000_000_000,
+        1.0,
+        Err(OptionValuationError::InvalidInput("time to expiry"))
+    )]
+    #[case::whole_seconds_before_expiry(
+        31_536_000_000_000_001,
+        1.0,
+        Ok((1.0 / 31_536_000_000_000_000.0, 0))
+    )]
+    #[case::whole_seconds_two_nanos_before_expiry(
+        31_536_000_000_000_002,
+        1.0,
+        Ok((2.0 / 31_536_000_000_000_000.0, 0))
+    )]
+    #[case::fractional_seconds_at_expiry(
+        31_659_187_500_000_000,
+        1.00390625,
+        Err(OptionValuationError::InvalidInput("time to expiry"))
+    )]
+    #[case::fractional_seconds_before_expiry(
+        31_659_187_500_000_001,
+        1.00390625,
+        Ok((1.0 / 31_536_000_000_000_000.0, 0))
+    )]
+    fn test_instrument_greeks_time_shock_near_expiry(
+        #[case] remaining_nanos: u64,
+        #[case] time_shock: f64,
+        #[case] expected: Result<(f64, i32), OptionValuationError>,
+        #[values(false, true)] use_cached: bool,
+    ) {
+        let remaining = DurationNanos::new(remaining_nanos);
+        let (calculator, option_id, now) = option_calculator_with_time_to_expiry(remaining);
+        let mut params = InstrumentGreeksParams::builder()
+            .instrument_id(option_id)
+            .ts_event(now)
+            .cache_greeks(use_cached)
+            .vega_time_weight_base(4)
+            .build();
+        params.calculate(&calculator).unwrap();
+        params.use_cached_greeks = use_cached;
+        params.cache_greeks = false;
+        params.time_to_expiry_shock = time_shock;
+
+        let result = params
+            .calculate(&calculator)
+            .map(|greeks| (greeks.expiry_in_years, greeks.expiry_in_days))
+            .map_err(|e| e.downcast::<OptionValuationError>().unwrap());
+
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::subday(DurationNanos::from_hours(29), 5.0 / (24.0 * 365.0), 0)]
+    #[case::whole_day(DurationNanos::from_days(2), 1.0 / 365.25, 1)]
+    fn test_instrument_greeks_time_shock_uses_saved_horizon_for_legacy_greeks(
+        #[case] remaining: DurationNanos,
+        #[case] time_shock: f64,
+        #[case] expiry_in_days: i32,
+    ) {
+        let (calculator, option_id, now) = option_calculator_with_time_to_expiry(remaining);
+        let mut params = InstrumentGreeksParams::builder()
+            .instrument_id(option_id)
+            .ts_event(now)
+            .vega_time_weight_base(4)
+            .build();
+        let mut cached = params.calculate(&calculator).unwrap();
+        let legacy_years = f64::from(cached.expiry_in_days) / 365.25;
+        cached.expiry_in_years = legacy_years;
+        let shocked_years = legacy_years - time_shock;
+        let expected = black_scholes_greeks_checked(
+            cached.underlying_price,
+            cached.interest_rate,
+            cached.cost_of_carry,
+            cached.vol,
+            cached.is_call,
+            cached.strike,
+            shocked_years,
+            0.0,
+        )
+        .unwrap();
+
+        let vega_weight = if expiry_in_days == 0 { 1.0 } else { 2.0 };
+        calculator.cache.borrow_mut().add_greeks(cached).unwrap();
+
+        params.use_cached_greeks = true;
+        params.time_to_expiry_shock = time_shock;
+        let shocked = params.calculate(&calculator).unwrap();
+
+        assert_eq!(shocked.expiry_in_years, shocked_years);
+        assert_eq!(shocked.expiry_in_days, expiry_in_days);
+        assert_eq!(shocked.vega, expected.vega * vega_weight);
     }
 
     #[rstest]
@@ -5125,6 +5454,88 @@ mod tests {
         ]
     }
 
+    #[rstest]
+    #[case::one_hour(3_600_000_000_000, 1.0)]
+    #[case::one_day(86_400_000_000_000, 1.0)]
+    #[case::forty_seven_hours(169_200_000_000_000, 1.0)]
+    // Make the one-nanosecond rate adjustment observable at the futures price precision
+    #[case::one_nanosecond(1, 1.0e15)]
+    fn test_implied_future_uses_fractional_expiry(
+        #[case] remaining_ns: u64,
+        #[case] rate_scale: f64,
+    ) {
+        let now = spread_now_ns();
+        let expiration = now + DurationNanos::new(remaining_ns);
+        let mut call = spread_call();
+        let mut put = spread_put();
+        call.expiration_ns = expiration;
+        put.expiration_ns = expiration;
+        let call_id = call.id();
+        let put_id = put.id();
+        let reference = spread_reference_future();
+        let reference_id = reference.id();
+        let call = call.into_any();
+        let calculator = spread_calculator(
+            vec![call.clone(), put.into_any(), reference.clone().into_any()],
+            spread_quotes(),
+        );
+
+        let curve = YieldCurve::new(
+            "USD".to_string(),
+            vec![0.0, 0.002, 0.006],
+            vec![0.1 * rate_scale, 0.2 * rate_scale, 0.4 * rate_scale],
+            now,
+            now,
+        );
+
+        calculator
+            .cache
+            .borrow_mut()
+            .add_yield_curve(curve.clone())
+            .unwrap();
+
+        let price = calculator
+            .calculate_implied_future_price(&call, Currency::USD(), 8.50, 3.33)
+            .unwrap();
+        let cached_price = calculator
+            .cache_futures_spread(call_id, put_id, reference_id)
+            .unwrap();
+        let years = remaining_ns as f64 / 31_536_000_000_000_000.0;
+        let expected = 150.0 + (curve.get_rate(years) * years).exp() * (8.50 - 3.33);
+
+        assert_eq!(price, expected);
+        assert_eq!(cached_price, reference.make_price(expected));
+    }
+
+    #[rstest]
+    #[case::at_expiry(0)]
+    #[case::after_expiry(1)]
+    fn test_cache_futures_spread_rejects_expired_pair(#[case] elapsed_ns: u64) {
+        let expiration = spread_now_ns() - DurationNanos::new(elapsed_ns);
+        let mut call = spread_call();
+        let mut put = spread_put();
+        call.expiration_ns = expiration;
+        put.expiration_ns = expiration;
+        let call_id = call.id();
+        let put_id = put.id();
+        let reference = spread_reference_future();
+        let reference_id = reference.id();
+        let calculator = spread_calculator(
+            vec![call.into_any(), put.into_any(), reference.into_any()],
+            spread_quotes(),
+        );
+
+        let error = calculator
+            .cache_futures_spread(call_id, put_id, reference_id)
+            .unwrap_err();
+
+        assert_eq!(
+            error.downcast_ref::<OptionValuationError>(),
+            Some(&OptionValuationError::Expired(call_id))
+        );
+        assert!(calculator.cached_futures_spreads.borrow().is_empty());
+    }
+
     fn cache_spread_error(instruments: Vec<InstrumentAny>, quotes: Vec<QuoteTick>) -> String {
         spread_calculator(instruments, quotes)
             .cache_futures_spread(
@@ -5237,7 +5648,7 @@ mod tests {
             .calculate(&calculator)
             .unwrap();
         let portfolio = greeks.to_portfolio_greeks();
-        let years = 30.0 / 365.25;
+        let years = 30.0 / 365.0;
         let expected = 150.0 + (rate * years).exp() * (8.50 - 3.33);
         let expected = spread_reference_future().make_price(expected);
         let unit = imply_vol_and_greeks_checked(
@@ -5948,7 +6359,7 @@ mod tests {
             cached.underlying_price = 16000.0;
             cached.vol = 0.2;
             cached.expiry_in_days = 30;
-            cached.expiry_in_years = 30.0 / 365.25;
+            cached.expiry_in_years = 30.0 / 365.0;
             calculator.cache.borrow_mut().add_greeks(cached).unwrap();
         }
 

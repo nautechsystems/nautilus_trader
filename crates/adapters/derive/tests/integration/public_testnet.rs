@@ -43,13 +43,17 @@ use nautilus_network::websocket::TransportBackend;
 use rstest::rstest;
 
 #[rstest]
-#[case::testnet(DeriveEnvironment::Testnet)]
-#[case::mainnet(DeriveEnvironment::Mainnet)]
+#[case::testnet(DeriveEnvironment::Testnet, "ETH-PERP")]
+#[case::mainnet(DeriveEnvironment::Mainnet, "ETH-PERP")]
+#[case::testnet_rwa(DeriveEnvironment::Testnet, "NVDA-PERP")]
 #[tokio::test]
 #[ignore = "requires Derive public network access; mainnet requires an isolated NZ route"]
-async fn test_public_v3_book_snapshots(#[case] environment: DeriveEnvironment) {
+async fn test_public_v3_book_snapshots(
+    #[case] environment: DeriveEnvironment,
+    #[case] instrument_name: &str,
+) {
     let http = DeriveHttpClient::new(urls::rest_url(environment), Some(15), None, None).unwrap();
-    let definition = http.get_instrument("ETH-PERP").await.unwrap();
+    let definition = http.get_instrument(instrument_name).await.unwrap();
     let instrument = parse_derive_instrument_any(&definition, UnixNanos::from(1))
         .unwrap()
         .unwrap();
@@ -59,7 +63,7 @@ async fn test_public_v3_book_snapshots(#[case] environment: DeriveEnvironment) {
     let mut events = ws_client.take_event_receiver().unwrap();
     let validation = async {
         ws_client
-            .subscribe_orderbook("ETH-PERP", "1", "10")
+            .subscribe_orderbook(instrument_name, "1", "10")
             .await
             .unwrap();
 
@@ -86,7 +90,10 @@ async fn test_public_v3_book_snapshots(#[case] environment: DeriveEnvironment) {
             UnixNanos::from(2),
         )
         .unwrap();
-        assert_eq!(msg.channel.as_str(), "orderbook.ETH-PERP.1.10");
+        assert_eq!(
+            msg.channel.as_str(),
+            format!("orderbook.{instrument_name}.1.10")
+        );
         assert_eq!(deltas.instrument_id, instrument.id());
         assert_eq!(depth.instrument_id, instrument.id());
         assert_eq!(deltas.sequence, depth.sequence);
@@ -108,11 +115,11 @@ async fn test_public_v3_book_snapshots(#[case] environment: DeriveEnvironment) {
         }
 
         ws_client
-            .unsubscribe_orderbook("ETH-PERP", "1", "10")
+            .unsubscribe_orderbook(instrument_name, "1", "10")
             .await
             .unwrap();
         println!(
-            "Derive {environment:?}: full snapshot decoded into deltas and depth; unsubscribed"
+            "Derive {environment:?} {instrument_name}: decoded book deltas and depth, then unsubscribed"
         );
     };
 
@@ -122,6 +129,28 @@ async fn test_public_v3_book_snapshots(#[case] environment: DeriveEnvironment) {
         .expect("book validation shutdown exceeds five seconds")
         .unwrap();
     result.expect("book validation exceeds 30 seconds");
+}
+
+#[tokio::test]
+#[ignore = "requires Derive public testnet network access"]
+async fn test_public_v3_rwa_discovery() {
+    let http = DeriveHttpClient::new(REST_URL_TESTNET, Some(15), None, None).unwrap();
+    let mut provider = DeriveInstrumentProvider::new(http, vec!["NVDA".to_string()]);
+    tokio::time::timeout(Duration::from_secs(30), provider.load_all(None))
+        .await
+        .expect("RWA discovery exceeds 30 seconds")
+        .unwrap();
+
+    let perp_id = InstrumentId::from("NVDA-PERP.DERIVE");
+    let now = get_atomic_clock_realtime().get_time_ns();
+    assert!(matches!(
+        provider.store().find(&perp_id),
+        Some(InstrumentAny::CryptoPerpetual(_))
+    ));
+    assert!(provider.store().list_all().iter().any(|instrument| {
+        matches!(instrument, InstrumentAny::CryptoOption(option)
+            if option.underlying.code.as_str() == "NVDA" && option.expiration_ns > now)
+    }));
 }
 
 #[tokio::test]

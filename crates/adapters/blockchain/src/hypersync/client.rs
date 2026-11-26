@@ -25,23 +25,23 @@ use std::{
 use ahash::AHashMap;
 use alloy::primitives::Address;
 use anyhow::Context;
-use futures_util::Stream;
-use hypersync_client::{
-    StreamConfig,
-    net_types::{BlockField, BlockSelection, FieldSelection, Query},
-    simple_types::Log,
-};
+use futures_util::{Stream, StreamExt};
 use nautilus_common::config::{ConfigError, check_non_empty_field};
-use nautilus_core::{consts::NAUTILUS_USER_AGENT, hex};
+use nautilus_core::hex;
 use nautilus_live::task::{TaskJoinOutcome, TaskSlot, finish_task};
 use nautilus_model::{
     defi::{Block, Blockchain, DexType, SharedChain},
     identifiers::InstrumentId,
 };
+use uuid::Uuid;
 
+use super::{
+    HypersyncLog,
+    transform::transform_hypersync_block,
+    wire::{Batch, FieldSelection, JsonClient, Query, RequestError},
+};
 use crate::{
     exchanges::{extended::DexExtended, get_dex_extended},
-    hypersync::transform::transform_hypersync_block,
     rpc::{http::validate_execution_endpoint, types::BlockchainMessage},
 };
 
@@ -57,21 +57,18 @@ pub enum PoolEventStreamItem {
     /// A block referenced by subsequent logs.
     Block(Block),
     /// A contract event log.
-    Log(Log),
+    Log(HypersyncLog),
 }
 
 /// The interval in milliseconds at which to check for new blocks when waiting
 /// for the hypersync to index the block.
 const BLOCK_POLLING_INTERVAL_MS: u64 = 50;
 
-/// Timeout in seconds for HyperSync HTTP requests.
-const HYPERSYNC_REQUEST_TIMEOUT_SECS: u64 = 30;
-
 /// Timeout in seconds for graceful task shutdown during disconnect.
 /// If the task doesn't finish within this time, it will be forcefully aborted.
 const DISCONNECT_TIMEOUT_SECS: u64 = 5;
 
-/// Delay before restarting a DEX event stream after it reaches the current indexed tip.
+/// Minimum delay before restarting a DEX event stream or retrying a failed height request.
 const DEX_EVENT_STREAM_RETRY_DELAY_MS: u64 = 1_000;
 
 /// A client for interacting with a HyperSync API to retrieve blockchain data.
@@ -79,8 +76,8 @@ const DEX_EVENT_STREAM_RETRY_DELAY_MS: u64 = 1_000;
 pub struct HyperSyncClient {
     /// The target blockchain identifier (e.g. Ethereum, Arbitrum).
     chain: SharedChain,
-    /// The underlying HyperSync Rust client for making API requests.
-    client: Arc<hypersync_client::Client>,
+    /// HTTP transport for JSON queries and archive height.
+    client: Arc<JsonClient>,
     /// Background task handle for the block subscription task.
     blocks_task: TaskSlot<()>,
     /// Cancellation token for the blocks subscription task.
@@ -107,8 +104,6 @@ impl HyperSyncClient {
         tx: Option<tokio::sync::mpsc::UnboundedSender<BlockchainMessage>>,
         cancellation_token: tokio_util::sync::CancellationToken,
     ) -> anyhow::Result<Self> {
-        let mut config = hypersync_client::ClientConfig::default();
-
         let hypersync_url = chain
             .hypersync_url
             .as_deref()
@@ -116,18 +111,16 @@ impl HyperSyncClient {
         let hypersync_url = validate_execution_endpoint(hypersync_url, "HyperSync")
             .map_err(|e| ConfigError::invalid_value("chain.hypersync_url", e.to_string()))?;
 
-        config.url = hypersync_url.to_string();
-        config.api_token = std::env::var(API_TOKEN_ENV).map_err(|e| match e {
+        let api_token = std::env::var(API_TOKEN_ENV).map_err(|e| match e {
             VarError::NotPresent => ConfigError::missing_field(API_TOKEN_ENV),
             VarError::NotUnicode(_) => ConfigError::invalid_format(API_TOKEN_ENV, API_TOKEN_FORMAT),
         })?;
 
-        check_non_empty_field(API_TOKEN_ENV, &config.api_token)?;
+        check_non_empty_field(API_TOKEN_ENV, &api_token)?;
 
-        config
-            .validate()
+        Uuid::parse_str(&api_token)
             .map_err(|_| ConfigError::invalid_format(API_TOKEN_ENV, API_TOKEN_FORMAT))?;
-        let client = hypersync_client::Client::new_with_agent(config, NAUTILUS_USER_AGENT)
+        let client = JsonClient::new(&hypersync_url, &api_token)
             .context("failed to create HyperSync client")?;
 
         Ok(Self {
@@ -150,15 +143,16 @@ impl HyperSyncClient {
     /// Starts, refreshes, or stops the live DEX event stream for one DEX.
     ///
     /// The stream query is open-ended (`to_block = None`) and the background task resumes from the
-    /// last HyperSync `next_block` whenever the SDK stream reaches the current indexed tip.
+    /// last HyperSync `next_block` whenever the stream reaches the current indexed tip.
+    /// Each distinct signature in `event_filters` becomes one log selection over its
+    /// subscribed addresses, so only subscribed pool-event pairs match. Entries with
+    /// empty address lists are ignored; an empty filter stops the stream.
     pub async fn update_dex_event_stream(
         &mut self,
         dex: DexType,
-        contract_addresses: Vec<Address>,
-        event_signatures: Vec<String>,
+        event_filters: Vec<(String, Vec<Address>)>,
     ) {
-        let filter = DexEventStreamFilter::new(contract_addresses, event_signatures);
-
+        let filter = DexEventStreamFilter::new(event_filters);
         if filter.is_empty() {
             self.stop_dex_event_stream(dex).await;
             return;
@@ -240,9 +234,11 @@ impl HyperSyncClient {
 
     /// Creates a stream of contract event logs matching the specified criteria.
     ///
+    /// An empty topic list matches every log at the address.
+    ///
     /// # Panics
     ///
-    /// Panics if the contract address cannot be parsed as a valid Ethereum address.
+    /// Panics if a HyperSync page request fails while polling the stream.
     pub async fn request_contract_events_stream(
         &self,
         from_block: u64,
@@ -250,24 +246,17 @@ impl HyperSyncClient {
         contract_address: &Address,
         topics: Vec<&str>,
     ) -> impl Stream<Item = PoolEventStreamItem> + use<> {
-        let query = Self::construct_contract_events_query(
-            from_block,
-            to_block,
-            &[*contract_address],
-            &topics,
-        );
+        let log_selections = backfill_log_selections(contract_address, topics);
+        let query = Self::construct_query_with_log_selections(from_block, to_block, log_selections);
 
         let chain = self.chain.name;
-        let mut rx = self
-            .client
-            .stream(query, StreamConfig::default())
-            .await
-            .expect("Failed to create stream");
+        let pages = self.client.stream(query);
 
         async_stream::stream! {
-              while let Some(response) = rx.recv().await {
+            tokio::pin!(pages);
+            while let Some(response) = pages.next().await {
                 let response = response.unwrap();
-                for item in pool_events_from_response(chain, response.data.blocks, response.data.logs) {
+                for item in pool_events_from_response(chain, response.data) {
                     yield item;
                 }
             }
@@ -318,27 +307,23 @@ impl HyperSyncClient {
     ///
     /// # Panics
     ///
-    /// Panics if the stream creation or block transformation fails.
+    /// Panics if a HyperSync page request or block transformation fails while polling the stream.
     pub async fn request_blocks_stream(
         &self,
         from_block: u64,
         to_block: Option<u64>,
     ) -> impl Stream<Item = Block> {
         let query = Self::construct_block_query(from_block, to_block);
-        let mut rx = self
-            .client
-            .stream(query, StreamConfig::default())
-            .await
-            .unwrap();
-
+        let pages = self.client.stream(query);
         let chain = self.chain.name;
 
         async_stream::stream! {
-            while let Some(response) = rx.recv().await {
+            tokio::pin!(pages);
+            while let Some(response) = pages.next().await {
                 let response = response.unwrap();
-                for received_block in response.data.blocks.into_iter().flatten() {
+                for received_block in response.data.into_iter().flat_map(|batch| batch.blocks) {
                     let block = transform_hypersync_block(chain, received_block).unwrap();
-                    yield block
+                    yield block;
                 }
             }
         }
@@ -380,23 +365,26 @@ impl HyperSyncClient {
                         log::debug!("Blocks subscription task received cancellation signal");
                         break;
                     }
-                    result = tokio::time::timeout(
-                        Duration::from_secs(HYPERSYNC_REQUEST_TIMEOUT_SECS),
-                        client.get(&query)
-                    ) => {
+                    result = client.get(&query) => {
                         let response = match result {
-                            Ok(Ok(resp)) => resp,
-                            Ok(Err(e)) => {
-                                log::error!("Hypersync request failed: {e}");
+                            Ok(response) => response,
+                            Err(e) => {
+                                let retryable = e.downcast_ref::<RequestError>()
+                                    .filter(|e| e.is_retryable());
+                                if let Some(error) = retryable {
+                                    log::warn!("HyperSync block request failed at block {}, retrying: {error}", query.from_block);
+                                    let delay = error.retry_delay().unwrap_or(Duration::from_secs(1));
+                                    if Self::sleep_or_cancel(delay, &cancellation_token).await {
+                                        continue;
+                                    }
+                                } else {
+                                    log::error!("HyperSync block request failed: {e}");
+                                }
                                 break;
-                            }
-                            Err(_) => {
-                                log::warn!("Hypersync request timed out after {HYPERSYNC_REQUEST_TIMEOUT_SECS}s, retrying...");
-                                continue;
                             }
                         };
 
-                        for received_block in response.data.blocks.into_iter().flatten() {
+                        for received_block in response.data.into_iter().flat_map(|batch| batch.blocks) {
                             let block = transform_hypersync_block(chain, received_block).unwrap();
                             let msg = BlockchainMessage::Block(block);
                             if let Err(e) = tx.send(msg) {
@@ -420,6 +408,14 @@ impl HyperSyncClient {
                             }
                         }
 
+                        if response.next_block == query.from_block
+                            && !Self::sleep_or_cancel(
+                                Duration::from_millis(BLOCK_POLLING_INTERVAL_MS),
+                                &cancellation_token,
+                            ).await
+                        {
+                            break;
+                        }
                         query.from_block = response.next_block;
                     }
                 }
@@ -463,34 +459,56 @@ impl HyperSyncClient {
         log::debug!("Unsubscribed from blocks");
     }
 
-    /// Constructs a HyperSync query for fetching blocks with all available fields within the specified range.
+    /// Constructs a HyperSync query for the block fields used by NautilusTrader.
     fn construct_block_query(from_block: u64, to_block: Option<u64>) -> Query {
         Query {
             from_block,
             to_block: Self::to_hypersync_exclusive_bound(to_block),
-            blocks: vec![BlockSelection::default()],
+            blocks: vec![serde_json::json!({})],
+            logs: vec![],
             field_selection: FieldSelection {
-                block: BlockField::all(),
-                ..Default::default()
+                block: &[
+                    "number",
+                    "hash",
+                    "parent_hash",
+                    "miner",
+                    "gas_limit",
+                    "gas_used",
+                    "timestamp",
+                    "base_fee_per_gas",
+                    "blob_gas_used",
+                    "excess_blob_gas",
+                ],
+                log: &[],
             },
-            ..Default::default()
         }
     }
 
     fn construct_contract_events_query(
         from_block: u64,
         to_block: Option<u64>,
-        contract_addresses: &[Address],
-        topics: &[&str],
+        event_filters: &[(String, Vec<Address>)],
     ) -> Query {
-        let mut query_value = serde_json::json!({
-            "from_block": from_block,
-            "logs": [{
-                "topics": [topics],
-                "address": contract_addresses
-            }],
-            "field_selection": {
-                "log": [
+        let log_selections: Vec<serde_json::Value> = event_filters
+            .iter()
+            .map(|(signature, addresses)| pair_log_selection(signature, addresses))
+            .collect();
+
+        Self::construct_query_with_log_selections(from_block, to_block, log_selections)
+    }
+
+    fn construct_query_with_log_selections(
+        from_block: u64,
+        to_block: Option<u64>,
+        log_selections: Vec<serde_json::Value>,
+    ) -> Query {
+        Query {
+            from_block,
+            to_block: Self::to_hypersync_exclusive_bound(to_block),
+            blocks: vec![],
+            logs: log_selections,
+            field_selection: FieldSelection {
+                log: &[
                     "block_number",
                     "transaction_hash",
                     "transaction_index",
@@ -503,7 +521,7 @@ impl HyperSyncClient {
                     "topic3",
                 ],
                 // Join block fields so callers can resolve each event's ts_event
-                "block": [
+                block: &[
                     "number",
                     "hash",
                     "parent_hash",
@@ -511,17 +529,9 @@ impl HyperSyncClient {
                     "gas_limit",
                     "gas_used",
                     "timestamp",
-                ]
-            }
-        });
-
-        if let Some(to_block) = Self::to_hypersync_exclusive_bound(to_block)
-            && let Some(obj) = query_value.as_object_mut()
-        {
-            obj.insert("to_block".to_string(), serde_json::json!(to_block));
+                ],
+            },
         }
-
-        serde_json::from_value(query_value).unwrap()
     }
 
     fn to_hypersync_exclusive_bound(to_block: Option<u64>) -> Option<u64> {
@@ -530,7 +540,7 @@ impl HyperSyncClient {
 
     async fn run_dex_event_stream(
         dex: DexType,
-        client: Arc<hypersync_client::Client>,
+        client: Arc<JsonClient>,
         tx: tokio::sync::mpsc::UnboundedSender<BlockchainMessage>,
         filter: DexEventStreamFilter,
         dex_extended: &'static DexExtended,
@@ -546,35 +556,14 @@ impl HyperSyncClient {
                 break;
             }
 
-            let topics = filter
-                .event_signatures
-                .iter()
-                .map(String::as_str)
-                .collect::<Vec<_>>();
-            let query = Self::construct_contract_events_query(
-                from_block,
-                None,
-                &filter.contract_addresses,
-                &topics,
-            );
-            let mut rx = match client.stream(query, StreamConfig::default()).await {
-                Ok(rx) => rx,
-                Err(e) => {
-                    log::warn!("Failed to create DEX event stream for {dex}: {e}");
+            let query =
+                Self::construct_contract_events_query(from_block, None, &filter.event_filters);
 
-                    if !Self::sleep_or_cancel(
-                        Duration::from_millis(DEX_EVENT_STREAM_RETRY_DELAY_MS),
-                        &cancellation_token,
-                    )
-                    .await
-                    {
-                        break;
-                    }
-                    continue;
-                }
-            };
+            let pages = client.stream(query);
+            tokio::pin!(pages);
 
             let mut received_response = false;
+            let mut retry_delay = Duration::from_millis(DEX_EVENT_STREAM_RETRY_DELAY_MS);
 
             loop {
                 tokio::select! {
@@ -582,7 +571,7 @@ impl HyperSyncClient {
                         log::debug!("DEX event stream task for {dex} received cancellation signal");
                         break;
                     }
-                    response = rx.recv() => {
+                    response = pages.next() => {
                         let Some(response) = response else {
                             break;
                         };
@@ -590,6 +579,7 @@ impl HyperSyncClient {
                         let response = match response {
                             Ok(resp) => resp,
                             Err(e) => {
+                                retry_delay = Self::dex_stream_retry_delay(&e);
                                 if received_response {
                                     log::debug!("DEX event stream drained for {dex}: {e}");
                                 } else {
@@ -602,19 +592,14 @@ impl HyperSyncClient {
                         received_response = true;
                         next_from_block.fetch_max(response.next_block, Ordering::Relaxed);
 
-                        for log in response.data.logs.into_iter().flatten() {
+                        for log in response.data.into_iter().flat_map(|batch| batch.logs) {
                             Self::send_dex_event_log(&tx, dex_extended, &log);
                         }
                     }
                 }
             }
 
-            if !Self::sleep_or_cancel(
-                Duration::from_millis(DEX_EVENT_STREAM_RETRY_DELAY_MS),
-                &cancellation_token,
-            )
-            .await
-            {
+            if !Self::sleep_or_cancel(retry_delay, &cancellation_token).await {
                 break;
             }
         }
@@ -623,26 +608,31 @@ impl HyperSyncClient {
     }
 
     async fn wait_for_stream_start_block(
-        client: &hypersync_client::Client,
+        client: &JsonClient,
         from_block: u64,
         cancellation_token: &tokio_util::sync::CancellationToken,
     ) {
         loop {
-            match client.get_height().await {
+            let delay = match client.get_height().await {
                 Ok(height) if height >= from_block => return,
-                Ok(_) => {}
-                Err(e) => log::warn!("Failed to get HyperSync height for DEX event stream: {e}"),
-            }
+                Ok(_) => Duration::from_millis(BLOCK_POLLING_INTERVAL_MS),
+                Err(e) => {
+                    log::warn!("Failed to get HyperSync height for DEX event stream: {e}");
+                    Self::dex_stream_retry_delay(&e)
+                }
+            };
 
-            if !Self::sleep_or_cancel(
-                Duration::from_millis(BLOCK_POLLING_INTERVAL_MS),
-                cancellation_token,
-            )
-            .await
-            {
+            if !Self::sleep_or_cancel(delay, cancellation_token).await {
                 return;
             }
         }
+    }
+
+    fn dex_stream_retry_delay(error: &anyhow::Error) -> Duration {
+        error
+            .downcast_ref::<RequestError>()
+            .and_then(RequestError::retry_delay)
+            .unwrap_or(Duration::from_millis(DEX_EVENT_STREAM_RETRY_DELAY_MS))
     }
 
     async fn sleep_or_cancel(
@@ -658,10 +648,10 @@ impl HyperSyncClient {
     fn send_dex_event_log(
         tx: &tokio::sync::mpsc::UnboundedSender<BlockchainMessage>,
         dex_extended: &DexExtended,
-        log: &Log,
+        log: &HypersyncLog,
     ) {
         let event_signature = match log.topics.first().and_then(|t| t.as_ref()) {
-            Some(log_argument) => hex::encode_prefixed(log_argument.as_ref()),
+            Some(log_argument) => hex::encode_prefixed(log_argument.as_slice()),
             None => return,
         };
 
@@ -788,24 +778,40 @@ impl Drop for HyperSyncClient {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DexEventStreamFilter {
-    contract_addresses: Vec<Address>,
-    event_signatures: Vec<String>,
+    event_filters: Vec<(String, Vec<Address>)>,
 }
 
 impl DexEventStreamFilter {
-    fn new(mut contract_addresses: Vec<Address>, mut event_signatures: Vec<String>) -> Self {
-        contract_addresses.sort_unstable();
-        contract_addresses.dedup();
-        event_signatures.sort_unstable();
-        event_signatures.dedup();
+    fn new(event_filters: Vec<(String, Vec<Address>)>) -> Self {
+        // Merge pairs sharing a signature so each log can match at most one selection.
+        let mut merged: Vec<(String, Vec<Address>)> = Vec::new();
+
+        for (signature, addresses) in event_filters {
+            if addresses.is_empty() {
+                continue;
+            }
+
+            if let Some(existing) = merged.iter_mut().find(|(sig, _)| *sig == signature) {
+                existing.1.extend(addresses);
+            } else {
+                merged.push((signature, addresses));
+            }
+        }
+
+        for (_, addresses) in &mut merged {
+            addresses.sort_unstable();
+            addresses.dedup();
+        }
+
+        merged.sort_by(|a, b| a.0.cmp(&b.0));
+
         Self {
-            contract_addresses,
-            event_signatures,
+            event_filters: merged,
         }
     }
 
     fn is_empty(&self) -> bool {
-        self.contract_addresses.is_empty() || self.event_signatures.is_empty()
+        self.event_filters.is_empty()
     }
 }
 
@@ -817,25 +823,59 @@ struct DexEventStreamTask {
     task: TaskSlot<()>,
 }
 
+/// Builds one log selection matching one signature at the given addresses.
+fn pair_log_selection(signature: &str, addresses: &[Address]) -> serde_json::Value {
+    serde_json::json!({
+        "topics": [[signature]],
+        "address": addresses
+    })
+}
+
+/// Builds log selections for a single-address backfill: one selection per distinct
+/// topic, or the address-only selection matching every log at the address when no
+/// topics are given.
+///
+/// Selection order carries no meaning (the server matches selections as a set), so topics
+/// are sorted to deduplicate them.
+fn backfill_log_selections(
+    contract_address: &Address,
+    topics: Vec<&str>,
+) -> Vec<serde_json::Value> {
+    if topics.is_empty() {
+        return vec![serde_json::json!({
+            "topics": [[]],
+            "address": [*contract_address],
+        })];
+    }
+
+    let mut topics = topics;
+    topics.sort_unstable();
+    topics.dedup();
+    topics
+        .into_iter()
+        .map(|topic| pair_log_selection(topic, &[*contract_address]))
+        .collect()
+}
+
 /// Maps one HyperSync response into stream items, surfacing blocks ahead of the logs from the
 /// same response so callers can cache them before converting events from those blocks.
 ///
 /// Blocks that fail to transform are logged and skipped without dropping the response's logs.
 fn pool_events_from_response(
     chain: Blockchain,
-    blocks: Vec<Vec<hypersync_client::simple_types::Block>>,
-    logs: Vec<Vec<Log>>,
+    mut batches: Vec<Batch>,
 ) -> Vec<PoolEventStreamItem> {
     let mut items = Vec::new();
 
-    for block in blocks.into_iter().flatten() {
+    for block in batches.iter_mut().flat_map(|batch| batch.blocks.drain(..)) {
         match transform_hypersync_block(chain, block) {
             Ok(block) => items.push(PoolEventStreamItem::Block(block)),
             Err(e) => log::error!("Failed to transform block for timestamp: {e}"),
         }
     }
 
-    items.extend(logs.into_iter().flatten().map(PoolEventStreamItem::Log));
+    let logs = batches.into_iter().flat_map(|batch| batch.logs);
+    items.extend(logs.map(PoolEventStreamItem::Log));
     items
 }
 
@@ -849,10 +889,7 @@ mod tests {
         },
     };
 
-    use hypersync_client::{
-        format::{Address as HypersyncAddress, Hash, Quantity},
-        simple_types::{Block as HypersyncBlock, Log},
-    };
+    use alloy::primitives::B256;
     #[cfg(not(madsim))]
     use nautilus_common::{clients::DataClient, live::runner::replace_data_event_sender};
     use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
@@ -862,6 +899,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::hypersync::HypersyncBlock;
     #[cfg(not(madsim))]
     use crate::{config::BlockchainDataClientConfig, data::client::BlockchainDataClient};
 
@@ -941,23 +979,21 @@ mod tests {
         HypersyncBlock {
             number: Some(number),
             hash: Some(
-                Hash::from_str(
+                B256::from_str(
                     "0x0000000000000000000000000000000000000000000000000000000000000001",
                 )
                 .unwrap(),
             ),
             parent_hash: Some(
-                Hash::from_str(
+                B256::from_str(
                     "0x0000000000000000000000000000000000000000000000000000000000000000",
                 )
                 .unwrap(),
             ),
-            miner: Some(
-                HypersyncAddress::from_str("0x0000000000000000000000000000000000000001").unwrap(),
-            ),
-            gas_limit: Some(Quantity::from(21_000_u64)),
-            gas_used: Some(Quantity::from(21_000_u64)),
-            timestamp: Some(Quantity::from(timestamp_secs)),
+            miner: Some(Address::from_str("0x0000000000000000000000000000000000000001").unwrap()),
+            gas_limit: Some(21_000),
+            gas_used: Some(21_000),
+            timestamp: Some(timestamp_secs),
             ..Default::default()
         }
     }
@@ -999,8 +1035,16 @@ mod tests {
     fn pool_events_yields_blocks_before_logs() {
         let items = pool_events_from_response(
             Blockchain::Ethereum,
-            vec![vec![synthetic_block(12, 100)]],
-            vec![vec![Log::default(), Log::default()]],
+            vec![
+                Batch {
+                    blocks: vec![],
+                    logs: vec![HypersyncLog::default()],
+                },
+                Batch {
+                    blocks: vec![synthetic_block(12, 100)],
+                    logs: vec![HypersyncLog::default()],
+                },
+            ],
         );
 
         assert_eq!(items.len(), 3);
@@ -1025,8 +1069,10 @@ mod tests {
         };
         let items = pool_events_from_response(
             Blockchain::Ethereum,
-            vec![vec![bad_block]],
-            vec![vec![Log::default()]],
+            vec![Batch {
+                blocks: vec![bad_block],
+                logs: vec![HypersyncLog::default()],
+            }],
         );
 
         assert_eq!(items.len(), 1);
@@ -1047,8 +1093,10 @@ mod tests {
         let query = HyperSyncClient::construct_contract_events_query(
             10,
             Some(12),
-            &[address],
-            &["0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67"],
+            &[(
+                "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67".to_string(),
+                vec![address],
+            )],
         );
 
         assert_eq!(query.from_block, 10);
@@ -1061,8 +1109,10 @@ mod tests {
         let query = HyperSyncClient::construct_contract_events_query(
             10,
             Some(10),
-            &[address],
-            &["0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67"],
+            &[(
+                "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67".to_string(),
+                vec![address],
+            )],
         );
 
         assert_eq!(query.from_block, 10);
@@ -1075,8 +1125,10 @@ mod tests {
         let query = HyperSyncClient::construct_contract_events_query(
             10,
             None,
-            &[address],
-            &["0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67"],
+            &[(
+                "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67".to_string(),
+                vec![address],
+            )],
         );
 
         assert_eq!(query.from_block, 10);
@@ -1084,35 +1136,161 @@ mod tests {
     }
 
     #[rstest]
-    fn dex_event_stream_filter_sorts_and_deduplicates_inputs() {
-        let address1 = Address::from_str("0x0000000000000000000000000000000000000001").unwrap();
-        let address2 = Address::from_str("0x0000000000000000000000000000000000000002").unwrap();
-        let filter = DexEventStreamFilter::new(
-            vec![address2, address1, address2],
+    fn backfill_log_selections_deduplicate_topics() {
+        let address = Address::from_str("0x0000000000000000000000000000000000000001").unwrap();
+
+        let selections = backfill_log_selections(
+            &address,
             vec![
-                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
-                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
-                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             ],
         );
 
-        assert_eq!(filter.contract_addresses, vec![address1, address2]);
         assert_eq!(
-            filter.event_signatures,
+            selections,
             vec![
-                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
-                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+                serde_json::json!({
+                    "topics": [["0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]],
+                    "address": ["0x0000000000000000000000000000000000000001"],
+                }),
+                serde_json::json!({
+                    "topics": [["0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]],
+                    "address": ["0x0000000000000000000000000000000000000001"],
+                }),
             ]
         );
     }
 
     #[rstest]
-    fn dex_event_stream_filter_requires_addresses_and_signatures() {
+    fn backfill_without_topics_keeps_address_only_selection() {
         let address = Address::from_str("0x0000000000000000000000000000000000000001").unwrap();
 
-        assert!(DexEventStreamFilter::new(vec![], vec!["0x01".to_string()]).is_empty());
-        assert!(DexEventStreamFilter::new(vec![address], vec![]).is_empty());
-        assert!(!DexEventStreamFilter::new(vec![address], vec!["0x01".to_string()]).is_empty());
+        let selections = backfill_log_selections(&address, vec![]);
+
+        assert_eq!(
+            selections,
+            vec![serde_json::json!({
+                "topics": [[]],
+                "address": ["0x0000000000000000000000000000000000000001"],
+            })]
+        );
+    }
+
+    #[rstest]
+    fn construct_contract_events_query_keeps_narrow_pairs_in_separate_selections() {
+        let pool_a = Address::from_str("0x1111111111111111111111111111111111111111").unwrap();
+        let pool_b = Address::from_str("0x2222222222222222222222222222222222222222").unwrap();
+        let swap_sig = "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67";
+        let mint_sig = "0x7a53080ba414158be7ec69b987b5fb7d07dee101fe85488f0853ae16239d0bde";
+
+        let query = HyperSyncClient::construct_contract_events_query(
+            10,
+            None,
+            &[
+                (swap_sig.to_string(), vec![pool_a]),
+                (mint_sig.to_string(), vec![pool_b]),
+            ],
+        );
+
+        let value = serde_json::to_value(&query).expect("query serializes");
+        assert_eq!(
+            value["logs"],
+            serde_json::json!([
+                {
+                    "address": ["0x1111111111111111111111111111111111111111"],
+                    "topics": [[swap_sig]],
+                },
+                {
+                    "address": ["0x2222222222222222222222222222222222222222"],
+                    "topics": [[mint_sig]],
+                },
+            ])
+        );
+
+        // HyperSync matches a log when its address is in a selection's address
+        // list and its topic0 is in that selection's topics[0], across any
+        // selection, so only the subscribed pairs below may match.
+        let matches = |address: &str, topic0: &str| {
+            value["logs"].as_array().is_some_and(|selections| {
+                selections.iter().any(|selection| {
+                    selection["address"]
+                        .as_array()
+                        .is_some_and(|addresses| addresses.iter().any(|a| a == address))
+                        && selection["topics"][0]
+                            .as_array()
+                            .is_some_and(|topics| topics.iter().any(|t| t == topic0))
+                })
+            })
+        };
+
+        assert!(matches(
+            "0x1111111111111111111111111111111111111111",
+            swap_sig
+        ));
+        assert!(matches(
+            "0x2222222222222222222222222222222222222222",
+            mint_sig
+        ));
+        assert!(!matches(
+            "0x2222222222222222222222222222222222222222",
+            swap_sig
+        ));
+        assert!(!matches(
+            "0x1111111111111111111111111111111111111111",
+            mint_sig
+        ));
+    }
+
+    #[rstest]
+    fn dex_event_stream_filter_sorts_deduplicates_and_merges_inputs() {
+        let address1 = Address::from_str("0x0000000000000000000000000000000000000001").unwrap();
+        let address2 = Address::from_str("0x0000000000000000000000000000000000000002").unwrap();
+
+        let filter = DexEventStreamFilter::new(vec![
+            (
+                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+                vec![address2, address1, address2],
+            ),
+            (
+                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+                vec![address2],
+            ),
+            (
+                "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+                vec![address1],
+            ),
+            (
+                "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".to_string(),
+                vec![],
+            ),
+        ]);
+
+        assert_eq!(
+            filter.event_filters,
+            vec![
+                (
+                    "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                        .to_string(),
+                    vec![address2],
+                ),
+                (
+                    "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                        .to_string(),
+                    vec![address1, address2],
+                ),
+            ]
+        );
+    }
+
+    #[rstest]
+    fn dex_event_stream_filter_requires_pairs_with_addresses() {
+        let address = Address::from_str("0x0000000000000000000000000000000000000001").unwrap();
+
+        assert!(DexEventStreamFilter::new(vec![]).is_empty());
+        assert!(DexEventStreamFilter::new(vec![("0x01".to_string(), vec![])]).is_empty());
+        assert!(!DexEventStreamFilter::new(vec![("0x01".to_string(), vec![address])]).is_empty());
     }
 
     #[tokio::test]
@@ -1127,7 +1305,7 @@ mod tests {
             task_next_from_block.store(99, Ordering::Relaxed);
         });
         let stream_task = DexEventStreamTask {
-            filter: DexEventStreamFilter::new(vec![], vec![]),
+            filter: DexEventStreamFilter::new(vec![]),
             next_from_block,
             cancellation_token,
             task: TaskSlot::from_handle(task),

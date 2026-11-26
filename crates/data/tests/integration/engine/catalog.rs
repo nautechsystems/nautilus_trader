@@ -2009,6 +2009,7 @@ fn test_request_instrument_catalog_uses_latest_record(
     mut audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
+    #[values(false, true)] bounded: bool,
 ) {
     let _ = stub_msgbus;
     let mut earlier = audusd_sim.clone();
@@ -2036,7 +2037,7 @@ fn test_request_instrument_catalog_uses_latest_record(
 
     let req = RequestCommand::Instrument(RequestInstrument::new(
         instrument_id,
-        None,
+        bounded.then(|| UnixNanos::from(1000).to_datetime_utc()),
         None,
         Some(client_id),
         parent_id,
@@ -2050,6 +2051,14 @@ fn test_request_instrument_catalog_uses_latest_record(
     assert_eq!(received[0].correlation_id, parent_id);
     assert_eq!(received[0].instrument_id, instrument_id);
     assert_eq!(received[0].data.ts_init(), UnixNanos::from(2_000));
+    assert_eq!(
+        data_engine
+            .cache()
+            .borrow()
+            .instrument(&instrument_id)
+            .map(Instrument::ts_init),
+        (!bounded).then_some(UnixNanos::from(2_000))
+    );
     assert_eq!(data_engine.request_pipeline_count(), 0);
 }
 
@@ -2061,6 +2070,7 @@ fn test_request_instruments_catalog_applies_only_last(
     stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
     venue: Venue,
+    #[values(false, true)] bounded: bool,
 ) {
     let _ = stub_msgbus;
     let mut audusd_earlier = audusd_sim.clone();
@@ -2092,7 +2102,7 @@ fn test_request_instruments_catalog_applies_only_last(
 
     let req = RequestCommand::Instruments(RequestInstruments::new(
         None,
-        None,
+        bounded.then(|| UnixNanos::from(3000).to_datetime_utc()),
         Some(client_id),
         Some(venue),
         parent_id,
@@ -2114,6 +2124,15 @@ fn test_request_instruments_catalog_applies_only_last(
         ids_and_timestamps,
         vec![(audusd_id, 2_000), (gbpusd_id, 3_000)]
     );
+    let cache = data_engine.cache().borrow();
+
+    for (id, timestamp) in ids_and_timestamps {
+        assert_eq!(
+            cache.instrument(&id).map(Instrument::ts_init),
+            (!bounded).then_some(UnixNanos::from(timestamp))
+        );
+    }
+
     assert_eq!(data_engine.request_pipeline_count(), 0);
 }
 
@@ -4110,7 +4129,12 @@ fn test_remapped_response_does_not_certify_concrete_contract_coverage(
 
 #[cfg(feature = "streaming")]
 #[rstest]
-fn test_instrument_writeback_serves_next_request_from_catalog(
+#[case::unbounded(false, false)]
+#[case::bounded(true, false)]
+#[case::split_bounded(true, true)]
+fn test_instrument_catalog_writeback_requires_single_complete_response(
+    #[case] bounded: bool,
+    #[case] split: bool,
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
     cache: Rc<RefCell<Cache>>,
@@ -4133,9 +4157,11 @@ fn test_instrument_writeback_serves_next_request_from_catalog(
     );
     let _directory = register_empty_catalog(&mut engine, "instrument-writeback");
 
+    let start = bounded.then_some(UnixNanos::default());
+
     let mut request = RequestInstrument::new(
         id,
-        None,
+        start.as_ref().map(UnixNanos::to_datetime_utc),
         None,
         Some(client_id),
         UUID4::new(),
@@ -4148,21 +4174,22 @@ fn test_instrument_writeback_serves_next_request_from_catalog(
         .execute_request(RequestCommand::Instrument(request.clone()))
         .unwrap();
 
-    let response = InstrumentResponse::new(
+    let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
         request.request_id,
         client_id,
         id,
         instrument.clone(),
-        None,
+        start,
         None,
         UnixNanos::from(3001),
         None,
-    );
-    engine.response_envelope(DataResponseEnvelope::new(
-        DataResponse::Instrument(Box::new(response)),
-        true,
-        None,
-    ));
+    )));
+
+    if split {
+        engine.response_envelope(DataResponseEnvelope::new(response.clone(), false, None));
+    }
+
+    engine.response_envelope(DataResponseEnvelope::new(response, true, None));
     request.request_id = UUID4::new();
     request.params = None;
     let (handler, saver) = get_response_saving_handler::<InstrumentResponse>(None);
@@ -4173,9 +4200,16 @@ fn test_instrument_writeback_serves_next_request_from_catalog(
         .unwrap();
 
     let received = saver.get_messages();
-    assert_eq!(received.len(), 1);
-    assert_eq!(received[0].data, instrument);
-    assert_eq!(recorded_request_instrument(&recorder).len(), 1);
+    assert_eq!(received.len(), usize::from(!split));
+
+    if let Some(response) = received.first() {
+        assert_eq!(response.data, instrument);
+    }
+
+    assert_eq!(
+        recorded_request_instrument(&recorder).len(),
+        1 + usize::from(split)
+    );
     assert_eq!(engine.request_pipeline_count(), 0);
 }
 
@@ -4187,6 +4221,7 @@ fn test_instrument_list_catalog_merge_preserves_current_client_definition(
     stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
     venue: Venue,
+    #[values(false, true)] bounded: bool,
 ) {
     let _ = stub_msgbus;
     audusd_sim.ts_init = UnixNanos::from(1000);
@@ -4207,11 +4242,13 @@ fn test_instrument_list_catalog_merge_preserves_current_client_definition(
     let root = UUID4::new();
     let (handler, saver) = get_typed_message_saving_handler::<DataResponseEnvelope>(None);
     msgbus::register_response_handler(&root, handler);
+    let start = bounded.then_some(UnixNanos::from(500));
+    let end = bounded.then_some(UnixNanos::from(2000));
     engine
         .execute_request(RequestCommand::Instrument(RequestInstrument::new(
             [cached.id(), fetched.id()],
-            Some(UnixNanos::from(500).to_datetime_utc()),
-            Some(UnixNanos::from(2000).to_datetime_utc()),
+            start.as_ref().map(UnixNanos::to_datetime_utc),
+            end.as_ref().map(UnixNanos::to_datetime_utc),
             Some(client_id),
             root,
             UnixNanos::from(4000),
@@ -4226,8 +4263,8 @@ fn test_instrument_list_catalog_merge_preserves_current_client_definition(
         client_id,
         fetched.id(),
         fetched.clone(),
-        Some(UnixNanos::from(500)),
-        Some(UnixNanos::from(2000)),
+        start,
+        end,
         UnixNanos::from(4001),
         None,
     ))));
@@ -4242,10 +4279,21 @@ fn test_instrument_list_catalog_merge_preserves_current_client_definition(
     };
 
     assert_eq!(response.data, vec![cached.clone(), fetched.clone()]);
-    assert_eq!(response.start, Some(UnixNanos::from(500)));
-    assert_eq!(response.end, Some(UnixNanos::from(2000)));
-    assert_eq!(cache.borrow().instrument(&cached.id()), Some(&cached));
-    assert_eq!(cache.borrow().instrument(&fetched.id()), Some(&fetched));
+
+    if bounded {
+        assert_eq!(response.start, start);
+        assert_eq!(response.end, end);
+    }
+
+    let cache = cache.borrow();
+
+    for definition in [&cached, &fetched] {
+        assert_eq!(
+            cache.instrument(&definition.id()).map(Instrument::ts_init),
+            (!bounded).then(|| definition.ts_init())
+        );
+    }
+
     assert_eq!(engine.request_pipeline_count(), 0);
 }
 

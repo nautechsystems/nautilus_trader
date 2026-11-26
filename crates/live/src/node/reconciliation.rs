@@ -474,18 +474,11 @@ impl LiveNode {
         self.process_reconciliation_events(&events);
     }
 
-    fn flush_pending_exec_client_instruments(&self) {
-        for client in &self.exec_clients {
-            client.flush_pending_instruments();
-        }
-    }
-
-    /// Flushes deferred instruments and clears cancelled targeted queries.
+    /// Clears cancelled targeted queries.
     pub(super) fn cleanup_cancelled_report_tasks(
         &mut self,
         planned_client_order_ids: &[ClientOrderId],
     ) {
-        self.flush_pending_exec_client_instruments();
         self.exec_manager
             .remove_targeted_order_queries(planned_client_order_ids);
     }

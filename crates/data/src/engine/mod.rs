@@ -1914,23 +1914,8 @@ impl DataEngine {
     /// [`Self::response_envelope`] to report explicit source completion.
     pub fn response(&mut self, mut resp: DataResponse) {
         resp.trim_to_bounds();
-        let request = self.inflight_requests.remove(resp.correlation_id());
-        #[cfg(feature = "streaming")]
-        if request
-            .as_ref()
-            .and_then(request_params)
-            .is_some_and(|params| params.get_bool(streaming::PARAM_UPDATE_CATALOG) == Some(true))
-        {
-            log::warn!(
-                "Catalog write-back requires an explicit completed response envelope, request={}",
-                resp.correlation_id()
-            );
-        }
-
-        #[cfg(not(feature = "streaming"))]
-        let _ = request;
         let envelope = DataResponseEnvelope::new(resp, true, None);
-        self.process_response_envelope(envelope);
+        self.process_response(envelope, false);
     }
 
     /// Completes failed adapter work while preserving any returned rows.
@@ -1962,16 +1947,47 @@ impl DataEngine {
         self.process_response_envelope(envelope);
     }
 
-    fn process_response_envelope(&mut self, mut envelope: DataResponseEnvelope) {
-        let accepted = match envelope.response() {
-            Some(DataResponse::Instrument(response)) => self.cache_instrument(&response.data),
-            Some(DataResponse::Instruments(response)) => {
-                let mut accepted = true;
-                for instrument in &response.data {
-                    accepted &= self.cache_instrument(instrument);
-                }
+    fn process_response_envelope(&mut self, envelope: DataResponseEnvelope) {
+        self.process_response(envelope, true);
+    }
 
-                accepted
+    fn process_response(&mut self, mut envelope: DataResponseEnvelope, catalog_writeback: bool) {
+        let request = self.inflight_requests.remove(envelope.correlation_id());
+        let source_completed = envelope.completed();
+
+        #[cfg(feature = "streaming")]
+        if !catalog_writeback
+            && request
+                .as_ref()
+                .and_then(request_params)
+                .is_some_and(|params| {
+                    params.get_bool(streaming::PARAM_UPDATE_CATALOG) == Some(true)
+                })
+            && envelope
+                .response()
+                .and_then(DataResponse::params)
+                .and_then(|params| params.get_bool(streaming::PARAM_UPDATE_CATALOG))
+                != Some(false)
+        {
+            log::warn!(
+                "Catalog write-back requires an explicit completed response envelope, request={}",
+                envelope.correlation_id()
+            );
+        }
+
+        #[cfg(not(feature = "streaming"))]
+        let _ = catalog_writeback;
+
+        let accepted = match envelope.response() {
+            Some(response @ DataResponse::Instrument(value)) => {
+                let is_bounded =
+                    self.response_is_bounded(response, envelope.correlation_id(), request.as_ref());
+                self.apply_instrument_response(std::slice::from_ref(&value.data), is_bounded)
+            }
+            Some(response @ DataResponse::Instruments(value)) => {
+                let is_bounded =
+                    self.response_is_bounded(response, envelope.correlation_id(), request.as_ref());
+                self.apply_instrument_response(&value.data, is_bounded)
             }
             _ => true,
         };
@@ -1983,11 +1999,12 @@ impl DataEngine {
             );
         }
 
-        let request = self.inflight_requests.remove(envelope.correlation_id());
         #[cfg(feature = "streaming")]
         let envelope = match (&request, envelope.response()) {
             (Some(request), Some(response))
-                if envelope.completed() && envelope.failure_reason().is_none() =>
+                if catalog_writeback
+                    && envelope.completed()
+                    && envelope.failure_reason().is_none() =>
             {
                 match self.update_catalog_from_response(response, request) {
                     Ok(()) => envelope,
@@ -1997,8 +2014,9 @@ impl DataEngine {
             _ => envelope,
         };
 
-        #[cfg(not(feature = "streaming"))]
-        let _ = request;
+        if !source_completed && let Some(request) = request {
+            self.retain_split_instrument_request(request);
+        }
 
         let Some(envelope) = self.handle_request_pipeline_response(envelope) else {
             return;
@@ -2024,6 +2042,40 @@ impl DataEngine {
         };
 
         self.route_response_payload(resp, envelope);
+    }
+
+    fn retain_split_instrument_request(&mut self, mut request: RequestCommand) {
+        let params = match &mut request {
+            RequestCommand::Instrument(value) => &mut value.params,
+            RequestCommand::Instruments(value) => &mut value.params,
+            _ => return,
+        };
+
+        // Keep the request bounds, since split responses are ineligible for catalog write-back
+        *params = None;
+        self.inflight_requests
+            .insert(*request.request_id(), request);
+    }
+
+    fn response_is_bounded(
+        &self,
+        response: &DataResponse,
+        correlation_id: &UUID4,
+        request: Option<&RequestCommand>,
+    ) -> bool {
+        let request = request.or_else(|| {
+            let (parent_id, _) = self
+                .request_pipeline_parent_request_id
+                .get(correlation_id)?;
+            self.request_pipeline_parent_request.get(parent_id)
+        });
+
+        // Catalog replies can carry query bounds synthesized for an unbounded request
+        let (start, end) = request.map_or_else(
+            || (response.start(), response.end()),
+            |request| parent_request_window(Some(request)),
+        );
+        start.is_some() || end.is_some()
     }
 
     fn finish_empty_response(&mut self, envelope: &DataResponseEnvelope) {

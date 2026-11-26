@@ -18,9 +18,13 @@ use std::{collections::VecDeque, sync::Arc};
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use futures_util::{Stream, StreamExt, future::BoxFuture, stream::FuturesUnordered};
-use nautilus_common::{live::sender::EventSender, messages::DataEvent};
-use nautilus_core::AtomicTime;
-use nautilus_live::ExecutionEventEmitter;
+use nautilus_common::{
+    live::sender::EventSender,
+    messages::{DataEvent, data::DataResponseEnvelope},
+    msgbus::{self, MessagingSwitchboard, TypedHandler},
+};
+use nautilus_core::{AtomicTime, UUID4};
+use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     enums::AccountType,
     identifiers::{AccountId, ClientOrderId, InstrumentId},
@@ -30,7 +34,6 @@ use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    common::parse::instrument_definitions_match,
     http::client::OKXHttpClient,
     websocket::{
         client::OKXWebSocketClient,
@@ -55,6 +58,7 @@ pub(super) struct StreamState {
 struct Registration {
     ready: AHashSet<InstrumentId>,
     pending: AHashMap<InstrumentId, (InstrumentAny, tokio::sync::oneshot::Sender<()>)>,
+    completion_id: Option<UUID4>,
     failure: Option<String>,
 }
 
@@ -81,29 +85,111 @@ impl StreamState {
             return;
         };
 
-        if !instrument_definitions_match(published, cached) {
+        if !published.same_definition(cached) {
             return;
         }
 
-        let id = cached.id();
-        self.http.cache_instrument(cached.clone());
-        for ws in [&self.private, &self.business] {
-            ws.cache_instrument(cached.clone());
-            if let Some(code) = self.http.inst_id_code(&id.symbol.inner()) {
-                ws.cache_inst_id_code(id.symbol.inner(), code);
-            }
+        self.accept_registration(cached);
+    }
+
+    pub(super) fn register_completion(self: &Arc<Self>, core: ExecutionClientCore) {
+        if !msgbus::get_message_bus()
+            .borrow()
+            .is_registered(MessagingSwitchboard::data_engine_process())
+        {
+            return;
         }
 
+        let id = UUID4::new();
+        self.registration.lock().completion_id = Some(id);
+        self.register_completion_handler(core, id);
+    }
+
+    pub(super) fn unregister_completion(&self) {
+        if let Some(id) = self.registration.lock().completion_id.take() {
+            msgbus::get_message_bus()
+                .borrow_mut()
+                .take_response_handler(&id);
+        }
+    }
+
+    fn register_completion_handler(self: &Arc<Self>, core: ExecutionClientCore, id: UUID4) {
+        let state = Arc::downgrade(self);
+        let handler = TypedHandler::from(move |_: &DataResponseEnvelope| {
+            let Some(state) = state.upgrade() else {
+                return;
+            };
+
+            let cache = core.cache();
+            let accepted = state
+                .registration
+                .lock()
+                .pending
+                .iter()
+                .filter_map(|(id, (expected, _))| {
+                    cache
+                        .instrument(id)
+                        .filter(|current| registration_satisfies(current, expected))
+                })
+                .collect::<Vec<_>>();
+
+            for instrument in accepted {
+                state.accept_registration(instrument);
+            }
+
+            state.register_completion_handler(core.clone(), id);
+        });
+
+        msgbus::register_response_handler(&id, handler);
+    }
+
+    fn accept_registration(&self, instrument: &InstrumentAny) {
         let mut registration = self.registration.lock();
+        let cached = self.cache_latest_definition(instrument);
+        let id = cached.id();
         registration.ready.insert(id);
         if registration
             .pending
             .get(&id)
-            .is_some_and(|(expected, _)| instrument_definitions_match(expected, cached))
+            .is_some_and(|(expected, _)| registration_satisfies(&cached, expected))
             && let Some((_, sender)) = registration.pending.remove(&id)
         {
             let _ = sender.send(());
         }
+    }
+
+    pub(super) fn cache_routed_definition(&self, instrument: &InstrumentAny) {
+        let _guard = self.registration.lock();
+        self.cache_latest_definition(instrument);
+    }
+
+    fn cache_latest_definition(&self, instrument: &InstrumentAny) -> InstrumentAny {
+        let symbol = instrument.raw_symbol().inner();
+        let latest = [
+            self.private.instruments_cache_arc().get_cloned(&symbol),
+            self.business.instruments_cache_arc().get_cloned(&symbol),
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|cached| cached.ts_init() > instrument.ts_init())
+        .max_by_key(Instrument::ts_init)
+        .unwrap_or_else(|| instrument.clone());
+        let latest = self.http.cache_latest_instrument(&latest);
+        let code = self.http.inst_id_code(&symbol);
+        let quote_currencies = self.http.trade_quote_ccy_list(&symbol);
+
+        for ws in [&self.private, &self.business] {
+            ws.cache_instrument(latest.clone());
+            if let Some(code) = code {
+                ws.cache_inst_id_code(symbol, code);
+            }
+
+            if let Some(currencies) = &quote_currencies {
+                ws.cache_trade_quote_ccy_lists([(symbol, currencies.clone())]);
+            }
+        }
+
+        latest
     }
 
     pub(super) fn is_healthy(&self) -> bool {
@@ -115,13 +201,14 @@ impl StreamState {
     }
 
     fn ready(&self, id: InstrumentId) -> bool {
-        self.registration.lock().ready.contains(&id)
-            && self
-                .private
-                .instruments_cache_arc()
-                .contains_key(&id.symbol.inner())
-            && (self.http.is_spread(id)
-                || self.private.get_inst_id_code(&id.symbol.inner()).is_some())
+        self.has_registered_instrument(&self.registration.lock(), id)
+    }
+
+    fn has_registered_instrument(&self, registration: &Registration, id: InstrumentId) -> bool {
+        let symbol = id.symbol.inner();
+        registration.ready.contains(&id)
+            && self.private.instruments_cache_arc().contains_key(&symbol)
+            && (self.http.is_spread(id) || self.private.get_inst_id_code(&symbol).is_some())
     }
 
     fn fail(&self, reason: String) {
@@ -151,22 +238,51 @@ impl StreamState {
             .resolve_instrument(id)
             .await
             .context("stream instrument lookup failed")?;
-        let sender = sender
-            .context("data event sender is unavailable for stream instrument registration")?;
-        let (completion, receiver) = tokio::sync::oneshot::channel();
-        self.registration
-            .lock()
-            .pending
-            .insert(id, (instrument.clone(), completion));
-        sender
-            .send(DataEvent::Data(instrument.into()))
-            .map_err(|_| anyhow::anyhow!("stream instrument registration receiver closed"))?;
+
+        let receiver = {
+            let mut registration = self.registration.lock();
+            if self.has_registered_instrument(&registration, id)
+                && self
+                    .private
+                    .instruments_cache_arc()
+                    .get_cloned(&id.symbol.inner())
+                    .is_some_and(|current| registration_satisfies(&current, &instrument))
+            {
+                return Ok(());
+            }
+
+            let sender = sender
+                .context("data event sender is unavailable for stream instrument registration")?;
+            let (completion, receiver) = tokio::sync::oneshot::channel();
+            sender
+                .send(DataEvent::Data(instrument.clone().into()))
+                .map_err(|_| anyhow::anyhow!("stream instrument registration receiver closed"))?;
+
+            // A stale definition is not published, so check the cache after the data event
+            if let Some(id) = registration.completion_id {
+                sender
+                    .send(DataEvent::ResponseEnvelope(DataResponseEnvelope::terminal(
+                        id, None,
+                    )))
+                    .map_err(|_| {
+                        anyhow::anyhow!("stream instrument registration receiver closed")
+                    })?;
+            }
+
+            registration.pending.insert(id, (instrument, completion));
+            receiver
+        };
+
         // Startup buffers data until all execution clients release their engine borrow
         receiver
             .await
             .context("stream instrument registration acknowledgement closed")?;
         Ok(())
     }
+}
+
+fn registration_satisfies(current: &InstrumentAny, expected: &InstrumentAny) -> bool {
+    current.ts_init() > expected.ts_init() || expected.same_definition(current)
 }
 
 pub(super) struct ExecutionStream {
@@ -390,18 +506,31 @@ impl Drop for ExecutionStream {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::{
+        rc::Rc,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
 
     use axum::{Json, Router, routing::get};
-    use nautilus_common::{messages::ExecutionEvent, testing::wait_until_async};
+    use nautilus_common::{
+        enums::Environment,
+        messages::ExecutionEvent,
+        msgbus::{stubs::get_typed_message_saving_handler, switchboard::get_instrument_topic},
+        testing::wait_until_async,
+    };
     use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
+    use nautilus_live::{builder::LiveNodeBuilder, runner::AsyncRunner};
     use nautilus_model::{
-        data::Data, events::account::state::BALANCES_SNAPSHOT_COMPLETE_INFO_KEY,
-        identifiers::TraderId,
+        data::Data,
+        enums::OmsType,
+        events::account::state::BALANCES_SNAPSHOT_COMPLETE_INFO_KEY,
+        identifiers::{ClientId, TraderId},
+        types::Price,
     };
     use nautilus_network::websocket::TransportBackend;
     use rstest::rstest;
     use serde_json::Value;
+    use ustr::Ustr;
 
     use super::*;
     use crate::common::{
@@ -409,19 +538,75 @@ mod tests {
         testing::load_test_json,
     };
 
+    #[tokio::test]
+    async fn older_routed_definition_keeps_execution_parser_caches_current() {
+        let (http, server) = metadata_server(true).await;
+        let (_, state, _events) = stream_with_http(http);
+        let payload: Value =
+            serde_json::from_str(&load_test_json("http_get_instruments_swap.json")).unwrap();
+        let mut raw = payload["data"][0].clone();
+        raw["instIdCode"] = serde_json::json!(12345);
+        raw["tradeQuoteCcyList"] = serde_json::json!(["USD"]);
+        let older: OKXInstrument = serde_json::from_value(raw.clone()).unwrap();
+        let older = parse_instrument_any(&older, None, None, UnixNanos::from(10))
+            .unwrap()
+            .unwrap();
+        raw["tickSz"] = serde_json::json!("0.05");
+        raw["instIdCode"] = serde_json::json!(56789);
+        raw["tradeQuoteCcyList"] = serde_json::json!(["USDC"]);
+        let newer: OKXInstrument = serde_json::from_value(raw).unwrap();
+        let newer = parse_instrument_any(&newer, None, None, UnixNanos::from(20))
+            .unwrap()
+            .unwrap();
+        let symbol = newer.raw_symbol().inner();
+
+        state.cache_routed_definition(&newer);
+        state.cache_routed_definition(&older);
+        state.observe(&older, Some(&older));
+
+        for instrument in [
+            state.http.get_instrument(&symbol).unwrap(),
+            state
+                .private
+                .instruments_cache_arc()
+                .get_cloned(&symbol)
+                .unwrap(),
+            state
+                .business
+                .instruments_cache_arc()
+                .get_cloned(&symbol)
+                .unwrap(),
+        ] {
+            assert_eq!(instrument.ts_init(), newer.ts_init());
+            assert_eq!(instrument.price_increment(), Price::from("0.05"));
+        }
+
+        assert_eq!(state.http.inst_id_code(&symbol), Some(56789));
+        assert_eq!(
+            state.http.trade_quote_ccy_list(&symbol),
+            Some(vec![Ustr::from("USDC")])
+        );
+        assert_eq!(state.private.get_inst_id_code(&symbol), Some(56789));
+        assert_eq!(state.business.get_inst_id_code(&symbol), Some(56789));
+
+        server.abort();
+    }
+
     #[rstest]
-    #[case::cold(false)]
-    #[case::cached(true)]
+    #[case::cold(false, false)]
+    #[case::cached(true, false)]
+    #[case::superseded(false, true)]
     #[tokio::test]
     async fn recovery_publishes_complete_websocket_metadata_after_registration(
         #[case] cached: bool,
+        #[case] superseded: bool,
     ) {
         let (http, server) = metadata_server(true).await;
 
         if cached {
             let response: Value =
                 serde_json::from_str(&load_test_json("http_get_instruments_swap.json")).unwrap();
-            let raw: OKXInstrument = serde_json::from_value(
+            let mut raw: OKXInstrument = serde_json::from_value(
                 response["data"]
                     .as_array()
                     .unwrap()
@@ -431,6 +616,7 @@ mod tests {
                     .clone(),
             )
             .unwrap();
+            raw.inst_id_code = None;
             let instrument = parse_instrument_any(&raw, None, None, UnixNanos::default())
                 .unwrap()
                 .unwrap();
@@ -440,6 +626,28 @@ mod tests {
         let (worker, state, _events) = stream_with_http(http);
         let (sender, mut data) = tokio::sync::mpsc::unbounded_channel();
         let id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+
+        let trader_id = TraderId::from("STREAM-001");
+        let node = superseded.then(|| {
+            LiveNodeBuilder::new(trader_id, Environment::Live)
+                .unwrap()
+                .build()
+                .unwrap()
+        });
+
+        if let Some(node) = &node {
+            state.register_completion(ExecutionClientCore::new(
+                trader_id,
+                ClientId::from("OKX"),
+                id.venue,
+                OmsType::Netting,
+                AccountId::from("OKX-001"),
+                AccountType::Margin,
+                None,
+                Rc::clone(&node.kernel().cache),
+            ));
+        }
+
         if cached {
             let instrument = state.http.get_instrument(&id.symbol.inner()).unwrap();
             state.observe(&instrument, Some(&instrument));
@@ -459,9 +667,57 @@ mod tests {
             }
         };
         assert!(futures_util::poll!(&mut recovery).is_pending());
-        state.observe(&instrument, Some(&instrument));
-        recovery.await.unwrap();
 
+        let mut accepted = (*instrument).clone();
+        if let Some(node) = &node {
+            let InstrumentAny::CryptoPerpetual(definition) = &mut accepted else {
+                panic!("expected swap instrument");
+            };
+
+            definition.ts_init = UnixNanos::from(definition.ts_init.as_u64() + 1);
+            definition.price_precision = 2;
+            definition.price_increment = Price::from("0.05");
+
+            node.kernel()
+                .cache
+                .borrow_mut()
+                .add_instrument(accepted.clone())
+                .unwrap();
+            let (handler, published) = get_typed_message_saving_handler::<InstrumentAny>(None);
+            msgbus::subscribe_instruments(get_instrument_topic(id).into(), handler, None);
+            AsyncRunner::handle_data_event(DataEvent::Data(Data::Instrument(instrument)));
+            assert!(!state.ready(id));
+
+            let completion = data.try_recv().unwrap();
+
+            let DataEvent::ResponseEnvelope(envelope) = &completion else {
+                panic!("expected recovery completion");
+            };
+
+            let completion_id = *envelope.correlation_id();
+            AsyncRunner::handle_data_event(completion);
+            assert!(published.get_messages().is_empty());
+            assert!(
+                msgbus::get_message_bus()
+                    .borrow()
+                    .get_response_handler(&completion_id)
+                    .is_some()
+            );
+
+            state.unregister_completion();
+            assert!(
+                msgbus::get_message_bus()
+                    .borrow()
+                    .get_response_handler(&completion_id)
+                    .is_none()
+            );
+        } else {
+            state.observe(&accepted, Some(&accepted));
+        }
+
+        assert!(state.ready(id));
+        recovery.await.unwrap();
+        state.recover(id, None).await.unwrap();
         for ws in [&state.private, &state.business] {
             assert_eq!(ws.get_inst_id_code(&id.symbol.inner()), Some(10459));
             assert_eq!(
@@ -471,7 +727,7 @@ mod tests {
                         .unwrap()
                 )
                 .unwrap(),
-                serde_json::to_value(&*instrument).unwrap()
+                serde_json::to_value(&accepted).unwrap()
             );
         }
 

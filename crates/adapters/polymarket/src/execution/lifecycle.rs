@@ -766,14 +766,6 @@ impl PolymarketExecutionClient {
         neg_risk_index.get(instrument_id).copied().unwrap_or(false)
     }
 
-    fn upsert_execution_lookup(&self, instrument: &InstrumentAny) {
-        upsert_execution_lookup(
-            &self.shared_token_instruments,
-            &self.neg_risk_index,
-            instrument,
-        );
-    }
-
     pub(super) fn load_instruments_from_cache(&self) {
         self.flush_pending_instruments();
         let cache = self.core.cache();
@@ -1045,7 +1037,7 @@ impl PolymarketExecutionClient {
         self.clear_settlement_observers();
         self.shared_token_instruments.store(AHashMap::new());
         self.neg_risk_index.store(AHashMap::new());
-        *self.instruments_pending.get_mut() = Some(Vec::new());
+        *self.instruments_pending.borrow_mut() = Some(Vec::new());
         self.collateral_locks.lock().clear_session();
         self.ws_dispatch_state.lock().reset_session();
         self.settlement.clear();
@@ -1243,10 +1235,6 @@ impl PolymarketExecutionClient {
         let _ = tokio::time::timeout_at(join_deadline, self.ws_client.disconnect()).await;
         self.finish_interrupted_modifies();
         self.core.set_disconnected();
-    }
-
-    pub(super) fn on_instrument_update(&self, instrument: &InstrumentAny) {
-        self.upsert_execution_lookup(instrument);
     }
 }
 
@@ -1876,7 +1864,7 @@ fn update_open_order(
     }
 }
 
-fn upsert_execution_lookup(
+pub(super) fn upsert_execution_lookup(
     shared_token_instruments: &AtomicMap<Ustr, InstrumentAny>,
     neg_risk_index: &AtomicMap<InstrumentId, bool>,
     instrument: &InstrumentAny,
@@ -2958,10 +2946,11 @@ mod tests {
 
     #[rstest]
     fn on_instrument_update_upserts_expired_execution_lookup_state() {
-        let (client, _cache) = test_client();
+        let (mut client, _cache) = test_client();
         let expired = test_binary_option("0xEXPIRED_ONLY", true, true);
 
-        client.on_instrument_update(&expired);
+        client.flush_pending_instruments();
+        client.on_instrument(expired.clone());
 
         assert!(
             client
@@ -3217,7 +3206,8 @@ mod tests {
     fn position_event_subscription_ignores_other_venue_events() {
         let (mut client, _cache) = test_client();
         let expired = test_binary_option("0xOTHER_VENUE", true, true);
-        client.upsert_execution_lookup(&expired);
+        client.flush_pending_instruments();
+        client.on_instrument(expired.clone());
         client.ensure_position_event_subscription();
 
         let mut event = position_closed_event(&closed_position(&open_position(&expired)));
@@ -4068,7 +4058,7 @@ mod tests {
     fn reset_clears_subscriptions_and_lookup_state() {
         let (mut client, _cache) = test_client();
         let expired = test_binary_option("0xRESET", true, true);
-        client.upsert_execution_lookup(&expired);
+        client.flush_pending_instruments();
         client.on_instrument(expired.clone());
         client.ensure_order_event_subscription();
         client.ensure_position_event_subscription();

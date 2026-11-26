@@ -910,7 +910,7 @@ async fn test_data_client_subscribes_dispatches_and_unsubscribes_exact_channels(
         ))
         .unwrap();
     wait_for_subscribe(&ws_state, "ticker_slim.ETH-PERP.100").await;
-
+    assert_lazy_loaded_eth_instruments(&mut rx).await;
     match recv_data(&mut rx).await {
         Data::Quote(quote) => {
             assert_eq!(quote.instrument_id, instrument_id);
@@ -998,7 +998,7 @@ async fn test_subscribe_book_depth_emits_depth_snapshot() {
         .subscribe_book_depth(subscribe_book_depth(instrument_id, None))
         .unwrap();
     wait_for_subscribe(&ws_state, "orderbook.ETH-PERP.1.10").await;
-
+    assert_lazy_loaded_eth_instruments(&mut rx).await;
     match recv_data(&mut rx).await {
         Data::BookDepth(depth) => {
             assert_eq!(depth.instrument_id, instrument_id);
@@ -1020,6 +1020,23 @@ async fn test_subscribe_book_depth_emits_depth_snapshot() {
     );
 
     client.disconnect().await.unwrap();
+}
+
+async fn assert_lazy_loaded_eth_instruments(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+) {
+    let mut ids = HashSet::with_capacity(2);
+    for _ in 0..2 {
+        ids.insert(recv_instrument(rx, Duration::from_secs(5)).await.id());
+    }
+
+    assert_eq!(
+        ids,
+        HashSet::from([
+            InstrumentId::from("ETH-20260627-3500-C.DERIVE"),
+            InstrumentId::from("ETH-PERP.DERIVE"),
+        ]),
+    );
 }
 
 #[rstest]
@@ -4166,6 +4183,14 @@ async fn test_request_instrument_emits_response_and_caches() {
         .request_instrument(request_instrument(instrument_id))
         .unwrap();
 
+    let Some(DataEvent::Data(Data::Instrument(published))) =
+        tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .unwrap()
+    else {
+        panic!("expected instrument update before the response");
+    };
+
     let response = recv_response(&mut rx).await;
 
     let DataResponse::Instrument(boxed) = response else {
@@ -4178,6 +4203,10 @@ async fn test_request_instrument_emits_response_and_caches() {
     assert_eq!(boxed.data.size_precision(), 3);
     assert_eq!(boxed.data.price_increment(), Price::from("0.01"));
     assert_eq!(boxed.data.size_increment(), Quantity::from("0.001"));
+    assert_eq!(published.id(), instrument_id);
+    assert_eq!(published.ts_init(), boxed.data.ts_init());
+    assert_eq!(published.price_increment(), Price::from("0.01"));
+    assert_eq!(published.size_increment(), Quantity::from("0.001"));
 
     let calls = rest_state.instrument_calls().await;
     assert_eq!(calls.len(), 1);

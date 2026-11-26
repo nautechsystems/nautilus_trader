@@ -32,7 +32,11 @@ use nautilus_execution::engine::{
 };
 #[cfg(feature = "high-precision")]
 use nautilus_model::{
-    accounts::MarginAccount, enums::AccountType, events::AccountState, types::AccountBalance,
+    accounts::MarginAccount,
+    enums::{AccountType, OptionPremiumStyle},
+    events::AccountState,
+    instruments::stubs::option_contract_appl,
+    types::AccountBalance,
 };
 use nautilus_model::{
     accounts::{Account, AccountAny, CashAccount},
@@ -166,6 +170,7 @@ struct NettingReopen {
 #[cfg(feature = "high-precision")]
 #[rstest]
 #[case::margin_opening_product(false, RejectedFill::OpeningProduct)]
+#[case::futures_style_opening_product(false, RejectedFill::FuturesStyleOpeningProduct)]
 #[case::cash_opening_product(true, RejectedFill::OpeningProduct)]
 #[case::margin_original_flip_commission(false, RejectedFill::FlipCommission)]
 #[case::cash_original_flip_commission(true, RejectedFill::FlipCommission)]
@@ -178,7 +183,16 @@ fn test_rejected_fill_preserves_account_and_position(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let mut engine = ExecutionEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
-    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    let futures_style = matches!(scenario, RejectedFill::FuturesStyleOpeningProduct);
+    let instrument = if futures_style {
+        let mut option = option_contract_appl();
+        option.id = InstrumentId::from("OPTION.SIM");
+        option.premium_style = Some(OptionPremiumStyle::FuturesStyle);
+        InstrumentAny::OptionContract(option)
+    } else {
+        InstrumentAny::CurrencyPair(audusd_sim())
+    };
+
     let account_id = AccountId::test_default();
     let position_id = PositionId::from("P-REJECTED-FILL");
     let total = Money::from("100 USD");
@@ -206,7 +220,12 @@ fn test_rejected_fill_preserves_account_and_position(
     let account = if cash {
         AccountAny::Cash(CashAccount::new(state, true, false))
     } else {
-        AccountAny::Margin(MarginAccount::new(state, true))
+        let mut margin = MarginAccount::new(state, true);
+        if futures_style {
+            margin.initialize_option_variations();
+        }
+
+        AccountAny::Margin(margin)
     };
 
     cache.borrow_mut().add_account(account).unwrap();
@@ -225,7 +244,7 @@ fn test_rejected_fill_preserves_account_and_position(
         .unwrap();
 
     let (opening, qty, px, side, commission) = match scenario {
-        RejectedFill::OpeningProduct => (
+        RejectedFill::OpeningProduct | RejectedFill::FuturesStyleOpeningProduct => (
             None,
             "0.0000000000000001",
             "0.0000000000000001",
@@ -309,6 +328,17 @@ fn test_rejected_fill_preserves_account_and_position(
 
     engine.process(&fill);
 
+    if futures_style {
+        let cache = cache.borrow();
+        let account = cache.account_ref(&account_id).unwrap();
+
+        let AccountAny::Margin(margin) = &*account else {
+            unreachable!();
+        };
+
+        assert!(margin.option_variations().next().is_none());
+    }
+
     assert_eq!(
         serde_json::to_value(cache.borrow().account_owned(&account_id)).unwrap(),
         account_before
@@ -334,6 +364,7 @@ fn test_rejected_fill_preserves_account_and_position(
 #[cfg(feature = "high-precision")]
 enum RejectedFill {
     OpeningProduct,
+    FuturesStyleOpeningProduct,
     FlipCommission,
     CumulativeCost,
 }

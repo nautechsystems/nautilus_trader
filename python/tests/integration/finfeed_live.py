@@ -117,10 +117,9 @@ async def main() -> None:
     node = (
         LiveNode.builder("FINFEED-LIVE-ACCEPTANCE", TraderId("TESTER-001"), Environment.LIVE)
         .with_reconciliation(False)
-        .with_timeout_connection(90)
-        .with_timeout_portfolio(0)
+        .with_timeout_connection_secs(90)
+        .with_timeout_portfolio_secs(0)
         .with_delay_post_stop_secs(0)
-        .with_delay_shutdown_secs(0)
         .add_data_client(None, FinFeedDataClientFactory(), config)
         .add_data_client(None, PolymarketDataClientFactory(), native)
         .build()

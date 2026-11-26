@@ -40,6 +40,7 @@ from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.model import StrategyId
 from nautilus_trader.model import TraderId
 from nautilus_trader.portfolio import Portfolio
+from nautilus_trader.testkit.functions import eventually
 from nautilus_trader.trading import ExecutionAlgorithm
 from nautilus_trader.trading import ExecutionAlgorithmConfig
 from nautilus_trader.trading import ImportableControllerConfig
@@ -335,7 +336,6 @@ async def test_live_node_start_stop_dispose_local() -> None:
             timeout_portfolio_secs=0,
             timeout_disconnection_secs=0,
             delay_post_stop_secs=0,
-            timeout_shutdown_secs=0,
         ),
     )
     node.add_strategy_from_config(
@@ -352,7 +352,7 @@ async def test_live_node_start_stop_dispose_local() -> None:
         assert handle.is_running is False
 
         task = asyncio.create_task(node.run_async())
-        await asyncio.sleep(0.1)
+        await eventually(lambda: handle.is_running, timeout_secs=10.0)
         assert handle.is_running is True
 
         handle.stop()
@@ -422,7 +422,6 @@ async def test_live_node_run_after_dispose_raises() -> None:
             timeout_portfolio_secs=0,
             timeout_disconnection_secs=0,
             delay_post_stop_secs=0,
-            timeout_shutdown_secs=0,
         ),
     )
     node.dispose()
@@ -947,7 +946,6 @@ async def test_add_exec_algorithm_rejects_running_node() -> None:
             timeout_portfolio_secs=0,
             timeout_disconnection_secs=0,
             delay_post_stop_secs=0,
-            timeout_shutdown_secs=0,
         ),
     )
 
@@ -957,9 +955,10 @@ async def test_add_exec_algorithm_rejects_running_node() -> None:
 
     handle = node.handle()
     task = asyncio.create_task(node.run_async())
-    await asyncio.sleep(0.1)
 
     try:
+        await eventually(lambda: handle.is_running, timeout_secs=10.0)
+
         # `run_async` owns the node, so registration is refused before the running check.
         with pytest.raises(RuntimeError) as exc_info:
             node.add_exec_algorithm(exec_algorithm)

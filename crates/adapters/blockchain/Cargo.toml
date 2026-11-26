@@ -30,7 +30,7 @@ extension-module = [
   "python",
   "pyo3/extension-module",
 ]
-hypersync = ["hypersync-client", "nautilus-live/node", "dep:async-stream"]
+hypersync = ["nautilus-live/node", "dep:async-stream", "dep:uuid"]
 python = [
   "dep:nautilus-system",
   "nautilus-infrastructure/python",
@@ -88,10 +88,10 @@ ustr = { workspace = true }
 zeroize = { workspace = true }
 
 async-stream = { workspace = true, optional = true }
-hypersync-client = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 turmoil = { workspace = true, optional = true }
+uuid = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-model = { workspace = true, features = ["test-support"] }

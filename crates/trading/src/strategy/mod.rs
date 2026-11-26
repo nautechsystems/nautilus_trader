@@ -1163,8 +1163,13 @@ pub trait Strategy: DataActor {
     ///
     /// # Errors
     ///
-    /// Returns an error if the strategy is not registered, a required instrument is not cached,
-    /// or position closing fails.
+    /// Returns an error if:
+    /// - The strategy is not registered.
+    /// - A required instrument is not cached.
+    /// - The closing quantity cannot be aligned to the instrument size increment.
+    /// - Market order validation fails for a position that requires a close order.
+    ///   [`TimeInForce::Gtd`] fails before any close order is submitted.
+    /// - A closing order cannot be submitted.
     #[expect(clippy::too_many_arguments)]
     fn close_position(
         &mut self,
@@ -1195,7 +1200,7 @@ pub trait Strategy: DataActor {
             return Ok(());
         };
 
-        let order = core.order_factory().market(
+        let order = core.order_factory().try_market(
             position.instrument_id,
             closing_side,
             quantity,
@@ -1206,7 +1211,7 @@ pub trait Strategy: DataActor {
             None,
             tags,
             None,
-        );
+        )?;
 
         self.submit_order(order, Some(position.id), client_id, params)
     }
@@ -1218,8 +1223,13 @@ pub trait Strategy: DataActor {
     ///
     /// # Errors
     ///
-    /// Returns an error if the strategy is not registered, a required instrument is not cached,
-    /// or position closing fails.
+    /// Returns an error if:
+    /// - The strategy is not registered.
+    /// - A required instrument is not cached.
+    /// - The closing quantity cannot be aligned to the instrument size increment.
+    /// - Market order validation fails for a position that requires a close order.
+    ///   [`TimeInForce::Gtd`] fails before any close order is submitted.
+    /// - A closing order cannot be submitted.
     #[expect(clippy::too_many_arguments)]
     fn close_all_positions(
         &mut self,
@@ -1282,7 +1292,7 @@ pub trait Strategy: DataActor {
                 continue;
             };
 
-            let order = core.order_factory().market(
+            let order = core.order_factory().try_market(
                 pos_instrument_id,
                 closing_side,
                 quantity,
@@ -1293,7 +1303,7 @@ pub trait Strategy: DataActor {
                 None,
                 tags.clone(),
                 None,
-            );
+            )?;
 
             self.submit_order(order, Some(pos_id), client_id, params.clone())?;
         }

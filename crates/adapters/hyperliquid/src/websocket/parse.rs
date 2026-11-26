@@ -302,9 +302,7 @@ pub fn parse_ws_candle(
 
     let ts_event = millis_to_nanos(candle.t)?;
 
-    Ok(Bar::new(
-        *bar_type, open, high, low, close, volume, ts_event, ts_init,
-    ))
+    Bar::new_checked(*bar_type, open, high, low, close, volume, ts_event, ts_init)
 }
 
 /// Parses a WebSocket order update message into an [`OrderStatusReport`].

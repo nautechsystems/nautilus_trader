@@ -28,6 +28,7 @@ use std::{
 };
 
 use ahash::AHashMap;
+use dashmap::DashMap;
 use futures_util::{StreamExt, stream::FuturesUnordered};
 use nautilus_core::{
     AtomicTime,
@@ -257,7 +258,7 @@ pub(super) struct FeedHandler {
     subscription_retries: FuturesUnordered<SubscriptionRetry>,
     ignored_completions: AHashMap<Ustr, CompletionKind>,
     next_subscription_generation: u64,
-    instruments: AHashMap<i64, InstrumentAny>,
+    instruments: Arc<DashMap<i64, InstrumentAny>>,
     book: BookSyncTracker,
     book_snapshot_timeout: Duration,
     last_candles: AHashMap<(i64, LighterCandleResolution), LighterWsCandle>,
@@ -329,7 +330,7 @@ impl FeedHandler {
             subscription_retries: FuturesUnordered::new(),
             ignored_completions: AHashMap::new(),
             next_subscription_generation: 1,
-            instruments: AHashMap::new(),
+            instruments: Arc::default(),
             book: BookSyncTracker::default(),
             book_snapshot_timeout,
             last_candles: AHashMap::new(),
@@ -338,6 +339,14 @@ impl FeedHandler {
                 settlement_currency,
             ),
         }
+    }
+
+    pub(super) fn with_instruments(
+        mut self,
+        instruments: Arc<DashMap<i64, InstrumentAny>>,
+    ) -> Self {
+        self.instruments = instruments;
+        self
     }
 
     pub(super) fn send(&self, msg: NautilusWsMessage) -> Result<(), String> {
@@ -589,7 +598,7 @@ impl FeedHandler {
                             if subscribed {
                                 let inserted = self.book.delta_subs.insert(market_index);
                                 if inserted
-                                    && let Some(first) = self.instruments.get(&market_index).and_then(|instrument| self.book.emit_cached_order_book_deltas_snapshot(market_index, instrument, self.clock.get_time_ns()))
+                                    && let Some(first) = self.instruments.get(&market_index).and_then(|instrument| self.book.emit_cached_order_book_deltas_snapshot(market_index, instrument.value(), self.clock.get_time_ns()))
                                 {
                                     return Some(first);
                                 }
@@ -603,7 +612,7 @@ impl FeedHandler {
                                 let inserted = self.book.depth_subs.insert(market_index);
                                 if inserted
                                     && let Some(first) =
-                                        self.instruments.get(&market_index).and_then(|instrument| self.book.emit_cached_order_book_depth_snapshot(market_index, instrument, self.clock.get_time_ns()))
+                                        self.instruments.get(&market_index).and_then(|instrument| self.book.emit_cached_order_book_depth_snapshot(market_index, instrument.value(), self.clock.get_time_ns()))
                                 {
                                     return Some(first);
                                 }
@@ -1536,7 +1545,7 @@ impl FeedHandler {
         match self.book.validate_sequence(market_index, book, is_snapshot) {
             BookSequenceOutcome::Accept => self.book.apply(
                 market_index,
-                instrument,
+                instrument.value(),
                 book,
                 timestamp,
                 is_snapshot,
@@ -1544,6 +1553,7 @@ impl FeedHandler {
             ),
             BookSequenceOutcome::Suppress => Vec::new(),
             BookSequenceOutcome::Recover => {
+                drop(instrument);
                 self.start_book_recovery(market_index);
                 Vec::new()
             }
@@ -1832,7 +1842,7 @@ impl FeedHandler {
             return Vec::new();
         };
 
-        match parse_ws_quote_tick(ticker, instrument, timestamp, ts_init) {
+        match parse_ws_quote_tick(ticker, instrument.value(), timestamp, ts_init) {
             Ok(Some(quote)) => vec![NautilusWsMessage::Quote(quote)],
             Ok(None) => {
                 log::debug!(
@@ -1871,7 +1881,7 @@ impl FeedHandler {
 
         let mut ticks = Vec::with_capacity(trades.len() + liquidation_trades.len());
         for trade in trades.iter().chain(liquidation_trades.iter()) {
-            match parse_ws_trade_tick(trade, instrument, ts_init) {
+            match parse_ws_trade_tick(trade, instrument.value(), ts_init) {
                 Ok(tick) => ticks.push(tick),
                 Err(e) => log::error!("Error parsing Lighter trade tick: {e}"),
             }
@@ -1916,18 +1926,17 @@ impl FeedHandler {
         };
 
         let mut messages = Vec::with_capacity(3);
-
-        match parse_ws_mark_price_update(stats, instrument, timestamp, ts_init) {
+        match parse_ws_mark_price_update(stats, instrument.value(), timestamp, ts_init) {
             Ok(mark_price) => messages.push(NautilusWsMessage::MarkPrice(mark_price)),
             Err(e) => log::error!("Error parsing Lighter mark price: {e}"),
         }
 
-        match parse_ws_index_price_update(stats, instrument, timestamp, ts_init) {
+        match parse_ws_index_price_update(stats, instrument.value(), timestamp, ts_init) {
             Ok(index_price) => messages.push(NautilusWsMessage::IndexPrice(index_price)),
             Err(e) => log::error!("Error parsing Lighter index price: {e}"),
         }
 
-        match parse_ws_funding_rate_update(stats, instrument, timestamp, ts_init) {
+        match parse_ws_funding_rate_update(stats, instrument.value(), timestamp, ts_init) {
             Ok(funding_rate) => messages.push(NautilusWsMessage::FundingRate(funding_rate)),
             Err(e) => log::error!("Error parsing Lighter funding rate: {e}"),
         }
@@ -1967,7 +1976,7 @@ impl FeedHandler {
             return None;
         };
 
-        match parse_ws_spot_index_price_update(stats, instrument, timestamp, ts_init) {
+        match parse_ws_spot_index_price_update(stats, instrument.value(), timestamp, ts_init) {
             Ok(index_price) => Some(NautilusWsMessage::IndexPrice(index_price)),
             Err(e) => {
                 log::error!("Error parsing Lighter spot index price: {e}");
@@ -2003,7 +2012,7 @@ impl FeedHandler {
                 None => {}
                 Some(prev) if candle.t > prev.t => {
                     // `t` advanced; previous candle is closed.
-                    match parse_ws_bar(instrument, &prev, resolution, ts_init) {
+                    match parse_ws_bar(instrument.value(), &prev, resolution, ts_init) {
                         Ok(bar) => emitted.push(NautilusWsMessage::Bar(bar)),
                         Err(e) => log::error!("Error parsing Lighter candle bar: {e}"),
                     }
@@ -2125,7 +2134,11 @@ impl FeedHandler {
             };
 
             match parse_ws_position_status_report(
-                position, instrument, account_id, ts_event, ts_init,
+                position,
+                instrument.value(),
+                account_id,
+                ts_event,
+                ts_init,
             ) {
                 Ok(report) => reports.push(report),
                 Err(e) => {

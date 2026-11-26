@@ -87,7 +87,9 @@ pub fn parse_futures_order_update_to_order_status(
     )?;
 
     let avg_px = if filled_qty.as_decimal() > Decimal::ZERO {
-        parse_optional_positive_price_at_precision(&order.average_price, price_precision)
+        parse_required_decimal(&order.average_price, "average_price")
+            .ok()
+            .filter(|price| *price > Decimal::ZERO)
     } else {
         None
     };
@@ -144,9 +146,7 @@ pub fn parse_futures_order_update_to_order_status(
         report.activation_price = Some(activation_price);
     }
 
-    if let Some(avg) = avg_px {
-        report.avg_px = Some(avg.as_decimal());
-    }
+    report.avg_px = avg_px;
 
     Ok(report)
 }
@@ -748,6 +748,29 @@ mod tests {
 
         let error = result.unwrap_err().to_string();
         assert!(error.contains("original_price"));
+    }
+
+    #[rstest]
+    fn test_parse_order_update_to_order_status_preserves_avg_px_precision() {
+        let mut msg: BinanceFuturesOrderUpdateMsg =
+            load_user_data_fixture("order_update_trade.json");
+        msg.order.average_price = "50000.005".to_string();
+
+        let report = parse_futures_order_update_to_order_status(
+            &msg,
+            instrument_id(),
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            account_id(),
+            false,
+            UnixNanos::from(1_000_000_000_u64),
+        )
+        .unwrap();
+
+        assert_eq!(
+            report.avg_px,
+            Some(Decimal::from_str_exact("50000.005").unwrap())
+        );
     }
 
     #[rstest]

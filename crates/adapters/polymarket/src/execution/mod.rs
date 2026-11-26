@@ -35,6 +35,7 @@ mod responses;
 
 use std::{
     cell::RefCell,
+    rc::Rc,
     sync::{Arc, atomic::AtomicBool},
 };
 
@@ -47,7 +48,7 @@ use nautilus_common::{
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
         ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
-    msgbus::TypedHandler,
+    msgbus::{InstrumentSubscription, TypedHandler, switchboard::get_instruments_pattern},
 };
 use nautilus_core::{
     Params, UnixNanos,
@@ -114,9 +115,10 @@ pub struct PolymarketExecutionClient {
     fill_observer: Option<TypedHandler<OrderEventAny>>,
     void_observer: Option<TypedHandler<OrderEventAny>>,
     decline_observer: Option<TypedHandler<OrderEventAny>>,
+    instrument_subscription: Option<InstrumentSubscription>,
     shared_token_instruments: Arc<AtomicMap<Ustr, InstrumentAny>>,
     neg_risk_index: Arc<AtomicMap<InstrumentId, bool>>,
-    instruments_pending: RefCell<Option<Vec<InstrumentAny>>>,
+    instruments_pending: Rc<RefCell<Option<Vec<InstrumentAny>>>>,
     pending_submits: PendingSubmitTracker,
     pending_cancels: PendingCancelTracker,
     order_contexts: Arc<OrderContextRegistry>,
@@ -251,9 +253,10 @@ impl PolymarketExecutionClient {
             fill_observer: None,
             void_observer: None,
             decline_observer: None,
+            instrument_subscription: None,
             shared_token_instruments: Arc::new(AtomicMap::new()),
             neg_risk_index: Arc::new(AtomicMap::new()),
-            instruments_pending: RefCell::new(Some(Vec::new())),
+            instruments_pending: Rc::new(RefCell::new(Some(Vec::new()))),
             pending_submits: PendingSubmitTracker::default(),
             pending_cancels: PendingCancelTracker::default(),
             order_contexts: Arc::new(OrderContextRegistry::default()),
@@ -304,6 +307,46 @@ fn resolve_maker_address(
     }
 
     Ok(format!("{maker_address:#x}"))
+}
+
+impl PolymarketExecutionClient {
+    fn subscribe_instruments(&mut self) {
+        if self.instrument_subscription.is_some() {
+            return;
+        }
+
+        let shared_token_instruments = Arc::clone(&self.shared_token_instruments);
+        let neg_risk_index = Arc::clone(&self.neg_risk_index);
+        let instruments_pending = Rc::clone(&self.instruments_pending);
+        self.instrument_subscription = Some(InstrumentSubscription::new(
+            get_instruments_pattern(self.venue()),
+            TypedHandler::from(move |instrument: &InstrumentAny| {
+                Self::apply_instrument(
+                    &shared_token_instruments,
+                    &neg_risk_index,
+                    &instruments_pending,
+                    instrument.clone(),
+                );
+            }),
+        ));
+    }
+
+    fn apply_instrument(
+        shared_token_instruments: &AtomicMap<Ustr, InstrumentAny>,
+        neg_risk_index: &AtomicMap<InstrumentId, bool>,
+        instruments_pending: &RefCell<Option<Vec<InstrumentAny>>>,
+        instrument: InstrumentAny,
+    ) {
+        if let Some(pending) = instruments_pending.borrow_mut().as_mut() {
+            pending.push(instrument);
+        } else {
+            lifecycle::upsert_execution_lookup(
+                shared_token_instruments,
+                neg_risk_index,
+                &instrument,
+            );
+        }
+    }
 }
 
 #[async_trait(?Send)]
@@ -371,16 +414,22 @@ impl ExecutionClient for PolymarketExecutionClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         self.start_client();
         Ok(())
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         self.stop_client();
         Ok(())
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         self.reset_client();
         Ok(())
     }
@@ -458,11 +507,12 @@ impl ExecutionClient for PolymarketExecutionClient {
     }
 
     fn on_instrument(&mut self, instrument: InstrumentAny) {
-        if let Some(pending) = self.instruments_pending.get_mut() {
-            pending.push(instrument);
-        } else {
-            self.on_instrument_update(&instrument);
-        }
+        Self::apply_instrument(
+            &self.shared_token_instruments,
+            &self.neg_risk_index,
+            &self.instruments_pending,
+            instrument,
+        );
     }
 
     fn calculate_commission(
@@ -477,6 +527,8 @@ impl ExecutionClient for PolymarketExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         self.connect_client().await
     }
 

@@ -48,7 +48,7 @@ use crate::{
         rate_limit::{
             LIGHTER_REST_BUCKET, LIGHTER_REST_QUOTA, LighterTxRateLimiter, await_tx_quota,
         },
-        symbol::MarketRegistry,
+        symbol::{MarketRegistry, format_instrument_id_with_venue},
         urls::lighter_http_base_url,
     },
     http::{
@@ -58,10 +58,10 @@ use crate::{
         },
         models::{
             LighterAccountDetail, LighterAccountsResponse, LighterCandle, LighterCandles,
-            LighterFundings, LighterMakerOnlyApiKeys, LighterNextNonce, LighterOrderBookDetails,
-            LighterOrderBookOrders, LighterOrderBooks, LighterOrders, LighterResultCode,
-            LighterSendTxBatchRequest, LighterSendTxBatchResponse, LighterSendTxRequest,
-            LighterSendTxResponse, LighterTrade, LighterTrades, LighterTx,
+            LighterFundings, LighterMakerOnlyApiKeys, LighterNextNonce, LighterOrderBook,
+            LighterOrderBookDetails, LighterOrderBookOrders, LighterOrderBooks, LighterOrders,
+            LighterResultCode, LighterSendTxBatchRequest, LighterSendTxBatchResponse,
+            LighterSendTxRequest, LighterSendTxResponse, LighterTrade, LighterTrades, LighterTx,
         },
         parse::{
             parse_candle_bar, parse_funding_rate_update,
@@ -1477,17 +1477,46 @@ impl LighterHttpClient {
         &self,
         instrument_id: InstrumentId,
     ) -> LighterHttpResult<(InstrumentAny, LighterMarketStatus)> {
+        let response = self.fetch_instrument_details(Some(instrument_id)).await?;
+        self.parse_instrument_detail(response, instrument_id, true)
+    }
+
+    pub(crate) async fn fetch_instrument_details(
+        &self,
+        instrument_id: Option<InstrumentId>,
+    ) -> LighterHttpResult<LighterOrderBookDetails> {
         let query = LighterOrderBookDetailsQuery {
-            market_id: self.market_registry.market_index(&instrument_id),
+            market_id: instrument_id.and_then(|id| self.market_registry.market_index(&id)),
             filter: None,
         };
-        let instruments = self
-            .request_instruments_with_status_for_query(&query)
-            .await?;
 
-        instruments
+        self.inner.get_order_book_details(&query).await
+    }
+
+    pub(crate) fn parse_instrument_detail(
+        &self,
+        mut response: LighterOrderBookDetails,
+        instrument_id: InstrumentId,
+        apply: bool,
+    ) -> LighterHttpResult<(InstrumentAny, LighterMarketStatus)> {
+        let matches = |row: &LighterOrderBook| {
+            format_instrument_id_with_venue(
+                row.symbol.as_str(),
+                row.market_type,
+                self.market_registry.venue(),
+            ) == instrument_id
+        };
+
+        response
+            .order_book_details
+            .retain(|row| matches(&row.order_book));
+        response
+            .spot_order_book_details
+            .retain(|row| matches(&row.order_book));
+
+        self.parse_instrument_details(&response, apply)?
             .into_iter()
-            .find(|(instrument, _)| instrument.id() == instrument_id)
+            .next()
             .ok_or_else(|| LighterHttpError::Parse(format!("instrument {instrument_id} not found")))
     }
 
@@ -1539,9 +1568,29 @@ impl LighterHttpClient {
         query: &LighterOrderBookDetailsQuery,
     ) -> LighterHttpResult<Vec<(InstrumentAny, LighterMarketStatus)>> {
         let response = self.inner.get_order_book_details(query).await?;
+        self.parse_instrument_details(&response, true)
+    }
+
+    pub(crate) fn parse_instrument_details(
+        &self,
+        response: &LighterOrderBookDetails,
+        apply: bool,
+    ) -> LighterHttpResult<Vec<(InstrumentAny, LighterMarketStatus)>> {
+        let detached;
+
+        let registry = if apply {
+            self.market_registry.as_ref()
+        } else {
+            detached = MarketRegistry::new_with_venue_and_settlement_currency(
+                self.market_registry.venue(),
+                self.market_registry.settlement_currency(),
+            );
+            &detached
+        };
+
         let ts_init = self.generate_ts_init();
         parse_order_book_details_instruments_with_status(
-            &self.market_registry,
+            registry,
             &response.order_book_details,
             &response.spot_order_book_details,
             ts_init,
@@ -1617,6 +1666,21 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_parse_response_does_not_register_live_markets() {
+        let fixture = include_str!("../../test_data/http_order_book_details.json");
+        let response: LighterOrderBookDetails = serde_json::from_str(fixture).unwrap();
+        let client = LighterHttpClient::new(LighterEnvironment::Mainnet, None, 10, None).unwrap();
+        let id = InstrumentId::from("ETH-PERP.LIGHTER");
+
+        let (instrument, status) = client.parse_instrument_detail(response, id, false).unwrap();
+
+        assert_eq!(instrument.id(), id);
+        assert_eq!(status, LighterMarketStatus::Active);
+        assert_eq!(client.market_registry().market_index(&id), None);
+        assert_eq!(client.market_registry().instrument_id(0), None);
+    }
 
     #[rstest]
     #[case(ENDPOINT_TRADES, "lighter:trades")]

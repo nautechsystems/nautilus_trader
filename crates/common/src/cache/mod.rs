@@ -93,8 +93,8 @@ use nautilus_model::{
         option_chain::OptionGreeks,
     },
     enums::{
-        AggregationSource, ContingencyType, InstrumentClass, OmsType, OrderSide, PositionSide,
-        PriceType,
+        AggregationSource, ContingencyType, InstrumentClass, InstrumentCloseType, OmsType,
+        OrderSide, PositionSide, PriceType,
     },
     events::{AccountState, OrderEventAny, OrderFilled, PositionAdjusted},
     identifiers::{
@@ -492,9 +492,14 @@ impl Cache {
     /// Returns the execution client registered as the route for `venue`, else the default client.
     #[must_use]
     pub fn client_id_for_venue(&self, venue: &Venue) -> Option<&ClientId> {
-        self.client_routes
-            .get(venue)
+        self.client_route_for_venue(venue)
             .or(self.default_client_id.as_ref())
+    }
+
+    /// Returns the execution client registered as the route for `venue`, if one exists.
+    #[must_use]
+    pub fn client_route_for_venue(&self, venue: &Venue) -> Option<&ClientId> {
+        self.client_routes.get(venue)
     }
 
     /// Registers the execution client `client_id` as the route for commands on `venue`, replacing
@@ -611,11 +616,7 @@ impl Cache {
         let (general, mut cache_map, order_indexes) = match &self.database {
             Some(db) => {
                 let (general, cache_map) = db.load_for_recovery(false).await?;
-
-                let order_indexes = (
-                    db.load_index_order_position()?,
-                    db.load_index_order_client()?,
-                );
+                let order_indexes = db.load_order_indexes().await?;
 
                 (general, cache_map, Some(order_indexes))
             }
@@ -659,9 +660,10 @@ impl Cache {
 
         self.restore_positions(cache_map.positions);
 
-        if let Some((order_position, order_client)) = order_indexes {
-            self.index.order_position = self.sanitize_order_position_index(order_position);
-            self.index.order_client = order_client;
+        if let Some(order_indexes) = order_indexes {
+            self.index.order_position =
+                self.sanitize_order_position_index(order_indexes.order_position);
+            self.index.order_client = order_indexes.order_client;
         }
 
         self.assign_position_ids_to_contingencies();
@@ -2918,8 +2920,13 @@ impl Cache {
             )?;
         }
 
-        self.instrument_closes.insert(close.instrument_id, close);
+        self.cache_instrument_close(close);
         Ok(())
+    }
+
+    /// Stores the latest close in memory without writing it to the backing database.
+    pub fn cache_instrument_close(&mut self, close: InstrumentClose) {
+        self.instrument_closes.insert(close.instrument_id, close);
     }
 
     /// Adds the `quote` tick to the cache.
@@ -3220,11 +3227,26 @@ impl Cache {
 
     /// Gets the yield curve for the `key`.
     pub fn yield_curve(&self, key: &str) -> Option<Box<dyn Fn(f64) -> f64>> {
-        self.yield_curves.get(key).map(|curve| {
+        self.yield_curve_ref(key).map(|curve| {
             let curve_clone = curve.clone();
             Box::new(move |expiry_in_years: f64| curve_clone.get_rate(expiry_in_years))
                 as Box<dyn Fn(f64) -> f64>
         })
+    }
+
+    pub(crate) fn yield_curve_for_instrument(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> Option<&YieldCurve> {
+        if self.yield_curves.is_empty() {
+            return None;
+        }
+
+        self.yield_curve_ref(&instrument_id.to_string())
+    }
+
+    pub(crate) fn yield_curve_ref(&self, key: &str) -> Option<&YieldCurve> {
+        self.yield_curves.get(key)
     }
 
     /// Adds the `currency` to the cache.
@@ -3240,14 +3262,7 @@ impl Cache {
         let token = nautilus_model::defi::currency::check(currency)?.is_some();
         #[cfg(feature = "defi")]
         if token {
-            if let Some(existing) = self.currencies.get(&currency.code) {
-                if !self.defi.contains_currency(&currency.code) {
-                    anyhow::bail!("Legacy currency occupies token code {}", currency.code);
-                }
-
-                nautilus_model::defi::currency::check(*existing)?;
-            }
-
+            self.check_cached_token_currency(currency.code)?;
             Currency::register(currency, false)?;
         }
 
@@ -4587,6 +4602,43 @@ impl Cache {
         }
 
         Ok(snapshot)
+    }
+
+    /// Records runtime activation on the cached trailing stop and in backends that support it.
+    ///
+    /// Activation preserves lifecycle events. Ignores other order types and logs an error if the
+    /// order is missing.
+    pub fn store_trailing_stop_activation(
+        &mut self,
+        client_order_id: ClientOrderId,
+        activation_price: Price,
+    ) {
+        let Some(mut order) = self.order_mut(&client_order_id) else {
+            log::error!("Cannot store trailing stop activation: order {client_order_id} not found");
+            return;
+        };
+
+        let init_id = order.init_id();
+        let (price, is_activated) = match &mut *order {
+            OrderAny::TrailingStopMarket(order) => {
+                (&mut order.activation_price, &mut order.is_activated)
+            }
+            OrderAny::TrailingStopLimit(order) => {
+                (&mut order.activation_price, &mut order.is_activated)
+            }
+            _ => return,
+        };
+
+        *price = Some(activation_price);
+        *is_activated = true;
+        drop(order);
+
+        if let Some(database) = &self.database
+            && let Err(e) =
+                database.store_trailing_stop_activation(client_order_id, init_id, activation_price)
+        {
+            log::error!("Failed to persist trailing stop activation for {client_order_id}: {e:#}");
+        }
     }
 
     fn reindex_order_position_after_fill_void(&mut self, client_order_id: ClientOrderId) {
@@ -7864,6 +7916,16 @@ impl Cache {
         self.instrument_closes.get(instrument_id)
     }
 
+    /// Returns the cached contract expiry close for `instrument_id`, if present.
+    #[must_use]
+    pub fn instrument_expiry_close(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> Option<&InstrumentClose> {
+        self.instrument_close(instrument_id)
+            .filter(|close| close.close_type == InstrumentCloseType::ContractExpired)
+    }
+
     /// Returns references to all instrument IDs with a cached close.
     #[must_use]
     pub fn instrument_close_ids(&self) -> Vec<&InstrumentId> {
@@ -8491,10 +8553,16 @@ impl Cache {
     /// Returns owned copies of every account in the cache.
     #[must_use]
     pub fn accounts_all_owned(&self) -> Vec<AccountAny> {
+        self.accounts_all_refs()
+            .map(|account| account.cloned())
+            .collect()
+    }
+
+    /// Iterates over the cached accounts. Drop each borrow before mutating its account.
+    pub fn accounts_all_refs(&self) -> impl Iterator<Item = AccountRef<'_>> {
         self.accounts
             .values()
-            .map(|account_cell| account_cell.borrow().clone())
-            .collect()
+            .map(|account_cell| AccountRef::new(account_cell.borrow()))
     }
 
     /// Updates the own order book with an order.

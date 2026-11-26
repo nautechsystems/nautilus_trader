@@ -64,19 +64,13 @@ pub fn parse_collect_event_hypersync(
 
     // Extract int24 tickLower from topic2 (stored as a 32-byte padded value)
     let tick_lower = match log.topics.get(2).and_then(|t| t.as_ref()) {
-        Some(topic) => {
-            let tick_lower_bytes: [u8; 32] = topic.as_ref().try_into()?;
-            i32::from_be_bytes(tick_lower_bytes[28..32].try_into()?)
-        }
+        Some(topic) => i32::from_be_bytes(topic[28..32].try_into()?),
         None => anyhow::bail!("Missing tickLower in topic2 when parsing collect event"),
     };
 
     // Extract int24 tickUpper from topic3 (stored as a 32-byte padded value)
     let tick_upper = match log.topics.get(3).and_then(|t| t.as_ref()) {
-        Some(topic) => {
-            let tick_upper_bytes: [u8; 32] = topic.as_ref().try_into()?;
-            i32::from_be_bytes(tick_upper_bytes[28..32].try_into()?)
-        }
+        Some(topic) => i32::from_be_bytes(topic[28..32].try_into()?),
         None => anyhow::bail!("Missing tickUpper in topic3 when parsing collect event"),
     };
 
@@ -96,7 +90,6 @@ pub fn parse_collect_event_hypersync(
 
         let pool_address = Address::from_slice(
             log.address
-                .clone()
                 .expect("Contract address should be set in logs")
                 .as_ref(),
         );

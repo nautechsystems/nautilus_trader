@@ -632,11 +632,13 @@ outputs instead.
   values. Use `activation_ns` and `expiration_ns` when exact nanosecond precision is required.
 - v2 caches `OptionGreeks` for option fee calculation; this extends v1.
 
-`OptionContract` and `CryptoOption` add optional `underlying_instrument_id`, `exercise_style`, and
-`settlement_type` fields:
+`OptionContract` and `CryptoOption` add optional `underlying_instrument_id`, `premium_style`,
+`exercise_style`, and `settlement_type` fields:
 
 - **Rust**: add the fields to struct literals and direct `build_checked` calls; use `None` when unknown.
 - **Defaults**: builders and Python constructors default the fields to `None`.
+- **Python**: `premium_style` precedes `exercise_style` and `settlement_type`.
+  Use keyword arguments for `exercise_style` and later optional parameters when migrating positional calls.
 - **Legacy data**: missing JSON and Arrow fields load as `None`. Parquet files without the columns remain readable.
 - **Consolidation**: Parquet files with and without these columns cannot be consolidated together.
   Read the instruments and write them to a separate catalog with the current schema first.
@@ -764,19 +766,22 @@ then supply `data_factories` and `exec_factories` to `LiveNode.build(...)` or `L
 
 ### Timeouts
 
-On `LiveNodeConfig`, timeout names now state their unit and the post-stop wait is a delay:
+In Python, `LiveNodeConfig` and `BacktestEngineConfig` use these names for timeouts and the post-stop delay.
 
-| v1 field                 | v2 `LiveNodeConfig` field     |
+| v1 field                 | v2 Python field               |
 | ------------------------ | ----------------------------- |
 | `timeout_connection`     | `timeout_connection_secs`     |
 | `timeout_reconciliation` | `timeout_reconciliation_secs` |
 | `timeout_portfolio`      | `timeout_portfolio_secs`      |
 | `timeout_disconnection`  | `timeout_disconnection_secs`  |
 | `timeout_post_stop`      | `delay_post_stop_secs`        |
-| `timeout_shutdown`       | `timeout_shutdown_secs`       |
 
-`BacktestEngineConfig` keeps the v1 timeout names without the `_secs` suffix, except that `timeout_post_stop`
-becomes `delay_post_stop`.
+Remove `timeout_shutdown` or `timeout_shutdown_secs` from existing live-node and backtest configs.
+If you used `delay_post_stop` in a v2 prerelease, rename it to `delay_post_stop_secs`.
+
+For `NautilusKernelBuilder`, drop calls to `with_timeout_shutdown` and append `_secs` to the remaining
+timeout and post-stop delay setter names.
+Remove `timeout_shutdown` from Rust `KernelConfig` and `BacktestEngineConfig` struct literals.
 
 ### Backtest models and settlement
 
@@ -1179,8 +1184,8 @@ Postgres-backed deployments must run `nautilus database init` before starting a 
 and `order.slippage` columns move from `double precision` to `NUMERIC`, and the node fails at connect time
 while the old column types remain.
 
-The initialization also adds nullable `instrument.underlying_instrument_id`, `instrument.exercise_style`,
-`instrument.settlement_type`, and `instrument.tick_scheme` columns:
+The initialization also adds nullable `instrument.tick_scheme`, `instrument.underlying_instrument_id`,
+`instrument.premium_style`, `instrument.exercise_style`, and `instrument.settlement_type` columns:
 
 - Existing rows keep `NULL`, which loads as `None`.
 - Cache startup rejects schemas missing any of these columns.

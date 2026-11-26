@@ -563,10 +563,6 @@ criteria = "safe-to-deploy"
 version = "0.4.10"
 criteria = "safe-to-deploy"
 
-[[exemptions.bincode]]
-version = "1.3.3"
-criteria = "safe-to-deploy"
-
 [[exemptions.bitcoin-consensus-encoding]]
 version = "1.1.0"
 criteria = "safe-to-deploy"
@@ -653,10 +649,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.c-kzg]]
 version = "2.1.8"
-criteria = "safe-to-deploy"
-
-[[exemptions.capnp]]
-version = "0.23.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.cc]]
@@ -753,10 +745,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.constant_time_eq]]
 version = "0.4.2"
-criteria = "safe-to-deploy"
-
-[[exemptions.convert_case]]
-version = "0.6.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.convert_case]]
@@ -1016,8 +1004,10 @@ version = "54.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.dbn]]
-version = "0.58.0"
+version = "0.74.0"
 criteria = "safe-to-deploy"
+suggest = false
+notes = "The Databento adapter uses immutable record views. Its live, historical, and file decoding paths do not reach the blanket mutable record conversion. Reassess the exemption when the resolved DBN version or these call paths change."
 
 [[exemptions.dbn-macros]]
 version = "0.58.0"
@@ -1044,15 +1034,7 @@ version = "0.20.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.derive_more]]
-version = "1.0.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.derive_more]]
 version = "2.1.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.derive_more-impl]]
-version = "1.0.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.derive_more-impl]]
@@ -1115,10 +1097,6 @@ criteria = "safe-to-deploy"
 version = "0.13.8"
 criteria = "safe-to-deploy"
 
-[[exemptions.embedded-io]]
-version = "0.7.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.enum-ordinalize]]
 version = "4.3.2"
 criteria = "safe-to-deploy"
@@ -1143,24 +1121,12 @@ criteria = "safe-to-deploy"
 version = "0.5.4"
 criteria = "safe-to-deploy"
 
-[[exemptions.eventsource-stream]]
-version = "0.2.3"
-criteria = "safe-to-deploy"
-
 [[exemptions.eyre]]
 version = "0.6.12"
 criteria = "safe-to-deploy"
 
-[[exemptions.faster-hex]]
-version = "0.9.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.fastrand]]
 version = "2.5.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.fastrange-rs]]
-version = "0.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.fastrlp]]
@@ -1217,10 +1183,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.futures-task]]
 version = "0.3.33"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures-timer]]
-version = "3.0.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.futures-util]]
@@ -1329,22 +1291,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.hyperlocal]]
 version = "0.9.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.hypersync-client]]
-version = "1.4.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.hypersync-format]]
-version = "0.7.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.hypersync-net-types]]
-version = "0.12.3"
-criteria = "safe-to-deploy"
-
-[[exemptions.hypersync-schema]]
-version = "0.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.iai]]
@@ -1919,10 +1865,6 @@ criteria = "safe-to-deploy"
 version = "4.5.1"
 criteria = "safe-to-deploy"
 
-[[exemptions.rayon]]
-version = "1.12.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.rcgen]]
 version = "0.14.8"
 criteria = "safe-to-run"
@@ -1960,15 +1902,7 @@ version = "0.8.11"
 criteria = "safe-to-deploy"
 
 [[exemptions.reqwest]]
-version = "0.12.28"
-criteria = "safe-to-deploy"
-
-[[exemptions.reqwest]]
 version = "0.13.4"
-criteria = "safe-to-deploy"
-
-[[exemptions.reqwest-eventsource]]
-version = "0.6.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.rfc6979]]
@@ -2083,23 +2017,11 @@ criteria = "safe-to-deploy"
 version = "1.0.6"
 criteria = "safe-to-deploy"
 
-[[exemptions.sbbf-rs]]
-version = "0.2.8"
-criteria = "safe-to-deploy"
-
-[[exemptions.sbbf-rs-safe]]
-version = "0.3.2"
-criteria = "safe-to-deploy"
-
 [[exemptions.schannel]]
 version = "0.1.29"
 criteria = "safe-to-deploy"
 
 [[exemptions.schemars]]
-version = "1.2.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.schemars_derive]]
 version = "1.2.1"
 criteria = "safe-to-deploy"
 
@@ -2169,10 +2091,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.serde_derive]]
 version = "1.0.229"
-criteria = "safe-to-deploy"
-
-[[exemptions.serde_derive_internals]]
-version = "0.29.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.serde_json]]
@@ -2573,10 +2491,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.wasm-bindgen-shared]]
 version = "0.2.126"
-criteria = "safe-to-deploy"
-
-[[exemptions.wasm-streams]]
-version = "0.4.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-streams]]

@@ -111,7 +111,7 @@ impl DydxHttpClient {
     /// This is a convenience method that fetches instruments and populates both
     /// the symbol-based and CLOB pair ID-based caches.
     ///
-    /// On success, existing caches are cleared and repopulated atomically.
+    /// On success, replaces the snapshot while preserving definitions newer than the request.
     /// On failure, existing caches are preserved (no partial updates).
     ///
     /// # Errors

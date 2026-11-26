@@ -139,7 +139,7 @@ mod tests {
         let record_batch = InstrumentStatus::encode_batch(&metadata, &original).unwrap();
         let schema = record_batch.schema();
         let decoded: Vec<Data> =
-            InstrumentStatus::decode_data_batch(schema.metadata(), record_batch).unwrap();
+            InstrumentStatus::decode_data_batch(&schema.metadata().into(), record_batch).unwrap();
 
         assert_eq!(
             schema

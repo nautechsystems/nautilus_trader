@@ -15,7 +15,7 @@
 
 //! Test fixtures and utilities for Binance adapter tests.
 
-use std::{fs, path::PathBuf};
+use std::{fs, future::Future, path::PathBuf, time::Duration};
 
 use serde_json::Value;
 
@@ -67,4 +67,47 @@ pub fn load_fixture_bytes(relpath: &str) -> Vec<u8> {
 pub fn load_event_fixture(relpath: &str) -> Value {
     let json = load_json_fixture(relpath);
     json.get("event").cloned().unwrap_or(json)
+}
+
+pub(crate) async fn spawn_instrument_timer(
+    timers: &mut tokio::task::JoinSet<()>,
+    future: impl Future<Output = ()> + Send + 'static,
+) {
+    let (started, ready) = tokio::sync::oneshot::channel();
+    timers.spawn(async move {
+        started.send(()).unwrap();
+        future.await;
+    });
+
+    ready.await.unwrap();
+}
+
+pub(crate) async fn advance_instrument_clock(duration: Duration) {
+    tokio::time::pause();
+    tokio::time::advance(duration).await;
+    tokio::time::resume();
+}
+
+pub(crate) async fn publish_instrument_snapshots(
+    requests: &mut tokio::sync::mpsc::UnboundedReceiver<
+        tokio::sync::oneshot::Sender<axum::response::Response>,
+    >,
+    update_lock: &tokio::sync::Mutex<()>,
+    count: usize,
+    response: impl Fn() -> axum::response::Response,
+) {
+    for _ in 0..count {
+        let request = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        request.send(response()).unwrap();
+    }
+
+    // Wait for publication before advancing virtual time or disconnecting
+    drop(
+        tokio::time::timeout(Duration::from_secs(5), update_lock.lock())
+            .await
+            .unwrap(),
+    );
 }

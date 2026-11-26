@@ -1986,13 +1986,18 @@ mod tests {
             _ => unreachable!("option fixtures only"),
         };
 
-        for (known, style, settlement) in [
-            (true, Some("AMERICAN"), Some("CASH")),
-            (true, Some("EUROPEAN"), Some("PHYSICAL")),
-            (false, Some("BERMUDAN"), Some("CASH")),
-            (true, Some("EUROPEAN"), None),
-            (true, None, Some("PHYSICAL")),
-            (false, None, None),
+        for (known, style, settlement, premium) in [
+            (true, Some("AMERICAN"), Some("CASH"), Some("UPFRONT")),
+            (
+                true,
+                Some("EUROPEAN"),
+                Some("PHYSICAL"),
+                Some("FUTURES_STYLE"),
+            ),
+            (false, Some("BERMUDAN"), Some("CASH"), None),
+            (true, Some("EUROPEAN"), None, Some("FUTURES_STYLE")),
+            (true, None, Some("PHYSICAL"), None),
+            (false, None, None, None),
         ] {
             let mut encoded = serde_json::to_value(&instrument).unwrap();
             let fields = encoded
@@ -2005,24 +2010,39 @@ mod tests {
             fields["settlement_currency"] = serde_json::json!("EUR");
             fields["underlying_instrument_id"] =
                 serde_json::to_value(known.then_some(underlying_id)).unwrap();
+            fields["premium_style"] = serde_json::to_value(premium).unwrap();
             fields["exercise_style"] = serde_json::to_value(style).unwrap();
             fields["settlement_type"] = serde_json::to_value(settlement).unwrap();
             let instrument: InstrumentAny = serde_json::from_value(encoded.clone()).unwrap();
             let metadata = instrument.metadata();
             let batch =
                 InstrumentAny::encode_batch(&metadata, std::slice::from_ref(&instrument)).unwrap();
+            let schema = batch.schema();
+            let exercise_index = schema.index_of("exercise_style").unwrap();
+            assert_eq!(
+                schema.index_of("premium_style").unwrap() + 1,
+                exercise_index
+            );
+            assert_eq!(
+                schema.index_of("settlement_type").unwrap(),
+                exercise_index + 1
+            );
             let restored = decode_instrument_any_batch(&metadata, &batch).unwrap();
             assert_eq!(serde_json::to_value(&restored[0]).unwrap(), encoded);
             assert_eq!(string_column_value(&batch, "option_kind"), Some(kind));
+            assert_eq!(string_column_value(&batch, "premium_style"), premium);
             assert_eq!(string_column_value(&batch, "exercise_style"), style);
+            assert_eq!(string_column_value(&batch, "settlement_type"), settlement);
 
             let legacy = batch_without_column(&batch, "underlying_instrument_id");
+            let legacy = batch_without_column(&legacy, "premium_style");
             let legacy = batch_without_column(&legacy, "exercise_style");
             let legacy = batch_without_column(&legacy, "settlement_type");
             let decoded = decode_instrument_any_batch(&metadata, &legacy).unwrap();
             let restored = serde_json::to_value(&decoded[0]).unwrap();
             let fields = restored.as_object().unwrap().values().next().unwrap();
             assert_eq!(fields["underlying_instrument_id"], serde_json::Value::Null);
+            assert_eq!(fields["premium_style"], serde_json::Value::Null);
             assert_eq!(fields["exercise_style"], serde_json::Value::Null);
             assert_eq!(fields["settlement_type"], serde_json::Value::Null);
         }
@@ -2040,7 +2060,12 @@ mod tests {
     )))]
     fn test_invalid_option_terms_return_field_error(
         #[case] instrument: InstrumentAny,
-        #[values("underlying_instrument_id", "exercise_style", "settlement_type")]
+        #[values(
+            "underlying_instrument_id",
+            "exercise_style",
+            "settlement_type",
+            "premium_style"
+        )]
         field: &'static str,
     ) {
         let metadata = instrument.metadata();

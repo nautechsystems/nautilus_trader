@@ -24,9 +24,9 @@ use std::{
 
 use implied_vol::{DefaultSpecialFn, ImpliedBlackVolatility, SpecialFn};
 use nautilus_core::{
-    UnixNanos,
+    DurationNanos, UnixNanos,
     correctness::{CorrectnessResult, check_equal_usize, check_predicate_true},
-    datetime::unix_nanos_to_iso8601,
+    datetime::{SECONDS_IN_DAY, unix_nanos_to_iso8601},
     math::{quadratic_interpolation, too_close_for_interpolation},
 };
 use serde::{Deserialize, Serialize};
@@ -41,9 +41,11 @@ use crate::{
     identifiers::InstrumentId,
 };
 
+/// Fixed 365-day year used for local option pricing and daily theta.
+pub const OPTION_PRICING_YEAR: DurationNanos = DurationNanos::from_days(365);
+
 const FRAC_SQRT_2_PI: f64 = f64::from_bits(0x3fd9_8845_33d4_3651);
-/// used to convert theta to per-calendar-day change when building `BlackScholesGreeksResult`.
-const THETA_DAILY_FACTOR: f64 = 1.0 / 365.0;
+const THETA_DAILY_FACTOR: f64 = SECONDS_IN_DAY as f64 / OPTION_PRICING_YEAR.as_secs_f64();
 /// Scale for vega to express as absolute percent change when building `BlackScholesGreeksResult`.
 const VEGA_PERCENT_FACTOR: f64 = 0.01;
 const RHO_PERCENT_FACTOR: f64 = 0.01;

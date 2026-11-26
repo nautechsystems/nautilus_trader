@@ -44,8 +44,9 @@ use nautilus_common::{
     messages::{
         DataEvent, DataResponse, SystemEvent,
         data::{
-            RequestInstrument, SubscribeBars, SubscribeBookDeltas, SubscribeFundingRates,
-            SubscribeInstrumentStatus, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
+            RequestInstrument, RequestInstruments, SubscribeBars, SubscribeBookDeltas,
+            SubscribeFundingRates, SubscribeInstrumentStatus, SubscribeQuotes, SubscribeTrades,
+            UnsubscribeBookDeltas,
         },
         system::SocketState,
     },
@@ -58,6 +59,7 @@ use nautilus_model::{
     enums::{BookAction, BookType, RecordFlag},
     identifiers::{ClientId, InstrumentId},
     instruments::Instrument,
+    types::Price,
 };
 use nautilus_network::websocket::TransportBackend;
 use rstest::rstest;
@@ -65,7 +67,9 @@ use rust_decimal_macros::dec;
 use serde_json::Value;
 use ustr::Ustr;
 
-use crate::common::server::{TestServerState, start_test_server, wait_for_connection};
+use crate::common::server::{
+    TestServerState, load_test_data, start_test_server, wait_for_connection,
+};
 
 fn setup_data_channel() -> tokio::sync::mpsc::UnboundedReceiver<DataEvent> {
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
@@ -953,7 +957,7 @@ async fn test_data_client_reset_clears_state() {
 
 #[rstest]
 #[tokio::test]
-async fn test_data_client_request_instrument_emits_response() {
+async fn test_data_client_request_instrument_publishes_before_response() {
     let mut rx = setup_data_channel();
 
     let (addr, state) = start_test_server().await.unwrap();
@@ -979,6 +983,14 @@ async fn test_data_client_request_instrument_emits_response() {
         ))
         .expect("Instrument request failed");
 
+    let Some(DataEvent::Data(Data::Instrument(published))) =
+        tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+    else {
+        panic!("Expected instrument update before the response");
+    };
+
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
         .await
         .expect("Timeout waiting for instrument response")
@@ -991,8 +1003,100 @@ async fn test_data_client_request_instrument_emits_response() {
     assert_eq!(response.client_id, client_id);
     assert_eq!(response.instrument_id, instrument_id);
     assert_eq!(response.data.id(), instrument_id);
+    assert_eq!(published.id(), instrument_id);
+    assert_eq!(published.ts_init(), response.data.ts_init());
+    assert_eq!(published.price_increment(), response.data.price_increment());
+    assert_eq!(published.size_increment(), response.data.size_increment());
 
     client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_late_instrument_response_keeps_newer_definition() {
+    let mut rx = setup_data_channel();
+    let (addr, state) = start_test_server().await.unwrap();
+    let client_id = ClientId::from("AX-TEST");
+    let mut client = create_data_client(addr, client_id, test_data_config());
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let id = InstrumentId::from("EURUSD-PERP.AX");
+    let older_request = UUID4::new();
+    let newer_request = UUID4::new();
+    let mut older = load_test_data("http_get_instruments.json")["instruments"][0].clone();
+    older["tick_size"] = serde_json::json!("0.01");
+    *state.instrument_payload.lock().await = Some(older);
+    state
+        .instrument_response_delay
+        .store(true, Ordering::Relaxed);
+
+    client
+        .request_instrument(RequestInstrument::new(
+            id,
+            None,
+            None,
+            Some(client_id),
+            older_request,
+            0.into(),
+            None,
+        ))
+        .unwrap();
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        state.instrument_response_entered.notified(),
+    )
+    .await
+    .expect("older request reached the server");
+
+    client
+        .request_instruments(RequestInstruments::new(
+            None,
+            None,
+            Some(client_id),
+            Some(client.venue()),
+            newer_request,
+            0.into(),
+            None,
+        ))
+        .unwrap();
+    let events = nautilus_testkit::events::collect_data_events_until_response(
+        &mut rx,
+        newer_request,
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let published = events
+        .iter()
+        .find_map(|event| match event {
+            DataEvent::Data(Data::Instrument(instrument)) if instrument.id() == id => {
+                Some(instrument)
+            }
+            _ => None,
+        })
+        .expect("newer definition published while the older request is held");
+
+    state.instrument_response_release.notify_one();
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+
+    let DataEvent::Response(DataResponse::Instrument(response)) = event else {
+        panic!("expected the older response without a live update, was {event:?}");
+    };
+
+    let cached = client.instruments().get_cloned(&id.symbol.inner()).unwrap();
+
+    assert_eq!(response.correlation_id, older_request);
+    assert_eq!(response.data.price_increment(), Price::from("0.01"));
+    assert!(response.data.ts_init() < published.ts_init());
+    assert_eq!(published.price_increment(), Price::from("0.0001"));
+    assert_eq!(cached.ts_init(), published.ts_init());
+    assert_eq!(cached.price_increment(), published.price_increment());
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -1110,6 +1214,15 @@ async fn test_data_client_disconnect_aborts_instrument_request() {
             None,
         ))
         .expect("Instrument request after reconnect failed");
+
+    let Some(DataEvent::Data(Data::Instrument(published))) =
+        tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+    else {
+        panic!("Expected instrument update before the response");
+    };
+
     let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
         .await
         .expect("Timeout waiting for instrument response after reconnect")
@@ -1122,6 +1235,10 @@ async fn test_data_client_disconnect_aborts_instrument_request() {
     assert_eq!(response.client_id, client_id);
     assert_eq!(response.instrument_id, instrument_id);
     assert_eq!(response.data.id(), instrument_id);
+    assert_eq!(published.id(), instrument_id);
+    assert_eq!(published.ts_init(), response.data.ts_init());
+    assert_eq!(published.price_increment(), response.data.price_increment());
+    assert_eq!(published.size_increment(), response.data.size_increment());
 
     client.disconnect().await.expect("Failed to disconnect");
 }

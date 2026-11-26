@@ -25,6 +25,7 @@ use std::{
     time::Duration,
 };
 
+use ahash::AHashSet;
 use arc_swap::ArcSwap;
 use dashmap::{DashMap, mapref::entry::Entry};
 #[cfg(test)]
@@ -380,35 +381,25 @@ impl LighterWebSocketClient {
         Arc::clone(&self.instruments)
     }
 
-    /// Caches a batch of instruments along with their venue `market_index`,
-    /// replaying them to the handler if a connection is already established.
+    /// Replaces the instrument definitions shared with the WebSocket parser.
     pub fn cache_instruments(&self, instruments: Vec<(i64, InstrumentAny)>) {
         let _guard = self.cache_lock.lock();
-        self.instruments.clear();
-        for (market_index, instrument) in &instruments {
-            self.instruments.insert(*market_index, instrument.clone());
+        let indices: AHashSet<_> = instruments.iter().map(|(index, _)| *index).collect();
+        for (market_index, instrument) in instruments {
+            self.instruments.insert(market_index, instrument);
         }
+
+        self.instruments.retain(|index, _| indices.contains(index));
         log::debug!(
             "Lighter instrument cache initialized with {} instruments",
-            instruments.len()
+            indices.len()
         );
-
-        if let Ok(cmd_tx) = self.cmd_tx.try_read() {
-            let _ = cmd_tx.send(HandlerCommand::InitializeInstruments(instruments));
-        }
     }
 
-    /// Caches a single instrument and pushes it to the handler if connected.
+    /// Caches a single instrument in the cache shared with the WebSocket parser.
     pub fn cache_instrument(&self, market_index: i64, instrument: InstrumentAny) {
         let _guard = self.cache_lock.lock();
-        self.instruments.insert(market_index, instrument.clone());
-
-        if let Ok(cmd_tx) = self.cmd_tx.try_read() {
-            let _ = cmd_tx.send(HandlerCommand::UpdateInstrument {
-                market_index,
-                instrument,
-            });
-        }
+        self.instruments.insert(market_index, instrument);
     }
 
     /// Establishes the WebSocket connection and spawns the feed-handler task.
@@ -529,11 +520,8 @@ impl LighterWebSocketClient {
         let connection_mode_atomic = client.connection_mode_atomic();
         let connection_epoch_atomic = client.connection_epoch_atomic();
 
-        // Queue SetClient (and the instrument cache replay) onto the new
-        // command channel BEFORE publishing it to clones or marking the
-        // connection active. Otherwise a clone observing `is_active()` could
-        // race in and send a Subscribe before SetClient lands, and the
-        // handler would drop the subscription because `inner == None`.
+        // Queue SetClient before exposing the sender so clones cannot subscribe
+        // before the handler has a WebSocket client
         let reconnect_handle = client.reconnect_handle();
         if let Err(e) = cmd_tx.send(HandlerCommand::SetClient(client)) {
             anyhow::bail!("Failed to send SetClient command: {e}");
@@ -546,29 +534,11 @@ impl LighterWebSocketClient {
         self.out_rx = Some(out_rx);
         {
             let mut sender = self.cmd_tx.write().await;
-            // Only connect takes the sender write lock, so skipped cache sends join this snapshot
-            let cache_guard = self.cache_lock.lock();
-            let initial_instruments: Vec<(i64, InstrumentAny)> = self
-                .instruments
-                .iter()
-                .map(|entry| (*entry.key(), entry.value().clone()))
-                .collect();
-
-            if !initial_instruments.is_empty()
-                && let Err(e) =
-                    cmd_tx.send(HandlerCommand::InitializeInstruments(initial_instruments))
-            {
-                log::error!("Failed to send InitializeInstruments: {e}");
-            }
-
             self.subscriptions.clear();
             self.subscription_args.clear();
             *sender = cmd_tx.clone();
             self.connection_epoch.store(connection_epoch_atomic);
             self.connection_mode.store(connection_mode_atomic);
-            // Release the sender first so cache writes cannot miss both the snapshot and dispatch
-            drop(sender);
-            drop(cache_guard);
         }
 
         log::debug!("Lighter WebSocket connected: {}", self.url.origin());
@@ -579,6 +549,7 @@ impl LighterWebSocketClient {
         let cmd_tx_for_reconnect = cmd_tx.clone();
         let settlement_currency = self.registry.settlement_currency();
         let book_snapshot_timeout = self.book_snapshot_timeout;
+        let instruments = Arc::clone(&self.instruments);
 
         if let Err(e) = self.task_handle.spawn(async move {
             let mut handler = FeedHandler::new_with_settlement_currency(
@@ -589,7 +560,8 @@ impl LighterWebSocketClient {
                 subscriptions,
                 settlement_currency,
                 book_snapshot_timeout,
-            );
+            )
+            .with_instruments(instruments);
 
             handler.set_command_sender(cmd_tx_for_reconnect.clone());
 

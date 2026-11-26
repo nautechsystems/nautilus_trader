@@ -449,100 +449,26 @@ fn test_register_venue_routing_success(
 }
 
 #[rstest]
-fn test_subscribe_venue_instruments_delivers_to_client_adapter(
+fn test_duplicate_client_registration_does_not_select_venue_route(
     mut execution_engine: ExecutionEngine,
     stub_client: StubExecutionClient,
 ) {
-    // Reset the thread-local bus so prior tests on this thread cannot leak
-    // instrument handlers into this assertion.
-    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
-
-    let venue = Venue::test_default();
-    let received = stub_client.received_instruments();
+    let client_id = stub_client.client_id();
     execution_engine
-        .register_client(Box::new(stub_client))
+        .register_client(Box::new(stub_client.clone()))
         .unwrap();
 
-    let engine_rc = Rc::new(RefCell::new(execution_engine));
-    ExecutionEngine::subscribe_venue_instruments(&engine_rc, venue);
-
-    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
-    let topic = switchboard::get_instrument_topic(instrument.id());
-    msgbus::publish_instrument(topic, &instrument);
-
-    let received = received.borrow();
-    assert_eq!(received.len(), 1);
-    assert_eq!(received[0].id(), instrument.id());
-}
-
-#[rstest]
-fn test_same_venue_clients_receive_instruments_once(
-    mut execution_engine: ExecutionEngine,
-    #[values(false, true)] route_other: bool,
-) {
-    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
-
-    let clients: Vec<_> = [("A", "SIM"), ("B", "SIM"), ("C", "OTHER")]
-        .into_iter()
-        .map(|(id, venue)| {
-            StubExecutionClient::new(
-                ClientId::from(id),
-                AccountId::new(format!("{id}-001")),
-                Venue::from(venue),
-                OmsType::Netting,
-                None,
-            )
-        })
-        .collect();
-
-    for client in &clients {
-        execution_engine
-            .register_client(Box::new(client.clone()))
-            .unwrap();
-    }
-
-    let duplicate = execution_engine.register_client(Box::new(clients[0].clone()));
+    let result = execution_engine.register_client(Box::new(stub_client));
     let order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(audusd_sim().id())
         .quantity(Quantity::from(1))
         .build();
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        format!("Client already registered with ID {client_id}")
+    );
     assert!(execution_engine.get_clients_for_orders(&[order]).is_empty());
-    assert_eq!(
-        duplicate.unwrap_err().to_string(),
-        "Client already registered with ID A"
-    );
-
-    if route_other {
-        execution_engine
-            .register_venue_routing(ClientId::from("C"), Venue::from("SIM"))
-            .unwrap();
-    }
-
-    let engine = Rc::new(RefCell::new(execution_engine));
-    ExecutionEngine::subscribe_venue_instruments(&engine, Venue::from("SIM"));
-    ExecutionEngine::subscribe_venue_instruments(&engine, Venue::from("SIM"));
-    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
-    msgbus::publish_instrument(
-        switchboard::get_instrument_topic(instrument.id()),
-        &instrument,
-    );
-
-    assert_eq!(
-        *clients[0].received_instruments().borrow(),
-        vec![instrument.clone()]
-    );
-    assert_eq!(
-        *clients[1].received_instruments().borrow(),
-        vec![instrument.clone()]
-    );
-
-    let expected_other = if route_other {
-        vec![instrument]
-    } else {
-        vec![]
-    };
-
-    assert_eq!(*clients[2].received_instruments().borrow(), expected_other);
 }
 
 fn binary_settlement_engine(subscribe: bool) -> (Rc<RefCell<ExecutionEngine>>, InstrumentAny) {

@@ -93,7 +93,7 @@ use crate::{
         fill::{FillModel, FillModelHandle, is_price_tradable},
     },
     protection::protection_price_calculate,
-    trailing::{store_trailing_stop_activation, trailing_stop_calculate},
+    trailing::trailing_stop_calculate,
 };
 
 /// An order matching engine for a single market.
@@ -142,6 +142,8 @@ pub struct OrderMatchingEngine {
     trade_consumption: QuantityRaw,
     bid_consumption: IndexMap<PriceRaw, (QuantityRaw, QuantityRaw)>,
     ask_consumption: IndexMap<PriceRaw, (QuantityRaw, QuantityRaw)>,
+    bid_touch: TouchObservation,
+    ask_touch: TouchObservation,
     queue_pending: IndexMap<ClientOrderId, PriceRaw>,
     queue_ahead_orders: IndexMap<ClientOrderId, IndexMap<OrderId, QuantityRaw>>,
     queue_ahead_total: IndexMap<ClientOrderId, (PriceRaw, QuantityRaw)>,
@@ -242,6 +244,8 @@ impl OrderMatchingEngine {
             trade_consumption: 0,
             bid_consumption: IndexMap::new(),
             ask_consumption: IndexMap::new(),
+            bid_touch: TouchObservation::default(),
+            ask_touch: TouchObservation::default(),
             queue_pending: IndexMap::new(),
             queue_ahead_orders: IndexMap::new(),
             queue_ahead_total: IndexMap::new(),
@@ -346,6 +350,8 @@ impl OrderMatchingEngine {
         self.trade_consumption = 0;
         self.bid_consumption.clear();
         self.ask_consumption.clear();
+        self.bid_touch = TouchObservation::default();
+        self.ask_touch = TouchObservation::default();
         self.queue_pending.clear();
         self.queue_ahead_orders.clear();
         self.queue_ahead_total.clear();
@@ -570,10 +576,23 @@ impl OrderMatchingEngine {
             return;
         }
 
-        // If the book was updated after the trade's event time, depth deltas
-        // already reflect this trade's consumed volume, skip to avoid double-counting
+        // If the book was updated after the trade's event time, depth deltas usually
+        // already reflect this trade's consumed volume, skip to avoid double-counting,
+        // but an update at another L2 level also advances `ts_last`, so a trade at a
+        // best price not restated since the trade still consumes that level (a trade
+        // through several levels is skipped, the book no longer shows what it took).
         if self.book.ts_last > trade_ts_event {
-            return;
+            let touch = match aggressor_side {
+                AggressorSide::Buy => &self.ask_touch,
+                AggressorSide::Sell => &self.bid_touch,
+                AggressorSide::NoAggressor => return,
+            };
+
+            if self.book_type != BookType::L2_MBP
+                || !touch.predates(trade_price_raw, trade_ts_event)
+            {
+                return;
+            }
         }
 
         let book = &self.book;
@@ -1441,6 +1460,23 @@ impl OrderMatchingEngine {
         &self.core
     }
 
+    /// Returns the last price and whether it is stale after reopen.
+    #[must_use]
+    pub const fn last_price_state(&self) -> (Option<Price>, bool) {
+        (self.core.last, self.trailing_reopen_prices.last_stale)
+    }
+
+    /// Seeds the matching core's last price and freshness during recovery.
+    ///
+    /// Preserves a last price the engine has already observed. Seeding does not update the book
+    /// or run matching.
+    pub const fn restore_last_price(&mut self, last: Option<Price>, last_stale: bool) {
+        if self.core.last.is_none() {
+            self.core.last = last;
+            self.trailing_reopen_prices.last_stale = last_stale;
+        }
+    }
+
     pub fn set_fill_at_market(&mut self, value: bool) {
         self.fill_at_market = value;
     }
@@ -1487,6 +1523,8 @@ impl OrderMatchingEngine {
             self.trade_consumption = 0;
             self.bid_consumption.clear();
             self.ask_consumption.clear();
+            self.bid_touch = TouchObservation::default();
+            self.ask_touch = TouchObservation::default();
             self.queue_pending.clear();
             self.queue_ahead_orders.clear();
             self.queue_ahead_total.clear();
@@ -1695,6 +1733,7 @@ impl OrderMatchingEngine {
         let update_count = self.book.update_count;
         self.book.apply_delta(delta)?;
         self.confirm_trailing_delta_price(delta, side, update_count);
+        self.observe_l2_touches(std::slice::from_ref(delta));
 
         let is_snapshot = RecordFlag::F_SNAPSHOT.matches(delta.flags);
         let is_last = RecordFlag::F_LAST.matches(delta.flags);
@@ -1751,7 +1790,16 @@ impl OrderMatchingEngine {
             return Ok(());
         }
 
-        self.apply_book_deltas(deltas)?;
+        let update_count = self.book.update_count;
+        let result = self.apply_book_deltas(deltas);
+        if result.is_err() && self.book.update_count != update_count {
+            // A partially applied batch can leave the touch observations stale
+            self.bid_touch = TouchObservation::default();
+            self.ask_touch = TouchObservation::default();
+        }
+
+        result?;
+        self.observe_l2_touches(&deltas.deltas);
 
         let mut has_snapshot_or_clear = false;
 
@@ -1775,6 +1823,55 @@ impl OrderMatchingEngine {
 
         self.iterate(deltas.ts_init, AggressorSide::NoAggressor);
         Ok(())
+    }
+
+    /// Updates L2 liquidity consumption state after `deltas` were applied to the book.
+    ///
+    /// Drops the consumption recorded at deleted levels and records the latest event
+    /// time of a delta at each side's best price.
+    fn observe_l2_touches(&mut self, deltas: &[OrderBookDelta]) {
+        if self.book_type != BookType::L2_MBP || !self.config.liquidity_consumption {
+            return;
+        }
+
+        let bid = self.book.best_bid_price();
+        let ask = self.book.best_ask_price();
+        let mut bid_change = None;
+        let mut ask_change = None;
+
+        for delta in deltas {
+            // A deleted level's liquidity is gone, so a level re-added at the same price
+            // is fresh even when its size equals the consumed level's size
+            if delta.action == BookAction::Delete {
+                let price_raw = delta.order.price.raw();
+                match delta.order.side {
+                    Some(OrderSide::Buy) => {
+                        self.bid_consumption.swap_remove(&price_raw);
+                    }
+                    Some(OrderSide::Sell) => {
+                        self.ask_consumption.swap_remove(&price_raw);
+                    }
+                    None => {}
+                }
+            }
+
+            // A clear, or a delta without a side, may have restated either best price
+            let either_side = delta.action == BookAction::Clear || delta.order.side.is_none();
+            if either_side
+                || (delta.order.side == Some(OrderSide::Buy) && bid == Some(delta.order.price))
+            {
+                bid_change = bid_change.max(Some(delta.ts_event));
+            }
+
+            if either_side
+                || (delta.order.side == Some(OrderSide::Sell) && ask == Some(delta.order.price))
+            {
+                ask_change = ask_change.max(Some(delta.ts_event));
+            }
+        }
+
+        self.bid_touch.observe(bid, bid_change, self.book.ts_last);
+        self.ask_touch.observe(ask, ask_change, self.book.ts_last);
     }
 
     fn apply_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
@@ -1858,6 +1955,15 @@ impl OrderMatchingEngine {
             self.last_quote_ask = top_ask.map(|order| order.price);
         } else {
             self.book.apply_depth(depth)?;
+
+            // A depth snapshot restates every level, including both best prices
+            if self.book_type == BookType::L2_MBP && self.config.liquidity_consumption {
+                let changed = Some(depth.ts_event);
+                self.bid_touch
+                    .observe(self.book.best_bid_price(), changed, self.book.ts_last);
+                self.ask_touch
+                    .observe(self.book.best_ask_price(), changed, self.book.ts_last);
+            }
 
             // The depth replaced every level the reopen left in the book
             self.trailing_reopen_prices.bids.clear();
@@ -5078,7 +5184,9 @@ impl OrderMatchingEngine {
             _ => unreachable!("only trailing orders require activation"),
         }
 
-        store_trailing_stop_activation(&mut self.cache.borrow_mut(), order);
+        self.cache
+            .borrow_mut()
+            .store_trailing_stop_activation(order.client_order_id(), activation_price);
         true
     }
 
@@ -8647,10 +8755,19 @@ impl OrderMatchingEngine {
         order: &OrderAny,
         venue_order_id: VenueOrderId,
     ) -> OrderEventAny {
-        let ts_now = self.clock.borrow().timestamp_ns();
         let account_id = order
             .account_id()
             .unwrap_or(self.account_ids.get(&order.trader_id()).unwrap().to_owned());
+        self.create_order_accepted_for_account(order, venue_order_id, account_id)
+    }
+
+    fn create_order_accepted_for_account(
+        &self,
+        order: &OrderAny,
+        venue_order_id: VenueOrderId,
+        account_id: AccountId,
+    ) -> OrderEventAny {
+        let ts_now = self.clock.borrow().timestamp_ns();
         OrderEventAny::Accepted(OrderAccepted::new(
             order.trader_id(),
             order.strategy_id(),
@@ -8984,6 +9101,33 @@ struct ConsumptionJournal {
     order_side: OrderSide,
     trade_consumption: QuantityRaw,
     levels: Vec<(PriceRaw, Option<(QuantityRaw, QuantityRaw)>)>,
+}
+
+/// Tracks the best price on one side of an L2 book and the latest event time
+/// that may have restated the size displayed at that price.
+///
+/// A trade at the best price whose event time is later than this time has not
+/// been reflected in the displayed size yet, even when another level has since
+/// advanced the book's `ts_last`.
+#[derive(Debug, Default)]
+struct TouchObservation {
+    price: Option<Price>,
+    ts_event: UnixNanos,
+}
+
+impl TouchObservation {
+    fn observe(&mut self, price: Option<Price>, changed: Option<UnixNanos>, ts_book: UnixNanos) {
+        if price != self.price {
+            self.price = price;
+            self.ts_event = ts_book;
+        } else if let Some(ts_changed) = changed {
+            self.ts_event = self.ts_event.max(ts_changed);
+        }
+    }
+
+    fn predates(&self, price_raw: PriceRaw, ts_event: UnixNanos) -> bool {
+        self.price.is_some_and(|price| price.raw() == price_raw) && self.ts_event < ts_event
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

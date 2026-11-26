@@ -36,7 +36,7 @@ use nautilus_model::{
     enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
-    types::Currency,
+    types::{Currency, Price},
 };
 use nautilus_network::http::HttpClient;
 use nautilus_testkit::http::assert_http_redirect_rejected;
@@ -1184,6 +1184,56 @@ async fn test_domain_http_report_fetches_and_caches_uncached_instrument(
     let queries = state.instrument_queries.lock().await;
     assert_eq!(queries.len(), 1);
     assert_eq!(queries[0].symbol, symbol);
+}
+
+#[tokio::test]
+async fn test_domain_http_report_hydration_preserves_live_definition() {
+    let (addr, state) = start_common_test_server().await.unwrap();
+    let symbol = "GBPUSD-PERP";
+    set_report_payload(&state, ReportFamily::OpenOrders, symbol).await;
+    state
+        .instrument_response_delay
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+
+    let base_url = format!("http://{addr}");
+    let client =
+        AxHttpClient::new(Some(base_url.clone()), Some(base_url), 60, 0, 1, 1, None).unwrap();
+    client.set_session_token("test_session_token".into());
+    client.request_account_fees().await.unwrap();
+
+    let InstrumentAny::PerpetualContract(mut live) = create_test_instrument(symbol) else {
+        panic!("expected perpetual contract");
+    };
+
+    live.price_precision = 3;
+    live.price_increment = Price::from("0.001");
+    let id = live.id;
+
+    let publish = async {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            state.instrument_response_entered.notified(),
+        )
+        .await
+        .expect("report hydration should reach the mock server");
+        client.cache_instrument(live.into());
+        state.instrument_response_release.notify_one();
+    };
+
+    let pending = client.request_order_status_reports(
+        AccountId::from("AX-001"),
+        None::<fn(u64) -> Option<ClientOrderId>>,
+    );
+
+    let (reports, ()) = tokio::join!(pending, publish);
+    let reports = reports.unwrap();
+    let cached = client.get_instrument(&Ustr::from(symbol)).unwrap();
+
+    assert_eq!(reports.len(), 2);
+    assert_eq!(reports[0].instrument_id, id);
+    assert_eq!(reports[0].price.unwrap().precision, 3);
+    assert_eq!(cached.id(), id);
+    assert_eq!(cached.price_increment(), Price::from("0.001"));
 }
 
 #[rstest]

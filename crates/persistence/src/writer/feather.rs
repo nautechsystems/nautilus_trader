@@ -25,7 +25,7 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fmt::Debug,
     fs::{self, File, OpenOptions, TryLockError},
-    io::{self, BufReader, BufWriter, Seek, Write},
+    io::{self, BufReader, BufWriter, Read, Seek, Write},
     path::{Path, PathBuf},
     rc::Rc,
     sync::{
@@ -260,11 +260,11 @@ fn record_batch_with_delta_staged_metadata(
     )?)
 }
 
-fn arrow_metadata_row(
-    metadata: &HashMap<String, String>,
+fn arrow_metadata_row<'a>(
+    metadata: impl IntoIterator<Item = (&'a String, &'a String)>,
     fields: &arrow::datatypes::Fields,
 ) -> anyhow::Result<StagedArrowMetadataRow> {
-    let schema_metadata = metadata.iter().collect::<BTreeMap<_, _>>();
+    let schema_metadata = metadata.into_iter().collect::<BTreeMap<_, _>>();
 
     let field_metadata = fields
         .iter()
@@ -298,14 +298,11 @@ fn arrow_metadata_row(
 ///
 /// The staged metadata id hashes this exact string so readers can verify the schema metadata
 /// independently of its storage location.
-pub(crate) fn canonical_metadata_json(
-    metadata: &HashMap<String, String>,
+pub(crate) fn canonical_metadata_json<'a>(
+    metadata: impl IntoIterator<Item = (&'a String, &'a String)>,
 ) -> anyhow::Result<String> {
     Ok(serde_json::to_string(
-        &metadata
-            .iter()
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect::<BTreeMap<_, _>>(),
+        &metadata.into_iter().collect::<BTreeMap<_, _>>(),
     )?)
 }
 
@@ -1701,12 +1698,13 @@ fn recover_partial_feather_file(partial_path: &Path) -> anyhow::Result<()> {
     let mut complete_len = 0;
     let mut tail_error = None;
 
-    match StreamReader::try_new(BufReader::new(&file), None) {
+    let input = FeatherRecoveryReader(BufReader::new(&file));
+    match StreamReader::try_new(input, None) {
         Ok(mut reader) => loop {
             match reader.next() {
                 Some(Ok(_)) => {
                     batches += 1;
-                    complete_len = reader.get_mut().stream_position()?;
+                    complete_len = reader.get_mut().0.stream_position()?;
                 }
                 Some(Err(e)) => {
                     tail_error = Some(e);
@@ -1762,6 +1760,21 @@ fn recover_partial_feather_file(partial_path: &Path) -> anyhow::Result<()> {
         sealed_path.display()
     );
     Ok(())
+}
+
+struct FeatherRecoveryReader<'a>(BufReader<&'a File>);
+
+impl Read for FeatherRecoveryReader<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let read = self.0.read(buf)?;
+
+        // Arrow handles EOF at a message boundary and propagates I/O errors within a message
+        if read == 0 && !buf.is_empty() {
+            return Err(io::ErrorKind::UnexpectedEof.into());
+        }
+
+        Ok(read)
+    }
 }
 
 #[cfg(test)]
@@ -1821,7 +1834,7 @@ mod tests {
         read_feather_batches(path)
             .into_iter()
             .flat_map(|batch| {
-                let metadata = batch.schema().metadata().clone();
+                let metadata = batch.schema().metadata().into();
                 QuoteTick::decode_data_batch(&metadata, batch).unwrap()
             })
             .collect()
@@ -1874,7 +1887,7 @@ mod tests {
         partial
     }
 
-    const TORN_TAIL: &str = ": Io error: failed to fill whole buffer";
+    const TORN_TAIL: &str = ": Io error: unexpected end of file";
 
     static RECOVERY_LOGS: RecoveryLogCapture = RecoveryLogCapture(Mutex::new(Vec::new()));
 
@@ -1985,7 +1998,8 @@ mod tests {
             let schema = batch.schema();
             let name = schema.metadata()["type_name"].clone();
             *counts.entry(name.clone()).or_insert(0) += batch.num_rows();
-            let decoded = CustomDataDecoder::decode_data_batch(schema.metadata(), batch).unwrap();
+            let decoded =
+                CustomDataDecoder::decode_data_batch(&schema.metadata().into(), batch).unwrap();
             assert_eq!(decoded.len(), 1);
 
             let Data::Custom(custom) = &decoded[0] else {
@@ -2422,7 +2436,7 @@ mod tests {
         let mut recovered = Vec::new();
 
         for batch in read_feather_batches(&files[0]) {
-            let metadata = batch.schema().metadata().clone();
+            let metadata = HashMap::from(batch.schema_ref().metadata());
             assert_eq!(
                 metadata.get("type_name").unwrap(),
                 if modify {
@@ -2544,8 +2558,7 @@ mod tests {
         for path in paths {
             let path_str = path.path;
             for batch in read_feather_batches(&path_str) {
-                let metadata = batch.schema().metadata().clone();
-
+                let metadata = batch.schema_ref().metadata().into();
                 if path_str.to_str().unwrap().contains("quotes") {
                     let decoded = QuoteTick::decode_data_batch(&metadata, batch).unwrap();
                     recovered_quotes.extend(decoded);
@@ -2752,7 +2765,7 @@ mod tests {
         let recovered = read_feather_batches(&sealed[0])
             .into_iter()
             .flat_map(|batch| {
-                let metadata = batch.schema().metadata().clone();
+                let metadata = batch.schema().metadata().into();
                 QuoteTick::decode_data_batch(&metadata, batch).unwrap()
             })
             .collect::<Vec<_>>();
@@ -3522,7 +3535,7 @@ mod tests {
             .join("RustTestCustomData");
         let files = feather_files(&prefix, FEATHER_EXTENSION);
         let batch = read_feather_batches(&files[0]).remove(0);
-        let metadata = batch.schema().metadata().clone();
+        let metadata = batch.schema_ref().metadata().into();
         let decoded =
             CustomDataDecoder::decode_data_batch(&metadata, batch).expect("decode_data_batch");
         assert_eq!(decoded.len(), 1);

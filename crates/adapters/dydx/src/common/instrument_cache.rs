@@ -37,6 +37,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use dashmap::DashMap;
+use nautilus_core::UnixNanos;
 use nautilus_model::{
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
@@ -44,6 +45,8 @@ use nautilus_model::{
 use ustr::Ustr;
 
 use crate::{grpc::OrderMarketParams, http::models::PerpetualMarket};
+
+pub(crate) const MARKET_INFO_KEY: &str = "dydx_market";
 
 /// Thread-safe instrument cache with multiple lookup indices.
 ///
@@ -79,6 +82,13 @@ impl InstrumentCache {
         let ticker = market.ticker;
         let clob_pair_id = market.clob_pair_id;
 
+        if let Some(previous) = self.market_params.get(&instrument_id)
+            && previous.clob_pair_id != clob_pair_id
+        {
+            self.clob_pair_id_index
+                .remove_if(&previous.clob_pair_id, |_, id| *id == instrument_id);
+        }
+
         // Primary storage
         self.instruments.insert(instrument_id, instrument);
 
@@ -100,6 +110,28 @@ impl InstrumentCache {
         self.initialized.store(true, Ordering::Release);
     }
 
+    pub(crate) fn replace_instruments(
+        &self,
+        mut items: Vec<(InstrumentAny, PerpetualMarket)>,
+        requested_at: UnixNanos,
+    ) {
+        items.extend(self.instruments.iter().filter_map(|entry| {
+            let instrument = entry.value();
+            if instrument.ts_init() <= requested_at {
+                return None;
+            }
+
+            let market = self.get_market_params(entry.key())?;
+            Some((instrument.clone(), market))
+        }));
+
+        self.clear();
+
+        if !items.is_empty() {
+            self.insert_many(items);
+        }
+    }
+
     /// Clears all cached data.
     ///
     /// Useful for refreshing instruments from the API.
@@ -114,14 +146,56 @@ impl InstrumentCache {
     /// Inserts an instrument without market data.
     ///
     /// Derives the market ticker from the instrument symbol by stripping the
-    /// "-PERP" suffix, so `get_by_market()` works. `get_by_clob_id()` requires
-    /// full market params and won't work for instruments inserted this way.
+    /// "-PERP" suffix so it is available to market ticker lookups.
     pub fn insert_instrument_only(&self, instrument: InstrumentAny) {
         let instrument_id = instrument.id();
         let symbol = instrument_id.symbol.as_str();
         let ticker = symbol.strip_suffix("-PERP").unwrap_or(symbol);
         self.market_index.insert(Ustr::from(ticker), instrument_id);
         self.instruments.insert(instrument_id, instrument);
+    }
+
+    pub(crate) fn update_definition(&self, instrument: InstrumentAny) -> bool {
+        let id = instrument.id();
+
+        let Some(value) = instrument.info().and_then(|info| info.get(MARKET_INFO_KEY)) else {
+            return false;
+        };
+
+        let Ok(market) = serde_json::from_value::<PerpetualMarket>(value.clone()) else {
+            return false;
+        };
+
+        if market.ticker != instrument.raw_symbol().inner()
+            || self
+                .instruments
+                .get(&id)
+                .is_some_and(|previous| previous.ts_init() > instrument.ts_init())
+        {
+            return false;
+        }
+
+        let changed = self.market_params.get(&id).is_none_or(|previous| {
+            previous.clob_pair_id != market.clob_pair_id
+                || previous.atomic_resolution != market.atomic_resolution
+                || previous.quantum_conversion_exponent != market.quantum_conversion_exponent
+                || previous.step_base_quantums != market.step_base_quantums
+                || previous.subticks_per_tick != market.subticks_per_tick
+                || previous.tick_size != market.tick_size
+                || previous.step_size != market.step_size
+                || previous.min_order_size != market.min_order_size
+                || previous.initial_margin_fraction != market.initial_margin_fraction
+                || previous.maintenance_margin_fraction != market.maintenance_margin_fraction
+                || previous.base_asset != market.base_asset
+                || previous.quote_asset != market.quote_asset
+                || (previous.oracle_price.is_none() && market.oracle_price.is_some())
+        });
+
+        if changed {
+            self.insert(instrument, market);
+        }
+
+        changed
     }
 
     /// Bulk inserts instruments without market data (derives market tickers).
@@ -391,6 +465,64 @@ mod tests {
         let retrieved = cache.get(&instrument_id);
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().id().symbol.as_str(), "BTC-USD-PERP");
+    }
+
+    #[rstest]
+    fn test_runtime_definition_updates_order_params_and_rejects_older_version() {
+        use crate::http::parse::parse_instrument_any;
+
+        let cache = InstrumentCache::new();
+        let mut market = create_test_market("BTC-USD", 1);
+        let older = parse_instrument_any(&market, UnixNanos::from(10)).unwrap();
+        let id = older.id();
+        assert!(cache.update_definition(older.clone()));
+
+        market.clob_pair_id = 2;
+        market.subticks_per_tick = 9;
+        market.step_base_quantums = 7;
+        market.tick_size = dec!(0.0001);
+        let latest = parse_instrument_any(&market, UnixNanos::from(20)).unwrap();
+        assert!(cache.update_definition(latest));
+        assert!(!cache.update_definition(older));
+
+        assert!(cache.get_by_clob_id(1).is_none());
+        let definition = cache.get_by_clob_id(2).unwrap();
+        assert_eq!(definition.id(), id);
+        assert_eq!(definition.price_increment(), Price::from("0.0001"));
+        let params = cache.get_order_market_params(&id).unwrap();
+        assert_eq!(params.clob_pair_id, 2);
+        assert_eq!(params.subticks_per_tick, 9);
+        assert_eq!(params.step_base_quantums, 7);
+    }
+
+    #[rstest]
+    fn test_bootstrap_preserves_definitions_received_during_fetch() {
+        use crate::http::parse::parse_instrument_any;
+
+        let cache = InstrumentCache::new();
+        let old_market = create_test_market("BTC-USD", 1);
+        let old = parse_instrument_any(&old_market, UnixNanos::from(10)).unwrap();
+        let current_market = create_test_market("BTC-USD", 2);
+        let current = parse_instrument_any(&current_market, UnixNanos::from(20)).unwrap();
+        let new_market = create_test_market("ETH-USD", 3);
+        let new = parse_instrument_any(&new_market, UnixNanos::from(20)).unwrap();
+        let dropped_market = create_test_market("SOL-USD", 4);
+        let dropped = parse_instrument_any(&dropped_market, UnixNanos::from(5)).unwrap();
+        cache.insert(current.clone(), current_market);
+        cache.insert(new.clone(), new_market);
+        cache.insert(dropped, dropped_market);
+
+        cache.replace_instruments(vec![(old, old_market)], UnixNanos::from(10));
+
+        assert_eq!(cache.len(), 2);
+        assert!(cache.is_initialized());
+        assert!(cache.get_by_clob_id(1).is_none());
+        assert_eq!(
+            cache.get_by_clob_id(2).unwrap().ts_init(),
+            current.ts_init()
+        );
+        assert_eq!(cache.get_by_clob_id(3).unwrap().id(), new.id());
+        assert!(cache.get_by_clob_id(4).is_none());
     }
 
     #[rstest]

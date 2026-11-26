@@ -62,7 +62,7 @@ pub(crate) fn loader() -> DatabentoDataLoader {
 
 pub(crate) fn first_record<T>(filename: &str) -> T
 where
-    T: dbn::Record + dbn::HasRType + Clone + 'static,
+    T: dbn::v3::HasRType + Clone + 'static,
 {
     let path = data_path(filename);
     let decoder = Decoder::from_zstd_file(&path).unwrap();
@@ -76,7 +76,7 @@ where
 
 pub(crate) fn record_count<T>(path: &Path) -> u64
 where
-    T: dbn::Record + dbn::HasRType + 'static,
+    T: dbn::v3::HasRType + 'static,
 {
     let decoder = Decoder::from_zstd_file(path).unwrap();
     let mut stream = decoder.decode_stream::<T>();

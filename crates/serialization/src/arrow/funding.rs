@@ -142,7 +142,8 @@ mod tests {
                 ),
             ])
         );
-        let decoded = FundingRateUpdate::decode_batch(batch.schema().metadata(), batch).unwrap();
+        let decoded =
+            FundingRateUpdate::decode_batch(&batch.schema().metadata().into(), batch).unwrap();
 
         assert_eq!(decoded, vec![update]);
     }
@@ -159,7 +160,8 @@ mod tests {
         );
         let metadata = update.metadata();
         let batch = FundingRateUpdate::encode_batch(&metadata, &[update]).unwrap();
-        let decoded = FundingRateUpdate::decode_batch(batch.schema().metadata(), batch).unwrap();
+        let decoded =
+            FundingRateUpdate::decode_batch(&batch.schema().metadata().into(), batch).unwrap();
 
         assert_eq!(decoded, vec![update]);
         assert!(decoded[0].interval.is_none());

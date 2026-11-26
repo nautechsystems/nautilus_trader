@@ -38,19 +38,6 @@ use axum::{
     routing::{get, post},
 };
 use jiff::{SignedDuration, Timestamp};
-use nautilus_binance::{
-    common::{
-        bar::BinanceBar,
-        consts::{BINANCE_CLIENT_ID, BINANCE_VENUE},
-        enums::{BinanceEnvironment, BinanceProductType},
-    },
-    config::BinanceDataClientConfig,
-    data_types::{
-        BinanceFuturesLiquidation, BinanceFuturesMarkPriceUpdate, BinanceFuturesOpenInterest,
-        BinanceFuturesOpenInterestHist, BinanceFuturesTicker,
-    },
-    futures::{BinanceFuturesDataClient, http::client::BinanceRawFuturesHttpClient},
-};
 use nautilus_common::{
     clients::DataClient,
     live::runner::{set_data_event_sender, set_system_event_sender},
@@ -58,10 +45,10 @@ use nautilus_common::{
         DataEvent, SystemEvent,
         data::{
             DataResponse, RequestBars, RequestBookSnapshot, RequestCustomData, RequestFundingRates,
-            RequestTrades,
+            RequestInstrument, RequestInstruments, RequestTrades,
             subscribe::{
                 SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth, SubscribeCustomData,
-                SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
+                SubscribeInstrumentStatus, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
             },
             unsubscribe::{
                 UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeCustomData,
@@ -90,6 +77,21 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde_json::json;
+
+use crate::{
+    common::{
+        bar::BinanceBar,
+        consts::{BINANCE_CLIENT_ID, BINANCE_VENUE},
+        enums::{BinanceEnvironment, BinanceProductType},
+        testing::{advance_instrument_clock, publish_instrument_snapshots, spawn_instrument_timer},
+    },
+    config::{BinanceDataClientConfig, BinanceInstrumentProviderConfig},
+    data_types::{
+        BinanceFuturesLiquidation, BinanceFuturesMarkPriceUpdate, BinanceFuturesOpenInterest,
+        BinanceFuturesOpenInterestHist, BinanceFuturesTicker,
+    },
+    futures::{BinanceFuturesDataClient, http::client::BinanceRawFuturesHttpClient},
+};
 
 type MarketQuery = (String, HashMap<String, String>);
 type MarketQueries = Arc<Mutex<Vec<MarketQuery>>>;
@@ -1026,7 +1028,7 @@ async fn test_client_creation() {
     let (client, _rx) = create_test_data_client(base_url_http, base_url_ws);
 
     assert_eq!(client.client_id(), *BINANCE_CLIENT_ID);
-    assert_eq!(client.venue(), Some(*BINANCE_VENUE));
+    assert_eq!(DataClient::venue(&client), Some(*BINANCE_VENUE));
     assert!(!client.is_connected());
 }
 
@@ -5550,6 +5552,192 @@ fn expected_l1_deltas(quote: QuoteTick, sequence: u64) -> OrderBookDeltas {
 }
 
 #[rstest]
+#[tokio::test]
+async fn test_subscribe_instrument_status_replays_scheduled_delisting() {
+    let (request_tx, mut requests) = tokio::sync::mpsc::unbounded_channel();
+
+    let addr = start_data_test_server_with_state(DataTestServerState {
+        exchange_info_requests: Some(request_tx),
+        ..Default::default()
+    })
+    .await;
+
+    let (tx, mut events) = tokio::sync::mpsc::unbounded_channel();
+    set_data_event_sender(tx);
+
+    let config = BinanceDataClientConfig {
+        base_url_http: Some(format!("http://{addr}")),
+        base_url_ws: Some(format!("ws://{addr}/ws")),
+        product_type: BinanceProductType::UsdM,
+        instrument_status_poll_secs: 0,
+        update_instruments_interval_mins: 0,
+        ..Default::default()
+    };
+
+    let mut client =
+        BinanceFuturesDataClient::new(*BINANCE_CLIENT_ID, config, BinanceProductType::UsdM)
+            .unwrap();
+
+    let mut info = load_fixture("exchange_info_usdm.json");
+    info["symbols"][0]["deliveryDate"] = json!(1_793_178_000_000_i64);
+
+    let serve_initial = async {
+        let request = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        request.send(json_response(&info)).unwrap();
+    };
+
+    let (connected, ()) = tokio::join!(
+        tokio::time::timeout(Duration::from_secs(5), client.connect()),
+        serve_initial,
+    );
+    connected.unwrap().unwrap();
+
+    let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    let mut definitions = 0;
+
+    while let Ok(event) = events.try_recv() {
+        match event {
+            DataEvent::Data(Data::InstrumentStatus(status)) => {
+                panic!("Unexpected status before subscribing: {status:?}");
+            }
+            DataEvent::Data(Data::Instrument(instrument)) if instrument.id() == instrument_id => {
+                definitions += 1;
+            }
+            _ => {}
+        }
+    }
+
+    assert_eq!(definitions, 1);
+
+    let cmd = SubscribeInstrumentStatus::new(
+        instrument_id,
+        Some(*BINANCE_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    client.subscribe_instrument_status(cmd).unwrap();
+
+    let event = recv_data(&mut events, Duration::from_secs(5)).await;
+    client.disconnect().await.unwrap();
+
+    let Some(Data::InstrumentStatus(status)) = event else {
+        panic!("Expected an instrument status event, was {event:?}");
+    };
+
+    let expected = InstrumentStatus::new(
+        instrument_id,
+        MarketStatusAction::PreClose,
+        status.ts_event,
+        status.ts_event,
+        None,
+        None,
+        Some(true),
+        None,
+        None,
+    );
+
+    assert_eq!(status, expected);
+}
+
+#[rstest]
+#[case::single(false)]
+#[case::bulk(true)]
+#[tokio::test]
+async fn test_instrument_request_publication(#[case] bulk: bool) {
+    let addr = start_data_test_server().await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    set_data_event_sender(tx);
+
+    let id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+
+    let config = BinanceDataClientConfig {
+        base_url_http: Some(format!("http://{addr}")),
+        base_url_ws: Some(format!("ws://{addr}/ws")),
+        product_type: BinanceProductType::UsdM,
+        instrument_status_poll_secs: 0,
+        update_instruments_interval_mins: 0,
+        instrument_provider: BinanceInstrumentProviderConfig {
+            load_all: false,
+            load_ids: Some(vec![id.to_string()]),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let client =
+        BinanceFuturesDataClient::new(*BINANCE_CLIENT_ID, config, BinanceProductType::UsdM)
+            .unwrap();
+    let request_id = UUID4::new();
+
+    if bulk {
+        client
+            .request_instruments(RequestInstruments::new(
+                None,
+                None,
+                Some(*BINANCE_CLIENT_ID),
+                DataClient::venue(&client),
+                request_id,
+                UnixNanos::default(),
+                None,
+            ))
+            .unwrap();
+    } else {
+        client
+            .request_instrument(RequestInstrument::new(
+                id,
+                None,
+                None,
+                Some(*BINANCE_CLIENT_ID),
+                request_id,
+                UnixNanos::default(),
+                None,
+            ))
+            .unwrap();
+    }
+
+    let Some(DataEvent::Data(Data::Instrument(published))) =
+        tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .unwrap()
+    else {
+        panic!("expected instrument update before the response");
+    };
+
+    let returned = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+        .await
+        .unwrap();
+
+    let (correlation_id, returned) = match returned {
+        Some(DataEvent::Response(DataResponse::Instrument(response))) if !bulk => {
+            (response.correlation_id, response.data)
+        }
+        Some(DataEvent::Response(DataResponse::Instruments(response))) if bulk => (
+            response.correlation_id,
+            response
+                .data
+                .into_iter()
+                .find(|instrument| instrument.id() == id)
+                .unwrap(),
+        ),
+        other => panic!("expected instrument response, was {other:?}"),
+    };
+
+    assert_eq!(correlation_id, request_id);
+    assert_eq!(returned.id(), id);
+    assert_eq!(published.id(), id);
+    assert_eq!(published.ts_init(), returned.ts_init());
+    assert_eq!(published.price_increment(), returned.price_increment());
+    assert_eq!(published.size_increment(), returned.size_increment());
+}
+
+#[rstest]
 #[case::poll_first(true)]
 #[case::refresh_first(false)]
 #[tokio::test]
@@ -5569,8 +5757,8 @@ async fn test_instrument_status_updates_do_not_overlap(#[case] poll_first: bool)
         base_url_http: Some(format!("http://{addr}")),
         base_url_ws: Some(format!("ws://{addr}/ws")),
         product_type: BinanceProductType::UsdM,
-        instrument_status_poll_secs: if poll_first { 1 } else { 2 },
-        instrument_refresh_interval_secs: if poll_first { 2 } else { 1 },
+        instrument_status_poll_secs: 0,
+        update_instruments_interval_mins: 0,
         ..Default::default()
     };
 
@@ -5590,63 +5778,88 @@ async fn test_instrument_status_updates_do_not_overlap(#[case] poll_first: bool)
     };
 
     let serve_initial = async {
-        for _ in 0..2 {
-            let request = tokio::time::timeout(Duration::from_secs(5), requests.recv())
-                .await
-                .unwrap()
-                .unwrap();
-            request.send(response("BTCUSDT", "BTC", false)).unwrap();
-        }
-    };
-
-    let (connected, ()) = tokio::join!(client.connect(), serve_initial);
-    connected.unwrap();
-
-    if !poll_first {
-        let catalog = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+        let request = tokio::time::timeout(Duration::from_secs(5), requests.recv())
             .await
             .unwrap()
             .unwrap();
-        catalog.send(response("ETHUSDT", "ETH", false)).unwrap();
-    }
+        request.send(response("BTCUSDT", "BTC", false)).unwrap();
+    };
+
+    let mut previous_non_trading = None;
+    let refresh = BinanceFuturesDataClient::refresh_instrument_catalog(
+        &client.http_client,
+        &client.config.instrument_provider,
+        &client.instruments,
+        &client.status_cache,
+        &client.instrument_update_lock,
+        (&client.instrument_publish_lock, &client.cancellation_token),
+        &client.ws_client,
+        &client.ws_public_client,
+        &client.data_sender,
+        client.clock,
+        &mut previous_non_trading,
+    );
+    let (refreshed, ()) = tokio::join!(refresh, serve_initial);
+    refreshed.unwrap();
+
+    let poll_secs = if poll_first { 59 } else { 61 };
+    client.config.instrument_status_poll_secs = poll_secs;
+    client.config.update_instruments_interval_mins = 1;
+    let mut timers = tokio::task::JoinSet::new();
+    spawn_instrument_timer(&mut timers, client.instrument_status_poll().unwrap()).await;
+    spawn_instrument_timer(
+        &mut timers,
+        client.instrument_refresh(previous_non_trading).unwrap(),
+    )
+    .await;
+    advance_instrument_clock(Duration::from_secs(poll_secs.min(60))).await;
 
     let blocked = tokio::time::timeout(Duration::from_secs(5), requests.recv())
         .await
         .unwrap()
         .unwrap();
 
-    // Hold the older response through the other task's next scheduled update
-    let overlapping = tokio::time::timeout(Duration::from_millis(1500), requests.recv()).await;
-    assert!(overlapping.is_err(), "overlapping exchange info request");
+    let request_id = UUID4::new();
 
-    let (symbol, base) = if poll_first {
-        ("BTCUSDT", "BTC")
-    } else {
-        ("ETHUSDT", "ETH")
-    };
-
-    blocked.send(response(symbol, base, true)).unwrap();
-
-    if poll_first {
-        let catalog = tokio::time::timeout(Duration::from_secs(5), requests.recv())
-            .await
-            .unwrap()
+    if !poll_first {
+        client
+            .request_instruments(RequestInstruments::new(
+                None,
+                None,
+                Some(*BINANCE_CLIENT_ID),
+                DataClient::venue(&client),
+                request_id,
+                UnixNanos::default(),
+                None,
+            ))
             .unwrap();
-        catalog.send(response("ETHUSDT", "ETH", false)).unwrap();
     }
 
-    let status = tokio::time::timeout(Duration::from_secs(5), requests.recv())
-        .await
-        .unwrap()
-        .unwrap();
-    status.send(response("ETHUSDT", "ETH", false)).unwrap();
+    // Hold the older response through the other task's next scheduled update
+    advance_instrument_clock(Duration::from_secs(2)).await;
+    let overlapping = tokio::time::timeout(Duration::from_millis(100), requests.recv()).await;
+    assert!(overlapping.is_err(), "overlapping exchange info request");
 
-    // The next request proves that the preceding update has published its snapshot
-    let next = tokio::time::timeout(Duration::from_secs(5), requests.recv())
-        .await
-        .unwrap()
-        .unwrap();
-    next.send(response("ETHUSDT", "ETH", false)).unwrap();
+    blocked.send(response("BTCUSDT", "BTC", true)).unwrap();
+
+    let eth_snapshot = || response("ETHUSDT", "ETH", false);
+    publish_instrument_snapshots(
+        &mut requests,
+        &client.instrument_update_lock,
+        if poll_first { 1 } else { 2 },
+        eth_snapshot,
+    )
+    .await;
+
+    advance_instrument_clock(Duration::from_secs(62)).await;
+    publish_instrument_snapshots(
+        &mut requests,
+        &client.instrument_update_lock,
+        2,
+        eth_snapshot,
+    )
+    .await;
+
     tokio::select! {
         result = client.disconnect() => result.unwrap(),
         () = async {
@@ -5660,28 +5873,31 @@ async fn test_instrument_status_updates_do_not_overlap(#[case] poll_first: bool)
     let eth = InstrumentId::from("ETHUSDT-PERP.BINANCE");
     let mut statuses = Vec::new();
     let mut instruments = Vec::new();
+    let mut instrument_responses = Vec::new();
 
     while let Ok(event) = events.try_recv() {
         match event {
             DataEvent::Data(Data::InstrumentStatus(status)) => statuses.push(status),
             DataEvent::Data(Data::Instrument(instrument)) => instruments.push(instrument.id()),
+            DataEvent::Response(DataResponse::Instruments(response)) => {
+                instrument_responses.push((response.correlation_id, response.data[0].id()));
+            }
             _ => {}
         }
     }
 
-    let changes = if poll_first {
-        vec![
-            (btc, MarketStatusAction::Halt),
-            (eth, MarketStatusAction::Trading),
-            (btc, MarketStatusAction::NotAvailableForTrading),
-        ]
-    } else {
-        vec![
-            (eth, MarketStatusAction::Halt),
-            (btc, MarketStatusAction::NotAvailableForTrading),
-            (eth, MarketStatusAction::Trading),
-        ]
-    };
+    let mut changes = [
+        (btc, MarketStatusAction::Halt),
+        (eth, MarketStatusAction::Trading),
+        (btc, MarketStatusAction::NotAvailableForTrading),
+    ];
+
+    assert_eq!(statuses.len(), 3);
+
+    // The poll may remove BTC before the explicit request adds ETH to the catalog
+    if !poll_first && statuses[1].instrument_id == btc {
+        changes.swap(1, 2);
+    }
 
     let expected = changes
         .into_iter()
@@ -5701,11 +5917,18 @@ async fn test_instrument_status_updates_do_not_overlap(#[case] poll_first: bool)
         })
         .collect::<Vec<_>>();
 
-    assert_eq!(statuses.len(), 3);
     assert_eq!(statuses, expected);
     assert!(instruments.len() >= 2);
     assert_eq!(instruments[0], btc);
     assert!(instruments[1..].iter().all(|id| *id == eth));
+
+    let expected_responses = if poll_first {
+        vec![]
+    } else {
+        vec![(request_id, eth)]
+    };
+
+    assert_eq!(instrument_responses, expected_responses);
 }
 
 #[rstest]

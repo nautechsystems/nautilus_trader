@@ -21,10 +21,12 @@ Credentials (default): user `nautilus`, password `pass`, database `nautilus`, po
 **Python:**
 
 ```bash
-make test-postgres
+make sync
+make build-debug
+uv run --project python --no-sync pytest python/tests/integration/test_live_node_cache.py
 ```
 
-Requires `make init-services` (or at least `make start-services` then `make init-db`) to have been run first.
+Run `make init-services` first to start PostgreSQL and Redis and initialize the schema.
 
 **Rust:**
 

@@ -49,7 +49,11 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 
-use super::{data::response, dst::start_peer, polling::timed_peer};
+use super::{
+    data::response,
+    dst::start_peer,
+    polling::{capture_diagnostics, timed_peer},
+};
 
 const MARKET: &str = include_str!("../../test_data/kalshi-market.json");
 const NATIVE_MARKET: &str = include_str!("../../test_data/kalshi-native-market.json");
@@ -425,6 +429,50 @@ async fn public_metadata_failure_is_identified_without_response_content() {
     assert_eq!(provider.get(id), None);
     assert_eq!(native_peer.await.unwrap().len(), 1);
     assert_eq!(peer.await.unwrap().len(), 1);
+}
+
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn bootstrap_logs_public_metadata_failure_without_response_content() {
+    let body = "private Kalshi bootstrap response sentinel";
+    let (native_peer, native_http) = start_peer(vec![(403, "", body)]).await;
+    let (peer, mut http) = start_peer(vec![(200, "", EXCHANGES), (200, "", MARKET)]).await;
+    http.kalshi_metadata_url = Some(native_http.base_url);
+    let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+
+    let config = FinFeedDataClientConfig {
+        api_key: Some(SecretString::from("test-api-key")),
+        http,
+        instruments: vec![FinFeedInstrumentSelection {
+            exchange_id: "KALSHI".into(),
+            market_ids: vec!["TEST-KALSHI-30_YES".into()],
+        }],
+        ..Default::default()
+    };
+
+    let mut client =
+        FinFeedDataClient::new(ClientId::from("FINFEED"), config, sender.into()).unwrap();
+    let logs = capture_diagnostics();
+    let first_message = logs.lock().unwrap().len();
+
+    let error = client.connect().await.unwrap_err();
+    let native_requests = native_peer.await.unwrap();
+    let requests = peer.await.unwrap();
+    let logs = logs.lock().unwrap();
+    let messages = &logs[first_message..];
+
+    assert!(matches!(
+        error.downcast_ref::<Error>(),
+        Some(Error::KalshiMetadata)
+    ));
+    assert!(client.is_disconnected());
+    assert_eq!(native_requests.len(), 1);
+    assert_eq!(requests.len(), 2);
+    assert!(messages.contains(&(
+        log::Level::Error,
+        "FinFeed bootstrap failed: Public Kalshi metadata request failed".into(),
+    )));
+    assert!(!messages.iter().any(|(_, message)| message.contains(body)));
 }
 
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]

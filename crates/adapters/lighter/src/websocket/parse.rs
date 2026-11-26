@@ -637,11 +637,7 @@ pub fn parse_ws_fill_report(
         LiquiditySide::Taker
     };
 
-    let venue_order_id = if user_is_bidder {
-        venue_order_id_from(trade.bid_id_str.as_deref(), trade.bid_id)
-    } else {
-        venue_order_id_from(trade.ask_id_str.as_deref(), trade.ask_id)
-    };
+    let venue_order_id = trade_venue_order_id(trade, user_is_bidder);
 
     let trade_id = parse_lighter_trade_id(trade)?;
 
@@ -1037,11 +1033,7 @@ pub(crate) fn parse_lighter_order_filled(
         LiquiditySide::Taker
     };
 
-    let venue_order_id = if user_is_bidder {
-        venue_order_id_from(trade.bid_id_str.as_deref(), trade.bid_id)
-    } else {
-        venue_order_id_from(trade.ask_id_str.as_deref(), trade.ask_id)
-    };
+    let venue_order_id = trade_venue_order_id(trade, user_is_bidder);
 
     let trade_id = match trade.trade_id_str.as_deref() {
         Some(s) => TradeId::new_checked(s),
@@ -1348,6 +1340,14 @@ fn nautilus_order_status(
 
 fn unmapped_order_status() -> anyhow::Error {
     anyhow::anyhow!("Lighter unknown order status has no Nautilus equivalent")
+}
+
+pub(crate) fn trade_venue_order_id(trade: &LighterTrade, user_is_bidder: bool) -> VenueOrderId {
+    if user_is_bidder {
+        venue_order_id_from(trade.bid_id_str.as_deref(), trade.bid_id)
+    } else {
+        venue_order_id_from(trade.ask_id_str.as_deref(), trade.ask_id)
+    }
 }
 
 /// Resolve a venue order id from the venue-provided string field, falling

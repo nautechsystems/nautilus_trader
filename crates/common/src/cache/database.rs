@@ -37,7 +37,7 @@ use nautilus_model::{
     orderbook::OrderBook,
     orders::{Order, OrderAny},
     position::Position,
-    types::{Currency, Money},
+    types::{Currency, Money, Price},
 };
 use ustr::Ustr;
 
@@ -120,6 +120,13 @@ pub struct CacheMap {
     pub yield_curves: AHashMap<String, YieldCurve>,
 }
 
+/// Persisted mappings from orders to their positions and execution clients.
+#[derive(Debug)]
+pub struct CacheOrderIndexes {
+    pub order_position: AHashMap<ClientOrderId, PositionId>,
+    pub order_client: AHashMap<ClientOrderId, ClientId>,
+}
+
 /// Factory for constructing cache database adapters at runtime.
 ///
 /// Implementations own the concrete database configuration and return the transport-neutral
@@ -186,6 +193,25 @@ pub trait CacheDatabaseAdapter {
             };
 
             Ok((self.load()?, cache))
+        })
+    }
+
+    /// Loads persisted order indexes during recovery.
+    ///
+    /// The default calls the synchronous index readers. Backends that support asynchronous reads
+    /// can override it to keep recovery from blocking the executor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either index read fails.
+    fn load_order_indexes(&self) -> LocalBoxFuture<'_, anyhow::Result<CacheOrderIndexes>> {
+        Box::pin(async move {
+            let order_position = self.load_index_order_position()?;
+            let order_client = self.load_index_order_client()?;
+            Ok(CacheOrderIndexes {
+                order_position,
+                order_client,
+            })
         })
     }
 
@@ -711,6 +737,23 @@ pub trait CacheDatabaseAdapter {
     /// Returns an error if updating the order fails.
     fn update_order_from_state(&self, order: &OrderAny) -> anyhow::Result<()> {
         self.update_order(order.last_event())
+    }
+
+    /// Stores runtime trailing-stop activation for an order.
+    ///
+    /// Recovery applies the record only when `init_id` matches the order's initialization.
+    /// The default implementation leaves activation in memory only.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if preparing, queueing, or writing the activation record fails.
+    fn store_trailing_stop_activation(
+        &self,
+        _client_order_id: ClientOrderId,
+        _init_id: UUID4,
+        _activation_price: Price,
+    ) -> anyhow::Result<()> {
+        Ok(())
     }
 
     /// Updates a position in the cache.

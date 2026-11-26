@@ -45,7 +45,7 @@ use nautilus_core::{DurationNanos, UUID4, UnixNanos};
 use nautilus_execution::{
     engine::stubs::StubExecutionClient,
     models::{
-        fee::{FeeModelAny, FeeModelHandle, MakerTakerFeeModel},
+        fee::{FeeModelAny, FeeModelHandle, FixedFeeModel, MakerTakerFeeModel},
         latency::{LatencyModelHandle, StaticLatencyModel},
     },
 };
@@ -65,9 +65,9 @@ use nautilus_model::{
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
-        BookType, ContingencyType, InstrumentCloseType, LiquiditySide, OmsType, OptionKind,
-        OrderSide, OrderStatus, OrderType, PositionAdjustmentType, PriceType, SettlementType,
-        TimeInForce, TrailingOffsetType, TriggerType,
+        BookType, ContingencyType, ExerciseStyle, InstrumentCloseType, LiquiditySide, OmsType,
+        OptionKind, OptionPremiumStyle, OrderSide, OrderStatus, OrderType, PositionAdjustmentType,
+        PriceType, SettlementType, TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{
         AccountState, OrderEventAny, OrderEventType, OrderFilled, OrderModifyRejected, OrderUpdated,
@@ -79,12 +79,13 @@ use nautilus_model::{
     instruments::{
         CryptoPerpetual, Equity, IndexInstrument, Instrument, InstrumentAny, OptionContract,
         stubs::{
-            audusd_sim, betting, crypto_perpetual_ethusdt, default_fx_ccy, futures_contract_es,
+            audusd_sim, betting, crypto_option_btc_deribit, crypto_perpetual_ethusdt,
+            default_fx_ccy, futures_contract_es,
         },
     },
     orders::{Order, OrderAny},
     position::Position,
-    types::{Currency, Money, Price, Quantity},
+    types::{Currency, ERROR_PRICE, Money, Price, Quantity},
 };
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_system::trader::Trader;
@@ -554,6 +555,7 @@ struct OpenOptionOnQuote {
     trade_size: Quantity,
     order_side: OrderSide,
     opened: bool,
+    exit_at: Option<UnixNanos>,
 }
 
 impl OpenOptionOnQuote {
@@ -569,6 +571,7 @@ impl OpenOptionOnQuote {
             trade_size,
             order_side: OrderSide::Buy,
             opened: false,
+            exit_at: None,
         }
     }
 }
@@ -592,7 +595,20 @@ impl DataActor for OpenOptionOnQuote {
         Ok(())
     }
 
-    fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+    fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        if self.exit_at == Some(quote.ts_init) {
+            return self.close_all_positions(
+                self.instrument_id,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+        }
+
         if self.opened {
             return Ok(());
         }
@@ -2781,6 +2797,7 @@ fn test_run_preserves_cash_balance_micro_profit() {
 #[rstest]
 fn test_instrument_close_precedes_expiration_timer_at_same_timestamp(
     #[values(false, true)] quote_at_expiration: bool,
+    #[values(false, true)] invalid_expiry_price: bool,
 ) {
     let venue = Venue::from("OPRA");
     let expiration_ns = UnixNanos::from(2_000_000_000_u64);
@@ -2788,7 +2805,13 @@ fn test_instrument_close_precedes_expiration_timer_at_same_timestamp(
     let option = option_contract(venue, expiration_ns);
     let underlying_id = underlying.id();
     let option_id = option.id();
-    let close_price = Price::from("7.25");
+
+    let close_price = if invalid_expiry_price {
+        ERROR_PRICE
+    } else {
+        Price::from("7.25")
+    };
+
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
     let venue_config = SimulatedVenueConfig::builder()
         .venue(venue)
@@ -2846,6 +2869,22 @@ fn test_instrument_close_precedes_expiration_timer_at_same_timestamp(
             false,
         )
         .unwrap();
+
+    if invalid_expiry_price {
+        let cache = engine.kernel().cache.borrow();
+        let positions = cache.positions_open(None, Some(&option_id), None, None, None);
+
+        let [position] = positions.as_slice() else {
+            panic!("expected the option to remain open after rejecting its expiry price");
+        };
+
+        assert_eq!(position.quantity, Quantity::from(1));
+        assert_eq!(
+            account_total(&engine, "OPRA", Currency::USD()),
+            Some(Money::from("999490 USD"))
+        );
+        return;
+    }
 
     assert_eq!(
         expiration_fill_price(&engine, venue, option_id),
@@ -6228,6 +6267,684 @@ fn test_option_expiry_timer_closes_position_without_data_at_expiration() {
 }
 
 #[rstest]
+#[case::dated(5_000_000_000, "1", "100", "5.10", "6.00", dec!(10086))]
+#[case::fractional(5_000_000_000, "0.1", "1", "1.00", "1.04", dec!(9996.004))]
+fn test_flat_futures_style_option_clears_pending_equity(
+    #[case] expiry: u64,
+    #[case] qty: &str,
+    #[case] multiplier: &str,
+    #[case] entry: &str,
+    #[case] exit: &str,
+    #[case] equity: Decimal,
+) {
+    let venue = Venue::from("SIM");
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    let fee = FixedFeeModel::new(Money::from("2 USD"), Some(false)).unwrap();
+    engine
+        .add_venue(
+            SimulatedVenueConfig::builder()
+                .venue(venue)
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("10000 USD")])
+                .fee_model(FeeModelAny::Fixed(fee).into())
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+
+    let qty = Quantity::from(qty);
+    let multiplier = Quantity::from(multiplier);
+
+    let instrument = if qty.precision == 0 {
+        let InstrumentAny::OptionContract(mut option) = option_contract(venue, expiry.into())
+        else {
+            unreachable!();
+        };
+
+        option.premium_style = Some(OptionPremiumStyle::FuturesStyle);
+        option.multiplier = multiplier;
+        option.into_any()
+    } else {
+        let mut option = crypto_option_btc_deribit(2, 1, Price::from("0.01"), qty);
+        option.id = InstrumentId::from("CRYPTO-OPTION.SIM");
+        option.quote_currency = Currency::USD();
+        option.settlement_currency = Currency::USD();
+        option.activation_ns = UnixNanos::default();
+        option.expiration_ns = expiry.into();
+        option.multiplier = multiplier;
+        option.lot_size = qty;
+        option.min_notional = None;
+        option.premium_style = Some(OptionPremiumStyle::FuturesStyle);
+        option.into_any()
+    };
+
+    let id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+    let mut strategy = OpenOptionOnQuote::new(id, qty);
+    strategy.exit_at = Some(2_000_000_000.into());
+    engine.add_strategy(strategy).unwrap();
+
+    let quotes = vec![
+        quote_with_size(id, entry, entry, &qty.to_string(), 1_000_000_000),
+        quote_with_size(id, exit, exit, &qty.to_string(), 2_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true).unwrap();
+    engine.run(None, None, None, true).unwrap();
+    let cache = engine.kernel().cache.borrow();
+    let closed = cache.positions_closed(None, Some(&id), None, None, None);
+    assert_eq!(closed.len(), 1);
+    assert!(
+        cache
+            .positions_open(None, Some(&id), None, None, None)
+            .is_empty()
+    );
+    drop(closed);
+    drop(cache);
+    let currency = Currency::USD();
+    let total_equity = Money::from_decimal_exact(equity, currency).unwrap();
+    assert_eq!(
+        account_total(&engine, "SIM", currency),
+        Some(Money::from("9996 USD"))
+    );
+    let mut portfolio = engine.kernel().portfolio.borrow_mut();
+    assert_eq!(portfolio.equity(&venue, None)[&currency], total_equity);
+    let snapshot = portfolio
+        .build_snapshot(&AccountId::from("SIM-001"))
+        .unwrap();
+    assert_eq!(snapshot.total_equity, vec![total_equity]);
+    drop(portfolio);
+
+    engine.clear_data();
+    let price = Price::from("7.00");
+
+    let mark = InstrumentClose::new(
+        id,
+        price,
+        InstrumentCloseType::Settlement,
+        3_000_000_000.into(),
+        3_000_000_000.into(),
+    );
+
+    let duplicate = InstrumentClose {
+        ts_init: 3_000_000_001.into(),
+        ..mark
+    };
+
+    engine
+        .add_data(
+            vec![
+                Data::InstrumentClose(mark),
+                Data::InstrumentClose(duplicate),
+            ],
+            None,
+            true,
+            true,
+        )
+        .unwrap();
+    engine
+        .run(Some(2_000_000_000.into()), None, None, true)
+        .unwrap();
+    assert_eq!(account_total(&engine, "SIM", currency), Some(total_equity));
+    let equity = engine.kernel().portfolio.borrow_mut().equity(&venue, None);
+    assert_eq!(equity[&currency], total_equity);
+}
+
+#[rstest]
+fn test_futures_style_option_expires_during_shutdown_latency() {
+    let venue = Venue::from("SIM");
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+
+    let latency = StaticLatencyModel::new(
+        DurationNanos::from_secs(1),
+        DurationNanos::default(),
+        DurationNanos::default(),
+        DurationNanos::default(),
+    );
+
+    engine
+        .add_venue(
+            SimulatedVenueConfig::builder()
+                .venue(venue)
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("10000 USD")])
+                .latency_model(LatencyModelHandle::new(latency))
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+
+    let InstrumentAny::OptionContract(mut option) =
+        option_contract(venue, 3_500_000_000_u64.into())
+    else {
+        unreachable!();
+    };
+
+    option.premium_style = Some(OptionPremiumStyle::FuturesStyle);
+    option.settlement_type = Some(SettlementType::Cash);
+    let id = option.id;
+    let underlying = option_underlying_equity(venue);
+    let underlying_id = underlying.id();
+    engine.add_instrument(&underlying).unwrap();
+    engine.add_instrument(&option.into()).unwrap();
+    engine
+        .add_strategy(CloseOnStop::new(id, Quantity::from(1)))
+        .unwrap();
+    let data = vec![
+        trade(underlying_id, "160.00", "1", 1_000_000_000),
+        quote_with_size(id, "5.00", "5.10", "1", 1_000_000_001),
+        quote_with_size(id, "5.00", "5.10", "1", 2_000_000_001),
+        quote_with_size(id, "5.00", "5.10", "1", 3_000_000_000),
+    ];
+    engine.add_data(data, None, true, true).unwrap();
+    engine
+        .run(None, Some(3_000_000_000.into()), None, false)
+        .unwrap();
+    let cache = engine.kernel().cache.borrow();
+    let closed = cache.positions_closed(None, Some(&id), None, None, None);
+    assert_eq!(closed.len(), 1);
+    assert_eq!(closed[0].avg_px_close, Some(dec!(10)));
+    assert_eq!(closed[0].realized_pnl, Some(Money::from("490 USD")));
+    assert_eq!(
+        account_total(&engine, "SIM", Currency::USD()),
+        Some(Money::from("10490 USD"))
+    );
+}
+
+#[rstest]
+#[case::upfront(
+    Some(OptionPremiumStyle::Upfront), OrderSide::Buy, Currency::USD(), SettlementType::Cash, false,
+    ["999488 USD", "999488 USD", "999488 USD", "1000488 USD"]
+)]
+#[case::legacy(
+    None, OrderSide::Buy, Currency::USD(), SettlementType::Cash, false,
+    ["999488 USD", "999488 USD", "999488 USD", "1000488 USD"]
+)]
+#[case::futures_long(
+    Some(OptionPremiumStyle::FuturesStyle), OrderSide::Buy, Currency::USD(), SettlementType::Cash, false,
+    ["999998 USD", "1000213 USD", "1000138 USD", "1000488 USD"]
+)]
+#[case::futures_short(
+    Some(OptionPremiumStyle::FuturesStyle), OrderSide::Sell, Currency::USD(), SettlementType::Cash, true,
+    ["999998 USD", "999773 USD", "999848 USD", "999498 USD"]
+)]
+#[case::futures_delivery(
+    Some(OptionPremiumStyle::FuturesStyle), OrderSide::Buy, Currency::USD(), SettlementType::Physical, false,
+    ["999998 USD", "1000213 USD", "1000138 USD", "999488 USD"]
+)]
+#[case::missing_payout_fixing(
+    Some(OptionPremiumStyle::Upfront), OrderSide::Buy, Currency::EUR(), SettlementType::Cash, true,
+    ["999488 USD", "999488 USD", "999488 USD", "999488 USD"]
+)]
+fn test_option_premium_cash_flows(
+    #[case] premium_style: Option<OptionPremiumStyle>,
+    #[case] side: OrderSide,
+    #[case] payout_currency: Currency,
+    #[case] settlement_type: SettlementType,
+    #[case] early_expiry: bool,
+    #[case] expected: [&str; 4],
+) {
+    let venue = Venue::from("SIM");
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    let fee = FixedFeeModel::new(Money::from("2 USD"), Some(false)).unwrap();
+    engine
+        .add_venue(
+            SimulatedVenueConfig::builder()
+                .venue(venue)
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1000000 USD"), Money::from("321 EUR")])
+                .fee_model(FeeModelAny::Fixed(fee).into())
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+
+    let expiration = 4_000_000_000;
+
+    let InstrumentAny::OptionContract(mut option) = option_contract(venue, expiration.into())
+    else {
+        unreachable!();
+    };
+
+    option.exercise_style = Some(ExerciseStyle::European);
+    option.settlement_type = Some(settlement_type);
+    option.settlement_currency = payout_currency;
+    option.premium_style = premium_style;
+
+    let id = option.id;
+
+    let underlying = if settlement_type == SettlementType::Physical {
+        let mut future =
+            futures_contract_es(Some(0.into()), Some((expiration + 1_000_000_000).into()));
+        future.id = InstrumentId::from("FUTURE.SIM");
+        future.multiplier = Quantity::from(100);
+        option.asset_class = future.asset_class;
+        option.underlying = future.underlying;
+        future.into_any()
+    } else {
+        option_underlying_equity(venue)
+    };
+
+    let underlying_id = underlying.id();
+    option.underlying_instrument_id = Some(underlying_id);
+    engine.add_instrument(&underlying).unwrap();
+    engine.add_instrument(&option.into()).unwrap();
+
+    let mut strategy = OpenOptionOnQuote::new(id, Quantity::from(1));
+    strategy.order_side = side;
+    engine.add_strategy(strategy).unwrap();
+
+    let first_mark = InstrumentClose::new(
+        id,
+        Price::from("7.25"),
+        InstrumentCloseType::Settlement,
+        2_000_000_000.into(),
+        2_000_000_000.into(),
+    );
+
+    let duplicate = InstrumentClose {
+        ts_init: 2_000_000_001.into(),
+        ..first_mark
+    };
+
+    let later_mark = InstrumentClose::new(
+        id,
+        Price::from("6.50"),
+        InstrumentCloseType::Settlement,
+        3_000_000_000.into(),
+        3_000_000_000.into(),
+    );
+
+    let expiry_data = if early_expiry {
+        let ts = 3_500_000_000_u64.into();
+
+        let close = InstrumentClose::new(
+            id,
+            Price::from("10.00"),
+            InstrumentCloseType::ContractExpired,
+            ts,
+            ts,
+        );
+
+        Data::InstrumentClose(close)
+    } else {
+        trade(underlying_id, "160.00", "1", expiration + 1)
+    };
+
+    let mut start = None;
+
+    for (stage, (data, balance)) in [
+        (
+            vec![
+                trade(underlying_id, "160.00", "1", 1_000_000_000),
+                quote_with_size(id, "5.00", "5.10", "1", 1_000_000_001),
+            ],
+            expected[0],
+        ),
+        (
+            vec![
+                Data::InstrumentClose(first_mark),
+                Data::InstrumentClose(duplicate),
+            ],
+            expected[1],
+        ),
+        (vec![Data::InstrumentClose(later_mark)], expected[2]),
+        (vec![expiry_data], expected[3]),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let end = data.last().map(HasTsInit::ts_init);
+        engine.add_data(data, None, true, true).unwrap();
+        engine.run(start, end, None, true).unwrap();
+        start = end;
+        assert_eq!(
+            account_total(&engine, "SIM", Currency::USD()),
+            Some(Money::from(balance))
+        );
+        assert_eq!(
+            account_total(&engine, "SIM", Currency::EUR()),
+            Some(Money::from("321 EUR"))
+        );
+
+        if stage < 3 {
+            let equity = engine.kernel().portfolio.borrow_mut().equity(&venue, None);
+            assert_eq!(equity[&Currency::USD()], Money::from("999988 USD"));
+            assert_eq!(equity[&Currency::EUR()], Money::from("321 EUR"));
+        }
+
+        engine.clear_data();
+    }
+
+    let cache = engine.kernel().cache.borrow();
+    let account = cache.account_for_venue(&venue).unwrap();
+
+    let AccountAny::Margin(account) = &*account else {
+        unreachable!();
+    };
+
+    assert_eq!(
+        account.commission(&Currency::USD()),
+        Some(Money::from("2 USD"))
+    );
+    let open = cache.positions_open(None, Some(&id), None, None, None);
+    let closed = cache.positions_closed(None, Some(&id), None, None, None);
+
+    if payout_currency != Currency::USD() {
+        assert!(closed.is_empty());
+        assert_eq!(open.len(), 1);
+        assert_eq!(open[0].quantity, Quantity::from(1));
+        return;
+    }
+
+    assert!(open.is_empty());
+    assert_eq!(closed.len(), 1);
+
+    let close_price = match settlement_type {
+        SettlementType::Cash => dec!(10),
+        SettlementType::Physical => dec!(0),
+    };
+
+    assert_eq!(closed[0].avg_px_close, Some(close_price));
+    assert_eq!(closed[0].settlement_currency, Currency::USD());
+    assert_eq!(
+        closed[0].realized_pnl,
+        Some(Money::from(match (settlement_type, side) {
+            (SettlementType::Physical, _) => "-512 USD",
+            (SettlementType::Cash, OrderSide::Buy) => "488 USD",
+            (SettlementType::Cash, OrderSide::Sell) => "-502 USD",
+        }))
+    );
+    let delivered = cache.positions_open(None, Some(&underlying_id), None, None, None);
+
+    if settlement_type == SettlementType::Physical {
+        assert_eq!(delivered.len(), 1);
+        assert_eq!(delivered[0].quantity, Quantity::from(1));
+        assert_eq!(delivered[0].entry, OrderSide::Buy);
+        assert_eq!(delivered[0].avg_px_open, dec!(150));
+        assert_eq!(delivered[0].settlement_currency, Currency::USD());
+    } else {
+        assert!(delivered.is_empty());
+    }
+}
+
+#[rstest]
+#[case::margin(AccountType::Margin, true, ["999490 USD", "1001490 USD", "986490 USD"])]
+#[case::cash(AccountType::Cash, true, ["999490 USD", "999490 USD", "999490 USD"])]
+#[case::no_scheduled_expiry(AccountType::Margin, false, ["999490 USD", "1001490 USD", "986490 USD"])]
+fn test_cross_venue_futures_style_option_clears_for_delivery_account(
+    #[case] account_type: AccountType,
+    #[case] scheduled_expiry: bool,
+    #[case] owner_balances: [&str; 3],
+) {
+    let venue = Venue::from("IB");
+    let expiry = CALL_OPTION_EXPIRATION + 1_000_000_000;
+    let equity = option_underlying_equity(venue);
+
+    let InstrumentAny::OptionContract(mut delivered) = option_contract(venue, expiry.into()) else {
+        unreachable!();
+    };
+
+    if !scheduled_expiry {
+        delivered.expiration_ns = UnixNanos::default();
+    }
+
+    delivered.premium_style = Some(OptionPremiumStyle::FuturesStyle);
+    delivered.settlement_type = Some(SettlementType::Cash);
+    delivered.underlying_instrument_id = Some(equity.id());
+    let (mut engine, parent, id) = prepare_call_option_expiry_timer(
+        "160.00",
+        account_type,
+        OmsType::Netting,
+        &delivered.into_any(),
+        false,
+    );
+    engine.add_instrument(&equity).unwrap();
+
+    if scheduled_expiry {
+        let mut listed = OpenOptionOnQuote::new(id, Quantity::from(1));
+
+        listed.core = StrategyCore::new(StrategyConfig {
+            strategy_id: Some(StrategyId::from("LISTED-OPTION-002")),
+            order_id_tag: Some("002".to_string()),
+            ..Default::default()
+        });
+
+        engine.add_strategy(listed).unwrap();
+    }
+
+    let prior = InstrumentClose::new(
+        id,
+        Price::from("160.00"),
+        InstrumentCloseType::Settlement,
+        (CALL_OPTION_EXPIRATION - 2_500).into(),
+        (CALL_OPTION_EXPIRATION - 2_500).into(),
+    );
+
+    let duplicate = InstrumentClose {
+        ts_init: (CALL_OPTION_EXPIRATION + 2).into(),
+        ..prior
+    };
+
+    let clear = InstrumentClose {
+        close_price: Price::from("170.00"),
+        ts_event: (CALL_OPTION_EXPIRATION + 3).into(),
+        ts_init: (CALL_OPTION_EXPIRATION + 3).into(),
+        ..prior
+    };
+
+    let expiry_data = if scheduled_expiry {
+        trade(equity.id(), "170.00", "1", expiry + 1)
+    } else {
+        let close = InstrumentClose::new(
+            id,
+            Price::from("20.00"),
+            InstrumentCloseType::ContractExpired,
+            expiry.into(),
+            expiry.into(),
+        );
+
+        Data::InstrumentClose(close)
+    };
+
+    let owner = AccountId::from("OPRA-001");
+    let usd = Currency::USD();
+    let mut start = None;
+
+    let listing_balances = if scheduled_expiry {
+        ["1000000 USD", "1001000 USD", "986000 USD"]
+    } else {
+        ["1000000 USD"; 3]
+    };
+
+    for ((data, owner_balance), listing_balance) in [
+        vec![
+            Data::InstrumentClose(prior),
+            quote_with_size(id, "159.00", "160.00", "1", CALL_OPTION_EXPIRATION - 2_250),
+            Data::InstrumentClose(duplicate),
+        ],
+        vec![Data::InstrumentClose(clear)],
+        vec![trade(equity.id(), "170.00", "1", expiry - 1), expiry_data],
+    ]
+    .into_iter()
+    .zip(owner_balances)
+    .zip(listing_balances)
+    {
+        let end = data.last().map(HasTsInit::ts_init);
+        engine.add_data(data, None, true, true).unwrap();
+        engine.run(start, end, None, true).unwrap();
+        start = end;
+        assert_eq!(
+            account_total(&engine, "OPRA", usd),
+            Some(Money::from(owner_balance))
+        );
+        assert_eq!(
+            account_total(&engine, "IB", usd),
+            Some(Money::from(listing_balance))
+        );
+        engine.clear_data();
+    }
+
+    let cache = engine.kernel().cache.borrow();
+    let closed = cache.positions_closed(None, Some(&id), None, Some(&owner), None);
+
+    let mut accepted_owners: Vec<_> = cache
+        .orders(None, Some(&id), None, None, None)
+        .into_iter()
+        .filter(|order| {
+            order
+                .client_order_id()
+                .as_str()
+                .starts_with("EXPIRATION-IB-")
+        })
+        .flat_map(|order| {
+            order
+                .events()
+                .into_iter()
+                .filter_map(|event| match event {
+                    OrderEventAny::Accepted(accepted) => Some(accepted.account_id),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+
+    accepted_owners.sort_unstable();
+    let listing = AccountId::from("IB-001");
+
+    if account_type == AccountType::Cash {
+        assert_eq!(accepted_owners, vec![listing]);
+        assert!(closed.is_empty());
+        let parent = cache.positions_open(None, Some(&parent), None, Some(&owner), None);
+        assert_eq!(parent.len(), 1);
+        assert_eq!(parent[0].quantity, Quantity::from(1));
+        return;
+    }
+
+    let expected_owners = if scheduled_expiry {
+        vec![listing, owner]
+    } else {
+        vec![owner]
+    };
+
+    assert_eq!(accepted_owners, expected_owners);
+
+    let [position] = closed.as_slice() else {
+        panic!("expected one closed delivered option for the originating account");
+    };
+
+    assert_eq!(position.peak_qty, Quantity::from(1));
+    assert_eq!(position.avg_px_open, dec!(150));
+    assert_eq!(position.avg_px_close, Some(dec!(20)));
+}
+
+#[rstest]
+#[case::early(true)]
+#[case::scheduled(false)]
+fn test_option_physical_delivery_rejects_expired_futures_style_option(#[case] early: bool) {
+    let venue = Venue::from("IB");
+
+    let expiry = if early {
+        CALL_OPTION_EXPIRATION + 1_000_000_000
+    } else {
+        CALL_OPTION_EXPIRATION
+    };
+
+    let InstrumentAny::OptionContract(mut underlying) = option_contract(venue, expiry.into())
+    else {
+        unreachable!();
+    };
+
+    underlying.premium_style = Some(OptionPremiumStyle::FuturesStyle);
+    let (mut engine, parent, id) = prepare_call_option_expiry_timer(
+        "160.00",
+        AccountType::Margin,
+        OmsType::Netting,
+        &underlying.into_any(),
+        false,
+    );
+
+    if early {
+        let close_time = (CALL_OPTION_EXPIRATION - 500).into();
+        let mark_time = (CALL_OPTION_EXPIRATION - 250).into();
+
+        let close = InstrumentClose::new(
+            id,
+            Price::from("0.00"),
+            InstrumentCloseType::ContractExpired,
+            close_time,
+            close_time,
+        );
+
+        let late_mark = InstrumentClose::new(
+            id,
+            Price::from("160.00"),
+            InstrumentCloseType::Settlement,
+            mark_time,
+            mark_time,
+        );
+
+        engine
+            .add_data(
+                vec![
+                    Data::InstrumentClose(close),
+                    Data::InstrumentClose(late_mark),
+                ],
+                None,
+                true,
+                true,
+            )
+            .unwrap();
+    }
+
+    engine
+        .run(None, Some((CALL_OPTION_EXPIRATION + 1).into()), None, false)
+        .unwrap();
+
+    let cache = engine.kernel().cache.borrow();
+    let positions = cache.positions_open(
+        None,
+        Some(&parent),
+        None,
+        Some(&AccountId::from("OPRA-001")),
+        None,
+    );
+
+    let [position] = positions.as_slice() else {
+        panic!("expected the parent option to remain open");
+    };
+
+    assert_eq!(position.quantity, Quantity::from(1));
+    assert!(cache.orders(None, Some(&id), None, None, None).is_empty());
+    assert!(
+        cache
+            .positions(None, Some(&id), None, None, None)
+            .is_empty()
+    );
+    let listing = cache.account_for_venue(&venue).unwrap();
+
+    let AccountAny::Margin(listing) = &*listing else {
+        panic!("expected a listing margin account");
+    };
+
+    assert!(listing.option_variation(&id).is_none());
+    assert_eq!(
+        account_total(&engine, "OPRA", Currency::USD()),
+        Some(Money::from("999490 USD"))
+    );
+    assert_eq!(
+        account_total(&engine, "IB", Currency::USD()),
+        Some(Money::from("1000000 USD"))
+    );
+}
+
+#[rstest]
 #[case::margin(AccountType::Margin, "999490 USD")]
 #[case::cash(AccountType::Cash, "984490 USD")]
 fn test_itm_option_expiry_timer_exercises_without_data_at_expiration(
@@ -8620,7 +9337,6 @@ fn test_add_venue_with_oto_full_trigger(crypto_perpetual_ethusdt: CryptoPerpetua
 #[rstest]
 fn test_end_returns_streaming_write_error() {
     use nautilus_common::msgbus::{self, switchboard};
-    use nautilus_model::types::ERROR_PRICE;
     use nautilus_system::config::{RotationConfig, StreamingConfig};
 
     let directory = tempfile::tempdir().unwrap();

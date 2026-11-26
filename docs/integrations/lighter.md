@@ -897,6 +897,9 @@ the effective quantity. The adapter then:
 1. Releases real fills.
 1. Reconciles terminal status.
 
+For an unfilled child, the adapter can publish the terminal status from the venue order record alone.
+If an earlier order report or buffered update records fills, the adapter still queries trades.
+
 Resting children publish trigger events once their modification resolves.
 
 An unresolved child fill or modification holds later fills and terminal events for the same strategy and
@@ -1431,8 +1434,12 @@ Venue `shutdown` notices request immediate reconnect through the shared WebSocke
 notices are ignored. Normal subscription replay, [nonce recovery](#nonce-recovery), and
 [account stream readiness](#account-stream-readiness) apply.
 
-The old stream stops before its replacement is ready. Fresh snapshots and HTTP reconciliation recover the
-gap. Subsequent server closes, including `1012`, use the same reconnect path.
+The old stream stops before its replacement is ready. Fresh snapshots restore stream state.
+Set `open_check_interval_secs` to enable
+[periodic open-order checks](../concepts/execution/reconciliation.md#order-consistency-checks) and recover
+terminal order updates missed during the gap. In open-only mode, the checks skip missing orders whose
+last update falls outside `open_check_lookback_mins`, which defaults to 60 minutes. Subsequent server
+closes, including `1012`, use the same reconnect path.
 
 ### Private authentication
 
@@ -1512,7 +1519,7 @@ and the data client check field presence, including environment fallback; they d
 | `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket.                      |
 | `http_timeout_secs`                | `60`      | HTTP request timeout in seconds.                                |
 | `ws_timeout_secs`                  | `30`      | WebSocket connection and reconnection timeout.                  |
-| `update_instruments_interval_mins` | `60`      | Instrument metadata refresh interval in minutes; 0 disables it. |
+| `update_instruments_interval_mins` | `60`      | Interval (minutes) between metadata refreshes. `0` disables it. |
 | `book_snapshot_timeout_secs`       | `10`      | Initial, reconnect, and recovery snapshot wait.                 |
 | `rest_quota_per_min`               | `None`    | REST quota override; unset or 0 keeps 60 req/min.               |
 | `transport_backend`                | Default   | WebSocket transport backend.                                    |

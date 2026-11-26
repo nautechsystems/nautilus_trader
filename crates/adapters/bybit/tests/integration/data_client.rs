@@ -55,9 +55,9 @@ use nautilus_common::{
         data::{
             DataResponse, RequestBars, RequestBookSnapshot, RequestFundingRates, RequestInstrument,
             RequestInstruments, RequestOptionChainReferencePrice, SubscribeBars,
-            SubscribeBookDeltas, SubscribeCustomData, SubscribeInstrumentStatus,
-            SubscribeInstruments, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
-            UnsubscribeCustomData, UnsubscribeQuotes,
+            SubscribeBookDeltas, SubscribeCustomData, SubscribeInstrument,
+            SubscribeInstrumentStatus, SubscribeInstruments, SubscribeQuotes, SubscribeTrades,
+            UnsubscribeBookDeltas, UnsubscribeCustomData, UnsubscribeQuotes,
         },
         system::SocketState,
     },
@@ -67,7 +67,7 @@ use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::{BarType, CustomData, Data, DataType, OrderBookDeltas, QuoteTick},
-    enums::{BookAction, BookType, PositionSide, RecordFlag},
+    enums::{BookAction, BookType, MarketStatusAction, PositionSide, RecordFlag},
     identifiers::{InstrumentId, OptionSeriesId},
     instruments::Instrument,
     types::{Price, Quantity},
@@ -83,6 +83,7 @@ struct TestServerState {
     connection_count: Arc<tokio::sync::Mutex<usize>>,
     upgrade_count: Arc<AtomicUsize>,
     instrument_requests: Arc<AtomicUsize>,
+    new_option_listed: Arc<AtomicBool>,
     instrument_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     upgrade_gate: tokio::sync::watch::Sender<bool>,
     socket_drops: Arc<tokio::sync::Mutex<HashMap<usize, tokio::sync::oneshot::Sender<()>>>>,
@@ -103,6 +104,7 @@ impl Default for TestServerState {
             connection_count: Arc::new(tokio::sync::Mutex::new(0)),
             upgrade_count: Arc::new(AtomicUsize::new(0)),
             instrument_requests: Arc::new(AtomicUsize::new(0)),
+            new_option_listed: Arc::default(),
             instrument_queries: Arc::default(),
             upgrade_gate: tokio::sync::watch::channel(true).0,
             socket_drops: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
@@ -162,7 +164,14 @@ async fn handle_get_instruments(
         }
     };
 
-    let instruments = load_test_data(filename);
+    let mut instruments = load_test_data(filename);
+    if category == Some("option") && state.new_option_listed.load(Ordering::Relaxed) {
+        let list = instruments["result"]["list"].as_array_mut().unwrap();
+        let mut listed = list[0].clone();
+        listed["symbol"] = json!("ETH-26JUN26-16500-P");
+        list.push(listed);
+    }
+
     Json(instruments).into_response()
 }
 
@@ -1414,6 +1423,66 @@ async fn test_data_client_emits_instruments_on_connect() {
     );
 
     client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_instrument_poll_refreshes_new_listing_without_definition_subscription() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    set_data_event_sender(tx);
+    let mut config = create_test_config(addr);
+    config.product_types = vec![BybitProductType::Option];
+    config.base_url_ws_public = Some(format!("ws://{addr}/v5/public/option"));
+    config.instrument_poll_interval_secs = Some(1);
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    let existing = InstrumentId::from("ETH-26JUN26-16000-P-OPTION.BYBIT");
+    let listed = InstrumentId::from("ETH-26JUN26-16500-P-OPTION.BYBIT");
+    client
+        .subscribe_instrument(SubscribeInstrument::new(
+            existing,
+            Some(*BYBIT_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    client
+        .subscribe_instrument_status(SubscribeInstrumentStatus::new(
+            listed,
+            Some(*BYBIT_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    state.new_option_listed.store(true, Ordering::Relaxed);
+
+    let (definitions, status) = tokio::time::timeout(Duration::from_secs(5), async {
+        let mut definitions = Vec::new();
+
+        loop {
+            match rx.recv().await.unwrap() {
+                DataEvent::Data(Data::Instrument(definition)) => definitions.push(definition.id()),
+                DataEvent::Data(Data::InstrumentStatus(status)) => break (definitions, status),
+                _ => {}
+            }
+        }
+    })
+    .await
+    .unwrap();
+
+    client.disconnect().await.unwrap();
+
+    assert_eq!(definitions, vec![existing, listed]);
+    assert_eq!(status.instrument_id, listed);
+    assert_eq!(status.action, MarketStatusAction::Trading);
 }
 
 #[rstest]

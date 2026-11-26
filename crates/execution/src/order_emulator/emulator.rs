@@ -60,7 +60,7 @@ use crate::{
     matching::{MatchAction, OrderMatchingCore, RestingOrder},
     order_manager::{OrderManagerAction, manager::OrderManager},
     reconciliation::SNAPSHOT_COVERING_FILL_ID,
-    trailing::{store_trailing_stop_activation, trailing_stop_calculate},
+    trailing::trailing_stop_calculate,
 };
 
 pub struct OrderEmulator {
@@ -656,7 +656,10 @@ impl OrderEmulator {
             OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
         ) {
             self.update_trailing_stop_order(&mut order);
-            if order.trigger_price().is_none() && is_order_activated(&order) {
+            if order.trigger_price().is_none()
+                && is_order_activated(&order)
+                && order.status() != OrderStatus::Emulated
+            {
                 log::error!(
                     "Cannot handle trailing stop order with no trigger_price and no market updates"
                 );
@@ -665,7 +668,6 @@ impl OrderEmulator {
                 self.dispatch_manager_actions(actions);
                 return;
             }
-            // Not yet activated: held inert until the activation price is touched
         }
 
         self.check_monitoring(strategy_id, position_id);
@@ -1703,23 +1705,8 @@ impl OrderEmulator {
                 log::debug!("Cannot update trailing-stop match info: {e:?}");
             }
 
-            // A trailing stop with no trigger price yet must stay inert:
-            // its limit price must never match as a plain limit order.
-            let (trigger_price, limit_price) = if order.trigger_price().is_some() {
-                (order.trigger_price(), order.price())
-            } else {
-                (None, None)
-            };
-
-            matching_core.add_order(RestingOrder::new_with_trigger_type(
-                order.client_order_id(),
-                order.order_side(),
-                order.order_type(),
-                order.emulation_trigger(),
-                trigger_price,
-                limit_price,
-                is_order_activated(order),
-            ));
+            let entry = matching_core_entry(order);
+            matching_core.add_order(entry);
         }
     }
 
@@ -1755,48 +1742,33 @@ impl OrderEmulator {
             return true;
         }
 
-        if let Some(activation_price) = activation_price {
-            let hit = match order_side {
-                OrderSide::Buy => ask.is_some_and(|a| a <= activation_price),
-                OrderSide::Sell => bid.is_some_and(|b| b >= activation_price),
-            };
-
-            if hit {
-                Self::set_trailing_stop_activated(order, None);
-                store_trailing_stop_activation(&mut self.cache.borrow_mut(), order);
-            }
-            return hit;
-        }
-
-        let market_price = match trigger_type {
-            TriggerType::LastPrice => last,
-            _ => match order_side {
-                OrderSide::Buy => ask,
-                OrderSide::Sell => bid,
-            },
+        let activation_price = match (activation_price, order_side) {
+            (Some(price), OrderSide::Buy) => ask.is_some_and(|ask| ask <= price).then_some(price),
+            (Some(price), OrderSide::Sell) => bid.is_some_and(|bid| bid >= price).then_some(price),
+            (None, _) if trigger_type == TriggerType::LastPrice => last,
+            (None, OrderSide::Buy) => ask,
+            (None, OrderSide::Sell) => bid,
         };
 
-        let Some(market_price) = market_price else {
+        let Some(activation_price) = activation_price else {
             return false;
         };
 
-        Self::set_trailing_stop_activated(order, Some(market_price));
-        store_trailing_stop_activation(&mut self.cache.borrow_mut(), order);
+        Self::set_trailing_stop_activated(order, activation_price);
+        self.cache
+            .borrow_mut()
+            .store_trailing_stop_activation(order.client_order_id(), activation_price);
         true
     }
 
-    fn set_trailing_stop_activated(order: &mut OrderAny, activation_price: Option<Price>) {
+    fn set_trailing_stop_activated(order: &mut OrderAny, activation_price: Price) {
         match order {
             OrderAny::TrailingStopMarket(inner) => {
-                if let Some(price) = activation_price {
-                    inner.activation_price = Some(price);
-                }
+                inner.activation_price = Some(activation_price);
                 inner.set_activated();
             }
             OrderAny::TrailingStopLimit(inner) => {
-                if let Some(price) = activation_price {
-                    inner.activation_price = Some(price);
-                }
+                inner.activation_price = Some(activation_price);
                 inner.set_activated();
             }
             _ => {}
@@ -1966,18 +1938,28 @@ fn match_emulated_order(core: &OrderMatchingCore, order: &RestingOrder) -> Optio
 }
 
 fn matching_core_entry(order: &OrderAny) -> RestingOrder {
+    let order_type = order.order_type();
     let is_activated = is_order_activated(order);
+    let trigger_price = order.trigger_price();
+
+    // A trailing limit must stay inert while it waits for its first trigger price
+    let (trigger_price, limit_price) = if matches!(
+        order_type,
+        OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+    ) && (!is_activated || trigger_price.is_none())
+    {
+        (None, None)
+    } else {
+        (trigger_price, order.price())
+    };
+
     RestingOrder::new_with_trigger_type(
         order.client_order_id(),
         order.order_side(),
-        order.order_type(),
+        order_type,
         order.emulation_trigger(),
-        if is_activated {
-            order.trigger_price()
-        } else {
-            None
-        },
-        if is_activated { order.price() } else { None },
+        trigger_price,
+        limit_price,
         is_activated,
     )
 }
@@ -6042,6 +6024,78 @@ mod tests {
             &commands[0],
             TradingCommand::SubmitOrder(command) if command.client_order_id == client_order_id
         ));
+    }
+
+    #[rstest]
+    fn test_restore_activated_trailing_stop_without_trigger(
+        instrument: CryptoPerpetual,
+        #[values(OrderType::TrailingStopMarket, OrderType::TrailingStopLimit)]
+        order_type: OrderType,
+    ) {
+        let (_clock, cache, emulator) = create_emulator();
+        add_instrument_to_cache(&cache, &instrument);
+        let activation_price = Price::from("5050.00");
+        let mut builder = OrderTestBuilder::new(order_type);
+        builder
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(1))
+            .trigger_type(TriggerType::LastOrBidAsk)
+            .activation_price(activation_price)
+            .trailing_offset(dec!(10))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .emulation_trigger(TriggerType::BidAsk);
+
+        if order_type == OrderType::TrailingStopLimit {
+            builder.price(Price::from("5020.00")).limit_offset(dec!(5));
+        }
+
+        let order = builder.build();
+        let client_order_id = order.client_order_id();
+
+        let emulated = OrderEmulated::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            client_order_id,
+            UUID4::new(),
+            0.into(),
+            0.into(),
+        );
+
+        let event = OrderEventAny::Emulated(emulated);
+
+        {
+            let mut cache = cache.borrow_mut();
+            cache.add_order(order, None, None, false).unwrap();
+            cache.update_order(&event).unwrap();
+            cache.store_trailing_stop_activation(client_order_id, activation_price);
+        }
+
+        emulator.borrow_mut().on_start().unwrap();
+        let after_start = cache.borrow().order_owned(&client_order_id).unwrap();
+
+        // The quote crosses the preset limit but is below the activation price
+        emulator
+            .borrow_mut()
+            .on_quote_tick(create_quote_tick(&instrument, "5040.00", "5041.00"));
+        let after_quote = cache.borrow().order_owned(&client_order_id).unwrap();
+
+        emulator
+            .borrow_mut()
+            .on_trade_tick(create_trade_tick(&instrument, "5039.00"));
+        let after_trade = cache.borrow().order_owned(&client_order_id).unwrap();
+
+        assert_eq!(after_start.status(), OrderStatus::Emulated);
+        assert_eq!(after_quote.status(), OrderStatus::Emulated);
+        assert_eq!(after_quote.trigger_price(), None);
+        assert_eq!(after_trade.status(), OrderStatus::Emulated);
+        assert_eq!(after_trade.order_type(), order_type);
+        assert_eq!(after_trade.activation_price(), Some(activation_price));
+        assert_eq!(after_trade.trigger_price(), Some(Price::from("5030.00")));
+        let expected_limit =
+            (order_type == OrderType::TrailingStopLimit).then(|| Price::from("5035.00"));
+        assert_eq!(after_trade.price(), expected_limit);
     }
 
     #[rstest]

@@ -5799,10 +5799,9 @@ async fn test_submit_order_denies_unsupported_order_type(#[case] order_type: Ord
     match event {
         ExecutionEvent::Order(OrderEventAny::Denied(denied)) => {
             assert_eq!(denied.client_order_id, client_order_id);
-            assert!(
-                denied.reason.contains("Unsupported order type"),
-                "reason was: {}",
-                denied.reason
+            assert_eq!(
+                denied.reason.as_str(),
+                format!("UNSUPPORTED_ORDER_TYPE: {order_type}")
             );
         }
         other => panic!("expected OrderDenied, was {other:?}"),

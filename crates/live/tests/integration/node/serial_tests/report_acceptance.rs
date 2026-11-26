@@ -692,7 +692,7 @@ async fn test_targeted_report_acceptance_carries_status_across_fill_failure(
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let topic = switchboard::get_instrument_topic(instrument.id());
         msgbus::publish_instrument(topic, &instrument);
-        assert!(!states[1].instrument_received.load(Ordering::Relaxed));
+        assert!(states[1].instrument_received.load(Ordering::Relaxed));
 
         if error {
             release.notify_one();

@@ -35,7 +35,7 @@ use arc_swap::ArcSwap;
 use jiff::Timestamp;
 use nautilus_common::{cache::InstrumentLookupError, live::get_runtime};
 use nautilus_core::{
-    AtomicMap, AtomicTime, env::get_or_env_var_opt, nanos::UnixNanos,
+    AtomicMap, AtomicTime, env::get_or_env_var_opt, nanos::UnixNanos, string::secret::REDACTED,
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
@@ -102,6 +102,7 @@ use crate::common::{
         BybitOrderStatus, BybitOrderType, BybitPositionIdx, BybitPositionMode, BybitProductType,
         BybitRepayStatus, BybitTpSlMode,
     },
+    instruments::economics_differ,
     models::{BybitCursorListResponse, BybitErrorCheck, BybitResponseCheck},
     parse::{
         bar_spec_to_bybit_interval, bybit_rejection_due_post_only, make_bybit_symbol,
@@ -118,7 +119,7 @@ use crate::common::{
     },
     retry::should_retry_http,
     symbol::BybitSymbol,
-    urls::bybit_http_base_url,
+    urls::{bybit_http_base_url, diagnostic_origin},
 };
 
 const DEFAULT_RECV_WINDOW_MS: u64 = 5_000;
@@ -213,6 +214,7 @@ pub static BYBIT_REPAY_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
 #[derive(Clone)]
 pub struct BybitRawHttpClient {
     base_url: String,
+    redact_url: bool,
     client: Arc<ArcSwap<HttpClient>>,
     rate_limiter: BybitRateLimiter,
     credential: Option<Credential>,
@@ -236,7 +238,7 @@ impl Default for BybitRawHttpClient {
 impl Debug for BybitRawHttpClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(BybitRawHttpClient))
-            .field("base_url", &self.base_url)
+            .field("base_url", &self.diagnostic_base_url())
             .field("has_credentials", &self.credential.is_some())
             .field("recv_window_ms", &self.recv_window_ms)
             .finish()
@@ -289,12 +291,14 @@ impl BybitRawHttpClient {
         let retry_manager = RetryManager::new(retry_config);
         let base_url =
             base_url.unwrap_or_else(|| bybit_http_base_url(BybitEnvironment::Mainnet).to_string());
+        let redact_url = Self::redact_base_url(&base_url, None, None);
         let rate_limiter = BybitRateLimiter::for_http(&base_url, None, proxy_url.as_deref());
-        let client = Self::build_http_client(timeout_secs, proxy_url.clone())?;
+        let client = Self::build_http_client(timeout_secs, proxy_url.clone(), redact_url)?;
         let session_generation = rate_limiter.http_session_generation();
 
         Ok(Self {
             base_url,
+            redact_url,
             client: Arc::new(ArcSwap::from_pointee(client)),
             rate_limiter,
             credential: None,
@@ -341,13 +345,19 @@ impl BybitRawHttpClient {
         let base_url =
             base_url.unwrap_or_else(|| bybit_http_base_url(BybitEnvironment::Mainnet).to_string());
         let credential = Credential::new(api_key, api_secret);
+        let redact_url = Self::redact_base_url(
+            &base_url,
+            Some(credential.api_key()),
+            credential.api_secret_str(),
+        );
         let rate_limiter =
             BybitRateLimiter::for_http(&base_url, Some(credential.api_key()), proxy_url.as_deref());
-        let client = Self::build_http_client(timeout_secs, proxy_url.clone())?;
+        let client = Self::build_http_client(timeout_secs, proxy_url.clone(), redact_url)?;
         let session_generation = rate_limiter.http_session_generation();
 
         Ok(Self {
             base_url,
+            redact_url,
             client: Arc::new(ArcSwap::from_pointee(client)),
             rate_limiter,
             credential: Some(credential),
@@ -435,9 +445,42 @@ impl BybitRawHttpClient {
         headers
     }
 
+    fn redact_base_url(base_url: &str, api_key: Option<&str>, api_secret: Option<&str>) -> bool {
+        diagnostic_origin(base_url, api_key, api_secret) == REDACTED
+    }
+
+    fn diagnostic_base_url(&self) -> String {
+        if self.redact_url {
+            return REDACTED.to_string();
+        }
+
+        let api_key = self.credential.as_ref().map(Credential::api_key);
+        let api_secret = self
+            .credential
+            .as_ref()
+            .and_then(Credential::api_secret_str);
+        diagnostic_origin(&self.base_url, api_key, api_secret)
+    }
+
+    pub(crate) fn apply_diagnostic_redaction(
+        &mut self,
+        api_key: Option<&str>,
+        api_secret: Option<&str>,
+    ) -> Result<(), BybitHttpError> {
+        if self.redact_url || !Self::redact_base_url(&self.base_url, api_key, api_secret) {
+            return Ok(());
+        }
+
+        self.redact_url = true;
+        let client = Self::build_http_client(self.timeout_secs, self.proxy_url.clone(), true)?;
+        self.client.store(Arc::new(client));
+        Ok(())
+    }
+
     fn build_http_client(
         timeout_secs: u64,
         proxy_url: Option<String>,
+        redact_url: bool,
     ) -> Result<HttpClient, BybitHttpError> {
         HttpClient::builder()
             .redirect_policy(HttpRedirectPolicy::Reject)
@@ -453,6 +496,7 @@ impl BybitRawHttpClient {
             ])
             .timeout_secs(timeout_secs)
             .maybe_proxy_url(proxy_url)
+            .redact_url(redact_url)
             .rate_limiters(Vec::new())
             .build()
             .map_err(|e| BybitHttpError::NetworkError(format!("Failed to create HTTP client: {e}")))
@@ -464,7 +508,8 @@ impl BybitRawHttpClient {
             return Ok(());
         }
 
-        let client = Self::build_http_client(self.timeout_secs, self.proxy_url.clone())?;
+        let client =
+            Self::build_http_client(self.timeout_secs, self.proxy_url.clone(), self.redact_url)?;
         self.client.store(Arc::new(client));
         self.session_generation.store(generation, Ordering::Release);
         Ok(())
@@ -1876,6 +1921,17 @@ impl BybitHttpClient {
         })
     }
 
+    pub(crate) fn redact_secret_origin(
+        mut self,
+        api_key: Option<&str>,
+        api_secret: Option<&str>,
+    ) -> Result<Self, BybitHttpError> {
+        Arc::get_mut(&mut self.inner)
+            .expect("HTTP client is not shared during construction")
+            .apply_diagnostic_redaction(api_key, api_secret)?;
+        Ok(self)
+    }
+
     /// Creates a new [`BybitHttpClient`] configured with credentials.
     ///
     /// # Errors
@@ -1996,6 +2052,25 @@ impl BybitHttpClient {
         self.instruments_cache
             .insert(instrument.symbol().inner(), instrument);
         self.cache_initialized.store(true, Ordering::Release);
+    }
+
+    pub(crate) fn cache_execution_instrument(&self, instrument: &InstrumentAny) {
+        let symbol = instrument.symbol().inner();
+        let should_update = |cache: &AHashMap<Ustr, InstrumentAny>| {
+            cache.get(&symbol).is_none_or(|current| {
+                current.ts_init() <= instrument.ts_init() && economics_differ(current, instrument)
+            })
+        };
+
+        if should_update(&self.instruments_cache.load()) {
+            self.instruments_cache.rcu(|cache| {
+                if should_update(cache) {
+                    cache.insert(symbol, instrument.clone());
+                }
+            });
+
+            self.cache_initialized.store(true, Ordering::Release);
+        }
     }
 
     /// Any existing instruments with the same symbols will be replaced.
@@ -3602,6 +3677,33 @@ impl BybitHttpClient {
         symbol: Option<String>,
         base_coin: Option<Ustr>,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
+        let instruments = self
+            .fetch_instruments(product_type, symbol, base_coin)
+            .await?;
+
+        self.instruments_cache.rcu(|cache| {
+            for instrument in &instruments {
+                let symbol = instrument.symbol().inner();
+                if cache
+                    .get(&symbol)
+                    .is_none_or(|previous| previous.ts_init() <= instrument.ts_init())
+                {
+                    cache.insert(symbol, instrument.clone());
+                }
+            }
+        });
+
+        self.cache_initialized.store(true, Ordering::Release);
+
+        Ok(instruments)
+    }
+
+    pub(crate) async fn fetch_instruments(
+        &self,
+        product_type: BybitProductType,
+        symbol: Option<String>,
+        base_coin: Option<Ustr>,
+    ) -> anyhow::Result<Vec<InstrumentAny>> {
         let ts_init = self.generate_ts_init();
 
         let instruments = match product_type {
@@ -3667,8 +3769,6 @@ impl BybitHttpClient {
             }
         };
 
-        self.cache_instruments(&instruments);
-
         Ok(instruments)
     }
 
@@ -3682,6 +3782,18 @@ impl BybitHttpClient {
     ///
     /// Returns an error if the request fails or parsing fails.
     pub async fn request_instruments_with_statuses(
+        &self,
+        product_type: BybitProductType,
+    ) -> anyhow::Result<(
+        Vec<InstrumentAny>,
+        AHashMap<InstrumentId, MarketStatusAction>,
+    )> {
+        let (instruments, statuses) = self.fetch_instruments_with_statuses(product_type).await?;
+        self.cache_instruments(&instruments);
+        Ok((instruments, statuses))
+    }
+
+    pub(crate) async fn fetch_instruments_with_statuses(
         &self,
         product_type: BybitProductType,
     ) -> anyhow::Result<(
@@ -3777,8 +3889,6 @@ impl BybitHttpClient {
                 .await?
             }
         };
-
-        self.cache_instruments(&instruments);
 
         Ok((instruments, statuses))
     }
@@ -5114,7 +5224,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_authenticated_client_rejects_redirects() {
-        let client = BybitRawHttpClient::build_http_client(3, None).unwrap();
+        let client = BybitRawHttpClient::build_http_client(3, None, false).unwrap();
         assert_http_redirect_rejected(|url| async move {
             client
                 .get(url, None, None, Some(3), None)
@@ -5153,6 +5263,98 @@ mod tests {
 
         let client = client.unwrap();
         assert!(client.credential().is_some());
+    }
+
+    #[rstest]
+    fn test_debug_preserves_public_origin_and_redacts_secret_host() {
+        let public = BybitRawHttpClient::new(
+            Some(
+                "http://user:http-secret@127.0.0.1:9/path-secret?token=query-secret#frag-secret"
+                    .to_string(),
+            ),
+            1,
+            0,
+            1,
+            1,
+            5_000,
+            None,
+        )
+        .unwrap();
+        let secret = BybitRawHttpClient::with_credentials(
+            "AbCdEfGh12345678".to_string(),
+            "secret-value".to_string(),
+            Some("https://AbCdEfGh12345678.example.com/path-secret".to_string()),
+            1,
+            0,
+            1,
+            1,
+            5_000,
+            None,
+        )
+        .unwrap();
+
+        let public_debug = format!("{public:?}");
+        let secret_debug = format!("{secret:?}");
+
+        assert!(public_debug.contains("base_url: \"http://127.0.0.1:9\""));
+        assert!(secret_debug.contains("base_url: \"<redacted>\""));
+        assert!(!public.redact_url);
+        assert!(secret.redact_url);
+
+        let mut partial = BybitRawHttpClient::new(
+            Some("https://secret99.example.com/v5".to_string()),
+            1,
+            0,
+            1,
+            1,
+            5_000,
+            None,
+        )
+        .unwrap();
+        partial
+            .apply_diagnostic_redaction(Some("secret99"), None)
+            .unwrap();
+        let partial_debug = format!("{partial:?}");
+        assert!(partial_debug.contains("base_url: \"<redacted>\""));
+        assert!(!partial_debug.contains("secret99"), "{partial_debug}");
+        assert!(partial.redact_url);
+
+        for hidden in [
+            "http-secret",
+            "path-secret",
+            "query-secret",
+            "frag-secret",
+            "AbCdEfGh12345678",
+            "secret-value",
+        ] {
+            assert!(!public_debug.contains(hidden), "{hidden} in {public_debug}");
+            assert!(!secret_debug.contains(hidden), "{hidden} in {secret_debug}");
+        }
+    }
+
+    #[tokio::test]
+    async fn credential_bearing_url_failure_omits_userinfo_path_query_and_fragment() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            if let Ok((stream, _)) = listener.accept().await {
+                drop(stream);
+            }
+        });
+
+        let url =
+            format!("http://user:http-secret@{addr}/path-secret?token=query-secret#frag-secret");
+        let client = BybitHttpClient::new(Some(url), 1, 0, 1, 1, 5_000, None).unwrap();
+
+        let error = client.get_server_time().await.unwrap_err();
+        server.abort();
+
+        let rendered = format!("{error} {error:?}");
+        assert!(rendered.contains(&format!("http://{addr}")), "{rendered}");
+
+        for hidden in ["http-secret", "path-secret", "query-secret", "frag-secret"] {
+            assert!(!rendered.contains(hidden), "{hidden} in {rendered}");
+        }
     }
 
     #[rstest]

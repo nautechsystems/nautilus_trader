@@ -15,8 +15,9 @@
 
 //! Parsers from Lighter REST payloads to Nautilus domain types.
 
+use ahash::AHashMap;
 use anyhow::Context;
-use nautilus_core::UnixNanos;
+use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, FundingRateUpdate, OrderBookDelta, OrderBookDeltas, TradeTick,
@@ -36,7 +37,7 @@ use crate::{
             funding_rate_from_percent, parse_millis_to_nanos, parse_secs_to_nanos,
             price_from_decimal, quantity_from_decimal,
         },
-        symbol::{MarketRegistry, format_instrument_id_with_venue},
+        symbol::{MARKET_ID_INFO_KEY, MarketRegistry, format_instrument_id_with_venue},
     },
     http::models::{
         LighterCandle, LighterFunding, LighterFundingDirection, LighterOrderBook,
@@ -46,7 +47,8 @@ use crate::{
 };
 
 pub fn register_order_books(registry: &MarketRegistry, order_books: &[LighterOrderBook]) {
-    for order_book in order_books {
+    let rows = order_books.iter().map(|row| (row, row));
+    for order_book in preferred_order_books(registry, rows) {
         register_order_book(registry, order_book);
     }
 }
@@ -55,8 +57,9 @@ pub fn register_perp_order_book_details(
     registry: &MarketRegistry,
     details: &[LighterPerpOrderBookDetail],
 ) {
-    for detail in details {
-        register_order_book(registry, &detail.order_book);
+    let rows = details.iter().map(|row| (&row.order_book, &row.order_book));
+    for order_book in preferred_order_books(registry, rows) {
+        register_order_book(registry, order_book);
     }
 }
 
@@ -64,8 +67,9 @@ pub fn register_spot_order_book_details(
     registry: &MarketRegistry,
     details: &[LighterSpotOrderBookDetail],
 ) {
-    for detail in details {
-        register_order_book(registry, &detail.order_book);
+    let rows = details.iter().map(|row| (&row.order_book, &row.order_book));
+    for order_book in preferred_order_books(registry, rows) {
+        register_order_book(registry, order_book);
     }
 }
 
@@ -108,11 +112,8 @@ pub fn parse_order_book_details_instruments_with_status(
     let mut first_error = None;
     let mut supported_len = 0_usize;
 
-    for detail in perp_details {
-        if !is_supported_product(&detail.order_book) {
-            continue;
-        }
-
+    let rows = perp_details.iter().map(|row| (&row.order_book, row));
+    for detail in preferred_order_books(registry, rows) {
         supported_len += 1;
 
         match parse_perp_instrument(registry, detail, ts_init) {
@@ -127,11 +128,8 @@ pub fn parse_order_book_details_instruments_with_status(
         }
     }
 
-    for detail in spot_details {
-        if !is_supported_product(&detail.order_book) {
-            continue;
-        }
-
+    let rows = spot_details.iter().map(|row| (&row.order_book, row));
+    for detail in preferred_order_books(registry, rows) {
         supported_len += 1;
 
         match parse_spot_instrument(registry, detail, ts_init) {
@@ -451,11 +449,40 @@ fn snapshot_flags(processed: usize, total_levels: usize) -> u8 {
     flags
 }
 
-fn register_order_book(registry: &MarketRegistry, order_book: &LighterOrderBook) {
-    if !is_supported_product(order_book) {
-        return;
+fn preferred_order_books<'a, T>(
+    registry: &MarketRegistry,
+    rows: impl Iterator<Item = (&'a LighterOrderBook, T)>,
+) -> impl Iterator<Item = T> {
+    let mut indices = AHashMap::new();
+    let mut selected: Vec<(LighterMarketStatus, T)> = Vec::new();
+
+    for (order_book, row) in rows {
+        if !is_supported_product(order_book) {
+            continue;
+        }
+
+        let id = format_instrument_id_with_venue(
+            order_book.symbol.as_str(),
+            order_book.market_type,
+            registry.venue(),
+        );
+        let status = order_book.status;
+
+        if let Some(&index) = indices.get(&id) {
+            let (previous, _) = &selected[index];
+            if *previous != LighterMarketStatus::Active || status == LighterMarketStatus::Active {
+                selected[index] = (status, row);
+            }
+        } else {
+            indices.insert(id, selected.len());
+            selected.push((status, row));
+        }
     }
 
+    selected.into_iter().map(|(_, row)| row)
+}
+
+fn register_order_book(registry: &MarketRegistry, order_book: &LighterOrderBook) {
     registry.insert(
         order_book.market_id,
         order_book.symbol.as_str(),
@@ -525,6 +552,14 @@ fn parse_perp_instrument(
         .maybe_min_notional(min_notional(order_book, quote_currency)?)
         .margin_init(margin_fraction(detail.default_initial_margin_fraction))
         .margin_maint(margin_fraction(detail.maintenance_margin_fraction))
+        .info(Params::new(
+            [(
+                MARKET_ID_INFO_KEY.to_owned(),
+                serde_json::Value::from(order_book.market_id),
+            )]
+            .into_iter()
+            .collect(),
+        ))
         .ts_event(ts_init)
         .ts_init(ts_init)
         .build()
@@ -569,6 +604,14 @@ fn parse_spot_instrument(
         .maybe_min_quantity(min_quantity(order_book, detail.size_decimals)?)
         .maybe_max_notional(max_notional(order_book, quote_currency)?)
         .maybe_min_notional(min_notional(order_book, quote_currency)?)
+        .info(Params::new(
+            [(
+                MARKET_ID_INFO_KEY.to_owned(),
+                serde_json::Value::from(order_book.market_id),
+            )]
+            .into_iter()
+            .collect(),
+        ))
         .ts_event(ts_init)
         .ts_init(ts_init)
         .build()
@@ -1449,6 +1492,44 @@ mod tests {
 
         assert!(err.to_string().contains("negative quantity"));
         assert!(registry.is_empty());
+    }
+
+    #[rstest]
+    #[case::active_first(false)]
+    #[case::inactive_first(true)]
+    fn test_instrument_details_prefer_active_market(#[case] reverse: bool) {
+        let registry = MarketRegistry::new();
+        let mut active = stub_perp_detail("ASELS", 10_635);
+        active.order_book.status = LighterMarketStatus::Active;
+        let mut inactive = stub_perp_detail("ASELS", 8_286);
+        inactive.order_book.status = LighterMarketStatus::Inactive;
+        let mut details = [active, inactive];
+        if reverse {
+            details.reverse();
+        }
+
+        let instruments = parse_order_book_details_instruments_with_status(
+            &registry,
+            &details,
+            &[],
+            UnixNanos::from(1),
+        )
+        .unwrap();
+
+        let id = instrument_id("ASELS-PERP");
+
+        let [(instrument, status)] = instruments.as_slice() else {
+            panic!("expected a single definition for {id}");
+        };
+
+        assert_eq!(instrument.id(), id);
+        assert_eq!(*status, LighterMarketStatus::Active);
+        assert_eq!(
+            instrument.info().unwrap().get_i64(MARKET_ID_INFO_KEY),
+            Some(10_635)
+        );
+        assert_eq!(registry.market_index(&id), Some(10_635));
+        assert_eq!(registry.instrument_id(8_286), None);
     }
 
     #[rstest]

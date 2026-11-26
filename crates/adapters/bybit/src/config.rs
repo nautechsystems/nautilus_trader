@@ -15,7 +15,7 @@
 
 //! Configuration structures for the Bybit adapter.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Debug};
 
 use nautilus_common::config::{ConfigError, ConfigResult, check_unique_values};
 #[cfg(test)]
@@ -33,11 +33,14 @@ use crate::common::{
         BybitEnvironment, BybitMarginMode, BybitOrderSmpType, BybitPositionMode, BybitProductType,
     },
     parse::deserialize_optional_smp_type,
-    urls::{bybit_http_base_url, bybit_ws_private_url, bybit_ws_public_url, bybit_ws_trade_url},
+    urls::{
+        bybit_http_base_url, bybit_ws_private_url, bybit_ws_public_url, bybit_ws_trade_url,
+        diagnostic_origin,
+    },
 };
 
 /// Configuration for the Bybit live data client.
-#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[derive(Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
@@ -111,6 +114,75 @@ pub struct BybitDataClientConfig {
     pub bars_timestamp_on_close: bool,
 }
 
+pub(crate) fn diagnostic_credential(
+    explicit: Option<&SecretString>,
+    env_var: &str,
+) -> Option<SecretString> {
+    if let Some(value) = explicit {
+        return Some(value.clone());
+    }
+
+    std::env::var(env_var).ok().map(SecretString::from)
+}
+
+impl Debug for BybitDataClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (key_var, secret_var) = credential_env_vars(self.environment);
+        let api_key = diagnostic_credential(self.api_key.as_ref(), key_var);
+        let api_secret = diagnostic_credential(self.api_secret.as_ref(), secret_var);
+        let api_key = api_key.as_ref().map(SecretString::expose_secret);
+        let api_secret = api_secret.as_ref().map(SecretString::expose_secret);
+        f.debug_struct(stringify!(BybitDataClientConfig))
+            .field("api_key", &self.api_key)
+            .field("api_secret", &self.api_secret)
+            .field("product_types", &self.product_types)
+            .field("environment", &self.environment)
+            .field(
+                "base_url_http",
+                &self
+                    .base_url_http
+                    .as_deref()
+                    .map(|url| diagnostic_origin(url, api_key, api_secret)),
+            )
+            .field(
+                "base_url_ws_public",
+                &self
+                    .base_url_ws_public
+                    .as_deref()
+                    .map(|url| diagnostic_origin(url, api_key, api_secret)),
+            )
+            .field(
+                "base_url_ws_private",
+                &self
+                    .base_url_ws_private
+                    .as_deref()
+                    .map(|url| diagnostic_origin(url, api_key, api_secret)),
+            )
+            .field("proxy_url", &self.proxy_url)
+            .field("http_timeout_secs", &self.http_timeout_secs)
+            .field("max_retries", &self.max_retries)
+            .field("retry_delay_initial_ms", &self.retry_delay_initial_ms)
+            .field("retry_delay_max_ms", &self.retry_delay_max_ms)
+            .field("heartbeat_interval_secs", &self.heartbeat_interval_secs)
+            .field("recv_window_ms", &self.recv_window_ms)
+            .field(
+                "update_instruments_interval_mins",
+                &self.update_instruments_interval_mins,
+            )
+            .field(
+                "instrument_poll_interval_secs",
+                &self.instrument_poll_interval_secs,
+            )
+            .field(
+                "book_snapshot_timeout_secs",
+                &self.book_snapshot_timeout_secs,
+            )
+            .field("transport_backend", &self.transport_backend)
+            .field("bars_timestamp_on_close", &self.bars_timestamp_on_close)
+            .finish()
+    }
+}
+
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(BybitDataClientConfig {
     product_types: Vec<BybitProductType>,
@@ -162,21 +234,6 @@ impl BybitDataClientConfig {
         self.api_key.is_some() && self.api_secret.is_some()
     }
 
-    pub(crate) fn resolved_api_credentials(&self) -> Option<(String, String)> {
-        let (key_var, secret_var) = credential_env_vars(self.environment);
-        // Keep each side in a zeroizing owner until both exist. An incomplete
-        // pair must not leave a plaintext secret on the heap.
-        let key = self
-            .api_key
-            .clone()
-            .or_else(|| std::env::var(key_var).ok().map(SecretString::from))?;
-        let secret = self
-            .api_secret
-            .clone()
-            .or_else(|| std::env::var(secret_var).ok().map(SecretString::from))?;
-        Some((key.into_inner(), secret.into_inner()))
-    }
-
     /// Returns the REST base URL, considering overrides and environment.
     #[must_use]
     pub fn http_base_url(&self) -> String {
@@ -224,7 +281,7 @@ impl BybitDataClientConfig {
 }
 
 /// Configuration for the Bybit live execution client.
-#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[derive(Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
@@ -310,6 +367,61 @@ pub struct BybitExecutionClientConfig {
     /// Instruments included in reconciliation. `None` or empty includes all configured product types.
     /// IDs must use the `BYBIT` venue, an uppercase symbol, and a configured product-type suffix.
     pub load_ids: Option<Vec<InstrumentId>>,
+}
+
+impl Debug for BybitExecutionClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (key_var, secret_var) = credential_env_vars(self.environment);
+        let api_key = diagnostic_credential(self.api_key.as_ref(), key_var);
+        let api_secret = diagnostic_credential(self.api_secret.as_ref(), secret_var);
+        let api_key = api_key.as_ref().map(SecretString::expose_secret);
+        let api_secret = api_secret.as_ref().map(SecretString::expose_secret);
+        f.debug_struct(stringify!(BybitExecutionClientConfig))
+            .field("api_key", &self.api_key)
+            .field("api_secret", &self.api_secret)
+            .field("product_types", &self.product_types)
+            .field("environment", &self.environment)
+            .field(
+                "base_url_http",
+                &self
+                    .base_url_http
+                    .as_deref()
+                    .map(|url| diagnostic_origin(url, api_key, api_secret)),
+            )
+            .field(
+                "base_url_ws_private",
+                &self
+                    .base_url_ws_private
+                    .as_deref()
+                    .map(|url| diagnostic_origin(url, api_key, api_secret)),
+            )
+            .field(
+                "base_url_ws_trade",
+                &self
+                    .base_url_ws_trade
+                    .as_deref()
+                    .map(|url| diagnostic_origin(url, api_key, api_secret)),
+            )
+            .field("proxy_url", &self.proxy_url)
+            .field("http_timeout_secs", &self.http_timeout_secs)
+            .field("max_retries", &self.max_retries)
+            .field("retry_delay_initial_ms", &self.retry_delay_initial_ms)
+            .field("retry_delay_max_ms", &self.retry_delay_max_ms)
+            .field("heartbeat_interval_secs", &self.heartbeat_interval_secs)
+            .field("auth_timeout_secs", &self.auth_timeout_secs)
+            .field("recv_window_ms", &self.recv_window_ms)
+            .field("account_id", &self.account_id)
+            .field("use_spot_position_reports", &self.use_spot_position_reports)
+            .field("auto_repay_spot_borrows", &self.auto_repay_spot_borrows)
+            .field("use_ws_execution_fast", &self.use_ws_execution_fast)
+            .field("futures_leverages", &self.futures_leverages)
+            .field("position_mode", &self.position_mode)
+            .field("margin_mode", &self.margin_mode)
+            .field("smp_type", &self.smp_type)
+            .field("transport_backend", &self.transport_backend)
+            .field("load_ids", &self.load_ids)
+            .finish()
+    }
 }
 
 #[cfg(feature = "python")]
@@ -623,6 +735,74 @@ mod tests {
         ] {
             assert!(!formatted.contains(secret));
         }
+    }
+
+    #[rstest]
+    fn test_config_debug_shows_public_origin_and_redacts_secret_host() {
+        let data = BybitDataClientConfig {
+            api_key: Some("AbCdEfGh12345678".into()),
+            base_url_http: Some(
+                "https://user:http-secret@api.example.com:8443/http-path?token=http-query#http-frag"
+                    .to_string(),
+            ),
+            base_url_ws_public: Some(
+                "wss://AbCdEfGh12345678.example.com/ws-path?token=ws-query".to_string(),
+            ),
+            base_url_ws_private: Some("not a url".to_string()),
+            http_timeout_secs: 41,
+            ..Default::default()
+        };
+
+        let execution = BybitExecutionClientConfig {
+            base_url_ws_trade: Some(
+                "wss://trade.example.com/trade-path?token=trade-query".to_string(),
+            ),
+            recv_window_ms: 43,
+            ..Default::default()
+        };
+
+        let data_debug = format!("{data:?}");
+        let execution_debug = format!("{execution:?}");
+
+        assert!(data_debug.contains("base_url_http: Some(\"https://api.example.com:8443\")"));
+        assert!(data_debug.contains("base_url_ws_public: Some(\"<redacted>\")"));
+        assert!(data_debug.contains("base_url_ws_private: Some(\"<redacted>\")"));
+        assert!(data_debug.contains("http_timeout_secs: 41"));
+        assert!(execution_debug.contains("base_url_ws_trade: Some(\"wss://trade.example.com\")"));
+        assert!(execution_debug.contains("recv_window_ms: 43"));
+
+        for secret in [
+            "http-secret",
+            "http-path",
+            "http-query",
+            "http-frag",
+            "AbCdEfGh12345678",
+            "ws-path",
+            "ws-query",
+            "trade-path",
+            "trade-query",
+            "not a url",
+        ] {
+            assert!(!data_debug.contains(secret), "{secret} in {data_debug}");
+            assert!(
+                !execution_debug.contains(secret),
+                "{secret} in {execution_debug}"
+            );
+        }
+    }
+
+    #[rstest]
+    fn config_debug_redacts_a_host_containing_only_the_configured_key() {
+        let data = BybitDataClientConfig {
+            api_key: Some("secret99".into()),
+            base_url_ws_public: Some("wss://gateway-secret99.example.com/public".to_string()),
+            ..Default::default()
+        };
+
+        let data_debug = format!("{data:?}");
+
+        assert!(data_debug.contains("base_url_ws_public: Some(\"<redacted>\")"));
+        assert!(!data_debug.contains("secret99"), "{data_debug}");
     }
 
     #[rstest]

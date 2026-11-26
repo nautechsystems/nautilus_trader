@@ -62,16 +62,11 @@ main() {
     --format-version=1 \
     --manifest-path "${consumer_work_dir}/Cargo.toml" > "$metadata_file"
 
-  reject_local_package "$metadata_file" arrow
-  reject_local_package "$metadata_file" parquet
-  require_registry_package "$metadata_file" arrow 59
-  require_registry_package "$metadata_file" parquet 59
+  require_single_registry_package "$metadata_file" arrow
+  require_single_registry_package "$metadata_file" parquet
 
-  if jq -e '.packages | any(
-    .name == "thrift"
-    or ((.name == "arrow" or .name == "parquet") and (.version | startswith("57.")))
-  )' "$metadata_file" > /dev/null; then
-    echo "::error::Published consumer graph resolved Arrow/Parquet 57 or thrift" >&2
+  if jq -e '.packages | any(.name == "thrift")' "$metadata_file" > /dev/null; then
+    echo "::error::Published consumer graph resolved thrift" >&2
     exit 1
   fi
 
@@ -159,33 +154,16 @@ EOF
     > "${consumer_work_dir}/src/main.rs"
 }
 
-require_registry_package() {
+require_single_registry_package() {
   local metadata_file=$1
   local package_name=$2
-  local version_prefix=$3
 
   if ! jq -e \
     --arg name "$package_name" \
-    --arg prefix "${version_prefix}." \
-    '.packages | any(
-      .name == $name
-      and (.version | startswith($prefix))
-      and .source == "registry+https://github.com/rust-lang/crates.io-index"
-    )' "$metadata_file" > /dev/null; then
-    echo "::error::${package_name} ${version_prefix} from crates.io is missing" >&2
-    exit 1
-  fi
-}
-
-reject_local_package() {
-  local metadata_file=$1
-  local package_name=$2
-
-  if jq -e \
-    --arg name "$package_name" \
-    '.packages | any(.name == $name and .source == null)' \
+    '[.packages[] | select(.name == $name)]
+    | length == 1 and .[0].source == "registry+https://github.com/rust-lang/crates.io-index"' \
     "$metadata_file" > /dev/null; then
-    echo "::error::Published consumer graph resolved local ${package_name}" >&2
+    echo "::error::Expected exactly one crates.io release of ${package_name} in the published consumer graph" >&2
     exit 1
   fi
 }

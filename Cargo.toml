@@ -131,7 +131,7 @@ alloy-primitives = { version = "1.7.3", default-features = false, features = [
 anyhow = "1.0.104"
 arc-swap = "1.9.5"
 arraydeque = "0.5.1"
-arrow = { version = "59.3.3", default-features = false, features = [
+arrow = { version = "60.2.0", default-features = false, features = [
   "ipc",
   "ffi",
 ] }
@@ -145,9 +145,9 @@ blake3 = { version = "1.8.7", default-features = false, features = ["std"] }
 # Pinned: 3.10.1 pulls prettyplease 0.3 while prost-build still requires 0.2.
 bon = "=3.9.3"
 bytes = { version = "1.12.2", features = ["serde"] }
-clap = { version = "4.6.8", features = ["derive", "env"] }
+clap = { version = "4.6.9", features = ["derive", "env"] }
 dashmap = "6.2.1"
-datafusion = { version = "55.3.0", default-features = false, features = [
+datafusion = { version = "56.0.0", default-features = false, features = [
   "parquet",
   "regex_expressions",
   "unicode_expressions",
@@ -205,11 +205,11 @@ log = { version = "0.4.35", features = [
 ] }
 madsim = { version = "0.2.34", default-features = false, features = ["macros"] }
 mimalloc = "0.1.52"
-object_store = { version = "0.13.2", default-features = false, features = [
+object_store = { version = "0.14.2", default-features = false, features = [
   "fs",
 ] }
 parking_lot = "0.13.0"
-parquet = { version = "59.3.3", default-features = false, features = [
+parquet = { version = "60.2.0", default-features = false, features = [
   "arrow",
   "arrow_canonical_extension_types",
   "async",
@@ -311,7 +311,7 @@ tokio-tungstenite = { version = "0.30.0", features = [
   "rustls-tls-webpki-roots",
 ] }
 tokio-util = { version = "0.7.20", default-features = false, features = ["io"] }
-toml = { version = "1.2.1", default-features = false, features = [
+toml = { version = "1.2.2", default-features = false, features = [
   "parse",
   "serde",
 ] }
@@ -343,10 +343,9 @@ bollard = { version = "0.21.1", default-features = false, features = [
 bzip2 = "0.6.1"
 cosmrs = { version = "0.22.0", default-features = false }
 csv = "1.4.0"
-databento = { version = "0.63.0" }
+databento = { version = "0.65.0" }
 dydx-proto = { version = "0.4.0", default-features = false }
 fallible-streaming-iterator = "0.1.9"
-hypersync-client = { version = "2.0.0" }
 ibapi = "=5.0.0"
 ryu = "1.0.23"
 serde_repr = "0.1.21"
@@ -396,7 +395,7 @@ pyo3-stub-gen = { path = "patches/pyo3-stub-gen" }
 # Tools (for cargo install, used by Makefile and CI)
 # -----------------------------------------------------------------------------
 [workspace.metadata.tools]
-cargo-codspeed = "6.0.0"
+cargo-codspeed = "6.1.0"
 cbindgen = "0.29.4"
 flamegraph = "0.6.15"
 lychee = "0.24.2"
@@ -411,11 +410,39 @@ store = { path = '.supply-chain' }
 days = 3
 trusted-base = "origin/develop"
 
-# RUSTSEC-2026-0592 is fixed in url 2.5.9, which requires form_urlencoded 1.2.3.
-# Both deltas are audited. Remove this exception after 2026-11-23 23:04 UTC.
 [workspace.metadata.cooldown.allow]
-form_urlencoded = "1.2.3"
-url = "2.5.9"
+brotli-decompressor = "6.4.0"
+datafusion = "56.0.0"
+datafusion-catalog = "56.0.0"
+datafusion-catalog-listing = "56.0.0"
+datafusion-common = "56.0.0"
+datafusion-common-runtime = "56.0.0"
+datafusion-datasource = "56.0.0"
+datafusion-datasource-arrow = "56.0.0"
+datafusion-datasource-csv = "56.0.0"
+datafusion-datasource-json = "56.0.0"
+datafusion-datasource-parquet = "56.0.0"
+datafusion-doc = "56.0.0"
+datafusion-execution = "56.0.0"
+datafusion-expr = "56.0.0"
+datafusion-expr-common = "56.0.0"
+datafusion-functions = "56.0.0"
+datafusion-functions-aggregate = "56.0.0"
+datafusion-functions-aggregate-common = "56.0.0"
+datafusion-functions-nested = "56.0.0"
+datafusion-functions-table = "56.0.0"
+datafusion-functions-window = "56.0.0"
+datafusion-functions-window-common = "56.0.0"
+datafusion-macros = "56.0.0"
+datafusion-optimizer = "56.0.0"
+datafusion-physical-expr = "56.0.0"
+datafusion-physical-expr-adapter = "56.0.0"
+datafusion-physical-expr-common = "56.0.0"
+datafusion-physical-optimizer = "56.0.0"
+datafusion-physical-plan = "56.0.0"
+datafusion-pruning = "56.0.0"
+datafusion-session = "56.0.0"
+datafusion-sql = "56.0.0"
 
 # -----------------------------------------------------------------------------
 # Profiles

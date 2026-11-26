@@ -79,7 +79,6 @@ pub fn parse_flash_event_hypersync(
 
         let pool_address = Address::from_slice(
             log.address
-                .clone()
                 .expect("Contract address should be set in logs")
                 .as_ref(),
         );

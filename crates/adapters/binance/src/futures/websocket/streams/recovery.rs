@@ -33,6 +33,7 @@ use nautilus_live::{
 };
 use nautilus_model::{
     identifiers::{InstrumentId, PositionId},
+    instruments::Instrument,
     reports::OrderStatusReport,
 };
 use nautilus_network::websocket::TransportBackend;
@@ -319,21 +320,35 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
     let ts_init = ctx.dispatch_ctx.clock.get_time_ns();
     let instruments = ctx.http_client.instruments_cache();
     let product_type = ctx.dispatch_ctx.product_type;
+    let precision_for_symbol = |symbol: &ustr::Ustr| {
+        let id = format_instrument_id(symbol, product_type);
+        ctx.http_client.instrument_reconciliation(&id).map_or_else(
+            || resolve_precision(&instruments, symbol, product_type),
+            |instrument| {
+                Ok((
+                    id,
+                    instrument.price_precision(),
+                    instrument.size_precision(),
+                ))
+            },
+        )
+    };
+
     let mut emitted = 0_usize;
 
     let open_ok = match open_orders_result {
         Ok(orders) => {
             for order in orders {
                 let symbol_ustr = order.symbol;
+
                 let (instrument_id, price_precision, size_precision) =
-                    resolve_precision(&instruments, &symbol_ustr, product_type).with_context(
-                        || {
-                            format!(
-                                "failed to resolve open order {} during recovery reconcile",
-                                order.symbol
-                            )
-                        },
-                    )?;
+                    precision_for_symbol(&symbol_ustr).with_context(|| {
+                        format!(
+                            "failed to resolve open order {} during recovery reconcile",
+                            order.symbol
+                        )
+                    })?;
+
                 let venue_position_id = make_venue_position_id(
                     ctx.dispatch_ctx.use_position_ids,
                     instrument_id,
@@ -372,15 +387,15 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
         Ok(algo_orders) => {
             for algo_order in algo_orders {
                 let symbol_ustr = algo_order.symbol;
+
                 let (instrument_id, price_precision, size_precision) =
-                    resolve_precision(&instruments, &symbol_ustr, product_type).with_context(
-                        || {
-                            format!(
-                                "failed to resolve open algo order {} during recovery reconcile",
-                                algo_order.symbol
-                            )
-                        },
-                    )?;
+                    precision_for_symbol(&symbol_ustr).with_context(|| {
+                        format!(
+                            "failed to resolve open algo order {} during recovery reconcile",
+                            algo_order.symbol
+                        )
+                    })?;
+
                 let venue_position_id = make_venue_position_id(
                     ctx.dispatch_ctx.use_position_ids,
                     instrument_id,
@@ -490,7 +505,8 @@ mod tests {
     use nautilus_model::{
         enums::{AccountType, OrderSide, OrderType},
         identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
-        types::{Currency, Quantity},
+        instruments::stubs::crypto_perpetual_ethusdt,
+        types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
     use rust_decimal::Decimal;
@@ -1001,13 +1017,27 @@ mod tests {
         #[case] mode: RecoveryServerMode,
         #[case] symbol: &str,
         #[case] expected_position_id: &str,
+        #[values(false, true)] parsed: bool,
     ) {
         let (base_url, server_task) = start_recovery_server(mode).await;
         let (context, mut event_rx) = recovery_context(base_url);
-        context
-            .http_client
-            .instruments_cache()
-            .insert(Ustr::from(symbol), usdm_instrument(symbol, 3));
+        let instrument_id = format_instrument_id(&Ustr::from(symbol), BinanceProductType::UsdM);
+
+        if parsed {
+            let mut definition = crypto_perpetual_ethusdt();
+            definition.id = instrument_id;
+            definition.raw_symbol = symbol.into();
+            definition.price_precision = 4;
+            definition.price_increment = Price::from("0.0001");
+            context
+                .http_client
+                .cache_reconciliation_instrument(definition.into());
+        } else {
+            context
+                .http_client
+                .instruments_cache()
+                .insert(Ustr::from(symbol), usdm_instrument(symbol, 3));
+        }
 
         let client_order_id = ClientOrderId::from(match mode {
             RecoveryServerMode::MissingRegular => "external-regular",
@@ -1018,7 +1048,7 @@ mod tests {
         context.dispatch_ctx.dispatch_state.order_identities.insert(
             client_order_id,
             OrderIdentity {
-                instrument_id: format_instrument_id(&Ustr::from(symbol), BinanceProductType::UsdM),
+                instrument_id,
                 strategy_id: StrategyId::from("RECOVERY-001"),
                 order_side: OrderSide::Buy,
                 order_type: OrderType::Limit,
@@ -1043,6 +1073,9 @@ mod tests {
                 .dispatch_state
                 .has_emitted_accepted(&client_order_id)
         );
+        let report_price = report.price.or(report.trigger_price).unwrap();
+        assert_eq!(report.instrument_id, instrument_id);
+        assert_eq!(report_price.precision, if parsed { 4 } else { 2 });
         assert_eq!(
             report.venue_position_id,
             Some(PositionId::from(expected_position_id)),

@@ -17,8 +17,6 @@ rustflags = [
   "-C",
   "link-arg=-Wl,--as-needed",
   "-C",
-  "link-arg=-Wl,-z,norelro",
-  "-C",
   "relocation-model=pic",
 ]
 

@@ -24,30 +24,40 @@ mod serial_tests {
     use futures::StreamExt;
     use nautilus_common::{
         cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
+        clients::ExecutionClient,
         clock::VirtualClock,
         enums::SerializationEncoding,
+        live::runner::replace_exec_event_sender,
+        messages::{ExecutionEvent, execution::SubmitOrder},
+        msgbus::{self, switchboard::get_instrument_status_topic},
         testing::wait_until_async,
     };
     use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_MINUTE};
-    use nautilus_execution::engine::{ExecutionEngine, config::ExecutionEngineConfig};
+    use nautilus_execution::{
+        client::core::ExecutionClientCore,
+        engine::{ExecutionEngine, config::ExecutionEngineConfig},
+        models::fee::{FeeModelAny, MakerTakerFeeModel},
+    };
     use nautilus_infrastructure::redis::{
         cache::{RedisCacheConfig, RedisCacheDatabase, RedisCacheDatabaseAdapter},
+        create_redis_connection,
         queries::DatabaseQueries,
     };
     use nautilus_live::{
         config::{LiveExecutionEngineConfig, LiveNodeConfig},
-        node::LiveNode,
+        node::{LiveNode, NodeState},
     };
     use nautilus_model::{
         accounts::AccountAny,
         data::{
-            DataType, InstrumentClose,
+            Bar, BarType, DataType, InstrumentClose, InstrumentStatus, QuoteTick, TradeTick,
             greeks::{GreeksData, YieldCurve},
             stubs::{ensure_stub_custom_data_registered, stub_custom_data, stub_instrument_close},
         },
         enums::{
-            AccountType, CurrencyType, InstrumentCloseType, LiquiditySide, OrderSide, OrderStatus,
-            OrderType, TimeInForce,
+            AccountType, AggressorSide, ContingencyType, CurrencyType, InstrumentCloseType,
+            LiquiditySide, MarketStatusAction, OrderSide, OrderStatus, OrderType, TimeInForce,
+            TrailingOffsetType, TriggerType,
         },
         events::{
             AccountState, OrderEventAny, OrderFilled, OrderSnapshot,
@@ -70,8 +80,10 @@ mod serial_tests {
         position::Position,
         types::{AccountBalance, Currency, Money, Price, Quantity},
     };
+    use nautilus_sandbox::{SandboxExecutionClient, SandboxExecutionClientConfig};
     use redis::AsyncCommands;
     use rstest::rstest;
+    use rust_decimal::Decimal;
 
     use crate::{
         position_flip::populate_flip_cache,
@@ -94,6 +106,1018 @@ mod serial_tests {
             number_of_retries: 0,
             ..Default::default()
         }
+    }
+
+    #[rstest]
+    #[case::empty(None)]
+    #[case::currency(Some(("currencies:USD", "RPUSH", "missing value")))]
+    #[case::invalid_currency_code(Some(("currencies:", "SET", "Invalid currency key")))]
+    #[case::instrument(Some(("instruments:BTCUSDT.BINANCE", "RPUSH", "WRONGTYPE")))]
+    #[case::synthetic(Some(("synthetics:desk:Spread.SYNTH", "RPUSH", "WRONGTYPE")))]
+    #[case::account(Some(("accounts:desk:BINANCE-001", "SET", "WRONGTYPE")))]
+    #[case::order(Some(("orders:desk:O-1", "SET", "WRONGTYPE")))]
+    #[case::position(Some(("positions:desk:P-1", "SET", "WRONGTYPE")))]
+    #[case::invalid_id(Some(("orders:", "SET", "Invalid order key")))]
+    #[case::empty_payload(Some(("synthetics:desk:Spread.SYNTH", "SET", "missing record")))]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_redis_startup_cache_read(#[case] bad_record: Option<(&str, &str, &str)>) {
+        let _guard = redis_test_mutex().lock().await;
+        let mut writer = get_redis_cache_adapter().await.unwrap();
+        let mut con = writer.database.con.clone();
+        let control_key = "recovery-control";
+        let control_value = Bytes::from_static(b"readable general entry");
+
+        let bad_record = bad_record.map(|(key, command, expected)| {
+            (
+                format!("{}:{key}", writer.database.trader_key),
+                command,
+                expected,
+            )
+        });
+
+        if let Some((key, command, _)) = &bad_record {
+            writer
+                .add(control_key.to_string(), control_value.clone())
+                .unwrap();
+            redis::cmd(command)
+                .arg(key)
+                .arg("")
+                .query_async::<()>(&mut con)
+                .await
+                .unwrap();
+        }
+
+        writer.close().unwrap();
+        let reader = connect_redis_cache_adapter().await.unwrap();
+
+        let expected_general = bad_record.as_ref().map_or_else(AHashMap::new, |_| {
+            AHashMap::from([(control_key.to_string(), control_value)])
+        });
+
+        assert_eq!(reader.load().unwrap(), expected_general);
+
+        let config = LiveNodeConfig {
+            trader_id: TraderId::from("test-trader"),
+            timeout_connection: Duration::ZERO,
+            timeout_disconnection: Duration::ZERO,
+            delay_post_stop: Duration::ZERO,
+            exec_engine: LiveExecutionEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut node = LiveNode::build("RedisRecoveryNode".to_string(), Some(config)).unwrap();
+        node.set_cache_database(Box::new(reader)).unwrap();
+        let result = node.start().await;
+
+        if let Some((key, _, expected)) = bad_record {
+            con.del::<_, ()>(&key).await.unwrap();
+            let error = result.unwrap_err();
+            assert_eq!(error.to_string(), "Failed to load persistent cache");
+            assert_eq!(node.state(), NodeState::Idle);
+            let chain = format!("{error:#}");
+            assert!(chain.contains(&key) && chain.contains(expected), "{chain}");
+        } else {
+            result.unwrap();
+            assert_eq!(node.state(), NodeState::Running);
+            node.stop().await.unwrap();
+        }
+
+        node.dispose();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_redis_startup_rejects_foreign_position_replay_trader() {
+        let _guard = redis_test_mutex().lock().await;
+        let mut writer = get_redis_cache_adapter().await.unwrap();
+        let trader_id = TraderId::new("test-trader");
+        let foreign_trader = TraderId::new("OTHER-001");
+        let position_id = PositionId::new("P-1");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let fill = OrderFilledSpec::builder()
+            .trader_id(trader_id)
+            .position_id(position_id)
+            .instrument_id(instrument.id())
+            .last_qty(Quantity::from("1.0"))
+            .last_px(Price::from("2000.0"))
+            .currency(instrument.quote_currency())
+            .build();
+        let position = Position::new(&instrument, fill);
+        let mut snapshot = PositionSnapshot::from_replay_state(&position, None);
+        snapshot.replay_state.as_mut().unwrap()["trader_id"] =
+            serde_json::to_value(foreign_trader).unwrap();
+
+        writer.add_instrument(&instrument).unwrap();
+        writer.add_position(&position).unwrap();
+        writer.add_position_snapshot(&snapshot).unwrap();
+        writer.close().unwrap();
+
+        let reader = connect_redis_cache_adapter().await.unwrap();
+
+        let config = LiveNodeConfig {
+            trader_id,
+            exec_engine: LiveExecutionEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut node = LiveNode::build("RedisRecoveryNode".to_string(), Some(config)).unwrap();
+        node.set_cache_database(Box::new(reader)).unwrap();
+        let result = node.start().await;
+        let state = node.state();
+        node.dispose();
+
+        let error = result.unwrap_err();
+        assert_eq!(error.to_string(), "Failed to load persistent cache");
+        assert_eq!(state, NodeState::Idle);
+        assert_eq!(
+            error.root_cause().to_string(),
+            format!(
+                "Position replay state for {trader_id}/{position_id} contains {foreign_trader}/{position_id}"
+            ),
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_delimiter_bearing_keys_round_trip_through_redis_bulk_recovery() {
+        let _guard = redis_test_mutex().lock().await;
+        let mut writer = get_redis_cache_adapter().await.unwrap();
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let mut account_state = cash_account_state_multi();
+        account_state.account_id = AccountId::new("desk:BINANCE-001");
+        let account = AccountAny::from(account_state);
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("2.0"))
+            .client_order_id(ClientOrderId::new("desk:O-1"))
+            .build();
+        let position_id = PositionId::new("desk:P-1");
+
+        let OrderEventAny::Filled(fill) = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(TradeId::new("T-1")),
+            Some(position_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) else {
+            unreachable!();
+        };
+
+        let position = Position::new(&instrument, fill);
+        let mut synthetic = SyntheticInstrument::default();
+        synthetic.id = InstrumentId::from("desk:Spread.SYNTH");
+
+        writer.add_instrument(&instrument).unwrap();
+        writer.add_synthetic(&synthetic).unwrap();
+        writer.add_account(&account).unwrap();
+        writer.add_order(&order, None).unwrap();
+        writer.add_position(&position).unwrap();
+        writer.close().unwrap();
+
+        let mut reader = connect_redis_cache_adapter().await.unwrap();
+        let cache = reader.load_all().await.unwrap();
+        let trader_key = &reader.database.trader_key;
+        let order_key = format!("{trader_key}:orders:{}", order.client_order_id());
+        let wrong_key = format!("{trader_key}:orders:desk:O-2");
+        let mut con = reader.database.con.clone();
+        con.rename::<_, _, ()>(&order_key, &wrong_key)
+            .await
+            .unwrap();
+        let mismatch = reader.load_orders().await.unwrap_err();
+        con.del::<_, ()>(&wrong_key).await.unwrap();
+        reader.close().unwrap();
+
+        assert_eq!(
+            mismatch.to_string(),
+            format!("Redis cache key '{wrong_key}' does not match the record ID")
+        );
+        assert_eq!(cache.synthetics.len(), 1);
+        assert_eq!(cache.accounts.len(), 1);
+        assert_eq!(cache.orders.len(), 1);
+        assert_eq!(cache.positions.len(), 1);
+
+        for (restored, expected) in [
+            (
+                serde_json::to_value(&cache.synthetics[&synthetic.id]).unwrap(),
+                serde_json::to_value(&synthetic).unwrap(),
+            ),
+            (
+                serde_json::to_value(&cache.accounts[&account.id()]).unwrap(),
+                serde_json::to_value(&account).unwrap(),
+            ),
+            (
+                serde_json::to_value(&cache.orders[&order.client_order_id()]).unwrap(),
+                serde_json::to_value(&order).unwrap(),
+            ),
+            (
+                serde_json::to_value(&cache.positions[&position_id]).unwrap(),
+                serde_json::to_value(&position).unwrap(),
+            ),
+        ] {
+            assert_eq!(restored, expected);
+        }
+    }
+
+    #[rstest]
+    #[case::assigned(None, true, false)]
+    #[case::configured(Some("1498.00"), true, false)]
+    #[case::configured_without_repricing(Some("1498.00"), false, false)]
+    #[case::inactive(Some("1600.00"), false, false)]
+    #[case::quote_first(Some("1498.00"), true, true)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_sandbox_trailing_stop_recovery(
+        #[values(OrderType::TrailingStopMarket, OrderType::TrailingStopLimit)]
+        order_type: OrderType,
+        #[case] activation_price: Option<&str>,
+        #[case] reprice: bool,
+        #[case] quote_first: bool,
+        #[values(SerializationEncoding::Json, SerializationEncoding::MsgPack)]
+        encoding: SerializationEncoding,
+    ) {
+        let _guard = redis_test_mutex().lock().await;
+        let trader_id = TraderId::from(format!("TRAIL-{}", UUID4::new()));
+        let instance_id = UUID4::new();
+
+        let config = CacheConfig {
+            encoding,
+            ..Default::default()
+        };
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let bar_type = BarType::from(format!("{}-1-MINUTE-LAST-EXTERNAL", instrument.id()));
+
+        let bar = |price: &str, sequence: u64| {
+            let price = Price::from(price);
+            let ts = UnixNanos::from(sequence * NANOSECONDS_IN_MINUTE);
+
+            Bar::new(
+                bar_type,
+                price,
+                price,
+                price,
+                price,
+                Quantity::from("10.000"),
+                ts,
+                ts,
+            )
+        };
+
+        let mut builder = OrderTestBuilder::new(order_type);
+        builder
+            .trader_id(trader_id)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.000"))
+            .trigger_type(TriggerType::LastPrice)
+            .trigger_price(Price::from("1490.00"))
+            .trailing_offset(Decimal::from(10))
+            .trailing_offset_type(TrailingOffsetType::Price);
+
+        if let Some(price) = activation_price {
+            builder.activation_price(Price::from(price));
+        }
+
+        if order_type == OrderType::TrailingStopLimit {
+            builder
+                .price(Price::from("1470.00"))
+                .limit_offset(Decimal::from(30));
+        }
+
+        let order = builder.build();
+        let client_order_id = order.client_order_id();
+        let active = activation_price != Some("1600.00");
+
+        let bars = [
+            bar("1495.00", 1),
+            bar("1500.00", 2),
+            bar(if reprice { "1520.00" } else { "1500.00" }, 3),
+        ];
+
+        let gap_price = if reprice { "1495.00" } else { "1485.00" };
+        let gap = bar(gap_price, 4);
+
+        let update = |client: &SandboxExecutionClient| {
+            if quote_first {
+                let ts = UnixNanos::from(5 * NANOSECONDS_IN_MINUTE);
+
+                let quote = QuoteTick::new(
+                    instrument.id(),
+                    gap.close,
+                    gap.close,
+                    gap.volume,
+                    gap.volume,
+                    ts,
+                    ts,
+                );
+
+                client.process_quote_tick(&quote).unwrap();
+            } else {
+                client.process_bar(&gap).unwrap();
+            }
+        };
+
+        let process_zero_volume_gap = |client: &SandboxExecutionClient, cache, events: &mut _| {
+            if quote_first {
+                let zero = Quantity::from("0.000");
+                client
+                    .process_bar(&Bar {
+                        volume: zero,
+                        ..gap
+                    })
+                    .unwrap();
+
+                assert!(apply_sandbox_order_events(cache, events).is_empty());
+            }
+        };
+
+        let (mut uninterrupted, control_cache, mut control_events) =
+            sandbox_trailing_stop(Cache::default(), &instrument, &order, bars);
+        let control = control_cache
+            .borrow()
+            .order_owned(&client_order_id)
+            .unwrap();
+        process_zero_volume_gap(&uninterrupted, &control_cache, &mut control_events);
+        update(&uninterrupted);
+        let control_fills = apply_sandbox_order_events(&control_cache, &mut control_events);
+        uninterrupted.stop().unwrap();
+
+        let database =
+            RedisCacheDatabase::new(trader_id, instance_id, config.clone(), redis_cache_config())
+                .await
+                .unwrap();
+        let adapter = RedisCacheDatabaseAdapter { database };
+        let persisted = Cache::new(Some(config.clone()), Some(Box::new(adapter)));
+        let (mut writing, writing_cache, mut writing_events) =
+            sandbox_trailing_stop(persisted, &instrument, &order, bars);
+        process_zero_volume_gap(&writing, &writing_cache, &mut writing_events);
+        writing.stop().unwrap();
+        let written = writing_cache
+            .borrow()
+            .order_owned(&client_order_id)
+            .unwrap();
+        writing_cache.borrow_mut().dispose();
+
+        let database =
+            RedisCacheDatabase::new(trader_id, instance_id, config.clone(), redis_cache_config())
+                .await
+                .unwrap();
+        let adapter = RedisCacheDatabaseAdapter { database };
+        let mut reloaded = Cache::new(Some(config), Some(Box::new(adapter)));
+        reloaded.reload().await.unwrap();
+        reloaded.build_index();
+        let recovered = reloaded.order_owned(&client_order_id).unwrap();
+
+        let (mut resumed, resumed_cache, mut resumed_events) =
+            start_sandbox_trailing_stop(reloaded, &instrument, trader_id, false);
+        update(&resumed);
+        let resumed_fills = apply_sandbox_order_events(&resumed_cache, &mut resumed_events);
+        let resumed_status = resumed_cache
+            .borrow()
+            .order(&client_order_id)
+            .unwrap()
+            .status();
+        resumed.stop().unwrap();
+        resumed_cache.borrow_mut().dispose();
+
+        let expected_activation = Some(Price::from(activation_price.unwrap_or("1500.00")));
+        let expected_trigger = Some(Price::from(if reprice { "1510.00" } else { "1490.00" }));
+        let expected_limit = (order_type == OrderType::TrailingStopLimit)
+            .then(|| Price::from(if reprice { "1490.00" } else { "1470.00" }));
+        assert_eq!(trailing_stop_is_activated(&control), active);
+        assert_eq!(control.activation_price(), expected_activation);
+        assert_eq!(control.trigger_price(), expected_trigger);
+        assert_eq!(control.price(), expected_limit);
+        assert_eq!(trailing_stop_is_activated(&recovered), active);
+        assert_eq!(recovered.activation_price(), expected_activation);
+        assert_eq!(recovered.trigger_price(), expected_trigger);
+        assert_eq!(recovered.price(), expected_limit);
+        assert_eq!(
+            written
+                .events()
+                .iter()
+                .any(|event| matches!(event, OrderEventAny::Updated(_))),
+            reprice,
+        );
+        assert_eq!(recovered.events(), written.events());
+
+        if active {
+            assert_eq!(
+                control_fills,
+                vec![(Price::from(gap_price), Quantity::from("1.000"))]
+            );
+            assert_eq!(resumed_status, OrderStatus::Filled);
+        } else {
+            assert!(control_fills.is_empty());
+            assert_eq!(resumed_status, OrderStatus::Accepted);
+        }
+
+        assert_eq!(resumed_fills, control_fills);
+    }
+
+    type SandboxRecoveryRun = (
+        SandboxExecutionClient,
+        Rc<RefCell<Cache>>,
+        tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    );
+
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum LastPriceRecovery {
+        QuoteOnly,
+        LastBeforeSubmit,
+        LastAfterSubmit,
+        Reopened,
+        InlineOto,
+    }
+
+    #[rstest]
+    fn test_sandbox_zero_volume_bar_keeps_newer_last() {
+        let trader_id = TraderId::from("BAR-LAST-001");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .trader_id(trader_id)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.000"))
+            .trigger_type(TriggerType::LastOrBidAsk)
+            .trigger_price(Price::from("1490.00"))
+            .trailing_offset(Decimal::from(10))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .build();
+
+        let mut cache = Cache::default();
+        cache.add_instrument(instrument.clone()).unwrap();
+        cache.add_order(order.clone(), None, None, false).unwrap();
+        let (mut client, cache, mut events) =
+            start_sandbox_trailing_stop(cache, &instrument, trader_id, true);
+
+        let trade = TradeTick::new(
+            instrument_id,
+            Price::from("1480.00"),
+            Quantity::from("10.000"),
+            AggressorSide::Sell,
+            TradeId::from("OLDER-TRADE"),
+            1.into(),
+            1.into(),
+        );
+
+        cache.borrow_mut().add_trade(trade).unwrap();
+
+        let price = Price::from("1500.00");
+
+        let bar = Bar::new(
+            BarType::from(format!("{instrument_id}-1-MINUTE-LAST-EXTERNAL")),
+            price,
+            price,
+            price,
+            price,
+            Quantity::from("0.000"),
+            NANOSECONDS_IN_MINUTE.into(),
+            NANOSECONDS_IN_MINUTE.into(),
+        );
+
+        client.process_bar(&bar).unwrap();
+
+        let command =
+            SubmitOrder::from_order(&order, trader_id, None, None, UUID4::new(), 0.into());
+        client.submit_order(command).unwrap();
+
+        let ts = UnixNanos::from(2 * NANOSECONDS_IN_MINUTE);
+
+        let quote = QuoteTick::new(
+            instrument_id,
+            Price::from("1485.00"),
+            Price::from("1486.00"),
+            trade.size,
+            trade.size,
+            ts,
+            ts,
+        );
+
+        client.process_quote_tick(&quote).unwrap();
+
+        assert!(apply_sandbox_order_events(&cache, &mut events).is_empty());
+        let cached = cache
+            .borrow()
+            .order_owned(&order.client_order_id())
+            .unwrap();
+        assert_eq!(cached.status(), OrderStatus::Accepted);
+        assert_eq!(cached.activation_price(), Some(price));
+        assert_eq!(cached.trigger_price(), Some(Price::from("1490.00")));
+        client.stop().unwrap();
+    }
+
+    #[rstest]
+    #[case::quote_only(LastPriceRecovery::QuoteOnly)]
+    #[case::last_before_submit(LastPriceRecovery::LastBeforeSubmit)]
+    #[case::last_after_submit(LastPriceRecovery::LastAfterSubmit)]
+    #[case::last_stale_after_reopen(LastPriceRecovery::Reopened)]
+    #[case::inline_oto(LastPriceRecovery::InlineOto)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_sandbox_last_or_bid_ask_recovery(
+        #[values(
+            OrderType::StopMarket,
+            OrderType::TrailingStopMarket,
+            OrderType::TrailingStopLimit
+        )]
+        order_type: OrderType,
+        #[case] recovery: LastPriceRecovery,
+    ) {
+        let _guard = redis_test_mutex().lock().await;
+        let reopened = recovery == LastPriceRecovery::Reopened;
+        let inline_oto = recovery == LastPriceRecovery::InlineOto;
+        let liquidity_consumption = recovery == LastPriceRecovery::LastBeforeSubmit;
+        let trader_id = TraderId::from(format!("LAST-{}", UUID4::new()));
+        let instance_id = UUID4::new();
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        let mut builder = OrderTestBuilder::new(order_type);
+        builder
+            .trader_id(trader_id)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.000"))
+            .trigger_type(TriggerType::LastOrBidAsk)
+            .trigger_price(Price::from("1490.00"))
+            .trailing_offset(Decimal::from(10))
+            .trailing_offset_type(TrailingOffsetType::Price);
+
+        if order_type == OrderType::TrailingStopLimit {
+            builder
+                .price(Price::from("1470.00"))
+                .limit_offset(Decimal::from(30));
+        }
+
+        let parent_id = ClientOrderId::from("O-OTO-LAST-PRICE-PARENT");
+        if inline_oto {
+            builder.parent_order_id(parent_id);
+        }
+
+        let order = builder.build();
+        let client_order_id = order.client_order_id();
+        let size = Quantity::from("10.000");
+
+        let quote = |bid: &str, ask: &str, minute: u64| {
+            let ts = UnixNanos::from(minute * NANOSECONDS_IN_MINUTE);
+
+            QuoteTick::new(
+                instrument_id,
+                Price::from(bid),
+                Price::from(ask),
+                size,
+                size,
+                ts,
+                ts,
+            )
+        };
+
+        let bar_type = BarType::from(format!("{instrument_id}-1-MINUTE-LAST-EXTERNAL"));
+
+        let bar = |open: &str, low: &str, close: &str, minute: u64| {
+            let ts = UnixNanos::from(minute * NANOSECONDS_IN_MINUTE);
+            let open = Price::from(open);
+
+            Bar::new(
+                bar_type,
+                open,
+                open,
+                Price::from(low),
+                Price::from(close),
+                size,
+                ts,
+                ts,
+            )
+        };
+
+        let submit = |mut cache: Cache| {
+            cache.add_instrument(instrument.clone()).unwrap();
+            cache.add_order(order.clone(), None, None, false).unwrap();
+            let (client, cache, mut events) =
+                start_sandbox_trailing_stop(cache, &instrument, trader_id, liquidity_consumption);
+            client
+                .process_quote_tick(&quote("1500.00", "1501.00", 1))
+                .unwrap();
+
+            if liquidity_consumption || inline_oto {
+                client
+                    .process_bar(&bar("1501.00", "1495.00", "1500.00", 2))
+                    .unwrap();
+            }
+
+            if inline_oto {
+                let parent = OrderTestBuilder::new(OrderType::Limit)
+                    .trader_id(trader_id)
+                    .instrument_id(instrument_id)
+                    .client_order_id(parent_id)
+                    .quantity(Quantity::from("1.000"))
+                    .price(Price::from("1498.00"))
+                    .contingency_type(ContingencyType::Oto)
+                    .linked_order_ids(vec![client_order_id])
+                    .build();
+                cache
+                    .borrow_mut()
+                    .add_order(parent.clone(), None, None, false)
+                    .unwrap();
+                let command =
+                    SubmitOrder::from_order(&parent, trader_id, None, None, UUID4::new(), 0.into());
+                client.submit_order(command).unwrap();
+            }
+
+            let command =
+                SubmitOrder::from_order(&order, trader_id, None, None, UUID4::new(), 0.into());
+            client.submit_order(command).unwrap();
+            assert!(apply_sandbox_order_events(&cache, &mut events).is_empty());
+
+            let first_quote = if inline_oto {
+                quote("1497.00", "1498.00", 3)
+            } else {
+                quote("1500.00", "1501.00", 3)
+            };
+
+            client.process_quote_tick(&first_quote).unwrap();
+            if recovery == LastPriceRecovery::LastAfterSubmit {
+                client
+                    .process_bar(&bar("1501.00", "1495.00", "1500.00", 4))
+                    .unwrap();
+            }
+
+            if reopened {
+                let status = |action| {
+                    let status = InstrumentStatus::new(
+                        instrument_id,
+                        action,
+                        0.into(),
+                        0.into(),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                    );
+
+                    msgbus::publish_any(get_instrument_status_topic(instrument_id), &status);
+                };
+
+                status(MarketStatusAction::Halt);
+                client
+                    .process_bar(&bar("1520.00", "1520.00", "1520.00", 4))
+                    .unwrap();
+                status(MarketStatusAction::Trading);
+            }
+
+            let fills = apply_sandbox_order_events(&cache, &mut events);
+
+            if inline_oto {
+                assert_eq!(
+                    fills,
+                    vec![(Price::from("1498.00"), Quantity::from("1.000"))]
+                );
+            } else {
+                assert!(fills.is_empty());
+            }
+
+            assert_eq!(
+                cache.borrow().order(&client_order_id).unwrap().status(),
+                OrderStatus::Accepted
+            );
+            (client, cache, events)
+        };
+
+        let finish = |(mut client, cache, mut events): SandboxRecoveryRun| {
+            let first_quote = if reopened {
+                quote("1505.00", "1506.00", 5)
+            } else {
+                quote("1485.00", "1486.00", 5)
+            };
+
+            client.process_quote_tick(&first_quote).unwrap();
+            let quote_fills = apply_sandbox_order_events(&cache, &mut events);
+            let quote_trigger = cache
+                .borrow()
+                .order(&client_order_id)
+                .unwrap()
+                .trigger_price();
+            client
+                .process_bar(&bar("1480.00", "1480.00", "1480.00", 6))
+                .unwrap();
+            let bar_fills = apply_sandbox_order_events(&cache, &mut events);
+            client.stop().unwrap();
+            cache.borrow_mut().dispose();
+            (quote_fills, bar_fills, quote_trigger)
+        };
+
+        let database = RedisCacheDatabase::new(
+            trader_id,
+            instance_id,
+            CacheConfig::default(),
+            redis_cache_config(),
+        )
+        .await
+        .unwrap();
+        let backing = RedisCacheDatabaseAdapter { database };
+        let (mut client, cache, _) = submit(Cache::new(None, Some(Box::new(backing))));
+        client.stop().unwrap();
+        cache.borrow_mut().dispose();
+
+        let database = RedisCacheDatabase::new(
+            trader_id,
+            instance_id,
+            CacheConfig::default(),
+            redis_cache_config(),
+        )
+        .await
+        .unwrap();
+        let backing = RedisCacheDatabaseAdapter { database };
+        let mut restored = Cache::new(None, Some(Box::new(backing)));
+        restored.reload().await.unwrap();
+        restored.build_index();
+
+        let control = finish(submit(Cache::default()));
+        let mut resumed =
+            start_sandbox_trailing_stop(restored, &instrument, trader_id, liquidity_consumption);
+
+        {
+            let mut cache = resumed.1.borrow_mut();
+            cache.add_quote(quote("1520.00", "1521.00", 1)).unwrap();
+
+            let trade_price = if recovery == LastPriceRecovery::QuoteOnly {
+                "1500.00"
+            } else {
+                "1480.00"
+            };
+
+            let ts = UnixNanos::from(NANOSECONDS_IN_MINUTE);
+            cache
+                .add_trade(TradeTick::new(
+                    instrument_id,
+                    Price::from(trade_price),
+                    size,
+                    AggressorSide::Sell,
+                    TradeId::from("CACHED-MARKET-TRADE"),
+                    ts,
+                    ts,
+                ))
+                .unwrap();
+        }
+
+        assert_eq!(
+            submit_sandbox_market_order(&mut resumed, trader_id, instrument_id, "O-BEFORE-LIVE"),
+            (OrderStatus::Rejected, vec![]),
+        );
+
+        if recovery == LastPriceRecovery::LastAfterSubmit {
+            resumed
+                .0
+                .process_quote_tick(&quote("1500.00", "1501.00", 4))
+                .unwrap();
+            assert!(apply_sandbox_order_events(&resumed.1, &mut resumed.2).is_empty());
+            resumed
+                .1
+                .borrow_mut()
+                .add_quote(quote("1500.00", "1502.00", 4))
+                .unwrap();
+            assert_eq!(
+                submit_sandbox_market_order(&mut resumed, trader_id, instrument_id, "O-AFTER-LIVE"),
+                (
+                    OrderStatus::Filled,
+                    vec![(Price::from("1502.00"), Quantity::from("1.000"))]
+                ),
+            );
+        }
+
+        let resumed = finish(resumed);
+
+        let expected_counts = if recovery == LastPriceRecovery::QuoteOnly {
+            (1, 0)
+        } else {
+            (0, 1)
+        };
+
+        assert_eq!((control.0.len(), control.1.len()), expected_counts);
+
+        if reopened && order_type != OrderType::StopMarket {
+            assert_eq!(control.2, Some(Price::from("1495.00")));
+        }
+
+        assert_eq!(resumed, control);
+    }
+
+    fn submit_sandbox_market_order(
+        (client, cache, events): &mut SandboxRecoveryRun,
+        trader_id: TraderId,
+        instrument_id: InstrumentId,
+        client_order_id: &str,
+    ) -> (OrderStatus, Vec<(Price, Quantity)>) {
+        let market = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(trader_id)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from(client_order_id))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .build();
+
+        cache
+            .borrow_mut()
+            .add_order(market.clone(), None, None, false)
+            .unwrap();
+        let command =
+            SubmitOrder::from_order(&market, trader_id, None, None, UUID4::new(), 0.into());
+        client.submit_order(command).unwrap();
+        let fills = apply_sandbox_order_events(cache, events);
+        let status = cache
+            .borrow()
+            .order(&market.client_order_id())
+            .unwrap()
+            .status();
+        (status, fills)
+    }
+
+    fn sandbox_trailing_stop(
+        mut cache: Cache,
+        instrument: &InstrumentAny,
+        order: &OrderAny,
+        [initial, activation, later]: [Bar; 3],
+    ) -> SandboxRecoveryRun {
+        cache.add_instrument(instrument.clone()).unwrap();
+        cache.add_order(order.clone(), None, None, false).unwrap();
+        let (client, cache, mut events) =
+            start_sandbox_trailing_stop(cache, instrument, order.trader_id(), false);
+        client.process_bar(&initial).unwrap();
+        let command = SubmitOrder::from_order(
+            order,
+            order.trader_id(),
+            None,
+            None,
+            UUID4::new(),
+            initial.ts_init,
+        );
+        client.submit_order(command).unwrap();
+        assert!(apply_sandbox_order_events(&cache, &mut events).is_empty());
+
+        for bar in [activation, later] {
+            client.process_bar(&bar).unwrap();
+            assert!(apply_sandbox_order_events(&cache, &mut events).is_empty());
+        }
+
+        (client, cache, events)
+    }
+
+    fn start_sandbox_trailing_stop(
+        cache: Cache,
+        instrument: &InstrumentAny,
+        trader_id: TraderId,
+        liquidity_consumption: bool,
+    ) -> SandboxRecoveryRun {
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let cache = Rc::new(RefCell::new(cache));
+        let config = SandboxExecutionClientConfig::builder()
+            .venue(instrument.id().venue)
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()))
+            .liquidity_consumption(liquidity_consumption)
+            .build();
+
+        let core = ExecutionClientCore::new(
+            trader_id,
+            ClientId::new("SANDBOX"),
+            config.venue,
+            config.oms_type,
+            config.account_id,
+            config.account_type,
+            config.base_currency,
+            Rc::clone(&cache),
+        );
+
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        replace_exec_event_sender(tx);
+        let mut client =
+            SandboxExecutionClient::new(core, config, clock, Rc::clone(&cache)).unwrap();
+        client.start().unwrap();
+        (client, cache, rx)
+    }
+
+    fn apply_sandbox_order_events(
+        cache: &RefCell<Cache>,
+        events: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    ) -> Vec<(Price, Quantity)> {
+        let mut fills = Vec::new();
+
+        while let Ok(event) = events.try_recv() {
+            let ExecutionEvent::Order(event) = event else {
+                continue;
+            };
+
+            if !cache
+                .borrow()
+                .order(&event.client_order_id())
+                .unwrap()
+                .events()
+                .contains(&&event)
+            {
+                cache.borrow_mut().update_order(&event).unwrap();
+            }
+
+            if let OrderEventAny::Filled(fill) = event {
+                fills.push((fill.last_px, fill.last_qty));
+            }
+        }
+
+        fills
+    }
+
+    fn trailing_stop_is_activated(order: &OrderAny) -> bool {
+        match order {
+            OrderAny::TrailingStopMarket(order) => order.is_activated,
+            OrderAny::TrailingStopLimit(order) => order.is_activated,
+            _ => unreachable!("expected a trailing stop order"),
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_trailing_stop_activation_is_cleared_on_order_reset_and_purge() {
+        let _guard = redis_test_mutex().lock().await;
+        let trader_id = TraderId::from(format!("TRAIL-{}", UUID4::new()));
+        let database = RedisCacheDatabase::new(
+            trader_id,
+            UUID4::new(),
+            CacheConfig::default(),
+            redis_cache_config(),
+        )
+        .await
+        .unwrap();
+        let mut adapter = RedisCacheDatabaseAdapter { database };
+        let instrument = crypto_perpetual_ethusdt();
+        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .trader_id(trader_id)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.000"))
+            .trigger_price(Price::from("1490.00"))
+            .trailing_offset(Decimal::from(10))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .build();
+        let client_order_id = order.client_order_id();
+        let activation_price = Price::from("1500.00");
+        adapter.add_order(&order, None).unwrap();
+        adapter
+            .store_trailing_stop_activation(client_order_id, order.init_id(), activation_price)
+            .unwrap();
+
+        wait_until_async(
+            || async {
+                adapter
+                    .load_order(&client_order_id)
+                    .await
+                    .unwrap()
+                    .is_some_and(|loaded| loaded.activation_price() == Some(activation_price))
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let trader_key = adapter.database.get_trader_key();
+        let activation_key = format!("{trader_key}:order_activations");
+        let order_key = format!("{trader_key}:orders:{client_order_id}");
+        let mut conn = adapter.database.con.clone();
+
+        adapter.add_order(&order, None).unwrap();
+        wait_until_async(
+            || async {
+                let loaded = adapter.load_order(&client_order_id).await.unwrap().unwrap();
+                !trailing_stop_is_activated(&loaded) && loaded.activation_price().is_none()
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        adapter
+            .store_trailing_stop_activation(client_order_id, order.init_id(), activation_price)
+            .unwrap();
+        adapter.delete_order(&client_order_id).unwrap();
+        adapter.close().unwrap();
+
+        assert!(
+            adapter
+                .load_order(&client_order_id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            !conn
+                .hexists::<_, _, bool>(activation_key, order_key)
+                .await
+                .unwrap()
+        );
     }
 
     #[rstest]
@@ -1005,8 +2029,113 @@ mod serial_tests {
         let mut adapter = get_redis_cache_adapter()
             .await
             .expect("Failed to create adapter");
+        let mut con = adapter.database.con.clone();
+        let key = format!("outside-trader:{}", UUID4::new());
+        con.set::<_, _, ()>(&key, "persisted").await.unwrap();
 
         adapter.flush().unwrap();
+
+        assert_eq!(con.get::<_, Option<String>>(&key).await.unwrap(), None);
+        adapter.close().unwrap();
+    }
+
+    #[rstest]
+    #[case::explicit(false)]
+    #[case::startup(true)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_redis_flush_reports_command_rejection(#[case] startup: bool) {
+        let _guard = redis_test_mutex().lock().await;
+        let mut con = create_redis_connection("cache-flush-test", &redis_cache_config())
+            .await
+            .unwrap();
+        let username = format!("flush-test-{}", UUID4::new());
+        let password = UUID4::new().to_string();
+        redis::cmd("ACL")
+            .arg("SETUSER")
+            .arg(&username)
+            .arg("on")
+            .arg(format!(">{password}"))
+            .arg("+info")
+            .exec_async(&mut con)
+            .await
+            .unwrap();
+
+        let trader_id = TraderId::from("test-trader");
+
+        let cache_config = CacheConfig {
+            flush_on_start: true,
+            ..Default::default()
+        };
+
+        let redis_config = RedisCacheConfig {
+            username: Some(username.clone()),
+            password: Some(password),
+            ..redis_cache_config()
+        };
+
+        let outcome: anyhow::Result<_> = async {
+            let database = RedisCacheDatabase::new(
+                trader_id,
+                UUID4::new(),
+                cache_config.clone(),
+                redis_config,
+            )
+            .await?;
+
+            let mut adapter = RedisCacheDatabaseAdapter { database };
+
+            if startup {
+                let config = LiveNodeConfig {
+                    trader_id,
+                    cache: Some(cache_config),
+                    timeout_connection: Duration::ZERO,
+                    timeout_disconnection: Duration::ZERO,
+                    delay_post_stop: Duration::ZERO,
+                    exec_engine: LiveExecutionEngineConfig {
+                        reconciliation: false,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                };
+
+                let mut node = LiveNode::build("RedisFlushNode".to_string(), Some(config))?;
+                node.set_cache_database(Box::new(adapter))?;
+                let result = node.start().await;
+                let state = node.state();
+                let stop = if result.is_ok() {
+                    node.stop().await
+                } else {
+                    Ok(())
+                };
+
+                node.dispose();
+                stop?;
+                Ok((result, Some(state)))
+            } else {
+                let result = adapter.flush();
+                adapter.close()?;
+                Ok((result, None))
+            }
+        }
+        .await;
+
+        let removed = redis::cmd("ACL")
+            .arg("DELUSER")
+            .arg(&username)
+            .query_async::<usize>(&mut con)
+            .await
+            .unwrap();
+
+        assert_eq!(removed, 1);
+        let (result, state) = outcome.unwrap();
+        let error = result.expect_err("FLUSHDB rejection must reach the caller");
+        let redis_error = error.downcast_ref::<redis::RedisError>().unwrap();
+        assert_eq!(redis_error.code(), Some("NOPERM"));
+
+        if startup {
+            assert_eq!(error.to_string(), "Failed to flush persistent cache");
+            assert_eq!(state, Some(NodeState::Idle));
+        }
     }
 
     #[tokio::test]
@@ -2637,7 +3766,7 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_load_position_duplicate_fill_returns_error() {
+    async fn test_load_position_fails_on_duplicate_fill_or_missing_instrument() {
         let _guard = redis_test_mutex().lock().await;
         let adapter = get_redis_cache_adapter()
             .await
@@ -2687,13 +3816,27 @@ mod serial_tests {
         conn.rpush::<_, _, ()>(&key, payload.clone()).await.unwrap();
         conn.rpush::<_, _, ()>(&key, payload).await.unwrap();
 
-        let result = adapter.load_position(&position_id).await;
-
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("E-1"));
+        let duplicate = adapter.load_position(&position_id).await.unwrap_err();
+        let instrument_id = instrument.id();
+        let instrument_key = format!(
+            "{}:instruments:{instrument_id}",
+            adapter.database.trader_key
+        );
+        let removed: usize = conn.del(instrument_key).await.unwrap();
+        let missing = adapter.load_positions().await.unwrap_err();
 
         let mut adapter = adapter;
         adapter.flush().unwrap();
+
+        assert_eq!(
+            duplicate.to_string(),
+            format!("Duplicate fill event for position {position_id}: E-1")
+        );
+        assert_eq!(removed, 1);
+        assert_eq!(
+            missing.root_cause().to_string(),
+            format!("missing instrument {instrument_id} for position {position_id}")
+        );
     }
 
     #[rstest]
@@ -2801,9 +3944,18 @@ mod serial_tests {
         let loaded = restored.positions.get(&position_id).unwrap();
         let snapshots = adapter.database.read(&snapshot_key).await.unwrap();
         let source = adapter.database.read("index:positions_replay_source").await;
+        let full_snapshot_key = format!("{}:{snapshot_key}", adapter.database.trader_key);
+        let mut con = adapter.database.con.clone();
+        let removed: usize = con.del(&full_snapshot_key).await.unwrap();
+        let missing_snapshot = adapter.load_positions().await.unwrap_err();
         clear_test_trader(&adapter).await;
         adapter.close().unwrap();
 
+        assert_eq!(removed, 1);
+        assert_eq!(
+            missing_snapshot.root_cause().to_string(),
+            format!("Missing replay snapshot for position {position_id}")
+        );
         assert_eq!(loaded.quantity, Quantity::from("0.5"));
         assert_eq!(
             restored.currencies.get(&quote_currency.code),
@@ -3223,20 +4375,33 @@ mod serial_tests {
     ///
     /// The key is what the dependents resolve, so the mismatch would register one currency and
     /// index another.
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_load_all_fails_on_a_record_filed_under_another_code() {
+    #[rstest]
+    #[case::record(None)]
+    #[case::bare_code(Some("ZZQ6"))]
+    #[case::empty_bare_code(Some(""))]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_load_all_fails_on_a_record_filed_under_another_code(
+        #[case] bare_code: Option<&str>,
+    ) {
         let _guard = redis_test_mutex().lock().await;
         let adapter = get_redis_cache_adapter()
             .await
             .expect("Failed to create adapter");
         let encoding = adapter.database.get_encoding();
-        let record = serde_json::json!({
-            "code": "ZZQ6",
-            "precision": 4,
-            "iso4217": 0,
-            "name": "ZZQ6",
-            "currency_type": serde_json::to_value(CurrencyType::Crypto).unwrap(),
-        });
+
+        let record = bare_code.map_or_else(
+            || {
+                serde_json::json!({
+                    "code": "ZZQ6",
+                    "precision": 4,
+                    "iso4217": 0,
+                    "name": "ZZQ6",
+                    "currency_type": serde_json::to_value(CurrencyType::Crypto).unwrap(),
+                })
+            },
+            |code| serde_json::json!(code),
+        );
+
         let payload = DatabaseQueries::serialize_payload(encoding, &record).unwrap();
         let key = format!("{}:currencies:ZZQ9X", adapter.database.trader_key);
         let mut con = adapter.database.con.clone();
@@ -3247,10 +4412,11 @@ mod serial_tests {
             .await
             .expect_err("a record under another code's key must fail the load");
 
-        assert!(
-            error.to_string().contains("ZZQ9X") && error.to_string().contains("ZZQ6"),
-            "the error names both codes: {error}"
+        let expected = bare_code.map_or_else(
+            || "Currency record under key ZZQ9X holds code ZZQ6".to_string(),
+            |code| format!("Invalid currency record for ZZQ9X: bare currency code '{code}' does not match key 'ZZQ9X'"),
         );
+        assert_eq!(error.to_string(), expected);
 
         let mut adapter = adapter;
         adapter.flush().unwrap();

@@ -205,6 +205,7 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
     let request_id = request.request_id;
     let client_id = request.client_id.unwrap_or(client.client_id);
     let venue = *POLYMARKET_VENUE;
+    let publish = request.start.is_none() && request.end.is_none();
     let start_nanos = datetime_to_unix_nanos(request.start);
     let end_nanos = datetime_to_unix_nanos(request.end);
     let params = request.params;
@@ -251,7 +252,7 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
             effective_instruments.push(instrument);
         }
 
-        let cached_count = if update_state.retired {
+        let cached_count = if !publish || update_state.retired {
             0
         } else {
             let live: Vec<_> = effective_instruments
@@ -265,6 +266,16 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
                 .collect();
 
             cache_instruments_unchecked(&instruments_cache, &token_meta, &live);
+            for instrument in &live {
+                if cached
+                    .get(&instrument.id())
+                    .is_none_or(|previous| !previous.same_definition(instrument))
+                    && let Err(e) = sender.send(DataEvent::Data(instrument.clone().into()))
+                {
+                    log::warn!("Failed to publish instrument {}: {e}", instrument.id());
+                }
+            }
+
             live.len()
         };
 
@@ -311,6 +322,7 @@ pub(super) fn request_instrument(
     let request_id = request.request_id;
     let start = request.start;
     let end = request.end;
+    let publish = start.is_none() && end.is_none();
     let params = request.params;
     let clock = client.clock;
     let future = async move {
@@ -354,11 +366,11 @@ pub(super) fn request_instrument(
                 }
             };
 
-            if is_instrument_expired_and_not_reported_open(&inst, clock.get_time_ns()) {
+            if publish && is_instrument_expired_and_not_reported_open(&inst, clock.get_time_ns()) {
                 log::debug!(
                     "Skipping expired instrument {instrument_id} during request_instrument cache update"
                 );
-            } else {
+            } else if publish {
                 apply_live_instrument_locked(
                     &closed_condition_ids,
                     &update_state,

@@ -1610,7 +1610,6 @@ impl LiveNode {
                             }
                         }
                         ReportTaskOutcome::TimedOut => {
-                            self.cleanup_cancelled_report_tasks(&[]);
                             log::warn!(
                                 "Open-order report collection expired after {:?}",
                                 self.config.timeout_reconciliation,
@@ -1645,9 +1644,7 @@ impl LiveNode {
 
                     match result {
                         ReportTaskOutcome::Completed(PositionReportTaskResult::Positions(result)) => {
-                            if is_shutting_down {
-                                self.cleanup_cancelled_report_tasks(&[]);
-                            } else {
+                            if !is_shutting_down {
                                 let result = result.finish();
                                 position_report_task = self.handle_position_report_result(result);
                             }
@@ -1660,7 +1657,6 @@ impl LiveNode {
                             });
                         }
                         ReportTaskOutcome::TimedOut => {
-                            self.cleanup_cancelled_report_tasks(&[]);
                             log::warn!(
                                 "Position report collection expired after {:?}",
                                 self.config.timeout_reconciliation,
@@ -3519,15 +3515,19 @@ fn render_client_statuses(rows: Vec<ClientStatus>) -> String {
 }
 
 #[cfg(test)]
+#[path = "../../tests/common/dispatch.rs"]
+mod dispatch_fixtures;
+#[cfg(test)]
+#[path = "../../tests/common/external_msgbus.rs"]
+mod external_msgbus_fixtures;
+
+#[cfg(test)]
 mod tests {
     use std::{
         cell::{Cell, RefCell},
         fmt::Debug,
         rc::Rc,
-        sync::{
-            Arc,
-            atomic::{AtomicBool, Ordering},
-        },
+        sync::{Arc, atomic::Ordering},
     };
 
     use bytes::Bytes;
@@ -3542,7 +3542,7 @@ mod tests {
             self, CallbackDispatchError, DataActor, DataActorCore, data_actor::DataActorConfig,
         },
         cache::Cache,
-        clock::{Clock, VirtualClock},
+        clock::Clock,
         enums::SerializationEncoding,
         live::{
             runner::{get_data_event_sender, get_exec_event_sender, get_system_event_sender},
@@ -3561,13 +3561,11 @@ mod tests {
             },
         },
         msgbus::{
-            self, BusMessage, BusPayloadType, MessageBusBacking, MessageBusBackingFactory,
-            MessageBusConfig, MessageBusExternalEgress, MessageBusExternalIngress,
-            MessagingSwitchboard, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
+            self, BusMessage, BusPayloadType, MessageBusConfig, MessagingSwitchboard,
+            ShareableMessageHandler, TypedHandler, TypedIntoHandler,
         },
         nautilus_actor,
         runner::{SyncTradingCommandSender, TradingCommandSender},
-        testing::wait_until_async,
         timer::{TimeEvent, TimeEventCallback},
     };
     use nautilus_core::{Params, UUID4, UnixNanos};
@@ -3587,8 +3585,8 @@ mod tests {
             order::{
                 OrderEventType,
                 spec::{
-                    OrderAcceptedSpec, OrderPendingCancelSpec, OrderPendingUpdateSpec,
-                    OrderUpdatedSpec,
+                    OrderAcceptedSpec, OrderFilledSpec, OrderPendingCancelSpec,
+                    OrderPendingUpdateSpec, OrderSubmittedSpec, OrderUpdatedSpec,
                 },
             },
         },
@@ -3609,10 +3607,6 @@ mod tests {
         types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
     };
     use nautilus_system::{KernelEventStore, RegisteredComponents, event_store::EventStoreConfig};
-    use nautilus_testkit::{
-        cache::TestCacheDatabaseControl,
-        components::{StateActor, StateStrategy},
-    };
     use nautilus_trading::{
         nautilus_strategy,
         strategy::{config::StrategyConfig, core::StrategyCore},
@@ -3624,6 +3618,8 @@ mod tests {
     use ustr::Ustr;
 
     use super::{
+        dispatch_fixtures::{stub_data_command, stub_data_event, stub_exec_event},
+        external_msgbus_fixtures::CapturingExternalEgress,
         reconciliation::{
             PositionFillReportResult, PositionReportResult, reconciliation_check_due,
             request_position_fill_reports,
@@ -3914,7 +3910,6 @@ mod tests {
             timeout_portfolio: Duration::ZERO,
             timeout_disconnection: Duration::ZERO,
             delay_post_stop: Duration::ZERO,
-            timeout_shutdown: Duration::ZERO,
             ..Default::default()
         };
 
@@ -4545,7 +4540,6 @@ mod tests {
             timeout_portfolio: Duration::ZERO,
             timeout_disconnection: Duration::ZERO,
             delay_post_stop: Duration::ZERO,
-            timeout_shutdown: Duration::ZERO,
             ..Default::default()
         };
 
@@ -4583,150 +4577,6 @@ mod tests {
 
         node.stop().await.unwrap();
         node.dispose();
-    }
-
-    #[rstest]
-    #[tokio::test(flavor = "current_thread")]
-    async fn test_run_publishes_queue_state_after_dispatch_sample() {
-        let config = LiveNodeConfig {
-            trader_id: TraderId::from("QUEUE-RUN-001"),
-            queue_monitor: Some(crate::config::QueueMonitorConfig {
-                queue_depth_trigger: usize::MAX,
-                queue_depth_clear: 0,
-                mean_dispatch_ns_trigger: 1,
-                mean_dispatch_ns_clear: 0,
-            }),
-            exec_engine: crate::config::LiveExecutionEngineConfig {
-                reconciliation: false,
-                ..Default::default()
-            },
-            delay_post_stop: Duration::ZERO,
-            ..Default::default()
-        };
-
-        let mut node = LiveNode::build("QueueMonitorRunNode".to_string(), Some(config)).unwrap();
-        let handle = node.handle();
-        let received = Rc::new(RefCell::new(Vec::<QueueStateChanged>::new()));
-
-        let handler = ShareableMessageHandler::from_typed({
-            let received = received.clone();
-            let stop_handle = handle.clone();
-
-            move |event: &QueueStateChanged| {
-                received.borrow_mut().push(event.clone());
-                stop_handle.stop();
-            }
-        });
-
-        msgbus::subscribe_any(
-            MessagingSwitchboard::queue_state_changed_pattern(None),
-            handler,
-            None,
-        );
-        let drive_handle = handle.clone();
-
-        let result = tokio::time::timeout(Duration::from_secs(5), async {
-            let run = node.run();
-            tokio::pin!(run);
-
-            let drive = async move {
-                wait_until_async(
-                    || async { drive_handle.is_running() },
-                    Duration::from_secs(2),
-                )
-                .await;
-                get_data_event_sender().send(stub_data_event()).unwrap();
-            };
-
-            let (run_result, ()) = tokio::join!(run, drive);
-            run_result
-        })
-        .await;
-
-        assert!(
-            result.is_ok(),
-            "queue state event should arrive before timeout"
-        );
-        assert!(result.unwrap().is_ok(), "run() should succeed");
-        let events = received.borrow();
-        assert_eq!(events.len(), 1);
-        assert_eq!(events[0].trader_id, TraderId::from("QUEUE-RUN-001"));
-        assert_eq!(events[0].channel, SystemChannel::DataEvents);
-        assert_eq!(events[0].condition, QueueCondition::Slow);
-        assert_eq!(events[0].state, QueueState::Triggered);
-        assert_eq!(events[0].queue_depth, 0);
-        assert!(events[0].mean_dispatch_ns > 0);
-        assert_ne!(events[0].event_id, UUID4::default());
-        assert_ne!(events[0].ts_event, UnixNanos::default());
-        assert_eq!(events[0].ts_init, events[0].ts_event);
-        drop(events);
-        msgbus::get_message_bus().borrow_mut().dispose();
-    }
-
-    #[rstest]
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn test_run_dispatch_progress_under_load(
-        #[values(false, true)] execution: bool,
-        #[values(false, true)] slow: bool,
-    ) {
-        let config = LiveNodeConfig {
-            delay_post_stop: Duration::ZERO,
-            ..Default::default()
-        };
-
-        let mut node = LiveNode::build("FairDispatchNode".to_string(), Some(config)).unwrap();
-        let handle = node.handle();
-        let stop = handle.clone();
-
-        let callback = TimeEventCallback::RustLocal(Rc::new(move |event| {
-            if slow {
-                // Make housekeeping ready after each timer callback
-                std::thread::sleep(Duration::from_millis(110));
-            }
-
-            if event.ts_init == UnixNanos::from(8) {
-                // Check progress before shutdown can drain the queues
-                let snapshot = stop.metrics_snapshot();
-                assert_eq!(snapshot.time_events.dispatched, 7);
-
-                if execution {
-                    assert!((1..16).contains(&snapshot.exec_events.dispatched));
-                    assert_eq!(snapshot.data_events.dispatched, 0);
-                } else {
-                    assert!(snapshot.data_events.dispatched > 0);
-                    assert_eq!(snapshot.data_commands.dispatched, 1);
-                }
-
-                stop.stop();
-            }
-        }));
-
-        let drive = async {
-            wait_until_async(|| async { handle.is_running() }, Duration::from_secs(2)).await;
-
-            for ts in (1..=16_u64).map(UnixNanos::from) {
-                nautilus_common::runner::get_time_event_sender().send(TimeEventMessage::new(
-                    TimeEvent::new("fairness".into(), UUID4::new(), ts, ts),
-                    callback.clone(),
-                ));
-                get_data_event_sender().send(stub_data_event()).unwrap();
-
-                if execution {
-                    get_exec_event_sender().send(stub_exec_event()).unwrap();
-                }
-            }
-
-            nautilus_common::runner::get_data_cmd_sender().execute(stub_data_command());
-        };
-
-        tokio::time::timeout(Duration::from_secs(5), async {
-            let (result, ()) = tokio::join!(node.run(), drive);
-            result.unwrap();
-        })
-        .await
-        .unwrap();
-
-        assert!(handle.should_stop());
     }
 
     #[rstest]
@@ -7159,28 +7009,6 @@ mod tests {
         assert!(result.events.is_empty());
     }
 
-    #[rstest]
-    fn test_live_node_builder_clock_factory_drives_kernel_clock() {
-        let calls = Rc::new(Cell::new(0_usize));
-        let calls_in_factory = calls.clone();
-        let sentinel = UnixNanos::from(123_456_789_u64);
-
-        let node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
-            .unwrap()
-            .with_reconciliation(false)
-            .with_clock_factory(move || {
-                calls_in_factory.set(calls_in_factory.get() + 1);
-                let mut clock = VirtualClock::new();
-                clock.advance_time(sentinel, true);
-                Rc::new(RefCell::new(clock)) as Rc<RefCell<dyn Clock>>
-            })
-            .build()
-            .unwrap();
-
-        assert_eq!(node.kernel().clock().borrow().timestamp_ns(), sentinel);
-        assert_eq!(calls.get(), 1);
-    }
-
     #[derive(Debug)]
     struct ReplayKernelEventStore {
         fail_restore: bool,
@@ -7276,7 +7104,7 @@ mod tests {
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
-            .with_timeout_connection(1)
+            .with_timeout_connection_secs(1)
             .build()
             .unwrap();
         let instrument_id = InstrumentId::from("AUDUSD.SIM");
@@ -7458,7 +7286,7 @@ mod tests {
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
-            .with_timeout_connection(1)
+            .with_timeout_connection_secs(1)
             .build()
             .unwrap();
         let instrument_id = InstrumentId::from("AUDUSD.SIM");
@@ -7505,7 +7333,7 @@ mod tests {
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
-            .with_timeout_connection(1)
+            .with_timeout_connection_secs(1)
             .build()
             .unwrap();
         let instrument_id = InstrumentId::from("AUDUSD.SIM");
@@ -7541,7 +7369,7 @@ mod tests {
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
-            .with_timeout_connection(1)
+            .with_timeout_connection_secs(1)
             .build()
             .unwrap();
         let existing_instrument_id = InstrumentId::from("AUDUSD.SIM");
@@ -7624,7 +7452,7 @@ mod tests {
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
-            .with_timeout_connection(1)
+            .with_timeout_connection_secs(1)
             .build()
             .unwrap();
         let strategy_id = StrategyId::from("FUNDING_ARBITRAGE-001");
@@ -9228,13 +9056,19 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0, NodeState::Idle)]
-    #[case(1, NodeState::Starting)]
-    #[case(2, NodeState::Running)]
-    #[case(3, NodeState::ShuttingDown)]
-    #[case(4, NodeState::Stopped)]
-    fn test_node_state_from_u8_valid(#[case] value: u8, #[case] expected: NodeState) {
-        assert_eq!(NodeState::from_u8(value), expected);
+    #[case(0, NodeState::Idle, false)]
+    #[case(1, NodeState::Starting, false)]
+    #[case(2, NodeState::Running, true)]
+    #[case(3, NodeState::ShuttingDown, false)]
+    #[case(4, NodeState::Stopped, false)]
+    fn test_node_state_discriminant_and_running_status(
+        #[case] value: u8,
+        #[case] state: NodeState,
+        #[case] running: bool,
+    ) {
+        assert_eq!(NodeState::from_u8(value), state);
+        assert_eq!(state.as_u8(), value);
+        assert_eq!(state.is_running(), running);
     }
 
     #[rstest]
@@ -9243,28 +9077,6 @@ mod tests {
     #[should_panic(expected = "Invalid NodeState value")]
     fn test_node_state_from_u8_invalid_panics(#[case] value: u8) {
         let _ = NodeState::from_u8(value);
-    }
-
-    #[rstest]
-    fn test_node_state_roundtrip() {
-        for state in [
-            NodeState::Idle,
-            NodeState::Starting,
-            NodeState::Running,
-            NodeState::ShuttingDown,
-            NodeState::Stopped,
-        ] {
-            assert_eq!(NodeState::from_u8(state.as_u8()), state);
-        }
-    }
-
-    #[rstest]
-    fn test_node_state_is_running_only_for_running() {
-        assert!(!NodeState::Idle.is_running());
-        assert!(!NodeState::Starting.is_running());
-        assert!(NodeState::Running.is_running());
-        assert!(!NodeState::ShuttingDown.is_running());
-        assert!(!NodeState::Stopped.is_running());
     }
 
     #[rstest]
@@ -9293,269 +9105,6 @@ mod tests {
         let status = node.await_engines_connected(deadline).await;
 
         assert_eq!(status, EngineConnectionStatus::ShutdownRequested);
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_start_stop_request_aborts_startup_without_running() {
-        let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecutionEngineConfig {
-                reconciliation: false,
-                ..Default::default()
-            },
-            timeout_disconnection: Duration::from_millis(50),
-            ..Default::default()
-        };
-
-        let mut node = LiveNode::build("TestNode".to_string(), Some(config)).unwrap();
-        let handle = node.handle();
-
-        handle.stop();
-        node.start().await.unwrap();
-
-        assert_eq!(handle.state(), NodeState::Stopped);
-        assert!(handle.should_stop());
-        assert!(!handle.is_running());
-    }
-
-    #[rstest]
-    #[tokio::test(start_paused = true)]
-    async fn test_stop_processes_residual_exec_event_during_grace_period() {
-        let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecutionEngineConfig {
-                reconciliation: false,
-                ..Default::default()
-            },
-            timeout_connection: Duration::ZERO,
-            timeout_reconciliation: Duration::ZERO,
-            timeout_portfolio: Duration::ZERO,
-            timeout_disconnection: Duration::ZERO,
-            delay_post_stop: Duration::from_millis(20),
-            timeout_shutdown: Duration::ZERO,
-            ..Default::default()
-        };
-
-        let mut node = LiveNode::build("TestNode".to_string(), Some(config)).unwrap();
-        let order = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(InstrumentId::from("EUR/USD.SIM"))
-            .quantity(Quantity::from("2"))
-            .build();
-        let client_order_id = order.client_order_id();
-        let submitted = TestOrderEventStubs::submitted(&order, AccountId::from("POLL-STOP-001"));
-
-        node.kernel
-            .cache()
-            .borrow_mut()
-            .add_order(order, None, None, false)
-            .unwrap();
-
-        node.start().await.unwrap();
-        let exec_event_sender = get_exec_event_sender();
-
-        let send_residual = tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(1)).await;
-            exec_event_sender
-                .send(ExecutionEvent::Order(submitted))
-                .unwrap();
-        });
-
-        node.stop().await.unwrap();
-        send_residual.await.unwrap();
-
-        assert_eq!(
-            node.kernel
-                .cache()
-                .borrow()
-                .order(&client_order_id)
-                .unwrap()
-                .status(),
-            OrderStatus::Submitted
-        );
-
-        node.dispose();
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_live_state_persistence_loads_before_start_and_saves_after_stop() {
-        let actor_id = ActorId::from("LIVE-STATE-ACTOR");
-        let strategy_id = StrategyId::from("LIVE-STATE-STRATEGY-001");
-        let actor_load = IndexMap::from([("actor-load".to_string(), b"actor-loaded".to_vec())]);
-        let strategy_load =
-            IndexMap::from([("strategy-load".to_string(), b"strategy-loaded".to_vec())]);
-        let actor_save = IndexMap::from([("actor-save".to_string(), b"actor-saved".to_vec())]);
-        let strategy_save =
-            IndexMap::from([("strategy-save".to_string(), b"strategy-saved".to_vec())]);
-        let (database, control) = TestCacheDatabaseControl::create();
-        control.set_actor_state(actor_id, &actor_load);
-        control.set_strategy_state(strategy_id, &strategy_load);
-
-        let config = LiveNodeConfig {
-            load_state: true,
-            save_state: true,
-            exec_engine: crate::config::LiveExecutionEngineConfig {
-                reconciliation: false,
-                ..Default::default()
-            },
-            timeout_connection: Duration::ZERO,
-            timeout_reconciliation: Duration::ZERO,
-            timeout_portfolio: Duration::ZERO,
-            timeout_disconnection: Duration::ZERO,
-            delay_post_stop: Duration::ZERO,
-            timeout_shutdown: Duration::ZERO,
-            ..Default::default()
-        };
-
-        let mut node = LiveNode::build("StatePersistenceNode".to_string(), Some(config)).unwrap();
-        node.set_cache_database(Box::new(database)).unwrap();
-        node.add_actor(StateActor::new(
-            actor_id,
-            control.clone(),
-            actor_save.clone(),
-        ))
-        .unwrap();
-        node.add_strategy(StateStrategy::new(
-            strategy_id,
-            control.clone(),
-            strategy_save.clone(),
-        ))
-        .unwrap();
-
-        node.start().await.unwrap();
-        node.stop().await.unwrap();
-        node.dispose();
-
-        assert_eq!(
-            control.events(),
-            vec![
-                "actor.load:LIVE-STATE-ACTOR",
-                "actor.on_load",
-                "strategy.load:LIVE-STATE-STRATEGY-001",
-                "strategy.on_load",
-                "actor.on_start",
-                "strategy.on_start",
-                "actor.on_stop",
-                "strategy.on_stop",
-                "actor.on_save",
-                "actor.update:LIVE-STATE-ACTOR",
-                "strategy.on_save",
-                "strategy.update:LIVE-STATE-STRATEGY-001",
-                "database.close",
-            ]
-        );
-        assert_eq!(control.actor_state(&actor_id), Some(actor_save));
-        assert_eq!(control.strategy_state(&strategy_id), Some(strategy_save));
-        assert_eq!(node.state(), NodeState::Stopped);
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_live_state_persistence_reports_callback_errors_after_shutdown() {
-        let actor_id = ActorId::from("LIVE-FAIL-SAVE-ACTOR");
-        let strategy_id = StrategyId::from("LIVE-FAIL-SAVE-STRATEGY-001");
-        let (database, control) = TestCacheDatabaseControl::create();
-
-        let config = LiveNodeConfig {
-            save_state: true,
-            exec_engine: crate::config::LiveExecutionEngineConfig {
-                reconciliation: false,
-                ..Default::default()
-            },
-            timeout_connection: Duration::ZERO,
-            timeout_reconciliation: Duration::ZERO,
-            timeout_portfolio: Duration::ZERO,
-            timeout_disconnection: Duration::ZERO,
-            delay_post_stop: Duration::ZERO,
-            timeout_shutdown: Duration::ZERO,
-            ..Default::default()
-        };
-
-        let mut node =
-            LiveNode::build("StatePersistenceErrorNode".to_string(), Some(config)).unwrap();
-        node.set_cache_database(Box::new(database)).unwrap();
-        node.add_actor(
-            StateActor::new(actor_id, control.clone(), IndexMap::new()).with_fail_save(),
-        )
-        .unwrap();
-        node.add_strategy(
-            StateStrategy::new(strategy_id, control.clone(), IndexMap::new()).with_fail_save(),
-        )
-        .unwrap();
-
-        node.start().await.unwrap();
-        let error = node.stop().await.unwrap_err();
-        node.dispose();
-
-        assert_eq!(
-            error.to_string(),
-            "failed while finalizing kernel shutdown: Failed to save component state: actor \
-             LIVE-FAIL-SAVE-ACTOR callback: test actor on_save failure; strategy \
-             LIVE-FAIL-SAVE-STRATEGY-001 callback: test strategy on_save failure"
-        );
-        assert_eq!(
-            control.events(),
-            vec![
-                "actor.on_start",
-                "strategy.on_start",
-                "actor.on_stop",
-                "strategy.on_stop",
-                "actor.on_save",
-                "strategy.on_save",
-                "database.close",
-            ]
-        );
-        assert_eq!(node.state(), NodeState::Stopped);
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_stop_drains_queued_exec_event_after_zero_grace() {
-        let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecutionEngineConfig {
-                reconciliation: false,
-                ..Default::default()
-            },
-            timeout_connection: Duration::ZERO,
-            timeout_reconciliation: Duration::ZERO,
-            timeout_portfolio: Duration::ZERO,
-            timeout_disconnection: Duration::ZERO,
-            delay_post_stop: Duration::ZERO,
-            timeout_shutdown: Duration::ZERO,
-            ..Default::default()
-        };
-
-        let mut node = LiveNode::build("TestNode".to_string(), Some(config)).unwrap();
-        let order = OrderTestBuilder::new(OrderType::Market)
-            .instrument_id(InstrumentId::from("GBP/USD.SIM"))
-            .quantity(Quantity::from("3"))
-            .build();
-        let client_order_id = order.client_order_id();
-        let submitted = TestOrderEventStubs::submitted(&order, AccountId::from("POLL-DRAIN-001"));
-
-        node.kernel
-            .cache()
-            .borrow_mut()
-            .add_order(order, None, None, false)
-            .unwrap();
-
-        node.start().await.unwrap();
-        get_exec_event_sender()
-            .send(ExecutionEvent::Order(submitted))
-            .unwrap();
-
-        node.stop().await.unwrap();
-
-        assert_eq!(
-            node.kernel
-                .cache()
-                .borrow()
-                .order(&client_order_id)
-                .unwrap()
-                .status(),
-            OrderStatus::Submitted
-        );
-
-        node.dispose();
     }
 
     #[rstest]
@@ -9758,23 +9307,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dispose_before_start_is_idempotent() {
-        let mut node = LiveNode::build("TestNode".to_string(), None).unwrap();
-        node.add_strategy(TestStrategy::new(StrategyConfig {
-            strategy_id: Some(StrategyId::from("DISPOSAL-001")),
-            ..Default::default()
-        }))
-        .unwrap();
-
-        node.dispose();
-        node.dispose();
-
-        assert!(node.kernel.trader().borrow().is_disposed());
-        assert_eq!(node.kernel.trader().borrow().component_count(), 0);
-        assert_eq!(node.state(), NodeState::Stopped);
-    }
-
-    #[rstest]
     fn test_dispose_releases_retained_callback_roots(
         #[values(false, true)] fatal: bool,
         #[values(false, true)] external: bool,
@@ -9886,7 +9418,6 @@ mod tests {
             timeout_connection: Duration::ZERO,
             timeout_reconciliation: Duration::ZERO,
             timeout_portfolio: Duration::ZERO,
-            timeout_shutdown: Duration::ZERO,
             ..Default::default()
         };
 
@@ -10083,13 +9614,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_builder_creation() {
-        let result = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox);
-
-        assert!(result.is_ok());
-    }
-
-    #[rstest]
     fn test_stream_processor_receives_unregistered_typed_payload() {
         let mut node = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox)
             .unwrap()
@@ -10167,25 +9691,21 @@ mod tests {
     }
 
     #[rstest]
-    fn test_builder_rejects_backtest() {
-        let result = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Backtest);
+    #[case::live(Environment::Live, Ok(()))]
+    #[case::sandbox(Environment::Sandbox, Ok(()))]
+    #[case::backtest(
+        Environment::Backtest,
+        Err("LiveNode cannot be used with Backtest environment")
+    )]
+    fn test_builder_validates_environment(
+        #[case] environment: Environment,
+        #[case] expected: Result<(), &str>,
+    ) {
+        let result = LiveNode::builder(TraderId::from("TRADER-001"), environment)
+            .map(|_| ())
+            .map_err(|e| e.to_string());
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Backtest"));
-    }
-
-    #[rstest]
-    fn test_builder_accepts_live_environment() {
-        let result = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Live);
-
-        assert!(result.is_ok());
-    }
-
-    #[rstest]
-    fn test_builder_accepts_sandbox_environment() {
-        let result = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox);
-
-        assert!(result.is_ok());
+        assert_eq!(result, expected.map_err(str::to_owned));
     }
 
     #[rstest]
@@ -10196,452 +9716,21 @@ mod tests {
             .with_instance_id(UUID4::new())
             .with_load_state(false)
             .with_save_state(true)
-            .with_timeout_connection(30)
-            .with_timeout_reconciliation(60)
+            .with_timeout_connection_secs(30)
+            .with_timeout_reconciliation_secs(60)
             .with_reconciliation(true)
             .with_reconciliation_lookback_mins(120)
-            .with_timeout_portfolio(10)
+            .with_timeout_portfolio_secs(15)
             .with_timeout_disconnection_secs(5)
-            .with_delay_post_stop_secs(3)
-            .with_delay_shutdown_secs(10);
+            .with_delay_post_stop_secs(3);
 
         assert_eq!(builder.name(), "TestNode");
-    }
 
-    #[rstest]
-    fn test_builder_with_external_msgbus_egress_uses_configured_encoding() {
-        let (external_egress, publications, closed) = CapturingExternalEgress::new();
+        let node = builder.build().unwrap();
 
-        let msgbus_config = MessageBusConfig {
-            encoding: SerializationEncoding::Json,
-            ..Default::default()
-        };
-
-        let node = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox)
-            .unwrap()
-            .with_msgbus_config(msgbus_config)
-            .with_external_msgbus_egress(Box::new(external_egress))
-            .build()
-            .expect("node builds with external message bus egress");
-        let quote = QuoteTick::default();
-
-        msgbus::publish_quote("data.quotes.TEST".into(), &quote);
-
-        let publications = publications.borrow();
-        assert_eq!(publications.len(), 1);
-        assert_eq!(publications[0].topic, "data.quotes.TEST");
-        assert_eq!(
-            serde_json::from_slice::<QuoteTick>(&publications[0].payload)
-                .expect("JSON payload must decode as QuoteTick"),
-            quote
-        );
-        drop(publications);
-
-        msgbus::get_message_bus().borrow_mut().dispose();
-        assert!(closed.get());
-        drop(node);
-    }
-
-    #[rstest]
-    #[tokio::test(flavor = "current_thread")]
-    async fn test_builder_with_external_msgbus_factory_installs_egress_and_ingress() {
-        let quote = QuoteTick::default();
-        let (tx, rx) = tokio::sync::mpsc::channel::<BusMessage>(1);
-        let publications = Arc::new(Mutex::new(Vec::new()));
-        let closed = Arc::new(AtomicBool::new(false));
-        let factory = CapturingBackingFactory::new(publications.clone(), closed.clone(), Some(rx));
-
-        let msgbus_config = MessageBusConfig {
-            external_streams: Some(vec!["stream".to_string()]),
-            ..Default::default()
-        };
-
-        let config = LiveNodeConfig {
-            environment: Environment::Sandbox,
-            msgbus: Some(msgbus_config),
-            exec_engine: crate::config::LiveExecutionEngineConfig {
-                reconciliation: false,
-                ..Default::default()
-            },
-            delay_post_stop: Duration::ZERO,
-            timeout_connection: Duration::from_millis(500),
-            timeout_disconnection: Duration::from_millis(500),
-            ..Default::default()
-        };
-
-        let mut node = LiveNodeBuilder::from_config(config)
-            .unwrap()
-            .with_external_msgbus_factory(Box::new(factory))
-            .build()
-            .expect("node builds with external message bus factory");
-
-        msgbus::publish_quote("data.quotes.TEST".into(), &quote);
-
-        {
-            let publications = publications.lock();
-            assert_eq!(publications.len(), 1);
-            assert_eq!(publications[0].topic, "data.quotes.TEST");
-            assert_eq!(
-                serde_json::from_slice::<QuoteTick>(&publications[0].payload)
-                    .expect("JSON payload must decode as QuoteTick"),
-                quote
-            );
-        }
-
-        let received = Rc::new(RefCell::new(Vec::<QuoteTick>::new()));
-        let handle = node.handle();
-
-        // Stopping from `drive` rather than here, so the node cannot finish `run` before the
-        // republished quote is observed.
-        let handler = TypedHandler::from({
-            let received = received.clone();
-            move |quote: &QuoteTick| {
-                received.borrow_mut().push(*quote);
-            }
-        });
-
-        msgbus::subscribe_quotes("data.quotes.*".into(), handler, None);
-        msgbus::get_message_bus()
-            .borrow_mut()
-            .add_streaming_type(BusPayloadType::QuoteTick);
-
-        let payload =
-            Bytes::from(serde_json::to_vec(&quote).expect("QuoteTick should serialize as JSON"));
-        let message = BusMessage::with_str_topic(
-            "data.quotes.TEST",
-            BusPayloadType::QuoteTick,
-            payload,
-            SerializationEncoding::Json,
-        );
-
-        tokio::time::timeout(Duration::from_secs(30), async {
-            let run = node.run();
-            tokio::pin!(run);
-
-            let drive = async {
-                wait_until_async(|| async { handle.is_running() }, Duration::from_secs(10)).await;
-
-                tx.send(message)
-                    .await
-                    .expect("external ingress receiver should be open");
-
-                wait_until_async(
-                    || async { received.borrow().len() == 1 },
-                    Duration::from_secs(10),
-                )
-                .await;
-                assert_eq!(*received.borrow(), vec![quote]);
-                handle.stop();
-            };
-
-            tokio::select! {
-                biased;
-
-                () = drive => {}
-                result = &mut run => {
-                    panic!("node stopped before factory ingress was republished: {result:?}");
-                }
-            }
-
-            run.await.expect("node should stop cleanly");
-        })
-        .await
-        .expect("live node should republish factory ingress and stop before timeout");
-
-        assert_eq!(handle.state(), NodeState::Stopped);
-        assert!(closed.load(Ordering::Relaxed));
-        msgbus::get_message_bus().borrow_mut().dispose();
-    }
-
-    #[rstest]
-    #[tokio::test(flavor = "current_thread")]
-    async fn test_builder_with_external_msgbus_factory_without_streams_runs_without_ingress() {
-        let quote = QuoteTick::default();
-        let publications = Arc::new(Mutex::new(Vec::new()));
-        let closed = Arc::new(AtomicBool::new(false));
-        let factory = CapturingBackingFactory::new(publications.clone(), closed.clone(), None);
-
-        let config = LiveNodeConfig {
-            environment: Environment::Sandbox,
-            msgbus: Some(MessageBusConfig::default()),
-            exec_engine: crate::config::LiveExecutionEngineConfig {
-                reconciliation: false,
-                ..Default::default()
-            },
-            delay_post_stop: Duration::ZERO,
-            timeout_connection: Duration::from_millis(500),
-            timeout_disconnection: Duration::from_millis(500),
-            ..Default::default()
-        };
-
-        let mut node = LiveNodeBuilder::from_config(config)
-            .unwrap()
-            .with_external_msgbus_factory(Box::new(factory))
-            .build()
-            .expect("node builds with egress-only message bus factory");
-        let handle = node.handle();
-
-        msgbus::publish_quote("data.quotes.TEST".into(), &quote);
-
-        {
-            let publications = publications.lock();
-            assert_eq!(publications.len(), 1);
-            assert_eq!(publications[0].topic, "data.quotes.TEST");
-        }
-
-        tokio::time::timeout(Duration::from_secs(30), async {
-            let run = node.run();
-            tokio::pin!(run);
-
-            let drive = async {
-                wait_until_async(|| async { handle.is_running() }, Duration::from_secs(10)).await;
-                handle.stop();
-            };
-
-            tokio::select! {
-                biased;
-
-                () = drive => {}
-                result = &mut run => {
-                    panic!("node stopped before egress-only factory run was observed: {result:?}");
-                }
-            }
-
-            run.await.expect("node should stop cleanly");
-        })
-        .await
-        .expect("live node should run without external ingress before timeout");
-
-        assert_eq!(handle.state(), NodeState::Stopped);
-        msgbus::get_message_bus().borrow_mut().dispose();
-        assert!(closed.load(Ordering::Relaxed));
-    }
-
-    #[rstest]
-    fn test_builder_with_external_msgbus_factory_rejects_injected_surfaces() {
-        let (external_egress, _publications, _closed) = CapturingExternalEgress::new();
-
-        let egress_factory = CapturingBackingFactory::new(
-            Arc::new(Mutex::new(Vec::new())),
-            Arc::new(AtomicBool::new(false)),
-            None,
-        );
-
-        let egress_error = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox)
-            .unwrap()
-            .with_external_msgbus_factory(Box::new(egress_factory))
-            .with_external_msgbus_egress(Box::new(external_egress))
-            .build()
-            .expect_err("builder should reject factory plus injected egress");
-
-        assert!(
-            egress_error
-                .to_string()
-                .contains("cannot be combined with injected egress or ingress")
-        );
-
-        let (_tx, rx) = tokio::sync::mpsc::channel::<BusMessage>(1);
-
-        let ingress_factory = CapturingBackingFactory::new(
-            Arc::new(Mutex::new(Vec::new())),
-            Arc::new(AtomicBool::new(false)),
-            None,
-        );
-
-        let ingress = CapturingExternalIngress::new(rx, Rc::new(Cell::new(false)));
-        let ingress_error = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox)
-            .unwrap()
-            .with_external_msgbus_factory(Box::new(ingress_factory))
-            .with_external_ingress(Box::new(ingress))
-            .build()
-            .expect_err("builder should reject factory plus injected ingress");
-
-        assert!(
-            ingress_error
-                .to_string()
-                .contains("cannot be combined with injected egress or ingress")
-        );
-    }
-
-    #[rstest]
-    #[tokio::test(flavor = "current_thread")]
-    async fn test_run_republishes_external_ingress_on_local_msgbus() {
-        let quote = QuoteTick::default();
-        let received = Rc::new(RefCell::new(Vec::<QuoteTick>::new()));
-        let payload =
-            Bytes::from(serde_json::to_vec(&quote).expect("QuoteTick should serialize as JSON"));
-        let message = BusMessage::with_str_topic(
-            "data.quotes.TEST",
-            BusPayloadType::QuoteTick,
-            payload,
-            SerializationEncoding::Json,
-        );
-        let (tx, rx) = tokio::sync::mpsc::channel::<BusMessage>(1);
-        let closed = Rc::new(Cell::new(false));
-        let ingress = CapturingExternalIngress::new(rx, closed.clone());
-
-        let config = LiveNodeConfig {
-            environment: Environment::Sandbox,
-            exec_engine: crate::config::LiveExecutionEngineConfig {
-                reconciliation: false,
-                ..Default::default()
-            },
-            delay_post_stop: Duration::ZERO,
-            timeout_connection: Duration::from_millis(500),
-            timeout_disconnection: Duration::from_millis(500),
-            ..Default::default()
-        };
-
-        let mut node = LiveNodeBuilder::from_config(config)
-            .unwrap()
-            .with_external_ingress(Box::new(ingress))
-            .build()
-            .expect("node builds with external message bus ingress");
-        let handle = node.handle();
-
-        let handler = TypedHandler::from({
-            let received = received.clone();
-            move |quote: &QuoteTick| {
-                received.borrow_mut().push(*quote);
-            }
-        });
-
-        msgbus::subscribe_quotes("data.quotes.*".into(), handler, None);
-        msgbus::get_message_bus()
-            .borrow_mut()
-            .add_streaming_type(BusPayloadType::QuoteTick);
-
-        tokio::time::timeout(Duration::from_secs(30), async {
-            let run = node.run();
-            tokio::pin!(run);
-
-            let drive = async {
-                wait_until_async(|| async { handle.is_running() }, Duration::from_secs(10)).await;
-
-                tx.send(message)
-                    .await
-                    .expect("external ingress receiver should be open");
-
-                wait_until_async(
-                    || async { received.borrow().len() == 1 },
-                    Duration::from_secs(10),
-                )
-                .await;
-                assert_eq!(*received.borrow(), vec![quote]);
-                handle.stop();
-            };
-
-            tokio::select! {
-                biased;
-
-                () = drive => {}
-                result = &mut run => {
-                    panic!("node stopped before external message was republished: {result:?}");
-                }
-            }
-
-            run.await.expect("node should stop cleanly");
-        })
-        .await
-        .expect("live node should republish ingress and stop before timeout");
-
-        assert_eq!(handle.state(), NodeState::Stopped);
-        assert!(closed.get());
-        msgbus::get_message_bus().borrow_mut().dispose();
-    }
-
-    #[rstest]
-    #[tokio::test(flavor = "current_thread")]
-    async fn test_run_closes_external_ingress_when_receiver_closes() {
-        let (tx, rx) = tokio::sync::mpsc::channel::<BusMessage>(1);
-        let closed = Rc::new(Cell::new(false));
-        let ingress = CapturingExternalIngress::new(rx, closed.clone());
-
-        let config = LiveNodeConfig {
-            environment: Environment::Sandbox,
-            exec_engine: crate::config::LiveExecutionEngineConfig {
-                reconciliation: false,
-                ..Default::default()
-            },
-            delay_post_stop: Duration::ZERO,
-            timeout_connection: Duration::from_millis(500),
-            timeout_disconnection: Duration::from_millis(500),
-            ..Default::default()
-        };
-
-        let mut node = LiveNodeBuilder::from_config(config)
-            .unwrap()
-            .with_external_ingress(Box::new(ingress))
-            .build()
-            .expect("node builds with external message bus ingress");
-        let handle = node.handle();
-        tokio::time::timeout(Duration::from_secs(30), async {
-            let run = node.run();
-            tokio::pin!(run);
-
-            let drive = async {
-                wait_until_async(|| async { handle.is_running() }, Duration::from_secs(10)).await;
-
-                drop(tx);
-
-                wait_until_async(|| async { closed.get() }, Duration::from_secs(10)).await;
-                assert!(
-                    handle.is_running(),
-                    "node should keep running after ingress closes"
-                );
-                handle.stop();
-            };
-
-            tokio::select! {
-                biased;
-
-                () = drive => {}
-                result = &mut run => {
-                    panic!("node stopped before ingress close was observed: {result:?}");
-                }
-            }
-
-            run.await.expect("node should stop cleanly");
-        })
-        .await
-        .expect("live node should close ingress and stop before timeout");
-
-        assert_eq!(handle.state(), NodeState::Stopped);
-    }
-
-    #[rstest]
-    #[tokio::test(flavor = "current_thread")]
-    async fn test_run_aborts_startup_when_external_ingress_receiver_unavailable() {
-        let closed = Rc::new(Cell::new(false));
-        let ingress = FailingExternalIngress::new(closed.clone());
-
-        let config = LiveNodeConfig {
-            environment: Environment::Sandbox,
-            exec_engine: crate::config::LiveExecutionEngineConfig {
-                reconciliation: false,
-                ..Default::default()
-            },
-            delay_post_stop: Duration::ZERO,
-            timeout_connection: Duration::from_millis(500),
-            timeout_disconnection: Duration::from_millis(500),
-            ..Default::default()
-        };
-
-        let mut node = LiveNodeBuilder::from_config(config)
-            .unwrap()
-            .with_external_ingress(Box::new(ingress))
-            .build()
-            .expect("node builds with external message bus ingress");
-        let handle = node.handle();
-
-        let err = node.run().await.expect_err("run should fail");
-
-        assert!(
-            err.to_string()
-                .contains("external ingress receiver unavailable")
-        );
-        assert_eq!(handle.state(), NodeState::Stopped);
-        assert!(closed.get());
+        assert_eq!(node.config.timeout_connection, Duration::from_secs(30));
+        assert_eq!(node.config.timeout_reconciliation, Duration::from_secs(60));
+        assert_eq!(node.config.timeout_portfolio, Duration::from_secs(15));
     }
 
     #[rstest]
@@ -10715,75 +9804,6 @@ mod tests {
                 .last_event(),
             Some(after)
         );
-    }
-
-    #[rstest]
-    fn test_node_build_rejects_reentry_and_releases_thread_after_factory_failure() {
-        let result = LiveNodeBuilder::new(TraderId::default(), Environment::Live)
-            .unwrap()
-            .with_event_store(|_instance_id: UUID4, _clock: Rc<RefCell<dyn Clock>>| {
-                let error = LiveNode::build("Reentrant".to_string(), None).unwrap_err();
-                assert!(
-                    error
-                        .to_string()
-                        .contains("already exists or is being built")
-                );
-                anyhow::bail!("Event store construction failed")
-            })
-            .build();
-
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Event store construction failed"
-        );
-
-        let node = LiveNode::build("Retry".to_string(), None).unwrap();
-        assert_eq!(node.state(), NodeState::Idle);
-    }
-
-    #[rstest]
-    fn test_node_build_allows_separate_threads() {
-        let node = LiveNode::build("First".to_string(), None).unwrap();
-
-        let other_state = std::thread::spawn(|| {
-            let other = LiveNode::build("OtherThread".to_string(), None).unwrap();
-            other.state()
-        })
-        .join()
-        .unwrap();
-
-        assert_eq!(node.state(), NodeState::Idle);
-        assert_eq!(other_state, NodeState::Idle);
-    }
-
-    #[rstest]
-    fn test_node_build_releases_thread_after_drop() {
-        let mut node = LiveNode::build("First".to_string(), None).unwrap();
-        node.dispose();
-        assert!(LiveNode::build("WhileRetained".to_string(), None).is_err());
-        drop(node);
-
-        let replacement = LiveNode::build("Replacement".to_string(), None).unwrap();
-        assert_eq!(replacement.state(), NodeState::Idle);
-    }
-
-    #[rstest]
-    fn test_node_build_releases_thread_after_failure(#[values(false, true)] builder: bool) {
-        let config = LiveNodeConfig {
-            event_store: Some(EventStoreConfig::default()),
-            ..Default::default()
-        };
-
-        let result = if builder {
-            LiveNodeBuilder::from_config(config).unwrap().build()
-        } else {
-            LiveNode::build("Failure".to_string(), Some(config))
-        };
-
-        assert!(result.unwrap_err().to_string().contains("factory"));
-
-        let node = LiveNode::build("Retry".to_string(), None).unwrap();
-        assert_eq!(node.state(), NodeState::Idle);
     }
 
     #[cfg(feature = "python")]
@@ -10860,27 +9880,6 @@ mod tests {
 
         assert!(pending.drain_data());
         assert!(pending.data_evts.is_empty());
-    }
-
-    fn stub_data_event() -> DataEvent {
-        use nautilus_model::instruments::{InstrumentAny, stubs::crypto_perpetual_ethusdt};
-
-        DataEvent::Data(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()).into())
-    }
-
-    fn stub_data_command() -> DataCommand {
-        use nautilus_common::messages::data::{SubscribeCommand, subscribe::SubscribeInstruments};
-        use nautilus_core::{UUID4, UnixNanos};
-        use nautilus_model::identifiers::Venue;
-
-        DataCommand::Subscribe(SubscribeCommand::Instruments(SubscribeInstruments::new(
-            None,
-            Venue::from("TEST"),
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-            None,
-        )))
     }
 
     fn stub_system_command() -> SystemCommand {
@@ -11021,32 +10020,6 @@ mod tests {
                 None, // correlation_id
             )),
         )
-    }
-
-    fn stub_exec_event() -> ExecutionEvent {
-        use nautilus_model::{
-            enums::{LiquiditySide, OrderSide},
-            identifiers::{AccountId, InstrumentId, TradeId, VenueOrderId},
-            reports::FillReport,
-            types::{Money, Price, Quantity},
-        };
-
-        ExecutionEvent::Report(ExecutionReport::Fill(Box::new(FillReport::new(
-            AccountId::from("TEST-001"),
-            InstrumentId::from("TEST.VENUE"),
-            VenueOrderId::from("V-001"),
-            TradeId::from("T-001"),
-            OrderSide::Buy,
-            Quantity::from("1.0"),
-            Price::from("100.0"),
-            Money::from("0.01 USD"),
-            LiquiditySide::Maker,
-            None,
-            None,
-            nautilus_core::UnixNanos::default(),
-            nautilus_core::UnixNanos::default(),
-            None,
-        ))))
     }
 
     #[rstest]
@@ -11382,115 +10355,101 @@ mod tests {
     }
 
     #[rstest]
-    fn test_flush_all_pending_buffers_submitted_batch_as_individual_events() {
-        let (_time_tx, mut time_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<TimeEventMessage>>();
-        let (_system_evt_tx, mut system_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<SystemEvent>>();
-        let (_system_cmd_tx, mut system_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<SystemCommand>>();
-        let (_data_evt_tx, mut data_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataEvent>>();
-        let (_data_cmd_tx, mut data_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataCommand>>();
-        let (exec_evt_tx, mut exec_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<ExecutionEvent>>();
-        let (_exec_cmd_tx, mut exec_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<TradingCommandMessage>>();
-
-        let mut pending = PendingEvents::default();
-
-        exec_evt_tx
-            .send((stub_submitted_batch_event()).into())
-            .unwrap();
-
-        let mut receivers = RunnerReceivers {
-            time_evt: &mut time_rx,
-            system_evt: &mut system_evt_rx,
-            system_cmd: &mut system_cmd_rx,
-            exec_evt: &mut exec_evt_rx,
-            exec_cmd: &mut exec_cmd_rx,
-            data_evt: &mut data_evt_rx,
-            data_cmd: &mut data_cmd_rx,
-        };
-
-        flush_all_pending(&mut pending, &mut receivers);
-
-        // Batch should be unpacked into individual Submitted events then drained
-        assert!(pending.order_evts.is_empty());
-        assert!(exec_evt_rx.try_recv().is_err());
-    }
-
-    #[rstest]
-    fn test_flush_all_pending_buffers_canceled_batch_as_individual_events() {
-        let (_time_tx, mut time_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<TimeEventMessage>>();
-        let (_system_evt_tx, mut system_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<SystemEvent>>();
-        let (_system_cmd_tx, mut system_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<SystemCommand>>();
-        let (_data_evt_tx, mut data_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataEvent>>();
-        let (_data_cmd_tx, mut data_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<DataCommand>>();
-        let (exec_evt_tx, mut exec_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<ExecutionEvent>>();
-        let (_exec_cmd_tx, mut exec_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<TradingCommandMessage>>();
-
-        let mut pending = PendingEvents::default();
-
-        exec_evt_tx
-            .send((stub_canceled_batch_event()).into())
-            .unwrap();
-
-        let mut receivers = RunnerReceivers {
-            time_evt: &mut time_rx,
-            system_evt: &mut system_evt_rx,
-            system_cmd: &mut system_cmd_rx,
-            exec_evt: &mut exec_evt_rx,
-            exec_cmd: &mut exec_cmd_rx,
-            data_evt: &mut data_evt_rx,
-            data_cmd: &mut data_cmd_rx,
-        };
-
-        flush_all_pending(&mut pending, &mut receivers);
-
-        // Batch should be unpacked into individual Canceled events then drained
-        assert!(pending.order_evts.is_empty());
-        assert!(exec_evt_rx.try_recv().is_err());
-    }
-
-    #[rstest]
     #[case::submitted(stub_submitted_batch_event, OrderEventType::Submitted, ["O-001", "O-002"])]
     #[case::accepted(stub_accepted_batch_event, OrderEventType::Accepted, ["O-017", "O-023"])]
     #[case::canceled(stub_canceled_batch_event, OrderEventType::Canceled, ["O-001", "O-002"])]
-    fn test_flush_all_pending_expands_batch_into_order_evts_before_drain(
+    #[tokio::test]
+    async fn test_startup_dispatches_buffered_order_and_batch_at_flush(
         #[case] make_event: fn() -> ExecutionEvent,
         #[case] event_type: OrderEventType,
         #[case] client_order_ids: [&str; 2],
+        #[values(false, true)] batch_during_connect: bool,
     ) {
-        let (exec_evt_tx, mut exec_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<DispatchMessage<ExecutionEvent>>();
+        let runner = AsyncRunner::new();
+        runner.bind_senders();
+        let sender = get_exec_event_sender();
+        let mut channels = runner.take_channels();
 
-        exec_evt_tx.send(make_event().into()).unwrap();
+        let mut receivers = RunnerReceivers {
+            time_evt: &mut channels.time_evt_rx,
+            system_evt: &mut channels.system_evt_rx,
+            system_cmd: &mut channels.system_cmd_rx,
+            exec_evt: &mut channels.exec_evt_rx,
+            exec_cmd: &mut channels.exec_cmd_rx,
+            data_evt: &mut channels.data_evt_rx,
+            data_cmd: &mut channels.data_cmd_rx,
+        };
 
-        let mut pending = PendingEvents::default();
-        while let Ok(evt) = exec_evt_rx.try_recv() {
-            pending.push_exec_event(evt);
+        let received = Rc::new(RefCell::new(Vec::new()));
+        msgbus::register_order_event_endpoint(
+            MessagingSwitchboard::exec_engine_process(),
+            TypedIntoHandler::from({
+                let received = received.clone();
+                move |event: OrderEventAny| {
+                    received
+                        .borrow_mut()
+                        .push((event.event_type(), event.client_order_id()));
+                }
+            }),
+        );
+
+        let buffered = ClientOrderId::from("O-BUFFERED");
+        let submitted = OrderSubmittedSpec::builder()
+            .client_order_id(buffered)
+            .build();
+        sender
+            .send(ExecutionEvent::Order(OrderEventAny::Submitted(submitted)))
+            .unwrap();
+
+        let trailing = ClientOrderId::from("O-TRAILING");
+
+        let send_batch_and_fill = || {
+            sender.send(make_event()).unwrap();
+            let fill = OrderFilledSpec::builder().client_order_id(trailing).build();
+            sender
+                .send(ExecutionEvent::Order(OrderEventAny::Filled(fill)))
+                .unwrap();
+        };
+
+        if batch_during_connect {
+            send_batch_and_fill();
         }
 
-        let (event_types, order_ids): (Vec<_>, Vec<_>) = pending
-            .order_evts
-            .drain(..)
-            .map(|event| event.dispatch(|event| (event.event_type(), event.client_order_id())))
-            .unzip();
-        assert_eq!(order_ids, client_order_ids.map(ClientOrderId::from));
-        assert!(
-            event_types
+        let mut pending = PendingEvents::default();
+
+        {
+            let (connected, connection) = tokio::sync::oneshot::channel();
+            let connecting = drive_with_event_buffering(connection, &mut pending, &mut receivers);
+            tokio::pin!(connecting);
+            assert!(futures_util::poll!(&mut connecting).is_pending());
+            connected.send(()).unwrap();
+            connecting.await.unwrap();
+        }
+
+        assert!(receivers.exec_evt.is_empty());
+        assert!(received.borrow().is_empty());
+
+        if !batch_during_connect {
+            send_batch_and_fill();
+        }
+
+        flush_all_pending(&mut pending, &mut receivers);
+
+        let received = received.borrow();
+        assert_eq!(
+            received
                 .iter()
-                .all(|actual_type| actual_type == &event_type)
+                .map(|(event_type, id)| (event_type, *id))
+                .collect::<Vec<_>>(),
+            [
+                (&OrderEventType::Submitted, buffered),
+                (&event_type, ClientOrderId::from(client_order_ids[0])),
+                (&event_type, ClientOrderId::from(client_order_ids[1])),
+                (&OrderEventType::Filled, trailing),
+            ]
         );
+        assert!(pending.is_empty());
+        assert!(channels.exec_evt_rx.try_recv().is_err());
     }
 
     #[rstest]
@@ -13609,181 +12568,6 @@ mod tests {
         ]))
     }
 
-    #[derive(Debug)]
-    struct CapturedEgressMessage {
-        topic: String,
-        payload: Bytes,
-    }
-
-    type CapturedEgressMessages = Rc<RefCell<Vec<CapturedEgressMessage>>>;
-    type SharedClosed = Rc<Cell<bool>>;
-
-    #[derive(Debug)]
-    struct CapturingExternalIngress {
-        rx: Option<tokio::sync::mpsc::Receiver<BusMessage>>,
-        closed: SharedClosed,
-    }
-
-    impl CapturingExternalIngress {
-        fn new(rx: tokio::sync::mpsc::Receiver<BusMessage>, closed: SharedClosed) -> Self {
-            Self {
-                rx: Some(rx),
-                closed,
-            }
-        }
-    }
-
-    impl MessageBusExternalIngress for CapturingExternalIngress {
-        fn is_closed(&self) -> bool {
-            self.closed.get()
-        }
-
-        fn take_receiver(&mut self) -> anyhow::Result<tokio::sync::mpsc::Receiver<BusMessage>> {
-            self.rx
-                .take()
-                .ok_or_else(|| anyhow::anyhow!("external ingress receiver already taken"))
-        }
-
-        fn close(&mut self) {
-            self.closed.set(true);
-        }
-    }
-
-    #[derive(Debug)]
-    struct FailingExternalIngress {
-        closed: SharedClosed,
-    }
-
-    impl FailingExternalIngress {
-        fn new(closed: SharedClosed) -> Self {
-            Self { closed }
-        }
-    }
-
-    impl MessageBusExternalIngress for FailingExternalIngress {
-        fn is_closed(&self) -> bool {
-            self.closed.get()
-        }
-
-        fn take_receiver(&mut self) -> anyhow::Result<tokio::sync::mpsc::Receiver<BusMessage>> {
-            anyhow::bail!("external ingress receiver unavailable")
-        }
-
-        fn close(&mut self) {
-            self.closed.set(true);
-        }
-    }
-
-    struct CapturingExternalEgress {
-        publications: CapturedEgressMessages,
-        closed: SharedClosed,
-    }
-
-    impl CapturingExternalEgress {
-        fn new() -> (Self, CapturedEgressMessages, SharedClosed) {
-            let publications = Rc::new(RefCell::new(Vec::new()));
-            let closed = Rc::new(Cell::new(false));
-
-            (
-                Self {
-                    publications: publications.clone(),
-                    closed: closed.clone(),
-                },
-                publications,
-                closed,
-            )
-        }
-    }
-
-    impl MessageBusExternalEgress for CapturingExternalEgress {
-        fn is_closed(&self) -> bool {
-            self.closed.get()
-        }
-
-        fn publish(&self, message: BusMessage) {
-            self.publications.borrow_mut().push(CapturedEgressMessage {
-                topic: message.topic.to_string(),
-                payload: message.payload,
-            });
-        }
-
-        fn close(&mut self) {
-            self.closed.set(true);
-        }
-    }
-
-    struct CapturingBackingFactory {
-        publications: Arc<Mutex<Vec<CapturedEgressMessage>>>,
-        closed: Arc<AtomicBool>,
-        rx: Mutex<Option<tokio::sync::mpsc::Receiver<BusMessage>>>,
-    }
-
-    impl CapturingBackingFactory {
-        fn new(
-            publications: Arc<Mutex<Vec<CapturedEgressMessage>>>,
-            closed: Arc<AtomicBool>,
-            rx: Option<tokio::sync::mpsc::Receiver<BusMessage>>,
-        ) -> Self {
-            Self {
-                publications,
-                closed,
-                rx: Mutex::new(rx),
-            }
-        }
-    }
-
-    impl Debug for CapturingBackingFactory {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct(stringify!(CapturingBackingFactory))
-                .finish_non_exhaustive()
-        }
-    }
-
-    impl MessageBusBackingFactory for CapturingBackingFactory {
-        fn create(
-            &self,
-            _trader_id: TraderId,
-            _instance_id: UUID4,
-            _config: MessageBusConfig,
-        ) -> anyhow::Result<Box<dyn MessageBusBacking>> {
-            let rx = self.rx.lock().take();
-            Ok(Box::new(CapturingBacking {
-                publications: self.publications.clone(),
-                closed: self.closed.clone(),
-                rx,
-            }))
-        }
-    }
-
-    struct CapturingBacking {
-        publications: Arc<Mutex<Vec<CapturedEgressMessage>>>,
-        closed: Arc<AtomicBool>,
-        rx: Option<tokio::sync::mpsc::Receiver<BusMessage>>,
-    }
-
-    impl MessageBusBacking for CapturingBacking {
-        fn is_closed(&self) -> bool {
-            self.closed.load(Ordering::Relaxed)
-        }
-
-        fn publish(&self, message: BusMessage) {
-            self.publications.lock().push(CapturedEgressMessage {
-                topic: message.topic.to_string(),
-                payload: message.payload,
-            });
-        }
-
-        fn take_receiver(&mut self) -> anyhow::Result<tokio::sync::mpsc::Receiver<BusMessage>> {
-            self.rx
-                .take()
-                .ok_or_else(|| anyhow::anyhow!("external ingress receiver unavailable"))
-        }
-
-        fn close(&mut self) {
-            self.closed.store(true, Ordering::Relaxed);
-        }
-    }
-
     mod report_acceptance {
         use futures_util::FutureExt;
         use nautilus_common::clients::ExecutionReportTask;
@@ -14455,11 +13239,12 @@ mod tests {
     }
 
     mod shutdown {
+        #[cfg(target_os = "linux")]
+        use nautilus_common::live::dst::time;
         use nautilus_common::{
             clients::ExecutionReportTask,
             component::component_state,
             enums::ComponentState,
-            live::dst::time,
             messages::{
                 data::UnsubscribeCommand,
                 execution::{CancelOrder, QueryOrder},
@@ -14908,7 +13693,6 @@ mod tests {
                 timeout_portfolio: Duration::ZERO,
                 timeout_disconnection: Duration::from_millis(10),
                 delay_post_stop: Duration::from_millis(if manage_stop { 250 } else { 50 }),
-                timeout_shutdown: Duration::ZERO,
                 ..Default::default()
             };
 

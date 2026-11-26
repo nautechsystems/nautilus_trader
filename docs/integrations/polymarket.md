@@ -2413,10 +2413,11 @@ snapshots leave the book gated until a valid snapshot arrives or recovery starts
 A zero timeout disables initial and reconnect deadlines, plus per-attempt snapshot deadlines
 within the 180-second retry budget. The budget still ends a pending attempt; later attempts time out after one minute.
 
-The venue sends a `book` snapshot on first subscribe and ignores duplicate subscribes. A book-delta
-subscription can join an asset held by quotes, trades, or resolution watches. Without an accepted
-snapshot, it starts recovery unless an armed deadline or running recovery already covers the book.
-Recovery cycles the asset's subscription until a valid snapshot arrives.
+On first subscribe, the venue sends a `book` snapshot if the book is available. The venue ignores
+duplicate subscribes. A book-delta subscription can join an asset held by quotes, trades, or
+resolution watches. Without an accepted snapshot, it starts recovery unless an armed deadline or
+running recovery already covers the book. Recovery cycles the asset's subscription until a valid
+snapshot arrives.
 
 A single `price_change` payload can contain interleaved updates for several assets. The adapter
 groups book updates by instrument, then splits consecutive updates by hash. Quote processing remains
@@ -2501,15 +2502,21 @@ exact wire values and level order. It logs and rejects a mismatch before the sna
 - Emit snapshot-derived deltas or quotes.
 - Resume gated book deltas.
 
-For book-delta subscribers, a hash rejection drops the comparison book and gates `price_change` deltas:
+For book-delta subscribers, rejecting a decoded `book` message gates `price_change` deltas. Rejections
+include hash mismatches, invalid timestamps or levels, and snapshots the adapter cannot apply. A
+hash mismatch also drops the comparison book.
 
 - An armed initial or reconnect deadline starts recovery at expiry.
-- During recovery, a mismatch fails the attempt and resubscribes immediately, without waiting for its snapshot deadline.
-- Otherwise, recovery starts immediately.
+- After a confirmed recovery resubscribe, rejection fails the attempt before its snapshot deadline.
+  A stale snapshot can also fail that attempt.
+- With no recovery owner or armed deadline, recovery starts immediately.
 
-The next accepted snapshot emits a full `CLEAR` reseed, including with effective deltas.
+After a hash mismatch, the next accepted snapshot emits a full `CLEAR` reseed, including with effective deltas.
 
-After exhausting its retry budget, recovery retries at intervals that double from one to fifteen minutes.
+After exhausting its retry budget, recovery retries at intervals that double from one to fifteen
+minutes. For a book with no accepted snapshot in its current book-delta subscription, a confirmed
+resubscribe followed by a snapshot timeout skips the rest of the retry budget. A valid snapshot can
+complete recovery between attempts.
 
 [Polymarket book messages](https://docs.polymarket.com/market-data/realtime-data) can omit hash inputs
 such as `tick_size` and `last_trade_price`. Instrument metadata supplies missing `min_order_size` and
@@ -3257,7 +3264,7 @@ Class/struct: `PolymarketDataClientConfig`.
 | `http_timeout_secs`                   | `60`      | HTTP timeout in seconds.                                                                      |
 | `ws_timeout_secs`                     | `30`      | Positive WebSocket timeout in seconds per connection attempt, including reconnects.           |
 | `ws_max_subscriptions`                | `200`     | Per-connection subscription cap; the market pool shards across connections at this bound.     |
-| `update_instruments_interval_mins`    | `60`      | Instrument catalog refresh interval in minutes; pass `None` to disable it.                    |
+| `update_instruments_interval_mins`    | `60`      | Interval (minutes) between instrument catalog refreshes. `None` disables periodic refresh.    |
 | `subscribe_new_markets`               | `false`   | Subscribe to discovery and resolution events; also enables `best_bid_ask` quote ticks.        |
 | `new_market_filter`                   | `None`    | Rust-only filter applied to newly discovered markets before instrument emission.              |
 | `new_market_fetch_max_concurrency`    | `8`       | Bound concurrent market fetches from discovery events.                                        |
@@ -3269,12 +3276,12 @@ Class/struct: `PolymarketDataClientConfig`.
 | `auto_load_retry_delay_initial_secs`  | `5.0`     | Initial auto-load retry delay in seconds.                                                     |
 | `auto_load_retry_delay_max_secs`      | `15.0`    | Maximum auto-load retry delay in seconds.                                                     |
 | `resolve_poll_enabled`                | `true`    | Poll expired watched conditions for resolution.                                               |
-| `resolve_poll_interval_secs`          | `30`      | Resolution polling interval in seconds.                                                       |
+| `resolve_poll_interval_secs`          | `30`      | Interval (seconds) between resolution polls.                                                  |
 | `resolve_poll_grace_secs`             | `10`      | Delay in seconds after expiry before polling begins.                                          |
 | `resolve_poll_max_wait_secs`          | `1,800`   | Pause automatic polling after this many seconds from expiration.                              |
 | `transport_backend`                   | `Sockudo` | WebSocket transport implementation.                                                           |
 | `book_snapshot_timeout_secs`          | `10`      | Snapshot wait in seconds; `0` disables these deadlines.                                       |
-| `book_stale_check_interval_secs`      | `5`       | Book feed staleness check interval in seconds.                                                |
+| `book_stale_check_interval_secs`      | `5`       | Interval (seconds) between book feed staleness checks.                                        |
 | `book_stale_threshold_secs`           | `0`       | Maximum book feed silence in seconds before reporting stale; `0` disables the monitor.        |
 
 Retry delays must be finite and nonnegative, and the maximum must be at least the initial delay.

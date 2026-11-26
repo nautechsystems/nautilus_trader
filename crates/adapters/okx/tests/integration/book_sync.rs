@@ -87,7 +87,7 @@ impl BookSession {
         spawner.clone().spawn(async move {
             let http = OKXHttpClient::default();
             let config = OKXDataClientConfig::default();
-            let update_lock = InstrumentUpdateLock::default();
+            let update_lock = parking_lot::Mutex::default();
             let mut quotes = QuoteCache::new();
             let mut funding = AHashMap::new();
             let indices = Arc::new(AtomicMap::new());

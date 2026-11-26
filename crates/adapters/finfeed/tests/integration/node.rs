@@ -374,10 +374,9 @@ fn data_tester_node(config: FinFeedDataClientConfig) -> LiveNode {
         .with_load_state(false)
         .with_save_state(false)
         .with_reconciliation(false)
-        .with_timeout_connection(timeout)
-        .with_timeout_portfolio(0)
+        .with_timeout_connection_secs(timeout)
+        .with_timeout_portfolio_secs(0)
         .with_delay_post_stop_secs(0)
-        .with_delay_shutdown_secs(0)
         .add_data_client(
             None,
             Box::new(FinFeedDataClientFactory::new()),

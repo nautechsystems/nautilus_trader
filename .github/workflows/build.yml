@@ -63,7 +63,6 @@ jobs:
       github-changed: ${{ steps.plan.outputs.github_changed }}
       untrusted_pr: ${{ steps.policy.outputs.untrusted_pr }}
       publish_r2: ${{ steps.wheel-publication.outputs.publish_r2 }}
-      publish_development: ${{ steps.wheel-publication.outputs.publish_development }}
       publish_environment: ${{ steps.wheel-publication.outputs.publish_environment }}
       wheel_matrix: ${{ steps.wheel-publication.outputs.wheel_matrix }}
       wheel_version: ${{ steps.wheel-publication.outputs.wheel_version }}
@@ -427,6 +426,18 @@ jobs:
           POSTGRES_PASSWORD: pass
           POSTGRES_DATABASE: nautilus
 
+      - name: Check generated file drift
+        if: env.PYTHON_VERSION == '3.13'
+        env:
+          TARGET_DIR: >-
+            ${{ github.event_name == 'pull_request'
+            && needs.plan.outputs.untrusted_pr != 'false'
+            && format('{0}/target/py-stubs', github.workspace)
+            || '/home/runner/.cache/cargo-target/py-stubs' }}
+        run: |
+          make py-stubs
+          bash scripts/ci/check-generated-drift.bash
+
       - name: Update version in pyproject.toml
         if: ${{ github.ref != 'refs/heads/master' }}
         working-directory: ${{ env.PACKAGE_DIR }}
@@ -441,6 +452,7 @@ jobs:
       - name: Build wheel
         working-directory: ${{ env.PACKAGE_DIR }}
         run: |
+          bash ../scripts/package-version.sh --check > /dev/null
           MATURIN_VERSION="$(bash ../scripts/maturin-version.bash)"
           uv run --no-project --no-build --with "maturin==${MATURIN_VERSION}" -- \
             maturin build --locked --profile "$MATURIN_PROFILE" --out ../dist
@@ -448,18 +460,6 @@ jobs:
       - name: Run Python tests
         working-directory: ${{ env.PACKAGE_DIR }}
         run: bash ../scripts/ci/test-wheel.bash
-
-      - name: Check generated file drift
-        if: env.PYTHON_VERSION == '3.13'
-        env:
-          TARGET_DIR: >-
-            ${{ github.event_name == 'pull_request'
-            && needs.plan.outputs.untrusted_pr != 'false'
-            && format('{0}/target/py-stubs', github.workspace)
-            || '/home/runner/.cache/cargo-target/py-stubs' }}
-        run: |
-          make py-stubs
-          bash scripts/ci/check-generated-drift.bash
 
       - name: Upload wheel artifact
         uses: $/.github/actions/upload-artifact-wheel
@@ -657,9 +657,12 @@ jobs:
         run: bash scripts/ci/report-disk-space.bash "before Rust tests"
 
       - name: Run Rust tests
-        run: >-
-          make cargo-test NEXTEST_PROFILE=ci
-          EXTRA_FEATURES="hypersync,nautilus-common/sbe,nautilus-infrastructure/postgres"
+        run: |
+          if [[ "$RUNNER_ENVIRONMENT" == "self-hosted" ]]; then
+            export NEXTEST_TEST_THREADS=8
+          fi
+          make cargo-test NEXTEST_PROFILE=ci \
+            EXTRA_FEATURES="hypersync,nautilus-common/sbe,nautilus-infrastructure/postgres"
 
       - name: Report disk space after Rust tests
         if: always()
@@ -681,12 +684,11 @@ jobs:
           - "3.13"
           - "3.14"
           - "3.15"
-    runs-on: depot-ubuntu-22.04-arm-8
+    runs-on: depot-ubuntu-22.04-arm-16
     defaults:
       run:
         shell: bash
     env:
-      BUILD_MODE: release
       RUST_BACKTRACE: 1
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-linux-arm
     steps:
@@ -705,8 +707,7 @@ jobs:
           persist-credentials: false
 
       - name: Common setup
-        # Depot Windows/ARM runners need ./ until they support runner >=2.336.0
-        uses: ./.github/actions/common-setup # zizmor: ignore[self-repository]
+        uses: $/.github/actions/common-setup
         with:
           python-version: ${{ matrix.python-version }}
           free-disk-space: "true"
@@ -724,6 +725,7 @@ jobs:
       - name: Build wheel
         working-directory: ${{ env.PACKAGE_DIR }}
         run: |
+          bash ../scripts/package-version.sh --check > /dev/null
           MATURIN_VERSION="$(bash ../scripts/maturin-version.bash)"
           uv run --no-project --no-build --with "maturin==${MATURIN_VERSION}" -- \
             maturin build --locked --release --out ../dist
@@ -733,8 +735,7 @@ jobs:
         run: bash ../scripts/ci/test-wheel.bash
 
       - name: Upload wheel artifact
-        # Depot Windows/ARM runners need ./ until they support runner >=2.336.0
-        uses: ./.github/actions/upload-artifact-wheel # zizmor: ignore[self-repository]
+        uses: $/.github/actions/upload-artifact-wheel
         with:
           retention-days: ${{ github.ref_name == 'master' && '7' || '1' }}
 
@@ -758,7 +759,6 @@ jobs:
       run:
         shell: bash
     env:
-      BUILD_MODE: release
       RUST_BACKTRACE: 1
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-macos
     steps:
@@ -799,6 +799,7 @@ jobs:
       - name: Build wheel
         working-directory: ${{ env.PACKAGE_DIR }}
         run: |
+          bash ../scripts/package-version.sh --check > /dev/null
           MATURIN_VERSION="$(bash ../scripts/maturin-version.bash)"
           uv run --no-project --no-build --with "maturin==${MATURIN_VERSION}" -- \
             maturin build --locked --release --out ../dist
@@ -832,7 +833,6 @@ jobs:
       run:
         shell: bash
     env:
-      BUILD_MODE: release
       RUST_BACKTRACE: 1
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-windows
     steps:
@@ -846,8 +846,7 @@ jobs:
           persist-credentials: false
 
       - name: Common setup
-        # Depot Windows/ARM runners need ./ until they support runner >=2.336.0
-        uses: ./.github/actions/common-setup # zizmor: ignore[self-repository]
+        uses: $/.github/actions/common-setup
         with:
           python-version: ${{ matrix.python-version }}
           free-disk-space: "true"
@@ -868,6 +867,7 @@ jobs:
       - name: Build wheel
         working-directory: ${{ env.PACKAGE_DIR }}
         run: |
+          bash ../scripts/package-version.sh --check > /dev/null
           MATURIN_VERSION="$(bash ../scripts/maturin-version.bash)"
           uv run --no-project --no-build --with "maturin==${MATURIN_VERSION}" -- \
             maturin build --locked --release --out ../dist
@@ -877,8 +877,7 @@ jobs:
         run: bash ../scripts/ci/test-wheel.bash
 
       - name: Upload wheel artifact
-        # Depot Windows/ARM runners need ./ until they support runner >=2.336.0
-        uses: ./.github/actions/upload-artifact-wheel # zizmor: ignore[self-repository]
+        uses: $/.github/actions/upload-artifact-wheel
         with:
           retention-days: ${{ github.ref_name == 'master' && '7' || '1' }}
 
@@ -1188,10 +1187,7 @@ jobs:
           build-type: "test"
           free-disk-space: "true"
           uv-cache-enabled: "false"
-          prek-cache-enabled: "false"
-          capnp-cache-enabled: "false"
           rust-cache-enabled: "false"
-          rust-cache-save-if: "false"
 
       - name: Check Cargo crate publish plan
         run: bash scripts/ci/publish-cargo-crates.sh --check
@@ -1337,7 +1333,6 @@ jobs:
           fi
 
       - name: Create draft GitHub release
-        id: create-release
         # zizmor: ignore[superfluous-actions] Retains idempotent draft updates and retries
         # https://github.com/softprops/action-gh-release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
@@ -1380,8 +1375,6 @@ jobs:
           python-version: "3.13"
           free-disk-space: "true"
           uv-cache-enabled: "false"
-          prek-cache-enabled: "false"
-          capnp-cache-enabled: "false"
           rust-cache-enabled: "false"
 
       - name: Build sdist
@@ -1646,10 +1639,7 @@ jobs:
           python-version: "3.13"
           build-type: "release"
           uv-cache-enabled: "false"
-          prek-cache-enabled: "false"
-          capnp-cache-enabled: "false"
           rust-cache-enabled: "false"
-          rust-cache-save-if: "false"
 
       - name: Check Cargo crate publish plan
         run: bash scripts/ci/publish-cargo-crates.sh --check

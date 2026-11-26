@@ -2,6 +2,7 @@ self-hosted-runner:
   labels:
     - depot-ubuntu-22.04-8
     - depot-ubuntu-22.04-arm-8
+    - depot-ubuntu-22.04-arm-16
     - depot-windows-2022-8
     - self-hosted-linux-x86
     - build

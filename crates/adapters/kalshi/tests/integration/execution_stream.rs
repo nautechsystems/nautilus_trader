@@ -41,6 +41,7 @@ use nautilus_common::{
             QueryOrder, SubmitOrder, TradingCommand,
         },
     },
+    msgbus::{publish_instrument, switchboard::get_instrument_topic},
     testing::wait_until_async,
 };
 use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
@@ -645,6 +646,134 @@ async fn bootstrap_accepts_advancing_timestamps_and_marks_and_reconnect_uses_a_n
         client.dispose().unwrap();
         assert!(client.connect().await.unwrap_err().to_string().contains("disposed"));
     }).await.unwrap();
+}
+
+#[rstest]
+#[case::valid_definition(false)]
+#[case::invalid_shard(true)]
+#[tokio::test]
+async fn position_report_uses_definition_published_while_rest_lookup_is_pending(
+    #[case] invalid_shard: bool,
+) {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let peer = Peer::new(None).await;
+        let (client, _, _) = client(&peer);
+        let mut instrument = bootstrap_instrument();
+
+        if invalid_shard {
+            peer.market.lock().unwrap()["exchange_index"] = 4.into();
+        }
+
+        let fixtures: Value =
+            serde_json::from_str(include_str!("../../test_data/rest_responses.json")).unwrap();
+        let mut position = fixtures["positions"]["market_positions"][0].clone();
+        position["ticker"] = instrument.id.symbol.as_str().into();
+        position["position_fp"] = "1.25".into();
+        position["exchange_index"] = 3.into();
+        *peer.positions.lock().unwrap() =
+            json!({"market_positions": [position], "event_positions": [], "cursor": ""});
+
+        let command = GeneratePositionStatusReports::new(
+            UUID4::new(),
+            UnixNanos::from(1),
+            Some(instrument.id),
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let market = peer.market_gate.acquire().await.unwrap();
+        let reports = client.generate_position_status_reports(&command);
+        tokio::pin!(reports);
+        tokio::select! {
+            result = &mut reports => panic!("report completed before its market lookup: {result:?}"),
+            () = peer.market_read.notified() => {},
+        }
+
+        instrument.ts_init = get_atomic_clock_realtime().get_time_ns();
+        instrument.size_precision += 1;
+        instrument.size_increment = Quantity::from("0.001");
+        let id = instrument.id;
+        let precision = instrument.size_precision;
+        publish_instrument(
+            get_instrument_topic(id),
+            &InstrumentAny::BinaryOption(instrument),
+        );
+        drop(market);
+
+        let reports = reports.await.unwrap();
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].instrument_id, id);
+        assert_eq!(reports[0].position_side, PositionSide::Long);
+        assert_eq!(reports[0].quantity, Quantity::from("1.250"));
+        assert_eq!(reports[0].quantity.precision, precision);
+    })
+    .await
+    .unwrap();
+}
+
+#[rstest]
+#[case::valid_definition(false)]
+#[case::invalid_shard(true)]
+#[tokio::test]
+async fn private_recovery_uses_definition_published_while_rest_lookup_is_pending(
+    #[case] invalid_shard: bool,
+) {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let peer = Peer::new(None).await;
+        let (mut client, cache, mut output) = client(&peer);
+        let mut definition = bootstrap_instrument();
+
+        if invalid_shard {
+            peer.market.lock().unwrap()["exchange_index"] = 4.into();
+        }
+
+        let fixtures: Value =
+            serde_json::from_str(include_str!("../../test_data/rest_responses.json")).unwrap();
+        let mut position = fixtures["positions"]["market_positions"][0].clone();
+        position["ticker"] = definition.id.symbol.as_str().into();
+        position["position_fp"] = "0.00".into();
+        position["exchange_index"] = 3.into();
+        *peer.positions.lock().unwrap() =
+            json!({"market_positions": [position], "event_positions": [], "cursor": ""});
+
+        let market = peer.market_gate.acquire().await.unwrap();
+        let connect = client.connect();
+        tokio::pin!(connect);
+        tokio::select! {
+            result = &mut connect => panic!("connect completed before recovery's market lookup: {result:?}"),
+            () = peer.market_read.notified() => {},
+        }
+
+        let id = definition.id;
+        definition.ts_init = get_atomic_clock_realtime().get_time_ns();
+        definition.size_precision = 3;
+        definition.size_increment = Quantity::from("0.001");
+        publish_instrument(get_instrument_topic(id), &definition.into());
+        drop(market);
+
+        let report = tokio::select! {
+            result = &mut connect => panic!("connect completed before position recovery: {result:?}"),
+            event = output.recv() => match event.unwrap() {
+                ExecutionEvent::Report(ExecutionReport::Position(report)) => report,
+                event => panic!("expected position report, was {event:?}"),
+            },
+        };
+        let event = tokio::select! {
+            result = &mut connect => panic!("connect completed before account observation: {result:?}"),
+            event = output.recv() => event.unwrap(),
+        };
+        account(event, &cache);
+        connect.await.unwrap();
+
+        assert_eq!(report.instrument_id, id);
+        assert_eq!(report.position_side, PositionSide::Flat);
+        assert_eq!(report.quantity, Quantity::zero(3));
+        assert_eq!(report.quantity.precision, 3);
+    })
+    .await
+    .unwrap();
 }
 
 #[rstest]

@@ -30,7 +30,6 @@ use nautilus_model::{
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
-    instruments::InstrumentAny,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
 };
 
@@ -189,11 +188,6 @@ impl ExecutionClientAdapter {
         }
 
         Ok(mass_status)
-    }
-
-    /// Forwards an instrument update to the underlying execution client.
-    pub fn on_instrument(&mut self, instrument: InstrumentAny) {
-        self.client.on_instrument(instrument);
     }
 
     /// Registers an external order for tracking by the execution client.

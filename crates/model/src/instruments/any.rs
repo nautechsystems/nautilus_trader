@@ -26,7 +26,10 @@ use super::{
     option_spread::OptionSpread, perpetual_contract::PerpetualContract,
     tokenized_asset::TokenizedAsset,
 };
-use crate::types::{Price, Quantity};
+use crate::{
+    enums::OptionPremiumStyle,
+    types::{Price, Quantity},
+};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[enum_dispatch(Instrument)]
@@ -57,6 +60,16 @@ impl InstrumentAny {
         self.calculate_base_quantity(quantity, last_px)
     }
 
+    /// Returns the premium style specified on a vanilla option.
+    #[must_use]
+    pub const fn premium_style(&self) -> Option<OptionPremiumStyle> {
+        match self {
+            Self::CryptoOption(option) => option.premium_style,
+            Self::OptionContract(option) => option.premium_style,
+            _ => None,
+        }
+    }
+
     /// Returns true if the instrument is a spread instrument.
     #[must_use]
     pub fn is_spread(&self) -> bool {
@@ -67,6 +80,32 @@ impl InstrumentAny {
                 | Self::CryptoFuturesSpread(_)
                 | Self::CryptoOptionSpread(_)
         )
+    }
+
+    /// Compares the serialized instrument definitions, ignoring their event and initialization timestamps.
+    ///
+    /// Returns false if either definition cannot be serialized.
+    #[must_use]
+    pub fn same_definition(&self, other: &Self) -> bool {
+        fn normalized(instrument: &InstrumentAny) -> Option<serde_json::Value> {
+            let mut value = serde_json::to_value(instrument).ok()?;
+            if let Some(definition) = value
+                .as_object_mut()
+                .and_then(|obj| obj.values_mut().next())
+                .and_then(serde_json::Value::as_object_mut)
+            {
+                definition.remove("ts_event");
+                definition.remove("ts_init");
+            }
+
+            Some(value)
+        }
+
+        // A serialization failure compares as changed so updates are never suppressed
+        match (normalized(self), normalized(other)) {
+            (Some(a), Some(b)) => a == b,
+            _ => false,
+        }
     }
 }
 

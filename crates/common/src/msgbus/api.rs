@@ -23,7 +23,12 @@
 //! - Publishing messages to subscribers.
 //! - Sending messages to endpoints.
 
-use std::{any::Any, cell::RefCell, thread::LocalKey};
+use std::{
+    any::Any,
+    cell::RefCell,
+    rc::{Rc, Weak},
+    thread::LocalKey,
+};
 
 use nautilus_core::UUID4;
 #[cfg(feature = "defi")]
@@ -288,6 +293,41 @@ pub fn subscribe_instruments(
         handler,
         priority.unwrap_or(0),
     );
+}
+
+/// An instrument subscription that unregisters when dropped.
+#[derive(Debug)]
+pub struct InstrumentSubscription {
+    bus: Weak<RefCell<MessageBus>>,
+    pattern: MStr<Pattern>,
+    handler: TypedHandler<InstrumentAny>,
+}
+
+impl InstrumentSubscription {
+    /// Subscribes the handler on the current message bus.
+    #[must_use]
+    pub fn new(pattern: MStr<Pattern>, handler: TypedHandler<InstrumentAny>) -> Self {
+        let bus = get_message_bus();
+        bus.borrow_mut()
+            .router_instruments
+            .subscribe(pattern, handler.clone(), 0);
+
+        Self {
+            bus: Rc::downgrade(&bus),
+            pattern,
+            handler,
+        }
+    }
+}
+
+impl Drop for InstrumentSubscription {
+    fn drop(&mut self) {
+        if let Some(bus) = self.bus.upgrade() {
+            bus.borrow_mut()
+                .router_instruments
+                .unsubscribe(self.pattern, &self.handler);
+        }
+    }
 }
 
 /// Subscribes a handler to instrument close messages matching a pattern.

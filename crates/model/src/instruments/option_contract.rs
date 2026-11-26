@@ -28,7 +28,9 @@ use ustr::Ustr;
 
 use super::{Instrument, any::InstrumentAny, tick_scheme::check_tick_scheme};
 use crate::{
-    enums::{AssetClass, ExerciseStyle, InstrumentClass, OptionKind, SettlementType},
+    enums::{
+        AssetClass, ExerciseStyle, InstrumentClass, OptionKind, OptionPremiumStyle, SettlementType,
+    },
     identifiers::{InstrumentId, Symbol},
     types::{
         currency::Currency,
@@ -73,6 +75,9 @@ pub struct OptionContract {
     pub quote_currency: Currency,
     /// The currency used to settle the contract.
     pub settlement_currency: Currency,
+    /// The premium cash flow style; absent when unspecified.
+    #[serde(default)]
+    pub premium_style: Option<OptionPremiumStyle>,
     /// The exercise style; absent when unknown.
     #[serde(default)]
     pub exercise_style: Option<ExerciseStyle>,
@@ -132,6 +137,7 @@ impl OptionContract {
         strike_currency: Currency,
         quote_currency: Currency,
         settlement_currency: Currency,
+        premium_style: Option<OptionPremiumStyle>,
         exercise_style: Option<ExerciseStyle>,
         settlement_type: Option<SettlementType>,
         activation_ns: UnixNanos,
@@ -177,6 +183,7 @@ impl OptionContract {
             strike_currency,
             quote_currency,
             settlement_currency,
+            premium_style,
             exercise_style,
             settlement_type,
             activation_ns,
@@ -221,6 +228,7 @@ impl OptionContract {
         strike_currency: Currency,
         quote_currency: Currency,
         settlement_currency: Currency,
+        premium_style: Option<OptionPremiumStyle>,
         exercise_style: Option<ExerciseStyle>,
         settlement_type: Option<SettlementType>,
         activation_ns: UnixNanos,
@@ -252,6 +260,7 @@ impl OptionContract {
             strike_currency,
             quote_currency,
             settlement_currency,
+            premium_style,
             exercise_style,
             settlement_type,
             activation_ns,
@@ -436,7 +445,10 @@ mod tests {
     use ustr::Ustr;
 
     use crate::{
-        enums::{AssetClass, ExerciseStyle, InstrumentClass, OptionKind, SettlementType},
+        enums::{
+            AssetClass, ExerciseStyle, InstrumentClass, OptionKind, OptionPremiumStyle,
+            SettlementType,
+        },
         identifiers::{InstrumentId, Symbol},
         instruments::{Instrument, OptionContract, stubs::*},
         types::{Currency, Price, Quantity},
@@ -488,6 +500,7 @@ mod tests {
             Currency::USD(),
             None,
             None,
+            None,
             0.into(),
             0.into(),
             4, // mismatch
@@ -522,6 +535,7 @@ mod tests {
             Currency::USD(),
             Currency::USD(),
             Currency::USD(),
+            None,
             None,
             None,
             0.into(),
@@ -560,6 +574,7 @@ mod tests {
             Currency::USD(),
             Currency::USD(),
             Currency::USD(),
+            None,
             None,
             None,
             0.into(),
@@ -611,6 +626,7 @@ mod tests {
             Currency::JPY(),
             Currency::USD(),
             Currency::EUR(),
+            Some(OptionPremiumStyle::FuturesStyle),
             Some(ExerciseStyle::American),
             Some(SettlementType::Physical),
             1.into(),
@@ -644,6 +660,7 @@ mod tests {
             .strike_currency(Currency::JPY())
             .quote_currency(Currency::USD())
             .settlement_currency(Currency::EUR())
+            .premium_style(OptionPremiumStyle::FuturesStyle)
             .exercise_style(ExerciseStyle::American)
             .settlement_type(SettlementType::Physical)
             .activation_ns(1.into())
@@ -667,6 +684,7 @@ mod tests {
             built.underlying_instrument_id,
             Some(InstrumentId::from("AAPL.NASDAQ"))
         );
+        assert_eq!(built.premium_style, Some(OptionPremiumStyle::FuturesStyle));
         assert_eq!(built.exercise_style, Some(ExerciseStyle::American));
         assert_eq!(built.settlement_type, Some(SettlementType::Physical));
         assert_eq!(

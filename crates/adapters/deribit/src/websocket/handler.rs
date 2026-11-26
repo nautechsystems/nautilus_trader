@@ -35,7 +35,7 @@ use nautilus_common::{
     live::dst::time::{Duration, Instant},
 };
 use nautilus_core::{
-    AtomicSet, AtomicTime, UUID4, UnixNanos,
+    AtomicMap, AtomicSet, AtomicTime, UUID4, UnixNanos,
     string::secret::{SecretString, zeroize_json_value},
     time::get_atomic_clock_realtime,
 };
@@ -290,7 +290,7 @@ pub struct DeribitWsFeedHandler {
     auth_tracker: AuthTracker,
     subscriptions_state: SubscriptionState,
     retry_manager: RetryManager<DeribitWsError>,
-    instruments_cache: AHashMap<Ustr, InstrumentAny>,
+    instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
     option_greeks_subs: Arc<AtomicSet<InstrumentId>>,
     mark_price_subs: Arc<AtomicSet<InstrumentId>>,
     index_price_subs: Arc<AtomicSet<InstrumentId>>,
@@ -351,7 +351,7 @@ impl DeribitWsFeedHandler {
             auth_tracker,
             subscriptions_state,
             retry_manager: create_websocket_retry_manager(),
-            instruments_cache: AHashMap::new(),
+            instruments_cache: Arc::new(AtomicMap::new()),
             option_greeks_subs,
             mark_price_subs,
             index_price_subs,
@@ -375,6 +375,14 @@ impl DeribitWsFeedHandler {
             pending_outgoing: VecDeque::new(),
             subscribe_errors,
         }
+    }
+
+    pub(super) fn with_instruments_cache(
+        mut self,
+        cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
+    ) -> Self {
+        self.instruments_cache = cache;
+        self
     }
 
     /// Wires book recovery to the handler command channel with the configured timers.
@@ -1222,11 +1230,12 @@ impl DeribitWsFeedHandler {
             }
             HandlerCommand::InitializeInstruments(instruments) => {
                 log::debug!("Handler received {} instruments", instruments.len());
-                self.instruments_cache.clear();
-                for inst in instruments {
-                    self.instruments_cache
-                        .insert(inst.raw_symbol().inner(), inst);
-                }
+                self.instruments_cache.store(
+                    instruments
+                        .into_iter()
+                        .map(|instrument| (instrument.raw_symbol().inner(), instrument))
+                        .collect(),
+                );
             }
             HandlerCommand::UpdateInstrument(instrument) => {
                 log::trace!("Updating instrument: {}", instrument.raw_symbol());
@@ -1448,6 +1457,7 @@ impl DeribitWsFeedHandler {
         };
 
         let ts_init = self.ts_init();
+        let instruments = self.instruments_cache.load();
 
         match ws_msg {
             DeribitWsMessage::Response(response) => {
@@ -1593,7 +1603,7 @@ impl DeribitWsFeedHandler {
                                             let instrument_name_ustr = order_msg.instrument_name;
 
                                             if let Some(instrument) =
-                                                self.instruments_cache.get(&instrument_name_ustr)
+                                                instruments.get(&instrument_name_ustr)
                                                 && let Some(account_id) = self.account_id
                                             {
                                                 let event =
@@ -1753,7 +1763,7 @@ impl DeribitWsFeedHandler {
                                         );
 
                                         if let Some(instrument) =
-                                            self.instruments_cache.get(&instrument_name_ustr)
+                                            instruments.get(&instrument_name_ustr)
                                         {
                                             if let Some(account_id) = self.account_id {
                                                 let Some(mut context) = self.find_order_context(
@@ -1882,7 +1892,7 @@ impl DeribitWsFeedHandler {
                                         let instrument_name_ustr = order_msg.instrument_name;
 
                                         if let Some(instrument) =
-                                            self.instruments_cache.get(&instrument_name_ustr)
+                                            instruments.get(&instrument_name_ustr)
                                         {
                                             if let Some(account_id) = self.account_id {
                                                 match parse_user_order_msg(
@@ -1978,32 +1988,26 @@ impl DeribitWsFeedHandler {
                             match serde_json::from_str::<Vec<DeribitTradeMsg>>(data.get()) {
                                 Ok(trades) => {
                                     log::debug!("Received {} trades", trades.len());
-                                    let data_vec = parse_trades_data(
-                                        &trades,
-                                        &self.instruments_cache,
-                                        ts_init,
-                                    );
-
+                                    let data_vec =
+                                        parse_trades_data(&trades, &instruments, ts_init);
                                     if data_vec.is_empty() && !trades.is_empty() {
                                         let missing: Vec<&Ustr> = trades
                                             .iter()
                                             .map(|t| &t.instrument_name)
-                                            .filter(|name| {
-                                                !self.instruments_cache.contains_key(name)
-                                            })
+                                            .filter(|name| !instruments.contains_key(name))
                                             .collect();
 
                                         if missing.is_empty() {
                                             log::warn!(
                                                 "Received {} trades but parsed 0 (parse failures); cache size: {}",
                                                 trades.len(),
-                                                self.instruments_cache.len()
+                                                instruments.len()
                                             );
                                         } else {
                                             log::warn!(
                                                 "Trade message received but instrument(s) not found in cache: {:?} (cache size: {})",
                                                 missing,
-                                                self.instruments_cache.len()
+                                                instruments.len()
                                             );
                                         }
                                     } else if !data_vec.is_empty() {
@@ -2023,7 +2027,7 @@ impl DeribitWsFeedHandler {
                             match serde_json::from_str::<DeribitTickerMsg>(data.get()) {
                                 Ok(ticker_msg) => {
                                     if let Some(instrument) =
-                                        self.instruments_cache.get(&ticker_msg.instrument_name)
+                                        instruments.get(&ticker_msg.instrument_name)
                                     {
                                         // Emit OptionGreeks only if subscribed
                                         if self.option_greeks_subs.contains(&instrument.id())
@@ -2081,7 +2085,7 @@ impl DeribitWsFeedHandler {
                                         log::warn!(
                                             "Ticker message received but instrument '{}' not found in cache (cache size: {})",
                                             ticker_msg.instrument_name,
-                                            self.instruments_cache.len()
+                                            instruments.len()
                                         );
                                     }
                                 }
@@ -2102,9 +2106,7 @@ impl DeribitWsFeedHandler {
                                     let parts: Vec<&str> = channel.split('.').collect();
                                     if parts.len() >= 2 {
                                         let instrument_name = Ustr::from(parts[1]);
-
-                                        if let Some(instrument) =
-                                            self.instruments_cache.get(&instrument_name)
+                                        if let Some(instrument) = instruments.get(&instrument_name)
                                         {
                                             let funding_rate = parse_perpetual_to_funding_rate(
                                                 &perpetual_msg,
@@ -2118,7 +2120,7 @@ impl DeribitWsFeedHandler {
                                             log::warn!(
                                                 "Instrument {} not found in cache (cache size: {})",
                                                 instrument_name,
-                                                self.instruments_cache.len()
+                                                instruments.len()
                                             );
                                         }
                                     }
@@ -2135,7 +2137,7 @@ impl DeribitWsFeedHandler {
                             match serde_json::from_str::<DeribitQuoteMsg>(data.get()) {
                                 Ok(quote_msg) => {
                                     if let Some(instrument) =
-                                        self.instruments_cache.get(&quote_msg.instrument_name)
+                                        instruments.get(&quote_msg.instrument_name)
                                     {
                                         match parse_quote_msg(&quote_msg, instrument, ts_init) {
                                             Ok(quote) => {
@@ -2151,7 +2153,7 @@ impl DeribitWsFeedHandler {
                                         log::warn!(
                                             "Quote message received but instrument '{}' not found in cache (cache size: {})",
                                             quote_msg.instrument_name,
-                                            self.instruments_cache.len()
+                                            instruments.len()
                                         );
                                     }
                                 }
@@ -2207,7 +2209,7 @@ impl DeribitWsFeedHandler {
                                     );
 
                                     let instrument_id = if let Some(instrument) =
-                                        self.instruments_cache.get(&state_msg.instrument_name)
+                                        instruments.get(&state_msg.instrument_name)
                                     {
                                         instrument.id()
                                     } else {
@@ -2258,9 +2260,7 @@ impl DeribitWsFeedHandler {
                                     let instrument_name = Ustr::from(parts[2]);
                                     let resolution = parts[3];
 
-                                    if let Some(instrument) =
-                                        self.instruments_cache.get(&instrument_name)
-                                    {
+                                    if let Some(instrument) = instruments.get(&instrument_name) {
                                         let instrument_id = instrument.id();
 
                                         match resolution_to_bar_type(instrument_id, resolution) {
@@ -2361,8 +2361,7 @@ impl DeribitWsFeedHandler {
                                             VenueOrderId::new(venue_order_id_str.as_str());
                                         let instrument_name = order.instrument_name;
 
-                                        let Some(instrument) =
-                                            self.instruments_cache.get(&instrument_name)
+                                        let Some(instrument) = instruments.get(&instrument_name)
                                         else {
                                             log::warn!(
                                                 "Instrument {instrument_name} not found in cache"
@@ -2859,7 +2858,9 @@ impl DeribitWsFeedHandler {
             return None;
         }
 
-        let Some(instrument) = self.instruments_cache.get(&book_msg.instrument_name) else {
+        let instruments = self.instruments_cache.load();
+
+        let Some(instrument) = instruments.get(&book_msg.instrument_name) else {
             log::warn!(
                 "Book message received but instrument '{}' not found in cache (cache size: {})",
                 book_msg.instrument_name,
@@ -2958,7 +2959,9 @@ impl DeribitWsFeedHandler {
             return None;
         }
 
-        let Some(instrument) = self.instruments_cache.get(&book_msg.instrument_name) else {
+        let instruments = self.instruments_cache.load();
+
+        let Some(instrument) = instruments.get(&book_msg.instrument_name) else {
             log::warn!(
                 "Book snapshot instrument '{}' not found in cache",
                 book_msg.instrument_name
@@ -3408,7 +3411,9 @@ impl DeribitWsFeedHandler {
 
         let instrument_name_ustr = order_response.order.instrument_name;
 
-        let Some(instrument) = self.instruments_cache.get(&instrument_name_ustr) else {
+        let instruments = self.instruments_cache.load();
+
+        let Some(instrument) = instruments.get(&instrument_name_ustr) else {
             log::warn!("Instrument {instrument_name_ustr} not found in cache for order response");
             return None;
         };
@@ -3501,17 +3506,18 @@ impl DeribitWsFeedHandler {
         let mut reports = Vec::new();
         let mut completed_contexts = IndexMap::new();
 
+        let instruments = self.instruments_cache.load();
+
         for trade in trades {
             let instrument_name = trade.instrument_name;
+
             let Some((report, quote_currency)) =
-                self.instruments_cache
-                    .get(&instrument_name)
-                    .map(|instrument| {
-                        (
-                            parse_user_trade_msg(trade, instrument, account_id, ts_init),
-                            instrument.quote_currency(),
-                        )
-                    })
+                instruments.get(&instrument_name).map(|instrument| {
+                    (
+                        parse_user_trade_msg(trade, instrument, account_id, ts_init),
+                        instrument.quote_currency(),
+                    )
+                })
             else {
                 log::warn!("Instrument {instrument_name} not found in cache");
                 continue;
@@ -3909,7 +3915,8 @@ mod tests {
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut handler = DeribitWsFeedHandler::new(
+
+        let handler = DeribitWsFeedHandler::new(
             signal,
             cmd_rx,
             raw_rx,

@@ -334,8 +334,11 @@ Direct connections and the factory use the same native configuration path.
 :::warning
 
 - `LiveExecutionEngineConfig.load_cache = true` (default) restores persisted state and rebuilds indexes
-  before connecting clients or reconciling execution state.
-- `CacheConfig.flush_on_start = true` clears the backing instead. Postgres clears only the node's trader rows.
+  before connecting clients or reconciling execution state. The node stops startup if recovery
+  returns a read or replay error. If the underlying error identifies an unreadable record, repair
+  the record before restarting.
+- `CacheConfig.flush_on_start = true` clears the backing instead. Redis clears the selected
+  database. Postgres clears only the node's trader rows. The node stops startup if the flush fails.
 
 :::
 

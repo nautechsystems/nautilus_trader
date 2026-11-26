@@ -28,6 +28,7 @@ from datetime import UTC
 from datetime import datetime
 from decimal import Decimal
 from getpass import getpass
+from hashlib import sha256
 from pathlib import Path
 
 from nautilus_trader.adapters.finfeed import FinFeedDataLoader
@@ -41,9 +42,12 @@ from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import DataCatalogConfig
 from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import LoggerConfig
+from nautilus_trader.core import dt_to_unix_nanos
 from nautilus_trader.execution import MakerTakerFeeModel
+from nautilus_trader.execution import StaticLatencyModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BinaryOption
+from nautilus_trader.model import BookAction
 from nautilus_trader.model import BookType
 from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import OmsType
@@ -60,6 +64,7 @@ INSTRUMENT_ID = finfeed_instrument_id("POLYMARKET", MARKET_ID)
 START = datetime(2026, 11, 2, 20, 0, 5, tzinfo=UTC)
 END = datetime(2026, 11, 2, 20, 2, tzinfo=UTC)
 BOOK_TYPE = BookType.L2_MBP
+ORDER_DELAY_MS = 0
 
 DATA_DIR = Path(os.environ.get("NAUTILUS_DATA_DIR", "~/Downloads/Data")).expanduser() / "FinFeed"
 CATALOG_PATH = DATA_DIR / "btc-above-76k-nov3-no-20261102-20"
@@ -92,17 +97,73 @@ if __name__ == "__main__":
     print(f"Catalog: {CATALOG_PATH}")
     print(f"Instrument: {instrument.id}, outcome: {instrument.outcome}")
 
+    if not deltas:
+        raise ValueError("Catalog has no book deltas")
+
+    first, last = deltas[0], deltas[-1]
+    if first.action != BookAction.CLEAR or not RecordFlag.F_SNAPSHOT.matches(first.flags):
+        raise ValueError("Book deltas do not open with a snapshot")
+
+    if first.ts_init != dt_to_unix_nanos(START) or last.ts_init > dt_to_unix_nanos(END):
+        raise ValueError("Catalog book deltas do not match the selected window")
+
+    if not RecordFlag.F_LAST.matches(last.flags):
+        raise ValueError("Catalog ends with an incomplete book batch")
+
+    snapshot_end = next(
+        i for i, delta in enumerate(deltas) if RecordFlag.F_LAST.matches(delta.flags)
+    )
+
+    if any(
+        delta.action != BookAction.ADD
+        or not RecordFlag.F_SNAPSHOT.matches(delta.flags)
+        or delta.ts_init != first.ts_init
+        for delta in deltas[1 : snapshot_end + 1]
+    ):
+        raise ValueError("Catalog opens with an incomplete book snapshot")
+
+    definition = (
+        instrument.id,
+        instrument.currency,
+        instrument.activation_ns,
+        instrument.expiration_ns,
+        instrument.price_increment,
+        instrument.size_increment,
+        instrument.min_quantity,
+        instrument.max_quantity,
+        instrument.min_notional,
+        instrument.max_notional,
+        instrument.min_price,
+        instrument.max_price,
+        instrument.tick_scheme,
+    )
+
+    definition_row = ",".join("" if value is None else str(value) for value in definition)
+    fingerprint = sha256(f"{definition_row}\n".encode())
     book = OrderBook(INSTRUMENT_ID, BOOK_TYPE)
     batches = 0
 
     for delta in deltas:
+        fingerprint.update(f"{delta}\n".encode())
         book.apply_delta(delta)
         if RecordFlag.F_LAST.matches(delta.flags):
             book.check_integrity()
             batches += 1
 
     print(f"Loaded {len(deltas):,} deltas in {batches:,} batches")
+    print(f"Replay input SHA-256: {fingerprint.hexdigest()}")
     print(book.pprint(3))
+
+    order_delay_ns = ORDER_DELAY_MS * 1_000_000
+
+    latency = StaticLatencyModel(
+        base_latency_nanos=0,
+        insert_latency_nanos=order_delay_ns,
+        update_latency_nanos=order_delay_ns,
+        cancel_latency_nanos=order_delay_ns,
+    )
+
+    print(f"Order delay: {ORDER_DELAY_MS} ms")
 
     config = BacktestRunConfig(
         engine=BacktestEngineConfig(
@@ -118,6 +179,7 @@ if __name__ == "__main__":
                 starting_balances=["1000 pUSD"],
                 book_type=BOOK_TYPE,
                 fee_model=MakerTakerFeeModel(maker_rate=Decimal(0), taker_rate=Decimal(0)),
+                latency_model=latency,
             ),
         ],
         data=[
@@ -155,6 +217,12 @@ if __name__ == "__main__":
         node.dispose()
 
     print(results)
+
+    if positions.empty:
+        raise ValueError(
+            "No positions opened, check the replay window, signal thresholds, and order delay",
+        )
+
     print(orders["status"].value_counts().to_string())
     print(executions.groupby(["order_type", "order_side"]).size().to_string())
     print(
@@ -169,7 +237,6 @@ if __name__ == "__main__":
     )
     print(account[["total", "locked", "free", "currency"]].tail().to_string())
 
-    assert not positions.empty, "No positions opened; inspect the selected window and signal"
     assert positions["ts_closed"].notna().all(), "The strategy left an open position"
     assert positions["side"].eq("FLAT").all()
     assert positions["quantity"].map(Decimal).eq(Decimal(0)).all()

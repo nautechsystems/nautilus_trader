@@ -46,6 +46,8 @@ class KrakenDataClientConfig:
     def max_requests_per_second(self) -> int | None: ...
     @property
     def transport_backend(self) -> network.TransportBackend: ...
+    @property
+    def book_snapshot_timeout_secs(self) -> int: ...
     def __init__(
         self,
         product_type: KrakenProductType | None = None,
@@ -64,6 +66,7 @@ class KrakenDataClientConfig:
         max_requests_per_second: int | None = None,
         transport_backend: network.TransportBackend | None = None,
         validate_l2_checksum: bool | None = None,
+        book_snapshot_timeout_secs: int | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...

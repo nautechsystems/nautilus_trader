@@ -722,18 +722,20 @@ impl DataClient for KalshiDataClient {
         parse_ticker(instrument_id)?;
         request.client_id.get_or_insert(self.client_id);
         let provider = Arc::clone(&self.provider);
-        let selected = self.instruments.contains(&instrument_id);
+        let publish = request.start.is_none()
+            && request.end.is_none()
+            && self.instruments.contains(&instrument_id);
         let context = Arc::clone(&self.context);
         let sender = self.sender.clone();
         let lifecycle = Arc::clone(&self.lifecycle);
         let stamp = lifecycle.begin_read();
         self.spawn_request(async move {
             let instrument = provider.load_instrument(&request).await?;
-            if selected {
+            if publish {
                 lifecycle.apply(instrument.clone(), stamp, &context, &sender)?;
             }
 
-            let guard = if selected {
+            let guard = if publish {
                 Some(lifecycle.response_guard(&[&instrument])?)
             } else {
                 None
@@ -752,6 +754,7 @@ impl DataClient for KalshiDataClient {
         );
         request.client_id.get_or_insert(self.client_id);
         let provider = Arc::clone(&self.provider);
+        let publish = request.start.is_none() && request.end.is_none();
         let selected = self.instruments.clone();
         let context = Arc::clone(&self.context);
         let sender = self.sender.clone();
@@ -786,28 +789,28 @@ impl DataClient for KalshiDataClient {
             }
 
             let instruments = provider.load_instruments(&scoped).await?;
-            for instrument in &instruments {
-                if let InstrumentAny::BinaryOption(instrument) = instrument
-                    && selected.contains(&instrument.id)
-                {
-                    lifecycle.apply(instrument.clone(), stamp, &context, &sender)?;
+            let guard = if publish {
+                let definitions: Vec<_> = instruments
+                    .iter()
+                    .filter_map(|instrument| match instrument {
+                        InstrumentAny::BinaryOption(instrument)
+                            if selected.contains(&instrument.id) =>
+                        {
+                            Some(instrument)
+                        }
+                        _ => None,
+                    })
+                    .collect();
+
+                for instrument in &definitions {
+                    lifecycle.apply((*instrument).clone(), stamp, &context, &sender)?;
                 }
-            }
 
-            let definitions: Vec<_> = instruments
-                .iter()
-                .filter_map(|instrument| match instrument {
-                    InstrumentAny::BinaryOption(instrument)
-                        if selected.contains(&instrument.id) =>
-                    {
-                        Some(instrument)
-                    }
-                    _ => None,
-                })
-                .collect();
+                Some(lifecycle.response_guard(&definitions)?)
+            } else {
+                None
+            };
 
-            let guard = lifecycle.response_guard(&definitions)?;
-            drop(definitions);
             let result = provider.respond_instruments(request, instruments);
             drop(guard);
             result

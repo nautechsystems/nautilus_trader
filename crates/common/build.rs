@@ -115,19 +115,23 @@ fn git_commit() -> String {
         println!("cargo:rerun-if-changed={git_dir}/HEAD");
     }
 
-    if let Some(common_dir) = git_output(&manifest_dir, &["rev-parse", "--git-common-dir"])
-        .map(|path| resolve_path(&manifest_dir, &path))
+    if let Some(reference) = git_output(&manifest_dir, &["symbolic-ref", "-q", "HEAD"])
+        && let Some(common_dir) = git_output(&manifest_dir, &["rev-parse", "--git-common-dir"])
+            .map(|path| resolve_path(&manifest_dir, &path))
     {
-        println!(
-            "cargo:rerun-if-changed={}",
-            common_dir.join("packed-refs").display()
-        );
+        let loose_ref = common_dir.join(reference);
+        if loose_ref.is_file() {
+            println!("cargo:rerun-if-changed={}", loose_ref.display());
+        } else {
+            let packed_refs = common_dir.join("packed-refs");
+            if packed_refs.is_file() {
+                println!("cargo:rerun-if-changed={}", packed_refs.display());
+            }
 
-        if let Some(reference) = git_output(&manifest_dir, &["symbolic-ref", "-q", "HEAD"]) {
-            println!(
-                "cargo:rerun-if-changed={}",
-                common_dir.join(reference).display(),
-            );
+            // Updating a packed ref creates a loose ref without changing packed-refs
+            if let Some(directory) = loose_ref.ancestors().skip(1).find(|path| path.is_dir()) {
+                println!("cargo:rerun-if-changed={}", directory.display());
+            }
         }
     }
 

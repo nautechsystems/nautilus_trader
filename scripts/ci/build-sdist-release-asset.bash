@@ -23,9 +23,9 @@ build_root="$(mktemp -d)"
 target_entries="$(mktemp)"
 trap 'rm -rf "$build_root" "$target_entries"' EXIT
 
-# Build from tracked files only. poetry-core explicit includes override .gitignore,
-# so a direct workspace build can package local Rust target directories if present.
+# Archive tracked files to keep local Rust target directories out of the sdist
 git archive --format=tar HEAD | tar -xf - -C "$build_root"
+bash "$build_root/scripts/package-version.sh" --check > /dev/null
 (
   cd "$build_root/python"
   uv build --sdist --out-dir "$output_dist_dir"

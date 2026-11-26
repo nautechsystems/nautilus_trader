@@ -59,8 +59,8 @@ make build-debug
 This compiles the Rust extension and installs it into the project environment (`python/.venv`). Run
 it again after Rust changes.
 
-For Python 3.15, follow the [environment setup](../docs/developer_guide/environment_setup.md#1-install-dependencies)
-to exclude documentation dependencies from sync, build, and test targets. Documentation builds use Python 3.14.
+To select a Python version or install documentation dependencies, see
+[environment setup](../docs/developer_guide/environment_setup.md#1-install-dependencies).
 
 ## How it works
 

@@ -17,7 +17,7 @@
 
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, AtomicU64, Ordering},
+    atomic::{AtomicBool, Ordering},
 };
 
 use ahash::{AHashMap, AHashSet};
@@ -84,10 +84,9 @@ use crate::{
         },
         models::OKXInstrument,
         parse::{
-            decode_messages, extract_inst_family, instrument_definitions_match,
-            okx_instrument_type_from_symbol, okx_status_to_market_action,
-            parse_base_quote_from_symbol, parse_instrument_any, parse_instrument_id,
-            parse_millisecond_timestamp, parse_price, parse_quantity,
+            decode_messages, extract_inst_family, okx_instrument_type_from_symbol,
+            okx_status_to_market_action, parse_base_quote_from_symbol, parse_instrument_any,
+            parse_instrument_id, parse_millisecond_timestamp, parse_price, parse_quantity,
         },
         task::{spawn_task, terminate_tasks},
     },
@@ -131,7 +130,7 @@ pub struct OKXDataClient {
     instruments_by_symbol: Arc<AtomicMap<Ustr, InstrumentAny>>,
     // Serializes instrument diff-update-publish sequences between the stream
     // tasks and the refresh task; only held for synchronous sections
-    instrument_update_lock: Arc<InstrumentUpdateLock>,
+    instrument_update_lock: Arc<parking_lot::Mutex<()>>,
     book_channels: Arc<AtomicMap<InstrumentId, OKXBookChannel>>,
     book_sync: BookSyncTracker,
     book_deltas: Arc<AtomicSet<InstrumentId>>,
@@ -271,7 +270,7 @@ impl OKXDataClient {
             tasks: TaskGroup::new(),
             data_sender,
             instruments_by_symbol: Arc::new(AtomicMap::new()),
-            instrument_update_lock: Arc::new(InstrumentUpdateLock::default()),
+            instrument_update_lock: Arc::new(parking_lot::Mutex::default()),
             book_channels: Arc::new(AtomicMap::new()),
             book_sync: BookSyncTracker::default(),
             book_deltas: Arc::new(AtomicSet::new()),
@@ -561,7 +560,11 @@ impl OKXDataClient {
     }
 
     fn begin_generation_shutdown(&self) {
-        self.tasks.begin_shutdown();
+        {
+            let _guard = self.instrument_update_lock.lock();
+            self.tasks.begin_shutdown();
+        }
+
         self.is_connected.store(false, Ordering::Release);
 
         if let Some(ws) = self.ws_public.as_ref() {
@@ -616,7 +619,7 @@ impl OKXDataClient {
         instruments_by_symbol: &Arc<AtomicMap<Ustr, InstrumentAny>>,
         http_client: &OKXHttpClient,
         config: &OKXDataClientConfig,
-        instrument_update_lock: &InstrumentUpdateLock,
+        instrument_update_lock: &parking_lot::Mutex<()>,
         book_channels: &Arc<AtomicMap<InstrumentId, OKXBookChannel>>,
         book_sync: &BookSyncTracker,
         book_depths: &AtomicMap<InstrumentId, usize>,
@@ -632,8 +635,12 @@ impl OKXDataClient {
         tasks: &TaskSpawner,
         clock: &AtomicTime,
     ) {
-        let message = match message.into() {
-            OKXWsInbound::Standard(message) => message,
+        let (message, received_at) = match message.into() {
+            OKXWsInbound::Standard(message) => (message, None),
+            OKXWsInbound::Timestamped {
+                message,
+                received_at,
+            } => (message, Some(received_at)),
             OKXWsInbound::MarketData { inst_id, data } => {
                 Self::handle_market_data(
                     inst_id,
@@ -1049,10 +1056,14 @@ impl OKXDataClient {
                 }
             }
             OKXWsMessage::Instruments(okx_instruments) => {
-                let ts_init = clock.get_time_ns();
+                let ts_init = received_at.unwrap_or_else(|| clock.get_time_ns());
                 // Hold the instrument lock for the batch so a concurrent
                 // reconciliation cannot interleave diff, cache update, and publish
-                let _update_guard = instrument_update_lock.mutex.lock();
+                let _update_guard = instrument_update_lock.lock();
+
+                if tasks.cancellation_token().is_cancelled() {
+                    return;
+                }
 
                 for okx_inst in okx_instruments {
                     let inst_key = okx_inst.inst_id;
@@ -1066,20 +1077,13 @@ impl OKXDataClient {
                     match parse_instrument_any(&okx_inst, margin_init, margin_maint, ts_init) {
                         Ok(Some(inst_any)) => {
                             let instrument_id = inst_any.id();
-                            let is_new_or_changed = cached.is_none_or(|cached| {
-                                !instrument_definitions_match(&cached, &inst_any)
-                            });
-
-                            if is_new_or_changed
-                                && definition_in_scope(config, &okx_inst, &inst_any)
-                            {
-                                publish_instrument_updates(
+                            if definition_in_scope(config, &okx_inst, &inst_any) {
+                                apply_instrument_definitions(
                                     std::slice::from_ref(&inst_any),
                                     instruments_by_symbol,
                                     http_client,
                                     recovery_ws,
                                     business_ws,
-                                    instrument_update_lock,
                                     data_sender,
                                 );
                             }
@@ -1327,43 +1331,17 @@ impl OKXDataClient {
 
         let all_instruments = fetch_configured_instruments(&self.http_client, &self.config).await?;
 
-        // Diff before updating the cache so reconnects do not republish
-        // unchanged definitions; the writer tasks start after this point,
-        // so no instrument lock is needed here
-        let changed = changed_definitions(&all_instruments, &self.instruments_by_symbol);
-
-        self.instruments_by_symbol.rcu(|m| {
-            for instrument in &all_instruments {
-                m.insert(instrument.symbol().inner(), instrument.clone());
-            }
-        });
-
-        // Cache both websockets before connecting and before publishing, so
-        // every cache holds a definition before it is emitted
-        let instruments: Vec<_> = self
-            .instruments_by_symbol
-            .load()
-            .values()
-            .cloned()
-            .collect();
-
-        if let Some(ref ws) = self.ws_public {
-            ws.cache_instruments(&instruments);
+        {
+            let _guard = self.instrument_update_lock.lock();
+            apply_instrument_definitions(
+                &all_instruments,
+                &self.instruments_by_symbol,
+                &self.http_client,
+                self.ws_public.as_ref(),
+                self.ws_business.as_ref(),
+                &self.data_sender,
+            );
         }
-
-        if let Some(ref ws) = self.ws_business {
-            ws.cache_instruments(&instruments);
-        }
-
-        publish_instrument_updates(
-            &changed,
-            &self.instruments_by_symbol,
-            &self.http_client,
-            self.ws_public.as_ref(),
-            self.ws_business.as_ref(),
-            &self.instrument_update_lock,
-            &self.data_sender,
-        );
 
         let instrument_types = configured_instrument_types(&self.config);
 
@@ -1458,7 +1436,7 @@ impl OKXDataClient {
                 .await
                 .context("business websocket did not become active")?;
 
-            let stream = ws.stream();
+            let stream = ws.inbound_stream();
             let sender = self.data_sender.clone();
             let insts = self.instruments_by_symbol.clone();
             let http = self.http_client.clone();
@@ -1577,6 +1555,7 @@ impl OKXDataClient {
                         &update_lock,
                         ws_public.as_ref(),
                         ws_business.as_ref(),
+                        &cancel,
                         &data_sender,
                     ) => result,
                 };
@@ -1691,15 +1670,6 @@ fn handle_book_sequence_outcome(
     }
 }
 
-/// Guards instrument definitions: serializes diff-update-publish sequences
-/// between writer tasks, and counts completed update batches so a pass can
-/// detect a write that raced its fetch and skip publishing a stale snapshot.
-#[derive(Debug, Default)]
-struct InstrumentUpdateLock {
-    mutex: parking_lot::Mutex<()>,
-    write_seq: AtomicU64,
-}
-
 /// The event for a historical response, by whether OKX covered the requested window: a covered
 /// window completes the response envelope, so the data engine can write it back to a catalog; a
 /// window the page cap cut short fails the request with the rows fetched, so the requester can
@@ -1805,83 +1775,63 @@ fn emit_instrument_status(
     }
 }
 
-fn changed_definitions(
+fn apply_instrument_definitions(
     fetched: &[InstrumentAny],
-    instruments_by_symbol: &Arc<AtomicMap<Ustr, InstrumentAny>>,
-) -> Vec<InstrumentAny> {
-    fetched
-        .iter()
-        .filter(|instrument| {
-            instruments_by_symbol
-                .get_cloned(&instrument.symbol().inner())
-                .is_none_or(|cached| !instrument_definitions_match(&cached, instrument))
-        })
-        .cloned()
-        .collect()
-}
-
-/// Updates the data client cache, HTTP client cache, and both WebSocket
-/// caches, then bumps the update sequence. Callers serialize diff-update
-/// sequences through the instrument update lock.
-fn cache_instrument_updates(
-    changed: &[InstrumentAny],
-    instruments_by_symbol: &Arc<AtomicMap<Ustr, InstrumentAny>>,
-    http_client: &OKXHttpClient,
+    instruments_by_symbol: &AtomicMap<Ustr, InstrumentAny>,
+    http: &OKXHttpClient,
     ws_public: Option<&OKXWebSocketClient>,
     ws_business: Option<&OKXWebSocketClient>,
-    instrument_update_lock: &InstrumentUpdateLock,
-) {
-    if changed.is_empty() {
-        return;
+    sender: &EventSender<DataEvent>,
+) -> usize {
+    let current = instruments_by_symbol.load();
+    let mut newest = indexmap::IndexMap::new();
+    for instrument in fetched {
+        let winner = newest
+            .entry(instrument.symbol().inner())
+            .or_insert(instrument);
+        if winner.ts_init() <= instrument.ts_init() {
+            *winner = instrument;
+        }
     }
 
-    instruments_by_symbol.rcu(|m| {
-        for instrument in changed {
-            m.insert(instrument.symbol().inner(), instrument.clone());
+    let mut accepted = Vec::new();
+    let mut changed = Vec::new();
+
+    for instrument in newest.into_values() {
+        let previous = current.get(&instrument.symbol().inner());
+        if previous.is_some_and(|previous| previous.ts_init() > instrument.ts_init()) {
+            continue;
+        }
+
+        if previous.is_none_or(|previous| !previous.same_definition(instrument)) {
+            changed.push(instrument);
+        }
+
+        accepted.push(instrument.clone());
+    }
+
+    if accepted.is_empty() {
+        return 0;
+    }
+
+    instruments_by_symbol.rcu(|cache| {
+        for instrument in &accepted {
+            cache.insert(instrument.symbol().inner(), instrument.clone());
         }
     });
-    http_client.cache_instruments(changed);
 
-    if let Some(ws) = ws_public {
-        ws.cache_instruments(changed);
+    http.cache_instruments(&accepted);
+    for ws in [ws_public, ws_business].into_iter().flatten() {
+        ws.cache_instruments(&accepted);
     }
 
-    if let Some(ws) = ws_business {
-        ws.cache_instruments(changed);
-    }
-
-    instrument_update_lock
-        .write_seq
-        .fetch_add(1, Ordering::SeqCst);
-}
-
-/// Publishes new or changed definitions as [`DataEvent::Data`] after
-/// updating every cache, so consumers never observe a definition the caches
-/// do not yet hold. Callers serialize diff-update-publish sequences through
-/// the instrument update lock.
-fn publish_instrument_updates(
-    changed: &[InstrumentAny],
-    instruments_by_symbol: &Arc<AtomicMap<Ustr, InstrumentAny>>,
-    http_client: &OKXHttpClient,
-    ws_public: Option<&OKXWebSocketClient>,
-    ws_business: Option<&OKXWebSocketClient>,
-    instrument_update_lock: &InstrumentUpdateLock,
-    data_sender: &EventSender<DataEvent>,
-) {
-    cache_instrument_updates(
-        changed,
-        instruments_by_symbol,
-        http_client,
-        ws_public,
-        ws_business,
-        instrument_update_lock,
-    );
-
-    for instrument in changed {
-        if let Err(e) = data_sender.send(DataEvent::Data(instrument.clone().into())) {
+    for instrument in &changed {
+        if let Err(e) = sender.send(DataEvent::Data((*instrument).clone().into())) {
             log::error!("Failed to emit instrument event: {e}");
         }
     }
+
+    changed.len()
 }
 
 fn contract_filter_with_config(config: &OKXDataClientConfig, instrument: &InstrumentAny) -> bool {
@@ -2021,42 +1971,28 @@ struct InstrumentReconciliation {
 /// not republished. Cached instruments missing from the response are retained
 /// because they may still back open subscriptions; the instruments WebSocket
 /// channel communicates state changes such as suspension or delisting.
+#[expect(clippy::too_many_arguments)]
 async fn reconcile_instruments(
     http_client: &OKXHttpClient,
     config: &OKXDataClientConfig,
     instruments_by_symbol: &Arc<AtomicMap<Ustr, InstrumentAny>>,
-    instrument_update_lock: &InstrumentUpdateLock,
+    instrument_update_lock: &parking_lot::Mutex<()>,
     ws_public: Option<&OKXWebSocketClient>,
     ws_business: Option<&OKXWebSocketClient>,
+    cancel: &tokio_util::sync::CancellationToken,
     data_sender: &EventSender<DataEvent>,
 ) -> anyhow::Result<InstrumentReconciliation> {
-    let seq_before = instrument_update_lock.write_seq.load(Ordering::SeqCst);
     let fetched = fetch_configured_instruments(http_client, config).await?;
-
-    // Hold the instrument lock from the diff through publication so a concurrent
-    // instruments channel update cannot interleave with this pass
-    let _update_guard = instrument_update_lock.mutex.lock();
-
-    // A write during the fetch means the snapshot is stale relative to the
-    // instrument cache; skip publishing it and let the next pass reconcile fully
-    let changed = if instrument_update_lock.write_seq.load(Ordering::SeqCst) == seq_before {
-        changed_definitions(&fetched, instruments_by_symbol)
-    } else {
-        log::debug!("OKX instrument cache changed during refresh fetch, skipping publish");
-        Vec::new()
-    };
-
-    if !changed.is_empty() {
-        publish_instrument_updates(
-            &changed,
-            instruments_by_symbol,
-            http_client,
-            ws_public,
-            ws_business,
-            instrument_update_lock,
-            data_sender,
-        );
-    }
+    let _update_guard = instrument_update_lock.lock();
+    anyhow::ensure!(!cancel.is_cancelled(), "Instrument refresh cancelled");
+    let changed = apply_instrument_definitions(
+        &fetched,
+        instruments_by_symbol,
+        http_client,
+        ws_public,
+        ws_business,
+        data_sender,
+    );
 
     let fetched_symbols: AHashSet<Ustr> = fetched
         .iter()
@@ -2076,7 +2012,7 @@ async fn reconcile_instruments(
 
     Ok(InstrumentReconciliation {
         fetched: fetched.len(),
-        changed: changed.len(),
+        changed,
         missing,
     })
 }
@@ -2734,6 +2670,7 @@ impl DataClient for OKXDataClient {
         let sender = self.data_sender.clone();
         let instruments_cache = self.instruments_by_symbol.clone();
         let update_lock = self.instrument_update_lock.clone();
+        let cancel = self.tasks.cancellation_token();
         let ws_public = self.ws_public.clone();
         let ws_business = self.ws_business.clone();
         let request_id = request.request_id;
@@ -2745,13 +2682,13 @@ impl DataClient for OKXDataClient {
         let clock = self.clock;
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
+        let publish = request.start.is_none() && request.end.is_none();
         let instrument_types = configured_instrument_types(&self.config);
         let contract_types = self.config.contract_types.clone();
         let instrument_families = self.config.instrument_families.clone();
         let load_spreads = self.config.load_spreads;
 
         self.spawn_task(async move {
-            let seq_before = update_lock.write_seq.load(Ordering::SeqCst);
             let mut all_instruments = Vec::new();
             let mut failures = Vec::new();
 
@@ -2847,25 +2784,21 @@ impl DataClient for OKXDataClient {
                 }
             }
 
-            {
-                let _update_guard = update_lock
-                    .mutex
-                    .lock();
+            let _update_guard = update_lock.lock();
 
-                if update_lock.write_seq.load(Ordering::SeqCst) == seq_before {
-                    cache_instrument_updates(
-                        &all_instruments,
-                        &instruments_cache,
-                        &http,
-                        ws_public.as_ref(),
-                        ws_business.as_ref(),
-                        &update_lock,
-                    );
-                } else {
-                    log::debug!(
-                        "OKX instrument cache changed during request fetch, skipping cache update"
-                    );
-                }
+            if cancel.is_cancelled() {
+                return;
+            }
+
+            if publish {
+                apply_instrument_definitions(
+                    &all_instruments,
+                    &instruments_cache,
+                    &http,
+                    ws_public.as_ref(),
+                    ws_business.as_ref(),
+                    &sender,
+                );
             }
 
             let response = DataResponse::Instruments(InstrumentsResponse::new(
@@ -2904,6 +2837,7 @@ impl DataClient for OKXDataClient {
         let sender = self.data_sender.clone();
         let instruments = self.instruments_by_symbol.clone();
         let update_lock = self.instrument_update_lock.clone();
+        let cancel = self.tasks.cancellation_token();
         let ws_public = self.ws_public.clone();
         let ws_business = self.ws_business.clone();
         let request_id = request.request_id;
@@ -2914,15 +2848,15 @@ impl DataClient for OKXDataClient {
         let clock = self.clock;
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
+        let publish = request.start.is_none() && request.end.is_none();
         let instrument_types = configured_instrument_types(&self.config);
         let contract_types = self.config.contract_types.clone();
         let load_spreads = self.config.load_spreads;
 
         self.spawn_task(async move {
-            let seq_before = update_lock.write_seq.load(Ordering::SeqCst);
 
             let instrument = match http
-                .request_instrument(instrument_id)
+                .fetch_instrument(instrument_id)
                 .await
                 .context("fetch instrument from API")
             {
@@ -2967,25 +2901,21 @@ impl DataClient for OKXDataClient {
                 return;
             }
 
-            {
-                let _update_guard = update_lock
-                    .mutex
-                    .lock();
+            let _update_guard = update_lock.lock();
 
-                if update_lock.write_seq.load(Ordering::SeqCst) == seq_before {
-                    cache_instrument_updates(
-                        std::slice::from_ref(&instrument),
-                        &instruments,
-                        &http,
-                        ws_public.as_ref(),
-                        ws_business.as_ref(),
-                        &update_lock,
-                    );
-                } else {
-                    log::debug!(
-                        "OKX instrument cache changed during request fetch, skipping cache update"
-                    );
-                }
+            if cancel.is_cancelled() {
+                return;
+            }
+
+            if publish {
+                apply_instrument_definitions(
+                    std::slice::from_ref(&instrument),
+                    &instruments,
+                    &http,
+                    ws_public.as_ref(),
+                    ws_business.as_ref(),
+                    &sender,
+                );
             }
 
             let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
@@ -3599,7 +3529,7 @@ mod tests {
         let cancel = book_sync.record_subscription(instrument_id, subscribed_at, gate.clone());
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
         let http = offline_http_client();
-        let update_lock = InstrumentUpdateLock::default();
+        let update_lock = parking_lot::Mutex::default();
         let mut quote_cache = QuoteCache::new();
         let mut funding_cache: AHashMap<Ustr, (Ustr, u64)> = AHashMap::new();
         let index_ticker_map = Arc::new(AtomicMap::new());
@@ -3673,7 +3603,7 @@ mod tests {
         let book_sync = BookSyncTracker::default();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         let http = offline_http_client();
-        let update_lock = InstrumentUpdateLock::default();
+        let update_lock = parking_lot::Mutex::default();
         let mut quote_cache = QuoteCache::new();
         quote_cache
             .process(
@@ -3853,7 +3783,7 @@ mod tests {
         let book_sync = BookSyncTracker::default();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         let http = offline_http_client();
-        let update_lock = InstrumentUpdateLock::default();
+        let update_lock = parking_lot::Mutex::default();
         let mut quote_cache = QuoteCache::new();
         let mut funding_cache = AHashMap::new();
         let option_greeks_subs = Arc::new(AtomicMap::new());
@@ -3940,7 +3870,7 @@ mod tests {
         book_sync.record_subscription(instrument_id, Instant::now(), SnapshotGate::default());
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         let http = offline_http_client();
-        let update_lock = InstrumentUpdateLock::default();
+        let update_lock = parking_lot::Mutex::default();
         let index_ticker_map = Arc::new(AtomicMap::new());
         let option_greeks_subs = Arc::new(AtomicMap::new());
         let task_group = TaskGroup::new();
@@ -4157,11 +4087,11 @@ mod tests {
         config: &OKXDataClientConfig,
         recovery_ws: Option<&OKXWebSocketClient>,
         business_ws: Option<&OKXWebSocketClient>,
-        message: OKXWsMessage,
+        message: impl Into<OKXWsInbound<OKXWsMessage>>,
     ) {
         let book_channels = Arc::new(AtomicMap::new());
         let book_sync = BookSyncTracker::default();
-        let update_lock = InstrumentUpdateLock::default();
+        let update_lock = parking_lot::Mutex::default();
         let mut quote_cache = QuoteCache::new();
         let mut funding_cache = AHashMap::new();
         let index_ticker_map = Arc::new(AtomicMap::new());
@@ -4248,6 +4178,76 @@ mod tests {
         assert!(
             ws_business.instruments_snapshot().contains_key(&symbol),
             "business WebSocket cache must be updated before publishing"
+        );
+    }
+
+    #[rstest]
+    fn ws_instruments_rejects_stale_queued_definition() {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let instruments = Arc::new(AtomicMap::new());
+        let http = offline_http_client();
+        let config = OKXDataClientConfig::default();
+
+        for (received_at, tick) in [(20, "0.05"), (10, "0.1")] {
+            handle_instruments_message(
+                &sender.clone().into(),
+                &instruments,
+                &http,
+                &config,
+                None,
+                None,
+                OKXWsInbound::Timestamped {
+                    message: ws_instruments_message(swap_definition(tick)),
+                    received_at: UnixNanos::from(received_at),
+                },
+            );
+        }
+
+        let updates: Vec<_> = std::iter::from_fn(|| receiver.try_recv().ok())
+            .filter_map(|event| match event {
+                DataEvent::Data(Data::Instrument(instrument)) => Some(instrument),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(updates.len(), 1);
+        let symbol = Ustr::from("BTC-USDT-SWAP");
+
+        for definition in [
+            &*updates[0],
+            &instruments.get_cloned(&symbol).unwrap(),
+            &http.get_instrument(&symbol).unwrap(),
+        ] {
+            assert_eq!(definition.ts_init(), UnixNanos::from(20));
+            assert_eq!(definition.price_increment(), Price::from("0.05"));
+        }
+    }
+
+    #[rstest]
+    fn apply_instrument_definitions_publishes_only_the_newest_row_for_each_symbol() {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let cache = AtomicMap::new();
+        let http = offline_http_client();
+
+        let fetched = [(20, "0.05"), (10, "0.1")].map(|(timestamp, tick)| {
+            let wire = serde_json::from_value(swap_definition(tick)).unwrap();
+            parse_instrument_any(&wire, None, None, UnixNanos::from(timestamp))
+                .unwrap()
+                .unwrap()
+        });
+
+        let changed =
+            apply_instrument_definitions(&fetched, &cache, &http, None, None, &sender.into());
+        let updates = instrument_events(&mut receiver);
+        assert_eq!(changed, 1);
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].price_increment(), Price::from("0.05"));
+        assert_eq!(
+            cache
+                .get_cloned(&fetched[0].symbol().inner())
+                .unwrap()
+                .ts_init(),
+            UnixNanos::from(20)
         );
     }
 
@@ -4682,7 +4682,7 @@ mod tests {
             .instrument_types(vec![OKXInstrumentType::Swap])
             .build();
         let instruments_by_symbol = Arc::new(AtomicMap::new());
-        let update_lock = InstrumentUpdateLock::default();
+        let update_lock = parking_lot::Mutex::default();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
 
         reconcile_instruments(
@@ -4692,6 +4692,7 @@ mod tests {
             &update_lock,
             None,
             None,
+            &tokio_util::sync::CancellationToken::new(),
             &sender.clone().into(),
         )
         .await
@@ -4738,7 +4739,7 @@ mod tests {
             .expect("parse")
             .expect("instrument");
 
-        assert!(instrument_definitions_match(&first, &second));
+        assert!(first.same_definition(&second));
     }
 
     #[rstest]
@@ -4749,10 +4750,10 @@ mod tests {
         pair.ts_event = UnixNanos::from(1_u64);
         changed.ts_event = UnixNanos::from(2_u64);
 
-        assert!(!instrument_definitions_match(
-            &InstrumentAny::CurrencyPair(pair),
-            &InstrumentAny::CurrencyPair(changed),
-        ));
+        assert!(
+            !InstrumentAny::CurrencyPair(pair)
+                .same_definition(&InstrumentAny::CurrencyPair(changed),)
+        );
     }
 
     #[rstest]
@@ -4762,10 +4763,10 @@ mod tests {
         let info = Params::new([("okx_rpi_min_level".to_string(), json!(5))].into());
         changed.info = Some(info);
 
-        assert!(!instrument_definitions_match(
-            &InstrumentAny::CurrencyPair(pair),
-            &InstrumentAny::CurrencyPair(changed),
-        ));
+        assert!(
+            !InstrumentAny::CurrencyPair(pair)
+                .same_definition(&InstrumentAny::CurrencyPair(changed),)
+        );
     }
 
     #[rstest]
@@ -4774,10 +4775,10 @@ mod tests {
         let mut other = pair.clone();
         other.id = InstrumentId::from("ETH-USDT.OKX");
 
-        assert!(!instrument_definitions_match(
-            &InstrumentAny::CurrencyPair(pair),
-            &InstrumentAny::CurrencyPair(other),
-        ));
+        assert!(
+            !InstrumentAny::CurrencyPair(pair)
+                .same_definition(&InstrumentAny::CurrencyPair(other),)
+        );
     }
 
     #[derive(Clone, Default)]
@@ -4984,7 +4985,7 @@ mod tests {
         let http = refresh_http_client(addr);
         let config = OKXDataClientConfig::default();
         let instruments_by_symbol = Arc::new(AtomicMap::new());
-        let update_lock = InstrumentUpdateLock::default();
+        let update_lock = parking_lot::Mutex::default();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
 
         let summary = reconcile_instruments(
@@ -4994,6 +4995,7 @@ mod tests {
             &update_lock,
             None,
             None,
+            &tokio_util::sync::CancellationToken::new(),
             &sender.clone().into(),
         )
         .await
@@ -5011,6 +5013,7 @@ mod tests {
             &update_lock,
             None,
             None,
+            &tokio_util::sync::CancellationToken::new(),
             &sender.clone().into(),
         )
         .await
@@ -5034,6 +5037,7 @@ mod tests {
             &update_lock,
             None,
             None,
+            &tokio_util::sync::CancellationToken::new(),
             &sender.clone().into(),
         )
         .await
@@ -5062,6 +5066,7 @@ mod tests {
             &update_lock,
             None,
             None,
+            &tokio_util::sync::CancellationToken::new(),
             &sender.clone().into(),
         )
         .await
@@ -5087,6 +5092,7 @@ mod tests {
             &update_lock,
             None,
             None,
+            &tokio_util::sync::CancellationToken::new(),
             &sender.clone().into(),
         )
         .await
@@ -5116,7 +5122,7 @@ mod tests {
         let http = refresh_http_client(addr);
         let config = OKXDataClientConfig::default();
         let instruments_by_symbol = Arc::new(AtomicMap::new());
-        let update_lock = InstrumentUpdateLock::default();
+        let update_lock = parking_lot::Mutex::default();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
 
         let result = reconcile_instruments(
@@ -5126,6 +5132,7 @@ mod tests {
             &update_lock,
             None,
             None,
+            &tokio_util::sync::CancellationToken::new(),
             &sender.clone().into(),
         )
         .await;
@@ -5153,7 +5160,7 @@ mod tests {
             .instrument_families(vec!["BTC-USD".to_string(), "BTC-USDT".to_string()])
             .build();
         let instruments_by_symbol = Arc::new(AtomicMap::new());
-        let update_lock = InstrumentUpdateLock::default();
+        let update_lock = parking_lot::Mutex::default();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
 
         let summary = reconcile_instruments(
@@ -5163,6 +5170,7 @@ mod tests {
             &update_lock,
             None,
             None,
+            &tokio_util::sync::CancellationToken::new(),
             &sender.clone().into(),
         )
         .await
@@ -5210,7 +5218,7 @@ mod tests {
             .contract_types(filter)
             .build();
         let instruments_by_symbol = Arc::new(AtomicMap::new());
-        let update_lock = InstrumentUpdateLock::default();
+        let update_lock = parking_lot::Mutex::default();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
 
         let summary = reconcile_instruments(
@@ -5220,6 +5228,7 @@ mod tests {
             &update_lock,
             None,
             None,
+            &tokio_util::sync::CancellationToken::new(),
             &sender.clone().into(),
         )
         .await
@@ -5252,7 +5261,7 @@ mod tests {
         let http = refresh_http_client(addr);
         let config = OKXDataClientConfig::builder().load_spreads(true).build();
         let instruments_by_symbol = Arc::new(AtomicMap::new());
-        let update_lock = InstrumentUpdateLock::default();
+        let update_lock = parking_lot::Mutex::default();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
 
         let summary = reconcile_instruments(
@@ -5262,6 +5271,7 @@ mod tests {
             &update_lock,
             None,
             None,
+            &tokio_util::sync::CancellationToken::new(),
             &sender.clone().into(),
         )
         .await
@@ -5285,7 +5295,7 @@ mod tests {
         let http = refresh_http_client(addr);
         let config = OKXDataClientConfig::default();
         let instruments_by_symbol = Arc::new(AtomicMap::new());
-        let update_lock = Arc::new(InstrumentUpdateLock::default());
+        let update_lock = Arc::new(parking_lot::Mutex::default());
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         let ws = offline_ws_client();
         let ws_business = offline_ws_client();
@@ -5304,6 +5314,7 @@ mod tests {
                 &update_lock_task,
                 Some(&ws_task),
                 Some(&ws_business_task),
+                &tokio_util::sync::CancellationToken::new(),
                 &sender.clone().into(),
             )
             .await
@@ -5339,8 +5350,14 @@ mod tests {
         reconcile.await.expect("reconcile task").expect("reconcile");
     }
 
+    #[rstest]
+    #[case::newer_change("0.5", true)]
+    #[case::newer_identical("0.1", false)]
     #[tokio::test]
-    async fn reconcile_skips_publish_when_cache_changes_during_fetch() {
+    async fn reconcile_keeps_newer_definition_when_cache_changes_during_fetch(
+        #[case] expected_increment: &str,
+        #[case] published: bool,
+    ) {
         let gate = Arc::new(tokio::sync::Semaphore::new(0));
         let state = RefreshServerState {
             gate_instruments: Some(gate.clone()),
@@ -5350,7 +5367,7 @@ mod tests {
         let http = refresh_http_client(addr);
         let config = OKXDataClientConfig::default();
         let instruments_by_symbol = Arc::new(AtomicMap::new());
-        let update_lock = Arc::new(InstrumentUpdateLock::default());
+        let update_lock = Arc::new(parking_lot::Mutex::default());
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
 
         gate.add_permits(1);
@@ -5361,6 +5378,7 @@ mod tests {
             &update_lock,
             None,
             None,
+            &tokio_util::sync::CancellationToken::new(),
             &sender.clone().into(),
         )
         .await
@@ -5382,6 +5400,7 @@ mod tests {
                     &update_lock,
                     None,
                     None,
+                    &tokio_util::sync::CancellationToken::new(),
                     &sender.clone().into(),
                 )
                 .await
@@ -5396,55 +5415,243 @@ mod tests {
 
         // A concurrent update lands while the refresh fetch is in flight
         let mut v2_item = test_payload("http_get_instruments_spot.json")["data"][0].clone();
-        v2_item["tickSz"] = json!("0.5");
+        v2_item["tickSz"] = json!(expected_increment);
         let v2: OKXInstrument = serde_json::from_value(v2_item).expect("valid OKXInstrument");
-        let v2 = parse_instrument_any(&v2, None, None, UnixNanos::from(1_u64))
+        let v2 = parse_instrument_any(&v2, None, None, get_atomic_clock_realtime().get_time_ns())
             .expect("parse")
             .expect("instrument");
         {
-            let _guard = update_lock.mutex.lock();
-            publish_instrument_updates(
+            let _guard = update_lock.lock();
+            apply_instrument_definitions(
                 std::slice::from_ref(&v2),
                 &instruments_by_symbol,
                 &http,
                 None,
                 None,
-                &update_lock,
                 &sender.clone().into(),
             );
         }
 
-        match receiver.try_recv().expect("concurrent update event") {
-            DataEvent::Data(Data::Instrument(instrument)) => {
-                assert_eq!(instrument.price_increment(), Price::from("0.5"));
-            }
-            other => panic!("Expected DataEvent::Data(Data::Instrument(...)), was {other:?}"),
+        let events = instrument_events(&mut receiver);
+        assert_eq!(events.len(), usize::from(published));
+
+        if let Some(instrument) = events.first() {
+            assert_eq!(
+                instrument.price_increment(),
+                Price::from(expected_increment)
+            );
+        }
+
+        {
+            let mut response = state.instruments_payload.lock().await;
+            response["data"][0]["tickSz"] = json!("1");
+            response["data"][1]["tickSz"] = json!("0.5");
         }
 
         gate.add_permits(1);
         let summary = reconcile.await.expect("reconcile task").expect("reconcile");
-        assert_eq!(
-            summary.changed, 0,
-            "a pass whose snapshot went stale mid-fetch must skip publishing"
-        );
-        assert!(
-            instrument_events(&mut receiver).is_empty(),
-            "the stale pass must not republish the older definition"
-        );
+        let events = instrument_events(&mut receiver);
+        assert_eq!(summary.changed, 1);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].id(), InstrumentId::from("ETH-USD.OKX"));
+        assert_eq!(events[0].price_increment(), Price::from("0.5"));
         let cached = instruments_by_symbol
             .get_cloned(&Ustr::from("BTC-USD"))
             .expect("instrument cached");
+        assert_eq!(cached.ts_init(), v2.ts_init());
         assert_eq!(
             cached.price_increment(),
-            Price::from("0.5"),
+            Price::from(expected_increment),
             "the instrument cache keeps the fresher concurrent definition"
         );
         assert_eq!(
             http.get_instrument(&Ustr::from("BTC-USD"))
                 .map(|instrument| instrument.price_increment()),
-            Some(Price::from("0.5")),
+            Some(Price::from(expected_increment)),
             "the HTTP cache keeps the fresher concurrent definition"
         );
+    }
+
+    #[rstest]
+    #[case::single(false)]
+    #[case::bulk(true)]
+    #[tokio::test]
+    async fn late_instrument_request_keeps_newer_stream_definition(#[case] bulk: bool) {
+        let gate = Arc::new(tokio::sync::Semaphore::new(0));
+
+        let state = RefreshServerState {
+            gate_instruments: Some(Arc::clone(&gate)),
+            ..spot_refresh_state()
+        };
+
+        let addr = start_refresh_server(state.clone()).await;
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(sender);
+
+        let client = OKXDataClient::new(
+            *OKX_CLIENT_ID,
+            OKXDataClientConfig {
+                base_url_http: Some(format!("http://{addr}")),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let id = InstrumentId::from("BTC-USD.OKX");
+        let request_id = UUID4::new();
+
+        if bulk {
+            client
+                .request_instruments(RequestInstruments::new(
+                    None,
+                    None,
+                    Some(*OKX_CLIENT_ID),
+                    None,
+                    request_id,
+                    UnixNanos::default(),
+                    None,
+                ))
+                .unwrap();
+        } else {
+            client
+                .request_instrument(RequestInstrument::new(
+                    id,
+                    None,
+                    None,
+                    Some(*OKX_CLIENT_ID),
+                    request_id,
+                    UnixNanos::default(),
+                    None,
+                ))
+                .unwrap();
+        }
+
+        wait_until_async(
+            || async { !state.instrument_queries.lock().await.is_empty() },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        let mut update = test_payload("http_get_instruments_spot.json")["data"][0].clone();
+        update["tickSz"] = json!("0.5");
+        let update = serde_json::from_value::<OKXInstrument>(update).unwrap();
+        let ts_init = client.clock.get_time_ns();
+        let newer = parse_instrument_any(&update, None, None, ts_init)
+            .unwrap()
+            .unwrap();
+
+        {
+            let _guard = client.instrument_update_lock.lock();
+            apply_instrument_definitions(
+                std::slice::from_ref(&newer),
+                &client.instruments_by_symbol,
+                &client.http_client,
+                client.ws_public.as_ref(),
+                client.ws_business.as_ref(),
+                &client.data_sender,
+            );
+        }
+
+        gate.add_permits(1);
+
+        let Some(DataEvent::Data(Data::Instrument(published))) = receiver.try_recv().ok() else {
+            panic!("expected the stream definition before the response");
+        };
+
+        let (envelope, other_updates) = tokio::time::timeout(Duration::from_secs(2), async {
+            let mut other_updates = Vec::new();
+
+            loop {
+                match receiver.recv().await {
+                    Some(DataEvent::Data(Data::Instrument(instrument))) => {
+                        other_updates.push(instrument.id());
+                    }
+                    Some(DataEvent::ResponseEnvelope(envelope)) => break (envelope, other_updates),
+                    event => panic!("expected instrument publication or response, was {event:?}"),
+                }
+            }
+        })
+        .await
+        .expect("request timed out");
+
+        let expected_updates = if bulk {
+            ["ETH-USD.OKX", "SOL-USD.OKX", "XRP-USD.OKX", "USDT-USD.OKX"]
+                .into_iter()
+                .map(InstrumentId::from)
+                .collect()
+        } else {
+            vec![]
+        };
+
+        assert_eq!(other_updates, expected_updates);
+
+        let returned = match envelope.response() {
+            Some(DataResponse::Instrument(response)) => &response.data,
+            Some(DataResponse::Instruments(response)) => response
+                .data
+                .iter()
+                .find(|instrument| instrument.id() == id)
+                .unwrap(),
+            other => panic!("expected instrument request payload, was {other:?}"),
+        };
+
+        let symbol = id.symbol.inner();
+        let cached = client.instruments_by_symbol.get_cloned(&symbol).unwrap();
+        let http_cached = client.http_client.get_instrument(&symbol).unwrap();
+
+        assert_eq!(envelope.correlation_id(), &request_id);
+        assert!(envelope.completed());
+        assert_eq!(returned.id(), id);
+        assert_eq!(returned.price_increment(), Price::from("0.1"));
+        assert!(returned.ts_init() < ts_init);
+
+        for definition in [&*published, &cached, &http_cached] {
+            assert_eq!(definition.id(), id);
+            assert_eq!(definition.ts_init(), ts_init);
+            assert_eq!(definition.price_increment(), Price::from("0.5"));
+        }
+    }
+
+    #[tokio::test]
+    async fn late_http_lookup_returns_the_newer_definition() {
+        let gate = Arc::new(tokio::sync::Semaphore::new(0));
+
+        let state = RefreshServerState {
+            gate_instruments: Some(Arc::clone(&gate)),
+            ..spot_refresh_state()
+        };
+
+        let addr = start_refresh_server(state.clone()).await;
+        let http = refresh_http_client(addr);
+        let id = InstrumentId::from("BTC-USD.OKX");
+        let lookup = http.request_instrument(id);
+
+        let stream_update = async {
+            wait_until_async(
+                || async { !state.instrument_queries.lock().await.is_empty() },
+                Duration::from_secs(2),
+            )
+            .await;
+            let mut update = test_payload("http_get_instruments_spot.json")["data"][0].clone();
+            update["tickSz"] = json!("0.5");
+            let raw = serde_json::from_value::<OKXInstrument>(update).unwrap();
+            let ts_init = get_atomic_clock_realtime().get_time_ns();
+            let instrument = parse_instrument_any(&raw, None, None, ts_init)
+                .unwrap()
+                .unwrap();
+            http.cache_instrument(instrument);
+            gate.add_permits(1);
+            ts_init
+        };
+
+        let (returned, ts_init) = tokio::join!(lookup, stream_update);
+        let returned = returned.unwrap();
+        let cached = http.get_instrument(&id.symbol.inner()).unwrap();
+        for instrument in [returned, cached] {
+            assert_eq!(instrument.id(), id);
+            assert_eq!(instrument.ts_init(), ts_init);
+            assert_eq!(instrument.price_increment(), Price::from("0.5"));
+        }
     }
 
     #[rstest]

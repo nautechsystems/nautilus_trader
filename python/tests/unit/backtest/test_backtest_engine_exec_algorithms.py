@@ -18,6 +18,7 @@ Test backtest engine exec algorithms behavior.
 
 import inspect
 import re
+from typing import Self
 
 import pytest
 
@@ -117,6 +118,69 @@ class CustomExecutionAlgorithm(ExecutionAlgorithm):
         """
         super().__init__(config)
         type(self).received_config = config
+
+
+class HyphenatedSpawnConfig(ExecutionAlgorithmConfig):
+    """
+    Default to hyphenated spawn IDs while allowing explicit automatic mode.
+    """
+
+    def __new__(
+        cls,
+        exec_algorithm_id: ExecAlgorithmId | str,
+        use_hyphens_in_client_order_ids: bool | None = True,
+        log_events: bool = True,
+        log_commands: bool = True,
+    ) -> Self:
+        """
+        Create a config with a subclass-specific hyphen default.
+        """
+        return super().__new__(
+            cls,
+            exec_algorithm_id=exec_algorithm_id,
+            use_hyphens_in_client_order_ids=use_hyphens_in_client_order_ids,
+            log_events=log_events,
+            log_commands=log_commands,
+        )
+
+
+class FixedSpawnConfig(ExecutionAlgorithmConfig):
+    """
+    Require an algorithm ID and accept the logging options.
+    """
+
+    def __new__(
+        cls,
+        exec_algorithm_id: ExecAlgorithmId | str,
+        log_events: bool = True,
+        log_commands: bool = True,
+    ) -> Self:
+        """
+        Construct the config with the inherited spawn format.
+        """
+        return super().__new__(
+            cls,
+            exec_algorithm_id=exec_algorithm_id,
+            log_events=log_events,
+            log_commands=log_commands,
+        )
+
+
+class SubclassInitExecutionAlgorithm(ExecutionAlgorithm):
+    """
+    Construct the algorithm config in __init__ if none is supplied.
+    """
+
+    last_instance: "SubclassInitExecutionAlgorithm | None" = None
+
+    def __init__(self, config: ExecutionAlgorithmConfig | None = None) -> None:
+        """
+        Apply a config constructed by the subclass or supplied by the loader.
+        """
+        if config is None:
+            config = HyphenatedSpawnConfig(exec_algorithm_id=ExecAlgorithmId("SUBCLASS-INIT"))
+        super().__init__(config)
+        type(self).last_instance = self
 
 
 class FirstDefaultExecutionAlgorithm(ExecutionAlgorithm):
@@ -498,6 +562,7 @@ def test_execution_algorithm_config_defaults() -> None:
     assert config.exec_algorithm_id is None
     assert config.log_events is True
     assert config.log_commands is True
+    assert config.use_hyphens_in_client_order_ids is None
 
 
 def test_execution_algorithm_config_supports_custom_fields() -> None:
@@ -549,6 +614,7 @@ def test_execution_algorithm_to_importable_config_round_trips_custom_config() ->
         "interval_secs": "3.75",
         "log_commands": True,
         "log_events": False,
+        "use_hyphens_in_client_order_ids": None,
     }
 
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
@@ -562,6 +628,78 @@ def test_execution_algorithm_to_importable_config_round_trips_custom_config() ->
     assert received.log_events is False
     assert received.log_commands is True
     engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("use_hyphens", "fixed_signature"),
+    [(True, False), (None, False), (None, True)],
+    ids=["hyphenated", "explicit-auto", "fixed-signature"],
+)
+def test_execution_algorithm_subclass_config_in_init_survives_round_trip(
+    use_hyphens: bool | None,
+    fixed_signature: bool,
+) -> None:
+    """
+    Preserve the spawn format when an algorithm is exported and reloaded.
+    """
+    if fixed_signature:
+        config = FixedSpawnConfig(
+            exec_algorithm_id=ExecAlgorithmId("SUBCLASS-INIT"),
+            log_events=False,
+        )
+
+        algorithm = SubclassInitExecutionAlgorithm(config)
+    elif use_hyphens is True:
+        algorithm = SubclassInitExecutionAlgorithm()
+    else:
+        config = HyphenatedSpawnConfig(
+            exec_algorithm_id=ExecAlgorithmId("SUBCLASS-INIT"),
+            use_hyphens_in_client_order_ids=None,
+        )
+
+        algorithm = SubclassInitExecutionAlgorithm(config)
+
+    primary_id = "O202611200910100010002"
+    primary = create_market_order(primary_id)
+    quantity = Quantity.from_int(10)
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+
+    try:
+        engine.add_exec_algorithm(algorithm)
+        original = algorithm.spawn_market(primary, quantity, reduce_primary=False)
+        importable = algorithm.to_importable_config()
+
+        engine.clear_exec_algorithms()
+        engine.add_exec_algorithm_from_config(importable)
+        loaded = SubclassInitExecutionAlgorithm.last_instance
+        assert isinstance(loaded, SubclassInitExecutionAlgorithm)
+        assert loaded is not algorithm
+        restored = loaded.spawn_market(primary, quantity, reduce_primary=False)
+
+        expected_config: dict[str, object] = {
+            "exec_algorithm_id": "SUBCLASS-INIT",
+            "log_events": not fixed_signature,
+            "log_commands": True,
+        }
+
+        if not fixed_signature:
+            expected_config["use_hyphens_in_client_order_ids"] = use_hyphens
+
+        assert importable.config == expected_config
+        assert loaded.to_importable_config().config == expected_config
+        assert original.exec_spawn_id == ClientOrderId(primary_id)
+        assert restored.exec_spawn_id == original.exec_spawn_id
+        assert restored.client_order_id == original.client_order_id
+        if use_hyphens is True:
+            assert original.client_order_id == ClientOrderId(f"{primary_id}-E1")
+        else:
+            assert re.fullmatch(
+                r"[0-9a-f]{12}8[0-9a-f]{3}[89ab][0-9a-f]{15}",
+                str(original.client_order_id),
+            )
+    finally:
+        SubclassInitExecutionAlgorithm.last_instance = None
+        engine.dispose()
 
 
 def test_execution_algorithm_to_importable_config_round_trips_without_config() -> None:
@@ -595,11 +733,20 @@ def test_execution_algorithm_config_with_explicit_values() -> None:
     """
     config = ExecutionAlgorithmConfig(
         exec_algorithm_id=ExecAlgorithmId("TWAP-001"),
+        use_hyphens_in_client_order_ids=False,
         log_events=False,
         log_commands=False,
     )
 
+    assert list(inspect.signature(ExecutionAlgorithmConfig).parameters) == [
+        "exec_algorithm_id",
+        "use_hyphens_in_client_order_ids",
+        "log_events",
+        "log_commands",
+        "_kwargs",
+    ]
     assert config.exec_algorithm_id == ExecAlgorithmId("TWAP-001")
+    assert config.use_hyphens_in_client_order_ids is False
     assert config.log_events is False
     assert config.log_commands is False
 
@@ -1060,7 +1207,7 @@ def test_execution_algorithm_spawn_constructor_errors_raise_value_error(
         engine.dispose()
 
 
-def create_market_order() -> object:
+def create_market_order(client_order_id: str = "O-PY-DENY") -> MarketOrder:
     """
     Create market order.
     """
@@ -1068,7 +1215,7 @@ def create_market_order() -> object:
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("DENY-001"),
         instrument_id=InstrumentId.from_str("AUD/USD.SIM"),
-        client_order_id=ClientOrderId("O-PY-DENY"),
+        client_order_id=ClientOrderId(client_order_id),
         order_side=OrderSide.BUY,
         quantity=Quantity.from_int(100_000),
         init_id=UUID4(),

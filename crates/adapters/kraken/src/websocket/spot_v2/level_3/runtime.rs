@@ -26,10 +26,7 @@ use std::sync::Arc;
 use ahash::AHashMap;
 use nautilus_core::{AtomicMap, UnixNanos};
 use nautilus_model::{
-    data::{OrderBookDelta, OrderBookDeltas},
-    enums::RecordFlag,
-    identifiers::InstrumentId,
-    instruments::{Instrument, InstrumentAny},
+    data::OrderBookDeltas, identifiers::InstrumentId, instruments::InstrumentAny,
 };
 use parking_lot::Mutex;
 
@@ -56,6 +53,13 @@ pub(crate) struct L3State {
     pub open_orders: AHashMap<u64, CachedL3Order>,
 }
 
+impl L3State {
+    pub(crate) fn await_snapshot(&mut self) {
+        self.open_orders.clear();
+        self.awaiting_snapshot = true;
+    }
+}
+
 /// Request emitted when local state diverges from Kraken's reported checksum.
 ///
 /// The caller should unsubscribe and resubscribe the named symbol to obtain a
@@ -79,25 +83,6 @@ pub(crate) trait L3Sink {
 /// Returns the depth registered for `symbol`, defaulting to `1000`.
 pub(crate) fn subscription_depth(depths: &Arc<Mutex<AHashMap<String, u32>>>, symbol: &str) -> u32 {
     depths.lock().get(symbol).copied().unwrap_or(1000)
-}
-
-/// Emits a `Clear` delta (with `F_LAST`) after detecting a checksum mismatch.
-pub(crate) fn emit_l3_clear<S: L3Sink>(
-    sink: &mut S,
-    instrument_id: InstrumentId,
-    sequence: &mut u64,
-    ts_event: UnixNanos,
-    ts_init: UnixNanos,
-    reason: &str,
-) {
-    let mut clear = OrderBookDelta::clear(instrument_id, *sequence, ts_event, ts_init);
-    *sequence += 1;
-    clear.flags |= RecordFlag::F_LAST as u8;
-
-    match OrderBookDeltas::new_checked(instrument_id, vec![clear]) {
-        Ok(clear_deltas) => sink.emit_deltas(clear_deltas),
-        Err(e) => log::error!("Failed to construct L3 clear after {reason}: {e}"),
-    }
 }
 
 /// Drives the L3 protocol state machine for one inbound message.
@@ -145,7 +130,7 @@ pub(crate) fn process_l3_message<S: L3Sink>(
                 &mut state.open_orders,
             ) {
                 Ok(deltas) => {
-                    if validate_checksum && snap.checksum != 0 {
+                    if validate_checksum {
                         let local = compute_checksum(&state.open_orders);
                         if local == snap.checksum {
                             log::debug!(
@@ -164,16 +149,7 @@ pub(crate) fn process_l3_message<S: L3Sink>(
                                 s.len(),
                                 &s[..s.len().min(200)],
                             );
-                            state.open_orders.clear();
-                            state.awaiting_snapshot = true;
-                            emit_l3_clear(
-                                sink,
-                                instrument.id(),
-                                &mut state.sequence,
-                                deltas.ts_event,
-                                ts_init,
-                                "snapshot checksum mismatch",
-                            );
+                            state.await_snapshot();
                             return Some(L3ResyncRequest {
                                 symbol: snap.symbol,
                                 depth: state.depth,
@@ -189,16 +165,7 @@ pub(crate) fn process_l3_message<S: L3Sink>(
                         "Failed to parse L3 snapshot for {}: {e}, clearing state and resyncing",
                         snap.symbol,
                     );
-                    state.open_orders.clear();
-                    state.awaiting_snapshot = true;
-                    emit_l3_clear(
-                        sink,
-                        instrument.id(),
-                        &mut state.sequence,
-                        ts_init,
-                        ts_init,
-                        "snapshot parse error",
-                    );
+                    state.await_snapshot();
                     return Some(L3ResyncRequest {
                         symbol: snap.symbol,
                         depth: state.depth,
@@ -244,7 +211,7 @@ pub(crate) fn process_l3_message<S: L3Sink>(
                 &mut state.open_orders,
                 state.depth,
             ) {
-                Ok((maybe_deltas, ts_event)) => {
+                Ok((maybe_deltas, _)) => {
                     if validate_checksum {
                         let local = compute_checksum(&state.open_orders);
                         if local != update.checksum {
@@ -258,16 +225,7 @@ pub(crate) fn process_l3_message<S: L3Sink>(
                                 s.len(),
                                 &s[..s.len().min(200)],
                             );
-                            state.open_orders.clear();
-                            state.awaiting_snapshot = true;
-                            emit_l3_clear(
-                                sink,
-                                instrument.id(),
-                                &mut state.sequence,
-                                ts_event,
-                                ts_init,
-                                "update checksum mismatch",
-                            );
+                            state.await_snapshot();
                             return Some(L3ResyncRequest {
                                 symbol: update.symbol,
                                 depth: state.depth,
@@ -285,16 +243,7 @@ pub(crate) fn process_l3_message<S: L3Sink>(
                         "Failed to parse L3 update for {}: {e}, clearing state and resyncing",
                         update.symbol,
                     );
-                    state.open_orders.clear();
-                    state.awaiting_snapshot = true;
-                    emit_l3_clear(
-                        sink,
-                        instrument.id(),
-                        &mut state.sequence,
-                        ts_init,
-                        ts_init,
-                        "update parse error",
-                    );
+                    state.await_snapshot();
                     return Some(L3ResyncRequest {
                         symbol: update.symbol,
                         depth: state.depth,
@@ -312,9 +261,8 @@ pub(crate) fn process_l3_message<S: L3Sink>(
 mod tests {
     use nautilus_core::time::get_atomic_clock_realtime;
     use nautilus_model::{
-        enums::BookAction,
         identifiers::Symbol,
-        instruments::currency_pair::CurrencyPair,
+        instruments::{Instrument, currency_pair::CurrencyPair},
         types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
@@ -403,16 +351,61 @@ mod tests {
         assert_eq!(request.depth, 1000);
         assert_eq!(request.reason, "snapshot checksum mismatch");
 
-        assert_eq!(sink.emitted.len(), 1);
-        let clear = &sink.emitted[0];
-        assert_eq!(clear.deltas.len(), 1);
-        assert_eq!(clear.deltas[0].action, BookAction::Clear);
+        assert!(sink.emitted.is_empty());
         assert!(states["BTC/USD"].awaiting_snapshot);
         assert!(states["BTC/USD"].open_orders.is_empty());
     }
 
     #[rstest]
-    fn test_process_l3_message_update_parse_error_clears_state_and_resyncs() {
+    fn test_replacement_l3_snapshot_preserves_book_sequence() {
+        let instruments = Arc::new(AtomicMap::new());
+        let instrument = make_instrument();
+        instruments.insert(instrument.id(), instrument);
+
+        let depths = Arc::new(Mutex::new(AHashMap::new()));
+        let snapshot: KrakenL3Snapshot = serde_json::from_str(
+            r#"{
+                "symbol": "BTC/USD",
+                "bids": [],
+                "asks": [],
+                "checksum": 0,
+                "timestamp": "2024-01-01T00:00:00Z"
+            }"#,
+        )
+        .unwrap();
+
+        let mut sink = CollectingSink {
+            emitted: Vec::new(),
+        };
+
+        let mut states = AHashMap::new();
+        let hasher = BookOrderIdHasher::new();
+        let ts_init = UnixNanos::from(1_704_067_201_000_000_000);
+
+        for snapshot in [snapshot.clone(), snapshot] {
+            if let Some(state) = states.get_mut("BTC/USD") {
+                L3State::await_snapshot(state);
+            }
+
+            let rejected = process_l3_message(
+                KrakenL3WsMessage::Snapshot(snapshot),
+                &mut sink,
+                &instruments,
+                &depths,
+                &mut states,
+                &hasher,
+                true,
+                ts_init,
+            );
+            assert!(rejected.is_none());
+        }
+
+        let sequences: Vec<_> = sink.emitted.iter().map(|batch| batch.sequence).collect();
+        assert_eq!(sequences, [0, 1]);
+    }
+
+    #[rstest]
+    fn test_process_l3_message_update_parse_error_suppresses_output_and_resyncs() {
         let instruments = Arc::new(AtomicMap::new());
         let instrument = make_instrument();
         instruments.insert(instrument.id(), instrument);
@@ -470,10 +463,7 @@ mod tests {
         assert_eq!(request.depth, 1000);
         assert_eq!(request.reason, "update parse error");
 
-        assert_eq!(sink.emitted.len(), 1);
-        let clear = &sink.emitted[0];
-        assert_eq!(clear.deltas.len(), 1);
-        assert_eq!(clear.deltas[0].action, BookAction::Clear);
+        assert!(sink.emitted.is_empty());
         assert!(states["BTC/USD"].awaiting_snapshot);
         assert!(states["BTC/USD"].open_orders.is_empty());
     }

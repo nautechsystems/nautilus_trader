@@ -70,7 +70,7 @@ controlling real capital.
 Run this command outside a NautilusTrader source checkout. The repository's
 `python/pyproject.toml` sets an `exclude-newer` uv policy for reproducible development, which can
 filter out newly published wheels. Inside a source checkout, use
-[Build Python from source](#8-build-python-from-source) instead.
+[Build Python from source](#7-build-python-from-source) instead.
 
 PyPI wheels target Python 3.13-3.15.
 Build from source when you need local Rust changes, a debug build, or a platform wheel that is not available.
@@ -269,9 +269,8 @@ cd nautilus_trader
 make sync
 ```
 
-For Python 3.15, follow the
-[environment setup](../developer_guide/environment_setup.md#1-install-dependencies) to exclude
-documentation dependencies from sync, build, and test targets. Documentation builds use Python 3.14.
+To select Python 3.15 or install documentation dependencies, see
+[environment setup](../developer_guide/environment_setup.md#1-install-dependencies).
 
 For development hosts and CI runner images, see the
 [single source of truth for versions](../developer_guide/environment_setup.md#single-source-of-truth-for-versions)
@@ -281,24 +280,7 @@ before installing pinned tools.
 The `--depth 1` flag fetches just the latest commit for a faster, lightweight clone.
 :::
 
-### 6. Install Cap'n Proto for HyperSync
-
-The [Cap'n Proto](https://capnproto.org) compiler remains available for HyperSync schema development.
-The pinned HyperSync dependencies ship generated Rust bindings, so normal builds do not regenerate
-their schemas. Use the repository script on Linux or macOS to install the pinned compiler version
-from `.nautilus-engineering/tools.toml`:
-
-```bash
-./scripts/install-capnp.sh
-```
-
-Verify: `capnp --version`
-
-:::note
-Cap'n Proto is a development dependency. It is not required when installing pre-built wheels.
-:::
-
-### 7. Set environment variables
+### 6. Set environment variables
 
 The uv project environment lives at `python/.venv`, beside `python/pyproject.toml`. Run direct uv
 project commands from `python/` or pass `--project python` from the repository root.
@@ -328,7 +310,7 @@ The `PYTHONHOME` variable is required when running `make cargo-test` with a `uv`
 Without it, tests that depend on PyO3 may fail to locate the Python runtime.
 :::
 
-### 8. Build Python from source
+### 7. Build Python from source
 
 This path builds the PyO3 package from the `python/` directory and installs it into `python/.venv`.
 Use it from a NautilusTrader source checkout when a development wheel is not available for your
@@ -340,8 +322,8 @@ From the repository root:
 make build-debug
 ```
 
-This target syncs `python/.venv`, builds the Rust extension with maturin, and regenerates Python type
-stubs. It uses `target/` for Cargo artifacts.
+This target syncs the development dependencies in `python/.venv` and builds the Rust extension with
+maturin. It uses `target/` for Cargo artifacts. Use `make py-stubs` to regenerate the Python type stubs.
 
 Run a Python example with the project environment:
 

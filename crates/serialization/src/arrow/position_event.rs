@@ -206,7 +206,7 @@ mod tests {
         let metadata = event.metadata();
         let batch = PositionAdjusted::encode_batch(&metadata, &[event]).unwrap();
         let decoded =
-            PositionAdjusted::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+            PositionAdjusted::decode_typed_batch(&batch.schema().metadata().into(), batch).unwrap();
 
         assert_eq!(decoded, vec![event]);
     }
@@ -235,7 +235,8 @@ mod tests {
         };
         let metadata = event.metadata();
         let batch = PositionOpened::encode_batch(&metadata, std::slice::from_ref(&event)).unwrap();
-        let decoded = PositionOpened::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+        let decoded =
+            PositionOpened::decode_typed_batch(&batch.schema().metadata().into(), batch).unwrap();
 
         assert_eq!(decoded, vec![event]);
     }
@@ -270,7 +271,7 @@ mod tests {
         let metadata = event.metadata();
         let batch = PositionChanged::encode_batch(&metadata, std::slice::from_ref(&event)).unwrap();
         let decoded =
-            PositionChanged::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+            PositionChanged::decode_typed_batch(&batch.schema().metadata().into(), batch).unwrap();
 
         assert_eq!(decoded, vec![event]);
     }
@@ -307,7 +308,8 @@ mod tests {
         };
         let metadata = event.metadata();
         let batch = PositionClosed::encode_batch(&metadata, std::slice::from_ref(&event)).unwrap();
-        let decoded = PositionClosed::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+        let decoded =
+            PositionClosed::decode_typed_batch(&batch.schema().metadata().into(), batch).unwrap();
 
         assert_eq!(decoded, vec![event]);
     }

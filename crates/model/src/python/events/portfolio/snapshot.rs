@@ -158,6 +158,11 @@ impl PortfolioSnapshot {
         self.ts_init.as_u64()
     }
 
+    #[getter]
+    fn is_registration(&self) -> bool {
+        self.is_registration
+    }
+
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
             CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),

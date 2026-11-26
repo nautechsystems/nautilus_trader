@@ -35,7 +35,7 @@
 use std::collections::HashMap;
 
 use anyhow::Context;
-use nautilus_core::UnixNanos;
+use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{AccountType, AggressorSide, OrderSide, TimeInForce},
@@ -52,6 +52,7 @@ use crate::common::enums::DydxTransferType;
 use crate::{
     common::{
         enums::{DydxMarketStatus, DydxOrderExecution, DydxOrderType, DydxTimeInForce},
+        instrument_cache::MARKET_INFO_KEY,
         parse::{parse_decimal, parse_instrument_id, parse_price, parse_quantity},
     },
     websocket::messages::DydxSubaccountInfo,
@@ -387,6 +388,14 @@ pub fn parse_instrument_any(
         // min_price: not specified by dYdX
         .maybe_margin_init(margin_init)
         .maybe_margin_maint(margin_maint)
+        .info(Params::new(
+            [(
+                MARKET_INFO_KEY.to_owned(),
+                serde_json::to_value(definition)?,
+            )]
+            .into_iter()
+            .collect(),
+        ))
         .ts_event(ts_init)
         .ts_init(ts_init)
         .build()?;

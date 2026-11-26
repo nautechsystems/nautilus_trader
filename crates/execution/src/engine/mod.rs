@@ -54,8 +54,8 @@ use nautilus_common::{
         },
     },
     msgbus::{
-        self, MStr, MessagingSwitchboard, Pattern, TypedHandler, TypedIntoHandler, get_message_bus,
-        switchboard, typed_handler::ShareableMessageHandler,
+        self, MStr, MessagingSwitchboard, Pattern, TypedIntoHandler, get_message_bus, switchboard,
+        typed_handler::ShareableMessageHandler,
     },
     runner::{
         TradingCommandMessage, capture_trading_cmd, trading_cmd_is_dispatching,
@@ -134,7 +134,6 @@ pub struct ExecutionEngine {
     clients: IndexMap<ClientId, ExecutionClientAdapter>,
     default_client_id: Option<ClientId>,
     routing_map: AHashMap<Venue, ClientId>,
-    instrument_venues: AHashSet<Venue>,
     instrument_close_venues: AHashSet<Venue>,
     external_clients: HashSet<ClientId>,
     pos_id_generator: PositionIdGenerator,
@@ -195,7 +194,6 @@ impl ExecutionEngine {
             clients: IndexMap::new(),
             default_client_id: None,
             routing_map: AHashMap::new(),
-            instrument_venues: AHashSet::new(),
             instrument_close_venues: AHashSet::new(),
             external_clients,
             pos_id_generator: PositionIdGenerator::new(trader_id, clock),
@@ -281,36 +279,6 @@ impl ExecutionEngine {
     #[must_use]
     pub const fn filtered_unclaimed_external_order_count(&self) -> u64 {
         self.filtered_unclaimed_external_order_count
-    }
-
-    /// Subscribes to instrument updates for a venue via the message bus.
-    ///
-    /// When instruments are published by the `DataEngine`, the handler routes
-    /// them to every client whose own venue matches, plus the client routed to that
-    /// venue, if any. Repeated subscriptions for the same venue are ignored.
-    pub fn subscribe_venue_instruments(engine: &Rc<RefCell<Self>>, venue: Venue) {
-        if !engine.borrow_mut().instrument_venues.insert(venue) {
-            return;
-        }
-
-        let weak = WeakCell::from(Rc::downgrade(engine));
-        let pattern = switchboard::get_instruments_pattern(venue);
-
-        let handler = TypedHandler::from(move |instrument: &InstrumentAny| {
-            if let Some(rc) = weak.upgrade() {
-                let venue = instrument.id().venue;
-                let mut engine = rc.borrow_mut();
-                let routed_client = engine.routing_map.get(&venue).copied();
-                for adapter in engine.clients.values_mut() {
-                    if adapter.venue == venue || Some(adapter.client_id) == routed_client {
-                        adapter.on_instrument(instrument.clone());
-                    }
-                }
-            }
-        });
-
-        msgbus::subscribe_instruments(pattern, handler, None);
-        log::info!("Subscribed to instrument updates for venue {venue}");
     }
 
     /// Subscribes to instrument closes for a venue via the message bus.
@@ -5598,7 +5566,7 @@ enum SubmissionValidationResult {
 mod tests {
     use nautilus_common::{
         clock::VirtualClock,
-        msgbus::{MessageBus, set_message_bus},
+        msgbus::{MessageBus, TypedHandler, set_message_bus},
     };
     use nautilus_model::{
         accounts::CashAccount,

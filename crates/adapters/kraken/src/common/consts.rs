@@ -115,6 +115,8 @@ pub const KRAKEN_SPOT_POST_ONLY_ERROR: &str = "EOrder:Post only order";
 /// `AssetPairs` response.
 pub(crate) const KRAKEN_ALTNAME_KEY: &str = "kraken_altname";
 
+pub(crate) const KRAKEN_LEVERAGE_TIERS_KEY: &str = "kraken_leverage_tiers";
+
 /// Instrument `info` key for the scale at which Kraken sends a Spot pair's prices on the wire.
 ///
 /// `AssetPairs` declares it as `pair_decimals`. The instrument's price precision comes from

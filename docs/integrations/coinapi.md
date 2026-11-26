@@ -22,7 +22,7 @@ The Rust crate also exposes `CoinApiHttpClient` and `CoinApiWebSocketClient` for
 
 ## Examples
 
-- [Backtest with Pre-IPO Order Book Data (CoinAPI)](../tutorials/backtest_orderbook_coinapi.md)
+- [Backtest with Equity Perpetual Order Book Data (CoinAPI)](../tutorials/backtest_orderbook_coinapi.md)
 - [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/coinapi/)
 - [Rust examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/coinapi/examples/)
 
@@ -175,15 +175,8 @@ requests and subscriptions.
 
 ### Unsupported contracts
 
-Other exchanges and symbol types are unsupported. This includes Binance COIN-M (`BINANCEFTSC`):
-CoinAPI reports a one-coin contract unit for `BTCUSD_PERP`, while the native Binance contract is
-100 USD.
-
-Kraken dated futures (`KRAKENFTS` `FUTURES`) are also unsupported. CoinAPI reports midnight UTC on the
-delivery date. Kraken's last trading time varies by product: 08:00 UTC for `FF_`, for example. For `FI_`
-contracts, it is 15:00 or 16:00 UTC.
-
-Other rejected forms include Bybit USDC contracts, OKX USD-margined futures such as
+The adapter rejects Binance COIN-M (`BINANCEFTSC`), Kraken dated futures (`KRAKENFTS` `FUTURES`),
+Bybit USDC contracts, OKX USD-margined futures such as
 `BTC-USD_UM-261225`, and ambiguous Binance delivery IDs with a `USD` quote, such as
 `BTCUSD_261225.BINANCE`. A symbol that resembles a supported native ID does not by itself establish
 that its product is supported.
@@ -470,6 +463,9 @@ history pages on one client. Pacing is off by default. With a 10-request-per-min
 limit, `7_000` ms allows at most nine starts per rolling minute per client. Divide that limit among
 clients and jobs.
 
+The Rust and Python live testers use this interval and cap each historical request at 60 records
+from the last hour. Adjust the pacing to fit the quota shared by your clients and jobs.
+
 The client backs off on HTTP 429 and fails promptly on HTTP 403. For HTTP 429, 500, 502, 503, or 504,
 `Retry-After` in seconds or HTTP-date format starts a REST cooldown if the deadline fits the local
 clock. The cooldown starts at header arrival and gates later attempts on the same client, even with
@@ -595,7 +591,7 @@ The loader accepts these optional HTTP keywords:
 | `proxy_url`               | Explicit HTTP(S) proxy for REST and Flat Files.               |
 | `timeout_secs`            | Per-attempt deadline, including admission and body streaming. |
 | `max_concurrent_requests` | Shared limit for REST requests and file downloads.            |
-| `min_request_interval_ms` | Optional minimum spacing between REST attempt starts.         |
+| `min_request_interval_ms` | Minimum interval (milliseconds) between REST attempt starts.  |
 | `credit_budget`           | Lifetime local REST credit allowance.                         |
 | `max_retries`             | Maximum retries for each HTTP request or download.            |
 | `retry_delay_initial_ms`  | Initial retry delay.                                          |
@@ -630,7 +626,7 @@ CoinAPI [Flat Files](https://www.coinapi.io/products/flat-files?ref=nautilus) ar
 exports served over an S3-compatible API. `CoinApiDataLoader` downloads selected objects and reads local
 files using registered instrument definitions. It does not list S3 objects.
 A registered definition can describe an exchange outside the [symbol mappings](#symbol-mappings),
-such as Lighter. See the [pre-IPO order book tutorial](../tutorials/backtest_orderbook_coinapi.md).
+such as Lighter. See the [equity perpetual order book tutorial](../tutorials/backtest_orderbook_coinapi.md).
 Each `load_*` method returns a whole file, and each `stream_*` method yields chunks. Both accept a record
 `limit`.
 
@@ -733,14 +729,14 @@ hold one symbol under
 `T-{SCHEMA}/D-{YYYYMMDD|YYYYMMDDHH}/E-{EXCHANGE}/IDDI-{ID}+SC-{SYMBOL_ID}+S-{EXCHANGE_SYMBOL}.csv.gz`.
 Pass an explicit `instrument_id` for each file.
 
-| Key part              | Example                         | Meaning                                                         |
-| --------------------- | ------------------------------- | --------------------------------------------------------------- |
-| `T-{SCHEMA}`          | `T-LIMITBOOK_FULL`              | Full-book dataset: a snapshot followed by all recorded updates. |
-| `D-{YYYYMMDDHH}`      | `D-2026100100`                  | UTC date and hour: `[00:00, 01:00)` on 2026-10-01.              |
-| `E-{EXCHANGE}`        | `E-LIGHTER`                     | Exchange.                                                       |
-| `IDDI-{ID}`           | `IDDI-47534074`                 | CoinAPI numeric symbol ID.                                      |
-| `SC-{SYMBOL_ID}`      | `SC-LIGHTER_PERP_ANTHROPIC_USD` | CoinAPI symbol ID.                                              |
-| `S-{EXCHANGE_SYMBOL}` | `S-ANTHROPIC`                   | Exchange symbol.                                                |
+| Key part              | Example                   | Meaning                                                         |
+| --------------------- | ------------------------- | --------------------------------------------------------------- |
+| `T-{SCHEMA}`          | `T-LIMITBOOK_FULL`        | Full-book dataset: a snapshot followed by all recorded updates. |
+| `D-{YYYYMMDDHH}`      | `D-2026112315`            | UTC date and hour: `[15:00, 16:00)` on 2026-11-23.              |
+| `E-{EXCHANGE}`        | `E-LIGHTER`               | Exchange.                                                       |
+| `IDDI-{ID}`           | `IDDI-48047693`           | CoinAPI numeric symbol ID.                                      |
+| `SC-{SYMBOL_ID}`      | `SC-LIGHTER_PERP_ANT_USD` | CoinAPI symbol ID.                                              |
+| `S-{EXCHANGE_SYMBOL}` | `S-ANT`                   | Exchange symbol.                                                |
 
 The loaders accept named book updates and numeric codes: `0=ADD`, `1=SUB`, `2=SET`, `3=DELETE`, and
 `4=MATCH`. Snapshots require the named `SNAPSHOT` update. CoinAPI also documents export variants with comma
@@ -814,24 +810,24 @@ source volumes remain valid.
 Register `CoinApiDataClientFactory` and `CoinApiDataClientConfig` with the node builder. The default client ID
 is `COINAPI`. A custom client name becomes its client ID.
 
-| Field                        | Default   | Purpose                                                     |
-| ---------------------------- | --------- | ----------------------------------------------------------- |
-| `api_key`                    | `None`    | API key; `None` reads `COINAPI_API_KEY`.                    |
-| `base_url_http`              | `None`    | REST URL override, including `/v1/`.                        |
-| `base_url_ws`                | `None`    | WebSocket URL override.                                     |
-| `proxy_url`                  | `None`    | Explicit HTTP(S) proxy for REST and WebSocket.              |
-| `instruments`                | Empty     | Instrument selections loaded on connect.                    |
-| `credit_budget`              | `100`     | Local lifetime REST credit allowance for this client.       |
-| `max_retries`                | `3`       | Maximum retries for a failed REST request.                  |
-| `http_timeout_secs`          | `30`      | Per-attempt REST timeout, including concurrency admission.  |
-| `max_concurrent_requests`    | `1`       | Maximum simultaneous REST requests.                         |
-| `min_request_interval_ms`    | `None`    | Minimum spacing between REST attempt starts.                |
-| `retry_delay_initial_ms`     | 1,000     | Initial REST retry delay.                                   |
-| `retry_delay_max_ms`         | 10,000    | Maximum REST backoff; provider retry delays can exceed it.  |
-| `retry_max_elapsed_ms`       | 120,000   | Total budget per REST GET, including admission and retries. |
-| `transport_backend`          | `Sockudo` | Shared WebSocket backend; `Tungstenite` is also available.  |
-| `book_snapshot_timeout_secs` | `10`      | Seconds to wait for a book snapshot; `0` disables.          |
-| `price_precisions`           | Empty     | Price precision overrides by instrument ID.                 |
+| Field                        | Default   | Purpose                                                      |
+| ---------------------------- | --------- | ------------------------------------------------------------ |
+| `api_key`                    | `None`    | API key; `None` reads `COINAPI_API_KEY`.                     |
+| `base_url_http`              | `None`    | REST URL override, including `/v1/`.                         |
+| `base_url_ws`                | `None`    | WebSocket URL override.                                      |
+| `proxy_url`                  | `None`    | Explicit HTTP(S) proxy for REST and WebSocket.               |
+| `instruments`                | Empty     | Instrument selections loaded on connect.                     |
+| `credit_budget`              | `100`     | Local lifetime REST credit allowance for this client.        |
+| `max_retries`                | `3`       | Maximum retries for a failed REST request.                   |
+| `http_timeout_secs`          | `30`      | Per-attempt REST timeout, including concurrency admission.   |
+| `max_concurrent_requests`    | `1`       | Maximum simultaneous REST requests.                          |
+| `min_request_interval_ms`    | `None`    | Minimum interval (milliseconds) between REST attempt starts. |
+| `retry_delay_initial_ms`     | 1,000     | Initial REST retry delay.                                    |
+| `retry_delay_max_ms`         | 10,000    | Maximum REST backoff; provider retry delays can exceed it.   |
+| `retry_max_elapsed_ms`       | 120,000   | Total budget per REST GET, including admission and retries.  |
+| `transport_backend`          | `Sockudo` | Shared WebSocket backend; `Tungstenite` is also available.   |
+| `book_snapshot_timeout_secs` | `10`      | Seconds to wait for a book snapshot; `0` disables.           |
+| `price_precisions`           | Empty     | Price precision overrides by instrument ID.                  |
 
 Configuration rejects unknown fields. Unset URL overrides use the production endpoints. Sockudo is the default
 WebSocket backend. Set `transport_backend=TransportBackend.TUNGSTENITE` to use Tungstenite instead, importing

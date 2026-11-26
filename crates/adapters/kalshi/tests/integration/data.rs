@@ -235,7 +235,7 @@ async fn lifecycle_streams_selected_types_and_shares_demand_across_reconnect() {
 }
 
 #[tokio::test]
-async fn explicit_requests_refresh_context_and_preserve_correlation_filters_and_bounds() {
+async fn bounded_instrument_requests_preserve_correlation_filters_and_bounds() {
     tokio::time::timeout(Duration::from_secs(10), async {
         let peer = Peer::new().await;
         let (sender, mut events) = tokio::sync::mpsc::unbounded_channel();
@@ -274,10 +274,6 @@ async fn explicit_requests_refresh_context_and_preserve_correlation_filters_and_
             );
 
             client.request_instrument(request).unwrap();
-            assert_eq!(
-                definition(&mut events).await.description.unwrap().as_str(),
-                format!("revision-{revision}")
-            );
 
             let DataEvent::Response(DataResponse::Instrument(response)) =
                 events.recv().await.unwrap()
@@ -318,8 +314,6 @@ async fn explicit_requests_refresh_context_and_preserve_correlation_filters_and_
             ))
             .unwrap();
 
-        assert_eq!(definition(&mut events).await.id, ids[1]);
-
         let DataEvent::Response(DataResponse::Instruments(response)) = events.recv().await.unwrap()
         else {
             panic!("expected correlated instruments");
@@ -334,7 +328,15 @@ async fn explicit_requests_refresh_context_and_preserve_correlation_filters_and_
             Some(UnixNanos::from(2_000_000_000_000_000_000))
         );
         assert_eq!(response.params, Some(params));
-        assert_eq!(response.data.len(), 2);
+        assert_eq!(
+            response
+                .data
+                .iter()
+                .map(InstrumentAny::id)
+                .collect::<Vec<_>>(),
+            ids,
+        );
+        assert!(events.try_recv().is_err());
         assert_eq!(peer.requests.load(Ordering::SeqCst), 9);
     })
     .await
@@ -635,6 +637,70 @@ async fn bulk_instrument_requests_respect_configured_and_explicit_selection(
     })
     .await
     .unwrap();
+}
+
+#[rstest::rstest]
+#[tokio::test]
+async fn bounded_instrument_requests_reply_without_live_publication(
+    #[values(false, true)] bulk: bool,
+) {
+    let peer = Peer::new().await;
+    let (sender, mut events) = tokio::sync::mpsc::unbounded_channel();
+    let instrument_id = ids()[0];
+    let client = KalshiDataClient::new(
+        *KALSHI_CLIENT_ID,
+        peer.config.clone(),
+        vec![instrument_id],
+        sender.into(),
+    )
+    .unwrap();
+    let request_id = UUID4::new();
+    let start = Some(UnixNanos::default().to_datetime_utc());
+
+    if bulk {
+        client
+            .request_instruments(RequestInstruments::new(
+                start,
+                None,
+                None,
+                Some(*KALSHI_VENUE),
+                request_id,
+                UnixNanos::from(1),
+                None,
+            ))
+            .unwrap();
+    } else {
+        client
+            .request_instrument(RequestInstrument::new(
+                instrument_id,
+                start,
+                None,
+                None,
+                request_id,
+                UnixNanos::from(1),
+                None,
+            ))
+            .unwrap();
+    }
+
+    let event = tokio::time::timeout(Duration::from_secs(2), events.recv())
+        .await
+        .unwrap()
+        .unwrap();
+
+    let (correlation_id, instruments) = match event {
+        DataEvent::Response(DataResponse::Instruments(response)) if bulk => (
+            response.correlation_id,
+            response.data.iter().map(InstrumentAny::id).collect(),
+        ),
+        DataEvent::Response(DataResponse::Instrument(response)) if !bulk => {
+            (response.correlation_id, vec![response.data.id()])
+        }
+        event => panic!("expected correlated instrument response, received {event:?}"),
+    };
+
+    assert_eq!(correlation_id, request_id);
+    assert_eq!(instruments, [instrument_id]);
 }
 
 #[rstest::rstest]

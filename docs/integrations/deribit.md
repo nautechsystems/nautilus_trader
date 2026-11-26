@@ -611,14 +611,21 @@ self.subscribe_data(
 
 An order's instrument must be loaded by the execution client's `product_types` or `load_ids`.
 The adapter validates order parameters and queues `OrderSubmitted` before sending an order.
-If validation or event queuing fails, the adapter returns an error without sending the order.
-The execution engine handles that error as `OrderDenied`.
+For an unsupported order type, the adapter queues `OrderDenied` with `UNSUPPORTED_ORDER_TYPE`
+and returns `Ok(())` without sending the order. If any other validation fails or the adapter
+cannot queue an event, it returns an error without sending the order. The execution engine
+handles that error as `OrderDenied`.
 
-For order lists, the adapter validates every member and queues all `OrderSubmitted` events
-before sending any member. A validation or queuing failure prevents all venue requests for that list.
+For order lists, the adapter skips closed members. It validates the remaining members and queues
+all `OrderSubmitted` events before sending any member. A validation or queuing failure prevents
+all venue requests for that list. If the first validation failure is an unsupported order type,
+the adapter queues `OrderDenied` for each remaining member and returns `Ok(())` once all denials
+are queued. The offending member receives `UNSUPPORTED_ORDER_TYPE` and the other members receive
+`ORDER_LIST_DENIED`.
 
 Below are the order types, execution instructions, and time-in-force options supported on Deribit.
-Routed spot pairs have the additional restrictions listed under [Spot](#spot).
+Option combos accept only `LIMIT` orders. Routed spot pairs have the additional restrictions listed
+under [Spot](#spot).
 
 ### Order types
 
@@ -1023,9 +1030,9 @@ for the testnet through the testnet interface at [test.deribit.com](https://test
 | `max_retries`                      | `3`        | Maximum retry attempts for recoverable errors.                     |
 | `retry_delay_initial_ms`           | `1,000`    | Initial delay in milliseconds before retrying.                     |
 | `retry_delay_max_ms`               | `10,000`   | Maximum delay in milliseconds between retries.                     |
-| `heartbeat_interval_secs`          | `30`       | WebSocket heartbeat interval.                                      |
+| `heartbeat_interval_secs`          | `30`       | Interval (seconds) between WebSocket heartbeats.                   |
 | `auth_timeout_secs`                | `None`     | Seconds to await the WebSocket auth result; unset means 30.        |
-| `update_instruments_interval_mins` | `60`       | Instrument refresh interval in minutes; `0` disables it.           |
+| `update_instruments_interval_mins` | `60`       | Interval (minutes) between instrument refreshes. `0` disables it.  |
 | `book_snapshot_timeout_secs`       | `10`       | Snapshot wait bound in seconds; `0` disables it.                   |
 | `book_stale_threshold_secs`        | `120`      | Stale-feed threshold in seconds; `0` disables it.                  |
 | `auto_load_missing_instruments`    | `False`    | Lazy-load uncached instruments on subscribe.                       |

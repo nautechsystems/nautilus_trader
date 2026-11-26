@@ -39,10 +39,10 @@ use nautilus_common::{
             SubmitOrder, SubmitOrderList,
         },
     },
-    msgbus::{self, TypedHandler},
+    msgbus::{self, InstrumentSubscription, TypedHandler, switchboard::get_instruments_pattern},
 };
 use nautilus_core::{
-    DurationNanos, Params, UUID4, UnixNanos,
+    AtomicMap, DurationNanos, Params, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -103,10 +103,11 @@ pub struct CoinbaseExecutionClient {
     emitter: ExecutionEventEmitter,
     http_client: CoinbaseHttpClient,
     ws_user: CoinbaseWebSocketClient,
+    instrument_subscription: Option<InstrumentSubscription>,
     session_tasks: TaskGroup,
     pending_tasks: TaskGroup,
     shutdown_errors: Vec<String>,
-    instruments_cache: Arc<AHashMap<String, InstrumentAny>>,
+    instruments_cache: Arc<AtomicMap<String, InstrumentAny>>,
     fills_observed: Arc<Mutex<AHashMap<VenueOrderId, AHashSet<TradeId>>>>,
     fills_pending: Arc<Mutex<AHashMap<VenueOrderId, OrderStatusReport>>>,
     fills_published: Arc<tokio::sync::Mutex<AHashMap<VenueOrderId, OrderStatusReport>>>,
@@ -209,10 +210,11 @@ impl CoinbaseExecutionClient {
             emitter,
             http_client,
             ws_user,
+            instrument_subscription: None,
             session_tasks,
             pending_tasks,
             shutdown_errors: Vec::new(),
-            instruments_cache: Arc::new(AHashMap::new()),
+            instruments_cache: Arc::new(AtomicMap::new()),
             fills_observed: Arc::new(Mutex::new(AHashMap::new())),
             fills_pending: Arc::new(Mutex::new(AHashMap::new())),
             fills_published: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
@@ -360,11 +362,10 @@ impl CoinbaseExecutionClient {
         self.core.account_type == AccountType::Margin
     }
 
-    // Returns true when the instrument resides in the connect-time bootstrap
-    // cache. For the Cash (spot) factory this gates spot-only traffic; for the
-    // Margin factory the cache contains CFM perp + future products.
+    // The Cash factory caches spot instruments. The Margin factory caches CFM futures and perps
     fn is_instrument_cached(&self, instrument_id: &InstrumentId) -> bool {
         self.instruments_cache
+            .load()
             .contains_key(instrument_id.symbol.as_str())
     }
 
@@ -397,6 +398,66 @@ impl CoinbaseExecutionClient {
     }
 }
 
+impl CoinbaseExecutionClient {
+    fn replace_user_websocket(&mut self, replacement: CoinbaseWebSocketClient) {
+        self.ws_user = replacement;
+        self.instrument_subscription.take();
+        self.subscribe_instruments();
+    }
+
+    fn subscribe_instruments(&mut self) {
+        if self.instrument_subscription.is_some() {
+            return;
+        }
+
+        let http_client = self.http_client.clone();
+        let ws_user = self.ws_user.clone();
+        let instruments_cache = Arc::clone(&self.instruments_cache);
+        let margin = self.is_margin();
+        self.instrument_subscription = Some(InstrumentSubscription::new(
+            get_instruments_pattern(self.venue()),
+            TypedHandler::from(move |instrument: &InstrumentAny| {
+                Self::apply_instrument(
+                    &http_client,
+                    &ws_user,
+                    &instruments_cache,
+                    margin,
+                    instrument.clone(),
+                );
+            }),
+        ));
+    }
+
+    fn apply_instrument(
+        http_client: &CoinbaseHttpClient,
+        ws_user: &CoinbaseWebSocketClient,
+        instruments_cache: &AtomicMap<String, InstrumentAny>,
+        margin: bool,
+        instrument: InstrumentAny,
+    ) {
+        if instrument.id().venue != *COINBASE_VENUE {
+            return;
+        }
+
+        let in_scope = match instrument {
+            InstrumentAny::CurrencyPair(_) => !margin,
+            InstrumentAny::CryptoPerpetual(_) | InstrumentAny::CryptoFuture(_) => margin,
+            _ => false,
+        };
+
+        if in_scope
+            && instruments_cache
+                .load()
+                .get(instrument.symbol().as_str())
+                .is_none_or(|cached| cached.ts_init() <= instrument.ts_init())
+        {
+            http_client.cache_instrument(&instrument);
+            instruments_cache.insert(instrument.symbol().to_string(), instrument.clone());
+            ws_user.cache_instrument(instrument);
+        }
+    }
+}
+
 #[async_trait(?Send)]
 impl ExecutionClient for CoinbaseExecutionClient {
     fn is_connected(&self) -> bool {
@@ -415,6 +476,16 @@ impl ExecutionClient for CoinbaseExecutionClient {
         *COINBASE_VENUE
     }
 
+    fn on_instrument(&mut self, instrument: InstrumentAny) {
+        Self::apply_instrument(
+            &self.http_client,
+            &self.ws_user,
+            &self.instruments_cache,
+            self.is_margin(),
+            instrument,
+        );
+    }
+
     fn oms_type(&self) -> OmsType {
         self.core.oms_type
     }
@@ -423,6 +494,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
         self.is_margin()
             && self
                 .instruments_cache
+                .load()
                 .get(instrument_id.symbol.as_str())
                 .is_some_and(|instrument| instrument.id() == instrument_id)
     }
@@ -432,6 +504,8 @@ impl ExecutionClient for CoinbaseExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         if self.core.is_connected() && self.pending_tasks.is_open() && self.session_tasks.is_open()
         {
             return Ok(());
@@ -484,7 +558,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
                     .map(|value| value.expose_secret()),
             )
             .ok_or_else(|| anyhow::anyhow!("Coinbase credentials unavailable for WS reset"))?;
-            self.ws_user = CoinbaseWebSocketClient::with_credential(
+            let replacement = CoinbaseWebSocketClient::with_credential(
                 &self.config.ws_url(),
                 credential,
                 self.config.transport_backend,
@@ -493,12 +567,15 @@ impl ExecutionClient for CoinbaseExecutionClient {
                     .as_ref()
                     .map(|value| value.expose_secret().to_owned()),
             );
+            self.replace_user_websocket(replacement);
         }
 
         if self.core.instruments_initialized() {
             // Instruments were loaded externally; still propagate the cached
             // set to the WS client on reconnect scenarios.
-            let cached: Vec<InstrumentAny> = self.instruments_cache.values().cloned().collect();
+            let cached: Vec<InstrumentAny> =
+                self.instruments_cache.load().values().cloned().collect();
+
             if !cached.is_empty() {
                 self.ws_user.initialize_instruments(cached).await;
             }
@@ -531,16 +608,9 @@ impl ExecutionClient for CoinbaseExecutionClient {
                 );
             }
 
-            let mut map: AHashMap<String, InstrumentAny> =
-                AHashMap::with_capacity(instruments.len());
-            for inst in &instruments {
-                map.insert(inst.id().symbol.as_str().to_string(), inst.clone());
+            for instrument in instruments {
+                self.on_instrument(instrument);
             }
-            self.instruments_cache = Arc::new(map);
-
-            // Propagate to the WS client so the feed handler can resolve
-            // user-channel product IDs to cached instruments.
-            self.ws_user.initialize_instruments(instruments).await;
 
             self.core.set_instruments_initialized();
         }
@@ -628,6 +698,8 @@ impl ExecutionClient for CoinbaseExecutionClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         if self.core.is_started() {
             return Ok(());
         }
@@ -648,6 +720,8 @@ impl ExecutionClient for CoinbaseExecutionClient {
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         if self.core.is_stopped() {
             return Ok(());
         }
@@ -902,7 +976,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
             return Ok(());
         }
 
-        if let Err(reason) = validate_order(&order, &self.instruments_cache) {
+        if let Err(reason) = validate_order(&order, &self.instruments_cache.load()) {
             self.emitter.emit_order_denied(&order, &reason.to_string());
             return Ok(());
         }
@@ -1524,10 +1598,18 @@ fn classify_coinbase_command_failure(error: &anyhow::Error) -> Option<CommandFai
     }
 }
 
+const COINBASE_SUPPORTED_ORDER_TYPES: &[OrderType] =
+    &[OrderType::Market, OrderType::Limit, OrderType::StopLimit];
+
 fn validate_order(
     order: &impl Order,
     instruments_cache: &AHashMap<String, InstrumentAny>,
 ) -> Result<(), OrderDeniedReason> {
+    let order_type = order.order_type();
+    if !COINBASE_SUPPORTED_ORDER_TYPES.contains(&order_type) {
+        return Err(OrderDeniedReason::UnsupportedOrderType { order_type });
+    }
+
     if order.is_reduce_only() {
         return Err(OrderDeniedReason::UnsupportedReduceOnly);
     }
@@ -1630,7 +1712,7 @@ fn coinbase_http_error(err: &anyhow::Error) -> Option<&CoinbaseHttpError> {
 struct UserOrderRecovery {
     http_client: CoinbaseHttpClient,
     emitter: ExecutionEventEmitter,
-    instruments: Arc<AHashMap<String, InstrumentAny>>,
+    instruments: Arc<AtomicMap<String, InstrumentAny>>,
     observed: Arc<Mutex<AHashMap<VenueOrderId, AHashSet<TradeId>>>>,
     pending: Arc<Mutex<AHashMap<VenueOrderId, OrderStatusReport>>>,
     published: Arc<tokio::sync::Mutex<AHashMap<VenueOrderId, OrderStatusReport>>>,
@@ -1756,7 +1838,11 @@ impl UserOrderRecovery {
             let mut observed = self.observed.lock();
 
             for (venue_order_id, instrument_id, trade_id) in fills {
-                if self.instruments.contains_key(instrument_id.symbol.as_str()) {
+                if self
+                    .instruments
+                    .load()
+                    .contains_key(instrument_id.symbol.as_str())
+                {
                     observed.entry(venue_order_id).or_default().insert(trade_id);
                 }
             }
@@ -1769,6 +1855,7 @@ impl UserOrderRecovery {
             .into_iter()
             .filter(|report| {
                 self.instruments
+                    .load()
                     .contains_key(report.instrument_id.symbol.as_str())
                     && report.filled_qty.is_positive()
                     && report.ts_last >= self.start
@@ -1823,6 +1910,7 @@ impl UserOrderRecovery {
                 .await?;
             anyhow::ensure!(
                 self.instruments
+                    .load()
                     .contains_key(report.instrument_id.symbol.as_str()),
                 "order instrument is outside the configured product family"
             );
@@ -2348,6 +2436,7 @@ mod tests {
         cache::Cache,
         enums::Environment,
         messages::{ExecutionEvent, ExecutionReport},
+        msgbus::{publish_instrument, switchboard::get_instrument_topic},
     };
     use nautilus_live::{manager::ExecutionManager, node::LiveNode};
     use nautilus_model::{
@@ -2522,7 +2611,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mut client = CoinbaseExecutionClient::new(core, config).unwrap();
+        let client = CoinbaseExecutionClient::new(core, config).unwrap();
 
         let instrument = if perpetual {
             let mut instrument = crypto_perpetual_ethusdt();
@@ -2538,7 +2627,7 @@ mod tests {
         let instrument_id = instrument.id();
 
         if cached {
-            client.instruments_cache = Arc::new(AHashMap::from([(
+            client.instruments_cache.store(AHashMap::from([(
                 instrument_id.symbol.as_str().to_owned(),
                 instrument,
             )]));
@@ -2552,6 +2641,77 @@ mod tests {
         assert!(!client.provides_bulk_position_coverage(foreign_id));
         assert!(!client.provides_bulk_position_coverage(InstrumentId::from("BTC-USD.COINBASE")));
         assert!(!client.provides_bulk_position_coverage(InstrumentId::from("UNKNOWN.COINBASE")));
+    }
+
+    #[rstest]
+    fn test_exec_submit_order_denies_unsupported_order_type() {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let (emitter, mut rx) = make_emitter();
+        let trader_id = TraderId::from("TRADER-001");
+        let client_id = ClientId::from("COINBASE-TEST");
+
+        let core = ExecutionClientCore::new(
+            trader_id,
+            client_id,
+            *COINBASE_VENUE,
+            OmsType::Netting,
+            AccountId::from("COINBASE-001"),
+            AccountType::Cash,
+            None,
+            Rc::clone(&cache),
+        );
+
+        let config = CoinbaseExecutionClientConfig {
+            api_key: Some("test-key".into()),
+            api_secret: Some("test-secret".into()),
+            base_url_rest: Some("http://127.0.0.1:1".into()),
+            ..Default::default()
+        };
+
+        let mut client = CoinbaseExecutionClient::new(core, config).unwrap();
+        client.emitter = emitter;
+        let instrument = test_instrument();
+        let instrument_id = instrument.id();
+
+        client
+            .instruments_cache
+            .insert(instrument_id.symbol.to_string(), instrument);
+
+        let order = OrderTestBuilder::new(OrderType::MarketToLimit)
+            .trader_id(trader_id)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-UNSUPPORTED-TYPE"))
+            .quantity(Quantity::from("0.1"))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(client_id), false)
+            .unwrap();
+
+        client
+            .submit_order(SubmitOrder::from_order(
+                &order,
+                trader_id,
+                Some(client_id),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+            ))
+            .unwrap();
+
+        let event = rx.try_recv().expect("missing OrderDenied");
+
+        let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+            panic!("Expected OrderDenied, was {event:?}");
+        };
+
+        assert_eq!(denied.client_order_id, order.client_order_id());
+        assert_eq!(denied.reason, "UNSUPPORTED_ORDER_TYPE: MARKET_TO_LIMIT");
+        assert_eq!(
+            rx.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
+        assert!(client.pending_tasks.is_empty());
     }
 
     #[rstest]
@@ -2726,6 +2886,42 @@ mod tests {
         assert!(is_coinbase_local_command_failure(&err));
         assert!(!is_coinbase_explicit_command_rejection(&err));
         assert!(!is_coinbase_ambiguous_command_failure(&err));
+    }
+
+    #[rstest]
+    fn test_instrument_subscription_follows_replacement_user_websocket() {
+        let core = ExecutionClientCore::new(
+            TraderId::from("TRADER-001"),
+            ClientId::from("COINBASE"),
+            *COINBASE_VENUE,
+            OmsType::Netting,
+            AccountId::from("COINBASE-001"),
+            AccountType::Cash,
+            None,
+            Rc::new(RefCell::new(Cache::default())),
+        );
+
+        let config = CoinbaseExecutionClientConfig {
+            api_key: Some("test-key".into()),
+            api_secret: Some("test-secret".into()),
+            ..Default::default()
+        };
+
+        let replacement =
+            CoinbaseWebSocketClient::new(&config.ws_url(), config.transport_backend, None);
+        let mut client = CoinbaseExecutionClient::new(core, config).unwrap();
+        let old_instruments = Arc::clone(client.ws_user.instruments());
+        client.subscribe_instruments();
+        client.replace_user_websocket(replacement);
+        let instrument = test_instrument();
+        let id = instrument.id();
+        publish_instrument(get_instrument_topic(id), &instrument);
+
+        assert_eq!(
+            client.ws_user.instruments().get_cloned(&id),
+            Some(instrument),
+        );
+        assert!(!old_instruments.contains_key(&id));
     }
 
     fn test_instrument() -> InstrumentAny {
@@ -2928,7 +3124,10 @@ mod tests {
             let recovery = UserOrderRecovery {
                 http_client,
                 emitter,
-                instruments: Arc::new(AHashMap::from([("BTC-USD".into(), instrument)])),
+                instruments: Arc::new(AtomicMap::from(AHashMap::from([(
+                    "BTC-USD".into(),
+                    instrument,
+                )]))),
                 observed: Arc::new(Mutex::new(AHashMap::new())),
                 pending: Arc::new(Mutex::new(AHashMap::new())),
                 published: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
@@ -3484,7 +3683,10 @@ mod tests {
         pair.quote_currency = Currency::USDC();
         let instrument = InstrumentAny::CurrencyPair(pair);
         spec.recovery.http_client.cache_instrument(&instrument);
-        spec.recovery.instruments = Arc::new(AHashMap::from([("BTC-USDC".into(), instrument)]));
+        spec.recovery
+            .instruments
+            .store(AHashMap::from([("BTC-USDC".into(), instrument)]));
+
         {
             let mut state = spec.state.lock();
             state.order["order"]["product_id"] = "BTC-USDC".into();

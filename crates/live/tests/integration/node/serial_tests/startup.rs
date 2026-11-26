@@ -46,7 +46,6 @@ async fn test_client_connect_failure_aborts_startup(
         },
         timeout_disconnection: Duration::from_millis(100),
         delay_post_stop: Duration::ZERO,
-        timeout_shutdown: Duration::from_millis(100),
         ..Default::default()
     };
 

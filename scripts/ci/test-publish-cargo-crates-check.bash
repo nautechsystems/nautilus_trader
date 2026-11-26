@@ -60,27 +60,28 @@ if [[ "${1:-}" == "metadata" && "$*" == "metadata --format-version=1 --manifest-
 
   registry_source='"registry+https://github.com/rust-lang/crates.io-index"'
   arrow_source=$registry_source
-  legacy_package=""
-  if [[ "${MOCK_CARGO_CONSUMER_GRAPH:-valid}" == "local-arrow" ]]; then
-    arrow_source=null
-  fi
+  extra_package=""
   case "${MOCK_CARGO_CONSUMER_GRAPH:-valid}" in
-    legacy-arrow | legacy-parquet)
-      legacy_name=${MOCK_CARGO_CONSUMER_GRAPH#legacy-}
-      legacy_package=',
-    {"name":"'"${legacy_name}"'","version":"57.3.1","source":'"${registry_source}"'}'
+    local-arrow)
+      arrow_source=null
       ;;
-    legacy-thrift)
-      legacy_package=',
+    duplicate-arrow | duplicate-parquet)
+      duplicate_name=${MOCK_CARGO_CONSUMER_GRAPH#duplicate-}
+      extra_package=',
+    {"name":"'"${duplicate_name}"'","version":"99.2.0","source":'"${registry_source}"'}'
+      ;;
+    thrift)
+      extra_package=',
     {"name":"thrift","version":"0.17.0","source":'"${registry_source}"'}'
       ;;
   esac
 
-  cat << JSON
+  jq --arg graph "${MOCK_CARGO_CONSUMER_GRAPH:-valid}" \
+    '.packages |= map(select(("missing-" + .name) != $graph))' << JSON
 {
   "packages": [
-    {"name":"arrow","version":"59.3.1","source":${arrow_source}},
-    {"name":"parquet","version":"59.3.1","source":${registry_source}}${legacy_package}
+    {"name":"arrow","version":"100.1.0","source":${arrow_source}},
+    {"name":"parquet","version":"100.1.0","source":${registry_source}}${extra_package}
   ]
 }
 JSON
@@ -597,36 +598,21 @@ if [[ -s "$dry_run_curl_log" ]]; then
   fail "--dry-run mode should not query crates.io versions for a publishable graph."
 fi
 
-local_arrow_output="${work_dir}/local-arrow-output.txt"
-set +e
-MOCK_CARGO_CONSUMER_GRAPH=local-arrow \
-  run_publish_script "--dry-run" "$dev_build_metadata" "$dry_run_exists_file" \
-  "$dry_run_curl_log" "$dry_run_cargo_log" \
-  > "$local_arrow_output" 2>&1
-local_arrow_status=$?
-set -e
-
-if [[ "$local_arrow_status" -eq 0 ]]; then
-  fail "--dry-run mode should reject a local Arrow package in the consumer graph."
-fi
-assert_contains "$local_arrow_output" "Published consumer graph resolved local arrow" \
-  "--dry-run mode did not report the local Arrow package."
-
-for legacy_package in arrow parquet thrift; do
-  legacy_output="${work_dir}/legacy-${legacy_package}-output.txt"
-  set +e
-  MOCK_CARGO_CONSUMER_GRAPH="legacy-${legacy_package}" \
+for graph in local-arrow duplicate-arrow duplicate-parquet missing-arrow missing-parquet thrift; do
+  graph_output="${work_dir}/${graph}-output.txt"
+  if MOCK_CARGO_CONSUMER_GRAPH="$graph" \
     run_publish_script "--dry-run" "$dev_build_metadata" "$dry_run_exists_file" \
     "$dry_run_curl_log" "$dry_run_cargo_log" \
-    > "$legacy_output" 2>&1
-  legacy_status=$?
-  set -e
-
-  if [[ "$legacy_status" -eq 0 ]]; then
-    fail "--dry-run mode should reject legacy ${legacy_package} in the consumer graph."
+    > "$graph_output" 2>&1; then
+    fail "--dry-run mode should reject the ${graph} consumer graph."
   fi
-  assert_contains "$legacy_output" "Published consumer graph resolved Arrow/Parquet 57 or thrift" \
-    "--dry-run mode did not report legacy ${legacy_package}."
+
+  case "$graph" in
+    thrift) expected_error="Published consumer graph resolved thrift" ;;
+    *) expected_error="Expected exactly one crates.io release of ${graph#*-}" ;;
+  esac
+  assert_contains "$graph_output" "$expected_error" \
+    "--dry-run mode did not report why it rejected the ${graph} consumer graph."
 done
 
 publish_no_token_exists_file="${work_dir}/publish-no-token-existing-crates.txt"

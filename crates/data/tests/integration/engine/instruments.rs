@@ -257,6 +257,235 @@ fn test_process_instrument_status_updates_existing(
 }
 
 #[rstest]
+#[case::live_update(false)]
+#[case::request_response(true)]
+fn test_late_live_instrument_keeps_newer_definition(
+    #[case] response_only: bool,
+    mut audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+) {
+    let id = audusd_sim.id;
+    let (handler, saved) = msgbus::stubs::get_typed_message_saving_handler::<InstrumentAny>(None);
+    msgbus::subscribe_instruments(switchboard::get_instrument_topic(id).into(), handler, None);
+
+    let mut engine = data_engine.borrow_mut();
+    audusd_sim.ts_init = UnixNanos::from(30);
+    audusd_sim.price_precision = 6;
+    audusd_sim.price_increment = Price::from("0.000001");
+    let newer = InstrumentAny::CurrencyPair(audusd_sim.clone());
+
+    if response_only {
+        engine.response(DataResponse::Instrument(Box::new(InstrumentResponse::new(
+            UUID4::new(),
+            ClientId::test_default(),
+            id,
+            newer,
+            None,
+            None,
+            UnixNanos::from(40),
+            None,
+        ))));
+    } else {
+        engine.process_data(newer.into());
+    }
+
+    audusd_sim.ts_init = UnixNanos::from(20);
+    audusd_sim.price_precision = 5;
+    audusd_sim.price_increment = Price::from("0.00001");
+    engine.process_data(InstrumentAny::CurrencyPair(audusd_sim).into());
+
+    let cache = engine.cache().borrow();
+    let cached = cache.instrument(&id).unwrap();
+    let messages = saved.get_messages();
+    assert_eq!(cached.ts_init(), UnixNanos::from(30));
+    assert_eq!(cached.price_increment(), Price::from("0.000001"));
+    assert_eq!(messages.len(), usize::from(!response_only));
+
+    if let Some(published) = messages.first() {
+        assert_eq!(published.ts_init(), UnixNanos::from(30));
+        assert_eq!(published.price_increment(), Price::from("0.000001"));
+    }
+}
+
+#[rstest]
+#[case::single(false)]
+#[case::bulk(true)]
+fn test_bounded_instrument_reply_leaves_live_definition_to_refresh(
+    #[case] bulk: bool,
+    mut audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
+    let id = audusd_sim.id;
+    let client_id = data_client.client_id;
+    let request_id = UUID4::new();
+    let (handler, published) =
+        msgbus::stubs::get_typed_message_saving_handler::<InstrumentAny>(None);
+    msgbus::subscribe_instruments(switchboard::get_instrument_topic(id).into(), handler, None);
+    let (handler, replies) =
+        msgbus::stubs::get_typed_message_saving_handler::<DataResponseEnvelope>(None);
+    msgbus::register_response_handler(&request_id, handler);
+
+    let mut engine = data_engine.borrow_mut();
+    engine.register_client(data_client, None);
+    audusd_sim.ts_init = UnixNanos::from(10);
+    audusd_sim.price_precision = 5;
+    audusd_sim.price_increment = Price::from("0.00001");
+    engine.process_data(InstrumentAny::CurrencyPair(audusd_sim.clone()).into());
+
+    let bound = UnixNanos::from(30);
+    let date = bound.to_datetime_utc();
+
+    let request = if bulk {
+        RequestCommand::Instruments(RequestInstruments::new(
+            Some(date),
+            None,
+            Some(client_id),
+            Some(id.venue),
+            request_id,
+            bound,
+            None,
+        ))
+    } else {
+        RequestCommand::Instrument(RequestInstrument::new(
+            id,
+            None,
+            Some(date),
+            Some(client_id),
+            request_id,
+            bound,
+            None,
+        ))
+    };
+
+    engine.execute_request(request).unwrap();
+
+    audusd_sim.ts_init = bound;
+    audusd_sim.price_precision = 6;
+    audusd_sim.price_increment = Price::from("0.000001");
+    let definition = InstrumentAny::CurrencyPair(audusd_sim.clone());
+    let received = UnixNanos::from(40);
+
+    let response = if bulk {
+        DataResponse::Instruments(InstrumentsResponse::new(
+            request_id,
+            client_id,
+            id.venue,
+            vec![definition],
+            None,
+            None,
+            received,
+            None,
+        ))
+    } else {
+        DataResponse::Instrument(Box::new(InstrumentResponse::new(
+            request_id,
+            client_id,
+            id,
+            definition,
+            None,
+            Some(bound),
+            received,
+            None,
+        )))
+    };
+
+    if bulk {
+        engine.response_envelope(DataResponseEnvelope::new(response.clone(), false, None));
+        engine.response_envelope(DataResponseEnvelope::new(response, true, None));
+    } else {
+        engine.response(response);
+    }
+
+    let cache = Rc::clone(engine.cache());
+    assert_eq!(
+        cache.borrow().instrument(&id).unwrap().price_increment(),
+        Price::from("0.00001")
+    );
+    assert_eq!(published.get_messages().len(), 1);
+    let replies = replies.get_messages();
+    assert_eq!(replies.len(), if bulk { 2 } else { 1 });
+    let reply = replies.last().unwrap();
+    assert!(reply.completed());
+    assert_eq!(reply.correlation_id(), &request_id);
+    assert_eq!(reply.failure_reason(), None);
+
+    let returned = match reply.response().unwrap() {
+        DataResponse::Instrument(response) => &response.data,
+        DataResponse::Instruments(response) => {
+            assert_eq!(response.data.len(), 1);
+            &response.data[0]
+        }
+        unexpected => panic!("Expected instrument definition, received {unexpected:?}"),
+    };
+
+    assert_eq!(returned.ts_init(), bound);
+    assert_eq!(returned.price_increment(), Price::from("0.000001"));
+
+    audusd_sim.ts_init = UnixNanos::from(20);
+    engine.process_data(InstrumentAny::CurrencyPair(audusd_sim).into());
+
+    let messages = published.get_messages();
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[1].ts_init(), UnixNanos::from(20));
+    assert_eq!(messages[1].price_increment(), Price::from("0.000001"));
+    let cache = cache.borrow();
+    let cached = cache.instrument(&id).unwrap();
+    assert_eq!(cached.ts_init(), messages[1].ts_init());
+    assert_eq!(cached.price_increment(), messages[1].price_increment());
+}
+
+#[rstest]
+#[case::single(false)]
+#[case::bulk(true)]
+fn test_instrument_response_keeps_newer_cached_definition(
+    #[case] bulk: bool,
+    mut audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+) {
+    let id = audusd_sim.id;
+    let mut engine = data_engine.borrow_mut();
+
+    audusd_sim.ts_init = UnixNanos::from(30);
+    audusd_sim.price_precision = 6;
+    audusd_sim.price_increment = Price::from("0.000001");
+    engine.process_data(InstrumentAny::CurrencyPair(audusd_sim.clone()).into());
+
+    audusd_sim.ts_init = UnixNanos::from(20);
+    audusd_sim.price_precision = 5;
+    audusd_sim.price_increment = Price::from("0.00001");
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let request_id = UUID4::new();
+    let client_id = ClientId::test_default();
+    let received = UnixNanos::from(40);
+
+    let response = if bulk {
+        DataResponse::Instruments(InstrumentsResponse::new(
+            request_id,
+            client_id,
+            id.venue,
+            vec![instrument],
+            None,
+            None,
+            received,
+            None,
+        ))
+    } else {
+        DataResponse::Instrument(Box::new(InstrumentResponse::new(
+            request_id, client_id, id, instrument, None, None, received, None,
+        )))
+    };
+
+    engine.response(response);
+
+    let cache = engine.cache().borrow();
+    let cached = cache.instrument(&id).unwrap();
+    assert_eq!(cached.ts_init(), UnixNanos::from(30));
+    assert_eq!(cached.price_precision(), 6);
+    assert_eq!(cached.price_increment(), Price::from("0.000001"));
+}
+
+#[rstest]
 fn test_trim_to_bounds_trims_instruments(audusd_sim: CurrencyPair, venue: Venue) {
     let mut earlier = audusd_sim.clone();
     earlier.ts_init = UnixNanos::from(1_000);
@@ -448,6 +677,62 @@ fn test_stale_legacy_instrument_is_not_published(
 
 #[cfg(feature = "defi")]
 #[rstest]
+fn test_bounded_instrument_batch_rejects_conflicting_token_definitions(
+    data_engine: Rc<RefCell<DataEngine>>,
+    mut audusd_sim: CurrencyPair,
+) {
+    let token = Token::new(
+        Arc::new(Chain::new(Blockchain::Ethereum, 823_158)),
+        "0x3141592653589793238462643383279502884197"
+            .parse()
+            .unwrap(),
+        "Bounded batch token".into(),
+        "REPLYBATCH".into(),
+        6,
+    );
+
+    audusd_sim.base_currency = token.currency().unwrap();
+    audusd_sim.ts_init = UnixNanos::from(10);
+    let id = audusd_sim.id;
+    let mut conflicting = audusd_sim.clone();
+    conflicting.ts_init = UnixNanos::from(20);
+    std::mem::swap(
+        &mut conflicting.base_currency,
+        &mut conflicting.quote_currency,
+    );
+
+    let request_id = UUID4::new();
+    let (handler, saver) =
+        msgbus::stubs::get_typed_message_saving_handler::<DataResponseEnvelope>(None);
+    msgbus::register_response_handler(&request_id, handler);
+
+    let response = DataResponse::Instruments(InstrumentsResponse::new(
+        request_id,
+        ClientId::test_default(),
+        id.venue,
+        vec![audusd_sim.into_any(), conflicting.into_any()],
+        None,
+        Some(UnixNanos::from(30)),
+        UnixNanos::from(40),
+        None,
+    ));
+    let mut engine = data_engine.borrow_mut();
+    engine.response_envelope(DataResponseEnvelope::new(response, true, None));
+
+    let replies = saver.get_messages();
+    assert_eq!(replies.len(), 1);
+    assert_eq!(replies[0].correlation_id(), &request_id);
+    assert!(replies[0].completed());
+    assert_eq!(
+        replies[0].failure_reason(),
+        Some("Instrument currency integrity check failed")
+    );
+    assert!(replies[0].response().is_none());
+    assert_eq!(engine.cache().borrow().instrument(&id), None);
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
 #[case(false, false)]
 #[case(false, true)]
 #[case(true, false)]
@@ -455,10 +740,11 @@ fn test_stale_legacy_instrument_is_not_published(
 fn test_instrument_response_rejects_currency_conflicts(
     #[case] bulk: bool,
     #[case] conflicting: bool,
+    #[values(false, true)] bounded: bool,
     data_engine: Rc<RefCell<DataEngine>>,
     audusd_sim: CurrencyPair,
 ) {
-    let case = u32::from(bulk) * 2 + u32::from(conflicting);
+    let case = u32::from(bulk) * 4 + u32::from(conflicting) * 2 + u32::from(bounded);
 
     let token = Token::new(
         Arc::new(Chain::new(Blockchain::Ethereum, 823_150 + case)),
@@ -471,8 +757,13 @@ fn test_instrument_response_rejects_currency_conflicts(
     );
     let mut canonical = audusd_sim;
     canonical.base_currency = token.currency().unwrap();
+    if bounded {
+        canonical.ts_init = UnixNanos::from(50);
+    }
+
     let expected = canonical.clone().into_any();
     let mut incoming = canonical.clone();
+    incoming.ts_init = UnixNanos::default();
     if conflicting {
         std::mem::swap(&mut incoming.base_currency, &mut incoming.quote_currency);
     }
@@ -492,6 +783,7 @@ fn test_instrument_response_rejects_currency_conflicts(
     let mut later = canonical.clone();
     later.id = InstrumentId::from("LATER.SIM");
     let expected_later = later.clone().into_any();
+    let end = bounded.then_some(UnixNanos::from(123));
 
     let response = if bulk {
         let mut sibling = canonical;
@@ -502,7 +794,7 @@ fn test_instrument_response_rejects_currency_conflicts(
             sibling.id.venue,
             vec![sibling.into_any(), incoming.into_any(), later.into_any()],
             None,
-            None,
+            end,
             UnixNanos::from(123),
             None,
         ))
@@ -513,7 +805,7 @@ fn test_instrument_response_rejects_currency_conflicts(
             incoming.id,
             incoming.into_any(),
             None,
-            None,
+            end,
             UnixNanos::from(123),
             None,
         )))
@@ -544,7 +836,9 @@ fn test_instrument_response_rejects_currency_conflicts(
         serde_json::to_value(expected).unwrap()
     );
 
-    if bulk {
+    if bounded {
+        assert_eq!(cache.instrument(&expected_later.id()), None);
+    } else if bulk {
         assert_eq!(
             serde_json::to_value(cache.instrument(&expected_later.id()).unwrap()).unwrap(),
             serde_json::to_value(expected_later).unwrap()

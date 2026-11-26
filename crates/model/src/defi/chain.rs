@@ -216,20 +216,21 @@ impl Chain {
 
     /// Returns a reference to the `Chain` corresponding to the given `chain_id`, or `None` if it is not found.
     #[must_use]
+    #[allow(clippy::unreadable_literal, reason = "chain IDs")]
     pub fn from_chain_id(chain_id: u32) -> Option<&'static Self> {
         match chain_id {
             2741 => Some(&chains::ABSTRACT),
             42161 => Some(&chains::ARBITRUM),
             42170 => Some(&chains::ARBITRUM_NOVA),
-            421_614 => Some(&chains::ARBITRUM_SEPOLIA),
-            1_313_161_554 => Some(&chains::AURORA),
+            421614 => Some(&chains::ARBITRUM_SEPOLIA),
+            1313161554 => Some(&chains::AURORA),
             43114 => Some(&chains::AVALANCHE),
             8453 => Some(&chains::BASE),
             84532 => Some(&chains::BASE_SEPOLIA),
             80094 => Some(&chains::BERACHAIN),
             80084 => Some(&chains::BERACHAIN_BARTIO),
             81457 => Some(&chains::BLAST),
-            168_587_773 => Some(&chains::BLAST_SEPOLIA),
+            168587773 => Some(&chains::BLAST_SEPOLIA),
             288 => Some(&chains::BOBA),
             56 => Some(&chains::BSC),
             97 => Some(&chains::BSC_TESTNET),
@@ -244,10 +245,10 @@ impl Chain {
             14 => Some(&chains::FLARE),
             252 => Some(&chains::FRAXTAL),
             43113 => Some(&chains::FUJI),
-            696_969 => Some(&chains::GALADRIEL_DEVNET),
+            696969 => Some(&chains::GALADRIEL_DEVNET),
             100 => Some(&chains::GNOSIS),
             10200 => Some(&chains::GNOSIS_CHIADO),
-            1_666_600_000 => Some(&chains::HARMONY_SHARD_0),
+            1666600000 => Some(&chains::HARMONY_SHARD_0),
             17000 => Some(&chains::HOLESKY),
             999 => Some(&chains::HYPERLIQUID),
             57073 => Some(&chains::INK),
@@ -270,18 +271,18 @@ impl Chain {
             2810 => Some(&chains::MORPH_HOLESKY),
             204 => Some(&chains::OPBNB),
             10 => Some(&chains::OPTIMISM),
-            11_155_420 => Some(&chains::OPTIMISM_SEPOLIA),
+            11155420 => Some(&chains::OPTIMISM_SEPOLIA),
             137 => Some(&chains::POLYGON),
             80002 => Some(&chains::POLYGON_AMOY),
             1101 => Some(&chains::POLYGON_ZKEVM),
             30 => Some(&chains::ROOTSTOCK),
-            7_225_878 => Some(&chains::SAAKURU),
-            534_352 => Some(&chains::SCROLL),
-            11_155_111 => Some(&chains::SEPOLIA),
+            7225878 => Some(&chains::SAAKURU),
+            534352 => Some(&chains::SCROLL),
+            11155111 => Some(&chains::SEPOLIA),
             148 => Some(&chains::SHIMMER_EVM),
             1868 => Some(&chains::SONEIUM),
             50104 => Some(&chains::SOPHON),
-            531_050_104 => Some(&chains::SOPHON_TESTNET),
+            531050104 => Some(&chains::SOPHON_TESTNET),
             5330 => Some(&chains::SUPERSEDE),
             130 => Some(&chains::UNICHAIN),
             1301 => Some(&chains::UNICHAIN_SEPOLIA),
@@ -290,7 +291,7 @@ impl Chain {
             7000 => Some(&chains::ZETA),
             48900 => Some(&chains::ZIRCUIT),
             324 => Some(&chains::ZKSYNC),
-            7_777_777 => Some(&chains::ZORA),
+            7777777 => Some(&chains::ZORA),
             _ => None,
         }
     }
@@ -387,6 +388,7 @@ impl Display for Chain {
 }
 
 // Define a module to contain all the chain definitions.
+#[allow(clippy::unreadable_literal, reason = "chain IDs")]
 pub mod chains {
     use std::sync::LazyLock;
 
@@ -399,9 +401,9 @@ pub mod chains {
     pub static ARBITRUM_NOVA: LazyLock<Chain> =
         LazyLock::new(|| hypersync_chain(Blockchain::ArbitrumNova, 42170));
     pub static ARBITRUM_SEPOLIA: LazyLock<Chain> =
-        LazyLock::new(|| hypersync_chain(Blockchain::ArbitrumSepolia, 421_614));
+        LazyLock::new(|| hypersync_chain(Blockchain::ArbitrumSepolia, 421614));
     pub static AURORA: LazyLock<Chain> =
-        LazyLock::new(|| hypersync_chain(Blockchain::Aurora, 1_313_161_554));
+        LazyLock::new(|| hypersync_chain(Blockchain::Aurora, 1313161554));
     pub static AVALANCHE: LazyLock<Chain> =
         LazyLock::new(|| hypersync_chain(Blockchain::Avalanche, 43114));
     pub static BASE: LazyLock<Chain> = LazyLock::new(|| hypersync_chain(Blockchain::Base, 8453));
@@ -413,7 +415,7 @@ pub mod chains {
         LazyLock::new(|| Chain::new(Blockchain::BerachainBartio, 80084));
     pub static BLAST: LazyLock<Chain> = LazyLock::new(|| hypersync_chain(Blockchain::Blast, 81457));
     pub static BLAST_SEPOLIA: LazyLock<Chain> =
-        LazyLock::new(|| Chain::new(Blockchain::BlastSepolia, 168_587_773));
+        LazyLock::new(|| Chain::new(Blockchain::BlastSepolia, 168587773));
     pub static BOBA: LazyLock<Chain> = LazyLock::new(|| hypersync_chain(Blockchain::Boba, 288));
     pub static BSC: LazyLock<Chain> = LazyLock::new(|| hypersync_chain(Blockchain::Bsc, 56));
     pub static BSC_TESTNET: LazyLock<Chain> =
@@ -435,12 +437,12 @@ pub mod chains {
         LazyLock::new(|| hypersync_chain(Blockchain::Fraxtal, 252));
     pub static FUJI: LazyLock<Chain> = LazyLock::new(|| hypersync_chain(Blockchain::Fuji, 43113));
     pub static GALADRIEL_DEVNET: LazyLock<Chain> =
-        LazyLock::new(|| Chain::new(Blockchain::GaladrielDevnet, 696_969));
+        LazyLock::new(|| Chain::new(Blockchain::GaladrielDevnet, 696969));
     pub static GNOSIS: LazyLock<Chain> = LazyLock::new(|| hypersync_chain(Blockchain::Gnosis, 100));
     pub static GNOSIS_CHIADO: LazyLock<Chain> =
         LazyLock::new(|| hypersync_chain(Blockchain::GnosisChiado, 10200));
     pub static HARMONY_SHARD_0: LazyLock<Chain> =
-        LazyLock::new(|| hypersync_chain(Blockchain::HarmonyShard0, 1_666_600_000));
+        LazyLock::new(|| hypersync_chain(Blockchain::HarmonyShard0, 1666600000));
     pub static HOLESKY: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Holesky, 17000));
     pub static HYPERLIQUID: LazyLock<Chain> =
         LazyLock::new(|| hypersync_chain(Blockchain::Hyperliquid, 999));
@@ -475,7 +477,7 @@ pub mod chains {
     pub static OPTIMISM: LazyLock<Chain> =
         LazyLock::new(|| hypersync_chain(Blockchain::Optimism, 10));
     pub static OPTIMISM_SEPOLIA: LazyLock<Chain> =
-        LazyLock::new(|| hypersync_chain(Blockchain::OptimismSepolia, 11_155_420));
+        LazyLock::new(|| hypersync_chain(Blockchain::OptimismSepolia, 11155420));
     pub static POLYGON: LazyLock<Chain> =
         LazyLock::new(|| hypersync_chain(Blockchain::Polygon, 137));
     pub static POLYGON_AMOY: LazyLock<Chain> =
@@ -485,11 +487,11 @@ pub mod chains {
     pub static ROOTSTOCK: LazyLock<Chain> =
         LazyLock::new(|| hypersync_chain(Blockchain::Rootstock, 30));
     pub static SAAKURU: LazyLock<Chain> =
-        LazyLock::new(|| Chain::new(Blockchain::Saakuru, 7_225_878));
+        LazyLock::new(|| Chain::new(Blockchain::Saakuru, 7225878));
     pub static SCROLL: LazyLock<Chain> =
-        LazyLock::new(|| hypersync_chain(Blockchain::Scroll, 534_352));
+        LazyLock::new(|| hypersync_chain(Blockchain::Scroll, 534352));
     pub static SEPOLIA: LazyLock<Chain> =
-        LazyLock::new(|| hypersync_chain(Blockchain::Sepolia, 11_155_111));
+        LazyLock::new(|| hypersync_chain(Blockchain::Sepolia, 11155111));
     pub static SHIMMER_EVM: LazyLock<Chain> =
         LazyLock::new(|| hypersync_chain(Blockchain::ShimmerEvm, 148));
     pub static SONEIUM: LazyLock<Chain> =
@@ -497,7 +499,7 @@ pub mod chains {
     pub static SOPHON: LazyLock<Chain> =
         LazyLock::new(|| hypersync_chain(Blockchain::Sophon, 50104));
     pub static SOPHON_TESTNET: LazyLock<Chain> =
-        LazyLock::new(|| Chain::new(Blockchain::SophonTestnet, 531_050_104));
+        LazyLock::new(|| Chain::new(Blockchain::SophonTestnet, 531050104));
     pub static SUPERSEDE: LazyLock<Chain> =
         LazyLock::new(|| hypersync_chain(Blockchain::Superseed, 5330));
     pub static UNICHAIN: LazyLock<Chain> =
@@ -511,8 +513,7 @@ pub mod chains {
     pub static ZIRCUIT: LazyLock<Chain> =
         LazyLock::new(|| hypersync_chain(Blockchain::Zircuit, 48900));
     pub static ZKSYNC: LazyLock<Chain> = LazyLock::new(|| hypersync_chain(Blockchain::ZKsync, 324));
-    pub static ZORA: LazyLock<Chain> =
-        LazyLock::new(|| hypersync_chain(Blockchain::Zora, 7_777_777));
+    pub static ZORA: LazyLock<Chain> = LazyLock::new(|| hypersync_chain(Blockchain::Zora, 7777777));
 
     fn hypersync_chain(name: Blockchain, chain_id: u32) -> Chain {
         let mut chain = Chain::new(name, chain_id);
@@ -522,6 +523,7 @@ pub mod chains {
 }
 
 #[cfg(test)]
+#[allow(clippy::unreadable_literal, reason = "chain IDs")]
 mod tests {
     use ahash::AHashSet;
     use rstest::rstest;
@@ -605,11 +607,11 @@ mod tests {
     // https://docs.envio.dev/docs/HyperSync/hypersync-supported-networks
     #[rstest]
     #[case(Blockchain::BerachainBartio, 80084, false)]
-    #[case(Blockchain::BlastSepolia, 168_587_773, false)]
+    #[case(Blockchain::BlastSepolia, 168587773, false)]
     #[case(Blockchain::Chiliz, 88888, true)]
     #[case(Blockchain::CitreaTestnet, 5115, true)]
     #[case(Blockchain::Darwinia, 46, false)]
-    #[case(Blockchain::GaladrielDevnet, 696_969, false)]
+    #[case(Blockchain::GaladrielDevnet, 696969, false)]
     #[case(Blockchain::Gnosis, 100, true)]
     #[case(Blockchain::Holesky, 17000, false)]
     #[case(Blockchain::Hyperliquid, 999, true)]
@@ -623,10 +625,10 @@ mod tests {
     #[case(Blockchain::MoonbaseAlpha, 1287, false)]
     #[case(Blockchain::Morph, 2818, true)]
     #[case(Blockchain::MorphHolesky, 2810, false)]
-    #[case(Blockchain::Saakuru, 7_225_878, false)]
+    #[case(Blockchain::Saakuru, 7225878, false)]
     #[case(Blockchain::Soneium, 1868, true)]
     #[case(Blockchain::Sophon, 50104, true)]
-    #[case(Blockchain::SophonTestnet, 531_050_104, false)]
+    #[case(Blockchain::SophonTestnet, 531050104, false)]
     #[case(Blockchain::Superseed, 5330, true)]
     #[case(Blockchain::Unichain, 130, true)]
     #[case(Blockchain::UnichainSepolia, 1301, false)]
@@ -659,7 +661,7 @@ mod tests {
     #[case(777)]
     #[case(11)]
     #[case(2358)]
-    #[case(2_710_111)]
+    #[case(2710111)]
     #[case(1337)]
     #[case(1204)]
     #[case(139)]

@@ -470,21 +470,23 @@ impl DatabaseQueries {
             _ => instrument_any,
         };
 
-        let (underlying_instrument_id, exercise_style, settlement_type) =
+        let (underlying_instrument_id, premium_style, exercise_style, settlement_type) =
             if let Some(option) = instrument_any.downcast_ref::<OptionContract>() {
                 (
                     option.underlying_instrument_id,
+                    option.premium_style,
                     option.exercise_style,
                     option.settlement_type,
                 )
             } else if let Some(option) = instrument_any.downcast_ref::<CryptoOption>() {
                 (
                     option.underlying_instrument_id,
+                    option.premium_style,
                     option.exercise_style,
                     option.settlement_type,
                 )
             } else {
-                (None, None, None)
+                (None, None, None, None)
             };
 
         sqlx::query(r#"
@@ -492,15 +494,15 @@ impl DatabaseQueries {
                 id, kind, raw_symbol, base_currency, underlying, quote_currency, settlement_currency, isin, asset_class, exchange,
                 strategy_type, multiplier, option_kind, is_inverse, strike_price, activation_ns, expiration_ns, price_precision, size_precision,
                 price_increment, size_increment, margin_init, margin_maint, lot_size, max_quantity, min_quantity, max_notional,
-                min_notional, max_price, min_price, ts_init, ts_event, info, underlying_instrument_id, exercise_style, settlement_type, tick_scheme, strike_currency, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::asset_class, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33::json, $34, $35, $36, $37, $38, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                min_notional, max_price, min_price, ts_init, ts_event, info, underlying_instrument_id, premium_style, exercise_style, settlement_type, tick_scheme, strike_currency, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::asset_class, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33::json, $34, $35, $36, $37, $38, $39, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON CONFLICT (id)
             DO UPDATE
             SET
                 kind = $2, raw_symbol = $3, base_currency= $4, underlying = $5, quote_currency = $6, settlement_currency = $7, isin = $8, asset_class = $9, exchange = $10,
                  strategy_type = $11, multiplier = $12, option_kind = $13, is_inverse = $14, strike_price = $15, activation_ns = $16, expiration_ns = $17 , price_precision = $18, size_precision = $19,
                  price_increment = $20, size_increment = $21, margin_init = $22, margin_maint = $23, lot_size = $24, max_quantity = $25,
-                 min_quantity = $26, max_notional = $27, min_notional = $28, max_price = $29, min_price = $30, ts_init = $31,  ts_event = $32, info = $33::json, underlying_instrument_id = $34, exercise_style = $35, settlement_type = $36, tick_scheme = $37, strike_currency = $38, updated_at = CURRENT_TIMESTAMP
+                 min_quantity = $26, max_notional = $27, min_notional = $28, max_price = $29, min_price = $30, ts_init = $31,  ts_event = $32, info = $33::json, underlying_instrument_id = $34, premium_style = $35, exercise_style = $36, settlement_type = $37, tick_scheme = $38, strike_currency = $39, updated_at = CURRENT_TIMESTAMP
             "#)
             .bind(instrument.id().to_string())
             .bind(kind)
@@ -536,6 +538,7 @@ impl DatabaseQueries {
             .bind(instrument.ts_event().to_string())
             .bind(instrument.info().map(serde_json::to_string).transpose()?)
             .bind(underlying_instrument_id.map(|id| id.to_string()))
+            .bind(premium_style.map(|style| style.to_string()))
             .bind(exercise_style.map(|style| style.to_string()))
             .bind(settlement_type.map(|kind| kind.to_string()))
             .bind(instrument.tick_scheme().map(|scheme| scheme.to_string()))
@@ -1807,10 +1810,10 @@ impl DatabaseQueries {
     ///
     /// # Errors
     ///
-    /// Returns an error if loading events or SQL operations fail.
+    /// Returns an error if loading or assembling a discovered order fails.
     pub async fn load_orders(pool: &PgPool, trader_id: &TraderId) -> anyhow::Result<Vec<OrderAny>> {
         let mut orders: Vec<OrderAny> = Vec::new();
-        let client_order_ids: Vec<ClientOrderId> = sqlx::query(
+        let client_order_ids: Vec<String> = sqlx::query_scalar(
             r#"
             SELECT DISTINCT client_order_id FROM "order_event"
             WHERE trader_id = $1
@@ -1819,18 +1822,15 @@ impl DatabaseQueries {
         .bind(trader_id.to_string())
         .fetch_all(pool)
         .await
-        .map(|rows| {
-            rows.into_iter()
-                .map(|row| ClientOrderId::from(row.get::<&str, _>(0)))
-                .collect()
-        })
-        .map_err(|e| anyhow::anyhow!("Failed to load order ids: {e}"))?;
+        .context("failed to load order IDs")?;
 
         for id in client_order_ids {
-            let order = Self::load_order(pool, &id, trader_id).await?;
-            if let Some(order) = order {
-                orders.push(order);
-            }
+            let id =
+                ClientOrderId::new_checked(&id).context("invalid persisted client order ID")?;
+            let order = Self::load_order(pool, &id, trader_id)
+                .await?
+                .with_context(|| format!("missing events for order {id}"))?;
+            orders.push(order);
         }
         Ok(orders)
     }
@@ -2032,21 +2032,26 @@ impl DatabaseQueries {
         if let Some(replay_state) = replay_state {
             let position: Position = serde_json::from_value(replay_state)
                 .map_err(|e| anyhow::anyhow!("Failed to decode position replay state: {e}"))?;
+            anyhow::ensure!(
+                position.id == *position_id && position.trader_id == *trader_id,
+                "Position replay state for {trader_id}/{position_id} contains {}/{}",
+                position.trader_id,
+                position.id,
+            );
             position.check_accounting()?;
             return Ok(Some(position));
         }
 
         let first_fill = OrderFilledRow::from_row(first)?.0;
 
-        let Some(instrument) =
-            Self::load_instrument_on(connection, &first_fill.instrument_id).await?
-        else {
-            log::error!(
-                "Instrument not found for position {position_id}: {}",
-                first_fill.instrument_id
-            );
-            return Ok(None);
-        };
+        let instrument = Self::load_instrument_on(connection, &first_fill.instrument_id)
+            .await?
+            .with_context(|| {
+                format!(
+                    "missing instrument {} for position {position_id}",
+                    first_fill.instrument_id
+                )
+            })?;
 
         let mut position = Position::new_checked(&instrument, first_fill)?;
 
@@ -2067,17 +2072,17 @@ impl DatabaseQueries {
 
     /// Loads and replays all `Position` entries via the provided `pool`.
     ///
-    /// Loads positions written by `trader_id` and logs unreadable positions before skipping them.
+    /// Only positions written by `trader_id` are loaded.
     ///
     /// # Errors
     ///
-    /// Returns an error if loading or validating position IDs fails.
+    /// Returns an error if loading or replaying a discovered position fails.
     pub async fn load_positions(
         pool: &PgPool,
         trader_id: &TraderId,
     ) -> anyhow::Result<Vec<Position>> {
         let mut connection = pool.acquire().await?;
-        Self::load_positions_on(&mut connection, trader_id, false).await
+        Self::load_positions_on(&mut connection, trader_id).await
     }
 
     pub(super) async fn load_positions_and_general(
@@ -2097,7 +2102,7 @@ impl DatabaseQueries {
             }
         }
 
-        let positions = Self::load_positions_on(&mut transaction, &trader_id, true).await?;
+        let positions = Self::load_positions_on(&mut transaction, &trader_id).await?;
         transaction.commit().await?;
         Ok((general, positions))
     }
@@ -2105,7 +2110,6 @@ impl DatabaseQueries {
     async fn load_positions_on(
         connection: &mut PgConnection,
         trader_id: &TraderId,
-        require_complete: bool,
     ) -> anyhow::Result<Vec<Position>> {
         let position_ids: Vec<String> = sqlx::query_scalar(
             r#"
@@ -2126,16 +2130,9 @@ impl DatabaseQueries {
 
             let position = Self::load_position_on(connection, &id, trader_id)
                 .await
-                .with_context(|| format!("failed to load position {id}"))
-                .and_then(|position| {
-                    position.with_context(|| format!("missing replay data for position {id}"))
-                });
-
-            match position {
-                Ok(position) => positions.push(position),
-                Err(e) if require_complete => return Err(e),
-                Err(e) => log::error!("Skipping unreadable position: {e:#}"),
-            }
+                .with_context(|| format!("failed to load position {id}"))?
+                .with_context(|| format!("missing replay data for position {id}"))?;
+            positions.push(position);
         }
 
         Ok(positions)
@@ -2388,13 +2385,13 @@ impl DatabaseQueries {
     ///
     /// # Errors
     ///
-    /// Returns an error if loading events or SQL operations fail.
+    /// Returns an error if loading or assembling a discovered account fails.
     pub async fn load_accounts(
         pool: &PgPool,
         trader_id: &TraderId,
     ) -> anyhow::Result<Vec<AccountAny>> {
         let mut accounts: Vec<AccountAny> = Vec::new();
-        let account_ids: Vec<AccountId> = sqlx::query(
+        let account_ids: Vec<String> = sqlx::query_scalar(
             r#"
             SELECT DISTINCT account_id FROM "account_event"
             WHERE trader_id = $1
@@ -2403,18 +2400,14 @@ impl DatabaseQueries {
         .bind(trader_id.to_string())
         .fetch_all(pool)
         .await
-        .map(|rows| {
-            rows.into_iter()
-                .map(|row| AccountId::from(row.get::<&str, _>(0)))
-                .collect()
-        })
-        .map_err(|e| anyhow::anyhow!("Failed to load account ids: {e}"))?;
+        .context("failed to load account IDs")?;
 
         for id in account_ids {
-            let account = Self::load_account(pool, &id, trader_id).await?;
-            if let Some(account) = account {
-                accounts.push(account);
-            }
+            let id = AccountId::new_checked(&id).context("invalid persisted account ID")?;
+            let account = Self::load_account(pool, &id, trader_id)
+                .await?
+                .with_context(|| format!("missing events for account {id}"))?;
+            accounts.push(account);
         }
         Ok(accounts)
     }

@@ -537,7 +537,8 @@ mod tests {
         let values = [first, second];
         let batch = GreeksData::encode_batch(&values[0].metadata(), &values).unwrap();
         let decoded =
-            GreeksData::decode_typed_batch(batch.schema().metadata(), batch.clone()).unwrap();
+            GreeksData::decode_typed_batch(&batch.schema().metadata().into(), batch.clone())
+                .unwrap();
 
         assert_eq!(
             batch
@@ -590,7 +591,7 @@ mod tests {
 
         let batch = PortfolioGreeks::encode_batch(&values[0].metadata(), &values).unwrap();
         let decoded =
-            PortfolioGreeks::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+            PortfolioGreeks::decode_typed_batch(&batch.schema().metadata().into(), batch).unwrap();
 
         assert_eq!(decoded.len(), values.len());
         assert_eq!(decoded[0].ts_init, values[0].ts_init);
@@ -627,7 +628,7 @@ mod tests {
         let batch = encode_custom_to_arrow(type_name, std::slice::from_ref(&item))
             .unwrap()
             .unwrap();
-        let metadata = batch.schema().metadata().clone();
+        let metadata = batch.schema_ref().metadata().into();
         let decoded = decode_custom_from_arrow(type_name, &metadata, batch)
             .unwrap()
             .unwrap();
@@ -657,7 +658,8 @@ mod tests {
         );
         let batch =
             YieldCurve::encode_batch(&curve.metadata(), std::slice::from_ref(&curve)).unwrap();
-        let decoded = YieldCurve::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+        let decoded =
+            YieldCurve::decode_typed_batch(&batch.schema().metadata().into(), batch).unwrap();
 
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].ts_init, curve.ts_init);
@@ -691,7 +693,7 @@ mod tests {
             ($type:ty) => {{
                 let batch = <$type>::encode_batch(&HashMap::new(), &Vec::<$type>::new()).unwrap();
                 let decoded =
-                    <$type>::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+                    <$type>::decode_typed_batch(&batch.schema().metadata().into(), batch).unwrap();
                 assert!(decoded.is_empty());
             }};
         }

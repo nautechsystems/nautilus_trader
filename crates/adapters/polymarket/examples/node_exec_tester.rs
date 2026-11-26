@@ -113,7 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_exec_client(None, Box::new(exec_factory), Box::new(exec_config))?
         .with_reconciliation(true)
         .with_reconciliation_lookback_mins(120)
-        .with_timeout_reconciliation(60)
+        .with_timeout_reconciliation_secs(60)
         .with_timeout_disconnection_secs(30)
         .with_delay_post_stop_secs(30)
         .build()?;

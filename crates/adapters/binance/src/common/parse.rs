@@ -21,7 +21,7 @@
 use std::str::FromStr;
 
 use anyhow::Context;
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::{Params, nanos::UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, QuoteTick,
@@ -43,6 +43,7 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use serde_json::Value;
 
+use super::instruments::CONTRACT_TYPE_INFO_KEY;
 use crate::{
     common::{
         consts::BINANCE,
@@ -65,8 +66,8 @@ use crate::{
         },
     },
 };
-const CONTRACT_TYPE_PERPETUAL: &str = "PERPETUAL";
-const CONTRACT_TYPE_TRADIFI_PERPETUAL: &str = "TRADIFI_PERPETUAL";
+pub(crate) const CONTRACT_TYPE_PERPETUAL: &str = "PERPETUAL";
+pub(crate) const CONTRACT_TYPE_TRADIFI_PERPETUAL: &str = "TRADIFI_PERPETUAL";
 const CONTRACT_TYPE_CURRENT_WEEK: &str = "CURRENT_WEEK";
 const CONTRACT_TYPE_NEXT_WEEK: &str = "NEXT_WEEK";
 const CONTRACT_TYPE_CURRENT_MONTH: &str = "CURRENT_MONTH";
@@ -128,6 +129,7 @@ fn parse_tradifi_asset_class(symbol: &BinanceFuturesUsdSymbol) -> anyhow::Result
     match underlying_type {
         "EQUITY" | "CN_EQUITY" | "KR_EQUITY" | "HK_EQUITY" | "PREMARKET" => Ok(AssetClass::Equity),
         "COMMODITY" => Ok(AssetClass::Commodity),
+        "FX" => Ok(AssetClass::FX),
         _ => anyhow::bail!(
             "Unsupported underlying type '{underlying_type}' for TRADIFI_PERPETUAL symbol '{}'",
             symbol.symbol
@@ -308,6 +310,14 @@ pub(crate) fn parse_usdm_instrument_with_fees(
         Delivery,
     }
 
+    if symbol.status != BinanceTradingStatus::Trading {
+        anyhow::bail!(
+            "Symbol '{}' is not trading (status: {:?})",
+            symbol.symbol,
+            symbol.status
+        );
+    }
+
     let contract_kind = match symbol.contract_type.as_str() {
         CONTRACT_TYPE_PERPETUAL => ContractKind::CryptoPerpetual,
         CONTRACT_TYPE_TRADIFI_PERPETUAL => ContractKind::TradFi(parse_tradifi_asset_class(symbol)?),
@@ -323,14 +333,6 @@ pub(crate) fn parse_usdm_instrument_with_fees(
             symbol.symbol,
         ),
     };
-
-    if symbol.status != BinanceTradingStatus::Trading {
-        anyhow::bail!(
-            "Symbol '{}' is not trading (status: {:?})",
-            symbol.symbol,
-            symbol.status
-        );
-    }
 
     let quote_currency = get_currency(symbol.quote_asset.as_str());
     let settlement_currency = get_currency(symbol.margin_asset.as_str());
@@ -360,6 +362,15 @@ pub(crate) fn parse_usdm_instrument_with_fees(
 
     let min_notional = parse_futures_min_notional(&symbol.filters, quote_currency);
 
+    let contract_info = Params::new(
+        [(
+            CONTRACT_TYPE_INFO_KEY.to_owned(),
+            serde_json::Value::from(symbol.contract_type.as_str()),
+        )]
+        .into_iter()
+        .collect(),
+    );
+
     let margin_maint = Decimal::new(1, 1);
 
     match contract_kind {
@@ -384,6 +395,7 @@ pub(crate) fn parse_usdm_instrument_with_fees(
                 .maybe_min_price(min_price)
                 .margin_init(Decimal::ONE)
                 .margin_maint(margin_maint)
+                .info(contract_info)
                 .ts_event(ts_event)
                 .ts_init(ts_init)
                 .build()?;
@@ -409,6 +421,7 @@ pub(crate) fn parse_usdm_instrument_with_fees(
                 .maybe_min_price(min_price)
                 .margin_init(Decimal::ONE)
                 .margin_maint(margin_maint)
+                .info(contract_info)
                 .ts_event(ts_event)
                 .ts_init(ts_init)
                 .build()
@@ -439,6 +452,7 @@ pub(crate) fn parse_usdm_instrument_with_fees(
                 .maybe_min_price(min_price)
                 .margin_init(Decimal::ONE)
                 .margin_maint(margin_maint)
+                .info(contract_info)
                 .ts_event(ts_event)
                 .ts_init(ts_init)
                 .build()
@@ -528,6 +542,15 @@ pub(crate) fn parse_coinm_instrument_with_fees(
 
     let min_notional = parse_futures_min_notional(&symbol.filters, quote_currency);
 
+    let contract_info = Params::new(
+        [(
+            CONTRACT_TYPE_INFO_KEY.to_owned(),
+            serde_json::Value::from(symbol.contract_type.as_str()),
+        )]
+        .into_iter()
+        .collect(),
+    );
+
     let margin_maint = Decimal::new(1, 1);
 
     if is_perpetual {
@@ -551,6 +574,7 @@ pub(crate) fn parse_coinm_instrument_with_fees(
             .maybe_min_price(min_price)
             .margin_init(Decimal::ONE)
             .margin_maint(margin_maint)
+            .info(contract_info)
             .ts_event(ts_event)
             .ts_init(ts_init)
             .build()
@@ -581,6 +605,7 @@ pub(crate) fn parse_coinm_instrument_with_fees(
             .maybe_min_price(min_price)
             .margin_init(Decimal::ONE)
             .margin_maint(margin_maint)
+            .info(contract_info)
             .ts_event(ts_event)
             .ts_init(ts_init)
             .build()
@@ -2197,6 +2222,7 @@ mod tests {
     #[case::hong_kong_equity("0700USDT", "0700", "HK_EQUITY", AssetClass::Equity)]
     #[case::premarket("SPCXUSDT", "SPCX", "PREMARKET", AssetClass::Equity)]
     #[case::commodity("XAUUSDT", "XAU", "COMMODITY", AssetClass::Commodity)]
+    #[case::fx("USDBRLUSDT", "USDBRL", "FX", AssetClass::FX)]
     fn test_parse_usdm_tradifi_perpetual(
         #[case] raw_symbol: &str,
         #[case] underlying: &str,
@@ -2449,6 +2475,33 @@ mod tests {
 
         assert!(is_not_trading_error(&error));
         assert!(!should_warn_on_instrument_parse_error(true, false, &error));
+        assert!(should_warn_on_instrument_parse_error(true, true, &error));
+    }
+
+    #[rstest]
+    #[case::delivering(BinanceTradingStatus::Delivering, "CURRENT_QUARTER DELIVERING", None)]
+    #[case::pending_tradifi(
+        BinanceTradingStatus::PendingTrading,
+        "TRADIFI_PERPETUAL",
+        Some("COIN")
+    )]
+    fn test_usdm_non_trading_skips_warn_only_for_explicit_symbols(
+        #[case] status: BinanceTradingStatus,
+        #[case] contract_type: &str,
+        #[case] underlying_type: Option<&str>,
+    ) {
+        let mut symbol = sample_usdm_symbol();
+        symbol.status = status;
+        symbol.contract_type = contract_type.to_string();
+        symbol.underlying_type = underlying_type.map(str::to_string);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
+
+        let error = parse_usdm_instrument(&symbol, ts, ts).unwrap_err();
+
+        assert!(
+            !should_warn_on_instrument_parse_error(true, false, &error),
+            "Unexpected warning in bulk load: {error}"
+        );
         assert!(should_warn_on_instrument_parse_error(true, true, &error));
     }
 

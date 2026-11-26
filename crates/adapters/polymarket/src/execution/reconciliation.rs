@@ -2630,8 +2630,9 @@ pub(crate) fn cap_order_report_filled_qty(
     confirmed_filled: Option<Decimal>,
     non_reopened_voided: Quantity,
 ) {
+    // A whole-share order can have fractional confirmed fills.
     let confirmed_filled = confirmed_filled
-        .and_then(|qty| Quantity::from_decimal_dp(qty, report.quantity.precision).ok())
+        .and_then(|qty| Quantity::from_decimal(qty).ok())
         .unwrap_or_else(|| Quantity::zero(report.quantity.precision));
 
     let capped = report.filled_qty.min(local_filled.max(confirmed_filled));
@@ -3567,6 +3568,94 @@ mod tests {
         .expect_err("owned open order with contradictory outcome must fail");
 
         assert!(error.to_string().contains("outcome"));
+    }
+
+    #[rstest]
+    #[case("1.130000")]
+    #[case("0.250000")]
+    #[case("2.750001")]
+    fn mass_status_preserves_fractional_fills_after_order_replay(#[case] matched: &str) {
+        use nautilus_execution::reconciliation::generate_reconciliation_order_snapshot_events;
+        use nautilus_model::{
+            events::order::spec::OrderUpdatedSpec,
+            orders::{
+                builder::OrderTestBuilder,
+                stubs::{OrderFilledTestBuilder, TestOrderEventStubs},
+            },
+        };
+
+        let instrument = test_instrument();
+        let ctx = test_fill_context();
+        let venue_id = VenueOrderId::from("V-1");
+        let price = Price::from("0.50");
+        let quantity = Quantity::from("39");
+        let filled = Quantity::from(matched);
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .price(price)
+            .quantity(quantity)
+            .build();
+        order
+            .apply(TestOrderEventStubs::submitted(&order, ctx.account_id))
+            .unwrap();
+        // The adapter can attach the signed venue ID before the venue acknowledges it.
+        let updated = OrderUpdatedSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(instrument.id())
+            .client_order_id(order.client_order_id())
+            .account_id(ctx.account_id)
+            .venue_order_id(venue_id)
+            .quantity(quantity)
+            .price(price)
+            .build();
+        order.apply(OrderEventAny::Updated(updated)).unwrap();
+        order
+            .apply(TestOrderEventStubs::accepted(
+                &order,
+                ctx.account_id,
+                venue_id,
+            ))
+            .unwrap();
+        let fill = OrderFilledTestBuilder::new(&order, &instrument)
+            .last_px(price)
+            .last_qty(filled)
+            .liquidity_side(LiquiditySide::Maker)
+            .build();
+        order.apply(fill).unwrap();
+        let restored =
+            OrderAny::from_events(order.events().into_iter().cloned().collect()).unwrap();
+
+        let row = PolymarketOpenOrder {
+            id: venue_id.to_string(),
+            market: Ustr::from(TEST_CONDITION_ID),
+            asset_id: Ustr::from(TEST_TOKEN_ID),
+            original_size: quantity.as_decimal(),
+            price: price.as_decimal(),
+            size_matched: matched.parse().unwrap(),
+            ..unmapped_open_order()
+        };
+        let now = ctx.clock.get_time_ns();
+        let (mut reports, _) =
+            build_order_reports_from_orders(&[row], &test_instruments(), &ctx, None, now, None)
+                .unwrap();
+        assert_eq!(reports[0].filled_qty, filled);
+        cap_order_reports_to_confirmed_fills(&mut reports, &[], &ctx.settlement, [&restored], true)
+            .unwrap();
+        let report = &reports[0];
+        let events = generate_reconciliation_order_snapshot_events(
+            &restored,
+            report,
+            Some(&instrument),
+            now,
+        );
+        assert!(
+            events.is_empty(),
+            "filled_qty={}, events={events:?}",
+            report.filled_qty
+        );
+        assert_eq!(report.filled_qty, filled);
     }
 
     #[rstest]

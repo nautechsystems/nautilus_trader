@@ -118,6 +118,8 @@ use crate::{
     },
 };
 
+const BLOCKCHAIN_SUPPORTED_ORDER_TYPES: &[OrderType] = &[OrderType::Market];
+
 const RECEIPT_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_PAYLOAD_OPERATION_BATCH_SIZE: usize = 1_000;
 const BPS_DENOMINATOR: u32 = 10_000;
@@ -1614,12 +1616,11 @@ impl BlockchainExecutionClient {
         let instrument_id = order.instrument_id();
         let pool = self.resolve_pool(&instrument_id)?;
 
-        if order.order_type() != OrderType::Market {
-            anyhow::bail!(
-                "Unsupported order type {}; only Market is supported",
-                order.order_type()
-            );
-        }
+        let order_type = order.order_type();
+        anyhow::ensure!(
+            BLOCKCHAIN_SUPPORTED_ORDER_TYPES.contains(&order_type),
+            OrderDeniedReason::UnsupportedOrderType { order_type }
+        );
 
         if !matches!(order.order_side(), OrderSide::Buy | OrderSide::Sell) {
             anyhow::bail!(
@@ -9232,11 +9233,9 @@ mod tests {
         let OrderEventAny::Denied(denied) = &events[0] else {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
-        assert!(
-            denied.reason.contains("only Market is supported"),
-            "was: {}",
-            denied.reason
-        );
+
+        assert_eq!(denied.client_order_id, order.client_order_id());
+        assert_eq!(denied.reason, "UNSUPPORTED_ORDER_TYPE: LIMIT");
     }
 
     #[tokio::test]

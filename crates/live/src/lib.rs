@@ -119,6 +119,13 @@
 // macro expansion; an item-level `allow` cannot reach the expansion
 #![allow(clippy::clone_on_copy)]
 
+// Cargo features are additive, so `examples` enables testkit even in Rust-only builds
+#[cfg(all(
+    feature = "examples",
+    not(any(feature = "python", feature = "test-support"))
+))]
+use nautilus_testkit as _;
+
 pub mod book;
 pub mod execution;
 pub mod runner;

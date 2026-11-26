@@ -346,7 +346,7 @@ def test_order_list_batch_fields_and_shutdown_cancellation(shutdown_cancel) -> N
     node = (
         LiveNode.builder("BATCH", TraderId("TEMPLATE-001"), Environment.SANDBOX)
         .with_delay_post_stop_secs(1 if shutdown_cancel else 0)
-        .with_timeout_connection(2)
+        .with_timeout_connection_secs(2)
         .with_timeout_disconnection_secs(1)
         .add_data_client(
             "TEMPLATE",
@@ -641,7 +641,7 @@ def test_execution_generated_event_reaches_core_and_strategy(kind, expected_stat
     node = (
         LiveNode.builder("EVENTS", TraderId("TEMPLATE-001"), Environment.SANDBOX)
         .with_delay_post_stop_secs(0)
-        .with_timeout_connection(2)
+        .with_timeout_connection_secs(2)
         .with_timeout_disconnection_secs(1)
         .add_data_client(
             "TEMPLATE",
@@ -1070,7 +1070,7 @@ def test_cancel_all_orders_preserves_filter_and_cancels_core_order(output) -> No
     node = (
         LiveNode.builder("CANCEL-ALL", TraderId("TEMPLATE-001"), Environment.SANDBOX)
         .with_delay_post_stop_secs(0)
-        .with_timeout_connection(2)
+        .with_timeout_connection_secs(2)
         .with_timeout_disconnection_secs(1)
         .add_data_client(
             "TEMPLATE",
@@ -1174,7 +1174,7 @@ def test_hosted_historical_callbacks_and_join(failed: bool) -> None:
     node = (
         LiveNode.builder("HISTORY", TraderId("TEMPLATE-001"), Environment.SANDBOX)
         .with_delay_post_stop_secs(0)
-        .with_timeout_connection(2)
+        .with_timeout_connection_secs(2)
         .with_timeout_disconnection_secs(1)
         .add_data_client(
             "TEMPLATE",
