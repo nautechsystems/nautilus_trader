@@ -29,7 +29,7 @@ dependencies = []
 visualization = [
   "pandas>=2.3.3,<4.0.0",
   "plotly>=7.0.0,<8.0.0",
-  "kaleido>=1.5.1,<2.0.0",
+  "kaleido>=1.5.2,<2.0.0",
   "simplejson>=4.3.0,<5.0.0",
 ]
 
@@ -152,7 +152,7 @@ no-build-package = [
 ]
 
 [dependency-groups]
-dev = ["maturin==1.16.0", "ruff>=0.17.6", "ty>=0.0.105"]
+dev = ["maturin==1.16.0", "ruff>=0.17.6", "ty>=0.0.107"]
 test = [
   "pyarrow>=26.0.1",
   "polars",

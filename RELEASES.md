@@ -12,23 +12,25 @@ Released on TBD (UTC).
 - Added complete balance snapshot support for `AccountState`, zeroing balances a full snapshot omits
 - Added mark price, last trade, and bar close fallbacks for unrealized PnL without quotes (#5535), thanks @viliamgonda
 - Added `ParquetDataCatalog::builder()` to open catalogs with named, optional settings
+- Added Binance Portfolio Margin balance and account response models
+- Added Binance USD-M opt-in raw trades via `use_usdm_raw_trades` (#5643), thanks @aaurix
+- Added Binance FX underlying support for TradFi perpetuals (#5708), thanks @shuggg999
+- Added Binance `PreClose` status for perpetuals scheduled for delisting (#5691), thanks @dxwil
 - Added Bybit `load_ids` execution config option to limit reconciliation to selected instruments
 - Added Bybit bounded reconciliation windows that retain older open orders
 - Added Bybit option `exercise_style` and `settlement_type` from the venue contract specification
-- Added Binance Portfolio Margin balance and account response models
-- Added opt-in Binance USD-M raw trades via `use_usdm_raw_trades` (#5643), thanks @aaurix
 - Added Coinbase L2 order book recovery after WebSocket sequence gaps (#5613), thanks @Nawazz-ish
 - Added Databento option `exercise_style` and `settlement_type` from CFI codes, with fixed root rules for OPRA
 - Added Deribit option `exercise_style` from the venue contract specification
 - Added Derive option `exercise_style` and `settlement_type` from the venue contract specification
-- Added Kalshi market data support to the FinFeed adapter
+- Added FinFeed support for Kalshi market data
 - Added FinFeed `finfeed_instrument_id` Python function to build instrument IDs from exchange and outcome IDs
 - Added Hyperliquid opt-in compact L2 book feed (#5587), thanks @graceyangfan
 - Added Hyperliquid product scope for execution clients (#5570), thanks @graceyangfan
 - Added Interactive Brokers contract order types to `instrument.info["orderTypes"]` (#5624), thanks @jweltmer
 - Added Kalshi numbered subaccount support (#5648), thanks for reporting @wangschien
 - Added Kraken `book_snapshot_timeout_secs` for Spot and Futures book recovery (#5300)
-- Added optional Lighter account transaction timestamps to WebSocket wire models
+- Added Lighter optional account transaction timestamps to WebSocket wire models
 - Added OKX low-level chase-trigger placement, amendment, and typed reads for `FUTURES` and `SWAP`
 - Added OKX `order_request_ttl_ms` option to set `expTime` on order requests (#5646), thanks @michalismeng
 - Added OKX option `exercise_style` and `settlement_type` from the venue contract specification
@@ -81,6 +83,8 @@ Released on TBD (UTC).
 - Changed `GreeksCalculator::cache_futures_spread` to reject call/put pairs at or after expiry
 - Changed local option valuation to require currency evidence for the underlying price
 - Changed `OrderDeniedReason` and `OrderDeniedCode` with `MarketExitInProgress`; update exhaustive matches
+- Changed `ExecutionAlgorithmConfig` literals. Set `use_hyphens_in_client_order_ids` to `None` to infer it (#5724)
+- Changed Python `ExecutionAlgorithmConfig` argument order. Pass `log_events` and `log_commands` by keyword (#5724)
 - Changed `SimulatedExchange::process_liquidations` to return `anyhow::Result<()>` for callers to handle
 - Changed Python `PortfolioAnalyzer.add_positions` to raise `ValueError` for realized PnL at precision 17 or 18
 - Changed Python backtest reporting to raise on unsupported float precision. `BacktestNode` skips failed runs by default
@@ -102,6 +106,7 @@ Released on TBD (UTC).
 - Changed Databento and Interactive Brokers share-class stock IDs to use a space (`BRK B`) (#5606), thanks @mmatvien
 - Changed Databento generic loader bounds to `dbn::v3::HasRType` for DBN v1-v3 records
 - Changed Databento GLBX to skip outright futures and options with a missing multiplier. Supply `price_precision` for their market data
+- Changed Architect AX derived `cid` values. Reconcile outstanding orders without a venue order ID before upgrading
 - Changed `BinanceDataClientConfig` literals to require `use_usdm_raw_trades`. Use `false` for aggregate trades (#5643)
 - Changed `BinanceFuturesTradeMsg` literals to require `trade_type` (#5643)
 - Changed `BybitExecutionClientConfig` literals; add `load_ids: None`
@@ -118,8 +123,12 @@ Released on TBD (UTC).
 - Changed `FuturesEditOrderResponse` literals and reads. Add `error` and handle optional `edit_status` (#5614)
 - Changed `KrakenSpotHttpClient::modify_order` to return `Result<Option<VenueOrderId>>`. Handle `None` (#5661)
 - Changed `KrakenDataClientConfig` literals; add `book_snapshot_timeout_secs` or `..Default::default()` (#5300)
+- Changed `KrakenWsOrderResponse.result`. Match `Some(Order(...))`, `Some(Batch(...))`, or `None` (#5744)
+- Changed `KrakenWsExecutionData` literals to require `display_qty`, `expire_time`, and `triggers` (#5704)
 - Changed Kraken Spot checksum recovery to retain the last book and keep validating checksums (#5300)
+- Changed order IDs in Kraken Spot L3 books. Restart for a fresh snapshot and preserve it in cross-version recordings
 - Changed `HypersyncLog` and `transform_hypersync_block` to use adapter types with Alloy primitives
+- Changed Lighter derived `client_order_index` values. Reconcile orders recoverable only by client ID before upgrading
 - Changed Lighter `From<LighterTradeType>` for `LighterTradeQueryType` to `TryFrom`; handle the error
 - Changed Lighter position and asset frame literals; add `transaction_time: None` and update exhaustive matches
 - Changed Lighter venue enums with fallback and settlement variants; update exhaustive matches
@@ -160,7 +169,10 @@ Released on TBD (UTC).
 - Fixed `ParquetDataCatalog::new` converting non-UTF-8 paths lossily, which could open another catalog
 - Fixed Windows Parquet catalog listing for instrument IDs containing colons (#5605), thanks @viliamgonda
 - Fixed idle Parquet promotion reopening the catalog on every message (#5645), thanks @rasmis1235
+- Fixed repeated Parquet promotion failures by setting aside conflicting Feather files (#5693), thanks @madebymlai
+- Fixed Feather writer errors when excluded custom data lacks Arrow encoding (#5761), thanks @salbang
 - Fixed open-only order checks leaving closed venue orders unresolved after lost updates
+- Fixed spawned order IDs to honor the strategy's hyphen setting (#5724), thanks @viliamgonda
 - Fixed trailing stops updating while markets are not open or from stale reopen prices
 - Fixed consecutive simulated maker fills leaking synthetic last prices into later matching
 - Fixed simulated L2 liquidity consumption for delayed trades and re-added levels (#5739), thanks @aaurix
@@ -217,6 +229,7 @@ Released on TBD (UTC).
 - Fixed Binance Futures flagging filled orders as unresolved at shutdown (#5679), thanks for reporting @AlphaTraderK
 - Fixed Binance buffered book deltas replaying before their snapshot (#5639), thanks @founderinaction
 - Fixed Binance Spot instrument loading with extended SBE symbol blocks (#5667), thanks @imbolc
+- Fixed Binance USD-M catalog loads parsing metadata for non-trading contracts (#5713), thanks @raphaelnz
 - Fixed blockchain sync leaving pooled PostgreSQL connections with asynchronous commit enabled
 - Fixed Bybit account margins and minimum notionals losing precision or mishandling invalid values
 - Fixed Bybit TP/SL limit and trigger prices passing validation after floating-point underflow
@@ -245,9 +258,16 @@ Released on TBD (UTC).
 - Fixed Kraken Futures order reports missing post-only and IOC flags (#5628), thanks @zhaow-de
 - Fixed Kraken Futures edit refusals causing local cancels of resting orders (#5614), thanks @zhaow-de
 - Fixed Kraken Futures snapshot flags and stalled buffered book updates (#5688), thanks @alex09x
+- Fixed Kraken Futures partial fills shrinking order size or closing orders early (#5729), thanks @viliamgonda
+- Fixed Kraken Futures amendments dropping the updated trigger price (#5745), thanks @zhaow-de
 - Fixed Kraken Spot WebSocket order events lost after the execution client disconnects and reconnects
 - Fixed Kraken Spot L3 order queue priority to use venue timestamps (#5673), thanks @ahmetsbilgin
 - Fixed Kraken Spot reporting successful client-ID-only amendments as errors (#5661), thanks @viliamgonda
+- Fixed Kraken Spot WebSocket submissions sending unsupported close order types (#5751), thanks @zhaow-de
+- Fixed Kraken Spot WebSocket batch acknowledgments and rejection decoding (#5744), thanks @zhaow-de
+- Fixed Kraken Spot WebSocket stop and take-profit trigger serialization (#5742), thanks @viliamgonda
+- Fixed Kraken Spot reconciliation losing external order terms and fills (#5704), thanks @zhaow-de
+- Fixed Kraken Spot reports losing trigger prices or misclassifying iceberg orders (#5703), thanks @zhaow-de
 - Fixed Lighter trade and account order queries sending authorization tokens in URLs instead of headers
 - Fixed Lighter decoding rejecting whole responses and frames on unfamiliar venue enum values
 - Fixed Lighter metadata decoding rejecting binary-options markets and settlement statuses
@@ -267,6 +287,7 @@ Released on TBD (UTC).
 - Fixed OKX submitting non-positive or misaligned `LIMIT` prices
 - Fixed Polymarket balances not refreshing after auto-redemption events
 - Fixed Polymarket inferred reconciliation fills keeping free balance reduced after restart
+- Fixed Polymarket reconciliation rounding fractional fills on whole-share orders (#5758), thanks @SoYuCry
 - Fixed Polymarket maker fills applying when maker quantities do not sum to the trade size
 - Fixed Polymarket reconciliation of wallet orders and positions outside discovery filters (#5649), thanks @imbolc
 - Fixed Polymarket stale metadata and resolution deadlines for tracked markets (#5671, #5655), thanks @imbolc
@@ -274,6 +295,7 @@ Released on TBD (UTC).
 - Fixed Polymarket exhausting its fast recovery budget on books with no initial snapshot
 - Fixed Polymarket resolution fallbacks retrying every poll after a failure (#5660), thanks @imbolc
 - Fixed Sandbox trailing stops losing activation on Redis reload (#5695)
+- Fixed Sandbox reconnect losing cached balances and margin (#5689), thanks @mian-abd
 
 ### Internal Improvements
 
@@ -317,7 +339,7 @@ Released on TBD (UTC).
 - Upgraded `flamegraph` tool to v0.6.15
 - Upgraded `OSV Scanner` tool to v2.7.1
 - Upgraded `prek` tool to v0.5.11
-- Upgraded `pypi-attestations` tool to v0.0.31
+- Upgraded `pypi-attestations` tool to v0.0.32
 - Upgraded `Socket CLI` tool to v1.16.0
 - Upgraded `uv` tool to v0.13.9
 - Upgraded `markdownlint-cli2` pre-commit hook to v0.24.2
@@ -325,7 +347,9 @@ Released on TBD (UTC).
 - Upgraded `typos` pre-commit hook to v1.52.2
 - Upgraded `uv` pre-commit hook to v0.13.9
 - Upgraded `zizmor` pre-commit hook to v1.32.0
+- Upgraded `ahash` crate to v0.8.13
 - Upgraded `alloy` crate to v2.6.1
+- Upgraded `anyhow` crate to v1.0.105
 - Upgraded `arc-swap` crate to v1.9.5
 - Upgraded `arrow` and `parquet` crates to v60.2.0
 - Upgraded `bytes` crate to v1.12.2
@@ -337,8 +361,9 @@ Released on TBD (UTC).
 - Upgraded `object_store` crate to v0.14.2
 - Upgraded `rand` crate to v0.10.4
 - Upgraded `redb` crate to v5.0.0
-- Upgraded `redis` crate to v1.8.2
+- Upgraded `redis` crate to v1.8.3
 - Upgraded `regex` crate to v1.13.2
+- Upgraded `rstest` crate to v0.29.0
 - Upgraded `smallvec` crate to v1.16.6
 - Upgraded `sockudo-ws` crate to v3.1.1
 - Upgraded `syn` crate to v3.0.10
@@ -347,7 +372,7 @@ Released on TBD (UTC).
 - Upgraded `uuid` crate to v1.29.3
 - Upgraded `webpki-roots` crate to v1.0.12
 - Upgraded `zeroize` crate to v1.9.2
-- Upgraded `kaleido` package to v1.5.1
+- Upgraded `kaleido` package to v1.5.2
 - Upgraded `maturin` package (dev) to v1.16.0
 - Upgraded `myst-parser` package (dev) to v5.2.0
 - Upgraded `polars` package (dev) to v2.1.0
@@ -355,13 +380,14 @@ Released on TBD (UTC).
 - Upgraded `pytest-asyncio` package (dev) to v1.5.0
 - Upgraded `ruff` package (dev) and pre-commit hook to v0.17.6
 - Upgraded `simplejson` package to v4.3.0
-- Upgraded `ty` package (dev) to v0.0.105
+- Upgraded `ty` package (dev) to v0.0.107
 
 ### Documentation Updates
 
-- Documented backtest account-history purging and its effect on balance reports
 - Added Rust program to the CoinAPI Lighter pre-IPO order book backtest tutorial
+- Added VS Code setup for Python development (#5746), thanks @Genaro-Vogelius
 - Added a latency comparison and replay input checks to the FinFeed Polymarket backtest tutorial
+- Documented backtest account-history purging and its effect on balance reports
 - Documented Polymarket order message size units for resting and market order types
 
 ---

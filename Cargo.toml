@@ -123,12 +123,12 @@ nautilus-tardis = { path = "crates/adapters/tardis", version = "0.69.0", default
 # - arrow, parquet major versions must stay in line with datafusion
 # - object_store must stay in line with datafusion (pre-1.0: minor bumps can break)
 # -----------------------------------------------------------------------------
-ahash = { version = "0.8.12", features = ["serde"] }
+ahash = { version = "0.8.13", features = ["serde"] }
 alloy-primitives = { version = "1.7.3", default-features = false, features = [
   "std",
   "serde",
 ] }
-anyhow = "1.0.104"
+anyhow = "1.0.105"
 arc-swap = "1.9.5"
 arraydeque = "0.5.1"
 arrow = { version = "60.2.0", default-features = false, features = [
@@ -239,7 +239,7 @@ rand = { version = "0.10.4", default-features = false, features = [
   "thread_rng",
 ] }
 redb = { version = "5.0.0", default-features = false, features = ["std"] }
-redis = { version = "1.8.2", default-features = false, features = [
+redis = { version = "1.8.3", default-features = false, features = [
   "connection-manager",
   "sentinel",
   "streams",
@@ -383,7 +383,7 @@ rcgen = { version = "0.14.10", default-features = false, features = [
   "crypto",
   "pem",
 ] }
-rstest = { version = "0.28.0", default-features = false }
+rstest = { version = "0.29.0", default-features = false }
 tempfile = "3.27.0"
 turmoil = "0.7.2"
 

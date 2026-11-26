@@ -1,6 +1,13 @@
 
 # cargo-vet audits file
 
+[[audits.ahash]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.8.12 -> 0.8.13"
+importable = false
+notes = "Reviewed published hashing and seed changes, including length bounds on slice reads and target-feature gating of AES intrinsics. The build probe reads the compiler version and target features. Hash values can change across versions."
+
 [[audits.aho-corasick]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1183,6 +1190,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.1.5 -> 0.1.6"
 notes = 'Marks the system-property FFI callback extern "C" so it is no longer a plain Rust fn passed into a C callback slot, and switches its out-parameter from String to Option<String> so non-UTF-8 property values return None instead of panicking across the FFI boundary. Manifest license string normalized to SPDX. Android-only code path; no new build, filesystem, network, process, or credential behavior.'
+
+[[audits.anyhow]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.0.104 -> 1.0.105"
+notes = "Reviewed the published delta. Boxed errors reuse the existing box via a type-specific vtable entry that matches the allocation layout. Pointer construction preserves ownership, and ensure macro changes qualify Err for no-prelude callers."
 
 [[audits.ar_archive_writer]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -4115,6 +4128,12 @@ criteria = "safe-to-run"
 delta = "0.4.20 -> 0.4.21"
 notes = "Reviewed the published delta: basename-only regex selection, literal length filters, and matcher bookkeeping. Separator-capable patterns retain whole-path matching; no new unsafe code or ambient capabilities."
 
+[[audits.globset]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-run"
+delta = "0.4.21 -> 0.4.22"
+notes = "Reviewed the published glob parser changes. Alternation depth is bounded, POSIX classes expand to fixed ranges, and path separator matching is corrected. No new unsafe code or filesystem access."
+
 [[audits.globwalk]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-run"
@@ -4144,6 +4163,13 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.4.19 -> 0.4.20"
 notes = "Reviewed checksum-verified published crates. Validates duplicate content lengths, response status, and GOAWAY stream IDs. Counts reserved pushes and refusals, tracks spent DATA budget across window changes, and defers send-buffer locks. Huffman fast decoding uses bounded safe slices and rejects invalid padding/EOS; all 256 encoding entries and the decode table match the prior release. No new unsafe or ambient capabilities."
+
+[[audits.hashbrown]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.17.1 -> 0.17.2"
+importable = false
+notes = "Reviewed the published table and allocator delta. Raw allocation extraction transfers allocator ownership once and drops it for empty tables. Control-group changes retain target-gated intrinsics and consistent matching masks."
 
 [[audits.hashlink]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -4414,6 +4440,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-run"
 delta = "0.4.33 -> 0.4.34"
 notes = "Reviewed the published delta: directory matcher reuse, cached path keys, inherited ignore rules, and hidden-name fixes. Existing filesystem access remains limited to requested traversal and ignore-file discovery."
+
+[[audits.ignore]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-run"
+delta = "0.4.34 -> 0.4.35"
+notes = "Reviewed the published ignore parsing and directory walk changes. They preserve usable patterns after malformed input, correct component boundaries, and detect symlink cycles without expanding the configured traversal policy."
 
 [[audits.implied-vol]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -5530,6 +5562,13 @@ criteria = "safe-to-deploy"
 delta = "1.8.1 -> 1.8.2"
 notes = "Reviewed checksum-verified published source. Reviewed reply bounds and push demultiplexing, parser reset on connection failure, cache invalidation and cluster routing. No new unsafe operations or authentication paths."
 
+[[audits.redis]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.8.2 -> 1.8.3"
+importable = false
+notes = "Reviewed the published connection and Sentinel changes. Failed synchronous writes close the connection, and Sentinel rejects client certificates without TLS. Cluster refresh and search changes are outside the enabled feature graph."
+
 [[audits.redox_syscall]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -5603,6 +5642,12 @@ criteria = "safe-to-deploy"
 delta = "0.27.0 -> 0.28.0"
 notes = "Reviewed checksum-verified published sources and cargo-vet package diff. Runtime library changes document optional and default case arguments; the matching macro dependency advances to 0.28.0. MSRV and MIT/Apache-2.0 licensing are unchanged. No new runtime code or ambient capabilities."
 
+[[audits.rstest]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.28.0 -> 0.29.0"
+notes = "Reviewed the published delta. The library updates documentation and fixtures and selects the matching macros release. Runtime source, license, and MSRV are unchanged."
+
 [[audits.rstest_macros]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -5614,6 +5659,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.27.0 -> 0.28.0"
 notes = "Reviewed checksum-verified published sources. Adds parsing, validation, and generated expressions for optional/default case arguments, preserving ordinary case arguments. Build script, dependencies, filesystem expansion, and process behavior are unchanged; no new unsafe operations."
+
+[[audits.rstest_macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.28.0 -> 0.29.0"
+notes = "Reviewed the published macro delta. Fixture resolution accepts a matching identifier with opposite mutability, and the parser updates to syn 3. Build script and filesystem behavior are unchanged."
 
 [[audits.ruint]]
 who = "Nautech Systems <info@nautechsystems.io>"

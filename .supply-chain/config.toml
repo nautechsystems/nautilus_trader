@@ -787,10 +787,6 @@ criteria = "safe-to-run"
 version = "0.8.7"
 criteria = "safe-to-deploy"
 
-[[exemptions.crossbeam-epoch]]
-version = "0.9.8"
-criteria = "safe-to-deploy"
-
 [[exemptions.crossbeam-queue]]
 version = "0.3.13"
 criteria = "safe-to-deploy"
@@ -1546,10 +1542,6 @@ version = "0.8.4"
 criteria = "safe-to-run"
 
 [[exemptions.md-5]]
-version = "0.10.6"
-criteria = "safe-to-deploy"
-
-[[exemptions.md-5]]
 version = "0.11.0"
 criteria = "safe-to-deploy"
 
@@ -1559,10 +1551,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.mimalloc]]
 version = "0.1.52"
-criteria = "safe-to-deploy"
-
-[[exemptions.mime]]
-version = "0.3.16"
 criteria = "safe-to-deploy"
 
 [[exemptions.minimal-lexical]]
@@ -1580,10 +1568,6 @@ criteria = "safe-to-deploy"
 [[exemptions.naive-timer]]
 version = "0.2.0"
 criteria = "safe-to-deploy"
-
-[[exemptions.nix]]
-version = "0.31.3"
-criteria = "safe-to-run"
 
 [[exemptions.ntapi]]
 version = "0.4.3"
@@ -1731,10 +1715,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.portable-atomic]]
 version = "1.13.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.portable-atomic-util]]
-version = "0.2.7"
 criteria = "safe-to-deploy"
 
 [[exemptions.potential_utf]]
