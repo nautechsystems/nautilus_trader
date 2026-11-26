@@ -171,6 +171,7 @@ Released on TBD (UTC).
 - Fixed `LiveNode::start` timing out when execution clients wait for account registration
 - Fixed live node panics on excessive `timeout_connection`, `timeout_disconnection`, or `delay_post_stop` values
 - Fixed panics when analytics, backtests, or data aggregation convert values at precision 17 or 18
+- Fixed a process abort when strategies close positions with `GTD` by returning an error before submission
 - Fixed custom tick-scheme persistence for `BinaryOption` Parquet catalogs
 - Fixed stale order status reports overwriting newer amendments for clients requiring authoritative fills
 - Fixed reconciliation applying `Accepted` reports to orders with fills or a closed status

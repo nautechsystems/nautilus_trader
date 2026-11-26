@@ -169,8 +169,15 @@ impl OrderFactory {
         .unwrap_or_else(|e| panic!("{e}"))
     }
 
+    /// Creates a new market order, returning an error instead of panicking on invalid parameters.
+    ///
+    /// Uses [`TimeInForce::Gtc`] when `time_in_force` is `None`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the parameters fail [`MarketOrder::new_checked`] validation.
     #[expect(clippy::too_many_arguments)]
-    pub(crate) fn try_market(
+    pub fn try_market(
         &mut self,
         instrument_id: InstrumentId,
         order_side: OrderSide,
