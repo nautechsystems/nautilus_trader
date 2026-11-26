@@ -139,9 +139,10 @@ follows this pattern:
 For example, the first order spawned from `O-20230404-001-000` has the ID
 `O-20230404-001-000-E1`.
 
-When hyphens are disabled (`use_hyphens_in_client_order_ids=False`), each child gets a fresh
-32-character UUID without hyphens. This meets the client order ID requirements of venues such as
-OKX.
+When hyphens are disabled (`use_hyphens_in_client_order_ids=False`), the algorithm derives a
+32-character UUID from the full primary order ID and the spawn sequence. The same inputs produce
+the same child ID. The UUID contains only hexadecimal characters, which meets OKX's client order
+ID requirements.
 
 When the setting is omitted or `None`, the algorithm uses hyphens if the primary order ID contains
 one.

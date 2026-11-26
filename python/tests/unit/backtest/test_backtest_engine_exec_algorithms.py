@@ -144,6 +144,28 @@ class HyphenatedSpawnConfig(ExecutionAlgorithmConfig):
         )
 
 
+class FixedSpawnConfig(ExecutionAlgorithmConfig):
+    """
+    Require an algorithm ID and accept the logging options.
+    """
+
+    def __new__(
+        cls,
+        exec_algorithm_id: ExecAlgorithmId | str,
+        log_events: bool = True,
+        log_commands: bool = True,
+    ) -> Self:
+        """
+        Construct the config with the inherited spawn format.
+        """
+        return super().__new__(
+            cls,
+            exec_algorithm_id=exec_algorithm_id,
+            log_events=log_events,
+            log_commands=log_commands,
+        )
+
+
 class SubclassInitExecutionAlgorithm(ExecutionAlgorithm):
     """
     Construct the algorithm config in __init__ if none is supplied.
@@ -608,14 +630,26 @@ def test_execution_algorithm_to_importable_config_round_trips_custom_config() ->
     engine.dispose()
 
 
-@pytest.mark.parametrize("use_hyphens", [True, None])
+@pytest.mark.parametrize(
+    ("use_hyphens", "fixed_signature"),
+    [(True, False), (None, False), (None, True)],
+    ids=["hyphenated", "explicit-auto", "fixed-signature"],
+)
 def test_execution_algorithm_subclass_config_in_init_survives_round_trip(
     use_hyphens: bool | None,
+    fixed_signature: bool,
 ) -> None:
     """
     Preserve the spawn format when an algorithm is exported and reloaded.
     """
-    if use_hyphens is True:
+    if fixed_signature:
+        config = FixedSpawnConfig(
+            exec_algorithm_id=ExecAlgorithmId("SUBCLASS-INIT"),
+            log_events=False,
+        )
+
+        algorithm = SubclassInitExecutionAlgorithm(config)
+    elif use_hyphens is True:
         algorithm = SubclassInitExecutionAlgorithm()
     else:
         config = HyphenatedSpawnConfig(
@@ -642,17 +676,27 @@ def test_execution_algorithm_subclass_config_in_init_survives_round_trip(
         assert loaded is not algorithm
         restored = loaded.spawn_market(primary, quantity, reduce_primary=False)
 
-        assert importable.config["use_hyphens_in_client_order_ids"] is use_hyphens
+        expected_config: dict[str, object] = {
+            "exec_algorithm_id": "SUBCLASS-INIT",
+            "log_events": not fixed_signature,
+            "log_commands": True,
+        }
 
-        for child in (original, restored):
-            assert child.exec_spawn_id == ClientOrderId(primary_id)
-            if use_hyphens is True:
-                assert child.client_order_id == ClientOrderId(f"{primary_id}-E1")
-            else:
-                assert re.fullmatch(
-                    r"[0-9a-f]{12}4[0-9a-f]{3}[89ab][0-9a-f]{15}",
-                    str(child.client_order_id),
-                )
+        if not fixed_signature:
+            expected_config["use_hyphens_in_client_order_ids"] = use_hyphens
+
+        assert importable.config == expected_config
+        assert loaded.to_importable_config().config == expected_config
+        assert original.exec_spawn_id == ClientOrderId(primary_id)
+        assert restored.exec_spawn_id == original.exec_spawn_id
+        assert restored.client_order_id == original.client_order_id
+        if use_hyphens is True:
+            assert original.client_order_id == ClientOrderId(f"{primary_id}-E1")
+        else:
+            assert re.fullmatch(
+                r"[0-9a-f]{12}8[0-9a-f]{3}[89ab][0-9a-f]{15}",
+                str(original.client_order_id),
+            )
     finally:
         SubclassInitExecutionAlgorithm.last_instance = None
         engine.dispose()

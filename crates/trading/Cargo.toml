@@ -57,6 +57,7 @@ nautilus-portfolio = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+blake3 = { workspace = true }
 bon = { workspace = true }
 indexmap = { workspace = true }
 jiff = { workspace = true }

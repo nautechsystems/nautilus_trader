@@ -1615,14 +1615,45 @@ fn py_config_to_json(config: &Bound<'_, PyAny>) -> PyResult<HashMap<String, serd
         "actor_id",
         "log_events",
         "log_commands",
-        "use_hyphens_in_client_order_ids",
     ] {
         if let Ok(value) = config.getattr(field) {
             config_dict.set_item(field, value)?;
         }
     }
 
+    let field = "use_hyphens_in_client_order_ids";
+    if let Ok(value) = config.getattr(field)
+        && accepts_config_keyword(config, field)?
+    {
+        config_dict.set_item(field, value)?;
+    }
+
     py_dict_to_json(&config_dict)
+}
+
+fn accepts_config_keyword(config: &Bound<'_, PyAny>, field: &str) -> PyResult<bool> {
+    let py = config.py();
+    let inspect = py.import("inspect")?;
+    let config_type = config.get_type();
+    let kwargs = PyDict::new(py);
+    kwargs.set_item(field, py.None())?;
+
+    for name in ["__new__", "__init__"] {
+        let constructor = config_type.getattr(name)?;
+
+        let Ok(signature) = inspect.call_method1("signature", (constructor,)) else {
+            return Ok(false);
+        };
+
+        if signature
+            .call_method("bind_partial", (), Some(&kwargs))
+            .is_err()
+        {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
 }
 
 fn py_dict_to_json(config: &Bound<'_, PyDict>) -> PyResult<HashMap<String, serde_json::Value>> {

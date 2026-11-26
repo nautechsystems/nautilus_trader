@@ -25,7 +25,7 @@ use nautilus_common::{
     clock::Clock,
     msgbus::TypedHandler,
 };
-use nautilus_core::{Params, UUID4, hex};
+use nautilus_core::{Params, hex};
 use nautilus_model::{
     events::{OrderEventAny, PositionEvent},
     identifiers::{ActorId, ClientOrderId, ExecAlgorithmId, StrategyId, TraderId},
@@ -209,8 +209,8 @@ impl ExecutionAlgorithmCore {
 
     /// Generates the next spawn client order ID for a primary order.
     ///
-    /// Uses `{primary_id}-E{sequence}` when hyphens are enabled and a fresh 32-character
-    /// UUID without hyphens otherwise.
+    /// Uses `{primary_id}-E{sequence}` when hyphens are enabled. Otherwise, it derives a
+    /// 32-character UUID from the full primary ID and spawn sequence.
     #[must_use]
     pub fn spawn_client_order_id(&mut self, primary_id: &ClientOrderId) -> ClientOrderId {
         let sequence = self
@@ -227,7 +227,17 @@ impl ExecutionAlgorithmCore {
         if use_hyphens {
             ClientOrderId::new(format!("{primary_id}-E{sequence}"))
         } else {
-            ClientOrderId::new(hex::encode(UUID4::new_bytes()))
+            let mut hasher =
+                blake3::Hasher::new_derive_key("NautilusTrader execution algorithm spawn ID");
+            hasher.update(primary_id.as_str().as_bytes());
+            hasher.update(&sequence.to_be_bytes());
+            let mut bytes = [0_u8; 16];
+            hasher.finalize_xof().fill(&mut bytes);
+
+            // UUIDv8 reserves a distinct version from UUIDv4 strategy IDs
+            bytes[6] = (bytes[6] & 0x0f) | 0x80;
+            bytes[8] = (bytes[8] & 0x3f) | 0x80;
+            ClientOrderId::new(hex::encode(bytes))
         }
     }
 
@@ -519,6 +529,7 @@ mod tests {
     #[rstest]
     #[case("O20261120091010001A1", "O20261120091010001A1E1")]
     #[case("O202611200910101A234567890123451", "O202611200910101B234567890123451")]
+    #[case("OABCDEFGHIJKLMNOPQRSTUVWXYZ12340", "OABCDEFGHIJKLMNOPQRSTUVWXYZ12341")]
     #[case("c023d8c0bdfd4399b101689255a6217b", "c023d8c0bdfd439ab101689255a6217b")]
     #[case("OABC", "EABC")]
     #[case("Desk_1", "Desk1")]
@@ -541,6 +552,11 @@ mod tests {
         assert_ne!(child1, child2);
         assert_ne!(child1, child3);
         assert_ne!(child2, child3);
+
+        let mut replay = ExecutionAlgorithmCore::new(create_test_config());
+        assert_eq!(replay.spawn_client_order_id(&first), child1);
+        assert_eq!(replay.spawn_client_order_id(&first), child3);
+        assert_eq!(replay.spawn_client_order_id(&second), child2);
     }
 
     #[rstest]
