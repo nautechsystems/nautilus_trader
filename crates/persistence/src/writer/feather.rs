@@ -3692,4 +3692,42 @@ mod tests {
         );
         assert!(writer.writers.is_empty());
     }
+
+    #[rstest]
+    #[case::excluded_identifier("OTHER.TEST", Ok(()))]
+    #[case::included_identifier(
+        "RUST.TEST",
+        Err("Custom data type \"JsonOnlyCustomData\" is not registered for Arrow")
+    )]
+    fn test_write_custom_data_filters_identifier_before_arrow_encoding(
+        #[case] allowed_identifier: &str,
+        #[case] expected: Result<(), &str>,
+    ) {
+        let temp_dir = TempDir::new().unwrap();
+        let custom = json_only_custom_data();
+        let mut filter = WriterRecordFilter::new();
+        filter.insert(
+            NautilusDataType::Custom {
+                type_name: custom.data.type_name().to_string(),
+            },
+            Some(vec![allowed_identifier.to_string()]),
+        );
+
+        let mut writer = FeatherWriter::new(
+            temp_dir.path().to_path_buf(),
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::NoRotation,
+            None,
+            None,
+        )
+        .with_record_filter(Some(filter));
+
+        let written = writer.write_any_message(&custom).map_err(|e| e.to_string());
+        let flushed = writer.flush().map_err(|e| e.to_string());
+
+        let expected = expected.map_err(str::to_owned);
+        assert_eq!(written, expected.clone().map(|()| true));
+        assert_eq!(flushed, expected);
+        assert!(!temp_dir.path().join("data").join("custom").exists());
+    }
 }
