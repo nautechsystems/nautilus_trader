@@ -18,8 +18,11 @@ from dataclasses import asdict
 from dataclasses import dataclass
 from dataclasses import fields
 from inspect import get_annotations
+from types import UnionType
 from typing import Any
+from typing import Union
 from typing import dataclass_transform
+from typing import get_args
 from typing import get_origin
 
 from nautilus_trader.model import InstrumentId
@@ -172,7 +175,16 @@ def _get_annotations(cls) -> dict[str, Any]:
     return {field.name: annotations[field.name] for field in fields(cls)}
 
 
+def _unwrap_optional(annotation: Any) -> Any:
+    if get_origin(annotation) in (Union, UnionType):
+        non_none = [arg for arg in get_args(annotation) if arg is not type(None)]
+        if len(non_none) == 1:
+            return non_none[0]
+    return annotation
+
+
 def _serialize_field_value(annotation: Any, value: Any) -> Any:
+    annotation = _unwrap_optional(annotation)
     if annotation is InstrumentId and value is not None:
         return str(value)
 
@@ -182,6 +194,7 @@ def _serialize_field_value(annotation: Any, value: Any) -> Any:
 
 
 def _deserialize_field_value(annotation: Any, value: Any) -> Any:
+    annotation = _unwrap_optional(annotation)
     if annotation is InstrumentId and isinstance(value, str):
         return InstrumentId.from_str(value)
 
@@ -191,6 +204,7 @@ def _deserialize_field_value(annotation: Any, value: Any) -> Any:
 
 
 def _is_dict_annotation(annotation: Any) -> bool:
+    annotation = _unwrap_optional(annotation)
     return annotation is dict or get_origin(annotation) is dict
 
 
@@ -205,10 +219,11 @@ def _arrow_schema_for_class(cls, pa):
         dict: pa.string(),
     }
 
-    fields = [
-        pa.field(name, type_mapping[get_origin(annotation) or annotation])
-        for name, annotation in _get_annotations(cls).items()
-    ]
+    fields = []
+
+    for name, annotation in _get_annotations(cls).items():
+        resolved = _unwrap_optional(annotation)
+        fields.append(pa.field(name, type_mapping[get_origin(resolved) or resolved]))
     fields.extend(
         [
             pa.field("type", pa.string(), nullable=False),
