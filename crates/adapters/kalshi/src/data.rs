@@ -1038,6 +1038,7 @@ impl Session {
             let new_generation = generation != Some(current);
             if new_generation {
                 scan_cancel.cancel();
+
                 if let Some(done) = refresh_done.take() {
                     let _ = done.await;
                 }
@@ -1731,6 +1732,7 @@ mod tests {
         let tick = time::timeout(Duration::from_secs(5), async {
             input.send(KalshiWsEvent::Ready { generation: 0 }).unwrap();
             initialized.await.unwrap().unwrap();
+
             while output.try_recv().is_ok() {}
 
             peer.response_gate
@@ -2145,6 +2147,7 @@ mod tests {
         time::timeout(Duration::from_secs(5), async {
             input.send(KalshiWsEvent::Ready { generation: 0 }).unwrap();
             initialized.await.unwrap().unwrap();
+
             while output.try_recv().is_ok() {}
 
             peer.response_gate
