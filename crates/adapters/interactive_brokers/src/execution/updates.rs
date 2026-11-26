@@ -584,13 +584,10 @@ impl InteractiveBrokersExecutionClient {
 
             tracing::warn!(
                 execution_id,
-                "IB commissionReport did not arrive within 5 seconds; emitting with zero commission",
+                "IB commissionReport did not arrive within 5 seconds",
             );
-            commission_cache
-                .lock()
-                .insert(execution_id.clone(), (0.0, commission_currency));
 
-            match Self::handle_execution_data(
+            if let Err(e) = Self::handle_execution_data(
                 &exec_data,
                 orders,
                 instrument_provider,
@@ -599,18 +596,16 @@ impl InteractiveBrokersExecutionClient {
                 account_id,
                 ib_account,
                 commission_cache,
+                Some(commission_currency),
                 position_tracker,
                 venue_ctx,
             )
             .await
             {
-                Ok(()) => pending_execution_cache
-                    .lock()
-                    .mark_emitted_without_commission(execution_id),
-                Err(e) => tracing::error!(
+                tracing::error!(
                     execution_id = exec_data.execution.execution_id,
-                    "Failed to emit IB execution after commission timeout: {e}",
-                ),
+                    "Failed to handle IB execution after commission timeout: {e}",
+                );
             }
         }
 
@@ -1225,13 +1220,13 @@ impl InteractiveBrokersExecutionClient {
                     return Ok(());
                 }
 
-                // A replay of an execution already emitted at zero commission is not a new fill
-                if pending_live_exec_data
-                    .lock()
-                    .was_emitted_without_commission(&exec_data.execution.execution_id)
+                if orders
+                    .lock()?
+                    .commission_timeouts
+                    .contains_key(&exec_data.execution.execution_id)
                 {
                     tracing::debug!(
-                        "Ignoring IB execution {} replayed after its fill was emitted",
+                        "Ignoring IB execution {} replayed after its commission wait timed out",
                         exec_data.execution.execution_id
                     );
                     return Ok(());
@@ -1290,6 +1285,7 @@ impl InteractiveBrokersExecutionClient {
                     account_id,
                     ib_account,
                     commission_cache,
+                    None,
                     position_tracker,
                     venue_ctx,
                 )
@@ -1302,46 +1298,42 @@ impl InteractiveBrokersExecutionClient {
                     currency = commission.currency,
                     "Received IB commissionReport",
                 );
-                let (pending_exec_data, emitted_without_commission) = {
-                    let mut pending = pending_live_exec_data.lock();
-                    let exec_data = pending.remove(&commission.execution_id);
-                    let emitted = pending.was_emitted_without_commission(&commission.execution_id);
-                    (exec_data, emitted)
-                };
 
-                // The fill already went out at zero commission, and nothing amends an emitted
-                // fill, so the commission is reported rather than cached where nothing reads it,
-                // and a replay of the execution still pending is discarded with it. IB's pending
-                // sentinel carries no commission to report.
-                if emitted_without_commission {
-                    if commission.commission != -1.0_f64 {
-                        tracing::warn!(
-                            execution_id = commission.execution_id,
-                            commission = commission.commission,
-                            currency = commission.currency,
-                            "IB commissionReport arrived after its fill was emitted with zero \
-                             commission; the commission is not applied",
-                        );
-                    }
+                if parse::is_pending_commission(commission.commission) {
                     return Ok(());
                 }
 
+                let pending_exec_data = pending_live_exec_data
+                    .lock()
+                    .remove(&commission.execution_id);
+
                 {
-                    let mut cache = commission_cache.lock();
+                    let mut state = orders.lock()?;
+                    if let Some(timeout) = state.commission_timeouts.get(&commission.execution_id) {
+                        match timeout {
+                            CommissionTimeout::Emitted => tracing::warn!(
+                                execution_id = commission.execution_id,
+                                commission = commission.commission,
+                                currency = commission.currency,
+                                "IB commissionReport arrived after its fill was emitted with zero \
+                                 commission; the commission is not applied",
+                            ),
+                            CommissionTimeout::OrderRecovery(_) => state.record_held_commission(
+                                &commission.execution_id,
+                                commission.commission,
+                                &commission.currency,
+                            )?,
+                            CommissionTimeout::Recovered => {}
+                        }
 
-                    // IB uses -1.0 as a pending-sentinel before the real commission arrives;
-                    // clamp only that sentinel to zero (legitimate rebates can be negative).
-                    let commission_value = if commission.commission == -1.0_f64 {
-                        0.0_f64
-                    } else {
-                        commission.commission
-                    };
-
-                    cache.insert(
-                        commission.execution_id.clone(),
-                        (commission_value, commission.currency.clone()),
-                    );
+                        return Ok(());
+                    }
                 }
+
+                commission_cache.lock().insert(
+                    commission.execution_id.clone(),
+                    (commission.commission, commission.currency.clone()),
+                );
 
                 if let Some((_, exec_data)) = pending_exec_data {
                     Self::handle_execution_data(
@@ -1353,6 +1345,7 @@ impl InteractiveBrokersExecutionClient {
                         account_id,
                         ib_account,
                         commission_cache,
+                        None,
                         position_tracker,
                         venue_ctx,
                     )
@@ -1980,6 +1973,7 @@ impl InteractiveBrokersExecutionClient {
         account_id: AccountId,
         ib_account: Ustr,
         commission_cache: &Arc<Mutex<CommissionCache>>,
+        commission_fallback: Option<String>,
         position_tracker: &PositionTracker,
         venue_ctx: Option<&NoticeVenueContext>,
     ) -> anyhow::Result<()> {
@@ -2007,7 +2001,10 @@ impl InteractiveBrokersExecutionClient {
             Self::resolve_contract_instrument_id(instrument_provider, &exec_data.contract)?
         };
 
-        let (commission, commission_currency) = if parse::is_combo_execution(exec_data) {
+        let commission_timed_out = commission_fallback.is_some();
+        let (commission, commission_currency) = if let Some(currency) = commission_fallback {
+            (0.0, currency)
+        } else if parse::is_combo_execution(exec_data) {
             (0.0, exec_data.contract.currency.to_string())
         } else {
             let mut cache = commission_cache.lock();
@@ -2124,6 +2121,14 @@ impl InteractiveBrokersExecutionClient {
                 }
                 Ok(leg_instrument_id) => {
                     if let Some(leg_instrument_id) = leg_instrument_id {
+                        if commission_timed_out {
+                            let execution_id = exec_data.execution.execution_id.clone();
+                            orders
+                                .lock()?
+                                .commission_timeouts
+                                .insert(execution_id, CommissionTimeout::Emitted);
+                        }
+
                         Self::record_spread_leg_fill(
                             orders,
                             tracking_order_id,
@@ -2195,6 +2200,14 @@ impl InteractiveBrokersExecutionClient {
                 Self::hold_spread_fill(orders, tracking_order_id, event, exec_sender)?;
             } else {
                 exec_sender.send(ExecutionEvent::Order(OrderEventAny::Filled(event)))?;
+
+                if commission_timed_out {
+                    let execution_id = exec_data.execution.execution_id.clone();
+                    orders
+                        .lock()?
+                        .commission_timeouts
+                        .insert(execution_id, CommissionTimeout::Emitted);
+                }
             }
         } else {
             let target = if exec_data.execution.perm_id > 0 {
@@ -2205,6 +2218,7 @@ impl InteractiveBrokersExecutionClient {
 
             Self::hold_fill(
                 Some(fill_report),
+                commission_timed_out,
                 target,
                 instrument_id,
                 correlated_id,
@@ -2243,6 +2257,7 @@ impl InteractiveBrokersExecutionClient {
         {
             return Self::hold_fill(
                 None,
+                false,
                 IbOrderSelector::PermId(perm_id),
                 report.instrument_id,
                 Some(client_order_id),
@@ -2267,6 +2282,7 @@ impl InteractiveBrokersExecutionClient {
     #[allow(clippy::too_many_arguments)] // Resolution shares the update stream context.
     fn hold_fill(
         fill: Option<FillReport>,
+        commission_timed_out: bool,
         target: IbOrderSelector,
         instrument_id: InstrumentId,
         client_order_id: Option<ClientOrderId>,
@@ -2277,18 +2293,39 @@ impl InteractiveBrokersExecutionClient {
         ib_account: Ustr,
         venue_ctx: Option<&NoticeVenueContext>,
     ) -> anyhow::Result<()> {
+        let timeout_id = fill
+            .as_ref()
+            .filter(|_| commission_timed_out)
+            .map(|fill| fill.trade_id.to_string());
+
         let Some(venue_ctx) = venue_ctx else {
             if let Some(fill) = fill {
                 exec_sender.send(ExecutionEvent::Report(ExecutionReport::Fill(Box::new(
                     fill,
                 ))))?;
+
+                if let Some(execution_id) = timeout_id {
+                    orders
+                        .lock()?
+                        .commission_timeouts
+                        .insert(execution_id, CommissionTimeout::Emitted);
+                }
             }
 
             return Ok(());
         };
 
-        if !orders.lock()?.hold_fill(target, fill) {
-            return Ok(());
+        {
+            let mut state = orders.lock()?;
+            if let Some(execution_id) = timeout_id {
+                state
+                    .commission_timeouts
+                    .insert(execution_id, CommissionTimeout::OrderRecovery(None));
+            }
+
+            if !state.hold_fill(target, fill) {
+                return Ok(());
+            }
         }
 
         let client = Arc::clone(&venue_ctx.client);
@@ -2329,9 +2366,7 @@ impl InteractiveBrokersExecutionClient {
                 .unwrap_or_default();
 
             for fill in held {
-                exec_sender.send(ExecutionEvent::Report(ExecutionReport::Fill(Box::new(
-                    fill,
-                ))))?;
+                Self::forward_held_fill(fill, orders, exec_sender)?;
             }
         }
 
@@ -2368,7 +2403,7 @@ impl InteractiveBrokersExecutionClient {
             ),
         )
         .await;
-        let mut held = orders
+        let held = orders
             .lock()?
             .fills_held
             .remove(&target)
@@ -2402,6 +2437,17 @@ impl InteractiveBrokersExecutionClient {
             }
         };
 
+        Self::dispatch_held_fills(resolved, held, target, client_order_id, orders, exec_sender)
+    }
+
+    fn dispatch_held_fills(
+        resolved: Option<(OrderStatusReport, Vec<FillReport>)>,
+        mut held: Vec<FillReport>,
+        target: IbOrderSelector,
+        client_order_id: Option<ClientOrderId>,
+        orders: &OrderTracker,
+        exec_sender: &EventSender<ExecutionEvent>,
+    ) -> anyhow::Result<()> {
         if let Some((mut report, mut fills)) = resolved {
             if let Some(client_order_id) = client_order_id {
                 report.client_order_id = Some(client_order_id);
@@ -2410,10 +2456,9 @@ impl InteractiveBrokersExecutionClient {
                 }
             }
 
+            let mut state = orders.lock()?;
             if let IbOrderSelector::PermId(perm_id) = target {
-                orders
-                    .lock()?
-                    .observe_duplicate_fills_resolved(perm_id, report.filled_qty.as_f64());
+                state.observe_duplicate_fills_resolved(perm_id, report.filled_qty.as_f64());
             }
 
             held.retain(|fill| {
@@ -2422,16 +2467,58 @@ impl InteractiveBrokersExecutionClient {
                     .any(|resolved| resolved.trade_id == fill.trade_id)
             });
 
+            let recovered: Vec<_> = fills
+                .iter()
+                .map(|fill| fill.trade_id.to_string())
+                .filter(|id| {
+                    matches!(
+                        state.commission_timeouts.get(id),
+                        Some(CommissionTimeout::OrderRecovery(_))
+                    )
+                })
+                .collect();
+
             exec_sender.send(ExecutionEvent::Report(ExecutionReport::OrderWithFills(
                 Box::new(report),
                 fills,
             )))?;
+
+            for execution_id in recovered {
+                state
+                    .commission_timeouts
+                    .insert(execution_id, CommissionTimeout::Recovered);
+            }
         }
 
         for fill in held {
-            exec_sender.send(ExecutionEvent::Report(ExecutionReport::Fill(Box::new(
-                fill,
-            ))))?;
+            Self::forward_held_fill(fill, orders, exec_sender)?;
+        }
+
+        Ok(())
+    }
+
+    fn forward_held_fill(
+        mut fill: FillReport,
+        orders: &OrderTracker,
+        exec_sender: &EventSender<ExecutionEvent>,
+    ) -> anyhow::Result<()> {
+        let execution_id = fill.trade_id.to_string();
+        let mut state = orders.lock()?;
+        let timeout = state.commission_timeouts.get_mut(&execution_id);
+        let outcome = match timeout.as_deref() {
+            Some(CommissionTimeout::OrderRecovery(Some(fee))) => {
+                fill.commission = *fee;
+                CommissionTimeout::Recovered
+            }
+            _ => CommissionTimeout::Emitted,
+        };
+
+        exec_sender.send(ExecutionEvent::Report(ExecutionReport::Fill(Box::new(
+            fill,
+        ))))?;
+
+        if let Some(timeout @ CommissionTimeout::OrderRecovery(_)) = timeout {
+            *timeout = outcome;
         }
 
         Ok(())
@@ -2551,9 +2638,9 @@ impl InteractiveBrokersExecutionClient {
 mod tests {
     use ibapi::{
         contracts::Contract,
-        orders::{Order, OrderData, OrderState},
+        orders::{CommissionReport, Order, OrderData, OrderState},
     };
-    use nautilus_model::types::Price;
+    use nautilus_model::{enums::TimeInForce, types::Price};
     use rstest::rstest;
 
     use super::*;
@@ -2606,5 +2693,151 @@ mod tests {
 
         assert_eq!(price, None);
         assert_eq!(trigger_price, Some(Price::from("4.8125")));
+    }
+
+    #[rstest]
+    #[case::fee_recovered(Some("1.25 USD"), None, CommissionTimeout::Recovered)]
+    #[case::fee_received_while_held(None, Some(1.75), CommissionTimeout::Recovered)]
+    #[case::forwarded_with_zero(None, None, CommissionTimeout::Emitted)]
+    #[tokio::test]
+    async fn test_held_fill_commission_timeout_tracks_delivery(
+        #[case] recovered_fee: Option<&str>,
+        #[case] late_fee: Option<f64>,
+        #[case] expected_timeout: CommissionTimeout,
+    ) {
+        let orders = OrderTracker::new(1);
+        let account_id = AccountId::from("IB-001");
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let venue_order_id = VenueOrderId::from("17");
+        let execution_id = String::from("exec-held");
+        let trade_id = TradeId::from(execution_id.as_str());
+        let quantity = Quantity::from(3);
+        let ts_event = UnixNanos::new(8);
+        let ts_init = UnixNanos::new(9);
+
+        let fill = FillReport::new(
+            account_id,
+            instrument_id,
+            venue_order_id,
+            trade_id,
+            OrderSide::Buy,
+            quantity,
+            Price::from("75.75"),
+            Money::from("0.00 USD"),
+            LiquiditySide::Taker,
+            None,
+            None,
+            ts_event,
+            ts_init,
+            None,
+        );
+
+        let resolved = recovered_fee.map(|fee| {
+            let report = OrderStatusReport::new(
+                account_id,
+                instrument_id,
+                None,
+                venue_order_id,
+                OrderSide::Buy.into(),
+                OrderType::Market,
+                TimeInForce::Day,
+                OrderStatus::Filled,
+                quantity,
+                quantity,
+                ts_event,
+                ts_event,
+                ts_init,
+                None,
+            );
+
+            let mut recovered = fill.clone();
+            recovered.commission = Money::from(fee);
+            (report, vec![recovered])
+        });
+
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let sender = sender.into();
+
+        orders
+            .lock()
+            .unwrap()
+            .commission_timeouts
+            .insert(execution_id.clone(), CommissionTimeout::OrderRecovery(None));
+        let provider_config = crate::config::InteractiveBrokersInstrumentProviderConfig::default();
+        let provider =
+            Arc::new(InteractiveBrokersInstrumentProvider::new(provider_config).unwrap());
+        let commission_cache = Arc::new(Mutex::new(CommissionCache::new()));
+        let pending = Arc::new(Mutex::new(PendingExecutionCache::new()));
+        let position_tracker = create_position_tracker();
+        let clock = get_atomic_clock_realtime();
+
+        for commission in late_fee.into_iter().chain([parse::PENDING_COMMISSION]) {
+            let update = OrderUpdate::CommissionReport(CommissionReport {
+                execution_id: execution_id.clone(),
+                commission,
+                currency: String::from("USD"),
+                realized_pnl: None,
+                yields: None,
+                yield_redemption_date: String::new(),
+            });
+
+            InteractiveBrokersExecutionClient::handle_order_update(
+                &update,
+                &orders,
+                &provider,
+                &sender,
+                clock,
+                account_id,
+                Ustr::from("001"),
+                &commission_cache,
+                &pending,
+                &position_tracker,
+                None,
+            )
+            .await
+            .unwrap();
+        }
+
+        InteractiveBrokersExecutionClient::dispatch_held_fills(
+            resolved,
+            vec![fill],
+            IbOrderSelector::OrderId(17),
+            None,
+            &orders,
+            &sender,
+        )
+        .unwrap();
+
+        let event = receiver.try_recv().unwrap();
+        match (recovered_fee, event) {
+            (Some(fee), ExecutionEvent::Report(ExecutionReport::OrderWithFills(report, fills))) => {
+                let [fill] = fills.as_slice() else {
+                    panic!("expected one recovered fill");
+                };
+
+                assert_eq!(report.venue_order_id, venue_order_id);
+                assert_eq!(fill.trade_id, trade_id);
+                assert_eq!(fill.commission, Money::from(fee));
+            }
+            (None, ExecutionEvent::Report(ExecutionReport::Fill(fill))) => {
+                assert_eq!(fill.trade_id, trade_id);
+                assert_eq!(
+                    fill.commission,
+                    Money::new(late_fee.unwrap_or(0.0), Currency::USD())
+                );
+            }
+            (_, event) => panic!("unexpected execution event {event:?}"),
+        }
+
+        assert!(receiver.try_recv().is_err());
+        assert!(commission_cache.lock().is_empty());
+        assert_eq!(
+            orders
+                .lock()
+                .unwrap()
+                .commission_timeouts
+                .get(&execution_id),
+            Some(&expected_timeout),
+        );
     }
 }

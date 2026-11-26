@@ -135,6 +135,12 @@ pub(crate) fn fill_missing_avg_px(
     }
 }
 
+pub(super) const PENDING_COMMISSION: f64 = -1.0;
+
+pub(super) const fn is_pending_commission(commission: f64) -> bool {
+    commission.to_bits() == PENDING_COMMISSION.to_bits()
+}
+
 /// Fill reports for an execution window, with the evidence an entry price rebuild needs.
 #[derive(Debug, Default)]
 pub(crate) struct FillEvidence {
@@ -160,6 +166,13 @@ pub(crate) struct MissingCommission {
 impl FillEvidence {
     fn is_complete_for(&self, instrument_id: &InstrumentId) -> bool {
         !self.missing_all && !self.missing_instruments.contains(instrument_id)
+    }
+
+    pub(super) fn orders_missing_commission(&self) -> AHashSet<VenueOrderId> {
+        self.missing_commissions
+            .iter()
+            .map(|missing| missing.venue_order_id)
+            .collect()
     }
 
     /// Returns the fill reports for a standalone fill query.
@@ -527,7 +540,12 @@ pub fn parse_execution_to_fill_report(
     let last_px = Price::new(execution_price, instrument.price_precision());
 
     // Clamp only IB's -1 pending sentinel to 0.0 to preserve rebates
-    let commission_clamped = if commission == -1.0 { 0.0 } else { commission };
+    let commission_clamped = if is_pending_commission(commission) {
+        0.0
+    } else {
+        commission
+    };
+
     let commission_money = Money::new(commission_clamped, Currency::from_str(commission_currency)?);
 
     // Parse execution time

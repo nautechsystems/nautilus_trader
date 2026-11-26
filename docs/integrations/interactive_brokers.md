@@ -522,10 +522,13 @@ Mass status requests query three independent IB sources:
 
 An execution without its commission report produces no fill report, and the adapter logs a warning. A fill
 report request fails when such an execution falls within its filters, so a position check does not
-synthesize the fill while it is pending. Mass status leaves out the affected order and its fills, so startup
-does not infer the missing fill from the order report. Position reports and the other orders stay, so
-reconciliation restores the position or leaves it unresolved, and a bounded mass status reports its history
-incomplete.
+synthesize the fill while it is pending. Startup requires an affected order to be confirmed terminal
+before omitting it and its fills. A completed account-specific position snapshot establishes that an
+omitted contract is flat, including each leg of a deferred spread. Startup checks that exposure and
+average cost stay stable through order and fill collection. Reconciliation uses the position
+reports and the other orders to restore the position or leave it unresolved. A bounded mass status
+reports the history as incomplete. This recovery requires position reconciliation for the affected
+instruments. When position reports are filtered out, startup cannot restore or verify their exposure.
 
 Position updates do not create synthetic order status reports. If IB returns a position without
 matching order or fill history, the execution engine can adopt the position from the position report
@@ -589,10 +592,12 @@ Replies to execution queries (`reqExecutions`) also arrive on IB's order update 
 treats only unsolicited execution details there as live fills, so startup and periodic execution
 queries do not apply the same fills again.
 
-A live fill waits for its commission report, except a combo-level fill, which carries no commission.
-If the report has not arrived after about 5 seconds, the fill is emitted with zero commission. A report
-for that execution arriving later is logged as a warning and not applied, since an emitted fill cannot
-be amended.
+A live fill waits for a confirmed commission report, except a combo-level fill, which carries no commission.
+IB sometimes sends a placeholder commission before it sends the fee.
+If the report has not arrived after about 5 seconds, the adapter uses zero commission as a fallback.
+For an untracked order, a fee received during order recovery can still be included before the adapter
+forwards the fill. Once a fill goes out with zero commission, a real fee that arrives later triggers a
+warning. The emitted fill cannot be amended.
 
 ## Symbology and instruments
 

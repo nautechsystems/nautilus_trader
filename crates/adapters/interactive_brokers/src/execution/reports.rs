@@ -18,7 +18,11 @@
 //! Collection owns everything it uses and never touches the live cache, so it can run on a
 //! runtime worker as an `ExecutionReportTask` and inline through the same code.
 
-use ibapi::{client::Client, orders::Order as IBOrder};
+use ibapi::{
+    accounts::{PositionUpdateMulti, types::AccountId as IbAccountId},
+    client::Client,
+    orders::Order as IBOrder,
+};
 use nautilus_live::execution::reports::retain_order_status_reports;
 
 use super::{
@@ -121,6 +125,29 @@ impl IbReportContext {
             .map(|price| price.round_dp(instrument.price_precision() as u32))
     }
 
+    pub(super) fn flat_position_report(
+        &self,
+        instrument_id: InstrumentId,
+        ts_init: UnixNanos,
+    ) -> PositionStatusReport {
+        let precision = self
+            .instrument_provider
+            .find(&instrument_id)
+            .map_or(0, |instrument| instrument.size_precision());
+
+        PositionStatusReport::new(
+            self.account_id,
+            instrument_id,
+            PositionSide::Flat,
+            Quantity::zero(precision),
+            ts_init,
+            ts_init,
+            None,
+            None,
+            None,
+        )
+    }
+
     pub(super) fn warn_historical_fill_report_parse_error(
         exec_data: &ExecutionData,
         error: &anyhow::Error,
@@ -139,6 +166,11 @@ impl IbReportContext {
             "Failed to parse IBKR historical fill report",
         );
     }
+}
+
+pub(super) struct OrderEvidence {
+    pub(super) reports: Vec<OrderStatusReport>,
+    pub(super) open_order_ids: AHashSet<VenueOrderId>,
 }
 
 /// Owned Interactive Brokers report collection.
@@ -207,6 +239,13 @@ impl IbReportClient {
         &self,
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        Ok(self.generate_order_evidence(cmd).await?.reports)
+    }
+
+    pub(super) async fn generate_order_evidence(
+        &self,
+        cmd: &GenerateOrderStatusReports,
+    ) -> anyhow::Result<OrderEvidence> {
         let client = self.client.as_ref();
 
         let timeout_dur = self.request_timeout;
@@ -266,6 +305,7 @@ impl IbReportClient {
             }
         }
 
+        let open_order_ids = reports.iter().map(|report| report.venue_order_id).collect();
         if !cmd.open_only {
             self.collect_completed_orders(cmd, &mut reports, &mut ib_orders, ts_init)
                 .await?;
@@ -276,7 +316,10 @@ impl IbReportClient {
             retain_order_status_reports(&mut reports, cmd);
         }
 
-        Ok(reports)
+        Ok(OrderEvidence {
+            reports,
+            open_order_ids,
+        })
     }
 
     async fn collect_completed_orders(
@@ -426,20 +469,26 @@ impl IbReportClient {
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
         let client = self.client.as_ref();
 
+        // The request ID keeps this snapshot separate from the live position subscription
+        let account = IbAccountId(self.ib_account.to_string());
         let timeout_dur = self.request_timeout;
-        let subscription = tokio::time::timeout(timeout_dur, client.positions())
-            .await
-            .context("Timeout requesting positions")??;
+        let subscription =
+            tokio::time::timeout(timeout_dur, client.positions_multi(Some(&account), None))
+                .await
+                .context("Timeout requesting positions")??;
         let mut subscription = subscription.filter_data();
         let mut reports = Vec::new();
         let ts_init = get_atomic_clock_realtime().get_time_ns();
         let ib_account = self.ib_account;
 
-        // Process positions until PositionEnd; return empty list when none (reconciliation parity:
-        // never return None/missing for "no positions").
-        while let Some(position_result) = subscription.next().await {
-            match position_result {
-                Ok(PositionUpdate::Position(position)) => {
+        loop {
+            let update = subscription
+                .next()
+                .await
+                .context("IB position snapshot ended before PositionMultiEnd")??;
+
+            match update {
+                PositionUpdateMulti::Position(position) => {
                     // Filter for the specific account
                     if position.account != ib_account {
                         continue;
@@ -509,33 +558,15 @@ impl IbReportClient {
                         );
                     }
                 }
-                Ok(PositionUpdate::PositionEnd) => {
-                    // End of position list
-                    break;
-                }
-                Err(e) => return Err(e.into()),
+                PositionUpdateMulti::PositionEnd => break,
             }
         }
 
         if reports.is_empty()
             && let Some(instrument_id) = cmd.instrument_id
         {
-            let precision = self
-                .context
-                .instrument_provider
-                .find(&instrument_id)
-                .map_or(0, |instrument| instrument.size_precision());
-            reports.push(PositionStatusReport::new(
-                self.context.account_id,
-                instrument_id,
-                PositionSide::Flat,
-                Quantity::zero(precision),
-                ts_init,
-                ts_init,
-                None,
-                None,
-                None,
-            ));
+            let report = self.context.flat_position_report(instrument_id, ts_init);
+            reports.push(report);
         }
 
         Ok(reports)
@@ -665,6 +696,8 @@ impl<'a> FillReportCollector<'a> {
                     self.pending_exec_data.insert(execution_id, exec_data);
                 }
             }
+            Ok(Executions::CommissionReport(commission))
+                if parse::is_pending_commission(commission.commission) => {}
             Ok(Executions::CommissionReport(commission)) => {
                 if let Some(exec_data) = self.pending_exec_data.remove(&commission.execution_id) {
                     self.add_fill(&exec_data, commission.commission, &commission.currency);
@@ -736,6 +769,13 @@ impl<'a> FillReportCollector<'a> {
                 combo_venue_order_ids.contains(&report.venue_order_id)
             })
             .collect();
+
+        let deferred_orders = self.evidence.orders_missing_commission();
+        self.combo_executions.retain(|exec_data| {
+            let venue_order_id =
+                ib_venue_order_id(exec_data.execution.order_id, exec_data.execution.perm_id);
+            !deferred_orders.contains(&venue_order_id)
+        });
 
         (self.evidence, self.combo_executions)
     }
@@ -809,6 +849,60 @@ mod tests {
     use crate::config::InteractiveBrokersInstrumentProviderConfig;
 
     #[rstest]
+    #[tokio::test]
+    async fn test_position_snapshot_ignores_other_position_end_markers() {
+        let exchanges = serde_json::from_str(include_str!(
+            "../../test_data/position_snapshot_responses.json"
+        ))
+        .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(serve_report_exchanges(listener, exchanges, done_rx));
+
+        let config = InteractiveBrokersInstrumentProviderConfig::default();
+        let provider = Arc::new(InteractiveBrokersInstrumentProvider::new(config).unwrap());
+        provider.insert_test_instrument(equity_aapl().into(), 265_598, 1);
+        let command = GeneratePositionStatusReportsBuilder::default()
+            .ts_init(UnixNanos::new(1))
+            .build()
+            .unwrap();
+
+        let reports = tokio::time::timeout(Duration::from_secs(10), async {
+            let client = Arc::new(Client::connect(&address.to_string(), 7).await.unwrap());
+            let context = IbReportContext::new(provider, AccountId::from("IB-DU123"));
+
+            let report_client = IbReportClient::new(
+                client.clone(),
+                context,
+                Ustr::from("DU123"),
+                Duration::from_secs(2),
+            );
+
+            let reports = report_client
+                .generate_position_status_reports(&command)
+                .await
+                .unwrap();
+            client.disconnect().await;
+            done_tx.send(()).unwrap();
+            server.await.unwrap();
+            reports
+        })
+        .await
+        .unwrap();
+
+        let [report] = reports.as_slice() else {
+            panic!("expected one IB position report");
+        };
+
+        assert_eq!(report.account_id, AccountId::from("IB-DU123"));
+        assert_eq!(report.instrument_id, equity_aapl().id);
+        assert_eq!(report.position_side, PositionSide::Long);
+        assert_eq!(report.signed_decimal_qty, Decimal::from(3));
+        assert_eq!(report.avg_px_open, Some(Decimal::new(1235, 1)));
+    }
+
+    #[rstest]
     #[case::unbounded(None, None, false, true, false)]
     #[case::before_start(Some("20260924 12:02:05 UTC"), None, false, false, false)]
     #[case::after_end(None, Some("20260924 12:02:03 UTC"), false, false, false)]
@@ -849,7 +943,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let reports = tokio::time::timeout(Duration::from_secs(10), async {
+        let evidence = tokio::time::timeout(Duration::from_secs(10), async {
             let client = Arc::new(Client::connect(&address.to_string(), 7).await.unwrap());
             let context = IbReportContext::new(provider, AccountId::from("IB-DU123"));
 
@@ -859,18 +953,24 @@ mod tests {
                 Ustr::from("DU123"),
                 Duration::from_secs(2),
             );
-            let reports = report_client
-                .generate_order_status_reports(&command)
+
+            let evidence = report_client
+                .generate_order_evidence(&command)
                 .await
                 .unwrap();
             client.disconnect().await;
             done_tx.send(()).unwrap();
             server.await.unwrap();
-            reports
+            evidence
         })
         .await
         .unwrap();
 
+        assert_eq!(
+            evidence.open_order_ids,
+            AHashSet::from([VenueOrderId::from("PERM-11"), VenueOrderId::from("PERM-12")]),
+        );
+        let reports = evidence.reports;
         let venue_order_ids = reports
             .iter()
             .map(|report| report.venue_order_id)
