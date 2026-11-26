@@ -1,9 +1,8 @@
 # Derive
 
-Derive (formerly Lyra) is a decentralized derivatives venue offering European-style options
-and cash-settled perpetual swaps, and one of the largest on-chain options markets. Trading
-runs against subaccounts owned by the user's EOA or multisig, so collateral stays in the
-user's custody while orders match through the venue's orderbook.
+Derive (formerly Lyra) is a decentralized derivatives venue offering European-style options,
+cash-settled perpetual swaps, and ERC-20 spot trading. Each trading subaccount belongs to the
+user's EOA or multisig.
 
 The v3 API batches operations for settlement on Ethereum. Orders match off chain and settle on chain, pairing
 orderbook execution with self-custody. Orders use EIP-712 typed-data signatures from a session key scoped to a
@@ -73,6 +72,34 @@ action. See [Testnet onboarding](#testnet-onboarding) and [Mainnet onboarding](#
 | Perpetual swaps        | ✓         | Cash-settled in USDC, with per-currency listings such as `ETH-PERP`.                     |
 | Options (calls / puts) | ✓         | European-style options using `{CURRENCY}-{EXPIRY}-{STRIKE}-{C\|P}`.                      |
 
+### Real-world assets
+
+Derive documents options and perpetuals on `NVDA`, `US100`, `US500`, and `WTI`.
+Testnet also lists options and perpetuals on `ANT` and `XAUT`. Check `public/get_all_instruments`
+for listings on your selected network. Add the underlying symbols to `DeriveDataClientConfig.currencies`.
+For example, adding `NVDA` loads `NVDA-PERP.DERIVE` and the NVDA option chain.
+The adapter uses `CryptoPerpetual` and `CryptoOption`, both with asset class `CRYPTOCURRENCY`.
+Use native symbols or underlying codes to select these markets in NautilusTrader.
+[Derive RWA contracts](https://docs.derive.xyz/rwa-assets)
+[Derive instrument listings](https://docs.derive.xyz/api-reference/market-data/publicget_all_instruments)
+
+To trade RWA derivatives, set `DeriveExecutionClientConfig.subaccount_id` to a funded subaccount
+in the RWA risk universe. Use `public/get_risk_universes` to find a Standard Margin (`SM`) or
+Portfolio Margin (`PM2`) manager that lists the perpetual symbol or option family, such as
+`NVDA-OPTION`. Confirm the funded account's `manager_id` and `risk_universe_id` through
+`private/get_subaccount`. The adapter preserves the instrument's `risk_universe_id` in its `info` metadata.
+Check `private/session_keys` for an active key authorized for that subaccount and for orderbook
+trading in the intended products.
+[Derive managers and risk universes](https://docs.derive.xyz/trading/managers-and-risk-universes)
+
+Select an RWA manager when you deposit to a new subaccount. Check the destination manager's
+`collaterals` list in `public/get_risk_universes` before depositing or transferring an asset.
+If you hold an eligible asset in another subaccount under the same wallet, `private/transfer_spot`
+can create and fund the destination. Set `new_subaccount_manager` to the manager ID and
+`to_subaccount_id` to `0`. Derive requires permission to create a subaccount and applies a minimum
+transfer amount. Set the signed `max_fee_usd` to cover the sequencer fee.
+[Derive same-owner transfers](https://docs.derive.xyz/trading/transfers-withdrawals)
+
 ## Symbology
 
 Derive instruments use the native venue symbol with the venue suffix `.DERIVE`:
@@ -86,30 +113,32 @@ fetches every page of `public/get_all_instruments` for each product type and con
 Subscribing to a new currency triggers a lazy REST fetch when `auto_load_missing_instruments`
 is enabled (the default).
 
-With `include_expired`, the provider merges live and expired option listings by instrument name.
-It keeps the live definition when both listings contain the same option near expiry. Perpetual
-and spot listings ignore this setting.
+With `include_expired`, the provider merges the separate live and expired option listings by instrument
+name. It keeps the live definition when both listings contain the same option near expiry. Perpetual and
+spot listings ignore this setting. For the latest settlement price on an expired option, request that
+instrument directly. Settlement prices in the paginated listing can lag.
+[Derive instrument listing](https://docs.derive.xyz/api-reference/market-data/publicget_all_instruments)
 
-The adapter routes on the venue `instrument_type` (`perp`, `option`, `erc20`), not on the symbol suffix. Thus,
-spot pairs need no special symbology parsing. Spot reuses the same Trade-module signing path as perps and
-options. Fixtures under `crates/adapters/derive/test_data/spot/` capture spot instrument, order book, ticker,
-and trade field shapes. These fixtures pin the parser and execution paths to those shapes.
+The adapter uses the venue's `instrument_type` (`perp`, `option`, `erc20`) to identify the product.
+Spot, perpetuals, and options all use the same Trade-module signing path.
 
 ### Spot behavior
 
 :::warning
-V3 testnet accepts and cancels passive `ETH-USDC` limit orders. Public spot trade frames, tracked
-fill commissions, and spot restart reconciliation remain unverified on v3. Mainnet place/cancel
-was exercised manually before the v3 migration. The current `ETH-USDC` minimum amount is `0.1 ETH`.
-An empty spot book does not provide a bounded way to close a minimum-size fill.
+V3 testnet supports submitting and canceling passive `ETH-USDC` limit orders. Public spot trade frames,
+tracked fill commissions, and restart reconciliation remain unverified on live v3.
 :::
+
+Use `minimum_amount` from the current instrument definition to size a spot order. Closing a spot balance
+at a bounded price requires executable liquidity within that bound.
 
 - **Sparse trades**: public spot trade channels (`trades.erc20.ETH`, `trades.ETH-USDC`) subscribe
   successfully but can be low-volume, so expect sparse trade frames.
 - **Empty books**: the venue still broadcasts ticker and order book frames with a zeroed top of book. The
   adapter emits no quote when either side has zero price or size. See [Quotes](#quotes). Trade frames are
   match-driven and independent of book state, so a trade that empties the book still emits an event.
-- **Standard Margin**: spot orders are margined by initial margin fraction, not full notional.
+- **Standard Margin** applies risk-based haircuts to base asset balances, with separate factors for assets
+  held and assets borrowed. [Derive Standard Margin](https://docs.derive.xyz/standard-margin)
 
 ## Environments
 
@@ -148,9 +177,11 @@ instead of truncating the signed value. The request sends the same decimal value
   subaccount, regardless of wallet lettercase.
 - **Clock rollback.** The allocator advances the last nonce only while it remains within one hour of
   local time.
-- **Order window.** The adapter uses the inclusive window [local time minus 90 days, local time plus
-  1 hour]. This is a conservative lookback within the venue's documented 120-day window. Local time
-  approximates the server clock, so clock skew can still cause venue rejection.
+- **Order window.** The adapter checks nonces against [local time minus 90 days, local time plus 1 hour].
+  Derive's action-signing reference specifies a five-minute tolerance on either side of server time
+  when placing an order. Its migration reference gives a wider window. Keep the host clock synchronized.
+  [Derive action signing](https://docs.derive.xyz/authentication/action-signing#nonce-and-expiry)
+  [Derive migration reference](https://docs.derive.xyz/migrating/breaking-changes)
 - **Other time units.** Login timestamps use milliseconds, and signature expiry uses seconds.
 
 ### Switch an existing deployment to v3
@@ -178,9 +209,9 @@ Steps to reach a position where the execution client can submit a signed order:
 1. **Copy the owner wallet address.** Use your EOA or multisig address as `wallet_address`. The client sends
    it in the `X-DeriveWallet` header. V3 has no separate Derive Wallet address.
 1. **Fund a subaccount.** Follow Derive's [deposit guide](https://docs.derive.xyz/getting-started/depositing)
-   to mint test collateral and deposit on Sepolia. The first deposit creates the account and subaccounts. Copy
-   the funded subaccount's integer ID as `subaccount_id`. Orders require enough collateral to cover their
-   margin.
+   to mint test collateral and deposit on Sepolia. The first deposit creates the funded trading subaccount
+   and a fallback subaccount. Copy the funded trading subaccount's integer ID as `subaccount_id`. Orders
+   require enough collateral to cover their margin.
 1. **Generate a session key.** Follow Derive's
    [session-key guide](https://docs.derive.xyz/authentication/session-keys) to register a key with protocol
    scope `trade:orderbook:all`, or narrower product scopes, restricted to the funded subaccount. The separate
@@ -188,8 +219,6 @@ Steps to reach a position where the execution client can submit a signed order:
    `private/session_keys`. Copy the raw secp256k1 private key as `session_key`. It stays local and is redacted
    from `Debug` output.
 
-   To retire a key, re-register it with a past or zero expiry. Revocation has a minimum cooldown of [5, 15]
-   minutes. It does not take effect immediately.
 1. **Set the environment variables.** Export the three values the client reads in testnet
    mode (or pass them on `DeriveExecutionClientConfig`, where the config field wins):
 
@@ -204,16 +233,19 @@ first fund the account, then submit the Set Session Key action from the owner co
 or Ethereum. An on-chain registration is ignored when the account does not exist. Follow the
 venue's [multisig guide](https://docs.derive.xyz/authentication/contract-owned-accounts).
 
+To retire a key through the API, re-register it with an earlier expiry. Derive documents a minimum
+cooldown of [5, 15] minutes. Contract owners can delete a key with an on-chain Set Session Key action
+that sets expiry to `0`. [Derive session keys](https://docs.derive.xyz/authentication/session-keys)
+[Derive contract-owned accounts](https://docs.derive.xyz/authentication/contract-owned-accounts)
+
 ### Minimum funding
 
 Funding must cover the venue's initial-margin requirement and pending-order reservations.
 Order acceptance also depends on the venue's price, quantity, and execution rules.
-Use the venue's margin figures to size funding for the smallest viable test:
-
-- **Smoke test (submit and cancel, no fills)**: fund enough to cover the margin required
-  for a passive order at the instrument's `minimum_amount`.
-- **Options**: size the deposit to cover the venue's margin requirement for the passive order.
-  `public/get_instrument` provides contract details but does not report initial-margin requirements.
+For passive orders, use the instrument's `minimum_amount` to estimate the smallest viable order.
+Use the venue's margin figures to size funding for that order. For options,
+`public/get_instrument` provides contract details. Use the account health and order quote
+endpoints below to estimate margin.
 
 For a fill round-trip, cover the venue's margin requirement, fees, and a bounded price move. Use current
 executable quotes, the smallest viable quantity, `max_fee_per_contract`, and a limit price or bounded
@@ -235,10 +267,13 @@ and position mark-to-market value after the venue's risk charges:
 | `maintenance_margin` | Signed net maintenance-margin health | Subaccount is exposed to liquidation.                                     |
 
 The adapter's `query_account` command emits this snapshot as an `AccountState` event so the strategy layer can
-inspect current health. These net-health values exclude pending open-order reservations. A positive value
-alone does not prove that another order can be accepted. The venue's `private/order_quote` returns pre/post
-initial-margin health for a proposed order. Actual order acceptance remains authoritative. See
-[Account state](#account-state) for the mapping.
+inspect current health. These net-health values exclude pending open-order reservations. For the mapping,
+see [Account state](#account-state).
+
+To estimate pre- and post-order initial-margin health, call Derive's `private/order_quote` directly with a
+signed order payload and account authentication. Derive validates the parameters at submission, including
+the [fee cap](#order-signing-and-pricing).
+[Derive order preview](https://docs.derive.xyz/api-reference/orderbook/privateorder_quote)
 
 ## Mainnet onboarding
 
@@ -250,9 +285,10 @@ Mainnet onboarding mirrors testnet against the production dashboard. Use real fu
    for authentication and as the signed action's owner.
 1. **Fund or pick a subaccount.** Follow Derive's
    [deposit guide](https://docs.derive.xyz/getting-started/depositing) to deposit USDC or supported collateral
-   on Ethereum. A first deposit creates the account and subaccounts. Copy the funded subaccount's integer ID
-   as `subaccount_id`. Confirm via `private/get_subaccount` that the deposit appears in the collateral
-   balances. The adapter's `query_account` exposes modeled rows in `AccountState.info.collaterals`.
+   on Ethereum. A first deposit creates the funded trading subaccount and a fallback subaccount. Copy the
+   funded trading subaccount's integer ID as `subaccount_id`. Confirm via `private/get_subaccount` that the
+   deposit appears in the collateral balances. The adapter's `query_account` exposes modeled rows in
+   `AccountState.info.collaterals`.
 
    Check `net_initial_margin` and `net_maintenance_margin` in the emitted metadata as described in
    [Check account health](#check-account-health). Positive net health alone does not prove that an order can
@@ -262,10 +298,8 @@ Mainnet onboarding mirrors testnet against the production dashboard. Use real fu
    scope `trade:orderbook:all`, or narrower product scopes, restricted to the subaccount. Verify its scopes
    and expiry through `private/session_keys`. Contract owners use the on-chain registration described in
    [Testnet onboarding](#testnet-onboarding), on Ethereum for mainnet. Copy the raw secp256k1 private key.
-   Prefer short-lived keys for exploratory tester runs.
-
-   To retire a key, re-register it with a past or zero expiry. Revocation has a minimum cooldown of [5, 15]
-   minutes. It does not take effect immediately.
+   Prefer short-lived keys for exploratory runs. See [Testnet onboarding](#testnet-onboarding) for key
+   retirement.
 1. **Set the environment variables.** Export the three mainnet values (or pass them on
    `DeriveExecutionClientConfig`, where the config field wins):
 
@@ -278,9 +312,10 @@ Mainnet onboarding mirrors testnet against the production dashboard. Use real fu
 ### Select the example network
 
 :::warning
-Each Rust example (`node_data_tester`, `node_exec_tester`, `node_delta_neutral`) pins the network with a
-`const DERIVE_ENVIRONMENT: DeriveEnvironment` literal near the top of the file. **Check that constant before
-every run** and edit it to switch networks. The examples do not read the network from the environment.
+**The Rust `node_exec_tester` example defaults to mainnet with `DRY_RUN` disabled.** Both Rust and Python
+examples select the network with `DERIVE_ENVIRONMENT` in the source file. Check it before every run.
+Set it to testnet to use test funds. Enable `DRY_RUN` in the execution example to connect without
+submitting orders.
 :::
 
 Production deployments select the network via `DeriveDataClientConfig::environment` /
@@ -306,7 +341,7 @@ and prioritize ongoing maintenance.
 | Order book snapshot (REST)     | -         | *Not supported.* The venue has no book snapshot endpoint.               |
 | Historical book deltas (REST)  | -         | *Not supported.* The venue has no historical book endpoint.             |
 | Quotes (`ticker_slim`)         | ✓         | Channel: `ticker_slim.{instrument}.{interval}`.                         |
-| Quote snapshot (REST)          | ✓         | One-shot `public/get_tickers`; emits a single `QuoteTick`.              |
+| Quote snapshot (REST)          | ✓         | `public/get_tickers`, up to one `QuoteTick` per instrument request.     |
 | Historical quotes (REST)       | -         | *Not supported.* The venue exposes ticker snapshots only.               |
 | Trades                         | ✓         | Channel: `trades.{instrument_type}.{currency}`.                         |
 | Historical trades (REST)       | ✓         | Chronological and deduplicated; `limit` retains the newest trades.      |
@@ -322,6 +357,9 @@ and prioritize ongoing maintenance.
 | Option chain                   | ✓         | Aggregated from quotes and greeks; `public/get_tickers` bootstraps ATM. |
 
 ### Quotes
+
+`request_quotes` fetches the current ticker. If the request includes a start or end time, the
+snapshot timestamp must fall within those bounds to return a quote.
 
 WebSocket tickers report complete snapshots for perpetuals, options, and spot. If either side has
 zero price or size, the adapter clears that instrument's internal quote state and emits no
@@ -390,8 +428,8 @@ reconnect retains this cache. Explicit disconnect or reset clears it.
 
 - **Aggregation and price**: bars require `EXTERNAL` aggregation and `PriceType::Last`, since
   Derive candles are trade-based.
-- **Periods**: the venue supports 1, 5, 15, and 30 minute, 1, 4, and 8 hour, 1 day, and 1 week
-  steps. Any other bar specification is rejected before the request goes out.
+- **Periods** include 1, 5, 15, and 30 minutes, 1, 4, and 8 hours, 1 day, and 1 week. The adapter
+  rejects other periods before sending the request.
 - **Time bounds**: the bar `end` bound selects buckets by their start time at the venue. Responses
   omit any bucket whose close is after the request time, including the still-forming bucket
   returned by the venue.
@@ -468,7 +506,7 @@ For a tracked order, a native fill can establish its first venue binding before 
 The adapter emits `OrderAccepted` before `OrderFilled`. A fill whose side conflicts with the tracked order
 remains deferred, including after that order reaches a terminal state.
 
-Private trade updates can arrive before REST history or position reads reflect them.
+Private order and trade updates can arrive before REST reflects the order state, fill, or position.
 Settlement progress does not trigger extra history polling in the adapter.
 
 :::note
@@ -489,8 +527,9 @@ types are denied locally with `OrderDenied` before submission, so they cannot fi
 `OrderDenied` and never signs.
 :::
 
-After the async submit task resolves the instrument, it refreshes the current ticker snapshot
-and derives the signed slippage-bound `limit_price` from that refreshed quote.
+Before signing a market order, the adapter refreshes the ticker snapshot. It applies
+`market_order_slippage_bps` above the ask for a buy or below the bid for a sell, then rounds
+the limit price up for a buy or down for a sell to the instrument's price increment.
 
 ### Replacing regular orders
 
@@ -614,10 +653,13 @@ not change their margin model or reproduce the venue's portfolio risk engine. Se
 for supported collateral and instruments.
 
 The default native risk engine checks per-instrument initial margin against free balance in the
-required currency. It does not use Derive's PM2 net-health metadata for order admission or portfolio
-sizing. Positive venue PM2 health therefore does not establish native admission with collateral in
-another currency. Live behavior with cross-currency collateral and nonzero maintenance-margin
-credits (`mm_credits`) remains unverified.
+required currency. The adapter retains venue perpetual margin rates, when present, in instrument metadata
+under `perp_details.srm_perp_margin_requirements`. Those rates do not populate Nautilus instrument margin
+fields. The risk engine does not use Derive's PM2 net-health metadata for order admission or portfolio
+sizing. With collateral in another currency, Nautilus can deny an order even when Derive reports positive
+PM2 health. Live behavior with cross-currency collateral and nonzero maintenance-margin credits (`mm_credits`)
+remains unverified.
+[Derive instrument definition](https://docs.derive.xyz/api-reference/market-data/publicget_instrument)
 
 ### Account state
 
@@ -870,6 +912,9 @@ The adapter does not support iceberg instructions. Orders with `display_qty` set
 the adapter denies every leg before submitting any leg. Existing orders with `display_qty`
 can still be canceled; modifying them is rejected.
 
+Specify order quantity in base units for spot or contracts for derivatives. The adapter denies
+orders specified in quote currency.
+
 ### Time in force
 
 Derive documents `gtc`, `post_only`, `fok`, and `ioc` as its `time_in_force` values. Nautilus
@@ -886,20 +931,22 @@ exposes post-only as a `time_in_force` value, so `post_only` cannot combine with
 | `AT_THE_OPEN`  | -         | -            | *Not supported by Derive*. |
 | `AT_THE_CLOSE` | -         | -            | *Not supported by Derive*. |
 
+Derive expires a resting order five seconds before the earlier of its signature expiry and the
+time its nonce reaches 120 days old. After that cutoff, cancel and replace requests return `11006`
+and a replace submits no new order. The adapter reports `Expired` when it receives the venue's
+expired status. Market orders never rest.
+[Derive time in force](https://docs.derive.xyz/trading/order-types#time-in-force)
+
 For passive IOC and FOK limits with no liquidity within the limit price, Derive returns
-[`11009: Zero liquidity for market or IOC/FOK order`](https://docs.derive.xyz/error-codes).
-In execution test cases [TC-E14](../developer_guide/spec_exec_testing.md#tc-e14-limit-ioc-passive---no-fill)
-and [TC-E16](../developer_guide/spec_exec_testing.md#tc-e16-limit-fok-no-fill), both Rust and Python must observe
-`OrderInitialized` -> `OrderSubmitted` -> `OrderRejected`, terminal status `Rejected`, zero filled
-quantity, and that exact rejection reason. An unrelated rejection does not pass. The adapter preserves
-the venue rejection without emitting `OrderAccepted` or `OrderCanceled`.
+`11009: Zero liquidity for market or IOC/FOK order`. The order follows the event sequence
+`OrderInitialized` -> `OrderSubmitted` -> `OrderRejected`. It ends in `Rejected` with zero filled
+quantity and the venue's rejection reason. [Derive error codes](https://docs.derive.xyz/error-codes)
 
 ### Spot reduce-only orders
 
-Derive spot has no position concept, so a reduce-only spot order can never reduce anything. The venue always
-rejects it with error `11025`. The adapter avoids that round-trip when it knows the instrument is spot. Cached
-spot instruments are denied with `OrderDenied`. Lazily resolved spot instruments are rejected with
-`OrderRejected` during submit.
+Derive spot trades change asset balances. To reduce a spot balance, submit an order on the opposite
+side. The adapter denies reduce-only orders for cached spot instruments with `OrderDenied`. For spot
+instruments loaded during submission, it emits `OrderRejected`.
 
 Reduce-only orders for perpetuals and options still reach the venue, where the outcome
 depends on the subaccount's position state. The `derive-flatten` bin closes derivative
@@ -1006,9 +1053,9 @@ adapter surfaces this as a definitive rejection (see [order rejection semantics]
 ### Request buckets
 
 The table gives reference defaults and the adapter's label-cancel allowance. Deployment values and negotiated
-allowances can differ. Read live request budgets with `public/getRateLimits`. The endpoint does not report
-instrument budgets. On testnet, the HTTP endpoint reports the public IP allowance even with authentication
-headers, while an authenticated WebSocket reports wallet allowances.
+allowances can differ. Call `public/getRateLimits` over an authenticated WebSocket to read the wallet's live
+request budgets. Public calls return the IP allowance. On testnet, HTTP calls have returned the public IP
+allowance even with authentication headers. The endpoint does not report instrument budgets.
 
 | Bucket                             | Scope                 | Reference allowance             |
 | ---------------------------------- | --------------------- | ------------------------------- |
@@ -1023,16 +1070,22 @@ headers, while an authenticated WebSocket reports wallet allowances.
 The venue also limits concurrent WebSocket connections per IP. Its published reference is four
 connections, but deployment values differ.
 
+Derive has a separate wallet budget named `proven` for account mutations such as transfers, withdrawals,
+and session key changes. The adapter has no separate local bucket for those calls.
+[Derive rate limit classes](https://docs.derive.xyz/rate-limits)
+
 The [integrator reference](https://docs.derive.xyz/integrators/trading/rate-limits) publishes 10 TPS for
 unscoped label cancellation. The canonical reference does not give a numeric endpoint allowance. The adapter
 retains 10 TPS for its label-cancel endpoint budget.
 
 #### Matching write allocation
 
+The adapter charges the following local budgets.
+
 | Operation                                                         | Budgets charged         |
 | ----------------------------------------------------------------- | ----------------------- |
 | Order, replace, cancel, cancel-by-nonce, and cancel-by-instrument | Matching and instrument |
-| `cancel_by_label`                                                 | Matching and endpoint   |
+| Unscoped `cancel_by_label`                                        | Matching and endpoint   |
 | `cancel_all`                                                      | Endpoint only           |
 | `cancel_trigger_order` and trigger-order reads                    | Non-matching            |
 
@@ -1040,9 +1093,9 @@ Per-instrument configuration applies to perpetuals, spot, and options independen
 allowance. Raw HTTP requests with `instrument_name` in the body also consume instrument credit. Trigger
 creation uses `private/order` and reserves matching quota before signing.
 
-The typed label-cancel parameters currently support unscoped calls only. Testnet currently charges the
-matching budget for scoped label cancels only. The adapter follows the canonical rate-limit reference and
-retains the stricter documented rule for unscoped calls.
+The adapter's typed `cancel_by_label` request has no instrument scope. Derive charges its matching budget
+for label cancellations scoped to an instrument and its per-method budget for unscoped cancellations.
+[Derive rate limit classes](https://docs.derive.xyz/rate-limits)
 
 The first explicit wallet and instrument settings apply to the shared limiter. A later constructor
 with unset options preserves them. The limiter ignores conflicting explicit settings and logs a
@@ -1210,20 +1263,18 @@ proof for those slices.
 
 ## Subscription parameters
 
-`subscribe_book_deltas` and `subscribe_book_depth` accept these `subscribe_params` keys:
+Pass these keys in the subscription's `params` argument as strings or nonnegative integers.
 
-| Key     | Type   | Default | Allowed                        |
-| ------- | ------ | ------- | ------------------------------ |
-| `group` | string | `"1"`   | `"1"`, `"10"`, `"100"`         |
-| `depth` | string | `"10"`  | `"1"`, `"10"`, `"20"`, `"100"` |
+| Key        | Subscriptions                                   | Default | Allowed                |
+| ---------- | ----------------------------------------------- | ------- | ---------------------- |
+| `group`    | `subscribe_book_deltas`, `subscribe_book_depth` | `1`     | `1`, `10`, `100`       |
+| `depth`    | `subscribe_book_deltas`                         | `10`    | `1`, `10`, `20`, `100` |
+| `interval` | [Ticker feeds](#shared-ticker-subscription)     | `1000`  | `100`, `1000`          |
 
-`subscribe_quotes` accepts:
-
-| Key        | Type   | Default  | Allowed           |
-| ---------- | ------ | -------- | ----------------- |
-| `interval` | string | `"1000"` | `"100"`, `"1000"` |
-
-Unknown values are rejected at subscribe time.
+For `subscribe_book_deltas`, an explicit command depth takes precedence over `params["depth"]`.
+`subscribe_book_depth` always uses 10 levels. When the adapter reads a parameter, it uses the default
+for a missing value or a value of a different type. Strings and nonnegative integers outside the listed
+values fail validation.
 
 ### Shared ticker subscription
 
@@ -1235,36 +1286,37 @@ the underlying WS subscribe call:
 - The last unsubscribe closes it.
 
 :::note
-**The first subscription's `interval` wins.** Subsequent feeds subscribing with a different
-interval share the existing channel.
+**The first subscription's `interval` wins.** Later feeds share the existing channel and their
+`interval` values are ignored.
 :::
 
 #### Ticker fields
 
-Mark prices, index prices, funding rates, and option greeks read fields from the ticker payload.
-Both the full ticker shape and the compact `ticker_slim` shape carry these fields, so derived
-feeds work on either:
+The adapter subscribes to the compact `ticker_slim` feed. Its decoder also accepts the legacy full ticker
+shape. Derive rejects subscriptions to the legacy `ticker` channel.
+[Derive WebSocket subscriptions](https://docs.derive.xyz/subscriptions)
 
-| Fields                      | Presence                  | Feed behavior                                                              |
-| --------------------------- | ------------------------- | -------------------------------------------------------------------------- |
-| `mark_price`, `index_price` | Required                  | A missing field fails deserialization and is logged, not silently dropped. |
-| `funding_rate`              | Optional; perpetuals only | Supplies funding-rate events.                                              |
-| `option_pricing`            | Optional; options only    | Supplies option greeks.                                                    |
-| Bid/ask                     | Present in both shapes    | Quote feed works with either shape.                                        |
+| Compact keys       | Presence                  | Feed behavior                             |
+| ------------------ | ------------------------- | ----------------------------------------- |
+| `M`, `I`           | Required                  | Supply mark and index price events.       |
+| `f`                | Optional; perpetuals only | Supplies funding-rate events.             |
+| `option_pricing`   | Optional; options only    | Supplies option greeks.                   |
+| `b`, `B`, `a`, `A` | Required                  | Supply best bid and ask prices and sizes. |
 
 Null or empty required mark/index prices reject the whole WebSocket ticker frame, including its
-quote, funding rate, and greeks. The adapter logs a warning. On REST, one malformed ticker rejects
-the entire `public/get_tickers` response: quote requests emit no response, option-chain reference
-prices are unavailable, and market-order quote refreshes fail. Subsequent valid updates and requests
-continue normally. Zero (`0` or `"0"`) remains valid; null optional fields produce no corresponding event.
+quote, funding rate, and greeks. Missing required fields also reject the frame. The adapter logs a
+warning. On REST, one malformed ticker causes the adapter to discard the entire `public/get_tickers`
+response. Quote requests emit no response, option-chain reference prices are unavailable, and market-order
+quote refreshes fail. Subsequent valid updates and requests continue normally. Zero (`0` or `"0"`) remains
+valid, and null optional fields produce no corresponding event.
 
 #### Instrument class restrictions
 
 Funding rates are only meaningful for perpetuals, and option greeks only for options. The adapter accepts a
 subscription to the wrong feed for an instrument's class (e.g. funding rates for an option). The WebSocket
-subscription opens, but the parser returns no events for that feed. The venue payload omits the funding rate
-field for non-perps and `option_pricing` for non-options. Verify the instrument class before subscribing to
-derivative-specific feeds.
+subscription opens, but the parser returns no events for that feed. In compact frames, Derive sends `f`
+as null for non-perpetuals. `option_pricing` is absent or null for non-options. Verify the instrument
+class before subscribing to derivative-specific feeds.
 
 ## Configuration
 
@@ -1289,8 +1341,9 @@ Class/struct: `DeriveDataClientConfig`.
 | `transport_backend`                | `Sockudo` | WebSocket transport backend (`Sockudo` or `Tungstenite`).                                   |
 
 The data client refreshes instrument definitions for configured currencies after each refresh interval
-and publishes them, including new listings. A failed refresh leaves cached definitions available and
-retries at the next interval. Empty `currencies` disables periodic refresh.
+and publishes new or changed definitions. Subscribe to the funding rate stream for current rates.
+A failed refresh leaves cached definitions available and retries at the next interval. Empty `currencies`
+disables periodic refresh.
 
 :::important
 **`auto_load_missing_instruments` covers subscribe commands only.** Before requesting quotes,
@@ -1354,6 +1407,15 @@ fails before creating venue clients when the field is missing or non-positive.
 | `signature_expiry_secs`     | `600`    | Order/replace TTL; see [signature expiry](#signature-expiry). Triggers use 31 days. |
 | `market_order_slippage_bps` | `50`     | Slippage bound for market-order limit prices.                                       |
 | `cancel_on_disconnect`      | `False`  | Protect resting limit orders; see [cancel on disconnect](#cancel-on-disconnect).    |
+
+Set `max_fee_per_contract` for the intended instruments and order sizes. For a crossing order,
+the cap must exceed the resting-order fee bound plus the flat taker fee divided by fill size.
+The flat fee can contribute a large share of the per-contract cap for small option orders.
+Derive rejects a cap below its required minimum with `11023: Max fee order param is too low`.
+Allow for price moves when sizing the cap for a resting order. Derive can cancel the order with
+`signed_max_fee_too_low` if the required fee rises above the signed cap.
+Calculate the cap for the instrument, price, and size using
+[Derive's fee rules](https://docs.derive.xyz/integrators/trading/trading-fees#setting-max_fee-on-orders).
 
 #### Matching request limits
 
@@ -1463,6 +1525,3 @@ let config = DeriveExecutionClientConfig {
   definition carries `is_active` and the scheduled activation/deactivation timestamps, and bars are REST-only.
 - The book snapshot REST endpoint and historical book deltas / historical quote endpoints
   are not exposed by the venue. See the capabilities table above.
-- Derive's official REST docs mark `public/get_ticker` as deprecated in favor of
-  `public/get_tickers` as of December 1, 2025. The adapter uses `public/get_tickers`
-  for quote snapshots and option-chain reference-price bootstrap.

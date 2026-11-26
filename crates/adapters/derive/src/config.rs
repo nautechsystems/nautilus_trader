@@ -203,8 +203,8 @@ pub struct DeriveExecutionClientConfig {
     /// Optional per-operation WebSocket timeout in seconds (login, subscribe,
     /// reads, writes). When unset, the low-level `WS_REQUEST_TIMEOUT` applies.
     pub ws_timeout_secs: Option<u64>,
-    /// Per-contract USDC fee cap signed into every order. Required for
-    /// execution and must be greater than zero.
+    /// Positive per-contract USDC fee cap required for execution and signed into every order.
+    /// Allow for the venue's flat taker fee divided by fill size on orders that can cross.
     pub max_fee_per_contract: Option<Decimal>,
     /// WebSocket transport backend (defaults to `Sockudo`).
     #[builder(default)]
