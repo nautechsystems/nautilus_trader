@@ -163,6 +163,10 @@ impl ExecutionClientFactory for LighterExecutionClientFactory {
     fn config_type(&self) -> &'static str {
         "LighterExecutionClientConfig"
     }
+
+    fn requires_order_retention_on_command_timeout(&self) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]

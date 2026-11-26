@@ -968,8 +968,22 @@ pub(crate) fn parse_lighter_order_updated(
     trader_id: TraderId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderUpdated> {
-    let shape =
-        identity.normalize_shape(lighter_order_shape(order, instrument, identity.order_type)?);
+    let shape = lighter_order_shape(order, instrument, identity.order_type)?;
+    order_updated_from_shape(
+        order, shape, identity, cloid, account_id, trader_id, ts_init,
+    )
+}
+
+pub(crate) fn order_updated_from_shape(
+    order: &LighterOrder,
+    shape: OrderShapeSnapshot,
+    identity: &OrderIdentity,
+    cloid: ClientOrderId,
+    account_id: AccountId,
+    trader_id: TraderId,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderUpdated> {
+    let shape = identity.normalize_shape(shape);
     let ts_event = parse_optional_order_timestamp(order.updated_at)?;
     let venue_order_id = VenueOrderId::new(order.order_id.as_str());
 
@@ -1221,7 +1235,7 @@ pub fn build_unified_account_state(
 /// normalizes second-scale values before nanosecond conversion.
 const UNIX_TIMESTAMP_SECONDS_MAX: i64 = 9_999_999_999;
 
-fn parse_optional_order_timestamp(timestamp: i64) -> anyhow::Result<UnixNanos> {
+pub(crate) fn parse_optional_order_timestamp(timestamp: i64) -> anyhow::Result<UnixNanos> {
     if timestamp <= 0 {
         return Ok(UnixNanos::default());
     }

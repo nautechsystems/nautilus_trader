@@ -17,3 +17,6 @@ mod data_client;
 mod http;
 mod python;
 mod websocket;
+
+#[cfg(any(feature = "examples", feature = "python"))]
+mod node;

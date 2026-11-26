@@ -96,6 +96,13 @@ pub trait ExecutionClientFactory: Debug {
 
     /// Returns the supported configuration type name for this factory.
     fn config_type(&self) -> &str;
+
+    /// Returns whether the client requires orders to stay open after an in-flight command timeout.
+    ///
+    /// A live node checks this requirement before creating clients.
+    fn requires_order_retention_on_command_timeout(&self) -> bool {
+        false
+    }
 }
 
 /// Factory trait for simulated execution clients owned by the sync core.

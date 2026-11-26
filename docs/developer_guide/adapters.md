@@ -72,6 +72,7 @@ that proves conformance.
 | [Tracked and external execution updates](#tracked-and-external-execution-updates)             | Execution clients |
 | [Event ordering and deduplication](#event-ordering-and-deduplication)                         | Execution clients |
 | [Order command outcome policy](#order-command-outcome-policy)                                 | Execution clients |
+| [Submission recovery policy](#submission-recovery-policy)                                     | Execution clients |
 | [Naming the evidence classes](#naming-the-evidence-classes)                                   | Execution clients |
 | [Diagnostics and strategy-facing reasons](#separate-diagnostics-from-strategy-facing-reasons) | Execution clients |
 
@@ -1674,6 +1675,18 @@ failed. Treat venue messages such as "not found" or "already closed" according t
 They can describe a race with a fill or cancellation, rather than an unambiguous command rejection.
 
 Keep this policy independent of the HTTP or WebSocket path used to send a command.
+
+### Submission recovery policy
+
+Keep venue-specific recovery in the adapter. **Require `RetainUnresolved`** when supporting
+`ResolveLocally` safely for a venue would add complexity to shared execution logic.
+
+Return `true` from `ExecutionClientFactory::requires_order_retention_on_command_timeout` to declare the
+requirement. If any configured execution client requires retention, `LiveNode` rejects a node
+configured with `ResolveLocally` before creating clients.
+
+In the integration guide, explain why local closure is unsafe and how later venue evidence can resolve
+the order. See [Lighter outcome recovery](../integrations/lighter.md#outcome-recovery).
 
 ### Naming the evidence classes
 

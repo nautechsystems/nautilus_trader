@@ -873,17 +873,23 @@ current WebSocket order shape matches. A `sendTx` or `sendTxBatch` acknowledgeme
 execution. Unresolved modifications use bounded REST transaction and order lookups starting two seconds
 after submission; see [outcome recovery](#outcome-recovery).
 
-While modification is pending:
+While an amend is pending, affected WebSocket order updates and fills wait for the amend outcome
+or terminal recovery. HTTP reports that could apply the amend or fills wait for those events to
+reach the cache.
 
-- Affected WebSocket order frames and fills wait for publication of `OrderUpdated`, `OrderModifyDenied`,
-  or `OrderModifyRejected`.
-- HTTP reports that could apply the amendment or fill wait for the cache to apply that event.
+| Request                                      | Behavior while modification is pending                     |
+| -------------------------------------------- | ---------------------------------------------------------- |
+| Single-order status lookup and `query_order` | Can return an unchanged working report as `PendingUpdate`. |
+| Bulk order reports and mass status           | Withhold the order and mark the result incomplete.         |
 
-| Request                            | Behavior while modification is pending                     |
-| ---------------------------------- | ---------------------------------------------------------- |
-| Single-order status lookup         | Can return an unchanged working report as `PendingUpdate`. |
-| Bulk order reports and mass status | Withhold the order and mark the result incomplete.         |
-| `query_order`                      | Emits no report.                                           |
+- **Amend outcome unknown.** After transaction retries end, a terminal row can release held events if
+  it matches the bound venue order and last confirmed terms, and real trades cover its reported fills.
+- **Amend confirmed or rejected.** The adapter publishes the outcome before fills. Once the cache applies
+  the outcome, reconciliation can supply missing trades. Even after retries end, the adapter denies new
+  amends and cancels on a confirmed terminal order and keeps tracking it until real trades cover its fills.
+
+For fully filled orders, targeted trade recovery applies venue quantity reductions before the closing
+fill. Orders with inferred fills follow the regular terminal reconciliation rules.
 
 Reports can lag by several seconds. Position reconciliation withholds affected instruments until their
 execution events reach the cache.
@@ -915,14 +921,22 @@ During this delay:
 
 #### Outcome recovery
 
-Order updates and transaction lookups resolve create and cancel outcomes. REST recovery, including pending
-modifications, performs up to three lookups at two-second intervals while the pending action remains current.
-It validates transaction hash, type, account, API key, and original submission nonce.
+**Lighter requires the default `RetainUnresolved` policy for the whole node.** `LiveNode` rejects
+`ResolveLocally` at build time because a local timeout could close an order before Lighter recovers
+[fills held during an amend](#modification-confirmation).
 
-The adapter [retains unresolved submissions](../concepts/execution/reconciliation.md#submission-recovery)
-in `SUBMITTED` after recovery ends, even under `ResolveLocally`. If they are still unresolved at the
-[shutdown boundary](../concepts/live.md#submission-recovery-at-shutdown), `LiveNode` stops and returns
-an error listing their client order IDs.
+With `RetainUnresolved`, an amend or cancel timeout restores an accepted order's prior status so
+late fills and venue updates can apply. This follows the
+[adapter policy](../developer_guide/adapters.md#submission-recovery-policy) of keeping venue-specific
+recovery in the adapter.
+
+Order updates and transaction lookups resolve creates and cancels. REST recovery makes up to three
+lookups at two-second intervals while the command, including an amend, remains current. Each lookup
+checks the transaction hash, type, account, API key, and original submission nonce.
+
+[Unresolved submissions](../concepts/execution/reconciliation.md#submission-recovery) stay `SUBMITTED`
+after retries. If any remain at [shutdown](../concepts/live.md#submission-recovery-at-shutdown),
+`LiveNode` stops and returns an error listing their client order IDs.
 
 After an execution WebSocket reconnect, the adapter looks up `CreateOrder` transactions that received
 no `sendTx` response by their signed hashes. A confirmed failure emits `OrderRejected`. If an executed
@@ -963,9 +977,7 @@ own and receives no independent denial or rejection.
 Cancellation and expiry events wait until **real fills cover the venue's cumulative filled quantity**.
 Events with no missing fills publish immediately.
 
-**Recovery limits**:
-
-Recovery fetches the order's trades and skips fills already published:
+Recovery fetches the order's trades and skips fills already published.
 
 - **Normal operation**: starts two seconds after the event begins waiting, with at most three
   attempts and a two-second timeout per attempt. Interrupted requests count toward this limit.
@@ -974,10 +986,11 @@ Recovery fetches the order's trades and skips fills already published:
   their remaining attempts for up to seven seconds. If those tasks do not stop, shutdown fails;
   events stay withheld until a later shutdown completes.
 
-While an event waits, reconciliation withholds its order and fill reports and its instrument's
-position report. When recovery exhausts its retries or shutdown deadline, the adapter logs the missing quantity
-and publishes the original terminal event **without creating fills**. Reconciliation must recover
-the missing quantity.
+For ordinary cancellations and expiries, reconciliation withholds order, fill, and instrument
+position reports during recovery. At the retry or shutdown limit, the adapter logs the missing
+quantity and publishes the terminal event without synthesizing fills. Reconciliation must recover
+the missing fills.
+[Terminal events held during an amend](#modification-confirmation) still require full trade coverage.
 
 Targeted and bulk status collection can return cancellation and expiry reports before real fills
 arrive, so native reconciliation can fetch companion fills. Other statuses, direct event publication,

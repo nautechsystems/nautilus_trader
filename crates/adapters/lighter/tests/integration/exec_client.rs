@@ -4582,6 +4582,7 @@ async fn test_cancel_already_canceled_preserves_terminal_state(#[case] rejected:
     assert_eq!(event.client_order_id, id);
     assert_eq!(event.venue_order_id, Some(venue_id));
     assert_eq!(event.account_id, Some(account_id()));
+    assert_eq!(client.dispatch.pending_order_action(&id), None);
     cache.borrow_mut().update_order(&canceled).unwrap();
     let terminal = cache.borrow().order(&id).unwrap().clone();
     assert_eq!(terminal.status(), OrderStatus::Canceled);
@@ -13403,7 +13404,10 @@ async fn test_completed_cancel_backlog_does_not_delay_modify_confirmation() {
         .lock()
         .await
         .push_back(json!({"status":2,"event_info":json!({"ae":""}).to_string()}));
-    let pending = OrderEventAny::PendingUpdate(OrderPendingUpdate::new(
+    let command = modify_command(target, target_venue, "2400.00");
+    let command_id = command.command_id;
+
+    let mut pending = OrderPendingUpdate::new(
         trader_id(),
         strategy_id(),
         eth_perp_id(),
@@ -13414,11 +13418,14 @@ async fn test_completed_cancel_backlog_does_not_delay_modify_confirmation() {
         UnixNanos::default(),
         false,
         Some(target_venue),
-    ));
-    cache.borrow_mut().update_order(&pending).unwrap();
-    client
-        .modify_order(modify_command(target, target_venue, "2400.00"))
+    );
+
+    pending.causation_id = Some(command_id);
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::PendingUpdate(pending))
         .unwrap();
+    client.modify_order(command).unwrap();
     let event = next_order_event(&mut rx, Duration::from_secs(8)).await;
     client.disconnect().await.unwrap();
 
@@ -13432,6 +13439,7 @@ async fn test_completed_cancel_backlog_does_not_delay_modify_confirmation() {
         .unwrap();
     let cached = cache.borrow().order_owned(&target).unwrap();
     assert_eq!(update.client_order_id, target);
+    assert_eq!(update.causation_id, Some(command_id));
     assert_eq!(update.venue_order_id, Some(target_venue));
     assert_eq!(update.instrument_id, eth_perp_id());
     assert_eq!(update.strategy_id, strategy_id());

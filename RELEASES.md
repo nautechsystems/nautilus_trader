@@ -257,6 +257,7 @@ Released on TBD (UTC).
 - Fixed Lighter recovery of unacknowledged order creates on reconnect (#5696), thanks @aaurix
 - Fixed Lighter IOC recovery after a lost acknowledgement (#5701), thanks for reporting @AlphaTraderK
 - Fixed Lighter recovery of unfilled bracket child cancellations when trade history is unavailable (#5683), thanks for reporting @YTsnipers
+- Fixed Lighter order queries and fill recovery during unresolved modifies (#5725), thanks for reporting @Industrial
 - Fixed OKX balances not refreshing after a WebSocket reconnect
 - Fixed OKX denying `TRAILING_STOP_LIMIT` orders only after `OrderSubmitted`
 - Fixed OKX execution clients not subscribing to venue position updates

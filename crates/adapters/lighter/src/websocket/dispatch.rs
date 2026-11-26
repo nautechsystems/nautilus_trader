@@ -33,7 +33,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet, RandomState};
 use anyhow::Context;
-use dashmap::{DashMap, DashSet, mapref::entry::Entry};
+use dashmap::{DashMap, DashSet, mapref::entry::Entry, try_result::TryResult};
 use nautilus_common::messages::execution::ModifyOrder;
 use nautilus_core::{AtomicTime, UUID4, UnixNanos, string::secret::SecretString};
 use nautilus_execution::reconciliation::inferred_reconciliation_trade_ids;
@@ -241,6 +241,10 @@ impl OrderIdentity {
         self.binding.lock().reduced_qty
     }
 
+    pub(crate) fn trigger_price(&self) -> Option<Price> {
+        self.binding.lock().trigger_price
+    }
+
     pub(crate) fn record_reduction(&self, quantity: Decimal) {
         let mut binding = self.binding.lock();
 
@@ -294,11 +298,18 @@ impl OrderIdentity {
         )
     }
 
-    pub(crate) fn publish_update(&self, event_id: UUID4) {
+    fn publish_update(&self, event_id: UUID4) {
         self.binding.lock().publication = Some(OrderPublication::Update(event_id));
     }
 
-    pub(crate) fn publish_child(&self, report: &OrderStatusReport, trade_ids: Vec<TradeId>) {
+    fn preserve_closing_fill_publication(&self, trade_id: TradeId) {
+        let mut binding = self.binding.lock();
+        if !matches!(binding.publication, Some(OrderPublication::Fills(_))) {
+            binding.publication = Some(OrderPublication::Fills(vec![trade_id]));
+        }
+    }
+
+    fn publish_child(&self, report: &OrderStatusReport, trade_ids: Vec<TradeId>) {
         let mut binding = self.binding.lock();
         binding.filled_qty = binding.filled_qty.max(report.filled_qty.as_decimal());
         binding.fill_ids.extend(trade_ids.iter().copied());
@@ -314,7 +325,7 @@ impl OrderIdentity {
         });
     }
 
-    pub(crate) fn publish_fill(&self, fill: &OrderFilled) -> bool {
+    fn publish_fill(&self, fill: &OrderFilled) -> bool {
         let mut binding = self.binding.lock();
         if binding.fills_inferred || !binding.fill_ids.insert(fill.trade_id) {
             return false;
@@ -393,6 +404,18 @@ impl OrderIdentity {
 
     pub(crate) fn has_inferred_fills(&self) -> bool {
         self.binding.lock().fills_inferred
+    }
+
+    pub(crate) fn filled_qty_with_deferred(&self, fills: &[OrderFilled]) -> Option<Decimal> {
+        let binding = self.binding.lock();
+        (!binding.fills_inferred).then(|| {
+            binding.filled_qty
+                + fills
+                    .iter()
+                    .filter(|fill| !binding.fill_ids.contains(&fill.trade_id))
+                    .map(|fill| fill.last_qty.as_decimal())
+                    .sum::<Decimal>()
+        })
     }
 
     pub(crate) fn report_fills_covered(
@@ -644,6 +667,7 @@ pub(crate) struct RetiredOrderCache {
 struct RetiredOrderCacheInner {
     by_index: AHashMap<i64, AHashMap<Option<VenueOrderId>, (RetiredOrderIdentity, u64)>>,
     by_cloid: AHashMap<ClientOrderId, (i64, Option<VenueOrderId>)>,
+    publications: AHashSet<ClientOrderId>,
     queue: VecDeque<(i64, Option<VenueOrderId>, u64)>,
     next_seq: u64,
 }
@@ -654,6 +678,7 @@ impl RetiredOrderCache {
             inner: Mutex::new(RetiredOrderCacheInner {
                 by_index: AHashMap::with_capacity(capacity),
                 by_cloid: AHashMap::with_capacity(capacity),
+                publications: AHashSet::new(),
                 queue: VecDeque::with_capacity(capacity),
                 next_seq: 0,
             }),
@@ -666,6 +691,12 @@ impl RetiredOrderCache {
         let venue_order_id = identity.venue_order_id();
         let binding = (index, venue_order_id);
         let mut inner = self.inner.lock();
+        if identity.has_publication() {
+            inner.publications.insert(cloid);
+        } else {
+            inner.publications.remove(&cloid);
+        }
+
         let seq = inner.next_seq;
         inner.next_seq = inner.next_seq.wrapping_add(1);
 
@@ -691,6 +722,7 @@ impl RetiredOrderCache {
             && old.cloid != cloid
         {
             inner.by_cloid.remove(&old.cloid);
+            inner.publications.remove(&old.cloid);
         }
         inner.by_cloid.insert(cloid, binding);
         inner.queue.push_back((index, venue_order_id, seq));
@@ -708,6 +740,7 @@ impl RetiredOrderCache {
 
             if let Some((old_cloid, remove_index)) = removed {
                 inner.by_cloid.remove(&old_cloid);
+                inner.publications.remove(&old_cloid);
                 if remove_index {
                     inner.by_index.remove(&old_index);
                 }
@@ -745,6 +778,44 @@ impl RetiredOrderCache {
             .get(index)
             .and_then(|bindings| bindings.get(venue_order_id))
             .map(|(retired, _)| retired.identity.clone())
+    }
+
+    fn track_publication(&self, cloid: ClientOrderId, identity: &OrderIdentity) {
+        let mut inner = self.inner.lock();
+        if let Some((index, venue)) = inner.by_cloid.get(&cloid)
+            && inner.by_index[index]
+                .get(venue)
+                .is_some_and(|(retired, _)| {
+                    Arc::ptr_eq(&retired.identity.binding, &identity.binding)
+                })
+        {
+            inner.publications.insert(cloid);
+        }
+    }
+
+    fn any_publication(
+        &self,
+        mut predicate: impl FnMut(&ClientOrderId, &OrderIdentity) -> bool,
+    ) -> bool {
+        let mut inner = self.inner.lock();
+        let RetiredOrderCacheInner {
+            by_index,
+            by_cloid,
+            publications,
+            ..
+        } = &mut *inner;
+        let mut found = false;
+        publications.retain(|cloid| {
+            let (index, venue) = by_cloid[cloid];
+            let identity = &by_index[&index][&venue].0.identity;
+            if !found {
+                found = predicate(cloid, identity);
+            }
+
+            identity.has_publication()
+        });
+
+        found
     }
 
     fn contains_index(&self, index: i64) -> bool {
@@ -816,6 +887,8 @@ struct PendingModify {
     submission: Option<(u64, i64)>,
     transaction: Option<PendingSendTx>,
     executed: bool,
+    probe_exhausted: bool,
+    terminal_recovery_requested: bool,
 }
 
 #[derive(Debug, Default)]
@@ -837,9 +910,15 @@ pub(crate) enum ObservedChildFill {
 #[derive(Debug)]
 pub(crate) struct PendingTerminal {
     pub(crate) order: LighterOrder,
-    pub(crate) event: ParsedOrderEvent,
+    pub(crate) event: Option<ParsedOrderEvent>,
     pub(crate) retry_at: tokio::time::Instant,
     pub(crate) attempts: usize,
+}
+
+impl PendingTerminal {
+    pub(crate) fn requires_complete_fills(&self) -> bool {
+        self.event.is_none()
+    }
 }
 
 impl DeferredOrderEvents {
@@ -1400,6 +1479,8 @@ impl WsDispatchState {
             submission: None,
             transaction: None,
             executed: false,
+            probe_exhausted: false,
+            terminal_recovery_requested: false,
         });
 
         true
@@ -1409,6 +1490,41 @@ impl WsDispatchState {
         self.pending_order_actions
             .get(cloid)
             .is_some_and(|state| state.modify.is_some())
+    }
+
+    pub(crate) fn position_modify_pending(
+        &self,
+        identity: &OrderIdentity,
+        except: Option<&ClientOrderId>,
+    ) -> bool {
+        let same_position = |other: &OrderIdentity| {
+            other.strategy_id == identity.strategy_id
+                && other.instrument_id == identity.instrument_id
+        };
+
+        let mut contended = Vec::new();
+
+        for state in self.pending_order_actions.iter() {
+            let cloid = state.key();
+            if Some(cloid) == except || state.modify.is_none() {
+                continue;
+            }
+
+            // A blocking lookup would hold the action shard across an identity lock
+            match self.order_identities.try_get(cloid) {
+                TryResult::Present(other) if same_position(&other) => return true,
+                TryResult::Locked => contended.push(*cloid),
+                _ => {}
+            }
+        }
+
+        contended.into_iter().any(|cloid| {
+            let matches = self
+                .order_identities
+                .get(&cloid)
+                .is_some_and(|other| same_position(&other));
+            matches && self.has_pending_modify(&cloid)
+        })
     }
 
     pub(crate) fn pending_modify_shape(&self, cloid: &ClientOrderId) -> Option<OrderShapeSnapshot> {
@@ -1467,16 +1583,7 @@ impl WsDispatchState {
         cloid: &ClientOrderId,
         pending: &PendingSendTx,
     ) {
-        if let Some(mut state) = self.pending_order_actions.get_mut(cloid)
-            && let Some(modify) = state.modify.as_mut()
-            && modify.submission == Some((pending.connection_epoch, pending.nonce))
-            && modify
-                .transaction
-                .as_ref()
-                .is_some_and(|tx| tx.tx_hash == pending.tx_hash)
-        {
-            modify.executed = true;
-        }
+        self.update_pending_modify(cloid, pending, |modify| modify.executed = true);
     }
 
     pub(crate) fn pending_modify_executed(&self, cloid: &ClientOrderId) -> Option<PendingSendTx> {
@@ -1489,6 +1596,69 @@ impl WsDispatchState {
         })
     }
 
+    pub(crate) fn mark_modify_probe_exhausted(&self, cloid: &ClientOrderId, tx: &PendingSendTx) {
+        self.update_pending_modify(cloid, tx, |modify| modify.probe_exhausted = true);
+    }
+
+    pub(crate) fn request_terminal_modify_recovery(&self, cloid: &ClientOrderId) -> bool {
+        if let Some(mut state) = self.pending_order_actions.get_mut(cloid)
+            && let Some(modify) = state.modify.as_mut()
+            && modify.probe_exhausted
+            && modify.transaction.is_some()
+        {
+            modify.terminal_recovery_requested = true;
+            return true;
+        }
+
+        false
+    }
+
+    pub(crate) fn terminal_modify_recoveries(
+        &self,
+        immediate: bool,
+        stopping: bool,
+    ) -> Vec<(ClientOrderId, PendingSendTx)> {
+        self.pending_order_actions
+            .iter()
+            .filter_map(|state| {
+                let modify = state.modify.as_ref().filter(|modify| {
+                    modify.terminal_recovery_requested
+                        || (immediate && (modify.probe_exhausted || stopping))
+                })?;
+
+                Some((*state.key(), modify.transaction.clone()?))
+            })
+            .collect()
+    }
+
+    pub(crate) fn clear_terminal_modify_recovery_request(
+        &self,
+        cloid: &ClientOrderId,
+        tx: &PendingSendTx,
+    ) {
+        self.update_pending_modify(cloid, tx, |modify| {
+            modify.terminal_recovery_requested = false;
+        });
+    }
+
+    fn update_pending_modify(
+        &self,
+        cloid: &ClientOrderId,
+        tx: &PendingSendTx,
+        update: impl FnOnce(&mut PendingModify),
+    ) {
+        if let Some(mut state) = self.pending_order_actions.get_mut(cloid)
+            && let Some(modify) = state.modify.as_mut()
+            && modify.submission == Some((tx.connection_epoch, tx.nonce))
+            && modify
+                .transaction
+                .as_ref()
+                .is_some_and(|pending| pending.tx_hash == tx.tx_hash)
+        {
+            update(modify);
+        }
+    }
+
     pub(crate) fn clear_pending_modify_if_nonce(
         &self,
         cloid: &ClientOrderId,
@@ -1497,6 +1667,17 @@ impl WsDispatchState {
     ) -> bool {
         self.clear_pending_modify_matching(cloid, |modify| {
             modify.submission == Some((connection_epoch, nonce))
+        })
+    }
+
+    pub(crate) fn clear_unconfirmed_modify_if_nonce(
+        &self,
+        cloid: &ClientOrderId,
+        connection_epoch: u64,
+        nonce: i64,
+    ) -> bool {
+        self.clear_pending_modify_matching(cloid, |modify| {
+            !modify.executed && modify.submission == Some((connection_epoch, nonce))
         })
     }
 
@@ -1927,6 +2108,66 @@ impl WsDispatchState {
             })
     }
 
+    pub(crate) fn any_order_publication(
+        &self,
+        mut predicate: impl FnMut(&ClientOrderId, &OrderIdentity) -> bool,
+    ) -> bool {
+        self.order_identities
+            .iter()
+            .any(|entry| predicate(entry.key(), entry.value()))
+            || self.retired_orders.any_publication(predicate)
+    }
+
+    pub(crate) fn publish_update(
+        &self,
+        cloid: ClientOrderId,
+        identity: &OrderIdentity,
+        event_id: UUID4,
+    ) {
+        identity.publish_update(event_id);
+        self.track_retired_publication(cloid, identity);
+    }
+
+    pub(crate) fn publish_fill(&self, identity: &OrderIdentity, fill: &OrderFilled) -> bool {
+        if !identity.publish_fill(fill) {
+            return false;
+        }
+
+        self.track_retired_publication(fill.client_order_id, identity);
+        true
+    }
+
+    pub(crate) fn publish_child(
+        &self,
+        cloid: ClientOrderId,
+        identity: &OrderIdentity,
+        report: &OrderStatusReport,
+        trade_ids: Vec<TradeId>,
+    ) {
+        identity.publish_child(report, trade_ids);
+        self.track_retired_publication(cloid, identity);
+        self.retire_order_identity(&cloid);
+    }
+
+    pub(crate) fn preserve_closing_fill_publication(
+        &self,
+        identity: &OrderIdentity,
+        fill: &OrderFilled,
+    ) {
+        identity.preserve_closing_fill_publication(fill.trade_id);
+        self.track_retired_publication(fill.client_order_id, identity);
+    }
+
+    fn track_retired_publication(&self, cloid: ClientOrderId, identity: &OrderIdentity) {
+        if !self
+            .order_identities
+            .get(&cloid)
+            .is_some_and(|active| Arc::ptr_eq(&active.binding, &identity.binding))
+        {
+            self.retired_orders.track_publication(cloid, identity);
+        }
+    }
+
     pub(crate) fn defer_fill(&self, deferred: &mut DeferredOrderEvents, fill: OrderFilled) {
         if !deferred
             .fills
@@ -1935,7 +2176,19 @@ impl WsDispatchState {
         {
             let sequence = self.fill_sequence.fetch_add(1, Ordering::Relaxed);
             deferred.fill_sequence.insert(fill.trade_id, sequence);
+            let cloid = fill.client_order_id;
             deferred.fills.push(fill);
+            if let Some(order) = deferred
+                .order
+                .as_ref()
+                .filter(|order| order.status.is_terminal())
+                && self.order_identities.get(&cloid).is_some_and(|identity| {
+                    identity.filled_qty_with_deferred(&deferred.fills)
+                        == Some(order.filled_base_amount)
+                })
+            {
+                self.request_terminal_modify_recovery(&cloid);
+            }
         }
     }
 
@@ -2448,9 +2701,7 @@ impl WsDispatchState {
             }
 
             report.order_type = identity.order_type;
-            report.trigger_price = report
-                .trigger_price
-                .or(identity.binding.lock().trigger_price);
+            report.trigger_price = report.trigger_price.or(identity.trigger_price());
             report.contingency_type = identity.contingency_type;
             report.linked_order_ids = identity.linked_order_ids.clone();
             report.parent_order_id = identity.parent_order_id;
@@ -2952,14 +3203,6 @@ impl OrderReportLookup {
             .supplied_cloid
             .filter(|cloid| dispatch.client_order_index(cloid) == Some(order.client_order_index));
         Ok((report, supplied_cloid))
-    }
-
-    pub(crate) fn finish(
-        &self,
-        dispatch: &WsDispatchState,
-        (report, supplied): (OrderStatusReport, Option<ClientOrderId>),
-    ) -> OrderStatusReport {
-        dispatch.preserve_pending_order_status(self.translate(dispatch, (report, supplied)))
     }
 
     pub(crate) fn translate(
@@ -3998,6 +4241,47 @@ mod tests {
         assert!(cache.identity_for_cloid(&cloid("RETIRED-1")).is_none());
         assert_eq!(cache.cloid_for_index(2), Some(cloid("RETIRED-2")));
         assert_eq!(cache.cloid_for_index(3), Some(cloid("RETIRED-3")));
+    }
+
+    #[rstest]
+    fn retired_publication_tracks_current_binding_until_eviction() {
+        let mut state = WsDispatchState::new();
+        state.retired_orders = Arc::new(RetiredOrderCache::new(1));
+        let id = cloid("LATE-PUBLICATION");
+
+        let make_identity = |index| {
+            OrderIdentity::new(
+                InstrumentId::from("ETH-PERP.LIGHTER"),
+                StrategyId::new("S-T"),
+                OrderSide::Buy,
+                OrderType::Limit,
+                index,
+            )
+        };
+
+        let identity = make_identity(1);
+        state.register_order_identity(id, identity.clone());
+        state.retire_order_identity(&id);
+
+        let has_publication =
+            || state.any_order_publication(|_, identity| identity.has_publication());
+        assert!(!has_publication());
+        state.publish_update(id, &identity, UUID4::new());
+        assert!(has_publication());
+
+        let replacement = make_identity(2);
+        state.retired_orders.insert(id, replacement.clone());
+        state.publish_update(id, &identity, UUID4::new());
+        assert!(!has_publication());
+
+        state.publish_update(id, &replacement, UUID4::new());
+        assert!(has_publication());
+        state
+            .retired_orders
+            .insert(cloid("NEXT-RETIRED"), make_identity(3));
+        state.publish_update(id, &replacement, UUID4::new());
+        assert!(!has_publication());
+        assert!(!state.any_order_publication(|_, _| true));
     }
 
     #[rstest]
