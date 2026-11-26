@@ -81,7 +81,7 @@ use nautilus_model::{
     accounts::{AccountAny, CashAccount, MarginAccount},
     enums::{
         AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
-        TimeInForce,
+        TimeInForce, TrailingOffsetType,
     },
     events::{
         AccountState, OrderAccepted, OrderDenied, OrderEventAny, OrderFilled, OrderPendingCancel,
@@ -176,7 +176,8 @@ struct TestServerState {
     /// Last raw body posted to a batch-cancel endpoint, for asserting the submitted IDs.
     last_batch_cancel_body: Arc<tokio::sync::Mutex<Option<String>>>,
     collection_request_ts: Arc<tokio::sync::Mutex<Option<UnixNanos>>>,
-    /// The path, query and body of each futures send, edit and cancel request, in order.
+    /// The path, query and body of each futures send, edit and cancel request and each spot amend
+    /// request, in order.
     command_requests: Arc<tokio::sync::Mutex<Vec<String>>>,
     orders_status_response: Arc<tokio::sync::Mutex<Option<String>>>,
     /// Served by `/derivatives/api/v3/orders/status` one per request, ahead of the override.
@@ -216,6 +217,8 @@ struct TestServerState {
     ws_connection_count: Arc<AtomicUsize>,
     /// The params of each executions subscribe the server received, without the token.
     ws_execution_subscriptions: Arc<std::sync::Mutex<Vec<Value>>>,
+    /// The params of each `amend_order` the server received, without the token.
+    ws_amend_requests: Arc<std::sync::Mutex<Vec<Value>>>,
     /// Pushes a message to each connected WebSocket; `WS_DROP` drops the connection instead.
     ws_message_tx: tokio::sync::broadcast::Sender<String>,
 }
@@ -237,6 +240,7 @@ impl Default for TestServerState {
             closed_orders_request_count: Arc::new(AtomicUsize::new(0)),
             ws_connection_count: Arc::new(AtomicUsize::new(0)),
             ws_execution_subscriptions: Arc::new(std::sync::Mutex::new(Vec::new())),
+            ws_amend_requests: Arc::new(std::sync::Mutex::new(Vec::new())),
             submit_request_count: Arc::new(AtomicUsize::new(0)),
             modify_request_count: Arc::new(AtomicUsize::new(0)),
             batch_submit_request_count: Arc::new(AtomicUsize::new(0)),
@@ -322,6 +326,12 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                         .fetch_add(1, Ordering::Relaxed);
                 }
 
+                if payload.get("method").and_then(Value::as_str) == Some("amend_order") {
+                    let mut params = payload["params"].clone();
+                    params.as_object_mut().unwrap().remove("token");
+                    state.ws_amend_requests.lock().unwrap().push(params);
+                }
+
                 if let Some(reply) = ws_reply(&payload)
                     && socket
                         .send(Message::Text(reply.to_string().into()))
@@ -398,6 +408,7 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
         "/derivatives/api/v3/sendorder"
             | "/derivatives/api/v3/editorder"
             | "/derivatives/api/v3/cancelorder"
+            | "/0/private/AmendOrder"
     ) {
         let (parts, body) = req.into_parts();
         let body = to_bytes(body, 1024 * 1024).await.unwrap();
@@ -8772,6 +8783,315 @@ async fn test_futures_modify_sends_trigger_price_as_stop_price(
         .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
         .collect();
     assert_eq!(fields, expected);
+}
+
+/// Adds a Spot sell of 0.1 BTC/USDT of `order_type` to the cache with `trigger_price`. A
+/// stop-limit has limit 47500, and a trailing stop trails 100 behind the market, a
+/// trailing-stop-limit with limit 47500 and limit offset 10.
+fn add_spot_conditional_order_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: ClientOrderId,
+    order_type: OrderType,
+    trigger_price: Option<&str>,
+) -> OrderAny {
+    let mut builder = OrderTestBuilder::new(order_type);
+    builder
+        .trader_id(test_trader_id())
+        .strategy_id(test_strategy_id())
+        .instrument_id(test_spot_instrument_id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("0.1"));
+
+    if let Some(trigger_price) = trigger_price {
+        builder.trigger_price(Price::from(trigger_price));
+    }
+
+    if matches!(
+        order_type,
+        OrderType::StopLimit | OrderType::TrailingStopLimit
+    ) {
+        builder.price(Price::from("47500"));
+    }
+
+    if matches!(
+        order_type,
+        OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+    ) {
+        builder
+            .trailing_offset(dec!(100))
+            .trailing_offset_type(TrailingOffsetType::Price);
+    }
+
+    if order_type == OrderType::TrailingStopLimit {
+        builder.limit_offset(dec!(10));
+    }
+
+    let order = builder.build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    order
+}
+
+/// A Spot REST amend sends a modify's new trigger price as `trigger_price`, beside any new
+/// quantity or limit price. A modify without one sends none, nor does a trailing stop's modify that
+/// restates its trigger.
+#[rstest]
+#[case::stop_limit_trigger_only(
+    OrderType::StopLimit,
+    None,
+    None,
+    Some("48000"),
+    &[("trigger_price", "48000"), ("txid", "V-1")]
+)]
+#[case::stop_limit_price_and_trigger(
+    OrderType::StopLimit,
+    None,
+    Some("47900"),
+    Some("48000"),
+    &[("limit_price", "47900"), ("trigger_price", "48000"), ("txid", "V-1")]
+)]
+#[case::stop_limit_quantity_and_trigger(
+    OrderType::StopLimit,
+    Some("0.2"),
+    None,
+    Some("48000"),
+    &[("order_qty", "0.2"), ("trigger_price", "48000"), ("txid", "V-1")]
+)]
+#[case::stop_limit_price_only(
+    OrderType::StopLimit,
+    None,
+    Some("47900"),
+    None,
+    &[("limit_price", "47900"), ("txid", "V-1")]
+)]
+#[case::stop_market_trigger_only(
+    OrderType::StopMarket,
+    None,
+    None,
+    Some("48000"),
+    &[("trigger_price", "48000"), ("txid", "V-1")]
+)]
+#[case::trailing_stop_quantity_only(
+    OrderType::TrailingStopMarket,
+    Some("0.2"),
+    None,
+    None,
+    &[("order_qty", "0.2"), ("txid", "V-1")]
+)]
+#[case::trailing_stop_quantity_with_restated_trigger(
+    OrderType::TrailingStopMarket,
+    Some("0.2"),
+    None,
+    Some("47600"),
+    &[("order_qty", "0.2"), ("txid", "V-1")]
+)]
+#[tokio::test]
+async fn test_spot_rest_modify_sends_trigger_price(
+    #[case] order_type: OrderType,
+    #[case] quantity: Option<&str>,
+    #[case] price: Option<&str>,
+    #[case] trigger_price: Option<&str>,
+    #[case] expected: &[(&str, &str)],
+) {
+    let (client, _rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+    let order = add_spot_conditional_order_to_cache(
+        &cache,
+        ClientOrderId::new("spot-modify-trigger-001"),
+        order_type,
+        Some("47600"),
+    );
+
+    client
+        .modify_order(stop_limit_modify_command(
+            &order,
+            quantity,
+            price,
+            trigger_price,
+        ))
+        .unwrap();
+
+    wait_for_count(&state.modify_request_count, 1).await;
+    let fields = recorded_command_fields(&state, "/0/private/AmendOrder").await;
+    let expected: Vec<(String, String)> = expected
+        .iter()
+        .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+        .collect();
+    assert_eq!(fields, expected);
+}
+
+/// Kraken holds a trailing stop's trigger at an offset from the market, so a modify that moves
+/// one's trigger, or names one where none is known, is denied before either route sends it.
+#[rstest]
+#[case::trailing_stop_over_rest(OrderType::TrailingStopMarket, Some("47600"), false)]
+#[case::trailing_stop_limit_over_rest(OrderType::TrailingStopLimit, Some("47600"), false)]
+#[case::trailing_stop_over_websocket(OrderType::TrailingStopMarket, Some("47600"), true)]
+#[case::trailing_stop_without_known_trigger(OrderType::TrailingStopMarket, None, false)]
+#[tokio::test]
+async fn test_spot_modify_denies_a_trailing_stop_trigger(
+    #[case] order_type: OrderType,
+    #[case] known_trigger: Option<&str>,
+    #[case] use_ws_trade: bool,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) =
+        create_test_spot_execution_client_with(addr, |config| config.use_ws_trade = use_ws_trade);
+    add_test_spot_account_to_cache(&cache);
+    client.connect().await.unwrap();
+    let client_order_id = ClientOrderId::new("spot-modify-trailing-001");
+    let order =
+        add_spot_conditional_order_to_cache(&cache, client_order_id, order_type, known_trigger);
+
+    client
+        .modify_order(stop_limit_modify_command(&order, None, None, Some("48000")))
+        .unwrap();
+
+    let event = recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Order(_))).await;
+    let ExecutionEvent::Order(OrderEventAny::ModifyDenied(denied)) = event else {
+        panic!("Expected ModifyDenied, was {event:?}");
+    };
+    assert_eq!(
+        (denied.client_order_id, denied.reason.as_str()),
+        (
+            client_order_id,
+            "Kraken Spot trailing stops do not support amending the trigger price"
+        ),
+    );
+    assert_no_order_event_matching(&mut rx, |_| true).await;
+    assert_eq!(state.modify_request_count.load(Ordering::Relaxed), 0);
+    assert!(state.ws_amend_requests.lock().unwrap().is_empty());
+}
+
+/// Over the WebSocket amend too, a modify that restates a trailing stop's trigger goes out
+/// without it.
+#[rstest]
+#[tokio::test]
+async fn test_spot_ws_modify_leaves_a_restated_trailing_stop_trigger_out() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) =
+        create_test_spot_execution_client_with(addr, |config| config.use_ws_trade = true);
+    add_test_spot_account_to_cache(&cache);
+    client.connect().await.unwrap();
+    let order = add_spot_conditional_order_to_cache(
+        &cache,
+        ClientOrderId::new("spot-modify-trailing-002"),
+        OrderType::TrailingStopMarket,
+        Some("47600"),
+    );
+
+    client
+        .modify_order(stop_limit_modify_command(
+            &order,
+            Some("0.2"),
+            None,
+            Some("47600"),
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || async { !state.ws_amend_requests.lock().unwrap().is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
+    let requests = state.ws_amend_requests.lock().unwrap().clone();
+    let mut fields: Vec<&str> = requests[0]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    fields.sort_unstable();
+    assert_eq!(fields, ["order_id", "order_qty"]);
+    assert_eq!(requests[0]["order_id"], json!("V-1"));
+    assert_eq!(requests.len(), 1);
+    assert_eq!(state.modify_request_count.load(Ordering::Relaxed), 0);
+}
+
+/// A REST amend sends a tracked stop's new trigger and limit, and the `amended` frame in which
+/// Kraken states them moves the order's trigger and limit with it.
+#[rstest]
+#[tokio::test]
+async fn test_spot_rest_trigger_amend_reaches_the_order_through_its_amended_frame() {
+    let (client, mut rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+    let client_order_id = ClientOrderId::new("spot-rest-amend");
+    let order = add_spot_conditional_order_to_cache(
+        &cache,
+        client_order_id,
+        OrderType::StopLimit,
+        Some("47600"),
+    );
+    let frame = |data: Value| {
+        json!({"channel": "executions", "type": "update", "data": [data]}).to_string()
+    };
+
+    client.submit_order(submit_order_command(&order)).unwrap();
+    wait_for_count(&state.submit_request_count, 1).await;
+    state
+        .ws_message_tx
+        .send(frame(json!({
+            "order_id": "S-SUBMIT",
+            "cl_ord_id": client_order_id.as_str(),
+            "exec_type": "new",
+            "order_status": "new",
+            "symbol": "BTC/USDT",
+            "timestamp": "2026-04-11T00:00:01.000000Z",
+        })))
+        .unwrap();
+    recv_until(&mut rx, |event| {
+        matches!(event, ExecutionEvent::Order(OrderEventAny::Accepted(_)))
+    })
+    .await;
+
+    let mut modify = stop_limit_modify_command(&order, None, Some("47900"), Some("48000"));
+    modify.venue_order_id = Some(VenueOrderId::from("S-SUBMIT"));
+    client.modify_order(modify).unwrap();
+    wait_for_count(&state.modify_request_count, 1).await;
+
+    // The venue applies what the amend sent and states it in the frame
+    let sent = recorded_command_fields(&state, "/0/private/AmendOrder").await;
+    let sent_price = |key: &str| {
+        sent.iter()
+            .find(|(field, _)| field == key)
+            .map(|(_, value)| value.parse::<f64>().unwrap())
+    };
+    let mut amended = json!({
+        "order_id": "S-SUBMIT",
+        "exec_type": "amended",
+        "order_status": "new",
+        "order_qty": 0.1,
+        "timestamp": "2026-04-11T00:00:02.000000Z",
+    });
+
+    if let Some(limit_price) = sent_price("limit_price") {
+        amended["limit_price"] = json!(limit_price);
+    }
+
+    if let Some(trigger_price) = sent_price("trigger_price") {
+        amended["triggers"] =
+            json!({"reference": "last", "price": trigger_price, "price_type": "static"});
+    }
+
+    state.ws_message_tx.send(frame(amended)).unwrap();
+
+    let event = recv_until(&mut rx, |event| {
+        matches!(event, ExecutionEvent::Order(OrderEventAny::Updated(_)))
+    })
+    .await;
+    let ExecutionEvent::Order(OrderEventAny::Updated(updated)) = event else {
+        panic!("Expected OrderUpdated, was {event:?}");
+    };
+    assert_eq!(
+        (
+            updated.client_order_id,
+            updated.trigger_price.map(|price| price.as_decimal()),
+            updated.price.map(|price| price.as_decimal()),
+        ),
+        (client_order_id, Some(dec!(48000)), Some(dec!(47900))),
+    );
 }
 
 /// A cancel or edit names the order by one identifier: its venue order ID when known, else its

@@ -16,6 +16,7 @@
 //! Kraken Spot execution client implementation.
 
 use std::{
+    borrow::Cow,
     collections::{BTreeSet, HashSet},
     future::Future,
     sync::Arc,
@@ -620,15 +621,50 @@ impl KrakenSpotExecutionClient {
     }
 
     fn modify_single_order(&self, cmd: &ModifyOrder) {
+        // Kraken holds a trailing stop's trigger at an offset from the market, while a modify
+        // carries an absolute trigger price, so neither route sends one: a modify that moves it
+        // is denied, and one that restates it goes out without it
+        let trailing_trigger = self
+            .core
+            .cache()
+            .order(&cmd.client_order_id)
+            .filter(|order| {
+                matches!(
+                    order.order_type(),
+                    OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+                )
+            })
+            .map(|order| order.trigger_price());
+
+        let mut cmd = Cow::Borrowed(cmd);
+        if let (Some(current), Some(trigger)) = (trailing_trigger, cmd.trigger_price) {
+            if current != Some(trigger) {
+                let reason = "Kraken Spot trailing stops do not support amending the trigger price";
+                log::warn!("{reason}: client_order_id={}", cmd.client_order_id);
+                self.emitter.emit_order_modify_denied_event(
+                    cmd.strategy_id,
+                    cmd.instrument_id,
+                    cmd.client_order_id,
+                    cmd.venue_order_id,
+                    reason,
+                    self.clock.get_time_ns(),
+                    Some(cmd.command_id),
+                );
+                return;
+            }
+
+            cmd.to_mut().trigger_price = None;
+        }
+
         let use_ws_trade = resolve_use_ws_trade(cmd.params.as_ref(), self.config.use_ws_trade);
         if use_ws_trade && self.ws.is_active() {
-            match self.amend_via_ws(cmd) {
+            match self.amend_via_ws(&cmd) {
                 Ok(()) => return,
                 Err(e) => log::warn!("Kraken WS amend_order fallback to REST: {e}"),
             }
         }
 
-        self.amend_via_rest(cmd);
+        self.amend_via_rest(&cmd);
     }
 
     fn amend_via_rest(&self, cmd: &ModifyOrder) {
@@ -639,6 +675,7 @@ impl KrakenSpotExecutionClient {
         let instrument_id = cmd.instrument_id;
         let quantity = cmd.quantity;
         let price = cmd.price;
+        let trigger_price = cmd.trigger_price;
 
         log::debug!(
             "Modifying order: venue_order_id={venue_order_id:?}, client_order_id={client_order_id}"
@@ -656,7 +693,7 @@ impl KrakenSpotExecutionClient {
                     venue_order_id,
                     quantity,
                     price,
-                    None,
+                    trigger_price,
                 )
                 .await
             {
