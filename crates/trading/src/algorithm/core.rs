@@ -25,7 +25,7 @@ use nautilus_common::{
     clock::Clock,
     msgbus::TypedHandler,
 };
-use nautilus_core::Params;
+use nautilus_core::{Params, hex};
 use nautilus_model::{
     events::{OrderEventAny, PositionEvent},
     identifiers::{ActorId, ClientOrderId, ExecAlgorithmId, StrategyId, TraderId},
@@ -209,7 +209,8 @@ impl ExecutionAlgorithmCore {
 
     /// Generates the next spawn client order ID for a primary order.
     ///
-    /// The generated ID follows the pattern: `{primary_id}-E{sequence}`.
+    /// Uses `{primary_id}-E{sequence}` when hyphens are enabled. Otherwise, it derives a
+    /// 32-character UUID from the full primary ID and spawn sequence.
     #[must_use]
     pub fn spawn_client_order_id(&mut self, primary_id: &ClientOrderId) -> ClientOrderId {
         let sequence = self
@@ -218,7 +219,26 @@ impl ExecutionAlgorithmCore {
             .and_modify(|s| *s += 1)
             .or_insert(1);
 
-        ClientOrderId::new(format!("{primary_id}-E{sequence}"))
+        let use_hyphens = self
+            .config
+            .use_hyphens_in_client_order_ids
+            .unwrap_or_else(|| primary_id.as_str().contains('-'));
+
+        if use_hyphens {
+            ClientOrderId::new(format!("{primary_id}-E{sequence}"))
+        } else {
+            let mut hasher =
+                blake3::Hasher::new_derive_key("NautilusTrader execution algorithm spawn ID");
+            hasher.update(primary_id.as_str().as_bytes());
+            hasher.update(&sequence.to_be_bytes());
+            let mut bytes = [0_u8; 16];
+            hasher.finalize_xof().fill(&mut bytes);
+
+            // UUIDv8 reserves a distinct version from UUIDv4 strategy IDs
+            bytes[6] = (bytes[6] & 0x0f) | 0x80;
+            bytes[8] = (bytes[8] & 0x3f) | 0x80;
+            ClientOrderId::new(hex::encode(bytes))
+        }
     }
 
     /// Returns the current spawn sequence for a primary order, if any.
@@ -504,6 +524,66 @@ mod tests {
         assert_eq!(spawn1_1.as_str(), "O-001-E1");
         assert_eq!(spawn2_1.as_str(), "O-002-E1");
         assert_eq!(spawn1_2.as_str(), "O-001-E2");
+    }
+
+    #[rstest]
+    #[case("O20261120091010001A1", "O20261120091010001A1E1")]
+    #[case("O202611200910101A234567890123451", "O202611200910101B234567890123451")]
+    #[case("OABCDEFGHIJKLMNOPQRSTUVWXYZ12340", "OABCDEFGHIJKLMNOPQRSTUVWXYZ12341")]
+    #[case("c023d8c0bdfd4399b101689255a6217b", "c023d8c0bdfd439ab101689255a6217b")]
+    #[case("OABC", "EABC")]
+    #[case("Desk_1", "Desk1")]
+    fn test_spawn_client_order_id_compact(#[case] first: &str, #[case] second: &str) {
+        let mut core = ExecutionAlgorithmCore::new(create_test_config());
+        let first = ClientOrderId::new(first);
+        let second = ClientOrderId::new(second);
+
+        let child1 = core.spawn_client_order_id(&first);
+        let child2 = core.spawn_client_order_id(&second);
+        let child3 = core.spawn_client_order_id(&first);
+        for child in [child1, child2, child3] {
+            let id = child.as_str();
+            assert_eq!(id.len(), 32);
+            assert!(id.bytes().all(|byte| byte.is_ascii_hexdigit()));
+            assert_ne!(child, first);
+            assert_ne!(child, second);
+        }
+
+        assert_ne!(child1, child2);
+        assert_ne!(child1, child3);
+        assert_ne!(child2, child3);
+
+        let mut replay = ExecutionAlgorithmCore::new(create_test_config());
+        assert_eq!(replay.spawn_client_order_id(&first), child1);
+        assert_eq!(replay.spawn_client_order_id(&first), child3);
+        assert_eq!(replay.spawn_client_order_id(&second), child2);
+    }
+
+    #[rstest]
+    fn test_spawn_client_order_id_config_override() {
+        let mut config_no_hyphens = create_test_config();
+        config_no_hyphens.use_hyphens_in_client_order_ids = Some(false);
+        let mut core_no_hyphens = ExecutionAlgorithmCore::new(config_no_hyphens);
+        let primary_hyphenated = ClientOrderId::new("O-001");
+
+        let spawn_no_hyphens = core_no_hyphens.spawn_client_order_id(&primary_hyphenated);
+
+        assert_eq!(spawn_no_hyphens.as_str().len(), 32);
+        assert!(
+            spawn_no_hyphens
+                .as_str()
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
+        );
+
+        let mut config_with_hyphens = create_test_config();
+        config_with_hyphens.use_hyphens_in_client_order_ids = Some(true);
+        let mut core_with_hyphens = ExecutionAlgorithmCore::new(config_with_hyphens);
+        let primary_unhyphenated = ClientOrderId::new("O202611200910100010002");
+
+        let spawn_with_hyphens = core_with_hyphens.spawn_client_order_id(&primary_unhyphenated);
+
+        assert_eq!(spawn_with_hyphens.as_str(), "O202611200910100010002-E1");
     }
 
     #[rstest]

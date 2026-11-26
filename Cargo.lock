@@ -7211,6 +7211,7 @@ dependencies = [
  "ahash",
  "anyhow",
  "async-trait",
+ "blake3",
  "bon",
  "bytes",
  "indexmap 2.14.2",
