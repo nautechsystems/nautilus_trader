@@ -1087,6 +1087,14 @@ def on_data(self, data: CustomData) -> None:
 | 1-WEEK     | `1w`               |
 | 1-MONTH    | `1M`               |
 
+### Bar publication
+
+The adapter publishes each live external bar once, when it processes a newer interval's candle or
+handles a deadline two seconds after the interval closes. Hyperliquid marks no candle as final, so
+the grace period allows late updates to arrive. At expiry, the adapter processes the WebSocket
+messages already queued before publishing. It discards revisions after publication. Intervals without
+a venue candle produce no bar.
+
 ## Orders capability
 
 In these tables, "Perpetuals" includes standard validator-operated and HIP-3 builder-deployed perps.

@@ -231,6 +231,7 @@ Released on TBD (UTC).
 - Fixed Hyperliquid venue timestamps losing nanosecond exactness through float conversion
 - Fixed Hyperliquid order queries missing orders closed before acceptance (#5650), thanks for reporting @AlphaTraderK
 - Fixed Hyperliquid instrument requests hanging after metadata failures or timeouts (#5656), thanks @graceyangfan
+- Fixed Hyperliquid live bars waiting for the next trade after close (#5770), thanks for reporting @plapointe6
 - Fixed Interactive Brokers range requests losing historical bars across sessions (#5621), thanks @madebymlai
 - Fixed Interactive Brokers stop orders refusing repeat edits (#5678), thanks @programskillforverification
 - Fixed Interactive Brokers historical tick requests skipping ticks at page boundaries (#5684), thanks @faysou
