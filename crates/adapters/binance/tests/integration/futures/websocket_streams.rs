@@ -41,6 +41,7 @@ use nautilus_binance::{
     },
     futures::websocket::streams::{
         client::BinanceFuturesWebSocketClient,
+        handler::BinanceFuturesDataWsFeedHandler,
         messages::{AccountUpdateReason, BinanceFuturesWsStreamsMessage},
     },
 };
@@ -406,6 +407,111 @@ async fn test_account_update_funding_fee_symbol_reaches_consumer(
         msg.account.symbol.as_ref().map(|value| value.as_str()),
         Some(symbol)
     );
+}
+
+#[rstest]
+fn test_stream_handler_is_sync() {
+    fn require_sync<T: Sync>() {}
+
+    require_sync::<BinanceFuturesDataWsFeedHandler>();
+}
+
+#[rstest]
+#[case::idle(None)]
+#[case::subscribe_wait(Some(1))]
+#[case::unsubscribe_wait(Some(2))]
+#[tokio::test]
+async fn test_trade_delivery_during_subscription_changes(#[case] inject_after: Option<usize>) {
+    use futures_util::SinkExt;
+    use tokio_tungstenite::tungstenite::Message as WireMessage;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let queued = inject_after.is_some();
+    let (sent_tx, sent_rx) = tokio::sync::oneshot::channel();
+
+    let peer = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+        let mut commands = Vec::new();
+        let mut sent_tx = Some(sent_tx);
+
+        while let Some(Ok(frame)) = socket.next().await {
+            let WireMessage::Text(text) = frame else {
+                continue;
+            };
+            let command: serde_json::Value = serde_json::from_str(&text).unwrap();
+            let ack = json!({"id": command["id"], "result": null});
+            commands.push((tokio::time::Instant::now(), command));
+            socket
+                .send(WireMessage::text(ack.to_string()))
+                .await
+                .unwrap();
+
+            if commands.len() == inject_after.unwrap_or(1) {
+                // Allow the next command to enter its quota wait
+                tokio::time::sleep(Duration::from_millis(30)).await;
+                let trade =
+                    include_str!("../../../test_data/futures/market_data_json/trade_stream.json");
+                let sent = tokio::time::Instant::now();
+                socket.send(WireMessage::text(trade)).await.unwrap();
+                sent_tx.take().unwrap().send(sent).unwrap();
+            }
+
+            if commands.len() == if queued { 3 } else { 1 } {
+                break;
+            }
+        }
+        (socket, commands)
+    });
+
+    let mut client = create_test_client(&addr);
+    client.connect().await.unwrap();
+    let stream = client.stream();
+    pin_mut!(stream);
+    client
+        .subscribe(vec!["btcusdt@trade".into()])
+        .await
+        .unwrap();
+
+    if queued {
+        client
+            .subscribe(vec!["ethusdt@trade".into()])
+            .await
+            .unwrap();
+        client
+            .unsubscribe(vec!["ethusdt@trade".into()])
+            .await
+            .unwrap();
+    }
+
+    let limit = Duration::from_secs(5);
+    let sent = tokio::time::timeout(limit, sent_rx).await.unwrap().unwrap();
+    let msg = tokio::time::timeout(limit, stream.next())
+        .await
+        .unwrap()
+        .unwrap();
+    let latency = sent.elapsed();
+    assert!(matches!(msg, BinanceFuturesWsStreamsMessage::Trade(_)));
+    let (_socket, commands) = tokio::time::timeout(limit, peer).await.unwrap().unwrap();
+    assert_eq!(commands[0].1["params"], json!(["btcusdt@trade"]));
+    assert_eq!(commands[0].1["method"], "SUBSCRIBE");
+    if queued {
+        assert_eq!(commands[1].1["method"], "SUBSCRIBE");
+        assert_eq!(commands[2].1["method"], "UNSUBSCRIBE");
+        for (_, cmd) in &commands[1..] {
+            assert_eq!(cmd["params"], json!(["ethusdt@trade"]));
+        }
+
+        for pair in commands.windows(2) {
+            assert!(pair[1].0 - pair[0].0 >= Duration::from_millis(250));
+        }
+    }
+    assert!(
+        latency < Duration::from_millis(200),
+        "Trade latency: {latency:?}"
+    );
+    client.close().await.unwrap();
 }
 
 #[rstest]

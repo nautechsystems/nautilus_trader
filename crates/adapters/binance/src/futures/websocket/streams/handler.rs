@@ -21,6 +21,7 @@
 
 use std::{
     fmt::Debug,
+    pin::Pin,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -28,8 +29,10 @@ use std::{
 };
 
 use ahash::AHashMap;
+use futures_util::future::OptionFuture;
 use nautilus_network::{
     RECONNECTED,
+    error::SendError,
     websocket::{SubscriptionState, WebSocketClient},
 };
 use serde::Deserialize;
@@ -57,6 +60,17 @@ use crate::common::{
     },
 };
 
+type SubscriptionSend = Pin<Box<dyn Future<Output = (u64, Result<(), SendError>)> + Send + Sync>>;
+
+fn subscription_send(client: Arc<WebSocketClient>, id: u64, json: String) -> SubscriptionSend {
+    Box::pin(async move {
+        let result = client
+            .send_text(json, Some(BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice()))
+            .await;
+        (id, result)
+    })
+}
+
 /// Handler for Binance Futures WebSocket JSON streams.
 ///
 /// Deserializes raw JSON into venue-specific types without performing
@@ -69,7 +83,8 @@ pub struct BinanceFuturesDataWsFeedHandler {
     raw_rx: RawFrames,
     #[allow(dead_code)]
     out_tx: tokio::sync::mpsc::UnboundedSender<BinanceFuturesWsStreamsMessage>,
-    inner: Option<WebSocketClient>,
+    inner: Option<Arc<WebSocketClient>>,
+    sending: Option<SubscriptionSend>,
     subscriptions_state: SubscriptionState,
     request_id_counter: Arc<AtomicU64>,
     pending_requests: PendingSubscriptionRequests,
@@ -118,6 +133,7 @@ impl BinanceFuturesDataWsFeedHandler {
             raw_rx,
             out_tx,
             inner: None,
+            sending: None,
             subscriptions_state,
             request_id_counter,
             pending_requests: PendingSubscriptionRequests::default(),
@@ -135,7 +151,16 @@ impl BinanceFuturesDataWsFeedHandler {
             }
 
             tokio::select! {
-                Some(cmd) = self.cmd_rx.recv() => {
+                Some((id, result)) = OptionFuture::from(self.sending.as_mut()), if self.sending.is_some() => {
+                    self.sending = None;
+                    if let Err(e) = result {
+                        if let Some(request) = self.pending_requests.take(id) {
+                            request.mark_failure(&self.subscriptions_state);
+                        }
+                        log::error!("Failed to send subscription command: {e}");
+                    }
+                }
+                Some(cmd) = self.cmd_rx.recv(), if self.sending.is_none() => {
                     self.handle_command(cmd).await;
                 }
                 Some(raw) = self.raw_rx.recv() => {
@@ -160,7 +185,7 @@ impl BinanceFuturesDataWsFeedHandler {
     async fn handle_command(&mut self, cmd: BinanceFuturesWsStreamsCommand) {
         match cmd {
             BinanceFuturesWsStreamsCommand::SetClient(client) => {
-                self.inner = Some(client);
+                self.inner = Some(Arc::new(client));
             }
             BinanceFuturesWsStreamsCommand::Disconnect => {
                 if let Some(client) = &self.inner {
@@ -169,18 +194,18 @@ impl BinanceFuturesDataWsFeedHandler {
                 self.inner = None;
             }
             BinanceFuturesWsStreamsCommand::Subscribe { streams } => {
-                self.send_subscribe(streams).await;
+                self.send_subscribe(streams);
             }
             BinanceFuturesWsStreamsCommand::Unsubscribe {
                 streams,
                 correlation,
             } => {
-                self.send_unsubscribe(streams, correlation).await;
+                self.send_unsubscribe(streams, correlation);
             }
         }
     }
 
-    async fn send_subscribe(&mut self, streams: Vec<String>) {
+    fn send_subscribe(&mut self, streams: Vec<String>) {
         for stream in &streams {
             self.subscriptions_state.mark_subscribe(stream);
         }
@@ -209,18 +234,10 @@ impl BinanceFuturesDataWsFeedHandler {
         self.pending_requests
             .insert(request_id, PendingSubscriptionRequest::subscribe(streams));
 
-        if let Err(e) = client
-            .send_text(json, Some(BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice()))
-            .await
-        {
-            if let Some(request) = self.pending_requests.take(request_id) {
-                request.mark_failure(&self.subscriptions_state);
-            }
-            log::error!("Failed to send subscribe request: {e}");
-        }
+        self.sending = Some(subscription_send(Arc::clone(client), request_id, json));
     }
 
-    async fn send_unsubscribe(&mut self, streams: Vec<String>, correlation: Option<u64>) {
+    fn send_unsubscribe(&mut self, streams: Vec<String>, correlation: Option<u64>) {
         for stream in &streams {
             self.subscriptions_state.mark_unsubscribe(stream);
         }
@@ -256,17 +273,12 @@ impl BinanceFuturesDataWsFeedHandler {
         self.pending_requests
             .insert(request_id, PendingSubscriptionRequest::unsubscribe(streams));
 
-        if let Err(e) = client
-            .send_text(json, Some(BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice()))
-            .await
-        {
-            self.pending_requests.take(request_id);
-            log::error!("Failed to send unsubscribe request: {e}");
-        }
+        self.sending = Some(subscription_send(Arc::clone(client), request_id, json));
     }
 
     fn handle_raw_message(&mut self, raw: &[u8]) -> Option<BinanceFuturesWsStreamsMessage> {
         if raw == RECONNECTED.as_bytes() {
+            self.sending = None;
             let abandoned = self
                 .unsubscribe_correlations
                 .values()
@@ -672,12 +684,8 @@ mod tests {
             request_id_counter,
         );
 
-        handler
-            .send_subscribe(vec![subscribe_topic.to_string()])
-            .await;
-        handler
-            .send_unsubscribe(vec![unsubscribe_topic.to_string()], None)
-            .await;
+        handler.send_subscribe(vec![subscribe_topic.to_string()]);
+        handler.send_unsubscribe(vec![unsubscribe_topic.to_string()], None);
 
         assert_eq!(
             subscriptions.pending_subscribe_topics(),
@@ -712,9 +720,7 @@ mod tests {
 
         // Without a connected client the wire send cannot happen, but the correlation
         // must survive so the reconnect abandons the drain it protects
-        handler
-            .send_unsubscribe(vec!["btcusdt@depth5@100ms".to_string()], Some(7))
-            .await;
+        handler.send_unsubscribe(vec!["btcusdt@depth5@100ms".to_string()], Some(7));
 
         let msg = handler.handle_raw_message(RECONNECTED.as_bytes());
 
