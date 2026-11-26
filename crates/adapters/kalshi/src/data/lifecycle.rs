@@ -334,6 +334,12 @@ pub(super) struct ReadStamp {
     serial: u64,
 }
 
+impl ReadStamp {
+    pub(super) const fn epoch(self) -> u64 {
+        self.epoch
+    }
+}
+
 #[derive(Debug, Default)]
 pub(super) struct State {
     epoch: u64,
