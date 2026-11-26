@@ -1477,6 +1477,11 @@ impl FeatherWriter {
 
     /// Writes a single custom data value (catalog layout: `data/custom/{type_name}[/{identifier}]`).
     fn write_custom_data(&mut self, custom: &CustomData) -> Result<(), Box<dyn std::error::Error>> {
+        // Filter before encoding: excluded types may have no Arrow encoding
+        if !self.should_write_custom(custom.data.type_name(), custom.data_type.identifier()) {
+            return Ok(());
+        }
+
         let batch = Self::encode_custom_to_batch(custom)?;
         self.write_custom_batch(custom, batch)
     }
@@ -1785,6 +1790,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     use nautilus_model::data::HasTsInit;
     use nautilus_model::{
+        custom_data,
         data::{Data, NautilusRecordType, QuoteTick, TradeTick},
         enums::AggressorSide,
         identifiers::{InstrumentId, TradeId},
@@ -3604,5 +3610,124 @@ mod tests {
             .map(RecordBatch::num_rows)
             .sum::<usize>();
         assert_eq!(rows, 2);
+    }
+
+    #[custom_data]
+    struct JsonOnlyCustomData {
+        value: u64,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    }
+
+    fn json_only_custom_data() -> CustomData {
+        CustomData::new(
+            Arc::new(JsonOnlyCustomData {
+                value: 7,
+                ts_event: UnixNanos::from(1_000),
+                ts_init: UnixNanos::from(2_000),
+            }),
+            CustomDataType::new("JsonOnlyCustomData", None, Some("RUST.TEST".to_string())),
+        )
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum CustomWritePath {
+        Data,
+        DataBatch,
+        MessageBus,
+    }
+
+    #[rstest]
+    #[case::write_data(CustomWritePath::Data)]
+    #[case::write_data_batch(CustomWritePath::DataBatch)]
+    #[case::write_any_message(CustomWritePath::MessageBus)]
+    fn test_write_custom_data_skips_excluded_type_without_arrow_encoding(
+        #[case] path: CustomWritePath,
+    ) {
+        let temp_dir = TempDir::new().unwrap();
+        let mut writer = FeatherWriter::new(
+            temp_dir.path().to_path_buf(),
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::NoRotation,
+            Some(HashSet::from([NautilusDataType::QuoteTick.into()])),
+            None,
+        );
+        let custom = json_only_custom_data();
+
+        let written = match path {
+            CustomWritePath::Data => writer.write_data(Data::Custom(custom)).map(|()| true),
+            CustomWritePath::DataBatch => writer
+                .write_data_batch(vec![Data::Custom(custom)])
+                .map(|()| true),
+            CustomWritePath::MessageBus => writer.write_any_message(&custom),
+        }
+        .map_err(|e| e.to_string());
+        let flushed = writer.flush().map_err(|e| e.to_string());
+        let closed = writer.close().map_err(|e| e.to_string());
+
+        assert_eq!(written, Ok(true));
+        assert_eq!(flushed, Ok(()));
+        assert_eq!(closed, Ok(()));
+        assert!(!temp_dir.path().join("data").join("custom").exists());
+    }
+
+    #[rstest]
+    fn test_write_custom_data_without_arrow_encoding_fails_when_included() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut writer = FeatherWriter::new(
+            temp_dir.path().to_path_buf(),
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::NoRotation,
+            None,
+            None,
+        );
+
+        let error = writer
+            .write_data(Data::Custom(json_only_custom_data()))
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Custom data type \"JsonOnlyCustomData\" is not registered for Arrow"
+        );
+        assert!(writer.writers.is_empty());
+    }
+
+    #[rstest]
+    #[case::excluded_identifier("OTHER.TEST", Ok(()))]
+    #[case::included_identifier(
+        "RUST.TEST",
+        Err("Custom data type \"JsonOnlyCustomData\" is not registered for Arrow")
+    )]
+    fn test_write_custom_data_filters_identifier_before_arrow_encoding(
+        #[case] allowed_identifier: &str,
+        #[case] expected: Result<(), &str>,
+    ) {
+        let temp_dir = TempDir::new().unwrap();
+        let custom = json_only_custom_data();
+        let mut filter = WriterRecordFilter::new();
+        filter.insert(
+            NautilusDataType::Custom {
+                type_name: custom.data.type_name().to_string(),
+            },
+            Some(vec![allowed_identifier.to_string()]),
+        );
+
+        let mut writer = FeatherWriter::new(
+            temp_dir.path().to_path_buf(),
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::NoRotation,
+            None,
+            None,
+        )
+        .with_record_filter(Some(filter));
+
+        let written = writer.write_any_message(&custom).map_err(|e| e.to_string());
+        let flushed = writer.flush().map_err(|e| e.to_string());
+
+        let expected = expected.map_err(str::to_owned);
+        assert_eq!(written, expected.clone().map(|()| true));
+        assert_eq!(flushed, expected);
+        assert!(!temp_dir.path().join("data").join("custom").exists());
     }
 }
