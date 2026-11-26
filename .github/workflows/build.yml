@@ -680,7 +680,7 @@ jobs:
           - "3.13"
           - "3.14"
           - "3.15"
-    runs-on: depot-ubuntu-22.04-arm-8
+    runs-on: depot-ubuntu-22.04-arm-16
     defaults:
       run:
         shell: bash
