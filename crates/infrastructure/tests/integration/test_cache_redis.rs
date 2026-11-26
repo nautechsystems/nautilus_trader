@@ -40,6 +40,7 @@ mod serial_tests {
     };
     use nautilus_infrastructure::redis::{
         cache::{RedisCacheConfig, RedisCacheDatabase, RedisCacheDatabaseAdapter},
+        create_redis_connection,
         queries::DatabaseQueries,
     };
     use nautilus_live::{
@@ -2028,8 +2029,113 @@ mod serial_tests {
         let mut adapter = get_redis_cache_adapter()
             .await
             .expect("Failed to create adapter");
+        let mut con = adapter.database.con.clone();
+        let key = format!("outside-trader:{}", UUID4::new());
+        con.set::<_, _, ()>(&key, "persisted").await.unwrap();
 
         adapter.flush().unwrap();
+
+        assert_eq!(con.get::<_, Option<String>>(&key).await.unwrap(), None);
+        adapter.close().unwrap();
+    }
+
+    #[rstest]
+    #[case::explicit(false)]
+    #[case::startup(true)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_redis_flush_reports_command_rejection(#[case] startup: bool) {
+        let _guard = redis_test_mutex().lock().await;
+        let mut con = create_redis_connection("cache-flush-test", &redis_cache_config())
+            .await
+            .unwrap();
+        let username = format!("flush-test-{}", UUID4::new());
+        let password = UUID4::new().to_string();
+        redis::cmd("ACL")
+            .arg("SETUSER")
+            .arg(&username)
+            .arg("on")
+            .arg(format!(">{password}"))
+            .arg("+info")
+            .exec_async(&mut con)
+            .await
+            .unwrap();
+
+        let trader_id = TraderId::from("test-trader");
+
+        let cache_config = CacheConfig {
+            flush_on_start: true,
+            ..Default::default()
+        };
+
+        let redis_config = RedisCacheConfig {
+            username: Some(username.clone()),
+            password: Some(password),
+            ..redis_cache_config()
+        };
+
+        let outcome: anyhow::Result<_> = async {
+            let database = RedisCacheDatabase::new(
+                trader_id,
+                UUID4::new(),
+                cache_config.clone(),
+                redis_config,
+            )
+            .await?;
+
+            let mut adapter = RedisCacheDatabaseAdapter { database };
+
+            if startup {
+                let config = LiveNodeConfig {
+                    trader_id,
+                    cache: Some(cache_config),
+                    timeout_connection: Duration::ZERO,
+                    timeout_disconnection: Duration::ZERO,
+                    delay_post_stop: Duration::ZERO,
+                    exec_engine: LiveExecutionEngineConfig {
+                        reconciliation: false,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                };
+
+                let mut node = LiveNode::build("RedisFlushNode".to_string(), Some(config))?;
+                node.set_cache_database(Box::new(adapter))?;
+                let result = node.start().await;
+                let state = node.state();
+                let stop = if result.is_ok() {
+                    node.stop().await
+                } else {
+                    Ok(())
+                };
+
+                node.dispose();
+                stop?;
+                Ok((result, Some(state)))
+            } else {
+                let result = adapter.flush();
+                adapter.close()?;
+                Ok((result, None))
+            }
+        }
+        .await;
+
+        let removed = redis::cmd("ACL")
+            .arg("DELUSER")
+            .arg(&username)
+            .query_async::<usize>(&mut con)
+            .await
+            .unwrap();
+
+        assert_eq!(removed, 1);
+        let (result, state) = outcome.unwrap();
+        let error = result.expect_err("FLUSHDB rejection must reach the caller");
+        let redis_error = error.downcast_ref::<redis::RedisError>().unwrap();
+        assert_eq!(redis_error.code(), Some("NOPERM"));
+
+        if startup {
+            assert_eq!(error.to_string(), "Failed to flush persistent cache");
+            assert_eq!(state, Some(NodeState::Idle));
+        }
     }
 
     #[tokio::test]

@@ -158,6 +158,74 @@ mod tests {
         assert_eq!(config.database, Some("nautilus".to_string()));
     }
 
+    #[tokio::test]
+    async fn test_flush_queues_behind_pending_write_and_waits_for_result() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy_with(PgConnectOptions::new().host("127.0.0.1").port(1));
+        pool.close().await;
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let handle = tokio::spawn(async {});
+        let trader_id = TraderId::from("TRADER-001");
+        let writer_pool = pool.clone();
+
+        let mut database = PostgresCacheDatabase {
+            pool,
+            trader_id,
+            tx: DatabaseWriter(tx),
+            handle,
+        };
+
+        database
+            .add("flush-order".to_string(), Bytes::from_static(b"pending"))
+            .unwrap();
+
+        let flush = tokio::task::spawn_blocking(move || database.flush());
+        let deadline = Duration::from_secs(5);
+
+        let (write, command) = tokio::time::timeout(deadline, async {
+            // Leave the write unprocessed until the flush command arrives
+            (rx.recv().await, rx.recv().await)
+        })
+        .await
+        .unwrap();
+
+        let Some(WriteCommand::Query(DatabaseQuery::Add(key, value))) = write else {
+            panic!("Expected the pending write before the flush command");
+        };
+
+        assert!(
+            matches!(command.as_ref(), Some(WriteCommand::Flush(_))),
+            "Expected a flush command on the writer queue"
+        );
+
+        let mut buffer = WriteBuffer::default();
+        let flow = handle_query(
+            command,
+            &mut buffer,
+            Duration::ZERO,
+            &writer_pool,
+            &trader_id,
+        )
+        .await;
+        let error = tokio::time::timeout(deadline, flush)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_err();
+
+        assert_eq!(
+            key,
+            "cache-database:trader:10:TRADER-001:general:flush-order"
+        );
+        assert_eq!(value, b"pending");
+        assert_eq!(flow, ControlFlow::Continue(()));
+        assert_eq!(
+            error.to_string(),
+            "Failed to flush Postgres cache for TRADER-001: attempted to acquire a connection on a closed pool"
+        );
+    }
+
     #[cfg(feature = "defi")]
     #[tokio::test]
     async fn test_defi_write_closed_channel_preserves_transport_error() {

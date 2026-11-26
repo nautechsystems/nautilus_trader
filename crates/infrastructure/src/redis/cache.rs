@@ -83,12 +83,12 @@ use nautilus_model::{
     position::Position,
     types::{Currency, Money, Price},
 };
-use redis::{AsyncCommands, Pipeline, aio::ConnectionManager};
+use redis::{AsyncCommands, Pipeline, RedisResult, aio::ConnectionManager};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ustr::Ustr;
 
-use super::{ORDER_ACTIVATIONS, REDIS_DELIMITER, REDIS_FLUSHDB, get_index_key};
+use super::{ORDER_ACTIVATIONS, REDIS_DELIMITER, REDIS_FLUSHDB, flush_redis, get_index_key};
 use crate::redis::{
     RedisConnectionConfig, create_redis_connection,
     queries::{
@@ -283,7 +283,7 @@ pub enum DatabaseOperation {
     },
     Delete,
     DeletePositionIndex,
-    Flush(SyncSender<()>),
+    Flush(SyncSender<RedisResult<()>>),
     Close,
 }
 
@@ -436,7 +436,9 @@ impl RedisCacheDatabase {
     ///
     /// # Errors
     ///
-    /// Returns an error if the command channel is closed or the reply is lost.
+    /// Returns an error if:
+    /// - The Redis `FLUSHDB` command fails.
+    /// - The command channel is closed or the reply is lost.
     pub fn flushdb_sync(&self) -> anyhow::Result<()> {
         let (reply_tx, reply_rx) = mpsc::sync_channel(1);
         let cmd = DatabaseCommand {
@@ -447,8 +449,9 @@ impl RedisCacheDatabase {
         self.tx
             .send(cmd)
             .map_err(|e| anyhow::anyhow!("{FAILED_TX_CHANNEL}: {e}"))?;
-        blocking_recv(&reply_rx).map_err(|e| anyhow::anyhow!("Failed to flush database: {e}"))?;
-        Ok(())
+        blocking_recv(&reply_rx)
+            .context("failed to receive Redis flush result")?
+            .context("failed to flush Redis database")
     }
 
     /// Retrieves all keys matching the given `pattern` from Redis for this trader.
@@ -887,10 +890,8 @@ async fn handle_command(
                 drain_buffer(con, trader_key, encoding, buffer).await;
             }
 
-            if let Err(e) = redis::cmd(REDIS_FLUSHDB).query_async::<()>(con).await {
-                log::error!("Failed to flush database: {e:?}");
-            }
-            let _ = reply_tx.send(());
+            let result = flush_redis(con).await;
+            let _ = reply_tx.send(result);
             return ControlFlow::Continue(());
         }
         _ => {}

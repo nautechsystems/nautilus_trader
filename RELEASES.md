@@ -70,6 +70,7 @@ Released on TBD (UTC).
 - Changed PostgreSQL OMS recovery to restore `UNSPECIFIED` for legacy positions whose OMS metadata has no trader ID
 - Changed PostgreSQL `Cache::add` to persist per trader and skip legacy shared user entries on restore
 - Changed Redis cache startup and PostgreSQL bulk position loads to fail on unreadable records
+- Changed Redis `DatabaseOperation::Flush` to take `SyncSender<RedisResult<()>>`. Send `Ok(())` or the error
 - Changed `Cache::add` to reject the reserved `position_oms:` key prefix
 - Changed `Cache::add_order` to reject venue order ID conflicts on insert. Handle `VenueOrderIdOwnershipError`
 - Changed `BinaryOption` Parquet writes to require registered tick schemes; register custom schemes before saving
@@ -187,6 +188,7 @@ Released on TBD (UTC).
 - Fixed `RateLimiter::add_quota_for_key` carrying over usage from a prior keyed or default quota
 - Fixed Redis and PostgreSQL restoring a prior NETTING cycle after a position ID is reused
 - Fixed Redis cache restores truncating identifiers that contain colons (#5710), thanks @viliamgonda
+- Fixed Redis cache adapter flushes reporting success when `FLUSHDB` fails, including with `flush_on_start`
 - Fixed `Cache.orders_for_position` omitting linked open orders after a reload (#5690), thanks for reporting @qOeOp
 - Fixed `Cache::add_order` omitting lifecycle status and venue order IDs for inserted order snapshots
 - Fixed `Cache::replace_order` leaving stale lookups after moving an order to a cached position

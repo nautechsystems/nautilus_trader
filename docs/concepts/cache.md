@@ -338,7 +338,7 @@ Direct connections and the factory use the same native configuration path.
   returns a read or replay error. If the underlying error identifies an unreadable record, repair
   the record before restarting.
 - `CacheConfig.flush_on_start = true` clears the backing instead. Redis clears the selected
-  database. Postgres clears only the node's trader rows.
+  database. Postgres clears only the node's trader rows. The node stops startup if the flush fails.
 
 :::
 

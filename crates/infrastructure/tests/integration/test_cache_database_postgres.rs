@@ -6070,6 +6070,44 @@ mod serial_tests {
         pg_cache_b.close().unwrap();
     }
 
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_flush_clears_queued_entry_and_keeps_other_trader() {
+        let trader_id = TraderId::from(format!("flush-{}", UUID4::new()));
+        let other_trader = TraderId::from(format!("flush-{}", UUID4::new()));
+        let mut writer = get_test_pg_cache_database_for_trader(trader_id)
+            .await
+            .unwrap();
+        let mut other = get_test_pg_cache_database_for_trader(other_trader)
+            .await
+            .unwrap();
+        let key = "flush-order";
+        let pending_value = Bytes::from(trader_id.to_string());
+        let other_value = Bytes::from(other_trader.to_string());
+
+        other.add(key.to_string(), other_value.clone()).unwrap();
+        wait_until_async(
+            || async { other.load().unwrap().get(key) == Some(&other_value) },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        writer.pool.close().await;
+        writer.add(key.to_string(), pending_value.clone()).unwrap();
+        writer.flush().unwrap();
+        writer.close().unwrap();
+        let pending_rows: i64 = sqlx::query_scalar("SELECT count(*) FROM general WHERE value = $1")
+            .bind(pending_value.as_ref())
+            .fetch_one(&other.pool)
+            .await
+            .unwrap();
+        let other_rows = other.load().unwrap();
+        other.flush().unwrap();
+        other.close().unwrap();
+
+        assert_eq!(pending_rows, 0);
+        assert_eq!(other_rows.get(key), Some(&other_value));
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn test_traders_sharing_an_account_id_load_their_own_account_state() {
         let trader_a = TraderId::from("TRADER-001");
