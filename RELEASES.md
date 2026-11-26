@@ -180,6 +180,7 @@ Released on TBD (UTC).
 - Fixed TWAP slices ignoring the size increment and minimum quantity, and panics on excessive interval counts
 - Fixed Feather rotation splitting rows with equal `ts_init` across files (#5611), thanks @aaurix
 - Fixed `ExecTester` submitting non-positive limit prices when tick offsets reach or exceed the bid
+- Fixed `ExecTester` using zero-size quote sides to price orders
 - Fixed socket client sending a superseded replayable command after its replacement on reconnect
 - Fixed TCP socket replay continuing during shutdown
 - Fixed spurious WebSocket writer update errors when shutdown cancels a reconnect
@@ -210,6 +211,8 @@ Released on TBD (UTC).
 - Fixed unnecessary rebuilds of vendored `nautilus-core` (#5757), thanks for reporting @jmmaloney4
 - Fixed Architect AX funding subscriptions publishing the oldest rate in the lookback window
 - Fixed Architect AX order history requests failing on an empty page with a continuation cursor
+- Fixed Architect AX single-order cancels during pending submission or replacement
+- Fixed Architect AX publishing consecutive identical quotes with the same venue timestamp
 - Fixed Betfair instrument loading failures when a runner name is missing (#5718), thanks for reporting @nstkhv
 - Fixed Binance Futures flagging filled orders as unresolved at shutdown (#5679), thanks for reporting @AlphaTraderK
 - Fixed Binance buffered book deltas replaying before their snapshot (#5639), thanks @founderinaction

@@ -58,7 +58,9 @@ use nautilus_live::{
     task::{TaskGroup, TaskGroupGuard, TaskSpawner},
 };
 use nautilus_model::{
-    data::{Data, FundingRateUpdate, InstrumentStatus, MarkPriceUpdate, OrderBookDeltas},
+    data::{
+        Data, FundingRateUpdate, InstrumentStatus, MarkPriceUpdate, OrderBookDeltas, QuoteTick,
+    },
     enums::{BookType, MarketStatusAction},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -209,6 +211,7 @@ impl AxDataClient {
             tokio::pin!(stream);
 
             let mut book_sequences: AHashMap<Ustr, u64> = AHashMap::new();
+            let mut last_quotes = AHashMap::new();
             let mut candle_cache: AHashMap<(Ustr, AxCandleWidth), AxMdCandle> = AHashMap::new();
             let mut instrument_states: AHashMap<Ustr, AxInstrumentState> = AHashMap::new();
 
@@ -232,6 +235,7 @@ impl AxDataClient {
                                     &instruments,
                                     &symbol_data_types,
                                     &mut book_sequences,
+                                    &mut last_quotes,
                                     &mut candle_cache,
                                     &mut instrument_states,
                                     clock,
@@ -1282,6 +1286,7 @@ fn handle_ws_message(
     instruments: &Arc<AtomicMap<Ustr, InstrumentAny>>,
     symbol_data_types: &Arc<AtomicMap<String, SymbolDataTypes>>,
     book_sequences: &mut AHashMap<Ustr, u64>,
+    last_quotes: &mut AHashMap<Ustr, (i64, QuoteTick)>,
     candle_cache: &mut AHashMap<(Ustr, AxCandleWidth), AxMdCandle>,
     instrument_states: &mut AHashMap<Ustr, AxInstrumentState>,
     clock: &'static AtomicTime,
@@ -1292,6 +1297,7 @@ fn handle_ws_message(
 ) {
     match msg {
         AxDataWsMessage::Reconnected => {
+            last_quotes.clear();
             candle_cache.clear();
             instrument_states.clear();
             log::info!("WebSocket reconnected");
@@ -1307,6 +1313,7 @@ fn handle_ws_message(
                 instruments,
                 symbol_data_types,
                 book_sequences,
+                last_quotes,
                 candle_cache,
                 instrument_states,
                 clock,
@@ -1326,6 +1333,7 @@ fn handle_md_message(
     instruments: &Arc<AtomicMap<Ustr, InstrumentAny>>,
     symbol_data_types: &Arc<AtomicMap<String, SymbolDataTypes>>,
     book_sequences: &mut AHashMap<Ustr, u64>,
+    last_quotes: &mut AHashMap<Ustr, (i64, QuoteTick)>,
     candle_cache: &mut AHashMap<(Ustr, AxCandleWidth), AxMdCandle>,
     instrument_states: &mut AHashMap<Ustr, AxInstrumentState>,
     clock: &'static AtomicTime,
@@ -1341,11 +1349,12 @@ fn handle_md_message(
 
     match message {
         AxMdMessage::BookL1(book) => {
-            let l1_subscribed = sdt_snap
-                .get(book.s.as_str())
-                .is_some_and(|e| e.quotes || e.book_level == Some(AxMarketDataLevel::Level1));
-
-            if !l1_subscribed {
+            let quote_epoch = ws_client.quote_epoch(book.s.as_str());
+            if quote_epoch.is_none()
+                && !sdt_snap
+                    .get(book.s.as_str())
+                    .is_some_and(|entry| entry.book_level == Some(AxMarketDataLevel::Level1))
+            {
                 return;
             }
 
@@ -1359,7 +1368,7 @@ fn handle_md_message(
 
             match parse_book_l1_quote(&book, instrument, ts_init()) {
                 Ok(quote) => {
-                    let _ = sender.send(DataEvent::Data(Data::Quote(quote)));
+                    publish_quote(book.s, quote_epoch.unwrap_or(0), quote, last_quotes, sender);
                 }
                 Err(e) => log::error!("Failed to parse L1 to QuoteTick: {e}"),
             }
@@ -1385,15 +1394,9 @@ fn handle_md_message(
                 book_tasks,
             );
 
-            let quotes_subscribed = sdt_snap
-                .get(symbol.as_str())
-                .is_some_and(|entry| entry.quotes);
-
-            if quotes_subscribed {
+            if let Some(epoch) = ws_client.quote_epoch(symbol.as_str()) {
                 match parse_book_l2_quote(&book, instrument, ts_init()) {
-                    Ok(quote) => {
-                        let _ = sender.send(DataEvent::Data(Data::Quote(quote)));
-                    }
+                    Ok(quote) => publish_quote(symbol, epoch, quote, last_quotes, sender),
                     Err(e) => log::error!("Failed to parse L2 to QuoteTick: {e}"),
                 }
             }
@@ -1419,15 +1422,9 @@ fn handle_md_message(
                 book_tasks,
             );
 
-            let quotes_subscribed = sdt_snap
-                .get(symbol.as_str())
-                .is_some_and(|entry| entry.quotes);
-
-            if quotes_subscribed {
+            if let Some(epoch) = ws_client.quote_epoch(symbol.as_str()) {
                 match parse_book_l3_quote(&book, instrument, ts_init()) {
-                    Ok(quote) => {
-                        let _ = sender.send(DataEvent::Data(Data::Quote(quote)));
-                    }
+                    Ok(quote) => publish_quote(symbol, epoch, quote, last_quotes, sender),
                     Err(e) => log::error!("Failed to parse L3 to QuoteTick: {e}"),
                 }
             }
@@ -1546,6 +1543,37 @@ fn handle_md_message(
     }
 }
 
+fn publish_quote(
+    symbol: Ustr,
+    epoch: i64,
+    quote: QuoteTick,
+    last_quotes: &mut AHashMap<Ustr, (i64, QuoteTick)>,
+    sender: &EventSender<DataEvent>,
+) {
+    match last_quotes.entry(symbol) {
+        std::collections::hash_map::Entry::Occupied(mut entry) => {
+            let (previous_epoch, previous) = *entry.get();
+            if previous_epoch == epoch
+                && previous.ts_event == quote.ts_event
+                && previous.has_same_bid_ask(&quote)
+            {
+                log::trace!(
+                    "Suppressing repeated AX quote for {symbol}, ts_event={}",
+                    quote.ts_event
+                );
+                return;
+            }
+
+            entry.insert((epoch, quote));
+        }
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            entry.insert((epoch, quote));
+        }
+    }
+
+    let _ = sender.send(DataEvent::Data(Data::Quote(quote)));
+}
+
 // Emits a book snapshot its book accepts, or recovers a book whose frame failed to parse
 fn handle_book_deltas(
     deltas: anyhow::Result<OrderBookDeltas>,
@@ -1580,12 +1608,69 @@ mod tests {
     use std::sync::Arc;
 
     use ahash::{AHashMap, AHashSet};
+    use nautilus_model::types::Quantity;
     use parking_lot::Mutex;
     use rstest::rstest;
     use ustr::Ustr;
 
     use super::*;
     use crate::http::{models::AxInstrumentsResponse, parse::parse_instrument};
+
+    #[rstest]
+    fn test_publish_quote_suppresses_only_repeats_in_the_same_epoch() {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let sender = sender.into();
+        let mut last_quotes = AHashMap::new();
+        let symbol = Ustr::from("EURUSD-PERP");
+
+        let first = QuoteTick::new(
+            InstrumentId::from("EURUSD-PERP.AX"),
+            Price::from("1.0900"),
+            Price::from("1.0901"),
+            Quantity::from(100),
+            Quantity::from(200),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+        );
+
+        let repeated = QuoteTick {
+            ts_init: UnixNanos::from(3),
+            ..first
+        };
+
+        let later = QuoteTick {
+            ts_event: UnixNanos::from(4),
+            ts_init: UnixNanos::from(5),
+            ..first
+        };
+
+        let changed = QuoteTick {
+            ask_price: Price::from("1.0902"),
+            ..later
+        };
+
+        for (epoch, quote) in [
+            (1, first),
+            (1, repeated),
+            (2, repeated),
+            (2, later),
+            (2, changed),
+            (2, later),
+        ] {
+            publish_quote(symbol, epoch, quote, &mut last_quotes, &sender);
+        }
+
+        for expected in [first, repeated, later, changed, later] {
+            let DataEvent::Data(Data::Quote(actual)) = receiver.try_recv().unwrap() else {
+                panic!("expected quote");
+            };
+
+            assert_eq!(actual, expected);
+            assert_eq!(actual.ts_init, expected.ts_init);
+        }
+
+        assert!(receiver.try_recv().is_err());
+    }
 
     #[rstest]
     fn test_bounded_instrument_response_does_not_replace_live_parser_definition() {

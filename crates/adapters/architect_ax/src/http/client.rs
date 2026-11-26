@@ -64,8 +64,8 @@ use super::{
         AxCancelAllOrdersResponse, AxCancelOrderResponse, AxCandle, AxCandleResponse,
         AxCandlesResponse, AxFillsResponse, AxFundingRatesResponse, AxFundingSlotsResponse,
         AxInitialMarginRequirementResponse, AxInstrument, AxInstrumentsResponse,
-        AxOpenOrdersResponse, AxOrderDetail, AxOrderRejectReason, AxOrderStatusQueryResponse,
-        AxOrdersResponse, AxPlaceOrderResponse, AxPositionsResponse,
+        AxOpenOrdersResponse, AxOrderDetail, AxOrderRejectReason, AxOrderStatusDetail,
+        AxOrderStatusQueryResponse, AxOrdersResponse, AxPlaceOrderResponse, AxPositionsResponse,
         AxPreviewAggressiveLimitOrderResponse, AxReplaceOrderResponse, AxRiskSnapshotResponse,
         AxTicker, AxTickerResponse, AxTickersResponse, AxTradesResponse, AxTransactionsResponse,
         AxWhoAmI, CancelAllOrdersRequest, CancelOrderRequest, PlaceOrderRequest,
@@ -1970,6 +1970,30 @@ impl AxHttpClient {
         order_type: OrderType,
         time_in_force: TimeInForce,
     ) -> anyhow::Result<OrderStatusReport> {
+        self.request_order_status_with_detail(
+            account_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            order_side,
+            order_type,
+            time_in_force,
+        )
+        .await
+        .map(|(report, _)| report)
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    pub(crate) async fn request_order_status_with_detail(
+        &self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
+        order_side: Option<OrderSide>,
+        order_type: OrderType,
+        time_in_force: TimeInForce,
+    ) -> anyhow::Result<(OrderStatusReport, AxOrderStatusDetail)> {
         let resp = if let Some(ref voi) = venue_order_id {
             self.inner.get_order_status_by_id(voi.as_str()).await
         } else if let Some(ref coid) = client_order_id {
@@ -2049,7 +2073,7 @@ impl AxHttpClient {
             report = report.with_cancel_reason(reason);
         }
 
-        Ok(report)
+        Ok((report, detail))
     }
 
     pub(crate) async fn request_order_report<F>(

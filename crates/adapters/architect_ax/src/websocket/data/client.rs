@@ -163,6 +163,7 @@ pub struct AxMdWebSocketClient {
     request_id_counter: Arc<AtomicI64>,
     subscribe_lock: Arc<tokio::sync::Mutex<()>>,
     symbol_data_types: Arc<AtomicMap<String, SymbolDataTypes>>,
+    quote_epochs: Arc<AtomicMap<String, i64>>,
     status_invalidations: Arc<Mutex<AHashSet<Ustr>>>,
     transport_backend: TransportBackend,
     proxy_url: Option<SecretString>,
@@ -197,6 +198,7 @@ impl Clone for AxMdWebSocketClient {
             subscribe_lock: Arc::clone(&self.subscribe_lock),
             request_id_counter: Arc::clone(&self.request_id_counter),
             symbol_data_types: Arc::clone(&self.symbol_data_types),
+            quote_epochs: Arc::clone(&self.quote_epochs),
             status_invalidations: Arc::clone(&self.status_invalidations),
             transport_backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
@@ -248,6 +250,7 @@ impl AxMdWebSocketClient {
             request_id_counter: Arc::new(AtomicI64::new(1)),
             subscribe_lock: Arc::new(tokio::sync::Mutex::new(())),
             symbol_data_types: Arc::new(AtomicMap::new()),
+            quote_epochs: Arc::new(AtomicMap::new()),
             status_invalidations: Arc::new(Mutex::new(AHashSet::new())),
             transport_backend,
             proxy_url: proxy_url.map(SecretString::from),
@@ -286,6 +289,7 @@ impl AxMdWebSocketClient {
             request_id_counter: Arc::new(AtomicI64::new(1)),
             subscribe_lock: Arc::new(tokio::sync::Mutex::new(())),
             symbol_data_types: Arc::new(AtomicMap::new()),
+            quote_epochs: Arc::new(AtomicMap::new()),
             status_invalidations: Arc::new(Mutex::new(AHashSet::new())),
             transport_backend,
             proxy_url: proxy_url.map(SecretString::from),
@@ -358,6 +362,10 @@ impl AxMdWebSocketClient {
     #[must_use]
     pub fn symbol_data_types(&self) -> Arc<AtomicMap<String, SymbolDataTypes>> {
         Arc::clone(&self.symbol_data_types)
+    }
+
+    pub(crate) fn quote_epoch(&self, symbol: &str) -> Option<i64> {
+        self.quote_epochs.load().get(symbol).copied()
     }
 
     /// Returns the shared set of symbols whose instrument status cache has been invalidated.
@@ -728,6 +736,13 @@ impl AxMdWebSocketClient {
         self.update_data_subscription(symbol, old_spec, new_spec)
             .await?;
 
+        if !current.quotes {
+            let epoch = self.next_request_id();
+            self.quote_epochs.rcu(|m| {
+                m.insert(symbol.to_string(), epoch);
+            });
+        }
+
         self.symbol_data_types.rcu(|m| {
             m.entry(symbol.to_string()).or_default().quotes = true;
         });
@@ -832,6 +847,10 @@ impl AxMdWebSocketClient {
                     m.remove(symbol);
                 }
             }
+        });
+
+        self.quote_epochs.rcu(|m| {
+            m.remove(symbol);
         });
 
         Ok(())

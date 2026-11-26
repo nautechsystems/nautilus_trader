@@ -4034,6 +4034,50 @@ fn apply_rejected_in_cache(cache: &Rc<RefCell<Cache>>, cid: ClientOrderId) {
         .unwrap();
 }
 
+#[rstest]
+#[case::bid_only(false)]
+#[case::ask_only(true)]
+fn test_quote_prices_only_the_available_side(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+    #[case] has_ask: bool,
+) {
+    config.tob_offset_ticks = 1;
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+    tester.price_offset = Some(tester.get_price_offset(&instrument));
+    tester.instrument = Some(instrument.clone());
+    let saver = capture_risk_commands();
+
+    let (bid_price, ask_price, bid_size, ask_size, side, expected) = if has_ask {
+        ("0.00", "3001.00", "0", "1", OrderSide::Sell, "3001.01")
+    } else {
+        ("3000.00", "0.00", "1", "0", OrderSide::Buy, "2999.99")
+    };
+
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::from(bid_price),
+        Price::from(ask_price),
+        Quantity::from(bid_size),
+        Quantity::from(ask_size),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    tester.on_quote(&quote).unwrap();
+
+    let commands = saver.get_messages();
+
+    let [TradingCommand::SubmitOrder(order)] = commands.as_slice() else {
+        panic!("expected one order, received {commands:?}");
+    };
+
+    assert_eq!(order.order_init.order_side, side);
+    assert_eq!(order.order_init.price, Some(Price::from(expected)));
+}
+
 // Clamp on: a BUY offset larger than the bid pulls up to min_price instead of
 // underflowing to the adapter signer.
 #[rstest]

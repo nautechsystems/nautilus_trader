@@ -46,7 +46,7 @@ use nautilus_common::{
         data::{
             RequestInstrument, RequestInstruments, SubscribeBars, SubscribeBookDeltas,
             SubscribeFundingRates, SubscribeInstrumentStatus, SubscribeQuotes, SubscribeTrades,
-            UnsubscribeBookDeltas,
+            UnsubscribeBookDeltas, UnsubscribeQuotes,
         },
         system::SocketState,
     },
@@ -472,19 +472,101 @@ async fn test_l2_book_emits_quote_when_quotes_subscribed() {
     client
         .subscribe_quotes(subscribe_cmd)
         .expect("Subscribe quotes failed");
-    wait_for_quote(&mut rx).await;
+    let first_quote = wait_for_quote(&mut rx).await;
+    assert_eq!(first_quote.ts_event.as_u64(), 1_609_459_200_123_456_789);
+    state
+        .l2_book_timestamp_nanos
+        .store(123_456_790, std::sync::atomic::Ordering::Relaxed);
     client
         .subscribe_book_deltas(book_deltas_subscription(instrument_id, client_id))
         .expect("Subscribe book deltas failed");
     let quote = wait_for_quote(&mut rx).await;
 
     assert_eq!(quote.instrument_id, instrument_id);
+    assert_eq!(quote.ts_event.as_u64(), 1_609_459_200_123_456_790);
     assert_eq!(quote.bid_price.as_decimal(), dec!(49999.50));
     assert_eq!(quote.ask_price.as_decimal(), dec!(50000.50));
     assert_eq!(quote.bid_size.as_decimal(), dec!(500));
     assert_eq!(quote.ask_size.as_decimal(), dec!(300));
 
     client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_quotes_reset_deduplication_after_resubscribe_and_reconnect() {
+    let mut rx = setup_data_channel();
+    let (addr, state) = start_test_server().await.unwrap();
+    let client_id = ClientId::from("AX-TEST");
+    let registry = SocketReconnectRegistry::default();
+    let mut client = registry.scope(|| create_data_client(addr, client_id, test_data_config()));
+    client.connect().await.unwrap();
+    wait_for_connection(&state).await;
+
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+
+    let subscribe = SubscribeQuotes {
+        instrument_ids: vec![instrument_id],
+        client_id: Some(client_id),
+        venue: None,
+        command_id: UUID4::new(),
+        ts_init: 0.into(),
+        correlation_id: None,
+        params: None,
+    };
+
+    client.subscribe_quotes(subscribe.clone()).unwrap();
+    let first = wait_for_quote(&mut rx).await;
+
+    client
+        .subscribe_book_deltas(book_deltas_subscription(instrument_id, client_id))
+        .unwrap();
+    wait_for_book_deltas(&mut rx).await;
+    assert!(
+        tokio::time::timeout(Duration::from_millis(200), wait_for_quote(&mut rx))
+            .await
+            .is_err()
+    );
+
+    client
+        .unsubscribe_book_deltas(&UnsubscribeBookDeltas::new(
+            instrument_id,
+            Some(client_id),
+            None,
+            UUID4::new(),
+            0.into(),
+            None,
+            None,
+        ))
+        .unwrap();
+    client
+        .unsubscribe_quotes(&UnsubscribeQuotes {
+            instrument_ids: vec![instrument_id],
+            client_id: Some(client_id),
+            venue: None,
+            command_id: UUID4::new(),
+            ts_init: 0.into(),
+            correlation_id: None,
+            params: None,
+        })
+        .unwrap();
+
+    client.subscribe_quotes(subscribe).unwrap();
+    let resubscribed = wait_for_quote(&mut rx).await;
+    assert_eq!(resubscribed.ts_event, first.ts_event);
+    assert!(resubscribed.has_same_bid_ask(&first));
+
+    let handle = registry
+        .handle(client_id, Ustr::from("architect-ax-data-streams"))
+        .unwrap();
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    let reconnected = wait_for_quote(&mut rx).await;
+    assert_eq!(reconnected.ts_event, first.ts_event);
+    assert!(reconnected.has_same_bid_ask(&first));
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]

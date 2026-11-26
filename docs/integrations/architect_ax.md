@@ -161,7 +161,7 @@ for historical data backfill.
 
 | AX Data           | Nautilus Data Type  | Notes                                                          |
 | ----------------- | ------------------- | -------------------------------------------------------------- |
-| Order book (L1)   | `QuoteTick`         | Best bid/ask top-of-book from L1 book subscription.            |
+| Order book        | `QuoteTick`         | Best bid and ask from the active L1, L2, or L3 book stream.    |
 | Order book (L2)   | `OrderBookDelta`    | Aggregated price levels.                                       |
 | Order book (L3)   | `OrderBookDelta`    | Per-snapshot order quantities with synthetic IDs.              |
 | Trades            | `TradeTick`         | Real-time trade events from trade-only WebSocket subscription. |
@@ -183,9 +183,11 @@ AX instrument states map to `MarketStatusAction` as follows:
 | Delisted, or any unrecognized state | `NOT_AVAILABLE_FOR_TRADING` |
 
 :::note
-Historical quote tick requests are not supported by AX Exchange. Only real-time quote
-data is available via WebSocket L1 book subscriptions. The adapter does not expose AX index prices
-or instrument close events, so those subscriptions log a warning and yield no data.
+AX Exchange provides real-time quotes through WebSocket book updates. The adapter suppresses
+consecutive quotes for the same instrument when the venue timestamp and the bid and ask prices and
+sizes match. The comparison resets on reconnect or when quotes are unsubscribed and subscribed
+again. The adapter does not expose historical quotes, AX index prices, or instrument close events.
+Index price and instrument close subscriptions log a warning and yield no data.
 :::
 
 :::note
@@ -486,8 +488,20 @@ identifies the active venue order. After replacement, queries, modifications, an
 venue order ID. Stale parent updates and malformed tracked updates wait for reconciliation without being
 routed as external orders.
 
-A cancel that already has a venue order ID is forwarded, including a second cancel of a
-terminal order. A strategy does not send that second cancel after the local order is already
+A `CancelOrder` command waits for a pending submission or replacement to resolve, then targets the
+confirmed working order. After an ambiguous replacement response, the adapter can cancel the parent
+if a status query confirms it is still working. A cancel receipt alone does not confirm cancellation.
+`disconnect` returns an error if a deferred cancel remains tracked. A definitive local send denial
+or terminal venue evidence can clear it. After an ambiguous replacement, HTTP recovery can clear
+a terminal parent when AX explicitly reports zero filled quantity. With executed or unknown filled
+quantity, the parent stays tracked if terminal evidence arrives only over HTTP.
+
+Batch and side-filtered cancels target the parent during replacement and can be rejected. A later
+stream confirmation, child fill, or order query can resolve the working ID. A batch cancel without
+a venue order ID emits `OrderCancelDenied`.
+
+The adapter forwards a second cancel of a terminal order when it has a venue order ID.
+A strategy does not send that second cancel after the local order is already
 closed or pending cancel. The adapter emits `OrderCancelRejected` only when AX sends
 `CancelRejected`. Sandbox answers a resend of an already canceled order with WebSocket error
 `404` (`order not found`). The adapter logs that error and does not turn it into
@@ -726,11 +740,10 @@ credentials are valid and have trading permissions.
   requires a stop-limit order.
 - **Order modification**: AX supports atomic order replacement via `POST /replace-order`. The execution client
   maps `modify_order` to this endpoint. The HTTP response contains a proposed venue order ID; the orders
-  stream confirms whether replacement succeeds. Queries and cancels retain the working order ID until
+  stream confirms whether replacement succeeds. Queries retain the working order ID until
   the stream, a child fill, or a query confirms the replacement. A query of a replaced parent checks proposed IDs
   and returns the confirmed replacement's status, including fills or cancellation. It leaves the result
-  unresolved when no replacement is confirmed. A cancel before confirmation targets the parent and
-  can be rejected; recovery then needs a late stream confirmation, a child fill, or an explicit query.
+  unresolved when no replacement is confirmed.
   The adapter emits `OrderModifyDenied` if a modification carries a trigger price, because AX has no
   field for one, or if the order has no venue order ID yet. A crossing post-only replacement emits
   `OrderModifyRejected` with the venue reason and leaves the original order working.

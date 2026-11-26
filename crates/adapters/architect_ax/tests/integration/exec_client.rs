@@ -18,7 +18,13 @@
 //! These tests use the mock HTTP+WS server from `common::server` to verify
 //! client creation, connection lifecycle, and account state handling.
 
-use std::{cell::RefCell, collections::HashSet, rc::Rc, sync::atomic::Ordering, time::Duration};
+use std::{
+    cell::RefCell,
+    collections::HashSet,
+    rc::Rc,
+    sync::{Arc, atomic::Ordering},
+    time::Duration,
+};
 
 use futures_util::StreamExt;
 use nautilus_common::{
@@ -6387,6 +6393,188 @@ async fn test_submit_market_order_uses_preview_price() {
     }
 
     client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[case::canceled(true, false)]
+#[case::receipt_only(false, false)]
+#[case::queried_partial_fill(true, true)]
+#[tokio::test]
+async fn test_cancel_before_place_response(#[case] canceled: bool, #[case] via_query: bool) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    drain_rx(&mut rx);
+
+    let release = Arc::new(tokio::sync::Notify::new());
+    *state.place_order_response_release.lock().await = Some(release.clone());
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+    let client_order_id = ClientOrderId::from("O-CANCEL-BEFORE-ACK");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.09"))
+        .quantity(Quantity::from("100"))
+        .build();
+
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*AX_CLIENT_ID), false)
+        .unwrap();
+    client.submit_order(make_submit_order_cmd(&order)).unwrap();
+    let submitted = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap();
+
+    let Some(ExecutionEvent::Order(event @ OrderEventAny::Submitted(_))) = submitted else {
+        panic!("expected a submitted order, received {submitted:?}");
+    };
+
+    cache.borrow_mut().update_order(&event).unwrap();
+
+    client
+        .cancel_order(CancelOrder::new(
+            order.trader_id(),
+            Some(*AX_CLIENT_ID),
+            order.strategy_id(),
+            instrument_id,
+            client_order_id,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    wait_for_pending_tasks(&client).await;
+    assert!(rx.try_recv().is_err());
+
+    let queried_order_id = VenueOrderId::from("OID-QUERY-CANCEL");
+
+    if via_query {
+        state
+            .omit_place_order_response
+            .store(true, Ordering::Relaxed);
+        let mut status = load_test_data("http_get_order_status.json");
+        status["status"]["order_id"] = queried_order_id.as_str().into();
+        status["status"]["clord_id"] = client_order_id_to_cid(&client_order_id).into();
+        status["status"]["filled_quantity"] = 30.into();
+        status["status"]["remaining_quantity"] = 70.into();
+
+        let query = QueryOrder::new(
+            order.trader_id(),
+            Some(*AX_CLIENT_ID),
+            order.strategy_id(),
+            instrument_id,
+            client_order_id,
+            None,
+            UUID4::new(),
+            0.into(),
+            None,
+            None,
+        );
+
+        for (key, value) in [("clord_id", 0.into()), ("symbol", "GBPUSD-PERP".into())] {
+            let mut mismatched = status.clone();
+            mismatched["status"][key] = value;
+            *state.order_status_response.lock().await = Some((200, mismatched));
+            client.query_order(query.clone()).unwrap();
+            wait_for_pending_tasks(&client).await;
+            assert!(rx.try_recv().is_err());
+        }
+
+        *state.order_status_response.lock().await = Some((200, status));
+        client.query_order(query).unwrap();
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap();
+
+        let Some(ExecutionEvent::Report(ExecutionReport::Order(report))) = event else {
+            panic!("expected a query report, received {event:?}");
+        };
+
+        assert_eq!(report.venue_order_id, queried_order_id);
+        assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
+        assert_eq!(report.filled_qty, Quantity::from("30"));
+    }
+
+    release.notify_one();
+    wait_until_async(
+        || async {
+            state
+                .get_messages()
+                .await
+                .iter()
+                .any(|message| message["t"] == "x")
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let messages = state.get_messages().await;
+    let placement = messages.iter().find(|message| message["t"] == "p").unwrap();
+
+    let venue_order_id = if via_query {
+        queried_order_id.to_string()
+    } else {
+        format!("order-{}", placement["rid"].as_i64().unwrap())
+    };
+
+    let cancels: Vec<_> = messages
+        .iter()
+        .filter(|message| message["t"] == "x")
+        .collect();
+    assert_eq!(cancels.len(), 1);
+    assert_eq!(cancels[0]["oid"], venue_order_id);
+
+    let mut acknowledged = load_test_data("ws_order_acknowledged.json");
+    acknowledged["o"]["oid"] = venue_order_id.as_str().into();
+    acknowledged["o"]["cid"] = placement["cid"].clone();
+    state.order_injected_events.lock().await.push(acknowledged);
+    let next = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .unwrap();
+
+    let Some(ExecutionEvent::Order(OrderEventAny::Accepted(event))) = next else {
+        panic!("expected an accepted order after the cancel receipt, received {next:?}");
+    };
+
+    assert_eq!(event.client_order_id, client_order_id);
+    assert_eq!(event.venue_order_id.as_str(), venue_order_id);
+
+    if canceled {
+        let mut cancel = load_test_data("ws_order_canceled.json");
+        cancel["o"]["oid"] = venue_order_id.as_str().into();
+        cancel["o"]["cid"] = placement["cid"].clone();
+        state.order_injected_events.lock().await.push(cancel);
+        let next = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap();
+
+        let Some(ExecutionEvent::Order(OrderEventAny::Canceled(event))) = next else {
+            panic!("expected a canceled order, received {next:?}");
+        };
+
+        assert_eq!(event.client_order_id, client_order_id);
+        assert_eq!(
+            event.venue_order_id,
+            Some(VenueOrderId::from(venue_order_id.as_str()))
+        );
+        client.disconnect().await.unwrap();
+    } else {
+        let error = client.disconnect().await.unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("AX cancellations unresolved at disconnect")
+        );
+        assert!(!client.is_connected());
+    }
 }
 
 #[rstest]

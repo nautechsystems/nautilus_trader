@@ -76,6 +76,7 @@ pub(crate) struct TestServerState {
     pub invalid_book: Arc<AtomicBool>,
     // When set, an unsubscribe is answered with an L2 frame sent before the venue processed it
     pub trailing_book: Arc<AtomicBool>,
+    pub l2_book_timestamp_nanos: Arc<AtomicUsize>,
     pub md_ticker_states: Arc<tokio::sync::Mutex<Vec<String>>>,
     pub authenticated: Arc<AtomicBool>,
     pub disconnect_trigger: Arc<AtomicBool>,
@@ -89,6 +90,7 @@ pub(crate) struct TestServerState {
     pub whoami_fail: Arc<AtomicBool>,
     pub whoami_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
     pub order_fill_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
+    pub omit_place_order_response: Arc<AtomicBool>,
     pub order_injected_events: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
     pub order_initial_events: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
     pub order_login_response: Arc<AtomicBool>,
@@ -106,6 +108,7 @@ pub(crate) struct TestServerState {
     pub preview_empty: Arc<AtomicBool>,
     pub preview_fail: Arc<AtomicBool>,
     pub preview_partial: Arc<AtomicBool>,
+    pub place_order_response_release: Arc<tokio::sync::Mutex<Option<Arc<tokio::sync::Notify>>>>,
     pub replace_order_response_delay: Arc<AtomicBool>,
     pub replace_order_response_release: Arc<tokio::sync::Notify>,
     pub replace_order_response_sent: Arc<tokio::sync::Notify>,
@@ -140,6 +143,7 @@ impl Default for TestServerState {
             withhold_book: Arc::new(AtomicBool::new(false)),
             invalid_book: Arc::new(AtomicBool::new(false)),
             trailing_book: Arc::new(AtomicBool::new(false)),
+            l2_book_timestamp_nanos: Arc::new(AtomicUsize::new(0)),
             md_ticker_states: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             authenticated: Arc::new(AtomicBool::new(false)),
             disconnect_trigger: Arc::new(AtomicBool::new(false)),
@@ -153,6 +157,7 @@ impl Default for TestServerState {
             whoami_fail: Arc::new(AtomicBool::new(false)),
             whoami_payload: Arc::new(tokio::sync::Mutex::new(None)),
             order_fill_payload: Arc::new(tokio::sync::Mutex::new(None)),
+            omit_place_order_response: Arc::new(AtomicBool::new(false)),
             order_injected_events: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             order_initial_events: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             order_login_response: Arc::new(AtomicBool::new(true)),
@@ -170,6 +175,7 @@ impl Default for TestServerState {
             preview_empty: Arc::new(AtomicBool::new(false)),
             preview_fail: Arc::new(AtomicBool::new(false)),
             preview_partial: Arc::new(AtomicBool::new(false)),
+            place_order_response_release: Arc::new(tokio::sync::Mutex::new(None)),
             replace_order_response_delay: Arc::new(AtomicBool::new(false)),
             replace_order_response_release: Arc::new(tokio::sync::Notify::new()),
             replace_order_response_sent: Arc::new(tokio::sync::Notify::new()),
@@ -542,6 +548,11 @@ fn book_message(state: &TestServerState, level: &str) -> Option<serde_json::Valu
         _ => load_test_data("ws_md_book_l1.json"),
     };
 
+    let l2_timestamp_nanos = state.l2_book_timestamp_nanos.load(Ordering::Relaxed);
+    if level == "LEVEL_2" && l2_timestamp_nanos != 0 {
+        book_msg["tn"] = json!(l2_timestamp_nanos);
+    }
+
     if is_book && state.invalid_book.load(Ordering::Relaxed) {
         book_msg["st"] = json!(false);
     }
@@ -718,12 +729,21 @@ async fn send_place_order_response(
     state: &TestServerState,
     request: &serde_json::Value,
 ) -> Result<(), axum::Error> {
+    let release = state.place_order_response_release.lock().await.take();
+    if let Some(release) = release {
+        release.notified().await;
+    }
+
     let rid = request.get("rid").and_then(|v| v.as_i64()).unwrap_or(0);
-    let ack = json!({
-        "rid": rid,
-        "res": {"oid": format!("order-{rid}")},
-    });
-    socket.send(Message::Text(ack.to_string().into())).await?;
+
+    if !state.omit_place_order_response.load(Ordering::Relaxed) {
+        let ack = json!({
+            "rid": rid,
+            "res": {"oid": format!("order-{rid}")},
+        });
+        socket.send(Message::Text(ack.to_string().into())).await?;
+    }
+
     let fill = state.order_fill_payload.lock().await.clone();
 
     if let Some(mut fill) = fill {
