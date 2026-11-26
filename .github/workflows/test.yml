@@ -180,6 +180,7 @@ jobs:
       - name: Build wheel
         working-directory: python
         run: |
+          bash ../scripts/package-version.sh --check > /dev/null
           MATURIN_VERSION="$(bash ../scripts/maturin-version.bash)"
           uv run --no-project --no-build --with "maturin==${MATURIN_VERSION}" -- \
             maturin build --locked --profile "$MATURIN_PROFILE" --out ../dist

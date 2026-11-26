@@ -12,7 +12,6 @@ on:
 
 env:
   RUST_BACKTRACE: 1
-  BUILD_MODE: release
 
 jobs:
   build-linux-x86:

@@ -38,8 +38,6 @@ RUN apt-get update && apt-get install -y \
     git \
     pkg-config \
     make \
-    capnproto \
-    libcapnp-dev \
     patchelf \
     gcc-aarch64-linux-gnu \
     && rm -rf /var/lib/apt/lists/*

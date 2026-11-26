@@ -1,4 +1,4 @@
-# NautilusTrader 2.0.0
+# NautilusTrader 2.0.0rc10
 
 Released on TBD (UTC).
 

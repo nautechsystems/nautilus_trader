@@ -22,7 +22,7 @@ crate-type = ["rlib", "staticlib"]
 [features]
 default = []
 simulation = ["madsim"]
-extension-module = ["python", "pyo3/extension-module"]
+extension-module = ["python", "pyo3/extension-module", "dep:toml"]
 ffi = []
 python = ["pyo3", "pyo3-stub-gen", "strum"]
 
@@ -68,7 +68,7 @@ rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
 
 [build-dependencies]
-toml = { workspace = true }
+toml = { workspace = true, optional = true }
 
 [target.'cfg(madsim)'.dependencies]
 madsim = { workspace = true, optional = true }

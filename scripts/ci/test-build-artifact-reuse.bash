@@ -104,7 +104,11 @@ rm "$SOURCE_DIR/input.rs"
 run_make "" py-stubs
 [[ "$(stub_generation_count)" -eq 3 ]] || fail "A deleted stub input did not trigger regeneration"
 
-run_make "$SOURCE_DIR" pytest-collect-fast
+: > "$UV_LOG"
+python_test_sync="sync --locked --group dev --group test --extra visualization --no-install-project"
+run_make "$SOURCE_DIR" UV_SYNC_FLAGS= pytest-collect-fast
+grep -Fq "$python_test_sync --inexact" "$UV_LOG" ||
+  fail "Fast Python collection did not sync its locked test dependencies additively"
 grep -Fq "run --no-sync pytest tests/ --collect-only -q" "$UV_LOG" ||
   fail "Fast Python collection did not collect the test tree"
 if grep -Fq "maturin develop" "$UV_LOG"; then
@@ -115,10 +119,52 @@ collection_count=$(grep -Fc "run --no-sync pytest tests/ --collect-only -q" "$UV
 run_make "$SOURCE_DIR" PYTHON_EXTENSION_PATH= pytest-collect-fast
 [[ "$(grep -Fc "run --no-sync pytest tests/ --collect-only -q" "$UV_LOG")" -eq "$collection_count" ]] ||
   fail "Fast Python collection ran without an existing extension"
+[[ "$(grep -Fc "$python_test_sync" "$UV_LOG")" -eq 1 ]] ||
+  fail "Fast Python collection synced dependencies without an existing extension"
 
-run_make "$SOURCE_DIR" pytest
-grep -Fq "run --no-sync maturin develop --profile nextest" "$UV_LOG" ||
-  fail "Full Python tests did not build with the nextest profile"
+: > "$UV_LOG"
+run_make "$SOURCE_DIR" -j2 build-debug pytest ty
+[[ "$(grep -Fc "run --no-sync maturin develop --profile nextest" "$UV_LOG")" -eq 1 ]] ||
+  fail "Combined debug build and Python tests did not build once with the nextest profile"
+grep -Fq "$python_test_sync" "$UV_LOG" ||
+  fail "Full Python tests did not sync their locked dependencies"
+[[ "$(stub_generation_count)" -eq 0 ]] ||
+  fail "Full Python tests regenerated stubs"
+
+: > "$UV_LOG"
+run_make "$SOURCE_DIR" build-debug UV_SYNC_FLAGS=
+grep -Fq "sync --locked --group dev --no-install-project --inexact" "$UV_LOG" ||
+  fail "Debug builds did not sync locked development dependencies additively"
+[[ "$(stub_generation_count)" -eq 0 ]] ||
+  fail "Debug build regenerated stubs"
+
+: > "$UV_LOG"
+run_make "$SOURCE_DIR" -j2 build-debug py-stubs pytest
+[[ "$(grep -Eo 'generate_stubs\.py|maturin develop' "$UV_LOG")" == $'generate_stubs.py\nmaturin develop' ]] ||
+  fail "A combined debug build must generate stubs before compiling the extension"
+if [[ "$(grep -Fc 'sync --locked ' "$UV_LOG")" -ne 1 ]] || ! grep -Fq "$python_test_sync" "$UV_LOG"; then
+  fail "A combined stub and test run must share one locked test dependency sync"
+fi
+
+: > "$UV_LOG"
+run_make "$SOURCE_DIR" -j2 UV_SYNC_FLAGS= build-debug sync
+if [[ "$(grep -F 'sync --locked ' "$UV_LOG")" != "$python_test_sync|stub-profile=" ]]; then
+  fail "An explicit sync combined with a debug build must share one exact dependency sync"
+fi
+
+: > "$UV_LOG"
+run_make "$SOURCE_DIR" -j2 UV_SYNC_FLAGS= PYTHON_EXTENSION_PATH= pytest-collect-fast build-debug
+if [[ "$(grep -F 'sync --locked ' "$UV_LOG")" != "$python_test_sync --inexact|stub-profile=" ]]; then
+  fail "Fast collection combined with a cold debug build must share one additive test dependency sync"
+fi
+if [[ "$(grep -Eo 'maturin develop|pytest tests/ --collect-only' "$UV_LOG")" != $'maturin develop\npytest tests/ --collect-only' ]]; then
+  fail "Fast collection did not wait for the requested debug build"
+fi
+
+: > "$UV_LOG"
+run_make "$SOURCE_DIR" ty
+grep -Fq "$python_test_sync" "$UV_LOG" ||
+  fail "Standalone type checking did not sync locked example dependencies"
 
 grep -Fq -- "- id: python-test-collection" "$REPO_ROOT/.pre-commit-config.yaml" ||
   fail "Python collection is not registered with pre-commit"
@@ -132,8 +178,24 @@ pre_flight_recipe=$(sed -n '/^pre-flight:  /,/^\t\$(call timer_end,Pre-flight)/p
   fail "Pre-flight does not check Python import isolation"
 [[ "$pre_flight_recipe" != *'pytest-wheel'* && "$pre_flight_recipe" != *'build-wheel'* ]] ||
   fail "Pre-flight must not build a wheel for validation"
-isolated_commands=$(make -C "$REPO_ROOT" -n --no-print-directory pytest-isolated)
-[[ "$isolated_commands" == "bash \"$REPO_ROOT/scripts/strip-adapter-env.bash\" bash scripts/test-python-isolation.bash" ]] ||
+isolated_commands=$(make -C "$REPO_ROOT" -n --no-print-directory UV_SYNC_FLAGS= pytest-isolated)
+[[ "$isolated_commands" == *"$python_test_sync --inexact"* ]] ||
+  fail "Python isolation did not sync its locked test dependencies additively"
+[[ "$isolated_commands" != *"maturin develop"* ]] ||
+  fail "Python isolation rebuilt the extension"
+combined_isolated_commands=$(make -C "$REPO_ROOT" -n --no-print-directory -o check-cargo-cooldown \
+  -j2 UV_SYNC_FLAGS= pytest-isolated build-debug)
+if [[ "$(grep -c 'uv sync --locked ' <<< "$combined_isolated_commands")" -ne 1 ]] ||
+  [[ "$combined_isolated_commands" != *"$python_test_sync --inexact"* ]]; then
+  fail "A debug build combined with Python isolation must share one additive test dependency sync"
+fi
+[[ "$combined_isolated_commands" == *"maturin develop"*'bash scripts/test-python-isolation.bash'* ]] ||
+  fail "Python isolation did not wait for the requested debug build"
+docs_commands=$(make -C "$REPO_ROOT" -n --no-print-directory UV_SYNC_FLAGS= docs-python)
+[[ "$docs_commands" == *"uv sync --locked --group docs --no-install-project --inexact"* ]] ||
+  fail "The Python docs build did not preserve the existing installation"
+isolated_existing_commands=$(make -C "$REPO_ROOT" -n --no-print-directory -o sync pytest-isolated)
+[[ "$isolated_existing_commands" == "bash \"$REPO_ROOT/scripts/strip-adapter-env.bash\" bash scripts/test-python-isolation.bash" ]] ||
   fail "Python isolation must only check the existing build with adapter variables unset"
 [[ "$pre_flight_recipe" != *'cargo-test-doc'* ]] ||
   fail "Pre-flight still runs Rust doctests"
@@ -201,12 +263,10 @@ nightly_doctest_job=$(awk '
   fail "Nightly Rust doctests do not preserve the CI feature set"
 
 : > "$CARGO_LOG"
-# The runner exports RUSTFLAGS="-D warnings" through setup-rust-toolchain, so the
-# lane must compose the madsim cfg on top of that value rather than lose the cfg
-# to the env override.
+# Cargo ignores target rustflags when the caller exports RUSTFLAGS
 PATH="$MOCK_BIN:$PATH" \
   CARGO_LOG="$CARGO_LOG" \
-  RUSTFLAGS='-D warnings' \
+  RUSTFLAGS='-C debuginfo=0' \
   "$MAKE_BIN" -C "$REPO_ROOT" --no-print-directory -o check-cargo-cooldown \
   CARGO_CI_PROFILE=nextest \
   NEXTEST_PROFILE=ci \
@@ -219,13 +279,13 @@ fi
 [[ "$(grep -Ec '^rustflags=--cfg madsim( |$)' "$CARGO_LOG")" -eq "$(wc -l < "$CARGO_LOG")" ]] ||
   fail "DST smoke tests did not prepend the madsim cfg to inherited RUSTFLAGS"
 grep -Fq \
-  'rustflags=--cfg madsim -D warnings args=nextest run --locked -p nautilus-common -p nautilus-core -p nautilus-event-store -p nautilus-network -p nautilus-execution -p nautilus-live --lib --tests --features simulation' \
+  'rustflags=--cfg madsim -Dwarnings -C debuginfo=0 args=nextest run --locked -p nautilus-common -p nautilus-core -p nautilus-event-store -p nautilus-network -p nautilus-execution -p nautilus-live --lib --tests --features simulation' \
   "$CARGO_LOG" || fail "Standard-precision DST tests did not compile the full package scope together"
 grep -Fq \
-  'rustflags=--cfg madsim -D warnings args=nextest run --locked -p nautilus-okx -p nautilus-coinapi -p nautilus-derive -p nautilus-finfeed -p nautilus-kalshi --lib --test integration --no-default-features --features simulation' \
+  'rustflags=--cfg madsim -Dwarnings -C debuginfo=0 args=nextest run --locked -p nautilus-okx -p nautilus-coinapi -p nautilus-derive -p nautilus-finfeed -p nautilus-kalshi --lib --test integration --no-default-features --features simulation' \
   "$CARGO_LOG" || fail "Adapter DST tests did not use a standard-precision simulation build"
 grep -Fq \
-  'rustflags=--cfg madsim -D warnings args=nextest run --locked -p nautilus-common -p nautilus-execution --lib --tests --features simulation,high-precision' \
+  'rustflags=--cfg madsim -Dwarnings -C debuginfo=0 args=nextest run --locked -p nautilus-common -p nautilus-execution --lib --tests --features simulation,high-precision' \
   "$CARGO_LOG" || fail "High-precision DST tests did not share one feature-coherent build"
 
 # The clippy lane fails silently without the cfg: madsim-gated code compiles out
@@ -233,7 +293,7 @@ grep -Fq \
 : > "$CARGO_LOG"
 PATH="$MOCK_BIN:$PATH" \
   CARGO_LOG="$CARGO_LOG" \
-  RUSTFLAGS='-D warnings' \
+  RUSTFLAGS='-C debuginfo=0' \
   "$MAKE_BIN" -C "$REPO_ROOT" --no-print-directory -o check-cargo-cooldown \
   check-code-sim > /dev/null
 [[ "$(grep -Fc 'args=clippy ' "$CARGO_LOG")" -eq 2 ]] ||
@@ -241,10 +301,10 @@ PATH="$MOCK_BIN:$PATH" \
 [[ "$(grep -Ec '^rustflags=--cfg madsim( |$)' "$CARGO_LOG")" -eq "$(wc -l < "$CARGO_LOG")" ]] ||
   fail "DST clippy did not prepend the madsim cfg to inherited RUSTFLAGS"
 grep -Fq \
-  'rustflags=--cfg madsim -D warnings args=clippy --locked -p nautilus-common -p nautilus-core -p nautilus-event-store -p nautilus-network -p nautilus-execution -p nautilus-live --lib --tests --features simulation --profile nextest -- -D warnings' \
+  'rustflags=--cfg madsim -Dwarnings -C debuginfo=0 args=clippy --locked -p nautilus-common -p nautilus-core -p nautilus-event-store -p nautilus-network -p nautilus-execution -p nautilus-live --lib --tests --features simulation --profile nextest -- -D warnings' \
   "$CARGO_LOG" || fail "Standard-precision DST clippy did not lint the full package scope together"
 grep -Fq \
-  'rustflags=--cfg madsim -D warnings args=clippy --locked -p nautilus-okx -p nautilus-coinapi -p nautilus-derive -p nautilus-finfeed -p nautilus-kalshi --lib --tests --no-default-features --features simulation --profile nextest -- -D warnings' \
+  'rustflags=--cfg madsim -Dwarnings -C debuginfo=0 args=clippy --locked -p nautilus-okx -p nautilus-coinapi -p nautilus-derive -p nautilus-finfeed -p nautilus-kalshi --lib --tests --no-default-features --features simulation --profile nextest -- -D warnings' \
   "$CARGO_LOG" || fail "Adapter DST clippy did not use a standard-precision simulation build"
 
 printf '%s\n' \
@@ -552,6 +612,18 @@ pre_flight_lint_steps() {
 run_pre_flight Linux
 grep -Fxq -- '--no-print-directory check-jiff-features' "$MAKE_LOG" ||
   fail "Pre-flight did not check the workspace's resolved Jiff features"
+expected_python_steps=$(
+  cat << 'PYTHON_STEPS'
+--no-print-directory -o sync-python-dev py-stubs
+--no-print-directory check-generated-drift
+--no-print-directory -o sync-python-dev build-debug
+--no-print-directory -o build-debug pytest
+--no-print-directory -o build-debug pytest-doctest ty
+--no-print-directory -o sync pytest-isolated
+PYTHON_STEPS
+)
+[[ "$(grep -E 'py-stubs|check-generated-drift|build-debug|pytest' "$MAKE_LOG")" == "$expected_python_steps" ]] ||
+  fail "Pre-flight must check generated files and reuse its debug extension for Python checks"
 [[ "$(pre_flight_lint_steps)" == $'check-cargo-cooldown\ncheck-all-targets\nruff\ncheck-all-targets-macos\ncheck-code-sim' ]] ||
   fail "Linux pre-flight does not run the host and macOS checks in order before DST linting"
 grep -Fxq -- '--no-print-directory check-all-targets CARGO_BUILD_TARGET=host-tuple EXTRA_FEATURES=hypersync,nautilus-common/sbe' "$MAKE_LOG" ||

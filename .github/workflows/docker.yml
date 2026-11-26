@@ -31,8 +31,6 @@ jobs:
             runner: [self-hosted, Linux, X64, self-hosted-linux-x86]
           - platform: linux/arm64
             runner: depot-ubuntu-22.04-arm-8
-    env:
-      BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
@@ -274,8 +272,6 @@ jobs:
             runner: [self-hosted, Linux, X64, self-hosted-linux-x86]
           - platform: linux/arm64
             runner: ubuntu-22.04-arm
-    env:
-      BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3

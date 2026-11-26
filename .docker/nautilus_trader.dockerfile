@@ -33,18 +33,24 @@ COPY --from=rust-toolchain /usr/local/rustup /usr/local/rustup
 COPY --from=ghcr.io/astral-sh/uv:0.13.9@sha256:d3b601f0c7b118bc1753febf7c41cc80981df678445e0254284eecf84db79a7d \
   /uv /uvx /root/.local/bin/
 
-COPY Cargo.toml ./
-COPY Cargo.lock ./
+COPY python/pyproject.toml python/uv.lock ./python/
+RUN cd python && uv sync --locked --group dev --no-install-project
+
+COPY .cargo/config.toml ./.cargo/
+COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY patches ./patches
 COPY examples/tutorials ./examples/tutorials
 COPY README.md ./
-COPY python/pyproject.toml python/uv.lock ./python/
-RUN cd python && uv sync --frozen --no-install-package nautilus-trader
-
+COPY scripts/package-version.sh ./scripts/
+COPY python/LICENSE ./python/
 COPY python/nautilus_trader ./python/nautilus_trader
 ARG CARGO_BUILD_JOBS=2
-RUN cd python && uv run --no-sync maturin build --locked --release --out ../dist
+ARG TARGETARCH
+ARG TARGETVARIANT
+RUN --mount=type=cache,id=nautilus-registry-$TARGETARCH$TARGETVARIANT,target=/usr/local/cargo/registry,sharing=locked \
+    bash scripts/package-version.sh --check > /dev/null && \
+    cd python && uv run --no-sync maturin build --locked --release --out ../dist
 RUN uv pip install --system dist/*.whl
 RUN find /usr/local/lib/python3.13/site-packages -name "*.pyc" -exec rm -f {} \;
 

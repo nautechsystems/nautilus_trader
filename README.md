@@ -523,9 +523,10 @@ See the **Redis** section of the [Installation Guide](https://nautilustrader.io/
 
 A `Makefile` is provided to automate most installation and build tasks for development. Some of the targets include:
 
-- `make install`: Installs in `release` build mode with all dependency groups and extras.
+- `make install`: Syncs development dependencies and installs the package in `release` mode.
 - `make install-debug`: Same as `make install` but with `debug` build mode.
-- `make sync`: Installs Python dependencies without building the package.
+- `make sync`: Installs Python development and test dependencies without building the package.
+- `make sync-python-docs`: Installs the documentation dependencies on any supported Python version.
 - `make build`: Builds and installs the package in `release` mode (default).
 - `make build-debug`: Builds and installs the package in `debug` mode.
 - `make build-wheel`: Builds a wheel in `release` mode.
@@ -604,7 +605,8 @@ recorded in `.nautilus-engineering.lock`; project-specific policy and CI wiring 
 
 > [!TIP]
 >
-> Run `make build-debug` to compile after Rust changes for the most efficient development workflow.
+> Run `make build-debug` after Rust changes. Python-only edits take effect on the next import from
+> the editable installation.
 
 After changes to PyO3 bindings, stub annotations, or wrapped Rust docs, regenerate the
 generated Python artifacts from the repository root:

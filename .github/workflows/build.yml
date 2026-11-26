@@ -426,6 +426,18 @@ jobs:
           POSTGRES_PASSWORD: pass
           POSTGRES_DATABASE: nautilus
 
+      - name: Check generated file drift
+        if: env.PYTHON_VERSION == '3.13'
+        env:
+          TARGET_DIR: >-
+            ${{ github.event_name == 'pull_request'
+            && needs.plan.outputs.untrusted_pr != 'false'
+            && format('{0}/target/py-stubs', github.workspace)
+            || '/home/runner/.cache/cargo-target/py-stubs' }}
+        run: |
+          make py-stubs
+          bash scripts/ci/check-generated-drift.bash
+
       - name: Update version in pyproject.toml
         if: ${{ github.ref != 'refs/heads/master' }}
         working-directory: ${{ env.PACKAGE_DIR }}
@@ -440,6 +452,7 @@ jobs:
       - name: Build wheel
         working-directory: ${{ env.PACKAGE_DIR }}
         run: |
+          bash ../scripts/package-version.sh --check > /dev/null
           MATURIN_VERSION="$(bash ../scripts/maturin-version.bash)"
           uv run --no-project --no-build --with "maturin==${MATURIN_VERSION}" -- \
             maturin build --locked --profile "$MATURIN_PROFILE" --out ../dist
@@ -447,18 +460,6 @@ jobs:
       - name: Run Python tests
         working-directory: ${{ env.PACKAGE_DIR }}
         run: bash ../scripts/ci/test-wheel.bash
-
-      - name: Check generated file drift
-        if: env.PYTHON_VERSION == '3.13'
-        env:
-          TARGET_DIR: >-
-            ${{ github.event_name == 'pull_request'
-            && needs.plan.outputs.untrusted_pr != 'false'
-            && format('{0}/target/py-stubs', github.workspace)
-            || '/home/runner/.cache/cargo-target/py-stubs' }}
-        run: |
-          make py-stubs
-          bash scripts/ci/check-generated-drift.bash
 
       - name: Upload wheel artifact
         uses: $/.github/actions/upload-artifact-wheel
@@ -685,7 +686,6 @@ jobs:
       run:
         shell: bash
     env:
-      BUILD_MODE: release
       RUST_BACKTRACE: 1
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-linux-arm
     steps:
@@ -722,6 +722,7 @@ jobs:
       - name: Build wheel
         working-directory: ${{ env.PACKAGE_DIR }}
         run: |
+          bash ../scripts/package-version.sh --check > /dev/null
           MATURIN_VERSION="$(bash ../scripts/maturin-version.bash)"
           uv run --no-project --no-build --with "maturin==${MATURIN_VERSION}" -- \
             maturin build --locked --release --out ../dist
@@ -755,7 +756,6 @@ jobs:
       run:
         shell: bash
     env:
-      BUILD_MODE: release
       RUST_BACKTRACE: 1
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-macos
     steps:
@@ -796,6 +796,7 @@ jobs:
       - name: Build wheel
         working-directory: ${{ env.PACKAGE_DIR }}
         run: |
+          bash ../scripts/package-version.sh --check > /dev/null
           MATURIN_VERSION="$(bash ../scripts/maturin-version.bash)"
           uv run --no-project --no-build --with "maturin==${MATURIN_VERSION}" -- \
             maturin build --locked --release --out ../dist
@@ -829,7 +830,6 @@ jobs:
       run:
         shell: bash
     env:
-      BUILD_MODE: release
       RUST_BACKTRACE: 1
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-windows
     steps:
@@ -864,6 +864,7 @@ jobs:
       - name: Build wheel
         working-directory: ${{ env.PACKAGE_DIR }}
         run: |
+          bash ../scripts/package-version.sh --check > /dev/null
           MATURIN_VERSION="$(bash ../scripts/maturin-version.bash)"
           uv run --no-project --no-build --with "maturin==${MATURIN_VERSION}" -- \
             maturin build --locked --release --out ../dist

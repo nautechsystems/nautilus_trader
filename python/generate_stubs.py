@@ -14,13 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Custom build script for nautilus-trader with automatic stub generation.
-
-This script can be used as:
-1. A standalone stub generator: python generate_stubs.py
-2. A custom build script: python generate_stubs.py build
-3. Integrated with uv/pip build systems via pyproject.toml
-
+Generate the type stubs and PyO3 docstrings for NautilusTrader.
 """
 
 from __future__ import annotations
@@ -3278,53 +3272,25 @@ def format_stub_files(root: Path) -> None:
     run_command(["ruff", "format", *file_args], check=False)
 
 
-def build_extension() -> bool:
-    """
-    Build the extension using maturin.
-    """
-    print("Building extension with maturin...")
-
-    run_command(["maturin", "develop", "--release"])
-
-    print("Extension built successfully")
-    return True
-
-
 def main() -> int:
     """
-    Parse CLI arguments and run the requested build action.
+    Generate docstrings and type stubs.
     """
-    parser = argparse.ArgumentParser(description="NautilusTrader build script")
-    parser.add_argument(
-        "action",
-        nargs="?",
-        default="stubs",
-        choices=["stubs", "build", "all"],
-        help="Action to perform: stubs (default), build, or all",
-    )
-
-    args = parser.parse_args()
-
-    print(f"Starting nautilus-trader {args.action}...")
+    argparse.ArgumentParser(description=__doc__).parse_args()
 
     try:
-        if args.action in ["stubs", "all"]:
-            print("Generating PyO3 docstrings...")
-            subprocess.run(
-                [sys.executable, str(Path(__file__).parent / "generate_docstrings.py")],
-                check=True,
-            )
+        print("Generating PyO3 docstrings...")
+        subprocess.run(
+            [sys.executable, str(Path(__file__).parent / "generate_docstrings.py")],
+            check=True,
+        )
 
-            if not generate_stubs():
-                return 1
-
-        if args.action in ["build", "all"] and not build_extension():
+        if not generate_stubs():
             return 1
 
-        action_name = "Build" if args.action != "stubs" else "Stub generation"
-        print(f"{action_name} completed successfully")
+        print("Stub generation completed successfully")
     except subprocess.CalledProcessError as e:
-        print(f"Build failed: {e}")
+        print(f"Stub generation failed: {e}")
         return 1
     except (OSError, RuntimeError, ValueError, SyntaxError) as e:
         print(f"Unexpected error: {e}")

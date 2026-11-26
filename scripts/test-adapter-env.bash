@@ -61,7 +61,7 @@ bash "$repo_root/scripts/strip-adapter-env.bash" bash -c 'exit 37' || status=$?
 run_make() {
   local make_command=(make
     -o check-cargo-cooldown -o check-nextest-installed -o check-llvm-cov-installed
-    -o check-miri-installed -o build-debug)
+    -o check-miri-installed -o build-debug -o sync)
   "${make_command[@]}" -C "$repo_root" --no-print-directory \
     MAKE="${make_command[*]}" \
     CARGO_BUILD_JOBS="$CARGO_BUILD_JOBS" NEXTEST_TEST_THREADS="$NEXTEST_TEST_THREADS" \

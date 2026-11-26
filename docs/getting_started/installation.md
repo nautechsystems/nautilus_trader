@@ -269,9 +269,8 @@ cd nautilus_trader
 make sync
 ```
 
-For Python 3.15, follow the
-[environment setup](../developer_guide/environment_setup.md#1-install-dependencies) to exclude
-documentation dependencies from sync, build, and test targets. Documentation builds use Python 3.14.
+To select Python 3.15 or install documentation dependencies, see
+[environment setup](../developer_guide/environment_setup.md#1-install-dependencies).
 
 For development hosts and CI runner images, see the
 [single source of truth for versions](../developer_guide/environment_setup.md#single-source-of-truth-for-versions)
@@ -323,8 +322,8 @@ From the repository root:
 make build-debug
 ```
 
-This target syncs `python/.venv`, builds the Rust extension with maturin, and regenerates Python type
-stubs. It uses `target/` for Cargo artifacts.
+This target syncs the development dependencies in `python/.venv` and builds the Rust extension with
+maturin. It uses `target/` for Cargo artifacts. Use `make py-stubs` to regenerate the Python type stubs.
 
 Run a Python example with the project environment:
 
