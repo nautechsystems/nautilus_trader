@@ -400,8 +400,11 @@ impl HistoricalInteractiveBrokersClient {
                             "Historical data request timed out after {timeout} seconds"
                         ))??;
 
-                        // Create new bar_type with correct instrument_id
-                        for ib_bar in &historical_data.bars {
+                        for ib_bar in historical_data
+                            .bars
+                            .iter()
+                            .filter(|bar| bar_request.keeps(bar))
+                        {
                             let nautilus_bar = ib_bar_to_nautilus_bar(
                                 ib_bar,
                                 bar_type_with_id,
@@ -933,10 +936,57 @@ fn data_ts_event(data: &Data) -> UnixNanos {
 #[cfg(test)]
 mod tests {
     use nautilus_common::config::ConfigError;
+    use nautilus_model::instruments::stubs::equity_aapl;
     use rstest::rstest;
 
     use super::*;
-    use crate::config::InteractiveBrokersInstrumentProviderConfig;
+    use crate::{config::InteractiveBrokersInstrumentProviderConfig, stubs::with_ib_replay};
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_request_bars_clips_overlapping_pages_before_merging() {
+        let exchanges = serde_json::from_str(include_str!(
+            "../../test_data/historical_bar_responses.json"
+        ))
+        .unwrap();
+        let bars = with_ib_replay(exchanges, async |ib| {
+            let provider =
+                Arc::new(InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap());
+            provider.insert_test_instrument(equity_aapl().into(), 265598, 1);
+            let client = HistoricalInteractiveBrokersClient::new(ib, provider);
+            let contract = Contract {
+                contract_id: 265598,
+                ..Contract::stock("AAPL").build()
+            };
+            client
+                .request_bars(
+                    vec!["1-SECOND-LAST"],
+                    "2026-09-24T12:40:00Z".parse().unwrap(),
+                    Some("2026-09-24T12:00:01Z".parse().unwrap()),
+                    None,
+                    Some(vec![contract]),
+                    None,
+                    false,
+                    3,
+                )
+                .await
+        })
+        .await
+        .unwrap();
+        let closes: Vec<_> = bars
+            .into_iter()
+            .map(|bar| Timestamp::from(bar.ts_event))
+            .collect();
+        assert_eq!(
+            closes,
+            [
+                "2026-09-24T12:05:01Z",
+                "2026-09-24T12:15:01Z",
+                "2026-09-24T12:35:01Z",
+            ]
+            .map(|time| time.parse::<Timestamp>().unwrap())
+        );
+    }
 
     #[rstest]
     #[case::config(false)]

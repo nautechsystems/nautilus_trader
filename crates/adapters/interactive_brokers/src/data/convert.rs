@@ -255,6 +255,16 @@ pub fn price_type_to_ib_what_to_show(price_type: PriceType) -> HistoricalWhatToS
     }
 }
 
+/// Returns whether IB serves historical bars of `price_type` itself, rather than the trade prices
+/// [`price_type_to_ib_what_to_show`] falls back to for any other price type, such as mark prices.
+#[must_use]
+pub(crate) fn ib_serves_historical_price_type(price_type: PriceType) -> bool {
+    matches!(
+        price_type,
+        PriceType::Last | PriceType::Bid | PriceType::Ask | PriceType::Mid
+    )
+}
+
 /// Whether IB requires `AGGTRADES` (not `TRADES`) for this request.
 ///
 /// TWS rejects `TRADES` for crypto contracts (ZEROHASH/PAXOS) with error 10299 on
@@ -638,7 +648,8 @@ impl BarRequestRange {
 /// One IB historical bars request of a [`BarRequestRange`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum BarRequest {
-    /// The bars IB stamps in `[from, to)`, fetched with [`HistoricalDataBuilder::between`].
+    /// The bars IB stamps in `[from, to)`, fetched as [`HistoricalDataBuilder::between`] fetches
+    /// them (see [`BarRequest::apply`]).
     Between(Timestamp, Timestamp),
     /// The bars over a duration ending at an end time, or at the current time when `None`.
     Ending(Option<Timestamp>, IBDuration),
@@ -646,20 +657,62 @@ pub(crate) enum BarRequest {
 
 impl BarRequest {
     /// Returns `request` set to fetch these bars.
+    ///
+    /// A `between` request asks for the duration ibapi's `between` asks for, ending at `to`, and
+    /// [`keeps`](Self::keeps) drops the bars outside `[from, to)` as `between` does. Going around
+    /// `between` keeps the window's start and end that IB sends with `HistoricalDataEnd`: `between`
+    /// overwrites them with the requested bounds, which hides a download that ended before it.
     pub(crate) fn apply<'a, C>(
         self,
         request: HistoricalDataBuilder<'a, C>,
     ) -> HistoricalDataBuilder<'a, C> {
         match self {
-            Self::Between(from, to) => {
-                request.between(jiff_to_ib_datetime(&from), jiff_to_ib_datetime(&to))
-            }
+            Self::Between(from, to) => request
+                .duration(covering_duration(to.duration_since(from)))
+                .ending(jiff_to_ib_datetime(&to)),
             Self::Ending(Some(end), duration) => {
                 request.duration(duration).ending(jiff_to_ib_datetime(&end))
             }
             Self::Ending(None, duration) => request.duration(duration),
         }
     }
+
+    /// Returns whether this request keeps `bar`: a `between` request keeps the bars IB stamps in
+    /// `[from, to)`, and a duration request every bar.
+    pub(crate) fn keeps(self, bar: &ibapi::market_data::historical::Bar) -> bool {
+        match self {
+            Self::Between(from, to) => {
+                bar.date >= BarTimestamp::from(jiff_to_ib_datetime(&from))
+                    && bar.date < BarTimestamp::from(jiff_to_ib_datetime(&to))
+            }
+            Self::Ending(..) => true,
+        }
+    }
+}
+
+/// Returns the IB duration covering a wall-clock `span` that ends at a request's end, as ibapi
+/// computes it for `between`: whole seconds up to a day, then whole sessions plus one for a range
+/// that starts partway through a session, then calendar years.
+///
+/// IB counts seconds in trading time and sessions back from the session holding the end, and
+/// trading time never exceeds wall-clock time, so the duration fetches at least the span.
+fn covering_duration(span: SignedDuration) -> IBDuration {
+    const SECONDS_PER_DAY: u64 = 86_400;
+    const MAX_DAYS: u64 = 365;
+
+    let to_i32 = |value: u64| i32::try_from(value).unwrap_or(i32::MAX);
+    let seconds = span.as_secs().unsigned_abs() + u64::from(span.subsec_nanos() != 0);
+
+    if seconds <= SECONDS_PER_DAY {
+        return IBDuration::seconds(to_i32(seconds));
+    }
+
+    let days = seconds.div_ceil(SECONDS_PER_DAY) + 1;
+    if days <= MAX_DAYS {
+        return IBDuration::days(to_i32(days));
+    }
+
+    IBDuration::years(to_i32(seconds.div_ceil(MAX_DAYS * SECONDS_PER_DAY)))
 }
 
 /// The longest span IB serves in one request for one-second bars.
@@ -826,7 +879,7 @@ mod tests {
     use time::macros::datetime;
 
     use super::*;
-    use crate::stubs::currency_pair;
+    use crate::stubs::{IbExchange, currency_pair, with_ib_replay};
 
     fn create_test_instrument_id() -> InstrumentId {
         InstrumentId::new(Symbol::from("AAPL"), Venue::from("NASDAQ"))
@@ -937,6 +990,85 @@ mod tests {
             price_type_to_ib_what_to_show(PriceType::Mid),
             HistoricalWhatToShow::MidPoint
         );
+    }
+
+    #[rstest]
+    #[case::hour(3_600, 0, "3600 S")]
+    #[case::fraction_of_a_second(59, 1, "60 S")]
+    #[case::day(86_400, 0, "86400 S")]
+    #[case::over_a_day(86_401, 0, "3 D")]
+    #[case::year_of_sessions(364 * 86_400, 0, "365 D")]
+    #[case::over_a_year_of_sessions(365 * 86_400, 0, "1 Y")]
+    fn test_covering_duration(#[case] seconds: i64, #[case] nanos: i32, #[case] expected: &str) {
+        assert_eq!(
+            covering_duration(SignedDuration::new(seconds, nanos)).to_string(),
+            expected
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_between_request_preserves_the_window_from_ib() {
+        let mut exchanges: Vec<IbExchange> = serde_json::from_str(include_str!(
+            "../../test_data/historical_bar_responses.json"
+        ))
+        .unwrap();
+        exchanges.truncate(2); // Start API and the first historical page
+        let data = with_ib_replay(exchanges, async |ib| {
+            let contract = ibapi::contracts::Contract::stock("AAPL").build();
+            let request = BarRequest::Between(
+                timestamp("2026-09-24T12:22:00Z"),
+                timestamp("2026-09-24T12:40:00Z"),
+            );
+            request
+                .apply(ib.historical_data(&contract, HistoricalBarSize::Sec))
+                .fetch()
+                .await
+        })
+        .await
+        .unwrap();
+
+        // IB reported an earlier start than the requested bound
+        assert_eq!(data.start, datetime!(2026-09-24 12:20 UTC));
+        assert_eq!(data.end, datetime!(2026-09-24 12:40 UTC));
+    }
+
+    #[rstest]
+    #[case::from("2026-10-07T10:00:00Z", true)]
+    #[case::inside("2026-10-07T10:59:00Z", true)]
+    #[case::to("2026-10-07T11:00:00Z", false)]
+    #[case::before("2026-10-07T09:59:00Z", false)]
+    fn test_bar_request_keeps_bars_stamped_in_its_bounds(
+        #[case] stamp: &str,
+        #[case] expected: bool,
+    ) {
+        let request = BarRequest::Between(
+            timestamp("2026-10-07T10:00:00Z"),
+            timestamp("2026-10-07T11:00:00Z"),
+        );
+        let bar = ibapi::market_data::historical::Bar {
+            date: BarTimestamp::DateTime(jiff_to_ib_datetime(&timestamp(stamp))),
+            open: 1.0,
+            high: 1.0,
+            low: 1.0,
+            close: 1.0,
+            volume: 1.0,
+            wap: 1.0,
+            count: 1,
+        };
+
+        assert_eq!(request.keeps(&bar), expected);
+        assert!(BarRequest::Ending(None, IBDuration::days(1)).keeps(&bar));
+    }
+
+    #[rstest]
+    #[case(PriceType::Last, true)]
+    #[case(PriceType::Bid, true)]
+    #[case(PriceType::Ask, true)]
+    #[case(PriceType::Mid, true)]
+    #[case(PriceType::Mark, false)]
+    fn test_ib_serves_historical_price_type(#[case] price_type: PriceType, #[case] expected: bool) {
+        assert_eq!(ib_serves_historical_price_type(price_type), expected);
     }
 
     #[rstest]

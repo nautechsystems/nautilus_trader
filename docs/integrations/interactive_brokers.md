@@ -413,12 +413,13 @@ client turns this coverage into one of three events:
 | Coverage   | Condition                                                                       | Event                                      |
 | ---------- | ------------------------------------------------------------------------------- | ------------------------------------------ |
 | Complete   | Quote and trade paging reached `start`, or bar requests covered `[start, end]`. | Completed `DataResponseEnvelope`.          |
-| Failed     | A request, a stream item, or a row conversion failed.                           | `DataRequestFailed` with the rows fetched. |
+| Failed     | A request, a download, a stream item, or a row conversion failed.               | `DataRequestFailed` with the rows fetched. |
 | Unverified | Any other result.                                                               | Plain `DataResponse`.                      |
 
 A window that did not fail is unverified when the request has no `start` or sets `limit`, when tick paging found no
 older ticks before `start` or could not move its end back, and for bar requests by IB duration, including continuous
-futures. A window is also unverified unless it is final:
+futures. Bars of a price type IB does not serve itself, such as `MARK`, are unverified too: IB returns trade prices
+for them, which a catalog would store under the requested price type. A window is also unverified unless it is final:
 
 - **Regular trading hours**: with `use_regular_trading_hours=True`, the default, IB returns only regular-hours data,
   and a catalog does not record that filter. Set it to `False` on clients that write back to a catalog.
@@ -429,16 +430,23 @@ futures. A window is also unverified unless it is final:
 
 Ticks dropped by design do not fail a request: trades without a size or with a zero size, and ticks whose size the
 instrument's size precision cannot hold. Any IB error on a bar request fails it, including error 162 when IB has no
-data for the window.
+data for the window, and so does a bar download that ends before IB sends `HistoricalDataEnd`. When a bar request
+takes several IB requests, as one-second bars over more than 2000 seconds do, and one fails, the bars of the requests
+before it are returned with the failure.
 
 Only a complete window is written back to a catalog when the request sets `params={"update_catalog": True}`. The data
 engine rejects a request that sets both `update_catalog` and `limit`. See
 [catalog write-back](../concepts/data/catalog.md#reading-data).
 
-Instrument requests answer with a completed `DataResponseEnvelope`. A failed contract details fetch, or an instrument
-the provider does not hold after loading its contract, fails `request_instrument` without an instrument. An
-`ib_contracts` value or contract specification that fails to parse, fails to load, or loads no instrument fails
-`request_instruments` with the reason and the instruments it loaded, which skips write-back.
+Use `params={"force_instrument_update": True}` to route an instrument refresh past the catalog and to IB.
+The adapter also accepts a string flag on requests it receives. A forced `request_instrument` completes only
+when TWS supplies the requested definition. The adapter rebuilds generic spreads from freshly loaded legs and
+returns them without catalog write-back. If the fetch fails or the definition is missing, the request fails without an instrument.
+A forced `request_instruments` response skips catalog write-back because it can include cached definitions.
+
+An invalid `ib_contracts` value or a contract specification that fails to parse, fails to load, or produces no
+instruments fails the request. Option-chain failures return the reason and the instruments loaded before or
+alongside the failure. The catalog only accepts completed responses.
 
 ## Execution capabilities
 

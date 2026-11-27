@@ -54,7 +54,7 @@ use nautilus_core::{
 };
 use nautilus_live::task::{TaskGroup, TaskJoinOutcome, TaskSlot, finish_task};
 use nautilus_model::{
-    data::BarType,
+    data::{Bar, BarType},
     enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, any::InstrumentAny},
@@ -64,9 +64,9 @@ use tokio_util::sync::CancellationToken;
 use super::{
     cache::{OptionGreeksCache, QuoteCache},
     convert::{
-        BarRequestRange, IbPriceConverter, TickPageOutcome, bar_request_range,
+        BarRequest, BarRequestRange, IbPriceConverter, TickPageOutcome, bar_request_range,
         bar_type_to_ib_bar_size, extend_historical_tick_batch, historical_tick_request_end,
-        ib_bar_to_nautilus_bar, jiff_to_ib_datetime,
+        ib_bar_to_nautilus_bar, ib_serves_historical_price_type, jiff_to_ib_datetime,
         price_type_to_ib_realtime_what_to_show_for_security,
         price_type_to_ib_what_to_show_for_security, retain_historical_ticks_in_range,
         should_continue_historical_tick_pagination,
@@ -90,7 +90,7 @@ use crate::{
     },
     config::{InteractiveBrokersDataClientConfig, MarketDataType},
     data_types::register_ib_custom_data,
-    providers::instruments::InteractiveBrokersInstrumentProvider,
+    providers::instruments::{ContractSpecLoad, InteractiveBrokersInstrumentProvider},
 };
 
 /// Interactive Brokers data client.
@@ -201,6 +201,16 @@ fn parse_start_ns(params: Option<&nautilus_core::Params>) -> Option<UnixNanos> {
 
 fn parse_bool_param_value(value: &str) -> bool {
     matches!(value, "true" | "True" | "1")
+}
+
+/// Returns whether `params` ask to refresh cached instruments from TWS, given as a boolean or as a
+/// boolean string.
+fn force_instrument_update_param(params: Option<&Params>) -> bool {
+    match params.and_then(|params| params.get("force_instrument_update")) {
+        Some(serde_json::Value::Bool(force)) => *force,
+        Some(serde_json::Value::String(value)) => parse_bool_param_value(value),
+        _ => false,
+    }
 }
 
 fn params_to_string_filters(params: Option<&Params>) -> Option<HashMap<String, String>> {
@@ -1403,12 +1413,7 @@ impl DataClient for InteractiveBrokersDataClient {
             );
         }
 
-        // Check if force_instrument_update is requested
-        let force_update = cmd
-            .params
-            .as_ref()
-            .and_then(|params| params.get_str("force_instrument_update"))
-            .is_some_and(parse_bool_param_value);
+        let force_update = force_instrument_update_param(cmd.params.as_ref());
 
         // Get instrument from provider (or load if not found or force_update)
         let instrument = if force_update || self.instrument_provider.find(&instrument_id).is_none()
@@ -1432,7 +1437,7 @@ impl DataClient for InteractiveBrokersDataClient {
             self.spawn_command(async move {
                 let filters = params_to_string_filters(params.as_ref());
 
-                if let Err(e) = load_requested_instrument(
+                let loaded = match load_requested_instrument(
                     &instrument_provider,
                     &client_clone,
                     instrument_id,
@@ -1442,37 +1447,45 @@ impl DataClient for InteractiveBrokersDataClient {
                 )
                 .await
                 {
-                    tracing::error!(
-                        "Failed to fetch contract details for {}: {:?}",
-                        instrument_id,
-                        e
-                    );
-                    let reason =
-                        format!("Failed to fetch contract details for {instrument_id}: {e:#}");
+                    Ok(loaded) => loaded,
+                    Err(e) => {
+                        tracing::error!(
+                            "Failed to fetch contract details for {}: {:?}",
+                            instrument_id,
+                            e
+                        );
+                        let reason =
+                            format!("Failed to fetch contract details for {instrument_id}: {e:#}");
 
-                    if let Err(e) = data_sender.send(request_failure(request_id, reason)) {
-                        tracing::error!("Failed to send instrument request failure: {e}");
+                        if let Err(e) = data_sender.send(request_failure(request_id, reason)) {
+                            tracing::error!("Failed to send instrument request failure: {e}");
+                        }
+                        return;
                     }
-                    return;
-                }
+                };
 
-                let event = if let Some(instrument) = instrument_provider.find(&instrument_id) {
-                    let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
-                        request_id,
-                        client_id,
-                        instrument_id,
-                        instrument,
-                        start_nanos,
-                        end_nanos,
-                        clock.get_time_ns(),
-                        params,
-                    )));
-                    history_event(request_id, response, HistoryCoverage::Complete)
-                } else {
-                    request_failure(
+                let event = match (
+                    instrument_provider.find(&instrument_id),
+                    instrument_coverage(instrument_id, force_update, &loaded),
+                ) {
+                    (_, HistoryCoverage::Failed(reason)) => request_failure(request_id, reason),
+                    (Some(instrument), coverage) => {
+                        let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
+                            request_id,
+                            client_id,
+                            instrument_id,
+                            instrument,
+                            start_nanos,
+                            end_nanos,
+                            clock.get_time_ns(),
+                            params,
+                        )));
+                        history_event(request_id, response, coverage)
+                    }
+                    (None, _) => request_failure(
                         request_id,
                         format!("Instrument {instrument_id} not found after loading its contract"),
-                    )
+                    ),
                 };
 
                 if let Err(e) = data_sender.send(event) {
@@ -1519,12 +1532,7 @@ impl DataClient for InteractiveBrokersDataClient {
             .as_ref()
             .context("IB client not connected. Call connect() first")?;
 
-        // Check for force_instrument_update
-        let force_update = cmd
-            .params
-            .as_ref()
-            .and_then(|params| params.get_str("force_instrument_update"))
-            .is_some_and(parse_bool_param_value);
+        let force_update = force_instrument_update_param(cmd.params.as_ref());
 
         // Check if ib_contracts parameter is provided for batch loading
         let mut contract_specs_to_load: Vec<serde_json::Value> = Vec::new();
@@ -1632,7 +1640,11 @@ impl DataClient for InteractiveBrokersDataClient {
                         );
 
                         let result = instrument_provider
-                            .load_contract_spec(&client_clone, &contract, Some(&contract_spec))
+                            .load_contract_spec_with_failures(
+                                &client_clone,
+                                &contract,
+                                Some(&contract_spec),
+                            )
                             .await;
 
                         if let Err(e) = &result {
@@ -1642,10 +1654,10 @@ impl DataClient for InteractiveBrokersDataClient {
                                 e
                             );
                         }
-                        failures.extend(contract_spec_failure(&contract_spec, &result));
+                        failures.extend(contract_spec_failures(&contract_spec, &result));
 
-                        if let Ok(mut instrument_ids) = result {
-                            loaded_instrument_ids.append(&mut instrument_ids);
+                        if let Ok(load) = result {
+                            loaded_instrument_ids.extend(load.instrument_ids);
                         }
                     }
                 }
@@ -1685,7 +1697,7 @@ impl DataClient for InteractiveBrokersDataClient {
                     clock.get_time_ns(),
                     params,
                 ));
-                let coverage = HistoryCoverage::unless_failed(&failures, HistoryCoverage::Complete);
+                let coverage = instruments_coverage(force_update, &failures);
 
                 if let Err(e) = data_sender.send(history_event(request_id, response, coverage)) {
                     tracing::error!("Failed to send instruments response: {e}");
@@ -2228,51 +2240,28 @@ impl DataClient for InteractiveBrokersDataClient {
         self.spawn_command(async move {
             // Taken before the first fetch, which serves the end of the window
             let requested_at = clock.get_time_ns();
-            let mut all_bars = Vec::new();
-            let mut failures = Vec::new();
 
-            if let Some(range) = range {
-                for bar_request in range.requests(&bar_type.spec()) {
-                    let request = bar_request
-                        .apply(client_clone.historical_data(&contract, ib_bar_size))
-                        .what_to_show(ib_what_to_show)
-                        .trading_hours(trading_hours);
-
-                    let historical_data = match request.fetch().await {
-                        Ok(historical_data) => historical_data,
-                        Err(e) => {
-                            tracing::warn!(
-                                "Historical data request failed for {bar_type} over {bar_request:?}: {e}"
-                            );
-                            failures.push(format!(
-                                "Historical data request failed for {bar_type} over {bar_request:?}: {e}"
-                            ));
-                            all_bars.clear();
-                            break;
-                        }
-                    };
-
-                    // Convert IB bars to Nautilus bars
-                    for ib_bar in &historical_data.bars {
-                        match ib_bar_to_nautilus_bar(ib_bar, bar_type, prices, size_precision) {
-                            Ok(bar) => {
-                                if range.contains(bar.ts_event) {
-                                    all_bars.push(bar);
-                                }
-                            }
-                            Err(e) => {
-                                tracing::warn!(
-                                    "Failed to convert IB bar to Nautilus bar: {:?}",
-                                    e
-                                );
-                                failures.push(format!(
-                                    "Failed to convert IB bar for {bar_type}: {e}"
-                                ));
-                            }
-                        }
-                    }
+            let (mut all_bars, failures) = match range {
+                Some(range) => {
+                    fetch_bar_window(
+                        bar_type,
+                        range.requests(&bar_type.spec()),
+                        |bar_request| {
+                            bar_request
+                                .apply(client_clone.historical_data(&contract, ib_bar_size))
+                                .what_to_show(ib_what_to_show)
+                                .trading_hours(trading_hours)
+                                .fetch()
+                        },
+                        |ib_bar| {
+                            ib_bar_to_nautilus_bar(ib_bar, bar_type, prices, size_precision)
+                                .map(|bar| range.contains(bar.ts_event).then_some(bar))
+                        },
+                    )
+                    .await
                 }
-            }
+                None => (Vec::new(), Vec::new()),
+            };
 
             // Return aggregated results
             if all_bars.is_empty() {
@@ -2306,7 +2295,13 @@ impl DataClient for InteractiveBrokersDataClient {
                 ts_init,
                 params,
             ));
-            let coverage = bar_coverage(range, limit, final_window, &failures);
+            let coverage = bar_coverage(
+                range,
+                limit,
+                final_window,
+                ib_serves_historical_price_type(bar_type.spec().price_type),
+                &failures,
+            );
 
             if let Err(e) = data_sender.send(history_event(request_id, response, coverage)) {
                 tracing::error!("Failed to send bars response: {e}");
@@ -2552,15 +2547,21 @@ async fn load_requested_instrument(
     force_update: bool,
     filters: Option<HashMap<String, String>>,
     data_sender: &EventSender<DataEvent>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<InstrumentId>> {
     if !is_spread_instrument_id(&instrument_id) {
         return instrument_provider
-            .fetch_contract_details(client, instrument_id, force_update, filters)
+            .fetch_contract_details_loaded(client, instrument_id, force_update, filters)
             .await;
     }
 
-    instrument_provider
-        .fetch_spread_instrument(client, instrument_id, force_update, filters)
+    let loaded = instrument_provider
+        .fetch_spread_instrument_with_legs(
+            client,
+            instrument_id,
+            force_update,
+            filters,
+            force_update,
+        )
         .await?;
     let leg_ids = parse_spread_instrument_id_to_legs(&instrument_id)?
         .into_iter()
@@ -2573,7 +2574,11 @@ async fn load_requested_instrument(
         }
     }
 
-    Ok(())
+    Ok(if loaded {
+        vec![instrument_id]
+    } else {
+        Vec::new()
+    })
 }
 
 /// Whether an IB historical or instrument request returned everything it asked for.
@@ -2633,21 +2638,100 @@ fn tick_coverage(
 /// The `between` requests of a range with a start fetch every bar closing in it. A duration
 /// request, used without a start and for continuous futures, is anchored to IB's trading time
 /// and can fall outside the requested window. A window that is not final (see
-/// [`window_is_final`]) stays unverified.
+/// [`window_is_final`]) stays unverified, and so do bars of a price type IB does not serve
+/// itself: IB returns trade prices for them, which a catalog would store under the requested
+/// price type.
 fn bar_coverage(
     range: Option<BarRequestRange>,
     limit: Option<usize>,
     final_window: bool,
+    price_type_served: bool,
     failures: &[String],
 ) -> HistoryCoverage {
     let coverage = match range {
-        Some(BarRequestRange::Between(..)) if final_window && limit.is_none() => {
+        Some(BarRequestRange::Between(..))
+            if final_window && price_type_served && limit.is_none() =>
+        {
             HistoryCoverage::Complete
         }
         _ => HistoryCoverage::Unverified,
     };
 
     HistoryCoverage::unless_failed(failures, coverage)
+}
+
+/// Returns the bars of the IB requests fetching a bars window, and what failed.
+///
+/// `fetch` runs one request; each request keeps the bars IB stamps within its own bounds (see
+/// [`BarRequest::keeps`]), and `convert` turns an IB bar into a Nautilus bar, or `None` when the
+/// bar falls outside the window. The first request that fails, or whose download ends before IB
+/// sends `HistoricalDataEnd`, ends the window, and the bars fetched before it are kept.
+async fn fetch_bar_window<F, Fut>(
+    bar_type: BarType,
+    requests: Vec<BarRequest>,
+    mut fetch: F,
+    mut convert: impl FnMut(&ibapi::market_data::historical::Bar) -> anyhow::Result<Option<Bar>>,
+) -> (Vec<Bar>, Vec<String>)
+where
+    F: FnMut(BarRequest) -> Fut,
+    Fut: std::future::Future<
+            Output = Result<ibapi::market_data::historical::HistoricalData, ibapi::Error>,
+        >,
+{
+    let mut bars = Vec::new();
+    let mut failures = Vec::new();
+
+    for bar_request in requests {
+        let historical_data = match fetch(bar_request).await {
+            Ok(historical_data) => historical_data,
+            Err(e) => {
+                tracing::warn!(
+                    "Historical data request failed for {bar_type} over {bar_request:?}: {e}"
+                );
+                failures.push(format!(
+                    "Historical data request failed for {bar_type} over {bar_request:?}: {e}"
+                ));
+                break;
+            }
+        };
+
+        for ib_bar in historical_data
+            .bars
+            .iter()
+            .filter(|ib_bar| bar_request.keeps(ib_bar))
+        {
+            match convert(ib_bar) {
+                Ok(Some(bar)) => bars.push(bar),
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::warn!("Failed to convert IB bar to Nautilus bar: {e:?}");
+                    failures.push(format!("Failed to convert IB bar for {bar_type}: {e}"));
+                }
+            }
+        }
+
+        if !download_finished(&historical_data) {
+            let failure = format!(
+                "Historical data download for {bar_type} over {bar_request:?} ended before IB sent HistoricalDataEnd"
+            );
+            tracing::warn!("{failure}");
+            failures.push(failure);
+            break;
+        }
+    }
+
+    (bars, failures)
+}
+
+/// Returns whether IB ended the download of `historical_data` with `HistoricalDataEnd`.
+///
+/// The pinned ibapi sets the start and end of the window only from that message, and returns the
+/// bars with both at the Unix epoch when the stream closes before it (fixed upstream in
+/// wboayue/rust-ibapi#967, which returns an error instead). [`BarRequest::apply`] does not use
+/// ibapi's `between`, which would overwrite both with the requested bounds.
+fn download_finished(historical_data: &ibapi::market_data::historical::HistoricalData) -> bool {
+    historical_data.start.unix_timestamp_nanos() != 0
+        || historical_data.end.unix_timestamp_nanos() != 0
 }
 
 /// The event for a response, by its coverage: a complete response completes the response
@@ -2720,31 +2804,70 @@ fn tick_parse_failure(
         .then(|| format!("Failed to parse IB {kind} tick for {instrument_id}: {e}"))
 }
 
-/// Returns the failure loading `contract_spec` leaves in an instruments request: an error, or
-/// no instrument loaded.
-fn contract_spec_failure(
+/// Returns the failures loading `contract_spec` leaves in an instruments request: an error, no
+/// instrument loaded, or what failed while loading it, such as an option expiry.
+fn contract_spec_failures(
     contract_spec: &serde_json::Value,
-    result: &anyhow::Result<Vec<InstrumentId>>,
-) -> Option<String> {
+    result: &anyhow::Result<ContractSpecLoad>,
+) -> Vec<String> {
     match result {
-        Ok(instrument_ids) if instrument_ids.is_empty() => Some(format!(
-            "IB contract spec {contract_spec} loaded no instrument"
-        )),
-        Ok(_) => None,
-        Err(e) => Some(format!(
+        Ok(load) if load.instrument_ids.is_empty() && load.failures.is_empty() => {
+            vec![format!(
+                "IB contract spec {contract_spec} loaded no instrument"
+            )]
+        }
+        Ok(load) => load
+            .failures
+            .iter()
+            .map(|failure| format!("IB contract spec {contract_spec}: {failure}"))
+            .collect(),
+        Err(e) => vec![format!(
             "Failed to load IB contract spec {contract_spec}: {e}"
-        )),
+        )],
     }
+}
+
+/// Returns the coverage of an instruments request that failed with `failures`, if any.
+///
+/// A forced refresh stays unverified: the instruments it returns can be cached definitions TWS
+/// did not supply again.
+fn instruments_coverage(force_update: bool, failures: &[String]) -> HistoryCoverage {
+    let coverage = if force_update {
+        HistoryCoverage::Unverified
+    } else {
+        HistoryCoverage::Complete
+    };
+
+    HistoryCoverage::unless_failed(failures, coverage)
+}
+
+/// Returns the coverage of a single instrument lookup, including a forced refresh from TWS.
+fn instrument_coverage(
+    instrument_id: InstrumentId,
+    force_update: bool,
+    loaded: &[InstrumentId],
+) -> HistoryCoverage {
+    if force_update && !loaded.contains(&instrument_id) {
+        return HistoryCoverage::Failed(format!(
+            "Forced refresh did not load {instrument_id} from TWS"
+        ));
+    }
+    // The provider builds a generic spread locally from the refreshed legs
+    if force_update && is_spread_instrument_id(&instrument_id) {
+        return HistoryCoverage::Unverified;
+    }
+    HistoryCoverage::Complete
 }
 
 #[cfg(test)]
 mod tests {
     use ibapi::market_data::historical::Duration as IBDuration;
     use nautilus_common::live::get_runtime;
+    use nautilus_model::types::{Price, Quantity};
     use rstest::rstest;
 
     use super::*;
-    use crate::common::consts::IB_CLIENT_ID;
+    use crate::{common::consts::IB_CLIENT_ID, data::convert::ib_bar_timestamp_to_unix_nanos};
 
     #[rstest]
     #[case(true, ibapi::market_data::TradingHours::Regular)]
@@ -3114,35 +3237,53 @@ mod tests {
     }
 
     #[rstest]
-    #[case::between(Some(between_range()), None, true, &[], HistoryCoverage::Complete)]
-    #[case::window_not_final(Some(between_range()), None, false, &[], HistoryCoverage::Unverified)]
-    #[case::between_failed(
+    #[case::between(Some(between_range()), None, true, true, &[], HistoryCoverage::Complete)]
+    #[case::window_not_final(
         Some(between_range()),
         None,
-        true,
-        &["request failed"],
-        HistoryCoverage::Failed("request failed".to_string())
-    )]
-    #[case::limit(Some(between_range()), Some(10), true, &[], HistoryCoverage::Unverified)]
-    #[case::duration(
-        Some(BarRequestRange::Ending(None, IBDuration::days(1))),
-        None,
+        false,
         true,
         &[],
         HistoryCoverage::Unverified
     )]
-    #[case::empty_window(None, None, true, &[], HistoryCoverage::Unverified)]
+    #[case::price_type_ib_does_not_serve(
+        Some(between_range()),
+        None,
+        true,
+        false,
+        &[],
+        HistoryCoverage::Unverified
+    )]
+    #[case::between_failed(
+        Some(between_range()),
+        None,
+        true,
+        true,
+        &["request failed"],
+        HistoryCoverage::Failed("request failed".to_string())
+    )]
+    #[case::limit(Some(between_range()), Some(10), true, true, &[], HistoryCoverage::Unverified)]
+    #[case::duration(
+        Some(BarRequestRange::Ending(None, IBDuration::days(1))),
+        None,
+        true,
+        true,
+        &[],
+        HistoryCoverage::Unverified
+    )]
+    #[case::empty_window(None, None, true, true, &[], HistoryCoverage::Unverified)]
     fn test_bar_coverage(
         #[case] range: Option<BarRequestRange>,
         #[case] limit: Option<usize>,
         #[case] final_window: bool,
+        #[case] price_type_served: bool,
         #[case] failures: &[&str],
         #[case] expected: HistoryCoverage,
     ) {
         let failures: Vec<String> = failures.iter().map(ToString::to_string).collect();
 
         assert_eq!(
-            bar_coverage(range, limit, final_window, &failures),
+            bar_coverage(range, limit, final_window, price_type_served, &failures),
             expected
         );
     }
@@ -3221,21 +3362,260 @@ mod tests {
     }
 
     #[rstest]
-    fn test_contract_spec_failure() {
+    fn test_contract_spec_failures() {
         let spec = serde_json::json!({"symbol": "AAPL"});
-        let loaded = vec![InstrumentId::from("AAPL.NASDAQ")];
+        let loaded = |failures: &[&str]| ContractSpecLoad {
+            instrument_ids: vec![InstrumentId::from("AAPL.NASDAQ")],
+            failures: failures.iter().map(ToString::to_string).collect(),
+        };
 
-        assert_eq!(contract_spec_failure(&spec, &Ok(loaded)), None);
+        assert!(contract_spec_failures(&spec, &Ok(loaded(&[]))).is_empty());
         assert_eq!(
-            contract_spec_failure(&spec, &Ok(Vec::new())),
-            Some(r#"IB contract spec {"symbol":"AAPL"} loaded no instrument"#.to_string())
+            contract_spec_failures(
+                &spec,
+                &Ok(loaded(&["Failed to fetch option contract details for expiry 20261218"]))
+            ),
+            vec![
+                r#"IB contract spec {"symbol":"AAPL"}: Failed to fetch option contract details for expiry 20261218"#
+                    .to_string()
+            ]
         );
         assert_eq!(
-            contract_spec_failure(&spec, &Err(anyhow::anyhow!("no contract details"))),
-            Some(
+            contract_spec_failures(&spec, &Ok(ContractSpecLoad::default())),
+            vec![r#"IB contract spec {"symbol":"AAPL"} loaded no instrument"#.to_string()]
+        );
+        assert_eq!(
+            contract_spec_failures(&spec, &Err(anyhow::anyhow!("no contract details"))),
+            vec![
                 r#"Failed to load IB contract spec {"symbol":"AAPL"}: no contract details"#
                     .to_string()
-            )
+            ]
+        );
+    }
+
+    #[rstest]
+    #[case::bool_true(Some(serde_json::json!(true)), true)]
+    #[case::bool_false(Some(serde_json::json!(false)), false)]
+    #[case::string_true(Some(serde_json::json!("true")), true)]
+    #[case::string_one(Some(serde_json::json!("1")), true)]
+    #[case::string_false(Some(serde_json::json!("false")), false)]
+    #[case::number(Some(serde_json::json!(1)), false)]
+    #[case::absent(None, false)]
+    fn test_force_instrument_update_param(
+        #[case] value: Option<serde_json::Value>,
+        #[case] expected: bool,
+    ) {
+        let params: Option<Params> = value.map(|value| {
+            serde_json::from_value(serde_json::json!({ "force_instrument_update": value })).unwrap()
+        });
+
+        assert_eq!(force_instrument_update_param(params.as_ref()), expected);
+    }
+
+    #[rstest]
+    #[case::not_forced("AAPL.NASDAQ", false, &[], HistoryCoverage::Complete)]
+    #[case::forced_and_supplied("AAPL.NASDAQ", true, &["AAPL.NASDAQ"], HistoryCoverage::Complete)]
+    #[case::forced_without_definition("AAPL.NASDAQ", true, &[],
+        HistoryCoverage::Failed("Forced refresh did not load AAPL.NASDAQ from TWS".into()))]
+    #[case::forced_with_another_definition("AAPL.NASDAQ", true, &["MSFT.NASDAQ"],
+        HistoryCoverage::Failed("Forced refresh did not load AAPL.NASDAQ from TWS".into()))]
+    #[case::rebuilt_spread("(1)AAPL___((2))MSFT.NASDAQ", true, &["(1)AAPL___((2))MSFT.NASDAQ"], HistoryCoverage::Unverified)]
+    fn test_instrument_coverage(
+        #[case] requested: &str,
+        #[case] force_update: bool,
+        #[case] loaded: &[&str],
+        #[case] expected: HistoryCoverage,
+    ) {
+        let loaded: Vec<InstrumentId> = loaded.iter().map(|id| InstrumentId::from(*id)).collect();
+
+        assert_eq!(
+            instrument_coverage(InstrumentId::from(requested), force_update, &loaded),
+            expected
+        );
+    }
+
+    const BAR_TYPE: &str = "AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL";
+
+    /// An IB download of `bars` bars, ended with `HistoricalDataEnd` over `[start, end]`
+    /// seconds, or cut before it when both are zero.
+    fn ib_download(
+        start: i64,
+        end: i64,
+        bars: i64,
+    ) -> ibapi::market_data::historical::HistoricalData {
+        let at = |second: i64| time::OffsetDateTime::from_unix_timestamp(second).unwrap();
+        ibapi::market_data::historical::HistoricalData {
+            start: at(start),
+            end: at(end),
+            bars: (0..bars)
+                .map(|i| ibapi::market_data::historical::Bar {
+                    date: ibapi::market_data::historical::BarTimestamp::DateTime(at(60 * i)),
+                    open: 1.0,
+                    high: 1.0,
+                    low: 1.0,
+                    close: 1.0,
+                    volume: 1.0,
+                    wap: 1.0,
+                    count: 1,
+                })
+                .collect(),
+        }
+    }
+
+    /// Runs [`fetch_bar_window`] over one request per download, converting the IB bars in turn
+    /// and failing the conversions numbered in `bad_bars`.
+    fn run_bar_window(
+        downloads: Vec<Result<ibapi::market_data::historical::HistoricalData, ibapi::Error>>,
+        bad_bars: &[u64],
+    ) -> (Vec<Bar>, Vec<String>) {
+        let bar_type = BarType::from(BAR_TYPE);
+        let requests = vec![BarRequest::Ending(None, IBDuration::days(1)); downloads.len()];
+        let mut downloads = downloads.into_iter();
+        let mut converted = 0_u64;
+
+        get_runtime().block_on(fetch_bar_window(
+            bar_type,
+            requests,
+            |_| {
+                let download = downloads.next().expect("one download per request");
+                async move { download }
+            },
+            |_| {
+                converted += 1;
+                if bad_bars.contains(&converted) {
+                    anyhow::bail!("bad bar {converted}");
+                }
+                Ok(Some(Bar::new(
+                    bar_type,
+                    Price::from("1.00"),
+                    Price::from("1.00"),
+                    Price::from("1.00"),
+                    Price::from("1.00"),
+                    Quantity::from(1),
+                    UnixNanos::from(converted),
+                    UnixNanos::from(converted),
+                )))
+            },
+        ))
+    }
+
+    #[rstest]
+    fn test_fetch_bar_window_finished_downloads() {
+        let (bars, failures) = run_bar_window(
+            vec![Ok(ib_download(60, 120, 2)), Ok(ib_download(0, 60, 1))],
+            &[],
+        );
+
+        assert_eq!(bars.len(), 3);
+        assert!(failures.is_empty(), "{failures:?}");
+    }
+
+    #[rstest]
+    fn test_fetch_bar_window_keeps_bars_when_a_later_request_fails() {
+        let (bars, failures) = run_bar_window(
+            vec![
+                Ok(ib_download(60, 120, 2)),
+                Err(ibapi::Error::UnexpectedEndOfStream),
+                Ok(ib_download(0, 60, 1)),
+            ],
+            &[],
+        );
+
+        assert_eq!(bars.len(), 2);
+        assert_eq!(
+            failures,
+            vec![format!(
+                "Historical data request failed for {BAR_TYPE} over {:?}: UnexpectedEndOfStream",
+                BarRequest::Ending(None, IBDuration::days(1))
+            )]
+        );
+    }
+
+    #[rstest]
+    fn test_fetch_bar_window_fails_a_download_without_historical_data_end() {
+        let (bars, failures) = run_bar_window(
+            vec![Ok(ib_download(0, 0, 2)), Ok(ib_download(0, 60, 1))],
+            &[],
+        );
+
+        assert_eq!(bars.len(), 2);
+        assert_eq!(
+            failures,
+            vec![format!(
+                "Historical data download for {BAR_TYPE} over {:?} ended before IB sent HistoricalDataEnd",
+                BarRequest::Ending(None, IBDuration::days(1))
+            )]
+        );
+    }
+
+    #[rstest]
+    fn test_fetch_bar_window_drops_bars_outside_a_between_request() {
+        let bar_type = BarType::from(BAR_TYPE);
+        let at = |second: i64| jiff::Timestamp::from_second(second).unwrap();
+        let mut converted = 0_u64;
+
+        let (bars, failures) = get_runtime().block_on(fetch_bar_window(
+            bar_type,
+            vec![BarRequest::Between(at(60), at(180))],
+            |_| async { Ok(ib_download(0, 240, 4)) },
+            |ib_bar| {
+                converted += 1;
+                Ok(Some(Bar::new(
+                    bar_type,
+                    Price::from("1.00"),
+                    Price::from("1.00"),
+                    Price::from("1.00"),
+                    Price::from("1.00"),
+                    Quantity::from(1),
+                    ib_bar_timestamp_to_unix_nanos(&ib_bar.date),
+                    ib_bar_timestamp_to_unix_nanos(&ib_bar.date),
+                )))
+            },
+        ));
+
+        assert_eq!(converted, 2);
+        assert_eq!(
+            bars.iter()
+                .map(|bar| bar.ts_event.as_u64())
+                .collect::<Vec<_>>(),
+            vec![60_000_000_000, 120_000_000_000]
+        );
+        assert!(failures.is_empty(), "{failures:?}");
+    }
+
+    #[rstest]
+    #[case::complete(false, &[], HistoryCoverage::Complete)]
+    #[case::forced_refresh(true, &[], HistoryCoverage::Unverified)]
+    #[case::failed(
+        false,
+        &["spec failed"],
+        HistoryCoverage::Failed("spec failed".to_string())
+    )]
+    #[case::forced_refresh_failed(
+        true,
+        &["spec failed"],
+        HistoryCoverage::Failed("spec failed".to_string())
+    )]
+    fn test_instruments_coverage(
+        #[case] force_update: bool,
+        #[case] failures: &[&str],
+        #[case] expected: HistoryCoverage,
+    ) {
+        let failures: Vec<String> = failures.iter().map(ToString::to_string).collect();
+
+        assert_eq!(instruments_coverage(force_update, &failures), expected);
+    }
+
+    #[rstest]
+    fn test_fetch_bar_window_records_bars_that_fail_to_convert() {
+        let (bars, failures) = run_bar_window(vec![Ok(ib_download(60, 120, 3))], &[2]);
+
+        assert_eq!(bars.len(), 2);
+        assert_eq!(
+            failures,
+            vec![format!(
+                "Failed to convert IB bar for {BAR_TYPE}: bad bar 2"
+            )]
         );
     }
 }
