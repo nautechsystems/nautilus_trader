@@ -58,7 +58,7 @@ use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_kraken::{
     common::{
         consts::{KRAKEN_CLIENT_ID, KRAKEN_VENUE},
-        enums::{KrakenEnvironment, KrakenProductType},
+        enums::{KrakenEnvironment, KrakenOrderType, KrakenProductType},
         parse::{parse_spot_instrument, parse_tokenized_instrument},
     },
     config::{KrakenDataClientConfig, KrakenExecutionClientConfig},
@@ -8785,14 +8785,15 @@ async fn test_futures_modify_sends_trigger_price_as_stop_price(
     assert_eq!(fields, expected);
 }
 
-/// Adds a Spot sell of 0.1 BTC/USDT of `order_type` to the cache with `trigger_price`. A
-/// stop-limit has limit 47500, and a trailing stop trails 100 behind the market, a
-/// trailing-stop-limit with limit 47500 and limit offset 10.
+/// Adds a Spot sell of 0.1 BTC/USDT of `order_type` to the cache with `trigger_price`, created by
+/// reconciliation when `reconciliation` is set. A stop-limit has limit 47500, and a trailing stop
+/// trails 100 behind the market, a trailing-stop-limit with limit 47500 and limit offset 10.
 fn add_spot_conditional_order_to_cache(
     cache: &Rc<RefCell<Cache>>,
     client_order_id: ClientOrderId,
     order_type: OrderType,
     trigger_price: Option<&str>,
+    reconciliation: bool,
 ) -> OrderAny {
     let mut builder = OrderTestBuilder::new(order_type);
     builder
@@ -8827,7 +8828,13 @@ fn add_spot_conditional_order_to_cache(
         builder.limit_offset(dec!(10));
     }
 
-    let order = builder.build();
+    let mut order = builder.build();
+    if reconciliation {
+        let mut init = order.init_event().clone();
+        init.reconciliation = true;
+        order = OrderAny::from_events(vec![OrderEventAny::Initialized(init)]).unwrap();
+    }
+
     cache
         .borrow_mut()
         .add_order(order.clone(), None, None, false)
@@ -8835,12 +8842,14 @@ fn add_spot_conditional_order_to_cache(
     order
 }
 
-/// A Spot REST amend sends a modify's new trigger price as `trigger_price`, beside any new
-/// quantity or limit price. A modify without one sends none, nor does a trailing stop's modify that
-/// restates its trigger.
+/// A Spot REST amend sends a modify's trigger price as `trigger_price`, beside any new quantity
+/// or limit price, and a modify without one sends none. A trailing stop's modify that restates its
+/// trigger leaves it out, while a stop created by reconciliation keeps a moved trigger and any
+/// other order keeps a restated one.
 #[rstest]
 #[case::stop_limit_trigger_only(
     OrderType::StopLimit,
+    false,
     None,
     None,
     Some("48000"),
@@ -8848,6 +8857,7 @@ fn add_spot_conditional_order_to_cache(
 )]
 #[case::stop_limit_price_and_trigger(
     OrderType::StopLimit,
+    false,
     None,
     Some("47900"),
     Some("48000"),
@@ -8855,13 +8865,23 @@ fn add_spot_conditional_order_to_cache(
 )]
 #[case::stop_limit_quantity_and_trigger(
     OrderType::StopLimit,
+    false,
     Some("0.2"),
     None,
     Some("48000"),
     &[("order_qty", "0.2"), ("trigger_price", "48000"), ("txid", "V-1")]
 )]
+#[case::stop_limit_quantity_with_restated_trigger(
+    OrderType::StopLimit,
+    false,
+    Some("0.2"),
+    None,
+    Some("47600"),
+    &[("order_qty", "0.2"), ("trigger_price", "47600"), ("txid", "V-1")]
+)]
 #[case::stop_limit_price_only(
     OrderType::StopLimit,
+    false,
     None,
     Some("47900"),
     None,
@@ -8869,6 +8889,7 @@ fn add_spot_conditional_order_to_cache(
 )]
 #[case::stop_market_trigger_only(
     OrderType::StopMarket,
+    false,
     None,
     None,
     Some("48000"),
@@ -8876,6 +8897,7 @@ fn add_spot_conditional_order_to_cache(
 )]
 #[case::trailing_stop_quantity_only(
     OrderType::TrailingStopMarket,
+    false,
     Some("0.2"),
     None,
     None,
@@ -8883,14 +8905,40 @@ fn add_spot_conditional_order_to_cache(
 )]
 #[case::trailing_stop_quantity_with_restated_trigger(
     OrderType::TrailingStopMarket,
+    false,
     Some("0.2"),
     None,
     Some("47600"),
     &[("order_qty", "0.2"), ("txid", "V-1")]
 )]
+#[case::rebuilt_stop_market_moved_trigger(
+    OrderType::StopMarket,
+    true,
+    None,
+    None,
+    Some("48000"),
+    &[("trigger_price", "48000"), ("txid", "V-1")]
+)]
+#[case::rebuilt_stop_limit_quantity_and_moved_trigger(
+    OrderType::StopLimit,
+    true,
+    Some("0.2"),
+    None,
+    Some("48000"),
+    &[("order_qty", "0.2"), ("trigger_price", "48000"), ("txid", "V-1")]
+)]
+#[case::reconciled_take_profit_quantity_with_restated_trigger(
+    OrderType::MarketIfTouched,
+    true,
+    Some("0.2"),
+    None,
+    Some("47600"),
+    &[("order_qty", "0.2"), ("trigger_price", "47600"), ("txid", "V-1")]
+)]
 #[tokio::test]
 async fn test_spot_rest_modify_sends_trigger_price(
     #[case] order_type: OrderType,
+    #[case] reconciliation: bool,
     #[case] quantity: Option<&str>,
     #[case] price: Option<&str>,
     #[case] trigger_price: Option<&str>,
@@ -8903,6 +8951,7 @@ async fn test_spot_rest_modify_sends_trigger_price(
         ClientOrderId::new("spot-modify-trigger-001"),
         order_type,
         Some("47600"),
+        reconciliation,
     );
 
     client
@@ -8942,22 +8991,130 @@ async fn test_spot_modify_denies_a_trailing_stop_trigger(
     add_test_spot_account_to_cache(&cache);
     client.connect().await.unwrap();
     let client_order_id = ClientOrderId::new("spot-modify-trailing-001");
-    let order =
-        add_spot_conditional_order_to_cache(&cache, client_order_id, order_type, known_trigger);
+    let order = add_spot_conditional_order_to_cache(
+        &cache,
+        client_order_id,
+        order_type,
+        known_trigger,
+        false,
+    );
 
-    client
-        .modify_order(stop_limit_modify_command(&order, None, None, Some("48000")))
-        .unwrap();
+    let modify = stop_limit_modify_command(&order, None, None, Some("48000"));
+    let command_id = modify.command_id;
+    client.modify_order(modify).unwrap();
 
     let event = recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Order(_))).await;
     let ExecutionEvent::Order(OrderEventAny::ModifyDenied(denied)) = event else {
         panic!("Expected ModifyDenied, was {event:?}");
     };
     assert_eq!(
-        (denied.client_order_id, denied.reason.as_str()),
+        (
+            denied.client_order_id,
+            denied.reason.as_str(),
+            denied.causation_id
+        ),
         (
             client_order_id,
-            "Kraken Spot trailing stops do not support amending the trigger price"
+            "A Kraken Spot trailing stop's trigger is an offset, not an absolute price",
+            Some(command_id),
+        ),
+    );
+    assert_no_order_event_matching(&mut rx, |_| true).await;
+    assert_eq!(state.modify_request_count.load(Ordering::Relaxed), 0);
+    assert!(state.ws_amend_requests.lock().unwrap().is_empty());
+}
+
+/// Reconciliation rebuilds a Kraken trailing stop from a venue report as a stop-market or
+/// stop-limit order holding its current trigger, since the adapter reads no trailing offset from
+/// the report. A resize that restates that trigger keeps the new quantity and leaves the trigger
+/// out, so no absolute trigger reaches the trailing order.
+#[rstest]
+#[case::trailing_stop(KrakenOrderType::TrailingStop)]
+#[case::trailing_stop_limit(KrakenOrderType::TrailingStopLimit)]
+#[tokio::test]
+async fn test_spot_rest_resize_of_a_rebuilt_trailing_stop_leaves_its_trigger_out(
+    #[case] kraken_order_type: KrakenOrderType,
+) {
+    let (client, mut rx, cache, state) =
+        connected_spot_client_with_command_responses(CommandResponses::default()).await;
+    let order = add_spot_conditional_order_to_cache(
+        &cache,
+        ClientOrderId::new("spot-rebuilt-trailing"),
+        OrderType::from(kraken_order_type),
+        Some("47600"),
+        true,
+    );
+
+    client
+        .modify_order(stop_limit_modify_command(
+            &order,
+            Some("0.2"),
+            None,
+            Some("47600"),
+        ))
+        .unwrap();
+
+    wait_for_count(&state.modify_request_count, 1).await;
+    assert_eq!(
+        recorded_command_fields(&state, "/0/private/AmendOrder").await,
+        vec![
+            ("order_qty".to_string(), "0.2".to_string()),
+            ("txid".to_string(), "V-1".to_string()),
+        ],
+    );
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(event, OrderEventAny::ModifyDenied(_))
+    })
+    .await;
+}
+
+/// A modify whose only field restates the trigger of an order that may be a Kraken trailing stop
+/// has nothing left to amend, so it is denied with its command ID and nothing is sent.
+#[rstest]
+#[case::held_as_trailing_stop_over_rest(OrderType::TrailingStopMarket, false, false)]
+#[case::rebuilt_from_report_over_websocket(
+    OrderType::from(KrakenOrderType::TrailingStop),
+    true,
+    true
+)]
+#[tokio::test]
+async fn test_spot_modify_denies_an_amend_left_with_nothing_to_change(
+    #[case] order_type: OrderType,
+    #[case] reconciliation: bool,
+    #[case] use_ws_trade: bool,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) =
+        create_test_spot_execution_client_with(addr, |config| config.use_ws_trade = use_ws_trade);
+    add_test_spot_account_to_cache(&cache);
+    client.connect().await.unwrap();
+    let client_order_id = ClientOrderId::new("spot-modify-nothing-001");
+    let order = add_spot_conditional_order_to_cache(
+        &cache,
+        client_order_id,
+        order_type,
+        Some("47600"),
+        reconciliation,
+    );
+
+    let modify = stop_limit_modify_command(&order, None, None, Some("47600"));
+    let command_id = modify.command_id;
+    client.modify_order(modify).unwrap();
+
+    let event = recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Order(_))).await;
+    let ExecutionEvent::Order(OrderEventAny::ModifyDenied(denied)) = event else {
+        panic!("Expected ModifyDenied, was {event:?}");
+    };
+    assert_eq!(
+        (
+            denied.client_order_id,
+            denied.reason.as_str(),
+            denied.causation_id
+        ),
+        (
+            client_order_id,
+            "Kraken Spot amend has nothing to change: the trigger is unchanged",
+            Some(command_id),
         ),
     );
     assert_no_order_event_matching(&mut rx, |_| true).await;
@@ -8966,10 +9123,15 @@ async fn test_spot_modify_denies_a_trailing_stop_trigger(
 }
 
 /// Over the WebSocket amend too, a modify that restates a trailing stop's trigger goes out
-/// without it.
+/// without it, whether the node holds the order as a trailing stop or rebuilt it from a report.
 #[rstest]
+#[case::held_as_trailing_stop(OrderType::TrailingStopMarket, false)]
+#[case::rebuilt_from_report(OrderType::from(KrakenOrderType::TrailingStop), true)]
 #[tokio::test]
-async fn test_spot_ws_modify_leaves_a_restated_trailing_stop_trigger_out() {
+async fn test_spot_ws_modify_leaves_a_restated_trailing_stop_trigger_out(
+    #[case] order_type: OrderType,
+    #[case] reconciliation: bool,
+) {
     let (addr, state) = start_test_server().await.unwrap();
     let (mut client, _rx, cache) =
         create_test_spot_execution_client_with(addr, |config| config.use_ws_trade = true);
@@ -8978,8 +9140,9 @@ async fn test_spot_ws_modify_leaves_a_restated_trailing_stop_trigger_out() {
     let order = add_spot_conditional_order_to_cache(
         &cache,
         ClientOrderId::new("spot-modify-trailing-002"),
-        OrderType::TrailingStopMarket,
+        order_type,
         Some("47600"),
+        reconciliation,
     );
 
     client
@@ -9023,6 +9186,7 @@ async fn test_spot_rest_trigger_amend_reaches_the_order_through_its_amended_fram
         client_order_id,
         OrderType::StopLimit,
         Some("47600"),
+        false,
     );
     let frame = |data: Value| {
         json!({"channel": "executions", "type": "update", "data": [data]}).to_string()

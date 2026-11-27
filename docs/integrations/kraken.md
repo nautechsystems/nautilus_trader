@@ -508,8 +508,10 @@ the new trigger. Kraken Spot holds a trailing stop's trigger at an offset from
 the market, while a modify carries an absolute trigger price. A modify that
 moves the trigger of an order the node holds as a Spot trailing stop is denied
 with `OrderModifyDenied` and nothing is sent, and one that restates the trigger
-goes out without it. A Kraken trailing stop rebuilt from a venue report is held
-as a stop-market or stop-limit order, so its modify sends the trigger as given.
+goes out without it. Reconciliation rebuilds a Kraken trailing stop from a venue
+report as a stop-market or stop-limit order, so a restated trigger is also left
+out of a stop it created, while a moved trigger is sent as given. A modify left
+with nothing to change is denied.
 
 Kraken Futures reports each edit's outcome in `editStatus.status`. `edited` and `filled` confirm the
 edit, and the private feeds carry the update or the fills. These statuses refuse the edit and emit
