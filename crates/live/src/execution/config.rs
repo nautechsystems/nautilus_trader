@@ -76,8 +76,8 @@ pub struct ExecutionManagerConfig {
     pub purge_closed_positions_buffer_mins: Option<u32>,
     /// The time buffer (minutes) before account events can be purged.
     pub purge_account_events_lookback_mins: Option<u32>,
-    /// If purging also deletes orders and positions from the backing database.
-    /// Redis and PostgreSQL retain persisted account events for replay.
+    /// If purging also deletes persisted closed orders, closed positions, and Redis account events.
+    /// PostgreSQL retains the full account event history.
     pub purge_from_database: bool,
 }
 

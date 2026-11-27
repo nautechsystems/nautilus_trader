@@ -73,6 +73,9 @@ Released on TBD (UTC).
 - Changed PostgreSQL OMS recovery to restore `UNSPECIFIED` for legacy positions whose OMS metadata has no trader ID
 - Changed PostgreSQL `Cache::add` to persist per trader and skip legacy shared user entries on restore
 - Changed Redis cache startup and PostgreSQL bulk position loads to fail on unreadable records
+- Changed `purge_from_database` to purge Redis account events. Keep it disabled until all Redis cache readers are upgraded
+- Changed Redis account writes to require `LRANGE` access to account lists
+- Changed Redis `DatabaseOperation` to include `PurgeAccountEvents`. Update exhaustive matches
 - Changed Redis `DatabaseOperation::Flush` to take `SyncSender<RedisResult<()>>`. Send `Ok(())` or the error
 - Changed `Cache::add` to reject the reserved `position_oms:` key prefix
 - Changed `Cache::add_order` to reject venue order ID conflicts on insert. Handle `VenueOrderIdOwnershipError`
@@ -161,6 +164,7 @@ Released on TBD (UTC).
 - Fixed option-chain delta selection depending on the arrival order of Greeks conventions
 - Fixed delta option chains missing matching strikes outside the ATM fallback
 - Fixed local option Greeks and implied futures pricing to use fractional time to expiry on a 365-day basis
+- Fixed Redis appending the same account event on consecutive saves
 - Fixed PostgreSQL cache startup hanging on current-thread Tokio or panicking on connection failure
 - Fixed PostgreSQL cache restoring another trader's OMS type when position IDs overlap
 - Fixed PostgreSQL `FuturesSpread` reloads panicking

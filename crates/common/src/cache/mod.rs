@@ -2541,7 +2541,8 @@ impl Cache {
     /// A value of 0 purges all but the latest account state event.
     ///
     /// When `purge_from_database` is true, also requests deletion from the backing database.
-    /// Redis and PostgreSQL log the request and retain the full account history for replay.
+    /// Redis purges expired events and stores a replay checkpoint when it removes distinct events.
+    /// PostgreSQL retains the full history.
     ///
     /// Persistence failures are logged without failing the operation.
     ///
@@ -2576,26 +2577,30 @@ impl Cache {
                     count_diff,
                     account.id()
                 );
+            }
 
-                if let Some(database) = &self.database
-                    && let Some(events_before) = events_before
-                {
-                    Self::delete_purged_account_events(
-                        database.as_ref(),
-                        &account,
-                        &events_before,
-                    )?;
-                }
+            if let Some(database) = &self.database
+                && let Some(events_before) = events_before
+            {
+                Self::purge_persisted_account_events(
+                    database.as_ref(),
+                    &account,
+                    &events_before,
+                    ts_now,
+                    lookback_secs,
+                )?;
             }
         }
 
         Ok(())
     }
 
-    fn delete_purged_account_events(
+    fn purge_persisted_account_events(
         database: &dyn CacheDatabaseAdapter,
         account: &AccountAny,
         events_before: &[AccountState],
+        ts_now: UnixNanos,
+        lookback_secs: u64,
     ) -> anyhow::Result<()> {
         let retained: AHashSet<_> = account
             .events()
@@ -2603,18 +2608,16 @@ impl Cache {
             .map(|event| event.event_id)
             .collect();
 
-        for event in events_before {
-            if retained.contains(&event.event_id) {
-                continue;
-            }
-
-            handle_persistence_result(
-                format_args!("delete account event {}", event.event_id),
-                database.delete_account_event(&account.id(), &event.event_id.to_string()),
-            )?;
-        }
-
-        Ok(())
+        let removed: Vec<_> = events_before
+            .iter()
+            .map(|event| event.event_id)
+            .filter(|id| !retained.contains(id))
+            .collect();
+        let account_id = account.id();
+        handle_persistence_result(
+            format_args!("purge persisted events for account {account_id}"),
+            database.purge_account_events(&account_id, &removed, ts_now, lookback_secs),
+        )
     }
 
     /// Clears the caches index.

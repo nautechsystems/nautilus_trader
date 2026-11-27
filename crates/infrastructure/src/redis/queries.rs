@@ -13,21 +13,24 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, fmt::Display, hash::Hash, str::FromStr};
+use std::{collections::HashMap, fmt::Display, hash::Hash, str::FromStr, sync::Arc};
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use bytes::Bytes;
 use futures::future::try_join_all;
 #[cfg(feature = "defi")]
 use nautilus_common::{cache::CacheSnapshotRef, defi::cache::InstrumentMigration};
 use nautilus_common::{
-    cache::database::{CacheMap, register_loaded_currencies},
+    cache::{
+        CacheConfig,
+        database::{CacheMap, register_loaded_currencies},
+    },
     enums::SerializationEncoding,
 };
-use nautilus_core::{UUID4, serialization::timestamps};
+use nautilus_core::{UUID4, UnixNanos, serialization::timestamps};
 use nautilus_model::{
-    accounts::AccountAny,
+    accounts::{Account, AccountAny, BaseAccount},
     data::{CustomData, DataType, HasTsInit, InstrumentClose},
     enums::CurrencyType,
     events::{AccountState, OrderFilled, PositionSnapshot},
@@ -35,7 +38,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orders::{Order, OrderAny},
     position::Position,
-    types::{Currency, Price},
+    types::{AccountBalance, Currency, Money, Price},
 };
 #[cfg(feature = "defi")]
 use nautilus_model::{
@@ -151,6 +154,8 @@ const ACTORS: &str = "actors";
 const STRATEGIES: &str = "strategies";
 const CUSTOM: &str = "custom";
 const REDIS_DELIMITER: char = ':';
+
+const CHECKPOINT_TAG: &[u8] = b"\x00nautilus-account-checkpoint-v1\x00";
 
 // Index keys
 const INDEX_ORDER_IDS: &str = "index:order_ids";
@@ -1460,18 +1465,107 @@ impl DatabaseQueries {
         account_id: &AccountId,
         encoding: SerializationEncoding,
     ) -> anyhow::Result<Option<AccountAny>> {
-        let key = format!("{ACCOUNTS}{REDIS_DELIMITER}{account_id}");
-        let result = Self::read(con, trader_key, &key).await?;
-        if result.is_empty() {
+        let key = account_key(trader_key, *account_id);
+        let rows = Self::read_list(&mut con.clone(), &key).await?;
+        Self::replay_account(&rows, encoding, &key, *account_id)
+    }
+
+    pub(super) fn account_event_id(
+        encoding: SerializationEncoding,
+        payload: &[u8],
+        key: &str,
+        id: AccountId,
+    ) -> anyhow::Result<UUID4> {
+        let event: AccountEventIdentity = Self::deserialize_payload(encoding, payload)?;
+        check_account_id(key, id, event.account_id)?;
+        Ok(event.event_id)
+    }
+
+    pub(super) fn compact_account_events(
+        rows: &[Bytes],
+        config: &CacheConfig,
+        key: &str,
+        id: AccountId,
+        ts_now: UnixNanos,
+        lookback_secs: u64,
+    ) -> anyhow::Result<Option<Vec<Vec<u8>>>> {
+        let encoding = config.encoding;
+
+        let Some(mut account) = Self::replay_account(rows, encoding, key, id)? else {
+            return Ok(None);
+        };
+
+        let distinct_count = account.event_count();
+        let stored_events = event_payloads(rows);
+        account.purge_account_events(ts_now, lookback_secs);
+        let retained = account.events();
+        if retained.len() == stored_events.len() {
             return Ok(None);
         }
 
-        let events: Vec<AccountState> = result
-            .iter()
-            .map(|payload| Self::deserialize_payload(encoding, payload))
-            .collect::<anyhow::Result<_>>()?;
-        let account = AccountAny::from_events(&events)?;
-        Ok(Some(account))
+        let mut replacement = Vec::with_capacity(retained.len() + 1);
+        if retained.len() == distinct_count && stored_events.len() == rows.len() {
+            // A full replay needs the original inputs before it adds synthetic zero balances
+            let mut seen = AHashSet::with_capacity(distinct_count);
+
+            for payload in stored_events {
+                let event_id = Self::account_event_id(encoding, payload, key, id)?;
+                if seen.insert(event_id) {
+                    replacement.push(payload.to_vec());
+                }
+            }
+
+            return Ok(Some(replacement));
+        }
+
+        let checkpoint = AccountCheckpoint::new(&account, &retained)?;
+        let mut payload = CHECKPOINT_TAG.to_vec();
+        payload.extend(Self::serialize_payload_with_timestamps(
+            encoding,
+            &checkpoint,
+            config.timestamps_as_iso8601,
+        )?);
+        replacement.push(payload);
+        for event in retained {
+            replacement.push(Self::serialize_payload_with_timestamps(
+                encoding,
+                &event,
+                config.timestamps_as_iso8601,
+            )?);
+        }
+
+        Ok(Some(replacement))
+    }
+
+    fn replay_account(
+        rows: &[Bytes],
+        encoding: SerializationEncoding,
+        key: &str,
+        id: AccountId,
+    ) -> anyhow::Result<Option<AccountAny>> {
+        if rows.is_empty() {
+            return Ok(None);
+        }
+
+        let payloads = event_payloads(rows);
+        let mut seen = AHashSet::with_capacity(payloads.len());
+        let mut events = Vec::with_capacity(payloads.len());
+        for payload in payloads {
+            let event: AccountState = Self::deserialize_payload(encoding, payload)?;
+            check_account_id(key, id, event.account_id)?;
+            if seen.insert(event.event_id) {
+                events.push(event);
+            }
+        }
+
+        if let Some(payload) = rows[0].strip_prefix(CHECKPOINT_TAG) {
+            let checkpoint: AccountCheckpoint = Self::deserialize_payload(encoding, payload)?;
+            check_account_id(key, id, checkpoint.starting.account_id)?;
+            check_account_id(key, id, checkpoint.current.account_id)?;
+            checkpoint.replay(events).map(Some)
+        } else {
+            AccountAny::from_events(&events).map(Some)
+        }
     }
 
     /// Loads a single order for `trader_key` and `client_order_id` using the specified `encoding`.
@@ -1780,6 +1874,111 @@ fn deserialize_payload_value<T: DeserializeOwned>(mut value: Value) -> anyhow::R
         .map_err(|e| anyhow::anyhow!("Failed to convert value to target type: {e}"))
 }
 
+pub(super) fn account_key(trader_key: &str, id: AccountId) -> String {
+    format!("{trader_key}:{ACCOUNTS}:{id}")
+}
+
+fn check_account_id(key: &str, id: AccountId, account_id: AccountId) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        id == account_id,
+        "Redis cache key '{key}' does not match the record ID '{account_id}'",
+    );
+    Ok(())
+}
+
+fn event_payloads(rows: &[Bytes]) -> &[Bytes] {
+    if rows
+        .first()
+        .is_some_and(|row| row.starts_with(CHECKPOINT_TAG))
+    {
+        &rows[1..]
+    } else {
+        rows
+    }
+}
+
+#[derive(Deserialize)]
+struct AccountEventIdentity {
+    account_id: AccountId,
+    event_id: UUID4,
+}
+
+#[derive(Serialize, Deserialize)]
+struct AccountCheckpoint {
+    covered: usize,
+    starting: AccountState,
+    current: AccountState,
+}
+
+impl AccountCheckpoint {
+    fn new(account: &AccountAny, events: &[AccountState]) -> anyhow::Result<Self> {
+        let mut current = events
+            .last()
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("Cannot checkpoint an account without events"))?;
+        current.account_type = account.account_type();
+        current.base_currency = account.base_currency();
+        current.balances = account.balances().into_values().collect();
+        current.margins = match account {
+            AccountAny::Margin(margin) => margin
+                .margins
+                .values()
+                .chain(margin.account_margins.values())
+                .copied()
+                .collect(),
+            _ => Vec::new(),
+        };
+
+        current.info = None;
+
+        // AccountState preserves inline currency identities for wallet balances
+        let mut starting = current.clone();
+        starting.margins.clear();
+        starting.balances = account
+            .starting_balances()
+            .into_values()
+            .map(|total| AccountBalance::new(total, Money::zero(total.currency), total))
+            .collect();
+        Ok(Self {
+            covered: events.len(),
+            starting,
+            current,
+        })
+    }
+
+    fn replay(self, mut events: Vec<AccountState>) -> anyhow::Result<AccountAny> {
+        anyhow::ensure!(
+            self.covered > 0 && self.covered <= events.len(),
+            "Invalid Redis account checkpoint event count",
+        );
+        let suffix = events.split_off(self.covered);
+        let mut account = AccountAny::try_from_state(self.current).map_err(anyhow::Error::msg)?;
+        let base = account_base(&mut account);
+        base.balances_starting = self
+            .starting
+            .balances
+            .into_iter()
+            .map(|balance| (balance.currency, balance.total))
+            .collect();
+        base.events = Arc::new(events);
+
+        for event in suffix {
+            account.apply(event)?;
+        }
+
+        Ok(account)
+    }
+}
+
+fn account_base(account: &mut AccountAny) -> &mut BaseAccount {
+    match account {
+        AccountAny::Margin(account) => &mut account.base,
+        AccountAny::Cash(account) => &mut account.base,
+        AccountAny::Betting(account) => &mut account.base,
+        AccountAny::Wallet(account) => &mut account.base,
+    }
+}
+
 fn normalize_account_state(value: &mut Value) {
     if value.get("type").and_then(Value::as_str) != Some("AccountState") {
         return;
@@ -1914,13 +2113,14 @@ mod tests {
     use std::{hint::black_box, str::FromStr, time::Instant};
 
     use bytes::Bytes;
-    use nautilus_common::enums::SerializationEncoding;
+    use nautilus_common::{cache::CacheConfig, enums::SerializationEncoding};
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         data::{Data, stubs::stub_custom_data},
         enums::{AccountType, CurrencyType, OrderType},
         events::{
             AccountState, OrderEventAny, OrderInitialized,
+            account::stubs::cash_account_state_multi,
             order::spec::{OrderFillVoidedSpec, OrderFilledSpec},
         },
         identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId},
@@ -1934,9 +2134,63 @@ mod tests {
     use ustr::Ustr;
 
     use super::{
-        CurrencyDecode, CurrencyRecord, DatabaseQueries, parse_account_key, parse_instrument_key,
-        parse_order_key, parse_position_key,
+        CHECKPOINT_TAG, CurrencyDecode, CurrencyRecord, DatabaseQueries, parse_account_key,
+        parse_instrument_key, parse_order_key, parse_position_key,
     };
+
+    #[rstest]
+    #[case(false, "2")]
+    #[case(true, "1970-01-01T00:00:00.000000002Z")]
+    fn test_account_checkpoint_uses_configured_timestamp_format(
+        #[case] timestamps_as_iso8601: bool,
+        #[case] expected: &str,
+    ) {
+        let config = CacheConfig {
+            timestamps_as_iso8601,
+            ..Default::default()
+        };
+
+        let mut initial = cash_account_state_multi();
+        initial.ts_event = UnixNanos::from(1);
+        let id = initial.account_id;
+        let mut update = initial.clone();
+        update.event_id = UUID4::new();
+        update.ts_event = UnixNanos::from(2);
+
+        let rows = [initial, update].map(|event| {
+            Bytes::from(
+                DatabaseQueries::serialize_payload_with_timestamps(
+                    config.encoding,
+                    &event,
+                    timestamps_as_iso8601,
+                )
+                .unwrap(),
+            )
+        });
+
+        let replacement = DatabaseQueries::compact_account_events(
+            &rows,
+            &config,
+            &format!("trader-test:accounts:{id}"),
+            id,
+            UnixNanos::from(1),
+            0,
+        )
+        .unwrap()
+        .unwrap();
+
+        let [checkpoint, event] = replacement.as_slice() else {
+            panic!("Expected a checkpoint and one retained event");
+        };
+
+        let checkpoint: serde_json::Value =
+            serde_json::from_slice(checkpoint.strip_prefix(CHECKPOINT_TAG).unwrap()).unwrap();
+        let event: serde_json::Value = serde_json::from_slice(event).unwrap();
+
+        assert_eq!(checkpoint["starting"]["ts_event"].as_str(), Some(expected));
+        assert_eq!(checkpoint["current"]["ts_event"].as_str(), Some(expected));
+        assert_eq!(event["ts_event"].as_str(), Some(expected));
+    }
 
     #[rstest]
     #[case(SerializationEncoding::Json)]

@@ -1027,8 +1027,10 @@ explains the rounding mechanics; it does not establish `fee_cost` semantics.
   have one balance read per second; each open order also requires event and series fee reads.
 - **Account history**: Each successful recovery publishes `AccountState`, including unchanged
   balances. Set `LiveExecutionEngineConfig.purge_account_events_interval_mins` and
-  `purge_account_events_lookback_mins` to bound in-memory history. Redis and PostgreSQL retain
-  persisted account events for replay.
+  `purge_account_events_lookback_mins` to bound in-memory history. Set `purge_from_database=True`
+  to also purge persisted Redis account events. This flag also applies to closed-order and
+  closed-position purges. PostgreSQL retains the full account history for replay. Check the
+  [Redis cache requirements](../concepts/cache.md#redis) before enabling persisted Redis purges.
 - **Client lifetime**: Private terminal ownership and command identities remain for the execution
   client's lifetime. Purging the shared cache does not prune that state.
 

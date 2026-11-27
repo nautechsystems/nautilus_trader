@@ -2083,7 +2083,8 @@ impl Cache {
     /// A value of 0 purges all but the latest account state event.
     ///
     /// When `purge_from_database` is true, also requests deletion from the backing database.
-    /// Redis and PostgreSQL log the request and retain the full account history for replay.
+    /// Redis purges expired events and stores a replay checkpoint when it removes distinct events.
+    /// PostgreSQL retains the full history.
     ///
     /// Persistence failures are logged without failing the operation.
     ///

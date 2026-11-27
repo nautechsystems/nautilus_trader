@@ -32,7 +32,7 @@ mod serial_tests {
         msgbus::{self, switchboard::get_instrument_status_topic},
         testing::wait_until_async,
     };
-    use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_MINUTE};
+    use nautilus_core::{Params, UUID4, UnixNanos, datetime::NANOSECONDS_IN_MINUTE};
     use nautilus_execution::{
         client::core::ExecutionClientCore,
         engine::{ExecutionEngine, config::ExecutionEngineConfig},
@@ -48,7 +48,7 @@ mod serial_tests {
         node::{LiveNode, NodeState},
     };
     use nautilus_model::{
-        accounts::AccountAny,
+        accounts::{Account, AccountAny},
         data::{
             Bar, BarType, DataType, InstrumentClose, InstrumentStatus, QuoteTick, TradeTick,
             greeks::{GreeksData, YieldCurve},
@@ -61,9 +61,12 @@ mod serial_tests {
         },
         events::{
             AccountState, OrderEventAny, OrderFilled, OrderSnapshot,
-            account::stubs::{
-                cash_account_state_multi, cash_account_state_multi_changed_btc,
-                wallet_account_state, wallet_account_state_changed,
+            account::{
+                state::BALANCES_SNAPSHOT_COMPLETE_INFO_KEY,
+                stubs::{
+                    cash_account_state_multi, cash_account_state_multi_changed_btc,
+                    wallet_account_state, wallet_account_state_changed,
+                },
             },
             order::spec::{OrderFillVoidedSpec, OrderFilledSpec, OrderInitializedSpec},
             position::snapshot::PositionSnapshot,
@@ -78,7 +81,7 @@ mod serial_tests {
         },
         orders::{Order, OrderAny, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
-        types::{AccountBalance, Currency, Money, Price, Quantity},
+        types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
     };
     use nautilus_sandbox::{SandboxExecutionClient, SandboxExecutionClientConfig};
     use redis::AsyncCommands;
@@ -2158,47 +2161,565 @@ mod serial_tests {
         adapter.flush().unwrap();
     }
 
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn test_account_event_purge_preserves_incremental_replay() {
+    async fn test_account_event_writes_skip_repeat_and_purge_legacy_duplicates(
+        #[case] encoding: SerializationEncoding,
+    ) {
         let _guard = redis_test_mutex().lock().await;
-        let mut adapter = get_redis_cache_adapter().await.unwrap();
-        let mut account = AccountAny::from(cash_account_state_multi());
+        let trader_id = TraderId::from(format!("ACCOUNTS-{}", UUID4::new()));
+        let mut adapter = connect_account_event_test(trader_id, encoding).await;
+        let initial = cash_account_state_multi();
+        let mut next = cash_account_state_multi_changed_btc();
+        next.event_id = UUID4::new();
+        let account_id = initial.account_id;
+        let key = format!("{}:accounts:{account_id}", adapter.database.trader_key);
+        let mut connection = adapter.database.con.clone();
+        let encode =
+            |event: &AccountState| DatabaseQueries::serialize_payload(encoding, event).unwrap();
+        let _: usize = connection
+            .rpush(
+                &key,
+                &[encode(&initial), encode(&initial), encode(&next)][..],
+            )
+            .await
+            .unwrap();
+
+        let loaded = adapter.load_account(&account_id).await.unwrap().unwrap();
+        let mut account = AccountAny::from_events(&[initial.clone(), next.clone()]).unwrap();
+        assert_eq!(
+            serde_json::to_value(loaded).unwrap(),
+            serde_json::to_value(&account).unwrap()
+        );
+
+        adapter.update_account(&account).unwrap();
+        let mut last = next.clone();
+        last.event_id = UUID4::new();
+        account.apply(last.clone()).unwrap();
+        adapter.update_account(&account).unwrap();
+        let mut repeat = last.clone();
+        repeat.ts_init = UnixNanos::from(1);
+        adapter.add_account(&AccountAny::from(repeat)).unwrap();
+        adapter.update_account(&account).unwrap();
+        adapter.close().unwrap();
+
+        let payloads: Vec<Bytes> = connection.lrange(&key, 0, -1).await.unwrap();
+        let expected = [&initial, &initial, &next, &last]
+            .into_iter()
+            .map(|event| encode(event).into())
+            .collect::<Vec<Bytes>>();
+        assert_eq!(payloads, expected);
+
+        let mut restarted = connect_account_event_test(trader_id, encoding).await;
+        restarted
+            .purge_account_events(&account_id, &[], UnixNanos::from(1), 1)
+            .unwrap();
+        restarted.close().unwrap();
+        let payloads: Vec<Bytes> = connection.lrange(&key, 0, -1).await.unwrap();
+        assert_eq!(
+            payloads,
+            vec![
+                expected[0].clone(),
+                expected[2].clone(),
+                expected[3].clone()
+            ]
+        );
+
+        connection
+            .rpush::<_, _, ()>(&key, encode(&initial))
+            .await
+            .unwrap();
+        let mut restarted = connect_account_event_test(trader_id, encoding).await;
+        let now = UnixNanos::from(u64::MAX);
+        restarted
+            .purge_account_events(&account_id, &[], now, 0)
+            .unwrap();
+        restarted.close().unwrap();
+        account.purge_account_events(now, 0);
+
+        let loaded = restarted.load_account(&account_id).await.unwrap().unwrap();
+        let payloads = restarted
+            .database
+            .read(&format!("accounts:{account_id}"))
+            .await
+            .unwrap();
+        assert_eq!(payloads.len(), 2);
+        assert_eq!(payloads[1], expected[3]);
+        assert_eq!(
+            serde_json::to_value(loaded).unwrap(),
+            serde_json::to_value(&account).unwrap(),
+        );
+        clear_test_trader(&restarted).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_account_event_purge_preserves_margin_snapshot_replay() {
+        let _guard = redis_test_mutex().lock().await;
+        let trader_id = TraderId::from(format!("ACCOUNT-MARGINS-{}", UUID4::new()));
+        let encoding = SerializationEncoding::Json;
+        let mut adapter = connect_account_event_test(trader_id, encoding).await;
+        let margin = MarginBalance::new(Money::from("1 BTC"), Money::from("0.5 BTC"), None);
+        let mut initial = cash_account_state_multi();
+        initial.account_type = AccountType::Margin;
+        initial.ts_event = UnixNanos::from(1);
+        initial.margins = vec![margin];
+        let mut snapshot = initial.clone();
+        snapshot.event_id = UUID4::new();
+        snapshot.ts_event = UnixNanos::from(2);
+        snapshot.balances.clear();
+        snapshot.margins.clear();
+        snapshot.info = Some(Params::new(
+            [(
+                BALANCES_SNAPSHOT_COMPLETE_INFO_KEY.to_string(),
+                serde_json::Value::Bool(true),
+            )]
+            .into_iter()
+            .collect(),
+        ));
+
+        let account_id = initial.account_id;
+        let key = format!("accounts:{account_id}");
+        let physical_key = format!("{}:{key}", adapter.database.trader_key);
+        let [initial, snapshot] = [initial, snapshot]
+            .map(|event| DatabaseQueries::serialize_payload(encoding, &event).unwrap());
+        let mut connection = adapter.database.con.clone();
+        connection
+            .rpush::<_, _, ()>(&physical_key, &[&initial, &snapshot, &snapshot])
+            .await
+            .unwrap();
+
+        adapter
+            .purge_account_events(&account_id, &[], UnixNanos::from(1), 1)
+            .unwrap();
+        adapter.close().unwrap();
+
+        let loaded = adapter.load_account(&account_id).await.unwrap().unwrap();
+
+        let AccountAny::Margin(loaded) = loaded else {
+            panic!("Expected a margin account");
+        };
+
+        assert_eq!(loaded.account_margins.get(&Currency::BTC()), Some(&margin));
+        let rows = adapter.database.read(&key).await.unwrap();
+        assert_eq!(rows, vec![Bytes::from(initial), Bytes::from(snapshot)]);
+
+        let retained = loaded.last_event().unwrap();
+
+        let expected_balances = [Currency::BTC(), Currency::ETH()].map(|currency| {
+            let zero = Money::zero(currency);
+            AccountBalance::new(zero, zero, zero)
+        });
+
+        assert_eq!(retained.balances, expected_balances);
+
+        let mut adapter = connect_account_event_test(trader_id, encoding).await;
+        adapter
+            .purge_account_events(&account_id, &[], UnixNanos::from(1), 0)
+            .unwrap();
+        adapter.close().unwrap();
+
+        let loaded = adapter.load_account(&account_id).await.unwrap().unwrap();
+
+        let AccountAny::Margin(loaded) = loaded else {
+            panic!("Expected a margin account");
+        };
+
+        assert_eq!(loaded.account_margins.get(&Currency::BTC()), Some(&margin));
+        assert_eq!(loaded.event_count(), 1);
+        assert_eq!(
+            serde_json::to_value(loaded.last_event().unwrap()).unwrap(),
+            serde_json::to_value(retained).unwrap(),
+        );
+        clear_test_trader(&adapter).await;
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_account_event_purge_preserves_incremental_replay(
+        #[case] encoding: SerializationEncoding,
+        #[values(AccountType::Cash, AccountType::Margin, AccountType::Wallet)]
+        account_type: AccountType,
+    ) {
+        let _guard = redis_test_mutex().lock().await;
+        let trader_id = TraderId::from(format!("ACCOUNTS-{}", UUID4::new()));
+        let adapter = connect_account_event_test(trader_id, encoding).await;
+        let mut initial = cash_account_state_multi();
+        initial.account_type = account_type;
         let mut update = cash_account_state_multi_changed_btc();
         update
             .balances
             .retain(|balance| balance.currency == Currency::BTC());
+        update.account_type = account_type;
+        if account_type == AccountType::Margin {
+            initial.margins = vec![MarginBalance::new(
+                Money::from("1 BTC"),
+                Money::from("0.5 BTC"),
+                None,
+            )];
+            update.balances.clear();
+        } else if account_type == AccountType::Wallet {
+            let currency = Currency::new(
+                "REDISWALLET",
+                9,
+                0,
+                "Redis test token",
+                CurrencyType::Crypto,
+            );
+
+            let total = Money::from_decimal_native(Decimal::new(123_456_789, 9), currency).unwrap();
+            initial
+                .balances
+                .push(AccountBalance::new(total, Money::zero(currency), total));
+        }
+
         update.event_id = UUID4::new();
         update.ts_event = UnixNanos::from(10);
         update.ts_init = UnixNanos::from(11);
-        adapter.add_currency(&Currency::BTC()).unwrap();
-        adapter.add_currency(&Currency::ETH()).unwrap();
+        let initial_account = AccountAny::from(initial.clone());
+        let mut account = initial_account.clone();
         adapter.add_account(&account).unwrap();
-        account.apply(update.clone()).unwrap();
+        account.apply(update).unwrap();
+        let update = account.last_event().unwrap();
         adapter.update_account(&account).unwrap();
-        adapter.close().unwrap();
-        let adapter = connect_redis_cache_adapter().await.unwrap();
+        adapter.update_account(&account).unwrap();
+
+        let other_trader_id = TraderId::from(format!("ACCOUNTS-{}", UUID4::new()));
+        let mut other_trader = connect_account_event_test(other_trader_id, encoding).await;
+        other_trader
+            .add_account(&AccountAny::from(initial.clone()))
+            .unwrap();
+        other_trader.close().unwrap();
+        let mut other_account = initial;
+        other_account.account_id = AccountId::from("desk:OTHER-001");
+        adapter
+            .add_account(&AccountAny::from(other_account.clone()))
+            .unwrap();
+
         let mut cache = Cache::default();
         cache.add_account(account.clone()).unwrap();
         cache.set_database(Box::new(adapter));
 
         cache
+            .purge_account_events(UnixNanos::from(u64::MAX), 0, false)
+            .unwrap();
+        cache
             .purge_account_events(UnixNanos::from(u64::MAX), 0, true)
             .unwrap();
-        assert_eq!(cache.account(&account.id()).unwrap().events(), vec![update]);
+        let expected = cache.account(&account.id()).unwrap().clone();
         cache.dispose();
 
-        let mut restarted = connect_redis_cache_adapter().await.unwrap();
-        let loaded = restarted
+        let mut restarted = connect_account_event_test(trader_id, encoding).await;
+        let key = format!("accounts:{}", account.id());
+        let mut connection = restarted.database.con.clone();
+        let physical_key = format!("{}:{key}", restarted.database.trader_key);
+        let namespace = format!("{}:*", restarted.database.trader_key);
+        let mut keys: Vec<String> = connection.keys(namespace).await.unwrap();
+        keys.sort_unstable();
+
+        let mut expected_keys = [
+            physical_key.clone(),
+            format!(
+                "{}:accounts:{}",
+                restarted.database.trader_key, other_account.account_id
+            ),
+        ];
+
+        expected_keys.sort_unstable();
+        assert_eq!(keys, expected_keys);
+        let stored: Vec<Bytes> = connection.lrange(&physical_key, 0, -1).await.unwrap();
+        assert_eq!(stored.len(), 2);
+        let payloads = restarted.database.read(&key).await.unwrap();
+        assert_eq!(payloads, stored);
+        assert!(payloads[0].starts_with(b"\x00nautilus-account-checkpoint-v1\x00"));
+        assert_eq!(
+            payloads[1],
+            Bytes::from(DatabaseQueries::serialize_payload(encoding, &update).unwrap()),
+        );
+        let mut loaded = restarted
+            .load_account(&account.id())
+            .await
+            .unwrap()
+            .unwrap();
+
+        if account_type == AccountType::Wallet {
+            assert_eq!(Currency::try_from_str("REDISWALLET"), None);
+        }
+
+        assert_eq!(
+            serde_json::to_value(&loaded).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
+        assert_eq!(
+            restarted
+                .load_account(&other_account.account_id)
+                .await
+                .unwrap()
+                .unwrap()
+                .events(),
+            vec![other_account],
+        );
+        assert_eq!(
+            other_trader
+                .load_account(&account.id())
+                .await
+                .unwrap()
+                .unwrap()
+                .events(),
+            vec![account.events()[0].clone()],
+        );
+
+        let mut next = update;
+        next.event_id = UUID4::new();
+        next.ts_event = initial_account.last_event().unwrap().ts_event;
+        next.ts_init = UnixNanos::from(13);
+        loaded.apply(next.clone()).unwrap();
+        restarted.update_account(&loaded).unwrap();
+        restarted.close().unwrap();
+        let mut restarted = connect_account_event_test(trader_id, encoding).await;
+        let after_append = restarted
+            .load_account(&account.id())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(after_append).unwrap(),
+            serde_json::to_value(&loaded).unwrap()
+        );
+
+        restarted.close().unwrap();
+        let mut recreated = connect_account_event_test(trader_id, encoding).await;
+        let new_account = initial_account;
+        recreated.database.delete(key, None).unwrap();
+        recreated.add_account(&new_account).unwrap();
+        recreated.close().unwrap();
+        let loaded = recreated
             .load_account(&account.id())
             .await
             .unwrap()
             .unwrap();
         assert_eq!(
             serde_json::to_value(loaded).unwrap(),
-            serde_json::to_value(account).unwrap()
+            serde_json::to_value(new_account).unwrap()
         );
-        restarted.flush().unwrap();
+        clear_test_trader(&recreated).await;
+        clear_test_trader(&other_trader).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_account_event_purge_keeps_newer_events_in_append_order() {
+        let _guard = redis_test_mutex().lock().await;
+        let encoding = SerializationEncoding::Json;
+        let trader_id = TraderId::from(format!("ACCOUNTS-{}", UUID4::new()));
+        let mut adapter = connect_account_event_test(trader_id, encoding).await;
+        let mut first = cash_account_state_multi();
+        first.ts_event = UnixNanos::from(10_000_000_000);
+        first.ts_init = first.ts_event;
+        let mut account = AccountAny::from(first.clone());
+        adapter.add_account(&account).unwrap();
+
+        let mut retained = Vec::new();
+
+        for (ts_event, ts_init) in [
+            (19_000_000_000, 20_000_000_000),
+            (11_000_000_000, 21_000_000_000),
+        ] {
+            let mut state = cash_account_state_multi_changed_btc();
+            state.event_id = UUID4::new();
+            state.ts_event = UnixNanos::from(ts_event);
+            state.ts_init = UnixNanos::from(ts_init);
+            account.apply(state.clone()).unwrap();
+            adapter.update_account(&account).unwrap();
+            retained.push(state);
+        }
+
+        let mut delayed = first.clone();
+        delayed.event_id = UUID4::new();
+        delayed.ts_event = UnixNanos::from(1);
+        delayed.ts_init = UnixNanos::from(22_000_000_000);
+        account.apply(delayed).unwrap();
+        adapter.update_account(&account).unwrap();
+        adapter.close().unwrap();
+
+        let backing = connect_account_event_test(trader_id, encoding).await;
+        let mut cache = Cache::new(None, Some(Box::new(backing)));
+        cache.cache_accounts().await.unwrap();
+        cache
+            .purge_account_events(UnixNanos::from(20_000_000_000), 10, true)
+            .unwrap();
+        cache.dispose();
+
+        let mut restarted = connect_account_event_test(trader_id, encoding).await;
+        let payloads = restarted
+            .database
+            .read(&format!("accounts:{}", account.id()))
+            .await
+            .unwrap();
+        let expected_payloads: Vec<_> = retained
+            .iter()
+            .map(|event| Bytes::from(DatabaseQueries::serialize_payload(encoding, event).unwrap()))
+            .collect();
+        assert_eq!(payloads.len(), expected_payloads.len() + 1);
+        assert_eq!(&payloads[1..], expected_payloads);
+        let loaded = restarted
+            .load_account(&account.id())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.balances(), account.balances());
         restarted.close().unwrap();
+        clear_test_trader(&restarted).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_account_event_persistence_without_scripting_permissions() {
+        let _guard = redis_test_mutex().lock().await;
+        let mut con = create_redis_connection("account-acl-test", &redis_cache_config())
+            .await
+            .unwrap();
+        let username = format!("account-acl-test-{}", UUID4::new());
+        let password = UUID4::new().to_string();
+        let trader_id = TraderId::from(format!("ACL-{}", UUID4::new()));
+        let trader_key = format!("trader-{trader_id}");
+        redis::cmd("ACL")
+            .arg("SETUSER")
+            .arg(&username)
+            .arg("on")
+            .arg(format!(">{password}"))
+            .arg(format!("~{trader_key}:*"))
+            .arg(&[
+                "+info", "+lrange", "+rpush", "+rpushx", "+del", "+multi", "+exec",
+            ])
+            .exec_async(&mut con)
+            .await
+            .unwrap();
+
+        let config = RedisCacheConfig {
+            username: Some(username.clone()),
+            password: Some(password),
+            ..redis_cache_config()
+        };
+
+        let database =
+            RedisCacheDatabase::new(trader_id, UUID4::new(), CacheConfig::default(), config)
+                .await
+                .unwrap();
+        let mut adapter = RedisCacheDatabaseAdapter { database };
+        let initial = cash_account_state_multi();
+        let mut next = cash_account_state_multi_changed_btc();
+        next.event_id = UUID4::new();
+        let mut account = AccountAny::from(initial);
+        adapter.add_account(&account).unwrap();
+        account.apply(next.clone()).unwrap();
+        adapter.update_account(&account).unwrap();
+        adapter.update_account(&account).unwrap();
+        adapter
+            .purge_account_events(&account.id(), &[], UnixNanos::from(u64::MAX), 0)
+            .unwrap();
+        adapter.close().unwrap();
+        let restored = adapter.load_account(&account.id()).await.unwrap().unwrap();
+
+        let removed: usize = redis::cmd("ACL")
+            .arg("DELUSER")
+            .arg(&username)
+            .query_async(&mut con)
+            .await
+            .unwrap();
+        assert_eq!(removed, 1);
+        assert_eq!(restored.balances(), account.balances());
+        assert_eq!(restored.events(), vec![next]);
+        let key = format!("{trader_key}:accounts:{}", account.id());
+        con.del::<_, ()>(&key).await.unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_account_event_update_does_not_create_missing_list() {
+        let _guard = redis_test_mutex().lock().await;
+        let trader_id = TraderId::from(format!("ACCOUNT-MISSING-{}", UUID4::new()));
+        let mut adapter = connect_account_event_test(trader_id, SerializationEncoding::Json).await;
+        let account = AccountAny::from(cash_account_state_multi());
+
+        adapter.update_account(&account).unwrap();
+        adapter.close().unwrap();
+
+        let loaded = adapter.load_account(&account.id()).await.unwrap();
+        assert!(loaded.is_none());
+        clear_test_trader(&adapter).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_account_event_purge_resolves_unregistered_persisted_currency() {
+        let _guard = redis_test_mutex().lock().await;
+        let trader_id = TraderId::from(format!("ACCOUNT-CURRENCY-{}", UUID4::new()));
+        let mut adapter = connect_account_event_test(trader_id, SerializationEncoding::Json).await;
+
+        let currency = Currency::new(
+            "REDISACCT",
+            6,
+            0,
+            "Test account currency",
+            CurrencyType::Crypto,
+        );
+
+        adapter.add_currency(&currency).unwrap();
+        let mut first = cash_account_state_multi();
+        let mut next = first.clone();
+        next.event_id = UUID4::new();
+        for (state, value) in [(&mut first, 61), (&mut next, 53)] {
+            let total = Money::from_decimal_native(Decimal::new(value, 0), currency).unwrap();
+            state.balances = vec![AccountBalance::new(total, Money::zero(currency), total)];
+        }
+
+        let mut account = AccountAny::from(first);
+        adapter.add_account(&account).unwrap();
+        account.apply(next.clone()).unwrap();
+        adapter.update_account(&account).unwrap();
+        adapter.close().unwrap();
+        assert_eq!(Currency::try_from_str("REDISACCT"), None);
+
+        let mut adapter = connect_account_event_test(trader_id, SerializationEncoding::Json).await;
+        let now = UnixNanos::from(u64::MAX);
+        adapter
+            .purge_account_events(&account.id(), &[], now, 0)
+            .unwrap();
+        adapter.close().unwrap();
+        account.purge_account_events(now, 0);
+
+        let key = format!("accounts:{}", account.id());
+        let rows = adapter.database.read(&key).await.unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows[0].starts_with(b"\x00nautilus-account-checkpoint-v1\x00"));
+        let retained: AccountState =
+            DatabaseQueries::deserialize_payload(SerializationEncoding::Json, &rows[1]).unwrap();
+        assert_eq!(retained.event_id, next.event_id);
+
+        let loaded = adapter.load_all().await.unwrap();
+        assert_eq!(
+            serde_json::to_value(&loaded.accounts[&account.id()]).unwrap(),
+            serde_json::to_value(&account).unwrap(),
+        );
+        clear_test_trader(&adapter).await;
+    }
+
+    async fn connect_account_event_test(
+        trader_id: TraderId,
+        encoding: SerializationEncoding,
+    ) -> RedisCacheDatabaseAdapter {
+        let config = CacheConfig {
+            encoding,
+            buffer_interval_ms: Some(10),
+            timestamps_as_iso8601: true,
+            ..Default::default()
+        };
+
+        let database =
+            RedisCacheDatabase::new(trader_id, UUID4::new(), config, redis_cache_config())
+                .await
+                .unwrap();
+        RedisCacheDatabaseAdapter { database }
     }
 
     #[expect(
@@ -2991,9 +3512,9 @@ mod serial_tests {
         order_1.apply(accepted.clone()).unwrap();
         adapter.update_order(&accepted).unwrap();
 
-        account
-            .apply(cash_account_state_multi_changed_btc())
-            .unwrap();
+        let mut update = cash_account_state_multi_changed_btc();
+        update.event_id = UUID4::new();
+        account.apply(update).unwrap();
         adapter.update_account(&account).unwrap();
 
         let OrderEventAny::Filled(close_fill) = TestOrderEventStubs::filled(

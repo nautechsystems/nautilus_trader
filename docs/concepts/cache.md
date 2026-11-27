@@ -253,6 +253,21 @@ nautilus database assign-account --account-id <ACCOUNT_ID> --trader-id <TRADER_I
 - Disable `save_market_data` with Redis to avoid unsupported writes. Postgres supports quotes, trades,
   bars, Greeks, and yield curves; neither built-in backing persists order books or funding rates.
 
+Use one writer per Redis cache namespace. A purge can discard an event appended by another writer.
+The writer skips events that match the last stored ID. Grant account writers `LRANGE` access for
+this check, even when `purge_from_database=False`. The cache ignores existing duplicate IDs on
+reload and removes them on the next persisted purge. A purge replaces the list in a single
+transaction. If an account uses a currency that the process has yet to register, a purge also
+needs `SCAN` and `MGET` access to the stored currency definitions.
+
+Keep `purge_from_database=False` until all readers of the Redis cache run NautilusTrader 2.0.0
+or later. If the setting is already enabled, disable it before a rolling upgrade. This pauses
+all database purges while the upgrade is in progress.
+
+After a purge removes distinct account events, the first list element is a recovery checkpoint
+marked by the prefix `\x00nautilus-account-checkpoint-v1\x00`. Older readers cannot load a list
+that contains this checkpoint.
+
 #### Connect a backing
 
 Rust callers use `CacheDatabaseFactory` to construct an adapter:
@@ -338,7 +353,8 @@ Direct connections and the factory use the same native configuration path.
   returns a read or replay error. If the underlying error identifies an unreadable record, repair
   the record before restarting.
 - `CacheConfig.flush_on_start = true` clears the backing instead. Redis clears the selected
-  database. Postgres clears only the node's trader rows. The node stops startup if the flush fails.
+  database. Stop any other writers to that database before running the flush. Postgres clears
+  only the node's trader rows. The node stops startup if the flush fails.
 
 :::
 
@@ -726,8 +742,8 @@ Long-running sessions accumulate closed orders, closed positions, account events
 unused instruments. The cache exposes targeted and bulk purge methods so strategies and
 the live trading engine can keep memory bounded without restarting the system.
 
-Purges change memory only by default. Pass `purge_from_database=True` to order and position purge methods
-in Python to queue deletion of their persisted histories and routine snapshots. Rust callers pass the
+Purges change memory only by default. Pass `purge_from_database=True` in Python to queue deletion of
+persisted order and position histories, routine snapshots, and Redis account events. Rust callers pass the
 boolean explicitly. Persistence failures follow the [persistence failure policy](#persistence-failure-policy),
 so a successful return does not confirm queue admission or database deletion. Encoded position snapshots
 used to replay corrections remain persisted as general data.
@@ -768,10 +784,15 @@ lookback window in seconds.
   older than `buffer_secs`.
 - `cache.purge_closed_positions(ts_now, buffer_secs)`: closed positions whose close timestamp
   is older than `buffer_secs`.
-- `cache.purge_account_events(ts_now, lookback_secs)`: account state events older than
-  `lookback_secs`. The latest event always remains, including when the lookback is `0`.
-  With `purge_from_database=True`, Redis and Postgres log deletion requests and retain the full account
-  history for incremental balance, margin, and starting-balance replay.
+- `cache.purge_account_events(ts_now, lookback_secs)`: account state events whose `ts_event` is at
+  or before the cutoff, `lookback_secs` seconds before `ts_now`. If all expire, the last appended
+  event remains.
+
+With `purge_from_database=True`, Redis ignores duplicate IDs before applying the cutoff. If all
+distinct events expire, it keeps the last distinct event in append order. When a purge removes
+distinct events, a checkpoint preserves the balances, starting balances, and margins produced by
+replaying the stored history. PostgreSQL retains the full event history. See
+[Redis cache requirements](#redis).
 
 :::warning
 Keep the closed source position of a virtual `HEDGING` flip while its order can still receive fills.
@@ -782,9 +803,9 @@ Purging it removes the history needed to route later fills and can cause the eng
 
 `LiveExecutionEngineConfig` schedules the bulk purges on a timer. All purge intervals default to `None`, which
 disables the corresponding loop. Set an interval to enable a loop and set its buffer or lookback to control
-how recent entries stay protected. Set `purge_from_database=True` to also delete persisted closed orders
-and positions. Redis and Postgres retain persisted account-event history. This example uses the recommended starting values
-from the live-trading configuration guide and keeps purges in memory:
+how recent entries stay protected. Set `purge_from_database=True` to also purge persisted closed
+orders and positions, and Redis account events. This example uses the recommended starting values from
+the live-trading configuration guide and keeps purges in memory:
 
 ```python
 from nautilus_trader.config import LiveExecutionEngineConfig
