@@ -208,14 +208,15 @@ impl PolymarketDataClient {
         let scheduled_guard = AutoLoadScheduledGuard::new(scheduled);
         let snapshot_timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
 
-        let spawner = match self.tasks.spawner() {
-            Ok(spawner) => spawner,
+        let recovery = match self.tick_recovery() {
+            Ok(recovery) => recovery,
             Err(e) => {
                 log::debug!("Skipping Polymarket auto-load after shutdown began: {e}");
                 return;
             }
         };
 
+        let spawner = recovery.tasks.clone();
         let monitor_spawner = spawner.clone();
 
         let future = async move {
@@ -433,6 +434,7 @@ impl PolymarketDataClient {
                             continue;
                         }
 
+                        recovery.observe(instrument).await;
                         let admission = {
                             let SelectedInstrument {
                                 update_state,

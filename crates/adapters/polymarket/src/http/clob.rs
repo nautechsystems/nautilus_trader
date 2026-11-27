@@ -764,6 +764,19 @@ impl PolymarketClobPublicClient {
         decode_response(&response)
     }
 
+    /// Fetches the executable tick size for a token.
+    pub async fn get_tick_size(&self, token_id: &str) -> Result<TickSizeResponse> {
+        let params = [("token_id", token_id)];
+        let url = format!("{}/tick-size", self.base_url);
+        let response = self
+            .client
+            .request_with_params(Method::GET, url, Some(&params), None, None, None, None)
+            .await
+            .map_err(Error::from_http_client)?;
+
+        decode_response(&response)
+    }
+
     /// Fetches the legacy base fee in basis points, distinct from the effective taker rate.
     pub async fn get_fee_rate(&self, token_id: &str) -> Result<FeeRateResponse> {
         let params = [("token_id", token_id)];

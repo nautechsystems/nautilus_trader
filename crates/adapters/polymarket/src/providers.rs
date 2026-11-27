@@ -367,6 +367,15 @@ pub async fn fetch_instruments(
     http_client: &PolymarketGammaHttpClient,
     filters: &[Arc<dyn InstrumentFilter>],
 ) -> anyhow::Result<Vec<InstrumentAny>> {
+    let mut instruments = fetch_instrument_candidates(http_client, filters).await?;
+    instruments.retain(|inst| filters.iter().all(|f| f.accept(inst)));
+    Ok(instruments)
+}
+
+pub(crate) async fn fetch_instrument_candidates(
+    http_client: &PolymarketGammaHttpClient,
+    filters: &[Arc<dyn InstrumentFilter>],
+) -> anyhow::Result<Vec<InstrumentAny>> {
     if filters.is_empty() {
         return http_client.request_instruments().await;
     }
@@ -419,7 +428,6 @@ pub async fn fetch_instruments(
 
     let mut seen = AHashSet::new();
     instruments.retain(|inst| seen.insert(inst.id()));
-    instruments.retain(|inst| filters.iter().all(|f| f.accept(inst)));
 
     Ok(instruments)
 }
@@ -431,8 +439,24 @@ pub async fn fetch_configured_instruments(
     config: &PolymarketInstrumentProviderConfig,
     filters: &[Arc<dyn InstrumentFilter>],
 ) -> anyhow::Result<Vec<InstrumentAny>> {
+    let (mut candidates, explicit) =
+        fetch_configured_candidates(http_client, config, filters).await?;
+    candidates.retain(|inst| filters.iter().all(|f| f.accept(inst)));
+    candidates.extend(explicit);
+    let mut seen = AHashSet::new();
+    candidates.retain(|inst| seen.insert(inst.id()));
+    Ok(candidates)
+}
+
+// Explicit scopes bypass acceptance predicates, including when they overlap a filter source.
+pub(crate) async fn fetch_configured_candidates(
+    http_client: &PolymarketGammaHttpClient,
+    config: &PolymarketInstrumentProviderConfig,
+    filters: &[Arc<dyn InstrumentFilter>],
+) -> anyhow::Result<(Vec<InstrumentAny>, Vec<InstrumentAny>)> {
     config.validate()?;
 
+    let mut candidates = Vec::new();
     let mut instruments = Vec::new();
 
     if has_bootstrap_scope(config, filters) {
@@ -455,7 +479,7 @@ pub async fn fetch_configured_instruments(
         // This mirrors `load_scoped_all`, which the interval refresh and
         // `request_instruments` paths must stay consistent with.
         if !filters.is_empty() {
-            instruments.extend(fetch_instruments(http_client, filters).await?);
+            candidates = fetch_instrument_candidates(http_client, filters).await?;
         } else if let Some(map) = config.filters.as_ref().filter(|map| !map.is_empty()) {
             let params = build_gamma_params_from_hashmap(map)?;
             instruments.extend(http_client.request_instruments_by_params(params).await?);
@@ -512,15 +536,7 @@ pub async fn fetch_configured_instruments(
         }
     }
 
-    // Deduplicated but NOT filtered by `accept` here. `fetch_instruments` already
-    // applies acceptance to the results of filter-driven queries, which is the only
-    // place it belongs: applying it again across the whole collection would let a
-    // registered filter reject series, slug, and ID instruments that the provider's
-    // `load_scoped_all` adds unconditionally, so a refresh would silently drop
-    // instruments the bootstrap had loaded.
-    let mut seen = AHashSet::new();
-    instruments.retain(|inst| seen.insert(inst.id()));
-    Ok(instruments)
+    Ok((candidates, instruments))
 }
 
 // Registered filters live on the provider, not the config, so the config predicate alone cannot

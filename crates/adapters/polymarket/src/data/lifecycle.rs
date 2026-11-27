@@ -95,6 +95,7 @@ impl PolymarketDataClient {
             instruments: self.instruments.clone(),
             instrument_update_state: self.instrument_update_state.clone(),
             gamma_client: self.provider.http_client().clone(),
+            clob_client: self.clob_public_client.clone(),
             filters: self.provider.filters(),
             resolve_poll_watchlist: self.resolve_poll_watchlist.clone(),
             resolve_watch_apply_mutex: self.resolve_watch_apply_mutex.clone(),

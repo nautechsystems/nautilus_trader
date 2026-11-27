@@ -43,7 +43,7 @@ use super::{
 use crate::{
     common::consts::POLYMARKET_VENUE,
     filters::{market_closed, set_market_closed},
-    providers::{extract_condition_id, fetch_configured_instruments, fetch_instruments},
+    providers::{extract_condition_id, fetch_configured_candidates, fetch_instrument_candidates},
     resolve::{
         PolymarketResolveRequestSummaryData, RESOLVE_REQUEST_TYPE_NAME, ResolveBatchErrorMode,
         ResolveRequestSummary, ResolveWatchSelectionMode, collect_resolve_watch_selection,
@@ -194,6 +194,9 @@ pub(super) fn request_data(client: &PolymarketDataClient, request: RequestCustom
 }
 
 pub(super) fn request_instruments(client: &PolymarketDataClient, request: RequestInstruments) {
+    let Ok(recovery) = client.tick_recovery() else {
+        return;
+    };
     let sender = client.data_sender.clone();
     let http = client.provider.http_client().clone();
     let filters = client.provider.filters();
@@ -216,12 +219,14 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
 
         let instruments = if instrument_config.should_load_all() || instrument_config.has_load_ids()
         {
-            fetch_configured_instruments(&http, &instrument_config, &filters).await
+            fetch_configured_candidates(&http, &instrument_config, &filters).await
         } else {
-            fetch_instruments(&http, &filters).await
+            fetch_instrument_candidates(&http, &filters)
+                .await
+                .map(|rows| (rows, vec![]))
         };
 
-        let instruments = match instruments {
+        let (candidates, explicit) = match instruments {
             Ok(instruments) => instruments,
             Err(e) => {
                 log::error!("Failed to fetch Polymarket instruments: {e}");
@@ -229,29 +234,50 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
             }
         };
 
-        let update_state = instrument_update_state.lock();
-        let terminal = closed_condition_ids.lock();
-        let cached = instruments_cache.load();
-        let mut effective_instruments = Vec::with_capacity(instruments.len());
-        let now_ns = clock.get_time_ns();
-
-        for instrument in instruments {
-            let instrument =
-                instrument_response_definition(instrument, &snapshot, &cached, &terminal);
-            let instrument = match update_state.compose_instrument(&instrument) {
-                Ok(instrument) => instrument,
-                Err(e) => {
-                    log::error!(
-                        "Failed to apply live tick to instrument {}: {e}",
-                        instrument.id()
-                    );
-                    continue;
-                }
-            };
-
-            effective_instruments.push(instrument);
+        if publish {
+            for instrument in candidates.iter().chain(&explicit) {
+                recovery.observe(instrument).await;
+            }
         }
 
+        // Predicates are user code and can inspect the cache. Retry selection if
+        // a definition, terminal condition or WebSocket tick changed meanwhile.
+        let (update_state, terminal, cached, effective_instruments) = loop {
+            let state = instrument_update_state.lock();
+            let revision = state.tick_revision;
+            let cached = Arc::clone(&instruments_cache.load());
+            let closed = closed_condition_ids.lock().clone();
+            let compose = |instrument: &InstrumentAny| {
+                let instrument =
+                    instrument_response_definition(instrument.clone(), &snapshot, &cached, &closed);
+                state
+                    .compose_instrument(&instrument, cached.get(&instrument.id()))
+                    .inspect_err(|e| {
+                        log::error!("Failed to compose instrument {}: {e}", instrument.id());
+                    })
+                    .ok()
+            };
+            let mut effective: Vec<_> = candidates.iter().filter_map(compose).collect();
+            let scoped: Vec<_> = explicit.iter().filter_map(compose).collect();
+            drop(state);
+
+            effective.retain(|inst| filters.iter().all(|f| f.accept(inst)));
+            effective.extend(scoped);
+            let mut seen = AHashSet::new();
+            effective.retain(|inst| seen.insert(inst.id()));
+
+            let state = instrument_update_state.lock();
+            let terminal = closed_condition_ids.lock();
+
+            if state.tick_revision == revision
+                && Arc::ptr_eq(&cached, &instruments_cache.load())
+                && *terminal == closed
+            {
+                break (state, terminal, cached, effective);
+            }
+        };
+
+        let now_ns = clock.get_time_ns();
         let cached_count = if !publish || update_state.retired {
             0
         } else {
@@ -312,6 +338,7 @@ pub(super) fn request_instrument(
     request: RequestInstrument,
 ) -> anyhow::Result<()> {
     let instrument_id = request.single_instrument_id()?;
+    let recovery = client.tick_recovery()?;
     let http = client.provider.http_client().clone();
     let sender = client.data_sender.clone();
     let instruments_cache = client.instruments.clone();
@@ -350,15 +377,19 @@ pub(super) fn request_instrument(
         };
 
         if let Some(inst) = instrument {
+            if publish {
+                recovery.observe(&inst).await;
+            }
             let update_state = instrument_update_state.lock();
+            let cached = instruments_cache.load();
             let inst = instrument_response_definition(
                 inst,
                 &snapshot,
-                &instruments_cache.load(),
+                &cached,
                 &closed_condition_ids.lock(),
             );
 
-            let inst = match update_state.compose_instrument(&inst) {
+            let inst = match update_state.compose_instrument(&inst, cached.get(&instrument_id)) {
                 Ok(instrument) => instrument,
                 Err(e) => {
                     log::error!("Failed to apply live tick to instrument {instrument_id}: {e}");

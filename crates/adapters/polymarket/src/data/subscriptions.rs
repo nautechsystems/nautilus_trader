@@ -101,6 +101,35 @@ impl DataSubscriptions {
         }
     }
 
+    pub(super) fn reset_tick_book(
+        &self,
+        id: InstrumentId,
+        token: &str,
+        timeout: Duration,
+        tasks: &TaskSpawner,
+    ) {
+        self.book_integrity.lock().remove(&id);
+        self.order_books.remove(&id);
+        let outcome = self.book_sync.request_recovery_if_subscribed(
+            &self.active_delta_subs,
+            id,
+            Instant::now(),
+        );
+
+        if outcome == crate::book::BookSequenceOutcome::Recover {
+            log::debug!("Resyncing book for {id} after tick size change");
+            crate::book::recovery::start_recovery(
+                id,
+                Some(token.to_owned()),
+                &self.active_delta_subs,
+                &self.book_sync,
+                &self.ws_client,
+                timeout,
+                tasks,
+            );
+        }
+    }
+
     pub(super) fn add_live_subscription_intent(
         &self,
         instrument_id: InstrumentId,

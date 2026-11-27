@@ -23,6 +23,7 @@ mod lifecycle;
 mod requests;
 mod runtime;
 mod subscriptions;
+mod tick_recovery;
 
 #[cfg(test)]
 mod test_logging;

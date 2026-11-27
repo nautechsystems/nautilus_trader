@@ -62,13 +62,15 @@ pub(crate) struct TokenMeta {
 
 #[derive(Clone, Copy, Debug)]
 struct LiveTick {
-    tick_size: Decimal,
+    tick_size: Option<Decimal>,
     ts_event: UnixNanos,
 }
 
 #[derive(Debug, Default)]
 pub(super) struct InstrumentUpdateState {
     live_ticks: AHashMap<Ustr, LiveTick>,
+    pub(super) disagreements: AHashMap<Ustr, super::tick_recovery::TickDisagreement>,
+    pub(super) tick_revision: u64,
     pub(super) retired: bool,
 }
 
@@ -89,28 +91,52 @@ impl InstrumentUpdateState {
         tick_size: Decimal,
         ts_event: UnixNanos,
     ) {
+        self.disagreements.remove(&token_id);
+        self.tick_revision += 1;
         self.live_ticks.insert(
             token_id,
             LiveTick {
-                tick_size,
+                tick_size: Some(tick_size),
                 ts_event,
             },
         );
     }
 
+    pub(super) fn record_recovered_tick(&mut self, token_id: Ustr) {
+        self.disagreements.remove(&token_id);
+        self.tick_revision += 1;
+        // Keep the last exchange timestamp for rejecting out-of-order WebSocket events.
+        if let Some(live) = self.live_ticks.get_mut(&token_id) {
+            live.tick_size = None;
+        }
+    }
+
     pub(super) fn compose_instrument(
         &self,
         instrument: &InstrumentAny,
+        cached: Option<&InstrumentAny>,
     ) -> anyhow::Result<InstrumentAny> {
-        let token_id = Ustr::from(instrument.raw_symbol().as_str());
-        let Some(live_tick) = self.live_ticks.get(&token_id) else {
+        let token_id = instrument.raw_symbol().inner();
+        let (tick, ts_event) = if let Some(live) = self.live_ticks.get(&token_id)
+            && let Some(tick) = live.tick_size
+        {
+            (tick, live.ts_event)
+        } else if let Some(previous) = cached
+            && previous.price_increment() != instrument.price_increment()
+        {
+            // Gamma can announce the next grid before the matching engine switches.
+            (
+                previous.price_increment().as_decimal(),
+                instrument.ts_event(),
+            )
+        } else {
             return Ok(instrument.clone());
         };
 
         crate::http::parse::rebuild_instrument_with_tick_size(
             instrument,
-            &live_tick.tick_size.to_string(),
-            live_tick.ts_event,
+            &tick.to_string(),
+            ts_event,
             instrument.ts_init(),
         )
     }
@@ -267,7 +293,9 @@ pub(super) fn apply_live_instrument_locked(
         return false;
     }
 
-    let instrument = match update_state.compose_instrument(instrument) {
+    let instrument = match update_state
+        .compose_instrument(instrument, instruments.load().get(&instrument.id()))
+    {
         Ok(instrument) => instrument,
         Err(e) => {
             log::error!(
@@ -399,7 +427,7 @@ fn cache_and_publish_instruments(
             continue;
         }
 
-        match update_state.compose_instrument(instrument) {
+        match update_state.compose_instrument(instrument, cached.get(&id)) {
             Ok(instrument) => pending.push(instrument),
             Err(e) => log::error!(
                 "Failed to apply live tick to instrument {}: {e}",
@@ -432,7 +460,7 @@ async fn refresh_instruments(
     config: Option<&PolymarketInstrumentProviderConfig>,
     filters: &[Arc<dyn InstrumentFilter>],
     ctx: &ResolveContext,
-    update_state: &Mutex<InstrumentUpdateState>,
+    recovery: &super::tick_recovery::TickRecovery,
     max_wait: DurationNanos,
 ) -> usize {
     let mut discovery_events = AHashMap::new();
@@ -442,9 +470,12 @@ async fn refresh_instruments(
         let config = config.cloned().unwrap_or_default();
         match fetch_configured_instruments(http, &config, filters).await {
             Ok(instruments) => {
+                for instrument in &instruments {
+                    recovery.observe(instrument).await;
+                }
                 apply_instrument_refresh(
                     ctx,
-                    update_state,
+                    &recovery.state,
                     &snapshot,
                     instruments,
                     false,
@@ -496,9 +527,12 @@ async fn refresh_instruments(
                 }
             };
 
+        for instrument in &instruments {
+            recovery.observe(instrument).await;
+        }
         total += apply_instrument_refresh(
             ctx,
-            update_state,
+            &recovery.state,
             &snapshot,
             instruments,
             true,
@@ -924,7 +958,7 @@ fn prepare_instrument_refresh(
     }
 
     state
-        .compose_instrument(&instrument)
+        .compose_instrument(&instrument, current)
         .inspect_err(|e| {
             log::warn!(
                 "Failed to apply live tick to instrument {}: {e}",
@@ -1233,6 +1267,15 @@ impl PolymarketDataClient {
             (!self.provider.store().is_initialized()).then(|| Arc::clone(&self.instruments.load()));
         self.provider.initialize(false).await?;
 
+        let definitions = self.provider.store().list_all();
+
+        if snapshot.is_some() {
+            let recovery = self.tick_recovery()?;
+
+            for instrument in &definitions {
+                recovery.observe(instrument).await;
+            }
+        }
         let total = cache_and_publish_instruments(
             &self.subscriptions.closed_condition_ids,
             &self.instrument_update_state,
@@ -1240,7 +1283,7 @@ impl PolymarketDataClient {
             &self.subscriptions.token_meta,
             &self.data_sender,
             self.clock.get_time_ns(),
-            self.provider.store().list_all(),
+            definitions,
             snapshot.as_deref(),
         );
 
@@ -1263,7 +1306,7 @@ impl PolymarketDataClient {
         let filters = self.provider.filters();
         let config = self.config.instrument_config.clone();
         let ctx = self.resolution_context();
-        let update_state = self.instrument_update_state.clone();
+        let recovery = self.tick_recovery()?;
         let max_wait = self
             .config
             .resolve_poll_max_wait_secs
@@ -1282,7 +1325,7 @@ impl PolymarketDataClient {
                 let total = tokio::select! {
                     biased;
                     () = cancellation.cancelled() => break,
-                    total = refresh_instruments(&http, config.as_ref(), &filters, &ctx, &update_state, max_wait) => total,
+                    total = refresh_instruments(&http, config.as_ref(), &filters, &ctx, &recovery, max_wait) => total,
                 };
 
                 if total > 0 {
@@ -1730,7 +1773,7 @@ mod tests {
                 Some(&config),
                 &[],
                 &client.resolution_context(),
-                &client.instrument_update_state,
+                &client.tick_recovery().unwrap(),
                 DurationNanos::MAX,
             )
             .await;
@@ -1872,16 +1915,8 @@ mod tests {
             ..Default::default()
         };
 
-        let refresh = || {
-            refresh_instruments(
-                &http,
-                Some(&config),
-                &[],
-                &ctx,
-                &client.instrument_update_state,
-                max_wait,
-            )
-        };
+        let recovery = client.tick_recovery().unwrap();
+        let refresh = || refresh_instruments(&http, Some(&config), &[], &ctx, &recovery, max_wait);
 
         assert_eq!(refresh().await, 2);
         assert_eq!(
@@ -2203,6 +2238,71 @@ mod tests {
                 info.get("gamma_event").unwrap(),
                 source.info().unwrap().get("gamma_event").unwrap()
             ));
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn gamma_refresh_retains_cached_tick_after_parent_event_restoration() {
+        let mut client = make_client(PolymarketDataClientConfig::default());
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.data_sender = tx.into();
+        let ctx = client.resolution_context();
+        let mut previous = tracked_market("2099-01-01T00:00:00Z", "0.03", false);
+        previous.parent_event = Some(Arc::new(
+            from_str(r#"{"id":"123","gameId":"456","category":"Sports"}"#).unwrap(),
+        ));
+        let initial = parse_markets_with_transient(&[previous], UnixNanos::default()).0;
+        cache_instruments_unchecked(&ctx.instruments, &ctx.subscriptions.token_meta, &initial);
+        upsert_resolve_watch_entry_from_instrument(
+            &ctx.watchlist,
+            &initial[0],
+            PositionId::from("P-1"),
+        );
+
+        let mut raw: Value =
+            from_str(&tracked_market("2099-12-01T00:00:00Z", "0.07", false).raw).unwrap();
+        raw["orderPriceMinTickSize"] = serde_json::json!(0.001);
+        let app = Router::new().route(
+            "/markets/keyset",
+            get(move || {
+                let body = serde_json::json!({"markets": [raw]});
+                async move { Json(body) }
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move { serve(listener, app).await.unwrap() });
+        let http = PolymarketGammaHttpClient::new(
+            Some(format!("http://{addr}")),
+            1,
+            RetryConfig::default(),
+        )
+        .unwrap();
+        let published = refresh_instruments(
+            &http,
+            None,
+            &[],
+            &ctx,
+            &client.tick_recovery().unwrap(),
+            DurationNanos::MAX,
+        )
+        .await;
+        assert_eq!(published, 2);
+
+        for _ in 0..published {
+            let DataEvent::Data(Data::Instrument(updated)) = rx.try_recv().unwrap() else {
+                panic!("expected tracked instrument");
+            };
+            let info = updated.info().unwrap();
+            assert_eq!(info.get_str("game_id"), Some("456"));
+            assert_eq!(info["fee_schedule"]["rate"], "0.07");
+            assert_eq!(updated.price_increment(), Price::from("0.01"));
+            assert_eq!(
+                ctx.instruments.load()[&updated.id()].price_increment(),
+                updated.price_increment()
+            );
         }
     }
 
