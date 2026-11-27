@@ -330,6 +330,7 @@ Released on TBD (UTC).
 - Replaced the Envio HyperSync SDK with its JSON API
 - Optimized socket client framing to search only unscanned bytes on each read
 - Optimized cache position queries, speeding up portfolio updates with many HEDGING positions
+- Optimized L1 book replacement, price-level insertion, and simulated queue-position updates for quotes
 - Optimized order fill processing for orders with many fills
 - Optimized duplicate-fill and price-restatement lookups in carried position history (#5551), thanks @Milchstrassse
 - Optimized Feather schema metadata serialization to avoid redundant allocations (#5658), thanks @imbolc

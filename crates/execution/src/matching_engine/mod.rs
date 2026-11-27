@@ -1189,7 +1189,7 @@ impl OrderMatchingEngine {
         ask_price_raw: PriceRaw,
         ask_size_raw: QuantityRaw,
     ) {
-        if !self.config.queue_position {
+        if self.queue_ids_by_price.is_empty() {
             return;
         }
 

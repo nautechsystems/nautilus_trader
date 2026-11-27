@@ -201,14 +201,22 @@ impl BookLadder {
     pub(crate) fn replace_l1(&mut self, order: BookOrder) {
         debug_assert_eq!(self.book_type, BookType::L1_MBP);
 
-        let reusable_level = self.levels.pop_first().map(|(_, level)| level);
-        self.clear();
-
         if !order.size.is_positive() {
+            self.clear();
             let side = self.side;
             log::debug!("L1 zero-size add cleared ladder: side={side:?}");
             return;
         }
+
+        let reusable_level = self.levels.pop_first().map(|(_, level)| level);
+
+        // Clearing an empty B-tree drops the root allocation needed by the replacement
+        if !self.levels.is_empty() {
+            self.levels.clear();
+        }
+
+        self.cache.clear();
+        self.batch_state = L1BatchState::None;
 
         let book_price = order.to_book_price();
         self.cache.insert(order.order_id, book_price);
@@ -271,9 +279,9 @@ impl BookLadder {
         }
 
         let book_price = order.to_book_price();
-
+        let existing_price = self.cache.insert(order.order_id, book_price);
         if self.book_type != BookType::L1_MBP
-            && let Some(existing_price) = self.cache.get(&order.order_id).copied()
+            && let Some(existing_price) = existing_price
             && existing_price != book_price
             && let Some(existing_level) = self.levels.get_mut(&existing_price)
         {
@@ -283,14 +291,10 @@ impl BookLadder {
             }
         }
 
-        self.cache.insert(order.order_id, book_price);
-
-        if let Some(level) = self.levels.get_mut(&book_price) {
-            level.add(order);
-        } else {
-            let level = BookLevel::from_order(order);
-            self.levels.insert(book_price, level);
-        }
+        self.levels
+            .entry(book_price)
+            .or_insert_with(|| BookLevel::new(book_price))
+            .add(order);
 
         // For L1_MBP with F_MBP or F_SNAPSHOT, always retain best to prevent unbounded
         // accumulation if F_LAST is never sent
@@ -2188,7 +2192,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_replace_l1_multi_order_level_falls_back_to_clear_and_add() {
+    fn test_replace_l1_clears_other_orders_and_levels() {
         let mut ladder = BookLadder::new(OrderSide::Buy, BookType::L1_MBP);
         let price = BookPrice::new(Price::from("10.00"), OrderSide::Buy);
         let mut level = BookLevel::new(price);
@@ -2207,6 +2211,11 @@ mod tests {
         ladder.levels.insert(price, level);
         ladder.cache.insert(1, price);
         ladder.cache.insert(2, price);
+        let stale = BookOrder::new(OrderSide::Buy, Price::from("9.00"), Quantity::from(10), 3);
+        let stale_price = stale.to_book_price();
+        let stale_level = BookLevel::from_order(stale);
+        ladder.levels.insert(stale_price, stale_level);
+        ladder.cache.insert(stale.order_id, stale_price);
         assert_eq!(ladder.top().unwrap().len(), 2);
 
         let replacement =

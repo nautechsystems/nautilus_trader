@@ -6,12 +6,10 @@ measurements, and the benchmark's CI role.
 Use the native sections to reproduce a workload or evaluate an optimization under equivalent controls.
 Use the version comparison to inspect the released Cython and Rust/PyO3 results and their raw evidence.
 
-The latest native profile, collected on 2026-11-02 at commit
-`25217eea5d3b1ccad4c41c2765400c577541180f`, confirmed `BookLadder::replace_l1` as the largest
-single production lead. That day's rounds removed the measured L1 cache-hash candidate and left
-the empty command-queue fast path unimplemented after its realistic estimate fell below the fresh
-admission thresholds. The dated records remain relevant because they define retained
-optimizations, rejected variants, and the conditions required to reconsider them.
+The November 28 profile found that L1 replacement accounted for 32.35% of CPU time during
+canonical replay. Reusing the B-tree root allocation and skipping L1 queue-position updates
+when no orders were tracked helped reduce preloaded replay time by 18.08% with legacy inputs and
+19.44% with typed inputs. See the [profile and measurements](#2026-11-28-l1-replacement-depth-snapshots-and-queue-position-updates).
 
 ## Native canonical benchmark
 
@@ -199,6 +197,7 @@ artifact identity. A profile share selects a target; it never establishes an ela
 | 2026-09-04 | Typed batch input                       |    Per-row baseline band | Typed within legacy round bands        | Retained               |
 | 2026-11-02 | L1 cache map ahash swap                 |             3.241947562% | 4.27% median regression                | Removed                |
 | 2026-11-02 | Empty command-queue fast path           |            13.510776671% | 0.932517798% estimated removable share | Not implemented        |
+| 2026-11-28 | L1, depth, and queue-position updates   |   Disjoint session bands | 18.08% less preloaded replay time      | Retained               |
 
 ### 2026-08-29: L1 replacement
 
@@ -962,6 +961,84 @@ and exec client event drain remain. No candidate patch, executable, or paired co
 produced. Reconsider an empty command-queue fast path after a material replay-loop or
 queue-implementation change regrows the direct drain share, or after a calibration establishes a
 protocol that resolves end-to-end effects below 1% on this host.
+
+### 2026-11-28: L1 replacement, depth snapshots, and queue-position updates
+
+One-millisecond `gprofng` sampling identified two order book hotspots at baseline revision
+`3891d59f82d88ae7e2422f53a0b0cf92599d13bb`. A second replay profile after both ladder changes
+identified the queue-position update. CPU percentages use the timed `BacktestEngine::run` stack
+for each workload. Each elapsed-time comparison isolates one change against its immediate predecessor.
+
+| Workload              | Function                                           | Run CPU | Change                                               | Time reduction   |
+| --------------------- | -------------------------------------------------- | ------: | ---------------------------------------------------- | ---------------: |
+| Canonical replay      | `BookLadder::replace_l1`                           | 32.35%  | Keep the B-tree root allocation across price changes | 16.35% (3 pairs) |
+| 1,000 depth snapshots | `BookLadder::add`                                  | 66.53%  | Combine order ID and price-level lookups             | 6.65% (8 pairs)  |
+| Canonical replay      | `OrderMatchingEngine::decrement_l1_queue_on_quote` | 6.45%   | Skip updates when no orders are tracked              | 5.25% (3 pairs)  |
+
+The [August same-price experiment](#2026-08-29-rejected-same-price-l1-node-reuse) updated a level
+only when the incoming price matched. This change still removes and reinserts the level at any price.
+Allocation and free accounted for 0.439 of the 0.962 seconds sampled in L1 replacement.
+
+Three sessions on the original baseline had a 1.57% spread for replay and 1.92% for depth.
+The isolated depth comparison used the build with only the L1 change as its baseline. In the
+first three pairs, the 5.00% median reduction was within the 5.92% spread of that build's depth
+times. Five additional pairs brought the median reduction to 6.65%. All eight pairs improved,
+by 3.03% to 9.65%, and the baseline and candidate session ranges did not overlap.
+
+Three separate pairs compared the combined changes directly with the original baseline. Each
+pair measured `run()` with preloaded data and the full CSV load, engine build, data registration,
+and run. All eight scenario and input combinations matched their checked-in
+references. Baseline and candidate produced byte-identical [result exports](../../../docs/developer_guide/benchmarking.md#canonical-backtest-workloads).
+For every row and timing boundary, the slowest candidate session was faster than the fastest baseline.
+
+| Scenario                | Input  | Preloaded baseline (ms) | Candidate (ms) | Reduction | Full baseline (ms) | Candidate (ms) | Reduction |
+| ----------------------- | ------ | ----------------------: | -------------: | --------: | -----------------: | -------------: | --------: |
+| Replay only             | Legacy | 10.899                  | 8.929          | 18.08%    | 15.757             | 14.139         | 10.26%    |
+| Replay only             | Typed  | 11.537                  | 9.295          | 19.44%    | 16.455             | 14.053         | 14.60%    |
+| Scheduled market orders | Legacy | 11.918                  | 10.105         | 15.21%    | 17.090             | 15.064         | 11.85%    |
+| Scheduled market orders | Typed  | 12.579                  | 10.451         | 16.92%    | 17.621             | 15.288         | 13.24%    |
+| Passive limit orders    | Legacy | 21.006                  | 18.020         | 14.22%    | 26.086             | 22.802         | 12.59%    |
+| Passive limit orders    | Typed  | 21.744                  | 18.591         | 14.50%    | 26.995             | 23.401         | 13.31%    |
+| Bar EMA cross           | Legacy | 18.493                  | 16.372         | 11.47%    | 23.999             | 22.178         | 7.59%     |
+| Bar EMA cross           | Typed  | 19.037                  | 16.762         | 11.95%    | 24.707             | 22.509         | 8.90%     |
+
+Legacy preloaded replay ranged from 10.738 to 10.942 ms at baseline and 8.870 to 9.064 ms with
+the changes. The share of replay CPU in L1 replacement fell to 21.13%.
+
+In the 20,000-event synthetic workloads, single-stream replay took 19.65% less time, four-stream
+replay across two instruments took 19.16% less, and alternating market orders took 8.18% less.
+For 1,000 depth snapshots the reduction was 9.98%. The session ranges overlapped for 1,000 L2
+delta events and for 4,000 accumulating market orders.
+
+The 20,000-event passive-order case improved by 2.47%. Its baseline spent 34.42% of run CPU in
+`queue_order_side`. The matcher looks up indexed orders in the cache to get their side and remove
+closed or missing orders.
+
+| Executable identity | Baseline                                                           | Combined candidate                                                 |
+| ------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| Source tree         | `6832da8290c9f41b0a6a30292e8fa9f12341df9e`                         | `08b6e26e4daac469e4c47d099494dd7e9d1f47f6`                         |
+| SHA-256             | `bf05b25d5421bbf27a095b81066d5365a80dc0aacc6605727b35bfbdbd0b6729` | `0438e7b95e0778ec33bf1df5b1ebc94176334be7e565faa8e146a2c73e651838` |
+| ELF build ID        | `fc9f016aec23f1e96efbd410a203e0a3d8bc370f`                         | `98afe3a2412304a6c1e0e48886a730edc1e42675`                         |
+
+Rust 1.100.0 built all five executables with standard precision and the `bench-lto` profile.
+The Threadripper 9980X ran Linux 7.0.0-43-generic with the `powersave` governor, SMT and boost
+enabled, and ASLR disabled per process. Each process used CPU 40 and `RAYON_NUM_THREADS=1`.
+Across the six combined timing sessions, the host averaged 97.75% idle and CPU 40's SMT sibling
+averaged 99.75% idle. No host sample recorded a build process.
+
+To repeat the comparison, use the [matrix build command](#reproduce-the-matrix) and save the executable
+from `target/bench-lto/deps/engine-*` for each revision. Run both executables in three pairs,
+baseline first in pairs one and three. Set `ENGINE` to the saved executable path and
+export `CRITERION_HOME` with a separate directory for each session. Read `median.point_estimate` from
+each session's `new/estimates.json` and take the median of the three sessions for each executable.
+
+```bash
+cases='canonical/(run_preloaded|load_build_run)/|data_routes/(depth|l2_deltas)/1000$'
+cases+='|position_history/accumulating_market_orders/4000$'
+cases+='|run/(market_data_replay(_4_streams_2_instruments)?|passive_limit_orders|alternating_market_orders)/20000$'
+RAYON_NUM_THREADS=1 taskset -c 40 setarch "$(uname -m)" -R "$ENGINE" --bench "$cases" \
+    --warm-up-time 1 --measurement-time 2 --sample-size 15 --noplot
+```
 
 ## v1.231.0 and v2 comparison
 
