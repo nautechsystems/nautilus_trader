@@ -706,8 +706,7 @@ impl BybitRawHttpClient {
                     .await?;
 
                 self.observe_rate_limit_headers(&endpoint, category, &response.headers);
-
-                if response.status.as_u16() >= 400 {
+                if !response.status.is_success() {
                     let body = String::from_utf8_lossy(&response.body).to_string();
                     if Self::is_rate_limit_403(response.status.as_u16(), &body) {
                         let generation = self.rate_limiter.reset_http_sessions();
@@ -4003,14 +4002,24 @@ impl BybitHttpClient {
         }
 
         let params = params_builder.build().build_anyhow()?;
-        let response = self.inner.get_recent_trades(&params).await?;
-
-        let mut trades = Vec::new();
-
-        for trade in response.result.list {
-            if let Ok(trade_tick) = parse_trade_tick(&trade, &instrument, None) {
-                trades.push(trade_tick);
+        let response = match self.inner.get_recent_trades(&params).await {
+            Ok(response) => response,
+            Err(e @ BybitHttpError::JsonError(_)) => {
+                return Err(BybitRecentTradeParseError::Payload(e).into());
             }
+            Err(e) => return Err(e.into()),
+        };
+
+        let mut trades = Vec::with_capacity(response.result.list.len());
+        for trade in response.result.list {
+            let trade_tick = parse_trade_tick(&trade, &instrument, None).map_err(|source| {
+                BybitRecentTradeParseError::Row {
+                    exec_id: trade.exec_id.clone(),
+                    source,
+                }
+            })?;
+
+            trades.push(trade_tick);
         }
 
         Ok(trades)
@@ -5199,6 +5208,18 @@ fn instrument_or_warn(
             log::warn!("Failed to parse instrument {symbol}: {e}");
         })
         .ok()
+}
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum BybitRecentTradeParseError {
+    #[error("failed to parse Bybit recent trades")]
+    Payload(#[source] BybitHttpError),
+    #[error("failed to parse Bybit recent trade '{exec_id}'")]
+    Row {
+        exec_id: String,
+        #[source]
+        source: anyhow::Error,
+    },
 }
 
 fn perp_status(status: MarketStatusAction, is_scheduled_perp: bool) -> MarketStatusAction {

@@ -34,22 +34,22 @@ use nautilus_common::{
     messages::{
         DataEvent,
         data::{
-            BarsResponse, BookResponse, DataResponse, FundingRatesResponse, InstrumentResponse,
-            InstrumentsResponse, OptionChainReferencePriceResponse, RequestBars,
-            RequestBookSnapshot, RequestFundingRates, RequestInstrument, RequestInstruments,
-            RequestOptionChainReferencePrice, RequestTrades, SubscribeBars, SubscribeBookDeltas,
-            SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
-            SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
-            SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, TradesResponse,
-            UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeCustomData, UnsubscribeFundingRates,
-            UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentStatus,
-            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks,
-            UnsubscribeQuotes, UnsubscribeTrades,
+            BarsResponse, BookResponse, DataRequestFailed, DataResponse, FundingRatesResponse,
+            InstrumentResponse, InstrumentsResponse, OptionChainReferencePriceResponse,
+            RequestBars, RequestBookSnapshot, RequestFundingRates, RequestInstrument,
+            RequestInstruments, RequestOptionChainReferencePrice, RequestTrades, SubscribeBars,
+            SubscribeBookDeltas, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
+            SubscribeInstrument, SubscribeInstrumentStatus, SubscribeInstruments,
+            SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
+            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeCustomData,
+            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+            UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
+            UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
 use nautilus_core::{
-    AtomicMap, AtomicSet, UnixNanos,
+    AtomicMap, AtomicSet, UUID4, UnixNanos,
     datetime::datetime_to_unix_nanos,
     string::secret::SecretString,
     time::{AtomicTime, get_atomic_clock_realtime},
@@ -89,7 +89,10 @@ use crate::{
     },
     config::{BybitDataClientConfig, diagnostic_credential},
     data_types::register_bybit_custom_data,
-    http::client::BybitHttpClient,
+    http::{
+        client::{BybitHttpClient, BybitRecentTradeParseError},
+        models::BybitTickerOption,
+    },
     websocket::{
         client::BybitWebSocketClient,
         messages::{BybitWsMessage, BybitWsOrderbookDepthMsg},
@@ -2032,7 +2035,17 @@ impl DataClient for BybitDataClient {
                 match result {
                     Ok(instruments) => all_instruments.extend(instruments),
                     Err(e) => {
-                        log::error!("Failed to fetch instruments for {product_type:?}: {e:?}");
+                        send_request_failed(
+                            &sender,
+                            request_id,
+                            format!(
+                                "failed to fetch Bybit instruments for {product_type:?}: {e:#}"
+                            ),
+                            &instrument_publish_lock,
+                            &cancel,
+                        );
+
+                        return;
                     }
                 }
             }
@@ -2206,6 +2219,8 @@ impl DataClient for BybitDataClient {
 
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
+        let instrument_publish_lock = self.instrument_publish_lock.clone();
+        let cancel = self.command_tasks.cancellation_token();
         let start = request.start;
         let end = request.end;
         let limit = request.limit.map(|n| n.get() as u32);
@@ -2240,6 +2255,15 @@ impl DataClient for BybitDataClient {
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send trades response: {e}");
                     }
+                }
+                Err(e) if e.is::<BybitRecentTradeParseError>() => {
+                    send_request_failed(
+                        &sender,
+                        request_id,
+                        format!("{e:#}"),
+                        &instrument_publish_lock,
+                        &cancel,
+                    );
                 }
                 Err(e) => log::error!("Trade request failed: {e:?}"),
             }
@@ -2363,6 +2387,8 @@ impl DataClient for BybitDataClient {
         let instrument_id = request.instrument_id;
         let http_client = self.http_client.clone();
         let sender = self.data_sender.clone();
+        let instrument_publish_lock = self.instrument_publish_lock.clone();
+        let cancel = self.command_tasks.cancellation_token();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id());
         let params = request.params;
@@ -2376,40 +2402,36 @@ impl DataClient for BybitDataClient {
                 base_coin: None,
                 exp_date: None,
             };
-            let price = match http_client.request_option_tickers_raw_with_params(&query).await {
-                Ok(tickers) => tickers.into_iter().find_map(|ticker| {
-                    let decimal = ticker.underlying_price.parse::<Decimal>().ok()?;
-                    if decimal <= Decimal::ZERO {
-                        return None;
-                    }
 
-                    match Price::from_decimal(decimal) {
-                        Ok(price) => Some(price),
-                        Err(e) => {
-                            log::warn!(
-                                "Invalid Bybit option-chain reference price for {instrument_id}: {e}"
-                            );
-                            None
-                        }
-                    }
-                }),
+            let price = match http_client
+                .request_option_tickers_raw_with_params(&query)
+                .await
+                .and_then(|tickers| option_chain_reference_price(&tickers))
+            {
+                Ok(price) => price,
                 Err(e) => {
-                    log::error!(
-                        "Option-chain reference price request failed for {series_id}: {e:?}"
+                    send_request_failed(
+                        &sender,
+                        request_id,
+                        format!(
+                            "option-chain reference price request failed for {series_id}: {e:#}"
+                        ),
+                        &instrument_publish_lock,
+                        &cancel,
                     );
-                    None
+                    return;
                 }
             };
-            let response = DataResponse::OptionChainReferencePrice(
-                OptionChainReferencePriceResponse::new(
+
+            let response =
+                DataResponse::OptionChainReferencePrice(OptionChainReferencePriceResponse::new(
                     request_id,
                     client_id,
                     series_id,
                     price,
                     clock.get_time_ns(),
                     params,
-                ),
-            );
+                ));
 
             if let Err(e) = sender.send(DataEvent::Response(response)) {
                 log::error!("Failed to send option-chain reference price response: {e}");
@@ -2418,6 +2440,56 @@ impl DataClient for BybitDataClient {
 
         Ok(())
     }
+}
+
+fn send_request_failed(
+    sender: &EventSender<DataEvent>,
+    request_id: UUID4,
+    reason: String,
+    publish_lock: &parking_lot::Mutex<()>,
+    cancel: &CancellationToken,
+) {
+    let _publish_guard = publish_lock.lock();
+
+    if cancel.is_cancelled() {
+        return;
+    }
+
+    let failure = DataEvent::RequestFailed(DataRequestFailed {
+        request_id,
+        reason,
+        response: None,
+    });
+
+    if let Err(e) = sender.send(failure) {
+        log::error!("Failed to send data request failure for {request_id}: {e}");
+    }
+}
+
+fn option_chain_reference_price(tickers: &[BybitTickerOption]) -> anyhow::Result<Option<Price>> {
+    for ticker in tickers {
+        let decimal = ticker
+            .underlying_price
+            .parse::<Decimal>()
+            .with_context(|| {
+                format!(
+                    "failed to parse Bybit option underlying price '{}'",
+                    ticker.underlying_price
+                )
+            })?;
+
+        if decimal <= Decimal::ZERO {
+            continue;
+        }
+
+        let price = Price::from_decimal(decimal).with_context(|| {
+            format!("failed to convert Bybit option underlying price {decimal}")
+        })?;
+
+        return Ok(Some(price));
+    }
+
+    Ok(None)
 }
 
 impl BybitDataClient {

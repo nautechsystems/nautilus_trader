@@ -954,7 +954,7 @@ impl BybitHttpClient {
             let trades = client
                 .request_trades(product_type, instrument_id, limit)
                 .await
-                .map_err(to_pyvalue_err)?;
+                .map_err(|e| to_pyvalue_err(format_args!("{e:#}")))?;
 
             Python::attach(|py| {
                 let py_trades: PyResult<Vec<_>> = trades

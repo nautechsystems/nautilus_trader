@@ -241,6 +241,7 @@ Released on TBD (UTC).
 - Fixed Bybit Spot quote-quantity market orders staying partially filled or rejecting fills as overfills
 - Fixed Bybit WebSocket holding replay messages indefinitely when re-authentication gets no reply
 - Fixed Bybit WebSocket authentication failures dropping the venue's rejection reason
+- Fixed failed Bybit instrument list, recent trade, and option reference price requests reporting success
 - Fixed Databento OPRA option multipliers defaulting to 1 when unset (#5672), thanks @madebymlai
 - Fixed Derive reconnect ignoring the startup reconciliation lookback (#5709), thanks for reporting @Aviksaikat
 - Fixed Derive execution staying offline after transient WebSocket failures (#5759), thanks for reporting @Aviksaikat
