@@ -32,7 +32,6 @@ pub(super) use ahash::{AHashMap, AHashSet};
 pub(super) use anyhow::Context;
 pub(super) use ibapi::{
     Notice, NoticeCategory,
-    accounts::PositionUpdate,
     client::Client,
     contracts::{Contract, Exchange, SecurityType},
     orders::{
@@ -108,10 +107,14 @@ pub(super) use super::{
         ib_venue_order_id, parse_execution_time, parse_execution_to_fill_report,
         parse_order_status_to_report,
     },
-    reports::{IbReportClient, IbReportContext},
+    reports::{IbReportClient, IbReportContext, OrderEvidence},
     transform::nautilus_order_to_ib_order,
 };
-use super::{incarnations::OrderIncarnationGroup, parse::parse_order_data_to_report};
+use super::{
+    incarnations::OrderIncarnationGroup,
+    parse::{FillEvidence, parse_order_data_to_report},
+};
+use crate::common::spreads::parse_spread_instrument_id_to_legs;
 pub(super) use crate::{
     common::shared_client::{SharedClientHandle, get_or_connect},
     config::InteractiveBrokersExecutionClientConfig,
@@ -172,8 +175,16 @@ pub struct InteractiveBrokersExecutionClient {
 }
 
 pub(super) type CommissionCache = FifoCacheMap<String, (f64, String), 10_000>;
+
 pub(super) type PendingExecutionCache =
     FifoCacheMap<String, (tokio::time::Instant, ExecutionData), 10_000>;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum CommissionTimeout {
+    OrderRecovery(Option<Money>),
+    Emitted,
+    Recovered,
+}
 
 #[derive(Clone)]
 pub(super) struct OrderTracker {
@@ -194,12 +205,29 @@ pub(super) struct OrderTrackerState {
     /// Fills held for untracked orders while their details resolve; a key marks a resolution
     /// in flight.
     pub(super) fills_held: AHashMap<IbOrderSelector, Vec<FillReport>>,
+    pub(super) commission_timeouts: FifoCacheMap<String, CommissionTimeout, 10_000>,
     /// Orders whose submission is under way but not yet tracked (while their price magnifier
     /// loads, say). A cancel takes an order from here, and its submission then stops before IB.
     pub(super) awaiting_submission: AHashMap<ClientOrderId, AwaitingSubmission>,
 }
 
 impl OrderTrackerState {
+    pub(super) fn record_held_commission(
+        &mut self,
+        execution_id: &String,
+        commission: f64,
+        currency: &str,
+    ) -> anyhow::Result<()> {
+        if let Some(CommissionTimeout::OrderRecovery(fee)) =
+            self.commission_timeouts.get_mut(execution_id)
+        {
+            let currency = Currency::from_str(currency)?;
+            *fee = Some(Money::new_checked(commission, currency)?);
+        }
+
+        Ok(())
+    }
+
     pub(super) fn order(&self, order_id: i32) -> Option<&TrackedOrder> {
         self.active_orders
             .get(&order_id)
@@ -274,6 +302,7 @@ impl OrderTracker {
                 active_orders: AHashMap::new(),
                 terminal_orders: FifoCacheMap::new(),
                 fills_held: AHashMap::new(),
+                commission_timeouts: FifoCacheMap::new(),
                 awaiting_submission: AHashMap::new(),
             })),
         }
@@ -556,7 +585,14 @@ impl InteractiveBrokersExecutionClient {
                 {
                     executions.insert(data.execution.execution_id.clone(), data);
                 }
-                Executions::CommissionReport(commission) => {
+                Executions::CommissionReport(commission)
+                    if !parse::is_pending_commission(commission.commission) =>
+                {
+                    orders.lock()?.record_held_commission(
+                        &commission.execution_id,
+                        commission.commission,
+                        &commission.currency,
+                    )?;
                     commissions.insert(
                         commission.execution_id,
                         (commission.commission, commission.currency),
@@ -1486,42 +1522,26 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         let report_client = self.report_client()?;
-        let (mut order_reports, fill_evidence, mut position_reports) = tokio::try_join!(
-            self.generate_order_status_reports(&order_cmd),
+        let (order_evidence, fill_evidence, position_reports) = tokio::try_join!(
+            report_client.generate_order_evidence(&order_cmd),
             report_client.generate_fill_evidence(fill_cmd),
             self.generate_position_status_reports(&position_cmd),
         )?;
 
-        tracing::info!(
-            "generate_mass_status: {} order reports, {} fill reports, {} position reports",
-            order_reports.len(),
-            fill_evidence.reports.len(),
-            position_reports.len()
-        );
+        if !fill_evidence.missing_commissions.is_empty() {
+            let confirmed = report_client
+                .generate_position_status_reports(&position_cmd)
+                .await?;
+            Self::confirm_positions_stable(&position_reports, &confirmed)?;
+        }
 
-        let mut mass_status = ExecutionMassStatus::new(
-            self.core.client_id,
-            self.core.account_id,
-            self.core.venue,
+        let mass_status = self.assemble_mass_status(
             ts_now,
-            Some(UUID4::new()),
-        );
-        // IB `reqExecutions` and completed orders are session-scoped, so without a
-        // configured lookback the actual venue bound is unknown and the report set
-        // cannot be claimed complete.
-        mass_status.set_report_window(start, start.is_some());
-
-        parse::fill_missing_avg_px(&mut order_reports, &fill_evidence.reports);
-        parse::fill_position_avg_px_from_fills(
-            &mut position_reports,
-            &fill_evidence,
-            &self.instrument_provider,
-        );
-        let fill_reports = fill_evidence.reports;
-        mass_status.add_order_reports(order_reports);
-        mass_status.add_fill_reports(fill_reports);
-        mass_status.add_position_reports(position_reports);
-
+            start,
+            order_evidence,
+            fill_evidence,
+            position_reports,
+        )?;
         Ok(Some(mass_status))
     }
 
@@ -1708,7 +1728,9 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                         {
                             execution_data.insert(data.execution.execution_id.clone(), data);
                         }
-                        Ok(Executions::CommissionReport(commission)) => {
+                        Ok(Executions::CommissionReport(commission))
+                            if !parse::is_pending_commission(commission.commission) =>
+                        {
                             commissions.insert(
                                 commission.execution_id,
                                 (commission.commission, commission.currency),
@@ -2291,6 +2313,145 @@ impl InteractiveBrokersExecutionClient {
                 tracing::warn!("Failed to send account state: {e}");
             }
         }
+    }
+
+    fn confirm_positions_stable(
+        before: &[PositionStatusReport],
+        after: &[PositionStatusReport],
+    ) -> anyhow::Result<()> {
+        let exposure = |reports: &[PositionStatusReport]| {
+            reports
+                .iter()
+                .filter(|report| !report.signed_decimal_qty.is_zero())
+                .map(|report| {
+                    (
+                        report.instrument_id,
+                        (report.signed_decimal_qty, report.avg_px_open),
+                    )
+                })
+                .collect::<AHashMap<_, _>>()
+        };
+
+        // Use the original snapshot so the refresh cannot absorb fills queued during startup
+        anyhow::ensure!(
+            exposure(before) == exposure(after),
+            "IB positions changed while reconciling executions missing commission reports",
+        );
+
+        Ok(())
+    }
+
+    pub(super) fn assemble_mass_status(
+        &self,
+        ts_now: UnixNanos,
+        start: Option<UnixNanos>,
+        order_evidence: OrderEvidence,
+        mut fill_evidence: FillEvidence,
+        mut position_reports: Vec<PositionStatusReport>,
+    ) -> anyhow::Result<ExecutionMassStatus> {
+        let OrderEvidence {
+            reports: mut order_reports,
+            open_order_ids,
+        } = order_evidence;
+        let deferred_orders = fill_evidence.orders_missing_commission();
+        if !deferred_orders.is_empty() {
+            let positions_affected = Self::deferred_order_instruments(
+                &order_reports,
+                &open_order_ids,
+                &deferred_orders,
+            )?;
+            let reported_instruments: AHashSet<InstrumentId> = position_reports
+                .iter()
+                .map(|report| report.instrument_id)
+                .collect();
+            let context =
+                IbReportContext::new(self.instrument_provider.clone(), self.core.account_id);
+
+            // PositionMultiEnd confirms coverage, including contracts omitted because they are flat
+            for &instrument_id in positions_affected.difference(&reported_instruments) {
+                let report = context.flat_position_report(instrument_id, ts_now);
+                position_reports.push(report);
+            }
+
+            tracing::warn!(
+                orders = ?deferred_orders,
+                "Deferring IB orders with executions missing commission reports",
+            );
+            order_reports.retain(|report| !deferred_orders.contains(&report.venue_order_id));
+            fill_evidence
+                .reports
+                .retain(|report| !deferred_orders.contains(&report.venue_order_id));
+        }
+
+        tracing::info!(
+            "generate_mass_status: {} order reports, {} fill reports, {} position reports",
+            order_reports.len(),
+            fill_evidence.reports.len(),
+            position_reports.len()
+        );
+
+        let mut mass_status = ExecutionMassStatus::new(
+            self.core.client_id,
+            self.core.account_id,
+            self.core.venue,
+            ts_now,
+            Some(UUID4::new()),
+        );
+        // IB `reqExecutions` and completed orders are session-scoped, so without a
+        // configured lookback the actual venue bound is unknown and the report set
+        // cannot be claimed complete. Nor can it when an order was deferred.
+        mass_status.set_report_window(
+            start,
+            start.is_some() && fill_evidence.missing_commissions.is_empty(),
+        );
+
+        parse::fill_missing_avg_px(&mut order_reports, &fill_evidence.reports);
+        parse::fill_position_avg_px_from_fills(
+            &mut position_reports,
+            &fill_evidence,
+            &self.instrument_provider,
+        );
+        let fill_reports = fill_evidence.reports;
+        mass_status.add_order_reports(order_reports);
+        mass_status.add_fill_reports(fill_reports);
+        mass_status.add_position_reports(position_reports);
+
+        Ok(mass_status)
+    }
+
+    fn deferred_order_instruments(
+        order_reports: &[OrderStatusReport],
+        open_order_ids: &AHashSet<VenueOrderId>,
+        deferred_orders: &AHashSet<VenueOrderId>,
+    ) -> anyhow::Result<AHashSet<InstrumentId>> {
+        let mut instruments = AHashSet::new();
+
+        for venue_order_id in deferred_orders {
+            anyhow::ensure!(
+                !open_order_ids.contains(venue_order_id),
+                "Cannot reconcile working IB order {venue_order_id} with a missing commission report",
+            );
+
+            let report = order_reports
+                .iter()
+                .find(|report| report.venue_order_id == *venue_order_id)
+                .with_context(|| format!(
+                    "Cannot confirm IB order {venue_order_id} with a missing commission report is terminal",
+                ))?;
+
+            anyhow::ensure!(
+                report.order_status.is_closed(),
+                "Cannot reconcile working IB order {venue_order_id} with a missing commission report",
+            );
+
+            if let Ok(legs) = parse_spread_instrument_id_to_legs(&report.instrument_id) {
+                instruments.extend(legs.into_iter().map(|(instrument_id, _)| instrument_id));
+            } else {
+                instruments.insert(report.instrument_id);
+            }
+        }
+
+        Ok(instruments)
     }
 
     // Returns an error while disconnected, so the report hooks fall back to the inline path
