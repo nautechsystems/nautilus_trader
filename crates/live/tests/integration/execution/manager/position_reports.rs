@@ -1617,10 +1617,16 @@ async fn test_mass_status_prices_opening_in_replay_order_for_tied_fills() {
     );
 }
 
-// The venue reports 4 shares @ 0.4995 at four decimal places, so its unrounded average may sit
-// above the exact back-solve that would price the residual opening below zero
+// The venue reports 4 shares @ 0.4995 at four decimal places. Pricing the residual opening at the
+// exact report would need a negative price, but the lowest tick keeps the replay within tolerance
+#[rstest]
+#[case::sell_1_005("1.005000", "0.005000")]
+#[case::sell_1_0042("1.004200", "0.004200")]
 #[tokio::test]
-async fn test_mass_status_prices_opening_within_report_precision() {
+async fn test_mass_status_prices_opening_within_report_precision(
+    #[case] sell_qty: &str,
+    #[case] opening_qty: &str,
+) {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
         position_check_threshold_ns: DurationNanos::ZERO,
@@ -1650,7 +1656,7 @@ async fn test_mass_status_prices_opening_within_report_precision() {
         VenueOrderId::from("2"),
         TradeId::from("2"),
         OrderSide::Sell,
-        "1.005000",
+        sell_qty,
         "0.510",
         true,
         UnixNanos::from(3_000_000),
@@ -1704,8 +1710,8 @@ async fn test_mass_status_prices_opening_within_report_precision() {
         vec![
             (
                 OrderSide::Buy,
-                Quantity::from("0.005000"),
-                Price::from("0.04955")
+                Quantity::from(opening_qty),
+                Price::from("0.001")
             ),
             (
                 OrderSide::Buy,
@@ -1714,19 +1720,248 @@ async fn test_mass_status_prices_opening_within_report_precision() {
             ),
             (
                 OrderSide::Sell,
-                Quantity::from("1.005000"),
+                Quantity::from(sell_qty),
                 Price::from("0.510")
             ),
         ]
     );
     assert_eq!(positions.len(), 1);
     assert_eq!(positions[0].quantity, Quantity::from("4.000000"));
-    assert_eq!(positions[0].avg_px_open, dec!(0.49955));
+    assert!(position_prices_match(
+        positions[0].avg_px_open,
+        dec!(0.4995),
+        None,
+        Some(4)
+    ));
     assert!(
         result.unresolved_positions.is_empty(),
         "{:?}",
         result.unresolved_positions
     );
+}
+
+// The opening that restores the report exactly lies above the largest representable price when
+// the build uses standard precision, while the largest price still lands within tolerance
+#[tokio::test]
+async fn test_mass_status_prices_opening_at_price_limit() {
+    let mut ctx = TestContext::new();
+    let mut instrument = crypto_perpetual_ethusdt();
+    instrument.size_increment = Quantity::from("0.00000001");
+    instrument.size_precision = instrument.size_increment.precision;
+    instrument.max_price = None;
+    let instrument = InstrumentAny::CryptoPerpetual(instrument);
+    let instrument_id = instrument.id();
+    ctx.add_instrument(instrument);
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(StrategyId::external(), OmsType::Netting);
+
+    let (buy_order, buy_fill) = create_bounded_fill_lifecycle(
+        instrument_id,
+        VenueOrderId::from("1"),
+        TradeId::from("1"),
+        OrderSide::Buy,
+        "10.00000000",
+        "100000.00",
+        false,
+        UnixNanos::from(2_000_000),
+    );
+    let (sell_order, sell_fill) = create_bounded_fill_lifecycle(
+        instrument_id,
+        VenueOrderId::from("2"),
+        TradeId::from("2"),
+        OrderSide::Sell,
+        "5.00000000",
+        "100000.00",
+        true,
+        UnixNanos::from(3_000_000),
+    );
+
+    let report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from("5.00000001"),
+        UnixNanos::from(4_000_000),
+        UnixNanos::from(4_000_000),
+        None,
+        None,
+        Some(dec!(100015)),
+    );
+
+    let mut mass_status =
+        create_mass_status(vec![buy_order, sell_order], vec![buy_fill, sell_fill]);
+    mass_status.add_position_reports(vec![report]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    let cache = ctx.cache.borrow();
+    let positions = cache.positions_open(
+        None,
+        Some(&instrument_id),
+        None,
+        Some(&test_account_id()),
+        None,
+    );
+    let fills = filled_events(&result.events);
+
+    assert!(
+        result.unresolved_positions.is_empty(),
+        "{:?}",
+        result.unresolved_positions
+    );
+    assert_eq!(fills.len(), 3);
+    assert_eq!(fills[0].0, OrderSide::Buy);
+    assert_eq!(fills[0].1, Quantity::from("0.00000001"));
+    assert!(fills[0].2.as_decimal() <= Price::max(fills[0].2.precision).as_decimal());
+    assert_eq!(
+        fills[1..],
+        [
+            (
+                OrderSide::Buy,
+                Quantity::from("10.00000000"),
+                Price::from("100000.00")
+            ),
+            (
+                OrderSide::Sell,
+                Quantity::from("5.00000000"),
+                Price::from("100000.00")
+            ),
+        ]
+    );
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, Quantity::from("5.00000001"));
+    assert!(position_prices_match(
+        positions[0].avg_px_open,
+        dec!(100015),
+        None,
+        None
+    ));
+}
+
+// A pre-window buy of 5 keeps the position open through the tied reduction, so the window only
+// looks flat when replayed from zero and its real fills must survive with the opening
+#[tokio::test]
+async fn test_mass_status_keeps_fills_when_opening_bridges_apparent_flat() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    ctx.add_instrument(instrument);
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(StrategyId::external(), OmsType::Netting);
+
+    let (first_order, first_fill) = create_bounded_fill_lifecycle(
+        instrument_id,
+        VenueOrderId::from("1"),
+        TradeId::from("1"),
+        OrderSide::Buy,
+        "10.000",
+        "100.00",
+        false,
+        UnixNanos::from(1_000_000),
+    );
+    let (reduce_order, reduce_fill) = create_bounded_fill_lifecycle(
+        instrument_id,
+        VenueOrderId::from("2"),
+        TradeId::from("2"),
+        OrderSide::Sell,
+        "10.000",
+        "110.00",
+        true,
+        UnixNanos::from(2_000_000),
+    );
+    let (add_order, add_fill) = create_bounded_fill_lifecycle(
+        instrument_id,
+        VenueOrderId::from("3"),
+        TradeId::from("3"),
+        OrderSide::Buy,
+        "20.000",
+        "100.00",
+        false,
+        UnixNanos::from(2_000_000),
+    );
+    let (last_order, last_fill) = create_bounded_fill_lifecycle(
+        instrument_id,
+        VenueOrderId::from("4"),
+        TradeId::from("4"),
+        OrderSide::Buy,
+        "5.000",
+        "100.00",
+        false,
+        UnixNanos::from(3_000_000),
+    );
+
+    let report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from("30.000"),
+        UnixNanos::from(4_000_000),
+        UnixNanos::from(4_000_000),
+        None,
+        None,
+        Some(dec!(100)),
+    );
+
+    let mut mass_status = create_mass_status(
+        vec![first_order, reduce_order, add_order, last_order],
+        vec![first_fill, add_fill, reduce_fill, last_fill],
+    );
+    mass_status.add_position_reports(vec![report]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    let cache = ctx.cache.borrow();
+    let positions = cache.positions_open(
+        None,
+        Some(&instrument_id),
+        None,
+        Some(&test_account_id()),
+        None,
+    );
+
+    assert!(
+        result.unresolved_positions.is_empty(),
+        "{:?}",
+        result.unresolved_positions
+    );
+    assert_eq!(
+        filled_events(&result.events),
+        vec![
+            (
+                OrderSide::Buy,
+                Quantity::from("5.000"),
+                Price::from("100.00")
+            ),
+            (
+                OrderSide::Buy,
+                Quantity::from("10.000"),
+                Price::from("100.00")
+            ),
+            (
+                OrderSide::Sell,
+                Quantity::from("10.000"),
+                Price::from("110.00")
+            ),
+            (
+                OrderSide::Buy,
+                Quantity::from("20.000"),
+                Price::from("100.00")
+            ),
+            (
+                OrderSide::Buy,
+                Quantity::from("5.000"),
+                Price::from("100.00")
+            ),
+        ]
+    );
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, Quantity::from("30.000"));
+    assert_eq!(positions[0].avg_px_open, dec!(100));
+    assert_eq!(positions[0].realized_pnl, Some(Money::from("99.20 USDT")));
 }
 
 #[rstest]

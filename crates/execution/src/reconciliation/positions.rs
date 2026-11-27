@@ -132,24 +132,39 @@ fn process_mass_status_for_reconciliation_inner(
     );
 
     if generate_synthetic_reports
-        && divides_notional_by_price
         && venue_position.avg_px_reconciliation == AvgPxReconciliation::Match
+        && !match_synthetic_fill(
+            &mut result,
+            &venue_position,
+            tol,
+            instrument,
+            divides_notional_by_price,
+        )
     {
-        let opening = match &mut result {
-            FillAdjustmentResult::AddSyntheticOpening {
-                synthetic_fill,
-                existing_fills,
-            } => Some((synthetic_fill, existing_fills.as_slice())),
-            FillAdjustmentResult::ReplaceCurrentLifecycle { synthetic_fill } => {
-                Some((synthetic_fill, &[][..]))
-            }
-            _ => None,
-        };
+        // An opening that bridges an apparent flat falls back to the lifecycle it bridged
+        let lifecycle = matches!(result, FillAdjustmentResult::AddSyntheticOpening { .. })
+            .then(|| {
+                adjust_fills_for_current_lifecycle(
+                    &fill_snapshots,
+                    &venue_position,
+                    tol,
+                    divides_notional_by_price,
+                )
+            })
+            .flatten();
 
-        if let Some((fill, fills)) = opening
-            && !match_inverse_opening_fill(fill, fills, &venue_position, tol, instrument)
+        result = FillAdjustmentResult::NoAdjustment;
+
+        if let Some(mut lifecycle) = lifecycle
+            && match_synthetic_fill(
+                &mut lifecycle,
+                &venue_position,
+                tol,
+                instrument,
+                divides_notional_by_price,
+            )
         {
-            result = FillAdjustmentResult::NoAdjustment;
+            result = lifecycle;
         }
     }
 
@@ -279,69 +294,140 @@ pub(super) fn adjust_fills_for_partial_window(
         return FillAdjustmentResult::NoAdjustment;
     }
 
+    // A tie-break can replay the window flat although the missing opening keeps the position open
+    let flat_closes = flat_closes(fills);
+    if !flat_closes.is_empty()
+        && flat_closes
+            .iter()
+            .all(|&index| reopens_at_flat_close(fills, index))
+        && opening_keeps_position_open(fills, venue_position)
+        && let result @ FillAdjustmentResult::AddSyntheticOpening { .. } = add_synthetic_opening(
+            fills,
+            venue_position,
+            tolerance,
+            divides_notional_by_price,
+            max_px,
+        )
+    {
+        return result;
+    }
+
+    adjust_fills_for_current_lifecycle(fills, venue_position, tolerance, divides_notional_by_price)
+        .unwrap_or_else(|| {
+            add_synthetic_opening(
+                fills,
+                venue_position,
+                tolerance,
+                divides_notional_by_price,
+                max_px,
+            )
+        })
+}
+
+/// Adjusts the fills to the lifecycle after the last zero-crossing, if the window crosses zero.
+fn adjust_fills_for_current_lifecycle(
+    fills: &[FillSnapshot],
+    venue_position: &VenuePositionSnapshot,
+    tolerance: Decimal,
+    divides_notional_by_price: bool,
+) -> Option<FillAdjustmentResult> {
     let zero_crossings = detect_zero_crossings(fills);
 
     // Focus on the current lifecycle after the last zero-crossing
-    if let Some(&last_zero_crossing_ts) = zero_crossings.last() {
-        // Find the last zero-crossing that lands on FLAT (qty==0)
-        // This separates lifecycles; flips within a lifecycle don't count
-        let mut last_flat_crossing = None;
-        let mut running_qty = Decimal::ZERO;
-        for (index, fill) in fills.iter().enumerate() {
-            let prev_qty = running_qty;
-            running_qty += Decimal::from(fill.direction()) * fill.qty;
-            if prev_qty != Decimal::ZERO && running_qty == Decimal::ZERO {
-                last_flat_crossing = Some(index);
-            }
-        }
+    let &last_zero_crossing_ts = zero_crossings.last()?;
 
-        let lifecycle_boundary_ts =
-            last_flat_crossing.map_or(last_zero_crossing_ts, |index| fills[index].ts_event);
+    // The last zero-crossing that lands on FLAT separates lifecycles, flips within one don't count
+    let last_flat_crossing = flat_closes(fills).last().copied();
 
-        // A timestamp cutoff would drop a reopening fill tied with a flat close
-        if divides_notional_by_price
-            && let Some(index) = last_flat_crossing
-            && fills
-                .get(index + 1)
-                .is_some_and(|fill| fill.ts_event == lifecycle_boundary_ts)
-        {
-            return FillAdjustmentResult::NoAdjustment;
-        }
+    let lifecycle_boundary_ts =
+        last_flat_crossing.map_or(last_zero_crossing_ts, |index| fills[index].ts_event);
 
-        // Get fills from current lifecycle (after lifecycle boundary)
-        let current_lifecycle_fills: Vec<FillSnapshot> = fills
-            .iter()
-            .filter(|f| f.ts_event > lifecycle_boundary_ts)
-            .cloned()
-            .collect();
-
-        let Some(first_fill) = current_lifecycle_fills.first() else {
-            return FillAdjustmentResult::NoAdjustment;
-        };
-
-        let (current_qty, current_value) =
-            simulate_position(&current_lifecycle_fills, divides_notional_by_price);
-
-        if check_position_match(current_qty, current_value, venue_position, tolerance) {
-            // Current lifecycle matches - filter out old lifecycles
-            return FillAdjustmentResult::FilterToCurrentLifecycle {
-                last_zero_crossing_ts: lifecycle_boundary_ts,
-                current_lifecycle_fills,
-            };
-        }
-
-        // Current lifecycle doesn't match - replace with synthetic fill
-        let synthetic_fill = FillSnapshot::new(
-            first_fill.venue_order_id,
-            position_to_order_side(venue_position.side),
-            venue_position.qty,
-            venue_position.avg_px,
-            first_fill.ts_event.saturating_sub(1), // Timestamp before first fill
-        );
-
-        return FillAdjustmentResult::ReplaceCurrentLifecycle { synthetic_fill };
+    // A timestamp cutoff would drop a reopening fill tied with a flat close
+    if divides_notional_by_price
+        && let Some(index) = last_flat_crossing
+        && reopens_at_flat_close(fills, index)
+    {
+        return Some(FillAdjustmentResult::NoAdjustment);
     }
 
+    // Get fills from current lifecycle (after lifecycle boundary)
+    let current_lifecycle_fills: Vec<FillSnapshot> = fills
+        .iter()
+        .filter(|f| f.ts_event > lifecycle_boundary_ts)
+        .cloned()
+        .collect();
+
+    let Some(first_fill) = current_lifecycle_fills.first() else {
+        return Some(FillAdjustmentResult::NoAdjustment);
+    };
+
+    let (current_qty, current_value) =
+        simulate_position(&current_lifecycle_fills, divides_notional_by_price);
+
+    if check_position_match(current_qty, current_value, venue_position, tolerance) {
+        // Current lifecycle matches - filter out old lifecycles
+        return Some(FillAdjustmentResult::FilterToCurrentLifecycle {
+            last_zero_crossing_ts: lifecycle_boundary_ts,
+            current_lifecycle_fills,
+        });
+    }
+
+    // Current lifecycle doesn't match - replace with synthetic fill
+    let synthetic_fill = FillSnapshot::new(
+        first_fill.venue_order_id,
+        position_to_order_side(venue_position.side),
+        venue_position.qty,
+        venue_position.avg_px,
+        first_fill.ts_event.saturating_sub(1), // Timestamp before first fill
+    );
+
+    Some(FillAdjustmentResult::ReplaceCurrentLifecycle { synthetic_fill })
+}
+
+/// Returns the indexes of the fills that close the window flat when replayed from zero.
+fn flat_closes(fills: &[FillSnapshot]) -> Vec<usize> {
+    let mut running_qty = Decimal::ZERO;
+    fills
+        .iter()
+        .enumerate()
+        .filter_map(|(index, fill)| {
+            let prev_qty = running_qty;
+            running_qty += Decimal::from(fill.direction()) * fill.qty;
+            (!prev_qty.is_zero() && running_qty.is_zero()).then_some(index)
+        })
+        .collect()
+}
+
+/// Returns whether the fill after the flat close at `index` shares its timestamp.
+fn reopens_at_flat_close(fills: &[FillSnapshot], index: usize) -> bool {
+    fills
+        .get(index + 1)
+        .is_some_and(|fill| fill.ts_event == fills[index].ts_event)
+}
+
+/// Returns whether the opening implied by the venue quantity keeps every window fill open.
+fn opening_keeps_position_open(
+    fills: &[FillSnapshot],
+    venue_position: &VenuePositionSnapshot,
+) -> bool {
+    let signed_qty = |fill: &FillSnapshot| Decimal::from(fill.direction()) * fill.qty;
+    let mut qty = venue_position.signed_qty() - fills.iter().map(signed_qty).sum::<Decimal>();
+    let is_short = qty.is_sign_negative();
+
+    !qty.is_zero()
+        && fills.iter().all(|fill| {
+            qty += signed_qty(fill);
+            !qty.is_zero() && qty.is_sign_negative() == is_short
+        })
+}
+
+fn add_synthetic_opening(
+    fills: &[FillSnapshot],
+    venue_position: &VenuePositionSnapshot,
+    tolerance: Decimal,
+    divides_notional_by_price: bool,
+    max_px: Option<Decimal>,
+) -> FillAdjustmentResult {
     let (oldest_qty, oldest_value) = simulate_position(fills, divides_notional_by_price);
     if check_position_match(oldest_qty, oldest_value, venue_position, tolerance) {
         return FillAdjustmentResult::NoAdjustment;
@@ -427,7 +513,7 @@ fn synthetic_opening_fill(
             if divides_notional_by_price {
                 inverse_synthetic_opening_price(fills, venue_position, max_px)?
             } else {
-                linear_synthetic_opening_price(&fill, fills, venue_position, tolerance)?
+                linear_synthetic_opening_price(&fill, fills, venue_position, tolerance, max_px)?
             }
         }
     };
@@ -435,12 +521,45 @@ fn synthetic_opening_fill(
     Some(fill)
 }
 
-fn match_inverse_opening_fill(
+/// Returns whether the synthetic fill of `result`, if any, still matches at its reported price.
+fn match_synthetic_fill(
+    result: &mut FillAdjustmentResult,
+    venue_position: &VenuePositionSnapshot,
+    tolerance: Decimal,
+    instrument: &InstrumentAny,
+    divides_notional_by_price: bool,
+) -> bool {
+    let (fill, fills) = match result {
+        FillAdjustmentResult::AddSyntheticOpening {
+            synthetic_fill,
+            existing_fills,
+        } => (synthetic_fill, existing_fills.as_slice()),
+        FillAdjustmentResult::ReplaceCurrentLifecycle { synthetic_fill }
+            if divides_notional_by_price =>
+        {
+            (synthetic_fill, &[][..])
+        }
+        _ => return true,
+    };
+
+    match_opening_fill(
+        fill,
+        fills,
+        venue_position,
+        tolerance,
+        instrument,
+        divides_notional_by_price,
+    )
+}
+
+/// Moves the opening to the price its synthetic report will carry and checks the replay at it.
+fn match_opening_fill(
     fill: &mut FillSnapshot,
     existing_fills: &[FillSnapshot],
     venue_position: &VenuePositionSnapshot,
     tolerance: Decimal,
     instrument: &InstrumentAny,
+    divides_notional_by_price: bool,
 ) -> bool {
     let Ok(quantity) = Quantity::from_decimal_dp(fill.qty, instrument.size_precision()) else {
         return false;
@@ -450,13 +569,26 @@ fn match_inverse_opening_fill(
         return false;
     }
 
-    let Some(px) = bound_inverse_reconciliation_price(fill.px, instrument) else {
+    // A linear opening priced at zero restores the closest average the lowest tick can reach
+    let px = if divides_notional_by_price || fill.px > Decimal::ZERO {
+        fill.px
+    } else {
+        instrument.price_increment().as_decimal()
+    };
+
+    let Some(px) = bound_inverse_reconciliation_price(px, instrument) else {
         return false;
     };
 
     fill.px = px;
 
-    opening_matches(fill, existing_fills, venue_position, tolerance, true)
+    opening_matches(
+        fill,
+        existing_fills,
+        venue_position,
+        tolerance,
+        divides_notional_by_price,
+    )
 }
 
 fn opening_matches(
@@ -476,25 +608,18 @@ fn linear_synthetic_opening_price(
     fills: &[FillSnapshot],
     venue_position: &VenuePositionSnapshot,
     tolerance: Decimal,
+    max_px: Option<Decimal>,
 ) -> Option<Decimal> {
-    // A venue that rounds its average reports up to half a unit below the unrounded value and one
-    // that truncates up to a full unit, so the half-unit midpoint stays inside either report when
-    // the exact back-solve leaves no positive opening price
-    let half_unit = venue_position
-        .avg_px_precision
-        .and_then(|precision| Decimal::try_new(5, u32::from(precision) + 1).ok());
-    let target_avg_pxs = std::iter::once(venue_position.avg_px)
-        .chain(half_unit.map(|half_unit| venue_position.avg_px + half_unit));
+    let exact_px = undo_linear_fills(fills, venue_position.signed_qty(), venue_position.avg_px)?;
 
-    target_avg_pxs
-        .filter_map(|target_avg_px| {
-            undo_linear_fills(fills, venue_position.signed_qty(), target_avg_px)
-        })
-        .find(|px| {
-            let mut candidate = opening.clone();
-            candidate.px = *px;
-            opening_matches(&candidate, fills, venue_position, tolerance, false)
-        })
+    // The replayed average rises with the opening price, so the nearest bounded price restores the
+    // closest average and any reported average within tolerance can accept it
+    let px = exact_px.max(Decimal::ZERO);
+    let px = max_px.map_or(px, |max_px| px.min(max_px));
+    let mut candidate = opening.clone();
+    candidate.px = px;
+
+    opening_matches(&candidate, fills, venue_position, tolerance, false).then_some(px)
 }
 
 fn undo_linear_fills(
@@ -529,7 +654,7 @@ fn undo_linear_fills(
         qty = prior_qty;
     }
 
-    avg_px.filter(|px| *px > Decimal::ZERO)
+    avg_px
 }
 
 fn inverse_synthetic_opening_price(
