@@ -62,9 +62,9 @@ use super::{ids::*, orders::*, positions::*, types::*};
 
 /// Returns the timestamps where the fills replayed from flat cross zero, fill by fill.
 pub(super) fn detect_zero_crossings(fills: &[FillSnapshot]) -> Vec<u64> {
-    zero_crossings(fills, |_, _| false)
+    fill_zero_crossings(fills)
         .into_iter()
-        .map(|(ts, _)| ts)
+        .map(|crossing| crossing.ts_event)
         .collect()
 }
 
