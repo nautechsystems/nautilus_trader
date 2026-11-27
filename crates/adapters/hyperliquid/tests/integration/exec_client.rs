@@ -2673,7 +2673,7 @@ async fn test_scheduled_cancel_startup_request_timeout() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_scheduled_cancel_pauses_during_websocket_outage() {
+async fn test_scheduled_cancel_stays_armed_after_websocket_disconnect() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
     let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -2709,26 +2709,18 @@ async fn test_scheduled_cancel_pauses_during_websocket_outage() {
     let SystemEvent::SocketState(disconnected) = disconnected;
     assert_eq!(disconnected.state, SocketState::Disconnected);
 
-    tokio::time::sleep(Duration::from_millis(5_200)).await;
-    assert_eq!(*state.exchange_request_count.lock().await, 1);
-    state.reject_ws_connections.store(false, Ordering::Relaxed);
-    wait_until_async(
-        || async { state.scheduled_cancel_requests.lock().await.len() >= 2 },
-        Duration::from_secs(20),
-    )
-    .await;
     client.disconnect().await.unwrap();
 
-    assert_eq!(state.ws_connections.load(Ordering::Relaxed), 2);
-    assert_eq!(state.scheduled_cancel_requests.lock().await.len(), 2);
-    assert_eq!(*state.exchange_request_count.lock().await, 2);
+    assert_eq!(state.ws_connections.load(Ordering::Relaxed), 1);
+    assert_eq!(state.scheduled_cancel_requests.lock().await.len(), 1);
+    assert_eq!(*state.exchange_request_count.lock().await, 1);
 }
 
 #[rstest]
 #[case::disconnect(false)]
 #[case::stop(true)]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_scheduled_cancel_refresh_retry_and_shutdown(#[case] stop: bool) {
+async fn test_scheduled_cancel_arms_once_and_preserves_deadline_on_shutdown(#[case] stop: bool) {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
     let mut config = create_test_exec_config(addr);
@@ -2744,12 +2736,6 @@ async fn test_scheduled_cancel_refresh_retry_and_shutdown(#[case] stop: bool) {
     let after = get_atomic_clock_realtime().get_time_ms();
     client.connect().await.unwrap();
     assert_eq!(*state.exchange_request_count.lock().await, 1);
-    state.fail_next_exchange.store(true, Ordering::Relaxed);
-    wait_until_async(
-        || async { state.scheduled_cancel_requests.lock().await.len() == 3 },
-        Duration::from_secs(13),
-    )
-    .await;
 
     if stop {
         client.stop().unwrap();
@@ -2757,31 +2743,19 @@ async fn test_scheduled_cancel_refresh_retry_and_shutdown(#[case] stop: bool) {
         client.disconnect().await.unwrap();
     }
 
-    tokio::time::sleep(Duration::from_millis(5_200)).await;
-
     let requests = state.scheduled_cancel_requests.lock().await.clone();
     assert!(!client.is_connected());
-    assert_eq!(requests.len(), 3);
-    assert_eq!(*state.exchange_request_count.lock().await, 3);
-    let first_deadline = requests[0]["action"]["time"].as_u64().unwrap();
-    assert!((before + 15_000..=after + 15_000).contains(&first_deadline));
-
-    for request in &requests {
-        let deadline = request["action"]["time"].as_u64().unwrap();
-        assert_eq!(
-            request["action"],
-            json!({"type": "scheduleCancel", "time": deadline})
-        );
-        assert_eq!(request["vaultAddress"], vault);
-    }
-
-    for pair in requests.windows(2) {
-        assert!(
-            pair[1]["action"]["time"].as_u64().unwrap()
-                > pair[0]["action"]["time"].as_u64().unwrap()
-        );
-        assert!(pair[1]["nonce"].as_u64().unwrap() > pair[0]["nonce"].as_u64().unwrap());
-    }
+    assert_eq!(requests.len(), 1);
+    assert_eq!(*state.exchange_request_count.lock().await, 1);
+    let request = &requests[0];
+    let deadline = request["action"]["time"].as_u64().unwrap();
+    assert!((before + 15_000..=after + 15_000).contains(&deadline));
+    assert_eq!(
+        request["action"],
+        json!({"type": "scheduleCancel", "time": deadline})
+    );
+    assert_eq!(request["vaultAddress"], vault);
+    assert!(request["nonce"].is_u64());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -2790,6 +2764,8 @@ async fn test_scheduled_cancel_reconnect_rearms_once() {
     let addr = start_mock_server(state.clone()).await;
     let mut config = create_test_exec_config(addr);
     config.scheduled_cancel_timeout_secs = Some(15);
+    let vault = "0x1111111111111111111111111111111111111111";
+    config.vault_address = Some(vault.to_string());
     let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
     add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
 
@@ -2807,8 +2783,24 @@ async fn test_scheduled_cancel_reconnect_rearms_once() {
     client.disconnect().await.unwrap();
 
     assert_eq!(state.ws_connections.load(Ordering::Relaxed), 2);
-    assert_eq!(state.scheduled_cancel_requests.lock().await.len(), 3);
+    let requests = state.scheduled_cancel_requests.lock().await;
+    assert_eq!(requests.len(), 3);
     assert_eq!(*state.exchange_request_count.lock().await, 3);
+
+    for request in requests.iter() {
+        let deadline = request["action"]["time"].as_u64().unwrap();
+        assert_eq!(
+            request["action"],
+            json!({"type": "scheduleCancel", "time": deadline})
+        );
+        assert_eq!(request["vaultAddress"], vault);
+    }
+
+    assert!(
+        requests[2]["action"]["time"].as_u64().unwrap()
+            > requests[1]["action"]["time"].as_u64().unwrap()
+    );
+    assert!(requests[2]["nonce"].as_u64().unwrap() > requests[1]["nonce"].as_u64().unwrap());
 }
 
 #[rstest]

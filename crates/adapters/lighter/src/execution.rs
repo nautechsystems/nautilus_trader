@@ -4692,52 +4692,59 @@ fn spawn_order_probe(pending: &PendingSendTx, context: AckedOrderProbeContext, r
     }
 
     let pending_tasks = context.pending_tasks.clone();
-
-    let future = async move {
-        tokio::select! {
-            () = context.cancellation_token.cancelled() => return,
-            () = tokio::time::sleep(ACKED_ORDER_LOOKUP_DELAY) => {}
-        }
-
-        if let Some(pending) = action {
-            let result = if let PendingSendTxKind::Cancel {
-                client_order_id, ..
-            } = pending.kind
-            {
-                let Some(token) = context.dispatch.pending_cancel_token(
-                    &client_order_id,
-                    pending.connection_epoch,
-                    pending.nonce,
-                ) else {
-                    return;
-                };
-
-                tokio::select! {
-                    biased;
-                    () = context.cancellation_token.cancelled() => return,
-                    () = token.cancelled() => return,
-                    result = probe_acked_action(&pending,&context) => result,
-                }
-            } else {
-                probe_acked_action(&pending, &context).await
-            };
-
-            if let Err(e) = result {
-                log::warn!("Lighter acknowledged action probe failed: {e}");
-            }
-
-            return;
-        }
-
-        if let Some(probe) = probe
-            && let Err(e) = probe_acked_create(&probe, &context).await
-        {
-            log::warn!("Lighter create outcome probe failed: {e:?}");
-        }
-    };
-
+    let future = run_order_probe(action, probe, context);
     if let Err(e) = pending_tasks.spawn(future) {
         log::debug!("Skipping Lighter acknowledged-order probe during shutdown: {e}");
+    }
+}
+
+async fn run_order_probe(
+    action: Option<PendingSendTx>,
+    probe: Option<AckedOrderProbe>,
+    context: AckedOrderProbeContext,
+) {
+    tokio::select! {
+        () = context.cancellation_token.cancelled() => return,
+        () = tokio::time::sleep(ACKED_ORDER_LOOKUP_DELAY) => {}
+    }
+
+    if let Some(pending) = action {
+        run_acked_action_probe(&pending, &context).await;
+        return;
+    }
+
+    if let Some(probe) = probe
+        && let Err(e) = probe_acked_create(&probe, &context).await
+    {
+        log::warn!("Lighter create outcome probe failed: {e:?}");
+    }
+}
+
+async fn run_acked_action_probe(pending: &PendingSendTx, context: &AckedOrderProbeContext) {
+    let result = if let PendingSendTxKind::Cancel {
+        client_order_id, ..
+    } = pending.kind
+    {
+        let Some(token) = context.dispatch.pending_cancel_token(
+            &client_order_id,
+            pending.connection_epoch,
+            pending.nonce,
+        ) else {
+            return;
+        };
+
+        tokio::select! {
+            biased;
+            () = context.cancellation_token.cancelled() => return,
+            () = token.cancelled() => return,
+            result = probe_acked_action(pending, context) => result,
+        }
+    } else {
+        probe_acked_action(pending, context).await
+    };
+
+    if let Err(e) = result {
+        log::warn!("Lighter acknowledged action probe failed: {e}");
     }
 }
 

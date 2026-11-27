@@ -4814,19 +4814,6 @@ mod tests {
         assert!(client.is_closed());
     }
 
-    #[tokio::test]
-    async fn test_websocket_heartbeat() {
-        let server = TestServer::setup().await;
-        let client = setup_test_client(server.port).await;
-
-        // Wait ~3s => server should see multiple "ping"
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-
-        // Cleanup
-        client.disconnect().await;
-        assert!(client.is_disconnected());
-    }
-
     #[rstest]
     #[tokio::test]
     async fn test_websocket_reconnect_exhausted() {

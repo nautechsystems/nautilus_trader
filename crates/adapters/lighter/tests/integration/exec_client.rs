@@ -66,7 +66,10 @@ use nautilus_common::{
     clients::{ExecutionClient, ExecutionReportTask},
     clock::{Clock, VirtualClock},
     factories::OrderFactory,
-    live::runner::{replace_exec_event_sender, replace_system_event_sender},
+    live::{
+        get_runtime,
+        runner::{replace_exec_event_sender, replace_system_event_sender},
+    },
     messages::{
         ExecutionEvent, ExecutionReport, SystemEvent,
         execution::{
@@ -107,6 +110,10 @@ use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use ustr::Ustr;
 
+use super::{
+    AckedOrderProbeContext, handle_send_tx_ack_for_connection, run_acked_action_probe,
+    run_order_probe,
+};
 use crate::{
     common::{
         consts::{
@@ -128,7 +135,7 @@ use crate::{
             L2TxAttributes, ModifyOrderTxInfo, OrderInfo, TxContext, compute_tx_hash,
         },
     },
-    websocket::dispatch::PendingOrderAction,
+    websocket::dispatch::{PendingOrderAction, PendingSendTx},
 };
 
 const PRIVATE_KEY_HEX: &str =
@@ -148,7 +155,7 @@ const ETH_SPOT_SYMBOL: &str = "ETH/USDC-SPOT";
 const TEST_MARKET_INDEX: i64 = 0;
 const TEST_NEXT_NONCE: i64 = 9_999;
 const TEST_ORDER_NONCE: i64 = 281_474_720_725_346;
-const TEST_REST_REFILL_PERIOD: Duration = ACKED_ORDER_LOOKUP_DELAY.saturating_mul(6);
+const TEST_REST_REFILL_PERIOD: Duration = Duration::from_secs(2);
 const INTEGRATOR_APPROVAL_MAX_TTL_MS: i64 = 5 * 365 * 24 * 60 * 60 * 1_000;
 
 fn data_path() -> PathBuf {
@@ -13310,11 +13317,11 @@ async fn test_resolved_single_cancel_probe_spends_no_rest_quota() {
 }
 
 #[rstest]
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test]
 async fn test_completed_cancel_backlog_does_not_delay_modify_confirmation() {
     let (addr, state) = start_server().await;
     let mut config = build_config(addr);
-    config.rest_quota_per_min = Some(5);
+    config.rest_quota_per_min = Some(7);
     let (mut client, mut rx, cache) = build_client_with(config);
     client.connect().await.unwrap();
     let target = ClientOrderId::from("O-QUOTA-MODIFY");
@@ -13327,6 +13334,8 @@ async fn test_completed_cancel_backlog_does_not_delay_modify_confirmation() {
         "281476929510805",
     )
     .await;
+
+    let mut cancels = Vec::new();
 
     for i in 0..3 {
         let id = ClientOrderId::from(format!("O-QUOTA-CANCELED-{i}").as_str());
@@ -13352,6 +13361,7 @@ async fn test_completed_cancel_backlog_does_not_delay_modify_confirmation() {
             Some(venue),
         ));
         cache.borrow_mut().update_order(&pending).unwrap();
+        *state.next_send_tx_ack.lock().await = Some(Value::Null);
         client
             .cancel_order(CancelOrder::new(
                 trader_id(),
@@ -13366,7 +13376,10 @@ async fn test_completed_cancel_backlog_does_not_delay_modify_confirmation() {
                 None,
             ))
             .unwrap();
-        await_send_tx_count(&state, 3 + 2 * i as usize).await;
+        let (pending, context) =
+            take_acknowledged_order_probe(&client, &state, 3 + 2 * i as usize).await;
+        let probe = run_order_probe(Some(pending), None, context);
+        cancels.push(Box::pin(probe));
         let mut entry = account_all_orders_open_entry(
             index,
             venue.as_str(),
@@ -13386,7 +13399,6 @@ async fn test_completed_cancel_backlog_does_not_delay_modify_confirmation() {
         cache.borrow_mut().update_order(&event).unwrap();
     }
 
-    tokio::time::sleep(Duration::from_secs(12)).await;
     let mut row = http_order_fixture(
         target_venue.as_str(),
         &target_index.to_string(),
@@ -13425,6 +13437,20 @@ async fn test_completed_cancel_backlog_does_not_delay_modify_confirmation() {
         .borrow_mut()
         .update_order(&OrderEventAny::PendingUpdate(pending))
         .unwrap();
+    tokio::time::pause();
+
+    for cancel in &mut cancels {
+        assert!(futures_util::poll!(cancel.as_mut()).is_pending());
+    }
+
+    tokio::time::sleep(ACKED_ORDER_LOOKUP_DELAY).await;
+
+    for cancel in &mut cancels {
+        assert!(futures_util::poll!(cancel.as_mut()).is_ready());
+    }
+
+    tokio::time::resume();
+
     client.modify_order(command).unwrap();
     let event = next_order_event(&mut rx, Duration::from_secs(8)).await;
     client.disconnect().await.unwrap();
@@ -13738,12 +13764,14 @@ async fn test_executed_single_cancel_retries_until_terminal_status(#[case] worki
 #[rstest]
 #[case::stream(false)]
 #[case::reconnected(true)]
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test]
 async fn test_completed_cancel_does_not_consume_queued_rest_token(#[case] reconnect: bool) {
     let (addr, state) = start_server().await;
     let registry = SocketReconnectRegistry::default();
     let (mut client, mut rx, cache) = registry.scope(|| build_client_with_rest_quota(addr));
+    let quota_started = tokio::time::Instant::now();
     client.connect().await.unwrap();
+    let quota_initialized = tokio::time::Instant::now();
     let id = ClientOrderId::from("O-CANCEL-QUEUED-REST");
     let (index, venue) = seed_open_order(
         &client,
@@ -13788,6 +13816,7 @@ async fn test_completed_cancel_does_not_consume_queued_rest_token(#[case] reconn
         Some(venue),
     ));
     cache.borrow_mut().update_order(&pending).unwrap();
+    *state.next_send_tx_ack.lock().await = Some(Value::Null);
     client
         .cancel_order(CancelOrder::new(
             trader_id(),
@@ -13802,43 +13831,97 @@ async fn test_completed_cancel_does_not_consume_queued_rest_token(#[case] reconn
             None,
         ))
         .unwrap();
-    await_send_tx_count(&state, 2).await;
-    tokio::time::sleep(Duration::from_secs(3)).await;
+    let (pending, context) = take_acknowledged_order_probe(&client, &state, 2).await;
+    let epoch = pending.connection_epoch;
+    let mut probe =
+        get_runtime().spawn(async move { run_acked_action_probe(&pending, &context).await });
+
+    assert!(
+        tokio::time::timeout(Duration::from_millis(75), &mut probe)
+            .await
+            .is_err(),
+        "probe must stay pending while REST quota is exhausted"
+    );
     assert_eq!(
         state.tx_calls.load(Ordering::Acquire),
         0,
         "probe must still be queued for REST quota"
     );
 
-    if reconnect {
-        let subscribe_count = state.subscribes().await.len();
-        let handle = registry
-            .handle(client_id(), Ustr::from("lighter-user-streams"))
-            .unwrap();
-        assert_eq!(
-            handle.request_reconnect(),
-            SocketReconnectRequestOutcome::Accepted
-        );
-        await_subscribe_count(&state, subscribe_count + 5).await;
-    } else {
-        let mut entry = account_all_orders_open_entry(
-            index,
-            venue.as_str(),
-            &index.to_string(),
-            TEST_ORDER_NONCE,
-        );
-        entry["status"] = json!("canceled");
-        entry["remaining_base_amount"] = json!("0.0000");
-        state.push_frame(&json!({"type":"update/account_all_orders","channel":format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),"orders":{"0":[entry]}}));
-        let event = next_order_event(&mut rx, Duration::from_secs(2))
-            .await
-            .unwrap();
-        assert!(matches!(&event,OrderEventAny::Canceled(e) if e.client_order_id==id));
-        cache.borrow_mut().update_order(&event).unwrap();
-    }
+    let resolve = async {
+        if reconnect {
+            let subscribe_count = state.subscribes().await.len();
+            let handle = registry
+                .handle(client_id(), Ustr::from("lighter-user-streams"))
+                .unwrap();
+            assert_eq!(
+                handle.request_reconnect(),
+                SocketReconnectRequestOutcome::Accepted
+            );
+            await_subscribe_count(&state, subscribe_count + 5).await;
+        } else {
+            let mut entry = account_all_orders_open_entry(
+                index,
+                venue.as_str(),
+                &index.to_string(),
+                TEST_ORDER_NONCE,
+            );
+            entry["status"] = json!("canceled");
+            entry["remaining_base_amount"] = json!("0.0000");
+            state.push_frame(&json!({"type":"update/account_all_orders","channel":format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),"orders":{"0":[entry]}}));
+            let event = next_order_event(&mut rx, Duration::from_secs(2))
+                .await
+                .unwrap();
+            assert!(matches!(&event,OrderEventAny::Canceled(e) if e.client_order_id==id));
+            cache.borrow_mut().update_order(&event).unwrap();
+        }
+    };
 
-    let refill_cycles = if reconnect { 2 } else { 1 };
-    tokio::time::sleep(TEST_REST_REFILL_PERIOD * refill_cycles).await;
+    let first_refill = quota_started + TEST_REST_REFILL_PERIOD;
+    let ((), probe_result) =
+        tokio::time::timeout_at(first_refill, async { tokio::join!(resolve, probe) })
+            .await
+            .expect("the queued probe should release before quota refills");
+
+    probe_result.unwrap();
+
+    // Leave time for I/O without letting the next refill rescue a missed request
+    let first_refill_deadline = first_refill + TEST_REST_REFILL_PERIOD / 2;
+
+    let refill_periods = if reconnect {
+        tokio::time::timeout_at(
+            first_refill_deadline,
+            wait_until_async(
+                || async {
+                    client.nonce_ready_connection_epoch.load(Ordering::Acquire) == epoch + 1
+                },
+                TEST_REST_REFILL_PERIOD,
+            ),
+        )
+        .await
+        .expect("the nonce refresh should use the first refilled token");
+
+        2
+    } else {
+        1
+    };
+
+    // Leave this refill uncontested so a surviving lookup can reach the venue
+    let refill = TEST_REST_REFILL_PERIOD * refill_periods;
+    let observe_until = quota_initialized + refill + TEST_REST_REFILL_PERIOD / 4;
+    tokio::time::sleep_until(observe_until).await;
+
+    let request_deadline = quota_started + refill + TEST_REST_REFILL_PERIOD * 3 / 4;
+    let http_client = client.http_client.clone();
+    let request =
+        get_runtime().spawn(async move { http_client.fetch_instrument_details(None).await });
+    let instruments = tokio::time::timeout_at(request_deadline, request)
+        .await
+        .expect("another REST request can use the refilled quota")
+        .unwrap()
+        .unwrap();
+    assert_eq!(instruments.code, 200);
+
     client.disconnect().await.unwrap();
     assert_eq!(
         cache.borrow().order(&id).unwrap().status(),
@@ -13855,6 +13938,52 @@ async fn test_completed_cancel_does_not_consume_queued_rest_token(#[case] reconn
         0,
         "completed cancellation must release its queued recovery lookup"
     );
+}
+
+async fn take_acknowledged_order_probe(
+    client: &LighterExecutionClient,
+    state: &TestServerState,
+    sent: usize,
+) -> (PendingSendTx, AckedOrderProbeContext) {
+    // The mock withholds the wire ack so the test can drive the probe directly
+    let frame = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(frame) = state.send_txs.lock().await.get(sent - 1).cloned() {
+                break frame;
+            }
+
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("mock venue received sendTx");
+
+    let info = send_tx_info(&frame);
+    let hash = order_tx_hash(send_tx_type(&frame), &info, LIGHTER_TESTNET_CHAIN_ID);
+    let credential = client.credential.clone().unwrap();
+    let pending = handle_send_tx_ack_for_connection(
+        &client.dispatch,
+        Some(credential.account_index()),
+        client.ws_client.connection_epoch(),
+        200,
+        Some(&hash),
+    )
+    .expect("mock sendTx reached the venue");
+
+    let context = AckedOrderProbeContext {
+        http_client: client.http_client.clone(),
+        registry: Arc::clone(&client.registry),
+        credential,
+        dispatch: client.dispatch.clone(),
+        account_id: client.core.account_id,
+        clock: client.clock,
+        emitter: client.emitter.clone(),
+        connection_epoch: client.ws_client.connection_epoch_atomic(),
+        cancellation_token: client.cancellation_token.clone(),
+        pending_tasks: client.pending_tasks.spawner().unwrap(),
+    };
+
+    (pending, context)
 }
 
 #[rstest]

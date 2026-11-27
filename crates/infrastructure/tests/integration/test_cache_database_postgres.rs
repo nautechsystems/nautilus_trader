@@ -375,7 +375,7 @@ mod serial_tests {
             .unwrap();
     }
 
-    #[tokio::test(flavor = "current_thread")]
+    #[tokio::test(start_paused = true)]
     async fn test_live_node_reports_postgres_connection_refused() {
         let socket = tokio::net::TcpSocket::new_v4().unwrap();
         socket.bind(([127, 0, 0, 1], 0).into()).unwrap();
@@ -392,6 +392,7 @@ mod serial_tests {
             .build()
             .unwrap();
 
+        // The paused clock advances through SQLx's connection retries and pool timeout
         let error = tokio::time::timeout(Duration::from_secs(40), node.run())
             .await
             .expect("PostgreSQL connection refusal exceeded the startup deadline")

@@ -17,6 +17,7 @@
 
 use std::{
     cell::RefCell,
+    future::Future,
     rc::Rc,
     sync::Arc,
     time::{Duration, Instant},
@@ -61,6 +62,7 @@ use nautilus_model::{
 };
 use parking_lot::Mutex;
 use rust_decimal::Decimal;
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use crate::{
@@ -697,35 +699,11 @@ impl HyperliquidExecutionClient {
         let ws_client = self.ws_client.clone();
         let clock = self.clock;
         let cancellation = self.session_tasks.cancellation_token();
-
         self.session_tasks.spawn(async move {
-            let mut interval = tokio::time::interval_at(
-                tokio::time::Instant::now() + refresh_interval,
-                refresh_interval,
-            );
-            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-
-            loop {
-                tokio::select! {
-                    biased;
-                    () = cancellation.cancelled() => break,
-                    _ = interval.tick() => {}
-                }
-
-                if !ws_client.is_active() {
-                    continue;
-                }
-
-                tokio::select! {
-                    biased;
-                    () = cancellation.cancelled() => break,
-                    result = refresh_scheduled_cancel(&http_client, clock, timeout, refresh_interval) => {
-                        if let Err(e) = result {
-                            log::error!("Scheduled cancellation refresh failed; the last deadline may expire: {e:#}");
-                        }
-                    }
-                }
-            }
+            run_scheduled_cancel_refresh(refresh_interval, &cancellation, &ws_client, || {
+                refresh_scheduled_cancel(&http_client, clock, timeout, refresh_interval)
+            })
+            .await;
         })?;
 
         log::info!("Scheduled cancellation armed: timeout_secs={timeout_secs}");
@@ -3232,6 +3210,43 @@ fn emit_account_state(
     Ok(())
 }
 
+async fn run_scheduled_cancel_refresh<F>(
+    refresh_interval: Duration,
+    cancellation: &CancellationToken,
+    ws_client: &HyperliquidWebSocketClient,
+    mut refresh: impl FnMut() -> F,
+) where
+    F: Future<Output = anyhow::Result<()>>,
+{
+    let mut interval = tokio::time::interval_at(
+        tokio::time::Instant::now() + refresh_interval,
+        refresh_interval,
+    );
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+    loop {
+        tokio::select! {
+            biased;
+            () = cancellation.cancelled() => break,
+            _ = interval.tick() => {}
+        }
+
+        if !ws_client.is_active() {
+            continue;
+        }
+
+        tokio::select! {
+            biased;
+            () = cancellation.cancelled() => break,
+            result = refresh() => {
+                if let Err(e) = result {
+                    log::error!("Scheduled cancellation refresh failed; the last deadline may expire: {e:#}");
+                }
+            }
+        }
+    }
+}
+
 async fn refresh_scheduled_cancel(
     http_client: &HyperliquidHttpClient,
     clock: &AtomicTime,
@@ -5072,7 +5087,12 @@ use crate::common::parse::determine_order_list_grouping;
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc, sync::Arc, time::Duration};
+    use std::{
+        cell::{Cell, RefCell},
+        rc::Rc,
+        sync::Arc,
+        time::Duration,
+    };
 
     use alloy::signers::local::PrivateKeySigner;
     use axum::{
@@ -5090,6 +5110,7 @@ mod tests {
         clock::VirtualClock,
         messages::{ExecutionEvent, ExecutionReport as EngineExecutionReport},
         msgbus::{publish_instrument, switchboard::get_instrument_topic},
+        testing::wait_until_async,
     };
     use nautilus_core::{
         DurationNanos, UUID4, UnixNanos,
@@ -5135,8 +5156,8 @@ mod tests {
         WsDispatchState, attach_known_client_order_id, build_ouo_resize_request,
         can_fast_cancel_order, classify_post_failure, determine_order_list_grouping,
         handle_execution_report, reconnect_reports_from_history, register_order_context_into,
-        resolve_order_legs, split_fast_cancel_requests, ts_venue, validate_order_for_hyperliquid,
-        validate_query_order_fills,
+        resolve_order_legs, run_scheduled_cancel_refresh, split_fast_cancel_requests, ts_venue,
+        validate_order_for_hyperliquid, validate_query_order_fills,
     };
     use crate::{
         common::{
@@ -5158,6 +5179,107 @@ mod tests {
 
     const TEST_INSTRUMENT_ID: &str = "BTC-USD-PERP.HYPERLIQUID";
     const BOOTSTRAP_DELAY: DurationNanos = DurationNanos::from_secs(60);
+
+    #[rstest]
+    #[case::disconnect(false)]
+    #[case::stop(true)]
+    #[tokio::test]
+    async fn scheduled_cancel_refresh_skips_outage_and_continues_after_failure(#[case] stop: bool) {
+        let upgrades = Arc::new(tokio::sync::Semaphore::new(1));
+        let (attempted, mut handshakes) = tokio::sync::mpsc::unbounded_channel();
+        let permits = Arc::clone(&upgrades);
+        let app = Router::new().route(
+            "/ws",
+            get(move |upgrade: WebSocketUpgrade| {
+                let permits = Arc::clone(&permits);
+                let attempted = attempted.clone();
+                async move {
+                    attempted.send(()).unwrap();
+                    permits.acquire().await.unwrap().forget();
+                    upgrade.on_upgrade(|mut socket| async move {
+                        while let Some(Ok(_)) = socket.next().await {}
+                    })
+                }
+            }),
+        );
+
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let mut client = make_execution_client();
+
+        client.ws_client = HyperliquidWebSocketClient::new(
+            Some(format!("ws://{addr}/ws")),
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+
+        client.ws_client.connect().await.unwrap();
+        assert_eq!(handshakes.recv().await, Some(()));
+        assert!(client.ws_client.request_reconnect());
+        tokio::time::timeout(Duration::from_secs(5), handshakes.recv())
+            .await
+            .unwrap()
+            .expect("the venue received the reconnect handshake");
+        assert!(!client.ws_client.is_active());
+
+        client.core.set_started();
+        client.core.set_connected();
+        let cancellation = client.session_tasks.cancellation_token();
+        let ws_client = client.ws_client.clone();
+        let (attempts, mut observed) = tokio::sync::mpsc::unbounded_channel();
+        let interval = Duration::from_secs(5);
+        let attempt = Cell::new(0);
+
+        tokio::time::pause();
+
+        let refresh = run_scheduled_cancel_refresh(interval, &cancellation, &ws_client, || async {
+            let current = attempt.get() + 1;
+            attempt.set(current);
+            attempts.send(current).unwrap();
+            if current == 1 {
+                anyhow::bail!("simulated refresh failure");
+            }
+
+            Ok(())
+        });
+
+        let drive = async {
+            tokio::time::sleep(interval + Duration::from_millis(1)).await;
+            assert!(observed.try_recv().is_err());
+
+            tokio::time::resume();
+            upgrades.add_permits(1);
+            wait_until_async(|| async { ws_client.is_active() }, Duration::from_secs(5)).await;
+            tokio::time::pause();
+
+            assert_eq!(observed.recv().await, Some(1));
+            assert_eq!(observed.recv().await, Some(2));
+
+            tokio::time::resume();
+
+            if stop {
+                client.stop().unwrap();
+            } else {
+                client.disconnect().await.unwrap();
+            }
+
+            tokio::time::pause();
+            tokio::time::sleep(interval).await;
+            assert!(observed.try_recv().is_err());
+            tokio::time::resume();
+        };
+
+        tokio::time::timeout(interval * 5, async { tokio::join!(refresh, drive) })
+            .await
+            .unwrap();
+        server.abort();
+    }
 
     fn test_emitter() -> (
         ExecutionEventEmitter,
