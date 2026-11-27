@@ -387,6 +387,7 @@ Released on TBD (UTC).
 - Added Rust program to the CoinAPI Lighter pre-IPO order book backtest tutorial
 - Added VS Code setup for Python development (#5746), thanks @Genaro-Vogelius
 - Added a latency comparison and replay input checks to the FinFeed Polymarket backtest tutorial
+- Added a FinFeed tutorial for replaying Kalshi NFL point spread trades with an EMA crossover
 - Documented backtest account-history purging and its effect on balance reports
 - Documented Polymarket order message size units for resting and market order types
 

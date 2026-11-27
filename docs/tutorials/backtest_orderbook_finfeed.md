@@ -143,6 +143,9 @@ the window from the same loader. The loader needs the definition first: its pric
 share precision control how FinFeed's records convert to deltas. The definition reflects FinFeed's
 metadata at download time and does not reconstruct the venue's historical trading rules.
 
+Pass the exact backtest window to the loader, even when it fits within a single UTC hour. The loader
+fetches the covering UTC hours from FinFeed and limits the returned replay to your window.
+
 ```rust tab="Rust"
 let loader = FinFeedDataLoader::new(None); // Reads FINFEED_API_KEY
 let instrument = loader.request_instrument(instrument_id).await?;

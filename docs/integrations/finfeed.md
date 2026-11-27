@@ -325,8 +325,11 @@ credentials without sending requests; the client keeps no instrument metadata ca
   sub-microsecond precision. A start must precede its end.
 - History: Supply `date` or `time_start` (optional `time_end`), never a date with time bounds.
   `get_ohlcv_latest` rejects bounds.
-- Raw trade/quote/book history: Use a date or covering UTC-hour bounds, then filter locally. Explicit
-  bounds within one UTC hour fail before spending an attempt; date and start-only selectors are accepted.
+- For raw trade, quote, and book history, request the covering UTC hours and filter locally. For example,
+  to read from `00:15` to `00:45` UTC, send `00:00` and `01:00` as the bounds. Requests within a
+  single UTC hour can return empty arrays even when the covering hour contains data.
+  `FinFeedHttpClient` rejects these bounds before sending a request or spending an attempt.
+  It also accepts a date or a start-only selector.
 
 Constructors parse dates/times; awaiting the call checks remaining query rules before admission.
 Query objects and result properties have no setters.
@@ -460,9 +463,9 @@ Raw REST access preserves the provider's values.
 
 #### Coverage and truncation
 
-**Native history paginates automatically**. Raw REST history remains single-response; partial-hour native
-windows expand retrieval and filter locally. Raw explicit bounds within one UTC hour are rejected because
-FinFeed can return empty arrays despite data in a covering response.
+**Pass the exact window to `FinFeedDataLoader` or the native data client.** For trades, quotes,
+and books, they fetch the covering UTC hours, paginate, and apply your window locally. This works
+for windows within a single hour. [Raw REST history](#python-rest-access) returns one response.
 
 Trades/quotes/books need at least one attempt per touched UTC hour, including the end hour. For 31 days:
 745 attempts midnight-to-midnight, or 744 ending before the final midnight. Default 10-second pacing alone
