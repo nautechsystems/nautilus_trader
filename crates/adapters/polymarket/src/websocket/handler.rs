@@ -691,38 +691,61 @@ mod tests {
 
     #[fixture]
     fn market_handler() -> FeedHandler {
-        feed_handler(WsChannel::Market)
+        feed_handler(WsChannel::Market).0
     }
 
     #[fixture]
     fn user_handler() -> FeedHandler {
-        feed_handler(WsChannel::User)
+        feed_handler(WsChannel::User).0
     }
 
     #[rstest]
     #[tokio::test]
-    async fn message_buffer_drains_in_arrival_order(mut market_handler: FeedHandler) {
-        market_handler.message_buffer = VecDeque::from([
-            PolymarketWsMessage::Reconnected { shard_id: Some(1) },
-            PolymarketWsMessage::Reconnected { shard_id: Some(2) },
-        ]);
+    async fn message_buffer_drains_in_arrival_order() {
+        let (mut handler, raw_tx) = feed_handler(WsChannel::Market);
+        let book = include_str!("../../test_data/ws_market_book_msg.json");
+        let trade = include_str!("../../test_data/ws_market_last_trade_msg.json");
+        let price_change = include_str!("../../test_data/ws_market_price_change_msg.json");
+        let best_bid_ask = include_str!("../../test_data/ws_market_best_bid_ask_msg.json");
+        let batch = format!("[{book},{trade},{price_change}]");
+
+        raw_tx
+            .send((0, Message::Text(batch.into())))
+            .expect("queue market batch");
+        raw_tx
+            .send((0, Message::Text(best_bid_ask.into())))
+            .expect("queue next market frame");
+        raw_tx
+            .send((0, Message::Close(None)))
+            .expect("queue close frame");
 
         assert!(matches!(
-            market_handler.next().await,
-            Some(PolymarketWsMessage::Reconnected { shard_id: Some(1) })
+            handler.next().await,
+            Some(PolymarketWsMessage::Market(MarketWsMessage::Book(_)))
         ));
         assert!(matches!(
-            market_handler.next().await,
-            Some(PolymarketWsMessage::Reconnected { shard_id: Some(2) })
+            handler.next().await,
+            Some(PolymarketWsMessage::Market(
+                MarketWsMessage::LastTradePrice(_)
+            ))
         ));
+        assert!(matches!(
+            handler.next().await,
+            Some(PolymarketWsMessage::Market(MarketWsMessage::PriceChange(_)))
+        ));
+        assert!(matches!(
+            handler.next().await,
+            Some(PolymarketWsMessage::Market(MarketWsMessage::BestBidAsk(_)))
+        ));
+        assert!(handler.next().await.is_none());
     }
 
-    fn feed_handler(channel: WsChannel) -> FeedHandler {
+    fn feed_handler(channel: WsChannel) -> (FeedHandler, UnboundedSender<(u64, Message)>) {
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
 
-        FeedHandler::new(
+        let handler = FeedHandler::new(
             Arc::new(AtomicBool::new(false)),
             channel,
             None,
@@ -736,7 +759,9 @@ mod tests {
             AuthTracker::new(),
             false,
             false,
-        )
+        );
+
+        (handler, raw_tx)
     }
 
     async fn recording_server() -> (String, Arc<Mutex<Vec<String>>>) {
