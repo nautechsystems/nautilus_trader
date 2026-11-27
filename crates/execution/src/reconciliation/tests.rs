@@ -60,6 +60,14 @@ use uuid::Uuid;
 
 use super::{ids::*, orders::*, positions::*, types::*};
 
+/// Returns the timestamps where the fills replayed from flat cross zero, fill by fill.
+pub(super) fn detect_zero_crossings(fills: &[FillSnapshot]) -> Vec<u64> {
+    zero_crossings(fills, |_, _| false)
+        .into_iter()
+        .map(|(ts, _)| ts)
+        .collect()
+}
+
 #[fixture]
 fn instrument() -> InstrumentAny {
     InstrumentAny::CurrencyPair(audusd_sim())
@@ -1289,6 +1297,40 @@ fn test_adjust_fills_partial_window_linear_opening_erased_by_window_flip(
     } else {
         assert_eq!(result, FillAdjustmentResult::NoAdjustment);
     }
+}
+
+#[rstest]
+fn test_adjust_fills_partial_window_inverse_opening_erased_by_window_flip() {
+    let venue_order_id = create_test_venue_order_id("ORDER1");
+    let fills = [
+        FillSnapshot::new(venue_order_id, OrderSide::Sell, dec!(150), dec!(60), 2000),
+        FillSnapshot::new(venue_order_id, OrderSide::Sell, dec!(50), dec!(60), 3000),
+    ];
+    let venue_position = venue_position_snapshot(dec!(-100), dec!(60));
+
+    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001), true, None);
+
+    let FillAdjustmentResult::AddSyntheticOpening {
+        synthetic_fill,
+        existing_fills,
+    } = result
+    else {
+        panic!("expected a synthetic opening, was {result:?}");
+    };
+
+    assert_eq!(
+        synthetic_fill,
+        FillSnapshot::new(venue_order_id, OrderSide::Buy, dec!(100), dec!(60), 1999)
+    );
+    assert_eq!(existing_fills, fills);
+    let replay = std::iter::once(&synthetic_fill).chain(&fills);
+    let (qty, value) = simulate_position(replay, true);
+    assert!(check_position_match(
+        qty,
+        value,
+        &venue_position,
+        dec!(0.0001)
+    ));
 }
 
 #[rstest]

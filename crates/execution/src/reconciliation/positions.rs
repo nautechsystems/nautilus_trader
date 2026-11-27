@@ -146,6 +146,7 @@ fn process_mass_status_for_reconciliation_inner(
             .then(|| {
                 adjust_fills_for_current_lifecycle(
                     &fill_snapshots,
+                    &zero_crossings(&fill_snapshots, |_, _| false),
                     &venue_position,
                     tol,
                     divides_notional_by_price,
@@ -294,60 +295,85 @@ pub(super) fn adjust_fills_for_partial_window(
         return FillAdjustmentResult::NoAdjustment;
     }
 
-    // A tie-break can replay the window flat although the missing opening keeps the position open
-    let flat_closes = flat_closes(fills);
-    if !flat_closes.is_empty()
-        && flat_closes
-            .iter()
-            .all(|&index| reopens_at_flat_close(fills, index))
-        && opening_keeps_position_open(fills, venue_position)
-        && let result @ FillAdjustmentResult::AddSyntheticOpening { .. } = add_synthetic_opening(
+    let timestamp_crossings = zero_crossings(fills, |a, b| a.ts_event == b.ts_event);
+    let fill_order_crossings = zero_crossings(fills, |_, _| false);
+
+    // Tied fills have no reliable order, a full replay that matches the venue confirms the given one
+    let ties_affect_lifecycle =
+        fill_order_crossings != timestamp_crossings || reopens_at_flat_close(fills);
+    if ties_affect_lifecycle {
+        let (qty, value) = simulate_position(fills, divides_notional_by_price);
+        if check_position_match(qty, value, venue_position, tolerance) {
+            return FillAdjustmentResult::NoAdjustment;
+        }
+    }
+
+    let lifecycle = adjust_fills_for_current_lifecycle(
+        fills,
+        &timestamp_crossings,
+        venue_position,
+        tolerance,
+        divides_notional_by_price,
+    );
+
+    // A tie can move the crossing the fill order shows, whose lifecycle may still match the venue
+    if !matches!(
+        lifecycle,
+        Some(FillAdjustmentResult::FilterToCurrentLifecycle { .. })
+    ) && let Some(filtered @ FillAdjustmentResult::FilterToCurrentLifecycle { .. }) =
+        adjust_fills_for_current_lifecycle(
             fills,
+            &fill_order_crossings,
             venue_position,
             tolerance,
             divides_notional_by_price,
-            max_px,
         )
     {
-        return result;
+        return filtered;
     }
 
-    adjust_fills_for_current_lifecycle(fills, venue_position, tolerance, divides_notional_by_price)
-        .unwrap_or_else(|| {
-            add_synthetic_opening(
-                fills,
-                venue_position,
-                tolerance,
-                divides_notional_by_price,
-                max_px,
-            )
-        })
+    if let Some(lifecycle) = lifecycle {
+        return lifecycle;
+    }
+
+    let opening = add_synthetic_opening(
+        fills,
+        venue_position,
+        tolerance,
+        divides_notional_by_price,
+        max_px,
+    );
+
+    // Without a reconciling opening, the lifecycle the fill order shows still reaches the venue
+    if ties_affect_lifecycle && matches!(opening, FillAdjustmentResult::NoAdjustment) {
+        return adjust_fills_for_current_lifecycle(
+            fills,
+            &fill_order_crossings,
+            venue_position,
+            tolerance,
+            divides_notional_by_price,
+        )
+        .unwrap_or(opening);
+    }
+
+    opening
 }
 
-/// Adjusts the fills to the lifecycle after the last zero-crossing, if the window crosses zero.
+/// Adjusts the fills to the lifecycle after the last of `crossings`, if any fill follows it.
+///
+/// The last crossing that lands on FLAT separates lifecycles, flips within one don't count.
 fn adjust_fills_for_current_lifecycle(
     fills: &[FillSnapshot],
+    crossings: &[(u64, bool)],
     venue_position: &VenuePositionSnapshot,
     tolerance: Decimal,
     divides_notional_by_price: bool,
 ) -> Option<FillAdjustmentResult> {
-    let zero_crossings = detect_zero_crossings(fills);
-
-    // Focus on the current lifecycle after the last zero-crossing
-    let &last_zero_crossing_ts = zero_crossings.last()?;
-
-    // The last zero-crossing that lands on FLAT separates lifecycles, flips within one don't count
-    let last_flat_crossing = flat_closes(fills).last().copied();
-
-    let lifecycle_boundary_ts =
-        last_flat_crossing.map_or(last_zero_crossing_ts, |index| fills[index].ts_event);
-
-    // A timestamp cutoff would drop a reopening fill tied with a flat close
-    if let Some(index) = last_flat_crossing
-        && reopens_at_flat_close(fills, index)
-    {
-        return Some(FillAdjustmentResult::NoAdjustment);
-    }
+    let &(lifecycle_boundary_ts, _) = crossings
+        .iter()
+        .rev()
+        .find(|(_, lands_flat)| *lands_flat)
+        .or(crossings.last())?;
 
     // Get fills from current lifecycle (after lifecycle boundary)
     let current_lifecycle_fills: Vec<FillSnapshot> = fills
@@ -356,9 +382,7 @@ fn adjust_fills_for_current_lifecycle(
         .cloned()
         .collect();
 
-    let Some(first_fill) = current_lifecycle_fills.first() else {
-        return Some(FillAdjustmentResult::NoAdjustment);
-    };
+    let first_fill = current_lifecycle_fills.first()?;
 
     let (current_qty, current_value) =
         simulate_position(&current_lifecycle_fills, divides_notional_by_price);
@@ -383,41 +407,49 @@ fn adjust_fills_for_current_lifecycle(
     Some(FillAdjustmentResult::ReplaceCurrentLifecycle { synthetic_fill })
 }
 
-/// Returns the indexes of the fills that close the window flat when replayed from zero.
-fn flat_closes(fills: &[FillSnapshot]) -> Vec<usize> {
+/// Returns whether a fill reopens the window replayed from flat at the timestamp it lands flat.
+fn reopens_at_flat_close(fills: &[FillSnapshot]) -> bool {
     let mut running_qty = Decimal::ZERO;
-    fills
-        .iter()
-        .enumerate()
-        .filter_map(|(index, fill)| {
-            let prev_qty = running_qty;
-            running_qty += Decimal::from(fill.direction()) * fill.qty;
-            (!prev_qty.is_zero() && running_qty.is_zero()).then_some(index)
-        })
-        .collect()
+    fills.iter().enumerate().any(|(index, fill)| {
+        let prev_qty = running_qty;
+        running_qty += Decimal::from(fill.direction()) * fill.qty;
+        !prev_qty.is_zero()
+            && running_qty.is_zero()
+            && fills
+                .get(index + 1)
+                .is_some_and(|next| next.ts_event == fill.ts_event)
+    })
 }
 
-/// Returns whether the fill after the flat close at `index` shares its timestamp.
-fn reopens_at_flat_close(fills: &[FillSnapshot], index: usize) -> bool {
-    fills
-        .get(index + 1)
-        .is_some_and(|fill| fill.ts_event == fills[index].ts_event)
-}
-
-/// Returns whether the opening implied by the venue quantity keeps every window fill open.
-fn opening_keeps_position_open(
+/// Returns where the window replayed from flat crosses zero, with whether the crossing lands on
+/// FLAT.
+///
+/// Fills that `same_step` groups replay as one step, so a crossing must hold across the group.
+pub(super) fn zero_crossings(
     fills: &[FillSnapshot],
-    venue_position: &VenuePositionSnapshot,
-) -> bool {
-    let signed_qty = |fill: &FillSnapshot| Decimal::from(fill.direction()) * fill.qty;
-    let mut qty = venue_position.signed_qty() - fills.iter().map(signed_qty).sum::<Decimal>();
-    let is_short = qty.is_sign_negative();
+    same_step: impl FnMut(&FillSnapshot, &FillSnapshot) -> bool,
+) -> Vec<(u64, bool)> {
+    let mut running_qty = Decimal::ZERO;
+    let mut crossings = Vec::new();
 
-    !qty.is_zero()
-        && fills.iter().all(|fill| {
-            qty += signed_qty(fill);
-            !qty.is_zero() && qty.is_sign_negative() == is_short
-        })
+    for step in fills.chunk_by(same_step) {
+        let start_qty = running_qty;
+        let mut lands_flat = false;
+
+        for fill in step {
+            running_qty += Decimal::from(fill.direction()) * fill.qty;
+            lands_flat |= running_qty.is_zero();
+        }
+
+        if !start_qty.is_zero()
+            && (running_qty.is_zero()
+                || start_qty.is_sign_negative() != running_qty.is_sign_negative())
+        {
+            crossings.push((step[0].ts_event, lands_flat));
+        }
+    }
+
+    crossings
 }
 
 fn add_synthetic_opening(
@@ -670,7 +702,7 @@ fn inverse_synthetic_opening_price(
         let prior_qty = qty - fill_qty;
         if prior_qty.is_zero() || prior_qty.is_sign_negative() != qty.is_sign_negative() {
             // Closing or flipping erases the average of the earlier position
-            return None;
+            return Some(venue_position.avg_px).filter(|px| *px > Decimal::ZERO);
         }
 
         if fill_qty.is_sign_negative() == qty.is_sign_negative() {
@@ -1140,38 +1172,6 @@ pub(super) fn simulate_position<'a>(
     );
 
     (qty, value)
-}
-
-/// Detect zero-crossing timestamps in a sequence of fills.
-///
-/// A zero-crossing occurs when position quantity crosses through zero (FLAT).
-/// This includes both landing exactly on zero and flipping from long to short or vice versa.
-///
-/// # Returns
-///
-/// Returns a list of timestamps where position crosses through zero.
-#[must_use]
-pub(super) fn detect_zero_crossings(fills: &[FillSnapshot]) -> Vec<u64> {
-    let mut running_qty = Decimal::ZERO;
-    let mut zero_crossings = Vec::new();
-
-    for fill in fills {
-        let prev_qty = running_qty;
-        running_qty += Decimal::from(fill.direction()) * fill.qty;
-
-        // Detect when position crosses zero
-        if prev_qty != Decimal::ZERO {
-            if running_qty == Decimal::ZERO {
-                // Landed exactly on zero
-                zero_crossings.push(fill.ts_event);
-            } else if (prev_qty > Decimal::ZERO) != (running_qty > Decimal::ZERO) {
-                // Sign changed - crossed through zero (flip)
-                zero_crossings.push(fill.ts_event);
-            }
-        }
-    }
-
-    zero_crossings
 }
 
 /// Check if simulated position matches venue position within tolerance.
