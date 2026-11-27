@@ -3396,8 +3396,12 @@ them.
 The cache includes metadata needed to understand existing exposure. Strategies must apply their own
 entry scope rather than treating every cached or published instrument as an entry candidate.
 
-Cached open orders and positions without explicit supported protocol metadata are skipped with a warning.
-Confirmed trades on those instruments fail fill-report generation. Reload old cached instruments before trading.
+For reconciliation, older cached instruments without a `market_version` key can use the `version`
+in their saved `gamma_market` JSON when its `conditionId` matches the cached condition. The same
+protocol and Combo validation still applies. An explicit invalid `market_version` is never replaced
+by this fallback, and the cache is not rewritten. Without usable protocol evidence, cached open
+orders and positions are skipped with a warning and confirmed trades fail fill-report generation.
+Reload old cached instruments before submitting or modifying orders.
 
 `event_slugs`, `market_slugs`, `series_ids`, `filters`, and `event_slug_builder` discover instruments. They do
 not classify unmapped records. A node that scopes discovery with those fields and still wants scoped
