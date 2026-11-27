@@ -343,8 +343,7 @@ fn adjust_fills_for_current_lifecycle(
         last_flat_crossing.map_or(last_zero_crossing_ts, |index| fills[index].ts_event);
 
     // A timestamp cutoff would drop a reopening fill tied with a flat close
-    if divides_notional_by_price
-        && let Some(index) = last_flat_crossing
+    if let Some(index) = last_flat_crossing
         && reopens_at_flat_close(fills, index)
     {
         return Some(FillAdjustmentResult::NoAdjustment);

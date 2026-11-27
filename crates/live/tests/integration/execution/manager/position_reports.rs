@@ -1964,6 +1964,125 @@ async fn test_mass_status_keeps_fills_when_opening_bridges_apparent_flat() {
     assert_eq!(positions[0].realized_pnl, Some(Money::from("99.20 USDT")));
 }
 
+// Without a missing opening the tied reduction closes the position, so a timestamp cutoff at the
+// flat close would also drop the tied reopening fill
+#[tokio::test]
+async fn test_mass_status_keeps_fills_when_reopening_ties_with_flat_close() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    ctx.add_instrument(instrument);
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(StrategyId::external(), OmsType::Netting);
+
+    let (first_order, first_fill) = create_bounded_fill_lifecycle(
+        instrument_id,
+        VenueOrderId::from("1"),
+        TradeId::from("1"),
+        OrderSide::Buy,
+        "10.000",
+        "100.00",
+        false,
+        UnixNanos::from(1_000_000),
+    );
+    let (reduce_order, reduce_fill) = create_bounded_fill_lifecycle(
+        instrument_id,
+        VenueOrderId::from("2"),
+        TradeId::from("2"),
+        OrderSide::Sell,
+        "10.000",
+        "110.00",
+        true,
+        UnixNanos::from(2_000_000),
+    );
+    let (add_order, add_fill) = create_bounded_fill_lifecycle(
+        instrument_id,
+        VenueOrderId::from("3"),
+        TradeId::from("3"),
+        OrderSide::Buy,
+        "20.000",
+        "100.00",
+        false,
+        UnixNanos::from(2_000_000),
+    );
+    let (last_order, last_fill) = create_bounded_fill_lifecycle(
+        instrument_id,
+        VenueOrderId::from("4"),
+        TradeId::from("4"),
+        OrderSide::Buy,
+        "5.000",
+        "100.00",
+        false,
+        UnixNanos::from(3_000_000),
+    );
+
+    let report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from("25.000"),
+        UnixNanos::from(4_000_000),
+        UnixNanos::from(4_000_000),
+        None,
+        None,
+        Some(dec!(100)),
+    );
+
+    let mut mass_status = create_mass_status(
+        vec![first_order, reduce_order, add_order, last_order],
+        vec![first_fill, add_fill, reduce_fill, last_fill],
+    );
+    mass_status.add_position_reports(vec![report]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    let cache = ctx.cache.borrow();
+    let positions = cache.positions_open(
+        None,
+        Some(&instrument_id),
+        None,
+        Some(&test_account_id()),
+        None,
+    );
+
+    assert!(
+        result.unresolved_positions.is_empty(),
+        "{:?}",
+        result.unresolved_positions
+    );
+    assert_eq!(
+        filled_events(&result.events),
+        vec![
+            (
+                OrderSide::Buy,
+                Quantity::from("10.000"),
+                Price::from("100.00")
+            ),
+            (
+                OrderSide::Sell,
+                Quantity::from("10.000"),
+                Price::from("110.00")
+            ),
+            (
+                OrderSide::Buy,
+                Quantity::from("20.000"),
+                Price::from("100.00")
+            ),
+            (
+                OrderSide::Buy,
+                Quantity::from("5.000"),
+                Price::from("100.00")
+            ),
+        ]
+    );
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, Quantity::from("25.000"));
+    assert_eq!(positions[0].avg_px_open, dec!(100));
+    assert_eq!(positions[0].realized_pnl, Some(Money::from("-0.40 USDT")));
+}
+
 #[rstest]
 #[case::missing_instrument(false, true, true, Some(dec!(3000.50)), "instrument missing from cache")]
 #[case::missing_account(true, false, true, Some(dec!(3000.50)), "account missing from cache")]
