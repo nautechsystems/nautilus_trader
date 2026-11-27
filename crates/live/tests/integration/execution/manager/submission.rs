@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Debug;
+
 use super::*;
 
 #[rstest]
@@ -509,6 +511,173 @@ async fn test_submission_registry_interleaved_missing_checks_preserve_budget(
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+enum RecoveryAction {
+    AdvanceClock,
+    CheckOpen,
+    CheckInflight,
+}
+
+#[rstest]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_retained_submission_recovery_schedules() {
+    use RecoveryAction::{AdvanceClock, CheckInflight, CheckOpen};
+
+    // Eight steps allow an open-order check between retries and both checks again after exhaustion
+    for schedule in recovery_schedules([AdvanceClock, CheckOpen, CheckInflight], 8) {
+        check_retained_submission_schedule(&schedule).await;
+    }
+}
+
+async fn check_retained_submission_schedule(schedule: &[RecoveryAction]) {
+    let mut ctx = TestContext::with_config(ExecutionManagerConfig {
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 2,
+        open_check_threshold_ns: DurationNanos::ZERO,
+        open_check_missing_retries: 1,
+        open_check_open_only: false,
+        single_order_query_delay_ms: 0,
+        submission_recovery_policy: SubmissionRecoveryPolicy::RetainUnresolved,
+        ..Default::default()
+    });
+
+    ctx.add_instrument(test_instrument());
+    let mut order = create_submitted_order(
+        "O-RETAINED-SCHEDULE",
+        test_instrument_id(),
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+    );
+    let client_order_id = order.client_order_id();
+    let accepted =
+        TestOrderEventStubs::accepted(&order, test_account_id(), VenueOrderId::from("V-LATE"));
+    order
+        .apply(OrderEventAny::PendingCancel(
+            OrderPendingCancelSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(client_order_id)
+                .account_id(test_account_id())
+                .build(),
+        ))
+        .unwrap();
+    ctx.manager
+        .register_submission(order.init_event(), Some(test_client_id()));
+    ctx.add_order(order.clone());
+    let client = MockExecutionClient::new(Vec::new());
+    let mut due = false;
+    let mut attempts = 0;
+    let mut targeted_queries = 0;
+
+    for action in schedule {
+        let mut expected_exhaustion = None;
+
+        match action {
+            RecoveryAction::AdvanceClock => {
+                ctx.advance_both(dst::time::Duration::from_millis(101))
+                    .await;
+                due = true;
+            }
+            RecoveryAction::CheckOpen => {
+                targeted_queries += usize::from(attempts < 2);
+                let events = ctx.manager.check_open_orders(&[&client]).await;
+                assert!(events.is_empty(), "{schedule:?}: {events:?}");
+            }
+            RecoveryAction::CheckInflight => {
+                expected_exhaustion =
+                    check_submission_tick(&mut ctx, &order, due, &mut attempts, schedule);
+                due = false;
+            }
+        }
+
+        assert_eq!(
+            client.order_report_query_count.get(),
+            targeted_queries,
+            "{schedule:?}"
+        );
+        assert_eq!(
+            ctx.manager.take_submission_recovery_exhaustions(),
+            expected_exhaustion.as_slice(),
+            "{schedule:?}"
+        );
+        assert_eq!(
+            ctx.get_order(&client_order_id)
+                .unwrap_or_else(|| panic!("Missing order {client_order_id} in {schedule:?}"))
+                .status(),
+            OrderStatus::PendingCancel,
+            "{schedule:?}"
+        );
+    }
+
+    ctx.cache.borrow_mut().update_order(&accepted).unwrap();
+    ctx.manager.confirm_submission_outcome(&client_order_id);
+    assert_eq!(
+        ctx.get_order(&client_order_id)
+            .unwrap_or_else(|| panic!("Missing order {client_order_id} in {schedule:?}"))
+            .status(),
+        OrderStatus::Accepted,
+        "{schedule:?}"
+    );
+    ctx.advance_both(dst::time::Duration::from_millis(101))
+        .await;
+    let result = ctx.manager.check_inflight_orders();
+    assert!(
+        result.queries.is_empty() && result.events.is_empty(),
+        "{schedule:?}: {result:?}"
+    );
+    assert!(
+        ctx.manager
+            .take_submission_recovery_exhaustions()
+            .is_empty(),
+        "{schedule:?}"
+    );
+}
+
+fn check_submission_tick(
+    ctx: &mut TestContext,
+    order: &OrderAny,
+    eligible: bool,
+    attempts: &mut u32,
+    schedule: &[impl Debug],
+) -> Option<SubmissionRecoveryExhausted> {
+    let client_order_id = order.client_order_id();
+    let result = ctx.manager.check_inflight_orders();
+    assert!(result.events.is_empty(), "{schedule:?}: {result:?}");
+
+    if eligible && *attempts == 0 {
+        assert!(
+            matches!(result.queries.as_slice(), [TradingCommand::QueryOrder(q)] if q.client_order_id == client_order_id),
+            "{schedule:?}: {result:?}"
+        );
+        *attempts = 1;
+        return None;
+    }
+
+    assert!(result.queries.is_empty(), "{schedule:?}: {result:?}");
+
+    if eligible && *attempts == 1 {
+        *attempts = 2;
+        return Some(SubmissionRecoveryExhausted {
+            trader_id: order.trader_id(),
+            client_id: Some(test_client_id()),
+            strategy_id: order.strategy_id(),
+            instrument_id: order.instrument_id(),
+            client_order_id,
+            source: SubmissionRecoverySource::Inflight,
+            retry_count: 2,
+            ts_event: ctx.clock.borrow().timestamp_ns(),
+        });
+    }
+
+    None
+}
+
 #[rstest]
 #[case::submitted(false)]
 #[case::pending_cancel(true)]
@@ -895,4 +1064,121 @@ async fn test_submission_registry_missing_checks_do_not_exhaust_without_absence(
             .take_submission_recovery_exhaustions()
             .is_empty()
     );
+}
+
+#[rstest]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_report_only_submission_confirmation_schedules() {
+    #[derive(Clone, Copy, Debug)]
+    enum Action {
+        Register,
+        MatchingReport,
+        OtherAccountReport,
+        CheckInflight,
+    }
+
+    use Action::{CheckInflight, MatchingReport, OtherAccountReport, Register};
+
+    let order = create_submitted_order(
+        "O-REPORT",
+        test_instrument_id(),
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+    );
+    let id = order.client_order_id();
+    let matching = create_order_report(
+        Some(id),
+        VenueOrderId::from("V-REPORT"),
+        order.instrument_id(),
+        OrderStatus::Submitted,
+        order.quantity(),
+        Quantity::zero(1),
+    );
+    let mut other = matching.clone();
+    other.account_id = AccountId::from("BINANCE-002");
+    let matching = ExecutionReport::Order(Box::new(matching));
+    let other = ExecutionReport::Order(Box::new(other));
+
+    for schedule in recovery_schedules(
+        [Register, MatchingReport, OtherAccountReport, CheckInflight],
+        8,
+    ) {
+        let mut ctx = TestContext::with_config(ExecutionManagerConfig {
+            inflight_threshold_ms: 100,
+            inflight_max_retries: 2,
+            submission_recovery_policy: SubmissionRecoveryPolicy::RetainUnresolved,
+            ..Default::default()
+        });
+
+        ctx.add_order(order.clone());
+        let mut registered = false;
+        let mut confirmed = false;
+        let mut attempts = 0;
+
+        for action in &schedule {
+            let mut expected_exhaustion = None;
+
+            match action {
+                Register => {
+                    ctx.manager
+                        .register_submission(order.init_event(), Some(test_client_id()));
+                    registered = true;
+                }
+                MatchingReport => {
+                    ctx.manager.observe_execution_report(&matching);
+                    confirmed = true;
+                }
+                OtherAccountReport => ctx.manager.observe_execution_report(&other),
+                CheckInflight => {
+                    ctx.advance_both(dst::time::Duration::from_millis(101))
+                        .await;
+                    expected_exhaustion = check_submission_tick(
+                        &mut ctx,
+                        &order,
+                        registered && !confirmed,
+                        &mut attempts,
+                        &schedule,
+                    );
+                }
+            }
+
+            assert_eq!(
+                ctx.manager.take_submission_recovery_exhaustions(),
+                expected_exhaustion.as_slice(),
+                "{schedule:?}"
+            );
+            let cached = ctx
+                .get_order(&id)
+                .unwrap_or_else(|| panic!("Missing order {id} in {schedule:?}"));
+            assert_eq!(cached.events(), order.events(), "{schedule:?}");
+            assert_eq!(cached.status(), OrderStatus::Submitted, "{schedule:?}");
+        }
+
+        // A new command can start recovery only once the exhausted submission is confirmed
+        if attempts == 2 {
+            ctx.manager.register_inflight(id, UUID4::new());
+            ctx.advance_both(dst::time::Duration::from_millis(101))
+                .await;
+            let mut command_attempts = 0;
+            let exhaustion = check_submission_tick(
+                &mut ctx,
+                &order,
+                confirmed,
+                &mut command_attempts,
+                &schedule,
+            );
+            assert_eq!(exhaustion, None, "{schedule:?}");
+            assert!(
+                ctx.manager
+                    .take_submission_recovery_exhaustions()
+                    .is_empty(),
+                "{schedule:?}"
+            );
+        }
+    }
 }

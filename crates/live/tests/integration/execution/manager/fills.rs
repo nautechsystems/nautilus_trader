@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Debug;
+
 use super::*;
 
 #[rstest]
@@ -1102,4 +1104,166 @@ async fn test_mass_status_zero_quantity_fill_does_not_consume_trade_id(#[case] b
     assert_eq!(fill.last_qty, Quantity::from("1.0"));
     assert_eq!(fill.commission, Some(Money::from("0.50 USDT")));
     assert_eq!(fill.trade_id, trade_id);
+}
+
+#[rstest]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_reconciled_fill_delivery_schedules() {
+    #[derive(Clone, Copy, Debug)]
+    enum Delivery {
+        ZeroFirst,
+        First,
+        Second,
+    }
+
+    use Delivery::{First, Second, ZeroFirst};
+
+    let client_order_id = ClientOrderId::from("O-FILL-SCHEDULE");
+    let venue_order_id = VenueOrderId::from("V-FILL-SCHEDULE");
+    let instrument_id = test_instrument_id();
+    let position_id = PositionId::from("P-FILL-SCHEDULE");
+    let mut first = create_fill_report(
+        client_order_id,
+        venue_order_id,
+        instrument_id,
+        TradeId::from("T-1"),
+        "1.0",
+    );
+    first.venue_position_id = Some(position_id);
+    let mut second = create_fill_report(
+        client_order_id,
+        venue_order_id,
+        instrument_id,
+        TradeId::from("T-2"),
+        "2.0",
+    );
+    second.venue_position_id = Some(position_id);
+    second.last_px = Price::from("2997.00");
+    second.commission = Money::from("0.80 USDT");
+    let mut zero = first.clone();
+    zero.last_qty = Quantity::zero(1);
+    zero.commission = Money::from("123.45 USDT");
+
+    for schedule in recovery_schedules([ZeroFirst, First, Second], 8) {
+        let mut ctx = TestContext::new();
+        ctx.add_instrument(test_instrument());
+        ctx.add_order(create_accepted_order(
+            client_order_id.as_str(),
+            instrument_id,
+            OrderSide::Buy,
+            "3.0",
+            "3000.00",
+            venue_order_id,
+        ));
+        let mut ledger = FillLedger::default();
+
+        for delivery in &schedule {
+            let fill = match delivery {
+                ZeroFirst => &zero,
+                First => &first,
+                Second => &second,
+            };
+
+            let apply = !fill.last_qty.is_zero() && !ledger.trades.contains(&fill.trade_id);
+            let result = ctx.manager.reconcile_execution_mass_status(
+                &create_mass_status(vec![], vec![fill.clone()]),
+                &ctx.exec_engine,
+            );
+            assert_eq!(
+                result.events.len(),
+                usize::from(apply),
+                "{schedule:?}: {:?}",
+                result.events
+            );
+
+            if apply {
+                let [OrderEventAny::Filled(event)] = result.events.as_slice() else {
+                    panic!("Expected a fill in {schedule:?}: {:?}", result.events);
+                };
+
+                assert_eq!(event.trade_id, fill.trade_id, "{schedule:?}");
+                assert_eq!(event.last_qty, fill.last_qty, "{schedule:?}");
+                assert_eq!(event.last_px, fill.last_px, "{schedule:?}");
+                assert_eq!(event.commission, Some(fill.commission), "{schedule:?}");
+                ledger.trades.push(fill.trade_id);
+                ledger.qty += fill.last_qty.as_decimal();
+                ledger.value += fill.last_qty.as_decimal() * fill.last_px.as_decimal();
+                ledger.commission += fill.commission.as_decimal();
+            }
+
+            ledger.assert_matches(&ctx, client_order_id, position_id, &schedule);
+        }
+    }
+}
+
+#[derive(Default)]
+struct FillLedger {
+    trades: Vec<TradeId>,
+    qty: Decimal,
+    value: Decimal,
+    commission: Decimal,
+}
+
+impl FillLedger {
+    fn assert_matches(
+        &self,
+        ctx: &TestContext,
+        client_order_id: ClientOrderId,
+        position_id: PositionId,
+        schedule: &[impl Debug],
+    ) {
+        let order = ctx
+            .get_order(&client_order_id)
+            .unwrap_or_else(|| panic!("Missing order {client_order_id} in {schedule:?}"));
+
+        let status = match self.trades.len() {
+            0 => OrderStatus::Accepted,
+            1 => OrderStatus::PartiallyFilled,
+            _ => OrderStatus::Filled,
+        };
+
+        let avg_px = (!self.qty.is_zero()).then(|| self.value / self.qty);
+        let fees = order
+            .commissions()
+            .get(&Currency::USDT())
+            .map(Money::as_decimal);
+        assert_eq!(order.status(), status, "{schedule:?}");
+        assert_eq!(
+            order.trade_ids(),
+            self.trades.iter().collect::<Vec<_>>(),
+            "{schedule:?}"
+        );
+        assert_eq!(order.filled_qty().as_decimal(), self.qty, "{schedule:?}");
+        assert_eq!(order.avg_px(), avg_px, "{schedule:?}");
+        assert_eq!(
+            fees,
+            (!self.trades.is_empty()).then_some(self.commission),
+            "{schedule:?}"
+        );
+        let cache = ctx.cache.borrow();
+        let positions = cache.positions(None, None, None, None, None);
+        assert_eq!(
+            positions.len(),
+            usize::from(!self.qty.is_zero()),
+            "{schedule:?}"
+        );
+
+        if let [position] = positions.as_slice() {
+            assert_eq!(position.id, position_id, "{schedule:?}");
+            assert_eq!(position.signed_qty, self.qty, "{schedule:?}");
+            assert_eq!(Some(position.avg_px_open), avg_px, "{schedule:?}");
+            assert_eq!(
+                position
+                    .commissions
+                    .get(&Currency::USDT())
+                    .map(Money::as_decimal),
+                Some(self.commission),
+                "{schedule:?}"
+            );
+        }
+    }
 }

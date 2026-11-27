@@ -20,7 +20,7 @@
 
 use std::{
     cell::{Cell, RefCell},
-    collections::HashSet,
+    collections::{HashSet, VecDeque},
     rc::Rc,
     sync::Once,
 };
@@ -130,6 +130,34 @@ async fn advance_clock(d: dst::time::Duration) {
 #[cfg(not(all(feature = "simulation", madsim)))]
 async fn advance_clock(d: dst::time::Duration) {
     tokio::time::advance(d).await;
+}
+
+#[rstest]
+fn test_recovery_schedules_enumerate_every_prefix() {
+    let schedules: Vec<_> = recovery_schedules(['A', 'B'], 2)
+        .map(|actions| actions.into_iter().collect::<String>())
+        .collect();
+
+    assert_eq!(schedules, ["", "A", "B", "AA", "AB", "BA", "BB"]);
+}
+
+fn recovery_schedules<A: Copy, const N: usize>(
+    actions: [A; N],
+    depth: usize,
+) -> impl Iterator<Item = Vec<A>> {
+    let mut schedules = VecDeque::from([Vec::new()]);
+    std::iter::from_fn(move || {
+        let schedule = schedules.pop_front()?;
+        if schedule.len() < depth {
+            for action in actions {
+                let mut next = schedule.clone();
+                next.push(action);
+                schedules.push_back(next);
+            }
+        }
+
+        Some(schedule)
+    })
 }
 
 struct TestContext {
@@ -408,6 +436,10 @@ fn create_mass_status(
     mass_status
 }
 
+thread_local! {
+    static CAPTURE_MANAGER_LOGS: Cell<bool> = const { Cell::new(false) };
+}
+
 struct ManagerLogCapture {
     messages: Mutex<Vec<String>>,
 }
@@ -423,7 +455,7 @@ impl Log for ManagerLogCapture {
     }
 
     fn log(&self, record: &Record<'_>) {
-        if self.enabled(record.metadata()) {
+        if CAPTURE_MANAGER_LOGS.get() && self.enabled(record.metadata()) {
             self.messages.lock().push(record.args().to_string());
         }
     }
@@ -444,6 +476,7 @@ fn install_manager_log_capture() {
     });
 
     MANAGER_LOG_CAPTURE.messages.lock().clear();
+    CAPTURE_MANAGER_LOGS.set(true);
 }
 
 #[expect(
