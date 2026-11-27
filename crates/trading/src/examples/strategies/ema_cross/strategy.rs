@@ -29,7 +29,7 @@ use nautilus_model::{
     types::Quantity,
 };
 
-use super::config::EmaCrossConfig;
+use super::{super::quote_midpoint, config::EmaCrossConfig};
 use crate::{
     nautilus_strategy,
     strategy::{Strategy, StrategyCore},
@@ -124,8 +124,9 @@ impl DataActor for EmaCross {
     }
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-        self.ema_fast.handle_quote(quote)?;
-        self.ema_slow.handle_quote(quote)?;
+        let midpoint = quote_midpoint(quote)?.as_f64();
+        self.ema_fast.update_raw(midpoint);
+        self.ema_slow.update_raw(midpoint);
 
         if !self.ema_fast.initialized() || !self.ema_slow.initialized() {
             return Ok(());

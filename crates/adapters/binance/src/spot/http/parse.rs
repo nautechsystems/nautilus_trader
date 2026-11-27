@@ -353,23 +353,23 @@ pub fn decode_klines(buf: &[u8]) -> Result<BinanceKlines, SbeDecodeError> {
         let close_price = cursor.read_i64_le()?;
 
         let volume_slice = cursor.read_bytes(16)?;
-        let mut volume = [0u8; 16];
+        let mut volume = [0_u8; 16];
         volume.copy_from_slice(volume_slice);
 
         let close_time = cursor.read_i64_le()?;
 
         let quote_volume_slice = cursor.read_bytes(16)?;
-        let mut quote_volume = [0u8; 16];
+        let mut quote_volume = [0_u8; 16];
         quote_volume.copy_from_slice(quote_volume_slice);
 
         let num_trades = cursor.read_i64_le()?;
 
         let taker_buy_base_volume_slice = cursor.read_bytes(16)?;
-        let mut taker_buy_base_volume = [0u8; 16];
+        let mut taker_buy_base_volume = [0_u8; 16];
         taker_buy_base_volume.copy_from_slice(taker_buy_base_volume_slice);
 
         let taker_buy_quote_volume_slice = cursor.read_bytes(16)?;
-        let mut taker_buy_quote_volume = [0u8; 16];
+        let mut taker_buy_quote_volume = [0_u8; 16];
         taker_buy_quote_volume.copy_from_slice(taker_buy_quote_volume_slice);
 
         klines.push(BinanceKline {
@@ -1433,7 +1433,7 @@ mod tests {
     };
 
     fn create_header(block_length: u16, template_id: u16, schema_id: u16, version: u16) -> [u8; 8] {
-        let mut buf = [0u8; 8];
+        let mut buf = [0_u8; 8];
         buf[0..2].copy_from_slice(&block_length.to_le_bytes());
         buf[2..4].copy_from_slice(&template_id.to_le_bytes());
         buf[4..6].copy_from_slice(&schema_id.to_le_bytes());
@@ -1450,7 +1450,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_ping_buffer_too_short() {
-        let buf = [0u8; 4];
+        let buf = [0_u8; 4];
         let err = decode_ping(&buf).unwrap_err();
         assert!(matches!(err, SbeDecodeError::BufferTooShort { .. }));
     }
@@ -1478,7 +1478,7 @@ mod tests {
             SBE_SCHEMA_ID,
             SBE_SCHEMA_VERSION,
         );
-        let timestamp: i64 = 1734300000000; // Example timestamp
+        let timestamp: i64 = 1_734_300_000_000; // Example timestamp
 
         let mut buf = Vec::with_capacity(16);
         buf.extend_from_slice(&header);
@@ -1506,7 +1506,7 @@ mod tests {
         let header = create_header(8, PING_TEMPLATE_ID, SBE_SCHEMA_ID, SBE_SCHEMA_VERSION);
         let mut buf = Vec::with_capacity(16);
         buf.extend_from_slice(&header);
-        buf.extend_from_slice(&0i64.to_le_bytes());
+        buf.extend_from_slice(&0_i64.to_le_bytes());
 
         let err = decode_server_time(&buf).unwrap_err();
         assert!(matches!(err, SbeDecodeError::UnknownTemplateId(101)));
@@ -1524,14 +1524,14 @@ mod tests {
         let header = create_header(8, SERVER_TIME_TEMPLATE_ID, SBE_SCHEMA_ID, version);
         let mut buf = Vec::with_capacity(16);
         buf.extend_from_slice(&header);
-        buf.extend_from_slice(&1_700_000_000_000i64.to_le_bytes());
+        buf.extend_from_slice(&1_700_000_000_000_i64.to_le_bytes());
 
         let result = decode_server_time(&buf).unwrap();
         assert_eq!(result, 1_700_000_000_000);
     }
 
     fn create_group_header(block_length: u16, count: u32) -> [u8; 6] {
-        let mut buf = [0u8; 6];
+        let mut buf = [0_u8; 6];
         buf[0..2].copy_from_slice(&block_length.to_le_bytes());
         buf[2..6].copy_from_slice(&count.to_le_bytes());
         buf
@@ -1587,10 +1587,10 @@ mod tests {
         let mut buf =
             create_header(fixed_width, template, SBE_SCHEMA_ID, SBE_SCHEMA_VERSION).to_vec();
         if template == DEPTH_TEMPLATE_ID {
-            buf.extend_from_slice(&999i64.to_le_bytes());
+            buf.extend_from_slice(&999_i64.to_le_bytes());
         }
 
-        buf.extend_from_slice(&[(-2i8) as u8, (-8i8) as u8]);
+        buf.extend_from_slice(&[(-2_i8) as u8, (-8_i8) as u8]);
 
         let group_count = if template == DEPTH_TEMPLATE_ID { 2 } else { 1 };
         for group in 0..group_count {
@@ -1605,7 +1605,7 @@ mod tests {
                     buf.extend_from_slice(&[1, 0]);
                 }
 
-                buf.extend_from_slice(&[0xFF; 3]);
+                buf.extend_from_slice(&[0xff; 3]);
             }
         }
 
@@ -1707,7 +1707,7 @@ mod tests {
         buf.extend_from_slice(&header);
 
         // Block: last_update_id (8) + price_exponent (1) + qty_exponent (1)
-        let last_update_id: i64 = 123456789;
+        let last_update_id: i64 = 123_456_789;
         let price_exponent: i8 = -8;
         let qty_exponent: i8 = -8;
         buf.extend_from_slice(&last_update_id.to_le_bytes());
@@ -1717,21 +1717,21 @@ mod tests {
         // Bids group: 2 levels
         buf.extend_from_slice(&create_group_header(16, 2));
         // Bid 1: price=100000000000, qty=50000000
-        buf.extend_from_slice(&100_000_000_000i64.to_le_bytes());
-        buf.extend_from_slice(&50_000_000i64.to_le_bytes());
+        buf.extend_from_slice(&100_000_000_000_i64.to_le_bytes());
+        buf.extend_from_slice(&50_000_000_i64.to_le_bytes());
         // Bid 2: price=99900000000, qty=30000000
-        buf.extend_from_slice(&99_900_000_000i64.to_le_bytes());
-        buf.extend_from_slice(&30_000_000i64.to_le_bytes());
+        buf.extend_from_slice(&99_900_000_000_i64.to_le_bytes());
+        buf.extend_from_slice(&30_000_000_i64.to_le_bytes());
 
         // Asks group: 1 level
         buf.extend_from_slice(&create_group_header(16, 1));
         // Ask 1: price=100100000000, qty=25000000
-        buf.extend_from_slice(&100_100_000_000i64.to_le_bytes());
-        buf.extend_from_slice(&25_000_000i64.to_le_bytes());
+        buf.extend_from_slice(&100_100_000_000_i64.to_le_bytes());
+        buf.extend_from_slice(&25_000_000_i64.to_le_bytes());
 
         let depth = decode_depth(&buf).unwrap();
 
-        assert_eq!(depth.last_update_id, 123456789);
+        assert_eq!(depth.last_update_id, 123_456_789);
         assert_eq!(depth.price_exponent, -8);
         assert_eq!(depth.qty_exponent, -8);
         assert_eq!(depth.bids.len(), 2);
@@ -1747,7 +1747,7 @@ mod tests {
 
         let mut buf = Vec::new();
         buf.extend_from_slice(&header);
-        buf.extend_from_slice(&0i64.to_le_bytes()); // last_update_id
+        buf.extend_from_slice(&0_i64.to_le_bytes()); // last_update_id
         buf.push(0); // price_exponent
         buf.push(0); // qty_exponent
 
@@ -1784,7 +1784,7 @@ mod tests {
         let price: i64 = 100_000_000_000;
         let qty: i64 = 10_000_000;
         let quote_qty: i64 = 1_000_000_000_000;
-        let time: i64 = 1734300000000;
+        let time: i64 = 1_734_300_000_000;
         let is_buyer_maker: u8 = 1; // true
         let is_best_match: u8 = 1; // true
 
@@ -1874,7 +1874,7 @@ mod tests {
 
         let mut buf = Vec::new();
         buf.extend_from_slice(&header);
-        buf.extend_from_slice(&[0u8; 10]); // dummy block
+        buf.extend_from_slice(&[0_u8; 10]); // dummy block
 
         let err = decode_depth(&buf).unwrap_err();
         assert!(matches!(err, SbeDecodeError::UnknownTemplateId(101)));
@@ -1886,7 +1886,7 @@ mod tests {
 
         let mut buf = Vec::new();
         buf.extend_from_slice(&header);
-        buf.extend_from_slice(&[0u8; 2]); // dummy block
+        buf.extend_from_slice(&[0_u8; 2]); // dummy block
 
         let err = decode_trades(&buf).unwrap_err();
         assert!(matches!(err, SbeDecodeError::UnknownTemplateId(101)));
@@ -1905,14 +1905,14 @@ mod tests {
         if new_end < block_end {
             buf.drain(new_end..block_end);
         } else {
-            buf.splice(block_end..block_end, vec![0u8; new_end - block_end]);
+            buf.splice(block_end..block_end, vec![0_u8; new_end - block_end]);
         }
 
         buf[0..2].copy_from_slice(&(block_length as u16).to_le_bytes());
     }
 
     fn build_order_response_buffer(expiry_reason: ExpiryReason) -> Vec<u8> {
-        let mut bytes = vec![0u8; 256];
+        let mut bytes = vec![0_u8; 256];
         let enc = OrderResponseEncoder::default().wrap(WriteBuf::new(&mut bytes), HEADER_LENGTH);
         let mut header = enc.header(0);
         let mut enc = header.parent().unwrap();
@@ -2016,7 +2016,7 @@ mod tests {
     }
 
     fn build_orders_response_buffer(orders: &[(i64, &str)]) -> Vec<u8> {
-        let mut bytes = vec![0u8; 512];
+        let mut bytes = vec![0_u8; 512];
         let enc = OrdersResponseEncoder::default().wrap(WriteBuf::new(&mut bytes), HEADER_LENGTH);
         let mut header = enc.header(0);
         let enc = header.parent().unwrap();
@@ -2081,26 +2081,26 @@ mod tests {
 
         // Order 1
         let order1_start = buf.len();
-        buf.push((-8i8) as u8); // price_exponent
-        buf.push((-8i8) as u8); // qty_exponent
-        buf.extend_from_slice(&1001i64.to_le_bytes()); // order_id
+        buf.push((-8_i8) as u8); // price_exponent
+        buf.push((-8_i8) as u8); // qty_exponent
+        buf.extend_from_slice(&1001_i64.to_le_bytes()); // order_id
         buf.extend_from_slice(&i64::MIN.to_le_bytes()); // order_list_id (None)
-        buf.extend_from_slice(&100_000_000_000i64.to_le_bytes()); // price_mantissa
-        buf.extend_from_slice(&10_000_000i64.to_le_bytes()); // orig_qty
-        buf.extend_from_slice(&0i64.to_le_bytes()); // executed_qty
-        buf.extend_from_slice(&0i64.to_le_bytes()); // cummulative_quote_qty
+        buf.extend_from_slice(&100_000_000_000_i64.to_le_bytes()); // price_mantissa
+        buf.extend_from_slice(&10_000_000_i64.to_le_bytes()); // orig_qty
+        buf.extend_from_slice(&0_i64.to_le_bytes()); // executed_qty
+        buf.extend_from_slice(&0_i64.to_le_bytes()); // cummulative_quote_qty
         buf.push(1); // status
         buf.push(1); // time_in_force
         buf.push(1); // order_type
         buf.push(1); // side
         buf.extend_from_slice(&i64::MIN.to_le_bytes()); // stop_price (None)
-        buf.extend_from_slice(&[0u8; 16]); // trailing_delta + trailing_time
+        buf.extend_from_slice(&[0_u8; 16]); // trailing_delta + trailing_time
         buf.extend_from_slice(&i64::MIN.to_le_bytes()); // iceberg_qty (None)
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // time
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // update_time
+        buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // time
+        buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // update_time
         buf.push(1); // is_working
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // working_time
-        buf.extend_from_slice(&0i64.to_le_bytes()); // orig_quote_order_qty
+        buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // working_time
+        buf.extend_from_slice(&0_i64.to_le_bytes()); // orig_quote_order_qty
 
         // Pad to 162 bytes from order start
         while buf.len() - order1_start < ORDER_MIN_BLOCK_LENGTH as usize {
@@ -2111,27 +2111,26 @@ mod tests {
 
         // Order 2
         let order2_start = buf.len();
-        buf.push((-8i8) as u8); // price_exponent
-        buf.push((-8i8) as u8); // qty_exponent
-        buf.extend_from_slice(&2002i64.to_le_bytes()); // order_id
+        buf.push((-8_i8) as u8); // price_exponent
+        buf.push((-8_i8) as u8); // qty_exponent
+        buf.extend_from_slice(&2002_i64.to_le_bytes()); // order_id
         buf.extend_from_slice(&i64::MIN.to_le_bytes()); // order_list_id (None)
-        buf.extend_from_slice(&200_000_000_000i64.to_le_bytes()); // price_mantissa
-        buf.extend_from_slice(&20_000_000i64.to_le_bytes()); // orig_qty
-        buf.extend_from_slice(&0i64.to_le_bytes()); // executed_qty
-        buf.extend_from_slice(&0i64.to_le_bytes()); // cummulative_quote_qty
+        buf.extend_from_slice(&200_000_000_000_i64.to_le_bytes()); // price_mantissa
+        buf.extend_from_slice(&20_000_000_i64.to_le_bytes()); // orig_qty
+        buf.extend_from_slice(&0_i64.to_le_bytes()); // executed_qty
+        buf.extend_from_slice(&0_i64.to_le_bytes()); // cummulative_quote_qty
         buf.push(1); // status
         buf.push(1); // time_in_force
         buf.push(1); // order_type
         buf.push(2); // side (SELL)
         buf.extend_from_slice(&i64::MIN.to_le_bytes()); // stop_price (None)
-        buf.extend_from_slice(&[0u8; 16]); // trailing_delta + trailing_time
+        buf.extend_from_slice(&[0_u8; 16]); // trailing_delta + trailing_time
         buf.extend_from_slice(&i64::MIN.to_le_bytes()); // iceberg_qty (None)
-        buf.extend_from_slice(&1734300001000i64.to_le_bytes()); // time
-        buf.extend_from_slice(&1734300001000i64.to_le_bytes()); // update_time
+        buf.extend_from_slice(&1_734_300_001_000_i64.to_le_bytes()); // time
+        buf.extend_from_slice(&1_734_300_001_000_i64.to_le_bytes()); // update_time
         buf.push(1); // is_working
-        buf.extend_from_slice(&1734300001000i64.to_le_bytes()); // working_time
-        buf.extend_from_slice(&0i64.to_le_bytes()); // orig_quote_order_qty
-
+        buf.extend_from_slice(&1_734_300_001_000_i64.to_le_bytes()); // working_time
+        buf.extend_from_slice(&0_i64.to_le_bytes()); // orig_quote_order_qty
         while buf.len() - order2_start < ORDER_MIN_BLOCK_LENGTH as usize {
             buf.push(0);
         }
@@ -2165,8 +2164,8 @@ mod tests {
         buf.extend_from_slice(&create_group_header(V4_BLOCK_LENGTH, 1));
 
         let order_start = buf.len();
-        buf.extend_from_slice(&[0u8; ORDER_MIN_BLOCK_LENGTH as usize]);
-        buf.push(0xFF); // Sentinel for the new expiryReason byte (null/absent)
+        buf.extend_from_slice(&[0_u8; ORDER_MIN_BLOCK_LENGTH as usize]);
+        buf.push(0xff); // Sentinel for the new expiryReason byte (null/absent)
         assert_eq!(buf.len() - order_start, V4_BLOCK_LENGTH as usize);
 
         write_var_string(&mut buf, "BTCUSDT");
@@ -2194,7 +2193,7 @@ mod tests {
 
         // Fill the fixed block with non-zero, non-0xff padding so the previous
         // bug (returning that last byte as expiry_reason) would surface.
-        buf.extend_from_slice(&[0xAAu8; PRE_V4_BLOCK_LENGTH as usize]);
+        buf.extend_from_slice(&[0xaa_u8; PRE_V4_BLOCK_LENGTH as usize]);
 
         write_var_string(&mut buf, "BTCUSDT");
         write_var_string(&mut buf, "pre-v4-order");
@@ -2215,7 +2214,7 @@ mod tests {
         buf.extend_from_slice(&header);
         buf.extend_from_slice(&create_group_header(V4_BLOCK_LENGTH, 1));
 
-        buf.extend_from_slice(&[0u8; ORDER_MIN_BLOCK_LENGTH as usize]);
+        buf.extend_from_slice(&[0_u8; ORDER_MIN_BLOCK_LENGTH as usize]);
         buf.push(0x05);
 
         write_var_string(&mut buf, "BTCUSDT");
@@ -2246,7 +2245,7 @@ mod tests {
         buf.extend_from_slice(&create_group_header(ORDER_MIN_BLOCK_LENGTH, 1));
 
         // Pad fixed block to 162 bytes
-        buf.extend_from_slice(&[0u8; ORDER_MIN_BLOCK_LENGTH as usize]);
+        buf.extend_from_slice(&[0_u8; ORDER_MIN_BLOCK_LENGTH as usize]);
 
         // Symbol length says 7 bytes but we only provide 3
         buf.push(7); // Length prefix claims "BTCUSDT" (7 chars)
@@ -2264,11 +2263,11 @@ mod tests {
         buf.extend_from_slice(&header);
         buf.extend_from_slice(&create_group_header(ORDER_MIN_BLOCK_LENGTH, 1));
 
-        buf.extend_from_slice(&[0u8; ORDER_MIN_BLOCK_LENGTH as usize]);
+        buf.extend_from_slice(&[0_u8; ORDER_MIN_BLOCK_LENGTH as usize]);
 
         // Invalid UTF-8 sequence
         buf.push(4);
-        buf.extend_from_slice(&[0xFF, 0xFE, 0x00, 0x01]);
+        buf.extend_from_slice(&[0xff, 0xfe, 0x00, 0x01]);
 
         let err = decode_orders(&buf).unwrap_err();
         assert!(matches!(err, SbeDecodeError::InvalidUtf8));
@@ -2309,18 +2308,18 @@ mod tests {
         buf.extend_from_slice(&header);
 
         // Fixed block (64 bytes)
-        buf.push((-8i8) as u8); // commission_exponent
-        buf.extend_from_slice(&100_000i64.to_le_bytes()); // maker_commission
-        buf.extend_from_slice(&100_000i64.to_le_bytes()); // taker_commission
-        buf.extend_from_slice(&0i64.to_le_bytes()); // buyer_commission
-        buf.extend_from_slice(&0i64.to_le_bytes()); // seller_commission
+        buf.push((-8_i8) as u8); // commission_exponent
+        buf.extend_from_slice(&100_000_i64.to_le_bytes()); // maker_commission
+        buf.extend_from_slice(&100_000_i64.to_le_bytes()); // taker_commission
+        buf.extend_from_slice(&0_i64.to_le_bytes()); // buyer_commission
+        buf.extend_from_slice(&0_i64.to_le_bytes()); // seller_commission
         buf.push(1); // can_trade
         buf.push(1); // can_withdraw
         buf.push(1); // can_deposit
         buf.push(0); // brokered
         buf.push(0); // require_self_trade_prevention
         buf.push(0); // prevent_sor
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // update_time
+        buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // update_time
         buf.push(1); // account_type (SPOT)
 
         // Pad to 64 bytes
@@ -2332,15 +2331,15 @@ mod tests {
         buf.extend_from_slice(&create_group_header(BALANCE_BLOCK_LENGTH, 2));
 
         // Balance 1: BTC
-        buf.push((-8i8) as u8); // exponent
-        buf.extend_from_slice(&100_000_000i64.to_le_bytes()); // free (1.0 BTC)
-        buf.extend_from_slice(&50_000_000i64.to_le_bytes()); // locked (0.5 BTC)
+        buf.push((-8_i8) as u8); // exponent
+        buf.extend_from_slice(&100_000_000_i64.to_le_bytes()); // free (1.0 BTC)
+        buf.extend_from_slice(&50_000_000_i64.to_le_bytes()); // locked (0.5 BTC)
         write_var_string(&mut buf, "BTC");
 
         // Balance 2: USDT
-        buf.push((-8i8) as u8); // exponent
-        buf.extend_from_slice(&1_000_000_000_000i64.to_le_bytes()); // free (10000 USDT)
-        buf.extend_from_slice(&0i64.to_le_bytes()); // locked
+        buf.push((-8_i8) as u8); // exponent
+        buf.extend_from_slice(&1_000_000_000_000_i64.to_le_bytes()); // free (10000 USDT)
+        buf.extend_from_slice(&0_i64.to_le_bytes()); // locked
         write_var_string(&mut buf, "USDT");
 
         let account = decode_account(&buf).unwrap();
@@ -2369,8 +2368,8 @@ mod tests {
         buf.extend_from_slice(&header);
 
         // Minimal fixed block
-        buf.push((-8i8) as u8);
-        buf.extend_from_slice(&[0u8; 63]); // Rest of fixed block
+        buf.push((-8_i8) as u8);
+        buf.extend_from_slice(&[0_u8; 63]); // Rest of fixed block
 
         // Empty balances group
         buf.extend_from_slice(&create_group_header(BALANCE_BLOCK_LENGTH, 0));
@@ -2395,17 +2394,17 @@ mod tests {
         buf.extend_from_slice(&create_group_header(ACCOUNT_TRADE_BLOCK_LENGTH, 2));
 
         // Trade 1
-        buf.push((-8i8) as u8); // price_exponent
-        buf.push((-8i8) as u8); // qty_exponent
-        buf.push((-8i8) as u8); // commission_exponent
-        buf.extend_from_slice(&1001i64.to_le_bytes()); // id
-        buf.extend_from_slice(&5001i64.to_le_bytes()); // order_id
+        buf.push((-8_i8) as u8); // price_exponent
+        buf.push((-8_i8) as u8); // qty_exponent
+        buf.push((-8_i8) as u8); // commission_exponent
+        buf.extend_from_slice(&1001_i64.to_le_bytes()); // id
+        buf.extend_from_slice(&5001_i64.to_le_bytes()); // order_id
         buf.extend_from_slice(&i64::MIN.to_le_bytes()); // order_list_id (None)
-        buf.extend_from_slice(&100_000_000_000i64.to_le_bytes()); // price
-        buf.extend_from_slice(&10_000_000i64.to_le_bytes()); // qty
-        buf.extend_from_slice(&1_000_000_000_000i64.to_le_bytes()); // quote_qty
-        buf.extend_from_slice(&100_000i64.to_le_bytes()); // commission
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // time
+        buf.extend_from_slice(&100_000_000_000_i64.to_le_bytes()); // price
+        buf.extend_from_slice(&10_000_000_i64.to_le_bytes()); // qty
+        buf.extend_from_slice(&1_000_000_000_000_i64.to_le_bytes()); // quote_qty
+        buf.extend_from_slice(&100_000_i64.to_le_bytes()); // commission
+        buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // time
         buf.push(1); // is_buyer
         buf.push(0); // is_maker
         buf.push(1); // is_best_match
@@ -2413,17 +2412,17 @@ mod tests {
         write_var_string(&mut buf, "BNB");
 
         // Trade 2
-        buf.push((-8i8) as u8);
-        buf.push((-8i8) as u8);
-        buf.push((-8i8) as u8);
-        buf.extend_from_slice(&1002i64.to_le_bytes());
-        buf.extend_from_slice(&5002i64.to_le_bytes());
+        buf.push((-8_i8) as u8);
+        buf.push((-8_i8) as u8);
+        buf.push((-8_i8) as u8);
+        buf.extend_from_slice(&1002_i64.to_le_bytes());
+        buf.extend_from_slice(&5002_i64.to_le_bytes());
         buf.extend_from_slice(&i64::MIN.to_le_bytes());
-        buf.extend_from_slice(&200_000_000_000i64.to_le_bytes());
-        buf.extend_from_slice(&5_000_000i64.to_le_bytes());
-        buf.extend_from_slice(&1_000_000_000_000i64.to_le_bytes());
-        buf.extend_from_slice(&50_000i64.to_le_bytes());
-        buf.extend_from_slice(&1734300001000i64.to_le_bytes());
+        buf.extend_from_slice(&200_000_000_000_i64.to_le_bytes());
+        buf.extend_from_slice(&5_000_000_i64.to_le_bytes());
+        buf.extend_from_slice(&1_000_000_000_000_i64.to_le_bytes());
+        buf.extend_from_slice(&50_000_i64.to_le_bytes());
+        buf.extend_from_slice(&1_734_300_001_000_i64.to_le_bytes());
         buf.push(0); // is_buyer (false = seller)
         buf.push(1); // is_maker
         buf.push(1); // is_best_match
@@ -2492,7 +2491,7 @@ mod tests {
         buf.push(8); // quote_asset_precision
         buf.push(8); // base_commission_precision
         buf.push(8); // quote_commission_precision
-        buf.extend_from_slice(&0b0000_0111u16.to_le_bytes()); // order_types (MARKET|LIMIT|STOP_LOSS)
+        buf.extend_from_slice(&0b0000_0111_u16.to_le_bytes()); // order_types (MARKET|LIMIT|STOP_LOSS)
         buf.push(1); // iceberg_allowed (True)
         buf.push(1); // oco_allowed (True)
         buf.push(0); // oto_allowed (False)
@@ -2686,7 +2685,7 @@ mod tests {
         buf.push(8); // quote_asset_precision
         buf.push(8); // base_commission_precision
         buf.push(8); // quote_commission_precision
-        buf.extend_from_slice(&0b0000_0011u16.to_le_bytes()); // order_types
+        buf.extend_from_slice(&0b0000_0011_u16.to_le_bytes()); // order_types
         buf.push(1); // iceberg_allowed
         buf.push(1); // oco_allowed
         buf.push(0); // oto_allowed
@@ -2699,7 +2698,7 @@ mod tests {
         buf.push(0); // default_self_trade_prevention_mode
         buf.push(0); // allowed_self_trade_prevention_modes
         buf.push(0); // peg_instructions_allowed
-        buf.resize(buf.len() + padding, 0xFF);
+        buf.resize(buf.len() + padding, 0xff);
         buf.extend_from_slice(&create_group_header(0, 0)); // No filters
         buf.extend_from_slice(&create_group_header(0, 0)); // No permission sets
         write_var_string(&mut buf, "BTCUSDT");
@@ -2712,7 +2711,7 @@ mod tests {
         buf.push(8); // quote_asset_precision
         buf.push(8); // base_commission_precision
         buf.push(8); // quote_commission_precision
-        buf.extend_from_slice(&0b0000_0011u16.to_le_bytes()); // order_types
+        buf.extend_from_slice(&0b0000_0011_u16.to_le_bytes()); // order_types
         buf.push(1); // iceberg_allowed
         buf.push(1); // oco_allowed
         buf.push(0); // oto_allowed
@@ -2725,7 +2724,7 @@ mod tests {
         buf.push(0); // default_self_trade_prevention_mode
         buf.push(0); // allowed_self_trade_prevention_modes
         buf.push(0); // peg_instructions_allowed
-        buf.resize(buf.len() + padding, 0xFF);
+        buf.resize(buf.len() + padding, 0xff);
         buf.extend_from_slice(&create_group_header(0, 0)); // No filters
         buf.extend_from_slice(&create_group_header(0, 0)); // No permission sets
         write_var_string(&mut buf, "ETHUSDT");
@@ -2750,20 +2749,20 @@ mod tests {
 
         let mut buf = Vec::new();
         buf.extend_from_slice(&header);
-        buf.push((-2i8) as u8); // price_exponent
-        buf.push((-4i8) as u8); // qty_exponent
+        buf.push((-2_i8) as u8); // price_exponent
+        buf.push((-4_i8) as u8); // qty_exponent
         buf.extend_from_slice(&create_group_header(KLINES_BLOCK_LENGTH, 1));
-        buf.extend_from_slice(&1_700_000_000_000_000i64.to_le_bytes()); // open_time (micros)
-        buf.extend_from_slice(&12_000i64.to_le_bytes()); // open_price
-        buf.extend_from_slice(&12_500i64.to_le_bytes()); // high_price
-        buf.extend_from_slice(&11_900i64.to_le_bytes()); // low_price
-        buf.extend_from_slice(&12_345i64.to_le_bytes()); // close_price
-        buf.extend_from_slice(&1_234_500i128.to_le_bytes()); // volume
-        buf.extend_from_slice(&1_700_000_059_999_000i64.to_le_bytes()); // close_time (micros)
-        buf.extend_from_slice(&2_345_600i128.to_le_bytes()); // quote_volume
-        buf.extend_from_slice(&100i64.to_le_bytes()); // num_trades
-        buf.extend_from_slice(&600_000i128.to_le_bytes()); // taker_buy_base_volume
-        buf.extend_from_slice(&1_200_000i128.to_le_bytes()); // taker_buy_quote_volume
+        buf.extend_from_slice(&1_700_000_000_000_000_i64.to_le_bytes()); // open_time (micros)
+        buf.extend_from_slice(&12_000_i64.to_le_bytes()); // open_price
+        buf.extend_from_slice(&12_500_i64.to_le_bytes()); // high_price
+        buf.extend_from_slice(&11_900_i64.to_le_bytes()); // low_price
+        buf.extend_from_slice(&12_345_i64.to_le_bytes()); // close_price
+        buf.extend_from_slice(&1_234_500_i128.to_le_bytes()); // volume
+        buf.extend_from_slice(&1_700_000_059_999_000_i64.to_le_bytes()); // close_time (micros)
+        buf.extend_from_slice(&2_345_600_i128.to_le_bytes()); // quote_volume
+        buf.extend_from_slice(&100_i64.to_le_bytes()); // num_trades
+        buf.extend_from_slice(&600_000_i128.to_le_bytes()); // taker_buy_base_volume
+        buf.extend_from_slice(&1_200_000_i128.to_le_bytes()); // taker_buy_quote_volume
 
         let klines = decode_klines(&buf).unwrap();
 
@@ -2777,7 +2776,7 @@ mod tests {
     }
 
     fn build_new_order_full_buffer(expiry_reason: ExpiryReason) -> Vec<u8> {
-        let mut bytes = vec![0u8; 512];
+        let mut bytes = vec![0_u8; 512];
         let enc =
             NewOrderFullResponseEncoder::default().wrap(WriteBuf::new(&mut bytes), HEADER_LENGTH);
         let mut header = enc.header(0);
@@ -3022,7 +3021,7 @@ mod tests {
     #[rstest]
     fn test_decode_cancel_open_orders_rejects_group_item_block() {
         let mut buf = create_cancel_open_orders_buffer(&[]);
-        buf[8..10].copy_from_slice(&1u16.to_le_bytes());
+        buf[8..10].copy_from_slice(&1_u16.to_le_bytes());
 
         let error = decode_cancel_open_orders(&buf).unwrap_err();
 
@@ -3038,7 +3037,7 @@ mod tests {
     #[rstest]
     fn test_decode_cancel_open_orders_rejects_short_order_list_block() {
         let mut order_list = create_cancel_order_list_response_buffer();
-        order_list[0..2].copy_from_slice(&20u16.to_le_bytes());
+        order_list[0..2].copy_from_slice(&20_u16.to_le_bytes());
         let buf = create_cancel_open_orders_buffer(&[order_list]);
 
         let error = decode_cancel_open_orders(&buf).unwrap_err();
@@ -3055,7 +3054,7 @@ mod tests {
     #[rstest]
     fn test_decode_cancel_open_orders_rejects_short_order_block() {
         let mut order = create_cancel_order_response_buffer(111, "BTCUSDT", "orig-1", "new-1");
-        order[0..2].copy_from_slice(&108u16.to_le_bytes());
+        order[0..2].copy_from_slice(&108_u16.to_le_bytes());
         let buf = create_cancel_open_orders_buffer(&[order]);
 
         let error = decode_cancel_open_orders(&buf).unwrap_err();
@@ -3076,7 +3075,7 @@ mod tests {
             .windows(4)
             .position(|window| window == [135, 0, 2, 0])
             .unwrap();
-        order_list[report_header..report_header + 2].copy_from_slice(&134u16.to_le_bytes());
+        order_list[report_header..report_header + 2].copy_from_slice(&134_u16.to_le_bytes());
         let buf = create_cancel_open_orders_buffer(&[order_list]);
 
         let error = decode_cancel_open_orders(&buf).unwrap_err();
@@ -3111,7 +3110,7 @@ mod tests {
         orig_client_order_id: &str,
         client_order_id: &str,
     ) -> Vec<u8> {
-        let mut bytes = vec![0u8; 256];
+        let mut bytes = vec![0_u8; 256];
         let enc =
             CancelOrderResponseEncoder::default().wrap(WriteBuf::new(&mut bytes), HEADER_LENGTH);
         let mut header = enc.header(0);
@@ -3149,33 +3148,33 @@ mod tests {
             SBE_SCHEMA_ID,
             SBE_SCHEMA_VERSION,
         ));
-        buf.extend_from_slice(&44i64.to_le_bytes());
+        buf.extend_from_slice(&44_i64.to_le_bytes());
         buf.push(1); // contingency_type (OCO)
         buf.push(2); // list_status_type (ALL_DONE)
         buf.push(2); // list_order_status (ALL_DONE)
-        buf.extend_from_slice(&1_700_000_000_000_000i64.to_le_bytes());
-        buf.push((-8i8) as u8);
-        buf.push((-8i8) as u8);
+        buf.extend_from_slice(&1_700_000_000_000_000_i64.to_le_bytes());
+        buf.push((-8_i8) as u8);
+        buf.push((-8_i8) as u8);
 
-        buf.extend_from_slice(&8u16.to_le_bytes());
-        buf.extend_from_slice(&2u16.to_le_bytes());
-        for (order_id, client_order_id) in [(111i64, "orig-1"), (222, "orig-2")] {
+        buf.extend_from_slice(&8_u16.to_le_bytes());
+        buf.extend_from_slice(&2_u16.to_le_bytes());
+        for (order_id, client_order_id) in [(111_i64, "orig-1"), (222, "orig-2")] {
             buf.extend_from_slice(&order_id.to_le_bytes());
             write_var_string(&mut buf, "BTCUSDT");
             write_var_string(&mut buf, client_order_id);
         }
 
         buf.extend_from_slice(&(REPORT_BLOCK_LENGTH as u16).to_le_bytes());
-        buf.extend_from_slice(&2u16.to_le_bytes());
-        for (order_id, orig_client_order_id) in [(111i64, "orig-1"), (222, "orig-2")] {
+        buf.extend_from_slice(&2_u16.to_le_bytes());
+        for (order_id, orig_client_order_id) in [(111_i64, "orig-1"), (222, "orig-2")] {
             let report_start = buf.len();
             buf.extend_from_slice(&order_id.to_le_bytes());
-            buf.extend_from_slice(&44i64.to_le_bytes());
-            buf.extend_from_slice(&1_700_000_000_000_000i64.to_le_bytes());
-            buf.extend_from_slice(&100_000_000_000i64.to_le_bytes());
-            buf.extend_from_slice(&10_000_000i64.to_le_bytes());
-            buf.extend_from_slice(&0i64.to_le_bytes());
-            buf.extend_from_slice(&0i64.to_le_bytes());
+            buf.extend_from_slice(&44_i64.to_le_bytes());
+            buf.extend_from_slice(&1_700_000_000_000_000_i64.to_le_bytes());
+            buf.extend_from_slice(&100_000_000_000_i64.to_le_bytes());
+            buf.extend_from_slice(&10_000_000_i64.to_le_bytes());
+            buf.extend_from_slice(&0_i64.to_le_bytes());
+            buf.extend_from_slice(&0_i64.to_le_bytes());
             buf.push(3); // status (CANCELED)
             buf.push(0); // time_in_force (GTC)
             buf.push(1); // order_type (LIMIT)

@@ -154,7 +154,7 @@ async fn handle_get_instruments(query: Query<HashMap<String, String>>) -> impl I
                     "retCode": 10001,
                     "retMsg": "Invalid category",
                     "result": {},
-                    "time": 1704470400123i64
+                    "time": 1_704_470_400_123_i64
                 })),
             )
                 .into_response();
@@ -186,7 +186,7 @@ async fn handle_get_fee_rate(
                 "retCode": 10003,
                 "retMsg": "Invalid API key",
                 "result": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -207,7 +207,7 @@ async fn handle_get_wallet_balance(
                 "retCode": 10003,
                 "retMsg": "Invalid API key",
                 "result": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -231,7 +231,7 @@ async fn handle_get_positions(
                 "retCode": 10003,
                 "retMsg": "Invalid API key",
                 "result": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -261,7 +261,7 @@ async fn handle_get_empty_report_list(headers: HeaderMap) -> impl IntoResponse {
                 "retCode": 10003,
                 "retMsg": "Invalid API key",
                 "result": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -275,7 +275,7 @@ async fn handle_get_empty_report_list(headers: HeaderMap) -> impl IntoResponse {
             "nextPageCursor": ""
         },
         "retExtInfo": {},
-        "time": 1704470400123i64
+        "time": 1_704_470_400_123_i64
     }))
     .into_response()
 }
@@ -292,7 +292,7 @@ async fn handle_get_orders_realtime(
                 "retCode": 10003,
                 "retMsg": "Invalid API key",
                 "result": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -356,7 +356,7 @@ async fn handle_get_orders_realtime(
                 "nextPageCursor": ""
             },
             "retExtInfo": {},
-            "time": 1704470400123i64
+            "time": 1_704_470_400_123_i64
         }))
         .into_response();
     }
@@ -395,7 +395,7 @@ async fn handle_post_order(headers: HeaderMap, body: Bytes) -> impl IntoResponse
                 "retCode": 10003,
                 "retMsg": "Invalid API key",
                 "result": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -408,7 +408,7 @@ async fn handle_post_order(headers: HeaderMap, body: Bytes) -> impl IntoResponse
                 "retCode": 10001,
                 "retMsg": "Invalid JSON body",
                 "result": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -422,7 +422,7 @@ async fn handle_post_order(headers: HeaderMap, body: Bytes) -> impl IntoResponse
             "orderLinkId": order_req.get("orderLinkId").and_then(|v| v.as_str()).unwrap_or("")
         },
         "retExtInfo": {},
-        "time": 1704470400123i64
+        "time": 1_704_470_400_123_i64
     }))
     .into_response()
 }
@@ -439,7 +439,7 @@ async fn handle_cancel_order(
                 "retCode": 10003,
                 "retMsg": "Invalid API key",
                 "result": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -457,7 +457,7 @@ async fn handle_cancel_order(
             "retCode": ret_code,
             "retMsg": format!("Test venue rejection {ret_code}"),
             "result": {},
-            "time": 1704470400123i64
+            "time": 1_704_470_400_123_i64
         }))
         .into_response();
     }
@@ -470,7 +470,7 @@ async fn handle_cancel_order(
             "orderLinkId": "test-order"
         },
         "retExtInfo": {},
-        "time": 1704470400123i64
+        "time": 1_704_470_400_123_i64
     }))
     .into_response()
 }
@@ -498,7 +498,7 @@ async fn handle_cancel_all_orders(
                 "retCode": 10003,
                 "retMsg": "Invalid API key",
                 "result": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -511,7 +511,7 @@ async fn handle_cancel_all_orders(
         "retMsg": "OK",
         "result": { "list": [] },
         "retExtInfo": {},
-        "time": 1704470400123i64
+        "time": 1_704_470_400_123_i64
     }))
     .into_response()
 }
@@ -538,7 +538,7 @@ async fn handle_switch_mode(
         "retMsg": "OK",
         "result": {},
         "retExtInfo": {},
-        "time": 1704470400123i64,
+        "time": 1_704_470_400_123_i64,
     }))
     .into_response()
 }
@@ -565,7 +565,7 @@ async fn handle_set_leverage(
         "retMsg": "OK",
         "result": {},
         "retExtInfo": {},
-        "time": 1704470400123i64,
+        "time": 1_704_470_400_123_i64,
     }))
     .into_response()
 }
@@ -592,7 +592,7 @@ async fn handle_set_margin_mode(
         "retMsg": "OK",
         "result": {},
         "retExtInfo": {},
-        "time": 1704470400123i64,
+        "time": 1_704_470_400_123_i64,
     }))
     .into_response()
 }
@@ -604,7 +604,7 @@ async fn handle_post_repay(State(state): State<TestServerState>) -> impl IntoRes
         "retMsg": "OK",
         "result": {"resultStatus": "SU"},
         "retExtInfo": {},
-        "time": 1704470400123i64
+        "time": 1_704_470_400_123_i64
     }))
 }
 
@@ -620,7 +620,7 @@ async fn handle_post_borrow(
                 "retCode": 10003,
                 "retMsg": "Invalid API key",
                 "result": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -634,7 +634,7 @@ async fn handle_post_borrow(
         "retMsg": "OK",
         "result": {"coin": coin, "amount": "0"},
         "retExtInfo": {},
-        "time": 1704470400123i64
+        "time": 1_704_470_400_123_i64
     }))
     .into_response()
 }
@@ -651,7 +651,7 @@ async fn handle_post_no_convert_repay(
                 "retCode": 10003,
                 "retMsg": "Invalid API key",
                 "result": {},
-                "time": 1704470400123i64
+                "time": 1_704_470_400_123_i64
             })),
         )
             .into_response();
@@ -665,7 +665,7 @@ async fn handle_post_no_convert_repay(
         "retMsg": "OK",
         "result": {"resultStatus": result_status},
         "retExtInfo": {},
-        "time": 1704470400123i64
+        "time": 1_704_470_400_123_i64
     }))
     .into_response()
 }
@@ -679,7 +679,7 @@ async fn handle_server_time() -> impl IntoResponse {
             "timeNano": "1704470400123456789"
         },
         "retExtInfo": {},
-        "time": 1704470400123i64
+        "time": 1_704_470_400_123_i64
     }))
 }
 

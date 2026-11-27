@@ -35,6 +35,8 @@ const REDIS_XTRIM: &str = "XTRIM";
 const REDIS_MINID: &str = "MINID";
 const REDIS_FLUSHDB: &str = "FLUSHDB";
 
+const ORDER_ACTIVATIONS: &str = "order_activations";
+
 /// Extracts the index key from a full Redis key.
 ///
 /// Handles keys with `instance_id` prefix by finding the `:index:` pattern.

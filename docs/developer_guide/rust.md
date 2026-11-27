@@ -71,6 +71,17 @@ allowance flags from the same generator.
 `make clippy-strict-audit` uses `--force-warn` to report candidate lints even at deliberately allowed
 sites; findings do not fail that audit.
 
+### All-targets checks in pre-flight
+
+`make pre-flight` runs `check-all-targets` for the host with HyperSync and SBE enabled. On Linux,
+`check-all-targets-macos` also checks macOS ARM64 with Python 3.13 when `MACOS_SDKROOT` is set.
+The cross-check keeps its Cargo cache under `$(TARGET_DIR)/macos`.
+
+To enable the check on Linux, install Clang and `llvm-ar`, and make both available on `PATH`.
+Install the Rust target with `rustup target add aarch64-apple-darwin` from the repository root.
+Set `MACOS_SDKROOT` to the absolute path to your macOS SDK when running `make pre-flight` or
+`make check-all-targets-macos`. On Linux, pre-flight reports a skip when `MACOS_SDKROOT` is unset.
+
 ## Module layout
 
 Arrange each hand-written module so its primary behavior appears before its supporting

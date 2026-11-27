@@ -369,8 +369,8 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                 "enabled_features": []
                             },
                             "testnet": true,
-                            "usIn": 1699999999000000_u64,
-                            "usOut": 1699999999001000_u64,
+                            "usIn": 1_699_999_999_000_000_u64,
+                            "usOut": 1_699_999_999_001_000_u64,
                             "usDiff": 1000
                         });
 
@@ -410,8 +410,8 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                 "id": id,
                                 "result": subscribed_channels,
                                 "testnet": true,
-                                "usIn": 1699999999000000_u64,
-                                "usOut": 1699999999001000_u64,
+                                "usIn": 1_699_999_999_000_000_u64,
+                                "usOut": 1_699_999_999_001_000_u64,
                                 "usDiff": 1000
                             });
 
@@ -636,9 +636,9 @@ fn order_message_result(request: &Value, order_state: CommandOrderState) -> Valu
         "instrument_name": instrument_name,
         "api": true,
         "order_id": "DERIBIT-ORDER-1",
-        "creation_timestamp": 1767978363493_u64,
+        "creation_timestamp": 1_767_978_363_493_u64,
         "filled_amount": 0.0,
-        "last_update_timestamp": 1767978363493_u64,
+        "last_update_timestamp": 1_767_978_363_493_u64,
         "post_only": true,
         "reduce_only": false,
         "average_price": 0.0,

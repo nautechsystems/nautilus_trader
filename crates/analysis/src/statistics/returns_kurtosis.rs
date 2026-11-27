@@ -152,7 +152,7 @@ mod tests {
     #[rstest]
     fn test_zero_dispersion() {
         let kurtosis = ReturnsKurtosis::new();
-        let returns = create_returns(&[0.01, 0.01, 0.01, 0.01]);
+        let returns = create_returns(&[-0.1; 11]);
         let result = kurtosis.calculate_from_returns(&returns);
         assert!(result.is_some());
         assert!(result.unwrap().is_nan());

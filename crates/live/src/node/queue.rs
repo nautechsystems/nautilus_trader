@@ -132,8 +132,7 @@ impl QueueMonitor {
 
         for channel in SYSTEM_CHANNELS {
             let queue_depth = channel_queue_depth(snapshot, channel);
-            let mean_dispatch_ns = delta.channel_mean_dispatch_ns(channel);
-            let dispatched = channel_dispatched(delta, channel);
+            let (dispatched, mean_dispatch_ns) = delta.channel_dispatch_stats(channel);
             let state = &mut self.states[system_channel_index(channel)];
 
             if let Some(queue_state) = condition_transition(
@@ -207,15 +206,5 @@ const fn channel_queue_depth(snapshot: RunnerMetricsSnapshot, channel: SystemCha
         SystemChannel::ExecCommands => snapshot.exec_commands.queue_depth,
         SystemChannel::DataEvents => snapshot.data_events.queue_depth,
         SystemChannel::DataCommands => snapshot.data_commands.queue_depth,
-    }
-}
-
-const fn channel_dispatched(delta: RunnerMetricsDelta, channel: SystemChannel) -> u64 {
-    match channel {
-        SystemChannel::TimeEvents => delta.time_events,
-        SystemChannel::ExecEvents => delta.exec_events,
-        SystemChannel::ExecCommands => delta.exec_commands,
-        SystemChannel::DataEvents => delta.data_events,
-        SystemChannel::DataCommands => delta.data_commands,
     }
 }

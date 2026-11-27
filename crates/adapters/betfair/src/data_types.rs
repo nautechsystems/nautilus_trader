@@ -470,14 +470,14 @@ mod tests {
         let data = BetfairRaceRunnerData::new(
             "28587288.1650".to_string(),
             "1.1234567".to_string(),
-            7390417,
+            7_390_417,
             51.4189543,
             -0.4058491,
             17.8,
             f64::NAN,
             f64::NAN,
-            UnixNanos::from(1_000_000_000u64),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
+            UnixNanos::from(1_000_000_000_u64),
         );
 
         let json = serde_json::to_string(&data).unwrap();
@@ -489,7 +489,7 @@ mod tests {
         assert!(parsed.progress.is_nan());
         assert!(parsed.stride_frequency.is_nan());
         assert_eq!(parsed.latitude, 51.4189543);
-        assert_eq!(parsed.selection_id, 7390417);
+        assert_eq!(parsed.selection_id, 7_390_417);
     }
 
     #[rstest]
@@ -500,8 +500,8 @@ mod tests {
             Some(Decimal::new(100, 0)),
             None,
             None,
-            UnixNanos::from(1_000_000_000u64),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
+            UnixNanos::from(1_000_000_000_u64),
         );
 
         let json = serde_json::to_string(&ticker).unwrap();
@@ -550,7 +550,8 @@ mod tests {
                 .is_null(0)
         );
 
-        let decoded = BetfairTicker::decode_data_batch(schema.metadata(), batch).unwrap();
+        let decoded = BetfairTicker::decode_data_batch(&schema.metadata().into(), batch).unwrap();
+
         let Data::Custom(custom) = &decoded[0] else {
             panic!("expected custom data");
         };
@@ -568,8 +569,8 @@ mod tests {
         let starting_price = BetfairStartingPrice::new(
             InstrumentId::from("1.234-56789-0.0.BETFAIR"),
             Decimal::new(573, 2),
-            UnixNanos::from(1_000_000_000u64),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
+            UnixNanos::from(1_000_000_000_u64),
         );
 
         let json = serde_json::to_string(&starting_price).unwrap();
@@ -589,8 +590,8 @@ mod tests {
             OrderSide::Buy,
             Decimal::new(1000, 0),
             Decimal::new(3338, 2),
-            UnixNanos::from(1_000_000_000u64),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
+            UnixNanos::from(1_000_000_000_u64),
         );
 
         let json = serde_json::to_string(&delta).unwrap();
@@ -618,8 +619,8 @@ mod tests {
             Some(Decimal::new(25, 1)),
             Some(Decimal::new(60, 0)),
             "VAR".to_string(),
-            UnixNanos::from(1_000_000_000u64),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
+            UnixNanos::from(1_000_000_000_u64),
         );
 
         let json = serde_json::to_string(&voided).unwrap();

@@ -28,15 +28,9 @@
 //!
 //! Task preparation and collection must not change state that controls later report delivery,
 //! such as deduplication markers. This is an adapter obligation the facade cannot enforce.
-//!
-//! # Instrument updates
-//!
-//! Report collection defers instrument updates only while an inline request borrows the client.
-//! The facade flushes them before returning a receipt; the node flushes them on cancellation.
 
 use std::{
     cell::{Cell, RefCell},
-    collections::VecDeque,
     fmt::Debug,
     rc::Rc,
 };
@@ -71,7 +65,6 @@ use crate::task::{TaskJoinOutcome, TaskSlot};
 #[derive(Clone)]
 pub(crate) struct LiveExecutionClient {
     client: Rc<RefCell<Box<dyn ExecutionClient>>>,
-    pending_instruments: Rc<RefCell<VecDeque<InstrumentAny>>>,
     report_task: Rc<RefCell<TaskSlot<()>>>,
     report_collecting: Rc<Cell<bool>>,
     client_id: ClientId,
@@ -100,7 +93,6 @@ impl LiveExecutionClient {
 
         Self {
             client: Rc::new(RefCell::new(client)),
-            pending_instruments: Rc::new(RefCell::new(VecDeque::new())),
             report_task: Rc::new(RefCell::new(TaskSlot::new())),
             report_collecting: Rc::new(Cell::new(false)),
             client_id,
@@ -126,10 +118,8 @@ impl LiveExecutionClient {
         log::debug!("{} collects single-order reports inline", self.client_id);
         let guard = self.reserve_report_task().await?;
         let result = { self.client.borrow().generate_order_status_report(cmd).await };
-        self.flush_pending_instruments();
-        let finish = Box::new(move || result);
         let guard = Rc::new(guard);
-        Ok(CollectedReport::new(finish, guard))
+        Ok(Self::complete_inline_report(guard, result))
     }
 
     #[expect(
@@ -155,10 +145,8 @@ impl LiveExecutionClient {
                 .await
         };
 
-        self.flush_pending_instruments();
-        let finish = Box::new(move || result);
         let guard = Rc::new(guard);
-        Ok(CollectedReport::new(finish, guard))
+        Ok(Self::complete_inline_report(guard, result))
     }
 
     #[expect(
@@ -177,10 +165,8 @@ impl LiveExecutionClient {
         log::debug!("{} collects fill reports inline", self.client_id);
         let guard = self.reserve_report_task().await?;
         let result = { self.client.borrow().generate_fill_reports(cmd).await };
-        self.flush_pending_instruments();
-        let finish = Box::new(move || result);
         let guard = Rc::new(guard);
-        Ok(CollectedReport::new(finish, guard))
+        Ok(Self::complete_inline_report(guard, result))
     }
 
     #[expect(
@@ -210,10 +196,8 @@ impl LiveExecutionClient {
                 .await
         };
 
-        self.flush_pending_instruments();
-        let finish = Box::new(move || result);
         let guard = Rc::new(guard);
-        Ok(CollectedReport::new(finish, guard))
+        Ok(Self::complete_inline_report(guard, result))
     }
 
     async fn collect_report<T>(
@@ -221,12 +205,26 @@ impl LiveExecutionClient {
         task: ExecutionReportTask<T>,
     ) -> anyhow::Result<CollectedReport<T>> {
         let guard = self.reserve_report_task().await?;
+        let guard = Rc::new(guard);
+        self.collect_worker_report(task, guard).await
+    }
 
+    async fn collect_worker_report<T>(
+        &self,
+        task: ExecutionReportTask<T>,
+        guard: Rc<ReportTaskGuard>,
+    ) -> anyhow::Result<CollectedReport<T>> {
         self.report_task.borrow_mut().spawn(task.collection)?;
         self.join_report_task().await?;
-        self.flush_pending_instruments();
-        let guard = Rc::new(guard);
         Ok(CollectedReport::new(task.finish, guard))
+    }
+
+    fn complete_inline_report<T: 'static>(
+        guard: Rc<ReportTaskGuard>,
+        result: anyhow::Result<T>,
+    ) -> CollectedReport<T> {
+        let finish = Box::new(move || result);
+        CollectedReport::new(finish, guard)
     }
 
     async fn reserve_report_task(&self) -> anyhow::Result<ReportTaskGuard> {
@@ -277,21 +275,6 @@ impl LiveExecutionClient {
             _ => Ok(()),
         }
     }
-
-    pub(crate) fn flush_pending_instruments(&self) {
-        let mut pending = self.pending_instruments.borrow_mut();
-        if pending.is_empty() {
-            return;
-        }
-
-        let count = pending.len();
-        let mut client = self.client.borrow_mut();
-        while let Some(instrument) = pending.pop_front() {
-            client.on_instrument(instrument);
-        }
-
-        log::debug!("Flushed {count} deferred execution client instrument update(s)");
-    }
 }
 
 /// Sequential fill collections retaining admission until the collector and all receipts are dropped.
@@ -339,23 +322,15 @@ impl ReportCollector {
         cmd: GenerateFillReports,
     ) -> anyhow::Result<CollectedReport<Vec<FillReport>>> {
         let task = self.client.client.borrow().generate_fill_reports_task(&cmd);
-        let finish = if let Some(task) = task {
-            self.client
-                .report_task
-                .borrow_mut()
-                .spawn(task.collection)?;
-            self.client.join_report_task().await?;
-            task.finish
-        } else {
-            log::debug!("{} collects fill reports inline", self.client.client_id);
-            let result = { self.client.client.borrow().generate_fill_reports(cmd).await };
-            let finish: Box<dyn FnOnce() -> anyhow::Result<Vec<FillReport>>> =
-                Box::new(move || result);
-            finish
-        };
+        if let Some(task) = task {
+            let guard = Rc::clone(&self.guard);
+            return self.client.collect_worker_report(task, guard).await;
+        }
 
-        self.client.flush_pending_instruments();
-        Ok(CollectedReport::new(finish, Rc::clone(&self.guard)))
+        log::debug!("{} collects fill reports inline", self.client.client_id);
+        let result = { self.client.client.borrow().generate_fill_reports(cmd).await };
+        let guard = Rc::clone(&self.guard);
+        Ok(LiveExecutionClient::complete_inline_report(guard, result))
     }
 }
 
@@ -570,13 +545,10 @@ impl ExecutionClient for LiveExecutionClient {
         lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         let _guard = self.reserve_report_task().await?;
-        let result = self
-            .client
+        self.client
             .borrow()
             .generate_mass_status(lookback_mins)
-            .await;
-        self.flush_pending_instruments();
-        result
+            .await
     }
 
     fn register_external_order(
@@ -597,20 +569,16 @@ impl ExecutionClient for LiveExecutionClient {
     }
 
     fn on_instrument(&mut self, instrument: InstrumentAny) {
-        let instrument_id = instrument.id();
+        let Ok(mut client) = self.client.try_borrow_mut() else {
+            log::warn!(
+                "Cannot seed instrument {} while execution client {} is busy",
+                instrument.id(),
+                self.client_id
+            );
+            return;
+        };
 
-        match self.client.try_borrow_mut() {
-            Ok(mut client) => {
-                client.on_instrument(instrument);
-            }
-            Err(_) => {
-                log::debug!(
-                    "Deferring execution client instrument update for {instrument_id}: \
-                     client request in progress"
-                );
-                self.pending_instruments.borrow_mut().push_back(instrument);
-            }
-        }
+        client.on_instrument(instrument);
     }
 
     fn calculate_commission(
@@ -663,9 +631,9 @@ mod tests {
         worker: bool,
         fail: bool,
         reports: Rc<Cell<u8>>,
-        instruments: Rc<RefCell<Vec<InstrumentId>>>,
         report_release: Option<Rc<tokio::sync::Notify>>,
         commission_args: Rc<RefCell<Option<CommissionArgs>>>,
+        instrument: Rc<RefCell<Option<InstrumentAny>>>,
     }
 
     type CommissionArgs = (InstrumentId, Quantity, Price, LiquiditySide);
@@ -810,7 +778,7 @@ mod tests {
         }
 
         fn on_instrument(&mut self, instrument: InstrumentAny) {
-            self.instruments.borrow_mut().push(instrument.id());
+            *self.instrument.borrow_mut() = Some(instrument);
         }
 
         fn calculate_commission(
@@ -847,6 +815,39 @@ mod tests {
         ) -> anyhow::Result<()> {
             Ok(())
         }
+    }
+
+    #[rstest]
+    fn facade_forwards_explicit_instrument_seeding() {
+        let adapter = ReportExecutionClient::default();
+        let seeded = Rc::clone(&adapter.instrument);
+        let mut client = LiveExecutionClient::new(Box::new(adapter));
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+
+        client.on_instrument(instrument.clone());
+
+        assert!(
+            seeded
+                .borrow()
+                .as_ref()
+                .unwrap()
+                .same_definition(&instrument)
+        );
+    }
+
+    #[rstest]
+    fn facade_rejects_explicit_instrument_seeding_while_borrowed() {
+        let adapter = ReportExecutionClient::default();
+        let seeded = Rc::clone(&adapter.instrument);
+        let mut client = LiveExecutionClient::new(Box::new(adapter));
+        let reader = client.clone();
+        let report_borrow = reader.client.borrow();
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+
+        client.on_instrument(instrument);
+
+        assert!(seeded.borrow().is_none());
+        drop(report_borrow);
     }
 
     #[rstest]
@@ -1100,7 +1101,7 @@ mod tests {
     #[case::inline(false)]
     #[case::worker_after_inline_cancel(true)]
     #[tokio::test(flavor = "current_thread")]
-    async fn collection_flushes_deferred_instruments_before_receipt(
+    async fn collection_retains_report_admission_until_receipt_finishes(
         #[case] worker: bool,
         #[values(false, true)] fail: bool,
     ) {
@@ -1112,9 +1113,7 @@ mod tests {
             ..Default::default()
         };
 
-        let instruments = Rc::clone(&adapter.instruments);
         let client = LiveExecutionClient::new(Box::new(adapter));
-        let mut client_view = client.clone();
         let command = GenerateOrderStatusReportsBuilder::default()
             .ts_init(17.into())
             .open_only(true)
@@ -1126,12 +1125,6 @@ mod tests {
             std::task::Poll::Ready(())
         })
         .await;
-
-        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
-        let instrument_id = instrument.id();
-        client_view.on_instrument(instrument);
-        assert!(instruments.borrow().is_empty());
-        assert_eq!(client.pending_instruments.borrow().len(), 1);
 
         let receipt = if worker {
             drop(collection);
@@ -1150,8 +1143,6 @@ mod tests {
             collection.await.unwrap()
         };
 
-        assert_eq!(*instruments.borrow(), vec![instrument_id]);
-        assert!(client.pending_instruments.borrow().is_empty());
         assert!(client.report_collecting.get());
         let result = receipt.finish();
 

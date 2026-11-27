@@ -15,6 +15,7 @@
 
 use nautilus_model::{
     enums::{OrderType, TimeInForce, TriggerType},
+    events::OrderDeniedReason,
     instruments::{Instrument, InstrumentAny},
     orders::Order,
 };
@@ -22,7 +23,29 @@ use nautilus_model::{
 pub(crate) const IS_CBE_ROUTED: &str = "is_cbe_routed";
 pub(crate) const IS_CSR: &str = "is_csr";
 
+const DERIBIT_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
+    OrderType::Market,
+    OrderType::Limit,
+    OrderType::StopMarket,
+    OrderType::StopLimit,
+    OrderType::MarketIfTouched,
+    OrderType::LimitIfTouched,
+];
+
 pub(crate) fn validate_order(instrument: &InstrumentAny, order: &dyn Order) -> anyhow::Result<()> {
+    let order_type = order.order_type();
+    let unsupported_type = OrderDeniedReason::UnsupportedOrderType { order_type };
+    anyhow::ensure!(
+        DERIBIT_SUPPORTED_ORDER_TYPES.contains(&order_type),
+        unsupported_type
+    );
+
+    anyhow::ensure!(
+        !matches!(instrument, InstrumentAny::CryptoOptionSpread(_))
+            || order_type == OrderType::Limit,
+        unsupported_type
+    );
+
     if matches!(instrument, InstrumentAny::CurrencyPair(_)) {
         anyhow::ensure!(
             order.time_in_force() != TimeInForce::Gtd,
@@ -36,11 +59,10 @@ pub(crate) fn validate_order(instrument: &InstrumentAny, order: &dyn Order) -> a
 
     anyhow::ensure!(
         matches!(
-            order.order_type(),
+            order_type,
             OrderType::Limit | OrderType::Market | OrderType::StopLimit
         ),
-        "Deribit routed spot does not support order type {}",
-        order.order_type()
+        unsupported_type
     );
     anyhow::ensure!(
         matches!(
@@ -172,8 +194,10 @@ mod tests {
             .build();
 
         assert_eq!(
-            validate_order(&instrument, &order).unwrap_err().to_string(),
-            format!("Deribit routed spot does not support order type {order_type}")
+            validate_order(&instrument, &order)
+                .unwrap_err()
+                .downcast_ref::<OrderDeniedReason>(),
+            Some(&OrderDeniedReason::UnsupportedOrderType { order_type })
         );
     }
 

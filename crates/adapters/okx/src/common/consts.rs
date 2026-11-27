@@ -657,6 +657,8 @@ mod tests {
 
     #[rstest]
     #[case("O20260101000000ABC1", true)]
+    #[case("c023d8c0bdfd8399b101689255a6217b", true)] // compact UUID spawn ID
+    #[case("O202611200910100010002-E1", false)] // hyphenated spawned order ID rejected
     #[case("aB9", true)]
     #[case("abcdefghij0123456789ABCDEFGHIJ12", true)] // exactly 32 chars
     #[case("abcdefghij0123456789ABCDEFGHIJ123", false)] // 33 chars

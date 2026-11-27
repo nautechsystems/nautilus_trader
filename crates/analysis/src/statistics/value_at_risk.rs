@@ -180,6 +180,14 @@ mod tests {
     }
 
     #[rstest]
+    fn test_single_return_preserves_value_at_risk() {
+        let var = ValueAtRisk::new(None);
+        let returns = create_returns(&[1e-17]);
+
+        assert_eq!(var.calculate_from_returns(&returns), Some(1e-17));
+    }
+
+    #[rstest]
     fn test_value_at_risk_calculation() {
         // sorted: [-0.10, -0.08, -0.05, -0.03, -0.02, 0.01, 0.015, 0.02, 0.03, 0.04]
         // alpha = 0.05, rank = 0.05 * 9 = 0.45

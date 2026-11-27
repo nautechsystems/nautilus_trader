@@ -67,7 +67,6 @@ pub fn parse_initialize_event_hypersync(
 
         let pool_address = Address::from_slice(
             log.address
-                .clone()
                 .expect("Contract address should be set in logs")
                 .as_ref(),
         );
@@ -181,7 +180,7 @@ mod tests {
         );
         let expected_sqrt_price = U160::from_str_radix("3d409fc4ca983d2e3df335", 16).unwrap();
         assert_eq!(event.sqrt_price_x96, expected_sqrt_price);
-        assert_eq!(event.tick, -139514);
+        assert_eq!(event.tick, -139_514);
     }
 
     #[rstest]
@@ -195,7 +194,7 @@ mod tests {
         );
         let expected_sqrt_price = U160::from_str_radix("3d409fc4ca983d2e3df335", 16).unwrap();
         assert_eq!(event.sqrt_price_x96, expected_sqrt_price);
-        assert_eq!(event.tick, -139514);
+        assert_eq!(event.tick, -139_514);
     }
 
     #[rstest]

@@ -148,7 +148,7 @@ impl StackStr {
             });
         }
 
-        let mut value = [0u8; STACKSTR_BUFFER_SIZE];
+        let mut value = [0_u8; STACKSTR_BUFFER_SIZE];
         value[..s.len()].copy_from_slice(bytes);
         // Null terminator is already set (array initialized to 0)
 
@@ -369,7 +369,7 @@ impl Default for StackStr {
     /// an empty placeholder. Use [`is_empty`](StackStr::is_empty) to check for this state.
     fn default() -> Self {
         Self {
-            value: [0u8; STACKSTR_BUFFER_SIZE],
+            value: [0_u8; STACKSTR_BUFFER_SIZE],
             len: 0,
         }
     }
@@ -499,7 +499,7 @@ mod tests {
     #[rstest]
     #[should_panic(expected = "Invalid UTF-8 in C string")]
     fn test_from_c_ptr_invalid_utf8_panics() {
-        let bytes = vec![0xFF];
+        let bytes = vec![0xff];
         let cstring = unsafe { std::ffi::CString::from_vec_unchecked(bytes) };
         let _ = unsafe { StackStr::from_c_ptr(cstring.as_ptr()) };
     }

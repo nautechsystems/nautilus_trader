@@ -35,6 +35,7 @@ use nautilus_common::{
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
         ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
+    msgbus::{InstrumentSubscription, TypedHandler, switchboard::get_instruments_pattern},
 };
 use nautilus_core::{
     AtomicMap, DurationNanos, Params, UUID4, UnixNanos,
@@ -110,6 +111,7 @@ pub struct KrakenFuturesExecutionClient {
     emitter: ExecutionEventEmitter,
     http: KrakenFuturesHttpClient,
     ws: KrakenFuturesWebSocketClient,
+    instrument_subscription: Option<InstrumentSubscription>,
     cancellation_token: CancellationToken,
     session_tasks: TaskGroup,
     pending_tasks: TaskGroup,
@@ -189,6 +191,7 @@ impl KrakenFuturesExecutionClient {
             emitter,
             http,
             ws,
+            instrument_subscription: None,
             cancellation_token,
             session_tasks,
             pending_tasks,
@@ -289,7 +292,9 @@ impl KrakenFuturesExecutionClient {
             return;
         }
 
-        if let Err(reason) = validate_order(order) {
+        if let Err(reason) = validate_order_type(order.order_type())
+            .and_then(|()| validate_client_order_id(order.client_order_id()))
+        {
             self.emitter.emit_order_denied(order, &reason.to_string());
             return;
         }
@@ -562,6 +567,7 @@ impl KrakenFuturesExecutionClient {
         let instrument_id = cmd.instrument_id;
         let quantity = cmd.quantity;
         let price = cmd.price;
+        let trigger_price = cmd.trigger_price;
 
         log::debug!(
             "Modifying order: venue_order_id={venue_order_id:?}, client_order_id={client_order_id}"
@@ -579,7 +585,7 @@ impl KrakenFuturesExecutionClient {
                     venue_order_id,
                     quantity,
                     price,
-                    None,
+                    trigger_price,
                 )
                 .await
             {
@@ -621,6 +627,41 @@ impl KrakenFuturesExecutionClient {
     }
 }
 
+impl KrakenFuturesExecutionClient {
+    fn subscribe_instruments(&mut self) {
+        if self.instrument_subscription.is_some() {
+            return;
+        }
+
+        let http = self.http.clone();
+        let instruments = Arc::clone(&self.instruments);
+        self.instrument_subscription = Some(InstrumentSubscription::new(
+            get_instruments_pattern(self.venue()),
+            TypedHandler::from(move |instrument: &InstrumentAny| {
+                Self::apply_instrument(&http, &instruments, instrument.clone());
+            }),
+        ));
+    }
+
+    fn apply_instrument(
+        http: &KrakenFuturesHttpClient,
+        instruments: &AtomicMap<InstrumentId, InstrumentAny>,
+        instrument: InstrumentAny,
+    ) {
+        let id = instrument.id();
+        if id.venue == *KRAKEN_VENUE
+            && matches!(instrument, InstrumentAny::CryptoPerpetual(_))
+            && instruments
+                .load()
+                .get(&id)
+                .is_none_or(|previous| previous.ts_init() <= instrument.ts_init())
+        {
+            http.cache_instrument(instrument.clone());
+            instruments.insert(id, instrument);
+        }
+    }
+}
+
 #[async_trait(?Send)]
 impl ExecutionClient for KrakenFuturesExecutionClient {
     fn is_connected(&self) -> bool {
@@ -637,6 +678,10 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
 
     fn venue(&self) -> Venue {
         *KRAKEN_VENUE
+    }
+
+    fn on_instrument(&mut self, instrument: InstrumentAny) {
+        Self::apply_instrument(&self.http, &self.instruments, instrument);
     }
 
     fn oms_type(&self) -> OmsType {
@@ -661,6 +706,8 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         if self.core.is_started() {
             return Ok(());
         }
@@ -678,6 +725,8 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         if self.core.is_stopped() {
             return Ok(());
         }
@@ -693,6 +742,8 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         if self.core.is_connected() && self.session_tasks.is_open() && self.pending_tasks.is_open()
         {
             return Ok(());
@@ -702,12 +753,19 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         self.prepare_task_groups().await?;
 
         if !self.core.instruments_initialized() {
-            let instruments = self
+            let mut instruments = self
                 .http
                 .request_instruments()
                 .await
                 .context("Failed to load Kraken futures instruments")?;
             log::debug!("Loaded {} Futures instruments", instruments.len());
+            let current = self.instruments.load();
+            instruments.retain(|instrument| {
+                current
+                    .get(&instrument.id())
+                    .is_none_or(|cached| cached.ts_init() <= instrument.ts_init())
+            });
+
             self.http.cache_instruments(&instruments);
             self.core.set_instruments_initialized();
         }
@@ -1437,11 +1495,11 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             orders.len()
         );
 
-        // A list's open members go out together or not at all, so no leg is stranded
+        // An invalid client order ID denies the whole list before any leg is sent
         if let Some(reason) = orders
             .iter()
             .filter(|order| !order.is_closed())
-            .find_map(|order| validate_order(order).err())
+            .find_map(|order| validate_client_order_id(order.client_order_id()).err())
         {
             for order in orders.iter().filter(|order| !order.is_closed()) {
                 self.emitter.emit_order_denied(order, &reason.to_string());
@@ -1465,6 +1523,11 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             // submit market orders individually
             if order.order_type() == OrderType::Market {
                 self.submit_single_order(order, "submit_order_list");
+                continue;
+            }
+
+            if let Err(reason) = validate_order_type(order.order_type()) {
+                self.emitter.emit_order_denied(order, &reason.to_string());
                 continue;
             }
 
@@ -2092,10 +2155,25 @@ impl KrakenFuturesExecutionClient {
     }
 }
 
-/// Checks an order against the venue's documented limits before it is submitted.
-fn validate_order(order: &OrderAny) -> Result<(), OrderDeniedReason> {
-    let len = order.client_order_id().as_str().len();
+const KRAKEN_FUTURES_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
+    OrderType::Market,
+    OrderType::Limit,
+    OrderType::StopMarket,
+    OrderType::StopLimit,
+    OrderType::MarketIfTouched,
+    OrderType::LimitIfTouched,
+];
 
+fn validate_order_type(order_type: OrderType) -> Result<(), OrderDeniedReason> {
+    if !KRAKEN_FUTURES_SUPPORTED_ORDER_TYPES.contains(&order_type) {
+        return Err(OrderDeniedReason::UnsupportedOrderType { order_type });
+    }
+
+    Ok(())
+}
+
+fn validate_client_order_id(client_order_id: ClientOrderId) -> Result<(), OrderDeniedReason> {
+    let len = client_order_id.as_str().len();
     if len > KRAKEN_FUTURES_MAX_CLIENT_ORDER_ID_LEN {
         return Err(OrderDeniedReason::InvalidClientOrderId {
             detail: format!(

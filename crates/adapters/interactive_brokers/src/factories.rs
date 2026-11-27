@@ -360,7 +360,7 @@ mod tests {
             .unwrap();
         let balances = vec![
             AccountBalance::from_total_and_free(
-                Decimal::new(100050, 2),
+                Decimal::new(100_050, 2),
                 Decimal::new(90025, 2),
                 Currency::USD(),
             )

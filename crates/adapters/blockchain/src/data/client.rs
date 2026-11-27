@@ -1062,12 +1062,9 @@ impl BlockchainDataClient {
             return Ok(());
         }
 
-        let addresses = core_client
+        let event_filters = core_client
             .subscription_manager
-            .get_subscribed_dex_contract_addresses(&dex);
-        let event_signatures = core_client
-            .subscription_manager
-            .get_active_subscribed_dex_event_signatures(&dex);
+            .get_active_pool_event_filters(&dex);
         let has_pool_event_subscriptions = Self::has_active_pool_event_subscriptions(core_client);
 
         if has_pool_event_subscriptions {
@@ -1076,7 +1073,7 @@ impl BlockchainDataClient {
 
         core_client
             .hypersync_client
-            .update_dex_event_stream(dex, addresses, event_signatures)
+            .update_dex_event_stream(dex, event_filters)
             .await;
 
         if !has_pool_event_subscriptions {

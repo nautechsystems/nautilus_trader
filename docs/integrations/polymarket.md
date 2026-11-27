@@ -2413,10 +2413,11 @@ snapshots leave the book gated until a valid snapshot arrives or recovery starts
 A zero timeout disables initial and reconnect deadlines, plus per-attempt snapshot deadlines
 within the 180-second retry budget. The budget still ends a pending attempt; later attempts time out after one minute.
 
-The venue sends a `book` snapshot on first subscribe and ignores duplicate subscribes. A book-delta
-subscription can join an asset held by quotes, trades, or resolution watches. Without an accepted
-snapshot, it starts recovery unless an armed deadline or running recovery already covers the book.
-Recovery cycles the asset's subscription until a valid snapshot arrives.
+On first subscribe, the venue sends a `book` snapshot if the book is available. The venue ignores
+duplicate subscribes. A book-delta subscription can join an asset held by quotes, trades, or
+resolution watches. Without an accepted snapshot, it starts recovery unless an armed deadline or
+running recovery already covers the book. Recovery cycles the asset's subscription until a valid
+snapshot arrives.
 
 A single `price_change` payload can contain interleaved updates for several assets. The adapter
 groups book updates by instrument, then splits consecutive updates by hash. Quote processing remains
@@ -2501,15 +2502,21 @@ exact wire values and level order. It logs and rejects a mismatch before the sna
 - Emit snapshot-derived deltas or quotes.
 - Resume gated book deltas.
 
-For book-delta subscribers, a hash rejection drops the comparison book and gates `price_change` deltas:
+For book-delta subscribers, rejecting a decoded `book` message gates `price_change` deltas. Rejections
+include hash mismatches, invalid timestamps or levels, and snapshots the adapter cannot apply. A
+hash mismatch also drops the comparison book.
 
 - An armed initial or reconnect deadline starts recovery at expiry.
-- During recovery, a mismatch fails the attempt and resubscribes immediately, without waiting for its snapshot deadline.
-- Otherwise, recovery starts immediately.
+- After a confirmed recovery resubscribe, rejection fails the attempt before its snapshot deadline.
+  A stale snapshot can also fail that attempt.
+- With no recovery owner or armed deadline, recovery starts immediately.
 
-The next accepted snapshot emits a full `CLEAR` reseed, including with effective deltas.
+After a hash mismatch, the next accepted snapshot emits a full `CLEAR` reseed, including with effective deltas.
 
-After exhausting its retry budget, recovery retries at intervals that double from one to fifteen minutes.
+After exhausting its retry budget, recovery retries at intervals that double from one to fifteen
+minutes. For a book with no accepted snapshot in its current book-delta subscription, a confirmed
+resubscribe followed by a snapshot timeout skips the rest of the retry budget. A valid snapshot can
+complete recovery between attempts.
 
 [Polymarket book messages](https://docs.polymarket.com/market-data/realtime-data) can omit hash inputs
 such as `tick_size` and `last_trade_price`. Instrument metadata supplies missing `min_order_size` and
@@ -2869,8 +2876,12 @@ subscriptions without further retries or a terminal-miss error. It logs the reje
 
 The Rust data client tracks Polymarket exposure by `condition_id` so both YES and NO legs
 close together when the venue resolves the market. Position events add open Polymarket binary
-option instruments to an internal watchlist. Data clients can also watch an instrument without a
-position by subscribing to `InstrumentStatus`, `InstrumentClose`, or both.
+option instruments to an internal watchlist. The data client takes a position's instrument from its loaded
+set or, failing that, from the shared cache, so wallet positions outside discovery filters also enter the
+watchlist. Periodic metadata refresh does not cover a watch taken from the shared cache: it keeps the cached
+end date, so a postponed market can time out before it resolves. To keep its deadline current, include the
+market in the data client's discovery filters or `load_ids`. Data clients can also watch an instrument
+without a position by subscribing to `InstrumentStatus`, `InstrumentClose`, or both.
 
 The subscriptions are independent: a status subscription emits only the status close, while a close
 subscription emits only the settlement price. Unsubscribing from one does not remove the other.
@@ -2976,7 +2987,8 @@ users can redeem CTF and V2 positions with [Position operations](#position-opera
   automatic polling, and manual requests. Successful resolution emits each admitted owner's event
   types once, removes those owners and the condition's watch, and releases its WebSocket subscriptions.
   Existing pending data intents retain their outcome until admission or cancellation. New subscriptions
-  cannot re-enroll the resolved condition. Automatic delivery never bypasses instrument-filter admission.
+  cannot re-enroll the resolved condition. Automatic delivery for pending data subscriptions requires
+  instrument-filter admission.
 
 #### Timeout, reconnect, and reset
 
@@ -3252,7 +3264,7 @@ Class/struct: `PolymarketDataClientConfig`.
 | `http_timeout_secs`                   | `60`      | HTTP timeout in seconds.                                                                      |
 | `ws_timeout_secs`                     | `30`      | Positive WebSocket timeout in seconds per connection attempt, including reconnects.           |
 | `ws_max_subscriptions`                | `200`     | Per-connection subscription cap; the market pool shards across connections at this bound.     |
-| `update_instruments_interval_mins`    | `60`      | Instrument catalog refresh interval in minutes; pass `None` to disable it.                    |
+| `update_instruments_interval_mins`    | `60`      | Interval (minutes) between instrument catalog refreshes. `None` disables periodic refresh.    |
 | `subscribe_new_markets`               | `false`   | Subscribe to discovery and resolution events; also enables `best_bid_ask` quote ticks.        |
 | `new_market_filter`                   | `None`    | Rust-only filter applied to newly discovered markets before instrument emission.              |
 | `new_market_fetch_max_concurrency`    | `8`       | Bound concurrent market fetches from discovery events.                                        |
@@ -3264,12 +3276,12 @@ Class/struct: `PolymarketDataClientConfig`.
 | `auto_load_retry_delay_initial_secs`  | `5.0`     | Initial auto-load retry delay in seconds.                                                     |
 | `auto_load_retry_delay_max_secs`      | `15.0`    | Maximum auto-load retry delay in seconds.                                                     |
 | `resolve_poll_enabled`                | `true`    | Poll expired watched conditions for resolution.                                               |
-| `resolve_poll_interval_secs`          | `30`      | Resolution polling interval in seconds.                                                       |
+| `resolve_poll_interval_secs`          | `30`      | Interval (seconds) between resolution polls.                                                  |
 | `resolve_poll_grace_secs`             | `10`      | Delay in seconds after expiry before polling begins.                                          |
 | `resolve_poll_max_wait_secs`          | `1,800`   | Pause automatic polling after this many seconds from expiration.                              |
 | `transport_backend`                   | `Sockudo` | WebSocket transport implementation.                                                           |
 | `book_snapshot_timeout_secs`          | `10`      | Snapshot wait in seconds; `0` disables these deadlines.                                       |
-| `book_stale_check_interval_secs`      | `5`       | Book feed staleness check interval in seconds.                                                |
+| `book_stale_check_interval_secs`      | `5`       | Interval (seconds) between book feed staleness checks.                                        |
 | `book_stale_threshold_secs`           | `0`       | Maximum book feed silence in seconds before reporting stale; `0` disables the monitor.        |
 
 Retry delays must be finite and nonnegative, and the maximum must be at least the initial delay.
@@ -3297,6 +3309,7 @@ Class/struct: `PolymarketExecutionClientConfig`.
 | `signature_type`                                    | `Eoa`                 | `Eoa`, `PolyProxy`, `PolyGnosisSafe`, or `Poly1271`.                                                                  |
 | `signer_type`                                       | `Owner`               | `Owner` or `Session`; sessions require explicit credentials and `Poly1271`.                                           |
 | `base_url_http`, `base_url_ws`, `base_url_data_api` | `None`                | Override the respective production endpoint.                                                                          |
+| `base_url_gamma`                                    | `None`                | Override the Gamma endpoint used to load wallet instruments during connect.                                           |
 | `proxy_url`                                         | `None`                | HTTP or HTTPS proxy for every execution transport.                                                                    |
 | `http_timeout_secs`                                 | `60`                  | HTTP timeout in seconds.                                                                                              |
 | `max_retries`                                       | `3`                   | Retries for single-order submit/cancel requests and for each batch-cancel chunk.                                      |
@@ -3336,7 +3349,7 @@ After such a failure, explicitly disconnect and reconnect the client to restore 
 
 Set `proxy_url` to apply one HTTP or HTTPS proxy to every transport owned by that client. The data
 client routes CLOB HTTP, Gamma HTTP, Data API HTTP, the market WebSocket pool, and PolyBolt through the
-proxy. The execution client routes authenticated CLOB HTTP, Data API HTTP, and the authenticated
+proxy. The execution client routes authenticated CLOB HTTP, Gamma HTTP, Data API HTTP, and the authenticated
 user WebSocket through it. Configure the same value on both clients when running data and execution
 together.
 
@@ -3365,8 +3378,30 @@ CLOB after applying account ownership, instrument filters, and position dust and
 exclusions. It skips rows for unsupported markets with a warning. An unmapped supported `v1` or `v2` row
 or a failed version lookup still fails the report request.
 
-Cached open orders and positions without explicit supported protocol metadata are skipped with a warning.
-Confirmed trades on those instruments fail fill-report generation. Reload old cached instruments before trading.
+During each connection setup, including when startup reconciliation is disabled, the execution client reads
+the wallet's open orders and, for `Owner` signers, its positions, and applies these scope rules. It loads
+missing supported `v1` and `v2` instruments by condition ID from open and closed Gamma markets, independently
+of discovery filters, and emits them as instrument events. `LiveNode::run()` caches them before startup
+reconciliation, and instrument subscribers receive them. The adapter does not subscribe to market data for
+them.
+
+- **Failures**: A failed lookup, a lookup that exceeds 15 seconds, or missing Gamma metadata logs a warning
+  and does not fail the connection. Startup reconciliation fails for an in-scope open order or position whose
+  instrument is still missing. If the node's `timeout_connection` expires during the lookup, startup fails with
+  an `exec-connect timeout` instead.
+- **Large wallets**: The client checks each missing market on CLOB in turn, so a wallet with many markets
+  outside discovery can exceed the budget. Set `load_ids` or widen discovery to cover those markets.
+- **Timing**: The client loads instruments only for records that exist at connect.
+
+The cache includes metadata needed to understand existing exposure. Strategies must apply their own
+entry scope rather than treating every cached or published instrument as an entry candidate.
+
+For reconciliation, older cached instruments without a `market_version` key can use the `version`
+in their saved `gamma_market` JSON when its `conditionId` matches the cached condition. The same
+protocol and Combo validation still applies. An explicit invalid `market_version` is never replaced
+by this fallback, and the cache is not rewritten. Without usable protocol evidence, cached open
+orders and positions are skipped with a warning and confirmed trades fail fill-report generation.
+Reload old cached instruments before submitting or modifying orders.
 
 `event_slugs`, `market_slugs`, `series_ids`, `filters`, and `event_slug_builder` discover instruments. They do
 not classify unmapped records. A node that scopes discovery with those fields and still wants scoped

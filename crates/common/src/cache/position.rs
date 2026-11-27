@@ -88,6 +88,7 @@ impl CacheSnapshotRef {
 pub(super) struct PositionSnapshotFrame {
     position: Position,
     encoded: OnceCell<Bytes>,
+    replayed_closes: Option<Vec<Position>>,
 }
 
 impl PositionSnapshotFrame {
@@ -95,6 +96,7 @@ impl PositionSnapshotFrame {
         Self {
             position,
             encoded: encoded.map_or_else(OnceCell::new, OnceCell::from),
+            replayed_closes: None,
         }
     }
 
@@ -230,7 +232,27 @@ impl Cache {
             let (_, mut settled) = self.build_position_snapshot(position);
             settled.realized_pnl = Some(closed_cycles_pnl);
             settled.events.clear();
-            self.store_position_snapshot(position.id, settled, None);
+            settled.fee_only_fill_id = None;
+            let mut frame = PositionSnapshotFrame::new(settled, None);
+
+            match position.replay_closed_cycles() {
+                Ok(mut cycles) if !cycles.is_empty() => {
+                    for cycle in &mut cycles {
+                        cycle.id = snapshot_position_id(position.id);
+                    }
+
+                    frame.replayed_closes = Some(cycles);
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    log::warn!(
+                        "Cannot reconstruct archived trade closes for {}: {e}",
+                        position.id
+                    );
+                }
+            }
+
+            self.position_snapshots.insert(position.id, vec![frame]);
         }
     }
 
@@ -249,8 +271,7 @@ impl Cache {
         let position_id = position.id;
 
         let mut copied_position = position.clone_for_snapshot();
-        let new_id = format!("{}-{}", position_id.as_str(), UUID4::new());
-        copied_position.id = PositionId::new(new_id);
+        copied_position.id = snapshot_position_id(position_id);
 
         let blob_ref = format!(
             "{}{}/{}",
@@ -484,6 +505,26 @@ impl Cache {
             .collect()
     }
 
+    /// Returns position snapshots for `position_id` for trade analysis. Expands frames from
+    /// [`Self::settle_position_snapshots`] into their replayed closes when available.
+    ///
+    /// A settled frame without replayed closes contributes one snapshot holding the settled total.
+    #[must_use]
+    pub fn position_trade_snapshots(&self, position_id: &PositionId) -> Vec<Position> {
+        self.position_snapshots
+            .get(position_id)
+            .into_iter()
+            .flatten()
+            .flat_map(|frame| {
+                frame
+                    .replayed_closes
+                    .as_deref()
+                    .unwrap_or_else(|| std::slice::from_ref(&frame.position))
+            })
+            .cloned()
+            .collect()
+    }
+
     /// Gets position snapshot IDs for the `instrument_id`.
     #[must_use]
     pub fn position_snapshot_ids(&self, instrument_id: &InstrumentId) -> AHashSet<PositionId> {
@@ -497,6 +538,10 @@ impl Cache {
             .copied()
             .collect()
     }
+}
+
+fn snapshot_position_id(position_id: PositionId) -> PositionId {
+    PositionId::new(format!("{}-{}", position_id.as_str(), UUID4::new()))
 }
 
 fn parse_position_snapshot_blob_ref(blob_ref: &str) -> anyhow::Result<(PositionId, usize)> {

@@ -57,7 +57,7 @@ async fn blockchain_rpc_server(
 
         tokio::spawn(async move {
             if let Ok(mut ws_stream) = accept_async(stream).await {
-                let mut subscription_id = 0u64;
+                let mut subscription_id = 0_u64;
 
                 while let Some(msg) = ws_stream.next().await {
                     match msg {
@@ -334,7 +334,7 @@ fn test_rpc_reconnect_with_unconfirmed_subscription_creates_single_subscription(
             if let Ok((stream, _)) = listener.accept().await
                 && let Ok(mut ws) = accept_async(stream).await
             {
-                let mut sub_id = 0u64;
+                let mut sub_id = 0_u64;
 
                 loop {
                     let next = tokio::time::timeout(Duration::from_millis(500), ws.next()).await;
@@ -438,7 +438,7 @@ fn test_rpc_reconnect_resends_sent_but_unconfirmed_subscription() {
             if let Ok((stream, _)) = listener.accept().await
                 && let Ok(mut ws) = accept_async(stream).await
             {
-                let mut sub_id = 0u64;
+                let mut sub_id = 0_u64;
 
                 loop {
                     let next = tokio::time::timeout(Duration::from_millis(500), ws.next()).await;
@@ -524,7 +524,7 @@ fn test_rpc_reconnect_mid_restore_cancel_recovers_both_types() {
                     seen.len() - 1
                 };
 
-                let mut sub_id = 0u64;
+                let mut sub_id = 0_u64;
                 let mut head_sid: Option<String> = None;
 
                 loop {
@@ -672,7 +672,7 @@ fn test_rpc_reconnect_replaced_request_ignores_stale_confirmation() {
             if let Ok((stream, _)) = listener.accept().await
                 && let Ok(mut ws) = accept_async(stream).await
             {
-                let mut sub_id = 0u64;
+                let mut sub_id = 0_u64;
 
                 loop {
                     let next = tokio::time::timeout(Duration::from_millis(500), ws.next()).await;
@@ -696,7 +696,7 @@ fn test_rpc_reconnect_replaced_request_ignores_stale_confirmation() {
             if let Ok((stream, _)) = listener.accept().await
                 && let Ok(mut ws) = accept_async(stream).await
             {
-                let mut sub_id = 0u64;
+                let mut sub_id = 0_u64;
                 let mut live: Vec<String> = Vec::new();
 
                 loop {
@@ -841,7 +841,7 @@ fn test_rpc_reconnect_pruned_request_ignores_stale_confirmation() {
             if let Ok((stream, _)) = listener.accept().await
                 && let Ok(mut ws) = accept_async(stream).await
             {
-                let mut sub_id = 0u64;
+                let mut sub_id = 0_u64;
 
                 loop {
                     let next = tokio::time::timeout(Duration::from_millis(500), ws.next()).await;
@@ -865,7 +865,7 @@ fn test_rpc_reconnect_pruned_request_ignores_stale_confirmation() {
             if let Ok((stream, _)) = listener.accept().await
                 && let Ok(mut ws) = accept_async(stream).await
             {
-                let mut sub_id = 0u64;
+                let mut sub_id = 0_u64;
                 let mut live: Vec<String> = Vec::new();
 
                 loop {

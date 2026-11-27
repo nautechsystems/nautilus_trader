@@ -169,7 +169,10 @@ fn create_catalog(
 ) -> (TempDir, String) {
     let temp_dir = TempDir::new().expect("temp dir should be created");
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .expect("catalog should be created");
     let instrument_id = instrument.id();
     let mut deltas = Vec::with_capacity(EVENT_COUNT * DELTAS_PER_EVENT);
 

@@ -125,7 +125,7 @@ fn create_csv_reader<P: AsRef<Path>>(
         anyhow::bail!("File too small to be a valid gzip file");
     }
 
-    let mut header_buf = [0u8; 2];
+    let mut header_buf = [0_u8; 2];
     for attempt in 1..=MAX_RETRIES {
         match file.read_exact(&mut header_buf) {
             Ok(()) => break,

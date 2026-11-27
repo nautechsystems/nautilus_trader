@@ -576,8 +576,8 @@ mod tests {
     fn test_get_candles_params_serialization() {
         let params = GetCandlesParams::new(
             Ustr::from("GBPUSD-PERP"),
-            1000000000,
-            2000000000,
+            1_000_000_000,
+            2_000_000_000,
             AxCandleWidth::Minutes1,
         );
         let qs = serde_urlencoded::to_string(&params).unwrap();
@@ -598,7 +598,7 @@ mod tests {
     #[rstest]
     fn test_get_funding_rates_params_serialization() {
         let mut params =
-            GetFundingRatesParams::new(Ustr::from("GBPUSD-PERP"), 1000000000, 2000000000);
+            GetFundingRatesParams::new(Ustr::from("GBPUSD-PERP"), 1_000_000_000, 2_000_000_000);
         params.cursor = Some("opaque+/=".to_string());
         params.limit = Some(100);
         params.sort_ts = Some("desc".to_string());
@@ -629,7 +629,7 @@ mod tests {
 
     #[rstest]
     fn test_get_fills_params_serialization() {
-        let mut params = GetFillsParams::new(1000000000, 2000000000);
+        let mut params = GetFillsParams::new(1_000_000_000, 2_000_000_000);
         params.account_id = Some(Ustr::from("account-1"));
         params.symbol = Some(Ustr::from("GBPUSD-PERP"));
         params.cursor = Some("opaque+/=".to_string());
@@ -649,8 +649,8 @@ mod tests {
     fn test_get_transactions_params_serialization() {
         let mut params = GetTransactionsParams::new(
             vec![Ustr::from("FUNDING"), Ustr::from("TRADE")],
-            1000000000,
-            2000000000,
+            1_000_000_000,
+            2_000_000_000,
         );
         params.account_id = Some(Ustr::from("account-1"));
         params.cursor = Some("opaque+/=".to_string());
@@ -729,8 +729,8 @@ mod tests {
             order_ids: vec!["ORD-2".to_string(), "ORD-3".to_string()],
             account_id: Some(Ustr::from("account-1")),
             cursor: Some("next".to_string()),
-            start_timestamp_ns: Some(1000000000),
-            end_timestamp_ns: Some(2000000000),
+            start_timestamp_ns: Some(1_000_000_000),
+            end_timestamp_ns: Some(2_000_000_000),
             limit: Some(100),
             ..Default::default()
         };

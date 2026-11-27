@@ -31,7 +31,7 @@ use ustr::Ustr;
 const PAYLOAD_SIZES: &[usize] = &[256, 1024, 4096];
 
 fn payload_of(size: usize) -> Bytes {
-    Bytes::from(vec![0xABu8; size])
+    Bytes::from(vec![0xab_u8; size])
 }
 
 fn populated_headers() -> Headers {

@@ -42,10 +42,10 @@ thread_local! {
 // SplitMix64 PRNG (Steele, Lea, Flood 2014): owning the algorithm here keeps the test UUID
 // sequence stable regardless of upstream PRNG crate versions, with zero added dependencies.
 fn splitmix64(state: &mut u64) -> u64 {
-    *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    *state = state.wrapping_add(0x9e37_79b9_7f4a_7c15);
     let mut z = *state;
-    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
     z ^ (z >> 31)
 }
 
@@ -65,7 +65,7 @@ pub fn test_uuid() -> UUID4 {
         let lo = splitmix64(&mut state).to_be_bytes();
         cell.set(state);
 
-        let mut bytes = [0u8; 16];
+        let mut bytes = [0_u8; 16];
         bytes[..8].copy_from_slice(&hi);
         bytes[8..].copy_from_slice(&lo);
         UUID4::from_bytes(bytes)

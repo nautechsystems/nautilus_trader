@@ -289,7 +289,7 @@ mod tests {
         let f: Value = serde_json::from_str(include_str!("../../test_data/history.json")).unwrap();
         let market = serde_json::from_value(f["market"]["market"].clone()).unwrap();
         let event = serde_json::from_value(f["event"]["event"].clone()).unwrap();
-        let now = UnixNanos::from(1700000100000000000);
+        let now = UnixNanos::from(1_700_000_100_000_000_000);
         let instrument = crate::http::parse::parse_instrument(&market, &event, now).unwrap();
         let mut candle = f["candles"]["candlesticks"][0].clone();
 
@@ -350,7 +350,7 @@ mod tests {
     fn invalid_history_ranges_fail(#[case] scenario: &str) {
         let start = Some("2023-11-14T22:14:00Z".parse().unwrap());
         let end = Some("2023-11-14T22:13:00Z".parse().unwrap());
-        let now = UnixNanos::from(1700000100000000000);
+        let now = UnixNanos::from(1_700_000_100_000_000_000);
         let result = match scenario {
             "start" => HistoryRange::new(None, None, None, None, now),
             "reversed" => HistoryRange::new(start, end, None, None, now),

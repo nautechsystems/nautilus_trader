@@ -20,7 +20,6 @@ import asyncio
 import json
 import runpy
 import threading
-from collections.abc import Callable
 from collections.abc import Iterator
 from contextlib import suppress
 from datetime import UTC
@@ -56,6 +55,7 @@ from nautilus_trader.model import OrderBook
 from nautilus_trader.model import RecordFlag
 from nautilus_trader.model import TraderId
 from nautilus_trader.testkit import DataTesterConfig
+from nautilus_trader.testkit.functions import eventually
 from nautilus_trader.trading import Controller
 
 
@@ -63,6 +63,7 @@ MARKET_ID = "TEST-OUTCOME_NO"
 INSTRUMENT_ID = InstrumentId.from_str(f"{MARKET_ID}.FINFEED_POLYMARKET")
 TEST_DATA = Path(__file__).resolve().parents[5] / "crates/adapters/finfeed/test_data"
 BAR_TYPE = BarType.from_str(f"{INSTRUMENT_ID}-1-TICK-LAST-INTERNAL")
+POLL_TIMEOUT_SECS = 5.0
 
 
 class Consumer(DataActor):
@@ -176,10 +177,9 @@ def test_discovery_replay_subscriptions_and_fresh_node_restart() -> None:  # noq
             node = (
                 LiveNode.builder("FINFEED-NODE", TraderId("TESTER-001"), Environment.LIVE)
                 .with_reconciliation(False)
-                .with_timeout_connection(5)
-                .with_timeout_portfolio(0)
+                .with_timeout_connection_secs(5)
+                .with_timeout_portfolio_secs(0)
                 .with_delay_post_stop_secs(0)
-                .with_delay_shutdown_secs(0)
                 .add_data_client(None, FinFeedDataClientFactory(), config)
                 .build()
             )
@@ -305,10 +305,11 @@ def test_builtin_data_tester_shares_activity_and_stops(polling_node) -> None:
             path, reply, _ = await asyncio.to_thread(observed.get, True, 5)
             assert path == endpoint
             reply.put(body)
-            await _wait_for(
+            await eventually(
                 lambda: (
                     cache.quote_count(INSTRUMENT_ID) == 2 and cache.trade_count(INSTRUMENT_ID) == 2
                 ),
+                timeout_secs=POLL_TIMEOUT_SECS,
             )
             path, reply, _ = await asyncio.to_thread(observed.get, True, 5)
             assert path == endpoint
@@ -427,11 +428,11 @@ def test_polling_actor_stop_releases_rest_demand(polling_node, feed: str) -> Non
             path, reply, _ = await asyncio.to_thread(observed.get, True, 5)
             assert path == endpoint
             reply.put(body)
-            await _wait_for(lambda: bool(consumer.events))
+            await eventually(lambda: bool(consumer.events), timeout_secs=POLL_TIMEOUT_SECS)
             path, reply, _ = await asyncio.to_thread(observed.get, True, 5)
             assert path == endpoint
             PollingController.current.stop_actor(consumer.actor_id)
-            await _wait_for(consumer.is_stopped)
+            await eventually(consumer.is_stopped, timeout_secs=POLL_TIMEOUT_SECS)
             reply.put(body)
             with pytest.raises(Empty):
                 await asyncio.to_thread(observed.get, True, 0.35)
@@ -522,22 +523,25 @@ def test_retirement_preserves_shared_internal_bars_until_final_subscriber(pollin
             path, reply, _ = await asyncio.to_thread(observed.get, True, 5)
             assert path == endpoint
             reply.put(json.dumps(activity).encode())
-            await _wait_for(lambda: len(first.events) == 2 and len(second.events) == 2)
+            await eventually(
+                lambda: len(first.events) == 2 and len(second.events) == 2,
+                timeout_secs=POLL_TIMEOUT_SECS,
+            )
             path, reply, _ = await asyncio.to_thread(observed.get, True, 5)
             assert path == endpoint
             PollingController.current.remove_actor(first.actor_id)
-            await _wait_for(first.is_disposed)
+            await eventually(first.is_disposed, timeout_secs=POLL_TIMEOUT_SECS)
 
             for trade in activity["trades"]:
                 trade["id"] += "-next"
                 trade["timestamp"] = "2026-10-11T00:00:04Z"
             reply.put(json.dumps(activity).encode())
-            await _wait_for(lambda: len(second.events) == 4)
+            await eventually(lambda: len(second.events) == 4, timeout_secs=POLL_TIMEOUT_SECS)
             assert len(first.events) == 2
             path, reply, _ = await asyncio.to_thread(observed.get, True, 5)
             assert path == endpoint
             PollingController.current.remove_actor(second.actor_id)
-            await _wait_for(second.is_disposed)
+            await eventually(second.is_disposed, timeout_secs=POLL_TIMEOUT_SECS)
 
             for trade in activity["trades"]:
                 trade["id"] += "-late"
@@ -718,10 +722,9 @@ def polling_node() -> Iterator[tuple[LiveNode, Queue, list]]:
     node = (
         LiveNode.builder("FINFEED-POLLING", TraderId("TESTER-001"), Environment.LIVE)
         .with_reconciliation(False)
-        .with_timeout_connection(5)
-        .with_timeout_portfolio(0)
+        .with_timeout_connection_secs(5)
+        .with_timeout_portfolio_secs(0)
         .with_delay_post_stop_secs(0)
-        .with_delay_shutdown_secs(0)
         .with_controller(
             ImportableControllerConfig(
                 controller_path=f"{__name__}:PollingController",
@@ -746,12 +749,6 @@ def polling_node() -> Iterator[tuple[LiveNode, Queue, list]]:
         server.server_close()
         thread.join(timeout=5)
         PollingController.current = None
-
-
-async def _wait_for(predicate: Callable[[], bool]) -> None:
-    async with asyncio.timeout(5):
-        while not predicate():
-            await asyncio.sleep(0.01)
 
 
 def test_failed_instrument_list_refresh_keeps_node_cache_ownership() -> None:
@@ -829,10 +826,9 @@ def test_failed_instrument_list_refresh_keeps_node_cache_ownership() -> None:
         node = (
             LiveNode.builder("FINFEED-REFRESH", TraderId("TESTER-001"), Environment.LIVE)
             .with_reconciliation(False)
-            .with_timeout_connection(5)
-            .with_timeout_portfolio(0)
+            .with_timeout_connection_secs(5)
+            .with_timeout_portfolio_secs(0)
             .with_delay_post_stop_secs(0)
-            .with_delay_shutdown_secs(0)
             .add_data_client(None, FinFeedDataClientFactory(), config)
             .build()
         )
@@ -842,19 +838,22 @@ def test_failed_instrument_list_refresh_keeps_node_cache_ownership() -> None:
         handle = node.handle()
         task = asyncio.create_task(node.run_async())
         try:
-            await _wait_for(lambda: consumer.is_running() and cache.instrument(beta) is not None)
+            await eventually(
+                lambda: consumer.is_running() and cache.instrument(beta) is not None,
+                timeout_secs=POLL_TIMEOUT_SECS,
+            )
             original = [
                 cache.instrument(instrument_id).to_dict() for instrument_id in [alpha, beta]
             ]
             consumer.request_instrument(delta, client_id=FINFEED_CLIENT_ID)
-            await _wait_for(lambda: len(consumer.instruments) == 1)
+            await eventually(lambda: len(consumer.instruments) == 1, timeout_secs=POLL_TIMEOUT_SECS)
 
             consumer.request_instruments(alpha.venue, client_id=FINFEED_CLIENT_ID)
-            await _wait_for(lambda: len(requests) == 6)
+            await eventually(lambda: len(requests) == 6, timeout_secs=POLL_TIMEOUT_SECS)
             consumer.request_instrument(gamma, client_id=FINFEED_CLIENT_ID)
-            await _wait_for(lambda: len(requests) == 7)
+            await eventually(lambda: len(requests) == 7, timeout_secs=POLL_TIMEOUT_SECS)
             consumer.request_instrument(delta, client_id=FINFEED_CLIENT_ID)
-            await _wait_for(lambda: len(consumer.instruments) >= 2)
+            await eventually(lambda: len(consumer.instruments) >= 2, timeout_secs=POLL_TIMEOUT_SECS)
             assert [instrument.id for instrument in consumer.instruments] == [delta, delta]
             assert [
                 cache.instrument(instrument_id).to_dict() for instrument_id in [alpha, beta]
@@ -862,20 +861,20 @@ def test_failed_instrument_list_refresh_keeps_node_cache_ownership() -> None:
             assert cache.instrument(gamma) is None
 
             consumer.request_instruments(alpha.venue, client_id=FINFEED_CLIENT_ID)
-            await _wait_for(lambda: len(consumer.instruments) == 4)
+            await eventually(lambda: len(consumer.instruments) == 4, timeout_secs=POLL_TIMEOUT_SECS)
             assert [instrument.id for instrument in consumer.instruments[2:]] == [alpha, beta]
             assert cache.instrument(alpha).info["token_id"] == "103"
             assert cache.instrument(beta).info["token_id"] == "105"
             assert cache.instrument(delta).info["token_id"] == "104"
 
             consumer.request_instrument(gamma, client_id=FINFEED_CLIENT_ID)
-            await _wait_for(lambda: len(consumer.instruments) == 5)
+            await eventually(lambda: len(consumer.instruments) == 5, timeout_secs=POLL_TIMEOUT_SECS)
             assert consumer.instruments[-1].id == gamma
             assert cache.instrument(gamma).info["token_id"] == "101"
             consumer.request_instrument(epsilon, client_id=FINFEED_CLIENT_ID)
-            await _wait_for(lambda: len(requests) == 12)
+            await eventually(lambda: len(requests) == 12, timeout_secs=POLL_TIMEOUT_SECS)
             consumer.request_instrument(delta, client_id=FINFEED_CLIENT_ID)
-            await _wait_for(lambda: len(consumer.instruments) >= 6)
+            await eventually(lambda: len(consumer.instruments) >= 6, timeout_secs=POLL_TIMEOUT_SECS)
             assert [instrument.id for instrument in consumer.instruments] == [
                 delta,
                 delta,
@@ -970,7 +969,7 @@ def test_public_activity_history_preserves_every_field_and_ties(polling_node, fa
                 "time_end=2026-10-11T01%3A00%3A00.0000000Z&limit=10000"
             )
             reply.put((TEST_DATA / f"client-{family}.json").read_bytes())
-            await _wait_for(lambda: consumer.records is not None)
+            await eventually(lambda: consumer.records is not None, timeout_secs=POLL_TIMEOUT_SECS)
         finally:
             handle.stop()
             await asyncio.wait_for(task, timeout=10)
@@ -1163,12 +1162,13 @@ def test_historical_books_reach_actor_and_existing_book_consumer(  # noqa: C901 
                 path, reply, _ = await asyncio.to_thread(observed.get, True, 5)
                 assert path.startswith(f"/v1/orderbook/POLYMARKET/{MARKET_ID}/history?")
                 reply.put(source)
-            await _wait_for(
+            await eventually(
                 lambda: (
                     consumer.depths is not None
                     and consumer.point is not None
                     and len(consumer.ladders) == count
                 ),
+                timeout_secs=POLL_TIMEOUT_SECS,
             )
         finally:
             handle.stop()
@@ -1308,7 +1308,7 @@ def test_public_bar_requests_return_complete_calendar_periods(
             path, reply, _ = await asyncio.to_thread(observed.get, True, 5)
             assert path.startswith(f"/v1/ohlcv/POLYMARKET/{MARKET_ID}/history?period_id={period}&")
             reply.put(json.dumps([row]).encode())
-            await _wait_for(lambda: consumer.bars is not None)
+            await eventually(lambda: consumer.bars is not None, timeout_secs=POLL_TIMEOUT_SECS)
         finally:
             handle.stop()
             await asyncio.wait_for(task, timeout=10)

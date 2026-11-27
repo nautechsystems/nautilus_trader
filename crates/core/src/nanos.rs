@@ -1579,10 +1579,10 @@ mod tests {
     #[rstest]
     fn test_u64_comparison_and_deref() {
         let nanos = UnixNanos::from(100);
-        assert_eq!(100u64, nanos);
-        assert_eq!(99u64.partial_cmp(&nanos), Some(Ordering::Less));
-        assert_eq!(nanos.partial_cmp(&Some(100u64)), Some(Ordering::Equal));
-        assert_eq!(*nanos, 100u64);
+        assert_eq!(100_u64, nanos);
+        assert_eq!(99_u64.partial_cmp(&nanos), Some(Ordering::Less));
+        assert_eq!(nanos.partial_cmp(&Some(100_u64)), Some(Ordering::Equal));
+        assert_eq!(*nanos, 100_u64);
     }
 
     #[rstest]
@@ -2041,19 +2041,19 @@ mod tests {
     fn unix_nanos_strategy() -> impl Strategy<Value = UnixNanos> {
         prop_oneof![
             // Small values
-            0u64..1_000_000u64,
+            0_u64..1_000_000_u64,
             // Medium values (microseconds range)
-            1_000_000u64..1_000_000_000_000u64,
+            1_000_000_u64..1_000_000_000_000_u64,
             // Large values (nanoseconds since 1970)
-            1_000_000_000_000u64..=i64::MAX.cast_unsigned(),
+            1_000_000_000_000_u64..=i64::MAX.cast_unsigned(),
             // Values above i64::MAX (sentinel range, GTC/infinity)
             (i64::MAX.cast_unsigned() + 1)..=u64::MAX,
             // Edge cases
-            Just(0u64),
-            Just(1u64),
-            Just(1_000_000_000u64),               // 1 second in nanos
-            Just(1_000_000_000_000u64),           // ~2001 timestamp
-            Just(1_700_000_000_000_000_000u64),   // ~2023 timestamp
+            Just(0_u64),
+            Just(1_u64),
+            Just(1_000_000_000_u64),              // 1 second in nanos
+            Just(1_000_000_000_000_u64),          // ~2001 timestamp
+            Just(1_700_000_000_000_000_000_u64),  // ~2023 timestamp
             Just((i64::MAX / 2).cast_unsigned()), // Safe for doubling
             Just(i64::MAX.cast_unsigned()),       // i64 boundary
             Just(u64::MAX),                       // Sentinel / max value

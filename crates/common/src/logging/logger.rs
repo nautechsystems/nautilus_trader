@@ -2559,7 +2559,7 @@ mod tests {
             drop(log_guard);
 
             // Wait until the file exists and contains at least N lines with our marker
-            let mut count = 0usize;
+            let mut count = 0_usize;
             wait_until(
                 || {
                     if let Some(log_file) = std::fs::read_dir(&temp_dir)

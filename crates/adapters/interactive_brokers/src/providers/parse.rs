@@ -257,6 +257,10 @@ fn ib_contract_info(details: &ibapi::contracts::ContractDetails) -> nautilus_cor
         "priceMagnifier".to_string(),
         serde_json::Value::from(details.price_magnifier),
     );
+    info.insert(
+        "orderTypes".to_string(),
+        serde_json::Value::from(details.order_types.join(",")),
+    );
     nautilus_core::Params::new(info)
 }
 
@@ -498,6 +502,7 @@ fn parse_option_contract(
             details.under_symbol.clone()
         };
 
+    let currency = Currency::from(details.contract.currency.to_string());
     let instrument = OptionContract::builder()
         .instrument_id(instrument_id)
         .raw_symbol(Symbol::from(details.contract.local_symbol.as_str()))
@@ -505,7 +510,9 @@ fn parse_option_contract(
         .underlying(Ustr::from(underlying.as_str()))
         .option_kind(option_kind)
         .strike_price(Price::new(strike, price_precision))
-        .currency(Currency::from(details.contract.currency.to_string()))
+        .quote_currency(currency)
+        .settlement_currency(currency)
+        .strike_currency(currency)
         .activation_ns(activation_ns)
         .expiration_ns(expiration_ns)
         .price_precision(price_precision)
@@ -892,6 +899,41 @@ mod tests {
         assert_eq!(
             equity.info.unwrap().get("priceMagnifier"),
             Some(&serde_json::Value::from(100))
+        );
+    }
+
+    #[rstest]
+    fn test_parse_contract_preserves_order_types_in_info() {
+        let details = ContractDetails {
+            contract: Contract {
+                symbol: Symbol::from("AAPL"),
+                security_type: SecurityType::Stock,
+                exchange: Exchange::from("SMART"),
+                primary_exchange: Exchange::from("NASDAQ"),
+                currency: Currency::from("USD"),
+                local_symbol: String::from("AAPL"),
+                ..Default::default()
+            },
+            min_tick: 0.01,
+            order_types: vec![
+                String::from("ALGO"),
+                String::from("LMT"),
+                String::from("MKT"),
+            ],
+            ..Default::default()
+        };
+
+        let instrument_id = InstrumentId::new(NautilusSymbol::from("AAPL"), Venue::from("XNAS"));
+
+        let instrument = parse_ib_contract_to_instrument(&details, instrument_id).unwrap();
+
+        let InstrumentAny::Equity(equity) = instrument else {
+            panic!("expected equity");
+        };
+
+        assert_eq!(
+            equity.info.unwrap().get("orderTypes"),
+            Some(&serde_json::Value::from("ALGO,LMT,MKT"))
         );
     }
 

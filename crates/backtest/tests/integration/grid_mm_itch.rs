@@ -120,20 +120,21 @@ fn test_grid_mm_itch_catalog_load() {
 
     // Write deltas to a temp catalog then query back
     let temp_dir = TempDir::new().unwrap();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
     catalog.write_to_parquet(&deltas, None, None, None).unwrap();
     catalog.write_instruments(vec![instrument.clone()]).unwrap();
 
-    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
     let loaded_deltas: Vec<OrderBookDelta> = catalog
-        .query(
-            Some(vec![instrument_id.to_string()]),
-            None,
-            None,
-            None,
-            None,
-            true,
-        )
+        .query()
+        .identifiers(vec![instrument_id.to_string()])
+        .execute()
         .unwrap();
 
     assert_eq!(loaded_deltas.len(), deltas.len());

@@ -879,7 +879,7 @@ mod tests {
     ) -> Vec<u8> {
         let var_data_len = 6 + symbol.len() + client_order_id.len() + commission_asset.len();
         let total = 8 + execution_report_event_codec::SBE_BLOCK_LENGTH as usize + var_data_len;
-        let mut buf_vec = vec![0u8; total];
+        let mut buf_vec = vec![0_u8; total];
 
         let buf = WriteBuf::new(buf_vec.as_mut_slice());
         let enc = execution_report_event_codec::ExecutionReportEventEncoder::default()
@@ -943,10 +943,10 @@ mod tests {
         enc.strategy_type(i32::MIN);
         enc.strategy_id(i64::MIN);
         enc.counter_order_id(i64::MIN);
-        enc.subscription_id(0xFFFF); // null
+        enc.subscription_id(0xffff); // null
         enc.peg_price_type(peg_price_type::PegPriceType::default());
         enc.peg_offset_type(peg_offset_type::PegOffsetType::default());
-        enc.peg_offset_value(0xFF); // null
+        enc.peg_offset_value(0xff); // null
         enc.pegged_price(i64::MIN);
         enc.expiry_reason(expiry_reason);
 
@@ -965,8 +965,8 @@ mod tests {
         encode_execution_report(
             "SYMBOL1",
             "CLIENT2",
-            12345678,
-            Some(87654321),
+            12_345_678,
+            Some(87_654_321),
             OrderSide::Buy,
             SbeOrderType::Limit,
             SbeTif::Gtc,
@@ -975,20 +975,20 @@ mod tests {
             -2,
             -5,
             -8,
-            123456,
-            234567,
-            345678,
-            456789,
-            567891,
-            678912,
-            789123,
-            891234,
+            123_456,
+            234_567,
+            345_678,
+            456_789,
+            567_891,
+            678_912,
+            789_123,
+            891_234,
             "ASSET3",
             true,
             false,
-            1709654400123456,
-            1709654400234567,
-            Some(1709654400345678),
+            1_709_654_400_123_456,
+            1_709_654_400_234_567,
+            Some(1_709_654_400_345_678),
             expiry_reason::ExpiryReason::NullVal,
         )
     }
@@ -1000,7 +1000,7 @@ mod tests {
     ) -> Vec<u8> {
         let var_data_len: usize = balances.iter().map(|(a, _, _, _)| 1 + a.len()).sum();
         let total = 8 + 18 + 6 + (balances.len() * 17) + var_data_len;
-        let mut buf_vec = vec![0u8; total];
+        let mut buf_vec = vec![0_u8; total];
 
         let buf = WriteBuf::new(buf_vec.as_mut_slice());
         let enc =
@@ -1011,7 +1011,7 @@ mod tests {
 
         enc.event_time(event_time_us);
         enc.update_time(update_time_us);
-        enc.subscription_id(0xFFFF); // null
+        enc.subscription_id(0xffff); // null
 
         let balances_enc =
             outbound_account_position_event_codec::encoder::BalancesEncoder::default();
@@ -1096,7 +1096,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case::template(2, 607u16)]
+    #[case::template(2, 607_u16)]
     #[case::schema(4, 2)]
     #[case::version(6, 6)]
     #[case::block(0, 28)]
@@ -1112,7 +1112,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case::event_negative(8, -1i64)]
+    #[case::event_negative(8, -1_i64)]
     #[case::event_null(8, i64::MIN)]
     #[case::event_overflow(8, i64::MAX)]
     #[case::transaction_negative(16, -1)]
@@ -1208,7 +1208,7 @@ mod tests {
         );
         data[6..8].copy_from_slice(&version.to_le_bytes());
         if version == 0 {
-            data[0..2].copy_from_slice(&27u16.to_le_bytes());
+            data[0..2].copy_from_slice(&27_u16.to_le_bytes());
             data.drain(35..37);
         } else if subscription.is_none() {
             data[35..37].copy_from_slice(&u16::MAX.to_le_bytes());
@@ -1222,9 +1222,9 @@ mod tests {
 
     #[rstest]
     fn test_mantissa_to_decimal_string_basic() {
-        assert_eq!(mantissa_to_decimal_string(250000, -2).unwrap(), "2500.00");
+        assert_eq!(mantissa_to_decimal_string(250_000, -2).unwrap(), "2500.00");
         assert_eq!(
-            mantissa_to_decimal_string(100000000, -8).unwrap(),
+            mantissa_to_decimal_string(100_000_000, -8).unwrap(),
             "1.00000000"
         );
         assert_eq!(mantissa_to_decimal_string(0, -8).unwrap(), "0.00000000");
@@ -1232,7 +1232,10 @@ mod tests {
         assert_eq!(mantissa_to_decimal_string(42, 0).unwrap(), "42");
         assert_eq!(mantissa_to_decimal_string(42, 2).unwrap(), "4200");
         assert_eq!(mantissa_to_decimal_string(5, -3).unwrap(), "0.005");
-        assert_eq!(mantissa_to_decimal_string(-250000, -2).unwrap(), "-2500.00");
+        assert_eq!(
+            mantissa_to_decimal_string(-250_000, -2).unwrap(),
+            "-2500.00"
+        );
         assert_eq!(
             mantissa_to_decimal_string(i64::MIN, -2).unwrap(),
             "-92233720368547758.08"
@@ -1241,7 +1244,7 @@ mod tests {
 
     #[rstest]
     fn test_mantissa_to_decimal_string_wire_domain(
-        #[values(i64::MIN, -250000, -1, 0, 1, 250000, i64::MAX)] mantissa: i64,
+        #[values(i64::MIN, -250_000, -1, 0, 1, 250_000, i64::MAX)] mantissa: i64,
     ) {
         for exponent in i8::MIN..=i8::MAX {
             let result = mantissa_to_decimal_string(mantissa, exponent);
@@ -1264,14 +1267,14 @@ mod tests {
     }
 
     #[rstest]
-    #[case::typical_price(250000_i64, -2_i8, "2500.00")]
-    #[case::btc_one(100000000_i64, -8_i8, "1.00000000")]
+    #[case::typical_price(250_000_i64, -2_i8, "2500.00")]
+    #[case::btc_one(100_000_000_i64, -8_i8, "1.00000000")]
     #[case::zero_negative_exp(0_i64, -8_i8, "0")]
     #[case::zero_zero_exp(0_i64, 0_i8, "0")]
     #[case::whole_no_scale(42_i64, 0_i8, "42")]
     #[case::positive_exponent(42_i64, 2_i8, "4200")]
     #[case::small_fractional(5_i64, -3_i8, "0.005")]
-    #[case::negative_mantissa(-250000_i64, -2_i8, "-2500.00")]
+    #[case::negative_mantissa(-250_000_i64, -2_i8, "-2500.00")]
     #[case::large_positive_exponent(1_i64, 9_i8, "1000000000")]
     #[case::exponent_beyond_i64_power(1_i64, 19_i8, "10000000000000000000")]
     #[case::max_decimal_scale(1_i64, -28_i8, "0.0000000000000000000000000001")]
@@ -1405,30 +1408,30 @@ mod tests {
         let data = encode_execution_report(
             "ETHUSDT",
             "O-20200101-000000-000-000-0",
-            12345678,
+            12_345_678,
             None, // no trade
             OrderSide::Buy,
             SbeOrderType::Limit,
             SbeTif::Gtc,
             ExecutionType::New,
             OrderStatus::New,
-            -2,     // price_exp
-            -5,     // qty_exp
-            -8,     // commission_exp
-            250000, // price = 2500.00
-            100000, // orig_qty = 1.00000
-            0,      // stop_price
-            0,      // last_qty
-            0,      // last_price
-            0,      // executed_qty
-            0,      // cumm_quote_qty
-            0,      // commission
-            "",     // no commission asset yet
+            -2,      // price_exp
+            -5,      // qty_exp
+            -8,      // commission_exp
+            250_000, // price = 2500.00
+            100_000, // orig_qty = 1.00000
+            0,       // stop_price
+            0,       // last_qty
+            0,       // last_price
+            0,       // executed_qty
+            0,       // cumm_quote_qty
+            0,       // commission
+            "",      // no commission asset yet
             false,
-            true,             // is_working
-            1709654400000000, // event_time_us
-            1709654400000000, // transact_time_us
-            Some(1709654400000000),
+            true,                  // is_working
+            1_709_654_400_000_000, // event_time_us
+            1_709_654_400_000_000, // transact_time_us
+            Some(1_709_654_400_000_000),
             expiry_reason::ExpiryReason::NullVal,
         );
 
@@ -1436,7 +1439,7 @@ mod tests {
 
         assert_eq!(report.symbol, "ETHUSDT");
         assert_eq!(report.client_order_id, "O-20200101-000000-000-000-0");
-        assert_eq!(report.order_id, 12345678);
+        assert_eq!(report.order_id, 12_345_678);
         assert_eq!(report.side, BinanceSide::Buy);
         assert_eq!(report.order_type, "LIMIT");
         assert_eq!(report.time_in_force, BinanceTimeInForce::Gtc);
@@ -1447,8 +1450,8 @@ mod tests {
         assert_eq!(report.trade_id, -1);
         assert!(report.is_working);
         assert!(!report.is_maker);
-        assert_eq!(report.event_time, 1709654400000);
-        assert_eq!(report.transaction_time, 1709654400000);
+        assert_eq!(report.event_time, 1_709_654_400_000);
+        assert_eq!(report.transaction_time, 1_709_654_400_000);
         assert!(report.expiry_reason.is_none());
     }
 
@@ -1457,7 +1460,7 @@ mod tests {
         let data = encode_execution_report(
             "ETHUSDT",
             "O-20200101-000000-000-000-0",
-            12345678,
+            12_345_678,
             None,
             OrderSide::Buy,
             SbeOrderType::Limit,
@@ -1467,8 +1470,8 @@ mod tests {
             -2,
             -5,
             -8,
-            250000,
-            100000,
+            250_000,
+            100_000,
             0,
             0,
             0,
@@ -1478,9 +1481,9 @@ mod tests {
             "",
             false,
             false,
-            1709654400000000,
-            1709654400000000,
-            Some(1709654400000000),
+            1_709_654_400_000_000,
+            1_709_654_400_000_000,
+            Some(1_709_654_400_000_000),
             expiry_reason::ExpiryReason::InsufficientLiquidity,
         );
 
@@ -1499,30 +1502,30 @@ mod tests {
         let data = encode_execution_report(
             "ETHUSDT",
             "O-20200101-000000-000-000-0",
-            12345678,
-            Some(98765432),
+            12_345_678,
+            Some(98_765_432),
             OrderSide::Buy,
             SbeOrderType::Limit,
             SbeTif::Gtc,
             ExecutionType::Trade,
             OrderStatus::Filled,
-            -2,        // price_exp
-            -8,        // qty_exp
-            -8,        // commission_exp
-            250000,    // price = 2500.00
-            100000000, // orig_qty = 1.00000000
-            0,         // stop_price
-            100000000, // last_qty = 1.00000000
-            250000,    // last_price = 2500.00 (uses price_exp)
-            100000000, // executed_qty = 1.00000000
-            250000,    // cumm_quote_qty = 2500.00
-            250000,    // commission = 0.00250000
+            -2,          // price_exp
+            -8,          // qty_exp
+            -8,          // commission_exp
+            250_000,     // price = 2500.00
+            100_000_000, // orig_qty = 1.00000000
+            0,           // stop_price
+            100_000_000, // last_qty = 1.00000000
+            250_000,     // last_price = 2500.00 (uses price_exp)
+            100_000_000, // executed_qty = 1.00000000
+            250_000,     // cumm_quote_qty = 2500.00
+            250_000,     // commission = 0.00250000
             "USDT",
             true, // is_maker
             false,
-            1709654400000000,
-            1709654400000000,
-            Some(1709654400000000),
+            1_709_654_400_000_000,
+            1_709_654_400_000_000,
+            Some(1_709_654_400_000_000),
             expiry_reason::ExpiryReason::NullVal,
         );
 
@@ -1541,7 +1544,7 @@ mod tests {
 
         assert_eq!(report.execution_type, BinanceSpotExecutionType::Trade);
         assert_eq!(report.order_status, BinanceOrderStatus::Filled);
-        assert_eq!(report.trade_id, 98765432);
+        assert_eq!(report.trade_id, 98_765_432);
         assert_eq!(report.last_filled_qty, "1.00000000");
         assert_eq!(report.last_filled_price, "2500.00");
         assert_eq!(report.cumulative_quote_qty, "2500.00");
@@ -1565,8 +1568,8 @@ mod tests {
             -2,
             -8,
             -8,
-            5000000,  // price = 50000.00
-            10000000, // orig_qty = 0.10000000
+            5_000_000,  // price = 50000.00
+            10_000_000, // orig_qty = 0.10000000
             0,
             0,
             0,
@@ -1576,9 +1579,9 @@ mod tests {
             "",
             false,
             false,
-            1709654400000000,
-            1709654400000000,
-            Some(1709654400000000),
+            1_709_654_400_000_000,
+            1_709_654_400_000_000,
+            Some(1_709_654_400_000_000),
             expiry_reason::ExpiryReason::NullVal,
         );
 
@@ -1595,7 +1598,7 @@ mod tests {
         let data = encode_execution_report(
             "ETHUSDT",
             "O-20200101-000000-000-000-1",
-            12345679,
+            12_345_679,
             None,
             OrderSide::Sell,
             SbeOrderType::StopLossLimit,
@@ -1605,9 +1608,9 @@ mod tests {
             -2,
             -5,
             -8,
-            240000, // price = 2400.00
-            100000, // orig_qty = 1.00000
-            245000, // stop_price = 2450.00
+            240_000, // price = 2400.00
+            100_000, // orig_qty = 1.00000
+            245_000, // stop_price = 2450.00
             0,
             0,
             0,
@@ -1616,9 +1619,9 @@ mod tests {
             "",
             false,
             true,
-            1709654400000000,
-            1709654400000000,
-            Some(1709654400000000),
+            1_709_654_400_000_000,
+            1_709_654_400_000_000,
+            Some(1_709_654_400_000_000),
             expiry_reason::ExpiryReason::NullVal,
         );
 
@@ -1631,7 +1634,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_execution_report_truncated_header() {
-        let data = vec![0u8; 5];
+        let data = vec![0_u8; 5];
         let err = decode_execution_report(&data).unwrap_err();
         assert!(err.to_string().contains("too short for SBE header"));
     }
@@ -1782,7 +1785,7 @@ mod tests {
             expiry_reason::ExpiryReason::NullVal,
         );
         // Overwrite template_id to 50
-        data[2..4].copy_from_slice(&50u16.to_le_bytes());
+        data[2..4].copy_from_slice(&50_u16.to_le_bytes());
 
         let err = decode_execution_report(&data).unwrap_err();
         assert!(err.to_string().contains("Wrong template ID"));
@@ -1791,15 +1794,15 @@ mod tests {
     #[rstest]
     fn test_decode_account_position_single_balance() {
         let data = encode_account_position(
-            1709654400000000,                            // event_time_us
-            1709654400000000,                            // update_time_us
-            &[("USDT", -8, 1000000000000, 50000000000)], // free=10000.00000000, locked=500.00000000
+            1_709_654_400_000_000,                              // event_time_us
+            1_709_654_400_000_000,                              // update_time_us
+            &[("USDT", -8, 1_000_000_000_000, 50_000_000_000)], // free=10000.00000000, locked=500.00000000
         );
 
         let msg = decode_account_position(&data).unwrap();
 
         assert_eq!(msg.event_type, "outboundAccountPosition");
-        assert_eq!(msg.event_time, 1709654400000);
+        assert_eq!(msg.event_time, 1_709_654_400_000);
         assert_eq!(msg.balances.len(), 1);
         assert_eq!(msg.balances[0].asset, "USDT");
         assert_eq!(
@@ -1815,11 +1818,11 @@ mod tests {
     #[rstest]
     fn test_decode_account_position_multiple_balances() {
         let data = encode_account_position(
-            1709654400000000,
-            1709654400000000,
+            1_709_654_400_000_000,
+            1_709_654_400_000_000,
             &[
-                ("BTC", -8, 100000000, 0),      // free=1.00000000, locked=0.00000000
-                ("USDT", -8, 5000000000000, 0), // free=50000.00000000, locked=0.00000000
+                ("BTC", -8, 100_000_000, 0),        // free=1.00000000, locked=0.00000000
+                ("USDT", -8, 5_000_000_000_000, 0), // free=50000.00000000, locked=0.00000000
             ],
         );
 
@@ -1840,7 +1843,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_account_position_zero_balances() {
-        let data = encode_account_position(1709654400000000, 1709654400000000, &[]);
+        let data = encode_account_position(1_709_654_400_000_000, 1_709_654_400_000_000, &[]);
 
         let msg = decode_account_position(&data).unwrap();
         assert!(msg.balances.is_empty());
@@ -1860,7 +1863,7 @@ mod tests {
             Vec::new()
         };
 
-        let mut data = encode_account_position(123000, 456000, &entries);
+        let mut data = encode_account_position(123_000, 456_000, &entries);
         let group_offset =
             HEADER_LEN + usize::from(outbound_account_position_event_codec::SBE_BLOCK_LENGTH);
         data[group_offset + 2..group_offset + group_size_encoding_codec::ENCODED_LENGTH]
@@ -1880,7 +1883,7 @@ mod tests {
     #[rstest]
     fn test_decode_account_position_accepts_maximum_count() {
         let entries = vec![("ASSET", -3, 12345, 6789); crate::spot::sbe::MAX_GROUP_SIZE as usize];
-        let data = encode_account_position(123000, 456000, &entries);
+        let data = encode_account_position(123_000, 456_000, &entries);
 
         let msg = decode_account_position(&data).unwrap();
 
@@ -1899,8 +1902,8 @@ mod tests {
     #[rstest]
     fn test_decode_account_position_validates_all_assets_before_decoding() {
         let mut data = encode_account_position(
-            123000,
-            456000,
+            123_000,
+            456_000,
             &[("BTC", i8::MIN, 12345, 6789), ("USDT", -3, 4321, 8765)],
         );
         data.pop();
@@ -1919,7 +1922,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_account_position_truncated_header() {
-        let data = vec![0u8; 5];
+        let data = vec![0_u8; 5];
         let err = decode_account_position(&data).unwrap_err();
         assert!(err.to_string().contains("too short for SBE header"));
     }
@@ -1927,7 +1930,7 @@ mod tests {
     #[rstest]
     fn test_decode_account_position_wrong_template() {
         let mut data = encode_account_position(0, 0, &[]);
-        data[2..4].copy_from_slice(&50u16.to_le_bytes());
+        data[2..4].copy_from_slice(&50_u16.to_le_bytes());
 
         let err = decode_account_position(&data).unwrap_err();
         assert!(err.to_string().contains("Wrong template ID"));
@@ -1945,7 +1948,7 @@ mod tests {
         #[case] version: u16,
         #[case] block_length: u16,
     ) {
-        let mut data = encode_account_position(123000, 456000, &[("BTC", -2, 12345, 6789)]);
+        let mut data = encode_account_position(123_000, 456_000, &[("BTC", -2, 12345, 6789)]);
         data[..2].copy_from_slice(&block_length.to_le_bytes());
         data[6..8].copy_from_slice(&version.to_le_bytes());
 
@@ -1968,8 +1971,8 @@ mod tests {
     #[rstest]
     fn test_decode_account_position_rejects_truncated_framing() {
         let data = encode_account_position(
-            123000,
-            456000,
+            123_000,
+            456_000,
             &[("BTC", -2, 12345, 6789), ("USDT", -3, 4321, 8765)],
         );
 
@@ -1990,7 +1993,7 @@ mod tests {
         #[case] block_length: u16,
         #[case] count: u32,
     ) {
-        let mut data = encode_account_position(123000, 456000, &[("BTC", -2, 12345, 6789)]);
+        let mut data = encode_account_position(123_000, 456_000, &[("BTC", -2, 12345, 6789)]);
         let group_offset =
             HEADER_LEN + usize::from(outbound_account_position_event_codec::SBE_BLOCK_LENGTH);
         data[group_offset..group_offset + 2].copy_from_slice(&block_length.to_le_bytes());
@@ -2012,8 +2015,8 @@ mod tests {
     #[case::second(1)]
     fn test_decode_account_position_rejects_oversized_asset(#[case] index: usize) {
         let mut data = encode_account_position(
-            123000,
-            456000,
+            123_000,
+            456_000,
             &[("BTC", -2, 12345, 6789), ("USDT", -3, 4321, 8765)],
         );
         let mut asset_offset = HEADER_LEN
@@ -2065,11 +2068,11 @@ mod tests {
         #[case] entry_block_length: usize,
     ) {
         let balances = [("BTC", -2, 12345, 6789), ("USDT", -3, 4321, 8765)];
-        let original = encode_account_position(123000, 456000, &balances);
+        let original = encode_account_position(123_000, 456_000, &balances);
         let group_offset =
             HEADER_LEN + usize::from(outbound_account_position_event_codec::SBE_BLOCK_LENGTH);
         let mut data = original[..HEADER_LEN + ACCOUNT_POSITION_BLOCK_LENGTH_V0].to_vec();
-        data.resize(HEADER_LEN + block_length, 0xA5);
+        data.resize(HEADER_LEN + block_length, 0xa5);
         data[..2].copy_from_slice(&(block_length as u16).to_le_bytes());
         data[6..8].copy_from_slice(&version.to_le_bytes());
         data.extend_from_slice(
@@ -2085,7 +2088,7 @@ mod tests {
             );
             data.resize(
                 data.len() + entry_block_length - ACCOUNT_POSITION_BALANCE_BLOCK_LENGTH,
-                0xA5,
+                0xa5,
             );
             let asset_offset = entry_offset + ACCOUNT_POSITION_BALANCE_BLOCK_LENGTH;
             entry_offset = asset_offset + 1 + asset.len();
@@ -2114,7 +2117,7 @@ mod tests {
         asset: &str,
     ) -> Vec<u8> {
         let total = 8 + 27 + 1 + asset.len();
-        let mut buf_vec = vec![0u8; total];
+        let mut buf_vec = vec![0_u8; total];
 
         let buf = WriteBuf::new(buf_vec.as_mut_slice());
         let enc =
@@ -2126,7 +2129,7 @@ mod tests {
         enc.clear_time(clear_time_us);
         enc.qty_exponent(qty_exponent);
         enc.free_qty_delta(free_qty_delta);
-        enc.subscription_id(0xFFFF); // null
+        enc.subscription_id(0xffff); // null
         enc.asset(asset);
 
         buf_vec
@@ -2135,25 +2138,25 @@ mod tests {
     #[rstest]
     fn test_decode_balance_update() {
         let data = encode_balance_update(
-            1709654400000000, // event_time_us
-            1709654400000000, // clear_time_us
+            1_709_654_400_000_000, // event_time_us
+            1_709_654_400_000_000, // clear_time_us
             -8,
-            10000000000, // delta = 100.00000000
+            10_000_000_000, // delta = 100.00000000
             "BTC",
         );
 
         let msg = decode_balance_update(&data).unwrap();
 
         assert_eq!(msg.event_type, "balanceUpdate");
-        assert_eq!(msg.event_time, 1709654400000);
+        assert_eq!(msg.event_time, 1_709_654_400_000);
         assert_eq!(msg.asset, "BTC");
         assert_eq!(msg.delta, "100.00000000");
-        assert_eq!(msg.clear_time, 1709654400000);
+        assert_eq!(msg.clear_time, 1_709_654_400_000);
     }
 
     #[rstest]
     fn test_decode_balance_update_rejects_null_exponent(#[values(0, 1, -1)] mantissa: i64) {
-        let data = encode_balance_update(123000, 456000, i8::MIN, mantissa, "ASSET");
+        let data = encode_balance_update(123_000, 456_000, i8::MIN, mantissa, "ASSET");
 
         let err = decode_balance_update(&data).unwrap_err();
 
@@ -2165,7 +2168,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_balance_update_truncated_header() {
-        let data = vec![0u8; 5];
+        let data = vec![0_u8; 5];
         let err = decode_balance_update(&data).unwrap_err();
         assert!(err.to_string().contains("too short for SBE header"));
     }
@@ -2173,7 +2176,7 @@ mod tests {
     #[rstest]
     fn test_decode_balance_update_wrong_template() {
         let mut data = encode_balance_update(0, 0, -8, 0, "BTC");
-        data[2..4].copy_from_slice(&50u16.to_le_bytes());
+        data[2..4].copy_from_slice(&50_u16.to_le_bytes());
 
         let err = decode_balance_update(&data).unwrap_err();
         assert!(err.to_string().contains("Wrong template ID"));
@@ -2191,7 +2194,7 @@ mod tests {
         #[case] version: u16,
         #[case] block_length: u16,
     ) {
-        let mut data = encode_balance_update(123000, 456000, -2, 12345, "BTC");
+        let mut data = encode_balance_update(123_000, 456_000, -2, 12345, "BTC");
         data[..2].copy_from_slice(&block_length.to_le_bytes());
         data[6..8].copy_from_slice(&version.to_le_bytes());
 
@@ -2213,8 +2216,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_balance_update_rejects_truncated_framing() {
-        let data = encode_balance_update(123000, 456000, -2, 12345, "BTC");
-
+        let data = encode_balance_update(123_000, 456_000, -2, 12345, "BTC");
         for length in 0..data.len() {
             assert!(
                 decode_balance_update(&data[..length]).is_err(),
@@ -2225,7 +2227,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_balance_update_rejects_oversized_asset() {
-        let mut data = encode_balance_update(123000, 456000, -2, 12345, "BTC");
+        let mut data = encode_balance_update(123_000, 456_000, -2, 12345, "BTC");
         let asset_offset = HEADER_LEN + usize::from(balance_update_event_codec::SBE_BLOCK_LENGTH);
         data[asset_offset] = u8::MAX;
 
@@ -2252,10 +2254,10 @@ mod tests {
         #[case] version: u16,
         #[case] block_length: usize,
     ) {
-        let original = encode_balance_update(123000, 456000, -2, 12345, "BTC");
+        let original = encode_balance_update(123_000, 456_000, -2, 12345, "BTC");
         let asset_offset = HEADER_LEN + usize::from(balance_update_event_codec::SBE_BLOCK_LENGTH);
         let mut data = original[..HEADER_LEN + BALANCE_UPDATE_BLOCK_LENGTH_V0].to_vec();
-        data.resize(HEADER_LEN + block_length, 0xA5);
+        data.resize(HEADER_LEN + block_length, 0xa5);
         data[..2].copy_from_slice(&(block_length as u16).to_le_bytes());
         data[6..8].copy_from_slice(&version.to_le_bytes());
         data.extend_from_slice(&original[asset_offset..]);
@@ -2294,7 +2296,7 @@ mod tests {
         assert_eq!(report.side, BinanceSide::Buy);
         assert_eq!(report.order_type, "LIMIT");
         assert_eq!(report.time_in_force, BinanceTimeInForce::Gtc);
-        assert_eq!(report.order_id, 12345678);
+        assert_eq!(report.order_id, 12_345_678);
         assert!(report.is_working);
         assert!(!report.is_maker);
         assert_eq!(report.trade_id, -1);
@@ -2310,7 +2312,7 @@ mod tests {
         assert_eq!(report.symbol, "BTCUSDT");
         assert_eq!(report.execution_type, BinanceSpotExecutionType::Canceled);
         assert_eq!(report.order_status, BinanceOrderStatus::Canceled);
-        assert_eq!(report.order_id, 12345678);
+        assert_eq!(report.order_id, 12_345_678);
         assert!(!report.is_working);
     }
 

@@ -145,8 +145,8 @@ const BASE62_CHARS: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij
 /// Lookup table mapping ASCII byte values to base62 digit values.
 /// Invalid characters map to `0xFF`.
 const BASE62_DECODE: [u8; 128] = {
-    let mut table = [0xFFu8; 128];
-    let mut i = 0u8;
+    let mut table = [0xff_u8; 128];
+    let mut i = 0_u8;
     while i < 62 {
         table[BASE62_CHARS[i as usize] as usize] = i;
         i += 1;
@@ -346,7 +346,7 @@ fn build_encoded(broker_id: &str, signal: u8, payload: &[u8]) -> String {
 
 fn encode_base62<const N: usize>(mut value: u128) -> [u8; N] {
     const DIGITS: usize = 10;
-    const RADIX: u128 = 62u128.pow(DIGITS as u32);
+    const RADIX: u128 = 62_u128.pow(DIGITS as u32);
     let mut buf = [b'0'; N];
     for chunk in buf.rchunks_mut(DIGITS) {
         let mut part = (value % RADIX) as u64;
@@ -364,9 +364,8 @@ fn decode_base62(encoded: &[u8]) -> Option<u128> {
     let mut value: u128 = 0;
 
     for &byte in encoded {
-        let digit = BASE62_DECODE[byte as usize & 0x7F];
-
-        if digit == 0xFF || !byte.is_ascii() {
+        let digit = BASE62_DECODE[byte as usize & 0x7f];
+        if digit == 0xff || !byte.is_ascii() {
             return None;
         }
         value = value.checked_mul(62)?.checked_add(digit as u128)?;
@@ -436,7 +435,7 @@ fn pack_o_format(id_str: &str) -> Option<(u128, bool)> {
             )
         };
 
-    if trader > 1023 || strategy > 1023 || count > 0xF_FFFF {
+    if trader > 1023 || strategy > 1023 || count > 0xf_ffff {
         return None;
     }
 
@@ -455,9 +454,9 @@ fn pack_o_format(id_str: &str) -> Option<(u128, bool)> {
 }
 
 fn unpack_o_format(packed: u128, has_hyphens: bool) -> String {
-    let count = (packed & 0xF_FFFF) as u32;
-    let strategy = ((packed >> 20) & 0x3FF) as u32;
-    let trader = ((packed >> 30) & 0x3FF) as u32;
+    let count = (packed & 0xf_ffff) as u32;
+    let strategy = ((packed >> 20) & 0x3ff) as u32;
+    let trader = ((packed >> 30) & 0x3ff) as u32;
     let secs_since_epoch = (packed >> 40) as i64;
 
     let timestamp = secs_since_epoch + O_FORMAT_EPOCH;
@@ -547,8 +546,8 @@ fn unpack_o_tags(packed: u128) -> anyhow::Result<String> {
         "tagged O-format payload exceeds its bit budget"
     );
     let count = (packed & O_TAGS_COUNT_MAX as u128) as u32;
-    let numeric = ((packed >> O_TAGS_COUNT_BITS) & 0x3FF) as u32;
-    let tag = unpack_tag(((packed >> 32) & 0xFFF) as u32)?;
+    let numeric = ((packed >> O_TAGS_COUNT_BITS) & 0x3ff) as u32;
+    let tag = unpack_tag(((packed >> 32) & 0xfff) as u32)?;
     let swapped = ((packed >> 44) & 1) != 0;
     let (year, month, day, hour, minute, second) =
         epoch_to_civil((packed >> 45) as i64 + O_FORMAT_EPOCH)
@@ -578,7 +577,7 @@ fn pack_tag(tag: &str) -> Option<u32> {
 
     for byte in tag.bytes() {
         let digit = *BASE62_DECODE.get(byte as usize)?;
-        if digit == 0xFF {
+        if digit == 0xff {
             return None;
         }
 
@@ -643,7 +642,7 @@ fn format_uuid(value: u128, has_hyphens: bool) -> String {
     let bytes = value.to_be_bytes();
 
     if has_hyphens {
-        let mut buf = [0u8; 36];
+        let mut buf = [0_u8; 36];
         let mut pos = 0;
 
         for (i, &b) in bytes.iter().enumerate() {
@@ -652,17 +651,17 @@ fn format_uuid(value: u128, has_hyphens: bool) -> String {
                 pos += 1;
             }
             buf[pos] = HEX[(b >> 4) as usize];
-            buf[pos + 1] = HEX[(b & 0x0F) as usize];
+            buf[pos + 1] = HEX[(b & 0x0f) as usize];
             pos += 2;
         }
         std::str::from_utf8(&buf)
             .expect("hex is valid UTF-8")
             .to_string()
     } else {
-        let mut buf = [0u8; 32];
+        let mut buf = [0_u8; 32];
         for (i, &b) in bytes.iter().enumerate() {
             buf[i * 2] = HEX[(b >> 4) as usize];
-            buf[i * 2 + 1] = HEX[(b & 0x0F) as usize];
+            buf[i * 2 + 1] = HEX[(b & 0x0f) as usize];
         }
         std::str::from_utf8(&buf)
             .expect("hex is valid UTF-8")
@@ -699,7 +698,7 @@ fn civil_to_epoch(year: u32, month: u32, day: u32, hour: u32, min: u32, sec: u32
     let m = if month > 2 { month - 3 } else { month + 9 } as u64;
     let doy = (153 * m + 2) / 5 + day as u64 - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146097 + doe as i64 - 719468;
+    let days = era * 146_097 + doe as i64 - 719_468;
     Some(days * 86400 + hour as i64 * 3600 + min as i64 * 60 + sec as i64)
 }
 
@@ -716,10 +715,10 @@ fn epoch_to_civil(timestamp: i64) -> Option<(u32, u32, u32, u32, u32, u32)> {
     let second = secs_of_day % 60;
 
     // Civil date from day count using Howard Hinnant's algorithm
-    let z = days + 719468;
-    let era = z.div_euclid(146097);
-    let doe = z.rem_euclid(146097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
     let y = yoe as i64 + era * 400;
     let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
     let mp = (5 * doy + 2) / 153;
@@ -814,17 +813,24 @@ mod tests {
 
     #[rstest]
     fn test_base62_chunked_encoding_matches_digit_reference() {
-        let mut state = 0x1234_5678_90ab_cdef_2345_6789_abcd_ef01u128;
+        let mut state = 0x1234_5678_90ab_cdef_2345_6789_abcd_ef01_u128;
 
-        for value in [0, 1, 61, 62, 62u128.pow(10) - 1, 62u128.pow(10), u128::MAX]
-            .into_iter()
-            .chain((0..10_000).map(|_| {
-                state ^= state << 13;
-                state ^= state >> 7;
-                state ^= state << 17;
-                state
-            }))
-        {
+        for value in [
+            0,
+            1,
+            61,
+            62,
+            62_u128.pow(10) - 1,
+            62_u128.pow(10),
+            u128::MAX,
+        ]
+        .into_iter()
+        .chain((0..10_000).map(|_| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        })) {
             let mut expected = [b'0'; 22];
             let mut remaining = value;
 
@@ -857,7 +863,7 @@ mod tests {
 
     #[rstest]
     fn test_base62_roundtrip_max_72_bit() {
-        let value: u128 = (1u128 << 72) - 1;
+        let value: u128 = (1_u128 << 72) - 1;
         let encoded = encode_base62::<13>(value);
         let decoded = decode_base62(&encoded);
         assert_eq!(decoded, Some(value));

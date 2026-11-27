@@ -613,7 +613,7 @@ mod tests {
                     Py::new(py, AccountId::from("OKX-001")).unwrap(),
                 )
                 .unwrap();
-            kwargs.set_item("order_request_ttl_ms", 0u64).unwrap();
+            kwargs.set_item("order_request_ttl_ms", 0_u64).unwrap();
 
             let err = py
                 .get_type::<OKXExecutionClientConfig>()

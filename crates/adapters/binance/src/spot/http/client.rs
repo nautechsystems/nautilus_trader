@@ -39,7 +39,6 @@ use indexmap::{IndexMap, map::Entry};
 use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
-    collections::AtomicMap,
     datetime::{NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND, SECONDS_IN_DAY},
     hex,
     nanos::UnixNanos,
@@ -65,6 +64,7 @@ use nautilus_network::{
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
+use parking_lot::RwLock;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -78,9 +78,9 @@ use super::{
         BinanceAggTrades, BinanceBalance, BinanceCancelOpenOrdersResponse,
         BinanceCancelOrderListResponse, BinanceCancelOrderResponse, BinanceDepth,
         BinanceExchangeInfoJson, BinanceKline, BinanceKlines, BinanceNewOrderResponse,
-        BinanceOrderFill, BinanceOrderResponse, BinancePriceLevel, BinanceTrade, BinanceTrades,
-        BookTicker, ListenKeyResponse, NewOcoOrderListResponse, OrderListOrder, Ticker24hr,
-        TickerPrice, TradeFee,
+        BinanceOrderFill, BinanceOrderResponse, BinancePriceLevel, BinanceSymbolJson,
+        BinanceSymbolSbe, BinanceTrade, BinanceTrades, BookTicker, ListenKeyResponse,
+        NewOcoOrderListResponse, OrderListOrder, Ticker24hr, TickerPrice, TradeFee,
     },
     parse,
     query::{
@@ -2731,7 +2731,7 @@ fn spot_sbe_stp(mode: Option<BinanceSelfTradePreventionMode>) -> SbeSelfTradePre
 pub struct BinanceSpotHttpClient {
     inner: Arc<BinanceRawSpotHttpClient>,
     clock: &'static AtomicTime,
-    instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
+    instruments_cache: Arc<RwLock<AHashMap<Ustr, InstrumentAny>>>,
 }
 
 impl Clone for BinanceSpotHttpClient {
@@ -2748,7 +2748,7 @@ impl Debug for BinanceSpotHttpClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(BinanceSpotHttpClient))
             .field("inner", &self.inner)
-            .field("instruments_cached", &self.instruments_cache.len())
+            .field("instruments_cached", &self.instruments_cache.read().len())
             .finish()
     }
 }
@@ -2819,7 +2819,7 @@ impl BinanceSpotHttpClient {
         Ok(Self {
             inner: Arc::new(inner),
             clock,
-            instruments_cache: Arc::new(AtomicMap::new()),
+            instruments_cache: Arc::default(),
         })
     }
 
@@ -2862,18 +2862,17 @@ impl BinanceSpotHttpClient {
 
     /// Retrieves an instrument from the cache.
     fn instrument_from_cache(&self, symbol: Ustr) -> anyhow::Result<InstrumentAny> {
-        self.instruments_cache
-            .get_cloned(&symbol)
+        self.get_instrument(&symbol)
             .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not in cache"))
     }
 
     /// Caches multiple instruments.
     pub fn cache_instruments(&self, instruments: Vec<InstrumentAny>) {
-        self.instruments_cache.rcu(move |cache| {
-            for instrument in &instruments {
-                cache.insert(instrument.raw_symbol().inner(), instrument.clone());
-            }
-        });
+        self.instruments_cache.write().extend(
+            instruments
+                .into_iter()
+                .map(|instrument| (instrument.raw_symbol().inner(), instrument)),
+        );
     }
 
     /// Replaces the complete instrument cache.
@@ -2882,24 +2881,36 @@ impl BinanceSpotHttpClient {
             .iter()
             .map(|instrument| (instrument.raw_symbol().inner(), instrument.clone()))
             .collect();
-        self.instruments_cache.store(cache);
+        *self.instruments_cache.write() = cache;
     }
 
     /// Caches a single instrument.
     pub fn cache_instrument(&self, instrument: InstrumentAny) {
         self.instruments_cache
+            .write()
             .insert(instrument.raw_symbol().inner(), instrument);
+    }
+
+    pub(crate) fn cache_execution_instrument(&self, instrument: InstrumentAny) {
+        let symbol = instrument.raw_symbol().inner();
+        let mut cache = self.instruments_cache.write();
+        if cache
+            .get(&symbol)
+            .is_none_or(|cached| cached.ts_init() <= instrument.ts_init())
+        {
+            cache.insert(symbol, instrument);
+        }
     }
 
     /// Gets an instrument from the cache by symbol.
     #[must_use]
     pub fn get_instrument(&self, symbol: &Ustr) -> Option<InstrumentAny> {
-        self.instruments_cache.get_cloned(symbol)
+        self.instruments_cache.read().get(symbol).cloned()
     }
 
     pub(crate) fn instrument_ids_reconciliation(&self) -> Vec<InstrumentId> {
         self.instruments_cache
-            .load()
+            .read()
             .values()
             .map(|instrument| instrument.id())
             .collect()
@@ -2945,27 +2956,13 @@ impl BinanceSpotHttpClient {
         &self,
         us: bool,
     ) -> BinanceSpotHttpResult<AHashMap<InstrumentId, MarketStatusAction>> {
-        let mut statuses = AHashMap::new();
-
         if us {
             let info = self.inner.exchange_info_json().await?;
-            for symbol in info.symbols {
-                let instrument_id =
-                    InstrumentId::new(Symbol::from(symbol.symbol.as_str()), *BINANCE_VENUE);
-                statuses.insert(instrument_id, spot_json_market_status(&symbol.status));
-            }
+            Ok(info.symbols.iter().map(spot_json_symbol_status).collect())
         } else {
             let info = self.exchange_info().await?;
-            for symbol in info.symbols {
-                let instrument_id =
-                    InstrumentId::new(Symbol::from(symbol.symbol.as_str()), *BINANCE_VENUE);
-                statuses.insert(
-                    instrument_id,
-                    MarketStatusAction::from(SymbolStatus::from(symbol.status)),
-                );
-            }
+            Ok(info.symbols.iter().map(spot_sbe_symbol_status).collect())
         }
-        Ok(statuses)
     }
 
     /// Requests Nautilus instruments for all trading symbols.
@@ -2994,9 +2991,60 @@ impl BinanceSpotHttpClient {
         config: &BinanceInstrumentProviderConfig,
         us: bool,
     ) -> BinanceSpotHttpResult<Vec<InstrumentAny>> {
+        self.load_instruments(config, us, None, None, true)
+            .await
+            .map(|(instruments, _)| instruments)
+    }
+
+    pub(crate) async fn request_instruments_with_statuses(
+        &self,
+        config: &BinanceInstrumentProviderConfig,
+        us: bool,
+        previous: &AHashMap<InstrumentId, InstrumentAny>,
+        publication: (
+            &parking_lot::Mutex<()>,
+            &tokio_util::sync::CancellationToken,
+        ),
+    ) -> BinanceSpotHttpResult<(
+        Vec<InstrumentAny>,
+        AHashMap<InstrumentId, MarketStatusAction>,
+    )> {
+        self.load_instruments(config, us, Some(previous), Some(publication), true)
+            .await
+    }
+
+    pub(crate) async fn request_instruments_in_generation(
+        &self,
+        config: &BinanceInstrumentProviderConfig,
+        us: bool,
+        publish_lock: &parking_lot::Mutex<()>,
+        cancel: &tokio_util::sync::CancellationToken,
+        apply_cache: bool,
+    ) -> BinanceSpotHttpResult<Vec<InstrumentAny>> {
+        self.load_instruments(config, us, None, Some((publish_lock, cancel)), apply_cache)
+            .await
+            .map(|(instruments, _)| instruments)
+    }
+
+    async fn load_instruments(
+        &self,
+        config: &BinanceInstrumentProviderConfig,
+        us: bool,
+        previous: Option<&AHashMap<InstrumentId, InstrumentAny>>,
+        publication: Option<(
+            &parking_lot::Mutex<()>,
+            &tokio_util::sync::CancellationToken,
+        )>,
+        apply_cache: bool,
+    ) -> BinanceSpotHttpResult<(
+        Vec<InstrumentAny>,
+        AHashMap<InstrumentId, MarketStatusAction>,
+    )> {
         let selector = BinanceInstrumentSelector::new(config, BinanceProductType::Spot)
             .map_err(|e| BinanceSpotHttpError::ValidationError(e.to_string()))?;
         let ts_init = self.generate_ts_init();
+
+        let mut statuses = AHashMap::new();
 
         let mut instruments = if us {
             if config.query_commission_rates {
@@ -3007,6 +3055,10 @@ impl BinanceSpotHttpClient {
                 }
             }
             let info = self.inner.exchange_info_json().await?;
+            if previous.is_some() {
+                statuses.extend(info.symbols.iter().map(spot_json_symbol_status));
+            }
+
             let mut instruments = Vec::with_capacity(info.symbols.len());
             for symbol in &info.symbols {
                 let instrument_id =
@@ -3036,6 +3088,10 @@ impl BinanceSpotHttpClient {
             instruments
         } else {
             let info = self.exchange_info().await?;
+            if previous.is_some() {
+                statuses.extend(info.symbols.iter().map(spot_sbe_symbol_status));
+            }
+
             let mut instruments = Vec::with_capacity(info.symbols.len());
             for symbol in &info.symbols {
                 let instrument_id =
@@ -3065,11 +3121,56 @@ impl BinanceSpotHttpClient {
             instruments
         };
 
+        if let Some(previous) = previous {
+            instruments.extend(
+                previous
+                    .values()
+                    .filter(|instrument| {
+                        statuses
+                            .get(&instrument.id())
+                            .is_some_and(|action| *action != MarketStatusAction::Trading)
+                    })
+                    .cloned(),
+            );
+        }
+
         instruments.shrink_to_fit();
-        self.replace_instruments(&instruments);
+        let _guard = publication.map(|(lock, _)| lock.lock());
+        if publication.is_some_and(|(_, cancel)| cancel.is_cancelled()) {
+            return Err(BinanceSpotHttpError::ValidationError(
+                "Instrument request cancelled".to_string(),
+            ));
+        }
+
+        if apply_cache {
+            let replace = previous.is_some() || publication.is_none();
+            self.cache_instruments_from_request(&instruments, ts_init, replace);
+        }
 
         log::debug!("Loaded spot instruments: count={}", instruments.len());
-        Ok(instruments)
+        Ok((instruments, statuses))
+    }
+
+    fn cache_instruments_from_request(
+        &self,
+        instruments: &[InstrumentAny],
+        requested_at: UnixNanos,
+        replace: bool,
+    ) {
+        let mut cache = self.instruments_cache.write();
+        if replace {
+            cache.retain(|_, instrument| instrument.ts_init() > requested_at);
+        }
+
+        for instrument in instruments {
+            let symbol = instrument.raw_symbol().inner();
+            if cache
+                .get(&symbol)
+                .is_none_or(|cached| cached.ts_init() <= requested_at)
+            {
+                cache.insert(symbol, instrument.clone());
+            }
+        }
     }
 
     /// Requests recent trades for an instrument.
@@ -3321,8 +3422,7 @@ impl BinanceSpotHttpClient {
         &self,
         instrument_id: InstrumentId,
     ) -> anyhow::Result<InstrumentAny> {
-        self.instruments_cache
-            .get_cloned(&instrument_id.symbol.inner())
+        self.get_instrument(&instrument_id.symbol.inner())
             .ok_or_else(|| InstrumentLookupError::not_found(instrument_id).into())
     }
 
@@ -3990,6 +4090,20 @@ impl BinanceSpotHttpClient {
     }
 }
 
+fn spot_json_symbol_status(symbol: &BinanceSymbolJson) -> (InstrumentId, MarketStatusAction) {
+    let id = InstrumentId::new(Symbol::from(symbol.symbol.as_str()), *BINANCE_VENUE);
+    (id, spot_json_market_status(&symbol.status))
+}
+
+fn spot_sbe_symbol_status(symbol: &BinanceSymbolSbe) -> (InstrumentId, MarketStatusAction) {
+    let id = InstrumentId::new(Symbol::from(symbol.symbol.as_str()), *BINANCE_VENUE);
+
+    (
+        id,
+        MarketStatusAction::from(SymbolStatus::from(symbol.status)),
+    )
+}
+
 fn spot_json_market_status(status: &str) -> MarketStatusAction {
     match status {
         "TRADING" => MarketStatusAction::Trading,
@@ -4034,6 +4148,56 @@ mod tests {
 
     use super::*;
     use crate::spot::http::models::BinancePriceLevel;
+
+    #[rstest]
+    #[case::changed(false)]
+    #[case::unchanged(true)]
+    fn test_spot_snapshot_keeps_definitions_received_during_fetch(
+        #[case] same_tick: bool,
+        #[values(false, true)] replace: bool,
+        #[values(5, 30)] eth_ts: u64,
+    ) {
+        let client = BinanceSpotHttpClient::new(
+            BinanceEnvironment::Live,
+            nautilus_core::time::get_atomic_clock_realtime(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let mut btc = currency_pair_btcusdt();
+        let mut eth = nautilus_model::instruments::stubs::currency_pair_ethusdt();
+        let requested_at = UnixNanos::from(10);
+        btc.ts_init = requested_at;
+        let snapshot = [InstrumentAny::from(btc.clone())];
+
+        btc.ts_init = UnixNanos::from(20);
+        btc.price_increment = Price::from("0.001");
+        btc.price_precision = 3;
+        if same_tick {
+            let mut previous = btc.clone();
+            previous.ts_init = UnixNanos::from(5);
+            client.cache_execution_instrument(previous.into());
+        }
+
+        client.cache_execution_instrument(btc.clone().into());
+        eth.ts_init = UnixNanos::from(eth_ts);
+        client.cache_execution_instrument(eth.clone().into());
+
+        client.cache_instruments_from_request(&snapshot, requested_at, replace);
+
+        let cached_btc = client.get_instrument(&btc.raw_symbol.inner()).unwrap();
+        let cached_eth = client.get_instrument(&eth.raw_symbol.inner());
+        assert_eq!(cached_btc.ts_init(), UnixNanos::from(20));
+        assert_eq!(cached_btc.price_increment(), Price::from("0.001"));
+        assert_eq!(
+            cached_eth.map(|row| (row.id(), row.ts_init())),
+            (!replace || eth.ts_init > requested_at).then_some((eth.id, eth.ts_init)),
+        );
+    }
 
     #[tokio::test]
     async fn test_weighted_concurrent_clients_share_atomic_quota() {
@@ -4421,7 +4585,7 @@ mod tests {
             InstrumentId::from("BTCUSDT.BINANCE"),
             &instrument,
             &snapshot,
-            UnixNanos::from(1_700_000_000_000_000_001u64),
+            UnixNanos::from(1_700_000_000_000_000_001_u64),
         )
         .unwrap_err();
 
@@ -4446,7 +4610,7 @@ mod tests {
             InstrumentId::from("BTCUSDT.BINANCE"),
             &instrument,
             &snapshot,
-            UnixNanos::from(1_700_000_000_000_000_001u64),
+            UnixNanos::from(1_700_000_000_000_000_001_u64),
         )
         .unwrap_err();
 

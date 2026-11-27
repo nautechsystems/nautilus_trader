@@ -196,7 +196,8 @@ pub fn resolve_legacy_schema(
     schema: &Schema,
 ) -> Result<LegacySchemaResolution, LegacyArrowError> {
     let source_fingerprint = schema_fingerprint(schema);
-    let Some(current_schema) = current_schema(type_name, schema.metadata().clone()) else {
+
+    let Some(current_schema) = current_schema(type_name, schema.metadata().into()) else {
         return Ok(LegacySchemaResolution {
             kind: LegacyTranscodeKind::PassThrough,
             target_fingerprint: source_fingerprint.clone(),
@@ -360,7 +361,7 @@ fn transcode_instrument_status(
     batch: &RecordBatch,
     file_path: &str,
 ) -> Result<RecordBatch, LegacyArrowError> {
-    let schema = InstrumentStatus::get_schema(Some(batch.schema().metadata().clone()));
+    let schema = InstrumentStatus::get_schema(Some(batch.schema().metadata().into()));
     let instrument_id = required_column(batch, "instrument_id", file_path)?;
     let mut columns = Vec::with_capacity(schema.fields().len());
 
@@ -464,7 +465,7 @@ fn transcode_funding_rate(
         rate_builder.append_value(value);
     }
 
-    let schema = FundingRateUpdate::get_schema(Some(batch.schema().metadata().clone()));
+    let schema = FundingRateUpdate::get_schema(Some(batch.schema().metadata().into()));
     let identifiers = StringArray::from(vec![instrument_id; batch.num_rows()]);
     let columns: Vec<ArrayRef> = vec![
         Arc::new(rate_builder.finish()),
@@ -1761,7 +1762,7 @@ mod tests {
                 Field::new("side", DataType::UInt8, false),
                 Field::new("ts_recv", DataType::UInt64, false),
             ],
-            [("type_name".to_string(), "CustomData".to_string())].into(),
+            [("type_name", "CustomData")],
         );
 
         assert!(!is_nautilus_legacy_schema(&schema));
@@ -1778,7 +1779,7 @@ mod tests {
                     Field::new("ts_event", DataType::UInt64, false),
                     Field::new("ts_init", DataType::UInt64, false),
                 ],
-                [("type".to_string(), "FundingRateUpdate".to_string())].into(),
+                [("type", "FundingRateUpdate")],
             ),
             Schema::new_with_metadata(
                 vec![
@@ -1792,7 +1793,7 @@ mod tests {
                     Field::new("ts_event", DataType::UInt64, true),
                     Field::new("ts_init", DataType::UInt64, true),
                 ],
-                [("type".to_string(), "InstrumentStatus".to_string())].into(),
+                [("type", "InstrumentStatus")],
             ),
             Schema::new_with_metadata(
                 vec![
@@ -1811,7 +1812,7 @@ mod tests {
                     Field::new("ts_init", DataType::UInt64, false),
                     Field::new("convention", DataType::Utf8, false),
                 ],
-                [("type".to_string(), "OptionGreeks".to_string())].into(),
+                [("type", "OptionGreeks")],
             ),
         ];
 
@@ -1872,7 +1873,7 @@ mod tests {
                     Field::new("ts_event", DataType::UInt64, false),
                     Field::new("ts_init", DataType::UInt64, false),
                 ],
-                [("type".to_string(), "QuoteTick".to_string())].into(),
+                [("type", "QuoteTick")],
             )),
             vec![
                 fixed(i64::MIN.to_le_bytes()),
@@ -1902,7 +1903,7 @@ mod tests {
         let batch = RecordBatch::try_new(
             Arc::new(Schema::new_with_metadata(
                 vec![Field::new("bid_price", DataType::FixedSizeBinary(8), false)],
-                [("type".to_string(), "QuoteTick".to_string())].into(),
+                [("type", "QuoteTick")],
             )),
             vec![Arc::new(
                 FixedSizeBinaryArray::try_from_sparse_iter_with_size(
@@ -2080,7 +2081,7 @@ mod tests {
         assert_eq!(identifiers.value(0), "AAPL.XNAS");
 
         // Migration attaches the row identifier as instrument metadata before decoding
-        let mut metadata = output.schema().metadata().clone();
+        let mut metadata = HashMap::from(output.schema_ref().metadata());
         metadata.insert(
             KEY_INSTRUMENT_ID.to_string(),
             identifiers.value(0).to_string(),
@@ -2120,9 +2121,11 @@ mod tests {
         let result =
             transcode_legacy_record_batch("funding_rates", "funding.parquet", batch).unwrap();
         let output = &result.batches[0];
-        let decoded =
-            FundingRateUpdate::decode_typed_batch(output.schema().metadata(), output.clone())
-                .unwrap();
+        let decoded = FundingRateUpdate::decode_typed_batch(
+            &output.schema().metadata().into(),
+            output.clone(),
+        )
+        .unwrap();
 
         assert_eq!(result.kind, LegacyTranscodeKind::FundingRateUpdateV1);
         assert_eq!(decoded[0].instrument_id.to_string(), "BTCUSDT-PERP.BINANCE");
@@ -2167,11 +2170,13 @@ mod tests {
 
         let result =
             transcode_legacy_record_batch("instrument_closes", "close.parquet", batch).unwrap();
+
         let decoded = result
             .batches
             .iter()
             .flat_map(|batch| {
-                InstrumentClose::decode_batch(batch.schema().metadata(), batch.clone()).unwrap()
+                InstrumentClose::decode_batch(&batch.schema().metadata().into(), batch.clone())
+                    .unwrap()
             })
             .collect::<Vec<_>>();
 
@@ -2213,7 +2218,8 @@ mod tests {
         // Transcoded files must consolidate with files written by the current encoder
         for batch in &result.batches {
             let schema = batch.schema();
-            let closes = InstrumentClose::decode_batch(schema.metadata(), batch.clone()).unwrap();
+            let closes =
+                InstrumentClose::decode_batch(&schema.metadata().into(), batch.clone()).unwrap();
             let fresh = InstrumentClose::encode_batch(&closes[0].metadata(), &closes).unwrap();
             assert_eq!(fresh.schema(), schema);
         }

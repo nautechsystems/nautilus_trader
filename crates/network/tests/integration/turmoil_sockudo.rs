@@ -37,11 +37,11 @@ use crate::common::turmoil::{seeded_builder, stressed_builder};
 
 const POLL_ITERS: u32 = 200;
 const POLL_STEP: Duration = Duration::from_millis(10);
-const BASIC_CONNECT_SEED: u64 = 0x50C0_D001;
-const RECONNECTION_SEED: u64 = 0x50C0_D002;
-const NETWORK_PARTITION_SEED: u64 = 0x50C0_D003;
-const PROXY_REJECTION_SEED: u64 = 0x50C0_D004;
-const WSS_REJECTION_SEED: u64 = 0x50C0_D005;
+const BASIC_CONNECT_SEED: u64 = 0x50c0_d001;
+const RECONNECTION_SEED: u64 = 0x50c0_d002;
+const NETWORK_PARTITION_SEED: u64 = 0x50c0_d003;
+const PROXY_REJECTION_SEED: u64 = 0x50c0_d004;
+const WSS_REJECTION_SEED: u64 = 0x50c0_d005;
 
 async fn recv_text(rx: &mut tokio::sync::mpsc::UnboundedReceiver<Message>, expected: &str) -> bool {
     for _ in 0..POLL_ITERS {
@@ -214,9 +214,9 @@ fn test_turmoil_real_sockudo_basic_connect(websocket_config: WebSocketConfig) {
 }
 
 #[rstest]
-#[case::seed_a(0x50C0_D101)]
-#[case::seed_b(0x50C0_D102)]
-#[case::seed_c(0x50C0_D103)]
+#[case::seed_a(0x50c0_d101)]
+#[case::seed_b(0x50c0_d102)]
+#[case::seed_c(0x50c0_d103)]
 fn test_turmoil_sockudo_repeated_drops_preserve_message_order(
     mut websocket_config: WebSocketConfig,
     #[case] seed: u64,

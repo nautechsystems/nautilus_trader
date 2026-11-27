@@ -19,6 +19,7 @@ Test portfolio behavior.
 from __future__ import annotations
 
 import importlib
+import json
 import subprocess
 import sys
 import textwrap
@@ -228,6 +229,95 @@ def test_registered_statistic_reaches_statistics_and_backtest_result() -> None:
     assert "Long Ratio" in result.stats_general
 
     engine.dispose()
+
+
+@pytest.mark.parametrize("precision", [16, 17, 18])
+def test_engine_held_balance_float_precision_does_not_abort_subprocess(precision: int) -> None:
+    """
+    Test that portfolio statistics and backtest reporting check engine-held balances.
+    """
+    instrument = TestInstrumentProvider.audusd_sim()
+
+    fixtures = {
+        "instrument": instrument.to_dict(),
+        "quotes": [quote.to_dict() for quote in _quotes(instrument)],
+    }
+
+    script = textwrap.dedent(
+        """
+        import json
+        import sys
+        from decimal import Decimal
+
+        from nautilus_trader.backtest import BacktestEngine, BacktestEngineConfig
+        from nautilus_trader.execution import MakerTakerFeeModel
+        from nautilus_trader.model import (
+            AccountType, Currency, CurrencyPair, CurrencyType, Money, OmsType, QuoteTick, Venue,
+        )
+
+        fixtures = json.load(sys.stdin)
+        precision = int(sys.argv[1])
+        message = (
+            "Cannot analyze TST balance for SIM-001: "
+            f"Fixed-point precision {precision} exceeds maximum float precision 16"
+        )
+
+        def check_error(call, exception_type, expected):
+            try:
+                call()
+            except exception_type as e:
+                assert str(e) == expected, str(e)
+            else:
+                raise AssertionError(f"expected {exception_type.__name__}")
+
+        for streaming in (False, True):
+            instrument = CurrencyPair.from_dict(fixtures["instrument"])
+            currency = Currency("TST", precision, 0, "Test balance", CurrencyType.CRYPTO)
+            balance = Money.from_raw(1000 * 10**precision, currency)
+            engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=True))
+            engine.add_venue(
+                Venue("SIM"), OmsType.NETTING, AccountType.MARGIN, [balance],
+                fee_model=MakerTakerFeeModel(maker_rate=Decimal(0), taker_rate=Decimal(0)),
+            )
+            engine.add_instrument(instrument)
+            engine.add_data([QuoteTick.from_dict(quote) for quote in fixtures["quotes"]])
+
+            if streaming:
+                engine.run(streaming=True)
+                complete = engine.end
+            else:
+                complete = engine.run
+
+            if precision == 16:
+                complete()
+                assert engine.portfolio.statistics().pnls["TST"]["PnL (total)"] == 0.0
+                assert engine.get_result().stats_pnls["TST"]["PnL (total)"] == 0.0
+            else:
+                check_error(
+                    complete, RuntimeError,
+                    "Backtest completed, but portfolio analysis failed. "
+                    f"Disable run_analysis to skip post-run analysis. {message}",
+                )
+                check_error(engine.portfolio.statistics, ValueError, message)
+                check_error(engine.get_result, RuntimeError, message)
+
+            assert engine.run_finished is not None
+            engine.dispose()
+
+        print("engine-held balance precision checked")
+        """,
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(precision)],
+        input=json.dumps(fixtures),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines().count("engine-held balance precision checked") == 1
 
 
 def test_registered_statistic_receives_authoritative_inputs() -> None:

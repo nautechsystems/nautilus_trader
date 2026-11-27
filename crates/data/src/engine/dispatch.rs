@@ -29,9 +29,13 @@ impl DataEngine {
         !self.config.disable_historical_cache
     }
 
-    pub(crate) fn handle_instrument(&mut self, instrument: &InstrumentAny) {
+    pub(crate) fn handle_instrument(&mut self, instrument: &InstrumentAny, is_live: bool) {
+        if is_live && Self::newer_instrument(&self.cache.borrow(), instrument).is_some() {
+            return;
+        }
+
         if self.cache_instrument(instrument) {
-            self.publish_instrument(instrument);
+            self.publish_instrument(instrument, is_live);
         }
     }
 
@@ -63,12 +67,50 @@ impl DataEngine {
         true
     }
 
-    pub(crate) fn publish_instrument(&mut self, instrument: &InstrumentAny) {
+    pub(crate) fn apply_instrument_response(
+        &mut self,
+        instruments: &[InstrumentAny],
+        is_bounded: bool,
+    ) -> bool {
+        if is_bounded {
+            #[cfg(feature = "defi")]
+            if let Err(e) = self
+                .cache
+                .borrow()
+                .validate_instrument_currency_integrity(instruments)
+            {
+                log_error_on_cache_insert(&e);
+                return false;
+            }
+
+            return true;
+        }
+
+        let mut accepted = true;
+
+        for instrument in instruments {
+            let has_newer = Self::newer_instrument(&self.cache.borrow(), instrument).is_some();
+            accepted &= has_newer || self.cache_instrument(instrument);
+        }
+
+        accepted
+    }
+
+    fn newer_instrument<'a>(
+        cache: &'a Cache,
+        instrument: &InstrumentAny,
+    ) -> Option<&'a InstrumentAny> {
+        cache
+            .instrument(&instrument.id())
+            .filter(|current| current.ts_init() > instrument.ts_init())
+    }
+
+    pub(crate) fn publish_instrument(&mut self, instrument: &InstrumentAny, is_live: bool) {
         let topic = switchboard::get_instrument_topic(instrument.id());
         log::debug!("Publishing instrument to topic: {topic}");
         msgbus::publish_instrument(topic, instrument);
 
-        self.update_option_chains(instrument);
+        self.update_option_chains(instrument, is_live);
     }
 
     pub(super) fn handle_delta(&mut self, delta: OrderBookDelta) {
@@ -213,6 +255,7 @@ impl DataEngine {
             MarketStatusAction::Close | MarketStatusAction::NotAvailableForTrading
         ) {
             self.expire_option_chain_instrument(status.instrument_id);
+            self.drain_deferred_commands();
         } else if status.action == MarketStatusAction::Trading {
             self.option_chain_instruments_expired
                 .remove(&status.instrument_id);

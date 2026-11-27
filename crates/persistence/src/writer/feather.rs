@@ -25,7 +25,7 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fmt::Debug,
     fs::{self, File, OpenOptions, TryLockError},
-    io::{self, BufReader, BufWriter, Seek, Write},
+    io::{self, BufReader, BufWriter, Read, Seek, Write},
     path::{Path, PathBuf},
     rc::Rc,
     sync::{
@@ -260,11 +260,11 @@ fn record_batch_with_delta_staged_metadata(
     )?)
 }
 
-fn arrow_metadata_row(
-    metadata: &HashMap<String, String>,
+fn arrow_metadata_row<'a>(
+    metadata: impl IntoIterator<Item = (&'a String, &'a String)>,
     fields: &arrow::datatypes::Fields,
 ) -> anyhow::Result<StagedArrowMetadataRow> {
-    let schema_metadata = metadata.iter().collect::<BTreeMap<_, _>>();
+    let schema_metadata = metadata.into_iter().collect::<BTreeMap<_, _>>();
 
     let field_metadata = fields
         .iter()
@@ -298,14 +298,11 @@ fn arrow_metadata_row(
 ///
 /// The staged metadata id hashes this exact string so readers can verify the schema metadata
 /// independently of its storage location.
-pub(crate) fn canonical_metadata_json(
-    metadata: &HashMap<String, String>,
+pub(crate) fn canonical_metadata_json<'a>(
+    metadata: impl IntoIterator<Item = (&'a String, &'a String)>,
 ) -> anyhow::Result<String> {
     Ok(serde_json::to_string(
-        &metadata
-            .iter()
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect::<BTreeMap<_, _>>(),
+        &metadata.into_iter().collect::<BTreeMap<_, _>>(),
     )?)
 }
 
@@ -318,6 +315,10 @@ pub(crate) const FEATHER_EXTENSION: &str = "feather";
 
 /// File extension of a Feather stream file that is still being appended to.
 pub(crate) const FEATHER_PARTIAL_EXTENSION: &str = "feather.partial";
+
+/// File extension of a sealed Feather stream file that promotion refused, which later
+/// promotions skip.
+pub(crate) const FEATHER_REFUSED_EXTENSION: &str = "feather.refused";
 
 /// An open local Feather file that appends Arrow IPC stream batches.
 ///
@@ -1166,7 +1167,10 @@ impl FeatherWriter {
             let path = self.build_writer_path(&data_type, timestamp, sequence);
 
             // Files left by an earlier writer in the same directory keep their names
-            if path.exists() || path.with_extension(FEATHER_PARTIAL_EXTENSION).exists() {
+            if path.exists()
+                || path.with_extension(FEATHER_PARTIAL_EXTENSION).exists()
+                || path.with_extension(FEATHER_REFUSED_EXTENSION).exists()
+            {
                 continue;
             }
 
@@ -1473,6 +1477,11 @@ impl FeatherWriter {
 
     /// Writes a single custom data value (catalog layout: `data/custom/{type_name}[/{identifier}]`).
     fn write_custom_data(&mut self, custom: &CustomData) -> Result<(), Box<dyn std::error::Error>> {
+        // Filter before encoding: excluded types may have no Arrow encoding
+        if !self.should_write_custom(custom.data.type_name(), custom.data_type.identifier()) {
+            return Ok(());
+        }
+
         let batch = Self::encode_custom_to_batch(custom)?;
         self.write_custom_batch(custom, batch)
     }
@@ -1694,12 +1703,13 @@ fn recover_partial_feather_file(partial_path: &Path) -> anyhow::Result<()> {
     let mut complete_len = 0;
     let mut tail_error = None;
 
-    match StreamReader::try_new(BufReader::new(&file), None) {
+    let input = FeatherRecoveryReader(BufReader::new(&file));
+    match StreamReader::try_new(input, None) {
         Ok(mut reader) => loop {
             match reader.next() {
                 Some(Ok(_)) => {
                     batches += 1;
-                    complete_len = reader.get_mut().stream_position()?;
+                    complete_len = reader.get_mut().0.stream_position()?;
                 }
                 Some(Err(e)) => {
                     tail_error = Some(e);
@@ -1757,6 +1767,21 @@ fn recover_partial_feather_file(partial_path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+struct FeatherRecoveryReader<'a>(BufReader<&'a File>);
+
+impl Read for FeatherRecoveryReader<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let read = self.0.read(buf)?;
+
+        // Arrow handles EOF at a message boundary and propagates I/O errors within a message
+        if read == 0 && !buf.is_empty() {
+            return Err(io::ErrorKind::UnexpectedEof.into());
+        }
+
+        Ok(read)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex, atomic::Ordering};
@@ -1765,6 +1790,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     use nautilus_model::data::HasTsInit;
     use nautilus_model::{
+        custom_data,
         data::{Data, NautilusRecordType, QuoteTick, TradeTick},
         enums::AggressorSide,
         identifiers::{InstrumentId, TradeId},
@@ -1814,7 +1840,7 @@ mod tests {
         read_feather_batches(path)
             .into_iter()
             .flat_map(|batch| {
-                let metadata = batch.schema().metadata().clone();
+                let metadata = batch.schema().metadata().into();
                 QuoteTick::decode_data_batch(&metadata, batch).unwrap()
             })
             .collect()
@@ -1867,7 +1893,7 @@ mod tests {
         partial
     }
 
-    const TORN_TAIL: &str = ": Io error: failed to fill whole buffer";
+    const TORN_TAIL: &str = ": Io error: unexpected end of file";
 
     static RECOVERY_LOGS: RecoveryLogCapture = RecoveryLogCapture(Mutex::new(Vec::new()));
 
@@ -1978,7 +2004,8 @@ mod tests {
             let schema = batch.schema();
             let name = schema.metadata()["type_name"].clone();
             *counts.entry(name.clone()).or_insert(0) += batch.num_rows();
-            let decoded = CustomDataDecoder::decode_data_batch(schema.metadata(), batch).unwrap();
+            let decoded =
+                CustomDataDecoder::decode_data_batch(&schema.metadata().into(), batch).unwrap();
             assert_eq!(decoded.len(), 1);
 
             let Data::Custom(custom) = &decoded[0] else {
@@ -2217,7 +2244,7 @@ mod tests {
             WriterClock::Test(Arc::new(AtomicU64::new(0))),
             RotationConfig::ScheduledDates {
                 interval_ns: 86_400_000_000_000,
-                rotation_time: UnixNanos::from(36_000_000_000_000u64),
+                rotation_time: UnixNanos::from(36_000_000_000_000_u64),
                 rotation_timezone: jiff::tz::TimeZone::UTC,
             },
             None,
@@ -2228,14 +2255,14 @@ mod tests {
         writer.write(quote_at(1_767_258_000_000_000_000)).unwrap();
         assert_eq!(
             writer.get_next_rotation_time(&quotes),
-            Some(UnixNanos::from(1_767_261_600_000_000_000u64)),
+            Some(UnixNanos::from(1_767_261_600_000_000_000_u64)),
         );
 
         // The first row after it, at 10:30, opens the next file, which rotates at 10:00 tomorrow
         writer.write(quote_at(1_767_263_400_000_000_000)).unwrap();
         assert_eq!(
             writer.get_next_rotation_time(&quotes),
-            Some(UnixNanos::from(1_767_348_000_000_000_000u64)),
+            Some(UnixNanos::from(1_767_348_000_000_000_000_u64)),
         );
         assert_eq!(
             sealed_timestamps(temp_dir.path()),
@@ -2262,7 +2289,7 @@ mod tests {
         );
 
         // 2026-11-07 17:47:15 UTC, then two rows at 18:14:41.380125727 UTC
-        let (before, after) = (1_794_073_635_000_000_000u64, 1_794_075_281_380_125_727u64);
+        let (before, after) = (1_794_073_635_000_000_000_u64, 1_794_075_281_380_125_727_u64);
         writer.write(quote_at(before)).unwrap();
         writer.write(quote_at(after)).unwrap();
         writer.write(quote_at(after)).unwrap();
@@ -2415,7 +2442,7 @@ mod tests {
         let mut recovered = Vec::new();
 
         for batch in read_feather_batches(&files[0]) {
-            let metadata = batch.schema().metadata().clone();
+            let metadata = HashMap::from(batch.schema_ref().metadata());
             assert_eq!(
                 metadata.get("type_name").unwrap(),
                 if modify {
@@ -2537,8 +2564,7 @@ mod tests {
         for path in paths {
             let path_str = path.path;
             for batch in read_feather_batches(&path_str) {
-                let metadata = batch.schema().metadata().clone();
-
+                let metadata = batch.schema_ref().metadata().into();
                 if path_str.to_str().unwrap().contains("quotes") {
                     let decoded = QuoteTick::decode_data_batch(&metadata, batch).unwrap();
                     recovered_quotes.extend(decoded);
@@ -2745,7 +2771,7 @@ mod tests {
         let recovered = read_feather_batches(&sealed[0])
             .into_iter()
             .flat_map(|batch| {
-                let metadata = batch.schema().metadata().clone();
+                let metadata = batch.schema().metadata().into();
                 QuoteTick::decode_data_batch(&metadata, batch).unwrap()
             })
             .collect::<Vec<_>>();
@@ -2854,18 +2880,24 @@ mod tests {
             .path()
             .join("trades")
             .join("trades_5-1.feather.partial");
+        let refused = temp_dir
+            .path()
+            .join("trades")
+            .join("trades_5-2.feather.refused");
         fs::create_dir_all(sealed.parent().unwrap()).unwrap();
         fs::write(&sealed, b"sealed").unwrap();
         fs::write(&partial, b"partial").unwrap();
+        fs::write(&refused, b"refused").unwrap();
 
         let path = writer.reserve_writer_path(NautilusDataType::TradeTick.into());
 
         assert_eq!(
             path.path,
-            temp_dir.path().join("trades").join("trades_5-2.feather")
+            temp_dir.path().join("trades").join("trades_5-3.feather")
         );
         assert_eq!(fs::read(&sealed).unwrap(), b"sealed");
         assert_eq!(fs::read(&partial).unwrap(), b"partial");
+        assert_eq!(fs::read(&refused).unwrap(), b"refused");
     }
 
     #[rstest]
@@ -3232,7 +3264,7 @@ mod tests {
         // A continuation marker followed by a negative metadata length is corrupt, not cut short
         let mut staged = fs::read(&partial).unwrap();
         staged.truncate(staged.len() - 8);
-        staged.extend_from_slice(&[0xFF, 0xFF, 0xFF, 0xFF, 0xF0, 0xFF, 0xFF, 0xFF]);
+        staged.extend_from_slice(&[0xff, 0xff, 0xff, 0xff, 0xf0, 0xff, 0xff, 0xff]);
         fs::write(&partial, &staged).unwrap();
 
         let warnings = recover_with_warnings(temp_dir.path());
@@ -3509,7 +3541,7 @@ mod tests {
             .join("RustTestCustomData");
         let files = feather_files(&prefix, FEATHER_EXTENSION);
         let batch = read_feather_batches(&files[0]).remove(0);
-        let metadata = batch.schema().metadata().clone();
+        let metadata = batch.schema_ref().metadata().into();
         let decoded =
             CustomDataDecoder::decode_data_batch(&metadata, batch).expect("decode_data_batch");
         assert_eq!(decoded.len(), 1);
@@ -3578,5 +3610,124 @@ mod tests {
             .map(RecordBatch::num_rows)
             .sum::<usize>();
         assert_eq!(rows, 2);
+    }
+
+    #[custom_data]
+    struct JsonOnlyCustomData {
+        value: u64,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    }
+
+    fn json_only_custom_data() -> CustomData {
+        CustomData::new(
+            Arc::new(JsonOnlyCustomData {
+                value: 7,
+                ts_event: UnixNanos::from(1_000),
+                ts_init: UnixNanos::from(2_000),
+            }),
+            CustomDataType::new("JsonOnlyCustomData", None, Some("RUST.TEST".to_string())),
+        )
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum CustomWritePath {
+        Data,
+        DataBatch,
+        MessageBus,
+    }
+
+    #[rstest]
+    #[case::write_data(CustomWritePath::Data)]
+    #[case::write_data_batch(CustomWritePath::DataBatch)]
+    #[case::write_any_message(CustomWritePath::MessageBus)]
+    fn test_write_custom_data_skips_excluded_type_without_arrow_encoding(
+        #[case] path: CustomWritePath,
+    ) {
+        let temp_dir = TempDir::new().unwrap();
+        let mut writer = FeatherWriter::new(
+            temp_dir.path().to_path_buf(),
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::NoRotation,
+            Some(HashSet::from([NautilusDataType::QuoteTick.into()])),
+            None,
+        );
+        let custom = json_only_custom_data();
+
+        let written = match path {
+            CustomWritePath::Data => writer.write_data(Data::Custom(custom)).map(|()| true),
+            CustomWritePath::DataBatch => writer
+                .write_data_batch(vec![Data::Custom(custom)])
+                .map(|()| true),
+            CustomWritePath::MessageBus => writer.write_any_message(&custom),
+        }
+        .map_err(|e| e.to_string());
+        let flushed = writer.flush().map_err(|e| e.to_string());
+        let closed = writer.close().map_err(|e| e.to_string());
+
+        assert_eq!(written, Ok(true));
+        assert_eq!(flushed, Ok(()));
+        assert_eq!(closed, Ok(()));
+        assert!(!temp_dir.path().join("data").join("custom").exists());
+    }
+
+    #[rstest]
+    fn test_write_custom_data_without_arrow_encoding_fails_when_included() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut writer = FeatherWriter::new(
+            temp_dir.path().to_path_buf(),
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::NoRotation,
+            None,
+            None,
+        );
+
+        let error = writer
+            .write_data(Data::Custom(json_only_custom_data()))
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Custom data type \"JsonOnlyCustomData\" is not registered for Arrow"
+        );
+        assert!(writer.writers.is_empty());
+    }
+
+    #[rstest]
+    #[case::excluded_identifier("OTHER.TEST", Ok(()))]
+    #[case::included_identifier(
+        "RUST.TEST",
+        Err("Custom data type \"JsonOnlyCustomData\" is not registered for Arrow")
+    )]
+    fn test_write_custom_data_filters_identifier_before_arrow_encoding(
+        #[case] allowed_identifier: &str,
+        #[case] expected: Result<(), &str>,
+    ) {
+        let temp_dir = TempDir::new().unwrap();
+        let custom = json_only_custom_data();
+        let mut filter = WriterRecordFilter::new();
+        filter.insert(
+            NautilusDataType::Custom {
+                type_name: custom.data.type_name().to_string(),
+            },
+            Some(vec![allowed_identifier.to_string()]),
+        );
+
+        let mut writer = FeatherWriter::new(
+            temp_dir.path().to_path_buf(),
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::NoRotation,
+            None,
+            None,
+        )
+        .with_record_filter(Some(filter));
+
+        let written = writer.write_any_message(&custom).map_err(|e| e.to_string());
+        let flushed = writer.flush().map_err(|e| e.to_string());
+
+        let expected = expected.map_err(str::to_owned);
+        assert_eq!(written, expected.clone().map(|()| true));
+        assert_eq!(flushed, expected);
+        assert!(!temp_dir.path().join("data").join("custom").exists());
     }
 }

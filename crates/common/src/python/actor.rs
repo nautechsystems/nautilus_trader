@@ -1591,8 +1591,8 @@ impl PyDataActor {
             .map_err(to_pyruntime_err)
     }
 
-    #[pyo3(name = "register_indicator_for_quote_ticks")]
-    fn py_register_indicator_for_quote_ticks(
+    #[pyo3(name = "register_indicator_for_quotes")]
+    fn py_register_indicator_for_quotes(
         &mut self,
         py: Python<'_>,
         instrument_id: InstrumentId,
@@ -1601,11 +1601,11 @@ impl PyDataActor {
         let indicator = wrap_python_indicator(py, indicator);
         self.inner_mut()
             .core
-            .register_indicator_for_quote_ticks(instrument_id, indicator);
+            .register_indicator_for_quotes(instrument_id, indicator);
     }
 
-    #[pyo3(name = "register_indicator_for_trade_ticks")]
-    fn py_register_indicator_for_trade_ticks(
+    #[pyo3(name = "register_indicator_for_trades")]
+    fn py_register_indicator_for_trades(
         &mut self,
         py: Python<'_>,
         instrument_id: InstrumentId,
@@ -1614,7 +1614,7 @@ impl PyDataActor {
         let indicator = wrap_python_indicator(py, indicator);
         self.inner_mut()
             .core
-            .register_indicator_for_trade_ticks(instrument_id, indicator);
+            .register_indicator_for_trades(instrument_id, indicator);
     }
 
     #[pyo3(name = "register_indicator_for_bars")]
@@ -5520,7 +5520,7 @@ class CapturingActor:
                 .unwrap(),
             I256::from_str("1000000000000000000").unwrap(),
             I256::from_str("400000000000000").unwrap(),
-            U160::from(59000000000000u128),
+            U160::from(59000000000000_u128),
             1000000,
             100,
         )
@@ -5548,8 +5548,8 @@ class CapturingActor:
                 .parse()
                 .unwrap(),
             1000,
-            U256::from(1_000u64),
-            U256::from(2_000u64),
+            U256::from(1_000_u64),
+            U256::from(2_000_u64),
             -10,
             10,
             UnixNanos::default(),
@@ -5601,10 +5601,10 @@ class CapturingActor:
             "0x742E4422b21FB8B4dF463F28689AC98bD56c39e0"
                 .parse()
                 .unwrap(),
-            U256::from(100u64),
-            U256::from(200u64),
-            U256::from(101u64),
-            U256::from(201u64),
+            U256::from(100_u64),
+            U256::from(200_u64),
+            U256::from(101_u64),
+            U256::from(201_u64),
         )
     }
 
@@ -6782,16 +6782,8 @@ class IndicatorEventActor:
             );
             assert!(!rust_actor.py_indicators_initialized(py).unwrap());
 
-            rust_actor.py_register_indicator_for_quote_ticks(
-                py,
-                audusd_sim.id,
-                indicator.clone_ref(py),
-            );
-            rust_actor.py_register_indicator_for_trade_ticks(
-                py,
-                audusd_sim.id,
-                indicator.clone_ref(py),
-            );
+            rust_actor.py_register_indicator_for_quotes(py, audusd_sim.id, indicator.clone_ref(py));
+            rust_actor.py_register_indicator_for_trades(py, audusd_sim.id, indicator.clone_ref(py));
             rust_actor.py_register_indicator_for_bars(py, bar_type, indicator.clone_ref(py));
 
             let registered = rust_actor.py_registered_indicators(py).unwrap();
@@ -6837,12 +6829,12 @@ class IndicatorEventActor:
             ))
             .unwrap();
 
-            rust_actor.py_register_indicator_for_quote_ticks(
+            rust_actor.py_register_indicator_for_quotes(
                 py,
                 quote.instrument_id,
                 indicator.clone_ref(py),
             );
-            rust_actor.py_register_indicator_for_trade_ticks(
+            rust_actor.py_register_indicator_for_trades(
                 py,
                 trade.instrument_id,
                 indicator.clone_ref(py),
@@ -6895,7 +6887,7 @@ class IndicatorEventActor:
 
             let quote = sample_quote();
 
-            rust_actor.py_register_indicator_for_quote_ticks(
+            rust_actor.py_register_indicator_for_quotes(
                 py,
                 quote.instrument_id,
                 indicator.clone_ref(py),
@@ -6924,12 +6916,12 @@ class IndicatorEventActor:
             let trades = vec![trade];
             let bars = vec![bar];
 
-            rust_actor.py_register_indicator_for_quote_ticks(
+            rust_actor.py_register_indicator_for_quotes(
                 py,
                 quote.instrument_id,
                 indicator.clone_ref(py),
             );
-            rust_actor.py_register_indicator_for_trade_ticks(
+            rust_actor.py_register_indicator_for_trades(
                 py,
                 trade.instrument_id,
                 indicator.clone_ref(py),
@@ -6987,16 +6979,8 @@ class IndicatorEventActor:
             let first = create_tracking_python_indicator(py).unwrap();
             let second = create_tracking_python_indicator(py).unwrap();
 
-            rust_actor.py_register_indicator_for_quote_ticks(
-                py,
-                audusd_sim.id,
-                first.clone_ref(py),
-            );
-            rust_actor.py_register_indicator_for_quote_ticks(
-                py,
-                audusd_sim.id,
-                second.clone_ref(py),
-            );
+            rust_actor.py_register_indicator_for_quotes(py, audusd_sim.id, first.clone_ref(py));
+            rust_actor.py_register_indicator_for_quotes(py, audusd_sim.id, second.clone_ref(py));
 
             first.bind(py).setattr("initialized", true).unwrap();
 
@@ -7025,22 +7009,22 @@ class IndicatorEventActor:
             rust_actor.register(trader_id, clock, cache).unwrap();
             Component::start(rust_actor.inner_mut()).unwrap();
 
-            rust_actor.py_register_indicator_for_quote_ticks(
+            rust_actor.py_register_indicator_for_quotes(
                 py,
                 quote.instrument_id,
                 indicator.clone_ref(py),
             );
-            rust_actor.py_register_indicator_for_quote_ticks(
+            rust_actor.py_register_indicator_for_quotes(
                 py,
                 quote.instrument_id,
                 indicator.clone_ref(py),
             );
-            rust_actor.py_register_indicator_for_trade_ticks(
+            rust_actor.py_register_indicator_for_trades(
                 py,
                 trade.instrument_id,
                 indicator.clone_ref(py),
             );
-            rust_actor.py_register_indicator_for_trade_ticks(
+            rust_actor.py_register_indicator_for_trades(
                 py,
                 trade.instrument_id,
                 indicator.clone_ref(py),
@@ -7087,7 +7071,7 @@ class IndicatorEventActor:
 
             let quote = sample_quote();
 
-            rust_actor.py_register_indicator_for_quote_ticks(py, quote.instrument_id, indicator);
+            rust_actor.py_register_indicator_for_quotes(py, quote.instrument_id, indicator);
 
             DataActor::handle_quote(rust_actor.inner_mut(), &quote);
             let events = events.extract::<Vec<String>>().unwrap();

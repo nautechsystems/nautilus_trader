@@ -383,8 +383,8 @@ pub fn load_depth_from_snapshot5<P: AsRef<Path>>(
         // Initialize empty arrays
         let mut bids = [NULL_ORDER; DEPTH10_LEN];
         let mut asks = [NULL_ORDER; DEPTH10_LEN];
-        let mut bid_counts = [0u32; DEPTH10_LEN];
-        let mut ask_counts = [0u32; DEPTH10_LEN];
+        let mut bid_counts = [0_u32; DEPTH10_LEN];
+        let mut ask_counts = [0_u32; DEPTH10_LEN];
 
         for i in 0..=4 {
             // Create bids
@@ -539,8 +539,8 @@ pub fn load_depth_from_snapshot25<P: AsRef<Path>>(
         // Initialize empty arrays for all 25 levels
         let mut bids = [NULL_ORDER; TardisOrderBookSnapshot25Record::LEVELS];
         let mut asks = [NULL_ORDER; TardisOrderBookSnapshot25Record::LEVELS];
-        let mut bid_counts = [0u32; TardisOrderBookSnapshot25Record::LEVELS];
-        let mut ask_counts = [0u32; TardisOrderBookSnapshot25Record::LEVELS];
+        let mut bid_counts = [0_u32; TardisOrderBookSnapshot25Record::LEVELS];
+        let mut ask_counts = [0_u32; TardisOrderBookSnapshot25Record::LEVELS];
 
         // Fill all 25 levels from the 25-level record
         for i in 0..TardisOrderBookSnapshot25Record::LEVELS {
@@ -980,8 +980,8 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         assert_eq!(deltas[1].order.size, Quantity::from("18640"));
         assert_eq!(deltas[1].flags, 0);
         assert_eq!(deltas[1].sequence, 0);
-        assert_eq!(deltas[1].ts_event, 1585699200245000000);
-        assert_eq!(deltas[1].ts_init, 1585699200355684000);
+        assert_eq!(deltas[1].ts_event, 1_585_699_200_245_000_000);
+        assert_eq!(deltas[1].ts_init, 1_585_699_200_355_684_000);
     }
 
     #[rstest]
@@ -1018,8 +1018,8 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
             depths[0].flags,
             RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
         );
-        assert_eq!(depths[0].ts_event, 1598918403696000000);
-        assert_eq!(depths[0].ts_init, 1598918403810979000);
+        assert_eq!(depths[0].ts_event, 1_598_918_403_696_000_000);
+        assert_eq!(depths[0].ts_init, 1_598_918_403_810_979_000);
         assert_eq!(depths[0].sequence, 0);
     }
 
@@ -1057,8 +1057,8 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
             depths[0].flags,
             RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
         );
-        assert_eq!(depths[0].ts_event, 1598918403696000000);
-        assert_eq!(depths[0].ts_init, 1598918403810979000);
+        assert_eq!(depths[0].ts_event, 1_598_918_403_696_000_000);
+        assert_eq!(depths[0].ts_init, 1_598_918_403_810_979_000);
         assert_eq!(depths[0].sequence, 0);
     }
 
@@ -1082,8 +1082,8 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         assert_eq!(quotes[0].bid_size, Quantity::from("806"));
         assert_eq!(quotes[0].ask_price, Price::from("8629.3"));
         assert_eq!(quotes[0].ask_size, Quantity::from("5494"));
-        assert_eq!(quotes[0].ts_event, 1588291201099000000);
-        assert_eq!(quotes[0].ts_init, 1588291201234268000);
+        assert_eq!(quotes[0].ts_event, 1_588_291_201_099_000_000);
+        assert_eq!(quotes[0].ts_init, 1_588_291_201_234_268_000);
     }
 
     #[rstest]
@@ -1209,8 +1209,8 @@ deribit,BTC-9JUN20-9875-P,1591574399413000,1591574400196008,put,9875,15916896000
             trades[0].trade_id,
             TradeId::new("ccc3c1fa-212c-e8b0-1706-9b9c4f3d5ecf")
         );
-        assert_eq!(trades[0].ts_event, 1583020803145000000);
-        assert_eq!(trades[0].ts_init, 1583020803307160000);
+        assert_eq!(trades[0].ts_event, 1_583_020_803_145_000_000);
+        assert_eq!(trades[0].ts_init, 1_583_020_803_307_160_000);
     }
 
     #[rstest]
@@ -1609,8 +1609,8 @@ binance-futures,BTCUSDT,2,2,false,ask,101.0,2.0";
             first.flags,
             RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
         );
-        assert_eq!(first.ts_event.as_u64(), 1598918403696000000);
-        assert_eq!(first.ts_init.as_u64(), 1598918403810979000);
+        assert_eq!(first.ts_event.as_u64(), 1_598_918_403_696_000_000);
+        assert_eq!(first.ts_init.as_u64(), 1_598_918_403_810_979_000);
         assert_eq!(first.sequence, 0);
     }
 
@@ -1739,8 +1739,8 @@ binance-futures,BTCUSDT,2,2,false,ask,101.0,2.0";
             first.flags,
             RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
         );
-        assert_eq!(first.ts_event.as_u64(), 1598918403696000000);
-        assert_eq!(first.ts_init.as_u64(), 1598918403810979000);
+        assert_eq!(first.ts_event.as_u64(), 1_598_918_403_696_000_000);
+        assert_eq!(first.ts_init.as_u64(), 1_598_918_403_810_979_000);
         assert_eq!(first.sequence, 0);
     }
 

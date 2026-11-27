@@ -17,11 +17,12 @@
 Stream CoinAPI market data with the built-in DataTester actor.
 
 Running this example loads the configured instrument from CoinAPI, then streams quotes, trades,
-and one-minute bars and requests the last hour of bars, logging all received data. No orders are
+and one-minute bars and requests up to 60 bars from the last hour, logging all received data. No orders are
 placed.
 
 Requires `COINAPI_API_KEY`. Connecting spends one REST credit on filtered symbol metadata, and
 each historical request spends credits per 100 returned records within `CREDIT_BUDGET`.
+REST attempts start at least seven seconds apart on this client.
 
 """
 
@@ -48,6 +49,8 @@ INSTRUMENT_ID = InstrumentId.from_str("BTC-USD.COINBASE")
 PRICE_PRECISION = 3
 BAR_TYPE = BarType.from_str(f"{INSTRUMENT_ID}-1-MINUTE-LAST-EXTERNAL")
 CREDIT_BUDGET = 10
+HISTORY_LIMIT = 60
+MIN_REQUEST_INTERVAL_MS = 7_000
 
 # A connection streams one book channel, so enable deltas or depth, not both
 SUBSCRIBE_BOOK_DELTAS = False
@@ -73,6 +76,7 @@ def main() -> None:
                 ],
                 price_precisions={INSTRUMENT_ID: PRICE_PRECISION},
                 credit_budget=CREDIT_BUDGET,
+                min_request_interval_ms=MIN_REQUEST_INTERVAL_MS,
             ),
         )
         .build()
@@ -89,6 +93,7 @@ def main() -> None:
             subscribe_trades=True,
             subscribe_bars=True,
             request_bars=True,
+            request_limit=HISTORY_LIMIT,
             manage_book=True,
             log_data=True,
         ),

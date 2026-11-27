@@ -531,9 +531,9 @@ def build_ib_live_node(
     builder = LiveNode.builder(name, trader, Environment.LIVE)
     if env_bool("IB_V2_BYPASS_RISK"):
         builder = builder.with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
-    builder = builder.with_timeout_connection(env_int("IB_V2_NODE_CONNECTION_TIMEOUT", 15))
-    builder = builder.with_timeout_reconciliation(5)
-    builder = builder.with_timeout_portfolio(5)
+    builder = builder.with_timeout_connection_secs(env_int("IB_V2_NODE_CONNECTION_TIMEOUT", 15))
+    builder = builder.with_timeout_reconciliation_secs(5)
+    builder = builder.with_timeout_portfolio_secs(5)
     builder = builder.with_timeout_disconnection_secs(5)
     builder = builder.with_delay_post_stop_secs(5 if account_id is not None else 2)
     builder = builder.with_reconciliation(env_bool("IB_V2_RECONCILIATION", False))

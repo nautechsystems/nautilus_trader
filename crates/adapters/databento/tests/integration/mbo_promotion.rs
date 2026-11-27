@@ -127,7 +127,11 @@ fn decoded_mbo_clear_promotes_without_changing_values(
     }
 
     sink.close().unwrap();
-    let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(directory.path())
+        .build()
+        .unwrap();
+
     if !automatic {
         catalog
             .convert_stream_to_data(
@@ -140,9 +144,7 @@ fn decoded_mbo_clear_promotes_without_changing_values(
             .unwrap();
     }
 
-    let actual = catalog
-        .query::<OrderBookDelta>(None, None, None, None, None, true)
-        .unwrap();
+    let actual = catalog.query::<OrderBookDelta>().execute().unwrap();
     assert_eq!(
         serde_json::to_value(&actual).unwrap(),
         serde_json::to_value(&rows).unwrap()

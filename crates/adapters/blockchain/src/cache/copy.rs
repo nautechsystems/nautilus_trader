@@ -344,7 +344,7 @@ impl<'a> PostgresCopyHandler<'a> {
         let mut row_data = Vec::new();
 
         // Number of fields (14)
-        row_data.write_all(&14u16.to_be_bytes())?;
+        row_data.write_all(&14_u16.to_be_bytes())?;
 
         let chain_id_bytes = (chain_id as i32).to_be_bytes();
         row_data.write_all(&(chain_id_bytes.len() as i32).to_be_bytes())?;
@@ -383,7 +383,7 @@ impl<'a> PostgresCopyHandler<'a> {
             row_data.write_all(&(base_fee_bytes.len() as i32).to_be_bytes())?;
             row_data.write_all(&base_fee_bytes)?;
         } else {
-            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL value
+            row_data.write_all(&(-1_i32).to_be_bytes())?; // NULL value
         }
 
         if let Some(ref blob_gas) = block.blob_gas_used {
@@ -391,7 +391,7 @@ impl<'a> PostgresCopyHandler<'a> {
             row_data.write_all(&(blob_gas_bytes.len() as i32).to_be_bytes())?;
             row_data.write_all(&blob_gas_bytes)?;
         } else {
-            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL value
+            row_data.write_all(&(-1_i32).to_be_bytes())?; // NULL value
         }
 
         if let Some(ref excess_blob) = block.excess_blob_gas {
@@ -399,7 +399,7 @@ impl<'a> PostgresCopyHandler<'a> {
             row_data.write_all(&(excess_blob_bytes.len() as i32).to_be_bytes())?;
             row_data.write_all(&excess_blob_bytes)?;
         } else {
-            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL value
+            row_data.write_all(&(-1_i32).to_be_bytes())?; // NULL value
         }
 
         if let Some(ref l1_gas_price) = block.l1_gas_price {
@@ -407,7 +407,7 @@ impl<'a> PostgresCopyHandler<'a> {
             row_data.write_all(&(l1_gas_price_bytes.len() as i32).to_be_bytes())?;
             row_data.write_all(&l1_gas_price_bytes)?;
         } else {
-            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL value
+            row_data.write_all(&(-1_i32).to_be_bytes())?; // NULL value
         }
 
         if let Some(l1_gas_used) = block.l1_gas_used {
@@ -415,7 +415,7 @@ impl<'a> PostgresCopyHandler<'a> {
             row_data.write_all(&(l1_gas_used_bytes.len() as i32).to_be_bytes())?;
             row_data.write_all(&l1_gas_used_bytes)?;
         } else {
-            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL value
+            row_data.write_all(&(-1_i32).to_be_bytes())?; // NULL value
         }
 
         if let Some(l1_fee_scalar) = block.l1_fee_scalar {
@@ -423,7 +423,7 @@ impl<'a> PostgresCopyHandler<'a> {
             row_data.write_all(&(l1_fee_scalar_bytes.len() as i32).to_be_bytes())?;
             row_data.write_all(&l1_fee_scalar_bytes)?;
         } else {
-            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL value
+            row_data.write_all(&(-1_i32).to_be_bytes())?; // NULL value
         }
 
         copy_in
@@ -447,7 +447,7 @@ impl<'a> PostgresCopyHandler<'a> {
         use std::io::Write;
         let mut row_data = Vec::new();
 
-        row_data.write_all(&19u16.to_be_bytes())?;
+        row_data.write_all(&19_u16.to_be_bytes())?;
 
         let chain_id_bytes = (chain_id as i32).to_be_bytes();
         row_data.write_all(&(chain_id_bytes.len() as i32).to_be_bytes())?;
@@ -525,11 +525,11 @@ impl<'a> PostgresCopyHandler<'a> {
             row_data.write_all(&(exec_price_bytes.len() as i32).to_be_bytes())?;
             row_data.write_all(exec_price_bytes)?;
         } else {
-            row_data.write_all(&(-1i32).to_be_bytes())?;
-            row_data.write_all(&(-1i32).to_be_bytes())?;
-            row_data.write_all(&(-1i32).to_be_bytes())?;
-            row_data.write_all(&(-1i32).to_be_bytes())?;
-            row_data.write_all(&(-1i32).to_be_bytes())?;
+            row_data.write_all(&(-1_i32).to_be_bytes())?;
+            row_data.write_all(&(-1_i32).to_be_bytes())?;
+            row_data.write_all(&(-1_i32).to_be_bytes())?;
+            row_data.write_all(&(-1_i32).to_be_bytes())?;
+            row_data.write_all(&(-1_i32).to_be_bytes())?;
         }
 
         copy_in
@@ -553,7 +553,7 @@ impl<'a> PostgresCopyHandler<'a> {
         use std::io::Write;
         let mut row_data = Vec::new();
 
-        row_data.write_all(&15u16.to_be_bytes())?;
+        row_data.write_all(&15_u16.to_be_bytes())?;
 
         let chain_id_bytes = (chain_id as i32).to_be_bytes();
         row_data.write_all(&(chain_id_bytes.len() as i32).to_be_bytes())?;
@@ -593,7 +593,7 @@ impl<'a> PostgresCopyHandler<'a> {
             row_data.write_all(&(sender_bytes.len() as i32).to_be_bytes())?;
             row_data.write_all(&sender_bytes)?;
         } else {
-            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL value
+            row_data.write_all(&(-1_i32).to_be_bytes())?; // NULL value
         }
 
         let owner_bytes = update.owner.to_string().as_bytes().to_vec();
@@ -710,7 +710,7 @@ impl<'a> PostgresCopyHandler<'a> {
         use std::io::Write;
         let mut row_data = Vec::new();
 
-        row_data.write_all(&12u16.to_be_bytes())?;
+        row_data.write_all(&12_u16.to_be_bytes())?;
 
         let chain_id_bytes = (chain_id as i32).to_be_bytes();
         row_data.write_all(&(chain_id_bytes.len() as i32).to_be_bytes())?;
@@ -777,7 +777,7 @@ impl<'a> PostgresCopyHandler<'a> {
         use std::io::Write;
         let mut row_data = Vec::new();
 
-        row_data.write_all(&5u16.to_be_bytes())?;
+        row_data.write_all(&5_u16.to_be_bytes())?;
 
         let chain_id_bytes = (chain_id as i32).to_be_bytes();
         row_data.write_all(&(chain_id_bytes.len() as i32).to_be_bytes())?;
@@ -820,7 +820,7 @@ impl<'a> PostgresCopyHandler<'a> {
         use std::io::Write;
         let mut row_data = Vec::new();
 
-        row_data.write_all(&14u16.to_be_bytes())?;
+        row_data.write_all(&14_u16.to_be_bytes())?;
 
         let chain_id_bytes = (chain_id as i32).to_be_bytes();
         row_data.write_all(&(chain_id_bytes.len() as i32).to_be_bytes())?;
@@ -863,7 +863,7 @@ impl<'a> PostgresCopyHandler<'a> {
             row_data.write_all(&(fee_bytes.len() as i32).to_be_bytes())?;
             row_data.write_all(&fee_bytes)?;
         } else {
-            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL
+            row_data.write_all(&(-1_i32).to_be_bytes())?; // NULL
         }
 
         if let Some(tick_spacing) = pool.tick_spacing {
@@ -871,7 +871,7 @@ impl<'a> PostgresCopyHandler<'a> {
             row_data.write_all(&(tick_spacing_bytes.len() as i32).to_be_bytes())?;
             row_data.write_all(&tick_spacing_bytes)?;
         } else {
-            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL
+            row_data.write_all(&(-1_i32).to_be_bytes())?; // NULL
         }
 
         if let Some(initial_tick) = pool.initial_tick {
@@ -879,13 +879,13 @@ impl<'a> PostgresCopyHandler<'a> {
             row_data.write_all(&(initial_tick_bytes.len() as i32).to_be_bytes())?;
             row_data.write_all(&initial_tick_bytes)?;
         } else {
-            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL
+            row_data.write_all(&(-1_i32).to_be_bytes())?; // NULL
         }
 
         if let Some(ref initial_sqrt_price) = pool.initial_sqrt_price_x96 {
             write_copy_numeric(&mut row_data, initial_sqrt_price);
         } else {
-            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL
+            row_data.write_all(&(-1_i32).to_be_bytes())?; // NULL
         }
 
         if let Some(ref hooks) = pool.hooks {
@@ -893,7 +893,7 @@ impl<'a> PostgresCopyHandler<'a> {
             row_data.write_all(&(hooks_bytes.len() as i32).to_be_bytes())?;
             row_data.write_all(&hooks_bytes)?;
         } else {
-            row_data.write_all(&(-1i32).to_be_bytes())?; // NULL
+            row_data.write_all(&(-1_i32).to_be_bytes())?; // NULL
         }
 
         copy_in
@@ -911,7 +911,7 @@ impl<'a> PostgresCopyHandler<'a> {
         copy_in: &mut sqlx::postgres::PgCopyIn<sqlx::pool::PoolConnection<sqlx::Postgres>>,
     ) -> anyhow::Result<()> {
         // Binary trailer: -1 as i16 to indicate end of data
-        let trailer = (-1i16).to_be_bytes();
+        let trailer = (-1_i16).to_be_bytes();
         copy_in
             .send(trailer.to_vec())
             .await

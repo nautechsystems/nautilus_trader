@@ -59,7 +59,7 @@ use object_store::path::Path as ObjectPath;
 use crate::{
     backend::parquet::{
         catalog::ParquetDataCatalog,
-        intervals::are_intervals_disjoint,
+        intervals::check_new_intervals_disjoint,
         io::read_parquet_from_object_store,
         paths::{
             catalog_filename, make_object_store_path, query_intersects_filename,
@@ -79,7 +79,7 @@ use crate::{
         },
     },
     writer::{
-        feather::recover_partial_feather_files,
+        feather::{FEATHER_EXTENSION, FEATHER_REFUSED_EXTENSION, recover_partial_feather_files},
         materializer::{
             StreamConversionOptions, apply_stream_conversion_transform,
             coalesce_stream_conversion_batches, read_feather_record_batches,
@@ -185,13 +185,9 @@ impl ParquetDataCatalog {
     /// ```rust,no_run
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     ///
     /// // Read data from a live run
     /// let data = catalog.read_live_run("instance-123")?;
@@ -232,13 +228,9 @@ impl ParquetDataCatalog {
     /// ```rust,no_run
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     ///
     /// // Read data from a backtest run
     /// let data = catalog.read_backtest("instance-123")?;
@@ -251,14 +243,21 @@ impl ParquetDataCatalog {
         self.read_run(Environment::Backtest, instance_id)
     }
 
-    /// Reads the sealed Feather files of a run instance (backtest or live).
+    /// Reads the sealed Feather files of a run instance (backtest or live), including files
+    /// promotion refused.
     ///
     /// Abandoned `.feather.partial` files are recovered first, and files a writer still holds
     /// open are not read. Families that do not decode to `Data`, such as order events, are
     /// skipped.
     fn read_run(&self, environment: Environment, instance_id: &str) -> anyhow::Result<Vec<Data>> {
         self.recover_partial_run_files(environment, instance_id)?;
-        let feather_files = self.list_feather_files(environment, instance_id, None, None)?;
+        let feather_files = self.list_feather_files(
+            environment,
+            instance_id,
+            &[FEATHER_EXTENSION, FEATHER_REFUSED_EXTENSION],
+            None,
+            None,
+        )?;
         let mut all_data: Vec<Data> = Vec::new();
 
         for file_path in feather_files {
@@ -405,12 +404,13 @@ impl ParquetDataCatalog {
         Ok(())
     }
 
-    /// Lists the feather files of a run, for one data type or every type when `data_type` is
-    /// `None`.
+    /// Lists the feather files of a run with one of `extensions`, for one data type or every
+    /// type when `data_type` is `None`.
     fn list_feather_files(
         &self,
         environment: Environment,
         instance_id: &str,
+        extensions: &[&str],
         data_type: Option<&CatalogDataType>,
         identifiers: Option<&[String]>,
     ) -> anyhow::Result<Vec<String>> {
@@ -428,7 +428,10 @@ impl ParquetDataCatalog {
                 let object = object?;
                 let path_str = object.location.to_string();
 
-                if !path_str.ends_with(".feather") {
+                if !extensions
+                    .iter()
+                    .any(|extension| path_str.ends_with(&format!(".{extension}")))
+                {
                     continue;
                 }
 
@@ -540,7 +543,7 @@ impl ParquetDataCatalog {
                 },
             )?;
 
-            let metadata = batch.schema().metadata().clone();
+            let metadata = batch.schema_ref().metadata().into();
 
             let data_vec = T::decode_data_batch(&metadata, batch)
                 .map_err(|e| anyhow::anyhow!("Failed to decode batch: {e}"))?;
@@ -562,7 +565,7 @@ impl ParquetDataCatalog {
         let mut all_data = Vec::new();
 
         for batch in batches {
-            let metadata = batch.schema().metadata().clone();
+            let metadata = batch.schema_ref().metadata().into();
             let decoded = T::decode_typed_batch(&metadata, batch)
                 .map_err(|e| anyhow::anyhow!("Failed to decode batch: {e}"))?;
             all_data.extend(decoded);
@@ -620,13 +623,9 @@ impl ParquetDataCatalog {
     /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     ///
     /// // Convert backtest stream data to parquet
     /// catalog.convert_stream_to_data(
@@ -648,8 +647,13 @@ impl ParquetDataCatalog {
     ) -> anyhow::Result<()> {
         Self::ensure_stream_data_type(data_type)?;
         self.recover_partial_run_files(environment, instance_id)?;
-        let feather_files =
-            self.list_feather_files(environment, instance_id, Some(data_type), identifiers)?;
+        let feather_files = self.list_feather_files(
+            environment,
+            instance_id,
+            &[FEATHER_EXTENSION],
+            Some(data_type),
+            identifiers,
+        )?;
 
         // Each file is planned before it is written; a file holds every identifier of its type,
         // and each restored batch carries its own identifier
@@ -913,15 +917,16 @@ impl ParquetDataCatalog {
             remaining = filtered;
         }
 
-        let mut intervals = existing.clone();
-        intervals.extend(remaining.iter().map(|plan| (plan.start_ts, plan.end_ts)));
-
-        if !are_intervals_disjoint(&intervals) {
-            anyhow::bail!(
+        let intervals = remaining
+            .iter()
+            .map(|plan| (plan.start_ts, plan.end_ts))
+            .collect::<Vec<_>>();
+        check_new_intervals_disjoint(&existing, &intervals, || {
+            format!(
                 "Writing promoted groups for {directory} would create non-disjoint intervals. \
                  Existing intervals: {existing:?}"
-            );
-        }
+            )
+        })?;
 
         Ok(remaining)
     }
@@ -1670,7 +1675,10 @@ mod promotion_group_tests {
     #[rstest]
     fn overlapping_empty_precision_group_is_promoted() {
         let temp = TempDir::new().unwrap();
-        let catalog = ParquetDataCatalog::new(temp.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp.path())
+            .build()
+            .unwrap();
         let batches = vec![
             precision_batch("0", vec![1, 3], None),
             precision_batch("2", vec![2], Some(20_000_000_000_000_000)),
@@ -1713,7 +1721,10 @@ mod promotion_group_tests {
     #[rstest]
     fn promotion_rejects_reserved_row_index() {
         let temp = TempDir::new().unwrap();
-        let catalog = ParquetDataCatalog::new(temp.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp.path())
+            .build()
+            .unwrap();
         let batch = precision_batch("2", vec![1], Some(1));
         let mut fields = batch.schema().fields().to_vec();
         fields.push(Arc::new(Field::new(
@@ -1759,7 +1770,10 @@ mod promotion_group_tests {
     #[rstest]
     fn overlapping_incompatible_groups_write_nothing() {
         let temp = TempDir::new().unwrap();
-        let catalog = ParquetDataCatalog::new(temp.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp.path())
+            .build()
+            .unwrap();
         let batches = vec![
             precision_batch("2", vec![1, 3], Some(1)),
             precision_batch("5", vec![2], Some(2)),
@@ -1793,7 +1807,10 @@ mod promotion_group_tests {
         #[values(false, true)] repeated_schema: bool,
     ) {
         let temp = TempDir::new().unwrap();
-        let catalog = ParquetDataCatalog::new(temp.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp.path())
+            .build()
+            .unwrap();
         let mut batches = vec![
             precision_batch("2", vec![1, 2], Some(10)),
             precision_batch("0", vec![2, 3], None),
@@ -1879,7 +1896,10 @@ mod promotion_group_tests {
     #[rstest]
     fn promote_feather_file_skips_staged_batches_without_rows() {
         let temp = TempDir::new().unwrap();
-        let catalog = ParquetDataCatalog::new(temp.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp.path())
+            .build()
+            .unwrap();
         let storage =
             create_storage_backend_from_path(temp.path().to_str().unwrap(), None).unwrap();
         let source = FeatherSessionSource::new(storage, Environment::Backtest, "run-1");
@@ -1911,7 +1931,10 @@ mod promotion_group_tests {
     #[rstest]
     fn overlapping_groups_with_different_fields_write_nothing() {
         let temp = TempDir::new().unwrap();
-        let catalog = ParquetDataCatalog::new(temp.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp.path())
+            .build()
+            .unwrap();
         let nullable = precision_batch("2", vec![2], Some(2));
         let schema = nullable.schema();
         let non_nullable = RecordBatch::try_new(
@@ -2059,7 +2082,10 @@ mod read_run_tests {
     }
 
     fn read_backtest(temp_dir: &TempDir) -> Vec<Data> {
-        ParquetDataCatalog::new(temp_dir.path(), None, None, None, None)
+        ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap()
             .read_backtest("run-001")
             .unwrap()
     }
@@ -2111,7 +2137,10 @@ mod read_run_tests {
         instance_id: &str,
     ) {
         let temp_dir = TempDir::new().unwrap();
-        let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
 
         let e = reader(&catalog, instance_id).unwrap_err();
 
@@ -2147,7 +2176,10 @@ mod read_run_tests {
             )
         };
 
-        let catalog = ParquetDataCatalog::new(&catalog_path, None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(&catalog_path)
+            .build()
+            .unwrap();
 
         let result = reader(&catalog, &instance_id);
 
@@ -2165,7 +2197,10 @@ mod read_run_tests {
     ) {
         let temp_dir = TempDir::new().unwrap();
         write_crashed_run(&temp_dir, &[quote_aud(1_000), quote_eth(2_000)]);
-        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
         fs::remove_dir_all(temp_dir.path().join(directory)).unwrap();
 
         let data = reader(&catalog, "run-001").unwrap();
@@ -2185,7 +2220,10 @@ mod read_run_tests {
     #[rstest]
     fn convert_stream_to_data_rejects_path_bearing_ids() {
         let temp_dir = TempDir::new().unwrap();
-        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
 
         let e = catalog
             .convert_stream_to_data(
@@ -2226,7 +2264,10 @@ mod read_run_tests {
             std::os::unix::fs::symlink(&run, root.join("run-001")).unwrap();
         }
 
-        let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
         let result = reader(&catalog, "run-001");
 
         assert!(result.is_err());
@@ -2245,7 +2286,11 @@ mod read_run_tests {
             .path()
             .join("backtest/run-001/quotes/quotes_0.feather.partial");
         let original = fs::read(&partial).unwrap();
-        let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
+
         let result = if environment_symlink {
             std::os::unix::fs::symlink(temp_dir.path(), temp_dir.path().join("live")).unwrap();
             catalog.read_live_run("backtest")
@@ -2290,7 +2335,10 @@ mod read_run_tests {
         };
 
         let target = fs::read_link(&link).unwrap();
-        let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
 
         let data = reader(&catalog, "run-001").unwrap();
 
@@ -2320,7 +2368,11 @@ mod read_run_tests {
             std::os::unix::fs::symlink(&run, temp_dir.path().join("backtest/run-alias")).unwrap();
         }
 
-        let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
+
         let data = if environment_symlink {
             catalog.read_live_run("run-001").unwrap()
         } else {
@@ -2380,7 +2432,10 @@ mod read_run_tests {
             [None, Some(&selected[..])]
         };
 
-        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
 
         for identifiers in conversions {
             catalog
@@ -2395,10 +2450,25 @@ mod read_run_tests {
         }
 
         assert_eq!(
-            catalog
-                .query::<QuoteTick>(None, None, None, None, None, true)
-                .unwrap(),
+            catalog.query::<QuoteTick>().execute().unwrap(),
             vec![quote_aud(1_000), quote_eth(2_000)],
+        );
+    }
+
+    #[rstest]
+    #[case::type_directory("quotes/quotes_0.feather.refused")]
+    #[case::flat("quotes_0.feather.refused")]
+    fn read_backtest_returns_refused_rows(#[case] refused: &str) {
+        let temp_dir = TempDir::new().unwrap();
+        let mut writer = run_writer(&temp_dir);
+        writer.write_data(Data::Quote(quote_aud(1_000))).unwrap();
+        writer.close().unwrap();
+        let run = temp_dir.path().join("backtest/run-001");
+        fs::rename(run.join("quotes/quotes_0.feather"), run.join(refused)).unwrap();
+
+        assert_eq!(
+            read_backtest(&temp_dir),
+            vec![Data::Quote(quote_aud(1_000))]
         );
     }
 
@@ -2434,7 +2504,10 @@ mod read_run_tests {
     fn convert_stream_to_data_recovers_crashed_partial_files() {
         let temp_dir = TempDir::new().unwrap();
         write_crashed_run(&temp_dir, &[quote_aud(1_000), quote_eth(2_000)]);
-        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
 
         catalog
             .convert_stream_to_data(
@@ -2447,9 +2520,7 @@ mod read_run_tests {
             .unwrap();
 
         assert_eq!(
-            catalog
-                .query::<QuoteTick>(None, None, None, None, None, true)
-                .unwrap(),
+            catalog.query::<QuoteTick>().execute().unwrap(),
             vec![quote_aud(1_000)],
         );
     }

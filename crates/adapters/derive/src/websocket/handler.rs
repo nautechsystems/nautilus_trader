@@ -128,7 +128,7 @@ pub(super) struct FeedHandler {
     client: Option<Arc<WebSocketClient>>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
     cmd_closed: bool,
-    raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
+    raw_rx: tokio::sync::mpsc::UnboundedReceiver<(u64, Message)>,
     raw_closed: bool,
     next_id: Arc<AtomicU64>,
     next_send_token: u64,
@@ -144,7 +144,7 @@ impl FeedHandler {
     pub(super) fn new_with_send_task(
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
-        raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
+        raw_rx: tokio::sync::mpsc::UnboundedReceiver<(u64, Message)>,
         next_id: Arc<AtomicU64>,
         auth_tracker: AuthTracker,
         authenticated_epoch: Arc<AtomicU64>,
@@ -179,7 +179,7 @@ impl FeedHandler {
     /// Drains the next event from the underlying channels, processes it, and
     /// returns the resulting outbound message (if any). Returns `None` when
     /// the handler is shutting down or both channels closed.
-    pub(super) async fn next(&mut self) -> Option<DeriveWsMessage> {
+    pub(super) async fn next(&mut self) -> Option<(u64, DeriveWsMessage)> {
         let mut command_ready = true;
 
         loop {
@@ -250,7 +250,7 @@ impl FeedHandler {
                                 return None;
                             }
                         }
-                        Some(Message::Text(text)) => {
+                        Some((epoch, Message::Text(text))) => {
                             if text.as_str() == RECONNECTED {
                                 log::info!("Derive WebSocket reconnected sentinel received");
                                 self.auth_tracker.invalidate();
@@ -266,7 +266,7 @@ impl FeedHandler {
                                 if let Some((tracker, timeout)) = &self.book_sync {
                                     tracker.reset_on_reconnect(*timeout);
                                 }
-                                return Some(DeriveWsMessage::Reconnected);
+                                return Some((epoch, DeriveWsMessage::Reconnected));
                             }
 
                             match ParsedFrame::parse(&text) {
@@ -303,12 +303,12 @@ impl FeedHandler {
                                         if write.generation.is_cancelled() || write.gate.lock().is_closed() {
                                             continue;
                                         }
-                                        return Some(DeriveWsMessage::BookSubscription {
+                                        return Some((epoch, DeriveWsMessage::BookSubscription {
                                             payload,
                                             generation: write.generation,
-                                        });
+                                        }));
                                     }
-                                    return Some(DeriveWsMessage::Subscription(payload));
+                                    return Some((epoch, DeriveWsMessage::Subscription(payload)));
                                 }
                                 Ok(ParsedFrame::UncorrelatedError(error)) => {
                                     self.fail_uncorrelated_error(error);
@@ -327,13 +327,13 @@ impl FeedHandler {
                                 }
                             }
                         }
-                        Some(Message::Ping(data)) => {
+                        Some((_, Message::Ping(data))) => {
                             if let Some(ref client) = self.client
                                 && let Err(e) = client.send_pong(data.to_vec()).await {
                                 log::error!("Derive WebSocket send_pong failed: {e}");
                             }
                         }
-                        Some(Message::Close(_)) => {
+                        Some((_, Message::Close(_))) => {
                             log::debug!("Derive WebSocket close frame received");
                             self.shutdown_send_path(
                                 "WebSocket closed before response was received",
@@ -930,22 +930,27 @@ mod tests {
                 .unwrap();
         let channel = "orderbook.ETH-USDC.1.10";
         raw_tx
-            .send(Message::Text(
-                json!({"method": "subscription", "params": {"channel": channel, "data": data}})
-                    .to_string()
-                    .into(),
+            .send((
+                20,
+                Message::Text(
+                    json!({"method": "subscription", "params": {"channel": channel, "data": data}})
+                        .to_string()
+                        .into(),
+                ),
             ))
             .unwrap();
-        raw_tx.send(Message::Text(RECONNECTED.into())).unwrap();
+        raw_tx
+            .send((21, Message::Text(RECONNECTED.into())))
+            .unwrap();
         let event = tokio::time::timeout(Duration::from_secs(1), handler.next())
             .await
             .unwrap()
             .unwrap();
 
         if tracked {
-            assert!(matches!(event, DeriveWsMessage::Reconnected));
+            assert!(matches!(event, (21, DeriveWsMessage::Reconnected)));
         } else {
-            let DeriveWsMessage::Subscription(payload) = event else {
+            let (20, DeriveWsMessage::Subscription(payload)) = event else {
                 panic!("expected legacy book event");
             };
 
@@ -1001,23 +1006,27 @@ mod tests {
             )
         };
 
-        raw_tx.send(notification(&data)).unwrap();
+        raw_tx.send((0, notification(&data))).unwrap();
         raw_tx
-            .send(Message::Text(
-                json!({"id": 1, "result": ack["result"]}).to_string().into(),
+            .send((
+                0,
+                Message::Text(json!({"id": 1, "result": ack["result"]}).to_string().into()),
             ))
             .unwrap();
         data["timestamp"] = json!(data["timestamp"].as_i64().unwrap() + 1);
-        raw_tx.send(notification(&data)).unwrap();
+        raw_tx.send((0, notification(&data))).unwrap();
         let event = tokio::time::timeout(Duration::from_secs(1), handler.next())
             .await
             .unwrap()
             .unwrap();
 
-        let DeriveWsMessage::BookSubscription {
-            payload,
-            generation,
-        } = event
+        let (
+            0,
+            DeriveWsMessage::BookSubscription {
+                payload,
+                generation,
+            },
+        ) = event
         else {
             panic!("expected gated book event");
         };
@@ -1117,9 +1126,9 @@ mod tests {
             }
 
             raw_tx
-                .send(Message::text(
+                .send((0, Message::text(
                     r#"{"method":"subscription","params":{"channel":"trades.perp.ETH","data":[]}}"#,
-                ))
+                )))
                 .unwrap();
             let event =
                 nautilus_common::live::dst::time::timeout(Duration::from_secs(1), handler.next())
@@ -1127,7 +1136,7 @@ mod tests {
                     .unwrap()
                     .unwrap();
 
-            let DeriveWsMessage::Subscription(payload) = event else {
+            let (0, DeriveWsMessage::Subscription(payload)) = event else {
                 panic!("expected subscription frame");
             };
 
@@ -1158,7 +1167,7 @@ mod tests {
     fn feed_handler(
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
-        raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
+        raw_rx: tokio::sync::mpsc::UnboundedReceiver<(u64, Message)>,
         next_id: Arc<AtomicU64>,
         auth_tracker: AuthTracker,
         authenticated_epoch: Arc<AtomicU64>,

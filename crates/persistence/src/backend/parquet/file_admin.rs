@@ -120,13 +120,9 @@ impl ParquetDataCatalog {
     /// ```rust,no_run
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     ///
     /// // Reset all filenames in the catalog
     /// catalog.reset_all_file_names()?;
@@ -172,13 +168,9 @@ impl ParquetDataCatalog {
     /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     ///
     /// // Reset filenames for all quote files
     /// catalog.reset_data_file_names(&NautilusDataType::QuoteTick.into(), None)?;
@@ -324,13 +316,9 @@ impl ParquetDataCatalog {
     /// ```rust,no_run
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     ///
     /// let leaf_dirs = catalog.find_leaf_data_directories()?;
     /// for dir in leaf_dirs {

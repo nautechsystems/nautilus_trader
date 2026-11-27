@@ -35,7 +35,7 @@
 use std::collections::HashMap;
 
 use anyhow::Context;
-use nautilus_core::UnixNanos;
+use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{AccountType, AggressorSide, OrderSide, TimeInForce},
@@ -52,6 +52,7 @@ use crate::common::enums::DydxTransferType;
 use crate::{
     common::{
         enums::{DydxMarketStatus, DydxOrderExecution, DydxOrderType, DydxTimeInForce},
+        instrument_cache::MARKET_INFO_KEY,
         parse::{parse_decimal, parse_instrument_id, parse_price, parse_quantity},
     },
     websocket::messages::DydxSubaccountInfo,
@@ -387,6 +388,14 @@ pub fn parse_instrument_any(
         // min_price: not specified by dYdX
         .maybe_margin_init(margin_init)
         .maybe_margin_maint(margin_maint)
+        .info(Params::new(
+            [(
+                MARKET_INFO_KEY.to_owned(),
+                serde_json::to_value(definition)?,
+            )]
+            .into_iter()
+            .collect(),
+        ))
         .ts_event(ts_init)
         .ts_init(ts_init)
         .build()?;
@@ -835,8 +844,8 @@ mod tests {
                     "quantumConversionExponent": -9,
                     "tickSize": "0.01",
                     "stepSize": "0.1",
-                    "stepBaseQuantums": 1000000,
-                    "subticksPerTick": 1000000
+                    "stepBaseQuantums": 1_000_000,
+                    "subticksPerTick": 1_000_000
                 }
             }
         });
@@ -865,8 +874,8 @@ mod tests {
                     "quantumConversionExponent": -9,
                     "tickSize": "0.01",
                     "stepSize": "0.1",
-                    "stepBaseQuantums": 1000000,
-                    "subticksPerTick": 1000000
+                    "stepBaseQuantums": 1_000_000,
+                    "subticksPerTick": 1_000_000
                 }
             }
         });
@@ -1035,7 +1044,7 @@ mod tests {
             serde_json::from_value(json).expect("Failed to parse trades");
 
         let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let tick = parse_trade_tick(&response.trades[0], instrument_id, 0, 4, ts_init)
             .expect("Failed to parse trade tick");
@@ -1058,7 +1067,7 @@ mod tests {
 
         let bar_type = BarType::from_str("BTC-USD-PERP.DYDX-1-MINUTE-LAST-EXTERNAL")
             .expect("Failed to parse bar type");
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let bar = parse_bar(
             &response.candles[0],
@@ -1078,8 +1087,8 @@ mod tests {
         assert_eq!(bar.volume.to_string(), "3.2767");
 
         // 2025-12-08T16:11:00.000Z
-        let started_at_ns = 1_765_210_260_000_000_000u64;
-        let one_min_ns = 60_000_000_000u64;
+        let started_at_ns = 1_765_210_260_000_000_000_u64;
+        let one_min_ns = 60_000_000_000_u64;
 
         if timestamp_on_close {
             assert_eq!(bar.ts_event.as_u64(), started_at_ns + one_min_ns);
@@ -1711,9 +1720,9 @@ mod reconciliation_tests {
                 .size_increment(Quantity::new(0.001, 8))
                 .multiplier(Quantity::new(1.0, 0))
                 .lot_size(Quantity::new(0.001, 8))
-                .max_quantity(Quantity::new(100000.0, 8))
+                .max_quantity(Quantity::new(100_000.0, 8))
                 .min_quantity(Quantity::new(0.001, 8))
-                .max_price(Price::new(1000000.0, 2))
+                .max_price(Price::new(1_000_000.0, 2))
                 .min_price(Price::new(0.01, 2))
                 .margin_init(dec!(0.05))
                 .margin_maint(dec!(0.03))
@@ -1825,7 +1834,7 @@ mod reconciliation_tests {
             client_metadata: 0,
             trigger_price: Some(dec!(49000.0)),
             condition_type: Some(DydxConditionType::StopLoss),
-            conditional_order_trigger_subticks: Some(490000),
+            conditional_order_trigger_subticks: Some(490_000),
             execution: None,
             updated_at: Some(Timestamp::now()),
             updated_at_height: Some(1001),

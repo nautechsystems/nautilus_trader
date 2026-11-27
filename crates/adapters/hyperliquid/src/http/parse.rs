@@ -374,9 +374,8 @@ pub fn parse_outcome_instruments(
     meta: &OutcomeMeta,
 ) -> Result<Vec<HyperliquidInstrumentDef>, String> {
     let mut defs = Vec::with_capacity(meta.outcomes.len() * 2);
-
     for market in &meta.outcomes {
-        for side in 0u8..=1u8 {
+        for side in 0_u8..=1_u8 {
             defs.push(build_outcome_def(market, side, meta)?);
         }
     }
@@ -1513,7 +1512,7 @@ mod tests {
             report.trade_id,
             make_fill_trade_id(
                 "0xquery-fill-a",
-                900029,
+                900_029,
                 dec!(90000),
                 dec!(0.0004),
                 1_700_000_001_000,
@@ -2961,7 +2960,7 @@ mod tests {
             "limitPx": "49000.0",
             "sz": "0.01",
             "oid": 42,
-            "timestamp": 1_754_000_000_000u64,
+            "timestamp": 1_754_000_000_000_u64,
             "triggerCondition": if is_trigger { "Price below 50000" } else { "N/A" },
             "isTrigger": is_trigger,
             "triggerPx": trigger_px,

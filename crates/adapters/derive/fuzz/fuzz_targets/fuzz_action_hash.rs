@@ -41,19 +41,19 @@ fuzz_target!(|data: &[u8]| {
 });
 
 fn address(data: &[u8], offset: usize) -> Address {
-    let mut bytes = [0u8; 20];
+    let mut bytes = [0_u8; 20];
     bytes.copy_from_slice(&data[offset..offset + 20]);
     Address::from(bytes)
 }
 
 fn b256(data: &[u8], offset: usize) -> B256 {
-    let mut bytes = [0u8; 32];
+    let mut bytes = [0_u8; 32];
     bytes.copy_from_slice(&data[offset..offset + 32]);
     B256::from(bytes)
 }
 
 fn read_u64(data: &[u8], offset: usize) -> u64 {
-    let mut buf = [0u8; 8];
+    let mut buf = [0_u8; 8];
     buf.copy_from_slice(&data[offset..offset + 8]);
     u64::from_le_bytes(buf)
 }

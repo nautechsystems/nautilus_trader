@@ -1524,7 +1524,7 @@ fn test_continuous_future_subscription_transition_swaps_source(
         register_continuous_future_subscription_engine(Rc::clone(&cache), 0);
 
     let target_bar_type = BarType::from("ES.GLBX-1-TICK-LAST-INTERNAL");
-    let transition_ns = 10u64;
+    let transition_ns = 10_u64;
     let params = continuous_future_transitions_params(transition_ns, pre_id, post_id);
 
     let sub = SubscribeBars::new(
@@ -2328,7 +2328,11 @@ fn test_continuous_future_catalog_segment_preserves_failure_and_cleans_up(
     }
 
     let directory = CatalogTempDir::new("continuous-segment-failure");
-    let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(directory.path())
+        .build()
+        .unwrap();
+
     let cached = [
         make_trade(first, "100.00", 1, "cached-1", 1),
         make_trade(first, "101.00", 1, "cached-2", 2),

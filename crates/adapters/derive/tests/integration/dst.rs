@@ -113,7 +113,7 @@ async fn public_subscriptions_pin_exact_request_bytes(
 
             let ticker = parse_ticker_msg(&payload).unwrap();
             let quote = parse_ticker_quote(&ticker, 2, 3, UnixNanos::from(751)).unwrap();
-            let expected = QuoteTick::new(InstrumentId::from("ETH-PERP.DERIVE"), Price::from("1992.36"), Price::from("1992.37"), Quantity::from("1.505"), Quantity::from("1.505"), UnixNanos::from(1779953796714000000), UnixNanos::from(751));
+            let expected = QuoteTick::new(InstrumentId::from("ETH-PERP.DERIVE"), Price::from("1992.36"), Price::from("1992.37"), Quantity::from("1.505"), Quantity::from("1.505"), UnixNanos::from(1_779_953_796_714_000_000), UnixNanos::from(751));
             assert_eq!(quote, expected);
             println!("DST_DOMAIN={}", serde_json::to_string(&quote).unwrap());
         }

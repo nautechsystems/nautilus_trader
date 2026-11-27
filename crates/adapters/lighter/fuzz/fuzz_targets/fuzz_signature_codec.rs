@@ -20,7 +20,7 @@ fuzz_target!(|data: &[u8]| {
     if data.len() < SIG_BYTES {
         return;
     }
-    let mut buf = [0u8; SIG_BYTES];
+    let mut buf = [0_u8; SIG_BYTES];
     buf.copy_from_slice(&data[..SIG_BYTES]);
 
     let sig = Signature::from_le_bytes_reduce(buf);

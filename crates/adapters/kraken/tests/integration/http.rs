@@ -72,7 +72,7 @@ use nautilus_model::{
     types::{Currency, Price, Quantity, fixed::FIXED_PRECISION},
 };
 use nautilus_network::http::HttpClient;
-use nautilus_testkit::events::drain_data_events;
+use nautilus_testkit::events::{collect_data_events_until_response, drain_data_events};
 use rstest::rstest;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -1050,6 +1050,103 @@ async fn test_spot_data_client_request_instrument_refetches_when_cached() {
 }
 
 #[rstest]
+#[case::newer_response(false)]
+#[case::reset_during_fetch(true)]
+#[tokio::test]
+async fn test_spot_data_client_rejects_late_instrument_updates(#[case] reset: bool) {
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    let entered_server = Arc::clone(&entered);
+    let release_server = Arc::clone(&release);
+    let calls = Arc::new(AtomicUsize::new(0));
+
+    let router = Router::new().route(
+        "/0/public/AssetPairs",
+        axum::routing::get(move |Query(params): Query<HashMap<String, String>>| {
+            let entered = Arc::clone(&entered_server);
+            let release = Arc::clone(&release_server);
+            let calls = Arc::clone(&calls);
+
+            async move {
+                if params.get("aclass_base").map(String::as_str) == Some("tokenized_asset") {
+                    return axum::Json(serde_json::json!({"error": [], "result": {}}));
+                }
+
+                let mut payload = load_test_data("http_asset_pairs.json");
+                if calls.fetch_add(1, Ordering::Relaxed) == 0 {
+                    payload["result"]["XBTUSDT"]["tick_size"] = serde_json::json!("1");
+                    entered.notify_one();
+                    release.notified().await;
+                }
+
+                axum::Json(payload)
+            }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_data_event_sender(tx);
+    let mut client = KrakenSpotDataClient::new(
+        *KRAKEN_CLIENT_ID,
+        create_data_config(addr, KrakenProductType::Spot),
+    )
+    .unwrap();
+    let id = InstrumentId::from("BTC/USDT.KRAKEN");
+
+    let request = |request_id| {
+        client
+            .request_instrument(RequestInstrument::new(
+                id,
+                None,
+                None,
+                Some(*KRAKEN_CLIENT_ID),
+                request_id,
+                UnixNanos::default(),
+                None,
+            ))
+            .unwrap();
+    };
+
+    let older = UUID4::new();
+    request(older);
+    tokio::time::timeout(Duration::from_secs(5), entered.notified())
+        .await
+        .unwrap();
+
+    if reset {
+        client.reset().unwrap();
+        release.notify_one();
+        client.disconnect().await.unwrap();
+        assert_eq!(client.get_instrument(&id), None);
+        assert_eq!(
+            rx.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
+        server.abort();
+        return;
+    }
+
+    let newer = UUID4::new();
+    request(newer);
+    let events = collect_data_events_until_response(&mut rx, newer, Duration::from_secs(5)).await;
+    let latest = instrument_response(&events).unwrap();
+    release.notify_one();
+    let events = collect_data_events_until_response(&mut rx, older, Duration::from_secs(5)).await;
+    let stale = instrument_response(&events).unwrap();
+    let cached = client.get_instrument(&id).unwrap();
+
+    assert_eq!(latest.data.price_increment(), Price::from("0.1"));
+    assert_eq!(stale.data.price_increment(), Price::from("1"));
+    assert_eq!(events.len(), 1);
+    assert_eq!(cached.ts_init(), latest.data.ts_init());
+    assert_eq!(cached.price_increment(), latest.data.price_increment());
+    server.abort();
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_futures_data_client_request_instrument_refetches_when_cached() {
     let (addr, state) = start_test_server().await;
@@ -1349,9 +1446,14 @@ async fn test_spot_raw_get_asset_pairs_tokenized() {
 }
 
 #[rstest]
+#[case::canonical_only(false)]
+#[case::with_legacy_alias(true)]
 #[tokio::test]
-async fn test_spot_domain_request_instruments() {
+async fn test_spot_domain_request_instruments(#[case] duplicate_tokenized_pair: bool) {
     let state = Arc::new(TestServerState::default());
+    state
+        .spot_asset_pairs_tokenized_duplicate
+        .store(duplicate_tokenized_pair, Ordering::Relaxed);
     let app = create_router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -1390,6 +1492,19 @@ async fn test_spot_domain_request_instruments() {
 
     assert!(matches!(currency_pair, InstrumentAny::CurrencyPair(_)));
     assert!(matches!(tokenized, InstrumentAny::TokenizedAsset(_)));
+    assert_eq!(
+        tokenized
+            .info()
+            .and_then(|info| info.get_str("kraken_altname")),
+        duplicate_tokenized_pair.then_some("AAPLSPVUSD"),
+    );
+    assert_eq!(
+        instruments
+            .iter()
+            .filter(|row| row.id() == tokenized.id())
+            .count(),
+        1,
+    );
 }
 
 #[rstest]

@@ -227,7 +227,7 @@ def test_catalog_writes_with_compression_code(tmp_path: Path, code: int, expecte
     """
     catalog = ParquetDataCatalog(str(tmp_path), compression=code)
 
-    catalog.write_quote_ticks([TestDataProviderPyo3.quote_tick()])
+    catalog.write_quotes([TestDataProviderPyo3.quote_tick()])
 
     [file_path] = tmp_path.rglob("*.parquet")
     row_group = pq.ParquetFile(file_path).metadata.row_group(0)
@@ -533,8 +533,8 @@ def test_raw_multi_identity_query_uses_truthful_ipc_schema(
         ts_event=2,
         ts_init=2,
     )
-    catalog.write_quote_ticks([second])
-    catalog.write_quote_ticks([first])
+    catalog.write_quotes([second])
+    catalog.write_quotes([first])
 
     query_args = (
         NautilusDataType.QuoteTick,
@@ -706,7 +706,7 @@ def test_query_data_arrow_bytes_empty_schema_matches_nonempty(
     """
     catalog = _catalog(tmp_path, backend)
     quote = TestDataProviderPyo3.quote_tick(ts_event=10, ts_init=10)
-    catalog.write_quote_ticks([quote])
+    catalog.write_quotes([quote])
     nonempty = _read_arrow_bytes(
         catalog.query_data_arrow_bytes(NautilusDataType.QuoteTick, display=display),
     )
@@ -845,7 +845,7 @@ def test_pyo3_parquet_catalog_query_metadata_returns_dict(tmp_path: Path) -> Non
         ts_event=20,
         ts_init=20,
     )
-    catalog.write_quote_ticks([first, second])
+    catalog.write_quotes([first, second])
 
     metadata = catalog.query_metadata(
         NautilusDataType.QuoteTick,
@@ -912,7 +912,7 @@ def test_parquet_catalog_files_are_open_to_external_arrow_and_json_readers(
         ],
         schema=account_schema,
     )
-    catalog.write_quote_ticks([quote])
+    catalog.write_quotes([quote])
     catalog.write_instruments([instrument])
     catalog.write_custom_data([custom])
     catalog.write_custom_data([price_map])

@@ -135,7 +135,7 @@ mod tests {
 
     #[rstest]
     fn test_group_size_decode_too_large() {
-        let mut buf = [0u8; GroupSizeEncoding::ENCODED_LENGTH];
+        let mut buf = [0_u8; GroupSizeEncoding::ENCODED_LENGTH];
         buf[2..6].copy_from_slice(&(MAX_GROUP_SIZE + 1).to_le_bytes());
         let err = GroupSizeEncoding::decode(&buf).unwrap_err();
         assert_eq!(
@@ -149,7 +149,7 @@ mod tests {
 
     #[rstest]
     fn test_group_size_16_decode_too_large() {
-        let mut buf = [0u8; GroupSize16Encoding::ENCODED_LENGTH];
+        let mut buf = [0_u8; GroupSize16Encoding::ENCODED_LENGTH];
         buf[2..4].copy_from_slice(&(MAX_GROUP_SIZE as u16 + 1).to_le_bytes());
         let err = GroupSize16Encoding::decode(&buf).unwrap_err();
         assert_eq!(
@@ -163,7 +163,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_var_string8_valid() {
-        let buf = [5u8, b'H', b'E', b'L', b'L', b'O'];
+        let buf = [5_u8, b'H', b'E', b'L', b'L', b'O'];
         let (s, consumed) = decode_var_string8(&buf).unwrap();
         assert_eq!(s, "HELLO");
         assert_eq!(consumed, 6);
@@ -171,7 +171,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_var_string8_invalid_utf8() {
-        let buf = [2u8, 0xFF, 0xFF];
+        let buf = [2_u8, 0xff, 0xff];
         let err = decode_var_string8(&buf).unwrap_err();
         assert_eq!(err, SbeDecodeError::InvalidUtf8);
     }

@@ -192,7 +192,7 @@ class _QuoteEmaStrategy(Strategy):
         """
         On start.
         """
-        self.register_indicator_for_quote_ticks(self.iid, self.ema)
+        self.register_indicator_for_quotes(self.iid, self.ema)
         self.subscribe_quotes(self.iid)
 
 

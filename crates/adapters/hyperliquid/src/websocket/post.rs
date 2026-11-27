@@ -1128,7 +1128,7 @@ mod tests {
         let batcher = PostBatcher::new(send_fn);
 
         // Enqueue a handful of posts into the NORMAL lane; tick is ~50ms.
-        for id in 1..=5u64 {
+        for id in 1..=5_u64 {
             batcher
                 .enqueue(ScheduledPost {
                     id,

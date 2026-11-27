@@ -858,7 +858,7 @@ mod tests {
             Ustr::from("0x0000000000000000000000000000000000000000"),
             100_000,
             50_000,
-            UnixNanos::from(1_700_000_000u64),
+            UnixNanos::from(1_700_000_000_u64),
             Some(Blockchain::Ethereum),
         );
 

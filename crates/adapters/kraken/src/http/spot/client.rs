@@ -25,13 +25,13 @@ use std::{
     },
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use indexmap::IndexMap;
 use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
-    AtomicMap, AtomicTime, UUID4, datetime::NANOSECONDS_IN_SECOND, nanos::UnixNanos,
+    AtomicMap, AtomicTime, Params, UUID4, datetime::NANOSECONDS_IN_SECOND, nanos::UnixNanos,
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
@@ -65,8 +65,8 @@ use super::{models::*, query::*};
 use crate::{
     common::{
         consts::{
-            KRAKEN_ALTNAME_KEY, KRAKEN_OFLAG_POST_ONLY, KRAKEN_OFLAG_QUOTE_QUANTITY, KRAKEN_VENUE,
-            NAUTILUS_KRAKEN_BROKER_ID,
+            KRAKEN_ALTNAME_KEY, KRAKEN_LEVERAGE_TIERS_KEY, KRAKEN_OFLAG_POST_ONLY,
+            KRAKEN_OFLAG_QUOTE_QUANTITY, KRAKEN_VENUE, NAUTILUS_KRAKEN_BROKER_ID,
         },
         credential::KrakenCredential,
         enums::{
@@ -1437,6 +1437,12 @@ pub struct KrakenSpotHttpClient {
     cache_initialized: Arc<AtomicBool>,
 }
 
+pub(crate) struct SpotInstrumentSnapshot {
+    pub(crate) instruments: Vec<InstrumentAny>,
+    pairs: AssetPairsResponse,
+    tokenized_pairs: AssetPairsResponse,
+}
+
 impl Clone for KrakenSpotHttpClient {
     fn clone(&self) -> Self {
         Self {
@@ -1604,9 +1610,30 @@ impl KrakenSpotHttpClient {
 
     /// Caches an instrument for symbol lookup.
     pub fn cache_instrument(&self, instrument: InstrumentAny) {
+        let symbol = instrument.symbol().inner();
+        if let InstrumentAny::TokenizedAsset(current) = &instrument
+            && let Some(InstrumentAny::TokenizedAsset(previous)) =
+                self.instruments_cache.get_cloned(&symbol)
+            && previous.id == current.id
+            && previous.base_currency == current.base_currency
+            && previous.quote_currency == current.quote_currency
+            && previous.raw_symbol != current.raw_symbol
+        {
+            self.pair_aliases
+                .insert(previous.raw_symbol.inner(), current.raw_symbol.inner());
+        }
+
         self.record_instrument_aliases(std::slice::from_ref(&instrument));
-        self.instruments_cache
-            .insert(instrument.symbol().inner(), instrument);
+        if let Some(tiers) = instrument
+            .info()
+            .and_then(|info| info.get(KRAKEN_LEVERAGE_TIERS_KEY))
+            .and_then(|value| serde::Deserialize::deserialize(value).ok())
+        {
+            self.leverage_tiers_cache
+                .insert(instrument.raw_symbol().inner(), tiers);
+        }
+
+        self.instruments_cache.insert(symbol, instrument);
         self.cache_initialized.store(true, Ordering::Release);
     }
 
@@ -1648,14 +1675,24 @@ impl KrakenSpotHttpClient {
         self.instruments_cache.get_cloned(symbol)
     }
 
-    /// Records the `altname` of each pair against the `AssetPairs` key.
+    /// Records equivalent pair names against the key used by the instrument.
     ///
     /// Only differing spellings are stored, so a key is never shadowed by another pair's altname.
-    fn record_pair_aliases(&self, pairs: &AssetPairsResponse) {
+    fn record_pair_aliases(&self, pairs: &AssetPairsResponse, accepts: impl Fn(&str) -> bool) {
         let aliases: Vec<(Ustr, Ustr)> = pairs
             .iter()
-            .filter(|(pair_name, definition)| definition.altname.as_str() != pair_name.as_str())
-            .map(|(pair_name, definition)| (definition.altname, Ustr::from(pair_name)))
+            .filter_map(|(pair_name, definition)| {
+                let altname = definition.altname;
+                if altname.as_str() == pair_name {
+                    return None;
+                }
+
+                if Self::has_canonical_tokenized_pair(pairs, pair_name, definition) {
+                    accepts(altname.as_str()).then(|| (Ustr::from(pair_name), altname))
+                } else {
+                    accepts(pair_name).then(|| (altname, Ustr::from(pair_name)))
+                }
+            })
             .collect();
 
         if aliases.is_empty() {
@@ -1667,6 +1704,23 @@ impl KrakenSpotHttpClient {
                 m.insert(*altname, *pair_name);
             }
         });
+    }
+
+    fn has_canonical_tokenized_pair(
+        pairs: &AssetPairsResponse,
+        pair_name: &str,
+        definition: &AssetPairInfo,
+    ) -> bool {
+        definition.aclass_base == KrakenAssetClass::TokenizedAsset
+            && pair_name != definition.altname.as_str()
+            && pairs
+                .get(definition.altname.as_str())
+                .is_some_and(|canonical| {
+                    canonical.wsname == definition.wsname
+                        && canonical.altname == definition.altname
+                        && canonical.base == definition.base
+                        && canonical.quote == definition.quote
+                })
     }
 
     /// Resolves a cached instrument from whichever spelling Kraken used for the pair.
@@ -1717,81 +1771,149 @@ impl KrakenSpotHttpClient {
         &self,
         pairs: Option<Vec<String>>,
     ) -> anyhow::Result<Vec<InstrumentAny>, KrakenHttpError> {
+        let snapshot = self.fetch_instruments(pairs).await?;
+        self.record_pair_aliases(&snapshot.pairs, |_| true);
+        self.record_pair_aliases(&snapshot.tokenized_pairs, |_| true);
+        self.cache_leverage_tiers(&snapshot.pairs, &snapshot.instruments);
+        Ok(snapshot.instruments)
+    }
+
+    pub(crate) async fn fetch_instruments(
+        &self,
+        pairs: Option<Vec<String>>,
+    ) -> anyhow::Result<SpotInstrumentSnapshot, KrakenHttpError> {
         let ts_init = self.generate_ts_init();
         let asset_pairs = self.inner.get_asset_pairs(pairs.clone(), None).await?;
-        self.record_pair_aliases(&asset_pairs);
-        let mut leverage_tiers = AHashMap::new();
 
         let mut instruments: Vec<InstrumentAny> = asset_pairs
             .iter()
             .filter_map(|(pair_name, definition)| {
                 match parse_spot_instrument(pair_name, definition, ts_init, ts_init) {
-                    Ok(instrument) => Some((instrument, definition)),
+                    Ok(instrument) => Some(instrument),
                     Err(e) => {
                         log::warn!("Failed to parse instrument {pair_name}: {e}");
                         None
                     }
                 }
             })
-            .map(|(instrument, definition)| {
-                let key = Ustr::from(instrument.raw_symbol().as_str());
-                let tiers = (
-                    definition.leverage_buy.clone(),
-                    definition.leverage_sell.clone(),
-                );
-                leverage_tiers.insert(key, tiers);
-                instrument
-            })
             .collect();
-
-        if !leverage_tiers.is_empty() {
-            self.leverage_tiers_cache.rcu(|cache| {
-                cache.extend(
-                    leverage_tiers
-                        .iter()
-                        .map(|(key, tiers)| (*key, tiers.clone())),
-                );
-            });
-        }
 
         // Also fetch tokenized asset pairs (xStocks). When loading all pairs this
         // picks up tokenized equities; when loading specific pairs it covers the
         // case where the requested symbols are tokenized assets.
+        let tokenized_pairs = match self
+            .inner
+            .get_asset_pairs(pairs, Some("tokenized_asset"))
+            .await
         {
-            match self
-                .inner
-                .get_asset_pairs(pairs, Some("tokenized_asset"))
-                .await
-            {
-                Ok(tokenized_pairs) => {
-                    if !tokenized_pairs.is_empty() {
-                        log::debug!("Fetched {} tokenized asset pairs", tokenized_pairs.len());
-                    }
-                    self.record_pair_aliases(&tokenized_pairs);
-                    let tokenized_instruments: Vec<InstrumentAny> =
-                        tokenized_pairs
-                            .iter()
-                            .filter_map(|(pair_name, definition)| match parse_tokenized_instrument(
-                                pair_name, definition, ts_init, ts_init,
-                            ) {
-                                Ok(instrument) => Some(instrument),
-                                Err(e) => {
-                                    log::warn!(
-                                        "Failed to parse tokenized instrument {pair_name}: {e}"
-                                    );
-                                    None
-                                }
-                            })
-                            .collect();
-                    instruments.extend(tokenized_instruments);
+            Ok(tokenized_pairs) => {
+                if !tokenized_pairs.is_empty() {
+                    log::debug!("Fetched {} tokenized asset pairs", tokenized_pairs.len());
                 }
-                Err(e) => {
-                    log::warn!("Failed to fetch tokenized asset pairs: {e}");
-                }
-            }
-        }
 
-        Ok(instruments)
+                let legacy_pairs: AHashMap<_, _> = tokenized_pairs
+                    .iter()
+                    .filter(|(name, definition)| {
+                        Self::has_canonical_tokenized_pair(&tokenized_pairs, name, definition)
+                    })
+                    .map(|(name, definition)| (definition.altname, name))
+                    .collect();
+
+                let tokenized_instruments: Vec<InstrumentAny> = tokenized_pairs
+                    .iter()
+                    .filter_map(|(pair_name, definition)| {
+                        if Self::has_canonical_tokenized_pair(
+                            &tokenized_pairs,
+                            pair_name,
+                            definition,
+                        ) {
+                            return None;
+                        }
+
+                        match parse_tokenized_instrument(pair_name, definition, ts_init, ts_init) {
+                            Ok(mut instrument) => {
+                                if let InstrumentAny::TokenizedAsset(asset) = &mut instrument
+                                    && let Some(name) = legacy_pairs.get(&definition.altname)
+                                {
+                                    let mut info: IndexMap<_, _> = asset
+                                        .info
+                                        .iter()
+                                        .flat_map(Params::borrowed_entries)
+                                        .map(|(key, value)| (key.clone(), value.clone()))
+                                        .collect();
+                                    info.insert(
+                                        KRAKEN_ALTNAME_KEY.to_owned(),
+                                        (*name).clone().into(),
+                                    );
+                                    asset.info = Some(Params::new(info));
+                                }
+
+                                Some(instrument)
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to parse tokenized instrument {pair_name}: {e}");
+                                None
+                            }
+                        }
+                    })
+                    .collect();
+
+                instruments.extend(tokenized_instruments);
+                tokenized_pairs
+            }
+            Err(e) => {
+                log::warn!("Failed to fetch tokenized asset pairs: {e}");
+                AssetPairsResponse::new()
+            }
+        };
+
+        Ok(SpotInstrumentSnapshot {
+            instruments,
+            pairs: asset_pairs,
+            tokenized_pairs,
+        })
+    }
+
+    pub(crate) fn cache_instrument_snapshot(
+        &self,
+        snapshot: &SpotInstrumentSnapshot,
+        accepted: &[InstrumentAny],
+    ) {
+        let symbols: AHashSet<_> = accepted.iter().map(|i| i.raw_symbol().inner()).collect();
+        self.record_pair_aliases(&snapshot.pairs, |symbol| {
+            symbols.contains(&Ustr::from(symbol))
+        });
+
+        self.record_pair_aliases(&snapshot.tokenized_pairs, |symbol| {
+            symbols.contains(&Ustr::from(symbol))
+        });
+
+        self.cache_leverage_tiers(&snapshot.pairs, accepted);
+        self.cache_instruments(accepted);
+    }
+
+    fn cache_leverage_tiers(&self, pairs: &AssetPairsResponse, instruments: &[InstrumentAny]) {
+        let tiers: Vec<_> = instruments
+            .iter()
+            .filter(|instrument| !matches!(instrument, InstrumentAny::TokenizedAsset(_)))
+            .filter_map(|instrument| {
+                let symbol = instrument.raw_symbol().inner();
+                pairs.get(symbol.as_str()).map(|definition| {
+                    (
+                        symbol,
+                        (
+                            definition.leverage_buy.clone(),
+                            definition.leverage_sell.clone(),
+                        ),
+                    )
+                })
+            })
+            .collect();
+
+        if !tiers.is_empty() {
+            self.leverage_tiers_cache
+                .rcu(|cache| cache.extend(tiers.iter().cloned()));
+        }
     }
 
     /// Requests the current market status for Kraken Spot instruments.
@@ -3710,6 +3832,39 @@ mod tests {
 
     use super::*;
 
+    #[rstest]
+    fn test_cache_instrument_keeps_previous_tokenized_pair_name() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../test_data/http_asset_pairs_tokenized.json"
+        ))
+        .unwrap();
+        let definition: AssetPairInfo =
+            serde_json::from_value(fixture["result"]["AAPLxUSD"].clone()).unwrap();
+        let client = KrakenSpotHttpClient::default();
+        let legacy = parse_tokenized_instrument(
+            "AAPLSPVUSD",
+            &definition,
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        )
+        .unwrap();
+        let current = parse_tokenized_instrument(
+            "AAPLxUSD",
+            &definition,
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        )
+        .unwrap();
+
+        client.cache_instrument(legacy);
+        client.cache_instrument(current);
+
+        let resolved = client.get_instrument_by_raw_symbol("AAPLSPVUSD").unwrap();
+        assert_eq!(resolved.id(), InstrumentId::from("AAPLx/USD.KRAKEN"));
+        assert_eq!(resolved.raw_symbol().as_str(), "AAPLxUSD");
+        assert_eq!(resolved.ts_init(), UnixNanos::from(2));
+    }
+
     #[tokio::test]
     async fn test_authenticated_client_rejects_redirects() {
         let client = KrakenSpotRawHttpClient::with_credentials(
@@ -3901,7 +4056,7 @@ mod tests {
     #[case::gtd_limit_with_expire(
         true,
         TimeInForce::Gtd,
-        Some(1_704_067_200_000_000_000u64),
+        Some(1_704_067_200_000_000_000_u64),
         Some("GTD"),
         Some("1704067200")
     )]
@@ -4528,10 +4683,22 @@ mod tests {
         leverage_sell: &[i32],
     ) -> InstrumentId {
         let instrument_id = cache_test_spot_instrument(client);
-        let raw_symbol = Ustr::from("XBTUSD");
-        client.leverage_tiers_cache.rcu(|m| {
-            m.insert(raw_symbol, (leverage_buy.to_vec(), leverage_sell.to_vec()));
-        });
+
+        let InstrumentAny::CurrencyPair(mut instrument) = client
+            .get_cached_instrument(&instrument_id.symbol.inner())
+            .unwrap()
+        else {
+            panic!("expected currency pair");
+        };
+
+        instrument.info = Some(Params::new(
+            [(
+                KRAKEN_LEVERAGE_TIERS_KEY.to_owned(),
+                serde_json::json!([leverage_buy, leverage_sell]),
+            )]
+            .into(),
+        ));
+        client.cache_instrument(instrument.into());
         instrument_id
     }
 

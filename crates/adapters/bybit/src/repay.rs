@@ -293,7 +293,7 @@ mod tests {
             "retMsg": "OK",
             "result": {"resultStatus": result_status},
             "retExtInfo": {},
-            "time": 1704470400123i64
+            "time": 1_704_470_400_123_i64
         }))
         .into_response()
     }

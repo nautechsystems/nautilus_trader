@@ -6,6 +6,10 @@ Run from the repository root with the tutorial dependencies and a Chrome-compati
     uv run --project python --no-sync --with pandas --with plotly --with kaleido \
         python docs/tutorials/assets/backtest_orderbook_coinapi/render_panels.py
 
+If Kaleido reports that Chrome is missing, install its browser once:
+
+    uv run --project python --no-sync --with plotly --with kaleido plotly_get_chrome -y
+
 The program reuses its cached catalog or performs its documented first download.
 
 """
@@ -73,6 +77,7 @@ def main() -> None:
         figure.update_xaxes(
             tickformat="%H:%M",
             dtick=600_000,
+            selector=lambda axis: axis.range is None,
             range=[
                 book.index[0].floor("h") - pd.Timedelta(seconds=45),
                 book.index[-1].ceil("min") + pd.Timedelta(seconds=45),
@@ -92,7 +97,7 @@ def _top_of_book(
     for delta in deltas:
         book.apply_delta(delta)
         if not RecordFlag.F_LAST.matches(delta.flags):
-            continue  # The book is incomplete until the batch ends
+            continue
 
         state = {"time": pd.Timestamp(delta.ts_init, tz="UTC")}
         rows.append(state)
@@ -124,21 +129,36 @@ def _top_of_book(
 
 
 def _book_figure(book: pd.DataFrame, executions: pd.DataFrame) -> go.Figure:
-    figure = go.Figure()
-    for column, label, color in [
-        ("bid", "Best bid", COLORS["positive"]),
-        ("ask", "Best ask", COLORS["negative"]),
+    end = book.index[-1]
+    start = end - pd.Timedelta(seconds=30)
+    window = book.loc[book.index >= start]
+    figure = make_subplots(
+        rows=2,
+        cols=1,
+        vertical_spacing=0.22,
+        subplot_titles=("Best ask over the hour", "Final 30 seconds and closing fills"),
+    )
+
+    for quotes, label, color, row in [
+        (book["ask"], "Best ask", COLORS["negative"], 1),
+        (window["bid"], "Best bid", COLORS["positive"], 2),
+        (window["ask"], "Best ask", COLORS["negative"], 2),
     ]:
+        prices = _step_changes(quotes)
         figure.add_trace(
             go.Scatter(
-                x=book.index,
-                y=book[column].map(float),
+                x=prices.index,
+                y=prices.map(float),
                 mode="lines",
                 name=label,
                 line={"color": color, "width": 1, "shape": "hv"},
+                showlegend=row == 2,
             ),
+            row=row,
+            col=1,
         )
 
+    executions = executions.loc[pd.to_datetime(executions["ts_event"], utc=True) >= start]
     limits = executions[executions["order_type"] == "LIMIT"]
     closes = executions[executions["order_type"] == "MARKET"]
 
@@ -148,16 +168,16 @@ def _book_figure(book: pd.DataFrame, executions: pd.DataFrame) -> go.Figure:
             "FOK sell fills",
             COLORS["negative"],
             "triangle-down",
-            6,
+            7,
         ),
         (
             limits[limits["order_side"] == "BUY"],
-            "FOK buy fill",
+            "FOK buy fills",
             COLORS["positive"],
             "triangle-up",
-            8,
+            7,
         ),
-        (closes, "Final market buy fills", "#fbbf24", "diamond", 8),
+        (closes, "Closing market fills", "#fbbf24", "diamond", 8),
     ]:
         figure.add_trace(
             go.Scatter(
@@ -172,34 +192,44 @@ def _book_figure(book: pd.DataFrame, executions: pd.DataFrame) -> go.Figure:
                     "line": {"color": COLORS["background"], "width": 0.7},
                 },
             ),
+            row=2,
+            col=1,
         )
 
-    apply_layout(figure)
+    apply_layout(figure, height=730)
     figure.update_layout(
         title={
-            "text": "ANTHROPIC pre-IPO perpetual: book and executions",
+            "text": "ANT equity perpetual order book and fills",
             "subtitle": {
-                "text": f"Lighter | {book.index[0]:%Y-%m-%d} | All book events and execution fills",
+                "text": f"Lighter | {book.index[0]:%Y-%m-%d}",
             },
         },
     )
-    figure.update_xaxes(title_text="Time (UTC)")
-    figure.update_yaxes(title_text="Price (USDC)", tickformat=".1f")
+    figure.update_xaxes(
+        title_text="Time (UTC)",
+        tickformat="%H:%M:%S",
+        dtick=5000,
+        range=[start, end + pd.Timedelta(seconds=1)],
+        row=2,
+        col=1,
+    )
+    figure.update_yaxes(title_text="Price (USDC)", tickformat=".2f")
     return figure
 
 
 def _liquidity_figure(book: pd.DataFrame) -> go.Figure:
     figure = make_subplots(
-        rows=2,
+        rows=3,
         cols=1,
         shared_xaxes=True,
         vertical_spacing=0.14,
-        subplot_titles=("Bid-ask spread", "Liquidity at the best bid and ask"),
+        subplot_titles=("Bid-ask spread", "Best bid size", "Best ask size"),
     )
+    spreads = _step_changes(book["spread"])
     figure.add_trace(
         go.Scatter(
-            x=book.index,
-            y=book["spread"].map(float),
+            x=spreads.index,
+            y=spreads.map(float),
             mode="lines",
             name="Spread",
             line={"color": COLORS["primary"], "width": 1, "shape": "hv"},
@@ -209,42 +239,46 @@ def _liquidity_figure(book: pd.DataFrame) -> go.Figure:
         col=1,
     )
 
-    for column, label, color in [
-        ("bid_size", "Best bid size", COLORS["positive"]),
-        ("ask_size", "Best ask size", COLORS["negative"]),
+    min_depth = min(book["bid_size"].min(), book["ask_size"].min())
+    max_depth = max(book["bid_size"].max(), book["ask_size"].max())
+    depth_range = [min_depth.adjusted() - 0.1, max_depth.adjusted() + 1]
+
+    for row, column, label, color in [
+        (2, "bid_size", "Best bid size", COLORS["positive"]),
+        (3, "ask_size", "Best ask size", COLORS["negative"]),
     ]:
+        sizes = _step_changes(book[column])
         figure.add_trace(
             go.Scatter(
-                x=book.index,
-                y=book[column].map(float),
+                x=sizes.index,
+                y=sizes.map(float),
                 mode="lines",
                 name=label,
                 line={"color": color, "width": 1, "shape": "hv"},
+                showlegend=False,
             ),
-            row=2,
+            row=row,
+            col=1,
+        )
+        figure.update_yaxes(
+            title_text="Contract units (log)",
+            type="log",
+            dtick=1,
+            tickformat=".4~f",
+            range=depth_range,
+            row=row,
             col=1,
         )
 
-    ticks = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10]
-    apply_layout(figure, height=680)
+    apply_layout(figure, height=870)
     figure.update_layout(
         title={
             "text": "Spread and best-quote depth",
-            "subtitle": {"text": "Lighter ANTHROPIC | Full hour | Depth uses a logarithmic scale"},
+            "subtitle": {"text": "Lighter ANT | Full hour | Depth uses a logarithmic scale"},
         },
-        legend={"y": 0.47},
     )
-    figure.update_xaxes(title_text="Time (UTC)", row=2, col=1)
+    figure.update_xaxes(title_text="Time (UTC)", row=3, col=1)
     figure.update_yaxes(title_text="Spread (USDC)", rangemode="tozero", row=1, col=1)
-    figure.update_yaxes(
-        title_text="Contract units (log)",
-        type="log",
-        tickmode="array",
-        tickvals=ticks,
-        ticktext=[f"{value:g}" for value in ticks],
-        row=2,
-        col=1,
-    )
     return figure
 
 
@@ -263,6 +297,8 @@ def _position_pnl_figure(
         )
         raise ValueError(msg)
 
+    position = _step_changes(position)
+    marked_pnl = _step_changes(marked_pnl)
     figure = make_subplots(
         rows=2,
         cols=1,
@@ -317,7 +353,7 @@ def _position_pnl_figure(
         y=float(realized_pnl.iloc[-1]),
         text=f"Flat: {realized_pnl.iloc[-1]} USDC realized",
         ax=-130,
-        ay=-90,
+        ay=-30,
         arrowcolor=COLORS["muted"],
         font={"color": COLORS["text"]},
         row=2,
@@ -327,7 +363,7 @@ def _position_pnl_figure(
     apply_layout(figure, height=640)
     figure.update_layout(
         title={
-            "text": "Short position and mark-to-market PnL",
+            "text": "Net position and mark-to-market PnL",
             "subtitle": {
                 "text": (
                     f"Peak short {-position.min()} units | Realized PnL {realized_pnl.iloc[-1]} "
@@ -364,6 +400,12 @@ def _position_and_marked_pnl(
     flows = cash.reindex(index).ffill().fillna(Decimal(0))
     marks = midpoint.reindex(index).ffill()
     return held, flows + held * marks
+
+
+def _step_changes(series: pd.Series) -> pd.Series:
+    changed = series.ne(series.shift())
+    changed.iloc[-1] = True  # Extend the final step to the end of the series
+    return series.loc[changed]
 
 
 if __name__ == "__main__":

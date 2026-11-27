@@ -115,13 +115,9 @@ impl ParquetDataCatalog {
     /// use nautilus_core::UnixNanos;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     ///
     /// // Delete all data before a specific date across entire catalog
     /// catalog.delete_catalog_range(None, Some(UnixNanos::from(1609459200000000000)))?;
@@ -202,13 +198,9 @@ impl ParquetDataCatalog {
     /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     ///
     /// // Delete all quote data for a specific instrument
     /// catalog.delete_data_range(&NautilusDataType::QuoteTick, Some("BTCUSD"), None, None)?;
@@ -480,14 +472,16 @@ impl ParquetDataCatalog {
         self.clear_session_tables();
         // Use optimize_file_loading=false for precise file control during split operations
         let instrument_ids = identifier.map(|id| vec![id.to_string()]);
-        let mut rows = self.query::<T>(
-            instrument_ids,
-            Some(UnixNanos::from(target.1)),
-            Some(UnixNanos::from(target.2)),
-            None,
-            Some(sources.to_vec()),
-            false,
-        )?;
+        let start = UnixNanos::from(target.1);
+        let end = UnixNanos::from(target.2);
+        let mut rows = self
+            .query::<T>()
+            .maybe_identifiers(instrument_ids)
+            .start(start)
+            .end(end)
+            .files(sources.to_vec())
+            .optimize_file_loading(false)
+            .execute()?;
         rows.sort_by_key(HasTsInit::ts_init);
         Ok(rows)
     }

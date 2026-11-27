@@ -70,7 +70,7 @@ impl UUID4 {
     /// Creates raw `UUIDv4` bytes.
     #[must_use]
     pub fn new_bytes() -> [u8; 16] {
-        let mut bytes = [0u8; 16];
+        let mut bytes = [0_u8; 16];
 
         #[cfg(all(feature = "simulation", madsim))]
         {
@@ -88,8 +88,8 @@ impl UUID4 {
         #[cfg(not(all(feature = "simulation", madsim)))]
         rand::rng().fill_bytes(&mut bytes);
 
-        bytes[6] = (bytes[6] & 0x0F) | 0x40; // Set the version to 4
-        bytes[8] = (bytes[8] & 0x3F) | 0x80; // Set the variant to RFC 4122
+        bytes[6] = (bytes[6] & 0x0f) | 0x40; // Set the version to 4
+        bytes[8] = (bytes[8] & 0x3f) | 0x80; // Set the variant to RFC 4122
 
         bytes
     }
@@ -100,8 +100,8 @@ impl UUID4 {
     /// so any 16 bytes produce a valid v4 UUID.
     #[must_use]
     pub fn from_bytes(mut bytes: [u8; 16]) -> Self {
-        bytes[6] = (bytes[6] & 0x0F) | 0x40;
-        bytes[8] = (bytes[8] & 0x3F) | 0x80;
+        bytes[6] = (bytes[6] & 0x0f) | 0x40;
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
 
         Self {
             value: format_uuid4_bytes(bytes),
@@ -147,8 +147,8 @@ impl UUID4 {
         // Constructors normalize the text to lowercase, hyphenated ASCII.
         const BYTE_POSITIONS: [usize; 16] =
             [0, 2, 4, 6, 9, 11, 14, 16, 19, 21, 24, 26, 28, 30, 32, 34];
-        let mut bytes = [0u8; 16];
-        let mut invalid_nibbles = 0u8;
+        let mut bytes = [0_u8; 16];
+        let mut invalid_nibbles = 0_u8;
 
         for (byte, pos) in bytes.iter_mut().zip(BYTE_POSITIONS) {
             let hi = DECODE_NIBBLE[self.value[pos] as usize];
@@ -302,7 +302,7 @@ impl<'de> Deserialize<'de> for UUID4 {
 }
 
 fn format_uuid4_bytes(bytes: [u8; 16]) -> [u8; UUID4_LEN] {
-    let mut value = [0u8; UUID4_LEN];
+    let mut value = [0_u8; UUID4_LEN];
     let mut pos = 0;
 
     for (idx, byte) in bytes.into_iter().enumerate() {
@@ -713,7 +713,7 @@ mod tests {
     #[rstest]
     fn test_from_bytes_normalizes_version() {
         // Input has version bits indicating v1 (0x10..): `from_bytes` must coerce to v4.
-        let mut bytes = [0u8; 16];
+        let mut bytes = [0_u8; 16];
         bytes[6] = 0x1a; // High nibble is version; 1 means v1
         bytes[8] = 0x80; // Already RFC 4122
         let uuid = UUID4::from_bytes(bytes);
@@ -725,7 +725,7 @@ mod tests {
     #[rstest]
     fn test_from_bytes_normalizes_variant() {
         // Input has variant bits indicating non-RFC-4122 (0x00..): `from_bytes` must coerce.
-        let mut bytes = [0u8; 16];
+        let mut bytes = [0_u8; 16];
         bytes[6] = 0x40; // Already v4
         bytes[8] = 0x00; // Non-RFC-4122 variant
         let uuid = UUID4::from_bytes(bytes);
@@ -735,7 +735,7 @@ mod tests {
 
     #[rstest]
     fn test_from_bytes_all_zero_is_valid_v4() {
-        let uuid = UUID4::from_bytes([0u8; 16]);
+        let uuid = UUID4::from_bytes([0_u8; 16]);
         // After normalization, byte 6 is 0x40 and byte 8 is 0x80, so the canonical representation
         // is "00000000-0000-4000-8000-000000000000", still a valid v4 UUID.
         assert_eq!(uuid.to_string(), "00000000-0000-4000-8000-000000000000");
@@ -743,7 +743,7 @@ mod tests {
 
     #[rstest]
     fn test_from_bytes_all_ones_is_valid_v4() {
-        let uuid = UUID4::from_bytes([0xFFu8; 16]);
+        let uuid = UUID4::from_bytes([0xff_u8; 16]);
         let parsed = Uuid::parse_str(uuid.as_str()).unwrap();
         assert_eq!(parsed.get_version(), Some(uuid::Version::Random));
         assert_eq!(parsed.get_variant(), uuid::Variant::RFC4122);

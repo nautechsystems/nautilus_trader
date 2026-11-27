@@ -302,7 +302,9 @@ impl DataActor for ExecTester {
             self.submit_pending_open_position();
         }
 
-        self.maintain_orders(quote.bid_price, quote.ask_price);
+        let best_bid = (!quote.bid_size.is_zero()).then_some(quote.bid_price);
+        let best_ask = (!quote.ask_size.is_zero()).then_some(quote.ask_price);
+        self.maintain_orders(best_bid, best_ask);
         Ok(())
     }
 
@@ -599,11 +601,17 @@ impl ExecTester {
     }
 
     /// Maintain orders based on current market prices.
-    pub(super) fn maintain_orders(&mut self, best_bid: Price, best_ask: Price) {
+    pub(super) fn maintain_orders(
+        &mut self,
+        best_bid: impl Into<Option<Price>>,
+        best_ask: impl Into<Option<Price>>,
+    ) {
         if self.instrument.is_none() || self.config.dry_run {
             return;
         }
 
+        let best_bid = best_bid.into();
+        let best_ask = best_ask.into();
         if self.config.batch_submit_limit_pair
             && self.config.enable_limit_buys
             && self.config.enable_limit_sells
@@ -667,7 +675,7 @@ impl ExecTester {
     }
 
     /// Maintain buy limit orders.
-    fn maintain_buy_orders(&mut self, best_bid: Price, best_ask: Price) {
+    fn maintain_buy_orders(&mut self, best_bid: Option<Price>, best_ask: Option<Price>) {
         // Refresh from cache first so post-submit event state (venue_order_id,
         // status) is visible. Done before binding `&self.instrument` to avoid
         // holding an immutable borrow across the mutable refresh call.
@@ -759,7 +767,7 @@ impl ExecTester {
     }
 
     /// Maintain sell limit orders.
-    fn maintain_sell_orders(&mut self, best_bid: Price, best_ask: Price) {
+    fn maintain_sell_orders(&mut self, best_bid: Option<Price>, best_ask: Option<Price>) {
         // Refresh from cache before borrowing `&self.instrument`; see the
         // matching comment in `maintain_buy_orders`.
         self.refresh_tracked_order(OrderSide::Sell);
@@ -1129,7 +1137,7 @@ impl ExecTester {
     }
 
     /// Submits a buy and sell limit order as an order list (batch).
-    fn maintain_batch_limit_pair(&mut self, best_bid: Price, best_ask: Price) {
+    fn maintain_batch_limit_pair(&mut self, best_bid: Option<Price>, best_ask: Option<Price>) {
         // Same rationale as the non-batch path: refresh from cache so the
         // active-order check sees the latest status. Done before binding
         // `&self.instrument` to avoid an immutable-vs-mutable borrow conflict.
@@ -1219,7 +1227,12 @@ impl ExecTester {
         }
     }
 
-    fn limit_price(&self, side: OrderSide, best_bid: Price, best_ask: Price) -> Option<Price> {
+    fn limit_price(
+        &self,
+        side: OrderSide,
+        best_bid: Option<Price>,
+        best_ask: Option<Price>,
+    ) -> Option<Price> {
         let instrument = self.instrument.as_ref()?;
         let offset_ticks = self.price_offset?;
         let increment = instrument.price_increment();
@@ -1228,10 +1241,10 @@ impl ExecTester {
 
         let price = match (side, cross_spread) {
             (OrderSide::Buy, false) | (OrderSide::Sell, true) => {
-                sub_price_ticks(best_bid, increment, offset_ticks, precision)
+                sub_price_ticks(best_bid?, increment, offset_ticks, precision)
             }
             (OrderSide::Buy, true) | (OrderSide::Sell, false) => {
-                add_price_ticks(best_ask, increment, offset_ticks, precision)
+                add_price_ticks(best_ask?, increment, offset_ticks, precision)
             }
         };
 
@@ -1250,7 +1263,7 @@ impl ExecTester {
     }
 
     /// Maintain stop buy orders.
-    fn maintain_stop_buy_orders(&mut self, best_bid: Price, best_ask: Price) {
+    fn maintain_stop_buy_orders(&mut self, best_bid: Option<Price>, best_ask: Option<Price>) {
         self.refresh_tracked_stop_order(OrderSide::Buy);
 
         // Avoid churn: leave a rejected/denied stop alone (no resubmit or modify)
@@ -1274,10 +1287,14 @@ impl ExecTester {
             OrderType::LimitIfTouched | OrderType::MarketIfTouched | OrderType::TrailingStopMarket
         ) {
             // IF_TOUCHED and trailing-stop buy: place BELOW market
-            sub_price_ticks(best_bid, increment, stop_offset_ticks, precision)
+            best_bid.map(|bid| sub_price_ticks(bid, increment, stop_offset_ticks, precision))
         } else {
             // STOP buy orders are placed ABOVE the market (stop loss on short)
-            add_price_ticks(best_ask, increment, stop_offset_ticks, precision)
+            best_ask.map(|ask| add_price_ticks(ask, increment, stop_offset_ticks, precision))
+        };
+
+        let Some(unclamped_trigger_price) = unclamped_trigger_price else {
+            return;
         };
         let clamp = self.config.clamp_to_instrument_price_range;
         let trigger_price = clamp_price_to_range(unclamped_trigger_price, instrument, clamp);
@@ -1287,13 +1304,13 @@ impl ExecTester {
             self.config.stop_order_type,
             OrderType::StopLimit | OrderType::LimitIfTouched
         ) {
-            let unclamped_limit_price =
-                if let Some(limit_offset_ticks) = self.config.stop_limit_offset_ticks {
-                    // BUY LIT/StopLimit both require trigger_price <= price.
-                    add_price_ticks(trigger_price, increment, limit_offset_ticks, precision)
-                } else {
-                    trigger_price
-                };
+            let unclamped_limit_price = self
+                .config
+                .stop_limit_offset_ticks
+                .map_or(trigger_price, |ticks| {
+                    add_price_ticks(trigger_price, increment, ticks, precision)
+                });
+
             Some(clamp_price_to_range(
                 unclamped_limit_price,
                 instrument,
@@ -1347,7 +1364,7 @@ impl ExecTester {
     }
 
     /// Maintain stop sell orders.
-    fn maintain_stop_sell_orders(&mut self, best_bid: Price, best_ask: Price) {
+    fn maintain_stop_sell_orders(&mut self, best_bid: Option<Price>, best_ask: Option<Price>) {
         self.refresh_tracked_stop_order(OrderSide::Sell);
 
         // Avoid churn: leave a rejected/denied stop alone (no resubmit or modify)
@@ -1371,10 +1388,14 @@ impl ExecTester {
             OrderType::LimitIfTouched | OrderType::MarketIfTouched | OrderType::TrailingStopMarket
         ) {
             // IF_TOUCHED and trailing-stop sell: place ABOVE market
-            add_price_ticks(best_ask, increment, stop_offset_ticks, precision)
+            best_ask.map(|ask| add_price_ticks(ask, increment, stop_offset_ticks, precision))
         } else {
             // STOP sell orders are placed BELOW the market (stop loss on long)
-            sub_price_ticks(best_bid, increment, stop_offset_ticks, precision)
+            best_bid.map(|bid| sub_price_ticks(bid, increment, stop_offset_ticks, precision))
+        };
+
+        let Some(unclamped_trigger_price) = unclamped_trigger_price else {
+            return;
         };
         let clamp = self.config.clamp_to_instrument_price_range;
         let trigger_price = clamp_price_to_range(unclamped_trigger_price, instrument, clamp);
@@ -1384,13 +1405,13 @@ impl ExecTester {
             self.config.stop_order_type,
             OrderType::StopLimit | OrderType::LimitIfTouched
         ) {
-            let unclamped_limit_price =
-                if let Some(limit_offset_ticks) = self.config.stop_limit_offset_ticks {
-                    // SELL LIT/StopLimit both require trigger_price >= price.
-                    sub_price_ticks(trigger_price, increment, limit_offset_ticks, precision)
-                } else {
-                    trigger_price
-                };
+            let unclamped_limit_price = self
+                .config
+                .stop_limit_offset_ticks
+                .map_or(trigger_price, |ticks| {
+                    sub_price_ticks(trigger_price, increment, ticks, precision)
+                });
+
             Some(clamp_price_to_range(
                 unclamped_limit_price,
                 instrument,

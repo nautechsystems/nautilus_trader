@@ -140,6 +140,7 @@ The adapter maps `TRADIFI_PERPETUAL` listings to
 | ------------------------------------------------------------ | -------------------- |
 | `EQUITY`, `CN_EQUITY`, `KR_EQUITY`, `HK_EQUITY`, `PREMARKET` | Equity               |
 | `COMMODITY`                                                  | Commodity            |
+| `FX`                                                         | FX                   |
 
 Listings with other or missing values are skipped with a warning.
 
@@ -1191,22 +1192,29 @@ The polling interval defaults to 3,600 seconds (60 minutes) and is configurable
 via `instrument_status_poll_secs` in the data client config. Set to `0` to
 disable polling entirely.
 
-On initial connect, the adapter seeds its status cache from the exchange info
-response without emitting events. Only subsequent polls that detect a status
-change emit `InstrumentStatus` events. If a symbol disappears from exchange
-info (e.g. after delisting or contract expiry), the adapter emits
-`NotAvailableForTrading`.
+On connect, the adapter caches statuses from exchange info without emitting events. On the first
+status subscription the data engine sends for an instrument, the client emits its cached status
+if available, even with polling disabled.
+Later polls and catalog refreshes emit status changes. If a tracked symbol disappears from exchange
+info after delisting or contract expiry, the adapter emits `NotAvailableForTrading`.
 
-Status polling does not reload instrument definitions. The separate `instrument_refresh_interval_secs` task
-performs a complete filtered catalog load. It atomically replaces the data-client and WebSocket lookup maps.
-Then it updates the status snapshot and sends the refreshed instruments to the data engine. It also refreshes
-the execution client precision cache.
+Status polling does not reload instrument definitions. The separate `update_instruments_interval_mins` task
+loads the configured instruments and their statuses from one `exchangeInfo` response. It atomically replaces
+the data client and WebSocket lookup maps, retaining cached definitions for symbols that still appear in
+the response but have stopped trading. Then it updates the status snapshot and sends the refreshed
+definitions to the data engine and execution client.
 
-The default full refresh interval is 3,600 seconds. Set it to `0` to disable it. Disconnect cancels the task,
+The default full refresh interval is 60 minutes. Set it to `0` to disable it. Disconnect cancels the task,
 and reconnect starts one replacement task with a new cancellation token.
+
+In data and execution configs, replace `instrument_refresh_interval_secs` with
+`update_instruments_interval_mins`. Divide values that are multiples of 60 by 60. For other values,
+choose a whole-minute interval. Keep `0` to disable refresh.
 
 Catalog refreshes and status polls serialize their requests and snapshot updates so overlapping responses
 cannot overwrite newer statuses or duplicate `InstrumentStatus` events. Each task keeps its own polling interval.
+The adapter also orders subscription replay with these updates so a replay cannot publish an older cached status
+after a newer one.
 
 ### Status mapping
 
@@ -1263,7 +1271,11 @@ to `Pause`, and every other value to `NotAvailableForTrading`.
 | TradingHalt       | Halt                   |
 | TradingCancelOnly | Halt                   |
 
-Unknown or undocumented Futures status values map to `NotAvailableForTrading`.
+For USD-M and COIN-M, a `TRADING` perpetual with a positive `deliveryDate` before
+2100-12-25 08:00 UTC emits `PreClose` with `is_trading = true`. Binance uses this delivery date
+to announce a scheduled delisting while the contract still trades. A `TRADING` perpetual with
+the placeholder date or a later value maps to `Trading`. Unknown or undocumented Futures
+status values map to `NotAvailableForTrading`.
 
 :::note
 Only instruments that are in a tradable state at connect time are tracked.
@@ -1409,8 +1421,8 @@ For the latest rate limits, query `/api/v3/exchangeInfo` (Spot) or `/fapi/v1/exc
 | `spot_market_data_mode`            | `Sbe`     | `Json` keeps the credential-free Global Spot path. Binance US requires `Json`. |
 | `use_usdm_raw_trades`              | `False`   | Subscribe USD-M trades to raw `<symbol>@trade` instead of `<symbol>@aggTrade`. |
 | `instrument_provider`              | default   | Loading, filters, parser-warning, and commission policy.                       |
-| `instrument_refresh_interval_secs` | `3,600`   | Full catalog refresh interval; `0` disables it.                                |
-| `instrument_status_poll_secs`      | `3,600`   | Status-only exchange-info poll interval; `0` disables it.                      |
+| `update_instruments_interval_mins` | `60`      | Interval (minutes) between full instrument refreshes. `0` disables it.         |
+| `instrument_status_poll_secs`      | `3,600`   | Interval (seconds) between status-only exchange-info polls. `0` disables it.   |
 | `book_snapshot_timeout_secs`       | `10`      | Deadline for each diff-depth REST snapshot request; `0` disables it.           |
 | `proxy_url`                        | `None`    | Proxy applied to HTTP and every market WebSocket connection.                   |
 | `recv_window_ms`                   | `5,000`   | Signed HTTP receive window, inclusive range `1..=60000`.                       |
@@ -1433,7 +1445,7 @@ For the latest rate limits, query `/api/v3/exchangeInfo` (Spot) or `/fapi/v1/exc
 | `use_ws_trading`                   | `True`    | Use Global WebSocket order entry where supported; Binance US uses HTTP. |
 | `ws_trading_setup_timeout_ms`      | `10,000`  | WebSocket trading authentication and setup timeout.                     |
 | `instrument_provider`              | default   | Loading, filters, parser-warning, and commission policy.                |
-| `instrument_refresh_interval_secs` | `3,600`   | Execution precision-cache refresh interval; `0` disables it.            |
+| `update_instruments_interval_mins` | `60`      | Interval (minutes) between precision-cache refreshes. `0` disables it.  |
 | `proxy_url`                        | `None`    | Proxy applied to HTTP, private streams, and WebSocket trading.          |
 | `recv_window_ms`                   | `5,000`   | Signed HTTP and WebSocket receive window, inclusive range `1..=60000`.  |
 | `max_retries`                      | `3`       | Maximum retries for HTTP GET requests.                                  |

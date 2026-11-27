@@ -1,0 +1,212 @@
+[
+  {
+    "channel": "executions",
+    "data": [
+      {
+        "order_id": "OCAP14-STLMT-000014",
+        "exec_type": "pending_new",
+        "timestamp": "2026-01-01T00:00:01.000000Z",
+        "order_status": "pending_new",
+        "order_userref": 0,
+        "symbol": "USDC/EUR",
+        "side": "buy",
+        "order_type": "stop-loss-limit",
+        "order_qty": 5.0,
+        "limit_price": 0.9132,
+        "limit_price_type": "static",
+        "time_in_force": "GTC",
+        "cum_cost": 0.0,
+        "fee_usd_equiv": 0.0,
+        "fee_ccy_pref": "fciq",
+        "triggers": {
+          "reference": "last",
+          "price": 0.9121,
+          "price_type": "static",
+          "status": "untriggered"
+        },
+        "stop_price": 0.9121
+      }
+    ],
+    "type": "update",
+    "sequence": 1
+  },
+  {
+    "channel": "executions",
+    "data": [
+      {
+        "order_id": "OCAP14-STLMT-000014",
+        "exec_type": "new",
+        "timestamp": "2026-01-01T00:00:02.000000Z",
+        "order_status": "triggered",
+        "order_userref": 0,
+        "limit_price": 0.9132,
+        "triggers": {
+          "last_price": 0.9122,
+          "status": "triggered",
+          "timestamp": "2026-01-01T00:00:02.000000Z"
+        },
+        "triggered_price": 0.9122
+      }
+    ],
+    "type": "update",
+    "sequence": 2
+  },
+  {
+    "channel": "executions",
+    "data": [
+      {
+        "order_id": "OCAP14-STLMT-000014",
+        "exec_type": "new",
+        "timestamp": "2026-01-01T00:00:03.000000Z",
+        "order_status": "new",
+        "order_userref": 0
+      }
+    ],
+    "type": "update",
+    "sequence": 3
+  },
+  {
+    "channel": "executions",
+    "data": [
+      {
+        "order_id": "OCAP14-STLMT-000014",
+        "exec_type": "trade",
+        "timestamp": "2026-01-01T00:00:04.000000Z",
+        "exec_id": "TCAP14-STLMT-000014",
+        "order_status": "partially_filled",
+        "order_userref": 0,
+        "symbol": "USDC/EUR",
+        "side": "buy",
+        "order_type": "stop-loss-limit",
+        "last_qty": 5.0,
+        "last_price": 0.9122,
+        "cost": 4.561,
+        "cum_qty": 5.0,
+        "cum_cost": 4.561,
+        "avg_price": 0.9122,
+        "liquidity_ind": "t",
+        "trade_id": 14,
+        "fees": [
+          {
+            "asset": "EUR",
+            "qty": 0.009122
+          }
+        ],
+        "fee_usd_equiv": 0.0
+      }
+    ],
+    "type": "update",
+    "sequence": 4
+  },
+  {
+    "channel": "executions",
+    "data": [
+      {
+        "order_id": "OCAP14-STLMT-000014",
+        "exec_type": "filled",
+        "timestamp": "2026-01-01T00:00:05.000000Z",
+        "order_status": "filled",
+        "order_userref": 0,
+        "cum_qty": 5.0,
+        "cum_cost": 4.561,
+        "avg_price": 0.9122,
+        "fee_usd_equiv": 0.0,
+        "triggers": {
+          "status": "triggered",
+          "timestamp": "2026-01-01T00:00:05.000000Z"
+        }
+      }
+    ],
+    "type": "update",
+    "sequence": 5
+  },
+  {
+    "channel": "executions",
+    "data": [
+      {
+        "order_id": "OCAP15-MARKT-000015",
+        "exec_type": "pending_new",
+        "timestamp": "2026-01-01T00:00:06.000000Z",
+        "order_status": "pending_new",
+        "order_userref": 0,
+        "symbol": "USDC/EUR",
+        "side": "sell",
+        "order_type": "market",
+        "order_qty": 5.0,
+        "limit_price": 0.0,
+        "time_in_force": "GTC",
+        "cum_cost": 0.0,
+        "fee_usd_equiv": 0.0,
+        "fee_ccy_pref": "fciq",
+        "stop_price": 0.0
+      }
+    ],
+    "type": "update",
+    "sequence": 6
+  },
+  {
+    "channel": "executions",
+    "data": [
+      {
+        "order_id": "OCAP15-MARKT-000015",
+        "exec_type": "new",
+        "timestamp": "2026-01-01T00:00:07.000000Z",
+        "order_status": "new",
+        "order_userref": 0
+      }
+    ],
+    "type": "update",
+    "sequence": 7
+  },
+  {
+    "channel": "executions",
+    "data": [
+      {
+        "order_id": "OCAP15-MARKT-000015",
+        "exec_type": "trade",
+        "timestamp": "2026-01-01T00:00:08.000000Z",
+        "exec_id": "TCAP15-MARKT-000015",
+        "order_status": "partially_filled",
+        "order_userref": 0,
+        "symbol": "USDC/EUR",
+        "side": "sell",
+        "order_type": "market",
+        "last_qty": 5.0,
+        "last_price": 0.9121,
+        "cost": 4.5605,
+        "cum_qty": 5.0,
+        "cum_cost": 4.5605,
+        "avg_price": 0.9121,
+        "liquidity_ind": "t",
+        "trade_id": 15,
+        "fees": [
+          {
+            "asset": "EUR",
+            "qty": 0.009121
+          }
+        ],
+        "fee_usd_equiv": 0.0
+      }
+    ],
+    "type": "update",
+    "sequence": 8
+  },
+  {
+    "channel": "executions",
+    "data": [
+      {
+        "order_id": "OCAP15-MARKT-000015",
+        "exec_type": "filled",
+        "timestamp": "2026-01-01T00:00:09.000000Z",
+        "order_status": "filled",
+        "order_userref": 0,
+        "cum_qty": 5.0,
+        "cum_cost": 4.5605,
+        "avg_price": 0.9121,
+        "fee_usd_equiv": 0.0
+      }
+    ],
+    "type": "update",
+    "sequence": 9
+  }
+]

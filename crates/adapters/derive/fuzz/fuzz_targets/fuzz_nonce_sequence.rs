@@ -73,7 +73,7 @@ fn wallet_from_selector(selector: u8) -> &'static str {
 }
 
 fn read_u64(data: &[u8], offset: usize) -> u64 {
-    let mut buf = [0u8; 8];
+    let mut buf = [0_u8; 8];
     buf.copy_from_slice(&data[offset..offset + 8]);
     u64::from_le_bytes(buf)
 }

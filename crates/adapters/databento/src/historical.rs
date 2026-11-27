@@ -36,7 +36,7 @@ use crate::{
     decode::{
         MboDeltaBuffer, decode_imbalance_msg, decode_instrument_def_msg, decode_mbo_msg,
         decode_mbp10_msg, decode_record, decode_statistics_msg, decode_status_msg,
-        is_supported_stat_type,
+        is_supported_stat_type, skip_glbx_outright_without_multiplier,
     },
     symbology::{
         MetadataCache, check_consistent_symbology, decode_nautilus_instrument_id,
@@ -327,6 +327,10 @@ impl DatabentoHistoricalClient {
         let mut futures_symbols = Vec::new();
 
         while let Some(msg) = decoder.decode_record::<dbn::InstrumentDefMsg>().await? {
+            if skip_glbx_outright_without_multiplier(msg) {
+                continue;
+            }
+
             let record = dbn::RecordRef::from(msg);
             let sym_map = self.symbol_venue_map.load();
             let mut instrument_id = decode_nautilus_instrument_id(
@@ -366,7 +370,7 @@ impl DatabentoHistoricalClient {
 
                     instruments.push(instrument);
                 }
-                Ok(None) => {} // Decoder logged a warning for the unsupported class
+                Ok(None) => {}
                 Err(e) => anyhow::bail!("Failed to decode instrument {instrument_id}: {e}"),
             }
         }
@@ -1414,6 +1418,10 @@ mod tests {
         let mut replacement = definitions[0].clone();
         replacement.maturity_year = 2036;
         definitions.push(replacement);
+        let mut missing_multiplier = definitions[0].clone();
+        missing_multiplier.unit_of_measure_qty = dbn::UNDEF_PRICE;
+        definitions.insert(1, missing_multiplier);
+
         let metadata = dbn::Metadata::builder()
             .dataset("GLBX.MDP3")
             .schema(Some(dbn::Schema::Definition))

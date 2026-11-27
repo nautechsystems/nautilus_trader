@@ -1,6 +1,6 @@
 [project]
 name = "nautilus-trader"
-version = "2.0.0"
+version = "2.0.0rc10"
 description = "Production-grade Rust-native trading engine with deterministic event-driven architecture"
 authors = [{ name = "Nautech Systems", email = "info@nautechsystems.io" }]
 classifiers = [
@@ -29,7 +29,7 @@ dependencies = []
 visualization = [
   "pandas>=2.3.3,<4.0.0",
   "plotly>=7.0.0,<8.0.0",
-  "kaleido>=1.5.0,<2.0.0",
+  "kaleido>=1.5.2,<2.0.0",
   "simplejson>=4.3.0,<5.0.0",
 ]
 
@@ -70,7 +70,8 @@ environments = [
   "sys_platform == 'win32' and platform_machine == 'AMD64'",
 ]
 exclude-newer = "7 days"
-exclude-newer-package = { ruff = "3 days" }
+# Remove the temporary PyYAML cutoff on 2026-11-28 UTC after 6.0.4 clears the seven-day window
+exclude-newer-package = { ruff = "3 days", pyyaml = "2026-11-21T00:00:00Z" }
 # Block sdist builds for every third-party package in python/uv.lock so
 # unexpected loss of wheel publishing fails `uv lock` instead of silently
 # building from source. Kept in sync with python/uv.lock by
@@ -130,7 +131,6 @@ no-build-package = [
   "roman-numerals",
   "ruff",
   "simplejson",
-  "six",
   "snowballstemmer",
   "soupsieve",
   "sphinx",
@@ -152,12 +152,12 @@ no-build-package = [
 ]
 
 [dependency-groups]
-dev = ["maturin==1.16.0", "ruff>=0.17.5", "ty>=0.0.100"]
+dev = ["maturin==1.16.0", "ruff>=0.17.6", "ty>=0.0.107"]
 test = [
-  "pyarrow>=26.0.0",
+  "pyarrow>=26.0.1",
   "polars",
   "pytest>=9.2.0",
-  "pytest-asyncio>=1.4.1",
+  "pytest-asyncio>=1.5.0",
   "pytest-cov>=7.1.0",
   "pytest-memray>=1.10.0; sys_platform == 'darwin' or sys_platform == 'linux'",
   "pytest-xdist[psutil]>=3.8.0",
@@ -170,9 +170,6 @@ docs = [
   "myst-parser>=5.2.0,<6.0.0",
   "sphinx-comments>=0.0.3,<1.0.0",
 ]
-
-[tool.uv.dependency-groups]
-docs = { requires-python = ">=3.13,<3.15" }
 
 [tool.ruff]
 target-version = "py313"

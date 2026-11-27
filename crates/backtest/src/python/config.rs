@@ -70,12 +70,11 @@ impl BacktestEngineConfig {
         shutdown_on_error = None,
         bypass_logging = None,
         run_analysis = None,
-        timeout_connection = None,
-        timeout_reconciliation = None,
-        timeout_portfolio = None,
-        timeout_disconnection = None,
-        delay_post_stop = None,
-        timeout_shutdown = None,
+        timeout_connection_secs = None,
+        timeout_reconciliation_secs = None,
+        timeout_portfolio_secs = None,
+        timeout_disconnection_secs = None,
+        delay_post_stop_secs = None,
         logging = None,
         instance_id = None,
         cache = None,
@@ -96,12 +95,11 @@ impl BacktestEngineConfig {
         shutdown_on_error: Option<bool>,
         bypass_logging: Option<bool>,
         run_analysis: Option<bool>,
-        timeout_connection: Option<u64>,
-        timeout_reconciliation: Option<u64>,
-        timeout_portfolio: Option<u64>,
-        timeout_disconnection: Option<u64>,
-        delay_post_stop: Option<u64>,
-        timeout_shutdown: Option<u64>,
+        timeout_connection_secs: Option<u64>,
+        timeout_reconciliation_secs: Option<u64>,
+        timeout_portfolio_secs: Option<u64>,
+        timeout_disconnection_secs: Option<u64>,
+        delay_post_stop_secs: Option<u64>,
         logging: Option<LoggerConfig>,
         instance_id: Option<UUID4>,
         cache: Option<CacheConfig>,
@@ -123,12 +121,11 @@ impl BacktestEngineConfig {
             shutdown_on_error: shutdown_on_error.unwrap_or(defaults.shutdown_on_error),
             bypass_logging: bypass_logging.unwrap_or(defaults.bypass_logging),
             run_analysis: run_analysis.unwrap_or(defaults.run_analysis),
-            timeout_connection: Duration::from_secs(timeout_connection.unwrap_or(60)),
-            timeout_reconciliation: Duration::from_secs(timeout_reconciliation.unwrap_or(30)),
-            timeout_portfolio: Duration::from_secs(timeout_portfolio.unwrap_or(10)),
-            timeout_disconnection: Duration::from_secs(timeout_disconnection.unwrap_or(10)),
-            delay_post_stop: Duration::from_secs(delay_post_stop.unwrap_or(10)),
-            timeout_shutdown: Duration::from_secs(timeout_shutdown.unwrap_or(5)),
+            timeout_connection: Duration::from_secs(timeout_connection_secs.unwrap_or(60)),
+            timeout_reconciliation: Duration::from_secs(timeout_reconciliation_secs.unwrap_or(30)),
+            timeout_portfolio: Duration::from_secs(timeout_portfolio_secs.unwrap_or(10)),
+            timeout_disconnection: Duration::from_secs(timeout_disconnection_secs.unwrap_or(10)),
+            delay_post_stop: Duration::from_secs(delay_post_stop_secs.unwrap_or(10)),
             logging: logging.unwrap_or_default(),
             instance_id,
             cache,
@@ -180,39 +177,33 @@ impl BacktestEngineConfig {
     }
 
     #[getter]
-    #[pyo3(name = "timeout_connection")]
-    fn py_timeout_connection(&self) -> f64 {
+    #[pyo3(name = "timeout_connection_secs")]
+    fn py_timeout_connection_secs(&self) -> f64 {
         self.timeout_connection.as_secs_f64()
     }
 
     #[getter]
-    #[pyo3(name = "timeout_reconciliation")]
-    fn py_timeout_reconciliation(&self) -> f64 {
+    #[pyo3(name = "timeout_reconciliation_secs")]
+    fn py_timeout_reconciliation_secs(&self) -> f64 {
         self.timeout_reconciliation.as_secs_f64()
     }
 
     #[getter]
-    #[pyo3(name = "timeout_portfolio")]
-    fn py_timeout_portfolio(&self) -> f64 {
+    #[pyo3(name = "timeout_portfolio_secs")]
+    fn py_timeout_portfolio_secs(&self) -> f64 {
         self.timeout_portfolio.as_secs_f64()
     }
 
     #[getter]
-    #[pyo3(name = "timeout_disconnection")]
-    fn py_timeout_disconnection(&self) -> f64 {
+    #[pyo3(name = "timeout_disconnection_secs")]
+    fn py_timeout_disconnection_secs(&self) -> f64 {
         self.timeout_disconnection.as_secs_f64()
     }
 
     #[getter]
-    #[pyo3(name = "delay_post_stop")]
-    fn py_delay_post_stop(&self) -> f64 {
+    #[pyo3(name = "delay_post_stop_secs")]
+    fn py_delay_post_stop_secs(&self) -> f64 {
         self.delay_post_stop.as_secs_f64()
-    }
-
-    #[getter]
-    #[pyo3(name = "timeout_shutdown")]
-    fn py_timeout_shutdown(&self) -> f64 {
-        self.timeout_shutdown.as_secs_f64()
     }
 
     #[getter]

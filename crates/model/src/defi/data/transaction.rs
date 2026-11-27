@@ -269,8 +269,8 @@ mod tests {
 
         // Test that large values are handled correctly with U256
         assert_eq!(tx.gas, U256::from(u64::MAX));
-        assert_eq!(tx.gas_price, U256::from(1_000_000_000_000_000_000u64)); // 1 ETH in wei
-        assert_eq!(tx.value, U256::from(1_000_000_000_000_000_000u64)); // 1 ETH in wei
+        assert_eq!(tx.gas_price, U256::from(1_000_000_000_000_000_000_u64)); // 1 ETH in wei
+        assert_eq!(tx.value, U256::from(1_000_000_000_000_000_000_u64)); // 1 ETH in wei
         assert_eq!(tx.block_number, 16_777_216); // 0x1000000
     }
 
@@ -340,15 +340,15 @@ mod tests {
             from_addr,
             to_addr,
             U256::from(21_000),
-            U256::from(20_000_000_000u64), // 20 gwei
+            U256::from(20_000_000_000_u64), // 20 gwei
             0,
-            U256::from(1_000_000_000_000_000_000u64), // 1 ETH
+            U256::from(1_000_000_000_000_000_000_u64), // 1 ETH
         );
 
         assert_eq!(tx.from, from_addr);
         assert_eq!(tx.to, to_addr);
         assert_eq!(tx.gas, U256::from(21_000));
-        assert_eq!(tx.gas_price, U256::from(20_000_000_000u64));
-        assert_eq!(tx.value, U256::from(1_000_000_000_000_000_000u64));
+        assert_eq!(tx.gas_price, U256::from(20_000_000_000_u64));
+        assert_eq!(tx.value, U256::from(1_000_000_000_000_000_000_u64));
     }
 }

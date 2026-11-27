@@ -558,7 +558,7 @@ fn test_cash_spread_credits_precede_debits_with_fees_above_premium(
         assert_eq!(fill.currency, currency);
         assert_eq!(fill.commission, Some(Money::from(commission)));
         assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
-        assert_eq!(fill.ts_event, UnixNanos::from(4_000_000_000u64));
+        assert_eq!(fill.ts_event, UnixNanos::from(4_000_000_000_u64));
         let (prefix, _) = fills[2].trade_id.as_str().rsplit_once('-').unwrap();
         assert_eq!(fill.trade_id.as_str(), format!("{prefix}-{:03}", index + 1));
 
@@ -977,7 +977,7 @@ fn test_cash_spread_credits_precede_debits_with_converted_account_currency(
         assert_eq!(fill.currency, Currency::EUR());
         assert_eq!(fill.commission, Some(Money::from(commission)));
         assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
-        assert_eq!(fill.ts_event, UnixNanos::from(4_000_000_000u64));
+        assert_eq!(fill.ts_event, UnixNanos::from(4_000_000_000_u64));
         let (prefix, _) = fills[2].trade_id.as_str().rsplit_once('-').unwrap();
         assert_eq!(fill.trade_id.as_str(), format!("{prefix}-{:03}", index + 1));
 
@@ -1129,11 +1129,13 @@ fn spread_instruments(
     let leg_b_id = InstrumentId::from(format!("LEG-B.{venue}").as_str());
     let spread_id = InstrumentId::from(format!("(1)LEG-A___((2))LEG-B.{venue}").as_str());
     let activation = UnixNanos::default();
-    let expiration = UnixNanos::from(1_000_000_000_000u64);
+    let expiration = UnixNanos::from(1_000_000_000_000_u64);
 
     if options {
         let mut leg_a = option_contract_appl();
-        leg_a.currency = currency;
+        leg_a.quote_currency = currency;
+        leg_a.strike_currency = currency;
+        leg_a.settlement_currency = currency;
         leg_a.id = leg_a_id;
         leg_a.raw_symbol = leg_a_id.symbol;
         leg_a.activation_ns = activation;

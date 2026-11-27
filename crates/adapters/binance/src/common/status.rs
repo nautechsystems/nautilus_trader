@@ -15,16 +15,131 @@
 
 //! Instrument status mapping and polling for the Binance adapter.
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use nautilus_common::{live::sender::EventSender, messages::DataEvent};
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, time::AtomicTime};
 use nautilus_model::{
     data::{Data, InstrumentStatus},
     enums::MarketStatusAction,
     identifiers::InstrumentId,
+    instruments::{Instrument, InstrumentAny},
+};
+use parking_lot::Mutex;
+
+use crate::{
+    common::parse::{CONTRACT_TYPE_PERPETUAL, CONTRACT_TYPE_TRADIFI_PERPETUAL},
+    spot::sbe::generated::symbol_status::SymbolStatus,
 };
 
-use crate::spot::sbe::generated::symbol_status::SymbolStatus;
+// Binance uses 2100-12-25 08:00 UTC or a later value for unscheduled perpetuals
+const PERPETUAL_DELIVERY_DATE_MS: i64 = 4_133_404_800_000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SymbolTradingStatus {
+    pub(crate) action: MarketStatusAction,
+    pub(crate) is_trading: bool,
+}
+
+impl From<MarketStatusAction> for SymbolTradingStatus {
+    fn from(action: MarketStatusAction) -> Self {
+        Self {
+            action,
+            is_trading: action == MarketStatusAction::Trading,
+        }
+    }
+}
+
+/// Serializes status changes and subscription replay through the same event sender.
+#[derive(Debug)]
+pub(crate) struct InstrumentStatusCache<S>(Mutex<AHashMap<InstrumentId, S>>);
+
+impl<S: Copy + PartialEq + Into<SymbolTradingStatus>> InstrumentStatusCache<S> {
+    pub(crate) fn new() -> Self {
+        Self(Mutex::default())
+    }
+
+    pub(crate) fn seed(&self, statuses: AHashMap<InstrumentId, S>) {
+        *self.0.lock() = statuses;
+    }
+
+    pub(crate) fn update(
+        &self,
+        statuses: &AHashMap<InstrumentId, S>,
+        sender: &EventSender<DataEvent>,
+        clock: &AtomicTime,
+    ) {
+        let mut cached_statuses = self.0.lock();
+        let ts = clock.get_time_ns();
+        diff_statuses(statuses, &mut cached_statuses, sender, ts, ts);
+    }
+
+    pub(crate) fn replay(
+        &self,
+        instrument_id: InstrumentId,
+        sender: &EventSender<DataEvent>,
+        clock: &AtomicTime,
+    ) {
+        let cached_statuses = self.0.lock();
+        if let Some(&status) = cached_statuses.get(&instrument_id) {
+            let ts = clock.get_time_ns();
+            emit_status(sender, instrument_id, status.into(), ts, ts);
+        }
+    }
+}
+
+/// Maps a trading perpetual with a scheduled delivery to `PreClose` while it remains tradable.
+#[must_use]
+pub(crate) fn futures_symbol_status(
+    action: MarketStatusAction,
+    contract_type: &str,
+    delivery_date: i64,
+) -> SymbolTradingStatus {
+    let mut status = SymbolTradingStatus::from(action);
+    let perpetual = matches!(
+        contract_type,
+        CONTRACT_TYPE_PERPETUAL | CONTRACT_TYPE_TRADIFI_PERPETUAL
+    );
+
+    if status.is_trading && perpetual && (1..PERPETUAL_DELIVERY_DATE_MS).contains(&delivery_date) {
+        status.action = MarketStatusAction::PreClose;
+    }
+
+    status
+}
+
+pub(crate) fn publish_refreshed_instruments<S: Copy + Into<SymbolTradingStatus>>(
+    instruments: &[InstrumentAny],
+    previous: &AHashMap<InstrumentId, InstrumentAny>,
+    statuses: &AHashMap<InstrumentId, S>,
+    previous_non_trading: &mut Option<AHashSet<InstrumentId>>,
+    sender: &EventSender<DataEvent>,
+) {
+    let mut non_trading = AHashSet::new();
+
+    for instrument in instruments {
+        let id = instrument.id();
+        if statuses
+            .get(&id)
+            .is_some_and(|status| !(*status).into().is_trading)
+        {
+            non_trading.insert(id);
+            continue;
+        }
+
+        // A status-only poll can observe resumption before the next definition refresh
+        let publish = previous_non_trading
+            .as_ref()
+            .is_none_or(|previous| previous.contains(&id))
+            || previous
+                .get(&id)
+                .is_none_or(|cached| !cached.same_definition(instrument));
+        if publish && let Err(e) = sender.send(DataEvent::Data(instrument.clone().into())) {
+            log::warn!("Failed to send refreshed Binance instrument {id}: {e}");
+        }
+    }
+
+    *previous_non_trading = Some(non_trading);
+}
 
 impl From<SymbolStatus> for MarketStatusAction {
     fn from(status: SymbolStatus) -> Self {
@@ -51,14 +166,23 @@ pub fn diff_and_emit_statuses(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) {
-    for (instrument_id, &new_action) in new_statuses {
+    diff_statuses(new_statuses, cached_statuses, sender, ts_event, ts_init);
+}
+
+fn diff_statuses<S: Copy + PartialEq + Into<SymbolTradingStatus>>(
+    new_statuses: &AHashMap<InstrumentId, S>,
+    cached_statuses: &mut AHashMap<InstrumentId, S>,
+    sender: &EventSender<DataEvent>,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) {
+    for (instrument_id, &new_status) in new_statuses {
         let changed = cached_statuses
             .get(instrument_id)
-            .is_none_or(|&prev| prev != new_action);
-
+            .is_none_or(|&prev| prev != new_status);
         if changed {
-            cached_statuses.insert(*instrument_id, new_action);
-            emit_status(sender, *instrument_id, new_action, ts_event, ts_init);
+            cached_statuses.insert(*instrument_id, new_status);
+            emit_status(sender, *instrument_id, new_status.into(), ts_event, ts_init);
         }
     }
 
@@ -71,32 +195,26 @@ pub fn diff_and_emit_statuses(
 
     for instrument_id in removed {
         cached_statuses.remove(&instrument_id);
-        emit_status(
-            sender,
-            instrument_id,
-            MarketStatusAction::NotAvailableForTrading,
-            ts_event,
-            ts_init,
-        );
+        let status = MarketStatusAction::NotAvailableForTrading.into();
+        emit_status(sender, instrument_id, status, ts_event, ts_init);
     }
 }
 
 fn emit_status(
     sender: &EventSender<DataEvent>,
     instrument_id: InstrumentId,
-    action: MarketStatusAction,
+    trading_status: SymbolTradingStatus,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) {
-    let is_trading = Some(matches!(action, MarketStatusAction::Trading));
     let status = InstrumentStatus::new(
         instrument_id,
-        action,
+        trading_status.action,
         ts_event,
         ts_init,
         None,
         None,
-        is_trading,
+        Some(trading_status.is_trading),
         None,
         None,
     );
@@ -108,13 +226,67 @@ fn emit_status(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::identifiers::InstrumentId;
+    use nautilus_model::{
+        enums::MarketStatusAction::{Close, PreClose, Trading},
+        identifiers::InstrumentId,
+        instruments::stubs::audusd_sim,
+        types::Price,
+    };
     use rstest::rstest;
 
     use super::{
         super::enums::{BinanceContractStatus, BinanceTradingStatus},
         *,
     };
+
+    #[rstest]
+    #[case::unchanged(false, false, false)]
+    #[case::changed(true, false, true)]
+    #[case::resumed(false, true, true)]
+    fn test_refresh_publishes_changed_or_resumed_instrument(
+        #[case] changed: bool,
+        #[case] previously_non_trading: bool,
+        #[case] publishes: bool,
+    ) {
+        let original = InstrumentAny::CurrencyPair(audusd_sim());
+        let mut updated = audusd_sim();
+        updated.ts_init = UnixNanos::from(10);
+        if changed {
+            updated.price_increment = Price::from("0.00002");
+        }
+
+        let updated = InstrumentAny::CurrencyPair(updated);
+        let id = original.id();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut non_trading = Some(if previously_non_trading {
+            AHashSet::from_iter([id])
+        } else {
+            AHashSet::new()
+        });
+
+        publish_refreshed_instruments(
+            std::slice::from_ref(&updated),
+            &AHashMap::from_iter([(id, original)]),
+            &AHashMap::from_iter([(id, MarketStatusAction::Trading)]),
+            &mut non_trading,
+            &tx.into(),
+        );
+
+        assert_eq!(non_trading, Some(AHashSet::new()));
+        let event = rx.try_recv().ok();
+        if publishes {
+            let Some(DataEvent::Data(Data::Instrument(received))) = event else {
+                panic!("expected an instrument for {id}");
+            };
+
+            assert_eq!(received.id(), id);
+            assert_eq!(received.ts_init(), updated.ts_init());
+            assert_eq!(received.price_increment(), updated.price_increment());
+        } else {
+            assert!(event.is_none());
+        }
+    }
 
     #[rstest]
     #[case(SymbolStatus::Trading, MarketStatusAction::Trading)]
@@ -188,6 +360,62 @@ mod tests {
         #[case] expected: MarketStatusAction,
     ) {
         assert_eq!(MarketStatusAction::from(input), expected);
+    }
+
+    #[rstest]
+    #[case::perpetual_scheduled(Trading, "PERPETUAL", 1_793_178_000_000, PreClose, true)]
+    #[case::tradfi_perpetual_scheduled(
+        Trading,
+        "TRADIFI_PERPETUAL",
+        1_793_178_000_000,
+        PreClose,
+        true
+    )]
+    #[case::perpetual_unscheduled(Trading, "PERPETUAL", 4_133_404_800_000, Trading, true)]
+    #[case::btc_demo_unscheduled(Trading, "PERPETUAL", 4_133_404_802_000, Trading, true)]
+    #[case::fet_demo_unscheduled(Trading, "PERPETUAL", 4_133_408_400_000, Trading, true)]
+    #[case::no_delivery_date(Trading, "PERPETUAL", 0, Trading, true)]
+    #[case::perpetual_pre_settle(PreClose, "PERPETUAL", 1_793_178_000_000, PreClose, false)]
+    #[case::perpetual_settling(Close, "PERPETUAL", 1_793_178_000_000, Close, false)]
+    #[case::delivery_contract(Trading, "CURRENT_QUARTER", 1_793_178_000_000, Trading, true)]
+    fn test_futures_symbol_status(
+        #[case] action: MarketStatusAction,
+        #[case] contract_type: &str,
+        #[case] delivery_date: i64,
+        #[case] expected_action: MarketStatusAction,
+        #[case] is_trading: bool,
+    ) {
+        assert_eq!(
+            futures_symbol_status(action, contract_type, delivery_date),
+            SymbolTradingStatus {
+                action: expected_action,
+                is_trading
+            },
+        );
+    }
+
+    #[rstest]
+    fn test_status_update_emits_when_only_trading_flag_changes() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let sender = tx.into();
+        let id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let ts = UnixNanos::from(42);
+        let clock = AtomicTime::new(false, ts);
+        let cache = InstrumentStatusCache::new();
+        let scheduled = futures_symbol_status(Trading, "PERPETUAL", 1_793_178_000_000);
+        cache.seed(AHashMap::from_iter([(id, scheduled)]));
+
+        let pre_settle = SymbolTradingStatus::from(PreClose);
+        let statuses = AHashMap::from_iter([(id, pre_settle)]);
+        cache.update(&statuses, &sender, &clock);
+
+        let DataEvent::Data(Data::InstrumentStatus(status)) = rx.try_recv().unwrap() else {
+            panic!("Expected an instrument status event");
+        };
+
+        let expected =
+            InstrumentStatus::new(id, PreClose, ts, ts, None, None, Some(false), None, None);
+        assert_eq!(status, expected);
     }
 
     #[rstest]

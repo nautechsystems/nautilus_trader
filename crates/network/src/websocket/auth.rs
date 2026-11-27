@@ -1541,7 +1541,7 @@ mod proptest_tests {
         /// agrees with the last state-setting call.
         #[rstest]
         fn test_state_consistency_after_random_operations(
-            ops in proptest::collection::vec(0u8..4, 1..50)
+            ops in proptest::collection::vec(0_u8..4, 1..50)
         ) {
             let tracker = AuthTracker::new();
             let mut expected_auth = false;
@@ -1575,7 +1575,7 @@ mod proptest_tests {
         /// prior state, so a new auth attempt starts clean.
         #[rstest]
         fn test_begin_always_clears_failed(
-            prior_ops in proptest::collection::vec(0u8..4, 0..20)
+            prior_ops in proptest::collection::vec(0_u8..4, 0..20)
         ) {
             let tracker = AuthTracker::new();
 
@@ -1598,7 +1598,7 @@ mod proptest_tests {
         /// regardless of prior state.
         #[rstest]
         fn test_succeed_always_sets_authenticated(
-            prior_ops in proptest::collection::vec(0u8..4, 0..20)
+            prior_ops in proptest::collection::vec(0_u8..4, 0..20)
         ) {
             let tracker = AuthTracker::new();
 

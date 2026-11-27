@@ -2240,7 +2240,7 @@ mod tests {
             .as_any_mut()
             .downcast_mut::<VirtualClock>()
             .expect("test default clock must be VirtualClock");
-        test_clock.set_time(1_000_000_000u64.into());
+        test_clock.set_time(1_000_000_000_u64.into());
         drop(clock_ref);
         let msgbus = Rc::new(RefCell::new(MessageBus::new(
             trader_id,
@@ -3951,7 +3951,7 @@ mod tests {
             .as_any_mut()
             .downcast_mut::<VirtualClock>()
             .unwrap()
-            .set_time(3_000_000_000u64.into());
+            .set_time(3_000_000_000_u64.into());
 
         let result = if after_start_failure {
             trader.stop_after_start_failure()
@@ -3969,7 +3969,7 @@ mod tests {
 
         assert_eq!(error.to_string(), format!("{prefix}: {expected_error}"));
         assert_eq!(trader.state(), ComponentState::Stopped);
-        assert_eq!(trader.ts_stopped(), Some(3_000_000_000u64.into()));
+        assert_eq!(trader.ts_stopped(), Some(3_000_000_000_u64.into()));
 
         for (component_id, fail_stop) in components {
             let expected = if fail_stop {
@@ -4550,7 +4550,7 @@ mod tests {
     fn test_create_component_clock_live_uses_factory_with_distinct_instances() {
         let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, _clock_factory) =
             create_trader_components();
-        let calls = Rc::new(Cell::new(0usize));
+        let calls = Rc::new(Cell::new(0_usize));
         let calls_in_closure = calls.clone();
         let clock_factory = ClockFactory::new(move || {
             calls_in_closure.set(calls_in_closure.get() + 1);
@@ -6528,20 +6528,20 @@ class ModuleStrategy(Strategy):
         fn prop_trader_bookkeeping_matches_registries(
             ops in proptest::collection::vec(
                 proptest::prop_oneof![
-                    (0u8..3).prop_map(TraderOp::AddActor),
-                    (0u8..3).prop_map(TraderOp::RemoveActor),
+                    (0_u8..3).prop_map(TraderOp::AddActor),
+                    (0_u8..3).prop_map(TraderOp::RemoveActor),
                     proptest::prelude::Just(TraderOp::ClearActors),
-                    (0u8..3).prop_map(TraderOp::AddStrategy),
-                    (0u8..3).prop_map(TraderOp::RemoveStrategy),
+                    (0_u8..3).prop_map(TraderOp::AddStrategy),
+                    (0_u8..3).prop_map(TraderOp::RemoveStrategy),
                     proptest::prelude::Just(TraderOp::ClearStrategies),
-                    (0u8..3).prop_map(TraderOp::AddExecutionAlgorithm),
+                    (0_u8..3).prop_map(TraderOp::AddExecutionAlgorithm),
                     proptest::prelude::Just(TraderOp::ClearExecutionAlgorithms),
                     proptest::prelude::Just(TraderOp::DisposeComponents),
                 ],
-                1..12usize,
+                1..12_usize,
             ),
         ) {
-            let slots: Vec<u8> = (0u8..3).collect();
+            let slots: Vec<u8> = (0_u8..3).collect();
 
             // Reset up front: a case which fails mid-way never reaches its teardown, and stale
             // registry entries would otherwise corrupt every later shrink iteration

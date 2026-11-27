@@ -25,7 +25,7 @@ use std::{
 };
 
 use anyhow::Context;
-use dashmap::DashMap;
+use dashmap::{DashMap, mapref::entry::Entry};
 use futures_util::{Stream, StreamExt, pin_mut};
 use nautilus_common::{
     clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
@@ -85,6 +85,9 @@ use crate::{
     },
 };
 
+const INSTRUMENT_REFRESH_COOLDOWN: Duration = Duration::from_secs(30);
+const INSTRUMENT_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+
 /// dYdX data client for live market data streaming and historical data requests.
 ///
 /// This client integrates with the Nautilus DataEngine to provide:
@@ -105,6 +108,8 @@ pub struct DydxDataClient {
     shutdown_errors: Vec<String>,
     data_sender: EventSender<DataEvent>,
     instrument_cache: Arc<InstrumentCache>,
+    instrument_refresh_lock: Arc<tokio::sync::Mutex<()>>,
+    instrument_publish_lock: Arc<parking_lot::Mutex<()>>,
     order_books: Arc<DashMap<InstrumentId, OrderBook>>,
     last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,
     incomplete_bars: Arc<DashMap<BarType, Bar>>,
@@ -158,6 +163,8 @@ impl DydxDataClient {
             shutdown_errors: Vec::new(),
             data_sender,
             instrument_cache,
+            instrument_refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
+            instrument_publish_lock: Arc::new(parking_lot::Mutex::new(())),
             order_books: Arc::new(DashMap::new()),
             last_quotes: Arc::new(DashMap::new()),
             incomplete_bars: Arc::new(DashMap::new()),
@@ -250,6 +257,58 @@ impl DydxDataClient {
         self.session_tasks
             .spawn(future)
             .context("failed to register dYdX WebSocket stream task")?;
+        Ok(())
+    }
+
+    fn spawn_instrument_refresh(&self) -> anyhow::Result<()> {
+        let cancellation = self.session_tasks.cancellation_token();
+        let instrument_refresh_lock = self.instrument_refresh_lock.clone();
+        let publish_lock = self.instrument_publish_lock.clone();
+        let http_client = self.http_client.clone();
+        let instrument_cache = self.instrument_cache.clone();
+        let ws_client = self.ws_client.clone();
+        let data_sender = self.data_sender.clone();
+
+        self.session_tasks
+            .spawn(async move {
+                let mut interval = tokio::time::interval_at(
+                    tokio::time::Instant::now() + INSTRUMENT_REFRESH_INTERVAL,
+                    INSTRUMENT_REFRESH_INTERVAL,
+                );
+                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+                loop {
+                    let refresh = async {
+                        interval.tick().await;
+                        let _guard = instrument_refresh_lock.lock().await;
+
+                        let result = http_client.request_instruments(None).await;
+                        let _publish_guard = publish_lock.lock();
+
+                        if cancellation.is_cancelled() {
+                            return;
+                        }
+
+                        match result {
+                            Ok(instruments) => publish_changed_definitions(
+                                &instrument_cache,
+                                &ws_client,
+                                &data_sender,
+                                &instruments,
+                            ),
+                            Err(e) => log::warn!("Failed to refresh dYdX instruments: {e}"),
+                        }
+                    };
+
+                    tokio::select! {
+                        biased;
+                        () = cancellation.cancelled() => break,
+                        () = refresh => {}
+                    }
+                }
+            })
+            .context("failed to register dYdX instrument refresh task")?;
+
         Ok(())
     }
 
@@ -362,8 +421,13 @@ impl DataClient for DydxDataClient {
 
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping {}", self.client_id);
-        self.session_tasks.begin_shutdown();
-        self.command_tasks.begin_shutdown();
+
+        {
+            let _guard = self.instrument_publish_lock.lock();
+            self.session_tasks.begin_shutdown();
+            self.command_tasks.begin_shutdown();
+        }
+
         self.ws_client.begin_shutdown();
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
@@ -371,8 +435,13 @@ impl DataClient for DydxDataClient {
 
     fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting {}", self.client_id);
-        self.session_tasks.begin_shutdown();
-        self.command_tasks.begin_shutdown();
+
+        {
+            let _guard = self.instrument_publish_lock.lock();
+            self.session_tasks.begin_shutdown();
+            self.command_tasks.begin_shutdown();
+        }
+
         self.ws_client.begin_shutdown();
         self.last_quotes.clear();
         self.is_connected.store(false, Ordering::Relaxed);
@@ -399,7 +468,10 @@ impl DataClient for DydxDataClient {
                 ws_client.begin_shutdown();
             });
 
-        self.bootstrap_instruments().await?;
+        {
+            let _refresh_guard = self.instrument_refresh_lock.lock().await;
+            self.bootstrap_instruments().await?;
+        }
 
         let session_result = async {
             self.ws_client
@@ -411,14 +483,6 @@ impl DataClient for DydxDataClient {
                 .subscribe_markets()
                 .await
                 .context("failed to subscribe to markets channel")?;
-
-            let seen_tickers: Arc<AtomicSet<Ustr>> = Arc::new(AtomicSet::new());
-
-            for instrument in self.instrument_cache.all_instruments() {
-                let id = instrument.id();
-                let ticker = extract_raw_symbol(id.symbol.as_str());
-                seen_tickers.insert(Ustr::from(ticker));
-            }
 
             let command_spawner = self
                 .command_tasks
@@ -445,11 +509,14 @@ impl DataClient for DydxDataClient {
                 last_instrument_statuses: self.last_instrument_statuses.clone(),
                 bars_timestamp_on_close: self.ws_client.bars_timestamp_on_close(),
                 pending_bars: Arc::new(DashMap::new()),
-                seen_tickers,
+                instrument_refreshes: Arc::new(DashMap::new()),
+                instrument_refresh_lock: self.instrument_refresh_lock.clone(),
+                instrument_publish_lock: self.instrument_publish_lock.clone(),
                 command_spawner,
             };
 
             let stream = self.ws_client.stream();
+            self.spawn_instrument_refresh()?;
             self.spawn_ws_stream_handler(stream, ctx)?;
 
             Ok::<(), anyhow::Error>(())
@@ -808,6 +875,10 @@ impl DataClient for DydxDataClient {
         }
 
         let instrument_cache = self.instrument_cache.clone();
+        let ws_client = self.ws_client.clone();
+        let instrument_refresh_lock = self.instrument_refresh_lock.clone();
+        let publish_lock = self.instrument_publish_lock.clone();
+        let cancel = self.command_tasks.cancellation_token();
         let sender = self.data_sender.clone();
         let http = self.http_client.clone();
         let request_id = request.request_id;
@@ -818,12 +889,38 @@ impl DataClient for DydxDataClient {
         let clock = self.clock;
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
+        let publish = request.start.is_none() && request.end.is_none();
 
         self.spawn_command(async move {
-            let instrument = match http.request_instruments(None).await {
+            let Some(_refresh_guard) = cancel
+                .run_until_cancelled(instrument_refresh_lock.lock())
+                .await
+            else {
+                return;
+            };
+
+            let Some(result) = cancel
+                .run_until_cancelled(Box::pin(http.request_instruments(None)))
+                .await
+            else {
+                return;
+            };
+
+            let _publish_guard = publish_lock.lock();
+
+            if cancel.is_cancelled() {
+                return;
+            }
+
+            let instrument = match result {
                 Ok(instruments) => {
-                    for inst in &instruments {
-                        instrument_cache.insert_instrument_only(inst.clone());
+                    if publish {
+                        publish_changed_definitions(
+                            &instrument_cache,
+                            &ws_client,
+                            &sender,
+                            &instruments,
+                        );
                     }
                     instruments.into_iter().find(|i| i.id() == instrument_id)
                 }
@@ -860,6 +957,10 @@ impl DataClient for DydxDataClient {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
         let instrument_cache = self.instrument_cache.clone();
+        let ws_client = self.ws_client.clone();
+        let instrument_refresh_lock = self.instrument_refresh_lock.clone();
+        let publish_lock = self.instrument_publish_lock.clone();
+        let cancel = self.command_tasks.cancellation_token();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let venue = self.venue();
@@ -869,14 +970,40 @@ impl DataClient for DydxDataClient {
         let clock = self.clock;
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
+        let publish = request.start.is_none() && request.end.is_none();
 
         self.spawn_command(async move {
-            match http.request_instruments(None).await {
+            let Some(_refresh_guard) = cancel
+                .run_until_cancelled(instrument_refresh_lock.lock())
+                .await
+            else {
+                return;
+            };
+
+            let Some(result) = cancel
+                .run_until_cancelled(Box::pin(http.request_instruments(None)))
+                .await
+            else {
+                return;
+            };
+
+            let _publish_guard = publish_lock.lock();
+
+            if cancel.is_cancelled() {
+                return;
+            }
+
+            match result {
                 Ok(instruments) => {
                     log::debug!("Fetched {} instruments from dYdX", instruments.len());
 
-                    for instrument in &instruments {
-                        instrument_cache.insert_instrument_only(instrument.clone());
+                    if publish {
+                        publish_changed_definitions(
+                            &instrument_cache,
+                            &ws_client,
+                            &sender,
+                            &instruments,
+                        );
                     }
 
                     let response = DataResponse::Instruments(InstrumentsResponse::new(
@@ -1206,8 +1333,7 @@ impl DydxDataClient {
                     return;
                 };
                 let instrument_id = instrument.id();
-
-                match ws_parse::parse_trade_ticks(instrument_id, &instrument, &contents, ts_init) {
+                match ws_parse::parse_trades(instrument_id, &instrument, &contents, ts_init) {
                     Ok(data) => {
                         Self::handle_data_message(
                             data,
@@ -1513,19 +1639,12 @@ impl DydxDataClient {
                 }
             }
 
-            let ticker_ustr = Ustr::from(ticker.as_str());
-            if !ctx.seen_tickers.contains(&ticker_ustr) {
-                let is_active = update
-                    .status
-                    .as_ref()
-                    .is_none_or(|s| matches!(s, crate::common::enums::DydxMarketStatus::Active));
+            let is_active = update.status.as_ref().is_none_or(|status| {
+                matches!(status, crate::common::enums::DydxMarketStatus::Active)
+            });
 
-                if ctx.instrument_cache.get_by_market(ticker).is_some() {
-                    ctx.seen_tickers.insert(ticker_ustr);
-                } else if is_active {
-                    ctx.seen_tickers.insert(ticker_ustr);
-                    Self::handle_new_instrument_discovered(ticker, ctx);
-                }
+            if is_active && market_definition_changed(ctx, instrument_id, update) {
+                Self::refresh_instrument(Ustr::from(ticker.as_str()), ctx);
             }
 
             if let Some(ref rate_str) = update.next_funding_rate {
@@ -1592,32 +1711,60 @@ impl DydxDataClient {
         }
     }
 
-    fn handle_new_instrument_discovered(ticker: &str, ctx: &WsMessageContext) {
-        log::debug!("New instrument discovered via WebSocket: {ticker}");
+    fn refresh_instrument(ticker: Ustr, ctx: &WsMessageContext) {
+        let refreshes = ctx.instrument_refreshes.clone();
+        if !begin_instrument_refresh(&refreshes, ticker, tokio::time::Instant::now()) {
+            return;
+        }
 
         let http_client = ctx.http_client.clone();
         let ws_client = ctx.ws_client.clone();
         let data_sender = ctx.data_sender.clone();
-        let ticker = ticker.to_string();
-
+        let active_refreshes = refreshes.clone();
+        let instrument_refresh_lock = ctx.instrument_refresh_lock.clone();
+        let publish_lock = ctx.instrument_publish_lock.clone();
+        let cancel = ctx.command_spawner.cancellation_token();
         if let Err(e) = ctx.command_spawner.spawn(async move {
-            match http_client.fetch_and_cache_single_instrument(&ticker).await {
-                Ok(Some(instrument)) => {
-                    ws_client.cache_instrument(instrument.clone());
-                    if let Err(e) = data_sender.send(DataEvent::Data(instrument.into())) {
-                        log::error!("Failed to emit new instrument: {e}");
-                    }
-                    log::debug!("Fetched and cached new instrument: {ticker}");
-                }
-                Ok(None) => {
-                    log::warn!("New instrument {ticker} not found or inactive");
-                }
-                Err(e) => {
-                    log::error!("Failed to fetch new instrument {ticker}: {e}");
-                }
+            let Some(_refresh_guard) = cancel
+                .run_until_cancelled(instrument_refresh_lock.lock())
+                .await
+            else {
+                return;
+            };
+
+            let Some(result) = cancel
+                .run_until_cancelled(Box::pin(
+                    http_client.fetch_single_instrument(ticker.as_str()),
+                ))
+                .await
+            else {
+                return;
+            };
+
+            let _publish_guard = publish_lock.lock();
+
+            if cancel.is_cancelled() {
+                return;
             }
+
+            match result {
+                Ok(Some((instrument, market))) => {
+                    http_client
+                        .instrument_cache()
+                        .insert(instrument.clone(), market);
+                    publish_instrument_definition(&ws_client, &data_sender, instrument);
+                }
+                Ok(None) => log::debug!("dYdX instrument {ticker} not found or inactive"),
+                Err(e) => log::warn!("Failed to refresh dYdX instrument {ticker}: {e}"),
+            }
+
+            active_refreshes.insert(
+                ticker,
+                Some(tokio::time::Instant::now() + INSTRUMENT_REFRESH_COOLDOWN),
+            );
         }) {
-            log::warn!("Skipping new dYdX instrument fetch after shutdown began: {e}");
+            refreshes.remove(&ticker);
+            log::warn!("Skipping dYdX instrument refresh after shutdown began: {e}");
         }
     }
 
@@ -1948,8 +2095,95 @@ struct WsMessageContext {
     last_instrument_statuses: Arc<DashMap<InstrumentId, InstrumentStatus>>,
     bars_timestamp_on_close: bool,
     pending_bars: Arc<DashMap<String, Bar>>,
-    seen_tickers: Arc<AtomicSet<Ustr>>,
+    instrument_refreshes: Arc<DashMap<Ustr, Option<tokio::time::Instant>>>,
+    instrument_refresh_lock: Arc<tokio::sync::Mutex<()>>,
+    instrument_publish_lock: Arc<parking_lot::Mutex<()>>,
     command_spawner: TaskSpawner,
+}
+
+fn begin_instrument_refresh(
+    refreshes: &DashMap<Ustr, Option<tokio::time::Instant>>,
+    ticker: Ustr,
+    now: tokio::time::Instant,
+) -> bool {
+    match refreshes.entry(ticker) {
+        Entry::Occupied(mut entry) => {
+            if entry.get().is_some_and(|available_at| now >= available_at) {
+                entry.insert(None);
+                true
+            } else {
+                false
+            }
+        }
+        Entry::Vacant(entry) => {
+            entry.insert(None);
+            true
+        }
+    }
+}
+
+fn market_definition_changed(
+    ctx: &WsMessageContext,
+    id: InstrumentId,
+    update: &crate::websocket::messages::DydxMarketTradingUpdate,
+) -> bool {
+    let Some(previous) = ctx.instrument_cache.get_market_params(&id) else {
+        return true;
+    };
+
+    update
+        .clob_pair_id
+        .as_ref()
+        .and_then(|value| value.parse::<u32>().ok())
+        .is_some_and(|id| id != previous.clob_pair_id)
+        || update
+            .atomic_resolution
+            .is_some_and(|value| value != previous.atomic_resolution)
+        || update
+            .quantum_conversion_exponent
+            .is_some_and(|value| value != previous.quantum_conversion_exponent)
+        || update
+            .step_base_quantums
+            .and_then(|value| u64::try_from(value).ok())
+            .is_some_and(|value| value != previous.step_base_quantums)
+        || update
+            .subticks_per_tick
+            .and_then(|value| u32::try_from(value).ok())
+            .is_some_and(|value| value != previous.subticks_per_tick)
+        || update
+            .initial_margin_fraction
+            .as_ref()
+            .and_then(|value| value.parse::<Decimal>().ok())
+            .is_some_and(|value| value != previous.initial_margin_fraction)
+        || update
+            .maintenance_margin_fraction
+            .as_ref()
+            .and_then(|value| value.parse::<Decimal>().ok())
+            .is_some_and(|value| value != previous.maintenance_margin_fraction)
+}
+
+fn publish_changed_definitions(
+    cache: &InstrumentCache,
+    ws_client: &DydxWebSocketClient,
+    sender: &EventSender<DataEvent>,
+    instruments: &[InstrumentAny],
+) {
+    for instrument in instruments {
+        if cache.update_definition(instrument.clone()) {
+            publish_instrument_definition(ws_client, sender, instrument.clone());
+        }
+    }
+}
+
+fn publish_instrument_definition(
+    ws_client: &DydxWebSocketClient,
+    sender: &EventSender<DataEvent>,
+    instrument: InstrumentAny,
+) {
+    ws_client.cache_instrument(instrument.clone());
+    if let Err(e) = sender.send(DataEvent::Data(instrument.into())) {
+        log::error!("Failed to send dYdX instrument definition: {e}");
+    }
 }
 
 #[cfg(test)]
@@ -2415,7 +2649,9 @@ pub(crate) mod tests {
                 last_instrument_statuses: client.last_instrument_statuses.clone(),
                 bars_timestamp_on_close: client.ws_client.bars_timestamp_on_close(),
                 pending_bars: Arc::new(DashMap::new()),
-                seen_tickers: Arc::new(AtomicSet::new()),
+                instrument_refreshes: Arc::new(DashMap::new()),
+                instrument_refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
+                instrument_publish_lock: Arc::new(parking_lot::Mutex::new(())),
                 command_spawner: client.command_tasks.spawner().unwrap(),
             };
 
@@ -2489,6 +2725,60 @@ pub(crate) mod tests {
     }
 
     #[rstest]
+    fn test_periodic_refresh_publishes_changed_market_definition_once() {
+        use crate::http::{models::PerpetualMarket, parse::parse_instrument_any};
+
+        let markets = load_json_fixture("http_get_perpetual_markets.json");
+        let mut market: PerpetualMarket =
+            serde_json::from_value(markets["result"]["markets"]["BTC-USD"].clone()).unwrap();
+        let original = parse_instrument_any(&market, UnixNanos::from(10)).unwrap();
+        let id = original.id();
+        let cache = InstrumentCache::new();
+        assert!(cache.update_definition(original));
+
+        let ws = DydxWebSocketClient::new_public("ws://127.0.0.1:1".to_string(), None, None);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let sender = tx.into();
+        market.tick_size = dec!(0.001);
+        market.subticks_per_tick = 2_000;
+        let revised = parse_instrument_any(&market, UnixNanos::from(20)).unwrap();
+
+        publish_changed_definitions(&cache, &ws, &sender, std::slice::from_ref(&revised));
+
+        let DataEvent::Data(NautilusData::Instrument(published)) = rx.try_recv().unwrap() else {
+            panic!("expected an instrument definition");
+        };
+
+        publish_changed_definitions(&cache, &ws, &sender, &[revised]);
+
+        assert_eq!(published.id(), id);
+        assert_eq!(published.price_increment(), Price::from("0.001"));
+        assert_eq!(
+            cache.get_market_params(&id).unwrap().subticks_per_tick,
+            2_000
+        );
+        assert_eq!(
+            rx.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
+    }
+
+    #[rstest]
+    fn test_instrument_refresh_deduplicates_and_bounds_retries() {
+        let refreshes = DashMap::new();
+        let ticker = Ustr::from("BTC-USD");
+        let now = tokio::time::Instant::now();
+        let next_refresh = now + INSTRUMENT_REFRESH_COOLDOWN;
+
+        assert!(begin_instrument_refresh(&refreshes, ticker, now));
+        assert!(!begin_instrument_refresh(&refreshes, ticker, next_refresh));
+        refreshes.insert(ticker, Some(next_refresh));
+        assert!(!begin_instrument_refresh(&refreshes, ticker, now));
+        assert!(begin_instrument_refresh(&refreshes, ticker, next_refresh));
+        assert_eq!(*refreshes.get(&ticker).unwrap(), None);
+    }
+
+    #[rstest]
     #[case::both(true, true)]
     #[case::mark_only(true, false)]
     #[case::index_only(false, true)]
@@ -2523,12 +2813,14 @@ pub(crate) mod tests {
             last_instrument_statuses: Arc::new(DashMap::new()),
             bars_timestamp_on_close: true,
             pending_bars: Arc::new(DashMap::new()),
-            seen_tickers: Arc::new(AtomicSet::new()),
+            instrument_refreshes: Arc::new(DashMap::new()),
+            instrument_refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
+            instrument_publish_lock: Arc::new(parking_lot::Mutex::new(())),
             command_spawner: command_tasks.spawner().unwrap(),
         };
 
         let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
-        ctx.seen_tickers.insert(Ustr::from("BTC-USD"));
+        ctx.instrument_refreshes.insert(Ustr::from("BTC-USD"), None);
         if mark_subscribed {
             ctx.active_mark_price_subs.insert(instrument_id);
         }

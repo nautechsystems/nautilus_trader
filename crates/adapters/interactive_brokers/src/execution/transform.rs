@@ -974,7 +974,7 @@ mod tests {
 
         match &ib_order.conditions[0] {
             OrderCondition::Price(condition) => {
-                assert_eq!(condition.contract_id, 265598);
+                assert_eq!(condition.contract_id, 265_598);
                 assert_eq!(condition.exchange, "SMART");
                 assert_eq!(condition.price, 150.0);
                 assert!(condition.is_more);

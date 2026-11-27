@@ -89,7 +89,7 @@ enum RequiredInstrumentCachePath {
 }
 
 fn create_sbe_header(block_length: u16, template_id: u16) -> [u8; 8] {
-    let mut header = [0u8; 8];
+    let mut header = [0_u8; 8];
     header[0..2].copy_from_slice(&block_length.to_le_bytes());
     header[2..4].copy_from_slice(&template_id.to_le_bytes());
     header[4..6].copy_from_slice(&SBE_SCHEMA_ID.to_le_bytes());
@@ -98,7 +98,7 @@ fn create_sbe_header(block_length: u16, template_id: u16) -> [u8; 8] {
 }
 
 fn create_group_header(block_length: u16, count: u32) -> [u8; 6] {
-    let mut header = [0u8; 6];
+    let mut header = [0_u8; 6];
     header[0..2].copy_from_slice(&block_length.to_le_bytes());
     header[2..6].copy_from_slice(&count.to_le_bytes());
     header
@@ -119,7 +119,7 @@ fn build_sbe_price_filter(exponent: i8, min_price: i64, max_price: i64, tick_siz
     let mut buf = Vec::new();
 
     // SBE message header (8 bytes)
-    buf.extend_from_slice(&25u16.to_le_bytes()); // block_length (1 + 8 + 8 + 8 = 25)
+    buf.extend_from_slice(&25_u16.to_le_bytes()); // block_length (1 + 8 + 8 + 8 = 25)
     buf.extend_from_slice(&PRICE_FILTER_TEMPLATE_ID.to_le_bytes());
     buf.extend_from_slice(&SBE_SCHEMA_ID.to_le_bytes());
     buf.extend_from_slice(&SBE_SCHEMA_VERSION.to_le_bytes());
@@ -138,7 +138,7 @@ fn build_sbe_lot_size_filter(exponent: i8, min_qty: i64, max_qty: i64, step_size
     let mut buf = Vec::new();
 
     // SBE message header (8 bytes)
-    buf.extend_from_slice(&25u16.to_le_bytes()); // block_length (1 + 8 + 8 + 8 = 25)
+    buf.extend_from_slice(&25_u16.to_le_bytes()); // block_length (1 + 8 + 8 + 8 = 25)
     buf.extend_from_slice(&LOT_SIZE_FILTER_TEMPLATE_ID.to_le_bytes());
     buf.extend_from_slice(&SBE_SCHEMA_ID.to_le_bytes());
     buf.extend_from_slice(&SBE_SCHEMA_VERSION.to_le_bytes());
@@ -171,8 +171,8 @@ fn build_depth_response(last_update_id: i64, bids: &[(i64, i64)], asks: &[(i64, 
 
     // Fixed block: last_update_id, price_exponent, qty_exponent (total 10 bytes)
     buf.extend_from_slice(&last_update_id.to_le_bytes());
-    buf.push((-8i8) as u8); // price_exponent
-    buf.push((-8i8) as u8); // qty_exponent
+    buf.push((-8_i8) as u8); // price_exponent
+    buf.push((-8_i8) as u8); // qty_exponent
 
     // Bids group
     buf.extend_from_slice(&create_group_header(16, bids.len() as u32));
@@ -197,8 +197,8 @@ fn build_trades_response(trades: &[(i64, i64, i64, i64, bool)]) -> Vec<u8> {
     buf.extend_from_slice(&header);
 
     // Fixed block
-    buf.push((-8i8) as u8); // price_exponent
-    buf.push((-8i8) as u8); // qty_exponent
+    buf.push((-8_i8) as u8); // price_exponent
+    buf.push((-8_i8) as u8); // qty_exponent
 
     // Trades group (block_length=42 for trade entries)
     buf.extend_from_slice(&create_group_header(42, trades.len() as u32));
@@ -207,7 +207,7 @@ fn build_trades_response(trades: &[(i64, i64, i64, i64, bool)]) -> Vec<u8> {
         buf.extend_from_slice(&price.to_le_bytes()); // price
         buf.extend_from_slice(&qty.to_le_bytes()); // qty
         buf.extend_from_slice(&quote_qty.to_le_bytes()); // quoteQty
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // time
+        buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // time
         buf.push(u8::from(*is_buyer_maker)); // isBuyerMaker
         buf.push(1); // isBestMatch
     }
@@ -221,8 +221,8 @@ fn build_klines_response(klines: &[(i64, i64, i64, i64, i64, i64, i64)]) -> Vec<
     let mut buf = Vec::new();
     buf.extend_from_slice(&header);
 
-    buf.push((-8i8) as u8); // price_exponent
-    buf.push((-8i8) as u8); // qty_exponent
+    buf.push((-8_i8) as u8); // price_exponent
+    buf.push((-8_i8) as u8); // qty_exponent
 
     buf.extend_from_slice(&create_group_header(
         KLINES_BLOCK_LENGTH,
@@ -238,7 +238,7 @@ fn build_klines_response(klines: &[(i64, i64, i64, i64, i64, i64, i64)]) -> Vec<
         buf.extend_from_slice(&(*volume as i128).to_le_bytes()); // volume (i128)
         buf.extend_from_slice(&close_time.to_le_bytes()); // close_time
         buf.extend_from_slice(&(*volume as i128).to_le_bytes()); // quote_volume (i128)
-        buf.extend_from_slice(&100i64.to_le_bytes()); // num_trades
+        buf.extend_from_slice(&100_i64.to_le_bytes()); // num_trades
         buf.extend_from_slice(&((*volume / 2) as i128).to_le_bytes()); // taker_buy_base_volume
         buf.extend_from_slice(&((*volume / 2) as i128).to_le_bytes()); // taker_buy_quote_volume
     }
@@ -257,26 +257,26 @@ fn build_single_order_response(
     let mut buf = Vec::new();
     buf.extend_from_slice(&header);
 
-    buf.push((-8i8) as u8); // price_exponent
-    buf.push((-8i8) as u8); // qty_exponent
+    buf.push((-8_i8) as u8); // price_exponent
+    buf.push((-8_i8) as u8); // qty_exponent
     buf.extend_from_slice(&order_id.to_le_bytes()); // order_id
     buf.extend_from_slice(&i64::MIN.to_le_bytes()); // order_list_id (None)
     buf.extend_from_slice(&price.to_le_bytes()); // price_mantissa
     buf.extend_from_slice(&qty.to_le_bytes()); // orig_qty
-    buf.extend_from_slice(&0i64.to_le_bytes()); // executed_qty
-    buf.extend_from_slice(&0i64.to_le_bytes()); // cummulative_quote_qty
+    buf.extend_from_slice(&0_i64.to_le_bytes()); // executed_qty
+    buf.extend_from_slice(&0_i64.to_le_bytes()); // cummulative_quote_qty
     buf.push(1); // status (NEW)
     buf.push(1); // time_in_force (GTC)
     buf.push(1); // order_type (LIMIT)
     buf.push(1); // side (BUY)
     buf.extend_from_slice(&i64::MIN.to_le_bytes()); // stop_price (None)
-    buf.extend_from_slice(&[0u8; 16]); // trailing_delta + trailing_time
+    buf.extend_from_slice(&[0_u8; 16]); // trailing_delta + trailing_time
     buf.extend_from_slice(&i64::MIN.to_le_bytes()); // iceberg_qty (None)
-    buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // time
-    buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // update_time
+    buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // time
+    buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // update_time
     buf.push(1); // is_working
-    buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // working_time
-    buf.extend_from_slice(&0i64.to_le_bytes()); // orig_quote_order_qty
+    buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // working_time
+    buf.extend_from_slice(&0_i64.to_le_bytes()); // orig_quote_order_qty
 
     // Pad to block length
     while buf.len() - 8 < ORDER_BLOCK_LENGTH as usize {
@@ -313,7 +313,7 @@ fn build_exchange_info_response(symbols: &[(&str, &str, &str)]) -> Vec<u8> {
         buf.push(8); // quote_asset_precision
         buf.push(8); // base_commission_precision
         buf.push(8); // quote_commission_precision
-        buf.extend_from_slice(&0b0000_0111u16.to_le_bytes()); // order_types
+        buf.extend_from_slice(&0b0000_0111_u16.to_le_bytes()); // order_types
         buf.push(1); // iceberg_allowed
         buf.push(1); // oco_allowed
         buf.push(0); // oto_allowed
@@ -356,18 +356,18 @@ fn build_account_response(balances: &[(&str, i64, i64)]) -> Vec<u8> {
     buf.extend_from_slice(&header);
 
     // Fixed block
-    buf.push((-8i8) as u8); // commission_exponent
-    buf.extend_from_slice(&100i64.to_le_bytes()); // maker_commission
-    buf.extend_from_slice(&100i64.to_le_bytes()); // taker_commission
-    buf.extend_from_slice(&100i64.to_le_bytes()); // buyer_commission
-    buf.extend_from_slice(&100i64.to_le_bytes()); // seller_commission
+    buf.push((-8_i8) as u8); // commission_exponent
+    buf.extend_from_slice(&100_i64.to_le_bytes()); // maker_commission
+    buf.extend_from_slice(&100_i64.to_le_bytes()); // taker_commission
+    buf.extend_from_slice(&100_i64.to_le_bytes()); // buyer_commission
+    buf.extend_from_slice(&100_i64.to_le_bytes()); // seller_commission
     buf.push(1); // can_trade
     buf.push(1); // can_withdraw
     buf.push(1); // can_deposit
     buf.push(0); // brokered
     buf.push(0); // require_self_trade_prevention
     buf.push(0); // prevent_sor
-    buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // update_time
+    buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // update_time
     buf.push(1); // account_type (SPOT)
 
     // Pad to 64 bytes
@@ -382,7 +382,7 @@ fn build_account_response(balances: &[(&str, i64, i64)]) -> Vec<u8> {
     ));
 
     for (asset, free, locked) in balances {
-        buf.push((-8i8) as u8); // exponent
+        buf.push((-8_i8) as u8); // exponent
         buf.extend_from_slice(&free.to_le_bytes()); // free
         buf.extend_from_slice(&locked.to_le_bytes()); // locked
         write_var_string(&mut buf, asset);
@@ -405,26 +405,26 @@ fn build_orders_response(orders: &[(i64, &str, &str, i64, i64)]) -> Vec<u8> {
     for (order_id, symbol, client_order_id, price, qty) in orders {
         let order_start = buf.len();
 
-        buf.push((-8i8) as u8); // price_exponent
-        buf.push((-8i8) as u8); // qty_exponent
+        buf.push((-8_i8) as u8); // price_exponent
+        buf.push((-8_i8) as u8); // qty_exponent
         buf.extend_from_slice(&order_id.to_le_bytes()); // order_id
         buf.extend_from_slice(&i64::MIN.to_le_bytes()); // order_list_id (None)
         buf.extend_from_slice(&price.to_le_bytes()); // price_mantissa
         buf.extend_from_slice(&qty.to_le_bytes()); // orig_qty
-        buf.extend_from_slice(&0i64.to_le_bytes()); // executed_qty
-        buf.extend_from_slice(&0i64.to_le_bytes()); // cummulative_quote_qty
+        buf.extend_from_slice(&0_i64.to_le_bytes()); // executed_qty
+        buf.extend_from_slice(&0_i64.to_le_bytes()); // cummulative_quote_qty
         buf.push(1); // status (NEW)
         buf.push(1); // time_in_force (GTC)
         buf.push(1); // order_type (LIMIT)
         buf.push(1); // side (BUY)
         buf.extend_from_slice(&i64::MIN.to_le_bytes()); // stop_price (None)
-        buf.extend_from_slice(&[0u8; 16]); // trailing_delta + trailing_time
+        buf.extend_from_slice(&[0_u8; 16]); // trailing_delta + trailing_time
         buf.extend_from_slice(&i64::MIN.to_le_bytes()); // iceberg_qty (None)
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // time
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // update_time
+        buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // time
+        buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // update_time
         buf.push(1); // is_working
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // working_time
-        buf.extend_from_slice(&0i64.to_le_bytes()); // orig_quote_order_qty
+        buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // working_time
+        buf.extend_from_slice(&0_i64.to_le_bytes()); // orig_quote_order_qty
 
         // Pad to block length
         while buf.len() - order_start < ORDERS_GROUP_BLOCK_LENGTH as usize {
@@ -455,9 +455,9 @@ fn build_account_trades_response(
     for (id, order_id, symbol, commission_asset, price, qty, commission, is_buyer, is_maker) in
         trades
     {
-        buf.push((-8i8) as u8); // price_exponent
-        buf.push((-8i8) as u8); // qty_exponent
-        buf.push((-8i8) as u8); // commission_exponent
+        buf.push((-8_i8) as u8); // price_exponent
+        buf.push((-8_i8) as u8); // qty_exponent
+        buf.push((-8_i8) as u8); // commission_exponent
         buf.extend_from_slice(&id.to_le_bytes()); // id
         buf.extend_from_slice(&order_id.to_le_bytes()); // order_id
         buf.extend_from_slice(&i64::MIN.to_le_bytes()); // order_list_id (None)
@@ -465,7 +465,7 @@ fn build_account_trades_response(
         buf.extend_from_slice(&qty.to_le_bytes()); // qty
         buf.extend_from_slice(&(price * qty / 100_000_000).to_le_bytes()); // quote_qty
         buf.extend_from_slice(&commission.to_le_bytes()); // commission
-        buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // time
+        buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // time
         buf.push(u8::from(*is_buyer)); // is_buyer
         buf.push(u8::from(*is_maker)); // is_maker
         buf.push(1); // is_best_match
@@ -490,11 +490,11 @@ fn build_new_order_response(
     buf.extend_from_slice(&header);
 
     // Fixed block (154 bytes)
-    buf.push((-8i8) as u8); // price_exponent
-    buf.push((-8i8) as u8); // qty_exponent
+    buf.push((-8_i8) as u8); // price_exponent
+    buf.push((-8_i8) as u8); // qty_exponent
     buf.extend_from_slice(&order_id.to_le_bytes()); // order_id
     buf.extend_from_slice(&i64::MIN.to_le_bytes()); // order_list_id (None)
-    buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // transact_time
+    buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // transact_time
     buf.extend_from_slice(&price.to_le_bytes()); // price_mantissa
     buf.extend_from_slice(&qty.to_le_bytes()); // orig_qty_mantissa
     buf.extend_from_slice(&executed_qty.to_le_bytes()); // executed_qty_mantissa
@@ -504,11 +504,11 @@ fn build_new_order_response(
     buf.push(1); // order_type (LIMIT)
     buf.push(1); // side (BUY)
     buf.extend_from_slice(&i64::MIN.to_le_bytes()); // stop_price (None)
-    buf.extend_from_slice(&[0u8; 16]); // trailing_delta + trailing_time
-    buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // working_time
-    buf.extend_from_slice(&[0u8; 22]); // iceberg_qty to working_floor
+    buf.extend_from_slice(&[0_u8; 16]); // trailing_delta + trailing_time
+    buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // working_time
+    buf.extend_from_slice(&[0_u8; 22]); // iceberg_qty to working_floor
     buf.push(3); // self_trade_prevention_mode (EXPIRE_MAKER)
-    buf.extend_from_slice(&[0u8; 36]); // trade_group_id to pegged_price
+    buf.extend_from_slice(&[0_u8; 36]); // trade_group_id to pegged_price
     buf.push(0xff); // expiry_reason (null)
 
     // Fills group (empty) - block length is 42
@@ -538,11 +538,11 @@ fn build_cancel_order_response(
     buf.extend_from_slice(&header);
 
     // Fixed block (137 bytes)
-    buf.push((-8i8) as u8); // price_exponent
-    buf.push((-8i8) as u8); // qty_exponent
+    buf.push((-8_i8) as u8); // price_exponent
+    buf.push((-8_i8) as u8); // qty_exponent
     buf.extend_from_slice(&order_id.to_le_bytes()); // order_id
     buf.extend_from_slice(&i64::MIN.to_le_bytes()); // order_list_id (None)
-    buf.extend_from_slice(&1734300000000i64.to_le_bytes()); // transact_time
+    buf.extend_from_slice(&1_734_300_000_000_i64.to_le_bytes()); // transact_time
     buf.extend_from_slice(&price.to_le_bytes()); // price_mantissa
     buf.extend_from_slice(&qty.to_le_bytes()); // orig_qty_mantissa
     buf.extend_from_slice(&executed_qty.to_le_bytes()); // executed_qty_mantissa
@@ -552,9 +552,9 @@ fn build_cancel_order_response(
     buf.push(1); // order_type (LIMIT)
     buf.push(1); // side (BUY)
     buf.extend_from_slice(&i64::MIN.to_le_bytes()); // stop_price (None)
-    buf.extend_from_slice(&[0u8; 38]); // trailing_delta to working_floor
+    buf.extend_from_slice(&[0_u8; 38]); // trailing_delta to working_floor
     buf.push(3); // self_trade_prevention_mode (EXPIRE_MAKER)
-    buf.extend_from_slice(&[0u8; 28]); // prevented_quantity to pegged_price
+    buf.extend_from_slice(&[0_u8; 28]); // prevented_quantity to pegged_price
 
     // Variable strings
     write_var_string(&mut buf, symbol);
@@ -603,11 +603,11 @@ fn build_cancel_order_list_response(
     buf.push(1); // contingency_type (OCO)
     buf.push(2); // list_status_type (ALL_DONE)
     buf.push(2); // list_order_status (ALL_DONE)
-    buf.extend_from_slice(&1_734_300_000_000_000i64.to_le_bytes());
-    buf.push((-8i8) as u8);
-    buf.push((-8i8) as u8);
+    buf.extend_from_slice(&1_734_300_000_000_000_i64.to_le_bytes());
+    buf.push((-8_i8) as u8);
+    buf.push((-8_i8) as u8);
 
-    buf.extend_from_slice(&8u16.to_le_bytes());
+    buf.extend_from_slice(&8_u16.to_le_bytes());
     buf.extend_from_slice(&(orders.len() as u16).to_le_bytes());
     for (order_id, client_order_id) in orders {
         buf.extend_from_slice(&order_id.to_le_bytes());
@@ -621,11 +621,11 @@ fn build_cancel_order_list_response(
         let report_start = buf.len();
         buf.extend_from_slice(&order_id.to_le_bytes());
         buf.extend_from_slice(&order_list_id.to_le_bytes());
-        buf.extend_from_slice(&1_734_300_000_000_000i64.to_le_bytes());
-        buf.extend_from_slice(&100_000_000_000i64.to_le_bytes());
-        buf.extend_from_slice(&10_000_000i64.to_le_bytes());
-        buf.extend_from_slice(&0i64.to_le_bytes());
-        buf.extend_from_slice(&0i64.to_le_bytes());
+        buf.extend_from_slice(&1_734_300_000_000_000_i64.to_le_bytes());
+        buf.extend_from_slice(&100_000_000_000_i64.to_le_bytes());
+        buf.extend_from_slice(&10_000_000_i64.to_le_bytes());
+        buf.extend_from_slice(&0_i64.to_le_bytes());
+        buf.extend_from_slice(&0_i64.to_le_bytes());
         buf.push(3); // status (CANCELED)
         buf.push(0); // time_in_force (GTC)
         buf.push(1); // order_type (LIMIT)
@@ -785,12 +785,12 @@ fn create_router(state: Arc<TestServerState>) -> Router {
 
                     let _symbol = params.get("symbol").cloned().unwrap_or_default();
                     let bids = vec![
-                        (100_000_000_000i64, 10_000_000i64), // 1000.00 @ 0.1
-                        (99_900_000_000i64, 20_000_000i64),  // 999.00 @ 0.2
+                        (100_000_000_000_i64, 10_000_000_i64), // 1000.00 @ 0.1
+                        (99_900_000_000_i64, 20_000_000_i64),  // 999.00 @ 0.2
                     ];
                     let asks = vec![
-                        (100_100_000_000i64, 15_000_000i64), // 1001.00 @ 0.15
-                        (100_200_000_000i64, 25_000_000i64), // 1002.00 @ 0.25
+                        (100_100_000_000_i64, 15_000_000_i64), // 1001.00 @ 0.15
+                        (100_200_000_000_i64, 25_000_000_i64), // 1002.00 @ 0.25
                     ];
                     sbe_response(build_depth_response(12345, &bids, &asks)).into_response()
                 }
@@ -808,17 +808,17 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                     let _symbol = params.get("symbol").cloned().unwrap_or_default();
                     let trades = vec![
                         (
-                            1001i64,
-                            100_000_000_000i64,
-                            10_000_000i64,
-                            1_000_000_000_000i64,
+                            1001_i64,
+                            100_000_000_000_i64,
+                            10_000_000_i64,
+                            1_000_000_000_000_i64,
                             true,
                         ),
                         (
-                            1002i64,
-                            100_100_000_000i64,
-                            5_000_000i64,
-                            500_500_000_000i64,
+                            1002_i64,
+                            100_100_000_000_i64,
+                            5_000_000_i64,
+                            500_500_000_000_i64,
                             false,
                         ),
                     ];
@@ -840,22 +840,22 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                     // Two 1-minute bars: open_time, open, high, low, close, volume, close_time
                     let klines = vec![
                         (
-                            1734300000000i64,   // open_time
-                            100_000_000_000i64, // open
-                            101_000_000_000i64, // high
-                            99_000_000_000i64,  // low
-                            100_500_000_000i64, // close
-                            1_000_000_000i64,   // volume
-                            1734300059999i64,   // close_time
+                            1_734_300_000_000_i64, // open_time
+                            100_000_000_000_i64,   // open
+                            101_000_000_000_i64,   // high
+                            99_000_000_000_i64,    // low
+                            100_500_000_000_i64,   // close
+                            1_000_000_000_i64,     // volume
+                            1_734_300_059_999_i64, // close_time
                         ),
                         (
-                            1734300060000i64,
-                            100_500_000_000i64,
-                            102_000_000_000i64,
-                            100_000_000_000i64,
-                            101_500_000_000i64,
-                            1_500_000_000i64,
-                            1734300119999i64,
+                            1_734_300_060_000_i64,
+                            100_500_000_000_i64,
+                            102_000_000_000_i64,
+                            100_000_000_000_i64,
+                            101_500_000_000_i64,
+                            1_500_000_000_i64,
+                            1_734_300_119_999_i64,
                         ),
                     ];
                     sbe_response(build_klines_response(&klines)).into_response()
@@ -892,8 +892,8 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         return rate_limit_response().into_response();
                     }
                     let balances = vec![
-                        ("BTC", 100_000_000i64, 50_000_000i64), // 1.0 free, 0.5 locked
-                        ("USDT", 1_000_000_000_000i64, 0i64),   // 10000 free, 0 locked
+                        ("BTC", 100_000_000_i64, 50_000_000_i64), // 1.0 free, 0.5 locked
+                        ("USDT", 1_000_000_000_000_i64, 0_i64),   // 10000 free, 0 locked
                     ];
                     sbe_response(build_account_response(&balances)).into_response()
                 }
@@ -915,18 +915,18 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         let _symbol = params.get("symbol").cloned().unwrap_or_default();
                         let orders = vec![
                             (
-                                12345i64,
+                                12345_i64,
                                 "BTCUSDT",
                                 "order-1",
-                                100_000_000_000i64,
-                                10_000_000i64,
+                                100_000_000_000_i64,
+                                10_000_000_i64,
                             ),
                             (
-                                12346i64,
+                                12346_i64,
                                 "BTCUSDT",
                                 "order-2",
-                                99_000_000_000i64,
-                                20_000_000i64,
+                                99_000_000_000_i64,
+                                20_000_000_i64,
                             ),
                         ];
                         sbe_response(build_orders_response(&orders)).into_response()
@@ -982,24 +982,24 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         let _symbol = params.get("symbol").cloned().unwrap_or_default();
                         let trades = vec![
                             (
-                                1001i64,
-                                12345i64,
+                                1001_i64,
+                                12345_i64,
                                 "BTCUSDT",
                                 "BNB",
-                                100_000_000_000i64,
-                                10_000_000i64,
-                                100_000i64,
+                                100_000_000_000_i64,
+                                10_000_000_i64,
+                                100_000_i64,
                                 true,
                                 false,
                             ),
                             (
-                                1002i64,
-                                12345i64,
+                                1002_i64,
+                                12345_i64,
                                 "BTCUSDT",
                                 "BNB",
-                                100_000_000_000i64,
-                                5_000_000i64,
-                                50_000i64,
+                                100_000_000_000_i64,
+                                5_000_000_i64,
+                                50_000_i64,
                                 true,
                                 true,
                             ),
@@ -1027,25 +1027,25 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         // Return a mix of open and filled orders for history
                         let orders = vec![
                             (
-                                12345i64,
+                                12345_i64,
                                 "BTCUSDT",
                                 "order-1",
-                                100_000_000_000i64,
-                                10_000_000i64,
+                                100_000_000_000_i64,
+                                10_000_000_i64,
                             ),
                             (
-                                12346i64,
+                                12346_i64,
                                 "BTCUSDT",
                                 "order-2",
-                                99_000_000_000i64,
-                                20_000_000i64,
+                                99_000_000_000_i64,
+                                20_000_000_i64,
                             ),
                             (
-                                12347i64,
+                                12347_i64,
                                 "BTCUSDT",
                                 "order-3",
-                                101_000_000_000i64,
-                                15_000_000i64,
+                                101_000_000_000_i64,
+                                15_000_000_i64,
                             ),
                         ];
                         sbe_response(build_orders_response(&orders)).into_response()
@@ -1239,20 +1239,20 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                             .unwrap_or_else(|| "BTCUSDT".to_string());
                         let orders = vec![
                             (
-                                12345i64,
+                                12345_i64,
                                 symbol.as_str(),
                                 "cancel-1",
                                 "order-1",
-                                100_000_000_000i64,
-                                10_000_000i64,
+                                100_000_000_000_i64,
+                                10_000_000_i64,
                             ),
                             (
-                                12346i64,
+                                12346_i64,
                                 symbol.as_str(),
                                 "cancel-2",
                                 "order-2",
-                                99_000_000_000i64,
-                                20_000_000i64,
+                                99_000_000_000_i64,
+                                20_000_000_i64,
                             ),
                         ];
                         let order_list = build_cancel_order_list_response(

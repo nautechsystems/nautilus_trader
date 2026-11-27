@@ -316,8 +316,8 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
         }
         "candleSnapshot" => Json(json!([
             {
-                "t": 1703875200000u64,
-                "T": 1703875260000u64,
+                "t": 1_703_875_200_000_u64,
+                "T": 1_703_875_260_000_u64,
                 "s": "BTC",
                 "i": "1m",
                 "o": "98450.00",
@@ -2241,7 +2241,7 @@ fn open_order(coin: &str, oid: u64, price: &str, size: &str) -> Value {
         "limitPx": price,
         "sz": size,
         "oid": oid,
-        "timestamp": 1_700_000_000_000u64,
+        "timestamp": 1_700_000_000_000_u64,
         "origSz": size
     })
 }
@@ -2532,7 +2532,7 @@ async fn test_request_order_status_report_open_order() {
         "limitPx": "95000.0",
         "sz": "0.05",
         "oid": 12345,
-        "timestamp": 1700000000000u64,
+        "timestamp": 1_700_000_000_000_u64,
         "origSz": "0.1",
         "cloid": "0xaabbccdd00112233aabbccdd00112233",
         "isTrigger": false,
@@ -2579,7 +2579,7 @@ async fn test_request_order_status_report_triggered_order() {
         "limitPx": "90000.0",
         "sz": "0.1",
         "oid": 99999,
-        "timestamp": 1700000000000u64,
+        "timestamp": 1_700_000_000_000_u64,
         "origSz": "0.1",
         "triggerPx": "91000.0",
         "isMarket": true,
@@ -2612,7 +2612,7 @@ async fn test_request_order_status_report_frontend_trigger_label() {
         "limitPx": "90000.0",
         "sz": "0.1",
         "oid": 77777,
-        "timestamp": 1700000000000u64,
+        "timestamp": 1_700_000_000_000_u64,
         "triggerCondition": "Price below 91000",
         "isTrigger": true,
         "triggerPx": "91000.0",
@@ -2655,11 +2655,11 @@ async fn test_request_order_status_report_closed_order_fallback() {
                 "limitPx": "95000.0",
                 "sz": "0.0",
                 "oid": 55555,
-                "timestamp": 1700000000000u64,
+                "timestamp": 1_700_000_000_000_u64,
                 "origSz": "0.1"
             },
             "status": "filled",
-            "statusTimestamp": 1700001000000u64
+            "statusTimestamp": 1_700_001_000_000_u64
         }
     }));
 
@@ -2676,7 +2676,7 @@ async fn test_request_order_status_report_closed_order_fallback() {
     assert_eq!(report.order_status, OrderStatus::Filled);
     assert_eq!(
         report.ts_last.as_u64(),
-        1700001000000u64 * 1_000_000,
+        1_700_001_000_000_u64 * 1_000_000,
         "ts_last should use statusTimestamp"
     );
 }
@@ -2696,12 +2696,12 @@ async fn test_request_order_status_report_filled_with_remainder_is_canceled() {
                 "limitPx": "95000.0",
                 "sz": "0.02",
                 "oid": 55557,
-                "timestamp": 1700000000000u64,
+                "timestamp": 1_700_000_000_000_u64,
                 "origSz": "0.1",
                 "tif": "Ioc"
             },
             "status": "filled",
-            "statusTimestamp": 1700001000000u64
+            "statusTimestamp": 1_700_001_000_000_u64
         }
     }));
 
@@ -2741,12 +2741,12 @@ async fn test_request_order_status_report_closed_order_fallback_propagates_cloid
                 "limitPx": "95000.0",
                 "sz": "0.0",
                 "oid": 55556,
-                "timestamp": 1700000000000u64,
+                "timestamp": 1_700_000_000_000_u64,
                 "origSz": "0.1",
                 "cloid": cloid_hex,
             },
             "status": "canceled",
-            "statusTimestamp": 1700001000000u64
+            "statusTimestamp": 1_700_001_000_000_u64
         }
     }));
 
@@ -2801,7 +2801,7 @@ async fn test_request_order_status_report_by_client_order_id_matches_cloid() {
         "limitPx": "95000.0",
         "sz": "0.1",
         "oid": 77777,
-        "timestamp": 1700000000000u64,
+        "timestamp": 1_700_000_000_000_u64,
         "origSz": "0.1",
         "cloid": cloid_hex
     }]));
@@ -2835,7 +2835,7 @@ async fn test_request_order_status_report_by_client_order_id_no_match() {
         "limitPx": "95000.0",
         "sz": "0.1",
         "oid": 88888,
-        "timestamp": 1700000000000u64,
+        "timestamp": 1_700_000_000_000_u64,
         "origSz": "0.1",
         "cloid": "0x0000000000000000000000000000dead"
     }]));
@@ -2860,7 +2860,7 @@ async fn test_request_order_status_reports_fails_closed_on_malformed_row() {
     let state = TestServerState::default();
     *state.frontend_open_orders_response.lock().await = Some(json!([
         open_order("BTC", 1001, "95000.0", "0.10000"),
-        { "coin": "BTC", "oid": 1002u64 }, // Missing side/limitPx/sz/timestamp/origSz
+        { "coin": "BTC", "oid": 1002_u64 }, // Missing side/limitPx/sz/timestamp/origSz
     ]));
     let addr = start_mock_server(state).await;
 
@@ -2926,16 +2926,16 @@ async fn test_request_fill_reports_fails_closed_on_unknown_instrument() {
     *state.user_fills_response.lock().await = Some(json!([
         {
             "coin": "BTC", "px": "50000.0", "sz": "0.001", "side": "B",
-            "time": 1_700_000_000_000u64, "startPosition": "0",
+            "time": 1_700_000_000_000_u64, "startPosition": "0",
             "dir": "Open Long", "closedPnl": "0", "hash": "0xaaaa",
-            "oid": 1001u64, "crossed": true, "fee": "0.01", "tid": 1u64,
+            "oid": 1001_u64, "crossed": true, "fee": "0.01", "tid": 1_u64,
             "feeToken": "USDC",
         },
         {
             "coin": "NOCOIN", "px": "100.0", "sz": "1.0", "side": "B",
-            "time": 1_700_000_000_001u64, "startPosition": "0",
+            "time": 1_700_000_000_001_u64, "startPosition": "0",
             "dir": "Open Long", "closedPnl": "0", "hash": "0xbbbb",
-            "oid": 1002u64, "crossed": true, "fee": "0.01", "tid": 2u64,
+            "oid": 1002_u64, "crossed": true, "fee": "0.01", "tid": 2_u64,
             "feeToken": "USDC",
         },
     ]));
@@ -2964,9 +2964,9 @@ async fn test_request_fill_reports_fails_closed_on_unconvertible_row() {
     *state.user_fills_response.lock().await = Some(json!([
         {
             "coin": "BTC", "px": "50000.0", "sz": "0.001", "side": "B",
-            "time": 1_700_000_000_000u64, "startPosition": "0",
+            "time": 1_700_000_000_000_u64, "startPosition": "0",
             "dir": "Open Long", "closedPnl": "0", "hash": "0xaaaa",
-            "oid": 1001u64, "crossed": true, "fee": "0.01", "tid": 1u64,
+            "oid": 1001_u64, "crossed": true, "fee": "0.01", "tid": 1_u64,
             "feeToken": "NOTACOIN",
         },
     ]));
@@ -3012,16 +3012,16 @@ async fn test_request_fill_reports_resolves_settled_outcome_absent_from_outcome_
     *state.user_fills_response.lock().await = Some(json!([
         {
             "coin": "#200", "px": "0.62", "sz": "15.00", "side": "B",
-            "time": 1_778_400_000_000u64, "startPosition": "0",
+            "time": 1_778_400_000_000_u64, "startPosition": "0",
             "dir": "Buy", "closedPnl": "0", "hash": "0xcccc",
-            "oid": 2001u64, "crossed": true, "fee": "0.0", "tid": 3u64,
+            "oid": 2001_u64, "crossed": true, "fee": "0.0", "tid": 3_u64,
             "feeToken": "+200",
         },
         {
             "coin": "#201", "px": "0.37", "sz": "8.00", "side": "A",
-            "time": 1_778_400_000_001u64, "startPosition": "8.00",
+            "time": 1_778_400_000_001_u64, "startPosition": "8.00",
             "dir": "Sell", "closedPnl": "0", "hash": "0xdddd",
-            "oid": 2002u64, "crossed": false, "fee": "0.0", "tid": 4u64,
+            "oid": 2002_u64, "crossed": false, "fee": "0.0", "tid": 4_u64,
             "feeToken": "+201",
         },
     ]));
@@ -3099,9 +3099,9 @@ async fn test_request_fill_reports_fails_closed_on_malformed_outcome_coin() {
     *state.user_fills_response.lock().await = Some(json!([
         {
             "coin": "#12", "px": "0.62", "sz": "15.00", "side": "B",
-            "time": 1_778_400_000_000u64, "startPosition": "0",
+            "time": 1_778_400_000_000_u64, "startPosition": "0",
             "dir": "Buy", "closedPnl": "0", "hash": "0xeeee",
-            "oid": 2003u64, "crossed": true, "fee": "0.0", "tid": 5u64,
+            "oid": 2003_u64, "crossed": true, "fee": "0.0", "tid": 5_u64,
             "feeToken": "+12",
         },
     ]));
@@ -3199,11 +3199,11 @@ async fn test_request_historical_order_status_reports_fails_closed_on_unknown_in
         {
             "order": {
                 "coin": "NOCOIN", "side": "B", "limitPx": "100.0", "sz": "0",
-                "oid": 1001u64, "timestamp": 1_700_000_000_000u64, "origSz": "0.10000",
+                "oid": 1001_u64, "timestamp": 1_700_000_000_000_u64, "origSz": "0.10000",
                 "reduceOnly": false, "orderType": "Limit", "tif": "Gtc", "cloid": null,
             },
             "status": "filled",
-            "statusTimestamp": 1_700_000_000_001u64,
+            "statusTimestamp": 1_700_000_000_001_u64,
         },
     ]));
     let addr = start_mock_server(state).await;
@@ -3235,7 +3235,7 @@ async fn test_request_order_status_report_by_client_order_id_fails_closed_on_unk
         "limitPx": "100.0",
         "sz": "1.0",
         "oid": 77778,
-        "timestamp": 1700000000000u64,
+        "timestamp": 1_700_000_000_000_u64,
         "origSz": "1.0",
         "cloid": cloid_hex
     }]));
@@ -3316,11 +3316,11 @@ async fn test_request_order_status_report_fails_closed_on_unknown_instrument_clo
                 "limitPx": "95000.0",
                 "sz": "0.0",
                 "oid": 55555,
-                "timestamp": 1700000000000u64,
+                "timestamp": 1_700_000_000_000_u64,
                 "origSz": "0.1"
             },
             "status": "filled",
-            "statusTimestamp": 1700001000000u64
+            "statusTimestamp": 1_700_001_000_000_u64
         }
     }));
 
@@ -3350,7 +3350,7 @@ async fn test_request_order_status_report_fails_closed_on_unconvertible_open_ord
         "limitPx": "95000.0",
         "sz": "2.0",
         "oid": 12345,
-        "timestamp": 1700000000000u64,
+        "timestamp": 1_700_000_000_000_u64,
         "origSz": "1.0"
     }]));
 
@@ -3382,7 +3382,7 @@ async fn test_request_order_status_report_by_client_order_id_fails_closed_on_unc
         "limitPx": "95000.0",
         "sz": "2.0",
         "oid": 77779,
-        "timestamp": 1700000000000u64,
+        "timestamp": 1_700_000_000_000_u64,
         "origSz": "1.0",
         "cloid": cloid_hex
     }]));
@@ -3416,11 +3416,11 @@ async fn test_request_order_status_report_fails_closed_on_unconvertible_closed_o
                 "limitPx": "95000.0",
                 "sz": "0.2",
                 "oid": 55555,
-                "timestamp": 1700000000000u64,
+                "timestamp": 1_700_000_000_000_u64,
                 "origSz": "0.1"
             },
             "status": "filled",
-            "statusTimestamp": 1700001000000u64
+            "statusTimestamp": 1_700_001_000_000_u64
         }
     }));
 

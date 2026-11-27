@@ -435,6 +435,11 @@ fn parse_option_instrument(
     let quote_currency = Currency::get_or_create_crypto(instrument.quote_currency);
     let settlement_currency = quote_currency;
     let option_kind = parse_option_kind(details.option_type);
+    let (_, index_quote) = details
+        .index
+        .rsplit_once('-')
+        .context("missing quote currency in option_details.index")?;
+    let strike_currency = index_quote.parse()?;
     let strike_price = price_from_decimal(details.strike, "option_details.strike")?;
     let activation_ns =
         timestamp_seconds_to_nanos(instrument.scheduled_activation, "scheduled_activation")?;
@@ -450,6 +455,7 @@ fn parse_option_instrument(
         .raw_symbol(raw_symbol)
         .underlying(underlying)
         .quote_currency(quote_currency)
+        .strike_currency(strike_currency)
         .settlement_currency(settlement_currency)
         .is_inverse(false)
         .option_kind(option_kind)
@@ -915,6 +921,7 @@ mod tests {
         assert_eq!(option.exercise_style, Some(ExerciseStyle::European));
         assert_eq!(option.settlement_type, Some(SettlementType::Cash));
         assert_eq!(option.strike_price(), Some(Price::from("3500")));
+        assert_eq!(option.strike_currency(), Some(Currency::USD()));
         assert_eq!(
             option.activation_ns(),
             Some(UnixNanos::from(1_774_598_400_000_000_000)),

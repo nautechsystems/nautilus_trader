@@ -77,7 +77,10 @@ fn create_catalog_with_quotes(
 ) -> (TempDir, String) {
     let temp_dir = TempDir::new().unwrap();
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     catalog.write_instruments(vec![instrument.clone()]).unwrap();
 
@@ -110,7 +113,10 @@ fn create_catalog_with_quotes_and_trades(
 ) -> (TempDir, String) {
     let temp_dir = TempDir::new().unwrap();
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     catalog.write_instruments(vec![instrument.clone()]).unwrap();
 
@@ -158,7 +164,10 @@ fn create_catalog_with_funding_rates(
 ) -> (TempDir, String, Vec<FundingRateUpdate>) {
     let temp_dir = TempDir::new().unwrap();
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     catalog.write_instruments(vec![instrument.clone()]).unwrap();
 
@@ -671,8 +680,8 @@ fn test_data_config_rejects_inverted_time_range(crypto_perpetual_ethusdt: Crypto
             None,
         ))
         .instrument_id(instrument.id())
-        .start_time(UnixNanos::from(5_000_000_000u64))
-        .end_time(UnixNanos::from(1_000_000_000u64))
+        .start_time(UnixNanos::from(5_000_000_000_u64))
+        .end_time(UnixNanos::from(1_000_000_000_u64))
         .build();
 
     assert!(result.is_err());
@@ -748,7 +757,7 @@ fn test_run_auto_builds(crypto_perpetual_ethusdt: CryptoPerpetual) {
 #[rstest]
 fn test_run_oneshot_with_time_bounds(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
-    let base_ts = 1_000_000_000u64;
+    let base_ts = 1_000_000_000_u64;
     let (_temp_dir, catalog_path) = create_catalog_with_quotes(&instrument, 10, base_ts);
 
     let data = BacktestDataConfig::builder()
@@ -868,10 +877,10 @@ fn test_run_streaming_shutdown_stops_between_chunks(crypto_perpetual_ethusdt: Cr
     // Regression for #3920: shutdown_system() during a streaming run must
     // prevent later chunks from being loaded and processed.
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
-    let total = 50usize;
+    let total = 50_usize;
     let (_temp_dir, catalog_path) = create_catalog_with_quotes(&instrument, total, 1_000_000_000);
 
-    let chunk_size = 10usize;
+    let chunk_size = 10_usize;
     let config = run_config(&catalog_path, instrument.id(), Some(chunk_size));
     let config_id = config.id().to_string();
 
@@ -905,11 +914,12 @@ mod serial_tests {
     #[rstest]
     fn test_run_streaming_error_log_triggers_shutdown(crypto_perpetual_ethusdt: CryptoPerpetual) {
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
-        let total = 50usize;
+        let total = 50_usize;
         let (_temp_dir, catalog_path) =
             create_catalog_with_quotes(&instrument, total, 1_000_000_000);
 
-        let chunk_size = 10usize;
+        let chunk_size = 10_usize;
+
         let config = BacktestRunConfig::builder()
             .venues(vec![binance_venue_config()])
             .data(vec![data_config(&catalog_path, instrument.id())])
@@ -1055,7 +1065,7 @@ fn test_node_uses_extended_catalog_factories(
     let factory_connections = Arc::clone(&connections);
     let factory: CatalogFactory = Arc::new(move |config| {
         factory_connections.lock().unwrap().push(config.uri.clone());
-        let catalog = ParquetDataCatalog::from_uri(&catalog_path, None, None, None, None)?;
+        let catalog = ParquetDataCatalog::builder().uri(&catalog_path).build()?;
         Ok(Box::new(catalog))
     });
 
@@ -1194,7 +1204,7 @@ fn test_load_data_config(crypto_perpetual_ethusdt: CryptoPerpetual) {
 #[rstest]
 fn test_load_data_config_with_time_bounds(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
-    let base_ts = 1_000_000_000u64;
+    let base_ts = 1_000_000_000_u64;
     let (_temp_dir, catalog_path) = create_catalog_with_quotes(&instrument, 10, base_ts);
 
     let config = data_config(&catalog_path, instrument.id());
@@ -1475,7 +1485,7 @@ fn test_run_streaming_uneven_chunks(crypto_perpetual_ethusdt: CryptoPerpetual) {
 #[rstest]
 fn test_multiple_data_configs_mixed_types(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
-    let base_ts = 1_000_000_000u64;
+    let base_ts = 1_000_000_000_u64;
     let (_temp_dir, catalog_path) =
         create_catalog_with_quotes_and_trades(&instrument, 10, 10, base_ts);
 
@@ -1555,7 +1565,7 @@ fn test_multiple_data_configs_share_one_matching_engine(crypto_perpetual_ethusdt
 #[rstest]
 fn test_run_streaming_multiple_data_configs(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
-    let base_ts = 1_000_000_000u64;
+    let base_ts = 1_000_000_000_u64;
     let (_temp_dir, catalog_path) =
         create_catalog_with_quotes_and_trades(&instrument, 10, 10, base_ts);
 
@@ -1598,7 +1608,7 @@ fn test_run_streaming_multiple_data_configs(crypto_perpetual_ethusdt: CryptoPerp
     assert_eq!(results[0].iterations, 20);
 
     // Trades sit 500ms after each quote, so both configs must arrive interleaved
-    let expected: Vec<UnixNanos> = (0..10u64)
+    let expected: Vec<UnixNanos> = (0..10_u64)
         .flat_map(|i| {
             let ts = base_ts + i * 1_000_000_000;
             [UnixNanos::from(ts), UnixNanos::from(ts + 500_000_000)]
@@ -1675,7 +1685,7 @@ fn test_data_config_time_bounds_intersect_with_run_bounds(
     crypto_perpetual_ethusdt: CryptoPerpetual,
 ) {
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
-    let base_ts = 1_000_000_000u64;
+    let base_ts = 1_000_000_000_u64;
     let (_temp_dir, catalog_path) = create_catalog_with_quotes(&instrument, 20, base_ts);
 
     // Data config restricts to [5s, 15s]
@@ -1708,7 +1718,7 @@ fn test_data_config_time_bounds_intersect_with_run_bounds(
 #[rstest]
 fn test_empty_catalog_data_handled_gracefully(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
-    let base_ts = 1_000_000_000u64;
+    let base_ts = 1_000_000_000_u64;
     let (_temp_dir, catalog_path) = create_catalog_with_quotes(&instrument, 5, base_ts);
 
     // Query time range with no data (far in the future)
@@ -1716,8 +1726,8 @@ fn test_empty_catalog_data_handled_gracefully(crypto_perpetual_ethusdt: CryptoPe
         .data_type(NautilusDataType::QuoteTick)
         .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument.id())
-        .start_time(UnixNanos::from(999_000_000_000u64))
-        .end_time(UnixNanos::from(999_999_000_000u64))
+        .start_time(UnixNanos::from(999_000_000_000_u64))
+        .end_time(UnixNanos::from(999_999_000_000_u64))
         .build()
         .unwrap();
 
@@ -1809,7 +1819,11 @@ fn test_l2_streaming_accepts_quote_chunk_after_book_chunk(
     let instrument_id = instrument.id();
     let temp_dir = TempDir::new().unwrap();
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
+
     let delta = OrderBookDelta::new(
         instrument_id,
         BookAction::Add,
@@ -1881,12 +1895,15 @@ fn test_streaming_same_timestamp_events(crypto_perpetual_ethusdt: CryptoPerpetua
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     let temp_dir = TempDir::new().unwrap();
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     catalog.write_instruments(vec![instrument.clone()]).unwrap();
 
     let instrument_id = instrument.id();
-    let base_ts = 1_000_000_000u64;
+    let base_ts = 1_000_000_000_u64;
 
     // Create 12 quotes where groups of 3 share the same timestamp,
     // so chunk_size=5 would split a same-ts group without alignment
@@ -2027,7 +2044,10 @@ fn create_catalog_with_deltas(
 ) -> (TempDir, String) {
     let temp_dir = TempDir::new().unwrap();
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     catalog.write_instruments(vec![instrument.clone()]).unwrap();
 
@@ -2640,7 +2660,10 @@ fn test_catalog_replay_rows_match_timestamp_aligned_batches(
     #[values(1, 2, 5)] chunk_size: usize,
 ) {
     let temp = TempDir::new().unwrap();
-    let mut catalog = ParquetDataCatalog::new(temp.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(temp.path())
+        .build()
+        .unwrap();
     let data_type = NautilusDataType::from_data(&sample);
     let ts = 1_700_000_000_000_000_123_u64;
 

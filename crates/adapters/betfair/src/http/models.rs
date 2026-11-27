@@ -245,6 +245,7 @@ pub struct LineRangeInfo {
 #[serde(rename_all = "camelCase")]
 pub struct RunnerCatalog {
     pub selection_id: SelectionId,
+    #[serde(default)]
     pub runner_name: String,
     #[serde(deserialize_with = "deserialize_decimal_native")]
     pub handicap: Handicap,
@@ -770,7 +771,7 @@ mod tests {
     fn test_limit_order_decimal_routes(#[case] size: &str, #[case] expected: &str) {
         let value = serde_json::json!({
             "size": size,
-            "price": 9007199254740993u64,
+            "price": 9_007_199_254_740_993_u64,
             "minFillSize": "2.375",
             "betTargetSize": null
         });
@@ -778,7 +779,7 @@ mod tests {
         let buffered: LimitOrder = serde_json::from_value(value).unwrap();
         for order in [direct, buffered] {
             assert_eq!(order.size, Decimal::from_str_exact(expected).unwrap());
-            assert_eq!(order.price, Decimal::from(9_007_199_254_740_993u64));
+            assert_eq!(order.price, Decimal::from(9_007_199_254_740_993_u64));
             assert_eq!(order.min_fill_size, Some(Decimal::new(2375, 3)));
             assert_eq!(order.bet_target_size, None);
             assert_eq!(order.persistence_type, None);

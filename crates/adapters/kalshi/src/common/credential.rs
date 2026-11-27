@@ -231,7 +231,7 @@ fn is_complete_der(der: &[u8]) -> bool {
         return false;
     }
 
-    let length = rest[..count].iter().try_fold(0usize, |length, b| {
+    let length = rest[..count].iter().try_fold(0_usize, |length, b| {
         length.checked_mul(256)?.checked_add(usize::from(*b))
     });
 
@@ -372,7 +372,7 @@ mod tests {
         for _ in 0..2 {
             let headers = credential
                 .headers(
-                    1703123456789,
+                    1_703_123_456_789,
                     "get",
                     "/trade-api/v2/portfolio/balance?limit=4",
                 )

@@ -255,6 +255,14 @@ pub(super) struct RetainedFillState {
     pub(super) netting_lifecycle_starts: IndexMap<AccountInstrumentStrategyKey, UnixNanos>,
 }
 
+impl RetainedFillState {
+    pub(super) fn fill_precedes_netting_lifecycle(&self, fill: &OrderFilled) -> bool {
+        self.netting_lifecycle_starts
+            .get(&(fill.account_id, fill.instrument_id, fill.strategy_id))
+            .is_some_and(|ts_opened| fill.ts_event < *ts_opened)
+    }
+}
+
 /// Tracks pending fill identities and their generated reconciliation events.
 #[derive(Default)]
 pub(super) struct ReconciliationFillQueue {
@@ -307,13 +315,16 @@ pub(crate) async fn request_targeted_order_reports(
     query_delay: Duration,
 ) -> Vec<TargetedOrderReportResult> {
     let mut results = Vec::with_capacity(queries.len());
-    let mut request_count = 0usize;
+    let mut request_count = 0_usize;
 
     for mut query in queries {
-        let mut report = None;
-        let mut fills = Vec::new();
-        let mut report_client_id = None;
-        let mut coverage_complete = true;
+        let mut result = TargetedOrderReportResult {
+            client_order_id: query.client_order_id(),
+            client_id: None,
+            report: None,
+            fills: Vec::new(),
+            coverage_complete: true,
+        };
 
         for client_id in &query.responsible_clients {
             let client_id = *client_id;
@@ -321,7 +332,7 @@ pub(crate) async fn request_targeted_order_reports(
                 .iter()
                 .find(|client| client.client_id() == client_id)
             else {
-                coverage_complete = false;
+                result.coverage_complete = false;
                 log::warn!(
                     "Cannot run targeted order status query for {}: execution client {client_id} is unavailable",
                     query.client_order_id,
@@ -341,42 +352,33 @@ pub(crate) async fn request_targeted_order_reports(
                 client.generate_order_status_report(&query.command).await
             };
 
-            if let Some(candidate) =
-                targeted_report_response(&query, client_id, response, &mut coverage_complete)
-            {
-                if order_report_has_missing_fills(
-                    &candidate,
-                    query.filled_qty,
-                    client.requires_authoritative_fills(),
-                ) {
-                    let command = targeted_fill_command(&query, &candidate);
-                    match client.generate_fill_reports(command).await {
-                        Ok(reports) => {
-                            fills = reports
-                                .into_iter()
-                                .filter(|fill| targeted_fill_matches(&candidate, fill))
-                                .collect();
-                        }
-                        Err(e) => log::warn!(
-                            "Failed fill report query from {client_id} for {}: {e}",
-                            query.client_order_id,
-                        ),
-                    }
-                }
+            let Some(report) = targeted_report_response(
+                &query,
+                client_id,
+                response,
+                &mut result.coverage_complete,
+            ) else {
+                continue;
+            };
 
-                report = Some(candidate);
-                report_client_id = Some(client_id);
-                break;
+            if order_report_has_missing_fills(
+                &report,
+                query.filled_qty,
+                client.requires_authoritative_fills(),
+            ) {
+                let command = targeted_fill_command(&query, &report);
+                let response = client.generate_fill_reports(command).await;
+                result.fills =
+                    targeted_fill_response(query.client_order_id, client_id, &report, response)
+                        .unwrap_or_default();
             }
+
+            result.report = Some(report);
+            result.client_id = Some(client_id);
+            break;
         }
 
-        results.push(TargetedOrderReportResult {
-            client_order_id: query.client_order_id(),
-            client_id: report_client_id,
-            report,
-            fills,
-            coverage_complete,
-        });
+        results.push(result);
     }
 
     results
@@ -394,7 +396,7 @@ pub(crate) async fn collect_targeted_order_reports(
     results: Rc<RefCell<Vec<TargetedOrderReportResult>>>,
 ) -> bool {
     let mut collectors = IndexMap::new();
-    let mut request_count = 0usize;
+    let mut request_count = 0_usize;
 
     for mut query in queries {
         collectors.clear();
@@ -451,17 +453,10 @@ pub(crate) async fn collect_targeted_order_reports(
                 return false;
             };
 
-            match response {
-                Ok(fills) => {
-                    results.borrow_mut()[result_index].fills = fills
-                        .into_iter()
-                        .filter(|fill| targeted_fill_matches(&report, fill))
-                        .collect();
-                }
-                Err(e) => log::warn!(
-                    "Failed fill report query from {client_id} for {}: {e}",
-                    query.client_order_id
-                ),
+            if let Some(fills) =
+                targeted_fill_response(query.client_order_id, client_id, &report, response)
+            {
+                results.borrow_mut()[result_index].fills = fills;
             }
         }
     }
@@ -593,6 +588,26 @@ fn targeted_fill_command(
 
     command.log_receipt_level = LogLevel::Debug;
     command
+}
+
+fn targeted_fill_response(
+    client_order_id: ClientOrderId,
+    client_id: ClientId,
+    report: &OrderStatusReport,
+    response: anyhow::Result<Vec<FillReport>>,
+) -> Option<Vec<FillReport>> {
+    match response {
+        Ok(fills) => Some(
+            fills
+                .into_iter()
+                .filter(|fill| targeted_fill_matches(report, fill))
+                .collect(),
+        ),
+        Err(e) => {
+            log::warn!("Failed fill report query from {client_id} for {client_order_id}: {e}");
+            None
+        }
+    }
 }
 
 fn targeted_fill_matches(report: &OrderStatusReport, fill: &FillReport) -> bool {
@@ -790,10 +805,7 @@ pub(super) fn should_project_fill(
         return true;
     }
 
-    retained_fill_state
-        .netting_lifecycle_starts
-        .get(&(fill.account_id, fill.instrument_id, fill.strategy_id))
-        .is_some_and(|ts_opened| fill.ts_event < *ts_opened)
+    retained_fill_state.fill_precedes_netting_lifecycle(fill)
 }
 
 /// Sorts reconciliation events by event time while keeping each venue order's lifecycle events
@@ -904,26 +916,51 @@ pub(super) fn responsible_client_ids(
         .collect()
 }
 
-/// Returns the quantity-weighted average of positive position entry prices.
+// Weights positive entry prices by quantity, using the harmonic mean for inverse notional
 pub(super) fn position_avg_px<'a>(
     positions: impl IntoIterator<Item = &'a Position>,
+    divides_notional_by_price: bool,
 ) -> Option<Decimal> {
-    let mut total_value = Decimal::ZERO;
-    let mut total_qty = Decimal::ZERO;
-
-    for position in positions {
+    let entries = positions.into_iter().filter_map(|position| {
         let qty = position.signed_decimal_qty().abs();
-        if position.avg_px_open > Decimal::ZERO && qty > Decimal::ZERO {
-            total_value += position.avg_px_open * qty;
-            total_qty += qty;
-        }
+        let px = position.avg_px_open;
+        (qty > Decimal::ZERO && px > Decimal::ZERO).then_some((qty, px))
+    });
+
+    weighted_entry_px(entries.map(Some), divides_notional_by_price).map(|(_, px)| px)
+}
+
+// Absent entries make the weighted entry price unknown
+pub(super) fn weighted_entry_px(
+    entries: impl Iterator<Item = Option<(Decimal, Decimal)>>,
+    divides_notional_by_price: bool,
+) -> Option<(Decimal, Decimal)> {
+    let mut entries = entries.peekable();
+    let first = entries.next()??;
+    if divides_notional_by_price && entries.peek().is_none() {
+        return Some(first);
     }
 
-    if total_qty > Decimal::ZERO {
-        Some(total_value / total_qty)
-    } else {
-        None
+    let mut total_qty = Decimal::ZERO;
+    let mut total_value = Decimal::ZERO;
+
+    for entry in [Some(first)].into_iter().chain(entries) {
+        let (qty, px) = entry?;
+        total_qty += qty;
+        total_value += if divides_notional_by_price {
+            qty.checked_div(px)?
+        } else {
+            qty * px
+        };
     }
+
+    let px = if divides_notional_by_price {
+        total_qty.checked_div(total_value)?
+    } else {
+        total_value / total_qty
+    };
+
+    Some((total_qty, px))
 }
 
 /// Aggregates signed quantities into net, long, and absolute short totals.
@@ -2222,7 +2259,7 @@ pub(super) mod tests {
             })
             .collect::<Vec<_>>();
 
-        let result = position_avg_px(&positions);
+        let result = position_avg_px(&positions, false);
 
         assert_eq!(result, expected);
     }
@@ -2246,12 +2283,12 @@ pub(super) mod tests {
     proptest! {
         #[rstest]
         fn prop_position_quantities_match_tolerance_and_side_exposure(
-            long in 100i64..1_000_000,
-            short in 100i64..1_000_000,
-            long_delta in -10i64..=10,
-            short_delta in -10i64..=10,
-            tolerance in 0i64..=20,
-            scale in 0u32..=6,
+            long in 100_i64..1_000_000,
+            short in 100_i64..1_000_000,
+            long_delta in -10_i64..=10,
+            short_delta in -10_i64..=10,
+            tolerance in 0_i64..=20,
+            scale in 0_u32..=6,
             side_reports in any::<bool>(),
         ) {
             let venue_net = long + long_delta - short - short_delta;
@@ -2293,7 +2330,7 @@ pub(super) mod tests {
     proptest! {
         #[rstest]
         fn prop_position_qty_aggregates_preserves_sign_and_net(
-            values in proptest::collection::vec(-1_000_000i64..=1_000_000, 0..32),
+            values in proptest::collection::vec(-1_000_000_i64..=1_000_000, 0..32),
         ) {
             let quantities = values.iter().map(|v| Decimal::new(*v, 3)).collect::<Vec<_>>();
             let (net, long, short) = position_qty_aggregates(quantities.iter().copied());

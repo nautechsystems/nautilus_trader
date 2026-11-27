@@ -29,14 +29,14 @@ use std::{
     },
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use arc_swap::ArcSwapOption;
 use dashmap::{DashMap, DashSet, mapref::entry::Entry};
 use nautilus_core::{UUID4, UnixNanos, time::AtomicTime};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide, OrderType},
+    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType},
     events::{
         OrderAccepted, OrderCanceled, OrderEventAny, OrderFilled, OrderTriggered, OrderUpdated,
     },
@@ -45,7 +45,8 @@ use nautilus_model::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
-    orders::TRIGGERABLE_ORDER_TYPES,
+    orders::{Order, OrderAny, TRIGGERABLE_ORDER_TYPES},
+    reports::{FillReport, OrderStatusReport},
     types::{Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
@@ -126,6 +127,23 @@ struct SpotRepayFill {
 }
 
 #[derive(Debug)]
+enum QuoteMarketFill {
+    Standard(OrderFilled, bool),
+    Fast(FillReport),
+    Rest(FillReport),
+}
+
+#[derive(Debug)]
+struct QuoteMarketFills {
+    quote_qty: Quantity,
+    pending: Vec<QuoteMarketFill>,
+    trade_ids: AHashSet<TradeId>,
+    filled_qty: Quantity,
+    terminal_qty: Option<Quantity>,
+    repay_pending: bool,
+}
+
+#[derive(Debug)]
 struct RecentIds<T: Eq + Hash> {
     ids: DashSet<T>,
     order: Mutex<VecDeque<T>>,
@@ -181,11 +199,12 @@ pub struct WsDispatchState {
     pub emitted_accepted: DashSet<ClientOrderId>,
     pub triggered_orders: DashSet<ClientOrderId>,
     pub filled_orders: DashSet<ClientOrderId>,
-    fast_execution_ids: RecentIds<TradeId>,
+    execution_ids: RecentIds<TradeId>,
     fast_filled_quantities: DashMap<ClientOrderId, Quantity>,
     pub terminal_order_quantities: DashMap<ClientOrderId, Quantity>,
     untracked_order_ids: RecentIds<VenueOrderId>,
     pending_fast_executions: DashMap<VenueOrderId, Vec<BybitWsAccountExecutionFast>>,
+    quote_market_fills: DashMap<ClientOrderId, QuoteMarketFills>,
     spot_repay_fills: DashMap<ClientOrderId, SpotRepayFill>,
     repay_tx: ArcSwapOption<tokio::sync::mpsc::UnboundedSender<RepayRequest>>,
     clearing: AtomicBool,
@@ -204,11 +223,12 @@ impl Default for WsDispatchState {
             emitted_accepted: DashSet::default(),
             triggered_orders: DashSet::default(),
             filled_orders: DashSet::default(),
-            fast_execution_ids: RecentIds::default(),
+            execution_ids: RecentIds::default(),
             fast_filled_quantities: DashMap::new(),
             terminal_order_quantities: DashMap::new(),
             untracked_order_ids: RecentIds::default(),
             pending_fast_executions: DashMap::new(),
+            quote_market_fills: DashMap::new(),
             spot_repay_fills: DashMap::new(),
             repay_tx: ArcSwapOption::empty(),
             clearing: AtomicBool::new(false),
@@ -222,6 +242,66 @@ impl WsDispatchState {
             fast_execution,
             ..Default::default()
         }
+    }
+
+    pub(crate) fn track_quote_market_order(&self, order: &OrderAny, product: BybitProductType) {
+        if product == BybitProductType::Spot
+            && order.order_type() == OrderType::Market
+            && order.is_quote_quantity()
+        {
+            self.seed_quote_market_fills(order, order.quantity(), true);
+        }
+    }
+
+    pub(crate) fn restore_quote_market_order(&self, order: &OrderAny, quote_qty: Quantity) {
+        let cid = order.client_order_id();
+        self.seed_quote_market_fills(order, quote_qty, false);
+        self.order_identities.entry(cid).or_insert(OrderIdentity {
+            instrument_id: order.instrument_id(),
+            strategy_id: order.strategy_id(),
+            order_side: order.order_side(),
+            order_type: order.order_type(),
+            venue_position_id: None,
+        });
+
+        if let Some(vid) = order.venue_order_id() {
+            record_venue_order_id(cid, vid, self);
+        }
+
+        if order.ts_accepted().is_some() {
+            self.insert_accepted(cid);
+        }
+
+        for &trade_id in order.trade_ids() {
+            self.insert_execution(trade_id);
+        }
+    }
+
+    fn seed_quote_market_fills(&self, order: &OrderAny, quote_qty: Quantity, repay_pending: bool) {
+        self.quote_market_fills
+            .entry(order.client_order_id())
+            .or_insert_with(|| QuoteMarketFills {
+                quote_qty,
+                pending: Vec::new(),
+                trade_ids: order.trade_ids().into_iter().copied().collect(),
+                filled_qty: order.filled_qty(),
+                terminal_qty: (!order.is_quote_quantity()).then(|| order.quantity()),
+                repay_pending,
+            });
+    }
+
+    pub(crate) fn tracks_quote_market_order(&self, report: &OrderStatusReport) -> bool {
+        report
+            .client_order_id
+            .is_some_and(|id| self.quote_market_fills.contains_key(&id))
+    }
+
+    pub(crate) fn needs_quote_market_executions(&self, report: &OrderStatusReport) -> bool {
+        report.order_status == OrderStatus::Filled
+            && report
+                .client_order_id
+                .and_then(|id| self.quote_market_fills.get(&id))
+                .is_some_and(|fills| fills.filled_qty < report.filled_qty)
     }
 
     fn evict_if_full<T: Eq + Hash>(&self, set: &DashSet<T>) {
@@ -246,12 +326,12 @@ impl WsDispatchState {
         self.filled_orders.insert(cid);
     }
 
-    fn insert_fast_execution(&self, trade_id: TradeId) -> bool {
-        self.fast_execution_ids.insert(trade_id)
+    fn insert_execution(&self, trade_id: TradeId) -> bool {
+        self.execution_ids.insert(trade_id)
     }
 
-    fn remove_fast_execution(&self, trade_id: TradeId) {
-        self.fast_execution_ids.remove(trade_id);
+    fn remove_execution(&self, trade_id: TradeId) {
+        self.execution_ids.remove(trade_id);
     }
 
     fn insert_triggered(&self, cid: ClientOrderId) {
@@ -725,6 +805,7 @@ fn dispatch_order_rejected(
     state: &WsDispatchState,
     emitter: &ExecutionEventEmitter,
 ) {
+    release_canceled_quote_market_fills(client_order_id, state, emitter);
     let filled_qty = parse_quantity_with_precision(
         &order.cum_exec_qty,
         instrument.size_precision(),
@@ -807,6 +888,19 @@ fn dispatch_order_filled(
         emitter,
     );
 
+    if state.quote_market_fills.contains_key(&client_order_id) {
+        match super::parse::parse_ws_order_status_report(order, instrument, account_id, ts_init) {
+            Ok(report) => {
+                reconcile_quote_market_fills(&report, instrument, state, emitter);
+            }
+            Err(e) => {
+                log::error!("Failed to parse filled quote market order {client_order_id}: {e}");
+            }
+        }
+
+        return;
+    }
+
     // Reconcile seed against venue values before the fill (BBO
     // orders may land directly on Filled).
     emit_order_updated_if_changed(
@@ -849,6 +943,7 @@ fn dispatch_order_canceled(
     state: &WsDispatchState,
     emitter: &ExecutionEventEmitter,
 ) {
+    release_canceled_quote_market_fills(client_order_id, state, emitter);
     let filled_qty = parse_quantity_with_precision(
         &order.cum_exec_qty,
         instrument.size_precision(),
@@ -977,6 +1072,13 @@ fn dispatch_execution_fill(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) {
+    if exec.category == BybitProductType::Spot
+        && let Ok(trade_id) = TradeId::new_checked(exec.exec_id.as_str())
+        && state.execution_ids.contains(&trade_id)
+    {
+        return;
+    }
+
     if exec.exec_type == BybitExecType::Funding {
         log::debug!(
             "Skipping funding execution: symbol={}, order_id={}, exec_id={}",
@@ -1010,47 +1112,65 @@ fn dispatch_execution_fill(
         .as_ref()
         .and_then(|cid| state.order_identities.get(cid).map(|r| r.clone()));
 
-    if let (Some(client_order_id), Some(identity)) = (client_order_id, identity) {
-        match parse_order_filled(exec, instrument, &identity, emitter, account_id, ts_init) {
-            Ok(filled) => {
-                let venue_order_id = filled.venue_order_id;
-                ensure_accepted_emitted(
-                    client_order_id,
-                    account_id,
-                    venue_order_id,
-                    &identity,
-                    ts_init,
-                    state,
-                    emitter,
-                );
-
-                let is_spot_buy =
-                    exec.category == BybitProductType::Spot && exec.side == BybitOrderSide::Buy;
-
-                if is_spot_buy {
-                    record_spot_repay_fill(client_order_id, &filled, instrument, state);
-                }
-
-                state.insert_filled(client_order_id);
-                state.triggered_orders.remove(&client_order_id);
-                emitter.send_order_event(OrderEventAny::Filled(filled));
-
-                if exec.leaves_qty == "0" {
-                    if is_spot_buy {
-                        enqueue_spot_repay(client_order_id, instrument, state);
-                    }
-
-                    cleanup_terminal(client_order_id, state);
-                }
-            }
-            Err(e) => log::error!("Failed to parse OrderFilled for {client_order_id}: {e}"),
-        }
-    } else {
-        // Untracked: fall back to FillReport for reconciliation
+    let (Some(client_order_id), Some(identity)) = (client_order_id, identity) else {
         match super::parse::parse_ws_fill_report(exec, account_id, instrument, ts_init) {
             Ok(report) => emitter.send_fill_report(report),
             Err(e) => log::error!("Failed to parse fill report: {e}"),
         }
+
+        return;
+    };
+
+    let filled = match parse_order_filled(exec, instrument, &identity, emitter, account_id, ts_init)
+    {
+        Ok(filled) => filled,
+        Err(e) => {
+            log::error!("Failed to parse OrderFilled for {client_order_id}: {e}");
+            return;
+        }
+    };
+
+    ensure_accepted_emitted(
+        client_order_id,
+        account_id,
+        filled.venue_order_id,
+        &identity,
+        ts_init,
+        state,
+        emitter,
+    );
+
+    let Some(QuoteMarketFill::Standard(filled, terminal)) = dispatch_quote_market_fill(
+        client_order_id,
+        QuoteMarketFill::Standard(filled, exec.leaves_qty == "0"),
+        instrument,
+        state,
+        emitter,
+    ) else {
+        return;
+    };
+
+    let is_spot_buy = exec.category == BybitProductType::Spot && exec.side == BybitOrderSide::Buy;
+    if is_spot_buy {
+        record_spot_repay_fill(
+            client_order_id,
+            filled.last_qty,
+            filled.commission,
+            instrument,
+            state,
+        );
+    }
+
+    state.insert_filled(client_order_id);
+    state.triggered_orders.remove(&client_order_id);
+    emitter.send_order_event(OrderEventAny::Filled(filled));
+
+    if terminal {
+        if is_spot_buy {
+            enqueue_spot_repay(client_order_id, instrument, state);
+        }
+
+        cleanup_terminal(client_order_id, state);
     }
 }
 
@@ -1079,7 +1199,7 @@ fn dispatch_execution_fill_fast(
         return;
     };
 
-    if defer_untracked && !state.insert_fast_execution(trade_id) {
+    if defer_untracked && !state.insert_execution(trade_id) {
         log::debug!("Skipping duplicate fast execution: {trade_id}");
         return;
     }
@@ -1142,20 +1262,401 @@ fn dispatch_execution_fill_fast(
         venue_position_id,
         ts_init,
     ) {
-        Ok(report) => {
-            let last_qty = report.last_qty;
-            emitter.send_fill_report(report);
-
-            if let Some(client_order_id) = client_order_id
-                && identity.is_some()
-            {
-                state.insert_filled(client_order_id);
-                record_fast_fill(client_order_id, last_qty, state);
-            }
-        }
+        Ok(report) => dispatch_fast_fill_report(
+            report,
+            client_order_id.filter(|_| identity.is_some()),
+            instrument,
+            state,
+            emitter,
+        ),
         Err(e) => {
-            state.remove_fast_execution(trade_id);
+            state.remove_execution(trade_id);
             log::error!("Failed to parse fast fill report for {trade_id}: {e:#}");
+        }
+    }
+}
+
+fn dispatch_fast_fill_report(
+    report: FillReport,
+    tracked_id: Option<ClientOrderId>,
+    instrument: &InstrumentAny,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+) {
+    let Some(client_order_id) = tracked_id else {
+        emitter.send_fill_report(report);
+        return;
+    };
+
+    let Some(QuoteMarketFill::Fast(report)) = dispatch_quote_market_fill(
+        client_order_id,
+        QuoteMarketFill::Fast(report),
+        instrument,
+        state,
+        emitter,
+    ) else {
+        return;
+    };
+
+    let last_qty = report.last_qty;
+    emitter.send_fill_report(report);
+    state.insert_filled(client_order_id);
+    record_fast_fill(client_order_id, last_qty, state);
+}
+
+fn dispatch_quote_market_fill(
+    client_order_id: ClientOrderId,
+    fill: QuoteMarketFill,
+    instrument: &InstrumentAny,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+) -> Option<QuoteMarketFill> {
+    let (trade_id, last_qty) = match &fill {
+        QuoteMarketFill::Standard(fill, _) => (fill.trade_id, fill.last_qty),
+        QuoteMarketFill::Fast(fill) | QuoteMarketFill::Rest(fill) => (fill.trade_id, fill.last_qty),
+    };
+
+    let Some(mut fills) = state.quote_market_fills.get_mut(&client_order_id) else {
+        let recovered = matches!(fill, QuoteMarketFill::Standard(..))
+            && state.execution_ids.contains(&trade_id);
+        return (!recovered).then_some(fill);
+    };
+
+    if fills.trade_ids.contains(&trade_id) {
+        return None;
+    }
+
+    let Some(filled_qty) = fills.filled_qty.checked_add(last_qty) else {
+        log::warn!("Quote market fill quantity overflow for {client_order_id}");
+        return None;
+    };
+
+    if fills
+        .terminal_qty
+        .is_some_and(|terminal_qty| filled_qty > terminal_qty)
+    {
+        log::warn!(
+            "Execution quantity exceeds the reported quote market fill for {client_order_id}"
+        );
+        return None;
+    }
+
+    fills.trade_ids.insert(trade_id);
+    fills.filled_qty = filled_qty;
+
+    if matches!(
+        fill,
+        QuoteMarketFill::Standard(..) | QuoteMarketFill::Rest(_)
+    ) {
+        state.insert_execution(trade_id);
+    }
+
+    if fills.repay_pending {
+        record_quote_market_repay_fill(client_order_id, &fill, instrument, state);
+        if fills.terminal_qty.is_none()
+            && matches!(&fill, QuoteMarketFill::Standard(fill, true) if fill.order_side == OrderSide::Buy)
+        {
+            enqueue_quote_market_repay(client_order_id, &mut fills, instrument, state);
+        }
+    }
+
+    // The engine compares numeric quantities even while the order is still in quote units
+    if fills.terminal_qty.is_none() && filled_qty >= fills.quote_qty {
+        fills.pending.push(fill);
+        return None;
+    }
+
+    emit_quote_market_fill(client_order_id, fill, state, emitter);
+    let is_terminal = fills.terminal_qty == Some(filled_qty);
+    if is_terminal {
+        enqueue_quote_market_repay(client_order_id, &mut fills, instrument, state);
+    }
+
+    drop(fills);
+
+    if is_terminal {
+        cleanup_terminal(client_order_id, state);
+    }
+
+    None
+}
+
+fn record_quote_market_repay_fill(
+    client_order_id: ClientOrderId,
+    fill: &QuoteMarketFill,
+    instrument: &InstrumentAny,
+    state: &WsDispatchState,
+) {
+    match fill {
+        QuoteMarketFill::Standard(fill, _) if fill.order_side == OrderSide::Buy => {
+            record_spot_repay_fill(
+                client_order_id,
+                fill.last_qty,
+                fill.commission,
+                instrument,
+                state,
+            );
+        }
+        QuoteMarketFill::Rest(fill)
+            if !state.fast_execution && fill.order_side == OrderSide::Buy =>
+        {
+            record_spot_repay_fill(
+                client_order_id,
+                fill.last_qty,
+                Some(fill.commission),
+                instrument,
+                state,
+            );
+        }
+        _ => {}
+    }
+}
+
+fn enqueue_quote_market_repay(
+    client_order_id: ClientOrderId,
+    fills: &mut QuoteMarketFills,
+    instrument: &InstrumentAny,
+    state: &WsDispatchState,
+) {
+    if fills.repay_pending {
+        enqueue_spot_repay(client_order_id, instrument, state);
+        fills.repay_pending = false;
+    }
+}
+
+fn reconcile_quote_market_fills(
+    report: &OrderStatusReport,
+    instrument: &InstrumentAny,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+) {
+    let Some(client_order_id) = report.client_order_id else {
+        return;
+    };
+
+    if !report.filled_qty.is_positive() {
+        return;
+    }
+
+    let Some(identity) = state
+        .order_identities
+        .get(&client_order_id)
+        .map(|entry| entry.clone())
+    else {
+        return;
+    };
+
+    if state.quote_market_fills.contains_key(&client_order_id)
+        && has_pending_fast_execution(report.venue_order_id, state)
+    {
+        record_venue_order_id(client_order_id, report.venue_order_id, state);
+        drain_pending_fast_executions(
+            report.venue_order_id,
+            instrument,
+            report.account_id,
+            report.ts_init,
+            state,
+            emitter,
+        );
+    }
+
+    let Some(mut fills) = state.quote_market_fills.get_mut(&client_order_id) else {
+        return;
+    };
+
+    if fills.terminal_qty.is_some() || fills.filled_qty > report.filled_qty {
+        return;
+    }
+
+    ensure_accepted_emitted(
+        client_order_id,
+        report.account_id,
+        report.venue_order_id,
+        &identity,
+        report.ts_init,
+        state,
+        emitter,
+    );
+
+    emitter.send_order_event(OrderEventAny::Updated(OrderUpdated::new(
+        emitter.trader_id(),
+        identity.strategy_id,
+        identity.instrument_id,
+        client_order_id,
+        report.filled_qty,
+        UUID4::new(),
+        report.ts_last,
+        report.ts_init,
+        true,
+        Some(report.venue_order_id),
+        Some(report.account_id),
+        None,
+        None,
+        None,
+        false,
+    )));
+
+    for fill in std::mem::take(&mut fills.pending) {
+        emit_quote_market_fill(client_order_id, fill, state, emitter);
+    }
+
+    fills.terminal_qty = Some(report.filled_qty);
+    let is_terminal = fills.filled_qty == report.filled_qty;
+    if is_terminal {
+        enqueue_quote_market_repay(client_order_id, &mut fills, instrument, state);
+    }
+
+    drop(fills);
+
+    if is_terminal {
+        cleanup_terminal(client_order_id, state);
+    }
+}
+
+pub(crate) fn dispatch_quote_market_rest_report(
+    report: &OrderStatusReport,
+    recovered: Vec<FillReport>,
+    instruments: &AHashMap<Ustr, InstrumentAny>,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+) -> bool {
+    let Some(client_order_id) = report.client_order_id else {
+        return true;
+    };
+
+    if !state.tracks_quote_market_order(report) {
+        return true;
+    }
+
+    if !report.order_status.is_closed() {
+        // A working snapshot can neither resize the order nor invent a fill while it is tracked
+        let identity = state
+            .order_identities
+            .get(&client_order_id)
+            .map(|entry| entry.clone());
+
+        if let Some(identity) = identity
+            && matches!(
+                report.order_status,
+                OrderStatus::Accepted | OrderStatus::PartiallyFilled
+            )
+            && let Some(_fills) = state.quote_market_fills.get(&client_order_id)
+        {
+            ensure_accepted_emitted(
+                client_order_id,
+                report.account_id,
+                report.venue_order_id,
+                &identity,
+                report.ts_init,
+                state,
+                emitter,
+            );
+        }
+
+        return false;
+    }
+
+    if report.order_status != OrderStatus::Filled {
+        release_canceled_quote_market_fills(client_order_id, state, emitter);
+        return true;
+    }
+
+    let Some(instrument) = instruments.get(&report.instrument_id.symbol.inner()) else {
+        return false;
+    };
+
+    reconcile_quote_market_fills(report, instrument, state, emitter);
+    if let Some(fills) = state.quote_market_fills.get(&client_order_id)
+        && !quote_market_executions_cover(
+            report,
+            fills.filled_qty,
+            fills.trade_ids.iter().copied(),
+            &recovered,
+        )
+    {
+        return false;
+    }
+
+    for fill in recovered {
+        if dispatch_quote_market_fill(
+            client_order_id,
+            QuoteMarketFill::Rest(fill),
+            instrument,
+            state,
+            emitter,
+        )
+        .is_some()
+        {
+            break;
+        }
+    }
+
+    !state.tracks_quote_market_order(report)
+}
+
+pub(crate) fn quote_market_executions_cover(
+    report: &OrderStatusReport,
+    filled_qty: Quantity,
+    trade_ids: impl Iterator<Item = TradeId>,
+    fills: &[FillReport],
+) -> bool {
+    let mut seen: AHashSet<_> = trade_ids.collect();
+    fills
+        .iter()
+        .filter(|fill| quote_market_fill_matches(report, fill) && seen.insert(fill.trade_id))
+        .try_fold(filled_qty, |total, fill| total.checked_add(fill.last_qty))
+        == Some(report.filled_qty)
+}
+
+pub(crate) fn quote_market_fill_matches(report: &OrderStatusReport, fill: &FillReport) -> bool {
+    fill.account_id == report.account_id
+        && fill.venue_order_id == report.venue_order_id
+        && fill.instrument_id == report.instrument_id
+        && report.order_side == Some(fill.order_side)
+        && fill
+            .client_order_id
+            .is_none_or(|id| Some(id) == report.client_order_id)
+}
+
+fn emit_quote_market_fill(
+    client_order_id: ClientOrderId,
+    fill: QuoteMarketFill,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+) {
+    match fill {
+        QuoteMarketFill::Standard(fill, _) => {
+            emitter.send_order_event(OrderEventAny::Filled(fill));
+        }
+        QuoteMarketFill::Fast(fill) | QuoteMarketFill::Rest(fill) => emitter.send_fill_report(fill),
+    }
+
+    state.insert_filled(client_order_id);
+}
+
+fn release_canceled_quote_market_fills(
+    client_order_id: ClientOrderId,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+) {
+    let Some((_, fills)) = state.quote_market_fills.remove(&client_order_id) else {
+        return;
+    };
+
+    if state.fast_execution {
+        state
+            .fast_filled_quantities
+            .insert(client_order_id, fills.filled_qty);
+    }
+
+    for fill in fills.pending {
+        match fill {
+            QuoteMarketFill::Standard(fill, _) => {
+                emitter.send_order_event(OrderEventAny::Filled(fill));
+            }
+            QuoteMarketFill::Fast(fill) | QuoteMarketFill::Rest(fill) => {
+                emitter.send_fill_report(fill);
+            }
         }
     }
 }
@@ -1519,8 +2020,7 @@ fn emit_rejection_for_op(
 ) {
     match pending_op {
         PendingOperation::Place => {
-            state.order_identities.remove(&client_order_id);
-            state.order_snapshots.remove(&client_order_id);
+            cleanup_terminal(client_order_id, state);
             emitter.emit_order_rejected_event(
                 identity.strategy_id,
                 identity.instrument_id,
@@ -1644,6 +2144,10 @@ fn emit_order_updated_if_changed(
     state: &WsDispatchState,
     emitter: &ExecutionEventEmitter,
 ) -> bool {
+    if state.quote_market_fills.contains_key(&client_order_id) {
+        return false;
+    }
+
     let Some(snapshot) = parse_order_snapshot(order, instrument) else {
         return false;
     };
@@ -1789,6 +2293,7 @@ pub(crate) fn cleanup_terminal(client_order_id: ClientOrderId, state: &WsDispatc
     state.filled_orders.remove(&client_order_id);
     state.fast_filled_quantities.remove(&client_order_id);
     state.terminal_order_quantities.remove(&client_order_id);
+    state.quote_market_fills.remove(&client_order_id);
     state.spot_repay_fills.remove(&client_order_id);
 }
 
@@ -1810,7 +2315,8 @@ fn extract_venue_order_id_from_data(data: &serde_json::Value) -> Option<VenueOrd
 
 fn record_spot_repay_fill(
     client_order_id: ClientOrderId,
-    filled: &OrderFilled,
+    quantity: Quantity,
+    commission: Option<Money>,
     instrument: &InstrumentAny,
     state: &WsDispatchState,
 ) {
@@ -1818,16 +2324,11 @@ fn record_spot_repay_fill(
         return;
     };
 
-    let base_fee = filled
-        .commission
+    let base_fee = commission
         .filter(|fee| fee.currency.code == base_currency.code)
         .map_or(Decimal::ZERO, |fee| fee.as_decimal().max(Decimal::ZERO));
 
-    let fill = SpotRepayFill {
-        quantity: filled.last_qty,
-        base_fee,
-    };
-
+    let fill = SpotRepayFill { quantity, base_fee };
     state
         .spot_repay_fills
         .entry(client_order_id)
@@ -1888,19 +2389,22 @@ mod tests {
     use super::*;
     use crate::{
         common::{
-            enums::{BybitExecType, BybitOrderSide, BybitProductType},
+            enums::{
+                BybitExecType, BybitMarketUnit, BybitOrderSide, BybitOrderType, BybitProductType,
+            },
             parse::{
                 parse_inverse_instrument, parse_linear_instrument, parse_option_instrument,
-                parse_spot_instrument,
+                parse_order_status_report, parse_spot_instrument,
             },
             testing::load_test_json,
         },
         http::models::{
             BybitInstrumentInverseResponse, BybitInstrumentLinearResponse,
-            BybitInstrumentOptionResponse, BybitInstrumentSpotResponse,
+            BybitInstrumentOptionResponse, BybitInstrumentSpotResponse, BybitOpenOrdersResponse,
         },
         websocket::messages::{
-            BybitWsAccountExecutionFastMsg, BybitWsMessage, BybitWsOrderResponse,
+            BybitWsAccountExecutionFastMsg, BybitWsAccountOrderMsg, BybitWsMessage,
+            BybitWsOrderResponse,
         },
     };
 
@@ -1971,6 +2475,49 @@ mod tests {
             order_type: OrderType::Limit,
             venue_position_id: None,
         }
+    }
+
+    #[rstest]
+    fn test_quote_recovered_execution_cannot_fall_through_after_cleanup() {
+        let instrument = spot_instrument();
+        let (emitter, mut rx) = create_emitter();
+        let state = WsDispatchState::default();
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("6"))
+            .quote_quantity(true)
+            .build();
+
+        let OrderEventAny::Filled(fill) = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            None,
+            None,
+            None,
+            Some(Quantity::from("0.001")),
+            None,
+            None,
+            None,
+            Some(test_account_id()),
+        ) else {
+            unreachable!()
+        };
+
+        let dispatch = |fill| {
+            dispatch_quote_market_fill(
+                order.client_order_id(),
+                QuoteMarketFill::Standard(fill, true),
+                &instrument,
+                &state,
+                &emitter,
+            )
+        };
+
+        assert!(dispatch(fill.clone()).is_some());
+        state.insert_execution(fill.trade_id);
+        assert!(dispatch(fill).is_none());
+        assert!(rx.try_recv().is_err());
     }
 
     #[rstest]
@@ -2865,6 +3412,289 @@ mod tests {
     }
 
     #[rstest]
+    #[case::absent(None, None)]
+    #[case::null(Some(serde_json::Value::Null), None)]
+    #[case::empty(Some(serde_json::json!("")), None)]
+    #[case::unknown(Some(serde_json::json!("other")), None)]
+    #[case::base(Some(serde_json::json!("baseCoin")), Some(BybitMarketUnit::BaseCoin))]
+    #[case::quote(Some(serde_json::json!("quoteCoin")), Some(BybitMarketUnit::QuoteCoin))]
+    fn test_order_response_market_unit(
+        #[case] wire_value: Option<serde_json::Value>,
+        #[case] expected: Option<BybitMarketUnit>,
+    ) {
+        let mut rest: serde_json::Value =
+            serde_json::from_str(&load_test_json("http_get_orders_realtime.json")).unwrap();
+        let mut ws: serde_json::Value =
+            serde_json::from_str(&load_test_json("ws_account_order.json")).unwrap();
+
+        if let Some(wire_value) = wire_value {
+            rest["result"]["list"][0]["marketUnit"] = wire_value.clone();
+            ws["data"][0]["marketUnit"] = wire_value;
+        }
+
+        let rest: BybitOpenOrdersResponse = serde_json::from_value(rest).unwrap();
+        let ws: BybitWsAccountOrderMsg = serde_json::from_value(ws).unwrap();
+        assert_eq!(rest.result.list[0].market_unit, expected);
+        assert_eq!(ws.data[0].market_unit, expected);
+    }
+
+    #[rstest]
+    #[case::executions_first(false, None)]
+    #[case::status_first(true, None)]
+    #[case::first_fill_then_rest(false, Some("trade-2"))]
+    #[case::status_then_first_fill_then_rest(true, Some("trade-2"))]
+    #[case::status_then_final_fill_then_rest(true, Some("trade-1"))]
+    fn test_dispatch_quote_market_order_fills_in_base_units(
+        #[case] status_first: bool,
+        #[case] rest_trade: Option<&str>,
+        #[values(false, true)] fast: bool,
+        #[values("5", "20")] quote_qty: &str,
+    ) {
+        let instrument = spot_instrument();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (emitter, mut rx) = create_emitter();
+        let account_id = test_account_id();
+        let state = WsDispatchState::new(fast);
+        let (repay_tx, mut repay_rx) = tokio::sync::mpsc::unbounded_channel();
+        state.set_repay_sender(repay_tx);
+        let clock = get_atomic_clock_realtime();
+        let cid = ClientOrderId::from("quote-market-1");
+
+        let identity = OrderIdentity {
+            instrument_id: instrument.id(),
+            order_type: OrderType::Market,
+            ..default_identity()
+        };
+
+        let harness = ExecutionHarness::new(
+            emitter.trader_id(),
+            *crate::common::consts::BYBIT_CLIENT_ID,
+            account_id,
+            instrument.clone(),
+        );
+
+        let wallet: crate::websocket::messages::BybitWsAccountWalletMsg =
+            serde_json::from_str(&load_test_json("ws_account_wallet.json")).unwrap();
+        let now = clock.get_time_ns();
+
+        let account = MarginAccount::new(
+            parse_ws_account_state(&wallet.data[0], account_id, now, now).unwrap(),
+            false,
+        );
+
+        harness
+            .cache()
+            .borrow_mut()
+            .add_account(account.into())
+            .unwrap();
+
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(emitter.trader_id())
+            .strategy_id(identity.strategy_id)
+            .instrument_id(instrument.id())
+            .client_order_id(cid)
+            .side(OrderSide::Buy)
+            .quote_quantity(true)
+            .quantity(Quantity::from(quote_qty))
+            .build();
+        order
+            .apply(TestOrderEventStubs::submitted(&order, account_id))
+            .unwrap();
+        state.track_quote_market_order(&order, BybitProductType::Spot);
+        state.order_identities.insert(cid, identity);
+        harness
+            .cache()
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+        cache_fee_rates(&state, &instrument);
+
+        let mut terminal = order_msg(cid.as_str(), "Filled", "11");
+        terminal.data[0].category = BybitProductType::Spot;
+        terminal.data[0].order_type = BybitOrderType::Market;
+        terminal.data[0].market_unit = Some(BybitMarketUnit::QuoteCoin);
+        terminal.data[0].qty = quote_qty.to_string();
+        let terminal = BybitWsMessage::AccountOrder(terminal);
+
+        let mut response: BybitOpenOrdersResponse =
+            serde_json::from_str(&load_test_json("http_get_orders_realtime.json")).unwrap();
+        let mut venue_order = response.result.list.remove(0);
+        venue_order.order_id = Ustr::from("ord-1");
+        venue_order.order_link_id = Ustr::from(cid.as_str());
+        venue_order.order_type = BybitOrderType::Market;
+        venue_order.order_status = BybitOrderStatus::Filled;
+        venue_order.qty = quote_qty.to_string();
+        venue_order.market_unit = Some(BybitMarketUnit::QuoteCoin);
+        venue_order.cum_exec_qty = "11".to_string();
+        venue_order.avg_price = Some("0.4".to_string());
+        let report = parse_order_status_report(&venue_order, &instrument, account_id, now).unwrap();
+
+        let dispatch = |message: &BybitWsMessage| {
+            dispatch_ws_message(message, account_id, &instruments, clock, &state, &emitter);
+        };
+
+        let dispatch_rest = |report: &OrderStatusReport, fills: Vec<FillReport>| {
+            dispatch_quote_market_rest_report(report, fills, &instruments, &state, &emitter)
+        };
+
+        let test_stale_snapshot = || {
+            let mut stale = report.clone();
+            stale.order_status = OrderStatus::Accepted;
+            stale.quantity = Quantity::from(quote_qty);
+            stale.filled_qty = Quantity::zero(instrument.size_precision());
+            assert!(!dispatch_rest(&stale, Vec::new()));
+        };
+
+        let rest_recovery = rest_trade.is_some();
+        match (status_first, rest_recovery) {
+            (true, true) => {
+                assert!(!dispatch_rest(&report, Vec::new()));
+                test_stale_snapshot();
+            }
+            (true, false) => {
+                dispatch(&terminal);
+            }
+            (false, _) => {}
+        }
+
+        let [first, last] = quote_market_execution_messages(fast, cid);
+        let (observed, missing, trade_ids) = if rest_trade == Some("trade-1") {
+            (&last, &first, ["trade-2", "trade-1"])
+        } else {
+            (&first, &last, ["trade-1", "trade-2"])
+        };
+
+        dispatch(observed);
+        dispatch(observed);
+
+        if rest_recovery {
+            assert!(repay_rx.try_recv().is_err());
+            assert!(!dispatch_rest(&report, Vec::new()));
+            test_stale_snapshot();
+            assert!(dispatch_rest(&report, quote_market_fill_reports(&report)));
+        }
+
+        let events_before_replay = rx.len();
+        dispatch(missing);
+        dispatch(missing);
+
+        if rest_recovery {
+            assert_eq!(rx.len(), events_before_replay);
+        }
+
+        let repay_before_status = !fast && !status_first && !rest_recovery;
+        if repay_before_status {
+            let repay = repay_rx.try_recv().unwrap();
+            assert_eq!(repay.quantity, Quantity::from("11"));
+            assert_eq!(repay.base_fee, Decimal::ZERO);
+        }
+
+        dispatch(&terminal);
+
+        let (base_fee, position_qty) = match (fast, rest_trade) {
+            (true, _) => (Decimal::ZERO, "10.9934"),
+            (false, Some("trade-1")) => (Decimal::new(3, 3), "10.997"),
+            (false, Some("trade-2")) => (Decimal::new(36, 4), "10.9964"),
+            _ => (Decimal::ZERO, "11"),
+        };
+
+        if !fast && !repay_before_status {
+            let repay = repay_rx.try_recv().unwrap();
+            assert_eq!(repay.quantity, Quantity::from("11"));
+            assert_eq!(repay.base_fee, base_fee);
+        }
+
+        assert!(repay_rx.try_recv().is_err());
+
+        while let Ok(event) = rx.try_recv() {
+            let mut engine = harness.exec_engine().borrow_mut();
+            match event {
+                ExecutionEvent::Order(event) => engine.process(&event),
+                ExecutionEvent::Report(report) => engine.reconcile_execution_report(&report),
+                other => panic!("unexpected execution event: {other:?}"),
+            }
+        }
+
+        harness
+            .exec_engine()
+            .borrow_mut()
+            .reconcile_order_status_report(&report);
+
+        let cache = harness.cache().borrow();
+        let order = cache.order(&cid).unwrap();
+        let position = cache.position(cache.position_id(&cid).unwrap()).unwrap();
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(report.quantity, Quantity::from("11"));
+        assert_eq!(order.quantity(), Quantity::from("11"));
+        assert_eq!(order.filled_qty(), Quantity::from("11"));
+        assert_eq!(
+            order.leaves_qty(),
+            Quantity::zero(instrument.size_precision())
+        );
+        assert!(!order.is_quote_quantity());
+
+        let trade_ids = trade_ids.map(TradeId::from);
+        assert_eq!(order.trade_ids(), trade_ids.iter().collect::<Vec<_>>());
+        assert_eq!(position.quantity, Quantity::from(position_qty));
+        assert!(state.quote_market_fills.is_empty());
+        assert_fast_state_cleared(&state, cid);
+    }
+
+    fn quote_market_fill_reports(report: &OrderStatusReport) -> Vec<FillReport> {
+        [
+            ("trade-1", "5", "0.003 BTC"),
+            ("trade-2", "6", "0.0036 BTC"),
+        ]
+        .into_iter()
+        .map(|(trade_id, qty, base_fee)| {
+            FillReport::new(
+                report.account_id,
+                report.instrument_id,
+                report.venue_order_id,
+                TradeId::from(trade_id),
+                OrderSide::Buy,
+                Quantity::from(qty),
+                Price::from("0.4"),
+                Money::from(base_fee),
+                LiquiditySide::Taker,
+                report.client_order_id,
+                None,
+                report.ts_last,
+                report.ts_init,
+                None,
+            )
+        })
+        .collect()
+    }
+
+    fn quote_market_execution_messages(fast: bool, cid: ClientOrderId) -> [BybitWsMessage; 2] {
+        [("trade-1", "5"), ("trade-2", "6")].map(|(id, qty)| {
+            if fast {
+                let mut message = fast_execution_msg(false, cid.as_str());
+                message.data[0].category = BybitProductType::Spot;
+                message.data[0].exec_id = id.to_string();
+                message.data[0].exec_qty = qty.to_string();
+                message.data[0].exec_price = "0.4".to_string();
+                BybitWsMessage::AccountExecutionFast(message)
+            } else {
+                let mut message: crate::websocket::messages::BybitWsAccountExecutionMsg =
+                    serde_json::from_str(&load_test_json("ws_account_execution.json")).unwrap();
+                let execution = &mut message.data[0];
+                execution.category = BybitProductType::Spot;
+                execution.side = BybitOrderSide::Buy;
+                execution.order_id = Ustr::from("ord-1");
+                execution.order_link_id = Ustr::from(cid.as_str());
+                execution.exec_id = id.to_string();
+                execution.exec_qty = qty.to_string();
+                execution.exec_price = "0.4".to_string();
+                execution.exec_fee = "0.001".to_string();
+                execution.leaves_qty = if id == "trade-1" { "6" } else { "0" }.to_string();
+                BybitWsMessage::AccountExecution(message)
+            }
+        })
+    }
+
+    #[rstest]
     #[case::fast_first(true)]
     #[case::order_first(false)]
     fn test_dispatch_untracked_fast_execution_emits_fill_report_without_position(
@@ -3236,7 +4066,7 @@ mod tests {
             ExecutionEvent::Order(OrderEventAny::Accepted(_))
         ));
         assert!(rx.try_recv().is_err());
-        assert!(!state.fast_execution_ids.contains(&TradeId::from("fast-1")));
+        assert!(!state.execution_ids.contains(&TradeId::from("fast-1")));
         assert!(!state.filled_orders.contains(&client_order_id));
         assert!(!state.fast_filled_quantities.contains_key(&client_order_id));
     }
@@ -3279,24 +4109,24 @@ mod tests {
         }
 
         assert!(rx.try_recv().is_err());
-        assert!(state.fast_execution_ids.contains(&TradeId::from("fast-1")));
+        assert!(state.execution_ids.contains(&TradeId::from("fast-1")));
     }
 
     #[rstest]
     fn test_recent_ids_evicts_oldest_without_clearing_history() {
         let state = WsDispatchState::default();
         let first = TradeId::from("first");
-        assert!(state.insert_fast_execution(first));
+        assert!(state.insert_execution(first));
 
         for index in 0..DEDUP_CAPACITY {
-            assert!(state.insert_fast_execution(TradeId::from(format!("id-{index}"))));
+            assert!(state.insert_execution(TradeId::from(format!("id-{index}"))));
         }
 
-        assert!(!state.fast_execution_ids.contains(&first));
-        assert_eq!(state.fast_execution_ids.ids.len(), DEDUP_CAPACITY);
-        assert!(state.insert_fast_execution(first));
-        assert_eq!(state.fast_execution_ids.ids.len(), DEDUP_CAPACITY);
-        assert!(!state.insert_fast_execution(first));
+        assert!(!state.execution_ids.contains(&first));
+        assert_eq!(state.execution_ids.ids.len(), DEDUP_CAPACITY);
+        assert!(state.insert_execution(first));
+        assert_eq!(state.execution_ids.ids.len(), DEDUP_CAPACITY);
+        assert!(!state.insert_execution(first));
     }
 
     #[rstest]
@@ -3500,7 +4330,7 @@ mod tests {
         );
 
         assert_fast_state_cleared(&state, client_order_id);
-        assert_eq!(state.fast_execution_ids.ids.len(), 2);
+        assert_eq!(state.execution_ids.ids.len(), 2);
     }
 
     #[rstest]
@@ -3932,7 +4762,7 @@ mod tests {
             "rejected",
             &ctx.emitter,
             &ctx.state,
-            UnixNanos::from(1u64),
+            UnixNanos::from(1_u64),
             None,
         );
 
@@ -3974,7 +4804,7 @@ mod tests {
             "Order command was not written",
             &ctx.emitter,
             &ctx.state,
-            UnixNanos::from(1u64),
+            UnixNanos::from(1_u64),
         );
 
         let event = ctx.rx.try_recv().expect("expected OrderRejected event");
@@ -4053,6 +4883,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(clippy::unreadable_literal, reason = "Bybit error codes")]
     fn test_dispatch_single_cancel_rejection_emits_cancel_rejected() {
         let mut ctx = DispatchTestContext::new();
         let cause = UUID4::new();
@@ -4081,7 +4912,7 @@ mod tests {
             None,
         );
 
-        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1_u64));
 
         let event = ctx.rx.try_recv().expect("expected CancelRejected event");
         assert!(
@@ -4095,6 +4926,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(clippy::unreadable_literal, reason = "Bybit error codes")]
     fn test_dispatch_single_modify_rejection_emits_modify_rejected() {
         let mut ctx = DispatchTestContext::new();
         let cause = UUID4::new();
@@ -4123,7 +4955,7 @@ mod tests {
             None,
         );
 
-        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1_u64));
 
         let event = ctx.rx.try_recv().expect("expected ModifyRejected event");
         assert!(
@@ -4137,6 +4969,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(clippy::unreadable_literal, reason = "Bybit error codes")]
     fn test_dispatch_single_place_rejection_emits_order_rejected() {
         let mut ctx = DispatchTestContext::new();
         let cid = ClientOrderId::from("place-reject-1");
@@ -4157,7 +4990,7 @@ mod tests {
             None,
         );
 
-        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1_u64));
 
         let event = ctx.rx.try_recv().expect("expected OrderRejected event");
         assert!(
@@ -4203,7 +5036,7 @@ mod tests {
             None,
         );
 
-        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1_u64));
 
         assert!(
             ctx.rx.try_recv().is_err(),
@@ -4241,7 +5074,7 @@ mod tests {
             None,
         );
 
-        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1_u64));
 
         assert!(
             ctx.rx.try_recv().is_err(),
@@ -4279,7 +5112,7 @@ mod tests {
             None,
         );
 
-        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1_u64));
 
         assert!(
             ctx.rx.try_recv().is_err(),
@@ -4313,7 +5146,7 @@ mod tests {
             None,
         );
 
-        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1_u64));
 
         assert!(
             ctx.rx.try_recv().is_err(),
@@ -4358,7 +5191,7 @@ mod tests {
             None,
         );
 
-        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1_u64));
 
         assert!(
             ctx.rx.try_recv().is_err(),
@@ -4397,6 +5230,7 @@ mod tests {
             ),
         );
 
+        #[allow(clippy::unreadable_literal, reason = "Bybit error codes")]
         let response = order_response(
             BYBIT_OP_ORDER_CANCEL_BATCH,
             0,
@@ -4416,7 +5250,7 @@ mod tests {
             })),
         );
 
-        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1_u64));
 
         let event = ctx.rx.try_recv().expect("expected CancelRejected event");
         assert!(
@@ -4464,7 +5298,7 @@ mod tests {
             })),
         );
 
-        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1_u64));
 
         assert!(
             ctx.rx.try_recv().is_err(),

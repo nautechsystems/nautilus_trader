@@ -2009,8 +2009,8 @@ impl PyStrategy {
             .map_err(to_pyruntime_err)
     }
 
-    #[pyo3(name = "register_indicator_for_quote_ticks")]
-    fn py_register_indicator_for_quote_ticks(
+    #[pyo3(name = "register_indicator_for_quotes")]
+    fn py_register_indicator_for_quotes(
         &mut self,
         py: Python<'_>,
         instrument_id: InstrumentId,
@@ -2019,11 +2019,11 @@ impl PyStrategy {
         let indicator = wrap_python_indicator(py, indicator);
         let inner = self.inner_mut();
         DataActorNative::core_mut(&mut inner.core)
-            .register_indicator_for_quote_ticks(instrument_id, indicator);
+            .register_indicator_for_quotes(instrument_id, indicator);
     }
 
-    #[pyo3(name = "register_indicator_for_trade_ticks")]
-    fn py_register_indicator_for_trade_ticks(
+    #[pyo3(name = "register_indicator_for_trades")]
+    fn py_register_indicator_for_trades(
         &mut self,
         py: Python<'_>,
         instrument_id: InstrumentId,
@@ -2032,7 +2032,7 @@ impl PyStrategy {
         let indicator = wrap_python_indicator(py, indicator);
         let inner = self.inner_mut();
         DataActorNative::core_mut(&mut inner.core)
-            .register_indicator_for_trade_ticks(instrument_id, indicator);
+            .register_indicator_for_trades(instrument_id, indicator);
     }
 
     #[pyo3(name = "register_indicator_for_bars")]
@@ -5568,12 +5568,12 @@ class IndicatorEventStrategy:
             );
             assert!(!rust_strategy.py_indicators_initialized(py).unwrap());
 
-            rust_strategy.py_register_indicator_for_quote_ticks(
+            rust_strategy.py_register_indicator_for_quotes(
                 py,
                 instrument_id,
                 indicator.clone_ref(py),
             );
-            rust_strategy.py_register_indicator_for_trade_ticks(
+            rust_strategy.py_register_indicator_for_trades(
                 py,
                 instrument_id,
                 indicator.clone_ref(py),
@@ -5631,12 +5631,12 @@ class IndicatorEventStrategy:
             ))
             .unwrap();
 
-            rust_strategy.py_register_indicator_for_quote_ticks(
+            rust_strategy.py_register_indicator_for_quotes(
                 py,
                 quote.instrument_id,
                 indicator.clone_ref(py),
             );
-            rust_strategy.py_register_indicator_for_trade_ticks(
+            rust_strategy.py_register_indicator_for_trades(
                 py,
                 trade.instrument_id,
                 indicator.clone_ref(py),
@@ -5683,12 +5683,12 @@ class IndicatorEventStrategy:
             let trades = vec![trade];
             let bars = vec![bar];
 
-            rust_strategy.py_register_indicator_for_quote_ticks(
+            rust_strategy.py_register_indicator_for_quotes(
                 py,
                 quote.instrument_id,
                 indicator.clone_ref(py),
             );
-            rust_strategy.py_register_indicator_for_trade_ticks(
+            rust_strategy.py_register_indicator_for_trades(
                 py,
                 trade.instrument_id,
                 indicator.clone_ref(py),
@@ -6366,6 +6366,87 @@ class IndicatorEventStrategy:
                     .and_then(|params| params.get("routing_hint")),
                 Some(&Value::String("prefer_batch".to_string()))
             );
+        });
+    }
+
+    #[rstest::rstest]
+    #[case::single("close_position")]
+    #[case::all("close_all_positions")]
+    fn test_python_close_rejects_gtd_before_submission(#[case] method: &str) {
+        Python::initialize();
+        Python::attach(|py| {
+            let (_python_instance, strategy) = create_registered_tracking_strategy(py);
+            let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+                get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+            msgbus::register_trading_command_endpoint(
+                MessagingSwitchboard::risk_engine_queue_execute(),
+                risk_handler,
+            );
+
+            let position_id = PositionId::from("P-PYO3-CLOSE-GTD");
+            let position = sample_open_position(
+                strategy.strategy_id(),
+                position_id,
+                ClientOrderId::from("O-PYO3-CLOSE-GTD"),
+            );
+            let instrument = sample_instrument();
+            let instrument_id = instrument.id;
+            let cache = strategy.inner().core.cache_rc();
+
+            {
+                let mut cache = cache.borrow_mut();
+                cache
+                    .add_instrument(InstrumentAny::CurrencyPair(instrument))
+                    .unwrap();
+                cache.add_position(&position, OmsType::Hedging).unwrap();
+            }
+
+            let strategy = Py::new(py, strategy).unwrap();
+            let argument = if method == "close_position" {
+                position.into_bound_py_any(py).unwrap()
+            } else {
+                instrument_id.into_bound_py_any(py).unwrap()
+            };
+
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("time_in_force", TimeInForce::Gtd).unwrap();
+            let error = strategy
+                .bind(py)
+                .call_method(method, (&argument,), Some(&kwargs))
+                .unwrap_err();
+
+            assert!(error.is_instance_of::<pyo3::exceptions::PyRuntimeError>(py));
+            assert_eq!(
+                error.value(py).to_string(),
+                "GTD not supported for Market orders"
+            );
+            assert!(risk_messages.get_messages().is_empty());
+            assert_eq!(
+                cache
+                    .borrow()
+                    .orders_total_count(None, None, None, None, None),
+                0,
+            );
+
+            kwargs.set_item("time_in_force", TimeInForce::Gtc).unwrap();
+            strategy
+                .bind(py)
+                .call_method(method, (&argument,), Some(&kwargs))
+                .unwrap();
+
+            let messages = risk_messages.get_messages();
+
+            let [TradingCommand::SubmitOrder(command)] = messages.as_slice() else {
+                panic!("expected one SubmitOrder command");
+            };
+
+            assert_eq!(command.instrument_id, instrument_id);
+            assert_eq!(command.position_id, Some(position_id));
+            assert_eq!(command.order_init.order_side, OrderSide::Sell);
+            assert_eq!(command.order_init.order_type, OrderType::Market);
+            assert_eq!(command.order_init.time_in_force, TimeInForce::Gtc);
+            assert_eq!(command.order_init.quantity, Quantity::from(100_000));
+            assert!(command.order_init.reduce_only);
         });
     }
 

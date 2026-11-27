@@ -45,6 +45,11 @@ pub enum PersistenceError {
     Unsupported(String),
 }
 
+/// A write whose intervals overlap intervals already in the catalog.
+#[derive(Debug, Error)]
+#[error("{0}")]
+pub(crate) struct CatalogOverlapError(pub(crate) String);
+
 impl PersistenceError {
     /// Convenience constructor for [`PersistenceError::Unsupported`].
     #[must_use]

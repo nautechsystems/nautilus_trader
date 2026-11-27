@@ -214,9 +214,6 @@ jobs:
           # Persistent CARGO_TARGET_DIR replaces Swatinem/rust-cache here.
           rust-cache-enabled: "false"
 
-      - name: Sync Python dependencies
-        run: make sync
-
       - name: Run Python memory leak tests
         run: make pytest-memray
 
@@ -344,10 +341,7 @@ jobs:
           build-type: "test"
           free-disk-space: "true"
           uv-cache-enabled: "false"
-          prek-cache-enabled: "false"
-          capnp-cache-enabled: "false"
           rust-cache-enabled: "false"
-          rust-cache-save-if: "false"
 
       - name: Check Cargo crate publish plan
         run: bash scripts/ci/publish-cargo-crates.sh --check

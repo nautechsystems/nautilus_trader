@@ -612,7 +612,7 @@ mod tests {
         assert_eq!(message.buy_volume, 24_244.0);
         assert_eq!(message.sell_volume, 12_790.0);
         assert_eq!(message.trades, 9);
-        assert_eq!(message.vwap, 7_623.327320840309);
+        assert_eq!(message.vwap, 7623.327320840309);
         assert_eq!(
             message.open_timestamp,
             "2019-10-25T13:11:31.574Z".parse::<Timestamp>().unwrap()

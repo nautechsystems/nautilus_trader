@@ -449,100 +449,26 @@ fn test_register_venue_routing_success(
 }
 
 #[rstest]
-fn test_subscribe_venue_instruments_delivers_to_client_adapter(
+fn test_duplicate_client_registration_does_not_select_venue_route(
     mut execution_engine: ExecutionEngine,
     stub_client: StubExecutionClient,
 ) {
-    // Reset the thread-local bus so prior tests on this thread cannot leak
-    // instrument handlers into this assertion.
-    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
-
-    let venue = Venue::test_default();
-    let received = stub_client.received_instruments();
+    let client_id = stub_client.client_id();
     execution_engine
-        .register_client(Box::new(stub_client))
+        .register_client(Box::new(stub_client.clone()))
         .unwrap();
 
-    let engine_rc = Rc::new(RefCell::new(execution_engine));
-    ExecutionEngine::subscribe_venue_instruments(&engine_rc, venue);
-
-    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
-    let topic = switchboard::get_instrument_topic(instrument.id());
-    msgbus::publish_instrument(topic, &instrument);
-
-    let received = received.borrow();
-    assert_eq!(received.len(), 1);
-    assert_eq!(received[0].id(), instrument.id());
-}
-
-#[rstest]
-fn test_same_venue_clients_receive_instruments_once(
-    mut execution_engine: ExecutionEngine,
-    #[values(false, true)] route_other: bool,
-) {
-    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
-
-    let clients: Vec<_> = [("A", "SIM"), ("B", "SIM"), ("C", "OTHER")]
-        .into_iter()
-        .map(|(id, venue)| {
-            StubExecutionClient::new(
-                ClientId::from(id),
-                AccountId::new(format!("{id}-001")),
-                Venue::from(venue),
-                OmsType::Netting,
-                None,
-            )
-        })
-        .collect();
-
-    for client in &clients {
-        execution_engine
-            .register_client(Box::new(client.clone()))
-            .unwrap();
-    }
-
-    let duplicate = execution_engine.register_client(Box::new(clients[0].clone()));
+    let result = execution_engine.register_client(Box::new(stub_client));
     let order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(audusd_sim().id())
         .quantity(Quantity::from(1))
         .build();
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        format!("Client already registered with ID {client_id}")
+    );
     assert!(execution_engine.get_clients_for_orders(&[order]).is_empty());
-    assert_eq!(
-        duplicate.unwrap_err().to_string(),
-        "Client already registered with ID A"
-    );
-
-    if route_other {
-        execution_engine
-            .register_venue_routing(ClientId::from("C"), Venue::from("SIM"))
-            .unwrap();
-    }
-
-    let engine = Rc::new(RefCell::new(execution_engine));
-    ExecutionEngine::subscribe_venue_instruments(&engine, Venue::from("SIM"));
-    ExecutionEngine::subscribe_venue_instruments(&engine, Venue::from("SIM"));
-    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
-    msgbus::publish_instrument(
-        switchboard::get_instrument_topic(instrument.id()),
-        &instrument,
-    );
-
-    assert_eq!(
-        *clients[0].received_instruments().borrow(),
-        vec![instrument.clone()]
-    );
-    assert_eq!(
-        *clients[1].received_instruments().borrow(),
-        vec![instrument.clone()]
-    );
-
-    let expected_other = if route_other {
-        vec![instrument]
-    } else {
-        vec![]
-    };
-
-    assert_eq!(*clients[2].received_instruments().borrow(), expected_other);
 }
 
 fn binary_settlement_engine(subscribe: bool) -> (Rc<RefCell<ExecutionEngine>>, InstrumentAny) {
@@ -17392,6 +17318,48 @@ fn test_hedging_flip_rejects_unproven_causation(
 }
 
 #[rstest]
+fn test_replace_order_preserves_proven_hedging_flip_route(mut execution_engine: ExecutionEngine) {
+    let (_, destination_id) = run_hedging_flip(&mut execution_engine);
+    let snapshot_position_id = PositionId::new("P-STALE");
+    let instrument = audusd_sim();
+    process_filled_order(
+        &mut execution_engine,
+        TraderId::test_default(),
+        StrategyId::test_default(),
+        &instrument,
+        "O-STALE",
+        "V-STALE",
+        "T-STALE",
+        OrderSide::Buy,
+        25_000,
+        snapshot_position_id,
+    );
+
+    let client_order_id = ClientOrderId::new("O-DURABLE-FLIP");
+    let mut cache = execution_engine.cache().borrow_mut();
+    let mut replacement = cache.order_owned(&client_order_id).unwrap();
+    assert!(cache.position_exists(&snapshot_position_id));
+    assert_ne!(replacement.position_id(), Some(snapshot_position_id));
+    replacement.set_position_id(Some(snapshot_position_id));
+
+    cache.replace_order(&replacement).unwrap();
+
+    let assert_route = |cache: &Cache| {
+        assert_eq!(cache.position_id(&client_order_id), Some(&destination_id));
+        assert_eq!(
+            cache
+                .position_for_order(&client_order_id)
+                .map(|position| position.id),
+            Some(destination_id),
+        );
+    };
+
+    assert_route(&cache);
+    cache.build_index();
+    assert_route(&cache);
+}
+
+#[rstest]
 #[case::source("source", 10_000, 75_000)]
 #[case::destination("destination", 0, 35_000)]
 fn test_hedging_flip_route_survives_other_orders(
@@ -19967,11 +19935,15 @@ fn test_snapshot_reopen_keeps_prior_reconciliation_fill_correctable() {
 }
 
 #[rstest]
-#[case::private(false, dec!(200_000), true)]
-#[case::reconciliation(true, dec!(100_000), false)]
+#[case::private(false, false, 1_000_000, dec!(200_000), true)]
+#[case::covered_reconciliation(true, false, 1_000_000, dec!(100_000), false)]
+#[case::uncovered_reconciliation(true, false, 10_000_000, dec!(200_000), true)]
+#[case::order_only_projection(true, true, 1_000_000, dec!(100_000), false)]
 fn test_process_fill_after_snapshot_respects_reconciliation_flag(
     mut execution_engine: ExecutionEngine,
     #[case] reconciliation: bool,
+    #[case] project_order_only: bool,
+    #[case] fill_ts: u64,
     #[case] expected_qty: Decimal,
     #[case] expected_trade_on_position: bool,
 ) {
@@ -19983,19 +19955,38 @@ fn test_process_fill_after_snapshot_respects_reconciliation_flag(
     let account_id = AccountId::test_default();
     let venue_order_id = VenueOrderId::from("PERM-2");
     let trade_id = TradeId::from("T-AFTER-SNAPSHOT");
+    let parent_id = ClientOrderId::from("O-AFTER-SNAPSHOT");
+    let child_id = ClientOrderId::from("O-SNAPSHOT-EXIT");
     let order = OrderTestBuilder::new(OrderType::Market)
         .trader_id(TraderId::test_default())
         .strategy_id(StrategyId::external())
         .instrument_id(instrument.id())
-        .client_order_id(ClientOrderId::from("O-AFTER-SNAPSHOT"))
+        .client_order_id(parent_id)
         .side(OrderSide::Buy)
         .quantity(Quantity::from(100_000))
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![child_id])
         .build();
-    execution_engine
-        .cache()
-        .borrow_mut()
-        .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
-        .unwrap();
+    let child = OrderTestBuilder::new(OrderType::StopMarket)
+        .trader_id(order.trader_id())
+        .strategy_id(order.strategy_id())
+        .instrument_id(instrument.id())
+        .client_order_id(child_id)
+        .parent_order_id(parent_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(100_000))
+        .trigger_price(Price::from("0.90000"))
+        .emulation_trigger(TriggerType::BidAsk)
+        .build();
+
+    {
+        let mut cache = execution_engine.cache().borrow_mut();
+        cache
+            .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+            .unwrap();
+        cache.add_order(child, None, None, false).unwrap();
+    }
+
     execution_engine.process(&TestOrderEventStubs::submitted(&order, account_id));
     execution_engine.process(&TestOrderEventStubs::accepted(
         &order,
@@ -20020,8 +20011,12 @@ fn test_process_fill_after_snapshot_respects_reconciliation_flag(
         None,
     );
     fill.reconciliation = reconciliation;
-    fill.ts_event = UnixNanos::from(1_000_000);
-    execution_engine.process(&OrderEventAny::Filled(fill));
+    fill.ts_event = UnixNanos::from(fill_ts);
+    if project_order_only {
+        execution_engine.project_reconciliation_fill(&fill);
+    } else {
+        execution_engine.process(&OrderEventAny::Filled(fill));
+    }
 
     let cache = execution_engine.cache().borrow();
     let recovered = cache.order(&order.client_order_id()).unwrap();
@@ -20035,6 +20030,25 @@ fn test_process_fill_after_snapshot_respects_reconciliation_flag(
         positions[0].trade_ids.contains(&trade_id),
         expected_trade_on_position
     );
+
+    let OrderEventAny::Filled(fill) = recovered.last_event() else {
+        unreachable!()
+    };
+
+    let covering_fill_id = fill
+        .info
+        .as_ref()
+        .and_then(|info| info.get(&Ustr::from("nautilus.snapshot_covering_fill_id")));
+
+    let expected_covering_fill_id = match (reconciliation, expected_trade_on_position) {
+        (true, false) if !project_order_only => {
+            Some(Ustr::from(positions[0].events[0].event_id.as_str()))
+        }
+        (true, _) => Some(Ustr::from("")),
+        (false, _) => None,
+    };
+
+    assert_eq!(covering_fill_id.copied(), expected_covering_fill_id);
 }
 
 #[rstest]

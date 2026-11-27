@@ -141,8 +141,8 @@ mod tests {
         let call = quote_exact_input_single_call(
             address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
             address!("af88d065e77c8cC2239327C5EDb3A432268e5831"),
-            U256::from(1_000_000u64),
-            U24::try_from(500u32).unwrap(),
+            U256::from(1_000_000_u64),
+            U24::try_from(500_u32).unwrap(),
         );
 
         assert_eq!(hex::encode(&call[..4]), "c6a5026a");
@@ -153,8 +153,8 @@ mod tests {
         let call = quote_exact_output_single_call(
             address!("af88d065e77c8cC2239327C5EDb3A432268e5831"),
             address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
-            U256::from(1_000_000u64),
-            U24::try_from(500u32).unwrap(),
+            U256::from(1_000_000_u64),
+            U24::try_from(500_u32).unwrap(),
         );
 
         assert_eq!(hex::encode(&call[..4]), "bd21704a");

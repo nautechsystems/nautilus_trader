@@ -42,7 +42,7 @@ use nautilus_network::dst::time::Instant;
 use rust_decimal::Decimal;
 use tokio_util::sync::CancellationToken;
 
-use super::{context::PrivateState, reports, submit};
+use super::{context::PrivateState, reports, stream::PrivateStreamCommand, submit};
 use crate::{
     http::{
         client::KalshiHttpClient,
@@ -70,7 +70,7 @@ pub(super) struct Mutation {
     pub(super) ws_client: KalshiWebSocketClient,
     pub(super) epoch: (u64, u64),
     pub(super) deadline: Instant,
-    pub(super) refresh: tokio::sync::mpsc::UnboundedSender<()>,
+    pub(super) refresh: tokio::sync::mpsc::UnboundedSender<PrivateStreamCommand>,
     pub(super) session: String,
     pub(super) cancellation: CancellationToken,
 }
@@ -124,7 +124,9 @@ impl Mutation {
             },
         }
 
-        if !self.cancellation.is_cancelled() && self.refresh.send(()).is_err() {
+        if !self.cancellation.is_cancelled()
+            && self.refresh.send(PrivateStreamCommand::Refresh).is_err()
+        {
             log::warn!("Kalshi change recovery stopped");
         }
     }
@@ -418,7 +420,7 @@ impl Mutation {
             log::warn!("Kalshi change rejection could not be routed: {e}");
         }
 
-        let _ = self.refresh.send(());
+        let _ = self.refresh.send(PrivateStreamCommand::Refresh);
     }
 }
 

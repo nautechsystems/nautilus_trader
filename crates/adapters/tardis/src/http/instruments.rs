@@ -22,7 +22,10 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 
 use super::{models::TardisInstrumentInfo, parse::parse_settlement_currency};
-use crate::common::parse::{option_terms, parse_option_kind};
+use crate::common::{
+    enums::TardisExchange,
+    parse::{option_terms, parse_option_kind},
+};
 
 /// Returns a currency from the internal map or creates a new crypto currency.
 ///
@@ -231,17 +234,25 @@ pub fn create_crypto_option(
         )
     })?;
 
+    let underlying = get_currency(info.base_currency.to_uppercase().as_str());
+    let quote = get_currency(info.quote_currency.to_uppercase().as_str());
+    let settlement_currency = get_currency(&parse_settlement_currency(info, is_inverse));
+    let (strike_currency, quote_currency) = match info.exchange {
+        TardisExchange::BybitOptions => (quote, settlement_currency),
+        _ if quote == underlying => (Currency::USD(), quote),
+        _ => (quote, quote),
+    };
+
     let (exercise_style, settlement_type) = option_terms(info.exchange);
 
     Ok(InstrumentAny::CryptoOption(
         CryptoOption::builder()
             .instrument_id(instrument_id)
             .raw_symbol(raw_symbol)
-            .underlying(get_currency(info.base_currency.to_uppercase().as_str()))
-            .quote_currency(get_currency(info.quote_currency.to_uppercase().as_str()))
-            .settlement_currency(get_currency(
-                parse_settlement_currency(info, is_inverse).as_str(),
-            ))
+            .underlying(underlying)
+            .strike_currency(strike_currency)
+            .quote_currency(quote_currency)
+            .settlement_currency(settlement_currency)
             .is_inverse(is_inverse)
             .option_kind(parse_option_kind(option_type))
             .strike_price(Price::new(strike_price, price_increment.precision))
@@ -384,7 +395,7 @@ mod tests {
         assert!(is_available(
             &info,
             None,
-            Some(UnixNanos::from(1000000)),
+            Some(UnixNanos::from(1_000_000)),
             None,
             None
         ));
@@ -459,15 +470,15 @@ mod tests {
         // April 24, 2023 00:00:00 UTC = 1682294400000
         // April 2, 2024 12:10:00 UTC = 1712061000000
 
-        let info = create_test_instrument(1682294400000, Some(1712061000000));
+        let info = create_test_instrument(1_682_294_400_000, Some(1_712_061_000_000));
 
         // Test effective date is within range
-        let mid_date = UnixNanos::from(1695000000000); // Sept 2023
+        let mid_date = UnixNanos::from(1_695_000_000_000); // Sept 2023
         assert!(is_available(&info, None, None, None, Some(mid_date)));
 
         // Test with start/end constraints
-        let start = UnixNanos::from(1690000000000); // July 2023
-        let end = UnixNanos::from(1700000000000); // Nov 2023
+        let start = UnixNanos::from(1_690_000_000_000); // July 2023
+        let end = UnixNanos::from(1_700_000_000_000); // Nov 2023
         assert!(is_available(
             &info,
             Some(start),
@@ -487,11 +498,11 @@ mod tests {
             Some(offset_boundary)
         ));
 
-        let start_date = UnixNanos::from(1682294400000);
+        let start_date = UnixNanos::from(1_682_294_400_000);
         assert!(is_available(&info, None, None, None, Some(start_date)));
 
         // Effective date at exactly the end should fail
-        let end_date = UnixNanos::from(1712061000000);
+        let end_date = UnixNanos::from(1_712_061_000_000);
         assert!(!is_available(&info, None, None, None, Some(end_date)));
     }
 

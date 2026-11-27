@@ -106,7 +106,7 @@ async fn test_public_endpoints() -> anyhow::Result<()> {
     println!("\n3. Testing GET /v5/market/instruments-info (spot)");
     let params = BybitInstrumentsInfoParamsBuilder::default()
         .category(BybitProductType::Spot)
-        .limit(5u32)
+        .limit(5_u32)
         .build()?;
 
     match client.get_instruments_spot(&params).await {
@@ -128,7 +128,7 @@ async fn test_public_endpoints() -> anyhow::Result<()> {
         .category(BybitProductType::Linear)
         .symbol("BTCUSDT")
         .interval(BybitKlineInterval::Minute1)
-        .limit(5u32)
+        .limit(5_u32)
         .build()?;
 
     match client.get_klines(&params).await {
@@ -152,7 +152,7 @@ async fn test_public_endpoints() -> anyhow::Result<()> {
     let params = BybitTradesParamsBuilder::default()
         .category(BybitProductType::Linear)
         .symbol("BTCUSDT")
-        .limit(5u32)
+        .limit(5_u32)
         .build()?;
 
     match client.get_recent_trades(&params).await {

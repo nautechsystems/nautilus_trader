@@ -45,14 +45,14 @@ use nautilus_live::{
 use nautilus_model::{
     accounts::{AccountAny, stubs::cash_account_million_usd},
     enums::{LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
-    events::account::stubs::cash_account_state_million_usd,
+    events::{OrderEventAny, account::stubs::cash_account_state_million_usd},
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId,
         VenueOrderId,
     },
     instruments::{
         Instrument, InstrumentAny,
-        stubs::{crypto_perpetual_ethusdt, equity_aapl},
+        stubs::{crypto_perpetual_ethusdt, equity_aapl, futures_contract_es},
     },
     orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
@@ -72,6 +72,7 @@ use startup::{
     StartupActor, StartupMassStatusBehavior, StartupMassStatusClientState,
     StartupMassStatusExecutionClient, StartupMassStatusExecutionClientConfig,
     StartupMassStatusExecutionClientFactory, add_reconciliation_test_account,
+    add_startup_margin_account,
 };
 
 const AAPL_ACCOUNT_ID: &str = "XNAS-001";
@@ -91,13 +92,14 @@ const _: () = assert!(
 struct StartupState {
     config: LiveNodeConfig,
     instrument: Option<InstrumentAny>,
+    excluded_instrument: Option<InstrumentAny>,
     behavior: StartupMassStatusBehavior,
     oms_type: OmsType,
     order_report: Option<OrderStatusReport>,
-    position_report: Option<PositionStatusReport>,
+    position_reports: Vec<PositionStatusReport>,
     delayed_report: Option<OrderStatusReport>,
     delayed_observation: Option<DelayedReportObservation>,
-    retained_position: bool,
+    retained_position: Option<RetainedPosition>,
     claim_external_orders: bool,
     closing: Option<ClosingRecovery>,
     client_state: StartupMassStatusClientState,
@@ -121,13 +123,14 @@ impl StartupWorld {
                 ..Default::default()
             },
             instrument: None,
+            excluded_instrument: None,
             behavior: StartupMassStatusBehavior::Available,
             oms_type: OmsType::Hedging,
             order_report: None,
-            position_report: None,
+            position_reports: Vec::new(),
             delayed_report: None,
             delayed_observation: None,
-            retained_position: false,
+            retained_position: None,
             claim_external_orders: false,
             closing: None,
             client_state: StartupMassStatusClientState::default(),
@@ -137,6 +140,32 @@ impl StartupWorld {
             result: None,
             position_count: None,
         }))
+    }
+
+    fn instrument(&self) -> &InstrumentAny {
+        self.instrument
+            .as_ref()
+            .expect("scenario requires an instrument")
+    }
+
+    fn account_id(&self) -> AccountId {
+        AccountId::from(match self.instrument() {
+            InstrumentAny::Equity(_) => AAPL_ACCOUNT_ID,
+            InstrumentAny::FuturesContract(_) => "GLBX-001",
+            _ => "BLOCKING-REPORT-001",
+        })
+    }
+
+    fn assert_qty_unit(&self, unit: &str) {
+        let instrument = self.instrument();
+        let expected = match instrument {
+            InstrumentAny::FuturesContract(contract) => {
+                format!("{} contracts", contract.raw_symbol)
+            }
+            _ => instrument.base_currency().unwrap().to_string(),
+        };
+
+        assert_eq!(unit, expected);
     }
 }
 
@@ -209,6 +238,11 @@ fn aapl_instrument(world: &mut StartupWorld) {
     world.instrument = Some(InstrumentAny::Equity(equity_aapl()));
 }
 
+#[given("the cache has the ESZ21 futures contract and a USD margin account")]
+fn es_instrument(world: &mut StartupWorld) {
+    world.instrument = Some(es_contract("ESZ21", None));
+}
+
 #[given("unclaimed external orders are filtered")]
 fn filter_unclaimed_orders(world: &mut StartupWorld) {
     world.config.exec_engine.filter_unclaimed_external_orders = true;
@@ -255,48 +289,127 @@ fn netting_client(world: &mut StartupWorld) {
     world.oms_type = OmsType::Netting;
 }
 
+#[given("the scripted execution client uses HEDGING accounting")]
+fn hedging_client(world: &mut StartupWorld) {
+    world.oms_type = OmsType::Hedging;
+}
+
 #[given("the venue reports no orders, fills, or positions")]
 fn venue_flat(world: &mut StartupWorld) {
     world.behavior = StartupMassStatusBehavior::Available;
-    world.position_report = None;
+    world.position_reports.clear();
 }
 
-#[given(regex = "^the venue reports a (long|short) position of ([0-9.]+) ETH$")]
-fn venue_position(world: &mut StartupWorld, side: String, qty: Quantity) {
-    let instrument_id = crypto_perpetual_ethusdt().id();
-    world.position_report = Some(PositionStatusReport::new(
-        AccountId::from("BLOCKING-REPORT-001"),
-        instrument_id,
+#[given(regex = "^the venue reports a (long|short) position of ([0-9.]+) (ETH|ESZ21 contracts)$")]
+fn venue_position(world: &mut StartupWorld, side: String, qty: Quantity, unit: String) {
+    world.assert_qty_unit(&unit);
+    let report = position_report(
+        world.account_id(),
+        world.instrument().id(),
         position_side(&side),
+        qty,
+        Some(PositionId::from("VENUE-POSITION-042")),
+        None,
+    );
+    world.position_reports.push(report);
+}
+
+#[given(
+    regex = "^the venue reports a (long|short) position of ([0-9]+) ESZ21 contracts at ([0-9.]+) USD with venue position ID ([A-Z-]+)$"
+)]
+fn venue_hedge_leg(
+    world: &mut StartupWorld,
+    side: String,
+    qty: Quantity,
+    price: Decimal,
+    venue_position_id: String,
+) {
+    let report = position_report(
+        world.account_id(),
+        world.instrument().id(),
+        position_side(&side),
+        qty,
+        Some(PositionId::from(venue_position_id.as_str())),
+        Some(price),
+    );
+    world.position_reports.push(report);
+}
+
+#[given(regex = r"^startup reconciliation is limited to (\S+)$")]
+fn reconciliation_scope(world: &mut StartupWorld, instrument_id: InstrumentId) {
+    world.config.exec_engine.reconciliation_instrument_ids = Some(vec![instrument_id.to_string()]);
+}
+
+#[given(
+    regex = "^the venue also reports a long position of ([0-9]+) ESH22 contracts without an opening price$"
+)]
+fn venue_excluded_position(world: &mut StartupWorld, qty: Quantity) {
+    let expiration = "2022-03-18T00:00:00Z".parse().unwrap();
+    let instrument = es_contract("ESH22", Some(expiration));
+    let report = position_report(
+        world.account_id(),
+        instrument.id(),
+        PositionSide::Long,
+        qty,
+        None,
+        None,
+    );
+    world.position_reports.push(report);
+    world.excluded_instrument = Some(instrument);
+}
+
+fn es_contract(symbol: &str, expiration: Option<UnixNanos>) -> InstrumentAny {
+    let mut contract = futures_contract_es(None, expiration);
+    contract.raw_symbol = Symbol::from(symbol);
+    contract.id = InstrumentId::new(contract.raw_symbol, contract.id.venue);
+    contract.price_increment = Price::from("0.25");
+    contract.multiplier = Quantity::from(50);
+
+    InstrumentAny::FuturesContract(contract)
+}
+
+fn position_report(
+    account_id: AccountId,
+    instrument_id: InstrumentId,
+    side: PositionSide,
+    qty: Quantity,
+    venue_position_id: Option<PositionId>,
+    avg_px_open: Option<Decimal>,
+) -> PositionStatusReport {
+    PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        side,
         qty,
         UnixNanos::from(1_000_000),
         UnixNanos::from(2_000_000),
         None,
-        Some(PositionId::from("VENUE-POSITION-042")),
-        None,
-    ));
+        venue_position_id,
+        avg_px_open,
+    )
 }
 
 #[given("the position report has no venue position ID")]
 fn no_venue_position_id(world: &mut StartupWorld) {
-    world.position_report.as_mut().unwrap().venue_position_id = None;
+    world.position_reports.last_mut().unwrap().venue_position_id = None;
 }
 
-#[given(regex = "^its average opening price is ([0-9.]+) USDT$")]
-fn opening_price(world: &mut StartupWorld, price: Decimal) {
-    world.position_report.as_mut().unwrap().avg_px_open = Some(price);
+#[given(regex = "^its average opening price is ([0-9.]+) (USDT|USD)$")]
+fn opening_price(world: &mut StartupWorld, price: Decimal, currency: Currency) {
+    assert_eq!(currency, world.instrument().quote_currency());
+    world.position_reports.last_mut().unwrap().avg_px_open = Some(price);
 }
 
 #[given("its average opening price is unavailable")]
 fn opening_price_unavailable(world: &mut StartupWorld) {
-    world.position_report.as_mut().unwrap().avg_px_open = None;
+    world.position_reports.last_mut().unwrap().avg_px_open = None;
 }
 
 #[given(
     "the execution in the delayed Filled order report is already included in the position snapshot"
 )]
 fn delayed_execution(world: &mut StartupWorld) {
-    let position = world.position_report.as_ref().unwrap();
+    let position = world.position_reports.first().unwrap();
     let side = if position.position_side == PositionSide::Long {
         OrderSide::Buy
     } else {
@@ -328,7 +441,7 @@ fn delayed_execution(world: &mut StartupWorld) {
 fn venue_explicit_flat(world: &mut StartupWorld) {
     let instrument_id = crypto_perpetual_ethusdt().id();
     let ts = UnixNanos::from(4_000_000);
-    world.position_report = Some(PositionStatusReport::new(
+    world.position_reports = vec![PositionStatusReport::new(
         AccountId::from("BLOCKING-REPORT-001"),
         instrument_id,
         PositionSide::Flat,
@@ -338,7 +451,7 @@ fn venue_explicit_flat(world: &mut StartupWorld) {
         None,
         None,
         None,
-    ));
+    )];
 }
 
 #[given("the venue cannot provide mass status")]
@@ -359,139 +472,9 @@ fn mass_status_pending(world: &mut StartupWorld) {
 
 #[when(regex = "^the live node starts using (start|run)$")]
 async fn start_node(world: &mut StartupWorld, entrypoint: String) {
-    let instrument = world
-        .instrument
-        .clone()
-        .expect("scenario requires an instrument");
-    let instrument_id = instrument.id();
-    let equity = matches!(instrument, InstrumentAny::Equity(_));
-
-    let account_id = AccountId::from(if equity {
-        AAPL_ACCOUNT_ID
-    } else {
-        "BLOCKING-REPORT-001"
-    });
-
-    let client_id = ClientId::from(StartupMassStatusExecutionClient::CLIENT_ID);
-
-    let mut mass_status = ExecutionMassStatus::new(
-        client_id,
-        account_id,
-        instrument_id.venue,
-        UnixNanos::default(),
-        None,
-    );
-
-    mass_status.add_order_reports(world.order_report.iter().cloned().collect());
-    mass_status.add_position_reports(world.position_report.iter().cloned().collect());
-    if let Some(closing) = &world.closing {
-        closing.add_reports(&mut mass_status);
-    }
-
-    *world.client_state.mass_status.lock() = Some(mass_status);
-    let factory =
-        StartupMassStatusExecutionClientFactory::new(world.client_state.clone(), world.behavior)
-            .with_identity(client_id, account_id, instrument_id.venue)
-            .with_oms_type(world.oms_type)
-            .with_handles_all_order_venues();
-    let node = LiveNodeBuilder::from_config(world.config.clone())
-        .unwrap()
-        .with_name("StartupSpecification")
-        .add_exec_client(
-            Some("startup-mass-status".to_string()),
-            Box::new(factory),
-            Box::new(StartupMassStatusExecutionClientConfig),
-        )
-        .unwrap()
-        .build()
-        .unwrap();
-    let mut node = StartupNodeGuard(node);
+    let stop_on_start = world.delayed_report.is_none();
+    let mut node = build_startup_node(world, None, stop_on_start);
     let node = &mut node.0;
-    node.kernel()
-        .cache()
-        .borrow_mut()
-        .add_instrument(instrument)
-        .unwrap();
-
-    if equity {
-        let mut account_state =
-            cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD");
-        account_state.account_id = account_id;
-        let account = cash_account_million_usd(account_state);
-        node.kernel()
-            .cache()
-            .borrow_mut()
-            .add_account(AccountAny::Cash(account))
-            .unwrap();
-    } else {
-        add_reconciliation_test_account(node);
-    }
-
-    assert_eq!(
-        node.kernel()
-            .cache()
-            .borrow()
-            .orders_total_count(None, None, None, None, None),
-        0
-    );
-    assert_eq!(
-        node.kernel()
-            .cache()
-            .borrow()
-            .positions_total_count(None, None, None, None, None),
-        0
-    );
-
-    if world.retained_position {
-        populate_retained_position(node);
-    }
-
-    if let Some(closing) = &world.closing {
-        closing.populate_cache(node);
-    }
-
-    node.add_actor(StartupActor {
-        core: DataActorCore::new(DataActorConfig::default()),
-        starts: world.actor_starts.clone(),
-    })
-    .unwrap();
-
-    let claims_external_orders = world.claim_external_orders
-        || world
-            .closing
-            .as_ref()
-            .is_some_and(|closing| closing.source == ClosingSource::Claimed);
-
-    let strategy_id = if world.retained_position {
-        Some(closing_strategy_id())
-    } else {
-        equity.then(|| StrategyId::from(AAPL_STRATEGY_ID))
-    };
-
-    let strategy_config = StrategyConfig {
-        strategy_id,
-        oms_type: world.retained_position.then_some(OmsType::Netting),
-        external_order_instrument_ids: claims_external_orders.then(|| vec![instrument_id]),
-        ..Default::default()
-    };
-
-    node.add_strategy(StartupStrategy {
-        core: StrategyCore::new(strategy_config),
-        handle: node.handle(),
-        instrument_id,
-        observation: world.observation.clone(),
-        stop_on_start: world.delayed_report.is_none(),
-    })
-    .unwrap();
-
-    let expected_claim = strategy_id.filter(|_| claims_external_orders);
-    assert_eq!(
-        node.kernel()
-            .cache()
-            .borrow()
-            .external_order_claim(&instrument_id),
-        expected_claim
-    );
 
     let result = dst::time::timeout(Duration::from_secs(5), async {
         match entrypoint.as_str() {
@@ -509,7 +492,7 @@ async fn start_node(world: &mut StartupWorld, entrypoint: String) {
             "startup must succeed before report delivery"
         );
         assert_eq!(node.state(), NodeState::Running);
-        assert!(report.ts_last < world.position_report.as_ref().unwrap().ts_last);
+        assert!(report.ts_last < world.position_reports.first().unwrap().ts_last);
         assert!(
             node.kernel()
                 .cache()
@@ -541,20 +524,188 @@ async fn start_node(world: &mut StartupWorld, entrypoint: String) {
         node.stop().await.expect("restarted node must stop cleanly");
     }
 
-    world.result = Some(result.map_err(|e| format!("{e:#}")));
-    world.node_state = Some(node.state());
-    if let Some(closing) = &mut world.closing {
-        let cache = node.kernel().cache();
-        let cache = cache.borrow();
-        closing.order_status = cache.order(&closing.order_id()).map(|order| order.status());
+    record_startup(world, node, result);
+}
+
+fn build_startup_node(
+    world: &StartupWorld,
+    restored: Option<RetainedClosingCache>,
+    stop_on_start: bool,
+) -> StartupNodeGuard {
+    let instrument = world.instrument();
+    let instrument_id = instrument.id();
+    let equity = matches!(instrument, InstrumentAny::Equity(_));
+
+    let account_id = world.account_id();
+
+    let client_id = ClientId::from(StartupMassStatusExecutionClient::CLIENT_ID);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        client_id,
+        account_id,
+        instrument_id.venue,
+        UnixNanos::default(),
+        None,
+    );
+
+    mass_status.add_order_reports(world.order_report.iter().cloned().collect());
+    mass_status.add_position_reports(world.position_reports.clone());
+    if let Some(closing) = &world.closing {
+        let qty = world.retained_position.as_ref().unwrap().qty;
+        closing.add_reports(&mut mass_status, instrument_id, qty);
     }
 
-    world.position_count = Some(
+    *world.client_state.mass_status.lock() = Some(mass_status);
+    let factory =
+        StartupMassStatusExecutionClientFactory::new(world.client_state.clone(), world.behavior)
+            .with_identity(client_id, account_id, instrument_id.venue)
+            .with_oms_type(world.oms_type)
+            .with_handles_all_order_venues();
+    let node = LiveNodeBuilder::from_config(world.config.clone())
+        .unwrap()
+        .with_name("StartupSpecification")
+        .add_exec_client(
+            Some("startup-mass-status".to_string()),
+            Box::new(factory),
+            Box::new(StartupMassStatusExecutionClientConfig),
+        )
+        .unwrap()
+        .build()
+        .unwrap();
+    let mut guard = StartupNodeGuard(node);
+    let node = &mut guard.0;
+    populate_startup_cache(world, node, account_id, restored);
+
+    node.add_actor(StartupActor {
+        core: DataActorCore::new(DataActorConfig::default()),
+        starts: world.actor_starts.clone(),
+    })
+    .unwrap();
+
+    let claims_external_orders = world.claim_external_orders
+        || world
+            .closing
+            .as_ref()
+            .is_some_and(|closing| closing.source == ClosingSource::Claimed);
+
+    let strategy_id = if world.retained_position.is_some() {
+        Some(closing_strategy_id())
+    } else {
+        equity.then(|| StrategyId::from(AAPL_STRATEGY_ID))
+    };
+
+    let strategy_config = StrategyConfig {
+        strategy_id,
+        oms_type: world
+            .retained_position
+            .is_some()
+            .then_some(OmsType::Netting),
+        external_order_instrument_ids: claims_external_orders.then(|| vec![instrument_id]),
+        ..Default::default()
+    };
+
+    node.add_strategy(StartupStrategy {
+        core: StrategyCore::new(strategy_config),
+        handle: node.handle(),
+        instrument_id,
+        observation: world.observation.clone(),
+        closing_order_id: world.closing.as_ref().map(ClosingRecovery::order_id),
+        stop_on_start,
+    })
+    .unwrap();
+
+    let expected_claim = strategy_id.filter(|_| claims_external_orders);
+    assert_eq!(
+        node.kernel()
+            .cache()
+            .borrow()
+            .external_order_claim(&instrument_id),
+        expected_claim
+    );
+
+    guard
+}
+
+fn populate_startup_cache(
+    world: &StartupWorld,
+    node: &LiveNode,
+    account_id: AccountId,
+    restored: Option<RetainedClosingCache>,
+) {
+    let instrument = world.instrument();
+    let instrument_id = instrument.id();
+    node.kernel()
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    if let Some(excluded) = &world.excluded_instrument {
+        node.kernel()
+            .cache()
+            .borrow_mut()
+            .add_instrument(excluded.clone())
+            .unwrap();
+    }
+
+    add_startup_account(node, account_id, instrument);
+
+    assert_eq!(
+        node.kernel()
+            .cache()
+            .borrow()
+            .orders_total_count(None, None, None, None, None),
+        0
+    );
+    assert_eq!(
         node.kernel()
             .cache()
             .borrow()
             .positions_total_count(None, None, None, None, None),
+        0
     );
+
+    if let Some(restored) = restored {
+        restored.populate_cache(node);
+        return;
+    }
+
+    if let Some(retained) = &world.retained_position {
+        populate_retained_position(node, instrument, account_id, retained);
+        if let Some(closing) = &world.closing {
+            closing.populate_cache(node, instrument_id, account_id, retained.qty);
+        }
+    }
+}
+
+fn add_startup_account(node: &LiveNode, account_id: AccountId, instrument: &InstrumentAny) {
+    if matches!(instrument, InstrumentAny::Equity(_)) {
+        let mut account_state =
+            cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD");
+        account_state.account_id = account_id;
+        let account = cash_account_million_usd(account_state);
+        node.kernel()
+            .cache()
+            .borrow_mut()
+            .add_account(AccountAny::Cash(account))
+            .unwrap();
+    } else if matches!(instrument, InstrumentAny::FuturesContract(_)) {
+        add_startup_margin_account(node, account_id, Currency::USD());
+    } else {
+        add_reconciliation_test_account(node);
+    }
+}
+
+fn record_startup(world: &mut StartupWorld, node: &LiveNode, result: anyhow::Result<()>) {
+    world.result = Some(result.map_err(|e| format!("{e:#}")));
+    world.node_state = Some(node.state());
+    let cache = node.kernel().cache();
+    let cache = cache.borrow();
+    if let Some(closing) = &mut world.closing {
+        closing.order_status = cache.order(&closing.order_id()).map(|order| order.status());
+    }
+
+    world.position_count = Some(cache.positions_total_count(None, None, None, None, None));
 }
 
 #[when(
@@ -563,6 +714,127 @@ async fn start_node(world: &mut StartupWorld, entrypoint: String) {
 async fn restart_before_delayed_report(world: &mut StartupWorld) {
     assert!(world.delayed_report.is_some());
     start_node(world, "start".to_string()).await;
+}
+
+#[when(
+    "the live node starts and restarts using start, replaying the same reports against the recovered orders and position"
+)]
+async fn restart_with_closing_executions(world: &mut StartupWorld) {
+    let (restored, profit, fees) = {
+        let mut node = build_startup_node(world, None, false);
+        let result = start_and_stop_replay_node(&mut node.0).await;
+        record_startup(world, &node.0, result);
+        startup_succeeds(world);
+        closing_order_filled(world);
+        closing_executions_once(world);
+        single_position(world);
+        components_started(world);
+
+        let observation = world.observation.borrow_mut().take().unwrap();
+        assert!(observation.positions.is_empty());
+        assert_eq!(observation.net_qty, Decimal::ZERO);
+        let position = observation.retained_position.unwrap();
+        let position_id = closing_position_id(world.instrument().id());
+        let restored = RetainedClosingCache::capture(&node.0, position_id);
+
+        (restored, position.realized_pnl, position.commissions())
+    };
+
+    world.actor_starts.set(0);
+    assert!(
+        world
+            .client_state
+            .mass_status_requested
+            .swap(false, Ordering::Relaxed)
+    );
+    world
+        .client_state
+        .disconnect_attempted
+        .store(false, Ordering::Relaxed);
+
+    let mut node = build_startup_node(world, Some(restored), false);
+    let order_id = world.closing.as_ref().unwrap().order_id();
+    let restored_order = node
+        .0
+        .kernel()
+        .cache()
+        .borrow()
+        .order_owned(&order_id)
+        .expect("the closing order must be in the cache before replay");
+    assert_eq!(restored_order.strategy_id(), closing_strategy_id());
+    assert_eq!(restored_order.status(), OrderStatus::Filled);
+
+    let result = start_and_stop_replay_node(&mut node.0).await;
+    record_startup(world, &node.0, result);
+    startup_succeeds(world);
+
+    let observation = world.observation.borrow();
+    let position = observation
+        .as_ref()
+        .unwrap()
+        .retained_position
+        .as_ref()
+        .unwrap();
+    assert_eq!(position.realized_pnl, profit);
+    assert_eq!(position.commissions(), fees);
+}
+
+async fn start_and_stop_replay_node(node: &mut LiveNode) -> anyhow::Result<()> {
+    dst::time::timeout(Duration::from_secs(5), async {
+        node.start().await?;
+        assert_eq!(node.state(), NodeState::Running);
+        node.stop().await
+    })
+    .await
+    .expect("node startup and shutdown must finish before the test deadline")
+}
+
+struct RetainedClosingCache {
+    orders: Vec<(OrderAny, Option<PositionId>, Option<ClientId>)>,
+    position: Position,
+    oms_type: OmsType,
+}
+
+impl RetainedClosingCache {
+    fn capture(node: &LiveNode, position_id: PositionId) -> Self {
+        let cache = node.kernel().cache();
+        let cache = cache.borrow();
+        let position = cache.position_owned(&position_id).unwrap();
+        assert_eq!(position.side, PositionSide::Flat);
+        let oms_type = cache.oms_type(&position_id).unwrap();
+
+        let orders = cache
+            .orders(None, None, None, None, None)
+            .into_iter()
+            .map(|order| {
+                let id = order.client_order_id();
+
+                (
+                    order.clone(),
+                    cache.position_id(&id).copied(),
+                    cache.client_id(&id).copied(),
+                )
+            })
+            .collect();
+
+        Self {
+            orders,
+            position,
+            oms_type,
+        }
+    }
+
+    fn populate_cache(self, node: &LiveNode) {
+        let cache = node.kernel().cache();
+        let mut cache = cache.borrow_mut();
+        for (order, position_id, client_id) in self.orders {
+            cache
+                .add_order(order, position_id, client_id, false)
+                .unwrap();
+        }
+
+        cache.add_position(&self.position, self.oms_type).unwrap();
+    }
 }
 
 #[then(regex = "^the delayed order is FILLED for ([0-9.]+) ETH at ([0-9.]+) USDT$")]
@@ -603,14 +875,33 @@ struct DelayedReportObservation {
     node_state: NodeState,
 }
 
-#[given("a retained long position holds 1.000 ETH bought at 3000.00 USDT with a 0.60 USDT fee")]
-fn retained_long(world: &mut StartupWorld) {
-    world.retained_position = true;
+#[given(
+    regex = "^a retained long position holds ([0-9.]+) (ETH|ESZ21 contracts) bought at ([0-9.]+) (USDT|USD) with a ([0-9.]+ (?:USDT|USD)) fee$"
+)]
+fn retained_long(
+    world: &mut StartupWorld,
+    qty: Quantity,
+    unit: String,
+    price: Price,
+    price_currency: Currency,
+    fee: Money,
+) {
+    world.assert_qty_unit(&unit);
+    assert_eq!(price_currency, world.instrument().quote_currency());
+    assert_eq!(fee.currency, world.instrument().settlement_currency());
+    world.retained_position = Some(RetainedPosition { qty, price, fee });
+}
+
+#[derive(Debug)]
+struct RetainedPosition {
+    qty: Quantity,
+    price: Price,
+    fee: Money,
 }
 
 #[given("the strategy claims external orders for the retained position's instrument")]
 fn claim_retained_instrument(world: &mut StartupWorld) {
-    assert!(world.retained_position);
+    assert!(world.retained_position.is_some());
     world.claim_external_orders = true;
 }
 
@@ -632,6 +923,7 @@ fn closing_source(world: &mut StartupWorld, source: String) {
         },
         window_start: None,
         reports_complete: true,
+        avg_px: None,
         fills: Vec::new(),
         order_status: None,
     });
@@ -645,12 +937,24 @@ fn closing_window(world: &mut StartupWorld) {
 
 #[given("the venue reports a filled closing order and no position")]
 fn closing_report(world: &mut StartupWorld) {
-    world.position_report = None;
+    closing_report_at(world, Decimal::from(3112), Currency::USDT());
+}
+
+#[given(
+    regex = "^the venue reports a closing order filled at an average of ([0-9.]+) (USDT|USD) and no position$"
+)]
+fn closing_report_at(world: &mut StartupWorld, avg_px: Decimal, currency: Currency) {
+    assert_eq!(currency, world.instrument().quote_currency());
+    world.closing.as_mut().unwrap().avg_px = Some(avg_px);
+    world.position_reports.clear();
     world.behavior = StartupMassStatusBehavior::Available;
 }
 
 #[given("the venue reports these closing executions")]
 fn closing_executions(world: &mut StartupWorld, step: &cucumber::gherkin::Step) {
+    let account_id = world.account_id();
+    let instrument_id = world.instrument().id();
+    let currency = world.instrument().settlement_currency();
     let closing = world.closing.as_mut().unwrap();
     let table = step.table.as_ref().expect("closing execution table");
     assert_eq!(table.rows[0], ["quantity", "price", "fee"]);
@@ -664,14 +968,14 @@ fn closing_executions(world: &mut StartupWorld, step: &cucumber::gherkin::Step) 
             let ts = UnixNanos::from(3_000_000 + i as u64);
 
             FillReport::new(
-                AccountId::from("BLOCKING-REPORT-001"),
-                crypto_perpetual_ethusdt().id(),
+                account_id,
+                instrument_id,
                 VenueOrderId::from("V-CLOSE"),
                 TradeId::new(format!("T-CLOSE-{i}")),
                 OrderSide::Sell,
                 Quantity::from(row[0].as_str()),
                 Price::from(row[1].as_str()),
-                Money::from(format!("{} USDT", row[2]).as_str()),
+                Money::from(format!("{} {currency}", row[2]).as_str()),
                 LiquiditySide::Taker,
                 (closing.source == ClosingSource::Cached).then(|| closing.order_id()),
                 None,
@@ -702,9 +1006,54 @@ fn closing_order_filled(world: &mut StartupWorld) {
 }
 
 #[then(
-    regex = "^the retained position is flat with realized profit of ([0-9.]+) USDT and total fees of ([0-9.]+) USDT when the strategy starts$"
+    "the closing executions are recorded once on the order and position when the strategy starts"
 )]
-fn closing_economics(world: &mut StartupWorld, profit: Decimal, fees: Decimal) {
+fn closing_executions_once(world: &mut StartupWorld) {
+    let closing = world.closing.as_ref().unwrap();
+    let observation = world.observation.borrow();
+    let observation = observation.as_ref().unwrap();
+    let order = observation.closing_order.as_ref().unwrap();
+    let position = observation.retained_position.as_ref().unwrap();
+    assert_eq!(order.strategy_id(), closing_strategy_id());
+
+    let order_fills: Vec<_> = order
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => {
+                Some((fill.trade_id, fill.last_qty, fill.last_px, fill.commission))
+            }
+            _ => None,
+        })
+        .collect();
+
+    let expected_order_fills: Vec<_> = closing
+        .fills
+        .iter()
+        .map(|fill| {
+            (
+                fill.trade_id,
+                fill.last_qty,
+                fill.last_px,
+                Some(fill.commission),
+            )
+        })
+        .collect();
+
+    assert_eq!(order_fills, expected_order_fills);
+
+    let opening_trade_id = TradeId::from("T-OPEN");
+    let expected_position_trades: Vec<_> = std::iter::once(opening_trade_id)
+        .chain(closing.fills.iter().map(|fill| fill.trade_id))
+        .collect();
+    let position_trades: Vec<_> = position.events.iter().map(|event| event.trade_id).collect();
+    assert_eq!(position_trades, expected_position_trades);
+}
+
+#[then(
+    regex = "^the retained position is flat with realized profit of ([0-9.]+ (?:USDT|USD)) and total fees of ([0-9.]+ (?:USDT|USD)) when the strategy starts$"
+)]
+fn closing_economics(world: &mut StartupWorld, profit: Money, fees: Money) {
     let closing = world.closing.as_ref().unwrap();
     let observation = world.observation.borrow();
     let position = observation
@@ -715,14 +1064,8 @@ fn closing_economics(world: &mut StartupWorld, profit: Decimal, fees: Decimal) {
         .unwrap();
     assert_eq!(position.side, PositionSide::Flat);
     assert_eq!(position.quantity.as_decimal(), Decimal::ZERO);
-    assert_eq!(
-        position.realized_pnl,
-        Some(Money::from_decimal(profit, Currency::USDT()).unwrap())
-    );
-    assert_eq!(
-        position.commissions(),
-        vec![Money::from_decimal(fees, Currency::USDT()).unwrap()]
-    );
+    assert_eq!(position.realized_pnl, Some(profit));
+    assert_eq!(position.commissions(), vec![fees]);
     assert_eq!(position.closing_order_id, Some(closing.order_id()));
     let expected_trades = std::iter::once(TradeId::from("T-OPEN"))
         .chain(closing.fills.iter().map(|fill| fill.trade_id))
@@ -772,9 +1115,10 @@ fn retained_position_at_start(world: &mut StartupWorld, side: String, qty: Quant
         _ => unreachable!(),
     };
 
-    assert_eq!(position.id, closing_position_id());
-    assert_eq!(position.account_id, AccountId::from("BLOCKING-REPORT-001"));
-    assert_eq!(position.instrument_id, crypto_perpetual_ethusdt().id());
+    let instrument_id = world.instrument().id();
+    assert_eq!(position.id, closing_position_id(instrument_id));
+    assert_eq!(position.account_id, world.account_id());
+    assert_eq!(position.instrument_id, instrument_id);
     assert_eq!(position.strategy_id, closing_strategy_id());
     assert_eq!(position.side, expected_side);
     assert_eq!(position.quantity, qty);
@@ -803,6 +1147,7 @@ struct ClosingRecovery {
     source: ClosingSource,
     window_start: Option<UnixNanos>,
     reports_complete: bool,
+    avg_px: Option<Decimal>,
     fills: Vec<FillReport>,
     order_status: Option<OrderStatus>,
 }
@@ -815,12 +1160,16 @@ impl ClosingRecovery {
         })
     }
 
-    fn add_reports(&self, mass_status: &mut ExecutionMassStatus) {
+    fn add_reports(
+        &self,
+        mass_status: &mut ExecutionMassStatus,
+        instrument_id: InstrumentId,
+        qty: Quantity,
+    ) {
         let ts = UnixNanos::from(4_000_000);
-        let qty = Quantity::from("1.000");
         let report = OrderStatusReport::new(
             mass_status.account_id,
-            crypto_perpetual_ethusdt().id(),
+            instrument_id,
             (self.source == ClosingSource::Cached).then(|| self.order_id()),
             VenueOrderId::from("V-CLOSE"),
             Some(OrderSide::Sell),
@@ -834,17 +1183,20 @@ impl ClosingRecovery {
             ts,
             None,
         )
-        .with_avg_px(Decimal::from(3112));
+        .with_avg_px(self.avg_px.unwrap());
         mass_status.add_order_reports(vec![report]);
         mass_status.add_fill_reports(self.fills.clone());
         mass_status.set_report_window(self.window_start, self.reports_complete);
     }
 
-    fn populate_cache(&self, node: &LiveNode) {
-        let account_id = AccountId::from("BLOCKING-REPORT-001");
+    fn populate_cache(
+        &self,
+        node: &LiveNode,
+        instrument_id: InstrumentId,
+        account_id: AccountId,
+        qty: Quantity,
+    ) {
         let client_id = ClientId::from(StartupMassStatusExecutionClient::CLIENT_ID);
-        let instrument_id = crypto_perpetual_ethusdt().id();
-        let qty = Quantity::from("1.000");
         let cache = node.kernel().cache();
         let mut cache = cache.borrow_mut();
 
@@ -865,35 +1217,36 @@ impl ClosingRecovery {
     }
 }
 
-fn populate_retained_position(node: &LiveNode) {
-    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
-    let account_id = AccountId::from("BLOCKING-REPORT-001");
+fn populate_retained_position(
+    node: &LiveNode,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    retained: &RetainedPosition,
+) {
     let client_id = ClientId::from(StartupMassStatusExecutionClient::CLIENT_ID);
-    let qty = Quantity::from("1.000");
-    let price = Price::from("3000.00");
     let mut opening = OrderTestBuilder::new(OrderType::Market)
         .trader_id(node.kernel().trader_id())
         .client_order_id(ClientOrderId::from("O-OPEN"))
         .strategy_id(closing_strategy_id())
         .instrument_id(instrument.id())
         .side(OrderSide::Buy)
-        .quantity(qty)
+        .quantity(retained.qty)
         .build();
     accept_order(&mut opening, account_id, VenueOrderId::from("V-OPEN"));
     let fill = TestOrderEventStubs::filled(
         &opening,
-        &instrument,
+        instrument,
         Some(TradeId::from("T-OPEN")),
-        Some(closing_position_id()),
-        Some(price),
-        Some(qty),
+        Some(closing_position_id(instrument.id())),
+        Some(retained.price),
+        Some(retained.qty),
         Some(LiquiditySide::Maker),
-        Some(Money::from("0.60 USDT")),
+        Some(retained.fee),
         Some(UnixNanos::from(1_000_000)),
         Some(account_id),
     );
     opening.apply(fill.clone()).unwrap();
-    let position = Position::new(&instrument, fill.into());
+    let position = Position::new(instrument, fill.into());
     let cache = node.kernel().cache();
     let mut cache = cache.borrow_mut();
     cache
@@ -906,12 +1259,9 @@ fn closing_strategy_id() -> StrategyId {
     StrategyId::from("RECOVERY-001")
 }
 
-fn closing_position_id() -> PositionId {
-    PositionId::new(format!(
-        "{}-{}",
-        crypto_perpetual_ethusdt().id(),
-        closing_strategy_id()
-    ))
+fn closing_position_id(instrument_id: InstrumentId) -> PositionId {
+    let strategy_id = closing_strategy_id();
+    PositionId::new(format!("{instrument_id}-{strategy_id}"))
 }
 
 fn accept_order(order: &mut OrderAny, account_id: AccountId, venue_order_id: VenueOrderId) {
@@ -958,7 +1308,7 @@ fn startup_fails(world: &mut StartupWorld, reason: String) {
         _ => panic!("unknown startup failure: {reason}"),
     };
 
-    let report = world.position_report.as_ref().unwrap();
+    let report = world.position_reports.first().unwrap();
     let expected = format!(
         "Unresolved positions during startup reconciliation for {client_id}: account={}, instrument={}, venue_position_id=Some(\"VENUE-POSITION-042\"), venue_quantity={}: {detail}",
         report.account_id, report.instrument_id, report.signed_decimal_qty,
@@ -967,18 +1317,26 @@ fn startup_fails(world: &mut StartupWorld, reason: String) {
 }
 
 #[then(
-    regex = "^the strategy observes a (long|short) position of ([0-9.]+) ETH at ([0-9.]+) USDT when it starts$"
+    regex = "^the strategy observes a (long|short) position of ([0-9.]+) (ETH|ESZ21 contracts) at ([0-9.]+) (USDT|USD) when it starts$"
 )]
-fn reconciled_position(world: &mut StartupWorld, side: String, qty: Quantity, price: Decimal) {
+fn reconciled_position(
+    world: &mut StartupWorld,
+    side: String,
+    qty: Quantity,
+    unit: String,
+    price: Decimal,
+    price_currency: Currency,
+) {
+    world.assert_qty_unit(&unit);
+    assert_eq!(price_currency, world.instrument().quote_currency());
     let observation = world.observation.borrow();
     let observation = observation.as_ref().expect("strategy must start");
     let positions = &observation.positions;
     assert_eq!(positions.len(), 1);
     assert!(observation.orders_open.is_empty());
-    let instrument_id = crypto_perpetual_ethusdt().id();
-
+    let instrument_id = world.instrument().id();
     let position_id = if world.oms_type == OmsType::Netting {
-        PositionId::from("ETHUSDT-PERP.BINANCE-EXTERNAL")
+        PositionId::new(format!("{instrument_id}-EXTERNAL"))
     } else {
         PositionId::from("VENUE-POSITION-042")
     };
@@ -987,7 +1345,7 @@ fn reconciled_position(world: &mut StartupWorld, side: String, qty: Quantity, pr
         positions[0],
         PositionObservation {
             id: position_id,
-            account_id: AccountId::from("BLOCKING-REPORT-001"),
+            account_id: world.account_id(),
             instrument_id,
             strategy_id: StrategyId::from("EXTERNAL"),
             oms_type: Some(world.oms_type),
@@ -1000,8 +1358,42 @@ fn reconciled_position(world: &mut StartupWorld, side: String, qty: Quantity, pr
     assert_eq!(world.position_count, Some(1));
 }
 
-#[then(regex = "^the portfolio exposes (-?[0-9.]+) ETH when the strategy starts$")]
-fn portfolio_exposure(world: &mut StartupWorld, qty: Decimal) {
+#[then("the strategy observes both reported hedge legs when it starts")]
+fn reconciled_hedge_legs(world: &mut StartupWorld) {
+    let observation = world.observation.borrow();
+    let observation = observation.as_ref().expect("strategy must start");
+    assert_eq!(observation.positions.len(), 2);
+    assert_eq!(world.position_count, Some(2));
+
+    for report in &world.position_reports {
+        let id = report.venue_position_id.unwrap();
+        let position = observation
+            .positions
+            .iter()
+            .find(|position| position.id == id)
+            .expect("reported hedge leg must be recovered");
+        assert_eq!(
+            *position,
+            PositionObservation {
+                id,
+                account_id: report.account_id,
+                instrument_id: report.instrument_id,
+                strategy_id: StrategyId::external(),
+                oms_type: Some(OmsType::Hedging),
+                side: report.position_side,
+                qty: report.quantity,
+                avg_px_open: report.avg_px_open.unwrap(),
+            }
+        );
+        assert_eq!(position.qty.precision, report.quantity.precision);
+    }
+}
+
+#[then(
+    regex = "^the portfolio exposes (-?[0-9.]+) (ETH|ESZ21 contracts) when the strategy starts$"
+)]
+fn portfolio_exposure(world: &mut StartupWorld, qty: Decimal, unit: String) {
+    world.assert_qty_unit(&unit);
     assert_eq!(world.observation.borrow().as_ref().unwrap().net_qty, qty);
 }
 
@@ -1032,6 +1424,7 @@ fn flat_startup(world: &mut StartupWorld) {
             positions: Vec::new(),
             net_qty: Decimal::ZERO,
             retained_position: None,
+            closing_order: None,
         })
     );
 }
@@ -1125,6 +1518,7 @@ struct StartupObservation {
     positions: Vec<PositionObservation>,
     net_qty: Decimal,
     retained_position: Option<Position>,
+    closing_order: Option<OrderAny>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -1160,6 +1554,7 @@ struct StartupStrategy {
     handle: LiveNodeHandle,
     instrument_id: InstrumentId,
     observation: Rc<RefCell<Option<StartupObservation>>>,
+    closing_order_id: Option<ClientOrderId>,
     stop_on_start: bool,
 }
 
@@ -1180,12 +1575,14 @@ impl DataActor for StartupStrategy {
             .collect();
 
         let net_qty = self.portfolio().net_position(&self.instrument_id);
+        let closing_order = self.closing_order_id.and_then(|id| cache.order(&id));
         *self.observation.borrow_mut() = Some(StartupObservation {
             orders_open,
             orders_total,
             positions,
             net_qty,
-            retained_position: cache.position(&closing_position_id()),
+            retained_position: cache.position(&closing_position_id(self.instrument_id)),
+            closing_order,
         });
 
         if self.stop_on_start {

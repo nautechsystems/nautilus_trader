@@ -29,7 +29,7 @@ pub static UNISWAP_V2: LazyLock<DexExtended> = LazyLock::new(|| {
         chains::ARBITRUM.clone(),
         DexType::UniswapV2,
         "0xf1D7CC64Fb4452F05c498126312eBE29f30Fbcf9",
-        150442611,
+        150_442_611,
         AmmType::CPAMM,
         "PairCreated(address,address,address,uint256)",
         "",

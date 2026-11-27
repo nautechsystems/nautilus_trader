@@ -668,7 +668,7 @@ impl HyperliquidRawHttpClient {
 
     async fn send_info_request(&self, request: &InfoRequest) -> Result<Value> {
         let base_w = info_base_weight(request);
-        let mut attempt = 0u32;
+        let mut attempt = 0_u32;
 
         loop {
             self.info_limiter.acquire(base_w).await;
@@ -1653,7 +1653,9 @@ impl HyperliquidHttpClient {
 
     /// Fetch and parse all instrument definitions, populating the asset indices cache.
     pub async fn request_instrument_defs(&self) -> Result<Vec<HyperliquidInstrumentDef>> {
-        Ok(self.load_instrument_defs().await?.0)
+        let (defs, _) = self.load_instrument_defs().await?;
+        self.cache_asset_indices_from_defs(&defs);
+        Ok(defs)
     }
 
     /// Loads all instrument definitions, together with the product types whose
@@ -1793,11 +1795,13 @@ impl HyperliquidHttpClient {
                 );
             }
         }
-        let defs = deduped;
 
-        // Populate asset indices for all instruments (including filtered HIP-3)
+        Ok((deduped, loaded))
+    }
+
+    fn cache_asset_indices_from_defs(&self, defs: &[HyperliquidInstrumentDef]) {
         self.asset_indices.rcu(|m| {
-            for def in &defs {
+            for def in defs {
                 m.insert(def.symbol, def.asset_index);
             }
         });
@@ -1805,8 +1809,6 @@ impl HyperliquidHttpClient {
             "Populated asset indices map (count={})",
             self.asset_indices.len()
         );
-
-        Ok((defs, loaded))
     }
 
     /// Converts instrument definitions into Nautilus instruments.
@@ -1821,9 +1823,16 @@ impl HyperliquidHttpClient {
         Ok(self.convert_defs(defs))
     }
 
+    pub(crate) async fn fetch_instruments(&self) -> Result<Vec<InstrumentAny>> {
+        let (defs, _) = self.load_instrument_defs().await?;
+        Ok(self.convert_defs(defs))
+    }
+
     /// Fetch all available instruments together with the market status of each.
     pub(crate) async fn request_instruments_with_statuses(&self) -> Result<InstrumentSnapshot> {
         let (defs, loaded) = self.load_instrument_defs().await?;
+        self.cache_asset_indices_from_defs(&defs);
+
         let def_statuses: AHashMap<Ustr, MarketStatusAction> = defs
             .iter()
             .map(|def| {
@@ -4750,7 +4759,7 @@ mod tests {
                 assert_eq!(request["type"], "frontendOpenOrders");
                 Json(json!([{
                     "coin": "vntls:SCOPE", "side": "B", "limitPx": "1", "sz": "2",
-                    "oid": 101, "timestamp": 1_700_000_000_000u64, "origSz": "2",
+                    "oid": 101, "timestamp": 1_700_000_000_000_u64, "origSz": "2",
                     "cloid": cloid.to_hex(),
                 }]))
             }),
@@ -5350,7 +5359,7 @@ mod tests {
                 "type": "order",
                 "data": {
                     "statuses": [{
-                        "filled": {"totalSz": "0.5", "avgPx": "1.2345", "oid": 778899}
+                        "filled": {"totalSz": "0.5", "avgPx": "1.2345", "oid": 778_899}
                     }]
                 }
             }
@@ -6281,7 +6290,7 @@ mod tests {
             json!({
                 "order": {
                     "coin": "BTC", "side": "A", "limitPx": "58800.0", "sz": "0.0",
-                    "oid": 900000001_u64, "timestamp": 1700000000000_u64,
+                    "oid": 900_000_001_u64, "timestamp": 1_700_000_000_000_u64,
                     "triggerCondition": "Price below 59500", "isTrigger": true,
                     "triggerPx": "59500.0", "children": [], "isPositionTpsl": true,
                     "reduceOnly": true, "orderType": "Stop Market", "origSz": "0.0", "tif": null,
@@ -6293,8 +6302,8 @@ mod tests {
         };
         json!([
             filled_stop_row(),
-            trigger_row("triggered", 1700000600000),
-            trigger_row("open", 1700000000000),
+            trigger_row("triggered", 1_700_000_600_000),
+            trigger_row("open", 1_700_000_000_000),
         ])
     }
 
@@ -6302,14 +6311,14 @@ mod tests {
         json!({
             "order": {
                 "coin": "BTC", "side": "A", "limitPx": "58200.0", "sz": "0.0",
-                "oid": 900000001_u64, "timestamp": 1700000600000_u64,
+                "oid": 900_000_001_u64, "timestamp": 1_700_000_600_000_u64,
                 "triggerCondition": "Triggered", "isTrigger": false, "triggerPx": "0.0",
                 "children": [], "isPositionTpsl": true, "reduceOnly": true,
                 "orderType": "Stop Market", "origSz": "0.02", "tif": "Gtc",
                 "cloid": "0x00000000000000000000000000000a01"
             },
             "status": "filled",
-            "statusTimestamp": 1700000600000_u64
+            "statusTimestamp": 1_700_000_600_000_u64
         })
     }
 
@@ -6446,14 +6455,14 @@ mod tests {
             json!({
                 "order": {
                     "coin": "BTC", "side": "A", "limitPx": "60100.0", "sz": sz,
-                    "oid": 900000002_u64, "timestamp": 1700001000000_u64,
+                    "oid": 900_000_002_u64, "timestamp": 1_700_001_000_000_u64,
                     "triggerCondition": "N/A", "isTrigger": false, "triggerPx": "0.0",
                     "children": [], "isPositionTpsl": false, "reduceOnly": false,
                     "orderType": "Limit", "origSz": "0.015", "tif": "Ioc",
                     "cloid": "0x00000000000000000000000000000a02"
                 },
                 "status": status,
-                "statusTimestamp": 1700001000000_u64
+                "statusTimestamp": 1_700_001_000_000_u64
             })
         };
 

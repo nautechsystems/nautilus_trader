@@ -125,10 +125,10 @@ writers.
 
 ```python
 catalog.write_instruments([instrument])
-catalog.write_quote_ticks(quote_ticks)
+catalog.write_quotes(quotes)
 
-catalog.write_trade_ticks(
-    trade_ticks,
+catalog.write_trades(
+    trades,
     start=1704067200000000000,
     end=1704153600000000000,
 )
@@ -140,8 +140,8 @@ The built-in market-data writers are:
 
 - `write_order_book_deltas`
 - `write_order_book_depths`
-- `write_quote_ticks`
-- `write_trade_ticks`
+- `write_quotes`
+- `write_trades`
 - `write_bars`
 - `write_mark_price_updates`
 - `write_index_price_updates`
@@ -198,13 +198,13 @@ Set `skip_disjoint_check=True` only when the overlap is intentional.
 Use a typed query when the expected return type is known. `start` and `end` are UNIX nanoseconds:
 
 ```python
-quotes = catalog.query_quote_ticks(
+quotes = catalog.query_quotes(
     identifiers=["EUR/USD.SIM"],
     start=1704067200000000000,
     end=1704153600000000000,
 )
 
-trades = catalog.query_trade_ticks(
+trades = catalog.query_trades(
     identifiers=["BTC/USD.BINANCE"],
     start=1704067200000000000,
     end=1704153600000000000,
@@ -430,7 +430,7 @@ All of these query methods use UNIX nanosecond time bounds and accept a DataFusi
 `where_clause`:
 
 - `query` provides the generic interface.
-- Typed methods such as `query_quote_ticks`, `query_trade_ticks`, and `query_bars` return the
+- Typed methods such as `query_quotes`, `query_trades`, and `query_bars` return the
   concrete model type.
 - `query_custom_data` resolves custom decoders through the runtime registry.
 
@@ -440,8 +440,8 @@ transitive `chrono-tz` 0.10.4 database (IANA 2025b). Rust core time-zone operati
 with its bundled IANA 2026e database. Zone results can differ when zone rules change or historical
 data is corrected after 2025b until DataFusion migrates.
 
-If RustSec files unmaintained advisories for `chrono` or `chrono-tz`, maintain matching documented
-ignores in `.cargo/audit.toml` and `deny.toml` until DataFusion migrates.
+Maintain the `chrono` and `chrono-tz` unmaintained advisory exceptions in `.cargo/audit.toml` and
+`osv-scanner.toml` until DataFusion migrates.
 :::
 
 ## Catalog operations

@@ -197,7 +197,7 @@ pub(crate) async fn run_analyze_pools(
         tasks.push((task_address, handle));
     }
 
-    let mut failures = 0usize;
+    let mut failures = 0_usize;
 
     for (pool_address, handle) in tasks {
         let result = match handle.await {

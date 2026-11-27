@@ -26,9 +26,9 @@ const MSG_BYTES: usize = 40;
 const INPUT_LEN: usize = PK_BYTES + MSG_BYTES + SIG_BYTES;
 
 fn fp5_from_bytes(bytes: &[u8; 40]) -> Fp5 {
-    let mut limbs = [0u64; 5];
+    let mut limbs = [0_u64; 5];
     for (i, slot) in limbs.iter_mut().enumerate() {
-        let mut chunk = [0u8; 8];
+        let mut chunk = [0_u8; 8];
         chunk.copy_from_slice(&bytes[i * 8..(i + 1) * 8]);
         *slot = u64::from_le_bytes(chunk);
     }
@@ -40,11 +40,11 @@ fuzz_target!(|data: &[u8]| {
         return;
     }
 
-    let mut pk_buf = [0u8; PK_BYTES];
+    let mut pk_buf = [0_u8; PK_BYTES];
     pk_buf.copy_from_slice(&data[..PK_BYTES]);
-    let mut msg_buf = [0u8; MSG_BYTES];
+    let mut msg_buf = [0_u8; MSG_BYTES];
     msg_buf.copy_from_slice(&data[PK_BYTES..PK_BYTES + MSG_BYTES]);
-    let mut sig_buf = [0u8; SIG_BYTES];
+    let mut sig_buf = [0_u8; SIG_BYTES];
     sig_buf.copy_from_slice(&data[PK_BYTES + MSG_BYTES..INPUT_LEN]);
 
     let pk = PublicKey::from_fp5(fp5_from_bytes(&pk_buf));

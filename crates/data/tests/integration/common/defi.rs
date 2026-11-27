@@ -59,14 +59,15 @@ pub(crate) fn make_initialized_pool_and_swap() -> (Pool, PoolSwap) {
         Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
-    let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
+
+    let initial_price = U160::from(79_228_162_514_264_337_593_543_950_336_u128); // sqrt(1) * 2^96
     pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
 
     let swap = PoolSwap::new(
@@ -74,7 +75,7 @@ pub(crate) fn make_initialized_pool_and_swap() -> (Pool, PoolSwap) {
         dex,
         pool.instrument_id,
         pool.pool_identifier,
-        1000u64,
+        1000_u64,
         "0x123".to_string(),
         0,
         0,
@@ -84,8 +85,8 @@ pub(crate) fn make_initialized_pool_and_swap() -> (Pool, PoolSwap) {
         Address::from([0x12; 20]),
         I256::from_str("1000000000000000000").unwrap(),
         I256::from_str("400000000000000").unwrap(),
-        U160::from(59000000000000u128),
-        1000000,
+        U160::from(59_000_000_000_000_u128),
+        1_000_000,
         100,
     );
     (pool, swap)

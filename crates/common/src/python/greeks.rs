@@ -315,6 +315,8 @@ mod tests {
         },
         types::{Price, Quantity},
     };
+    #[cfg(feature = "defi")]
+    use nautilus_model::{data::TradeTick, enums::AggressorSide, identifiers::TradeId};
     use rstest::rstest;
 
     use super::*;
@@ -374,6 +376,59 @@ mod tests {
         assert_eq!(greeks.underlying_price, 150.0);
     }
 
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[case(16, true)]
+    #[case(17, false)]
+    #[case(18, false)]
+    fn test_py_instrument_greeks_checks_cached_price_precision(
+        #[case] precision: u8,
+        #[case] supported: bool,
+    ) {
+        Python::initialize();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let equity = equity_aapl();
+        let instrument_id = equity.id();
+        let price = Price::from_decimal_dp(150.into(), precision).unwrap();
+        let size = Quantity::from(1);
+        let ts = UnixNanos::from(1);
+
+        let trade = TradeTick::new(
+            instrument_id,
+            price,
+            size,
+            AggressorSide::Buy,
+            TradeId::new("EQ-1"),
+            ts,
+            ts,
+        );
+
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::Equity(equity))
+            .unwrap();
+        cache.borrow_mut().add_trade(trade).unwrap();
+        let calculator = make_calculator(cache);
+
+        let result = py_instrument_greeks(&calculator, instrument_id, None);
+        if supported {
+            let greeks = result.unwrap().unwrap();
+            assert_eq!(greeks.instrument_id, instrument_id);
+            assert_eq!(greeks.greeks.delta, 1.0);
+        } else {
+            let e = result.unwrap_err();
+            Python::attach(|py| {
+                assert!(e.is_instance_of::<pyo3::exceptions::PyValueError>(py));
+                assert_eq!(
+                    e.value(py).to_string(),
+                    format!(
+                        "Cannot convert cached price for {instrument_id}: Fixed-point precision {precision} exceeds maximum float precision 16"
+                    ),
+                );
+            });
+        }
+    }
+
     #[rstest]
     fn test_py_instrument_greeks_raises_when_instrument_missing() {
         Python::initialize();
@@ -426,7 +481,6 @@ mod tests {
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
         let option = option_contract_appl();
         let option_id = option.id();
-        let underlying_id = InstrumentId::from("AAPL.OPRA");
         let vol_index_id = InstrumentId::from("VIX.XCBF");
 
         match case {
@@ -448,9 +502,15 @@ mod tests {
                 (make_calculator(cache), option_id, None)
             }
             MissingPriceCase::VolIndex => {
+                let equity = equity_aapl();
+                let underlying_id = equity.id();
                 cache
                     .borrow_mut()
                     .add_instrument(InstrumentAny::OptionContract(option))
+                    .unwrap();
+                cache
+                    .borrow_mut()
+                    .add_instrument(InstrumentAny::Equity(equity))
                     .unwrap();
                 add_quote(&cache, option_id, "10.50");
                 add_quote(&cache, underlying_id, "150.00");
@@ -471,7 +531,7 @@ mod tests {
     }
 
     fn add_quote(cache: &Rc<RefCell<Cache>>, instrument_id: InstrumentId, price: &str) {
-        let ts = UnixNanos::from(1u64);
+        let ts = UnixNanos::from(1_u64);
         cache
             .borrow_mut()
             .add_quote(QuoteTick::new(

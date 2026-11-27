@@ -28,7 +28,7 @@ use std::{
     future::Future,
     rc::Rc,
     sync::{
-        Arc,
+        Arc, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -55,6 +55,7 @@ use nautilus_common::{
             ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
         },
     },
+    msgbus::{InstrumentSubscription, TypedHandler, switchboard::get_instruments_pattern},
     runner::{TimeEventMessage, TimeEventSender, try_get_time_event_sender},
     timer::{TimeEvent, TimeEventCallback},
 };
@@ -138,13 +139,24 @@ use crate::{
         DeriveOrdersSubscriptionData, DeriveTradesSubscriptionData, DeriveWebSocketClient,
         DeriveWsChannel, DeriveWsCredentials, DeriveWsError, DeriveWsExecutionHandle,
         DeriveWsMessage, OrderIdentity, WsDispatchState,
+        client::{ReconnectSocket, ReconnectWindow},
         dispatch::{OrderBinding, ReplaceCompletion},
         parse::parse_ticker_quote_from_rest,
     },
 };
 
+const DERIVE_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
+    OrderType::Market,
+    OrderType::Limit,
+    OrderType::StopMarket,
+    OrderType::StopLimit,
+    OrderType::MarketIfTouched,
+    OrderType::LimitIfTouched,
+];
+
 const DERIVE_PRIVATE_PAGE_SIZE: u32 = 500;
 const CANCEL_ON_DISCONNECT_CONFIRMATION_TIMEOUT: Duration = Duration::from_secs(30);
+const RECONNECT_HISTORY_OVERLAP: DurationNanos = DurationNanos::from_mins(1);
 
 /// Live execution client for Derive.
 ///
@@ -162,6 +174,7 @@ pub struct DeriveExecutionClient {
     http_client: DeriveHttpClient,
     ws_client: DeriveWebSocketClient,
     ws_exec: DeriveWsExecutionHandle,
+    instrument_subscription: Option<InstrumentSubscription>,
     instruments: Arc<AtomicMap<InstrumentId, Arc<DeriveInstrument>>>,
     nonce_manager: Arc<NonceManager>,
     signing: SigningContext,
@@ -172,6 +185,7 @@ pub struct DeriveExecutionClient {
     shutdown_errors: Vec<String>,
     dispatch_state: Arc<WsDispatchState>,
     reconciliation_request: Mutex<Option<ReconciliationSnapshotRequest>>,
+    reconciliation_lookback: Arc<OnceLock<Option<DurationNanos>>>,
 }
 
 impl DeriveExecutionClient {
@@ -226,9 +240,13 @@ impl DeriveExecutionClient {
         )
         .context("failed to create Derive HTTP client")?;
 
-        let ws_client = create_ws_client(&config, &credential)?.with_socket_control(
-            SocketControl::new(core.client_id, Some(*DERIVE_VENUE), "derive-user-streams"),
-        );
+        let ws_client = create_ws_client(&config, &credential)?
+            .with_socket_control(SocketControl::new(
+                core.client_id,
+                Some(*DERIVE_VENUE),
+                "derive-user-streams",
+            ))
+            .with_execution_recovery();
 
         // The handle shares the client's command channel, which survives the
         // reconnect swap, so it stays valid for the client's lifetime.
@@ -264,6 +282,7 @@ impl DeriveExecutionClient {
             http_client,
             ws_client,
             ws_exec,
+            instrument_subscription: None,
             instruments: Arc::new(AtomicMap::new()),
             nonce_manager: Arc::new(NonceManager::new()),
             signing,
@@ -274,6 +293,7 @@ impl DeriveExecutionClient {
             shutdown_errors: Vec::new(),
             dispatch_state,
             reconciliation_request: Mutex::new(None),
+            reconciliation_lookback: Arc::new(OnceLock::new()),
         })
     }
 
@@ -303,13 +323,21 @@ impl DeriveExecutionClient {
     ///
     /// Returns an error if instrument identity or price and size increments are invalid.
     pub fn cache_instrument(&self, instrument: DeriveInstrument) -> anyhow::Result<()> {
-        let instrument_id = self.register_instrument_precision(&instrument)?;
-        self.instruments.insert(instrument_id, Arc::new(instrument));
+        Self::cache_execution_instrument(&self.instruments, &self.dispatch_state, instrument)
+    }
+
+    fn cache_execution_instrument(
+        instruments: &AtomicMap<InstrumentId, Arc<DeriveInstrument>>,
+        dispatch_state: &WsDispatchState,
+        instrument: DeriveInstrument,
+    ) -> anyhow::Result<()> {
+        let instrument_id = Self::register_instrument_precision(dispatch_state, &instrument)?;
+        instruments.insert(instrument_id, Arc::new(instrument));
         Ok(())
     }
 
     fn register_instrument_precision(
-        &self,
+        dispatch_state: &WsDispatchState,
         instrument: &DeriveInstrument,
     ) -> anyhow::Result<InstrumentId> {
         let instrument_id = format_instrument_id(instrument.instrument_name)?;
@@ -327,7 +355,7 @@ impl DeriveExecutionClient {
         let size_increment =
             Quantity::from_decimal_dp(instrument.amount_step, instrument.amount_step.scale() as u8)
                 .context("invalid Derive amount_step")?;
-        self.dispatch_state.register_instrument_precision(
+        dispatch_state.register_instrument_precision(
             instrument_id,
             price_increment.precision,
             size_increment.precision,
@@ -405,7 +433,8 @@ impl DeriveExecutionClient {
         let result: anyhow::Result<()> = (|| {
             for instrument in &instruments {
                 let definition = Self::native_instrument(instrument)?;
-                let instrument_id = self.register_instrument_precision(&definition)?;
+                let instrument_id =
+                    Self::register_instrument_precision(&self.dispatch_state, &definition)?;
                 pending.push((instrument_id, Arc::new(definition)));
             }
 
@@ -422,7 +451,11 @@ impl DeriveExecutionClient {
         Ok(())
     }
 
-    async fn initialize_portfolio(&self) -> anyhow::Result<()> {
+    // LiveNode caches emitted instruments only after connect returns, so do not wait for them here
+    async fn initialize_portfolio(
+        &self,
+        emitted: &mut AHashSet<InstrumentId>,
+    ) -> anyhow::Result<()> {
         let snapshot = self
             .http_client
             .get_subaccount(&DeriveGetSubaccountParams::new(self.subaccount_id()))
@@ -465,11 +498,9 @@ impl DeriveExecutionClient {
 
         let mut names: Vec<_> = names.into_iter().collect();
         names.sort_unstable();
-        let mut required = Vec::with_capacity(names.len());
         for name in names {
             let id = format_instrument_id(name)?;
-            required.push(id);
-            if self.core.cache().instrument(&id).is_some() {
+            if emitted.contains(&id) || self.core.cache().instrument(&id).is_some() {
                 continue;
             }
 
@@ -490,36 +521,13 @@ impl DeriveExecutionClient {
                 .map_err(|e| {
                     anyhow::anyhow!("Failed to publish required Derive instrument {id}: {e}")
                 })?;
+
+            emitted.insert(id);
         }
 
-        self.await_instruments_registered(&required).await?;
         self.await_account_registered(DERIVE_ACCOUNT_REGISTRATION_TIMEOUT_SECS)
             .await?;
         Ok(())
-    }
-
-    async fn await_instruments_registered(&self, required: &[InstrumentId]) -> anyhow::Result<()> {
-        let started = Instant::now();
-        let timeout = Duration::from_secs_f64(DERIVE_ACCOUNT_REGISTRATION_TIMEOUT_SECS);
-
-        loop {
-            if required
-                .iter()
-                .all(|id| self.core.cache().instrument(id).is_some())
-            {
-                return Ok(());
-            }
-
-            anyhow::ensure!(
-                started.elapsed() < timeout,
-                "Timeout waiting for required Derive instruments to be registered"
-            );
-            time::sleep(Duration::from_millis(10)).await;
-        }
-    }
-
-    fn cache_native_instrument(&self, instrument: &InstrumentAny) -> anyhow::Result<()> {
-        self.cache_instrument(Self::native_instrument(instrument)?)
     }
 
     fn native_instrument(instrument: &InstrumentAny) -> anyhow::Result<DeriveInstrument> {
@@ -552,6 +560,7 @@ impl DeriveExecutionClient {
             terminal_revision,
             report_observations: None,
             load_ids: self.config.load_ids.clone(),
+            reconnect_position_instruments: AHashSet::new(),
         }
     }
 
@@ -623,7 +632,12 @@ impl DeriveExecutionClient {
     }
 
     fn validate_order(&self, order: &OrderAny) -> anyhow::Result<()> {
-        if is_derive_trigger_order_type(order.order_type()) {
+        let order_type = order.order_type();
+        if !DERIVE_SUPPORTED_ORDER_TYPES.contains(&order_type) {
+            anyhow::bail!(OrderDeniedReason::UnsupportedOrderType { order_type });
+        }
+
+        if is_derive_trigger_order_type(order_type) {
             validate_trigger_order_support(order)?;
         } else {
             validate_order_support(order)?;
@@ -813,6 +827,25 @@ impl DeriveExecutionClient {
         }
     }
 
+    async fn finish_ws_startup(
+        &self,
+        rx: tokio::sync::mpsc::UnboundedReceiver<DeriveWsMessage>,
+        emitted_instruments: &mut AHashSet<InstrumentId>,
+    ) -> anyhow::Result<()> {
+        self.initialize_portfolio(emitted_instruments)
+            .await
+            .context("failed subscribed Derive portfolio refresh")?;
+        anyhow::ensure!(
+            self.ws_client.wait_for_authenticated_session().await,
+            "Derive execution WebSocket session unavailable at startup"
+        );
+
+        self.core.set_connected();
+        self.is_connected.store(true, Ordering::Release);
+        self.start_ws_dispatch(rx)
+            .context("failed to register Derive execution WebSocket dispatch task")
+    }
+
     fn start_ws_dispatch(
         &self,
         rx: tokio::sync::mpsc::UnboundedReceiver<DeriveWsMessage>,
@@ -822,7 +855,9 @@ impl DeriveExecutionClient {
         let clock = self.clock;
         let cancellation = self.cancellation_token.clone();
         let dispatch_state = self.dispatch_state.clone();
-        let reconciliation = self.reconciliation_context();
+        let mut reconciliation = self.reconciliation_context();
+        reconciliation.reconnect_position_instruments =
+            reconnect_position_instruments(&self.core, reconciliation.load_ids.as_deref());
         let timeout = self
             .config
             .ws_timeout_secs
@@ -836,6 +871,25 @@ impl DeriveExecutionClient {
         );
         *self.reconciliation_request.lock() = request.clone();
         let is_connected = Arc::clone(&self.is_connected);
+        let reconnect = Arc::new(tokio::sync::Notify::new());
+        let socket = self
+            .ws_client
+            .reconnect_socket()
+            .context("missing Derive reconnect socket")?;
+
+        if socket.pending().is_some() {
+            reconnect.notify_one();
+        }
+
+        self.session_tasks.spawn(run_reconnect_recovery(
+            Arc::clone(&reconnect),
+            cancellation.clone(),
+            request,
+            reconciliation.clone(),
+            Arc::clone(&self.reconciliation_lookback),
+            socket,
+        ))?;
+
         let session_spawner = self
             .session_tasks
             .spawner()
@@ -851,33 +905,12 @@ impl DeriveExecutionClient {
                     maybe = rx.recv() => {
                         match maybe {
                             Some(DeriveWsMessage::Reconnected) => {
-                                let context = reconciliation.clone();
-                                let request = request.clone();
-                                let task_cancellation = cancellation.clone();
-
-                                if let Err(e) = session_spawner.spawn(async move {
-                                    tokio::select! {
-                                        biased;
-                                        () = task_cancellation.cancelled() => {}
-                                        result = async {
-                                            let (context, ts_init) = match request {
-                                                Some(request) => request.snapshot().await?,
-                                                None => (context, clock.get_time_ns()),
-                                            };
-                                            context.recover_after_reconnect(ts_init).await
-                                        } => {
-                                            if result.is_err() {
-                                                log::warn!("Derive post-reconnect recovery failed");
-                                            }
-                                        }
-                                    }
-                                }) {
-                                    log::warn!("Skipping Derive reconnect recovery after shutdown began: {e}");
-                                }
+                                reconnect.notify_one();
                             }
                             Some(DeriveWsMessage::SessionRecoveryFailed(_)) => {
-                                is_connected.store(false, Ordering::Release);
                                 log::error!("Derive execution WebSocket recovery failed");
+                                cancellation.cancel();
+                                break;
                             }
                             Some(DeriveWsMessage::Subscription(payload))
                                 if payload.channel == DeriveWsChannel::balances(dispatch_state.subaccount_id()).to_string() =>
@@ -912,11 +945,12 @@ impl DeriveExecutionClient {
                 }
             }
 
-            is_connected.store(false, Ordering::Release);
-
             if !cancellation.is_cancelled() {
                 log::warn!("Derive execution WebSocket stream ended unexpectedly");
+                cancellation.cancel();
             }
+
+            is_connected.store(false, Ordering::Release);
         })?;
 
         Ok(())
@@ -964,6 +998,35 @@ impl DeriveExecutionClient {
         }
 
         Some(cancels)
+    }
+}
+
+impl DeriveExecutionClient {
+    fn subscribe_instruments(&mut self) {
+        if self.instrument_subscription.is_some() {
+            return;
+        }
+
+        let instruments = Arc::clone(&self.instruments);
+        let dispatch_state = Arc::clone(&self.dispatch_state);
+        self.instrument_subscription = Some(InstrumentSubscription::new(
+            get_instruments_pattern(self.venue()),
+            TypedHandler::from(move |instrument: &InstrumentAny| {
+                Self::apply_instrument(&instruments, &dispatch_state, instrument);
+            }),
+        ));
+    }
+
+    fn apply_instrument(
+        instruments: &AtomicMap<InstrumentId, Arc<DeriveInstrument>>,
+        dispatch_state: &WsDispatchState,
+        instrument: &InstrumentAny,
+    ) {
+        if let Err(e) = Self::native_instrument(instrument).and_then(|native| {
+            Self::cache_execution_instrument(instruments, dispatch_state, native)
+        }) {
+            log::warn!("Cannot cache Derive instrument {}: {e:#}", instrument.id());
+        }
     }
 }
 
@@ -1074,6 +1137,8 @@ impl ExecutionClient for DeriveExecutionClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         self.emitter.set_sender(get_exec_event_sender());
         self.restore_active_orders();
         flush_pending_delivery(
@@ -1101,6 +1166,8 @@ impl ExecutionClient for DeriveExecutionClient {
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         if self.core.is_stopped()
             && self.cancellation_token.is_cancelled()
             && !self.session_tasks.is_open()
@@ -1132,6 +1199,8 @@ impl ExecutionClient for DeriveExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         if self.is_connected()
             && !self.cancellation_token.is_cancelled()
             && self.session_tasks.is_open()
@@ -1168,7 +1237,8 @@ impl ExecutionClient for DeriveExecutionClient {
         self.ensure_instruments_initialized()
             .await
             .context("failed to initialize Derive instruments")?;
-        self.initialize_portfolio()
+        let mut emitted_instruments = AHashSet::new();
+        self.initialize_portfolio(&mut emitted_instruments)
             .await
             .context("failed initial Derive account state refresh")?;
         self.restore_active_orders();
@@ -1209,7 +1279,7 @@ impl ExecutionClient for DeriveExecutionClient {
             DeriveWsChannel::balances(subaccount_id),
         ];
 
-        if let Err(e) = self.ws_client.subscribe_channels(channels).await {
+        if let Err(e) = self.ws_client.subscribe_initial_channels(channels).await {
             log::warn!(
                 "Derive private WS subscriptions failed: {}; tearing down",
                 e.redacted_message()
@@ -1224,22 +1294,16 @@ impl ExecutionClient for DeriveExecutionClient {
             return Err(anyhow::Error::new(e).context("failed Derive private WS subscriptions"));
         }
 
-        self.initialize_portfolio()
-            .await
-            .context("failed subscribed Derive portfolio refresh")?;
-
-        if let Err(e) = self.start_ws_dispatch(rx) {
+        if let Err(e) = self.finish_ws_startup(rx, &mut emitted_instruments).await {
             if let Err(teardown_error) = self.teardown_partial_connect().await {
                 return Err(e.context(format!(
                     "Derive execution startup teardown failed: {teardown_error}"
                 )));
             }
 
-            return Err(e.context("failed to register Derive execution WebSocket dispatch task"));
+            return Err(e);
         }
 
-        self.core.set_connected();
-        self.is_connected.store(true, Ordering::Release);
         setup_guard.disarm();
         log::info!(
             "Connected Derive execution client ({:?})",
@@ -1269,9 +1333,7 @@ impl ExecutionClient for DeriveExecutionClient {
     }
 
     fn on_instrument(&mut self, instrument: InstrumentAny) {
-        if let Err(e) = self.cache_native_instrument(&instrument) {
-            log::warn!("Cannot cache Derive instrument {}: {e:#}", instrument.id());
-        }
+        Self::apply_instrument(&self.instruments, &self.dispatch_state, &instrument);
     }
 
     fn generate_order_status_report_task(
@@ -1365,10 +1427,16 @@ impl ExecutionClient for DeriveExecutionClient {
         &self,
         lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
+        let lookback = lookback_mins
+            .map(DurationNanos::try_from_mins)
+            .transpose()?;
+        // The node supplies its startup policy before any on-demand mass status requests
+        self.reconciliation_lookback.get_or_init(|| lookback);
         let ts_init = self.clock.get_time_ns();
+        log::info!("Generating ExecutionMassStatus (lookback_mins={lookback_mins:?})");
         Box::pin(
             self.reconciliation_context()
-                .generate_mass_status(lookback_mins, ts_init, true),
+                .generate_mass_status(lookback, ts_init, true),
         )
         .await
         .map(Some)
@@ -2176,6 +2244,7 @@ impl ExecutionClient for DeriveExecutionClient {
         let stale_venue_order_id = venue_order_id;
         let account_id = self.core.account_id;
         let voi_str = venue_order_id.to_string();
+        let command_id = cmd.command_id;
 
         {
             let _delivery = dispatch_state.delivery_guard();
@@ -2196,6 +2265,14 @@ impl ExecutionClient for DeriveExecutionClient {
             dispatch_state.record_modify_target(client_order_id, target_quantity, target_price);
         }
 
+        let mut unsent = UnsentModify {
+            command: Some(cmd),
+            venue_order_id,
+            dispatch_state: Arc::clone(&dispatch_state),
+            emitter: emitter.clone(),
+            clock,
+        };
+
         self.spawn_task("modify_order", async move {
             let instrument = match cached_or_fetch_instrument(
                 &http_client,
@@ -2208,19 +2285,7 @@ impl ExecutionClient for DeriveExecutionClient {
                 Ok(i) => i,
                 Err(e) => {
                     let reason = format!("instrument resolution failed: {e}");
-                    log::warn!("Cannot modify order {client_order_id}: {reason}");
-                    let ts = clock.get_time_ns();
-                    emit_modify_failure(
-                        &emitter,
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        Some(stale_venue_order_id),
-                        CommandFailure::not_sent(&reason),
-                        ts,
-                        Some(cmd.command_id),
-                    );
-                    dispatch_state.clear_pending_modify(&client_order_id);
+                    unsent.reject(&reason);
                     return Ok(());
                 }
             };
@@ -2232,19 +2297,7 @@ impl ExecutionClient for DeriveExecutionClient {
                 Ok(reservation) => reservation,
                 Err(e) => {
                     let (reason, _) = ws_rejection_reason(&e);
-                    log::warn!("Cannot reserve Derive replace quota for {client_order_id}: {reason}");
-                    let ts = clock.get_time_ns();
-                    emit_modify_failure(
-                        &emitter,
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        Some(stale_venue_order_id),
-                        CommandFailure::not_sent(&reason),
-                        ts,
-                        Some(cmd.command_id),
-                    );
-                    dispatch_state.clear_pending_modify(&client_order_id);
+                    unsent.reject(&reason);
                     return Ok(());
                 }
             };
@@ -2259,18 +2312,7 @@ impl ExecutionClient for DeriveExecutionClient {
             let (remaining_amount, expected_filled_amount) = match replacement_amounts(&http_client, &dispatch_state, client_order_id, identity, stale_venue_order_id, target_quantity.as_decimal()).await {
                 Ok(amounts) => amounts,
                 Err(e) => {
-                    log::warn!("Cannot prepare Derive replace for {client_order_id}: {e:#}");
-                    emit_modify_failure(
-                        &emitter,
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        Some(stale_venue_order_id),
-                        CommandFailure::not_sent(e.to_string()),
-                        clock.get_time_ns(),
-                        Some(cmd.command_id),
-                    );
-                    dispatch_state.clear_pending_modify(&client_order_id);
+                    unsent.reject(&e.to_string());
                     return Ok(());
                 }
             };
@@ -2279,38 +2321,13 @@ impl ExecutionClient for DeriveExecutionClient {
                 Ok(expiry) => expiry,
                 Err(e) => {
                     let reason = format!("replace expiry validation failed: {e}");
-                    log::warn!("Cannot modify order {client_order_id}: {reason}");
-                    let ts = clock.get_time_ns();
-                    emit_modify_failure(
-                        &emitter,
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        Some(stale_venue_order_id),
-                        CommandFailure::not_sent(&reason),
-                        ts,
-                        Some(cmd.command_id),
-                    );
-                    dispatch_state.clear_pending_modify(&client_order_id);
+                    unsent.reject(&reason);
                     return Ok(());
                 }
             };
 
-            let nonce = match resolve_modify_nonce(
-                nonce_manager.next_nonce(&wallet_str, signing.subaccount_id),
-                &emitter,
-                strategy_id,
-                instrument_id,
-                client_order_id,
-                stale_venue_order_id,
-                clock,
-                Some(cmd.command_id),
-            ) {
-                Some(nonce) => nonce,
-                None => {
-                    dispatch_state.clear_pending_modify(&client_order_id);
-                    return Ok(());
-                }
+            let Some(nonce) = unsent.resolve_nonce(nonce_manager.next_nonce(&wallet_str, signing.subaccount_id)) else {
+                return Ok(());
             };
 
             let mut payload = match order_replace_to_derive_payload(
@@ -2332,19 +2349,7 @@ impl ExecutionClient for DeriveExecutionClient {
                 Ok(p) => p,
                 Err(e) => {
                     let reason = format!("replace encoding failed: {e}");
-                    log::warn!("Cannot modify order {client_order_id}: {reason}");
-                    let ts = clock.get_time_ns();
-                    emit_modify_failure(
-                        &emitter,
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        Some(stale_venue_order_id),
-                        CommandFailure::not_sent(&reason),
-                        ts,
-                        Some(cmd.command_id),
-                    );
-                    dispatch_state.clear_pending_modify(&client_order_id);
+                    unsent.reject(&reason);
                     return Ok(());
                 }
             };
@@ -2352,15 +2357,13 @@ impl ExecutionClient for DeriveExecutionClient {
             payload.expected_filled_amount = Some(expected_filled_amount);
             enable_resting_order_mmp(&mut payload.order, cancel_on_disconnect);
 
-            {
-                let _delivery = dispatch_state.delivery_guard();
-                dispatch_state.record_modify_nonce(client_order_id, nonce);
-            }
-
             let outcome = ws_exec
-                .modify_order_after_rate_limit(&payload, matching_reservation)
+                .modify_order_after_rate_limit(&payload, matching_reservation, || {
+                    unsent.record_nonce(client_order_id, nonce);
+                })
                 .await;
 
+            unsent.disarm();
             let _delivery = dispatch_state.delivery_guard();
 
             match outcome.map_err(|e| ws_command_failure(&e)) {
@@ -2408,7 +2411,7 @@ impl ExecutionClient for DeriveExecutionClient {
                         Some(stale_venue_order_id),
                         failure,
                         ts,
-                        Some(cmd.command_id),
+                        Some(command_id),
                     );
                 }
             }
@@ -2633,9 +2636,15 @@ impl Drop for DeriveExecutionClient {
 #[derive(Debug, Clone)]
 struct ReconciliationSnapshotRequest {
     sender: Arc<dyn TimeEventSender>,
-    next: Arc<Mutex<Option<PendingReconciliationSnapshot>>>,
+    slot: Arc<ReconciliationSnapshotSlot>,
     cancellation: CancellationToken,
     timeout: Duration,
+}
+
+#[derive(Debug, Default)]
+struct ReconciliationSnapshotSlot {
+    next: Mutex<Option<PendingReconciliationSnapshot>>,
+    armed: tokio::sync::Notify,
 }
 
 #[derive(Debug)]
@@ -2653,7 +2662,7 @@ impl ReconciliationSnapshotRequest {
     ) -> Option<Self> {
         let request = Self {
             sender: try_get_time_event_sender()?,
-            next: Arc::new(Mutex::new(None)),
+            slot: Arc::new(ReconciliationSnapshotSlot::default()),
             cancellation,
             timeout,
         };
@@ -2664,7 +2673,8 @@ impl ReconciliationSnapshotRequest {
 
     fn arm(&self, core: ExecutionClientCore, mut template: DeriveReconciliationContext) {
         template.orders = AHashMap::new();
-        let next = Arc::downgrade(&self.next);
+        template.reconnect_position_instruments.clear();
+        let slot = Arc::downgrade(&self.slot);
         let sender = Arc::clone(&self.sender);
         let cancellation = self.cancellation.clone();
         let timeout = self.timeout;
@@ -2677,7 +2687,7 @@ impl ReconciliationSnapshotRequest {
                 return;
             }
 
-            let Some(next) = next.upgrade() else {
+            let Some(slot) = slot.upgrade() else {
                 return;
             };
 
@@ -2687,10 +2697,12 @@ impl ReconciliationSnapshotRequest {
             let mut context = template.clone();
             context.orders = orders;
             context.terminal_revision = terminal_revision;
+            context.reconnect_position_instruments =
+                reconnect_position_instruments(&core, context.load_ids.as_deref());
 
             let request = Self {
                 sender: Arc::clone(&sender),
-                next,
+                slot,
                 cancellation: cancellation.clone(),
                 timeout,
             };
@@ -2711,28 +2723,37 @@ impl ReconciliationSnapshotRequest {
             ),
             callback,
         );
-        *self.next.lock() = Some(PendingReconciliationSnapshot { message, result });
+
+        *self.slot.next.lock() = Some(PendingReconciliationSnapshot { message, result });
+        self.slot.armed.notify_one();
     }
 
     async fn snapshot(&self) -> anyhow::Result<(DeriveReconciliationContext, UnixNanos)> {
-        let pending = self
-            .next
-            .lock()
-            .take()
-            .context("Derive cache snapshot refresh is already pending")?;
-        self.sender.send(pending.message);
+        let refresh = async {
+            let pending = loop {
+                if let Some(pending) = self.slot.next.lock().take() {
+                    break pending;
+                }
+
+                self.slot.armed.notified().await;
+            };
+
+            self.sender.send(pending.message);
+            pending
+                .result
+                .await
+                .context("Derive cache snapshot refresh stopped without a result")
+        };
+
         tokio::select! {
             biased;
             () = self.cancellation.cancelled() => anyhow::bail!("Derive cache snapshot refresh canceled"),
-            result = time::timeout(self.timeout, pending.result) => {
-                result.context("Derive cache snapshot refresh timed out")?
-                    .context("Derive cache snapshot refresh stopped without a result")
-            }
+            result = time::timeout(self.timeout, refresh) => result.context("Derive cache snapshot refresh timed out")?,
         }
     }
 
     fn close(&self) {
-        let pending = self.next.lock().take();
+        let pending = self.slot.next.lock().take();
         drop(pending);
     }
 }
@@ -2767,6 +2788,66 @@ fn cached_order_bindings(
     (orders, dispatch_state.terminal_revision())
 }
 
+fn reconnect_position_instruments(
+    core: &ExecutionClientCore,
+    load_ids: Option<&[InstrumentId]>,
+) -> AHashSet<InstrumentId> {
+    core.cache()
+        .positions_open(Some(&core.venue), None, None, Some(&core.account_id), None)
+        .into_iter()
+        .map(|position| position.instrument_id)
+        .filter(|id| load_ids.is_none_or(|ids| ids.is_empty() || ids.contains(id)))
+        .collect()
+}
+
+async fn run_reconnect_recovery(
+    reconnect: Arc<tokio::sync::Notify>,
+    cancellation: CancellationToken,
+    request: Option<ReconciliationSnapshotRequest>,
+    context: DeriveReconciliationContext,
+    lookback: Arc<OnceLock<Option<DurationNanos>>>,
+    socket: ReconnectSocket,
+) {
+    let recover = async {
+        loop {
+            reconnect.notified().await;
+
+            while let Some(window) = socket.pending() {
+                let snapshot = match &request {
+                    Some(request) => request.snapshot().await,
+                    None => Ok((context.clone(), context.clock.get_time_ns())),
+                };
+
+                let result = match snapshot {
+                    Ok((context, ts_init)) => {
+                        tokio::select! {
+                            biased;
+                            () = reconnect.notified() => continue,
+                            result = context.recover_after_reconnect(&lookback, &socket, window, ts_init) => result,
+                        }
+                    }
+                    Err(e) => Err(e),
+                };
+
+                if let Err(e) = result {
+                    log::warn!(
+                        "Derive post-reconnect recovery failed: {}",
+                        reconciliation_diagnostic(&e)
+                    );
+                }
+
+                break;
+            }
+        }
+    };
+
+    tokio::select! {
+        biased;
+        () = cancellation.cancelled() => {}
+        () = recover => {}
+    }
+}
+
 #[derive(Debug, Clone)]
 struct DeriveReconciliationContext {
     http_client: DeriveHttpClient,
@@ -2781,16 +2862,20 @@ struct DeriveReconciliationContext {
     terminal_revision: Arc<()>,
     report_observations: Option<Arc<Mutex<ReportObservations>>>,
     load_ids: Option<Vec<InstrumentId>>,
+    reconnect_position_instruments: AHashSet<InstrumentId>,
 }
 
 impl DeriveReconciliationContext {
     async fn refresh_account_state(&self) -> anyhow::Result<()> {
-        let value = self
-            .http_client
+        let value = self.fetch_account_snapshot().await?;
+        self.emit_account_snapshot(&value)
+    }
+
+    async fn fetch_account_snapshot(&self) -> anyhow::Result<DeriveSubaccount> {
+        self.http_client
             .get_subaccount(&DeriveGetSubaccountParams::new(self.subaccount_id))
             .await
-            .context("failed to fetch Derive subaccount snapshot")?;
-        self.emit_account_snapshot(&value)
+            .context("failed to fetch Derive subaccount snapshot")
     }
 
     fn emit_account_snapshot(&self, snapshot: &DeriveSubaccount) -> anyhow::Result<()> {
@@ -2802,17 +2887,50 @@ impl DeriveReconciliationContext {
         Ok(())
     }
 
-    async fn recover_after_reconnect(&self, ts_init: UnixNanos) -> anyhow::Result<()> {
-        self.refresh_account_state().await?;
-        let mass_status = Box::pin(self.generate_mass_status(None, ts_init, false)).await?;
+    async fn recover_after_reconnect(
+        &self,
+        lookback: &OnceLock<Option<DurationNanos>>,
+        socket: &ReconnectSocket,
+        window: ReconnectWindow,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<()> {
+        if !socket.is_active(window.epoch) {
+            return Ok(());
+        }
+
+        let account = self.fetch_account_snapshot().await?;
+
+        if !socket.is_active(window.epoch) {
+            return Ok(());
+        }
+
+        self.emit_account_snapshot(&account)?;
+        let start = window.start.saturating_sub(RECONNECT_HISTORY_OVERLAP);
+        let lookback = lookback
+            .get()
+            .copied()
+            .flatten()
+            .map(|lookback| lookback.max(ts_init.saturating_duration_since(start)));
+
+        let lookback_start = lookback.map(|lookback| ts_init.saturating_sub(lookback));
+        log::info!(
+            "Generating Derive reconnect ExecutionMassStatus (lookback_start={lookback_start:?})"
+        );
+        let mass_status = Box::pin(self.generate_mass_status(lookback, ts_init, false)).await?;
         let order_count = mass_status.order_reports().len();
         let fill_count: usize = mass_status.fill_reports().values().map(Vec::len).sum();
         let position_count = mass_status.position_reports().len();
-        self.emitter
-            .send_execution_report(ExecutionReport::MassStatus(Box::new(mass_status)));
-        log::info!(
-            "Derive post-reconnect reconciliation submitted: orders={order_count}, fills={fill_count}, positions={position_count}",
-        );
+
+        let complete = mass_status.reports_complete();
+        if socket.publish(window, complete, || {
+            self.emitter
+                .try_send_execution_report(ExecutionReport::MassStatus(Box::new(mass_status)))
+        })? {
+            log::info!(
+                "Derive post-reconnect reconciliation submitted: orders={order_count}, fills={fill_count}, positions={position_count}, complete={complete}",
+            );
+        }
+
         Ok(())
     }
 
@@ -3756,17 +3874,13 @@ impl DeriveReconciliationContext {
 
     async fn generate_mass_status(
         &self,
-        lookback_mins: Option<u64>,
+        lookback: Option<DurationNanos>,
         ts_now: UnixNanos,
-        recover_uncached: bool,
+        startup: bool,
     ) -> anyhow::Result<ExecutionMassStatus> {
         self.ensure_order_context()?;
-        log::info!("Generating ExecutionMassStatus (lookback_mins={lookback_mins:?})");
-
-        let start = lookback_mins
-            .map(DurationNanos::try_from_mins)
-            .transpose()?
-            .map(|lookback| ts_now.saturating_sub(lookback));
+        let start = lookback.map(|lookback| ts_now.saturating_sub(lookback));
+        let allow_partial = startup && start.is_some();
 
         let open_order_cmd = GenerateOrderStatusReports::new(
             UUID4::new(),
@@ -3817,11 +3931,11 @@ impl DeriveReconciliationContext {
                         records_complete: true,
                     })
             },
-            self.generate_fill_reports(fill_cmd, recover_uncached),
+            self.generate_fill_reports(fill_cmd, startup),
             self.generate_position_status_snapshot(&position_cmd),
         );
-        let history = collect_mass_reports(history, "order history", start.is_some())?;
-        let open = collect_mass_reports(open, "open orders", start.is_some())?;
+        let history = collect_mass_reports(history, "order history", allow_partial)?;
+        let open = collect_mass_reports(open, "open orders", allow_partial)?;
 
         let fills = match fills {
             Err(e)
@@ -3832,25 +3946,13 @@ impl DeriveReconciliationContext {
                     )
                 }) =>
             {
-                return Err(e);
+                return Err(reconnect_source_error(e, startup, "Derive fill history"));
             }
-            other => collect_mass_reports(other, "fill history", start.is_some())?,
+            other => collect_mass_reports(other, "fill history", allow_partial)?,
         };
 
-        let positions_complete = positions.is_ok();
-
-        let position_snapshot = match positions {
-            Ok(snapshot) => snapshot,
-            Err(e) if start.is_some() && e.is::<DeriveHttpError>() => {
-                log::warn!("Derive position source failed: {e:#}");
-
-                PositionStatusSnapshot {
-                    reports: Vec::new(),
-                    instruments: AHashSet::new(),
-                }
-            }
-            Err(e) => return Err(e),
-        };
+        let (position_snapshot, positions_complete) =
+            PositionStatusSnapshot::for_mass_status(positions, allow_partial)?;
 
         let mut records_complete = history.records_complete
             && open.records_complete
@@ -3864,13 +3966,9 @@ impl DeriveReconciliationContext {
             .map(|report| report.venue_order_id)
             .collect();
         let companions = self
-            .collect_companion_order_records(
-                &history,
-                &open.reports,
-                &fill_reports,
-                start.is_some(),
-            )
-            .await?;
+            .collect_companion_order_records(&history, &open.reports, &fill_reports, allow_partial)
+            .await
+            .map_err(|e| reconnect_source_error(e, startup, "Derive fill companion orders"))?;
         reports_complete &= companions.complete;
         records_complete &= companions.records_complete;
         let ambiguous_client_order_ids = ambiguous_history_client_order_ids(
@@ -3896,7 +3994,7 @@ impl DeriveReconciliationContext {
             .collect();
 
         anyhow::ensure!(
-            !recover_uncached
+            !startup
                 || !open.reports.iter().any(|order| {
                     (order.replaced_order_id.is_some()
                         && ambiguous_client_order_ids.contains(&order.label)
@@ -3920,7 +4018,7 @@ impl DeriveReconciliationContext {
                 &ambiguous_client_order_ids,
                 false,
                 &ancestors,
-                recover_uncached,
+                startup,
             ),
             self.generate_order_status_reports_from_records(
                 &open_order_cmd,
@@ -3928,7 +4026,7 @@ impl DeriveReconciliationContext {
                 &ambiguous_open_client_order_ids,
                 false,
                 &ancestors,
-                recover_uncached,
+                startup,
             ),
             self.generate_order_status_reports_from_records(
                 &history_order_cmd,
@@ -3936,17 +4034,18 @@ impl DeriveReconciliationContext {
                 &ambiguous_client_order_ids,
                 true,
                 &ancestors,
-                recover_uncached,
+                startup,
             ),
         );
-        let history = collect_mass_reports(history, "order history", start.is_some())?;
-        let open = collect_mass_reports(open, "open orders", start.is_some())?;
-        let companions = companions?;
+        let history = collect_mass_reports(history, "order history", allow_partial)?;
+        let open = collect_mass_reports(open, "open orders", allow_partial)?;
+        let companions = companions
+            .map_err(|e| reconnect_source_error(e, startup, "Derive fill companion reports"))?;
         reports_complete &= history.complete && open.complete && companions.complete;
         records_complete &=
             history.records_complete && open.records_complete && companions.records_complete;
         anyhow::ensure!(
-            !recover_uncached
+            !startup
                 || records_complete
                 || !ancestors.iter().any(|order| {
                     order.replaced_order_id.is_some()
@@ -3963,13 +4062,14 @@ impl DeriveReconciliationContext {
         );
         let open_order_reports = open.reports;
 
-        if recover_uncached
+        if startup
             && let Some(earliest) =
                 self.replacement_lookback_start(start, &open_order_reports, &ancestors)
         {
-            let lookback = ts_now.saturating_duration_since(earliest).as_mins() + 1;
-            return Box::pin(self.generate_mass_status(Some(lookback), ts_now, recover_uncached))
-                .await;
+            let lookback = DurationNanos::try_from_mins(
+                ts_now.saturating_duration_since(earliest).as_mins() + 1,
+            )?;
+            return Box::pin(self.generate_mass_status(Some(lookback), ts_now, startup)).await;
         }
 
         let (mut history_order_reports, retained_companion_reports): (Vec<_>, Vec<_>) = history
@@ -4007,8 +4107,8 @@ impl DeriveReconciliationContext {
         }
 
         anyhow::ensure!(
-            start.is_some() || records_complete,
-            "incomplete unbounded Derive report coverage"
+            allow_partial || records_complete,
+            "incomplete Derive report coverage"
         );
 
         let detached_order_ids: AHashSet<VenueOrderId> = history_order_reports
@@ -4038,7 +4138,7 @@ impl DeriveReconciliationContext {
             position_snapshot.reports.len()
         );
 
-        let mut touched_instruments = AHashSet::new();
+        let mut touched_instruments = self.reconnect_position_instruments.clone();
         for report in history_order_reports
             .iter()
             .chain(open_order_reports.iter())
@@ -4056,7 +4156,7 @@ impl DeriveReconciliationContext {
         } = position_snapshot;
         let mut mass_status =
             ExecutionMassStatus::new(self.client_id, self.account_id, *DERIVE_VENUE, ts_now, None);
-        mass_status.set_report_window(start, reports_complete || start.is_none());
+        mass_status.set_report_window(start, reports_complete || (startup && start.is_none()));
 
         let order_reports = deduplicate_order_status_reports(
             history_order_reports
@@ -4065,7 +4165,7 @@ impl DeriveReconciliationContext {
                 .collect(),
         )?;
 
-        if recover_uncached {
+        if startup {
             self.ensure_replacement_fills(&order_reports, &fill_reports, &ancestors)?;
         }
 
@@ -4224,17 +4324,16 @@ impl DeriveReconciliationContext {
                                 }) =>
                         {
                             if !allow_partial {
-                                return Err(
-                                    e.context("incomplete unbounded Derive report coverage")
-                                );
+                                return Err(e.context("incomplete Derive report coverage"));
                             }
 
                             records_complete = false;
                             queried_orders.insert(fill.venue_order_id, None);
                             log::warn!(
-                                "Derive fill companion {} on {} is unavailable: {e:#}",
+                                "Derive fill companion {} on {} is unavailable: {}",
                                 fill.venue_order_id,
                                 fill.instrument_id,
+                                reconciliation_diagnostic(&e),
                             );
                             continue;
                         }
@@ -4766,13 +4865,19 @@ fn collect_mass_reports<T>(
 ) -> anyhow::Result<CollectedReports<T>> {
     match result {
         Ok(collection) => Ok(collection),
+        Err(e) if !allow_partial && e.is::<DeriveHttpError>() => {
+            Err(e.context(format!("failed to fetch Derive {source}")))
+        }
         Err(e)
             if !allow_partial || e.is::<CommissionError>() || e.is::<UnresolvedOrderBinding>() =>
         {
             Err(e)
         }
         Err(e) => {
-            log::warn!("Derive {source} source failed: {e:#}");
+            log::warn!(
+                "Derive {source} source failed: {}",
+                reconciliation_diagnostic(&e)
+            );
             Ok(CollectedReports {
                 reports: Vec::new(),
                 complete: false,
@@ -4782,9 +4887,61 @@ fn collect_mass_reports<T>(
     }
 }
 
+fn reconnect_source_error(e: anyhow::Error, startup: bool, source: &str) -> anyhow::Error {
+    if startup {
+        e
+    } else {
+        e.context(format!("failed to collect {source}"))
+    }
+}
+
+fn reconciliation_diagnostic(e: &anyhow::Error) -> String {
+    let mut messages = Vec::new();
+
+    for cause in e.chain() {
+        if let Some(e) = cause.downcast_ref::<DeriveHttpError>() {
+            messages.push(e.redacted_message());
+            break;
+        }
+
+        messages.push(cause.to_string());
+    }
+
+    messages.join(": ")
+}
+
 struct PositionStatusSnapshot {
     reports: Vec<PositionStatusReport>,
     instruments: AHashSet<InstrumentId>,
+}
+
+impl PositionStatusSnapshot {
+    fn for_mass_status(
+        result: anyhow::Result<Self>,
+        allow_partial: bool,
+    ) -> anyhow::Result<(Self, bool)> {
+        match result {
+            Ok(snapshot) => Ok((snapshot, true)),
+            Err(e) if !allow_partial && e.is::<DeriveHttpError>() => {
+                Err(e.context("failed to fetch Derive positions"))
+            }
+            Err(e) if allow_partial && e.is::<DeriveHttpError>() => {
+                log::warn!(
+                    "Derive position source failed: {}",
+                    reconciliation_diagnostic(&e)
+                );
+
+                Ok((
+                    Self {
+                        reports: Vec::new(),
+                        instruments: AHashSet::new(),
+                    },
+                    false,
+                ))
+            }
+            Err(e) => Err(e),
+        }
+    }
 }
 
 fn ws_command_failure(error: &DeriveWsError) -> (CommandFailure, bool) {
@@ -4918,9 +5075,11 @@ fn ws_rejection_reason(error: &DeriveWsError) -> (String, bool) {
             derive_rejection_due_post_only(Some(*code), message),
         ),
         DeriveWsError::NotConnected => ("WebSocket client is not connected".to_string(), false),
-        DeriveWsError::Auth(_) | DeriveWsError::Authentication { .. } => {
-            ("Session authentication failed".to_string(), false)
-        }
+        DeriveWsError::Auth(_) => ("Session authentication failed".to_string(), false),
+        DeriveWsError::Authentication { .. } => (
+            "WebSocket execution session is unavailable".to_string(),
+            false,
+        ),
         DeriveWsError::MissingCredentials { .. } => {
             ("Session credentials are missing".to_string(), false)
         }
@@ -6426,37 +6585,69 @@ fn resolve_submit_nonce(
     }
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Failure emission retains order identity and command correlation"
-)]
-fn resolve_modify_nonce(
-    nonce: Result<u64, NonceError>,
-    emitter: &ExecutionEventEmitter,
-    strategy_id: StrategyId,
-    instrument_id: InstrumentId,
-    client_order_id: ClientOrderId,
+struct UnsentModify {
+    command: Option<ModifyOrder>,
     venue_order_id: VenueOrderId,
+    dispatch_state: Arc<WsDispatchState>,
+    emitter: ExecutionEventEmitter,
     clock: &'static AtomicTime,
-    causation_id: Option<UUID4>,
-) -> Option<u64> {
-    match nonce {
-        Ok(nonce) => Some(nonce),
-        Err(e) => {
-            let reason = format!("nonce allocation failed: {e}");
-            log::warn!("Cannot modify order {client_order_id}: {reason}");
-            emit_modify_failure(
-                emitter,
-                strategy_id,
-                instrument_id,
-                client_order_id,
-                Some(venue_order_id),
-                CommandFailure::not_sent(&reason),
-                clock.get_time_ns(),
-                causation_id,
-            );
-            None
+}
+
+impl UnsentModify {
+    fn resolve_nonce(&mut self, nonce: Result<u64, NonceError>) -> Option<u64> {
+        match nonce {
+            Ok(nonce) => Some(nonce),
+            Err(e) => {
+                self.reject(&format!("nonce allocation failed: {e}"));
+                None
+            }
         }
+    }
+
+    fn record_nonce(&mut self, client_order_id: ClientOrderId, nonce: u64) {
+        // Once transmission can begin, reconciliation owns the pending marker
+        self.disarm();
+        let _delivery = self.dispatch_state.delivery_guard();
+        self.dispatch_state
+            .record_modify_nonce(client_order_id, nonce);
+    }
+
+    fn disarm(&mut self) {
+        self.command = None;
+    }
+
+    fn reject(&mut self, reason: &str) {
+        let Some(cmd) = self.command.take() else {
+            return;
+        };
+
+        let _delivery = self.dispatch_state.delivery_guard();
+
+        if !self
+            .dispatch_state
+            .take_pending_modify(&cmd.client_order_id, self.venue_order_id, None)
+        {
+            return;
+        }
+
+        self.dispatch_state.take_modify_target(&cmd.client_order_id);
+        log::warn!("Cannot modify order {}: {reason}", cmd.client_order_id);
+        emit_modify_failure(
+            &self.emitter,
+            cmd.strategy_id,
+            cmd.instrument_id,
+            cmd.client_order_id,
+            Some(self.venue_order_id),
+            CommandFailure::not_sent(reason),
+            self.clock.get_time_ns(),
+            Some(cmd.command_id),
+        );
+    }
+}
+
+impl Drop for UnsentModify {
+    fn drop(&mut self) {
+        self.reject("Derive modify stopped before transmission");
     }
 }
 
@@ -6547,8 +6738,17 @@ async fn cached_or_fetch_instrument(
         .get_instrument(venue_symbol)
         .await
         .with_context(|| format!("failed to fetch instrument {venue_symbol}"))?;
-    instruments.insert(*instrument_id, Arc::new(instrument.clone()));
-    Ok(instrument)
+    let fetched = Arc::new(instrument);
+    let mut current = Arc::clone(&fetched);
+    instruments.rcu(|cache| {
+        current = Arc::clone(
+            cache
+                .entry(*instrument_id)
+                .or_insert_with(|| Arc::clone(&fetched)),
+        );
+    });
+
+    Ok((*current).clone())
 }
 
 #[cfg(test)]
@@ -6681,7 +6881,7 @@ mod tests {
         false
     )]
     #[case::credentials(DeriveWsError::MissingCredentials { operation: "private/order".into() }, CommandFailure::not_sent("Session credentials are missing"), false)]
-    #[case::authentication(DeriveWsError::Authentication { operation: "private/order".into(), reason: "opaque sensitive detail".into() }, CommandFailure::not_sent("Session authentication failed"), false)]
+    #[case::session_unavailable(DeriveWsError::Authentication { operation: "private/order".into(), reason: "opaque sensitive detail".into() }, CommandFailure::not_sent("WebSocket execution session is unavailable"), false)]
     #[case::transport(
         DeriveWsError::transport("opaque sensitive URL"),
         CommandFailure::ambiguous("Transport outcome is unconfirmed"),
@@ -7052,6 +7252,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_snapshot_after_timeout_waits_for_runner_to_rearm() {
+        let client = DeriveExecutionClient::new(test_core(), test_config()).unwrap();
+        let (sender, mut events) = tokio::sync::mpsc::unbounded_channel();
+        nautilus_common::runner::set_time_event_sender(Arc::new(ReconciliationTimeSender(sender)));
+        let request = ReconciliationSnapshotRequest::new(
+            client.core.clone(),
+            client.reconciliation_context(),
+            client.cancellation_token.clone(),
+            Duration::from_secs(1),
+        )
+        .unwrap();
+        tokio::time::pause();
+
+        let (first, message) = tokio::join!(request.snapshot(), events.recv());
+        assert_eq!(
+            first.unwrap_err().to_string(),
+            "Derive cache snapshot refresh timed out"
+        );
+
+        let next = request.snapshot();
+        tokio::pin!(next);
+        assert!(futures_util::poll!(next.as_mut()).is_pending());
+        assert!(events.try_recv().is_err());
+        assert!(message.unwrap().dispatch());
+
+        let (next, ()) = tokio::join!(next, async {
+            assert!(events.recv().await.unwrap().dispatch());
+        });
+        assert!(next.is_ok());
+    }
+
+    #[tokio::test]
     async fn test_reconnect_context_rejects_evicted_replacement_proof() {
         let cache = Rc::new(RefCell::new(Cache::default()));
 
@@ -7256,7 +7488,7 @@ mod tests {
             Duration::from_secs(1),
         )
         .unwrap();
-        let pending = request.next.lock().take().unwrap();
+        let pending = request.slot.next.lock().take().unwrap();
         client.cancellation_token.cancel();
         request.close();
         let cache_borrow = cache.borrow_mut();
@@ -7265,7 +7497,7 @@ mod tests {
 
         assert!(dispatched);
         assert!(pending.result.await.is_err());
-        assert!(request.next.lock().is_none());
+        assert!(request.slot.next.lock().is_none());
         assert_eq!(Rc::strong_count(&cache), 2);
     }
 
@@ -7449,19 +7681,38 @@ mod tests {
         let venue_order_id = VenueOrderId::from("ord-nonce-modify-1");
         let (emitter, mut rx) = test_emitter(clock);
 
-        let nonce = resolve_modify_nonce(
-            Err(NonceError::ClockBeforeEpoch),
-            &emitter,
+        let dispatch_state = Arc::new(WsDispatchState::new(123));
+        assert!(dispatch_state.mark_pending_modify(client_order_id, venue_order_id));
+
+        let command = ModifyOrder::new(
+            TraderId::from("TRADER-001"),
+            None,
             strategy_id,
             instrument_id,
             client_order_id,
-            venue_order_id,
-            clock,
-            Some(UUID4::default()),
+            Some(venue_order_id),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
         );
+
+        let mut unsent = UnsentModify {
+            command: Some(command),
+            venue_order_id,
+            dispatch_state: Arc::clone(&dispatch_state),
+            emitter,
+            clock,
+        };
+
+        let nonce = unsent.resolve_nonce(Err(NonceError::ClockBeforeEpoch));
         let event = rx.try_recv().expect("OrderModifyDenied event");
 
         assert!(nonce.is_none());
+        assert_eq!(dispatch_state.pending_modify(&client_order_id), None);
 
         if let ExecutionEvent::Order(OrderEventAny::ModifyDenied(rejected)) = event {
             assert_eq!(rejected.client_order_id, client_order_id);

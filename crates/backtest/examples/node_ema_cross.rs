@@ -114,7 +114,7 @@ fn main() -> anyhow::Result<()> {
 
     let temp_dir = TempDir::new()?;
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder().uri(temp_dir.path()).build()?;
     catalog.write_instruments(vec![instrument])?;
     catalog.write_to_parquet(&quotes, None, None, None)?;
 

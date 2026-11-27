@@ -9,6 +9,7 @@ See [`SOURCES.md`](SOURCES.md) for the current source map by parser surface.
 ## Current fixture directories
 
 - `spot/http_json/` holds Spot REST JSON fixtures.
+- `spot/market_data_json/` holds Spot market-data stream fixtures.
 - `spot/user_data_json/` holds Spot user-data JSON fixtures.
 - `futures/http_json/` holds Futures HTTP JSON fixtures.
 - `futures/market_data_json/` holds Futures market-data stream fixtures.

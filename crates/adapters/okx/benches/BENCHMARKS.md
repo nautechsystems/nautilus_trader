@@ -43,6 +43,28 @@ streams (live order / fill) at the end.
 | `inbound_pipeline/order_event`  | 5.21 µs | 192 k/s    |
 | `inbound_pipeline/order_fill`   | 5.34 µs | 187 k/s    |
 
+## Public market-data dispatch (`market_data/mod.rs`)
+
+Run the ignored library benchmark with `cargo test`.
+
+```bash
+CARGO_BUILD_JOBS=8 cargo test --locked -p nautilus-okx --profile bench-lto --lib \
+    public_market_data_benchmark -- --ignored --nocapture --test-threads=1
+```
+
+Each iteration decodes one public WebSocket text frame, dispatches it through
+`OKXDataClient::handle_ws_message`, and drains the emitted events from the local channel.
+The timed path starts at the decoder and runs without socket I/O or the feed handler loop.
+
+- `public_market_data/partial_bbo` merges an ask-only `bbo-tbt` update into a seeded quote cache.
+- `public_market_data/trades` dispatches a one-record `trades` batch.
+- `public_market_data/index_fanout` routes one index price to five instruments at 1-, 2-, and
+  3-decimal price precision.
+
+The partial BBO and index inputs are synthetic workloads based on OKX message examples.
+They exercise the quote-cache merge and precision conversion across subscribers. The benchmark
+reports allocation calls per input frame over 1,024 frames after a 1,024-frame warm-up.
+
 ## Execution pipeline (`exec.rs`)
 
 Strategy command (place/cancel/modify) -> wire bytes ready to send. Each

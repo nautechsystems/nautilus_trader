@@ -334,8 +334,11 @@ Direct connections and the factory use the same native configuration path.
 :::warning
 
 - `LiveExecutionEngineConfig.load_cache = true` (default) restores persisted state and rebuilds indexes
-  before connecting clients or reconciling execution state.
-- `CacheConfig.flush_on_start = true` clears the backing instead. Postgres clears only the node's trader rows.
+  before connecting clients or reconciling execution state. The node stops startup if recovery
+  returns a read or replay error. If the underlying error identifies an unreadable record, repair
+  the record before restarting.
+- `CacheConfig.flush_on_start = true` clears the backing instead. Redis clears the selected
+  database. Postgres clears only the node's trader rows. The node stops startup if the flush fails.
 
 :::
 
@@ -406,7 +409,7 @@ second_last_quote = self.cache.quote(instrument_id, index=1)
 
 # Check quote availability
 quote_count = self.cache.quote_count(instrument_id)
-has_quotes = self.cache.has_quote_ticks(instrument_id)
+has_quotes = self.cache.has_quotes(instrument_id)
 ```
 
 #### Trade ticks
@@ -423,7 +426,7 @@ second_last_trade = self.cache.trade(instrument_id, index=1)
 
 # Check trade availability
 trade_count = self.cache.trade_count(instrument_id)
-has_trades = self.cache.has_trade_ticks(instrument_id)
+has_trades = self.cache.has_trades(instrument_id)
 ```
 
 Quotes and trades accumulate all ticks, including those sharing a timestamp.
@@ -729,6 +732,8 @@ boolean explicitly. Persistence failures follow the [persistence failure policy]
 so a successful return does not confirm queue admission or database deletion. Encoded position snapshots
 used to replay corrections remain persisted as general data.
 Instrument purges change memory only.
+
+Order purges remove an affected order list when none of its member orders remain cached.
 
 #### Targeted purges
 

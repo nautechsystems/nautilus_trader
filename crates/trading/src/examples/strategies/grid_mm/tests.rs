@@ -19,8 +19,9 @@ use nautilus_common::{
     actor::DataActor,
     cache::Cache,
     clock::{Clock, VirtualClock},
+    messages::execution::TradingCommand,
+    msgbus::{self, MessagingSwitchboard, stubs::get_typed_into_message_saving_handler},
 };
-use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::QuoteTick,
     enums::{OrderSide, OrderStatus, OrderType},
@@ -42,6 +43,7 @@ use nautilus_model::{
 };
 use nautilus_portfolio::portfolio::Portfolio;
 use rstest::rstest;
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use ustr::Ustr;
 
@@ -68,7 +70,6 @@ fn create_strategy(
         .build();
 
     let mut strategy = GridMarketMaker::new(config);
-    strategy.price_precision = Some(PRECISION);
     strategy.instrument = Some(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()));
     strategy
 }
@@ -80,12 +81,12 @@ fn mid(value: &str) -> Price {
 fn quote(bid: &str, ask: &str) -> QuoteTick {
     QuoteTick::new(
         InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-        mid(bid),
-        mid(ask),
-        Quantity::from("1.0"),
-        Quantity::from("1.0"),
-        UnixNanos::default(),
-        UnixNanos::default(),
+        Price::from(bid),
+        Price::from(ask),
+        Quantity::from(1),
+        Quantity::from(1),
+        0.into(),
+        0.into(),
     )
 }
 
@@ -113,28 +114,28 @@ fn test_config_defaults() {
 #[rstest]
 fn test_should_requote_true_when_no_previous_quote() {
     let strategy = create_strategy(3, 100, 0.0, Quantity::from("10.0"), 5);
-    assert!(strategy.should_requote(mid("1000.00")));
+    assert!(strategy.should_requote(dec!(1000.00)));
 }
 
 #[rstest]
 fn test_should_requote_false_within_threshold() {
     let mut strategy = create_strategy(3, 100, 0.0, Quantity::from("10.0"), 5);
-    strategy.last_quoted_mid = Some(mid("1000.00"));
-    assert!(!strategy.should_requote(mid("1000.30")));
+    strategy.last_quoted_mid = Some(dec!(1000.00));
+    assert!(!strategy.should_requote(dec!(1000.30)));
 }
 
 #[rstest]
 fn test_should_requote_true_at_threshold() {
     let mut strategy = create_strategy(3, 100, 0.0, Quantity::from("10.0"), 5);
-    strategy.last_quoted_mid = Some(mid("1000.00"));
-    assert!(strategy.should_requote(mid("1000.50")));
+    strategy.last_quoted_mid = Some(dec!(1000.00));
+    assert!(strategy.should_requote(dec!(1000.50)));
 }
 
 #[rstest]
 fn test_should_requote_true_beyond_threshold_negative() {
     let mut strategy = create_strategy(3, 100, 0.0, Quantity::from("10.0"), 5);
-    strategy.last_quoted_mid = Some(mid("1000.00"));
-    assert!(strategy.should_requote(mid("999.40")));
+    strategy.last_quoted_mid = Some(dec!(1000.00));
+    assert!(strategy.should_requote(dec!(999.40)));
 }
 
 #[rstest]
@@ -142,7 +143,7 @@ fn test_grid_orders_flat_position_symmetric() {
     // 1% geometric grid: buy = mid × 0.99^level, sell = mid × 1.01^level
     let strategy = create_strategy(3, 100, 0.0, Quantity::from("10.0"), 5);
     let orders = strategy
-        .grid_orders(mid("1000.00"), 0.0, dec!(0), dec!(0))
+        .grid_orders(dec!(1000.00), dec!(0.0), dec!(0), dec!(0))
         .unwrap();
 
     assert_eq!(orders.len(), 6);
@@ -174,7 +175,7 @@ fn test_grid_orders_skew_shifts_prices() {
     // 500 bps (5%) geometric grid, skew_factor=1.0, net_position=2.0 → skew_f64=2.0
     let strategy = create_strategy(1, 500, 1.0, Quantity::from("10.0"), 5);
     let orders = strategy
-        .grid_orders(mid("1000.00"), 2.0, dec!(2), dec!(2))
+        .grid_orders(dec!(1000.00), dec!(2.0), dec!(2), dec!(2))
         .unwrap();
 
     assert_eq!(orders.len(), 2);
@@ -193,7 +194,7 @@ fn test_grid_orders_max_position_limits_buy_levels() {
     // net_position=9.9, trade_size=0.1, max=10.0 → only 1 buy level fits
     let strategy = create_strategy(3, 100, 0.0, Quantity::from("10.0"), 5);
     let orders = strategy
-        .grid_orders(mid("1000.00"), 9.9, dec!(9.9), dec!(9.9))
+        .grid_orders(dec!(1000.00), dec!(9.9), dec!(9.9), dec!(9.9))
         .unwrap();
 
     assert_eq!(count_side(&orders, OrderSide::Buy), 1);
@@ -205,7 +206,7 @@ fn test_grid_orders_max_position_limits_sell_levels() {
     // net_position=-9.9, trade_size=0.1, max=10.0 → only 1 sell level fits
     let strategy = create_strategy(3, 100, 0.0, Quantity::from("10.0"), 5);
     let orders = strategy
-        .grid_orders(mid("1000.00"), -9.9, dec!(-9.9), dec!(-9.9))
+        .grid_orders(dec!(1000.00), dec!(-9.9), dec!(-9.9), dec!(-9.9))
         .unwrap();
 
     assert_eq!(count_side(&orders, OrderSide::Buy), 3);
@@ -217,7 +218,7 @@ fn test_grid_orders_max_position_blocks_all_buys() {
     // net_position=10.0 (at max) → no buys, all sells
     let strategy = create_strategy(3, 100, 0.0, Quantity::from("10.0"), 5);
     let orders = strategy
-        .grid_orders(mid("1000.00"), 10.0, dec!(10), dec!(10))
+        .grid_orders(dec!(1000.00), dec!(10.0), dec!(10), dec!(10))
         .unwrap();
 
     assert_eq!(count_side(&orders, OrderSide::Buy), 0);
@@ -229,7 +230,7 @@ fn test_grid_orders_projected_exposure_across_levels() {
     // max_position=0.15, trade_size=0.1, 3 levels → only 1 level fits per side
     let strategy = create_strategy(3, 100, 0.0, Quantity::from("0.150"), 5);
     let orders = strategy
-        .grid_orders(mid("1000.00"), 0.0, dec!(0), dec!(0))
+        .grid_orders(dec!(1000.00), dec!(0.0), dec!(0), dec!(0))
         .unwrap();
 
     assert_eq!(count_side(&orders, OrderSide::Buy), 1);
@@ -241,7 +242,7 @@ fn test_grid_orders_empty_when_fully_constrained() {
     // max_position=0.05, trade_size=0.1 → nothing fits
     let strategy = create_strategy(3, 100, 0.0, Quantity::from("0.050"), 5);
     let orders = strategy
-        .grid_orders(mid("1000.00"), 0.0, dec!(0), dec!(0))
+        .grid_orders(dec!(1000.00), dec!(0.0), dec!(0), dec!(0))
         .unwrap();
     assert!(orders.is_empty());
 }
@@ -256,7 +257,7 @@ fn test_grid_orders_errors_when_instrument_not_resolved() {
     let strategy = GridMarketMaker::new(config);
 
     let err = strategy
-        .grid_orders(mid("1000.00"), 0.0, dec!(0), dec!(0))
+        .grid_orders(dec!(1000.00), dec!(0.0), dec!(0), dec!(0))
         .unwrap_err()
         .to_string();
 
@@ -267,7 +268,22 @@ fn test_grid_orders_errors_when_instrument_not_resolved() {
 }
 
 #[rstest]
-fn test_on_quote_errors_when_price_precision_not_resolved() {
+fn test_grid_orders_reports_skewed_price_overflow() {
+    let strategy = create_strategy(1, 50, 1e16, Quantity::from("10.0"), 5);
+    let position = dec!(-7922816251426.433759354395);
+
+    let e = strategy
+        .grid_orders(dec!(1000), position, position, position)
+        .unwrap_err();
+
+    assert_eq!(
+        e.to_string(),
+        "Skewed grid buy price exceeds the decimal range"
+    );
+}
+
+#[rstest]
+fn test_on_quote_errors_when_instrument_not_resolved() {
     let config = GridMarketMakerConfig::builder()
         .instrument_id(InstrumentId::from("ETHUSDT-PERP.BINANCE"))
         .max_position(Quantity::from("10.0"))
@@ -275,12 +291,81 @@ fn test_on_quote_errors_when_price_precision_not_resolved() {
         .build();
     let mut strategy = GridMarketMaker::new(config);
 
-    let err = strategy
-        .on_quote(&quote("1000.00", "1000.10"))
-        .unwrap_err()
-        .to_string();
+    let e = strategy.on_quote(&quote("100.00", "101.00")).unwrap_err();
 
-    assert_eq!(err, "Cannot handle quote: price_precision is not resolved");
+    assert_eq!(
+        e.to_string(),
+        "Cannot handle quote: instrument is not resolved"
+    );
+    assert_eq!(strategy.last_quoted_mid, None);
+}
+
+#[rstest]
+#[case("100", "101", dec!(100.5))]
+#[cfg_attr(feature = "defi", case("100.000000000000000001", "101.000000000000000001", dec!(100.500000000000000001)))]
+fn test_on_quote_keeps_midpoint_until_grid_rounding(
+    #[case] bid: &str,
+    #[case] ask: &str,
+    #[case] midpoint: Decimal,
+) {
+    let mut strategy = create_strategy(1, 50, 0.0, Quantity::from("10.0"), 5);
+    let mut instrument = crypto_perpetual_ethusdt();
+    instrument.price_precision = 0;
+    instrument.price_increment = Price::from("1");
+    let instrument = InstrumentAny::CryptoPerpetual(instrument);
+    strategy.instrument = Some(instrument.clone());
+    let cache = register_with_cache(&mut strategy);
+    cache.borrow_mut().add_instrument(instrument).unwrap();
+    let (handler, commands) = get_typed_into_message_saving_handler::<TradingCommand>(None);
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::risk_engine_queue_execute(),
+        handler,
+    );
+
+    strategy.on_quote(&quote(bid, ask)).unwrap();
+
+    assert_eq!(strategy.last_quoted_mid, Some(midpoint));
+    let cache = cache.borrow();
+
+    let prices: Vec<_> = commands
+        .get_messages()
+        .iter()
+        .map(|command| {
+            let TradingCommand::SubmitOrder(command) = command else {
+                panic!("Expected SubmitOrder, received {command:?}");
+            };
+
+            let order = cache.order(&command.client_order_id).unwrap();
+            (order.order_side(), order.price().unwrap())
+        })
+        .collect();
+
+    assert_eq!(
+        prices,
+        [
+            (OrderSide::Buy, Price::from("99")),
+            (OrderSide::Sell, Price::from("102"))
+        ]
+    );
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_grid_prices_from_native_mid() {
+    let strategy = create_strategy(1, 10, 0.0, Quantity::from("10.0"), 5);
+    let mid = dec!(1000.000000000000000001);
+
+    let orders = strategy
+        .grid_orders(mid, dec!(0), dec!(0), dec!(0))
+        .unwrap();
+
+    assert_eq!(
+        orders,
+        [
+            (OrderSide::Buy, Price::from("999.00")),
+            (OrderSide::Sell, Price::from("1001.01"))
+        ]
+    );
 }
 
 fn order_canceled(client_order_id: &str) -> OrderCanceled {
@@ -300,15 +385,13 @@ fn create_cancel_resubmit_strategy() -> GridMarketMaker {
         .on_cancel_resubmit(true)
         .build();
 
-    let mut strategy = GridMarketMaker::new(config);
-    strategy.price_precision = Some(PRECISION);
-    strategy
+    GridMarketMaker::new(config)
 }
 
 #[rstest]
 fn test_on_order_canceled_self_cancel_preserves_last_quoted_mid() {
     let mut strategy = create_cancel_resubmit_strategy();
-    strategy.last_quoted_mid = Some(mid("1000.00"));
+    strategy.last_quoted_mid = Some(dec!(1000.00));
     strategy
         .pending_self_cancels
         .insert(ClientOrderId::from("O-001"));
@@ -317,14 +400,14 @@ fn test_on_order_canceled_self_cancel_preserves_last_quoted_mid() {
     strategy.on_order_canceled(&event);
 
     assert!(strategy.pending_self_cancels.is_empty());
-    assert_eq!(strategy.last_quoted_mid, Some(mid("1000.00")));
+    assert_eq!(strategy.last_quoted_mid, Some(dec!(1000.00)));
 }
 
 #[rstest]
 fn test_on_order_canceled_protocol_cancel_resets_last_quoted_mid() {
     // ID not in pending set → protocol-initiated cancel resets mid
     let mut strategy = create_cancel_resubmit_strategy();
-    strategy.last_quoted_mid = Some(mid("1000.00"));
+    strategy.last_quoted_mid = Some(dec!(1000.00));
 
     let event = order_canceled("O-999");
     strategy.on_order_canceled(&event);
@@ -335,7 +418,7 @@ fn test_on_order_canceled_protocol_cancel_resets_last_quoted_mid() {
 #[rstest]
 fn test_on_order_canceled_self_cancel_then_protocol_cancel() {
     let mut strategy = create_cancel_resubmit_strategy();
-    strategy.last_quoted_mid = Some(mid("1000.00"));
+    strategy.last_quoted_mid = Some(dec!(1000.00));
     strategy
         .pending_self_cancels
         .insert(ClientOrderId::from("O-001"));
@@ -343,7 +426,7 @@ fn test_on_order_canceled_self_cancel_then_protocol_cancel() {
     // Self-cancel consumed
     let self_event = order_canceled("O-001");
     strategy.on_order_canceled(&self_event);
-    assert_eq!(strategy.last_quoted_mid, Some(mid("1000.00")));
+    assert_eq!(strategy.last_quoted_mid, Some(dec!(1000.00)));
 
     // Protocol cancel triggers reset
     let protocol_event = order_canceled("O-002");
@@ -356,7 +439,7 @@ fn test_on_order_canceled_filled_order_does_not_block_protocol_cancel() {
     // Order O-001 tracked as self-cancel but fills before cancel ack,
     // so O-002 (protocol cancel) must still trigger reset
     let mut strategy = create_cancel_resubmit_strategy();
-    strategy.last_quoted_mid = Some(mid("1000.00"));
+    strategy.last_quoted_mid = Some(dec!(1000.00));
     strategy
         .pending_self_cancels
         .insert(ClientOrderId::from("O-001"));
@@ -377,7 +460,7 @@ fn test_on_order_filled_keeps_self_cancel_marker_until_full_fill(
 ) {
     let mut strategy = create_cancel_resubmit_strategy();
     let cache = register_with_cache(&mut strategy);
-    strategy.last_quoted_mid = Some(mid("1000.00"));
+    strategy.last_quoted_mid = Some(dec!(1000.00));
     let order_id = ClientOrderId::from("O-001");
     strategy.pending_self_cancels.insert(order_id);
 
@@ -431,14 +514,14 @@ fn test_on_order_filled_keeps_self_cancel_marker_until_full_fill(
     }
 
     assert!(strategy.pending_self_cancels.is_empty());
-    assert_eq!(strategy.last_quoted_mid, Some(mid("1000.00")));
+    assert_eq!(strategy.last_quoted_mid, Some(dec!(1000.00)));
 }
 
 #[rstest]
 fn test_on_order_filled_clears_self_cancel_marker_when_fill_closes_order_voided() {
     let mut strategy = create_cancel_resubmit_strategy();
     let cache = register_with_cache(&mut strategy);
-    strategy.last_quoted_mid = Some(mid("1000.00"));
+    strategy.last_quoted_mid = Some(dec!(1000.00));
     let order_id = ClientOrderId::from("O-001");
     strategy.pending_self_cancels.insert(order_id);
 
@@ -513,7 +596,7 @@ fn test_on_order_filled_clears_self_cancel_marker_when_fill_closes_order_voided(
 
     assert_eq!(order.status(), OrderStatus::Voided);
     assert!(strategy.pending_self_cancels.is_empty());
-    assert_eq!(strategy.last_quoted_mid, Some(mid("1000.00")));
+    assert_eq!(strategy.last_quoted_mid, Some(dec!(1000.00)));
 }
 
 fn register_with_cache(strategy: &mut GridMarketMaker) -> Rc<RefCell<Cache>> {
@@ -542,12 +625,12 @@ fn register_with_cache(strategy: &mut GridMarketMaker) -> Rc<RefCell<Cache>> {
 fn test_on_order_canceled_without_resubmit_does_nothing() {
     // on_cancel_resubmit=false: cancel never resets mid
     let mut strategy = create_strategy(3, 100, 0.0, Quantity::from("10.0"), 5);
-    strategy.last_quoted_mid = Some(mid("1000.00"));
+    strategy.last_quoted_mid = Some(dec!(1000.00));
 
     let event = order_canceled("O-001");
     strategy.on_order_canceled(&event);
 
-    assert_eq!(strategy.last_quoted_mid, Some(mid("1000.00")));
+    assert_eq!(strategy.last_quoted_mid, Some(dec!(1000.00)));
 }
 
 fn order_rejected(client_order_id: &str) -> OrderRejected {
@@ -574,7 +657,7 @@ fn order_expired(client_order_id: &str) -> OrderExpired {
 #[rstest]
 fn test_on_order_rejected_discards_pending_and_resets_mid() {
     let mut strategy = create_strategy(3, 100, 0.0, Quantity::from("10.0"), 5);
-    strategy.last_quoted_mid = Some(mid("1000.00"));
+    strategy.last_quoted_mid = Some(dec!(1000.00));
     strategy
         .pending_self_cancels
         .insert(ClientOrderId::from("O-001"));
@@ -588,7 +671,7 @@ fn test_on_order_rejected_discards_pending_and_resets_mid() {
 #[rstest]
 fn test_on_order_rejected_unknown_id_still_resets_mid() {
     let mut strategy = create_strategy(3, 100, 0.0, Quantity::from("10.0"), 5);
-    strategy.last_quoted_mid = Some(mid("1000.00"));
+    strategy.last_quoted_mid = Some(dec!(1000.00));
 
     strategy.on_order_rejected(order_rejected("O-999"));
 
@@ -598,7 +681,7 @@ fn test_on_order_rejected_unknown_id_still_resets_mid() {
 #[rstest]
 fn test_on_order_expired_discards_pending_and_resets_mid() {
     let mut strategy = create_strategy(3, 100, 0.0, Quantity::from("10.0"), 5);
-    strategy.last_quoted_mid = Some(mid("1000.00"));
+    strategy.last_quoted_mid = Some(dec!(1000.00));
     strategy
         .pending_self_cancels
         .insert(ClientOrderId::from("O-001"));
@@ -612,7 +695,7 @@ fn test_on_order_expired_discards_pending_and_resets_mid() {
 #[rstest]
 fn test_on_order_expired_unknown_id_still_resets_mid() {
     let mut strategy = create_strategy(3, 100, 0.0, Quantity::from("10.0"), 5);
-    strategy.last_quoted_mid = Some(mid("1000.00"));
+    strategy.last_quoted_mid = Some(dec!(1000.00));
 
     strategy.on_order_expired(order_expired("O-999"));
 
@@ -622,7 +705,7 @@ fn test_on_order_expired_unknown_id_still_resets_mid() {
 #[rstest]
 fn test_on_reset_clears_all_state() {
     let mut strategy = create_strategy(3, 100, 0.0, Quantity::from("10.0"), 5);
-    strategy.last_quoted_mid = Some(mid("1000.00"));
+    strategy.last_quoted_mid = Some(dec!(1000.00));
     strategy
         .pending_self_cancels
         .insert(ClientOrderId::from("O-001"));
@@ -630,7 +713,6 @@ fn test_on_reset_clears_all_state() {
     strategy.on_reset().unwrap();
 
     assert!(strategy.instrument.is_none());
-    assert!(strategy.price_precision.is_none());
     assert_eq!(strategy.last_quoted_mid, None);
     assert!(strategy.pending_self_cancels.is_empty());
     // trade_size reverts to the configured value

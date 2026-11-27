@@ -14,9 +14,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Backtest order book imbalance on Lighter ANTHROPIC pre-IPO book data from CoinAPI.
+Backtest order book imbalance on Lighter ANT equity perpetual book data from CoinAPI.
 
-Companion program for the "Backtest with Pre-IPO Order Book Data (CoinAPI)" tutorial.
+Companion program for the "Backtest with Equity Perpetual Order Book Data (CoinAPI)" tutorial.
 The first run downloads one Flat Files export and reads `COINAPI_API_KEY` or prompts for it.
 Later runs reuse the Parquet catalog.
 
@@ -40,6 +40,7 @@ from nautilus_trader.config import DataCatalogConfig
 from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import LoggerConfig
 from nautilus_trader.execution import MakerTakerFeeModel
+from nautilus_trader.execution import StaticLatencyModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookAction
 from nautilus_trader.model import BookType
@@ -61,16 +62,15 @@ from nautilus_trader.trading import OrderBookImbalanceConfig
 
 BUCKET = "coinapi"
 OBJECT_KEY = (
-    "T-LIMITBOOK_FULL/D-2026100100/E-LIGHTER/"
-    "IDDI-47534074+SC-LIGHTER_PERP_ANTHROPIC_USD+S-ANTHROPIC.csv.gz"
+    "T-LIMITBOOK_FULL/D-2026112315/E-LIGHTER/IDDI-48047693+SC-LIGHTER_PERP_ANT_USD+S-ANT.csv.gz"
 )
-FILE_SHA256 = "2ed141be6480c56ff16322e08bbc43398edc710875fe81093e0635ff672e48e4"
-INSTRUMENT_ID = InstrumentId.from_str("ANTHROPIC-PERP.LIGHTER")
+FILE_SHA256 = "5a05a328f1622c88091238ad190d7e63c370d1d3e845f5b5d0f5b49401ccf8e1"
+INSTRUMENT_ID = InstrumentId.from_str("ANT-PERP.LIGHTER")
 BOOK_TYPE = BookType.L2_MBP
 
 DATA_DIR = Path(os.environ.get("NAUTILUS_DATA_DIR", "~/Downloads/Data")).expanduser() / "CoinAPI"
 FILEPATH = DATA_DIR / OBJECT_KEY
-CATALOG_PATH = DATA_DIR / "lighter-anthropic-20261001-00"
+CATALOG_PATH = DATA_DIR / "lighter-ant-20261123-15"
 
 
 async def download(api_key: str) -> None:
@@ -98,19 +98,19 @@ if __name__ == "__main__":
 
         instrument = CryptoPerpetual(
             instrument_id=INSTRUMENT_ID,
-            raw_symbol=Symbol("ANTHROPIC"),
-            base_currency=Currency.from_str("ANTHROPIC"),
+            raw_symbol=Symbol("ANT"),
+            base_currency=Currency.from_str("ANT"),
             quote_currency=usdc,
             settlement_currency=usdc,
             is_inverse=False,
-            price_precision=1,
-            size_precision=5,
-            price_increment=Price.from_str("0.1"),
-            size_increment=Quantity.from_str("0.00001"),
-            min_quantity=Quantity.from_str("0.00250"),
+            price_precision=2,
+            size_precision=4,
+            price_increment=Price.from_str("0.01"),
+            size_increment=Quantity.from_str("0.0001"),
+            min_quantity=Quantity.from_str("0.1000"),
             min_notional=Money.from_decimal(Decimal(10), usdc),
-            margin_init=Decimal("0.20"),
-            margin_maint=Decimal("0.12"),
+            margin_init=Decimal("0.10"),
+            margin_maint=Decimal("0.06"),
             ts_event=0,
             ts_init=0,
         )
@@ -160,6 +160,15 @@ if __name__ == "__main__":
     print(f"Locked or crossed books: {locked_or_crossed:,}")
     print(book.pprint(3))
 
+    order_delay_ns = 300_000_000
+
+    latency = StaticLatencyModel(
+        base_latency_nanos=0,
+        insert_latency_nanos=order_delay_ns,
+        update_latency_nanos=order_delay_ns,
+        cancel_latency_nanos=order_delay_ns,
+    )
+
     config = BacktestRunConfig(
         engine=BacktestEngineConfig(
             logging=LoggerConfig(stdout_level=LogLevel.ERROR),
@@ -174,6 +183,7 @@ if __name__ == "__main__":
                 book_type=BOOK_TYPE,
                 margin_model=StandardMarginModel(),
                 fee_model=MakerTakerFeeModel(maker_rate=Decimal(0), taker_rate=Decimal(0)),
+                latency_model=latency,
             ),
         ],
         data=[
@@ -190,7 +200,7 @@ if __name__ == "__main__":
     strategy_config = OrderBookImbalanceConfig(
         instrument_id=instrument.id,
         book_type=BOOK_TYPE,
-        max_trade_size=Quantity.from_str("0.01000"),
+        max_trade_size=Quantity.from_str("0.2500"),
         trigger_min_size=Decimal("1.0"),
         trigger_imbalance_ratio=Decimal("0.20"),
         min_seconds_between_triggers=1.0,

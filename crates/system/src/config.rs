@@ -55,8 +55,7 @@ pub trait NautilusKernelConfig: Debug {
     fn timeout_disconnection(&self) -> Duration;
     /// Returns the timeout after stopping the node to await residual events before final shutdown.
     fn delay_post_stop(&self) -> Duration;
-    /// Returns the timeout to await pending tasks cancellation during shutdown.
-    fn timeout_shutdown(&self) -> Duration;
+
     /// Returns the cache configuration.
     fn cache(&self) -> Option<CacheConfig>;
     /// Returns the message bus configuration.
@@ -121,9 +120,6 @@ pub struct KernelConfig {
     /// The delay after stopping the node to await residual events before final shutdown.
     #[builder(default = Duration::from_secs(10))]
     pub delay_post_stop: Duration,
-    /// The delay to await pending tasks cancellation during shutdown.
-    #[builder(default = Duration::from_secs(5))]
-    pub timeout_shutdown: Duration,
     /// The cache configuration.
     pub cache: Option<CacheConfig>,
     /// The message bus configuration.
@@ -192,10 +188,6 @@ impl NautilusKernelConfig for KernelConfig {
 
     fn delay_post_stop(&self) -> Duration {
         self.delay_post_stop
-    }
-
-    fn timeout_shutdown(&self) -> Duration {
-        self.timeout_shutdown
     }
 
     fn cache(&self) -> Option<CacheConfig> {

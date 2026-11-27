@@ -15,11 +15,11 @@
 
 //! Static constants for the Derive adapter.
 //!
-//! EIP-712 domain separators, the Action typehash, and Trade module addresses
-//! are sourced from the v3 action-signing reference at
-//! <https://docs.derive.xyz/authentication/action-signing>. Both mainnet and
-//! testnet values are populated; per-instance overrides on
-//! [`crate::config::DeriveExecutionClientConfig`] take precedence.
+//! The v3 [action-signing reference](https://docs.derive.xyz/authentication/action-signing)
+//! defines the EIP-712 domain separators, Action typehash, and Trade, Transfer, and Withdrawal
+//! module addresses. The three modules have the same addresses on mainnet and testnet.
+//! Per-instance order-signing overrides on [`crate::config::DeriveExecutionClientConfig`]
+//! take precedence over the defaults.
 
 use std::{sync::LazyLock, time::Duration};
 
@@ -73,13 +73,13 @@ pub const TRADE_MODULE_ADDRESS_TESTNET: &str = TRADE_MODULE_ADDRESS_MAINNET;
 pub const WITHDRAW_MODULE_ADDRESS_MAINNET: &str = "0x9d0E8f5b25384C7310CB8C6aE32C8fbeb645d083";
 
 /// Withdrawal module contract address (testnet).
-pub const WITHDRAW_MODULE_ADDRESS_TESTNET: &str = "0xe850641C5207dc5E9423fB15f89ae6031A05fd92";
+pub const WITHDRAW_MODULE_ADDRESS_TESTNET: &str = WITHDRAW_MODULE_ADDRESS_MAINNET;
 
 /// Transfer module contract address (mainnet).
 pub const TRANSFER_MODULE_ADDRESS_MAINNET: &str = "0x01259207A40925b794C8ac320456F7F6c8FE2636";
 
 /// Transfer module contract address (testnet).
-pub const TRANSFER_MODULE_ADDRESS_TESTNET: &str = "0x0CFC1a4a90741aB242cAfaCD798b409E12e68926";
+pub const TRANSFER_MODULE_ADDRESS_TESTNET: &str = TRANSFER_MODULE_ADDRESS_MAINNET;
 
 /// Deposit module contract address (mainnet).
 pub const DEPOSIT_MODULE_ADDRESS_MAINNET: &str = "0x9B3FE5E5a3bcEa5df4E08c41Ce89C4e3Ff01Ace3";
@@ -176,7 +176,7 @@ mod tests {
 
     #[rstest]
     fn test_decimal_scale_is_1e18() {
-        assert_eq!(DECIMAL_SCALE, 10u128.pow(18));
+        assert_eq!(DECIMAL_SCALE, 10_u128.pow(18));
     }
 
     #[rstest]
@@ -213,6 +213,18 @@ mod tests {
         assert_eq!(
             trade_module_address_for(DeriveEnvironment::Testnet),
             TRADE_MODULE_ADDRESS_TESTNET,
+        );
+    }
+
+    #[rstest]
+    fn test_transfer_and_withdrawal_modules_use_same_address_on_both_networks() {
+        assert_eq!(
+            TRANSFER_MODULE_ADDRESS_TESTNET,
+            TRANSFER_MODULE_ADDRESS_MAINNET
+        );
+        assert_eq!(
+            WITHDRAW_MODULE_ADDRESS_TESTNET,
+            WITHDRAW_MODULE_ADDRESS_MAINNET
         );
     }
 }

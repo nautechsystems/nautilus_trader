@@ -169,16 +169,15 @@ impl HyperliquidEip712Signer {
 
         let timestamp = request.time_nonce.as_millis() as u64;
         hasher.update(timestamp.to_be_bytes());
-
         if let Some(vault_addr) = request.vault_address {
-            hasher.update([1u8]);
+            hasher.update([1_u8]);
             hasher.update(vault_addr.as_bytes());
         } else {
-            hasher.update([0u8]);
+            hasher.update([0_u8]);
         }
 
         if let Some(expires_after) = request.expires_after {
-            hasher.update([0u8]);
+            hasher.update([0_u8]);
             hasher.update(expires_after.to_be_bytes());
         }
 
@@ -196,7 +195,7 @@ impl HyperliquidEip712Signer {
         let r = signature.r();
         let s = signature.s();
         let v = signature.v();
-        let v_byte = if v { 28u8 } else { 27u8 };
+        let v_byte = if v { 28_u8 } else { 27_u8 };
 
         Ok(HyperliquidSignature::new(
             format!("0x{r:064x}"),
@@ -244,7 +243,7 @@ mod tests {
                 "amount": "100.000"
             })),
             action_bytes: None,
-            time_nonce: TimeNonce::from_millis(1640995200000),
+            time_nonce: TimeNonce::from_millis(1_640_995_200_000),
             action_type: HyperliquidActionType::L1,
             is_testnet: false,
             vault_address: None,
@@ -272,7 +271,7 @@ mod tests {
         let request = SignRequest {
             action: None,
             action_bytes: None,
-            time_nonce: TimeNonce::from_millis(1640995200000),
+            time_nonce: TimeNonce::from_millis(1_640_995_200_000),
             action_type: HyperliquidActionType::L1,
             is_testnet: false,
             vault_address: None,
@@ -427,7 +426,7 @@ mod tests {
         let request = SignRequest {
             action: Some(json!({"type": "order"})),
             action_bytes: None,
-            time_nonce: TimeNonce::from_millis(1640995200000),
+            time_nonce: TimeNonce::from_millis(1_640_995_200_000),
             action_type: HyperliquidActionType::UserSigned,
             is_testnet: false,
             vault_address: None,
@@ -510,7 +509,7 @@ mod tests {
         let request = SignRequest {
             action: None,
             action_bytes: Some(action_bytes),
-            time_nonce: TimeNonce::from_millis(1640995200000),
+            time_nonce: TimeNonce::from_millis(1_640_995_200_000),
             action_type: HyperliquidActionType::L1,
             is_testnet: true, // source = "b"
             vault_address: None,
@@ -598,14 +597,14 @@ mod tests {
         let without_expiry = SignRequest {
             action: None,
             action_bytes: Some(action_bytes),
-            time_nonce: TimeNonce::from_millis(1640995200000),
+            time_nonce: TimeNonce::from_millis(1_640_995_200_000),
             action_type: HyperliquidActionType::L1,
             is_testnet: true,
             vault_address: None,
             expires_after: None,
         };
         let with_expiry = SignRequest {
-            expires_after: Some(1640995260000),
+            expires_after: Some(1_640_995_260_000),
             ..without_expiry.clone()
         };
 
@@ -647,7 +646,7 @@ mod tests {
         let request = SignRequest {
             action: None,
             action_bytes: Some(action_bytes),
-            time_nonce: TimeNonce::from_millis(1640995200000),
+            time_nonce: TimeNonce::from_millis(1_640_995_200_000),
             action_type: HyperliquidActionType::L1,
             is_testnet: true,
             vault_address: Some(
@@ -828,7 +827,7 @@ mod tests {
         let request = SignRequest {
             action: None,
             action_bytes: Some(action_bytes),
-            time_nonce: TimeNonce::from_millis(1733833200000), // Dec 10, 2024
+            time_nonce: TimeNonce::from_millis(1_733_833_200_000), // Dec 10, 2024
             action_type: HyperliquidActionType::L1,
             is_testnet: true, // source = "b"
             vault_address: None,

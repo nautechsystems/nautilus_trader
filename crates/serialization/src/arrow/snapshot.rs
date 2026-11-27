@@ -189,7 +189,8 @@ mod tests {
         let metadata = snapshot.metadata();
         let batch =
             OrderSnapshot::encode_batch(&metadata, std::slice::from_ref(&snapshot)).unwrap();
-        let decoded = OrderSnapshot::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+        let decoded =
+            OrderSnapshot::decode_typed_batch(&batch.schema().metadata().into(), batch).unwrap();
 
         assert_eq!(decoded, vec![snapshot]);
     }
@@ -232,7 +233,8 @@ mod tests {
 
         let avg_px_field = batch.schema().field_with_name("avg_px").unwrap().clone();
         let slippage_field = batch.schema().field_with_name("slippage").unwrap().clone();
-        let decoded = OrderSnapshot::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+        let decoded =
+            OrderSnapshot::decode_typed_batch(&batch.schema().metadata().into(), batch).unwrap();
 
         assert_eq!(avg_px_field.data_type(), &DataType::Utf8);
         assert_eq!(slippage_field.data_type(), &DataType::Utf8);
@@ -245,7 +247,8 @@ mod tests {
         let metadata = snapshot.metadata();
         let batch =
             OrderSnapshot::encode_batch(&metadata, std::slice::from_ref(&snapshot)).unwrap();
-        let decoded = OrderSnapshot::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+        let decoded =
+            OrderSnapshot::decode_typed_batch(&batch.schema().metadata().into(), batch).unwrap();
 
         assert_eq!(decoded, vec![snapshot]);
     }
@@ -263,8 +266,8 @@ mod tests {
         )
         .unwrap();
 
-        let error =
-            OrderSnapshot::decode_typed_batch(batch.schema().metadata(), batch).unwrap_err();
+        let error = OrderSnapshot::decode_typed_batch(&batch.schema().metadata().into(), batch)
+            .unwrap_err();
 
         assert!(matches!(
             error,
@@ -312,7 +315,7 @@ mod tests {
         let batch =
             PositionSnapshot::encode_batch(&metadata, std::slice::from_ref(&snapshot)).unwrap();
         let decoded =
-            PositionSnapshot::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+            PositionSnapshot::decode_typed_batch(&batch.schema().metadata().into(), batch).unwrap();
 
         assert_eq!(decoded, vec![snapshot]);
     }
@@ -333,7 +336,7 @@ mod tests {
         let batch =
             PositionSnapshot::encode_batch(&metadata, std::slice::from_ref(&snapshot)).unwrap();
         let decoded =
-            PositionSnapshot::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+            PositionSnapshot::decode_typed_batch(&batch.schema().metadata().into(), batch).unwrap();
 
         assert_eq!(decoded, vec![snapshot]);
     }

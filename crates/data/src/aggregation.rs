@@ -43,13 +43,16 @@ use nautilus_model::{
     },
     enums::{
         AggregationSource, AggressorSide, BarAggregation, BarIntervalType,
-        ContinuousFutureAdjustmentType,
+        ContinuousFutureAdjustmentType, PriceType,
     },
     identifiers::InstrumentId,
     instruments::{FixedTickScheme, TickSchemeRule},
     types::{
         Price, Quantity,
-        fixed::{FIXED_PRECISION, FIXED_SCALAR, mantissa_exponent_to_fixed_i128},
+        fixed::{
+            FIXED_PRECISION, FIXED_SCALAR, check_float_precision, mantissa_exponent_to_fixed_i128,
+            raw_scales_match,
+        },
         price::PriceRaw,
         quantity::QuantityRaw,
     },
@@ -71,24 +74,14 @@ pub trait BarAggregator: Any + Debug {
     fn set_is_running(&mut self, value: bool);
     /// Updates the aggregator  with the given price and size.
     fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos);
-    /// Updates the aggregator with the given quote.
-    fn handle_quote(&mut self, quote: QuoteTick) {
-        let spec = self.bar_type().spec();
-        // Quote-fed aggregators use Bid/Ask/Mid (Last uses trades), so this cannot fail; guard
-        // rather than unwrap to stay panic-free
-        let (Ok(price), Ok(size)) = (
-            quote.extract_price(spec.price_type),
-            quote.extract_size(spec.price_type),
-        ) else {
-            log::error!(
-                "Cannot aggregate quote for {}: price type {} unsupported for quotes",
-                self.bar_type(),
-                spec.price_type,
-            );
-            return;
-        };
 
-        self.update(price, size, quote.ts_init);
+    /// Updates the aggregator with the given quote.
+    ///
+    /// Skips midpoint quotes whose raw precision exceeds the standard fixed-point scale.
+    fn handle_quote(&mut self, quote: QuoteTick) {
+        if let Some((price, size)) = bar_quote_values(self.bar_type(), &quote) {
+            self.update(price, size, quote.ts_init);
+        }
     }
     /// Updates the aggregator with the given trade.
     fn handle_trade(&mut self, trade: TradeTick) {
@@ -257,13 +250,72 @@ impl BarBuilder {
         adjusted
     }
 
+    fn accepts_price_precision(&self, precision: u8) -> bool {
+        if self.adjustment_active
+            && self.adjustment_is_ratio
+            && let Err(e) = check_float_precision(precision)
+        {
+            log::warn!("Cannot apply ratio adjustment for {}: {e}", self.bar_type);
+            return false;
+        }
+
+        if !raw_scales_match(self.price_precision, precision) {
+            log::warn!(
+                "Cannot aggregate {} with price precision {precision} at bar precision {}",
+                self.bar_type,
+                self.price_precision,
+            );
+            return false;
+        }
+
+        true
+    }
+
+    fn accepts_update_precision(&self, price: u8, size: u8) -> bool {
+        if !raw_scales_match(self.size_precision, size) {
+            log::warn!(
+                "Cannot aggregate {} with size precision {size} at volume precision {}",
+                self.bar_type,
+                self.size_precision,
+            );
+            return false;
+        }
+
+        self.accepts_price_precision(price)
+    }
+
+    fn accepts_bar_precision(&self, bar: &Bar, volume: Quantity) -> bool {
+        let [open, high, low, close] = [
+            bar.open.precision,
+            bar.high.precision,
+            bar.low.precision,
+            bar.close.precision,
+        ];
+
+        let min = open.min(high).min(low).min(close);
+        let max = open.max(high).max(low).max(close);
+        if !raw_scales_match(min, max) {
+            log::warn!(
+                "Cannot aggregate {} with mixed source bar price scales",
+                self.bar_type
+            );
+            return false;
+        }
+
+        self.accepts_update_precision(max, volume.precision)
+    }
+
     /// Updates the builder state with the given price, size, and init timestamp.
+    ///
+    /// Skips the update when price or volume scales differ or a ratio adjustment requires unsupported
+    /// float precision.
     ///
     /// # Panics
     ///
     /// Panics if `high` or `low` values are unexpectedly `None` when updating.
     pub fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
-        if ts_init < self.ts_last {
+        if ts_init < self.ts_last || !self.accepts_update_precision(price.precision, size.precision)
+        {
             return; // Not applicable
         }
 
@@ -294,11 +346,14 @@ impl BarBuilder {
 
     /// Updates the builder state with a completed bar, its volume, and the bar init timestamp.
     ///
+    /// Skips the update when price or volume scales differ or a ratio adjustment requires unsupported
+    /// float precision.
+    ///
     /// # Panics
     ///
     /// Panics if `high` or `low` values are unexpectedly `None` when updating.
     pub fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
-        if ts_init < self.ts_last {
+        if ts_init < self.ts_last || !self.accepts_bar_precision(&bar, volume) {
             return; // Not applicable
         }
 
@@ -575,7 +630,12 @@ impl BarAggregator for TickImbalanceBarAggregator {
     }
 
     fn handle_trade(&mut self, trade: TradeTick) {
-        if self.core.is_stale(trade.ts_init) {
+        if self.core.is_stale(trade.ts_init)
+            || !self
+                .core
+                .builder
+                .accepts_update_precision(trade.price.precision, trade.size.precision)
+        {
             return;
         }
 
@@ -642,7 +702,12 @@ impl BarAggregator for TickRunsBarAggregator {
     }
 
     fn handle_trade(&mut self, trade: TradeTick) {
-        if self.core.is_stale(trade.ts_init) {
+        if self.core.is_stale(trade.ts_init)
+            || !self
+                .core
+                .builder
+                .accepts_update_precision(trade.price.precision, trade.size.precision)
+        {
             return;
         }
 
@@ -712,7 +777,12 @@ impl BarAggregator for VolumeBarAggregator {
 
     /// Apply the given update to the aggregator.
     fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
-        if self.core.is_stale(ts_init) {
+        if self.core.is_stale(ts_init)
+            || !self
+                .core
+                .builder
+                .accepts_update_precision(price.precision, size.precision)
+        {
             return;
         }
 
@@ -741,7 +811,7 @@ impl BarAggregator for VolumeBarAggregator {
     }
 
     fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
-        if self.core.is_stale(ts_init) {
+        if self.core.is_stale(ts_init) || !self.core.builder.accepts_bar_precision(&bar, volume) {
             return;
         }
 
@@ -814,7 +884,12 @@ impl BarAggregator for VolumeImbalanceBarAggregator {
     }
 
     fn handle_trade(&mut self, trade: TradeTick) {
-        if self.core.is_stale(trade.ts_init) {
+        if self.core.is_stale(trade.ts_init)
+            || !self
+                .core
+                .builder
+                .accepts_update_precision(trade.price.precision, trade.size.precision)
+        {
             return;
         }
 
@@ -907,7 +982,12 @@ impl BarAggregator for VolumeRunsBarAggregator {
     }
 
     fn handle_trade(&mut self, trade: TradeTick) {
-        if self.core.is_stale(trade.ts_init) {
+        if self.core.is_stale(trade.ts_init)
+            || !self
+                .core
+                .builder
+                .accepts_update_precision(trade.price.precision, trade.size.precision)
+        {
             return;
         }
 
@@ -999,7 +1079,12 @@ impl BarAggregator for ValueBarAggregator {
 
     /// Apply the given update to the aggregator.
     fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
-        if self.core.is_stale(ts_init) {
+        if self.core.is_stale(ts_init)
+            || !self
+                .core
+                .builder
+                .accepts_update_precision(price.precision, size.precision)
+        {
             return;
         }
 
@@ -1047,7 +1132,7 @@ impl BarAggregator for ValueBarAggregator {
     }
 
     fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
-        if self.core.is_stale(ts_init) {
+        if self.core.is_stale(ts_init) || !self.core.builder.accepts_bar_precision(&bar, volume) {
             return;
         }
 
@@ -1136,7 +1221,12 @@ impl BarAggregator for ValueImbalanceBarAggregator {
     }
 
     fn handle_trade(&mut self, trade: TradeTick) {
-        if self.core.is_stale(trade.ts_init) {
+        if self.core.is_stale(trade.ts_init)
+            || !self
+                .core
+                .builder
+                .accepts_update_precision(trade.price.precision, trade.size.precision)
+        {
             return;
         }
 
@@ -1283,7 +1373,12 @@ impl BarAggregator for ValueRunsBarAggregator {
     }
 
     fn handle_trade(&mut self, trade: TradeTick) {
-        if self.core.is_stale(trade.ts_init) {
+        if self.core.is_stale(trade.ts_init)
+            || !self
+                .core
+                .builder
+                .accepts_update_precision(trade.price.precision, trade.size.precision)
+        {
             return;
         }
 
@@ -1409,7 +1504,12 @@ impl BarAggregator for RenkoBarAggregator {
     /// For Renko bars, we check if the price movement from the last close
     /// is greater than or equal to the brick size. If so, we create new bars.
     fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
-        if self.core.is_stale(ts_init) {
+        if self.core.is_stale(ts_init)
+            || !self
+                .core
+                .builder
+                .accepts_update_precision(price.precision, size.precision)
+        {
             return;
         }
 
@@ -1420,7 +1520,7 @@ impl BarAggregator for RenkoBarAggregator {
     }
 
     fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
-        if self.core.is_stale(ts_init) {
+        if self.core.is_stale(ts_init) || !self.core.builder.accepts_bar_precision(&bar, volume) {
             return;
         }
 
@@ -1854,8 +1954,27 @@ impl TimeBarAggregator {
             ))
     }
 
-    fn preprocess_historical_events(&mut self, ts_init: UnixNanos, include_close: bool) {
-        if self.clock.borrow().timestamp_ns() == UnixNanos::default() {
+    fn advance_historical_time(&mut self, ts_init: UnixNanos, include_close: bool) -> bool {
+        if !self.historical_mode {
+            return true;
+        }
+
+        let now = self.clock.borrow().timestamp_ns();
+        if self.core.is_stale(ts_init) || ts_init < now {
+            return false;
+        }
+
+        self.preprocess_historical_events(ts_init, include_close, now);
+        true
+    }
+
+    fn preprocess_historical_events(
+        &mut self,
+        ts_init: UnixNanos,
+        include_close: bool,
+        now: UnixNanos,
+    ) {
+        if now == UnixNanos::default() {
             // In historical mode, clock is always a VirtualClock (set by data engine)
             {
                 let mut clock_borrow = self.clock.borrow_mut();
@@ -1942,27 +2061,26 @@ impl BarAggregator for TimeBarAggregator {
         Self::stop(self);
     }
 
-    fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
-        if self.historical_mode {
-            // Stale data is not applicable, and must not move the private clock backwards
-            if self.core.is_stale(ts_init) {
-                return;
-            }
-
-            self.preprocess_historical_events(ts_init, self.is_left_open);
+    fn handle_quote(&mut self, quote: QuoteTick) {
+        if let Some((price, size)) = bar_quote_values(self.bar_type(), &quote) {
+            self.update(price, size, quote.ts_init);
+        } else {
+            self.advance_historical_time(quote.ts_init, self.is_left_open);
         }
+    }
 
-        self.core.builder.update(price, size, ts_init);
+    fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
+        if self.advance_historical_time(ts_init, self.is_left_open) {
+            self.core.builder.update(price, size, ts_init);
+        }
     }
 
     fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
-        if self.historical_mode {
-            if self.core.is_stale(ts_init) {
-                return;
-            }
-
-            // Completed source bars belong to the interval ending at their init timestamp
-            self.preprocess_historical_events(ts_init, true);
+        // Completed source bars belong to the interval ending at their init timestamp
+        if !self.advance_historical_time(ts_init, true)
+            || !self.core.builder.accepts_bar_precision(&bar, volume)
+        {
+            return;
         }
 
         self.core.builder.update_bar(bar, volume, ts_init);
@@ -2013,6 +2131,33 @@ impl BarAggregator for TimeBarAggregator {
 
     fn is_historical(&self) -> bool {
         self.historical_mode
+    }
+}
+
+fn bar_quote_values(bar_type: BarType, quote: &QuoteTick) -> Option<(Price, Quantity)> {
+    let price_type = bar_type.spec().price_type;
+    if price_type == PriceType::Mid {
+        let precision = quote
+            .bid_price
+            .precision
+            .max(quote.ask_price.precision)
+            .max(quote.bid_size.precision)
+            .max(quote.ask_size.precision);
+
+        if let Err(e) = check_float_precision(precision) {
+            log::warn!("Cannot aggregate quote midpoint for {bar_type}: {e}");
+            return None;
+        }
+    }
+
+    if let (Ok(price), Ok(size)) = (
+        quote.extract_price(price_type),
+        quote.extract_size(price_type),
+    ) {
+        Some((price, size))
+    } else {
+        log::error!("Cannot aggregate quote for {bar_type}: {price_type} unsupported for quotes");
+        None
     }
 }
 
@@ -2435,9 +2580,45 @@ impl SpreadQuoteAggregator {
             return;
         }
 
+        self.has_update = false;
+
+        if let Err(e) = check_float_precision(self.price_precision.max(self.size_precision)) {
+            log::warn!(
+                "Cannot build spread quote for {}: {e}",
+                self.spread_instrument_id
+            );
+            return;
+        }
+
         let use_vega_pricing =
             !(self.disable_vega_pricing || self.vega_pricing_temporarily_disabled);
 
+        if !self.update_leg_prices_and_sizes() {
+            return;
+        }
+
+        if !self.is_futures_spread
+            && use_vega_pricing
+            && let Some(ref vp) = self.vega_provider
+        {
+            for (idx, &leg_id) in self.leg_ids.iter().enumerate() {
+                if let Some(vega) = vp.vega_for_leg(leg_id) {
+                    self.vegas[idx] = vega;
+                }
+            }
+        }
+
+        let (raw_bid, raw_ask) = if self.is_futures_spread {
+            self.create_futures_spread_prices()
+        } else {
+            self.create_option_spread_prices()
+        };
+
+        let spread_quote = self.create_quote_tick_from_raw_prices(raw_bid, raw_ask, ts_event);
+        (self.handler)(spread_quote);
+    }
+
+    fn update_leg_prices_and_sizes(&mut self) -> bool {
         for (idx, &leg_id) in self.leg_ids.iter().enumerate() {
             let Some(tick) = self.last_quotes.get(&leg_id) else {
                 log::error!(
@@ -2445,8 +2626,24 @@ impl SpreadQuoteAggregator {
                     self.spread_instrument_id,
                     leg_id
                 );
-                return;
+                return false;
             };
+
+            let precision = tick
+                .ask_price
+                .precision
+                .max(tick.bid_price.precision)
+                .max(tick.ask_size.precision)
+                .max(tick.bid_size.precision);
+
+            if let Err(e) = check_float_precision(precision) {
+                log::warn!(
+                    "Cannot build spread quote for {} from {leg_id}: {e}",
+                    self.spread_instrument_id,
+                );
+                return false;
+            }
+
             let ask_price = tick.ask_price.as_f64();
             let bid_price = tick.bid_price.as_f64();
             self.bid_prices[idx] = bid_price;
@@ -2457,23 +2654,10 @@ impl SpreadQuoteAggregator {
             if !self.is_futures_spread {
                 self.mid_prices[idx] = f64::midpoint(ask_price, bid_price);
                 self.bid_ask_spreads[idx] = ask_price - bid_price;
-
-                if use_vega_pricing
-                    && let Some(ref vp) = self.vega_provider
-                    && let Some(vega) = vp.vega_for_leg(leg_id)
-                {
-                    self.vegas[idx] = vega;
-                }
             }
         }
-        let (raw_bid, raw_ask) = if self.is_futures_spread {
-            self.create_futures_spread_prices()
-        } else {
-            self.create_option_spread_prices()
-        };
-        let spread_quote = self.create_quote_tick_from_raw_prices(raw_bid, raw_ask, ts_event);
-        self.has_update = false;
-        (self.handler)(spread_quote);
+
+        true
     }
 
     fn create_option_spread_prices(&mut self) -> (f64, f64) {
@@ -2631,6 +2815,8 @@ mod tests {
 
     use nautilus_common::{clock::VirtualClock, timer::TimeEvent};
     use nautilus_core::{UUID4, UnixNanos};
+    #[cfg(feature = "defi")]
+    use nautilus_model::identifiers::TradeId;
     use nautilus_model::{
         data::{BarSpecification, BarType, QuoteTick},
         enums::{AggregationSource, AggressorSide, BarAggregation, PriceType},
@@ -2643,6 +2829,117 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[case::ratio_tick(false, PriceType::Last, 3_500_000_000)]
+    #[case::ratio_bar(true, PriceType::Last, 3_500_000_000)]
+    #[case::ratio_bar_replaced_on_close(true, PriceType::Last, 2_000_000_000)]
+    #[case::mid_quote(false, PriceType::Mid, 3_500_000_000)]
+    fn test_historical_time_bar_closes_after_rejecting_native_precision(
+        equity_aapl: Equity,
+        #[case] completed_bar: bool,
+        #[case] price_type: PriceType,
+        #[case] rejected_ts: u64,
+        #[values(17, 18)] precision: u8,
+    ) {
+        let id = equity_aapl.id();
+
+        let bar_type = BarType::new(
+            id,
+            BarSpecification::new(1, BarAggregation::Second, price_type),
+            AggregationSource::Internal,
+        );
+
+        let (handler, record) = recording_handler();
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+
+        let mut aggregator = TimeBarAggregator::new(
+            bar_type,
+            16,
+            0,
+            Rc::clone(&clock),
+            record,
+            false,
+            true,
+            BarIntervalType::LeftOpen,
+            None,
+            TimeZone::UTC,
+            0,
+            false,
+        );
+
+        aggregator.historical_mode = true;
+        let price = Price::from("100.0000000000000000");
+
+        let expected = if price_type == PriceType::Last {
+            aggregator.set_adjustment(Decimal::TWO, ContinuousFutureAdjustmentType::ForwardRatio);
+            Price::from("200.0000000000000000")
+        } else {
+            price
+        };
+
+        let rc: Rc<RefCell<Box<dyn BarAggregator>>> = Rc::new(RefCell::new(Box::new(aggregator)));
+        rc.borrow_mut().set_aggregator_weak(Rc::downgrade(&rc));
+        let first = UnixNanos::from(1_500_000_000);
+        let close = UnixNanos::from(2_000_000_000);
+        let later = UnixNanos::from(rejected_ts);
+        let rejected = Price::from_decimal_dp(123.into(), precision).unwrap();
+        let volume = Quantity::from(4);
+
+        rc.borrow_mut().update(price, volume, first);
+        if price_type == PriceType::Mid {
+            let quote = QuoteTick::new(id, rejected, rejected, volume, volume, later, later);
+            rc.borrow_mut().handle_quote(quote);
+        } else if completed_bar {
+            let bar = Bar::new(
+                bar_type, rejected, rejected, rejected, rejected, volume, later, later,
+            );
+
+            rc.borrow_mut().update_bar(bar, volume, later);
+        } else {
+            rc.borrow_mut().update(rejected, volume, later);
+        }
+
+        let (high, total_volume) = if later == close {
+            assert!(handler.lock().is_empty());
+            let replacement = Price::from("150.0000000000000000");
+            let size = Quantity::from(6);
+
+            let bar = Bar::new(
+                bar_type,
+                replacement,
+                replacement,
+                replacement,
+                replacement,
+                size,
+                close,
+                close,
+            );
+
+            rc.borrow_mut().update_bar(bar, size, close);
+            (Price::from("300.0000000000000000"), Quantity::from(10))
+        } else {
+            rc.borrow_mut()
+                .update(price, volume, UnixNanos::from(2_500_000_000));
+            (expected, volume)
+        };
+
+        assert_eq!(clock.borrow().timestamp_ns(), later);
+        assert_eq!(
+            *handler.lock(),
+            [Bar::new(
+                bar_type,
+                expected,
+                high,
+                expected,
+                high,
+                total_volume,
+                close,
+                close,
+            )]
+        );
+    }
 
     #[rstest]
     #[case::day(BarAggregation::Day, "2026-10-30T16:00:00Z", "2026-11-02T12:00:00Z", ["2026-10-31T04:00:00Z", "2026-11-01T04:00:00Z", "2026-11-02T05:00:00Z"])]
@@ -3546,6 +3843,154 @@ mod tests {
 
     #[cfg(feature = "defi")]
     #[rstest]
+    #[case(BarAggregation::Tick)]
+    #[case(BarAggregation::TickImbalance)]
+    #[case(BarAggregation::TickRuns)]
+    fn test_bar_aggregator_rejects_incompatible_trade_size_before_accumulating(
+        equity_aapl: Equity,
+        #[case] aggregation: BarAggregation,
+        #[values((16, 18), (17, 18), (18, 17))] precisions: (u8, u8),
+    ) {
+        let id = equity_aapl.id();
+
+        let bar_type = BarType::new(
+            id,
+            BarSpecification::new(2, aggregation, PriceType::Last),
+            AggregationSource::Internal,
+        );
+
+        let (handler, record) = recording_handler();
+        let (size_precision, rejected_precision) = precisions;
+
+        let mut aggregator: Box<dyn BarAggregator> = match aggregation {
+            BarAggregation::Tick => {
+                Box::new(TickBarAggregator::new(bar_type, 2, size_precision, record))
+            }
+            BarAggregation::TickImbalance => Box::new(TickImbalanceBarAggregator::new(
+                bar_type,
+                2,
+                size_precision,
+                record,
+            )),
+            BarAggregation::TickRuns => Box::new(TickRunsBarAggregator::new(
+                bar_type,
+                2,
+                size_precision,
+                record,
+            )),
+            _ => unreachable!(),
+        };
+
+        let size = Quantity::from_decimal_dp(Decimal::ONE, size_precision).unwrap();
+        let rejected = Quantity::from_decimal_dp(Decimal::ONE, rejected_precision).unwrap();
+        let first = Price::from("100.00");
+        let last = Price::from("103.00");
+
+        for (ts, price, size, side) in [
+            (1_u64, first, size, AggressorSide::Buy),
+            (2, Price::from("200.00"), rejected, AggressorSide::Sell),
+            (3, last, size, AggressorSide::Buy),
+        ] {
+            aggregator.handle_trade(TradeTick::new(
+                id,
+                price,
+                size,
+                side,
+                TradeId::new("VOLUME"),
+                ts.into(),
+                ts.into(),
+            ));
+        }
+
+        assert_eq!(
+            *handler.lock(),
+            [Bar::new(
+                bar_type,
+                first,
+                last,
+                first,
+                last,
+                size + size,
+                3.into(),
+                3.into()
+            )]
+        );
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[case(BarAggregation::Tick, 2)]
+    #[case(BarAggregation::Renko, 1)]
+    fn test_bar_aggregator_rejects_incompatible_trade_price_before_accumulating(
+        equity_aapl: Equity,
+        #[case] aggregation: BarAggregation,
+        #[case] step: usize,
+        #[values((16, 18), (17, 18), (18, 17))] precisions: (u8, u8),
+    ) {
+        let id = equity_aapl.id();
+
+        let bar_type = BarType::new(
+            id,
+            BarSpecification::new(step, aggregation, PriceType::Last),
+            AggregationSource::Internal,
+        );
+
+        let (handler, record) = recording_handler();
+        let (precision, rejected_precision) = precisions;
+        let first = Price::from_decimal_dp(Decimal::ONE, precision).unwrap();
+        let last = Price::from_decimal_dp(Decimal::TWO, precision).unwrap();
+        let rejected = Price::from_decimal_dp(10.into(), rejected_precision).unwrap();
+
+        let mut aggregator: Box<dyn BarAggregator> = match aggregation {
+            BarAggregation::Tick => {
+                Box::new(TickBarAggregator::new(bar_type, precision, 0, record))
+            }
+            BarAggregation::Renko => Box::new(RenkoBarAggregator::new(
+                bar_type, precision, 0, first, record,
+            )),
+            _ => unreachable!(),
+        };
+
+        for (ts, price, size) in [(1_u64, first, 1), (2, rejected, 9), (3, last, 2)] {
+            aggregator.handle_trade(TradeTick::new(
+                id,
+                price,
+                Quantity::from(size),
+                AggressorSide::Buy,
+                TradeId::new("PRICE"),
+                ts.into(),
+                ts.into(),
+            ));
+        }
+
+        let bars = handler.lock();
+        assert_eq!(
+            *bars,
+            [Bar::new(
+                bar_type,
+                first,
+                last,
+                first,
+                last,
+                Quantity::from(3),
+                3.into(),
+                3.into()
+            )]
+        );
+        let bar = &bars[0];
+        assert_eq!(
+            [
+                bar.open.precision,
+                bar.high.precision,
+                bar.low.precision,
+                bar.close.precision
+            ],
+            [precision; 4]
+        );
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
     #[case(BarAggregation::Volume)]
     #[case(BarAggregation::VolumeImbalance)]
     #[case(BarAggregation::VolumeRuns)]
@@ -3636,6 +4081,109 @@ mod tests {
         assert_eq!(bar.high, Price::from("121.00"));
         assert_eq!(bar.low, Price::from("99.00"));
         assert_eq!(bar.close, Price::from("121.00"));
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[case(16, true)]
+    #[case(17, false)]
+    #[case(18, false)]
+    fn test_tick_imbalance_ratio_rejects_unsupported_trade_before_accumulating(
+        equity_aapl: Equity,
+        #[case] precision: u8,
+        #[case] supported: bool,
+    ) {
+        let id = equity_aapl.id();
+
+        let bar_type = BarType::new(
+            id,
+            BarSpecification::new(1, BarAggregation::TickImbalance, PriceType::Last),
+            AggregationSource::Internal,
+        );
+
+        let (handler, record) = recording_handler();
+        let mut aggregator = TickImbalanceBarAggregator::new(bar_type, 16, 0, record);
+        aggregator.set_adjustment(
+            Decimal::new(15, 1),
+            ContinuousFutureAdjustmentType::ForwardRatio,
+        );
+        let price = Price::from_decimal_dp(100.into(), precision).unwrap();
+        let ts = UnixNanos::from(1);
+
+        let trade = TradeTick::new(
+            id,
+            price,
+            Quantity::from(1),
+            AggressorSide::Buy,
+            TradeId::new("RATIO-1"),
+            ts,
+            ts,
+        );
+
+        aggregator.handle_trade(trade);
+
+        if !supported {
+            assert!(handler.lock().is_empty());
+            assert_eq!(aggregator.imbalance, 0);
+            assert_eq!(aggregator.core.builder.ts_last, UnixNanos::default());
+            aggregator.handle_trade(TradeTick {
+                price: Price::from_decimal_dp(100.into(), 16).unwrap(),
+                ..trade
+            });
+        }
+
+        let bars = handler.lock();
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].close, Price::from("150.0000000000000000"));
+        assert_eq!(bars[0].close.precision, 16);
+        assert_eq!(bars[0].volume, Quantity::from(1));
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[case(16, true)]
+    #[case(17, false)]
+    #[case(18, false)]
+    fn test_bar_builder_ratio_checks_bar_before_updating_ohlc(
+        equity_aapl: Equity,
+        #[case] precision: u8,
+        #[case] supported: bool,
+    ) {
+        let id = equity_aapl.id();
+
+        let bar_type = BarType::new(
+            id,
+            BarSpecification::new(2, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+
+        let mut builder = BarBuilder::new(bar_type, 16, 0);
+        builder.set_adjustment(
+            Decimal::new(15, 1),
+            ContinuousFutureAdjustmentType::ForwardRatio,
+        );
+        let open = Price::from_decimal_dp(100.into(), precision).unwrap();
+        let high = Price::from_decimal_dp(102.into(), precision).unwrap();
+        let low = Price::from_decimal_dp(98.into(), precision).unwrap();
+        let close = Price::from_decimal_dp(101.into(), precision).unwrap();
+        let ts = UnixNanos::from(1);
+        let volume = Quantity::from(2);
+        let bar = Bar::new(bar_type, open, high, low, close, volume, ts, ts);
+
+        builder.update_bar(bar, volume, ts);
+        if supported {
+            let bar = builder.build_now();
+            assert_eq!(bar.open, Price::from("150.0000000000000000"));
+            assert_eq!(bar.high, Price::from("153.0000000000000000"));
+            assert_eq!(bar.low, Price::from("147.0000000000000000"));
+            assert_eq!(bar.close, Price::from("151.5000000000000000"));
+            assert_eq!(bar.volume, volume);
+        } else {
+            assert_eq!(builder.count, 0);
+            assert_eq!(builder.ts_last, UnixNanos::default());
+            assert_eq!(builder.volume, Quantity::zero(0));
+            assert!(!builder.initialized);
+        }
     }
 
     #[rstest]
@@ -4008,6 +4556,50 @@ mod tests {
         assert_eq!(bars[0].volume, expected_size);
         assert_eq!(bars[0].ts_event, ts_init);
         assert_eq!(bars[0].ts_init, ts_init);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[case(16, 16, true)]
+    #[case(17, 16, false)]
+    #[case(18, 16, false)]
+    #[case(16, 17, false)]
+    #[case(16, 18, false)]
+    fn test_mid_quote_bar_rejects_native_scale_before_extracting_midpoint(
+        equity_aapl: Equity,
+        #[case] price_precision: u8,
+        #[case] size_precision: u8,
+        #[case] supported: bool,
+    ) {
+        let id = equity_aapl.id();
+
+        let bar_type = BarType::new(
+            id,
+            BarSpecification::new(1, BarAggregation::Tick, PriceType::Mid),
+            AggregationSource::Internal,
+        );
+
+        let (handler, record) = recording_handler();
+        let mut aggregator = TickBarAggregator::new(bar_type, 16, 16, record);
+        let bid_price = Price::from_decimal_dp(100.into(), price_precision).unwrap();
+        let ask_price = Price::from_decimal_dp(102.into(), price_precision).unwrap();
+        let bid_size = Quantity::from_decimal_dp(10.into(), size_precision).unwrap();
+        let ask_size = Quantity::from_decimal_dp(14.into(), size_precision).unwrap();
+        let ts = UnixNanos::from(1);
+        let quote = QuoteTick::new(id, bid_price, ask_price, bid_size, ask_size, ts, ts);
+
+        aggregator.handle_quote(quote);
+
+        let bars = handler.lock();
+
+        if supported {
+            assert_eq!(bars.len(), 1);
+            assert_eq!(bars[0].close, Price::from("101.0000000000000000"));
+            assert_eq!(bars[0].volume, Quantity::from("12.0000000000000000"));
+        } else {
+            assert!(bars.is_empty());
+            assert_eq!(aggregator.core.builder.ts_last, UnixNanos::default());
+        }
     }
 
     #[rstest]
@@ -7457,7 +8049,18 @@ mod tests {
     }
 
     #[rstest]
-    fn test_spread_quote_quote_driven_emits_when_all_legs_received(equity_aapl: Equity) {
+    #[case(2, 0, true)]
+    #[cfg_attr(feature = "defi", case(16, 16, true))]
+    #[cfg_attr(feature = "defi", case(17, 16, false))]
+    #[cfg_attr(feature = "defi", case(16, 17, false))]
+    #[cfg_attr(feature = "defi", case(18, 16, false))]
+    #[cfg_attr(feature = "defi", case(16, 18, false))]
+    fn test_spread_quote_quote_driven_emits_when_all_legs_received(
+        equity_aapl: Equity,
+        #[case] price_precision: u8,
+        #[case] size_precision: u8,
+        #[case] supported: bool,
+    ) {
         let instrument = InstrumentAny::Equity(equity_aapl);
         let leg1 = instrument.id();
         let leg2 = InstrumentId::from("MSFT.XNAS");
@@ -7484,15 +8087,11 @@ mod tests {
         );
 
         let ts = UnixNanos::from(1_000_000_000);
-        agg.handle_quote_tick(QuoteTick::new(
-            leg1,
-            Price::from("100.00"),
-            Price::from("100.10"),
-            Quantity::from(10),
-            Quantity::from(10),
-            ts,
-            ts,
-        ));
+        let bid = Price::from_decimal_dp(100.into(), price_precision).unwrap();
+        let ask = Price::from_decimal_dp(Decimal::new(10_010, 2), price_precision).unwrap();
+        let size = Quantity::from_decimal_dp(10.into(), size_precision).unwrap();
+        let leg1_quote = QuoteTick::new(leg1, bid, ask, size, size, ts, ts);
+        agg.handle_quote_tick(leg1_quote);
         assert_eq!(handler.lock().len(), 0);
 
         agg.handle_quote_tick(QuoteTick::new(
@@ -7504,10 +8103,89 @@ mod tests {
             ts,
             ts,
         ));
+
+        if !supported {
+            assert!(handler.lock().is_empty());
+            assert!(!agg.has_update);
+            agg.handle_quote_tick(QuoteTick {
+                bid_price: Price::from("100.00"),
+                ask_price: Price::from("100.10"),
+                bid_size: Quantity::from(10),
+                ask_size: Quantity::from(10),
+                ..leg1_quote
+            });
+        }
+
         let quotes = handler.lock();
         assert_eq!(quotes.len(), 1);
         assert_eq!(quotes[0].instrument_id, spread_id);
-        assert!(quotes[0].bid_price < quotes[0].ask_price);
+        assert_eq!(quotes[0].bid_price, Price::from("0.90"));
+        assert_eq!(quotes[0].ask_price, Price::from("1.10"));
+        assert_eq!(quotes[0].bid_size, Quantity::from(10));
+        assert_eq!(quotes[0].ask_size, Quantity::from(10));
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[case(16, 16, true)]
+    #[case(17, 16, false)]
+    #[case(18, 16, false)]
+    #[case(16, 17, false)]
+    #[case(16, 18, false)]
+    fn test_spread_quote_rejects_unsupported_float_output(
+        #[case] price_precision: u8,
+        #[case] size_precision: u8,
+        #[case] supported: bool,
+    ) {
+        let spread_id = InstrumentId::from("SPREAD.XNAS");
+        let leg_a = InstrumentId::from("AAPL.XNAS");
+        let leg_b = InstrumentId::from("MSFT.XNAS");
+        let (handler, record) = recording_handler();
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+
+        let mut aggregator = SpreadQuoteAggregator::new(
+            spread_id,
+            &[(leg_a, 1), (leg_b, -1)],
+            true,
+            price_precision,
+            size_precision,
+            Box::new(record),
+            clock,
+            false,
+            None,
+            0,
+            false,
+            60,
+            None,
+            None,
+        );
+
+        let size = Quantity::from(10);
+
+        for (id, bid, ask) in [(leg_a, "100.00", "100.25"), (leg_b, "99.00", "99.25")] {
+            let bid = Price::from(bid);
+            let ask = Price::from(ask);
+            let ts = UnixNanos::from(1);
+            let tick = QuoteTick::new(id, bid, ask, size, size, ts, ts);
+            aggregator.handle_quote_tick(tick);
+        }
+
+        let quotes = handler.lock();
+
+        if supported {
+            assert_eq!(quotes.len(), 1);
+            let quote = &quotes[0];
+            assert_eq!(quote.bid_price, Price::from("0.7500000000000000"));
+            assert_eq!(quote.ask_price, Price::from("1.2500000000000000"));
+            assert_eq!(quote.bid_size, Quantity::from("10.0000000000000000"));
+            assert_eq!(quote.ask_size, Quantity::from("10.0000000000000000"));
+            assert_eq!(quote.bid_price.precision, price_precision);
+            assert_eq!(quote.bid_size.precision, size_precision);
+        } else {
+            assert!(quotes.is_empty());
+        }
+
+        assert!(!aggregator.has_update);
     }
 
     #[rstest]
@@ -8996,9 +9674,9 @@ mod property_tests {
 
     fn time_bar_spec_strategy() -> impl Strategy<Value = (BarAggregation, usize)> {
         prop_oneof![
-            (Just(BarAggregation::Second), 1usize..=5),
-            (Just(BarAggregation::Minute), 1usize..=5),
-            (Just(BarAggregation::Hour), 1usize..=4),
+            (Just(BarAggregation::Second), 1_usize..=5),
+            (Just(BarAggregation::Minute), 1_usize..=5),
+            (Just(BarAggregation::Hour), 1_usize..=4),
         ]
     }
 
@@ -9147,7 +9825,7 @@ mod property_tests {
 
         #[rstest]
         fn prop_bar_builder_ohlc_invariants(
-            updates in prop::collection::vec((1i64..=100_000i64, 1u64..=1_000u64), 1..=50),
+            updates in prop::collection::vec((1_i64..=100_000_i64, 1_u64..=1_000_u64), 1..=50),
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
             let bar_spec = BarSpecification::new(1, BarAggregation::Tick, PriceType::Last);
@@ -9175,8 +9853,8 @@ mod property_tests {
 
         #[rstest]
         fn prop_tick_bar_aggregator_volume_conservation(
-            ticks in prop::collection::vec((1i64..=1_000i64, 1u64..=100u64), 3..=60),
-            step in 1usize..=5,
+            ticks in prop::collection::vec((1_i64..=1_000_i64, 1_u64..=100_u64), 3..=60),
+            step in 1_usize..=5,
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
             let bar_spec = BarSpecification::new(step, BarAggregation::Tick, PriceType::Last);
@@ -9223,8 +9901,8 @@ mod property_tests {
 
         #[rstest]
         fn prop_volume_bar_aggregator_conservation(
-            sizes in prop::collection::vec(1u64..=50u64, 3..=40),
-            step in 2u64..=10u64,
+            sizes in prop::collection::vec(1_u64..=50_u64, 3..=40),
+            step in 2_u64..=10_u64,
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
             let bar_spec = BarSpecification::new(step as usize, BarAggregation::Volume, PriceType::Last);
@@ -9268,8 +9946,8 @@ mod property_tests {
 
         #[rstest]
         fn prop_volume_bar_matches_unit_trade_reference(
-            updates in prop::collection::vec((1i64..=100_000i64, 1u64..=8u64, 0u64..=30u64), 1..=30),
-            step in 1usize..=5,
+            updates in prop::collection::vec((1_i64..=100_000_i64, 1_u64..=8_u64, 0_u64..=30_u64), 1..=30),
+            step in 1_usize..=5,
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
             let bar_spec = BarSpecification::new(step, BarAggregation::Volume, PriceType::Last);
@@ -9354,8 +10032,8 @@ mod property_tests {
 
         #[rstest]
         fn prop_bar_builder_spread_adjustment_is_additive(
-            updates in prop::collection::vec((10_000i64..=100_000i64, 1u64..=100u64), 1..=20),
-            spread_cents in -10_000i64..=10_000i64,
+            updates in prop::collection::vec((10_000_i64..=100_000_i64, 1_u64..=100_u64), 1..=20),
+            spread_cents in -10_000_i64..=10_000_i64,
             backward in any::<bool>(),
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
@@ -9404,7 +10082,7 @@ mod property_tests {
 
         #[rstest]
         fn prop_bar_builder_inactive_adjustment_is_identity(
-            updates in prop::collection::vec((1i64..=100_000i64, 1u64..=1_000u64), 1..=20),
+            updates in prop::collection::vec((1_i64..=100_000_i64, 1_u64..=1_000_u64), 1..=20),
             use_ratio in any::<bool>(),
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
@@ -9441,10 +10119,10 @@ mod property_tests {
 
         #[rstest]
         fn prop_bar_builder_spread_preserves_raw_arithmetic(
-            updates in prop::collection::vec((10_000i64..=100_000i64, 1u64..=100u64), 1..=20),
+            updates in prop::collection::vec((10_000_i64..=100_000_i64, 1_u64..=100_u64), 1..=20),
             // Sub-precision spread: scale 4 versus price precision 2. Locks in that
             // spread mode performs raw addition without rounding to price precision.
-            spread_micro in -10_000i64..=10_000i64,
+            spread_micro in -10_000_i64..=10_000_i64,
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
             let bar_spec = BarSpecification::new(1, BarAggregation::Tick, PriceType::Last);
@@ -9510,9 +10188,9 @@ mod property_tests {
 
         #[rstest]
         fn prop_bar_builder_active_ratio_scales_each_ohlc(
-            updates in prop::collection::vec((1_000i64..=100_000i64, 1u64..=100u64), 1..=20),
+            updates in prop::collection::vec((1_000_i64..=100_000_i64, 1_u64..=100_u64), 1..=20),
             // Ratio in [0.50, 2.00] excluding exactly 1.00 to stay on the active path.
-            ratio_centi in prop_oneof![50i64..=99i64, 101i64..=200i64],
+            ratio_centi in prop_oneof![50_i64..=99_i64, 101_i64..=200_i64],
             backward in any::<bool>(),
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
@@ -9531,8 +10209,8 @@ mod property_tests {
 
             let mut min_cents = i64::MAX;
             let mut max_cents = i64::MIN;
-            let mut first_cents = 0i64;
-            let mut last_cents = 0i64;
+            let mut first_cents = 0_i64;
+            let mut last_cents = 0_i64;
 
             for (i, (price_cents, size)) in updates.iter().enumerate() {
                 if *price_cents < min_cents {
@@ -9567,8 +10245,8 @@ mod property_tests {
 
         #[rstest]
         fn prop_bar_builder_spread_mode_direction_is_metadata_only(
-            updates in prop::collection::vec((10_000i64..=100_000i64, 1u64..=100u64), 1..=20),
-            spread_cents in -10_000i64..=10_000i64,
+            updates in prop::collection::vec((10_000_i64..=100_000_i64, 1_u64..=100_u64), 1..=20),
+            spread_cents in -10_000_i64..=10_000_i64,
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
             let bar_spec = BarSpecification::new(1, BarAggregation::Tick, PriceType::Last);
@@ -9598,8 +10276,8 @@ mod property_tests {
 
         #[rstest]
         fn prop_value_bar_aggregator_ohlc_invariants(
-            ticks in prop::collection::vec((50i64..=500i64, 1u64..=20u64), 2..=30),
-            step in 100u64..=2_000u64,
+            ticks in prop::collection::vec((50_i64..=500_i64, 1_u64..=20_u64), 2..=30),
+            step in 100_u64..=2_000_u64,
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
             let bar_spec = BarSpecification::new(step as usize, BarAggregation::Value, PriceType::Last);
@@ -9633,8 +10311,8 @@ mod property_tests {
 
         #[rstest]
         fn prop_renko_brick_chain(
-            moves in prop::collection::vec(-500i64..=500i64, 1..=60),
-            step in 1usize..=10,
+            moves in prop::collection::vec(-500_i64..=500_i64, 1..=60),
+            step in 1_usize..=10,
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
             let bar_spec = BarSpecification::new(step, BarAggregation::Renko, PriceType::Last);
@@ -9687,8 +10365,8 @@ mod property_tests {
 
         #[rstest]
         fn prop_volume_imbalance_one_sided_conservation(
-            sizes in prop::collection::vec(1u64..=50u64, 1..=40),
-            step in 2u64..=10u64,
+            sizes in prop::collection::vec(1_u64..=50_u64, 1..=40),
+            step in 2_u64..=10_u64,
             buyer in any::<bool>(),
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
@@ -9739,8 +10417,8 @@ mod property_tests {
 
         #[rstest]
         fn prop_volume_runs_one_sided_conservation(
-            sizes in prop::collection::vec(1u64..=50u64, 1..=40),
-            step in 2u64..=10u64,
+            sizes in prop::collection::vec(1_u64..=50_u64, 1..=40),
+            step in 2_u64..=10_u64,
             buyer in any::<bool>(),
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
@@ -9790,8 +10468,8 @@ mod property_tests {
 
         #[rstest]
         fn prop_value_bar_cum_value_stays_below_step(
-            ticks in prop::collection::vec((50i64..=500i64, 1u64..=20u64), 1..=30),
-            step in 100u64..=2_000u64,
+            ticks in prop::collection::vec((50_i64..=500_i64, 1_u64..=20_u64), 1..=30),
+            step in 100_u64..=2_000_u64,
         ) {
             let instrument = InstrumentAny::Equity(equity_aapl());
             let bar_spec = BarSpecification::new(step as usize, BarAggregation::Value, PriceType::Last);

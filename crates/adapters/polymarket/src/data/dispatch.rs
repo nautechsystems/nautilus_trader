@@ -350,6 +350,7 @@ fn reject_book_snapshot(
     ctx: &WsMessageContext,
     instrument_id: InstrumentId,
     error: PolymarketWsError,
+    reason: &str,
 ) {
     let outcome = ctx.subscriptions.book_sync.reject_snapshot_if_subscribed(
         &ctx.subscriptions.active_delta_subs,
@@ -359,6 +360,7 @@ fn reject_book_snapshot(
     );
 
     if outcome == BookSequenceOutcome::Recover {
+        log::debug!("Resyncing book for {instrument_id} {reason}");
         start_book_recovery(ctx, instrument_id);
     }
 }
@@ -385,6 +387,12 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 Ok(timestamp) => timestamp,
                 Err(e) => {
                     log::error!("Failed to parse book snapshot timestamp: {e}");
+                    reject_book_snapshot(
+                        ctx,
+                        instrument_id,
+                        PolymarketWsError::InvalidSnapshot(e.to_string()),
+                        "after invalid snapshot timestamp",
+                    );
                     return;
                 }
             };
@@ -415,6 +423,12 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
             if let Some(state) = state.as_mut()
                 && state.is_stale_snapshot(ts_event, snap.hash.as_deref())
             {
+                ctx.subscriptions
+                    .book_sync
+                    .reject_stale_snapshot_if_subscribed(
+                        &ctx.subscriptions.active_delta_subs,
+                        instrument_id,
+                    );
                 return;
             }
 
@@ -436,6 +450,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                         ctx,
                         instrument_id,
                         PolymarketWsError::InvalidSnapshot(e.to_string()),
+                        "after snapshot hash verification failure",
                     );
                     return;
                 }
@@ -527,9 +542,12 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                         // The snapshot could not seed the book; without an
                         // accepted snapshot the book stays gated inside the
                         // current episode.
-                        request_book_recovery(
+                        reject_book_snapshot(
                             ctx,
                             instrument_id,
+                            PolymarketWsError::InvalidSnapshot(
+                                "Book snapshot could not be applied".to_string(),
+                            ),
                             "after snapshot application failure",
                         );
                     }
@@ -889,7 +907,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 let snapshot = Arc::clone(&instruments.load());
 
                 let result = if let Some(condition_id) = fetch_condition_id {
-                    let mut attempt = 0usize;
+                    let mut attempt = 0_usize;
 
                     loop {
                         let params = GetGammaMarketsParams {
@@ -1720,7 +1738,7 @@ mod tests {
 
     use super::{
         super::{
-            PolymarketDataClient,
+            PolymarketDataClient, SubscriptionKind,
             instruments::{apply_live_instrument, cache_instrument_unchecked},
         },
         *,
@@ -2890,7 +2908,7 @@ mod tests {
 
         assert_eq!(client.instruments.load().len(), expected);
         assert_eq!(client.subscriptions.token_meta.len(), expected);
-        assert_eq!(publish_count, usize::from(!multiple && !closed));
+        assert_eq!(publish_count, expected);
 
         for instrument in response_instruments {
             assert_eq!(crate::filters::market_closed(instrument), Some(closed));
@@ -3427,7 +3445,7 @@ mod tests {
         ctx.subscriptions.subscribe_new_markets = true;
         ctx.new_market_fetch_semaphore = Arc::new(tokio::sync::Semaphore::new(1));
 
-        let slug_count = 6usize;
+        let slug_count = 6_usize;
         for idx in 0..slug_count {
             let slug = format!("asset-{idx}-updown-5m-1");
             handle_market_message(make_new_market(&slug, true), &ctx);
@@ -5203,6 +5221,7 @@ mod tests {
             &ctx.subscriptions.closed_condition_ids,
             &ctx.resolve_poll_watchlist,
             &ctx.instruments,
+            None,
             &stub_position_opened_event(yes.id()),
         );
 
@@ -5256,6 +5275,7 @@ mod tests {
             &ctx.subscriptions.closed_condition_ids,
             &ctx.resolve_poll_watchlist,
             &ctx.instruments,
+            None,
             &stub_position_opened_event(yes.id()),
         );
         update_resolve_watchlist_from_position_event_serialized(
@@ -5263,6 +5283,7 @@ mod tests {
             &ctx.subscriptions.closed_condition_ids,
             &ctx.resolve_poll_watchlist,
             &ctx.instruments,
+            None,
             &stub_position_opened_event(no.id()),
         );
 
@@ -12372,7 +12393,7 @@ mod tests {
         assert_eq!(quote.ask_size, Quantity::from("300.00"));
         assert_eq!(
             quote.ts_event,
-            UnixNanos::from(1_700_000_003_000_000_000u64),
+            UnixNanos::from(1_700_000_003_000_000_000_u64),
         );
         assert_eq!(
             ctx.subscriptions
@@ -12396,7 +12417,7 @@ mod tests {
                 Price::from("0.51"),
                 Quantity::from("100.00"),
                 Quantity::from("75.00"),
-                UnixNanos::from(1_700_000_002_000_000_000u64),
+                UnixNanos::from(1_700_000_002_000_000_000_u64),
                 UnixNanos::default(),
             ),
         );
@@ -12413,7 +12434,7 @@ mod tests {
         assert_eq!(quote.ask_size, Quantity::from("0.00"));
         assert_eq!(
             quote.ts_event,
-            UnixNanos::from(1_700_000_003_000_000_000u64),
+            UnixNanos::from(1_700_000_003_000_000_000_u64),
         );
     }
 
@@ -12450,7 +12471,7 @@ mod tests {
                 Price::from("0.51"),
                 Quantity::from("12.00"),
                 Quantity::from("13.00"),
-                UnixNanos::from(1_700_000_002_000_000_000u64),
+                UnixNanos::from(1_700_000_002_000_000_000_u64),
                 UnixNanos::default(),
             ),
         );
@@ -12489,7 +12510,7 @@ mod tests {
             .order_books
             .get_mut(&instrument_id)
             .unwrap()
-            .ts_last = UnixNanos::from(1_700_000_004_000_000_000u64);
+            .ts_last = UnixNanos::from(1_700_000_004_000_000_000_u64);
 
         let last_quote = QuoteTick::new(
             instrument_id,
@@ -12497,7 +12518,7 @@ mod tests {
             Price::from("0.51"),
             Quantity::from("12.00"),
             Quantity::from("13.00"),
-            UnixNanos::from(1_700_000_002_000_000_000u64),
+            UnixNanos::from(1_700_000_002_000_000_000_u64),
             UnixNanos::default(),
         );
         ctx.subscriptions
@@ -12588,7 +12609,7 @@ mod tests {
         assert_eq!(book.best_bid_size(), Some(Quantity::from("50.00")));
         assert_eq!(book.best_ask_price(), Some(Price::from("0.52")));
         assert_eq!(book.best_ask_size(), Some(Quantity::from("300.00")));
-        assert_eq!(book.ts_last, UnixNanos::from(1_700_000_002_000_000_000u64),);
+        assert_eq!(book.ts_last, UnixNanos::from(1_700_000_002_000_000_000_u64),);
     }
 
     #[rstest]
@@ -12663,7 +12684,7 @@ mod tests {
         assert_eq!(book.best_bid_size(), Some(Quantity::from("50.00")));
         assert_eq!(book.best_ask_price(), Some(Price::from("0.52")));
         assert_eq!(book.best_ask_size(), Some(Quantity::from("300.00")));
-        assert_eq!(book.ts_last, UnixNanos::from(1_700_000_002_000_000_000u64),);
+        assert_eq!(book.ts_last, UnixNanos::from(1_700_000_002_000_000_000_u64),);
     }
 
     #[rstest]
@@ -12677,7 +12698,7 @@ mod tests {
             Price::from("0.51"),
             Quantity::from("100.00"),
             Quantity::from("75.00"),
-            UnixNanos::from(1_700_000_004_000_000_000u64),
+            UnixNanos::from(1_700_000_004_000_000_000_u64),
             UnixNanos::default(),
         );
         ctx.subscriptions.last_quotes.insert(instrument_id, latest);
@@ -12747,7 +12768,7 @@ mod tests {
         assert!(emitted_quotes(&mut data_rx).is_empty());
         assert_eq!(
             latest.ts_event,
-            UnixNanos::from(1_700_000_003_000_000_000u64)
+            UnixNanos::from(1_700_000_003_000_000_000_u64)
         );
         assert_eq!(latest.bid_price, first.bid_price);
         assert_eq!(latest.ask_price, first.ask_price);
@@ -12811,7 +12832,7 @@ mod tests {
                 Price::from("0.51"),
                 Quantity::from("100.00"),
                 Quantity::from("75.00"),
-                UnixNanos::from(1_700_000_002_000_000_000u64),
+                UnixNanos::from(1_700_000_002_000_000_000_u64),
                 UnixNanos::default(),
             ),
         );
@@ -12825,7 +12846,7 @@ mod tests {
                 .get(&instrument_id)
                 .unwrap()
                 .ts_event,
-            UnixNanos::from(1_700_000_002_000_000_000u64)
+            UnixNanos::from(1_700_000_002_000_000_000_u64)
         );
     }
 
@@ -12971,7 +12992,7 @@ mod tests {
         assert_eq!(updates[0].ask_size, Quantity::from("46394.26"));
         assert_eq!(
             updates[0].ts_event,
-            UnixNanos::from(1_786_179_143_001_000_000u64)
+            UnixNanos::from(1_786_179_143_001_000_000_u64)
         );
         assert_eq!(
             ctx.subscriptions
@@ -13171,6 +13192,11 @@ mod tests {
             assert!(recovery.begin_replacement());
             recovery.gate.open();
             handle_market_message(MarketWsMessage::Book(snapshot.clone()), &ctx);
+            assert!(matches!(
+                &*recovery.outcome.borrow(),
+                BookRecoveryOutcome::Rejected(PolymarketWsError::InvalidSnapshot(message))
+                if message == "Book snapshot predates an update"
+            ));
         }
         assert!(!recovery.is_accepted());
         assert!(ctx.subscriptions.book_sync.book_gated(instrument_id));
@@ -14011,6 +14037,11 @@ mod tests {
             .store(true, std::sync::atomic::Ordering::Release);
         client.disconnect().await.unwrap();
         assert!(ctx.subscriptions.book_integrity.lock().is_empty());
+        assert!(
+            ctx.subscriptions
+                .book_sync
+                .has_accepted_snapshot(instrument_id)
+        );
         assert_eq!(
             consumer.bids_as_map(None),
             ctx.subscriptions
@@ -14041,6 +14072,21 @@ mod tests {
         assert_eq!(consumer.bids_as_map(None), book.bids_as_map(None));
         assert_eq!(consumer.asks_as_map(None), book.asks_as_map(None));
         assert!(!ctx.subscriptions.book_sync.book_gated(instrument_id));
+        drop(book);
+
+        client
+            .subscriptions
+            .unsubscribe(instrument_id, SubscriptionKind::Deltas);
+        assert!(
+            client
+                .subscriptions
+                .add_delta_subscription_intent(instrument_id, effective)
+        );
+        assert!(
+            !ctx.subscriptions
+                .book_sync
+                .has_accepted_snapshot(instrument_id)
+        );
     }
 
     #[rstest]
@@ -14566,7 +14612,7 @@ mod tests {
         assert_eq!(book.asks_as_map(None), baseline.asks_as_map(None));
         assert_eq!(
             book.asks_as_map(None)[&rust_decimal::Decimal::new(7, 2)],
-            rust_decimal::Decimal::new(6991471, 1),
+            rust_decimal::Decimal::new(6_991_471, 1),
         );
     }
 
@@ -15689,7 +15735,17 @@ mod tests {
     }
 
     #[rstest]
-    fn pending_persists_when_snapshot_fails_to_seed() {
+    #[case::invalid_price("abc", "1700000000000", "Book snapshot could not be applied")]
+    #[case::invalid_timestamp(
+        "0.50",
+        "18446744073709551615",
+        "Timestamp overflow for '18446744073709551615'"
+    )]
+    fn pending_persists_when_snapshot_fails_to_seed(
+        #[case] price: &str,
+        #[case] timestamp: &str,
+        #[case] expected_error: &str,
+    ) {
         let asset_id_str = "0xTOKEN5";
         let market = "0xMARKET";
 
@@ -15702,17 +15758,28 @@ mod tests {
         );
         let instrument_id = inst.id();
         ctx.subscriptions.active_delta_subs.insert(instrument_id);
-        ctx.subscriptions.book_sync.request_recovery_if_subscribed(
-            &ctx.subscriptions.active_delta_subs,
-            instrument_id,
-            Instant::now(),
-        );
+        let recovery = ctx
+            .subscriptions
+            .book_sync
+            .claim_recovery_if_subscribed(&ctx.subscriptions.active_delta_subs, instrument_id)
+            .unwrap();
+        assert!(recovery.begin_replacement());
+        recovery.gate.open();
 
-        // An empty book is a usable snapshot; use an unparsable level so the
-        // snapshot still fails to seed.
-        let unusable = make_snapshot(market, asset_id_str, &[("abc", "5")]);
-        handle_market_message(unusable, &ctx);
+        let MarketWsMessage::Book(mut snapshot) =
+            make_snapshot(market, asset_id_str, &[(price, "5")])
+        else {
+            panic!("expected book snapshot");
+        };
 
+        snapshot.timestamp = timestamp.to_string();
+        handle_market_message(MarketWsMessage::Book(snapshot), &ctx);
+
+        assert!(matches!(
+            &*recovery.outcome.borrow(),
+            BookRecoveryOutcome::Rejected(PolymarketWsError::InvalidSnapshot(message))
+            if message == expected_error
+        ));
         assert!(ctx.subscriptions.book_sync.book_gated(instrument_id));
         let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
         assert!(
@@ -16368,7 +16435,7 @@ mod tests {
                 Price::from("0.54"),
                 Quantity::from("12.00"),
                 Quantity::from("13.00"),
-                UnixNanos::from(1_700_000_002_000_000_000u64),
+                UnixNanos::from(1_700_000_002_000_000_000_u64),
                 UnixNanos::default(),
             ),
         );

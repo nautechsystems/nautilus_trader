@@ -53,24 +53,22 @@ pub fn extract_transaction_hash(log: &HypersyncLog) -> anyhow::Result<String> {
 ///
 /// # Errors
 ///
-/// Returns an error if the transaction index is not present in the log.
+/// Returns an error if the transaction index is absent or does not fit in `u32`.
 pub fn extract_transaction_index(log: &HypersyncLog) -> anyhow::Result<u32> {
     log.transaction_index
-        .as_ref()
-        .map(|index| **index as u32)
         .ok_or_else(|| anyhow::anyhow!("Missing transaction index in the log"))
+        .and_then(|index| u32::try_from(index).map_err(Into::into))
 }
 
 /// Extracts the log index from a log entry
 ///
 /// # Errors
 ///
-/// Returns an error if the log index is not present in the log.
+/// Returns an error if the log index is absent or does not fit in `u32`.
 pub fn extract_log_index(log: &HypersyncLog) -> anyhow::Result<u32> {
     log.log_index
-        .as_ref()
-        .map(|index| **index as u32)
         .ok_or_else(|| anyhow::anyhow!("Missing log index in the log"))
+        .and_then(|index| u32::try_from(index).map_err(Into::into))
 }
 
 /// Extracts the block number from a log entry
@@ -80,8 +78,6 @@ pub fn extract_log_index(log: &HypersyncLog) -> anyhow::Result<u32> {
 /// Returns an error if the block number is not present in the log.
 pub fn extract_block_number(log: &HypersyncLog) -> anyhow::Result<u64> {
     log.block_number
-        .as_ref()
-        .map(|number| **number)
         .ok_or_else(|| anyhow::anyhow!("Missing block number in the log"))
 }
 
@@ -89,7 +85,7 @@ pub fn extract_block_number(log: &HypersyncLog) -> anyhow::Result<u64> {
 ///
 /// Returns `None` when the query did not select the block hash field.
 pub fn extract_block_hash(log: &HypersyncLog) -> Option<B256> {
-    log.block_hash.as_ref().map(B256::from)
+    log.block_hash
 }
 
 /// Extracts the event signature from a log entry and returns it as a hex string
@@ -363,7 +359,7 @@ mod tests {
 
         let result = extract_transaction_index(&log);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 5u32);
+        assert_eq!(result.unwrap(), 5_u32);
     }
 
     #[rstest]
@@ -408,7 +404,7 @@ mod tests {
 
         let result = extract_log_index(&log);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 10u32);
+        assert_eq!(result.unwrap(), 10_u32);
     }
 
     #[rstest]
@@ -453,7 +449,7 @@ mod tests {
 
         let result = extract_block_number(&log);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 22551426u64); // 0x1581b82 in decimal
+        assert_eq!(result.unwrap(), 22_551_426_u64); // 0x1581b82 in decimal
     }
 
     #[rstest]

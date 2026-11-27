@@ -107,7 +107,6 @@ env/
 !scripts/ci/install-cargo-nextest.sh
 !scripts/ci/install-nautilus-cli.sh
 !scripts/ci/install-prek.sh
-!scripts/ci/install-rust.sh
 !scripts/ci/osv-severity-gate.sh
 !scripts/ci/plan.sh
 !scripts/ci/publish-cargo-crates.sh
@@ -132,7 +131,6 @@ env/
 !scripts/crate-test-features.sh
 !scripts/curate-dataset.sh
 !scripts/doc-changed.sh
-!scripts/install-capnp.sh
 !scripts/install-osv-scanner.sh
 !scripts/package-version.sh
 !scripts/purge-orphan-dev-wheels.sh

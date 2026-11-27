@@ -832,6 +832,9 @@ on Spot instruments. This feature is disabled by default, so set
    result status is logged as processing, not complete.
 1. The execution client defers queued repayments during Bybit's UTC blackout window.
 
+Automatic repayment for a quote-quantity market order applies only in the execution client that
+submits it. After restoring such an order, check the outstanding borrow before repaying it manually.
+
 **Example**:
 
 ```python
@@ -1228,10 +1231,10 @@ The product types for each client must be specified in the configurations.
 | `max_retries`                      | `3`        | Maximum retry attempts for REST reads.                                                                          |
 | `retry_delay_initial_ms`           | `1,000`    | Initial retry delay for REST reads (milliseconds).                                                              |
 | `retry_delay_max_ms`               | `10,000`   | Maximum retry delay for REST reads (milliseconds).                                                              |
-| `heartbeat_interval_secs`          | `20`       | Heartbeat interval (seconds) for WebSocket clients.                                                             |
+| `heartbeat_interval_secs`          | `20`       | Interval (seconds) between WebSocket heartbeats.                                                                |
 | `recv_window_ms`                   | `5,000`    | Receive window (milliseconds) for signed REST requests.                                                         |
-| `update_instruments_interval_mins` | `60`       | Interval (minutes) between instrument catalog refreshes.                                                        |
-| `instrument_status_poll_secs`      | `60`       | Interval (seconds) between instrument and status polls; `0` disables polling.                                   |
+| `update_instruments_interval_mins` | `60`       | Interval (minutes) between background instrument refreshes. `0` disables periodic refresh.                      |
+| `instrument_status_poll_secs`      | `60`       | Interval (seconds) between polls for subscribed instrument definitions and statuses. `0` disables polling.      |
 | `book_snapshot_timeout_secs`       | `10`       | Initial, reconnect, and recovery snapshot wait; `0` disables it.                                                |
 | `transport_backend`                | `Sockudo`  | WebSocket transport backend.                                                                                    |
 | `bars_timestamp_on_close`          | `True`     | Timestamp bars on the interval close; `False` timestamps them on the interval open.                             |
@@ -1252,7 +1255,7 @@ The product types for each client must be specified in the configurations.
 | `max_retries`               | `3`        | Maximum retry attempts for REST reads.                                                                                       |
 | `retry_delay_initial_ms`    | `1,000`    | Initial REST read retry delay and cancel-all polling interval (milliseconds).                                                |
 | `retry_delay_max_ms`        | `10,000`   | Maximum REST read retry delay (milliseconds).                                                                                |
-| `heartbeat_interval_secs`   | `20`       | Heartbeat interval (seconds) for WebSocket clients.                                                                          |
+| `heartbeat_interval_secs`   | `20`       | Interval (seconds) between WebSocket heartbeats.                                                                             |
 | `auth_timeout_secs`         | `None`     | Optional WebSocket authentication timeout (seconds).                                                                         |
 | `recv_window_ms`            | `5,000`    | Receive window (milliseconds) for signed REST and trade WebSocket requests.                                                  |
 | `account_id`                | `None`     | Optional account ID associated with this client.                                                                             |

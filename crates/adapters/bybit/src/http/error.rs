@@ -175,6 +175,7 @@ impl From<BybitErrorResponse> for BybitHttpError {
     }
 }
 
+#[allow(clippy::unreadable_literal, reason = "Bybit error codes")]
 pub(crate) fn is_bybit_ambiguous_order_error_code(code: i64) -> bool {
     matches!(
         code,
@@ -254,6 +255,7 @@ mod tests {
     #[case(170005, false)]
     #[case(170222, false)]
     #[case(20003, false)]
+    #[allow(clippy::unreadable_literal, reason = "Bybit error codes")]
     fn test_order_error_ambiguity(#[case] code: i64, #[case] expected: bool) {
         assert_eq!(is_bybit_ambiguous_order_error_code(code), expected);
     }

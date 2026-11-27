@@ -567,8 +567,8 @@ mod tests {
 
     #[rstest]
     fn test_parse_u256_decimal_and_hex() {
-        assert_eq!(parse_u256("12", "nonce").unwrap(), U256::from(12u64));
-        assert_eq!(parse_u256("0x0a", "nonce").unwrap(), U256::from(10u64));
+        assert_eq!(parse_u256("12", "nonce").unwrap(), U256::from(12_u64));
+        assert_eq!(parse_u256("0x0a", "nonce").unwrap(), U256::from(10_u64));
         assert!(parse_u256("", "nonce").is_err());
     }
 }

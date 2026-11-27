@@ -614,7 +614,7 @@ fn test_subscribe_option_chain_filters_by_underlying(
         "ETH",
         "3000.000",
         OptionKind::Call,
-        UnixNanos::from(1_704_067_200_000_000_000u64),
+        UnixNanos::from(1_704_067_200_000_000_000_u64),
     );
     let _ = cache.borrow_mut().add_instrument(eth_option);
 
@@ -1720,6 +1720,384 @@ fn test_option_chain_reference_price_response_bootstraps_dynamic_range(
 }
 
 #[rstest]
+#[case::raw(None, false)]
+#[case::raw_expiry(None, true)]
+#[case::snapshot(Some(1_000), false)]
+fn test_option_chain_delta_discovers_and_releases_candidates(
+    #[case] interval: Option<u64>,
+    #[case] market_data_expiry: bool,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(clock, &cache);
+    let series_id = make_series_id();
+    if interval.is_some() {
+        let start = series_id.expiration_ns - DurationNanos::from_secs(8);
+        fixture.clock.borrow().set_time(start);
+    }
+
+    let strikes: Vec<_> = (40..=64).map(|index| format!("{index}000.000")).collect();
+
+    let ids: Vec<_> = strikes
+        .iter()
+        .map(|strike| {
+            [OptionKind::Call, OptionKind::Put].map(|kind| {
+                let instrument = make_btc_option(strike, kind);
+                let id = instrument.id();
+                cache.borrow_mut().add_instrument(instrument).unwrap();
+                id
+            })
+        })
+        .collect();
+
+    fixture.subscribe(0, StrikeRange::delta(0.25, 0.04).unwrap(), interval);
+    fixture.resolve_reference_price(Price::from("50000.000"));
+
+    let assert_subscriptions = |expected: &[[InstrumentId; 2]]| {
+        let mut expected: Vec<_> = expected.iter().flatten().copied().collect();
+        expected.sort_unstable();
+        let engine = fixture.engine.borrow();
+        let mut quotes = engine.subscribed_quotes();
+        quotes.sort_unstable();
+        let mut statuses = engine.subscribed_instrument_status();
+        statuses.sort_unstable();
+        assert_eq!(quotes, expected);
+        assert_eq!(statuses, expected);
+
+        for id in ids.iter().flatten() {
+            let subscribers = usize::from(expected.contains(id));
+            assert_eq!(
+                msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(*id)),
+                subscribers
+            );
+            assert_eq!(
+                msgbus::exact_subscriber_count_option_greeks(switchboard::get_option_greeks_topic(
+                    *id
+                )),
+                subscribers
+            );
+        }
+    };
+
+    assert_subscriptions(&ids[..21]);
+
+    let feed = |id, delta, forward, ts| {
+        let quote = make_quote(id, "101.000", "103.000", ts);
+        let mut greeks = make_option_chain_greeks(id, forward);
+        greeks.greeks.delta = delta;
+        greeks.ts_event = UnixNanos::from(ts);
+        let mut engine = fixture.engine.borrow_mut();
+        engine.process_data(Data::Quote(quote));
+        engine.process_data(Data::OptionGreeks(greeks));
+    };
+
+    let assert_slice = |expected: &[&str]| {
+        if interval.is_some() {
+            advance_clock_and_dispatch(&fixture.clock, 2_000_000_000);
+        }
+
+        let actor = get_actor_unchecked::<OptionChainActor>(&fixture.actors[0]);
+        let slice = actor.slices.last().unwrap();
+        let expected: Vec<_> = expected.iter().map(|strike| Price::from(*strike)).collect();
+        assert_eq!(slice.calls.keys().copied().collect::<Vec<_>>(), expected);
+        assert_eq!(slice.puts.keys().copied().collect::<Vec<_>>(), expected);
+    };
+
+    for (index, &[call, put]) in ids.iter().enumerate() {
+        let (call_delta, put_delta) = match index {
+            1 => (0.60, -0.23),
+            2 => (0.60, -0.27),
+            3 => (0.60, -0.20),
+            4 => (0.60, -0.31),
+            17 => (0.23, -0.60),
+            18 => (0.27, -0.60),
+            19 => (0.20, -0.60),
+            20 => (0.31, -0.60),
+            _ => (0.60, -0.60),
+        };
+
+        feed(call, call_delta, 50000.0, 10);
+        feed(put, put_delta, 50000.0, 11);
+    }
+
+    assert_slice(&["41000.000", "42000.000", "57000.000", "58000.000"]);
+    assert_subscriptions(&ids[..21]);
+
+    feed(ids[10][0], 0.60, 54000.0, 12);
+    assert_slice(&["57000.000", "58000.000"]);
+    feed(ids[21][0], 0.25, 54000.0, 13);
+    feed(ids[21][1], -0.60, 54000.0, 14);
+    feed(ids[1][1], -0.25, 54000.0, 15);
+    assert_slice(&["57000.000", "58000.000", "61000.000"]);
+    assert_subscriptions(&ids[4..]);
+
+    fixture.recorder.borrow_mut().clear();
+
+    match (interval, market_data_expiry) {
+        (_, true) => {
+            let expired_quote = make_quote(
+                ids[21][0],
+                "101.000",
+                "103.000",
+                series_id.expiration_ns.as_u64(),
+            );
+            fixture
+                .engine
+                .borrow_mut()
+                .process_data(Data::Quote(expired_quote));
+        }
+        (Some(_), false) => {
+            let events = fixture
+                .clock
+                .borrow_mut()
+                .advance_time(series_id.expiration_ns, false);
+            let handlers = fixture.clock.borrow().match_handlers(events);
+            for handler in handlers {
+                handler.callback.call(handler.event);
+            }
+
+            let definition = make_btc_option("60500.000", OptionKind::Call);
+            let pipeline_definition = Box::new(definition.clone());
+            let mut engine = fixture.engine.borrow_mut();
+            engine.process_pipeline(Data::Instrument(pipeline_definition));
+            assert!(engine.has_option_chain_manager(&series_id));
+            assert!(fixture.recorder.borrow().is_empty());
+            engine.process(&definition);
+        }
+        (None, false) => {}
+    }
+
+    if interval.is_some() || market_data_expiry {
+        let recorder = fixture.recorder.borrow();
+        assert_eq!(recorder.len(), 42 * 3);
+        assert!(
+            recorder
+                .iter()
+                .all(|command| matches!(command, DataCommand::Unsubscribe(_)))
+        );
+        assert!(!fixture.engine.borrow().has_option_chain_manager(&series_id));
+    }
+
+    fixture.dispose();
+    assert_subscriptions(&[]);
+    assert_eq!(fixture.clock.borrow().timer_count(), 0);
+}
+
+#[rstest]
+fn test_option_chain_delta_series_expiry_precedes_fixed_retirement(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(clock, &cache);
+    let mut ids = vec![make_btc_option("50000.000", OptionKind::Call).id()];
+
+    for index in 51..=61 {
+        let option = make_btc_option(&format!("{index}000.000"), OptionKind::Call);
+        ids.push(option.id());
+        cache.borrow_mut().add_instrument(option).unwrap();
+    }
+
+    let atm = Price::from("50000.000");
+    fixture.subscribe(0, StrikeRange::Fixed(vec![atm]), None);
+    fixture.subscribe(1, StrikeRange::delta(0.25, 0.04).unwrap(), None);
+    fixture.resolve_reference_price(atm);
+    let mut subscribed = fixture.engine.borrow().subscribed_quotes();
+    subscribed.sort_unstable();
+    assert_eq!(subscribed, ids[..11]);
+
+    fixture.recorder.borrow_mut().clear();
+    let series_id = make_series_id();
+    let quote = make_quote(
+        ids[0],
+        "101.000",
+        "103.000",
+        series_id.expiration_ns.as_u64(),
+    );
+    fixture.engine.borrow_mut().process_data(Data::Quote(quote));
+
+    let engine = fixture.engine.borrow();
+    assert!(!engine.has_option_chain_manager(&series_id));
+    assert!(engine.subscribed_quotes().is_empty());
+    drop(engine);
+    let commands = fixture.recorder.borrow();
+    assert_eq!(commands.len(), 33);
+    assert!(
+        commands
+            .iter()
+            .all(|cmd| matches!(cmd, DataCommand::Unsubscribe(_)))
+    );
+    drop(commands);
+    fixture.dispose();
+}
+
+#[rstest]
+fn test_option_chain_delta_expiry_preserves_direct_quotes_for_pending_candidate(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(clock, &cache);
+    let series_id = make_series_id();
+    let start = series_id.expiration_ns - DurationNanos::from_secs(4);
+    fixture.clock.borrow().set_time(start);
+
+    for strike in 51..=61 {
+        let instrument = make_btc_option(&format!("{strike}000.000"), OptionKind::Call);
+        cache.borrow_mut().add_instrument(instrument).unwrap();
+    }
+
+    fixture.subscribe(0, StrikeRange::delta(0.25, 0.04).unwrap(), Some(1_000));
+    fixture.resolve_reference_price(Price::from("50000.000"));
+
+    let instrument_id = make_btc_option("61000.000", OptionKind::Call).id();
+
+    let direct = SubscribeQuotes::new(
+        instrument_id,
+        Some(fixture.client_id),
+        Some(instrument_id.venue),
+        UUID4::new(),
+        start,
+        None,
+        None,
+    );
+
+    fixture
+        .engine
+        .borrow_mut()
+        .execute_subscribe(SubscribeCommand::Quotes(direct))
+        .unwrap();
+    fixture.recorder.borrow_mut().clear();
+
+    let atm = make_btc_option("50000.000", OptionKind::Call).id();
+    fixture
+        .engine
+        .borrow_mut()
+        .process_data(Data::OptionGreeks(make_option_chain_greeks(atm, 51000.0)));
+    advance_clock_and_dispatch(&fixture.clock, 2_000_000_000);
+    assert_eq!(
+        msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(instrument_id)),
+        1
+    );
+    assert!(fixture.recorder.borrow().is_empty());
+
+    advance_clock_and_dispatch(&fixture.clock, 2_000_000_000);
+    let mut engine = fixture.engine.borrow_mut();
+    let quote = make_quote(atm, "101.000", "103.000", series_id.expiration_ns.as_u64());
+    engine.process_data(Data::Quote(quote));
+
+    assert!(!engine.has_option_chain_manager(&series_id));
+    assert_eq!(engine.subscribed_quotes(), [instrument_id]);
+    assert!(engine.subscribed_instrument_status().is_empty());
+    drop(engine);
+    let commands = fixture.recorder.borrow();
+    assert_eq!(commands.len(), 33);
+    assert!(
+        commands
+            .iter()
+            .all(|command| matches!(command, DataCommand::Unsubscribe(_)))
+    );
+    drop(commands);
+    fixture.dispose();
+}
+
+#[rstest]
+fn test_option_chain_delta_replaces_candidate_for_same_leg(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let fixture = OptionChainFixture::new(clock, &cache);
+    let strike = "50000.000";
+    let original = make_btc_option(strike, OptionKind::Call).id();
+    let preferred = make_crypto_option(
+        "BTC-20240101-50000.000-0.DERIBIT",
+        "BTC",
+        "BTC",
+        strike,
+        OptionKind::Call,
+        make_series_id().expiration_ns,
+    );
+    let preferred_id = preferred.id();
+    fixture.subscribe(0, StrikeRange::delta(0.25, 0.04).unwrap(), None);
+    fixture.resolve_reference_price(Price::from(strike));
+    let before = make_quote(original, "101.000", "103.000", 2);
+    let mut engine = fixture.engine.borrow_mut();
+    engine.process_data(Data::Quote(before));
+    let mut greeks = make_option_chain_greeks(original, 50000.0);
+    greeks.greeks.delta = 0.25;
+    greeks.ts_event = UnixNanos::from(3);
+    engine.process_data(Data::OptionGreeks(greeks));
+
+    fixture.recorder.borrow_mut().clear();
+    engine.process_pipeline(Data::Instrument(Box::new(preferred.clone())));
+    let unrelated = make_btc_option("54000.000", OptionKind::Call).id();
+    engine.process_data(Data::Quote(make_quote(unrelated, "1.000", "2.000", 4)));
+
+    assert!(cache.borrow().instrument(&preferred_id).is_some());
+    assert_eq!(engine.subscribed_quotes(), [original]);
+    assert_eq!(engine.subscribed_instrument_status(), [original]);
+    assert!(fixture.recorder.borrow().is_empty());
+
+    for (id, expected) in [(original, 1), (preferred_id, 0)] {
+        assert_eq!(
+            msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(id)),
+            expected
+        );
+        assert_eq!(
+            msgbus::exact_subscriber_count_option_greeks(switchboard::get_option_greeks_topic(id)),
+            expected
+        );
+    }
+
+    greeks.ts_event = UnixNanos::from(5);
+    engine.process_data(Data::OptionGreeks(greeks));
+    let actor = get_actor_unchecked::<OptionChainActor>(&fixture.actors[0]);
+    assert_eq!(actor.slices.len(), 3);
+    assert_eq!(actor.slices[2].calls[&Price::from(strike)].quote, before);
+    drop(actor);
+
+    engine.process(&preferred);
+    assert_eq!(engine.subscribed_quotes(), [preferred_id]);
+    let is_subscribe = |cmd: &DataCommand| matches!(cmd, DataCommand::Subscribe(_));
+    let handoff: Vec<_> = fixture.recorder.borrow().iter().map(is_subscribe).collect();
+    assert_eq!(handoff, [true, true, true, false, false, false]);
+
+    let live = make_quote(preferred_id, "201.000", "203.000", 6);
+    engine.process_data(Data::Quote(live));
+
+    fixture.recorder.borrow_mut().clear();
+    engine.process_data(Data::InstrumentStatus(InstrumentStatus::new(
+        preferred_id,
+        MarketStatusAction::Close,
+        UnixNanos::from(7),
+        UnixNanos::from(7),
+        None,
+        None,
+        Some(false),
+        Some(false),
+        None,
+    )));
+    assert_eq!(engine.subscribed_quotes(), [original]);
+    let handoff: Vec<_> = fixture.recorder.borrow().iter().map(is_subscribe).collect();
+    assert_eq!(handoff, [true, true, true, false, false, false]);
+
+    let resumed = make_quote(original, "301.000", "303.000", 8);
+    engine.process_data(Data::Quote(resumed));
+    drop(engine);
+
+    let actor = get_actor_unchecked::<OptionChainActor>(&fixture.actors[0]);
+    let visible: Vec<_> = actor.slices[3..]
+        .iter()
+        .map(|slice| &slice.calls[&Price::from(strike)])
+        .collect();
+    assert_eq!(visible.len(), 2);
+    assert_eq!(visible[0].quote, live);
+    assert_eq!(visible[0].greeks, None);
+    assert_eq!(visible[1].quote, resumed);
+    assert_eq!(visible[1].greeks, None);
+    drop(actor);
+    fixture.dispose();
+}
+
+#[rstest]
 #[case::okx_black_scholes_first("OKX", None, &[BlackScholes, PriceAdjusted], Some(BlackScholes))]
 #[case::okx_price_adjusted_first("OKX", None, &[PriceAdjusted, BlackScholes], Some(BlackScholes))]
 #[case::okx_explicit("OKX", Some(json!("price_adjusted")), &[PriceAdjusted, BlackScholes], Some(PriceAdjusted))]
@@ -2663,8 +3041,8 @@ fn test_option_chain_deferred_bootstrap_from_greeks_keeps_bootstrap_event(
         Price::from("101.00"),
         Quantity::from("1.0"),
         Quantity::from("1.0"),
-        UnixNanos::from(2u64),
-        UnixNanos::from(2u64),
+        UnixNanos::from(2_u64),
+        UnixNanos::from(2_u64),
     );
     data_engine.borrow_mut().process_data(Data::Quote(quote));
 
@@ -3627,7 +4005,7 @@ fn make_btc_option(strike: &str, kind: OptionKind) -> InstrumentAny {
     };
 
     let symbol = format!("BTC-20240101-{strike}-{kind_char}.DERIBIT");
-    let expiration_ns = UnixNanos::from(1_704_067_200_000_000_000u64);
+    let expiration_ns = UnixNanos::from(1_704_067_200_000_000_000_u64);
     make_crypto_option(&symbol, "BTC", "BTC", strike, kind, expiration_ns)
 }
 
@@ -3647,8 +4025,8 @@ fn make_option_chain_greeks(instrument_id: InstrumentId, underlying_price: f64) 
         ask_iv: Some(0.67),
         underlying_price: Some(underlying_price),
         open_interest: Some(1000.0),
-        ts_event: UnixNanos::from(1u64),
-        ts_init: UnixNanos::from(1u64),
+        ts_event: UnixNanos::from(1_u64),
+        ts_init: UnixNanos::from(1_u64),
     }
 }
 
@@ -3657,7 +4035,7 @@ fn make_series_id() -> OptionSeriesId {
         Venue::new("DERIBIT"),
         ustr::Ustr::from("BTC"),
         ustr::Ustr::from("BTC"),
-        UnixNanos::from(1_704_067_200_000_000_000u64),
+        UnixNanos::from(1_704_067_200_000_000_000_u64),
     )
 }
 
@@ -5109,6 +5487,22 @@ impl OptionChainFixture {
                 Some(self.params(index)),
             )
             .unwrap();
+    }
+
+    fn resolve_reference_price(&self, price: Price) {
+        let request_id = option_chain_reference_price_request_id(&self.recorder);
+        self.engine
+            .borrow_mut()
+            .response(DataResponse::OptionChainReferencePrice(
+                OptionChainReferencePriceResponse::new(
+                    request_id,
+                    self.client_id,
+                    make_series_id(),
+                    Some(price),
+                    UnixNanos::from(1),
+                    None,
+                ),
+            ));
     }
 
     fn dispose(&self) {

@@ -3669,19 +3669,25 @@ fn emit_cancel_denials(
     }
 }
 
+const BETFAIR_SUPPORTED_ORDER_TYPES: &[OrderType] = &[OrderType::Market, OrderType::Limit];
+
 fn validate_order(order: &impl Order) -> Result<(), OrderDeniedReason> {
     if order.is_reduce_only() {
         return Err(OrderDeniedReason::UnsupportedReduceOnly);
     }
 
-    match order.order_type() {
-        OrderType::Limit => Ok(()),
-        OrderType::Market if order.time_in_force() != TimeInForce::AtTheClose => Err(
-            OrderDeniedReason::UnsupportedTimeInForce(order.time_in_force()),
-        ),
-        OrderType::Market => Ok(()),
-        order_type => Err(OrderDeniedReason::UnsupportedOrderType { order_type }),
+    let order_type = order.order_type();
+    if !BETFAIR_SUPPORTED_ORDER_TYPES.contains(&order_type) {
+        return Err(OrderDeniedReason::UnsupportedOrderType { order_type });
     }
+
+    if order_type == OrderType::Market && order.time_in_force() != TimeInForce::AtTheClose {
+        return Err(OrderDeniedReason::UnsupportedTimeInForce(
+            order.time_in_force(),
+        ));
+    }
+
+    Ok(())
 }
 
 // SP bets cannot be cancelled once placed.
@@ -6574,7 +6580,7 @@ mod tests {
             status: crate::common::enums::StreamingOrderStatus::ExecutionComplete,
             pt: Some(crate::common::enums::StreamingPersistenceType::Lapse),
             ot: crate::common::enums::StreamingOrderType::Limit,
-            pd: 1617863365000,
+            pd: 1_617_863_365_000,
             bsp: None,
             rfo,
             rfs: None,
@@ -6605,7 +6611,7 @@ mod tests {
             status: crate::common::enums::StreamingOrderStatus::ExecutionComplete,
             pt: Some(crate::common::enums::StreamingPersistenceType::MarketOnClose),
             ot: crate::common::enums::StreamingOrderType::MarketOnClose,
-            pd: 1789423573000,
+            pd: 1_789_423_573_000,
             bsp: Some(Decimal::new(2, 0)),
             rfo,
             rfs: None,
@@ -7829,7 +7835,7 @@ mod tests {
             status: crate::common::enums::StreamingOrderStatus::Executable,
             pt: Some(crate::common::enums::StreamingPersistenceType::Lapse),
             ot: crate::common::enums::StreamingOrderType::Limit,
-            pd: 1617863365000,
+            pd: 1_617_863_365_000,
             bsp: None,
             rfo,
             rfs: None,
@@ -10896,7 +10902,7 @@ mod tests {
             status: crate::common::enums::StreamingOrderStatus::Executable,
             pt: Some(crate::common::enums::StreamingPersistenceType::Lapse),
             ot: crate::common::enums::StreamingOrderType::Limit,
-            pd: 1617863365000,
+            pd: 1_617_863_365_000,
             bsp: None,
             rfo: Some("O-FILL-001".to_string()),
             rfs: None,
@@ -11208,7 +11214,7 @@ mod tests {
             status: crate::common::enums::StreamingOrderStatus::ExecutionComplete,
             pt: Some(crate::common::enums::StreamingPersistenceType::Lapse),
             ot: crate::common::enums::StreamingOrderType::Limit,
-            pd: 1617863365000,
+            pd: 1_617_863_365_000,
             bsp: None,
             rfo: None,
             rfs: None,
@@ -11248,7 +11254,7 @@ mod tests {
             status: crate::common::enums::StreamingOrderStatus::Executable,
             pt: Some(crate::common::enums::StreamingPersistenceType::Lapse),
             ot: crate::common::enums::StreamingOrderType::Limit,
-            pd: 1617863365000,
+            pd: 1_617_863_365_000,
             bsp: None,
             rfo: Some("O-SEED-001".to_string()),
             rfs: None,
@@ -11323,7 +11329,7 @@ mod tests {
             status: crate::common::enums::StreamingOrderStatus::Executable,
             pt: Some(crate::common::enums::StreamingPersistenceType::Persist),
             ot: crate::common::enums::StreamingOrderType::Limit,
-            pd: 1617863365000,
+            pd: 1_617_863_365_000,
             bsp: None,
             rfo: Some("O-INC-001".to_string()),
             rfs: None,
@@ -11386,7 +11392,7 @@ mod tests {
             status: crate::common::enums::StreamingOrderStatus::Executable,
             pt: Some(crate::common::enums::StreamingPersistenceType::Lapse),
             ot: crate::common::enums::StreamingOrderType::Limit,
-            pd: 1617863365000,
+            pd: 1_617_863_365_000,
             bsp: None,
             rfo: None,
             rfs: None,

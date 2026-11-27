@@ -338,8 +338,8 @@ mod tests {
     proptest! {
         #[rstest]
         fn prop_sma_matches_windowed_reference(
-            period in 1usize..=32,
-            inputs in prop::collection::vec(0i64..=1_000_000i64, 1..=96),
+            period in 1_usize..=32,
+            inputs in prop::collection::vec(0_i64..=1_000_000_i64, 1..=96),
         ) {
             let mut sma = SimpleMovingAverage::new(period, None);
             let mut equal_weight_wma = WeightedMovingAverage::with_weights(period, vec![1.0; period], None);

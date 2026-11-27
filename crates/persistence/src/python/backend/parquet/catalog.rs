@@ -105,15 +105,18 @@ fn query_parquet_data<T>(
 where
     T: DecodeTypedFromRecordBatch + HasCatalogDataType + HasTsInit + Send,
 {
+    let start = start.map(UnixNanos::from);
+    let end = end.map(UnixNanos::from);
     py.detach(move || {
-        catalog.query::<T>(
-            identifiers,
-            start.map(UnixNanos::from),
-            end.map(UnixNanos::from),
-            where_clause,
-            files,
-            optimize_file_loading,
-        )
+        catalog
+            .query::<T>()
+            .maybe_identifiers(identifiers)
+            .maybe_start(start)
+            .maybe_end(end)
+            .maybe_where_clause(where_clause)
+            .maybe_files(files)
+            .optimize_file_loading(optimize_file_loading)
+            .execute()
     })
     .map_err(|e| PyIOError::new_err(format!("{error_context}: {e}")))
 }
@@ -168,17 +171,17 @@ impl PyParquetDataCatalog {
         // Convert HashMap to AHashMap for internal use
         let storage_options = storage_options.map(|m| m.into_iter().collect());
 
-        let inner = ParquetDataCatalog::from_uri(
-            base_path,
-            storage_options,
-            batch_size,
-            compression,
-            max_row_group_size,
-        )
-        .map_err(|e| match e.downcast::<ConfigError>() {
-            Ok(e) => config_error_to_pyvalue_err(e),
-            Err(e) => PyIOError::new_err(format!("Failed to create ParquetDataCatalog: {e}")),
-        })?;
+        let inner = ParquetDataCatalog::builder()
+            .uri(base_path)
+            .maybe_storage_options(storage_options)
+            .maybe_batch_size(batch_size)
+            .maybe_compression(compression)
+            .maybe_max_row_group_size(max_row_group_size)
+            .build()
+            .map_err(|e| match e.downcast::<ConfigError>() {
+                Ok(e) => config_error_to_pyvalue_err(e),
+                Err(e) => PyIOError::new_err(format!("Failed to create ParquetDataCatalog: {e}")),
+            })?;
 
         Ok(Self {
             inner,
@@ -195,7 +198,10 @@ impl PyParquetDataCatalog {
         dry_run: bool,
     ) -> PyResult<usize> {
         let storage_options = storage_options.map(|m| m.into_iter().collect());
-        let source = ParquetDataCatalog::from_uri(parquet_path, storage_options, None, None, None)
+        let source = ParquetDataCatalog::builder()
+            .uri(parquet_path)
+            .maybe_storage_options(storage_options)
+            .build()
             .map_err(to_pyio_err)?;
         let py = slf.py();
         if dry_run {
@@ -279,11 +285,11 @@ impl PyParquetDataCatalog {
         )
     }
 
-    /// Write quote tick data to Parquet files.
+    /// Write quote data to Parquet files.
     ///
     /// # Parameters
     ///
-    /// - `data`: Vector of quote ticks to write
+    /// - `data`: Vector of quotes to write
     /// - `start`: Optional start timestamp override (nanoseconds since Unix epoch)
     /// - `end`: Optional end timestamp override (nanoseconds since Unix epoch)
     ///
@@ -291,7 +297,7 @@ impl PyParquetDataCatalog {
     ///
     /// Returns the path of the created file as a string.
     #[pyo3(signature = (data, start=None, end=None, skip_disjoint_check=false))]
-    pub fn write_quote_ticks(
+    pub fn write_quotes(
         &self,
         py: Python<'_>,
         data: Vec<QuoteTick>,
@@ -299,22 +305,14 @@ impl PyParquetDataCatalog {
         end: Option<u64>,
         skip_disjoint_check: bool,
     ) -> PyResult<String> {
-        write_parquet_data(
-            py,
-            self,
-            data,
-            start,
-            end,
-            skip_disjoint_check,
-            "quote ticks",
-        )
+        write_parquet_data(py, self, data, start, end, skip_disjoint_check, "quotes")
     }
 
-    /// Write trade tick data to Parquet files.
+    /// Write trade data to Parquet files.
     ///
     /// # Parameters
     ///
-    /// - `data`: Vector of trade ticks to write
+    /// - `data`: Vector of trades to write
     /// - `start`: Optional start timestamp override (nanoseconds since Unix epoch)
     /// - `end`: Optional end timestamp override (nanoseconds since Unix epoch)
     ///
@@ -322,7 +320,7 @@ impl PyParquetDataCatalog {
     ///
     /// Returns the path of the created file as a string.
     #[pyo3(signature = (data, start=None, end=None, skip_disjoint_check=false))]
-    pub fn write_trade_ticks(
+    pub fn write_trades(
         &self,
         py: Python<'_>,
         data: Vec<TradeTick>,
@@ -330,15 +328,7 @@ impl PyParquetDataCatalog {
         end: Option<u64>,
         skip_disjoint_check: bool,
     ) -> PyResult<String> {
-        write_parquet_data(
-            py,
-            self,
-            data,
-            start,
-            end,
-            skip_disjoint_check,
-            "trade ticks",
-        )
+        write_parquet_data(py, self, data, start, end, skip_disjoint_check, "trades")
     }
 
     /// Write bar data to Parquet files.
@@ -1657,7 +1647,7 @@ impl PyParquetDataCatalog {
         )
     }
 
-    /// Query quote tick data from Parquet files.
+    /// Query quote data from Parquet files.
     ///
     /// # Parameters
     ///
@@ -1672,7 +1662,7 @@ impl PyParquetDataCatalog {
     ///
     /// Returns a vector of `QuoteTick` objects matching the query criteria.
     #[pyo3(signature = (identifiers=None, start=None, end=None, where_clause=None))]
-    pub fn query_quote_ticks(
+    pub fn query_quotes(
         &mut self,
         py: Python<'_>,
         identifiers: Option<Vec<String>>,
@@ -1693,7 +1683,7 @@ impl PyParquetDataCatalog {
         )
     }
 
-    /// Query trade tick data from Parquet files.
+    /// Query trade data from Parquet files.
     ///
     /// # Parameters
     ///
@@ -1708,7 +1698,7 @@ impl PyParquetDataCatalog {
     ///
     /// Returns a vector of `TradeTick` objects matching the query criteria.
     #[pyo3(signature = (identifiers=None, start=None, end=None, where_clause=None))]
-    pub fn query_trade_ticks(
+    pub fn query_trades(
         &mut self,
         py: Python<'_>,
         identifiers: Option<Vec<String>>,
@@ -2243,10 +2233,7 @@ mod tests {
             .unwrap()
         });
 
-        let loaded = catalog
-            .inner
-            .query::<OrderBookDelta>(None, None, None, None, None, true)
-            .unwrap();
+        let loaded = catalog.inner.query::<OrderBookDelta>().execute().unwrap();
 
         assert!(catalog.inner.file_exists(&path).unwrap());
         assert_eq!(loaded, vec![delta]);
@@ -2256,7 +2243,10 @@ mod tests {
     fn test_query_parquet_data_releases_gil() {
         Python::initialize();
         let directory = TempDir::new().unwrap();
-        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        let mut catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .build()
+            .unwrap();
         let delta = OrderBookDelta::clear(
             InstrumentId::from("ETH/USDT.BINANCE"),
             17,
@@ -2481,10 +2471,7 @@ mod tests {
             }
         };
 
-        let loaded = catalog
-            .inner
-            .query::<OrderBookDelta>(None, None, None, None, None, true)
-            .unwrap();
+        let loaded = catalog.inner.query::<OrderBookDelta>().execute().unwrap();
 
         Python::attach(|py| {
             assert!(error.is_instance_of::<PyIOError>(py));
@@ -2598,7 +2585,7 @@ mod tests {
         register_gil_checked_custom_data();
         let directory = TempDir::new().unwrap();
 
-        let expected = [11u64, 29, 47]
+        let expected = [11_u64, 29, 47]
             .into_iter()
             .map(|ts| {
                 let value = GilCheckedCustomData {

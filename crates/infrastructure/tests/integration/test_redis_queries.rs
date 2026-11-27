@@ -397,8 +397,7 @@ mod serial_tests {
 
         // Create large values
         let keys: Vec<String> = (0..10).map(|i| format!("test:large:value:{i}")).collect();
-        let large_value = vec![0u8; 1024 * 1024]; // 1MB value
-
+        let large_value = vec![0_u8; 1024 * 1024]; // 1MB value
         for key in &keys {
             let _: () = con.set(key, &large_value).await.unwrap();
         }

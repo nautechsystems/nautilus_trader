@@ -764,8 +764,8 @@ mod tests {
 
     fn set_operation_strategy() -> impl Strategy<Value = SetOperation> {
         prop_oneof![
-            (0..50u8).prop_map(SetOperation::Add),
-            (0..50u8).prop_map(SetOperation::Remove),
+            (0..50_u8).prop_map(SetOperation::Add),
+            (0..50_u8).prop_map(SetOperation::Remove),
         ]
     }
 
@@ -781,8 +781,8 @@ mod tests {
 
     fn map_operation_strategy() -> impl Strategy<Value = MapOperation> {
         prop_oneof![
-            (0..50u8, any::<u8>()).prop_map(|(key, value)| MapOperation::Insert(key, value)),
-            (0..50u8).prop_map(MapOperation::Remove),
+            (0..50_u8, any::<u8>()).prop_map(|(key, value)| MapOperation::Insert(key, value)),
+            (0..50_u8).prop_map(MapOperation::Remove),
         ]
     }
 
@@ -815,7 +815,7 @@ mod tests {
 
                 prop_assert_eq!(cache.len(), expected_order.len());
                 prop_assert_eq!(cache.is_empty(), expected_order.is_empty());
-                for id in 0..50u8 {
+                for id in 0..50_u8 {
                     prop_assert_eq!(cache.contains(&id), expected_order.contains(&id));
                 }
             }
@@ -852,7 +852,7 @@ mod tests {
 
                 prop_assert_eq!(cache.len(), expected_values.len());
                 prop_assert_eq!(cache.is_empty(), expected_values.is_empty());
-                for key in 0..50u8 {
+                for key in 0..50_u8 {
                     prop_assert_eq!(cache.get(&key).copied(), expected_values.get(&key).copied());
                 }
             }

@@ -80,7 +80,7 @@ fn symbols_fixture_preserves_every_modeled_field() {
                 volume_1day_usd: Some(decimal("707264.67")),
                 volume_1mth: Some(decimal("1274.56542302")),
                 volume_1mth_usd: Some(decimal("106560665.82")),
-                symbol_id_int: Some(5950967),
+                symbol_id_int: Some(5_950_967),
                 raw_kvp: Some(SymbolRawKvp {
                     contract_type: None,
                     underlying_type: None,

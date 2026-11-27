@@ -843,8 +843,8 @@ mod tests {
         /// run starting at the refreshed baseline.
         #[rstest]
         fn prop_sequential_issuance_is_contiguous(
-            baseline in 0i64..1_000_000,
-            count in 1usize..256,
+            baseline in 0_i64..1_000_000,
+            count in 1_usize..256,
         ) {
             let mgr = NonceManager::new(u32::MAX);
             mgr.refresh(ACCOUNT, API_KEY, baseline);
@@ -865,8 +865,8 @@ mod tests {
         /// nonce: the round-trip is identity-preserving on `last_issued`.
         #[rstest]
         fn prop_ack_failure_is_idempotent_round_trip(
-            baseline in 0i64..1_000_000,
-            advance in 1usize..32,
+            baseline in 0_i64..1_000_000,
+            advance in 1_usize..32,
         ) {
             let mgr = NonceManager::new(u32::MAX);
             mgr.refresh(ACCOUNT, API_KEY, baseline);

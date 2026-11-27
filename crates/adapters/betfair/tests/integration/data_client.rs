@@ -379,7 +379,7 @@ async fn test_data_client_publishes_socket_state_and_registers_reconnect() {
 
     let instrument_id = nautilus_betfair::common::parse::make_instrument_id(
         "1.180294978",
-        6146434,
+        6_146_434,
         rust_decimal::Decimal::ZERO,
     );
     client
@@ -615,7 +615,7 @@ async fn test_data_client_subscribe_sends_market_subscription() {
 
     let instrument_id = nautilus_betfair::common::parse::make_instrument_id(
         "1.180294978",
-        6146434,
+        6_146_434,
         rust_decimal::Decimal::ZERO,
     );
 
@@ -688,12 +688,12 @@ async fn test_data_client_deduplicates_same_market_subscription() {
 
     let first_instrument_id = nautilus_betfair::common::parse::make_instrument_id(
         "1.180294978",
-        6146434,
+        6_146_434,
         rust_decimal::Decimal::ZERO,
     );
     let second_instrument_id = nautilus_betfair::common::parse::make_instrument_id(
         "1.180294978",
-        40273293,
+        40_273_293,
         rust_decimal::Decimal::ZERO,
     );
 
@@ -1059,7 +1059,7 @@ async fn test_data_client_handles_resub_delta_emits_deltas() {
     let expected_markets: std::collections::HashSet<&str> =
         RESUB_DELTA_MARKET_IDS.into_iter().collect();
     let mut markets_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut delta_count = 0usize;
+    let mut delta_count = 0_usize;
 
     for _ in 0..40 {
         match tokio::time::timeout(Duration::from_secs(3), rx.recv()).await {
@@ -1378,7 +1378,7 @@ async fn test_data_client_connect_is_idempotent() {
 
     // Drain instrument events emitted during connect-time provider load so
     // the second connect's behavior is observable in isolation.
-    let mut first_instruments = 0usize;
+    let mut first_instruments = 0_usize;
 
     while let Ok(event) = rx.try_recv() {
         if matches!(event, DataEvent::Data(Data::Instrument(_))) {
@@ -1424,7 +1424,7 @@ async fn test_data_client_connect_is_idempotent() {
         "second connect must not open a second stream socket",
     );
 
-    let mut second_instruments = 0usize;
+    let mut second_instruments = 0_usize;
 
     while let Ok(event) = rx.try_recv() {
         if matches!(event, DataEvent::Data(Data::Instrument(_))) {

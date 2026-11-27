@@ -28,7 +28,7 @@ fuzz_target!(|data: &[u8]| {
     let chunk_count = body.len() / 8;
     let mut input = Vec::with_capacity(chunk_count);
     for i in 0..chunk_count {
-        let mut chunk = [0u8; 8];
+        let mut chunk = [0_u8; 8];
         chunk.copy_from_slice(&body[i * 8..(i + 1) * 8]);
         input.push(Fp::from_u64_reduce(u64::from_le_bytes(chunk)));
     }

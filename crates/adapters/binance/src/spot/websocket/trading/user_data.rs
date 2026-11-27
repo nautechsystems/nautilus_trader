@@ -273,7 +273,7 @@ mod tests {
         assert_eq!(msg.symbol.as_str(), "ETHBTC");
         assert_eq!(msg.execution_type, BinanceSpotExecutionType::New);
         assert_eq!(msg.order_status, BinanceOrderStatus::New);
-        assert_eq!(msg.order_id, 4293153);
+        assert_eq!(msg.order_id, 4_293_153);
         assert_eq!(msg.side, BinanceSide::Buy);
     }
 
@@ -284,7 +284,7 @@ mod tests {
 
         assert_eq!(msg.execution_type, BinanceSpotExecutionType::Trade);
         assert_eq!(msg.order_status, BinanceOrderStatus::Filled);
-        assert_eq!(msg.trade_id, 98765432);
+        assert_eq!(msg.trade_id, 98_765_432);
         assert_eq!(msg.last_filled_qty, "1.00000000");
         assert_eq!(msg.last_filled_price, "2500.00000000");
         assert!(msg.is_maker);

@@ -15,6 +15,9 @@
 
 //! Example trading strategies for backtesting and demonstration.
 
+use nautilus_model::{data::QuoteTick, types::price::ERROR_PRICE};
+use rust_decimal::Decimal;
+
 pub mod composite_market_maker;
 pub mod delta_neutral_vol;
 pub mod ema_cross;
@@ -28,3 +31,27 @@ pub use ema_cross::{EmaCross, EmaCrossConfig};
 pub use grid_mm::{GridMarketMaker, GridMarketMakerConfig};
 pub use hurst_vpin_directional::{HurstVpinDirectional, HurstVpinDirectionalConfig};
 pub use orderbook_imbalance::{OrderBookImbalance, OrderBookImbalanceConfig};
+
+fn quote_midpoint(quote: &QuoteTick) -> anyhow::Result<Decimal> {
+    let bid = quote.bid_price;
+    let ask = quote.ask_price;
+    anyhow::ensure!(
+        !bid.is_error()
+            && !bid.is_undefined()
+            && bid.precision != ERROR_PRICE.precision
+            && !ask.is_error()
+            && !ask.is_undefined()
+            && ask.precision != ERROR_PRICE.precision,
+        "Cannot calculate midpoint for {} from an invalid quote",
+        quote.instrument_id,
+    );
+    Ok((bid.as_decimal() + ask.as_decimal()) / Decimal::TWO)
+}
+
+fn price_change_reaches_threshold(change: Decimal, reference: Decimal, bps: u32) -> bool {
+    if reference.is_sign_negative() {
+        return change.is_zero() && bps == 0;
+    }
+
+    change >= reference * Decimal::new(i64::from(bps), 4)
+}

@@ -146,7 +146,7 @@ impl DataEngine {
         }
     }
 
-    pub(super) fn update_option_chains(&mut self, instrument: &InstrumentAny) {
+    pub(super) fn update_option_chains(&mut self, instrument: &InstrumentAny, is_live: bool) {
         if self
             .option_chain_instruments_expired
             .contains(&instrument.id())
@@ -173,13 +173,14 @@ impl DataEngine {
         let clock = Rc::clone(&self.clock);
 
         for manager in managers.into_values() {
-            let client_id = manager.borrow().client_id();
-            let client = client_id.and_then(|client_id| self.clients.get_mut(&client_id));
+            let mut manager = manager.borrow_mut();
+            if !is_live && manager.is_delta() {
+                continue;
+            }
 
-            if manager
-                .borrow_mut()
-                .add_instrument(instrument.id(), strike, kind, client, &clock)
-            {
+            let client_id = manager.client_id();
+            let client = client_id.and_then(|client_id| self.clients.get_mut(&client_id));
+            if manager.add_instrument(instrument.id(), strike, kind, client, &clock) {
                 self.option_chain_instrument_index
                     .insert(instrument.id(), series_id);
             }
@@ -287,8 +288,6 @@ impl DataEngine {
         {
             self.cancel_pending_option_chain_requests(Some(series_id), None);
         }
-
-        self.drain_deferred_commands();
     }
 
     /// Drains deferred subscribe/unsubscribe commands pushed by option chain
@@ -297,16 +296,23 @@ impl DataEngine {
     pub(super) fn drain_deferred_commands(&mut self) {
         // Loop because expire_series pushes Unsubscribe commands; converges in <= 3 iterations
         while !self.deferred_cmd_queue.borrow().is_empty() {
-            let commands: VecDeque<DeferredCommand> =
+            let mut commands: VecDeque<DeferredCommand> =
                 std::mem::take(&mut *self.deferred_cmd_queue.borrow_mut());
+
+            if commands
+                .iter()
+                .any(|command| matches!(command, DeferredCommand::ExpireSeries(_)))
+            {
+                // Series retirement supersedes contract refreshes queued by other handlers
+                commands
+                    .make_contiguous()
+                    .sort_by_key(|command| !matches!(command, DeferredCommand::ExpireSeries(_)));
+            }
 
             for cmd in commands {
                 match cmd {
                     DeferredCommand::Subscribe(sub) => {
-                        let client = self.get_client(sub.client_id(), sub.venue());
-                        if let Some(client) = client {
-                            client.execute_subscribe_intent(sub);
-                        }
+                        self.subscribe_option_chain_feed(sub);
                     }
                     DeferredCommand::Unsubscribe(unsub) => {
                         self.unsubscribe_option_chain_feed(&unsub);
@@ -322,11 +328,25 @@ impl DataEngine {
         }
     }
 
+    fn subscribe_option_chain_feed(&mut self, command: SubscribeCommand) {
+        let retired = command.instrument_ids().is_some_and(|ids| {
+            ids.iter()
+                .any(|id| self.option_chain_instruments_expired.contains(id))
+        });
+
+        let Some(client) = self.get_client(command.client_id(), command.venue()) else {
+            return;
+        };
+
+        if retired {
+            // Match the release already queued by teardown without subscribing on the wire
+            client.retain_intent(&command);
+        } else {
+            client.execute_subscribe_intent(command);
+        }
+    }
+
     /// Proactively expires all instruments for a series and tears down the manager.
-    ///
-    /// `handle_instrument_expired` removes each instrument from the aggregator and pushes
-    /// deferred unsubscribe commands. `teardown` then cancels the snapshot timer and clears
-    /// the handler lists (the aggregator is already empty at that point).
     fn expire_series(&mut self, series_id: OptionSeriesId) {
         self.cancel_pending_option_chain_requests(Some(series_id), None);
         let mut owners: Vec<_> = self
@@ -348,14 +368,15 @@ impl DataEngine {
             .retain(|_, series| *series != series_id);
 
         for manager in managers.into_values() {
-            let instrument_ids = manager.borrow().all_instrument_ids();
+            let mut manager = manager.borrow_mut();
             self.option_chain_instruments_expired
-                .extend(instrument_ids.iter().copied());
-            for id in instrument_ids {
-                manager.borrow_mut().handle_instrument_expired(&id);
-            }
+                .extend(manager.all_instrument_ids());
 
-            manager.borrow_mut().teardown(&self.clock);
+            let commands = manager.unsubscribe_commands();
+            manager.teardown(&self.clock);
+            self.deferred_cmd_queue
+                .borrow_mut()
+                .extend(commands.into_iter().map(DeferredCommand::Unsubscribe));
         }
 
         log::info!("Proactively torn down expired option chain {series_id}");
@@ -1132,7 +1153,7 @@ mod tests {
             Venue::from("DERIBIT"),
             Ustr::from("BTC"),
             Ustr::from("BTC"),
-            UnixNanos::from(1_704_067_200_000_000_000u64),
+            UnixNanos::from(1_704_067_200_000_000_000_u64),
         );
         let instrument_id = InstrumentId::from("BTC-20240101-50000-C.DERIBIT");
         let request_id = UUID4::new();

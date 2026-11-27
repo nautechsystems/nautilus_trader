@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_model::types::fixed::check_float_precision;
+
 use super::{DataEngine, InstrumentId, Quantity, QuoteTick, SyntheticInstrument, TradeTick};
 
 impl DataEngine {
@@ -63,6 +65,14 @@ impl DataEngine {
 
                 (component_quote.bid_price, component_quote.ask_price)
             };
+
+            if let Err(e) = check_float_precision(bid_price.precision.max(ask_price.precision)) {
+                log::warn!(
+                    "Cannot calculate synthetic instrument {} quote from {instrument_id}: {e}",
+                    synthetic.id,
+                );
+                return None;
+            }
 
             bid_inputs.push(bid_price.as_f64());
             ask_inputs.push(ask_price.as_f64());
@@ -139,6 +149,14 @@ impl DataEngine {
 
                 component_trade.price
             };
+
+            if let Err(e) = check_float_precision(price.precision) {
+                log::warn!(
+                    "Cannot calculate synthetic instrument {} trade from {instrument_id}: {e}",
+                    synthetic.id,
+                );
+                return None;
+            }
 
             inputs.push(price.as_f64());
         }

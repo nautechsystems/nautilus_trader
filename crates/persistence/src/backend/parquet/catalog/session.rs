@@ -114,7 +114,7 @@ pub(super) fn decode_typed_pages<T>(
 where
     T: DecodeTypedFromRecordBatch,
 {
-    let metadata = stream.schema().metadata().clone();
+    let metadata = stream.schema().metadata().into();
     futures::stream::try_unfold((stream, metadata), |(mut stream, metadata)| async move {
         let Some(batch) = stream.next().await else {
             return Ok(None);

@@ -111,6 +111,8 @@ pub struct LighterDataClient {
     ws_handler_retained: Arc<RetainedTaskSlot>,
     shutdown_errors: Vec<String>,
     data_sender: EventSender<DataEvent>,
+    instrument_refresh_lock: Arc<tokio::sync::Mutex<()>>,
+    instrument_publish_lock: Arc<parking_lot::Mutex<()>>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     instrument_statuses: Arc<DashMap<InstrumentId, LighterMarketStatus>>,
     instrument_status_subscriptions: Arc<DashSet<InstrumentId>>,
@@ -173,6 +175,8 @@ impl LighterDataClient {
             ws_handler_retained: Arc::new(RetainedTaskSlot::new()),
             shutdown_errors: Vec::new(),
             data_sender,
+            instrument_refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
+            instrument_publish_lock: Arc::new(parking_lot::Mutex::new(())),
             instruments: Arc::new(AtomicMap::new()),
             instrument_statuses: Arc::new(DashMap::new()),
             instrument_status_subscriptions: Arc::new(DashSet::new()),
@@ -263,6 +267,7 @@ impl LighterDataClient {
     }
 
     fn abort_tasks(&self) {
+        let _guard = self.instrument_publish_lock.lock();
         self.tasks.begin_shutdown();
     }
 
@@ -530,6 +535,8 @@ impl LighterDataClient {
         let interval = Duration::from_secs(minutes.saturating_mul(60));
         let cancellation = self.cancellation_token.clone();
         let http_client = self.http_client.clone();
+        let instrument_refresh_lock = Arc::clone(&self.instrument_refresh_lock);
+        let publish_lock = Arc::clone(&self.instrument_publish_lock);
         let instruments_cache = Arc::clone(&self.instruments);
         let statuses = Arc::clone(&self.instrument_statuses);
         let status_subscriptions = Arc::clone(&self.instrument_status_subscriptions);
@@ -549,15 +556,26 @@ impl LighterDataClient {
                         break;
                     }
                     () = &mut sleep => {
+                        let _refresh_guard = tokio::select! {
+                            biased;
+                            () = cancellation.cancelled() => break,
+                            guard = instrument_refresh_lock.lock() => guard,
+                        };
+
                         let Some(result) = await_instrument_refresh(
                             &cancellation,
-                            http_client.request_instruments_with_status(),
+                            http_client.fetch_instrument_details(None),
                         ).await else {
                             log::debug!("Lighter instrument refresh task cancelled");
                             break;
                         };
 
-                        match result {
+                        let _publish_guard = publish_lock.lock();
+                        if cancellation.is_cancelled() {
+                            break;
+                        }
+
+                        match result.and_then(|response| http_client.parse_instrument_details(&response, true)) {
                             Ok(items) => {
                                 instruments_cache.rcu(|m| {
                                     for (instrument, _) in &items {
@@ -596,13 +614,7 @@ impl LighterDataClient {
                                         ts_init,
                                     );
 
-                                    if let Err(e) = data_sender
-                                        .send(DataEvent::Data(instrument.clone().into()))
-                                    {
-                                        log::warn!(
-                                            "Failed to send refreshed Lighter instrument: {e}"
-                                        );
-                                    }
+                                    emit_lighter_instrument(&data_sender, instrument);
                                 }
 
                                 log::debug!(
@@ -820,6 +832,12 @@ async fn await_instrument_refresh<T>(
     }
 }
 
+fn emit_lighter_instrument(sender: &EventSender<DataEvent>, instrument: &InstrumentAny) {
+    if let Err(e) = sender.send(DataEvent::Data(instrument.clone().into())) {
+        log::warn!("Failed to send Lighter instrument: {e}");
+    }
+}
+
 fn cache_lighter_instrument_status(
     statuses: &DashMap<InstrumentId, LighterMarketStatus>,
     instrument_id: InstrumentId,
@@ -987,14 +1005,15 @@ impl DataClient for LighterDataClient {
             ws_client.begin_shutdown();
         });
 
-        let instruments = self
-            .bootstrap_instruments()
-            .await
-            .context("failed to bootstrap Lighter instruments")?;
+        {
+            let _refresh_guard = self.instrument_refresh_lock.lock().await;
+            let instruments = self
+                .bootstrap_instruments()
+                .await
+                .context("failed to bootstrap Lighter instruments")?;
 
-        for instrument in instruments {
-            if let Err(e) = self.data_sender.send(DataEvent::Data(instrument.into())) {
-                log::warn!("Failed to send instrument: {e}");
+            for instrument in &instruments {
+                emit_lighter_instrument(&self.data_sender, instrument);
             }
         }
 
@@ -1104,13 +1123,27 @@ impl DataClient for LighterDataClient {
             let ws = self.ws_client.clone();
             let registry = Arc::clone(&self.registry);
             let sender = self.data_sender.clone();
+            let instrument_refresh_lock = Arc::clone(&self.instrument_refresh_lock);
+            let publish_lock = Arc::clone(&self.instrument_publish_lock);
+            let cancel = self.cancellation_token.clone();
             let instruments_cache = Arc::clone(&self.instruments);
             let statuses = Arc::clone(&self.instrument_statuses);
             let subscriptions = Arc::clone(&self.instrument_status_subscriptions);
             let clock = self.clock;
 
             self.spawn_task(async move {
-                match http.request_instrument_with_status(instrument_id).await {
+                let _refresh_guard = instrument_refresh_lock.lock().await;
+
+                let result = http.fetch_instrument_details(Some(instrument_id)).await;
+                let _publish_guard = publish_lock.lock();
+
+                if cancel.is_cancelled() {
+                    return;
+                }
+
+                match result.and_then(|response| {
+                    http.parse_instrument_detail(response, instrument_id, true)
+                }) {
                     Ok((instrument, status)) => {
                         instruments_cache.rcu(|map| {
                             map.insert(instrument.id(), instrument.clone());
@@ -1424,6 +1457,9 @@ impl DataClient for LighterDataClient {
         let registry = Arc::clone(&self.registry);
         let sender = self.data_sender.clone();
         let instruments_cache = Arc::clone(&self.instruments);
+        let instrument_refresh_lock = Arc::clone(&self.instrument_refresh_lock);
+        let publish_lock = Arc::clone(&self.instrument_publish_lock);
+        let cancel = self.cancellation_token.clone();
         let status_cache = Arc::clone(&self.instrument_statuses);
         let status_subscriptions = Arc::clone(&self.instrument_status_subscriptions);
         let request_id = request.request_id;
@@ -1431,45 +1467,67 @@ impl DataClient for LighterDataClient {
         let venue = self.venue();
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
+        let publish = request.start.is_none() && request.end.is_none();
         let params = request.params;
         let clock = self.clock;
 
         self.spawn_task(async move {
-            match http.request_instruments_with_status().await {
+            let _refresh_guard = instrument_refresh_lock.lock().await;
+
+            let result = http.fetch_instrument_details(None).await;
+            let _publish_guard = publish_lock.lock();
+
+            if cancel.is_cancelled() {
+                return;
+            }
+
+            match result.and_then(|response| http.parse_instrument_details(&response, publish)) {
                 Ok(instruments_with_status) => {
                     let instruments: Vec<InstrumentAny> = instruments_with_status
                         .iter()
                         .map(|(instrument, _)| instrument.clone())
                         .collect();
 
-                    instruments_cache.rcu(|map| {
-                        for instrument in &instruments {
-                            map.insert(instrument.id(), instrument.clone());
+                    if publish {
+                        instruments_cache.rcu(|map| {
+                            for instrument in &instruments {
+                                map.insert(instrument.id(), instrument.clone());
+                            }
+                        });
+
+                        let ws_cache: Vec<(i64, InstrumentAny)> = instruments
+                            .iter()
+                            .filter_map(|i| {
+                                registry.market_index(&i.id()).map(|idx| (idx, i.clone()))
+                            })
+                            .collect();
+
+                        if !ws_cache.is_empty() {
+                            ws.cache_instruments(ws_cache);
                         }
-                    });
 
-                    let ws_cache: Vec<(i64, InstrumentAny)> = instruments
-                        .iter()
-                        .filter_map(|i| registry.market_index(&i.id()).map(|idx| (idx, i.clone())))
-                        .collect();
+                        status_cache.clear();
+                        let ts_init = clock.get_time_ns();
 
-                    if !ws_cache.is_empty() {
-                        ws.cache_instruments(ws_cache);
-                    }
+                        for (instrument, status) in &instruments_with_status {
+                            cache_lighter_instrument_status(
+                                &status_cache,
+                                instrument.id(),
+                                *status,
+                            );
+                            emit_lighter_instrument_status_if_subscribed(
+                                &sender,
+                                &status_subscriptions,
+                                instrument.id(),
+                                *status,
+                                ts_init,
+                                ts_init,
+                            );
+                        }
 
-                    status_cache.clear();
-                    let ts_init = clock.get_time_ns();
-
-                    for (instrument, status) in &instruments_with_status {
-                        cache_lighter_instrument_status(&status_cache, instrument.id(), *status);
-                        emit_lighter_instrument_status_if_subscribed(
-                            &sender,
-                            &status_subscriptions,
-                            instrument.id(),
-                            *status,
-                            ts_init,
-                            ts_init,
-                        );
+                        for instrument in &instruments {
+                            emit_lighter_instrument(&sender, instrument);
+                        }
                     }
 
                     let response = DataResponse::Instruments(InstrumentsResponse::new(
@@ -1506,36 +1564,55 @@ impl DataClient for LighterDataClient {
         let registry = Arc::clone(&self.registry);
         let sender = self.data_sender.clone();
         let instruments_cache = Arc::clone(&self.instruments);
+        let instrument_refresh_lock = Arc::clone(&self.instrument_refresh_lock);
+        let publish_lock = Arc::clone(&self.instrument_publish_lock);
+        let cancel = self.cancellation_token.clone();
         let status_cache = Arc::clone(&self.instrument_statuses);
         let status_subscriptions = Arc::clone(&self.instrument_status_subscriptions);
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
+        let publish = request.start.is_none() && request.end.is_none();
         let params = request.params;
         let clock = self.clock;
 
         self.spawn_task(async move {
-            match http.request_instrument_with_status(instrument_id).await {
+            let _refresh_guard = instrument_refresh_lock.lock().await;
+
+            let result = http.fetch_instrument_details(Some(instrument_id)).await;
+            let _publish_guard = publish_lock.lock();
+
+            if cancel.is_cancelled() {
+                return;
+            }
+
+            match result
+                .and_then(|response| http.parse_instrument_detail(response, instrument_id, publish))
+            {
                 Ok((instrument, status)) => {
-                    instruments_cache.rcu(|map| {
-                        map.insert(instrument.id(), instrument.clone());
-                    });
+                    if publish {
+                        instruments_cache.rcu(|map| {
+                            map.insert(instrument.id(), instrument.clone());
+                        });
 
-                    if let Some(market_index) = registry.market_index(&instrument.id()) {
-                        ws.cache_instrument(market_index, instrument.clone());
+                        if let Some(market_index) = registry.market_index(&instrument.id()) {
+                            ws.cache_instrument(market_index, instrument.clone());
+                        }
+
+                        cache_lighter_instrument_status(&status_cache, instrument.id(), status);
+                        let ts_init = clock.get_time_ns();
+                        emit_lighter_instrument_status_if_subscribed(
+                            &sender,
+                            &status_subscriptions,
+                            instrument.id(),
+                            status,
+                            ts_init,
+                            ts_init,
+                        );
+
+                        emit_lighter_instrument(&sender, &instrument);
                     }
-
-                    cache_lighter_instrument_status(&status_cache, instrument.id(), status);
-                    let ts_init = clock.get_time_ns();
-                    emit_lighter_instrument_status_if_subscribed(
-                        &sender,
-                        &status_subscriptions,
-                        instrument.id(),
-                        status,
-                        ts_init,
-                        ts_init,
-                    );
 
                     let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
                         request_id,
@@ -1648,7 +1725,7 @@ impl DataClient for LighterDataClient {
         self.spawn_task(async move {
             match http.request_recent_trades(&instrument, limit).await {
                 Ok(mut trades) => {
-                    retain_trade_ticks_in_range(&mut trades, start_nanos, end_nanos);
+                    retain_trades_in_range(&mut trades, start_nanos, end_nanos);
 
                     let response = DataResponse::Trades(TradesResponse::new(
                         request_id,
@@ -1805,7 +1882,7 @@ impl DataClient for LighterDataClient {
     }
 }
 
-fn retain_trade_ticks_in_range(
+fn retain_trades_in_range(
     trades: &mut Vec<TradeTick>,
     start_nanos: Option<UnixNanos>,
     end_nanos: Option<UnixNanos>,
@@ -2878,7 +2955,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_retain_trade_ticks_in_range_sorts_ascending() {
+    fn test_retain_trades_in_range_sorts_ascending() {
         let instrument_id = InstrumentId::new(Symbol::new("ETH-PERP"), *LIGHTER_VENUE);
         let tick = |ts_event, trade_id| {
             TradeTick::new(
@@ -2893,7 +2970,7 @@ mod tests {
         };
         let mut trades = vec![tick(4, "4"), tick(1, "1"), tick(3, "3"), tick(2, "2")];
 
-        retain_trade_ticks_in_range(
+        retain_trades_in_range(
             &mut trades,
             Some(UnixNanos::from(2)),
             Some(UnixNanos::from(4)),

@@ -457,7 +457,7 @@ mod tests {
         let batch =
             OrderInitialized::encode_batch(&metadata, std::slice::from_ref(&event)).unwrap();
         let decoded =
-            OrderInitialized::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+            OrderInitialized::decode_typed_batch(&batch.schema().metadata().into(), batch).unwrap();
 
         assert_eq!(decoded, vec![event]);
     }
@@ -467,7 +467,8 @@ mod tests {
         let event = order_filled;
         let metadata = event.metadata();
         let batch = OrderFilled::encode_batch(&metadata, std::slice::from_ref(&event)).unwrap();
-        let decoded = OrderFilled::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+        let decoded =
+            OrderFilled::decode_typed_batch(&batch.schema().metadata().into(), batch).unwrap();
 
         assert_eq!(decoded, vec![event]);
     }
@@ -478,7 +479,8 @@ mod tests {
         let metadata = order_filled.metadata();
         let batch =
             OrderFilled::encode_batch(&metadata, std::slice::from_ref(&order_filled)).unwrap();
-        let decoded = OrderFilled::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+        let decoded =
+            OrderFilled::decode_typed_batch(&batch.schema().metadata().into(), batch).unwrap();
 
         assert_eq!(decoded, vec![order_filled]);
     }
@@ -514,7 +516,7 @@ mod tests {
     {
         let metadata = event.metadata();
         let batch = T::encode_batch(&metadata, std::slice::from_ref(&event)).unwrap();
-        let decoded = T::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+        let decoded = T::decode_typed_batch(&batch.schema().metadata().into(), batch).unwrap();
         assert_eq!(decoded, vec![event]);
     }
 
@@ -561,7 +563,7 @@ mod tests {
             .filter_map(|(index, field)| (field.name() != "causation_id").then_some(index))
             .collect();
         let batch = batch.project(&columns).unwrap();
-        let decoded = T::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+        let decoded = T::decode_typed_batch(&batch.schema().metadata().into(), batch).unwrap();
         assert_eq!(decoded, vec![event]);
     }
 

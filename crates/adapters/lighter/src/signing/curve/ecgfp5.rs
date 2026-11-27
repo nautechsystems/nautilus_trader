@@ -448,7 +448,7 @@ impl Point {
     #[must_use]
     pub fn scalar_mul(self, s: Scalar) -> Self {
         let win = self.make_window_affine();
-        let mut digits = [0i32; NUM_DIGITS];
+        let mut digits = [0_i32; NUM_DIGITS];
         s.recode_signed(&mut digits, WINDOW);
         scalar_mul_with_window_var_time(&win, &digits)
     }
@@ -465,7 +465,7 @@ impl Point {
     #[must_use]
     pub fn scalar_mul_ct(self, s: Scalar) -> Self {
         let win = self.make_window_affine();
-        let mut digits = [0i32; NUM_DIGITS];
+        let mut digits = [0_i32; NUM_DIGITS];
         s.recode_signed(&mut digits, WINDOW);
         scalar_mul_with_window_ct(&win, &digits)
     }
@@ -480,7 +480,7 @@ impl Point {
     #[must_use]
     pub fn mulgen_ct(s: Scalar) -> Self {
         let win = generator_window();
-        let mut digits = [0i32; NUM_DIGITS];
+        let mut digits = [0_i32; NUM_DIGITS];
         s.recode_signed(&mut digits, WINDOW);
         scalar_mul_with_window_ct(win, &digits)
     }
@@ -492,7 +492,7 @@ impl Point {
     #[must_use]
     pub fn mulgen(s: Scalar) -> Self {
         let win = generator_window();
-        let mut digits = [0i32; NUM_DIGITS];
+        let mut digits = [0_i32; NUM_DIGITS];
         s.recode_signed(&mut digits, WINDOW);
         scalar_mul_with_window_var_time(win, &digits)
     }
@@ -776,7 +776,7 @@ mod tests {
 
     fn decode_scalar(hex: &str) -> Scalar {
         let bytes = hex_to_bytes(hex);
-        let mut buf = [0u8; super::super::scalar::SCALAR_BYTES];
+        let mut buf = [0_u8; super::super::scalar::SCALAR_BYTES];
         buf.copy_from_slice(&bytes);
         Scalar::from_le_bytes_reduce(buf)
     }
@@ -824,8 +824,7 @@ mod tests {
     #[rstest]
     fn mdouble_matches_iterated_double() {
         let g = Point::GENERATOR;
-
-        for n in 0..10u32 {
+        for n in 0..10_u32 {
             let mut iter = g;
             for _ in 0..n {
                 iter = iter.double();
@@ -870,10 +869,10 @@ mod tests {
             Scalar::ZERO,
             Scalar::ONE,
             Scalar::from_limbs([2, 0, 0, 0, 0]),
-            Scalar::from_limbs([0xDEAD_BEEF, 0, 0, 0, 0]),
+            Scalar::from_limbs([0xdead_beef, 0, 0, 0, 0]),
             Scalar::from_limbs([
-                0x0123_4567_89AB_CDEF,
-                0xFEDC_BA98_7654_3210,
+                0x0123_4567_89ab_cdef,
+                0xfedc_ba98_7654_3210,
                 0x1111_2222_3333_4444,
                 0x5555_6666_7777_8888,
                 0x0000_0001_0000_0001,
@@ -980,7 +979,7 @@ mod tests {
         /// `lookup` and `lookup_ct` agree on every signed digit in the
         /// window range `[-WIN_SIZE, WIN_SIZE]` (`WIN_SIZE = 16`).
         #[rstest]
-        fn prop_lookup_ct_matches_lookup(k in -16i32..=16) {
+        fn prop_lookup_ct_matches_lookup(k in -16_i32..=16) {
             let win = Point::GENERATOR.make_window_affine();
             let var = lookup(&win, k);
             let ct = lookup_ct(&win, k);
@@ -1119,7 +1118,7 @@ mod tests {
 
         /// `mdouble(n)` matches `n` iterated `double` calls for small `n`.
         #[rstest]
-        fn prop_mdouble_via_double(p in arb_point(), n in 0u32..6) {
+        fn prop_mdouble_via_double(p in arb_point(), n in 0_u32..6) {
             let mut iter = p;
             for _ in 0..n {
                 iter = iter.double();

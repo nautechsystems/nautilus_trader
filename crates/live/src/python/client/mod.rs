@@ -70,6 +70,7 @@ use nautilus_common::{
             SubmitOrderList,
         },
     },
+    msgbus::{InstrumentSubscription, TypedHandler},
     python::clock::PyClock,
 };
 use nautilus_core::{
@@ -92,7 +93,7 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
         TradeId, TraderId, Venue, VenueOrderId,
     },
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
     orders::OrderList,
     position::Position,
@@ -1210,6 +1211,7 @@ impl ExecutionClientFactory for PythonExecutionFactory {
             client,
             identity,
             cache,
+            instrument_subscription: None,
         }))
     }
 }
@@ -1899,6 +1901,73 @@ struct PythonExecutionClient {
     client: PythonClient,
     identity: ExecutionIdentity,
     cache: CacheView,
+    instrument_subscription: Option<InstrumentSubscription>,
+}
+
+impl PythonExecutionClient {
+    fn subscribe_instruments(&mut self) {
+        if self.instrument_subscription.is_some() {
+            return;
+        }
+
+        let cache = self.cache.clone();
+        let venue = self.identity.venue;
+        let client_id = self.client.client_id;
+
+        let (instance, runtime) = Python::attach(|py| {
+            (
+                self.client.instance.clone_ref(py),
+                self.client.runtime.clone_ref(py),
+            )
+        });
+
+        let handler = TypedHandler::from(move |instrument: &InstrumentAny| {
+            let instrument_venue = instrument.id().venue;
+            if instrument_venue != venue {
+                let check_venue = {
+                    let cache = cache.borrow();
+                    if cache.client_id_for_venue(&instrument_venue) != Some(&client_id) {
+                        return;
+                    }
+
+                    cache.client_route_for_venue(&instrument_venue).is_none()
+                };
+
+                if check_venue && !Self::handles_venue(&instance, client_id, instrument_venue) {
+                    return;
+                }
+            }
+
+            Self::apply_instrument(&runtime, client_id, instrument.clone());
+        });
+
+        self.instrument_subscription = Some(InstrumentSubscription::new(
+            "data.instrument.*".into(),
+            handler,
+        ));
+    }
+
+    fn handles_venue(instance: &Py<PyAny>, client_id: ClientId, venue: Venue) -> bool {
+        Python::attach(|py| {
+            instance
+                .call_method1(py, "_handles_order_venue", (venue,))?
+                .extract::<bool>(py)
+        })
+        .unwrap_or_else(|e| {
+            log::error!("Client {client_id} venue coverage failed: {e}");
+            false
+        })
+    }
+
+    fn apply_instrument(runtime: &Py<PyAny>, client_id: ClientId, instrument: InstrumentAny) {
+        if let Err(e) = Python::attach(|py| -> PyResult<()> {
+            let instrument = instrument_any_to_pyobject(py, instrument)?;
+            runtime.call_method1(py, "admit", ("_on_instrument", (instrument,)))?;
+            Ok(())
+        }) {
+            log::error!("Client {client_id} instrument update failed: {e}");
+        }
+    }
 }
 
 impl PythonClient {
@@ -1977,19 +2046,7 @@ impl ExecutionClient for PythonExecutionClient {
     }
 
     fn handles_order_venue(&self, venue: Venue) -> bool {
-        Python::attach(|py| {
-            self.client
-                .instance
-                .call_method1(py, "_handles_order_venue", (venue,))?
-                .extract::<bool>(py)
-        })
-        .unwrap_or_else(|e| {
-            log::error!(
-                "Client {} venue coverage failed: {e}",
-                self.client.client_id
-            );
-            false
-        })
+        Self::handles_venue(&self.client.instance, self.client.client_id, venue)
     }
 
     fn provides_bulk_position_coverage(&self, instrument_id: InstrumentId) -> bool {
@@ -2062,18 +2119,7 @@ impl ExecutionClient for PythonExecutionClient {
     }
 
     fn on_instrument(&mut self, instrument: InstrumentAny) {
-        if let Err(e) = Python::attach(|py| -> PyResult<()> {
-            let instrument = instrument_any_to_pyobject(py, instrument)?;
-            self.client
-                .runtime
-                .call_method1(py, "admit", ("_on_instrument", (instrument,)))?;
-            Ok(())
-        }) {
-            log::error!(
-                "Client {} instrument update failed: {e}",
-                self.client.client_id
-            );
-        }
+        Self::apply_instrument(&self.client.runtime, self.client.client_id, instrument);
     }
 
     fn get_account(&self) -> Option<AccountAny> {
@@ -2105,10 +2151,13 @@ impl ExecutionClient for PythonExecutionClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
-        self.client.output.bind().map_err(Into::into)
+        self.client.output.bind()?;
+        self.subscribe_instruments();
+        Ok(())
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
         Ok(())
     }
 
@@ -2117,6 +2166,7 @@ impl ExecutionClient for PythonExecutionClient {
     }
 
     fn dispose(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
         Ok(())
     }
 
@@ -2125,6 +2175,7 @@ impl ExecutionClient for PythonExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
         self.client.lifecycle("connect").await
     }
 
@@ -2396,11 +2447,17 @@ fn mass_status_matches(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::{clock::VirtualClock, enums::LogLevel, messages::data::DataResponse};
+    use nautilus_common::{
+        clock::VirtualClock,
+        enums::LogLevel,
+        messages::data::DataResponse,
+        msgbus::{publish_instrument, switchboard::get_instrument_topic},
+    };
     use nautilus_core::python::to_pyvalue_err;
     use nautilus_model::{
         enums::{OrderStatus, OrderType, TimeInForce},
         events::OrderEventAny,
+        instruments::{CryptoPerpetual, stubs::crypto_perpetual_ethusdt},
     };
     use rstest::{fixture, rstest};
 
@@ -2456,6 +2513,8 @@ class Runtime:
         return task
     def call(self, operation, args):
         return self.call_awaited(operation, args)
+    def admit(self, operation, args):
+        self.calls.append((operation, args))
     def _handles_order_venue(self, venue):
         self.calls.append(('venue', venue))
         if self.failure is not None:
@@ -2504,8 +2563,71 @@ class Runtime:
                     venue: Venue::from("SIM"),
                 },
                 cache,
+                instrument_subscription: None,
             }
         })
+    }
+
+    #[rstest]
+    #[case::native("SIM", None, false, false, true)]
+    #[case::explicit("ROUTED", Some("SIM"), false, false, true)]
+    #[case::fallback("FALLBACK", None, true, true, true)]
+    #[case::unhandled("UNHANDLED", None, true, false, false)]
+    #[case::other_client("OTHER", Some("OTHER"), true, true, false)]
+    fn test_instrument_subscription_respects_routes_and_stop(
+        mut native_execution_client: PythonExecutionClient,
+        #[case] venue: &str,
+        #[case] route: Option<&str>,
+        #[case] is_default: bool,
+        #[case] handles_venue: bool,
+        #[case] receives: bool,
+    ) {
+        let client = &mut native_execution_client;
+        let venue = Venue::from(venue);
+        let mut cache = Cache::default();
+        if let Some(route) = route {
+            cache.add_client_route(ClientId::from(route), venue);
+        }
+
+        if is_default {
+            cache.set_default_client(client.client_id());
+        }
+
+        client.cache = CacheView::new(Rc::new(RefCell::new(cache)));
+
+        Python::attach(|py| {
+            client
+                .client
+                .runtime
+                .setattr(py, "result", handles_venue)
+                .unwrap();
+        });
+
+        let mut instrument = crypto_perpetual_ethusdt();
+        instrument.id = InstrumentId::new(instrument.id.symbol, venue);
+        let instrument = InstrumentAny::CryptoPerpetual(instrument);
+        let topic = get_instrument_topic(instrument.id());
+
+        client.subscribe_instruments();
+        publish_instrument(topic, &instrument);
+        client.stop().unwrap();
+        publish_instrument(topic, &instrument);
+
+        let mut received = Vec::new();
+        Python::attach(|py| {
+            let calls = client.client.runtime.getattr(py, "calls").unwrap();
+            for call in calls.bind(py).try_iter().unwrap() {
+                let call = call.unwrap();
+                let operation = call.get_item(0).unwrap();
+                if operation.extract::<String>().unwrap() == "_on_instrument" {
+                    let payload = call.get_item(1).unwrap().get_item(0).unwrap();
+                    let instrument = payload.extract::<PyRef<'_, CryptoPerpetual>>().unwrap();
+                    received.push(instrument.id);
+                }
+            }
+        });
+
+        assert_eq!(received, receives.then_some(instrument.id()).as_slice());
     }
 
     #[rstest]
@@ -2889,19 +3011,19 @@ class Runtime:
                     output.call_method1(
                         py,
                         method,
-                        (py_order, explicit_venue, reason, 73u64, 79u64, cause),
+                        (py_order, explicit_venue, reason, 73_u64, 79_u64, cause),
                     )
                 } else {
                     output.call_method1(
                         py,
                         method,
-                        (py_order, explicit_venue, reason, 73u64, 79u64),
+                        (py_order, explicit_venue, reason, 73_u64, 79_u64),
                     )
                 }
             } else if with_cause {
-                output.call_method1(py, method, (py_order, reason, 73u64, 79u64, cause))
+                output.call_method1(py, method, (py_order, reason, 73_u64, 79_u64, cause))
             } else {
-                output.call_method1(py, method, (py_order, reason, 73u64, 79u64))
+                output.call_method1(py, method, (py_order, reason, 73_u64, 79_u64))
             };
 
             assert!(result.unwrap().is_none(py));

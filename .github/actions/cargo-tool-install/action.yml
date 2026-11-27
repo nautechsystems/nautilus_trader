@@ -6,11 +6,6 @@ inputs:
     description: The cargo tool to install (e.g., cargo-deny, cargo-vet)
     required: true
 
-outputs:
-  version:
-    description: The installed tool version
-    value: ${{ steps.get-version.outputs.version }}
-
 runs:
   using: "composite"
   steps:

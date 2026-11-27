@@ -127,7 +127,9 @@ impl PyBacktestEngine {
     ///   margin threshold scaled by `liquidation_trigger_ratio`.
     /// - `liquidation_trigger_ratio` (float, optional, default `1.0`): the ratio of
     ///   maintenance margin used as the liquidation threshold. A value of `1.0`
-    ///   liquidates when equity <= maintenance margin; higher values trigger earlier.
+    ///   liquidates when equity is at or below maintenance margin. Higher values
+    ///   trigger earlier. The comparison uses the ratio's shortest round-trip
+    ///   decimal representation, so `1.2` sets the threshold at 120% of maintenance.
     /// - `liquidation_cancel_open_orders` (bool, default `True`): if open resting
     ///   orders for the venue should be cancelled before synthetic close-out fills
     ///   are emitted for open positions.
@@ -523,8 +525,8 @@ impl PyBacktestEngine {
 
     /// Returns the backtest result from the last run.
     #[pyo3(name = "get_result")]
-    fn py_get_result(&self) -> BacktestResult {
-        self.0.get_result()
+    fn py_get_result(&self) -> PyResult<BacktestResult> {
+        self.0.try_get_result().map_err(to_pyruntime_err)
     }
 
     /// Clears all data from the engine.

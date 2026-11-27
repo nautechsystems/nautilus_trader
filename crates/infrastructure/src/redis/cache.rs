@@ -81,18 +81,19 @@ use nautilus_model::{
     orderbook::OrderBook,
     orders::{Order, OrderAny},
     position::Position,
-    types::{Currency, Money},
+    types::{Currency, Money, Price},
 };
-use redis::{AsyncCommands, Pipeline, aio::ConnectionManager};
+use redis::{AsyncCommands, Pipeline, RedisResult, aio::ConnectionManager};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ustr::Ustr;
 
-use super::{REDIS_DELIMITER, REDIS_FLUSHDB, get_index_key};
+use super::{ORDER_ACTIVATIONS, REDIS_DELIMITER, REDIS_FLUSHDB, flush_redis, get_index_key};
 use crate::redis::{
     RedisConnectionConfig, create_redis_connection,
     queries::{
-        CurrencyRecord, DatabaseQueries, INDEX_POSITIONS_REPLAY_SOURCE, POSITION_SNAPSHOTS_PREFIX,
+        CurrencyRecord, DatabaseQueries, INDEX_POSITIONS_REPLAY_SOURCE, OrderActivationRecord,
+        POSITION_SNAPSHOTS_PREFIX,
     },
 };
 
@@ -274,6 +275,7 @@ pub enum DatabaseOperation {
     Insert,
     Update,
     UpdateOrder,
+    UpdateOrderActivation,
     ReplaceList,
     WritePosition {
         position_id: PositionId,
@@ -281,7 +283,7 @@ pub enum DatabaseOperation {
     },
     Delete,
     DeletePositionIndex,
-    Flush(SyncSender<()>),
+    Flush(SyncSender<RedisResult<()>>),
     Close,
 }
 
@@ -434,7 +436,9 @@ impl RedisCacheDatabase {
     ///
     /// # Errors
     ///
-    /// Returns an error if the command channel is closed or the reply is lost.
+    /// Returns an error if:
+    /// - The Redis `FLUSHDB` command fails.
+    /// - The command channel is closed or the reply is lost.
     pub fn flushdb_sync(&self) -> anyhow::Result<()> {
         let (reply_tx, reply_rx) = mpsc::sync_channel(1);
         let cmd = DatabaseCommand {
@@ -445,8 +449,9 @@ impl RedisCacheDatabase {
         self.tx
             .send(cmd)
             .map_err(|e| anyhow::anyhow!("{FAILED_TX_CHANNEL}: {e}"))?;
-        blocking_recv(&reply_rx).map_err(|e| anyhow::anyhow!("Failed to flush database: {e}"))?;
-        Ok(())
+        blocking_recv(&reply_rx)
+            .context("failed to receive Redis flush result")?
+            .context("failed to flush Redis database")
     }
 
     /// Retrieves all keys matching the given `pattern` from Redis for this trader.
@@ -885,10 +890,8 @@ async fn handle_command(
                 drain_buffer(con, trader_key, encoding, buffer).await;
             }
 
-            if let Err(e) = redis::cmd(REDIS_FLUSHDB).query_async::<()>(con).await {
-                log::error!("Failed to flush database: {e:?}");
-            }
-            let _ = reply_tx.send(());
+            let result = flush_redis(con).await;
+            let _ = reply_tx.send(result);
             return ControlFlow::Continue(());
         }
         _ => {}
@@ -989,7 +992,7 @@ fn append_pipeline_command(
     payload: Option<Vec<Bytes>>,
 ) -> anyhow::Result<()> {
     if matches!(operation, DatabaseOperation::Delete) {
-        return delete(pipe, collection, key, payload);
+        return delete(pipe, trader_key, collection, key, payload);
     }
 
     let payload = payload.ok_or_else(|| anyhow::anyhow!("Null `payload` for {operation:?}"))?;
@@ -998,7 +1001,15 @@ fn append_pipeline_command(
     match operation {
         DatabaseOperation::Insert => insert(pipe, collection, key, &payload),
         DatabaseOperation::Update => update(pipe, collection, key, &payload),
-        DatabaseOperation::ReplaceList => replace_list_operation(pipe, collection, key, &payload),
+        DatabaseOperation::UpdateOrderActivation => {
+            check_slice_not_empty(&payload, stringify!(payload))?;
+            let activations = full_redis_key(trader_key, ORDER_ACTIVATIONS);
+            insert_hset(pipe, &activations, key.as_bytes(), payload[0].as_ref());
+            Ok(())
+        }
+        DatabaseOperation::ReplaceList => {
+            replace_list_operation(pipe, trader_key, collection, key, &payload)
+        }
         DatabaseOperation::WritePosition {
             position_id,
             replace_fills,
@@ -1224,6 +1235,7 @@ fn replace_list(pipe: &mut Pipeline, key: &str, value: &[u8]) {
 
 fn replace_list_operation(
     pipe: &mut Pipeline,
+    trader_key: &str,
     collection: &str,
     key: &str,
     value: &[Bytes],
@@ -1233,6 +1245,10 @@ fn replace_list_operation(
     match collection {
         ACCOUNTS | ORDERS | POSITIONS => {
             replace_list(pipe, key, value[0].as_ref());
+            if collection == ORDERS {
+                delete_order_activation(pipe, trader_key, key);
+            }
+
             Ok(())
         }
         _ => anyhow::bail!("Unsupported operation: `replace_list` for collection '{collection}'"),
@@ -1257,6 +1273,7 @@ fn update_list(pipe: &mut Pipeline, key: &str, value: &[u8]) {
 
 fn delete(
     pipe: &mut Pipeline,
+    trader_key: &str,
     collection: &str,
     key: &str,
     value: Option<Vec<Bytes>>,
@@ -1272,6 +1289,10 @@ fn delete(
         INDEX => delete_from_index(pipe, key, value),
         ORDERS | POSITIONS | ACCOUNTS | ACTORS | STRATEGIES | SNAPSHOTS | GENERAL => {
             delete_string(pipe, key);
+            if collection == ORDERS {
+                delete_order_activation(pipe, trader_key, key);
+            }
+
             Ok(())
         }
         _ => anyhow::bail!("Unsupported operation: `delete` for collection '{collection}'"),
@@ -1321,6 +1342,11 @@ fn delete_string(pipe: &mut Pipeline, key: &str) {
 
 fn full_redis_key(trader_key: &str, key: &str) -> String {
     format!("{trader_key}{REDIS_DELIMITER}{key}")
+}
+
+fn delete_order_activation(pipe: &mut Pipeline, trader_key: &str, order_key: &str) {
+    let activations = full_redis_key(trader_key, ORDER_ACTIVATIONS);
+    remove_from_hash(pipe, &activations, order_key.as_bytes());
 }
 
 fn update_order_indexes(pipe: &mut Pipeline, trader_key: &str, order: &OrderAny) {
@@ -2213,6 +2239,27 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
             .tx
             .send(op)
             .map_err(|e| anyhow::anyhow!("{FAILED_TX_CHANNEL}: {e}"))
+    }
+
+    fn store_trailing_stop_activation(
+        &self,
+        client_order_id: ClientOrderId,
+        init_id: UUID4,
+        activation_price: Price,
+    ) -> anyhow::Result<()> {
+        let key = format!("{ORDERS}{REDIS_DELIMITER}{client_order_id}");
+
+        let record = OrderActivationRecord {
+            init_id,
+            activation_price,
+        };
+
+        let payload = self.database.serialize_payload(&record)?;
+        self.send_command(
+            DatabaseOperation::UpdateOrderActivation,
+            key,
+            Some(vec![Bytes::from(payload)]),
+        )
     }
 
     fn update_position(&self, position: &Position) -> anyhow::Result<()> {

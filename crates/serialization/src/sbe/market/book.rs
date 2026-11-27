@@ -263,8 +263,8 @@ impl MarketSbeMessage for OrderBookDepth {
             );
         }
 
-        let mut bid_counts = [0u32; DEPTH10_LEVEL_COUNT];
-        let mut ask_counts = [0u32; DEPTH10_LEVEL_COUNT];
+        let mut bid_counts = [0_u32; DEPTH10_LEVEL_COUNT];
+        let mut ask_counts = [0_u32; DEPTH10_LEVEL_COUNT];
 
         for count in &mut bid_counts {
             *count = cursor.read_u32_le()?;

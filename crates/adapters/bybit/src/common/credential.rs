@@ -83,6 +83,14 @@ impl Credential {
         &self.api_key
     }
 
+    /// Returns the API secret when it is valid UTF-8.
+    ///
+    /// Use only to decide whether a URL origin contains this secret. Do not log the result.
+    #[must_use]
+    pub(crate) fn api_secret_str(&self) -> Option<&str> {
+        std::str::from_utf8(&self.api_secret).ok()
+    }
+
     /// Returns a masked version of the API key for logging purposes.
     ///
     /// Shows first 4 and last 4 characters with ellipsis in between.
@@ -116,7 +124,7 @@ impl Credential {
         payload: Option<&str>,
     ) -> String {
         let recv_window = recv_window_ms.to_string();
-        let payload_len = payload.map_or(0usize, str::len);
+        let payload_len = payload.map_or(0_usize, str::len);
         let mut message = String::with_capacity(
             timestamp.len() + self.api_key.len() + recv_window.len() + payload_len,
         );

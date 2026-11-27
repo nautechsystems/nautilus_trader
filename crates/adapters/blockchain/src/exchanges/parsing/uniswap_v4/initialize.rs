@@ -77,7 +77,6 @@ pub fn parse_initialize_event_hypersync(log: HypersyncLog) -> anyhow::Result<Poo
     // The pool address for V4 is the PoolManager contract address (the event emitter)
     let pool_manager_address = Address::from_slice(
         log.address
-            .clone()
             .expect("PoolManager address should be set in logs")
             .as_ref(),
     );
@@ -99,14 +98,14 @@ pub fn parse_initialize_event_hypersync(log: HypersyncLog) -> anyhow::Result<Poo
     let pool_id_bytes = topics[1]
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("Missing poolId topic"))?
-        .as_ref();
+        .as_slice();
     let pool_identifier = Ustr::from(&hex::encode_prefixed(pool_id_bytes));
 
     let currency0 = Address::from_slice(
         topics[2]
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Missing currency0 topic"))?
-            .as_ref()
+            .as_slice()
             .get(12..32)
             .ok_or_else(|| anyhow::anyhow!("Invalid currency0 topic length"))?,
     );
@@ -115,7 +114,7 @@ pub fn parse_initialize_event_hypersync(log: HypersyncLog) -> anyhow::Result<Poo
         topics[3]
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Missing currency1 topic"))?
-            .as_ref()
+            .as_slice()
             .get(12..32)
             .ok_or_else(|| anyhow::anyhow!("Invalid currency1 topic length"))?,
     );
@@ -275,7 +274,7 @@ mod tests {
         let event =
             parse_initialize_event_hypersync(hypersync_log_weth_usdc).expect("Failed to parse");
 
-        assert_eq!(event.block_number, 298076243);
+        assert_eq!(event.block_number, 298_076_243);
         assert_eq!(
             event.token0.to_string().to_lowercase(),
             "0x82af49447d8a07e3bd95bd0d56f35241523fbab1"
@@ -296,7 +295,7 @@ mod tests {
     fn test_parse_initialize_rpc(rpc_log_weth_usdc: RpcLog) {
         let event = parse_initialize_event_rpc(&rpc_log_weth_usdc).expect("Failed to parse");
 
-        assert_eq!(event.block_number, 298076243);
+        assert_eq!(event.block_number, 298_076_243);
         assert_eq!(
             event.token0.to_string().to_lowercase(),
             "0x82af49447d8a07e3bd95bd0d56f35241523fbab1"
@@ -333,7 +332,7 @@ mod tests {
             error.to_string(),
             format!("Topic must be 32 bytes, was {byte_len}")
         );
-        assert_eq!(event.block_number, 298076243);
+        assert_eq!(event.block_number, 298_076_243);
     }
 
     #[rstest]
@@ -348,7 +347,7 @@ mod tests {
             error.to_string(),
             "Invalid contract address length: expected 20 bytes, was 19"
         );
-        assert_eq!(event.block_number, 298076243);
+        assert_eq!(event.block_number, 298_076_243);
     }
 
     #[rstest]

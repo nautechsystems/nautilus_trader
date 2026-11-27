@@ -145,15 +145,15 @@ fn stream_message(template: u16, count: u16) -> Vec<u8> {
         STREAM_SCHEMA_ID,
         STREAM_SCHEMA_VERSION,
     );
-    bytes.extend_from_slice(&1_700_000_000_000_000i64.to_le_bytes());
-    bytes.extend_from_slice(&1_700_000_000_000_001i64.to_le_bytes());
+    bytes.extend_from_slice(&1_700_000_000_000_000_i64.to_le_bytes());
+    bytes.extend_from_slice(&1_700_000_000_000_001_i64.to_le_bytes());
     if diff {
-        bytes.extend_from_slice(&1_700_000_000_000_002i64.to_le_bytes());
+        bytes.extend_from_slice(&1_700_000_000_000_002_i64.to_le_bytes());
     }
 
-    bytes.extend_from_slice(&[(-2i8) as u8, (-8i8) as u8]);
+    bytes.extend_from_slice(&[(-2_i8) as u8, (-8_i8) as u8]);
     if template == template_id::TRADES_STREAM_EVENT {
-        bytes.extend_from_slice(&25u16.to_le_bytes());
+        bytes.extend_from_slice(&25_u16.to_le_bytes());
         bytes.extend_from_slice(&u32::from(count).to_le_bytes());
         for index in 0..count {
             bytes.extend_from_slice(&(i64::from(index) + 1).to_le_bytes());
@@ -163,7 +163,7 @@ fn stream_message(template: u16, count: u16) -> Vec<u8> {
         }
     } else {
         for side in [0, 1] {
-            bytes.extend_from_slice(&16u16.to_le_bytes());
+            bytes.extend_from_slice(&16_u16.to_le_bytes());
             bytes.extend_from_slice(&count.to_le_bytes());
             append_levels(&mut bytes, count, side);
         }
@@ -184,20 +184,20 @@ fn http_message(template: u16, count: u16) -> Vec<u8> {
     );
 
     if depth {
-        bytes.extend_from_slice(&123_456_789i64.to_le_bytes());
+        bytes.extend_from_slice(&123_456_789_i64.to_le_bytes());
     }
 
-    bytes.extend_from_slice(&[(-2i8) as u8, (-8i8) as u8]);
+    bytes.extend_from_slice(&[(-2_i8) as u8, (-8_i8) as u8]);
 
     if depth {
         for side in [0, 1] {
-            bytes.extend_from_slice(&16u16.to_le_bytes());
+            bytes.extend_from_slice(&16_u16.to_le_bytes());
             bytes.extend_from_slice(&u32::from(count).to_le_bytes());
             append_levels(&mut bytes, count, side);
         }
     } else {
         let fields = if template == trades_response_codec::SBE_TEMPLATE_ID {
-            5u16
+            5_u16
         } else {
             6
         };

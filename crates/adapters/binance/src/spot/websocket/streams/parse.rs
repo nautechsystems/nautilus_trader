@@ -358,24 +358,24 @@ mod tests {
     };
 
     fn make_bbo_buffer() -> Vec<u8> {
-        let mut buf = vec![0u8; 70];
+        let mut buf = vec![0_u8; 70];
 
         // Header
-        buf[0..2].copy_from_slice(&50u16.to_le_bytes()); // block_length
+        buf[0..2].copy_from_slice(&50_u16.to_le_bytes()); // block_length
         buf[2..4].copy_from_slice(&template_id::BEST_BID_ASK_STREAM_EVENT.to_le_bytes());
         buf[4..6].copy_from_slice(&STREAM_SCHEMA_ID.to_le_bytes());
-        buf[6..8].copy_from_slice(&0u16.to_le_bytes()); // version
+        buf[6..8].copy_from_slice(&0_u16.to_le_bytes()); // version
 
         // Body
         let body = &mut buf[8..];
-        body[0..8].copy_from_slice(&1000000i64.to_le_bytes()); // event_time_us
-        body[8..16].copy_from_slice(&12345i64.to_le_bytes()); // book_update_id
-        body[16] = (-2i8) as u8; // price_exponent
-        body[17] = (-8i8) as u8; // qty_exponent
-        body[18..26].copy_from_slice(&4200000i64.to_le_bytes()); // bid_price
-        body[26..34].copy_from_slice(&100000000i64.to_le_bytes()); // bid_qty
-        body[34..42].copy_from_slice(&4200100i64.to_le_bytes()); // ask_price
-        body[42..50].copy_from_slice(&200000000i64.to_le_bytes()); // ask_qty
+        body[0..8].copy_from_slice(&1_000_000_i64.to_le_bytes()); // event_time_us
+        body[8..16].copy_from_slice(&12345_i64.to_le_bytes()); // book_update_id
+        body[16] = (-2_i8) as u8; // price_exponent
+        body[17] = (-8_i8) as u8; // qty_exponent
+        body[18..26].copy_from_slice(&4_200_000_i64.to_le_bytes()); // bid_price
+        body[26..34].copy_from_slice(&100_000_000_i64.to_le_bytes()); // bid_qty
+        body[34..42].copy_from_slice(&4_200_100_i64.to_le_bytes()); // ask_price
+        body[42..50].copy_from_slice(&200_000_000_i64.to_le_bytes()); // ask_qty
 
         // Symbol: "BTCUSDT" (7 bytes)
         body[50] = 7;
@@ -420,7 +420,7 @@ mod tests {
             permissions: vec![vec!["SPOT".to_string()]],
         };
 
-        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
         parse_spot_instrument_sbe(&symbol, ts, ts).unwrap()
     }
 
@@ -432,18 +432,18 @@ mod tests {
 
     #[rstest]
     fn test_decode_short_buffer() {
-        let buf = [0u8; 5];
+        let buf = [0_u8; 5];
         let err = decode_market_data(&buf).unwrap_err();
         assert!(matches!(err, StreamDecodeError::BufferTooShort { .. }));
     }
 
     #[rstest]
     fn test_decode_wrong_schema() {
-        let mut buf = [0u8; 100];
-        buf[0..2].copy_from_slice(&50u16.to_le_bytes()); // block_length
+        let mut buf = [0_u8; 100];
+        buf[0..2].copy_from_slice(&50_u16.to_le_bytes()); // block_length
         buf[2..4].copy_from_slice(&template_id::BEST_BID_ASK_STREAM_EVENT.to_le_bytes());
-        buf[4..6].copy_from_slice(&99u16.to_le_bytes()); // Wrong schema
-        buf[6..8].copy_from_slice(&0u16.to_le_bytes()); // version
+        buf[4..6].copy_from_slice(&99_u16.to_le_bytes()); // Wrong schema
+        buf[6..8].copy_from_slice(&0_u16.to_le_bytes()); // version
 
         let err = decode_market_data(&buf).unwrap_err();
         assert!(matches!(err, StreamDecodeError::SchemaMismatch { .. }));
@@ -451,11 +451,11 @@ mod tests {
 
     #[rstest]
     fn test_decode_unknown_template() {
-        let mut buf = [0u8; 100];
-        buf[0..2].copy_from_slice(&50u16.to_le_bytes()); // block_length
-        buf[2..4].copy_from_slice(&9999u16.to_le_bytes()); // Unknown template
+        let mut buf = [0_u8; 100];
+        buf[0..2].copy_from_slice(&50_u16.to_le_bytes()); // block_length
+        buf[2..4].copy_from_slice(&9999_u16.to_le_bytes()); // Unknown template
         buf[4..6].copy_from_slice(&STREAM_SCHEMA_ID.to_le_bytes());
-        buf[6..8].copy_from_slice(&0u16.to_le_bytes()); // version
+        buf[6..8].copy_from_slice(&0_u16.to_le_bytes()); // version
 
         let err = decode_market_data(&buf).unwrap_err();
         assert!(matches!(err, StreamDecodeError::UnknownTemplateId(9999)));
@@ -478,7 +478,8 @@ mod tests {
     #[rstest]
     fn test_parse_trades_event() {
         let instrument = sample_instrument();
-        let ts_init = UnixNanos::from(1_800_000_000_000_000_000u64);
+        let ts_init = UnixNanos::from(1_800_000_000_000_000_000_u64);
+
         let event = TradesStreamEvent {
             event_time_us: 1_700_000_000_000_000,
             transact_time_us: 1_700_000_000_100_000,
@@ -513,7 +514,7 @@ mod tests {
                 assert_eq!(trade.trade_id, TradeId::new("1"));
                 assert_eq!(
                     trade.ts_event,
-                    UnixNanos::from(1_700_000_000_100_000_000u64)
+                    UnixNanos::from(1_700_000_000_100_000_000_u64)
                 );
                 assert_eq!(trade.ts_init, ts_init);
             }
@@ -529,7 +530,7 @@ mod tests {
                 assert_eq!(trade.trade_id, TradeId::new("2"));
                 assert_eq!(
                     trade.ts_event,
-                    UnixNanos::from(1_700_000_000_100_000_000u64)
+                    UnixNanos::from(1_700_000_000_100_000_000_u64)
                 );
                 assert_eq!(trade.ts_init, ts_init);
             }
@@ -540,7 +541,8 @@ mod tests {
     #[rstest]
     fn test_parse_bbo_event() {
         let instrument = sample_instrument();
-        let ts_init = UnixNanos::from(1_800_000_000_000_000_000u64);
+        let ts_init = UnixNanos::from(1_800_000_000_000_000_000_u64);
+
         let event = BestBidAskStreamEvent {
             event_time_us: 1_700_000_000_000_000,
             book_update_id: 123,
@@ -562,7 +564,7 @@ mod tests {
         assert_eq!(quote.ask_size, Quantity::from("3.0000"));
         assert_eq!(
             quote.ts_event,
-            UnixNanos::from(1_700_000_000_000_000_000u64)
+            UnixNanos::from(1_700_000_000_000_000_000_u64)
         );
         assert_eq!(quote.ts_init, ts_init);
     }
@@ -594,7 +596,8 @@ mod tests {
     #[rstest]
     fn test_parse_depth_snapshot() {
         let instrument = sample_instrument();
-        let ts_init = UnixNanos::from(1_800_000_000_000_000_000u64);
+        let ts_init = UnixNanos::from(1_800_000_000_000_000_000_u64);
+
         let event = DepthSnapshotStreamEvent {
             event_time_us: 1_700_000_000_000_000,
             book_update_id: 123,
@@ -633,7 +636,7 @@ mod tests {
         assert_eq!(deltas.deltas[2].sequence, 123);
         assert_eq!(
             deltas.ts_event,
-            UnixNanos::from(1_700_000_000_000_000_000u64)
+            UnixNanos::from(1_700_000_000_000_000_000_u64)
         );
         assert_eq!(deltas.ts_init, ts_init);
         assert!(deltas.deltas.iter().all(|delta| delta.ts_init == ts_init));
@@ -666,7 +669,8 @@ mod tests {
     #[rstest]
     fn test_parse_depth_diff() {
         let instrument = sample_instrument();
-        let ts_init = UnixNanos::from(1_800_000_000_000_000_000u64);
+        let ts_init = UnixNanos::from(1_800_000_000_000_000_000_u64);
+
         let event = DepthDiffStreamEvent {
             event_time_us: 1_700_000_000_000_000,
             first_book_update_id: 100,
@@ -718,14 +722,14 @@ mod tests {
             assert_eq!(delta.sequence, 101);
             assert_eq!(
                 delta.ts_event,
-                UnixNanos::from(1_700_000_000_000_000_000u64)
+                UnixNanos::from(1_700_000_000_000_000_000_u64)
             );
             assert_eq!(delta.ts_init, ts_init);
         }
 
         assert_eq!(
             deltas.ts_event,
-            UnixNanos::from(1_700_000_000_000_000_000u64)
+            UnixNanos::from(1_700_000_000_000_000_000_u64)
         );
         assert_eq!(deltas.ts_init, ts_init);
         assert!(deltas.deltas.iter().all(|delta| delta.ts_init == ts_init));

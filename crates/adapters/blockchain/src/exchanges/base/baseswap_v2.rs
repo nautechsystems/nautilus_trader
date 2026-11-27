@@ -28,7 +28,7 @@ pub static BASESWAP_V2: LazyLock<DexExtended> = LazyLock::new(|| {
         chains::BASE.clone(),
         DexType::BaseSwapV2,
         "0xFDa619b6d20975be80A10332cD39b9a4b0FAa8BB",
-        2059124,
+        2_059_124,
         AmmType::CPAMM,
         "",
         "",

@@ -141,24 +141,24 @@ mod tests {
     use crate::spot::sbe::stream::{STREAM_SCHEMA_ID, template_id};
 
     fn make_valid_buffer() -> Vec<u8> {
-        let mut buf = vec![0u8; 70];
+        let mut buf = vec![0_u8; 70];
 
         // Header
-        buf[0..2].copy_from_slice(&50u16.to_le_bytes()); // block_length
+        buf[0..2].copy_from_slice(&50_u16.to_le_bytes()); // block_length
         buf[2..4].copy_from_slice(&template_id::BEST_BID_ASK_STREAM_EVENT.to_le_bytes());
         buf[4..6].copy_from_slice(&STREAM_SCHEMA_ID.to_le_bytes());
-        buf[6..8].copy_from_slice(&0u16.to_le_bytes()); // version
+        buf[6..8].copy_from_slice(&0_u16.to_le_bytes()); // version
 
         // Body
         let body = &mut buf[8..];
-        body[0..8].copy_from_slice(&1000000i64.to_le_bytes()); // event_time_us
-        body[8..16].copy_from_slice(&12345i64.to_le_bytes()); // book_update_id
-        body[16] = (-2i8) as u8; // price_exponent
-        body[17] = (-8i8) as u8; // qty_exponent
-        body[18..26].copy_from_slice(&4200000i64.to_le_bytes()); // bid_price
-        body[26..34].copy_from_slice(&100000000i64.to_le_bytes()); // bid_qty
-        body[34..42].copy_from_slice(&4200100i64.to_le_bytes()); // ask_price
-        body[42..50].copy_from_slice(&200000000i64.to_le_bytes()); // ask_qty
+        body[0..8].copy_from_slice(&1_000_000_i64.to_le_bytes()); // event_time_us
+        body[8..16].copy_from_slice(&12345_i64.to_le_bytes()); // book_update_id
+        body[16] = (-2_i8) as u8; // price_exponent
+        body[17] = (-8_i8) as u8; // qty_exponent
+        body[18..26].copy_from_slice(&4_200_000_i64.to_le_bytes()); // bid_price
+        body[26..34].copy_from_slice(&100_000_000_i64.to_le_bytes()); // bid_qty
+        body[34..42].copy_from_slice(&4_200_100_i64.to_le_bytes()); // ask_price
+        body[42..50].copy_from_slice(&200_000_000_i64.to_le_bytes()); // ask_qty
 
         // Symbol: "BTCUSDT" (7 bytes)
         body[50] = 7;
@@ -172,7 +172,7 @@ mod tests {
         let buf = make_valid_buffer();
         let event = BestBidAskStreamEvent::decode(&buf).unwrap();
 
-        assert_eq!(event.event_time_us, 1000000);
+        assert_eq!(event.event_time_us, 1_000_000);
         assert_eq!(event.book_update_id, 12345);
         assert_eq!(event.price_exponent, -2);
         assert_eq!(event.qty_exponent, -8);
@@ -182,7 +182,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_truncated_header() {
-        let buf = [0u8; 5];
+        let buf = [0_u8; 5];
         let err = BestBidAskStreamEvent::decode(&buf).unwrap_err();
         assert!(matches!(err, StreamDecodeError::BufferTooShort { .. }));
     }
@@ -198,7 +198,7 @@ mod tests {
     #[rstest]
     fn test_decode_wrong_schema() {
         let mut buf = make_valid_buffer();
-        buf[4..6].copy_from_slice(&99u16.to_le_bytes()); // Wrong schema
+        buf[4..6].copy_from_slice(&99_u16.to_le_bytes()); // Wrong schema
         let err = BestBidAskStreamEvent::decode(&buf).unwrap_err();
         assert!(matches!(err, StreamDecodeError::SchemaMismatch { .. }));
     }

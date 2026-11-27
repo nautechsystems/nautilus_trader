@@ -51,7 +51,7 @@ fn convert_to_f64(amount: impl Display, decimals: u8, type_name: &str) -> anyhow
         .parse()
         .map_err(|e| anyhow::anyhow!("Failed to parse {type_name} to f64: {e}"))?;
 
-    let factor = 10f64.powi(i32::from(decimals));
+    let factor = 10_f64.powi(i32::from(decimals));
     Ok(amount / factor)
 }
 

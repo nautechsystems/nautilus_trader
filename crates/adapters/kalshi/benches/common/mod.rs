@@ -204,7 +204,7 @@ fn book_frame(kind: &str, payload: &Value, seq: u64) -> Vec<u8> {
         "type": kind,
         "sid": BOOK_SID,
         "seq": seq,
-        "sending_ts_ms": 1_700_000_000_001u64,
+        "sending_ts_ms": 1_700_000_000_001_u64,
         "msg": payload,
     })
     .to_string()

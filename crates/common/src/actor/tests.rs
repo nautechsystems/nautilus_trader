@@ -1131,8 +1131,8 @@ fn test_data_actor_cache_api_returns_owned_market_data_point_reads(
     let trade_count = cache_api.trade_count(&instrument_id);
     let bar_count = cache_api.bar_count(&bar_type);
     let has_order_book = cache_api.has_order_book(&instrument_id);
-    let has_quote_ticks = cache_api.has_quote_ticks(&instrument_id);
-    let has_trade_ticks = cache_api.has_trade_ticks(&instrument_id);
+    let has_quotes = cache_api.has_quotes(&instrument_id);
+    let has_trades = cache_api.has_trades(&instrument_id);
     let has_bars = cache_api.has_bars(&bar_type);
     let cached_currency = cache_api.currency(&usd.code);
     let required_currency = cache_api.try_currency(&usd.code).unwrap();
@@ -1172,8 +1172,8 @@ fn test_data_actor_cache_api_returns_owned_market_data_point_reads(
     assert_eq!(trade_count, 1);
     assert_eq!(bar_count, 1);
     assert!(has_order_book);
-    assert!(has_quote_ticks);
-    assert!(has_trade_ticks);
+    assert!(has_quotes);
+    assert!(has_trades);
     assert!(has_bars);
     assert_eq!(cached_currency, Some(usd));
     assert_eq!(required_currency, usd);
@@ -1551,8 +1551,8 @@ fn test_data_actor_cache_api_surface_returns_owned_values(
     let _: usize = cache_api.trade_count(&instrument_id);
     let _: usize = cache_api.bar_count(&bar_type);
     let _: bool = cache_api.has_order_book(&instrument_id);
-    let _: bool = cache_api.has_quote_ticks(&instrument_id);
-    let _: bool = cache_api.has_trade_ticks(&instrument_id);
+    let _: bool = cache_api.has_quotes(&instrument_id);
+    let _: bool = cache_api.has_trades(&instrument_id);
     let _: bool = cache_api.has_bars(&bar_type);
     let _: Option<Currency> = cache_api.currency(&currency_code);
     let _: Result<Currency, crate::cache::CurrencyLookupError> =
@@ -5854,10 +5854,10 @@ fn test_subscribe_and_receive_blocks(
     let block = Block::new(
         "0x123".to_string(),
         "0x456".to_string(),
-        1u64,
+        1_u64,
         "miner".into(),
-        1000000u64,
-        500000u64,
+        1000000_u64,
+        500000_u64,
         UnixNanos::from(1),
         Some(blockchain),
     );
@@ -5885,10 +5885,10 @@ fn test_unsubscribe_blocks(
     let block1 = Block::new(
         "0x123".to_string(),
         "0x456".to_string(),
-        1u64,
+        1_u64,
         "miner".into(),
-        1000000u64,
-        500000u64,
+        1000000_u64,
+        500000_u64,
         UnixNanos::from(1),
         Some(blockchain),
     );
@@ -5900,10 +5900,10 @@ fn test_unsubscribe_blocks(
     let block2 = Block::new(
         "0x789".to_string(),
         "0xabc".to_string(),
-        2u64,
+        2_u64,
         "miner2".into(),
-        1000001u64,
-        500001u64,
+        1000001_u64,
+        500001_u64,
         UnixNanos::from(2),
         Some(blockchain),
     );
@@ -6017,7 +6017,7 @@ fn test_subscribe_and_receive_pool_swaps(
         Arc::new(dex),
         instrument_id,
         PoolIdentifier::from_address(pool_address),
-        1000u64,
+        1000_u64,
         "0x123".to_string(),
         0,
         0,
@@ -6027,7 +6027,7 @@ fn test_subscribe_and_receive_pool_swaps(
         Address::from([0x12; 20]),
         I256::from_str("1000000000000000000").unwrap(),
         I256::from_str("400000000000000").unwrap(),
-        U160::from(59000000000000u128),
+        U160::from(59000000000000_u128),
         1000000,
         100,
     );
@@ -6079,7 +6079,7 @@ fn test_unsubscribe_pool_swaps(
         Arc::new(dex.clone()),
         instrument_id,
         PoolIdentifier::from_address(pool_address),
-        1000u64,
+        1000_u64,
         "0x123".to_string(),
         0,
         0,
@@ -6089,7 +6089,7 @@ fn test_unsubscribe_pool_swaps(
         Address::from([0x12; 20]),
         I256::from_str("1000000000000000000").unwrap(),
         I256::from_str("400000000000000").unwrap(),
-        U160::from(59000000000000u128),
+        U160::from(59000000000000_u128),
         1000000,
         100,
     );
@@ -6103,7 +6103,7 @@ fn test_unsubscribe_pool_swaps(
         Arc::new(dex),
         instrument_id,
         PoolIdentifier::from_address(pool_address),
-        2000u64,
+        2000_u64,
         "0x456".to_string(),
         0,
         0,
@@ -6113,7 +6113,7 @@ fn test_unsubscribe_pool_swaps(
         Address::from([0x12; 20]),
         I256::from_str("1000000000000000000").unwrap(),
         I256::from_str("400000000000000").unwrap(),
-        U160::from(59000000000000u128),
+        U160::from(59000000000000_u128),
         1000000,
         100,
     );

@@ -35,6 +35,7 @@ use crate::{
         parse::{
             deserialize_decimal_or_zero, deserialize_i32_or_string, deserialize_i64_or_string,
             deserialize_optional_decimal_or_zero, deserialize_optional_decimal_str,
+            deserialize_optional_market_unit,
         },
     },
     websocket::enums::BybitWsOperation,
@@ -853,6 +854,12 @@ pub struct BybitWsAccountOrder {
     pub cancel_type: BybitCancelType,
     pub price: String,
     pub qty: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_market_unit",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub market_unit: Option<BybitMarketUnit>,
     pub order_iv: String,
     pub time_in_force: BybitTimeInForce,
     pub order_status: BybitOrderStatus,

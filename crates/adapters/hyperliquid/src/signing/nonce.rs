@@ -271,8 +271,8 @@ mod tests {
 
     #[rstest]
     fn test_time_nonce_creation() {
-        let nonce_ms = TimeNonce::from_millis(1640995200000);
-        assert_eq!(nonce_ms.as_millis(), 1640995200000);
+        let nonce_ms = TimeNonce::from_millis(1_640_995_200_000);
+        assert_eq!(nonce_ms.as_millis(), 1_640_995_200_000);
     }
 
     #[rstest]

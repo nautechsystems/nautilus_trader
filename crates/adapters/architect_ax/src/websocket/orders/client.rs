@@ -25,6 +25,7 @@ use std::{
     time::Duration,
 };
 
+use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
 use dashmap::{DashMap, mapref::entry::Entry};
 use nautilus_common::cache::InstrumentLookupError;
@@ -81,6 +82,15 @@ pub struct OrdersCaches {
     /// Maps AX cid values to client order IDs.
     pub cid_to_client_order_id: Arc<DashMap<u64, ClientOrderId>>,
     pub(crate) pending_modifies: Arc<DashMap<VenueOrderId, (ClientOrderId, usize, bool)>>,
+    pub(crate) cancel_tracking: Arc<Mutex<CancelTracking>>,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct CancelTracking {
+    pub submissions: AHashSet<ClientOrderId>,
+    pub intents: AHashMap<UUID4, (ClientOrderId, Option<VenueOrderId>)>,
+    pub attempts: AHashMap<UUID4, (UUID4, ClientOrderId, VenueOrderId)>,
+    pub ambiguous_replaces: AHashSet<VenueOrderId>,
 }
 
 impl Default for OrdersCaches {
@@ -90,6 +100,7 @@ impl Default for OrdersCaches {
             venue_to_client_id: Arc::new(DashMap::new()),
             cid_to_client_order_id: Arc::new(DashMap::new()),
             pending_modifies: Arc::new(DashMap::new()),
+            cancel_tracking: Arc::new(Mutex::new(CancelTracking::default())),
         }
     }
 }
@@ -773,6 +784,53 @@ impl AxOrdersWebSocketClient {
         .await?;
 
         Ok(request_id)
+    }
+
+    pub(crate) async fn send_pending_cancels(&self, confirmed_parent: Option<VenueOrderId>) {
+        if self.caches.cancel_tracking.lock().intents.is_empty() {
+            return;
+        }
+
+        let sender = self.cmd_tx.read().await;
+        let mut tracking = self.caches.cancel_tracking.lock();
+        let confirmed_parent =
+            confirmed_parent.filter(|id| tracking.ambiguous_replaces.contains(id));
+        let CancelTracking {
+            intents, attempts, ..
+        } = &mut *tracking;
+
+        for (&command_id, (client_order_id, attempted)) in intents {
+            let client_order_id = *client_order_id;
+
+            let Some(metadata) = self.caches.orders_metadata.get(&client_order_id) else {
+                continue;
+            };
+
+            let Some(active) = metadata.venue_order_id else {
+                continue;
+            };
+
+            if *attempted == Some(active)
+                || (confirmed_parent != Some(active)
+                    && self.caches.pending_modifies.contains_key(&active))
+            {
+                continue;
+            }
+
+            let attempt_id = UUID4::new();
+
+            let command = HandlerCommand::CancelOrder {
+                request_id: self.next_request_id(),
+                order_id: active.to_string(),
+                client_order_id,
+                command_id: Some(attempt_id),
+            };
+
+            if sender.send(command).is_ok() {
+                *attempted = Some(active);
+                attempts.insert(attempt_id, (command_id, client_order_id, active));
+            }
+        }
     }
 
     /// Requests open orders via WebSocket.

@@ -118,6 +118,8 @@ use crate::{
     },
 };
 
+const BLOCKCHAIN_SUPPORTED_ORDER_TYPES: &[OrderType] = &[OrderType::Market];
+
 const RECEIPT_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_PAYLOAD_OPERATION_BATCH_SIZE: usize = 1_000;
 const BPS_DENOMINATOR: u32 = 10_000;
@@ -1614,12 +1616,11 @@ impl BlockchainExecutionClient {
         let instrument_id = order.instrument_id();
         let pool = self.resolve_pool(&instrument_id)?;
 
-        if order.order_type() != OrderType::Market {
-            anyhow::bail!(
-                "Unsupported order type {}; only Market is supported",
-                order.order_type()
-            );
-        }
+        let order_type = order.order_type();
+        anyhow::ensure!(
+            BLOCKCHAIN_SUPPORTED_ORDER_TYPES.contains(&order_type),
+            OrderDeniedReason::UnsupportedOrderType { order_type }
+        );
 
         if !matches!(order.order_side(), OrderSide::Buy | OrderSide::Sell) {
             anyhow::bail!(
@@ -4800,7 +4801,7 @@ fn execution_event_id(tx_hash: B256, event: &[u8]) -> UUID4 {
     identity.extend_from_slice(tx_hash.as_slice());
     identity.extend_from_slice(event);
     let digest = keccak256(identity);
-    let mut bytes = [0u8; 16];
+    let mut bytes = [0_u8; 16];
     bytes.copy_from_slice(&digest[..16]);
     UUID4::from_bytes(bytes)
 }
@@ -5094,7 +5095,7 @@ async fn verify_connect_capabilities(
                     &quote_contract,
                     token_in,
                     token_out,
-                    U256::from(1u64),
+                    U256::from(1_u64),
                     fee,
                     block,
                 )
@@ -5311,14 +5312,14 @@ fn quantity_to_raw_amount(quantity: Quantity, decimals: u8) -> anyhow::Result<U2
     let raw = U256::from(quantity.raw());
     let raw_precision = quantity.precision.max(FIXED_PRECISION);
     if decimals >= raw_precision {
-        let scale = U256::from(10u64)
+        let scale = U256::from(10_u64)
             .checked_pow(U256::from(decimals - raw_precision))
             .ok_or_else(|| anyhow::anyhow!("Order amount scaling overflow"))?;
         raw.checked_mul(scale).ok_or_else(|| {
             anyhow::anyhow!("Order amount overflow scaling quantity to raw token units")
         })
     } else {
-        let divisor = U256::from(10u64)
+        let divisor = U256::from(10_u64)
             .checked_pow(U256::from(raw_precision - decimals))
             .ok_or_else(|| anyhow::anyhow!("Order amount scaling overflow"))?;
         if !(raw % divisor).is_zero() {
@@ -5351,8 +5352,9 @@ fn raw_amount_to_quantity(amount: U256, decimals: u8) -> anyhow::Result<Quantity
     if amount.is_zero() {
         anyhow::bail!("Executed amount must be positive");
     }
+
     let quantity = if decimals >= FIXED_PRECISION {
-        let scale = U256::from(10u64)
+        let scale = U256::from(10_u64)
             .checked_pow(U256::from(decimals - FIXED_PRECISION))
             .ok_or_else(|| anyhow::anyhow!("Executed amount scaling overflow"))?;
         Quantity::from_u256(amount / scale, FIXED_PRECISION).map_err(anyhow::Error::from)?
@@ -6691,7 +6693,7 @@ mod tests {
                         UniswapV3Factory::getPoolCall {
                             tokenA: WETH_ADDRESS,
                             tokenB: USDC_ADDRESS,
-                            fee: U24::try_from(500u32).unwrap(),
+                            fee: U24::try_from(500_u32).unwrap(),
                         }
                         .abi_encode(),
                     ),
@@ -7066,7 +7068,7 @@ mod tests {
             pool,
             block_number,
             block_hash,
-            U160::from(1u128 << 96),
+            U160::from(1_u128 << 96),
             -887_220,
             887_220,
             TEST_LIQUIDITY,
@@ -7579,7 +7581,7 @@ mod tests {
             130_000_000,
             10_000_000,
             WETH_ADDRESS,
-            U256::from(1u64),
+            U256::from(1_u64),
             Bytes::from(nautilus_core::hex::decode("d0e30db0").unwrap()),
         );
         let (tx_hash, raw_tx) = sign_eip1559_transaction(
@@ -7832,10 +7834,10 @@ mod tests {
             params: UniswapV3SwapRouter::ExactInputSingleParams {
                 tokenIn: WETH_ADDRESS,
                 tokenOut: address!("af88d065e77c8cC2239327C5EDb3A432268e5831"),
-                fee: U24::try_from(500u32).unwrap(),
+                fee: U24::try_from(500_u32).unwrap(),
                 recipient: address!("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266"),
                 deadline: U256::from(FIXTURE_BLOCK_TIMESTAMP + 300),
-                amountIn: U256::from(1_000_000_000_000_000u64),
+                amountIn: U256::from(1_000_000_000_000_000_u64),
                 amountOutMinimum: min_amount_out,
                 sqrtPriceLimitX96: U160::ZERO,
             },
@@ -7850,7 +7852,7 @@ mod tests {
     fn expected_min_amount_out_for(pool: &Pool, zero_for_one: bool, slippage_bps: u32) -> U256 {
         let profiler = test_profiler(pool, FIXTURE_BLOCK);
         let quote = profiler
-            .swap_exact_in(U256::from(1_000_000_000_000_000u64), zero_for_one, None)
+            .swap_exact_in(U256::from(1_000_000_000_000_000_u64), zero_for_one, None)
             .unwrap();
         let quoted = exact_output_amount(&quote, zero_for_one).unwrap();
         derive_min_amount_out(quoted, slippage_bps).unwrap()
@@ -7859,13 +7861,19 @@ mod tests {
     fn expected_sell_quote_amount() -> U256 {
         let profiler = test_profiler(&test_pool(), FIXTURE_BLOCK);
         let quote = profiler
-            .swap_exact_in(U256::from(1_000_000_000_000_000u64), true, None)
+            .swap_exact_in(U256::from(1_000_000_000_000_000_u64), true, None)
             .unwrap();
         exact_output_amount(&quote, true).unwrap()
     }
 
     fn quote_response(amount: U256) -> String {
-        let result = (amount, U160::from(1u128 << 96), 0u32, U256::from(50_000u64)).abi_encode();
+        let result = (
+            amount,
+            U160::from(1_u128 << 96),
+            0_u32,
+            U256::from(50_000_u64),
+        )
+            .abi_encode();
         serde_json::json!({
             "jsonrpc": "2.0",
             "id": 1,
@@ -7897,7 +7905,7 @@ mod tests {
     }
 
     fn expected_buy_base_amount() -> U256 {
-        U256::from(1_000_000_000_000_000u64)
+        U256::from(1_000_000_000_000_000_u64)
     }
 
     fn expected_buy_amount_in() -> U256 {
@@ -7917,7 +7925,7 @@ mod tests {
             params: UniswapV3SwapRouter::ExactInputSingleParams {
                 tokenIn: USDC_ADDRESS,
                 tokenOut: WETH_ADDRESS,
-                fee: U24::try_from(500u32).unwrap(),
+                fee: U24::try_from(500_u32).unwrap(),
                 recipient: address!("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266"),
                 deadline: U256::from(FIXTURE_BLOCK_TIMESTAMP + 300),
                 amountIn: amount_in,
@@ -8296,8 +8304,8 @@ mod tests {
             weth: WETH_ADDRESS,
             token_in: WETH_ADDRESS,
             token_out: USDC_ADDRESS,
-            fee: U24::try_from(500u32).unwrap(),
-            amount_in: U256::from(1_000_000_000_000_000u64),
+            fee: U24::try_from(500_u32).unwrap(),
+            amount_in: U256::from(1_000_000_000_000_000_u64),
             min_amount_out: expected_min_amount_out(50),
             slippage_bps: 50,
             quote_spend_ceiling: None,
@@ -8366,21 +8374,21 @@ mod tests {
     fn quantity_to_raw_amount_scales_by_token_decimals() {
         assert_eq!(
             quantity_to_raw_amount(Quantity::from("0.001"), 18).unwrap(),
-            U256::from(1_000_000_000_000_000u64)
+            U256::from(1_000_000_000_000_000_u64)
         );
         assert_eq!(
             quantity_to_raw_amount(Quantity::from("1.5"), 18).unwrap(),
-            U256::from(1_500_000_000_000_000_000u128)
+            U256::from(1_500_000_000_000_000_000_u128)
         );
         assert_eq!(
             quantity_to_raw_amount(Quantity::from("12.5"), 6).unwrap(),
-            U256::from(12_500_000u64)
+            U256::from(12_500_000_u64)
         );
     }
 
     #[rstest]
     fn quantity_to_raw_amount_uses_defi_quantity_precision() {
-        let amount = U256::from(10_000_000_000_000_000u64);
+        let amount = U256::from(10_000_000_000_000_000_u64);
         let quantity = Quantity::from_u256(amount, 18).unwrap();
 
         assert_eq!(quantity_to_raw_amount(quantity, 18).unwrap(), amount);
@@ -8415,7 +8423,7 @@ mod tests {
 
     #[rstest]
     fn raw_amount_to_quantity_rejects_positive_amount_truncated_to_zero() {
-        let error = raw_amount_to_quantity(U256::from(99u64), 18).unwrap_err();
+        let error = raw_amount_to_quantity(U256::from(99_u64), 18).unwrap_err();
 
         assert!(
             error
@@ -8427,8 +8435,8 @@ mod tests {
 
     #[rstest]
     fn fill_price_from_quote_recovers_spent_quote_after_quantity_truncation() {
-        let last_qty = raw_amount_to_quantity(U256::from(1_000_000_403_079_044u64), 18).unwrap();
-        let quote_amount = U256::from(1_891_348u64);
+        let last_qty = raw_amount_to_quantity(U256::from(1_000_000_403_079_044_u64), 18).unwrap();
+        let quote_amount = U256::from(1_891_348_u64);
         let quote = Currency::new_checked("USDC", 6, 0, "USD Coin", CurrencyType::Crypto).unwrap();
         let last_px = fill_price_from_quote(last_qty, quote_amount, quote).unwrap();
 
@@ -8459,7 +8467,8 @@ mod tests {
             .borrow_mut()
             .add_order(order.clone(), None, None, true)
             .unwrap();
-        let amount_in = U256::from(2_345_678u64);
+        let amount_in = U256::from(2_345_678_u64);
+
         let intent = ExecutionIntentRow {
             id: 7,
             schema_version: crate::execution::transaction::EXECUTION_SCHEMA_VERSION,
@@ -8510,7 +8519,7 @@ mod tests {
 
     #[rstest]
     fn derive_min_amount_out_rejects_zero_result() {
-        let error = derive_min_amount_out(U256::from(9_999u64), 9_999).unwrap_err();
+        let error = derive_min_amount_out(U256::from(9_999_u64), 9_999).unwrap_err();
 
         assert!(
             error.to_string().contains("Derived minimum output is zero"),
@@ -8520,7 +8529,7 @@ mod tests {
 
     #[rstest]
     fn derive_min_amount_out_rejects_full_slippage() {
-        let error = derive_min_amount_out(U256::from(1_000_000u64), 10_000).unwrap_err();
+        let error = derive_min_amount_out(U256::from(1_000_000_u64), 10_000).unwrap_err();
 
         assert!(
             error.to_string().contains("must be below 10000"),
@@ -8926,14 +8935,14 @@ mod tests {
         let plan = fixture_sell_plan();
         let quote = UniswapV3Quote {
             amount: expected_sell_quote_amount(),
-            sqrt_price_x96_after: U160::from(1u128 << 96),
+            sqrt_price_x96_after: U160::from(1_u128 << 96),
             initialized_ticks_crossed: 0,
-            gas_estimate: U256::from(50_000u64),
+            gas_estimate: U256::from(50_000_u64),
         };
 
         let (amount_in, min_amount_out) = verified_swap_amounts(&plan, quote).unwrap();
 
-        assert_eq!(amount_in, U256::from(1_000_000_000_000_000u64));
+        assert_eq!(amount_in, U256::from(1_000_000_000_000_000_u64));
         assert_eq!(min_amount_out, expected_min_amount_out(50));
     }
 
@@ -8942,13 +8951,13 @@ mod tests {
         let pool = test_pool();
         let profiler = test_profiler(&pool, FIXTURE_BLOCK);
         let quote = profiler
-            .swap_exact_in(U256::from(1_000_000_000_000_000u64), true, None)
+            .swap_exact_in(U256::from(1_000_000_000_000_000_u64), true, None)
             .unwrap();
 
         let amount = exact_output_amount(&quote, true).unwrap();
 
-        assert!(amount < U256::from(1_000_000_000_000_000u64));
-        assert!(amount > U256::from(990_000_000_000_000u64));
+        assert!(amount < U256::from(1_000_000_000_000_000_u64));
+        assert!(amount > U256::from(990_000_000_000_000_u64));
 
         let error = exact_output_amount(&quote, false).unwrap_err();
         assert!(
@@ -9168,7 +9177,7 @@ mod tests {
         let amount_in = expected_buy_amount_in();
         let mut config = buy_test_config("http://127.0.0.1:1".to_string());
         config.quote_spend_limits.as_mut().unwrap()[0].max_amount =
-            (amount_in - U256::from(1u8)).to_string();
+            (amount_in - U256::from(1_u8)).to_string();
         let (mut client, cache) = swap_client_with_cache(config);
         let order = test_market_buy_order(test_pool().instrument_id);
         cache
@@ -9224,11 +9233,9 @@ mod tests {
         let OrderEventAny::Denied(denied) = &events[0] else {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
-        assert!(
-            denied.reason.contains("only Market is supported"),
-            "was: {}",
-            denied.reason
-        );
+
+        assert_eq!(denied.client_order_id, order.client_order_id());
+        assert_eq!(denied.reason, "UNSUPPORTED_ORDER_TYPE: LIMIT");
     }
 
     #[tokio::test]
@@ -12881,7 +12888,7 @@ mod tests {
                 &pool,
                 FIXTURE_BLOCK,
                 FIXTURE_BLOCK_HASH,
-                U160::from(1u128 << 96),
+                U160::from(1_u128 << 96),
                 -10,
                 10,
                 1,
@@ -13051,7 +13058,7 @@ mod tests {
             .add_pool_profiler(test_profiler_with_state(
                 &pool,
                 FIXTURE_BLOCK,
-                U160::from(2u128 << 96),
+                U160::from(2_u128 << 96),
                 TEST_LIQUIDITY,
             ))
             .unwrap();
@@ -13128,16 +13135,16 @@ mod tests {
         let profiler = test_profiler_with_state(
             &pool,
             FIXTURE_BLOCK,
-            U160::from(2u128 << 96),
+            U160::from(2_u128 << 96),
             TEST_LIQUIDITY,
         );
         let quote = profiler
-            .swap_exact_in(U256::from(1_000_000_000_000_000u64), false, None)
+            .swap_exact_in(U256::from(1_000_000_000_000_000_u64), false, None)
             .unwrap();
         let quoted = exact_output_amount(&quote, false).unwrap();
         let expected_min_out = derive_min_amount_out(quoted, 50).unwrap();
         let wrong_direction_quote = profiler
-            .swap_exact_in(U256::from(1_000_000_000_000_000u64), true, None)
+            .swap_exact_in(U256::from(1_000_000_000_000_000_u64), true, None)
             .unwrap();
         let wrong_direction_out = exact_output_amount(&wrong_direction_quote, true).unwrap();
         assert_ne!(
@@ -13401,18 +13408,18 @@ mod tests {
         assert_eq!(report.tokens.len(), 2);
         assert_eq!(
             report.tokens[0].wallet_balance,
-            U256::from(500_000_000_000_000_000u64)
+            U256::from(500_000_000_000_000_000_u64)
         );
         assert_eq!(
             report.tokens[0].router_allowances,
             vec![(
                 address!("E592427A0AEce92De3Edee1F18E0157C05861564"),
-                U256::from(1_000_000_000_000_000_000u64)
+                U256::from(1_000_000_000_000_000_000_u64)
             )]
         );
         assert_eq!(
             report.native_balance_wei,
-            U256::from(1_000_000_000_000_000_000u64)
+            U256::from(1_000_000_000_000_000_000_u64)
         );
         assert_eq!(report.base_fee_per_gas_wei, 100_000_000);
         assert_eq!(report.max_priority_fee_per_gas_wei, 10_000_000);
@@ -13666,7 +13673,7 @@ mod tests {
         assert_eq!(sell_ceiling.max_amount, U256::MAX);
         assert_eq!(buy_ceiling.spend_token, USDC_ADDRESS);
         assert_eq!(buy_ceiling.spend_token_decimals, 6);
-        assert_eq!(buy_ceiling.max_amount, U256::from(1_000_000_000u64));
+        assert_eq!(buy_ceiling.max_amount, U256::from(1_000_000_000_u64));
     }
 
     #[rstest]
@@ -13789,7 +13796,7 @@ mod tests {
         let (mut client, _) = client_with_mock_rpc(ready_rpc_state()).await;
         client.core.set_connected();
 
-        let error = client.wrap(U256::from(1_000u64)).await.unwrap_err();
+        let error = client.wrap(U256::from(1_000_u64)).await.unwrap_err();
 
         assert!(
             error.to_string().contains("No durable store configured"),
@@ -13804,7 +13811,7 @@ mod tests {
         let error = client
             .approve(
                 WETH_ADDRESS,
-                U256::from(1_000u64),
+                U256::from(1_000_u64),
                 address!("68b3465833fb72A70ecDF485E0e4C7bD8665Fc45"),
             )
             .await
@@ -13825,7 +13832,7 @@ mod tests {
         let (mut client, state) = client_with_mock_rpc(ready_rpc_state()).await;
 
         let error = client
-            .approve(USDC_ADDRESS, U256::from(1_000u64), ROUTER_ADDRESS)
+            .approve(USDC_ADDRESS, U256::from(1_000_u64), ROUTER_ADDRESS)
             .await
             .unwrap_err();
 
@@ -13849,7 +13856,7 @@ mod tests {
             purpose: TransactionPurpose::Wrap,
         }));
 
-        let error = client.wrap(U256::from(1_000u64)).await.unwrap_err();
+        let error = client.wrap(U256::from(1_000_u64)).await.unwrap_err();
 
         assert!(
             error.to_string().contains("still awaiting finality"),
@@ -13879,7 +13886,7 @@ mod tests {
         };
 
         let error = client
-            .wrap(U256::from(1_000_000_000_000_000u64))
+            .wrap(U256::from(1_000_000_000_000_000_u64))
             .await
             .unwrap_err();
 
@@ -13917,7 +13924,7 @@ mod tests {
         };
 
         let error = client
-            .wrap(U256::from(1_000_000_000_000_000u64))
+            .wrap(U256::from(1_000_000_000_000_000_u64))
             .await
             .unwrap_err();
 
@@ -13948,7 +13955,7 @@ mod tests {
         };
 
         let error = client
-            .wrap(U256::from(1_000_000_000_000_000u64))
+            .wrap(U256::from(1_000_000_000_000_000_u64))
             .await
             .unwrap_err();
 
@@ -13976,7 +13983,7 @@ mod tests {
             .count();
         assert_eq!(broadcasts, 1);
 
-        let expected_hash = expected_wrap_tx_hash(U256::from(1_000_000_000_000_000u64)).await;
+        let expected_hash = expected_wrap_tx_hash(U256::from(1_000_000_000_000_000_u64)).await;
         let block = finalized_wrap_block(expected_hash);
         let receipt = receipt_with_transaction_hash(RECEIPT_SUCCESS, expected_hash);
         let restart_state = with_finalized_identity(
@@ -14031,7 +14038,7 @@ mod tests {
         };
 
         let error = client
-            .wrap(U256::from(1_000_000_000_000_000u64))
+            .wrap(U256::from(1_000_000_000_000_000_u64))
             .await
             .unwrap_err();
 
@@ -14061,7 +14068,7 @@ mod tests {
         };
 
         let error = client
-            .approve(WETH_ADDRESS, U256::from(1_000u64), ROUTER_ADDRESS)
+            .approve(WETH_ADDRESS, U256::from(1_000_u64), ROUTER_ADDRESS)
             .await
             .unwrap_err();
 
@@ -14113,7 +14120,7 @@ mod tests {
         };
 
         let error = client
-            .approve(WETH_ADDRESS, U256::from(1_000u64), ROUTER_ADDRESS)
+            .approve(WETH_ADDRESS, U256::from(1_000_u64), ROUTER_ADDRESS)
             .await
             .unwrap_err();
 
@@ -14148,7 +14155,7 @@ mod tests {
         };
 
         let error = client
-            .approve(WETH_ADDRESS, U256::from(1_000u64), ROUTER_ADDRESS)
+            .approve(WETH_ADDRESS, U256::from(1_000_u64), ROUTER_ADDRESS)
             .await
             .unwrap_err();
 
@@ -14183,7 +14190,7 @@ mod tests {
         };
 
         let error = client
-            .approve(WETH_ADDRESS, U256::from(1_000u64), ROUTER_ADDRESS)
+            .approve(WETH_ADDRESS, U256::from(1_000_u64), ROUTER_ADDRESS)
             .await
             .unwrap_err();
 
@@ -14289,7 +14296,7 @@ mod tests {
         };
 
         let tx_hash = client
-            .approve(WETH_ADDRESS, U256::from(1_000u64), ROUTER_ADDRESS)
+            .approve(WETH_ADDRESS, U256::from(1_000_u64), ROUTER_ADDRESS)
             .await
             .unwrap();
 
@@ -14322,7 +14329,7 @@ mod tests {
         };
 
         let error = client
-            .approve(WETH_ADDRESS, U256::from(1_000u64), ROUTER_ADDRESS)
+            .approve(WETH_ADDRESS, U256::from(1_000_u64), ROUTER_ADDRESS)
             .await
             .unwrap_err();
 
@@ -14346,8 +14353,8 @@ mod tests {
         .unwrap();
         assert_eq!(nonce_state, (7, 0));
 
-        let expected_hash = expected_approve_tx_hash(U256::from(1_000u64)).await;
-        let block = finalized_approve_block(expected_hash, U256::from(1_000u64));
+        let expected_hash = expected_approve_tx_hash(U256::from(1_000_u64)).await;
+        let block = finalized_approve_block(expected_hash, U256::from(1_000_u64));
         let receipt = receipt_with_transaction_hash(RECEIPT_SUCCESS, expected_hash);
         let restart_state = with_finalized_identity(
             execution_rpc_state()
@@ -14402,7 +14409,7 @@ mod tests {
         };
 
         let error = client
-            .approve(WETH_ADDRESS, U256::from(1_000u64), ROUTER_ADDRESS)
+            .approve(WETH_ADDRESS, U256::from(1_000_u64), ROUTER_ADDRESS)
             .await
             .unwrap_err();
 
@@ -14849,7 +14856,7 @@ mod tests {
         ));
 
         client.disconnect().await.unwrap();
-        let error = client.wrap(U256::from(1_000u64)).await.unwrap_err();
+        let error = client.wrap(U256::from(1_000_u64)).await.unwrap_err();
 
         assert!(!client.is_connected());
         assert!(client.signer.is_none());
@@ -15026,7 +15033,7 @@ mod tests {
             .await
             .unwrap();
 
-        let value = U256::from(1_000_000_000_000_000u64);
+        let value = U256::from(1_000_000_000_000_000_u64);
         let in_flight = Arc::clone(&client.in_flight);
         let mut wrap = Box::pin(client.wrap(value));
         tokio::time::timeout(Duration::from_secs(2), async {
@@ -15050,7 +15057,7 @@ mod tests {
 
         let slot = *client.in_flight.lock();
         let second_error = client
-            .wrap(U256::from(2_000_000_000_000_000u64))
+            .wrap(U256::from(2_000_000_000_000_000_u64))
             .await
             .unwrap_err();
         let broadcasts = state
@@ -15087,7 +15094,7 @@ mod tests {
         };
 
         let executor = client.transaction_executor().unwrap();
-        let value = U256::from(1_000_000_000_000_000u64);
+        let value = U256::from(1_000_000_000_000_000_u64);
         let input = Bytes::from(WETH9::depositCall {}.abi_encode());
         let authorization = TransactionAuthorization::Wrap { weth: WETH_ADDRESS };
 
@@ -15177,11 +15184,11 @@ mod tests {
         .unwrap();
 
         let error = client
-            .wrap(U256::from(1_000_000_000_000_000u64))
+            .wrap(U256::from(1_000_000_000_000_000_u64))
             .await
             .unwrap_err();
         let retry_error = client
-            .wrap(U256::from(2_000_000_000_000_000u64))
+            .wrap(U256::from(2_000_000_000_000_000_u64))
             .await
             .unwrap_err();
         let broadcasts = state
@@ -15216,12 +15223,12 @@ mod tests {
         install_reservation_commit_rejection(&admin_pool, &schema).await;
 
         let error = client
-            .wrap(U256::from(1_000_000_000_000_000u64))
+            .wrap(U256::from(1_000_000_000_000_000_u64))
             .await
             .unwrap_err();
         let slot = *client.in_flight.lock();
         let second_error = client
-            .wrap(U256::from(2_000_000_000_000_000u64))
+            .wrap(U256::from(2_000_000_000_000_000_u64))
             .await
             .unwrap_err();
         let requests = state.recorded_requests();
@@ -15283,11 +15290,11 @@ mod tests {
         .await
         .unwrap();
 
-        let value = U256::from(1_000_000_000_000_000u64);
+        let value = U256::from(1_000_000_000_000_000_u64);
         let error = client.wrap(value).await.unwrap_err();
         let in_flight = awaiting_in_flight(&client);
         let second_error = client
-            .wrap(U256::from(2_000_000_000_000_000u64))
+            .wrap(U256::from(2_000_000_000_000_000_u64))
             .await
             .unwrap_err();
         let broadcasts = state
@@ -15329,7 +15336,7 @@ mod tests {
             return;
         };
 
-        let mut wrap = Box::pin(client.wrap(U256::from(1_000_000_000_000_000u64)));
+        let mut wrap = Box::pin(client.wrap(U256::from(1_000_000_000_000_000_u64)));
         tokio::select! {
             result = &mut wrap => panic!("broadcast completed before cancellation: {result:?}"),
             () = await_recorded_requests(&state, "eth_sendRawTransaction", 1) => {}
@@ -15338,7 +15345,7 @@ mod tests {
 
         let in_flight = awaiting_in_flight(&client);
         let error = client
-            .wrap(U256::from(2_000_000_000_000_000u64))
+            .wrap(U256::from(2_000_000_000_000_000_u64))
             .await
             .unwrap_err();
         let record = client
@@ -15380,7 +15387,7 @@ mod tests {
             return;
         };
 
-        let mut wrap = Box::pin(client.wrap(U256::from(1_000_000_000_000_000u64)));
+        let mut wrap = Box::pin(client.wrap(U256::from(1_000_000_000_000_000_u64)));
         tokio::select! {
             result = &mut wrap => panic!("receipt polling completed before cancellation: {result:?}"),
             () = await_recorded_requests(&state, "eth_getTransactionReceipt", 3) => {}
@@ -15389,7 +15396,7 @@ mod tests {
 
         let in_flight = awaiting_in_flight(&client);
         let second_error = client
-            .wrap(U256::from(2_000_000_000_000_000u64))
+            .wrap(U256::from(2_000_000_000_000_000_u64))
             .await
             .unwrap_err();
         let record = client
@@ -15440,7 +15447,7 @@ mod tests {
         };
 
         let error = client
-            .wrap(U256::from(1_000_000_000_000_000u64))
+            .wrap(U256::from(1_000_000_000_000_000_u64))
             .await
             .unwrap_err();
         let (purpose, status): (String, String) = sqlx::query_as(sqlx::AssertSqlSafe(format!(
@@ -15479,7 +15486,7 @@ mod tests {
             return;
         };
 
-        let mut wrap = Box::pin(client.wrap(U256::from(1_000_000_000_000_000u64)));
+        let mut wrap = Box::pin(client.wrap(U256::from(1_000_000_000_000_000_u64)));
         tokio::select! {
             result = &mut wrap => panic!("broadcast completed before database failure: {result:?}"),
             () = await_recorded_requests(&state, "eth_sendRawTransaction", 1) => {}
@@ -15506,7 +15513,7 @@ mod tests {
 
     #[tokio::test]
     async fn finalized_receipt_keeps_slot_when_status_update_fails() {
-        let expected_hash = expected_wrap_tx_hash(U256::from(1_000_000_000_000_000u64)).await;
+        let expected_hash = expected_wrap_tx_hash(U256::from(1_000_000_000_000_000_u64)).await;
         let block = finalized_wrap_block(expected_hash);
         let receipt = receipt_with_transaction_hash(RECEIPT_SUCCESS, expected_hash);
         let state = with_finalized_identity(
@@ -15557,7 +15564,7 @@ mod tests {
         }
 
         let error = client
-            .wrap(U256::from(1_000_000_000_000_000u64))
+            .wrap(U256::from(1_000_000_000_000_000_u64))
             .await
             .unwrap_err();
         let in_flight = awaiting_in_flight(&client);
@@ -15604,7 +15611,7 @@ mod tests {
         };
 
         let error = client
-            .wrap(U256::from(1_000_000_000_000_000u64))
+            .wrap(U256::from(1_000_000_000_000_000_u64))
             .await
             .unwrap_err();
 
@@ -15857,7 +15864,7 @@ mod tests {
 
     #[tokio::test]
     async fn verification_migration_reconstructs_consumed_active_intent() {
-        let expected_hash = expected_wrap_tx_hash(U256::from(1u64)).await;
+        let expected_hash = expected_wrap_tx_hash(U256::from(1_u64)).await;
         let mut block_value: serde_json::Value =
             serde_json::from_str(&finalized_wrap_block(expected_hash)).unwrap();
         block_value["result"]["transactions"][0]["value"] = serde_json::json!("0x1");
@@ -16371,7 +16378,7 @@ mod tests {
             130_000_000,
             10_000_000,
             WETH_ADDRESS,
-            U256::from(1u64),
+            U256::from(1_u64),
             Bytes::from(nautilus_core::hex::decode("d0e30db0").unwrap()),
         );
         let (tx_hash, raw_transaction) = sign_eip1559_transaction(
@@ -17282,9 +17289,10 @@ mod tests {
         else {
             return;
         };
-        let expected_hash = expected_approve_tx_hash(U256::from(1_000u64)).await;
+
+        let expected_hash = expected_approve_tx_hash(U256::from(1_000_u64)).await;
         let error = first_client
-            .approve(WETH_ADDRESS, U256::from(1_000u64), ROUTER_ADDRESS)
+            .approve(WETH_ADDRESS, U256::from(1_000_u64), ROUTER_ADDRESS)
             .await
             .unwrap_err();
         assert!(
@@ -17295,7 +17303,7 @@ mod tests {
         let payload_keys = first_client.payload_keys.clone();
         drop(first_client);
 
-        let block = finalized_approve_block(expected_hash, U256::from(1_000u64));
+        let block = finalized_approve_block(expected_hash, U256::from(1_000_u64));
         let receipt = receipt_with_transaction_hash(RECEIPT_SUCCESS, expected_hash);
         let restart_state = with_finalized_identity(
             execution_rpc_state()
@@ -17365,9 +17373,10 @@ mod tests {
         else {
             return;
         };
-        let expected_hash = expected_approve_tx_hash(U256::from(1_000u64)).await;
+
+        let expected_hash = expected_approve_tx_hash(U256::from(1_000_u64)).await;
         let error = first_client
-            .approve(WETH_ADDRESS, U256::from(1_000u64), ROUTER_ADDRESS)
+            .approve(WETH_ADDRESS, U256::from(1_000_u64), ROUTER_ADDRESS)
             .await
             .unwrap_err();
         assert!(
@@ -17379,7 +17388,7 @@ mod tests {
         drop(first_client);
 
         // Call identity matches, but the allowance does not equal the approved amount
-        let block = finalized_approve_block(expected_hash, U256::from(1_000u64));
+        let block = finalized_approve_block(expected_hash, U256::from(1_000_u64));
         let receipt = receipt_with_transaction_hash(RECEIPT_SUCCESS, expected_hash);
         let restart_state = with_finalized_identity(
             execution_rpc_state()
@@ -18059,7 +18068,7 @@ mod tests {
         client.transaction_limits.receipt_timeout_secs = 3;
 
         let wrap_hash = client
-            .wrap(U256::from(1_000_000_000_000_000u64))
+            .wrap(U256::from(1_000_000_000_000_000_u64))
             .await
             .unwrap();
 
@@ -18078,7 +18087,7 @@ mod tests {
         );
 
         let approve_hash = client
-            .approve(WETH_ADDRESS, U256::from(1_000u64), ROUTER_ADDRESS)
+            .approve(WETH_ADDRESS, U256::from(1_000_u64), ROUTER_ADDRESS)
             .await
             .unwrap();
 
@@ -18221,7 +18230,7 @@ mod tests {
         };
 
         let error = client
-            .wrap(U256::from(1_000_000_000_000_000u64))
+            .wrap(U256::from(1_000_000_000_000_000_u64))
             .await
             .unwrap_err();
 
@@ -18231,7 +18240,7 @@ mod tests {
         );
         assert!(client.in_flight.lock().is_none());
 
-        let expected_hash = expected_wrap_tx_hash(U256::from(1_000_000_000_000_000u64)).await;
+        let expected_hash = expected_wrap_tx_hash(U256::from(1_000_000_000_000_000_u64)).await;
 
         let record = client
             .cache

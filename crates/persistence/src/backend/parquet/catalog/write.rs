@@ -33,7 +33,10 @@ use super::{
     write_catalog_batch,
 };
 use crate::{
-    backend::parquet::{io::write_batches_to_object_store_create, paths::catalog_filename},
+    backend::parquet::{
+        intervals::check_new_intervals_disjoint, io::write_batches_to_object_store_create,
+        paths::catalog_filename,
+    },
     common::metadata::record_batch_ts_init_range,
 };
 
@@ -62,13 +65,9 @@ impl ParquetDataCatalog {
     /// use nautilus_model::data::Data;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     /// let mixed_data: Vec<Data> = vec![/* mixed data types */];
     ///
     /// catalog.write_data_enum(&mixed_data, None, None, None)?;
@@ -220,13 +219,9 @@ impl ParquetDataCatalog {
     /// use nautilus_model::data::QuoteTick;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     /// let quotes: Vec<QuoteTick> = vec![/* quote data */];
     ///
     /// let path = catalog.write_to_parquet(&quotes, None, None, None)?;
@@ -460,13 +455,9 @@ impl ParquetDataCatalog {
     /// use nautilus_model::instruments::InstrumentAny;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     /// let instruments: Vec<InstrumentAny> = vec![/* instruments */];
     ///
     /// let paths = catalog.write_instruments(instruments)?;
@@ -562,15 +553,16 @@ impl ParquetDataCatalog {
 
         if !skip_disjoint_check {
             let current_intervals = self.get_directory_intervals(directory)?;
-            let new_interval = (start_ts.as_u64(), end_ts.as_u64());
-            let mut new_intervals = current_intervals.clone();
-            new_intervals.push(new_interval);
-
-            anyhow::ensure!(
-                are_intervals_disjoint(&new_intervals),
-                "Writing file {filename} with interval ({start_ts}, {end_ts}) would create \
-                non-disjoint intervals. Existing intervals: {current_intervals:?}"
-            );
+            check_new_intervals_disjoint(
+                &current_intervals,
+                &[(start_ts.as_u64(), end_ts.as_u64())],
+                || {
+                    format!(
+                        "Writing file {filename} with interval ({start_ts}, {end_ts}) would \
+                         create non-disjoint intervals. Existing intervals: {current_intervals:?}"
+                    )
+                },
+            )?;
         }
 
         if let Some(data_description) = data_description {
@@ -653,13 +645,9 @@ impl ParquetDataCatalog {
     /// use nautilus_model::data::TradeTick;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     /// let trades: Vec<TradeTick> = vec![/* trade data */];
     ///
     /// let path = catalog.write_to_json(
@@ -840,6 +828,7 @@ impl CustomDataWrite {
 #[cfg(test)]
 mod tests {
     use std::{
+        collections::HashMap,
         fmt::Display,
         fs::File,
         sync::{
@@ -886,14 +875,12 @@ mod tests {
         empty.bid_counts.clear();
         empty.ask_counts.clear();
         let directory = TempDir::new().unwrap();
-        let catalog = ParquetDataCatalog::from_uri(
-            directory.path().to_str().unwrap(),
-            None,
-            Some(2),
-            None,
-            Some(2),
-        )
-        .unwrap();
+        let catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .batch_size(2)
+            .max_row_group_size(2)
+            .build()
+            .unwrap();
         let data = vec![empty.clone(), empty, stub_depth10];
 
         let path = catalog.write_to_parquet(&data, None, None, None).unwrap();
@@ -901,7 +888,7 @@ mod tests {
             File::open(directory.path().join(path)).unwrap(),
         )
         .unwrap();
-        let metadata = builder.schema().metadata().clone();
+        let metadata = HashMap::from(builder.schema().metadata());
         let batches = builder
             .build()
             .unwrap()
@@ -923,14 +910,11 @@ mod tests {
     #[rstest]
     fn leading_clear_delta_writes_with_following_precision(stub_delta: OrderBookDelta) {
         let directory = TempDir::new().unwrap();
-        let catalog = ParquetDataCatalog::from_uri(
-            directory.path().to_str().unwrap(),
-            None,
-            Some(2),
-            None,
-            None,
-        )
-        .unwrap();
+        let catalog = ParquetDataCatalog::builder()
+            .uri(directory.path())
+            .batch_size(2)
+            .build()
+            .unwrap();
         let clear = OrderBookDelta::clear(
             stub_delta.instrument_id,
             0,
@@ -951,7 +935,7 @@ mod tests {
             File::open(directory.path().join(&path)).unwrap(),
         )
         .unwrap();
-        let metadata = builder.schema().metadata().clone();
+        let metadata = HashMap::from(builder.schema().metadata());
         let decoded = builder
             .build()
             .unwrap()

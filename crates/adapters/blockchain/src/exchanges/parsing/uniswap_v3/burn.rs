@@ -61,19 +61,13 @@ pub fn parse_burn_event_hypersync(dex: SharedDex, log: &HypersyncLog) -> anyhow:
 
     // Extract int24 tickLower from topic2 (stored as a 32-byte padded value)
     let tick_lower = match log.topics.get(2).and_then(|t| t.as_ref()) {
-        Some(topic) => {
-            let tick_lower_bytes: [u8; 32] = topic.as_ref().try_into()?;
-            i32::from_be_bytes(tick_lower_bytes[28..32].try_into()?)
-        }
+        Some(topic) => i32::from_be_bytes(topic[28..32].try_into()?),
         None => anyhow::bail!("Missing tickLower in topic2 when parsing burn event"),
     };
 
     // Extract int24 tickUpper from topic3 (stored as a 32-byte padded value)
     let tick_upper = match log.topics.get(3).and_then(|t| t.as_ref()) {
-        Some(topic) => {
-            let tick_upper_bytes: [u8; 32] = topic.as_ref().try_into()?;
-            i32::from_be_bytes(tick_upper_bytes[28..32].try_into()?)
-        }
+        Some(topic) => i32::from_be_bytes(topic[28..32].try_into()?),
         None => anyhow::bail!("Missing tickUpper in topic3 when parsing burn event"),
     };
 
@@ -93,7 +87,6 @@ pub fn parse_burn_event_hypersync(dex: SharedDex, log: &HypersyncLog) -> anyhow:
 
         let pool_address = Address::from_slice(
             log.address
-                .clone()
                 .expect("Contract address should be set in logs")
                 .as_ref(),
         );
@@ -242,14 +235,14 @@ mod tests {
             event.owner.to_string().to_lowercase(),
             "0xc36442b4a4522e871399cd717abdd847ab11fe88"
         );
-        assert_eq!(event.tick_lower, -139767);
-        assert_eq!(event.tick_upper, -139764);
+        assert_eq!(event.tick_lower, -139_767);
+        assert_eq!(event.tick_upper, -139_764);
         let expected_amount = u128::from_str_radix("2bc997c8ea58d3a8521ec", 16).unwrap();
         assert_eq!(event.amount, expected_amount);
         assert_eq!(event.amount0, U256::ZERO);
         let expected_amount1 = U256::from_str_radix("65b33ff853688eb", 16).unwrap();
         assert_eq!(event.amount1, expected_amount1);
-        assert_eq!(event.block_number, 391799940);
+        assert_eq!(event.block_number, 391_799_940);
     }
 
     #[rstest]
@@ -270,14 +263,14 @@ mod tests {
             event.owner.to_string().to_lowercase(),
             "0xc36442b4a4522e871399cd717abdd847ab11fe88"
         );
-        assert_eq!(event.tick_lower, -139767);
-        assert_eq!(event.tick_upper, -139764);
+        assert_eq!(event.tick_lower, -139_767);
+        assert_eq!(event.tick_upper, -139_764);
         let expected_amount = u128::from_str_radix("2bc997c8ea58d3a8521ec", 16).unwrap();
         assert_eq!(event.amount, expected_amount);
         assert_eq!(event.amount0, U256::ZERO);
         let expected_amount1 = U256::from_str_radix("65b33ff853688eb", 16).unwrap();
         assert_eq!(event.amount1, expected_amount1);
-        assert_eq!(event.block_number, 391799940);
+        assert_eq!(event.block_number, 391_799_940);
     }
 
     #[rstest]
@@ -301,7 +294,7 @@ mod tests {
             error.to_string(),
             format!("Topic must be 32 bytes, was {byte_len}")
         );
-        assert_eq!(event.block_number, 391799940);
+        assert_eq!(event.block_number, 391_799_940);
     }
 
     #[rstest]

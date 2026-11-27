@@ -34,6 +34,7 @@ use nautilus_common::{
         GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
         SubmitOrderList,
     },
+    msgbus::{InstrumentSubscription, TypedHandler, switchboard::get_instruments_pattern},
 };
 use nautilus_core::{
     DurationNanos, Params, UUID4, UnixNanos,
@@ -151,6 +152,7 @@ pub struct BinanceSpotExecutionClient {
     ws_trading_dispatch: Option<TaskRef>,
     ws_user_data_client: Arc<Mutex<Option<BinanceSpotWsTradingClient>>>,
     ws_user_data_dispatch: Option<TaskRef>,
+    instrument_subscription: Option<InstrumentSubscription>,
     listen_key: Option<SecretString>,
     us_credentials: Option<(SecretString, SecretString)>,
     ws_authenticated: Arc<tokio::sync::Notify>,
@@ -257,6 +259,7 @@ impl BinanceSpotExecutionClient {
             ws_trading_dispatch: None,
             ws_user_data_client: Arc::new(Mutex::new(None)),
             ws_user_data_dispatch: None,
+            instrument_subscription: None,
             listen_key: None,
             us_credentials,
             ws_authenticated: Arc::new(tokio::sync::Notify::new()),
@@ -928,6 +931,53 @@ impl BinanceSpotExecutionClient {
     }
 }
 
+impl BinanceSpotExecutionClient {
+    fn subscribe_instruments(&mut self) {
+        if self.instrument_subscription.is_some() {
+            return;
+        }
+
+        let http_client = self.http_client.clone();
+        let config = self.config.clone();
+        self.instrument_subscription = Some(InstrumentSubscription::new(
+            get_instruments_pattern(self.venue()),
+            TypedHandler::from(move |instrument: &InstrumentAny| {
+                Self::apply_instrument(&http_client, &config, instrument.clone());
+            }),
+        ));
+    }
+
+    fn apply_instrument(
+        http_client: &BinanceSpotHttpClient,
+        config: &BinanceExecutionClientConfig,
+        instrument: InstrumentAny,
+    ) {
+        let InstrumentAny::CurrencyPair(pair) = &instrument else {
+            return;
+        };
+
+        if pair.id.venue != *BINANCE_VENUE {
+            return;
+        }
+
+        let Ok(selector) =
+            BinanceInstrumentSelector::new(&config.instrument_provider, config.product_type)
+        else {
+            return;
+        };
+
+        if selector.includes(
+            pair.id,
+            pair.raw_symbol.as_str(),
+            pair.base_currency.code.as_str(),
+            pair.quote_currency.code.as_str(),
+            None,
+        ) {
+            http_client.cache_execution_instrument(instrument);
+        }
+    }
+}
+
 #[async_trait(?Send)]
 impl ExecutionClient for BinanceSpotExecutionClient {
     fn is_connected(&self) -> bool {
@@ -946,6 +996,10 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         *BINANCE_VENUE
     }
 
+    fn on_instrument(&mut self, instrument: InstrumentAny) {
+        Self::apply_instrument(&self.http_client, &self.config, instrument);
+    }
+
     fn oms_type(&self) -> OmsType {
         self.core.oms_type
     }
@@ -960,6 +1014,8 @@ impl ExecutionClient for BinanceSpotExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         if self.core.is_connected() && self.session_tasks.is_open() && self.pending_tasks.is_open()
         {
             return Ok(());
@@ -1009,7 +1065,6 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                 log::warn!("No instruments returned for Binance Spot");
             } else {
                 log::debug!("Loaded {} Spot instruments", instruments.len());
-                self.http_client.cache_instruments(instruments);
             }
 
             self.core.set_instruments_initialized();
@@ -1207,14 +1262,14 @@ impl ExecutionClient for BinanceSpotExecutionClient {
             }
         }
 
-        let refresh_secs = self.config.instrument_refresh_interval_secs;
-        if refresh_secs > 0 {
+        let refresh_mins = self.config.update_instruments_interval_mins;
+        if refresh_mins > 0 {
             let http_client = self.http_client.clone();
             let provider = self.config.instrument_provider.clone();
             let us = self.config.us;
 
             self.session_tasks.spawn(async move {
-                let mut interval = tokio::time::interval(Duration::from_secs(refresh_secs));
+                let mut interval = tokio::time::interval(Duration::from_secs(refresh_mins.saturating_mul(60)));
                 interval.tick().await;
 
                 loop {
@@ -1317,6 +1372,8 @@ impl ExecutionClient for BinanceSpotExecutionClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         if self.core.is_started() {
             return Ok(());
         }
@@ -1338,7 +1395,6 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                     if instruments.is_empty() {
                         log::warn!("No instruments returned for Binance Spot");
                     } else {
-                        http_client.cache_instruments(instruments);
                         log::debug!("Instruments initialized");
                     }
                 }
@@ -1360,6 +1416,8 @@ impl ExecutionClient for BinanceSpotExecutionClient {
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         let was_started = self.core.is_started();
         self.core.set_stopped();
         self.begin_generation_shutdown();
@@ -1371,11 +1429,15 @@ impl ExecutionClient for BinanceSpotExecutionClient {
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         self.begin_generation_shutdown();
         Ok(())
     }
 
     fn dispose(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         self.begin_generation_shutdown();
         Ok(())
     }
@@ -2380,12 +2442,25 @@ impl ExecutionClient for BinanceSpotExecutionClient {
     }
 }
 
+const BINANCE_SPOT_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
+    OrderType::Market,
+    OrderType::Limit,
+    OrderType::StopMarket,
+    OrderType::StopLimit,
+    OrderType::MarketIfTouched,
+    OrderType::LimitIfTouched,
+];
+
 fn validate_order(order: &impl Order, use_gtd: bool) -> Result<(), OrderDeniedReason> {
     if order.is_reduce_only() {
         return Err(OrderDeniedReason::UnsupportedReduceOnly);
     }
 
     let order_type = order.order_type();
+    if !BINANCE_SPOT_SUPPORTED_ORDER_TYPES.contains(&order_type) {
+        return Err(OrderDeniedReason::UnsupportedOrderType { order_type });
+    }
+
     let venue_type = order_type_to_binance_spot(order_type, order.is_post_only())
         .map_err(|_| OrderDeniedReason::UnsupportedOrderType { order_type })?;
 
@@ -5024,7 +5099,7 @@ mod tests {
         let (emitter, mut rx) = create_test_emitter(clock);
         let client = create_test_http_client(clock);
         let account_id = AccountId::from("BINANCE-001");
-        let ts_init = UnixNanos::from(1_734_300_000_999_888_000u64);
+        let ts_init = UnixNanos::from(1_734_300_000_999_888_000_u64);
         let seen = Arc::new(Mutex::new(FifoCache::new()));
         let json = crate::common::testing::load_fixture_string(
             "spot/user_data_json/execution_report_new.json",
@@ -5863,7 +5938,7 @@ mod tests {
         );
         let mut report: BinanceSpotExecutionReport = serde_json::from_str(&json).unwrap();
         report.execution_type = terminal_type;
-        let ts_init = UnixNanos::from(1_734_300_000_999_888_000u64);
+        let ts_init = UnixNanos::from(1_734_300_000_999_888_000_u64);
 
         let dispatch = |report: &BinanceSpotExecutionReport| {
             dispatch_execution_report(
@@ -5927,7 +6002,7 @@ mod tests {
             LiquiditySide::Maker,
             Some(cid),
             None,
-            UnixNanos::from(1_709_654_401_000_000_000u64),
+            UnixNanos::from(1_709_654_401_000_000_000_u64),
             ts_init,
             Some(fill.report_id),
         );
@@ -6304,7 +6379,7 @@ mod tests {
                 false,
                 &state,
                 &seen_trade_ids,
-                UnixNanos::from(1709654402000000000),
+                UnixNanos::from(1_709_654_402_000_000_000),
             );
         };
 
@@ -6727,7 +6802,7 @@ mod tests {
         .unwrap();
 
         assert!(cancel_id.len() <= 36);
-        assert_eq!(params.cancel_order_id, Some(12345678));
+        assert_eq!(params.cancel_order_id, Some(12_345_678));
         assert_eq!(
             params.cancel_new_client_order_id.as_deref(),
             Some(cancel_id.as_str())
@@ -6949,7 +7024,7 @@ mod tests {
                 assert_eq!(event.venue_order_id, Some(VenueOrderId::from("12345678")));
                 assert_eq!(
                     event.ts_event,
-                    UnixNanos::from(1_709_654_402_000_000_000u64)
+                    UnixNanos::from(1_709_654_402_000_000_000_u64)
                 );
             }
             other => panic!("Expected OrderCanceled, was {other:?}"),
@@ -7047,7 +7122,7 @@ mod tests {
                 assert_eq!(report.order_status, OrderStatus::Canceled);
                 assert_eq!(
                     report.ts_last,
-                    UnixNanos::from(1_709_654_402_000_000_000u64)
+                    UnixNanos::from(1_709_654_402_000_000_000_u64)
                 );
             }
             other => panic!("Expected order status report, was {other:?}"),

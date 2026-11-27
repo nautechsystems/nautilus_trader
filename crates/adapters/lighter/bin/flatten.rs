@@ -559,7 +559,7 @@ fn fresh_client_order_index() -> i64 {
     // Lighter rejects client_order_index above 2^31-1 with `21727
     // invalid client order index`; mask to 31 positive bits so the
     // close-position IOC frames the venue accepts.
-    i64::from((seed.wrapping_add(bump)) as u32 & 0x7FFF_FFFF)
+    i64::from((seed.wrapping_add(bump)) as u32 & 0x7fff_ffff)
 }
 
 async fn wait_for_authoritative_positions(

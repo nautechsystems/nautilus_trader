@@ -952,10 +952,10 @@ mod tests {
         let bars = with_ib_replay(exchanges, async |ib| {
             let provider =
                 Arc::new(InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap());
-            provider.insert_test_instrument(equity_aapl().into(), 265598, 1);
+            provider.insert_test_instrument(equity_aapl().into(), 265_598, 1);
             let client = HistoricalInteractiveBrokersClient::new(ib, provider);
             let contract = Contract {
-                contract_id: 265598,
+                contract_id: 265_598,
                 ..Contract::stock("AAPL").build()
             };
             client
@@ -995,7 +995,7 @@ mod tests {
     async fn test_historical_connect_rejects_duplicates_before_connection(#[case] supplied: bool) {
         let duplicate_provider: InteractiveBrokersInstrumentProviderConfig =
             serde_json::from_value(serde_json::json!({
-                "load_contracts": [{"conId": 265598}, {"conId": 265598}]
+                "load_contracts": [{"conId": 265_598}, {"conId": 265_598}]
             }))
             .unwrap();
 

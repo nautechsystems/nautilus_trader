@@ -17,15 +17,22 @@ use std::{collections::BTreeMap, fmt::Debug, sync::Arc};
 
 use ahash::AHashMap;
 use indexmap::{IndexMap, IndexSet};
-use nautilus_core::{DurationNanos, UUID4, UnixNanos};
+use nautilus_core::{
+    DurationNanos, UUID4, UnixNanos,
+    correctness::{CorrectnessError, CorrectnessResult},
+};
 use nautilus_model::{
     accounts::{Account, AccountAny},
     events::PortfolioSnapshot,
     identifiers::{AccountId, PositionId},
     position::Position,
-    types::{Currency, Money, fixed::MAX_FLOAT_PRECISION},
+    types::{
+        Currency, Money,
+        fixed::{MAX_FLOAT_PRECISION, check_float_precision, fixed_i128_to_f64, raw_scales_match},
+        money::MoneyRaw,
+    },
 };
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::prelude::ToPrimitive;
 
 use crate::{
     Returns,
@@ -204,9 +211,13 @@ impl PortfolioAnalyzer {
 
         self.add_positions(positions);
 
-        if let Some(account_returns) = Self::calculate_account_returns(account) {
-            self.portfolio_returns = account_returns;
-            self.sync_returns_alias();
+        match Self::calculate_account_returns(account) {
+            Ok(Some(account_returns)) => {
+                self.portfolio_returns = account_returns;
+                self.sync_returns_alias();
+            }
+            Ok(None) => (),
+            Err(e) => log::warn!("Cannot calculate account returns for {}: {e}", account.id()),
         }
     }
 
@@ -235,6 +246,10 @@ impl PortfolioAnalyzer {
     /// Portfolio returns use daily mark-to-market equity when at least two UTC dates are
     /// available and every account resolves to one common currency. Otherwise the primary
     /// returns source falls back to position returns.
+    ///
+    /// Aggregates balances exactly. Logs and omits balances for a currency if its starting or
+    /// current total falls outside the [`Money`] range or its balances use incompatible scales.
+    /// Logs and omits equity series that exceed the supported float precision.
     #[must_use]
     pub fn from_accounts_with_snapshots<'a>(
         accounts: &[AccountAny],
@@ -243,8 +258,76 @@ impl PortfolioAnalyzer {
         portfolio_snapshots: impl IntoIterator<Item = &'a PortfolioSnapshot>,
         recorded_realized_pnls: AHashMap<Currency, Vec<(PositionId, UnixNanos, f64)>>,
     ) -> Self {
+        let (mut analyzer, account_ids, _, invalid_totals) = Self::build_from_accounts(
+            accounts,
+            positions,
+            position_snapshots,
+            recorded_realized_pnls,
+        );
+
+        for currency in invalid_totals {
+            log::warn!("Cannot sum portfolio balances for {currency}");
+        }
+
+        analyzer.set_portfolio_returns_from_snapshots(&account_ids, portfolio_snapshots);
+        analyzer
+    }
+
+    /// Builds an analyzer from accounts, positions, and portfolio snapshots.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the analyzer cannot represent its inputs or balance totals.
+    ///
+    /// Starting and current totals must fit in [`Money`] and combine balances at compatible
+    /// fixed-point scales. Balances, daily equity values, and realized PnL must use supported
+    /// float precision.
+    pub fn try_from_accounts_with_snapshots<'a>(
+        accounts: &[AccountAny],
+        positions: &[Position],
+        position_snapshots: &[Position],
+        portfolio_snapshots: impl IntoIterator<Item = &'a PortfolioSnapshot>,
+        recorded_realized_pnls: AHashMap<Currency, Vec<(PositionId, UnixNanos, f64)>>,
+    ) -> CorrectnessResult<Self> {
+        check_position_pnl_precision(positions.iter().chain(position_snapshots))?;
+
+        for currency in recorded_realized_pnls.keys() {
+            check_float_precision(currency.precision).map_err(|e| {
+                CorrectnessError::PredicateViolation {
+                    message: format!("Cannot analyze recorded realized PnL in {currency}: {e}"),
+                }
+            })?;
+        }
+
+        let (mut analyzer, account_ids, balance_result, _) = Self::build_from_accounts(
+            accounts,
+            positions,
+            position_snapshots,
+            recorded_realized_pnls,
+        );
+
+        balance_result?;
+        analyzer.try_set_portfolio_returns_from_snapshots(&account_ids, portfolio_snapshots)?;
+        Ok(analyzer)
+    }
+
+    fn build_from_accounts(
+        accounts: &[AccountAny],
+        positions: &[Position],
+        position_snapshots: &[Position],
+        recorded_realized_pnls: AHashMap<Currency, Vec<(PositionId, UnixNanos, f64)>>,
+    ) -> (
+        Self,
+        Vec<AccountId>,
+        CorrectnessResult<()>,
+        IndexSet<Currency>,
+    ) {
         let mut analyzer = Self::default();
         let mut account_ids = Vec::with_capacity(accounts.len());
+        let mut balance_error = None;
+        let mut starting_totals = IndexMap::new();
+        let mut current_totals = IndexMap::new();
+        let mut invalid_totals = IndexSet::new();
 
         for account in accounts {
             let account_ref: &dyn Account = match account {
@@ -253,42 +336,118 @@ impl PortfolioAnalyzer {
                 AccountAny::Betting(betting) => betting,
                 AccountAny::Wallet(wallet) => wallet,
             };
-            account_ids.push(account_ref.id());
 
-            for (currency, money) in account_ref.starting_balances() {
-                analyzer
-                    .account_balances_starting
-                    .entry(currency)
-                    .and_modify(|existing| *existing = *existing + money)
-                    .or_insert(money);
-            }
+            let account_id = account_ref.id();
+            account_ids.push(account_id);
 
-            for (currency, money) in account_ref.balances_total() {
-                analyzer
-                    .account_balances
-                    .entry(currency)
-                    .and_modify(|existing| *existing = *existing + money)
-                    .or_insert(money);
+            for (balances, totals) in [
+                (account_ref.starting_balances(), &mut starting_totals),
+                (account_ref.balances_total(), &mut current_totals),
+            ] {
+                Self::sum_account_balances(
+                    account_id,
+                    balances,
+                    totals,
+                    &mut invalid_totals,
+                    &mut balance_error,
+                );
             }
+        }
+
+        analyzer.account_balances_starting =
+            Self::finish_account_balances(starting_totals, &mut invalid_totals);
+        analyzer.account_balances =
+            Self::finish_account_balances(current_totals, &mut invalid_totals);
+        for currency in &invalid_totals {
+            analyzer.account_balances_starting.shift_remove(currency);
+            analyzer.account_balances.shift_remove(currency);
+            balance_error.get_or_insert_with(|| CorrectnessError::PredicateViolation {
+                message: format!("Cannot sum portfolio balances for {currency}"),
+            });
         }
 
         analyzer.add_positions(positions);
         analyzer.add_positions(position_snapshots);
         analyzer.recorded_realized_pnls = recorded_realized_pnls;
-        analyzer.set_portfolio_returns_from_snapshots(&account_ids, portfolio_snapshots);
-        analyzer
+
+        (
+            analyzer,
+            account_ids,
+            balance_error.map_or(Ok(()), Err),
+            invalid_totals,
+        )
     }
 
-    /// Replaces the primary returns source with snapshot-backed portfolio returns when resolvable.
+    fn sum_account_balances(
+        account_id: AccountId,
+        balances: impl IntoIterator<Item = (Currency, Money)>,
+        totals: &mut IndexMap<Currency, BalanceTotal>,
+        invalid_totals: &mut IndexSet<Currency>,
+        balance_error: &mut Option<CorrectnessError>,
+    ) {
+        for (currency, money) in balances {
+            if let Err(e) = check_float_precision(currency.precision.max(money.currency.precision))
+            {
+                balance_error.get_or_insert_with(|| CorrectnessError::PredicateViolation {
+                    message: format!("Cannot analyze {currency} balance for {account_id}: {e}"),
+                });
+            }
+
+            totals
+                .entry(currency)
+                .and_modify(|existing| {
+                    if !existing.add(money) {
+                        invalid_totals.insert(currency);
+                    }
+                })
+                .or_insert_with(|| BalanceTotal::new(money));
+        }
+    }
+
+    fn finish_account_balances(
+        totals: IndexMap<Currency, BalanceTotal>,
+        invalid_totals: &mut IndexSet<Currency>,
+    ) -> IndexMap<Currency, Money> {
+        totals
+            .into_iter()
+            .filter_map(|(currency, total)| {
+                if let Some(balance) = total.into_money() {
+                    Some((currency, balance))
+                } else {
+                    invalid_totals.insert(currency);
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Replaces the portfolio return series using the supplied snapshots.
+    ///
+    /// Falls back to position returns when the snapshots cannot form a usable daily series.
+    /// Logs a warning and retains the current returns if snapshot equity exceeds the supported
+    /// float precision.
     pub fn set_portfolio_returns_from_snapshots<'a>(
         &mut self,
         account_ids: &[AccountId],
         snapshots: impl IntoIterator<Item = &'a PortfolioSnapshot>,
     ) {
-        if let Some(returns) = Self::calculate_snapshot_returns(account_ids, snapshots) {
-            self.portfolio_returns = returns;
+        if let Err(e) = self.try_set_portfolio_returns_from_snapshots(account_ids, snapshots) {
+            log::warn!("Cannot calculate portfolio returns from snapshots: {e}");
+        }
+    }
+
+    fn try_set_portfolio_returns_from_snapshots<'a>(
+        &mut self,
+        account_ids: &[AccountId],
+        snapshots: impl IntoIterator<Item = &'a PortfolioSnapshot>,
+    ) -> CorrectnessResult<()> {
+        let returns = Self::calculate_snapshot_returns(account_ids, snapshots)?;
+        if returns.is_some() || !self.portfolio_returns.is_empty() {
+            self.portfolio_returns = returns.unwrap_or_default();
             self.sync_returns_alias();
         }
+
+        Ok(())
     }
 
     /// Collects an owned [`PortfolioStatistics`] snapshot from the current analyzer state.
@@ -297,8 +456,11 @@ impl PortfolioAnalyzer {
         let mut pnls = AHashMap::new();
 
         for currency in self.currencies() {
-            if let Ok(stats) = self.get_performance_stats_pnls(Some(currency), None) {
-                pnls.insert(currency.code.to_string(), stats);
+            match self.get_performance_stats_pnls(Some(currency), None) {
+                Ok(stats) => {
+                    pnls.insert(currency.code.to_string(), stats);
+                }
+                Err(e) => log::warn!("Cannot calculate PnL statistics for {currency}: {e}"),
             }
         }
         PortfolioStatistics {
@@ -336,6 +498,17 @@ impl PortfolioAnalyzer {
     /// Records a trade's PnL realized at `ts_event`, observed during portfolio processing.
     pub fn record_trade(&mut self, position_id: &PositionId, ts_event: UnixNanos, pnl: &Money) {
         let currency = pnl.currency;
+        // Currency keys compare by code. Keep native precision visible to checked reporting.
+        if currency.precision > MAX_FLOAT_PRECISION
+            && self
+                .recorded_realized_pnls
+                .get_key_value(&currency)
+                .is_some_and(|(key, _)| key.precision < currency.precision)
+            && let Some(records) = self.recorded_realized_pnls.remove(&currency)
+        {
+            self.recorded_realized_pnls.insert(currency, records);
+        }
+
         let entry = self.recorded_realized_pnls.entry(currency).or_default();
         entry.push((*position_id, ts_event, trade_pnl_value(pnl)));
     }
@@ -375,10 +548,10 @@ impl PortfolioAnalyzer {
     ///
     /// Multi-currency accounts are not yet supported; the caller silently
     /// receives per-position returns in that case.
-    fn calculate_account_returns(account: &dyn Account) -> Option<Returns> {
+    fn calculate_account_returns(account: &dyn Account) -> CorrectnessResult<Option<Returns>> {
         let mut events = account.events();
         if events.len() < 2 {
-            return None;
+            return Ok(None);
         }
 
         events.sort_by_key(|event| event.ts_event);
@@ -392,33 +565,43 @@ impl PortfolioAnalyzer {
             }
 
             if event.balances.len() != 1 {
-                return None;
+                return Ok(None);
             }
 
             let balance = event.balances[0];
 
             if let Some(existing_currency) = currency {
                 if existing_currency != balance.currency {
-                    return None;
+                    return Ok(None);
                 }
             } else {
                 currency = Some(balance.currency);
             }
 
             let day_start = event.ts_event.floor(DurationNanos::from_days(1));
+            check_float_precision(balance.total.currency.precision).map_err(|e| {
+                CorrectnessError::PredicateViolation {
+                    message: format!(
+                        "Cannot analyze {} balance for {}: {e}",
+                        balance.currency,
+                        account.id()
+                    ),
+                }
+            })?;
+
             daily_balances.insert(day_start, balance.total.as_f64());
         }
 
-        Self::calculate_daily_returns(&daily_balances)
+        Ok(Self::calculate_daily_returns(&daily_balances))
     }
 
     fn calculate_snapshot_returns<'a>(
         account_ids: &[AccountId],
         snapshots: impl IntoIterator<Item = &'a PortfolioSnapshot>,
-    ) -> Option<Returns> {
+    ) -> CorrectnessResult<Option<Returns>> {
         let expected_accounts: IndexSet<AccountId> = account_ids.iter().copied().collect();
         if expected_accounts.is_empty() {
-            return None;
+            return Ok(None);
         }
 
         let mut currency = None;
@@ -434,7 +617,7 @@ impl PortfolioAnalyzer {
             }
 
             if snapshot.total_equity.len() != 1 {
-                return None;
+                return Ok(None);
             }
 
             let equity = snapshot
@@ -443,24 +626,38 @@ impl PortfolioAnalyzer {
 
             if let Some(existing_currency) = currency {
                 if existing_currency != equity.currency {
-                    return None;
+                    return Ok(None);
                 }
             } else {
                 currency = Some(equity.currency);
             }
 
-            let is_registration = !equity_by_account.contains_key(&snapshot.account_id);
-            let day_start = Self::snapshot_day_start(snapshot.ts_event, is_registration);
-            equity_by_account
-                .entry(snapshot.account_id)
-                .or_default()
-                .insert(day_start, equity.as_f64());
+            check_float_precision(equity.currency.precision).map_err(|e| {
+                CorrectnessError::PredicateViolation {
+                    message: format!(
+                        "Cannot analyze {} snapshot equity for {}: {e}",
+                        equity.currency, snapshot.account_id
+                    ),
+                }
+            })?;
+
+            let daily_equity = equity_by_account.entry(snapshot.account_id).or_default();
+            let day_start = Self::snapshot_day_start(snapshot, daily_equity.is_empty());
+            daily_equity.insert(day_start, equity.as_f64());
         }
 
         if equity_by_account.len() != expected_accounts.len() {
-            return None;
+            return Ok(None);
         }
 
+        let daily_equity = Self::aggregate_daily_equity(&expected_accounts, &equity_by_account);
+        Ok(daily_equity.and_then(|equity| Self::calculate_daily_returns(&equity)))
+    }
+
+    fn aggregate_daily_equity(
+        expected_accounts: &IndexSet<AccountId>,
+        equity_by_account: &AHashMap<AccountId, BTreeMap<UnixNanos, f64>>,
+    ) -> Option<BTreeMap<UnixNanos, f64>> {
         let first_day = equity_by_account
             .values()
             .filter_map(|equity| equity.keys().next().copied())
@@ -469,12 +666,13 @@ impl PortfolioAnalyzer {
             .values()
             .filter_map(|equity| equity.keys().next_back().copied())
             .max()?;
+
         let mut daily_equity = BTreeMap::new();
         let mut current_equity = AHashMap::new();
         let mut current_day = first_day;
 
         loop {
-            for account_id in &expected_accounts {
+            for account_id in expected_accounts {
                 if let Some(equity) = equity_by_account
                     .get(account_id)
                     .and_then(|values| values.get(&current_day))
@@ -498,13 +696,16 @@ impl PortfolioAnalyzer {
             current_day += DurationNanos::from_days(1);
         }
 
-        Self::calculate_daily_returns(&daily_equity)
+        Some(daily_equity)
     }
 
-    fn snapshot_day_start(ts_event: UnixNanos, is_registration: bool) -> UnixNanos {
+    fn snapshot_day_start(snapshot: &PortfolioSnapshot, is_first_usable: bool) -> UnixNanos {
         let day = DurationNanos::from_days(1);
+        let ts_event = snapshot.ts_event;
         let day_start = ts_event.floor(day);
-        if is_registration || (ts_event == day_start && !ts_event.is_zero()) {
+        if (is_first_usable && snapshot.is_registration)
+            || (ts_event == day_start && !ts_event.is_zero())
+        {
             day_start.saturating_sub(day)
         } else {
             day_start
@@ -557,11 +758,11 @@ impl PortfolioAnalyzer {
     /// IDs are preserved for NETTING position cycles. Records are returned in ascending
     /// `ts_event` order, with ties keeping their source order.
     ///
-    /// Native PnLs (derived from analyzed positions) and PnLs recorded live during
-    /// portfolio processing are merged per cycle: a native record is excluded only when a
-    /// recorded record shares its `(position_id, ts_event)`. Recorded values therefore take
-    /// precedence for the cycles they cover, while native cycles that were never recorded
-    /// are retained rather than dropped by position ID.
+    /// Merges PnLs added through [`Self::add_trade`] with PnLs observed through
+    /// [`Self::record_trade`]. Snapshots use their original position ID for matching.
+    /// When exactly one PnL from each source shares an ID and timestamp, the recorded value
+    /// takes precedence. Otherwise, each recorded PnL replaces at most one added PnL with
+    /// an equal amount. Unmatched PnLs remain in the output.
     ///
     /// Returns `None` if no PnLs exist, or if multiple currencies exist
     /// without an explicit currency specified.
@@ -585,23 +786,7 @@ impl PortfolioAnalyzer {
             (Some(realized_pnls), None) => realized_pnls.clone(),
             (None, Some(recorded_realized_pnls)) => recorded_realized_pnls.clone(),
             (Some(realized_pnls), Some(recorded_realized_pnls)) => {
-                let recorded_keys: IndexSet<(PositionId, UnixNanos)> = recorded_realized_pnls
-                    .iter()
-                    .map(|(position_id, ts_event, _)| {
-                        (canonical_position_id(*position_id), *ts_event)
-                    })
-                    .collect();
-                let mut merged: Vec<(PositionId, UnixNanos, f64)> = realized_pnls
-                    .iter()
-                    .copied()
-                    .filter(|(position_id, ts_event, _)| {
-                        let key = (canonical_position_id(*position_id), *ts_event);
-                        !recorded_keys.contains(&key)
-                    })
-                    .collect();
-                merged.extend(recorded_realized_pnls.iter().copied());
-
-                merged
+                merge_trade_pnl_records(realized_pnls, recorded_realized_pnls)
             }
         };
 
@@ -633,44 +818,18 @@ impl PortfolioAnalyzer {
     /// - No currency is specified in a multi-currency portfolio.
     /// - The specified currency is not found in account balances.
     /// - The unrealized PnL currency does not match the specified currency.
-    #[expect(clippy::missing_panics_doc)] // Guarded by length check
+    /// - A money value exceeds the supported float precision.
+    /// - The fixed-point PnL calculation overflows.
     pub fn total_pnl(
         &self,
         currency: Option<&Currency>,
         unrealized_pnl: Option<&Money>,
     ) -> Result<f64, &'static str> {
-        if self.account_balances.is_empty() {
+        let Some((current, starting)) = self.pnl_balances(currency, unrealized_pnl)? else {
             return Ok(0.0);
-        }
-
-        // Require explicit currency for multi-currency portfolios to avoid nondeterminism
-        let currency = match currency {
-            Some(c) => c,
-            None if self.account_balances.len() == 1 => {
-                self.account_balances.keys().next().expect("len is 1")
-            }
-            None => return Err("Currency must be specified for multi-currency portfolio"),
         };
 
-        if let Some(unrealized_pnl) = unrealized_pnl
-            && unrealized_pnl.currency != *currency
-        {
-            return Err("Unrealized PnL currency does not match specified currency");
-        }
-
-        let account_balance = self
-            .account_balances
-            .get(currency)
-            .ok_or("Specified currency not found in account balances")?;
-
-        let default_money = &Money::zero(*currency);
-        let account_balance_starting = self
-            .account_balances_starting
-            .get(currency)
-            .unwrap_or(default_money);
-
-        let unrealized_pnl_f64 = unrealized_pnl.map_or(0.0, Money::as_f64);
-        Ok((account_balance.as_f64() - account_balance_starting.as_f64()) + unrealized_pnl_f64)
+        total_pnl_raw(&current, &starting, unrealized_pnl).map(fixed_i128_to_f64)
     }
 
     /// Calculates total PnL as a percentage of starting balance.
@@ -681,14 +840,32 @@ impl PortfolioAnalyzer {
     /// - No currency is specified in a multi-currency portfolio.
     /// - The specified currency is not found in account balances.
     /// - The unrealized PnL currency does not match the specified currency.
-    #[expect(clippy::missing_panics_doc)] // Guarded by length check
+    /// - A money value exceeds the supported float precision.
+    /// - The fixed-point PnL calculation overflows.
     pub fn total_pnl_percentage(
         &self,
         currency: Option<&Currency>,
         unrealized_pnl: Option<&Money>,
     ) -> Result<f64, &'static str> {
-        if self.account_balances.is_empty() {
+        let Some((current, starting)) = self.pnl_balances(currency, unrealized_pnl)? else {
             return Ok(0.0);
+        };
+
+        if starting.raw() == 0 {
+            return Ok(0.0);
+        }
+
+        let pnl = total_pnl_raw(&current, &starting, unrealized_pnl)?;
+        Ok(fixed_i128_to_f64(pnl) / starting.as_f64() * 100.0)
+    }
+
+    fn pnl_balances(
+        &self,
+        currency: Option<&Currency>,
+        unrealized_pnl: Option<&Money>,
+    ) -> Result<Option<(Money, Money)>, &'static str> {
+        if self.account_balances.is_empty() {
+            return Ok(None);
         }
 
         // Require explicit currency for multi-currency portfolios to avoid nondeterminism
@@ -711,22 +888,13 @@ impl PortfolioAnalyzer {
             .get(currency)
             .ok_or("Specified currency not found in account balances")?;
 
-        let default_money = &Money::zero(*currency);
         let account_balance_starting = self
             .account_balances_starting
             .get(currency)
-            .unwrap_or(default_money);
+            .copied()
+            .unwrap_or_else(|| Money::zero(*currency));
 
-        if account_balance_starting.as_decimal() == Decimal::ZERO {
-            return Ok(0.0);
-        }
-
-        let unrealized_pnl_f64 = unrealized_pnl.map_or(0.0, Money::as_f64);
-        let current = account_balance.as_f64() + unrealized_pnl_f64;
-        let starting = account_balance_starting.as_f64();
-        let difference = current - starting;
-
-        Ok((difference / starting) * 100.0)
+        Ok(Some((*account_balance, account_balance_starting)))
     }
 
     /// Gets all PnL-related performance statistics.
@@ -738,6 +906,7 @@ impl PortfolioAnalyzer {
     /// - No currency specified for a multi-currency portfolio.
     /// - Unrealized PnL currency not matching the specified currency.
     /// - Specified currency not found in account balances.
+    /// - A money value exceeds the supported float precision.
     pub fn get_performance_stats_pnls(
         &self,
         currency: Option<&Currency>,
@@ -971,6 +1140,100 @@ impl PortfolioAnalyzer {
     }
 }
 
+struct BalanceTotal {
+    currency: Currency,
+    raw: MoneyRaw,
+    wraps: isize,
+}
+
+impl BalanceTotal {
+    fn new(balance: Money) -> Self {
+        Self {
+            currency: balance.currency,
+            raw: balance.raw(),
+            wraps: 0,
+        }
+    }
+
+    fn add(&mut self, balance: Money) -> bool {
+        if self.currency != balance.currency
+            || !raw_scales_match(self.currency.precision, balance.currency.precision)
+        {
+            return false;
+        }
+
+        let (raw, wrapped) = self.raw.overflowing_add(balance.raw());
+        self.raw = raw;
+
+        // Track signed wraps so opposite balances can bring the final sum back into range
+        if wrapped {
+            self.wraps += if balance.is_negative() { -1 } else { 1 };
+        }
+
+        true
+    }
+
+    fn into_money(self) -> Option<Money> {
+        if self.wraps != 0 {
+            return None;
+        }
+
+        Money::from_raw_checked(self.raw, self.currency).ok()
+    }
+}
+
+pub(crate) fn check_position_pnl_precision<'a>(
+    positions: impl IntoIterator<Item = &'a Position>,
+) -> CorrectnessResult<()> {
+    for position in positions {
+        if let Some(pnl) = position.realized_pnl {
+            check_realized_pnl_precision(position.id, &pnl)?;
+        }
+    }
+
+    Ok(())
+}
+
+pub(crate) fn check_realized_pnl_precision(
+    position_id: PositionId,
+    pnl: &Money,
+) -> CorrectnessResult<()> {
+    check_float_precision(pnl.currency.precision).map_err(|e| {
+        CorrectnessError::PredicateViolation {
+            message: format!(
+                "Cannot analyze {} realized PnL for {position_id}: {e}",
+                pnl.currency
+            ),
+        }
+    })
+}
+
+fn total_pnl_raw(
+    current: &Money,
+    starting: &Money,
+    unrealized_pnl: Option<&Money>,
+) -> Result<i128, &'static str> {
+    let unrealized = unrealized_pnl.map(pnl_money_raw).transpose()?.unwrap_or(0);
+    let current = pnl_money_raw(current)?;
+    let starting = pnl_money_raw(starting)?;
+
+    current
+        .checked_sub(starting)
+        .and_then(|pnl| pnl.checked_add(unrealized))
+        .ok_or("Total PnL exceeds the fixed-point calculation range")
+}
+
+#[allow(
+    clippy::useless_conversion,
+    reason = "i128::from widens MoneyRaw in standard-precision builds"
+)]
+fn pnl_money_raw(money: &Money) -> Result<i128, &'static str> {
+    // The precision check ensures every operand uses FIXED_SCALAR.
+    check_float_precision(money.currency.precision)
+        .map_err(|_| "Money precision exceeds maximum float precision")?;
+    Ok(i128::from(money.raw()))
+}
+
 fn trade_pnl_value(pnl: &Money) -> f64 {
     if pnl.currency.precision > MAX_FLOAT_PRECISION {
         pnl.as_decimal()
@@ -979,6 +1242,51 @@ fn trade_pnl_value(pnl: &Money) -> f64 {
     } else {
         pnl.as_f64()
     }
+}
+
+fn merge_trade_pnl_records(
+    native: &[(PositionId, UnixNanos, f64)],
+    recorded: &[(PositionId, UnixNanos, f64)],
+) -> Vec<(PositionId, UnixNanos, f64)> {
+    let mut counts = AHashMap::<_, (usize, usize)>::with_capacity(recorded.len());
+    for &(id, ts, _) in recorded {
+        counts.entry((canonical_position_id(id), ts)).or_default().1 += 1;
+    }
+
+    for &(id, ts, _) in native {
+        if let Some((count, _)) = counts.get_mut(&(canonical_position_id(id), ts)) {
+            *count += 1;
+        }
+    }
+
+    let mut unmatched = AHashMap::<_, usize>::new();
+
+    for &(id, ts, pnl) in recorded {
+        let key = (canonical_position_id(id), ts);
+        if counts[&key] != (1, 1) {
+            *unmatched.entry((key, pnl.to_bits())).or_default() += 1;
+        }
+    }
+
+    let mut merged = Vec::with_capacity(native.len().max(recorded.len()));
+    for &(id, ts, pnl) in native {
+        let key = (canonical_position_id(id), ts);
+        if counts.get(&key) == Some(&(1, 1)) {
+            continue;
+        }
+
+        if let Some(count) = unmatched.get_mut(&(key, pnl.to_bits()))
+            && *count > 0
+        {
+            *count -= 1;
+            continue;
+        }
+
+        merged.push((id, ts, pnl));
+    }
+
+    merged.extend_from_slice(recorded);
+    merged
 }
 
 fn canonical_position_id(position_id: PositionId) -> PositionId {
@@ -1009,7 +1317,7 @@ mod tests {
     use indexmap::IndexMap;
     use nautilus_core::{DurationNanos, UUID4, approx_eq, datetime::NANOSECONDS_IN_DAY};
     use nautilus_model::{
-        accounts::{AccountAny, CashAccount},
+        accounts::{AccountAny, CashAccount, MarginAccount},
         enums::{AccountType, InstrumentClass, LiquiditySide, OrderSide, PositionSide},
         events::{AccountState, OrderFilled, PortfolioSnapshot},
         fees::MakerTakerFeeRates,
@@ -1018,10 +1326,16 @@ mod tests {
             stubs::{instrument_id_aud_usd_sim, strategy_id_ema_cross, trader_id},
         },
         instruments::InstrumentAny,
+        position::PositionReplayEvents,
         stubs::TestDefault,
-        types::{AccountBalance, Money, Price, Quantity},
+        types::{
+            AccountBalance, Money, Price, Quantity,
+            fixed::FIXED_PRECISION,
+            money::{MONEY_RAW_MAX, MONEY_RAW_MIN},
+        },
     };
     use rstest::rstest;
+    use rust_decimal::Decimal;
 
     use super::*;
     use crate::statistics::beta_ratio::BetaRatio;
@@ -1108,7 +1422,7 @@ mod tests {
         Position {
             events: Vec::new(),
             adjustments: Vec::new(),
-            replay_events: Vec::new(),
+            replay_events: PositionReplayEvents::default(),
             fill_voids: Vec::new(),
             trader_id: trader_id(),
             strategy_id: strategy_id_ema_cross(),
@@ -1149,6 +1463,9 @@ mod tests {
             qty_closed: 0.into(),
             realized_pnl_remainder: 0.into(),
             allows_negative_price: Some(false),
+            inverse_gross_pnl_closed: 0.into(),
+            inverse_entry_notional_closed: 0.into(),
+            fee_only_fill_id: None,
         }
     }
 
@@ -1305,13 +1622,16 @@ mod tests {
     fn test_calculate_snapshot_returns_tracks_daily_mark_to_market_equity() {
         let account_id = AccountId::new("SIM-001");
         let currency = Currency::USD();
+        let mut registration = create_portfolio_snapshot(
+            account_id,
+            Decimal::from(10_000),
+            currency,
+            NANOSECONDS_IN_DAY + NANOSECONDS_IN_DAY / 2,
+        );
+        registration.is_registration = true;
+
         let snapshots = [
-            create_portfolio_snapshot(
-                account_id,
-                Decimal::from(10_000),
-                currency,
-                NANOSECONDS_IN_DAY + NANOSECONDS_IN_DAY / 2,
-            ),
+            registration,
             create_portfolio_snapshot(
                 account_id,
                 Decimal::from(10_500),
@@ -1333,7 +1653,9 @@ mod tests {
         ];
 
         let returns =
-            PortfolioAnalyzer::calculate_snapshot_returns(&[account_id], snapshots.iter()).unwrap();
+            PortfolioAnalyzer::calculate_snapshot_returns(&[account_id], snapshots.iter())
+                .unwrap()
+                .unwrap();
         let values: Vec<f64> = returns.values().copied().collect();
         let dates: Vec<UnixNanos> = returns.keys().copied().collect();
 
@@ -1347,6 +1669,71 @@ mod tests {
         assert_eq!(values.len(), 2);
         assert!(approx_eq!(f64, values[0], 0.1, epsilon = 1e-12));
         assert!(approx_eq!(f64, values[1], 0.1, epsilon = 1e-12));
+    }
+
+    #[rstest]
+    #[case::no_registration(false)]
+    #[case::late_registration(true)]
+    fn test_snapshot_returns_fall_back_without_opening_registration(
+        #[case] late_registration: bool,
+    ) {
+        let account_id = AccountId::new("SIM-001");
+        let currency = Currency::USD();
+
+        let mut snapshots = [
+            create_portfolio_snapshot(
+                account_id,
+                Decimal::from(100),
+                currency,
+                NANOSECONDS_IN_DAY + NANOSECONDS_IN_DAY / 2,
+            ),
+            create_portfolio_snapshot(
+                account_id,
+                Decimal::from(110),
+                currency,
+                NANOSECONDS_IN_DAY + 3 * NANOSECONDS_IN_DAY / 4,
+            ),
+        ];
+
+        snapshots[1].is_registration = late_registration;
+        let mut analyzer = PortfolioAnalyzer::new();
+        let timestamp = UnixNanos::from(NANOSECONDS_IN_DAY);
+        analyzer.add_position_return(timestamp, 0.25);
+
+        analyzer.set_portfolio_returns_from_snapshots(&[account_id], &snapshots);
+
+        assert_eq!(analyzer.portfolio_returns(), &Returns::new());
+        assert_eq!(analyzer.returns(), &Returns::from([(timestamp, 0.25)]));
+    }
+
+    #[rstest]
+    fn test_snapshot_returns_refresh_falls_back_after_registration_eviction() {
+        let account_id = AccountId::new("SIM-001");
+        let currency = Currency::USD();
+        let day = UnixNanos::from(NANOSECONDS_IN_DAY);
+
+        let mut snapshots = [(100, 1), (110, 2), (125, 3)].map(|(equity, offset)| {
+            create_portfolio_snapshot(
+                account_id,
+                Decimal::from(equity),
+                currency,
+                NANOSECONDS_IN_DAY + offset,
+            )
+        });
+
+        snapshots[0].is_registration = true;
+        let mut analyzer = PortfolioAnalyzer::new();
+        analyzer.add_position_return(day, 0.5);
+
+        analyzer.set_portfolio_returns_from_snapshots(&[account_id], &snapshots);
+
+        assert_eq!(analyzer.portfolio_returns(), &Returns::from([(day, 0.25)]));
+        assert_eq!(analyzer.returns(), &Returns::from([(day, 0.25)]));
+
+        analyzer.set_portfolio_returns_from_snapshots(&[account_id], &snapshots[1..]);
+
+        assert_eq!(analyzer.portfolio_returns(), &Returns::new());
+        assert_eq!(analyzer.returns(), &Returns::from([(day, 0.5)]));
     }
 
     #[rstest]
@@ -1369,6 +1756,7 @@ mod tests {
             &[account_a, account_b],
             snapshots.iter(),
         )
+        .unwrap()
         .unwrap();
 
         assert!(approx_eq!(
@@ -1396,7 +1784,9 @@ mod tests {
         let snapshots = [first, second];
 
         let returns =
-            PortfolioAnalyzer::calculate_snapshot_returns(&[account_id], snapshots.iter()).unwrap();
+            PortfolioAnalyzer::calculate_snapshot_returns(&[account_id], snapshots.iter())
+                .unwrap()
+                .unwrap();
 
         assert!(approx_eq!(
             f64,
@@ -1426,7 +1816,7 @@ mod tests {
         let snapshots = [first, second];
 
         let returns =
-            PortfolioAnalyzer::calculate_snapshot_returns(&[account_id], snapshots.iter());
+            PortfolioAnalyzer::calculate_snapshot_returns(&[account_id], snapshots.iter()).unwrap();
 
         assert!(returns.is_none());
     }
@@ -1449,7 +1839,9 @@ mod tests {
         let snapshots = [first, unpriced, last];
 
         let returns =
-            PortfolioAnalyzer::calculate_snapshot_returns(&[account_id], snapshots.iter()).unwrap();
+            PortfolioAnalyzer::calculate_snapshot_returns(&[account_id], snapshots.iter())
+                .unwrap()
+                .unwrap();
 
         assert!(approx_eq!(
             f64,
@@ -1487,7 +1879,8 @@ mod tests {
         let returns = PortfolioAnalyzer::calculate_snapshot_returns(
             &[account_a, account_b],
             snapshots.iter(),
-        );
+        )
+        .unwrap();
 
         assert!(returns.is_none());
     }
@@ -1767,6 +2160,35 @@ mod tests {
     }
 
     #[rstest]
+    fn test_calculate_total_pnl_preserves_small_balance_change() {
+        let mut analyzer = PortfolioAnalyzer::new();
+        let mut currency = Currency::USD();
+        currency.precision = FIXED_PRECISION;
+        let starting = Money::from_mantissa_exponent(1_000_000_000, 0, currency);
+        let current = Money::from_raw(starting.raw() + 3, currency);
+        let unrealized = Money::from_raw(-1, currency);
+        analyzer
+            .account_balances_starting
+            .insert(currency, starting);
+        analyzer.account_balances.insert(currency, current);
+
+        let pnl = analyzer.total_pnl(None, Some(&unrealized)).unwrap();
+        let percentage = analyzer
+            .total_pnl_percentage(None, Some(&unrealized))
+            .unwrap();
+
+        let expected = Money::from_raw(2, currency).as_f64();
+        let expected_percentage = expected / 10_000_000.0;
+        assert_eq!(pnl, expected);
+        assert!(approx_eq!(
+            f64,
+            percentage,
+            expected_percentage,
+            epsilon = expected_percentage * 2.0 * f64::EPSILON
+        ));
+    }
+
+    #[rstest]
     fn test_add_positions_and_returns() {
         let mut analyzer = PortfolioAnalyzer::new();
         let currency = Currency::USD();
@@ -1867,6 +2289,35 @@ mod tests {
                 (position_id, UnixNanos::from(1), 10.0),
                 (position_id, UnixNanos::from(2), 25.0),
             ]
+        );
+    }
+
+    #[rstest]
+    #[case::different_pnls("-75 USD", -75.0)]
+    #[case::equal_pnls("25 USD", 25.0)]
+    fn test_trade_pnl_records_merge_one_same_timestamp_cycle(
+        #[case] first_pnl: &str,
+        #[case] first_value: f64,
+    ) {
+        let mut analyzer = PortfolioAnalyzer::new();
+        let currency = Currency::USD();
+        let position_id = PositionId::new("pos1");
+        let snapshot_id = PositionId::new(format!("{}-{}", position_id.as_str(), UUID4::new()));
+        let ts_event = UnixNanos::from(2);
+        let pnl = Money::from("25 USD");
+
+        analyzer.add_trade(&position_id, ts_event, &pnl);
+        analyzer.add_trade(&snapshot_id, ts_event, &Money::from(first_pnl));
+        analyzer.add_trade(&position_id, UnixNanos::from(1), &Money::from("10 USD"));
+        analyzer.record_trade(&position_id, ts_event, &pnl);
+
+        assert_eq!(
+            analyzer.trade_pnl_records(Some(&currency)),
+            Some(vec![
+                (position_id, UnixNanos::from(1), 10.0),
+                (snapshot_id, ts_event, first_value),
+                (position_id, ts_event, 25.0),
+            ])
         );
     }
 
@@ -2412,6 +2863,212 @@ mod tests {
         assert_eq!(summed, single + single);
         assert_eq!(summed_start, single_start + single_start);
         assert_ne!(summed, single);
+    }
+
+    #[rstest]
+    #[case::in_range(MONEY_RAW_MAX / 2 + 1, true)]
+    #[case::out_of_range(MONEY_RAW_MAX / 2 + 1, false)]
+    #[case::positive_overflow(MONEY_RAW_MAX, true)]
+    #[case::negative_overflow(MONEY_RAW_MIN, true)]
+    fn test_from_accounts_checks_final_balance_bounds(
+        #[case] raw: MoneyRaw,
+        #[case] include_offset: bool,
+    ) {
+        let mut currency = Currency::USD();
+        currency.precision = FIXED_PRECISION;
+        let expected = Money::from_raw(raw, currency);
+        let ts = UnixNanos::from(1);
+
+        let accounts = [
+            ("SIM-001", expected),
+            ("SIM-002", expected),
+            ("SIM-003", -expected),
+        ]
+        .map(|(account_id, amount)| {
+            let event = AccountState::new(
+                AccountId::new(account_id),
+                AccountType::Margin,
+                vec![AccountBalance::new(amount, Money::zero(currency), amount)],
+                vec![],
+                true,
+                UUID4::new(),
+                ts,
+                ts,
+                Some(currency),
+            );
+
+            AccountAny::Margin(MarginAccount::new(event, true))
+        });
+
+        let accounts = if include_offset {
+            &accounts[..]
+        } else {
+            &accounts[..2]
+        };
+
+        let exact = PortfolioAnalyzer::from_accounts(accounts, &[], &[], AHashMap::new());
+        let checked = PortfolioAnalyzer::try_from_accounts_with_snapshots(
+            accounts,
+            &[],
+            &[],
+            &[],
+            AHashMap::new(),
+        );
+
+        if include_offset {
+            for analyzer in [exact, checked.unwrap()] {
+                assert_eq!(analyzer.account_balances[&currency], expected);
+                assert_eq!(analyzer.account_balances_starting[&currency], expected);
+            }
+        } else {
+            assert!(exact.account_balances.is_empty());
+            assert!(exact.account_balances_starting.is_empty());
+            assert_eq!(
+                checked.unwrap_err().to_string(),
+                "Cannot sum portfolio balances for USD"
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_from_accounts_omits_currency_with_out_of_range_current_total() {
+        let usd = Currency::USD();
+        let eur = Currency::EUR();
+        let min = Money::from_raw(MONEY_RAW_MIN, usd);
+        let minus_unit = Money::from_raw(-1, usd);
+        let zero = Money::zero(usd);
+
+        let mut initial = create_account_state(10.0, eur, 1);
+        initial.balances.push(AccountBalance::new(min, zero, min));
+        let first = CashAccount::new(initial, true, true);
+
+        let second_id = AccountId::new("test-account-2");
+        let mut initial = create_account_state(0.0, usd, 1);
+        initial.account_id = second_id;
+        let mut second = CashAccount::new(initial, true, true);
+        let mut update = create_account_state(0.0, usd, 2);
+        update.account_id = second_id;
+        update.balances = vec![AccountBalance::new(minus_unit, zero, minus_unit)];
+        second.apply(update).unwrap();
+
+        let accounts = [AccountAny::Cash(first), AccountAny::Cash(second)];
+        let exact = PortfolioAnalyzer::from_accounts(&accounts, &[], &[], AHashMap::new());
+        let checked = PortfolioAnalyzer::try_from_accounts_with_snapshots(
+            &accounts,
+            &[],
+            &[],
+            &[],
+            AHashMap::new(),
+        );
+
+        let valid_totals = IndexMap::from([(eur, Money::from("10 EUR"))]);
+        assert_eq!(exact.account_balances, valid_totals);
+        assert_eq!(exact.account_balances_starting, valid_totals);
+        assert_eq!(
+            checked.unwrap_err().to_string(),
+            "Cannot sum portfolio balances for USD"
+        );
+    }
+
+    #[rstest]
+    #[case(16, true)]
+    #[case(17, false)]
+    #[case(18, false)]
+    fn test_checked_analyzer_rejects_native_realized_pnl(
+        #[case] precision: u8,
+        #[case] supported: bool,
+    ) {
+        use nautilus_model::types::fixed::check_fixed_precision;
+
+        if check_fixed_precision(precision).is_err() {
+            return;
+        }
+
+        let usd = Currency::USD();
+        let mut normal = create_mock_position("P-SUPPORTED", 2.0, 0.1, usd);
+        let mut native = create_mock_position("P-NATIVE", 1.0, 0.2, usd);
+        normal.ts_last = 1.into();
+        native.ts_last = 2.into();
+        let mut native_currency = usd;
+        native_currency.precision = precision;
+        let exact = Decimal::ONE + Decimal::new(1, u32::from(precision));
+        let pnl = Money::from_decimal(exact, native_currency).unwrap();
+        native.realized_pnl = Some(pnl);
+        let positions = &[normal.clone(), native.clone()];
+        let precision_error =
+            format!("Fixed-point precision {precision} exceeds maximum float precision 16");
+        let position_error =
+            format!("Cannot analyze USD realized PnL for P-NATIVE: {precision_error}");
+        let recorded_error =
+            format!("Cannot analyze recorded realized PnL in USD: {precision_error}");
+
+        let mut records = PortfolioAnalyzer::new();
+        records.record_trade(&normal.id, 1.into(), &Money::from("2 USD"));
+        records.record_trade(&native.id, 2.into(), &pnl);
+
+        for (positions, snapshots, recorded, expected_error) in [
+            (
+                positions.as_slice(),
+                &[][..],
+                AHashMap::new(),
+                &position_error,
+            ),
+            (
+                &[][..],
+                positions.as_slice(),
+                AHashMap::new(),
+                &position_error,
+            ),
+            (
+                &[][..],
+                &[][..],
+                records.recorded_realized_pnls,
+                &recorded_error,
+            ),
+        ] {
+            let result = PortfolioAnalyzer::try_from_accounts_with_snapshots(
+                &[],
+                positions,
+                snapshots,
+                &[],
+                recorded,
+            );
+
+            if supported {
+                assert_eq!(
+                    result.unwrap().realized_pnls(Some(&usd)).unwrap(),
+                    [(normal.id, 1.into(), 2.0), (native.id, 2.into(), 1.0)]
+                );
+            } else {
+                assert_eq!(result.unwrap_err().to_string(), *expected_error);
+            }
+        }
+
+        #[cfg(feature = "python")]
+        {
+            use pyo3::{Py, Python, prelude::PyAnyMethods};
+
+            Python::initialize();
+            Python::attach(|py| {
+                let analyzer = Py::new(py, PortfolioAnalyzer::new()).unwrap();
+                let positions = vec![Py::new(py, normal).unwrap(), Py::new(py, native).unwrap()];
+                let result = analyzer
+                    .bind(py)
+                    .call_method1("add_positions", (positions,));
+                let state = analyzer.borrow(py);
+
+                if supported {
+                    result.unwrap();
+                    assert_eq!(state.positions.len(), 2);
+                } else {
+                    let e = result.unwrap_err();
+                    assert!(e.is_instance_of::<pyo3::exceptions::PyValueError>(py));
+                    assert_eq!(e.value(py).to_string(), position_error);
+                    assert!(state.positions.is_empty());
+                    assert!(state.realized_pnls.is_empty());
+                }
+            });
+        }
     }
 
     #[rstest]

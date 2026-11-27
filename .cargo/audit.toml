@@ -1,14 +1,8 @@
 # cargo-audit configuration
 # https://github.com/rustsec/rustsec/blob/main/cargo-audit/audit.toml.example
 #
-# Mirrors deny.toml [advisories] ignore list, plus advisories that cargo-audit
-# surfaces but cargo-deny does not match against the resolved feature graph:
-#   - RUSTSEC-2024-0388 (derivative, unmaintained via alloy-primitives -> ruint -> ark-ff)
-#
-# Chrono and chrono-tz remain transitive via Arrow/DataFusion; object_store also
-# depends on chrono. Core time zones use jiff with bundled data. Their
-# unmaintained advisories are ignored below and in deny.toml and osv-scanner.toml
-# pending upstream migration.
+# cargo-audit scans lockfiles. cargo-deny uses the resolved dependency graph to
+# enforce unmaintained advisories for direct dependencies.
 
 [advisories]
 ignore = [
@@ -29,15 +23,6 @@ ignore = [
   "RUSTSEC-2025-0090",
   "RUSTSEC-2025-0098",
   "RUSTSEC-2025-0100",
-  # bincode unmaintained, transitive via madsim and hypersync-client
-  "RUSTSEC-2025-0141",
-  # capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix
-  "RUSTSEC-2025-0143",
-  # quick-xml DoS, transitive via the DataFusion-aligned object_store 0.13 release
-  "RUSTSEC-2026-0194",
-  "RUSTSEC-2026-0195",
-  # faster-hex unsound hex_decode_unchecked, transitive via hypersync, no in-graph caller
-  "RUSTSEC-2026-0306",
 
   # SQLx 0.9 resolves SQLite into Cargo.lock but no workspace feature builds it.
   # Its libsqlite3-sys requirement excludes the fixed 0.39 release. Keep cargo-deny

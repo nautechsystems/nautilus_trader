@@ -45,6 +45,9 @@ The adapter supports these product categories:
 | Spot tokenized assets | ✓         | Loaded from Kraken's `tokenized_asset` asset class. |
 | Futures               | ✓         | Instruments returned by the Kraken Futures API.     |
 
+Spot and Futures data clients refresh instrument definitions every 60 seconds. New and updated definitions
+reach the cache and the corresponding execution client while the node runs.
+
 :::warning
 Kraken Futures can return instrument definitions that need more than standard-precision mode's nine decimal places.
 Keep [high-precision mode](../getting_started/installation.md#precision-mode) enabled for Futures. Standard-precision
@@ -270,66 +273,68 @@ price scale one digit finer than their tick size. The instrument retains that fi
 scale in its metadata so checksum rendering does not truncate price digits.
 Kraken Futures `book` messages carry no checksum.
 
-#### Recovery and stream identity
-
-On a checksum mismatch, the adapter emits a `Clear` delta, drops the shadow book,
-and unsubscribes and resubscribes the symbol at its configured depth with a snapshot.
-It ignores updates until that snapshot arrives. Every `book` unsubscribe includes
-its depth: Kraken keys subscriptions by symbol and depth, and defaults an omitted
-unsubscribe depth to `10`.
-
-Recovery runs serially with user subscription changes, so stale recovery never
-cancels a replacement subscription. The subscribe request identifies each stream.
-The adapter accepts frames only from the symbol's latest stream after Kraken confirms
-that request, dropping frames from replaced subscriptions and superseded recoveries.
-A snapshot changes the book only after it parses and applies successfully. A recovery
-request made before an accepted snapshot or reconnect sends nothing after that event.
-
-The adapter also emits a `Clear` delta when it drops a shadow book outside frame processing. This occurs on
-these events:
-
-- Reconnect.
-- Confirmation of a new stream.
-- Rejection of the latest subscribe request.
-- Detection of an unconfirmed latest request by the snapshot watchdog.
-
-#### Missing snapshots and rejected subscriptions
-
-The snapshot watchdog is the only retry mechanism for `book` recovery. It runs even
-with checksum validation disabled, because it also recovers streams that never
-receive a snapshot. Each replacement subscription starts a fresh wait rather than
-inheriting its predecessor's retry count.
-
-If no snapshot arrives within 10 seconds, the data client requests it again. It doubles the wait between
-requests (`10`, `20`, `40`, `80`, and `160` seconds), up to five requests. At the cap, it logs an error and
-stops retrying. The book stays cleared and updates are dropped until a snapshot arrives. A subscription change
-or reconnect starts recovery again.
-
-Kraken's rejection of the latest subscribe request clears any held book and logs the
-venue's reason and the next request time at error level. The rejection counts as one
-failed request, so the next attempt follows after 20 seconds. Four more rejections
-exhaust the allowance in about five minutes. A transient rejection can therefore
-recover on the next attempt after 20 seconds. Rejections of superseded requests are ignored.
-
-On reconnect, the adapter retires its recorded subscribes and replays each subscribe
-with its original request ID. Replay responses match no active request. If Kraken
-rejects a replay, the watchdog detects the missing snapshot within its base wait of
-10 seconds.
-
-#### Repeated checksum mismatches
-
-Three mismatches on one instrument without a valid update between them disable
-validation for that instrument and log an error. The adapter keeps its book as
-received, preventing a resubscription loop when Kraken hashes it differently.
-A valid snapshot does not reset the mismatch count.
-
-To disable L2 checksum validation:
+Repeated checksum mismatches keep the book in recovery. To disable L2 checksum validation:
 
 ```python
 config = KrakenDataClientConfig(
     validate_l2_checksum=False,
 )
 ```
+
+### Order book recovery
+
+- Spot replaces an L2 or L3 subscription at its original depth after a checksum mismatch.
+- Futures replaces the L2 subscription after a per-instrument sequence gap. All deltas in a
+  Futures snapshot share one venue sequence.
+
+Subscribers retain the last published book during recovery. An accepted snapshot starts with a
+`Clear` and replaces all levels, including when the snapshot is empty. Futures pauses derived quotes
+until the adapter accepts a snapshot. Reconnecting preserves the current retry budget. Removing the
+last subscription cancels recovery and skips replacement writes still queued in the adapter.
+Writes already handed to the WebSocket can complete before the final unsubscribe.
+
+`book_snapshot_timeout_secs` defaults to `10`. If a snapshot misses its deadline, the adapter
+starts recovery or retries the current replacement. Set it to `0` to disable snapshot deadlines.
+Checksum failures and sequence gaps can still start recovery, while a silent subscription waits
+for a reconnect or subscription change.
+Spot L3 token refresh uses the HTTP request timeout. The snapshot deadline starts after the
+replacement subscription is sent.
+With a nonzero timeout, Futures waits up to the greater of 10 seconds and
+`book_snapshot_timeout_secs` for replacement confirmation. At zero, the shared retry budget
+still bounds that wait. The snapshot deadline starts after confirmation. A written subscribe that remains
+unacknowledged for 10 seconds can force a reconnect on the next recovery attempt. A retiring
+subscription also reconnects if its written transition remains unacknowledged after 10 seconds.
+A feed-less invalid-product alert leaves the affected product's transition pending until a
+feed-specific reply arrives or the socket reconnects for another reason.
+Other products keep streaming on the same socket.
+
+Recovery makes up to eight attempts within 180 seconds. After that, it retries at intervals that
+grow from one minute to fifteen minutes until a snapshot arrives or the subscription ends. See
+[recovery state and retry budgets](../developer_guide/adapters.md#recovery-state-and-retry-budgets).
+
+### Live recovery validation
+
+The public L2 stress harness checks emitted books against raw venue frames and an independent Kraken
+connection. Each snapshot episode needs at least one aligned comparison with the independent feed.
+The harness uses `wss://ws.kraken.com/v2` for Spot and `wss://futures.kraken.com/ws/v1` for Futures.
+Run this command from the repository root. Use `--product futures` for Futures.
+
+```bash
+CARGO_BUILD_JOBS=4 bash scripts/strip-adapter-env.bash \
+  cargo test -p nautilus-kraken --features examples --test kraken-book-stress -- \
+  --product spot --scenario churn --timeout 10 --rounds 60
+```
+
+| `--scenario` | `--timeout` | Checks                                                                |
+| ------------ | ----------- | --------------------------------------------------------------------- |
+| `churn`      | `10`        | Repeated faults, reconnects, and subscription changes.                |
+| `initial`    | `1`         | Recovery after the first snapshot is dropped.                         |
+| `disabled`   | `0`         | An initial snapshot stays pending until reconnect.                    |
+| `held`       | `1`         | Unsubscribe while a replacement snapshot is held, then recover again. |
+| `boundaries` | `1`         | Reconnect, retry ceiling, and late snapshot recovery.                 |
+
+The `boundaries` scenario can take several minutes. See the
+[stress harness guide](../developer_guide/spec_data_testing.md#stress-harnesses) for output fields.
 
 ## L3 order book (market-by-order)
 
@@ -381,10 +386,12 @@ Valid depths are `10`, `100`, and `1000`. A `depth` of `0` uses `1000`.
 
 ### CRC32 checksum validation
 
-By default, the adapter validates the CRC32 checksum on each L3 snapshot and
-update when Kraken provides one. On mismatch, it emits a `Clear` delta, clears
-local L3 state, refreshes the auth token, and resubscribes so Kraken
-sends a fresh snapshot. To disable validation for benchmarking:
+By default, the adapter validates the CRC32 checksum on each L3 snapshot and update. On mismatch,
+the adapter refreshes the authentication token and resubscribes. Updates resume after it accepts a
+fresh snapshot. `OrderBookDelta.sequence` keeps increasing across recovery and reconnect for the
+same subscription. See [order book recovery](#order-book-recovery) for deadlines and retry behavior.
+
+To disable validation for benchmarking:
 
 ```python
 config = KrakenDataClientConfig(
@@ -492,6 +499,11 @@ Spot amends take `order_qty`. Kraken Futures reads a bare edit `size` as the ope
 size, so the adapter sends `qtyMode=ABSOLUTE` with every futures edit that resizes
 the order, single or batch. Kraken Futures does not document its answer to a
 total at or below the filled quantity.
+
+A modify's new trigger price goes to Kraken Futures as the edit's `stopPrice`,
+and the open-orders update that follows emits `OrderUpdated` with the new
+trigger. Kraken Spot receives it as the WebSocket amend's `trigger_price`. A
+Spot amend sent over REST does not carry a new trigger price.
 
 Kraken Futures reports each edit's outcome in `editStatus.status`. `edited` and `filled` confirm the
 edit, and the private feeds carry the update or the fills. These statuses refuse the edit and emit
@@ -692,6 +704,16 @@ request requires one shared symbol. Unsupported trigger references fall back to
 the REST path, which rejects them locally before sending a request to Kraken.
 For Spot margin orders, use REST as described under [Spot margin trading](#spot-margin-trading).
 
+A same-instrument order list goes out as one `batch_add` request, and Kraken
+returns its results in request order. The adapter accepts an order whose
+result carries a venue order ID, matching the result by the client order ID
+Kraken echoes. The adapter matches by position when the response holds exactly
+one result per order and every echoed ID agrees with its position. An order
+stays in flight when the result array does not identify it, has no venue order
+ID for it, or includes an error for it. The executions stream or reconciliation
+resolves those orders. When the response reports a batch failure without a result
+array or any per-order results, each order is rejected with Kraken's error.
+
 The per-call `params={"use_ws_trade": False}` override forces a single
 command through REST regardless of the configured default. Set it on
 `SubmitOrder`, `ModifyOrder`, `CancelOrder`, `SubmitOrderList`, or
@@ -837,21 +859,56 @@ page, with a cap of 500 pages per read. Reaching the cap logs a warning:
 - A report carries the order's own prices, not the row's top-level `price`. That field is the average fill
   price and reads zero on an unfilled order. The report's `avg_px` comes from `cost` and `vol_exec`.
 
-  The limit comes from `descr.price` for a limit order and `descr.price2` for a stop-loss-limit or
-  take-profit-limit order, or a trailing-stop-limit order once `misc` marks it `stopped`. A
-  trailing-stop-limit's `limitprice` holds the peak price, not its limit. A market, settle-position,
-  stop-loss, take-profit or trailing-stop order carries no limit.
+  The limit comes from `descr.price` for a limit or iceberg order and `descr.price2` for a
+  stop-loss-limit or take-profit-limit order, or a trailing-stop-limit order once `misc` marks it
+  `stopped`. A trailing-stop-limit's `limitprice` holds the peak price, not its limit. A market,
+  settle-position, stop-loss, take-profit or trailing-stop order carries no limit. An iceberg order
+  reports as a limit order, without its display quantity.
 
-  The trigger comes from `stopprice`, which a stop-loss, take-profit, stop-loss-limit or take-profit-limit
-  order fills only once triggered, so `descr.price`, as AddOrder takes it, stands in before. A zero or
-  relative price reads as none.
+  A stop-loss, take-profit, stop-loss-limit or take-profit-limit order's trigger comes from
+  `descr.price`, as AddOrder takes it. Its `stopprice` is not read for the trigger: once the order
+  triggers, it holds the market price that triggered it, which can differ from the trigger. A
+  trailing order's trigger comes from `stopprice`. A zero or relative price reads as none.
 - An untriggered trailing-stop-limit order has no absolute limit, so its report carries no price,
   and an order the cache does not hold cannot be rebuilt from it until it triggers.
 - A take-profit-limit order whose trigger sits above a buy limit or below a sell limit cannot be a
   `LimitIfTouched` order, so the row fails naming both prices. An open row fails the read; a closed
   row is skipped and leaves the set incomplete.
 - An executions frame states the order's price only when it carries `limit_price`, never at a
-  fill price.
+  fill price. Its trigger is `triggers.price` when `triggers.price_type` is `static`, tracking the
+  `last` or `index` price. A relative or trailing trigger reads as none. A frame without
+  `order_type` reads the trigger of an order the node submitted by the type it was submitted as.
+
+#### Orders placed outside the node
+
+The executions channel covers the whole account, so an order another client places while the node
+runs reaches the adapter as an order it does not track. Kraken states the order's side, type,
+quantity, limit, and trigger on its `pending_new` frame and only some of them on later frames.
+The adapter keeps these terms, including GTD expiry and iceberg display quantity when present,
+by venue order ID until the order's `filled`, `canceled`, or `expired` frame. It keeps at most
+10,000 orders and drops the oldest first. Later reports use the retained terms:
+
+- `pending_new` reports `ACCEPTED`, so the engine creates the external order.
+- Once a frame reports the order triggered, a later frame that states the order open reports
+  `TRIGGERED` until the order has a fill.
+- A valid `trade` frame reports its status and fill together. The reported fill quantity and
+  average price use the trades the stream delivered. A failed parse leaves the trade available
+  for a valid replay or REST reconciliation.
+- Reports use `FILLED` when the stream accounts for the full order quantity. REST reconciliation
+  can supply fills from before the stream first observed the order or during a disconnect.
+
+The execution client resubscribes with `snap_orders` after a WebSocket reconnect. Kraken restates
+each open order's side, type, quantity, and limit. An entry refreshes the retained terms or
+initializes an order the stream first sees in the snapshot. The snapshot supplies order terms.
+Fills missed during the gap stay eligible for REST reconciliation under their venue trade IDs.
+The initial connection omits the snapshot and clears terms from any prior session.
+
+Each frame reports alone, and a trade's fill arrives as its own report, for an order the adapter
+keeps nothing of or one the engine cannot rebuild from its `pending_new` frame or snapshot entry.
+That covers orders open before the node connected, including orders resting across a restart,
+until a reconnect restates them, orders whose trigger `price_type` is not `static`,
+take-profit-limit orders whose trigger sits above a buy limit or below a sell limit, and GTD
+orders whose expiry is absent.
 
 #### Fill reports
 
@@ -1401,24 +1458,25 @@ increase the intervals or reduce `max_requests_per_second`.
 
 ### Data client configuration options
 
-| Option                    | Default   | Description                                                      |
-| ------------------------- | --------- | ---------------------------------------------------------------- |
-| `product_type`            | `SPOT`    | Product type for this client (`SPOT` or `FUTURES`).              |
-| `environment`             | `LIVE`    | Trading environment (`LIVE` or `DEMO`); demo only for Futures.   |
-| `api_key`                 | `None`    | API key for Spot L3 data.                                        |
-| `api_secret`              | `None`    | API secret for Spot L3 data.                                     |
-| `base_url`                | `None`    | Override for the Kraken REST base URL.                           |
-| `ws_public_url`           | `None`    | Override for the public WebSocket URL.                           |
-| `ws_private_url`          | `None`    | Override for the private WebSocket URL.                          |
-| `ws_l3_url`               | `None`    | Override for the Spot L3 WebSocket URL.                          |
-| `validate_l3_checksum`    | `True`    | Validate Kraken Spot L3 checksums and resync on mismatch.        |
-| `validate_l2_checksum`    | `True`    | Validate Kraken Spot L2 `book` checksums and resync on mismatch. |
-| `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.            |
-| `timeout_secs`            | `30`      | HTTP request timeout in seconds.                                 |
-| `heartbeat_interval_secs` | `30`      | WebSocket heartbeat interval in seconds.                         |
-| `ws_idle_timeout_ms`      | `10,000`  | Data-silence timeout for the Spot v2 WebSocket; `0` disables.    |
-| `max_requests_per_second` | `None`    | Per-client request throttle; default is 5 req/s.                 |
-| `transport_backend`       | `Sockudo` | WebSocket transport backend.                                     |
+| Option                       | Default   | Description                                                      |
+| ---------------------------- | --------- | ---------------------------------------------------------------- |
+| `product_type`               | `SPOT`    | Product type for this client (`SPOT` or `FUTURES`).              |
+| `environment`                | `LIVE`    | Trading environment (`LIVE` or `DEMO`); demo only for Futures.   |
+| `api_key`                    | `None`    | API key for Spot L3 data.                                        |
+| `api_secret`                 | `None`    | API secret for Spot L3 data.                                     |
+| `base_url`                   | `None`    | Override for the Kraken REST base URL.                           |
+| `ws_public_url`              | `None`    | Override for the public WebSocket URL.                           |
+| `ws_private_url`             | `None`    | Override for the private WebSocket URL.                          |
+| `ws_l3_url`                  | `None`    | Override for the Spot L3 WebSocket URL.                          |
+| `validate_l3_checksum`       | `True`    | Validate Kraken Spot L3 checksums and resync on mismatch.        |
+| `validate_l2_checksum`       | `True`    | Validate Kraken Spot L2 `book` checksums and resync on mismatch. |
+| `book_snapshot_timeout_secs` | `10`      | Snapshot deadline in seconds. `0` disables snapshot deadlines.   |
+| `proxy_url`                  | `None`    | Optional proxy URL for HTTP and WebSocket transports.            |
+| `timeout_secs`               | `30`      | HTTP request timeout in seconds.                                 |
+| `heartbeat_interval_secs`    | `30`      | Interval (seconds) between WebSocket heartbeats.                 |
+| `ws_idle_timeout_ms`         | `10,000`  | Data-silence timeout for the Spot v2 WebSocket; `0` disables.    |
+| `max_requests_per_second`    | `None`    | Per-client request throttle; default is 5 req/s.                 |
+| `transport_backend`          | `Sockudo` | WebSocket transport backend.                                     |
 
 ### Execution client configuration options
 
@@ -1433,7 +1491,7 @@ increase the intervals or reduce `max_requests_per_second`.
 | `ws_url`                        | `None`    | Override for the Kraken WebSocket URL.                                |
 | `proxy_url`                     | `None`    | Optional proxy URL for HTTP and WebSocket transports.                 |
 | `timeout_secs`                  | `30`      | HTTP request timeout in seconds.                                      |
-| `heartbeat_interval_secs`       | `30`      | WebSocket heartbeat interval in seconds.                              |
+| `heartbeat_interval_secs`       | `30`      | Interval (seconds) between WebSocket heartbeats.                      |
 | `auth_timeout_secs`             | `None`    | Futures WebSocket auth timeout; `None` uses the client default.       |
 | `max_requests_per_second`       | `None`    | Per-client request throttle; default is 5 req/s.                      |
 | `max_retries`                   | `3`       | Maximum retry attempts for retryable REST requests.                   |

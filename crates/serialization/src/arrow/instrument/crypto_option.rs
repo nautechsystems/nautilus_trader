@@ -37,7 +37,7 @@ use rust_decimal::Decimal;
 use super::{optional_parsed_value, validate_required_instrument_columns};
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
-    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, extract_column, extract_column_by_name,
+    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, extract_column_by_name,
     extract_optional_string_column_by_name, json_string_field, metadata_with_type_name,
     optional_ustr_value, record_batch_with_timestamps, record_batch_with_u64_timestamps,
     timestamp_data_type,
@@ -49,11 +49,16 @@ impl ArrowSchemaProvider for CryptoOption {
             Field::new("id", DataType::Utf8, false),
             Field::new("raw_symbol", DataType::Utf8, false),
             Field::new("underlying", DataType::Utf8, false),
+            Field::new("underlying_instrument_id", DataType::Utf8, true),
+            Field::new("option_kind", DataType::Utf8, false),
+            Field::new("strike_price", DataType::Utf8, false),
+            Field::new("strike_currency", DataType::Utf8, false),
             Field::new("quote_currency", DataType::Utf8, false),
             Field::new("settlement_currency", DataType::Utf8, false),
             Field::new("is_inverse", DataType::Boolean, false),
-            Field::new("option_kind", DataType::Utf8, false),
-            Field::new("strike_price", DataType::Utf8, false),
+            Field::new("premium_style", DataType::Utf8, true),
+            Field::new("exercise_style", DataType::Utf8, true),
+            Field::new("settlement_type", DataType::Utf8, true),
             Field::new("activation_ns", timestamp_data_type(), false),
             Field::new("expiration_ns", timestamp_data_type(), false),
             Field::new("price_precision", DataType::UInt8, false),
@@ -74,9 +79,6 @@ impl ArrowSchemaProvider for CryptoOption {
             json_string_field("info", true),
             Field::new("ts_event", timestamp_data_type(), false),
             Field::new("ts_init", timestamp_data_type(), false),
-            Field::new("underlying_instrument_id", DataType::Utf8, true),
-            Field::new("exercise_style", DataType::Utf8, true),
-            Field::new("settlement_type", DataType::Utf8, true),
         ];
 
         Schema::new_with_metadata(fields, metadata_with_type_name("CryptoOption", metadata))
@@ -94,11 +96,16 @@ impl EncodeToRecordBatch for CryptoOption {
         let mut id_builder = StringBuilder::new();
         let mut raw_symbol_builder = StringBuilder::new();
         let mut underlying_builder = StringBuilder::new();
+        let mut underlying_instrument_id_builder = StringBuilder::new();
+        let mut option_kind_builder = StringBuilder::new();
+        let mut strike_price_builder = StringBuilder::new();
+        let mut strike_currency_builder = StringBuilder::new();
         let mut quote_currency_builder = StringBuilder::new();
         let mut settlement_currency_builder = StringBuilder::new();
         let mut is_inverse_builder = BooleanBuilder::new();
-        let mut option_kind_builder = StringBuilder::new();
-        let mut strike_price_builder = StringBuilder::new();
+        let mut premium_style_builder = StringBuilder::new();
+        let mut exercise_style_builder = StringBuilder::new();
+        let mut settlement_type_builder = StringBuilder::new();
         let mut activation_ns_builder = UInt64Array::builder(data.len());
         let mut expiration_ns_builder = UInt64Array::builder(data.len());
         let mut price_precision_builder = UInt8Array::builder(data.len());
@@ -119,19 +126,21 @@ impl EncodeToRecordBatch for CryptoOption {
         let mut info_builder = StringBuilder::new();
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
-        let mut underlying_instrument_id_builder = StringBuilder::new();
-        let mut exercise_style_builder = StringBuilder::new();
-        let mut settlement_type_builder = StringBuilder::new();
-
         for co in data.iter().map(Borrow::borrow) {
             id_builder.append_value(co.id.to_string());
             raw_symbol_builder.append_value(co.raw_symbol);
             underlying_builder.append_value(co.underlying.to_string());
+            underlying_instrument_id_builder
+                .append_option(co.underlying_instrument_id.map(|id| id.to_string()));
+            option_kind_builder.append_value(co.option_kind);
+            strike_price_builder.append_value(co.strike_price.to_string());
+            strike_currency_builder.append_value(co.strike_currency.to_string());
             quote_currency_builder.append_value(co.quote_currency.to_string());
             settlement_currency_builder.append_value(co.settlement_currency.to_string());
             is_inverse_builder.append_value(co.is_inverse);
-            option_kind_builder.append_value(co.option_kind);
-            strike_price_builder.append_value(co.strike_price.to_string());
+            premium_style_builder.append_option(co.premium_style.map(|style| style.to_string()));
+            exercise_style_builder.append_option(co.exercise_style.map(|style| style.to_string()));
+            settlement_type_builder.append_option(co.settlement_type.map(|kind| kind.to_string()));
             activation_ns_builder.append_value(co.activation_ns.as_u64());
             expiration_ns_builder.append_value(co.expiration_ns.as_u64());
             price_precision_builder.append_value(co.price_precision);
@@ -203,10 +212,6 @@ impl EncodeToRecordBatch for CryptoOption {
 
             ts_event_builder.append_value(co.ts_event.as_u64());
             ts_init_builder.append_value(co.ts_init.as_u64());
-            underlying_instrument_id_builder
-                .append_option(co.underlying_instrument_id.map(|id| id.to_string()));
-            exercise_style_builder.append_option(co.exercise_style.map(|style| style.to_string()));
-            settlement_type_builder.append_option(co.settlement_type.map(|kind| kind.to_string()));
         }
 
         record_batch_with_timestamps(
@@ -215,11 +220,16 @@ impl EncodeToRecordBatch for CryptoOption {
                 Arc::new(id_builder.finish()),
                 Arc::new(raw_symbol_builder.finish()),
                 Arc::new(underlying_builder.finish()),
+                Arc::new(underlying_instrument_id_builder.finish()),
+                Arc::new(option_kind_builder.finish()),
+                Arc::new(strike_price_builder.finish()),
+                Arc::new(strike_currency_builder.finish()),
                 Arc::new(quote_currency_builder.finish()),
                 Arc::new(settlement_currency_builder.finish()),
                 Arc::new(is_inverse_builder.finish()),
-                Arc::new(option_kind_builder.finish()),
-                Arc::new(strike_price_builder.finish()),
+                Arc::new(premium_style_builder.finish()),
+                Arc::new(exercise_style_builder.finish()),
+                Arc::new(settlement_type_builder.finish()),
                 Arc::new(activation_ns_builder.finish()),
                 Arc::new(expiration_ns_builder.finish()),
                 Arc::new(price_precision_builder.finish()),
@@ -240,9 +250,6 @@ impl EncodeToRecordBatch for CryptoOption {
                 Arc::new(info_builder.finish()),
                 Arc::new(ts_event_builder.finish()),
                 Arc::new(ts_init_builder.finish()),
-                Arc::new(underlying_instrument_id_builder.finish()),
-                Arc::new(exercise_style_builder.finish()),
-                Arc::new(settlement_type_builder.finish()),
             ],
         )
     }
@@ -278,63 +285,64 @@ pub fn decode_crypto_option_batch(
     validate_required_instrument_columns::<CryptoOption>(metadata, record_batch)?;
     let record_batch = record_batch_with_u64_timestamps(record_batch)?;
     let record_batch = &record_batch;
-    let cols = record_batch.columns();
     let num_rows = record_batch.num_rows();
 
-    let id_values = extract_column::<StringArray>(cols, "id", 0, DataType::Utf8)?;
-    let raw_symbol_values = extract_column::<StringArray>(cols, "raw_symbol", 1, DataType::Utf8)?;
-    let underlying_values = extract_column::<StringArray>(cols, "underlying", 2, DataType::Utf8)?;
-    let quote_currency_values =
-        extract_column::<StringArray>(cols, "quote_currency", 3, DataType::Utf8)?;
-    let settlement_currency_values =
-        extract_column::<StringArray>(cols, "settlement_currency", 4, DataType::Utf8)?;
-    let is_inverse_values =
-        extract_column::<BooleanArray>(cols, "is_inverse", 5, DataType::Boolean)?;
-    let option_kind_values = extract_column::<StringArray>(cols, "option_kind", 6, DataType::Utf8)?;
+    let id_values = extract_column_by_name::<StringArray>(record_batch, "id", DataType::Utf8)?;
+    let raw_symbol_values =
+        extract_column_by_name::<StringArray>(record_batch, "raw_symbol", DataType::Utf8)?;
+    let underlying_values =
+        extract_column_by_name::<StringArray>(record_batch, "underlying", DataType::Utf8)?;
+    let underlying_instrument_id_values =
+        extract_optional_string_column_by_name(record_batch, "underlying_instrument_id")?;
+    let option_kind_values =
+        extract_column_by_name::<StringArray>(record_batch, "option_kind", DataType::Utf8)?;
     let strike_price_values =
-        extract_column::<StringArray>(cols, "strike_price", 7, DataType::Utf8)?;
+        extract_column_by_name::<StringArray>(record_batch, "strike_price", DataType::Utf8)?;
+    let strike_currency_values =
+        extract_column_by_name::<StringArray>(record_batch, "strike_currency", DataType::Utf8)?;
+    let quote_currency_values =
+        extract_column_by_name::<StringArray>(record_batch, "quote_currency", DataType::Utf8)?;
+    let settlement_currency_values =
+        extract_column_by_name::<StringArray>(record_batch, "settlement_currency", DataType::Utf8)?;
+    let is_inverse_values =
+        extract_column_by_name::<BooleanArray>(record_batch, "is_inverse", DataType::Boolean)?;
+    let premium_style_values =
+        extract_optional_string_column_by_name(record_batch, "premium_style")?;
+    let exercise_style_values =
+        extract_optional_string_column_by_name(record_batch, "exercise_style")?;
+    let settlement_type_values =
+        extract_optional_string_column_by_name(record_batch, "settlement_type")?;
     let activation_ns_values =
-        extract_column::<UInt64Array>(cols, "activation_ns", 8, DataType::UInt64)?;
+        extract_column_by_name::<UInt64Array>(record_batch, "activation_ns", DataType::UInt64)?;
     let expiration_ns_values =
-        extract_column::<UInt64Array>(cols, "expiration_ns", 9, DataType::UInt64)?;
+        extract_column_by_name::<UInt64Array>(record_batch, "expiration_ns", DataType::UInt64)?;
     let price_precision_values =
-        extract_column::<UInt8Array>(cols, "price_precision", 10, DataType::UInt8)?;
+        extract_column_by_name::<UInt8Array>(record_batch, "price_precision", DataType::UInt8)?;
     let size_precision_values =
-        extract_column::<UInt8Array>(cols, "size_precision", 11, DataType::UInt8)?;
+        extract_column_by_name::<UInt8Array>(record_batch, "size_precision", DataType::UInt8)?;
     let price_increment_values =
-        extract_column::<StringArray>(cols, "price_increment", 12, DataType::Utf8)?;
+        extract_column_by_name::<StringArray>(record_batch, "price_increment", DataType::Utf8)?;
     let size_increment_values =
-        extract_column::<StringArray>(cols, "size_increment", 13, DataType::Utf8)?;
-    let multiplier_values = extract_column::<StringArray>(cols, "multiplier", 14, DataType::Utf8)?;
-    let lot_size_values = record_batch
-        .schema()
-        .index_of("lot_size")
-        .ok()
-        .map(|index| extract_column::<StringArray>(cols, "lot_size", index, DataType::Utf8))
-        .transpose()?;
-    let lot_size_offset = usize::from(lot_size_values.is_some());
-    let max_quantity_values = cols
-        .get(15 + lot_size_offset)
-        .ok_or_else(|| EncodingError::MissingColumn("max_quantity", 15 + lot_size_offset))?;
-    let min_quantity_values = cols
-        .get(16 + lot_size_offset)
-        .ok_or_else(|| EncodingError::MissingColumn("min_quantity", 16 + lot_size_offset))?;
-    let max_notional_values = cols
-        .get(17 + lot_size_offset)
-        .ok_or_else(|| EncodingError::MissingColumn("max_notional", 17 + lot_size_offset))?;
-    let min_notional_values = cols
-        .get(18 + lot_size_offset)
-        .ok_or_else(|| EncodingError::MissingColumn("min_notional", 18 + lot_size_offset))?;
-    let max_price_values = cols
-        .get(19 + lot_size_offset)
-        .ok_or_else(|| EncodingError::MissingColumn("max_price", 19 + lot_size_offset))?;
-    let min_price_values = cols
-        .get(20 + lot_size_offset)
-        .ok_or_else(|| EncodingError::MissingColumn("min_price", 20 + lot_size_offset))?;
+        extract_column_by_name::<StringArray>(record_batch, "size_increment", DataType::Utf8)?;
+    let multiplier_values =
+        extract_column_by_name::<StringArray>(record_batch, "multiplier", DataType::Utf8)?;
+    let lot_size_values = extract_optional_string_column_by_name(record_batch, "lot_size")?;
+    let max_quantity_values =
+        extract_column_by_name::<StringArray>(record_batch, "max_quantity", DataType::Utf8)?;
+    let min_quantity_values =
+        extract_column_by_name::<StringArray>(record_batch, "min_quantity", DataType::Utf8)?;
+    let max_notional_values =
+        extract_column_by_name::<StringArray>(record_batch, "max_notional", DataType::Utf8)?;
+    let min_notional_values =
+        extract_column_by_name::<StringArray>(record_batch, "min_notional", DataType::Utf8)?;
+    let max_price_values =
+        extract_column_by_name::<StringArray>(record_batch, "max_price", DataType::Utf8)?;
+    let min_price_values =
+        extract_column_by_name::<StringArray>(record_batch, "min_price", DataType::Utf8)?;
     let margin_init_values =
-        extract_column::<StringArray>(cols, "margin_init", 21 + lot_size_offset, DataType::Utf8)?;
+        extract_column_by_name::<StringArray>(record_batch, "margin_init", DataType::Utf8)?;
     let margin_maint_values =
-        extract_column::<StringArray>(cols, "margin_maint", 22 + lot_size_offset, DataType::Utf8)?;
+        extract_column_by_name::<StringArray>(record_batch, "margin_maint", DataType::Utf8)?;
     let tick_scheme_values = extract_optional_string_column_by_name(record_batch, "tick_scheme")?;
     let info_values = extract_column_by_name::<StringArray>(record_batch, "info", DataType::Utf8)?;
     let ts_event_values =
@@ -342,15 +350,7 @@ pub fn decode_crypto_option_batch(
     let ts_init_values =
         extract_column_by_name::<UInt64Array>(record_batch, "ts_init", DataType::UInt64)?;
 
-    let underlying_instrument_id_values =
-        extract_optional_string_column_by_name(record_batch, "underlying_instrument_id")?;
-    let exercise_style_values =
-        extract_optional_string_column_by_name(record_batch, "exercise_style")?;
-    let settlement_type_values =
-        extract_optional_string_column_by_name(record_batch, "settlement_type")?;
-
     let mut result = Vec::with_capacity(num_rows);
-
     for i in 0..num_rows {
         let id = InstrumentId::from_str(id_values.value(i))
             .map_err(|e| EncodingError::ParseError("id", format!("row {i}: {e}")))?;
@@ -367,6 +367,12 @@ pub fn decode_crypto_option_batch(
             "crypto_option.quote_currency",
             i,
         )?;
+        let strike_currency = super::decode_currency(
+            strike_currency_values.value(i),
+            "strike_currency",
+            "crypto_option.strike_currency",
+            i,
+        )?;
         let settlement_currency = super::decode_currency(
             settlement_currency_values.value(i),
             "settlement_currency",
@@ -380,6 +386,7 @@ pub fn decode_crypto_option_batch(
             i,
         )?;
 
+        let premium_style = optional_parsed_value(premium_style_values, "premium_style", i)?;
         let exercise_style = optional_parsed_value(exercise_style_values, "exercise_style", i)?;
 
         let settlement_type = optional_parsed_value(settlement_type_values, "settlement_type", i)?;
@@ -399,116 +406,33 @@ pub fn decode_crypto_option_batch(
             .map_err(|e| EncodingError::ParseError("size_increment", format!("row {i}: {e}")))?;
         let multiplier = Quantity::from_str(multiplier_values.value(i))
             .map_err(|e| EncodingError::ParseError("multiplier", format!("row {i}: {e}")))?;
-        let lot_size =
-            if let Some(values) = lot_size_values {
-                if values.is_null(i) {
-                    None
-                } else {
-                    Some(Quantity::from_str(values.value(i)).map_err(|e| {
-                        EncodingError::ParseError("lot_size", format!("row {i}: {e}"))
-                    })?)
-                }
-            } else {
-                None
-            };
-
+        let lot_size = super::optional_quantity_value(lot_size_values, "lot_size", i)?;
         let max_quantity =
-            if max_quantity_values.is_null(i) {
-                None
-            } else {
-                let max_qty_str = max_quantity_values
-                    .as_any()
-                    .downcast_ref::<StringArray>()
-                    .ok_or_else(|| {
-                        EncodingError::ParseError("max_quantity", format!("row {i}: invalid type"))
-                    })?
-                    .value(i);
-                Some(Quantity::from_str(max_qty_str).map_err(|e| {
-                    EncodingError::ParseError("max_quantity", format!("row {i}: {e}"))
-                })?)
-            };
-
+            super::optional_quantity_value(Some(max_quantity_values), "max_quantity", i)?;
         let min_quantity =
-            if min_quantity_values.is_null(i) {
-                None
-            } else {
-                let min_qty_str = min_quantity_values
-                    .as_any()
-                    .downcast_ref::<StringArray>()
-                    .ok_or_else(|| {
-                        EncodingError::ParseError("min_quantity", format!("row {i}: invalid type"))
-                    })?
-                    .value(i);
-                Some(Quantity::from_str(min_qty_str).map_err(|e| {
-                    EncodingError::ParseError("min_quantity", format!("row {i}: {e}"))
-                })?)
-            };
-
-        let max_notional =
-            if max_notional_values.is_null(i) {
-                None
-            } else {
-                let max_not_str = max_notional_values
-                    .as_any()
-                    .downcast_ref::<StringArray>()
-                    .ok_or_else(|| {
-                        EncodingError::ParseError("max_notional", format!("row {i}: invalid type"))
-                    })?
-                    .value(i);
-
-                Some(Money::from_str_exact(max_not_str).map_err(|e| {
+            super::optional_quantity_value(Some(min_quantity_values), "min_quantity", i)?;
+        let max_notional = if max_notional_values.is_null(i) {
+            None
+        } else {
+            Some(
+                Money::from_str_exact(max_notional_values.value(i)).map_err(|e| {
                     EncodingError::ParseError("max_notional", format!("row {i}: {e}"))
-                })?)
-            };
+                })?,
+            )
+        };
 
-        let min_notional =
-            if min_notional_values.is_null(i) {
-                None
-            } else {
-                let min_not_str = min_notional_values
-                    .as_any()
-                    .downcast_ref::<StringArray>()
-                    .ok_or_else(|| {
-                        EncodingError::ParseError("min_notional", format!("row {i}: invalid type"))
-                    })?
-                    .value(i);
-
-                Some(Money::from_str_exact(min_not_str).map_err(|e| {
+        let min_notional = if min_notional_values.is_null(i) {
+            None
+        } else {
+            Some(
+                Money::from_str_exact(min_notional_values.value(i)).map_err(|e| {
                     EncodingError::ParseError("min_notional", format!("row {i}: {e}"))
-                })?)
-            };
-
-        let max_price = if max_price_values.is_null(i) {
-            None
-        } else {
-            let max_p_str = max_price_values
-                .as_any()
-                .downcast_ref::<StringArray>()
-                .ok_or_else(|| {
-                    EncodingError::ParseError("max_price", format!("row {i}: invalid type"))
-                })?
-                .value(i);
-            Some(
-                Price::from_str(max_p_str)
-                    .map_err(|e| EncodingError::ParseError("max_price", format!("row {i}: {e}")))?,
+                })?,
             )
         };
 
-        let min_price = if min_price_values.is_null(i) {
-            None
-        } else {
-            let min_p_str = min_price_values
-                .as_any()
-                .downcast_ref::<StringArray>()
-                .ok_or_else(|| {
-                    EncodingError::ParseError("min_price", format!("row {i}: invalid type"))
-                })?
-                .value(i);
-            Some(
-                Price::from_str(min_p_str)
-                    .map_err(|e| EncodingError::ParseError("min_price", format!("row {i}: {e}")))?,
-            )
-        };
+        let max_price = super::optional_price_value(Some(max_price_values), "max_price", i)?;
+        let min_price = super::optional_price_value(Some(min_price_values), "min_price", i)?;
 
         let margin_init = Decimal::from_str(margin_init_values.value(i))
             .map_err(|e| EncodingError::ParseError("margin_init", format!("row {i}: {e}")))?;
@@ -543,14 +467,16 @@ pub fn decode_crypto_option_batch(
             .instrument_id(id)
             .raw_symbol(raw_symbol)
             .underlying(underlying)
+            .maybe_underlying_instrument_id(underlying_instrument_id)
+            .option_kind(option_kind)
+            .strike_price(strike_price)
+            .strike_currency(strike_currency)
             .quote_currency(quote_currency)
             .settlement_currency(settlement_currency)
             .is_inverse(is_inverse)
-            .option_kind(option_kind)
-            .maybe_underlying_instrument_id(underlying_instrument_id)
+            .maybe_premium_style(premium_style)
             .maybe_exercise_style(exercise_style)
             .maybe_settlement_type(settlement_type)
-            .strike_price(strike_price)
             .activation_ns(activation_ns)
             .expiration_ns(expiration_ns)
             .price_precision(price_prec)

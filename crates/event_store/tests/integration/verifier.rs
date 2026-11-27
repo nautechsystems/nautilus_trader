@@ -192,7 +192,7 @@ fn flip_stored_entry_payload_bytes(path: &std::path::Path, seqs: std::ops::Range
                 .windows(4)
                 .position(|window| window == b"\x01\x02\x03\x04")
                 .expect("payload bytes present");
-            bytes[payload_offset + 2] ^= 0xFF;
+            bytes[payload_offset + 2] ^= 0xff;
             table
                 .insert(seq, bytes.as_slice())
                 .expect("overwrite entry");
@@ -392,7 +392,7 @@ fn binary_marker_hash_mismatch_exits_corrupt_without_quarantine() {
             .expect("open marker run");
         let snapshot = marker_snapshot(1, 1);
         marker_backend
-            .append_snapshot(&snapshot, [0xAA; 32])
+            .append_snapshot(&snapshot, [0xaa; 32])
             .expect("append marker snapshot");
         marker_backend.seal(RunStatus::Ended).expect("seal markers");
     }

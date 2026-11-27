@@ -36,7 +36,7 @@ use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 const HISTORY_COUNTS: [usize; 3] = [8, 64, 512];
-const POSITION_ID: &str = "P-BENCH";
+const POSITION_ID: &str = "NETTING-BENCH";
 
 fn bench_fill_apply(c: &mut Criterion) {
     let mut group = c.benchmark_group("position/fill_apply");
@@ -121,6 +121,100 @@ fn bench_requires_replay_state(c: &mut Criterion) {
             &position,
             |b, position| {
                 b.iter(|| black_box(position.requires_replay_state()));
+            },
+        );
+    }
+
+    group.finish();
+}
+
+fn bench_carried_replay(c: &mut Criterion) {
+    let mut group = c.benchmark_group("position/carried_replay");
+
+    for count in [8, 512, 4096, 36_000] {
+        let (position, _, _) = position_with_prior_cycle(count);
+        let unique = fill(count + 2, OrderSide::Buy, Quantity::from(1));
+        assert!(!position.id.is_virtual());
+        assert_eq!(position.events.len(), 1);
+        assert!(position.replay_events.len() > position.events.len());
+        assert!(!position.requires_replay_state());
+
+        group.bench_with_input(
+            BenchmarkId::new("requires_warm", count),
+            &position,
+            |b, position| {
+                b.iter(|| black_box(black_box(position).requires_replay_state()));
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("requires_cold", count),
+            &position,
+            |b, position| {
+                b.iter_batched_ref(
+                    || position.clone(),
+                    |position| black_box(position.requires_replay_state()),
+                    BatchSize::PerIteration,
+                );
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("apply_warm", count),
+            &position,
+            |b, position| {
+                b.iter_batched_ref(
+                    || {
+                        let position = position_for_fill(position);
+                        assert!(!position.has_replay_trade_id(unique.trade_id));
+                        position
+                    },
+                    |position| {
+                        position.apply(black_box(&unique));
+                        black_box(&*position);
+                    },
+                    BatchSize::PerIteration,
+                );
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("snapshot", count),
+            &position,
+            |b, position| {
+                b.iter(|| black_box(position.clone_for_snapshot()));
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("transfer_warm", count),
+            &position,
+            |b, position| {
+                b.iter_batched_ref(
+                    || {
+                        let mut prior = position_for_fill(position);
+                        prior.apply(&fill(count + 2, OrderSide::Sell, Quantity::from(1)));
+                        assert!(prior.is_closed());
+                        prior.replay_events.reserve(1);
+                        assert!(!prior.has_replay_trade_id(TradeId::from("NOT-IN-HISTORY")));
+                        let next = Position::new(
+                            &instrument(),
+                            fill(count + 3, OrderSide::Buy, Quantity::from(1)),
+                        );
+                        (prior, next)
+                    },
+                    |(prior, next)| {
+                        next.transfer_replay_state_from(prior);
+                        black_box(&*next);
+                    },
+                    BatchSize::PerIteration,
+                );
+            },
+        );
+        let mut virtual_position = position.clone();
+        virtual_position.id = PositionId::from("P-BENCH");
+        assert!(virtual_position.requires_replay_state());
+        group.bench_with_input(
+            BenchmarkId::new("requires_virtual_warm", count),
+            &virtual_position,
+            |b, position| {
+                b.iter(|| black_box(black_box(position).requires_replay_state()));
             },
         );
     }
@@ -357,6 +451,7 @@ criterion_group!(
     bench_fill_apply,
     bench_accounting,
     bench_requires_replay_state,
+    bench_carried_replay,
     bench_fill_void_replay
 );
 criterion_main!(benches);

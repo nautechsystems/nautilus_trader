@@ -32,8 +32,13 @@ use nautilus_model::{
     },
     identifiers::{ClientOrderId, PositionId},
     orders::{Order, OrderCore},
-    types::Quantity,
+    types::{
+        Price, Quantity,
+        fixed::{FIXED_PRECISION, fixed_i128_to_f64},
+        price::ERROR_PRICE,
+    },
 };
+use rust_decimal::Decimal;
 
 use super::config::HurstVpinDirectionalConfig;
 use crate::{
@@ -57,9 +62,9 @@ pub struct HurstVpinDirectional {
     pub(super) returns: VecDeque<f64>,
     pub(super) abs_imbalances: VecDeque<f64>,
     pub(super) signed_imbalances: VecDeque<f64>,
-    pub(super) last_close: Option<f64>,
-    pub(super) bucket_buy_volume: f64,
-    pub(super) bucket_sell_volume: f64,
+    pub(super) last_close: Option<Price>,
+    pub(super) bucket_buy_volume: Decimal,
+    pub(super) bucket_sell_volume: Decimal,
     pub(super) hurst: Option<f64>,
     pub(super) vpin: Option<f64>,
     pub(super) signed_vpin: Option<f64>,
@@ -89,8 +94,8 @@ impl HurstVpinDirectional {
             abs_imbalances: VecDeque::with_capacity(vpin_window),
             signed_imbalances: VecDeque::with_capacity(vpin_window),
             last_close: None,
-            bucket_buy_volume: 0.0,
-            bucket_sell_volume: 0.0,
+            bucket_buy_volume: Decimal::ZERO,
+            bucket_sell_volume: Decimal::ZERO,
             hurst: None,
             vpin: None,
             signed_vpin: None,
@@ -158,10 +163,10 @@ impl HurstVpinDirectional {
                 let chunk = &returns[start..start + lag];
                 let mean = chunk.iter().sum::<f64>() / lag as f64;
 
-                let mut running = 0.0f64;
-                let mut cum_min = 0.0f64;
-                let mut cum_max = 0.0f64;
-                let mut var_sum = 0.0f64;
+                let mut running = 0.0_f64;
+                let mut cum_min = 0.0_f64;
+                let mut cum_max = 0.0_f64;
+                let mut var_sum = 0.0_f64;
 
                 for value in chunk {
                     let deviation = value - mean;
@@ -458,36 +463,51 @@ impl DataActor for HurstVpinDirectional {
     }
 
     fn on_trade(&mut self, tick: &TradeTick) -> anyhow::Result<()> {
-        let size = tick.size.as_f64();
         match tick.aggressor_side {
-            AggressorSide::Buy => self.bucket_buy_volume += size,
-            AggressorSide::Sell => self.bucket_sell_volume += size,
+            AggressorSide::Buy => self.bucket_buy_volume += tick.size.as_decimal(),
+            AggressorSide::Sell => self.bucket_sell_volume += tick.size.as_decimal(),
             _ => {}
         }
         Ok(())
     }
 
+    #[allow(
+        clippy::useless_conversion,
+        reason = "i128::from widens PriceRaw in standard-precision builds"
+    )]
     fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
-        let close = bar.close.as_f64();
+        let close = bar.close;
+        anyhow::ensure!(
+            !close.is_error() && close.precision != ERROR_PRICE.precision,
+            "Cannot calculate returns for {} from an invalid close",
+            bar.bar_type
+        );
 
         if let Some(prev) = self.last_close
-            && prev > 0.0
-            && close > 0.0
+            && prev.is_positive()
+            && close.is_positive()
         {
             let window = self.config.hurst_window;
-            Self::push_bounded(&mut self.returns, window, (close / prev).ln());
+            // Bar adjustments can retain digits below the displayed precision
+            let current = fixed_i128_to_f64(i128::from(close.raw()));
+            let previous = fixed_i128_to_f64(i128::from(prev.raw()));
+            let scale_delta = i32::from(prev.precision.max(FIXED_PRECISION))
+                - i32::from(close.precision.max(FIXED_PRECISION));
+            let ratio = (current / previous) * 10_f64.powi(scale_delta);
+            Self::push_bounded(&mut self.returns, window, ratio.ln());
         }
         self.last_close = Some(close);
 
         let total = self.bucket_buy_volume + self.bucket_sell_volume;
-        if total > 0.0 {
-            let imbalance = (self.bucket_buy_volume - self.bucket_sell_volume) / total;
+        if !total.is_zero() {
+            let imbalance = ((self.bucket_buy_volume - self.bucket_sell_volume) / total).as_f64();
             let vpin_window = self.config.vpin_window;
             Self::push_bounded(&mut self.abs_imbalances, vpin_window, imbalance.abs());
             Self::push_bounded(&mut self.signed_imbalances, vpin_window, imbalance);
         }
-        self.bucket_buy_volume = 0.0;
-        self.bucket_sell_volume = 0.0;
+
+        self.bucket_buy_volume = Decimal::ZERO;
+        self.bucket_sell_volume = Decimal::ZERO;
 
         self.hurst = self.estimate_hurst();
         self.vpin = Self::rolling_mean(&self.abs_imbalances);
@@ -557,8 +577,8 @@ impl DataActor for HurstVpinDirectional {
         self.abs_imbalances.clear();
         self.signed_imbalances.clear();
         self.last_close = None;
-        self.bucket_buy_volume = 0.0;
-        self.bucket_sell_volume = 0.0;
+        self.bucket_buy_volume = Decimal::ZERO;
+        self.bucket_sell_volume = Decimal::ZERO;
         self.hurst = None;
         self.vpin = None;
         self.signed_vpin = None;

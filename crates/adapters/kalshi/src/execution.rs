@@ -27,12 +27,11 @@ mod stream;
 mod submit;
 
 use std::{
-    cell::RefCell,
     collections::{HashMap, HashSet},
     num::NonZeroU64,
     rc::Rc,
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, RwLock,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -48,6 +47,7 @@ use nautilus_common::{
         timer::LiveTimer,
     },
     messages::{DataEvent, execution::*},
+    msgbus::{InstrumentSubscription, TypedHandler, switchboard::get_instruments_pattern},
     runner::try_get_time_event_sender,
     timer::TimeEventCallback,
 };
@@ -82,7 +82,7 @@ use self::{
         collect_fills, collect_orders, collect_positions_current, collect_recovery_snapshot,
         collect_snapshot_at, load_definition, timestamp, validate_definition, validate_order_scope,
     },
-    stream::PrivateStream,
+    stream::{PrivateStream, PrivateStreamCommand},
 };
 pub use self::{
     context::{OrderPlan, PrivateState},
@@ -107,6 +107,8 @@ use crate::{
     },
 };
 
+type InstrumentDefinitions = RwLock<HashMap<InstrumentId, BinaryOption>>;
+
 /// Submits GTC, IOC, FOK, and GTD limits, amends and cancels orders, recovers Kalshi execution
 /// and cash, and provides shard-scoped reports.
 ///
@@ -120,7 +122,7 @@ pub struct KalshiExecutionClient {
     config: KalshiExecutionClientConfig,
     http: KalshiHttpClient,
     emitter: ExecutionEventEmitter,
-    definitions: RefCell<HashMap<InstrumentId, BinaryOption>>,
+    definitions: Arc<InstrumentDefinitions>,
     transport: KalshiDataClientConfig,
     disposed: bool,
     private: Arc<Mutex<PrivateState>>,
@@ -128,7 +130,8 @@ pub struct KalshiExecutionClient {
     session_tasks: TaskGroup,
     command_tasks: TaskGroup,
     ws_client: Option<KalshiWebSocketClient>,
-    refresh: Option<tokio::sync::mpsc::UnboundedSender<()>>,
+    instrument_subscription: Option<InstrumentSubscription>,
+    refresh: Option<tokio::sync::mpsc::UnboundedSender<PrivateStreamCommand>>,
     settlement_registration: Option<Registration>,
     settlement_timer: Option<LiveTimer>,
 }
@@ -191,7 +194,7 @@ impl KalshiExecutionClient {
             config,
             http,
             emitter,
-            definitions: RefCell::new(HashMap::new()),
+            definitions: Arc::default(),
             transport,
             disposed: false,
             private: Arc::new(Mutex::new(PrivateState::new())),
@@ -199,6 +202,7 @@ impl KalshiExecutionClient {
             session_tasks: TaskGroup::new(),
             command_tasks: TaskGroup::new(),
             ws_client: None,
+            instrument_subscription: None,
             refresh: None,
             settlement_registration: None,
             settlement_timer: None,
@@ -219,7 +223,13 @@ impl KalshiExecutionClient {
 
     async fn definition(&self, ticker: &str, ts_init: UnixNanos) -> anyhow::Result<BinaryOption> {
         let id = parse_instrument_id(ticker)?;
-        let known = self.definitions.borrow().get(&id).cloned();
+        let known = self
+            .definitions
+            .read()
+            .expect("instrument definitions lock is not poisoned")
+            .get(&id)
+            .cloned();
+
         if let Some(instrument) = known {
             return Ok(instrument);
         }
@@ -232,12 +242,30 @@ impl KalshiExecutionClient {
                 anyhow::bail!("Kalshi report requires a binary instrument");
             };
 
-            instrument
+            Ok(instrument)
         } else {
-            load_definition(&self.http, ticker, ts_init).await?
+            load_definition(&self.http, ticker, ts_init).await
         };
 
-        validate_definition(&instrument, self.config.exchange_index)?;
+        let instrument = instrument.and_then(|instrument| {
+            validate_definition(&instrument, self.config.exchange_index)?;
+            Ok(instrument)
+        });
+
+        let mut definitions = self
+            .definitions
+            .write()
+            .expect("instrument definitions lock is not poisoned");
+
+        if let Some(current) = definitions.get(&id)
+            && instrument
+                .as_ref()
+                .map_or(true, |loaded| current.ts_init >= loaded.ts_init)
+        {
+            return Ok(current.clone());
+        }
+
+        let instrument = instrument?;
         if unloaded && let Some(sender) = try_get_data_event_sender() {
             let data = InstrumentAny::BinaryOption(instrument.clone()).into();
             sender
@@ -245,7 +273,7 @@ impl KalshiExecutionClient {
                 .map_err(|_| anyhow::anyhow!("instrument receiver closed"))?;
         }
 
-        self.definitions.borrow_mut().insert(id, instrument.clone());
+        definitions.insert(id, instrument.clone());
         Ok(instrument)
     }
 
@@ -507,9 +535,11 @@ impl KalshiExecutionClient {
             if let Some(InstrumentAny::BinaryOption(definition)) =
                 cache.instrument(&order.instrument_id())
             {
-                self.definitions
-                    .borrow_mut()
-                    .insert(definition.id, definition.clone());
+                Self::apply_instrument(
+                    self.config.exchange_index,
+                    &self.definitions,
+                    InstrumentAny::BinaryOption(definition.clone()),
+                );
             }
 
             private.restore(order.cloned());
@@ -541,6 +571,69 @@ impl KalshiExecutionClient {
             .observe(&cache, self.core.account_id);
 
         Ok(())
+    }
+}
+
+impl KalshiExecutionClient {
+    fn subscribe_instruments(&mut self) {
+        if self.instrument_subscription.is_some() {
+            return;
+        }
+
+        let exchange_index = self.config.exchange_index;
+        let definitions = Arc::clone(&self.definitions);
+        self.instrument_subscription = Some(InstrumentSubscription::new(
+            get_instruments_pattern(self.venue()),
+            TypedHandler::from(move |instrument: &InstrumentAny| {
+                Self::apply_instrument(exchange_index, &definitions, instrument.clone());
+            }),
+        ));
+    }
+
+    fn apply_instrument(
+        exchange_index: u32,
+        definitions: &InstrumentDefinitions,
+        instrument: InstrumentAny,
+    ) {
+        let InstrumentAny::BinaryOption(instrument) = instrument else {
+            return;
+        };
+
+        if instrument.id.venue != *KALSHI_VENUE
+            || validate_definition(&instrument, exchange_index).is_err()
+        {
+            return;
+        }
+
+        let mut definitions = definitions
+            .write()
+            .expect("instrument definitions lock is not poisoned");
+
+        if definitions
+            .get(&instrument.id)
+            .is_none_or(|current| current.ts_init <= instrument.ts_init)
+        {
+            definitions.insert(instrument.id, instrument);
+        }
+    }
+
+    fn stop_session(&mut self) {
+        self.core.set_stopped();
+        self.core.set_disconnected();
+        self.ready.store(false, Ordering::Release);
+        self.private
+            .lock()
+            .expect("private state lock is not poisoned")
+            .invalidate();
+
+        if let Some(mut timer) = self.settlement_timer.take() {
+            timer.cancel();
+        }
+
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        self.refresh.take();
+        self.ws_client = None;
     }
 }
 
@@ -613,6 +706,10 @@ impl ExecutionClient for KalshiExecutionClient {
         *KALSHI_VENUE
     }
 
+    fn on_instrument(&mut self, instrument: InstrumentAny) {
+        Self::apply_instrument(self.config.exchange_index, &self.definitions, instrument);
+    }
+
     fn oms_type(&self) -> OmsType {
         OmsType::Netting
     }
@@ -668,32 +765,19 @@ impl ExecutionClient for KalshiExecutionClient {
 
         self.start_settlement_timer();
         self.core.set_started();
+        self.subscribe_instruments();
         Ok(())
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
-        self.core.set_stopped();
-        self.core.set_disconnected();
-        self.ready.store(false, Ordering::Release);
-        self.private
-            .lock()
-            .expect("private state lock is not poisoned")
-            .invalidate();
-
-        if let Some(mut timer) = self.settlement_timer.take() {
-            timer.cancel();
-        }
-
-        self.session_tasks.begin_shutdown();
-        self.command_tasks.begin_shutdown();
-        self.refresh = None;
-        self.ws_client = None;
+        self.instrument_subscription.take();
+        self.stop_session();
         Ok(())
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
         self.stop()?;
-        self.definitions.borrow_mut().clear();
+        self.definitions = Arc::default();
         Ok(())
     }
 
@@ -710,6 +794,7 @@ impl ExecutionClient for KalshiExecutionClient {
             self.emitter.is_initialized(),
             "Kalshi bootstrap requires an execution sender"
         );
+        self.subscribe_instruments();
 
         if self.core.is_connected()
             && self
@@ -720,7 +805,7 @@ impl ExecutionClient for KalshiExecutionClient {
             return Ok(());
         }
 
-        self.stop()?;
+        self.stop_session();
         self.finish_shutdown().await?;
         self.session_tasks.start_generation()?;
         self.command_tasks.start_generation()?;
@@ -752,7 +837,7 @@ impl ExecutionClient for KalshiExecutionClient {
             emitter: self.emitter.clone(),
             data_sender: try_get_data_event_sender(),
             state: Arc::clone(&self.private),
-            definitions: self.definitions.borrow().clone(),
+            definitions: Arc::clone(&self.definitions),
             instruments: self
                 .core
                 .cache()
@@ -827,7 +912,7 @@ impl ExecutionClient for KalshiExecutionClient {
 
         if let Err(e) = result {
             drop(guard);
-            self.stop()?;
+            self.stop_session();
             self.finish_shutdown().await?;
             return Err(e);
         }
@@ -839,7 +924,7 @@ impl ExecutionClient for KalshiExecutionClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        self.stop()?;
+        self.stop_session();
         self.finish_shutdown().await?;
         Ok(())
     }
@@ -1068,7 +1153,7 @@ impl ExecutionClient for KalshiExecutionClient {
         self.refresh
             .as_ref()
             .context("Kalshi account bootstrap is not active")?
-            .send(())
+            .send(PrivateStreamCommand::Refresh)
             .map_err(|_| anyhow::anyhow!("Kalshi account refresh stopped"))
     }
 
@@ -1105,7 +1190,7 @@ impl ExecutionClient for KalshiExecutionClient {
         self.refresh
             .as_ref()
             .context("Kalshi account bootstrap is not active")?
-            .send(())
+            .send(PrivateStreamCommand::Refresh)
             .map_err(|_| anyhow::anyhow!("Kalshi private recovery stopped"))
     }
 
@@ -1936,6 +2021,8 @@ impl KalshiExecutionClient {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+
     #[cfg(not(all(feature = "simulation", madsim)))]
     use futures_util::StreamExt;
     use nautilus_common::{cache::Cache, messages::ExecutionEvent};
@@ -1969,7 +2056,7 @@ mod tests {
     }
 
     #[rstest::rstest]
-    fn reset_preserves_unconsumed_submission_identity_and_funds() {
+    fn reset_isolates_retired_definitions_and_preserves_unconsumed_submission_identity_and_funds() {
         let (sender, mut output) = tokio::sync::mpsc::unbounded_channel();
         nautilus_common::live::runner::set_exec_event_sender(sender);
         let cache = Rc::new(RefCell::new(Cache::default()));
@@ -2017,7 +2104,18 @@ mod tests {
         }
 
         let balance = client.private.lock().unwrap().ledger.balance().unwrap();
+        let retired_definitions = Arc::clone(&client.definitions);
         client.reset().unwrap();
+
+        let mut retired = nautilus_model::instruments::stubs::binary_option();
+        retired.id = InstrumentId::from("RESET.KALSHI");
+        let retired_id = retired.id;
+        retired_definitions
+            .write()
+            .unwrap()
+            .insert(retired_id, retired);
+
+        assert!(!client.definitions.read().unwrap().contains_key(&retired_id));
         assert_eq!(
             cache.borrow().order(&id).unwrap().status(),
             OrderStatus::Initialized
@@ -2149,7 +2247,10 @@ mod tests {
             client.ready.load(Ordering::Acquire),
             dispatched == Some(false)
         );
-        assert_eq!(requests.try_recv(), Ok(()));
+        assert!(matches!(
+            requests.try_recv(),
+            Ok(PrivateStreamCommand::Refresh)
+        ));
         assert!(requests.try_recv().is_err());
         assert_eq!(state.orders[&id].order.quantity(), Quantity::from("1.25"));
         assert_eq!(

@@ -76,9 +76,9 @@ def test_parquet_roundtrip_and_dataframe_preserve_nanoseconds(tmp_path) -> None:
     catalog = ParquetDataCatalog(str(tmp_path))
     timestamps = [1_700_000_000_000_000_001, 1_700_000_000_000_000_123]
     quotes = [TestDataProviderPyo3.quote_tick(ts_event=ts - 1, ts_init=ts) for ts in timestamps]
-    catalog.write_quote_ticks(quotes)
+    catalog.write_quotes(quotes)
 
-    actual = catalog.query_quote_ticks()
+    actual = catalog.query_quotes()
     table = query_catalog(catalog, NautilusDataType.QuoteTick, output=CatalogOutput.ARROW)
     physical = pq.read_table(next(tmp_path.rglob("*.parquet")))
 
@@ -113,7 +113,7 @@ def test_parquet_converts_current_feather_stream(tmp_path) -> None:
 
     catalog.convert_stream_to_data("run", NautilusDataType.QuoteTick)
 
-    assert catalog.query_quote_ticks() == [quote]
+    assert catalog.query_quotes() == [quote]
 
 
 def test_parquet_converts_feather_stream_for_environment(tmp_path) -> None:
@@ -129,11 +129,11 @@ def test_parquet_converts_feather_stream_for_environment(tmp_path) -> None:
     writer.close()
 
     catalog.convert_stream_to_data("run", NautilusDataType.QuoteTick)
-    backtest_quotes = catalog.query_quote_ticks()
+    backtest_quotes = catalog.query_quotes()
     catalog.convert_stream_to_data("run", NautilusDataType.QuoteTick, environment=Environment.LIVE)
 
     assert backtest_quotes == []
-    assert catalog.query_quote_ticks() == [quote]
+    assert catalog.query_quotes() == [quote]
 
 
 def test_parquet_backend_is_builtin() -> None:

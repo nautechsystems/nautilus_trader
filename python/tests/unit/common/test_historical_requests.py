@@ -61,7 +61,7 @@ def test_catalog_request_callbacks_join_and_follow_up(tmp_path: Path, component_
 
     catalog = ParquetDataCatalog(str(tmp_path))
     catalog.write_instruments([instrument])
-    catalog.write_quote_ticks([quote])
+    catalog.write_quotes([quote])
     events = []
     responses = []
     request_time = dt.datetime(1970, 1, 1, 0, 0, 0, 1, tzinfo=dt.UTC)

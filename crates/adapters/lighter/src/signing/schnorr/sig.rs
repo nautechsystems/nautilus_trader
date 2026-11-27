@@ -57,7 +57,7 @@ impl Signature {
     /// Encode to the canonical 80-byte little-endian layout `s_le || e_le`.
     #[must_use]
     pub fn to_le_bytes(&self) -> [u8; SIG_BYTES] {
-        let mut out = [0u8; SIG_BYTES];
+        let mut out = [0_u8; SIG_BYTES];
         out[..SCALAR_BYTES].copy_from_slice(&self.s.to_le_bytes());
         out[SCALAR_BYTES..].copy_from_slice(&self.e.to_le_bytes());
         out
@@ -71,8 +71,8 @@ impl Signature {
     /// the actual canonicality / membership check.
     #[must_use]
     pub fn from_le_bytes_reduce(bytes: [u8; SIG_BYTES]) -> Self {
-        let mut s_buf = [0u8; SCALAR_BYTES];
-        let mut e_buf = [0u8; SCALAR_BYTES];
+        let mut s_buf = [0_u8; SCALAR_BYTES];
+        let mut e_buf = [0_u8; SCALAR_BYTES];
         s_buf.copy_from_slice(&bytes[..SCALAR_BYTES]);
         e_buf.copy_from_slice(&bytes[SCALAR_BYTES..]);
 
@@ -371,8 +371,8 @@ mod tests {
             sk in arb_scalar(),
             k in arb_scalar(),
             hashed_msg in arb_fp5(),
-            byte_idx in 0usize..SCALAR_BYTES,
-            bit in 0u8..8,
+            byte_idx in 0_usize..SCALAR_BYTES,
+            bit in 0_u8..8,
         ) {
             prop_assume!(!sk.is_zero());
             prop_assume!(!k.is_zero());
@@ -394,7 +394,7 @@ mod tests {
             k in arb_scalar(),
             hashed_msg in arb_fp5(),
             byte_idx in SCALAR_BYTES..SIG_BYTES,
-            bit in 0u8..8,
+            bit in 0_u8..8,
         ) {
             prop_assume!(!sk.is_zero());
             prop_assume!(!k.is_zero());
@@ -468,7 +468,7 @@ mod tests {
         // reducing, encode raw, and feed back through the reducing decoder.
         let s_inflated = canonical.s.add_inner(crate::signing::curve::ORDER);
         let e_inflated = canonical.e.add_inner(crate::signing::curve::ORDER);
-        let mut bytes = [0u8; SIG_BYTES];
+        let mut bytes = [0_u8; SIG_BYTES];
         bytes[..SCALAR_BYTES].copy_from_slice(&s_inflated.to_le_bytes());
         bytes[SCALAR_BYTES..].copy_from_slice(&e_inflated.to_le_bytes());
 

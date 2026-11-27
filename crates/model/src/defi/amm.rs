@@ -320,7 +320,7 @@ mod tests {
             .parse()
             .unwrap();
         let pool_identifier = PoolIdentifier::from_address(pool_address);
-        let ts_init = UnixNanos::from(1_234_567_890_000_000_000u64);
+        let ts_init = UnixNanos::from(1_234_567_890_000_000_000_u64);
 
         let pool = Pool::new(
             Arc::clone(&chain),

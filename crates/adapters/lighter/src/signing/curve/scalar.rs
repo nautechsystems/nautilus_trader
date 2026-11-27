@@ -40,24 +40,24 @@ pub const SCALAR_BYTES: usize = LIMBS * 8;
 ///
 /// `n = 1067993516717146951041484916571792702745057740581727230159139685185762082554198619328292418486241`
 pub const ORDER: Scalar = Scalar([
-    0xE80F_D996_948B_FFE1,
-    0xE888_5C39_D724_A09C,
-    0x7FFF_FFE6_CFB8_0639,
-    0x7FFF_FFF1_0000_0016,
-    0x7FFF_FFFD_8000_0007,
+    0xe80f_d996_948b_ffe1,
+    0xe888_5c39_d724_a09c,
+    0x7fff_ffe6_cfb8_0639,
+    0x7fff_fff1_0000_0016,
+    0x7fff_fffd_8000_0007,
 ]);
 
 /// `-1 / n[0] mod 2^64`, the precomputed Montgomery reduction multiplier.
-const N0I: u64 = 0xD78B_EF72_057B_7BDF;
+const N0I: u64 = 0xd78b_ef72_057b_7bdf;
 
 /// `R^2 mod n` with `R = 2^320`. Multiplying by this lifts a value into
 /// Montgomery form via [`Scalar::monty_mul`].
 const R2: Scalar = Scalar([
-    0xA010_01DC_E33D_C739,
-    0x6C32_28D3_3F62_ACCF,
-    0xD1D7_96CC_91CF_8525,
-    0xAADF_FF5D_1574_C1D8,
-    0x4ACA_13B2_8CA2_51F5,
+    0xa010_01dc_e33d_c739,
+    0x6c32_28d3_3f62_accf,
+    0xd1d7_96cc_91cf_8525,
+    0xaadf_ff5d_1574_c1d8,
+    0x4aca_13b2_8ca2_51f5,
 ]);
 
 /// A scalar in the ECgFp5 curve's scalar field, stored in non-Montgomery form
@@ -126,8 +126,7 @@ impl Scalar {
     /// Canonical 40-byte little-endian encoding (5 x 8-byte limbs).
     #[must_use]
     pub fn to_le_bytes(self) -> [u8; SCALAR_BYTES] {
-        let mut out = [0u8; SCALAR_BYTES];
-
+        let mut out = [0_u8; SCALAR_BYTES];
         for (i, limb) in self.0.iter().enumerate() {
             out[i * 8..(i + 1) * 8].copy_from_slice(&limb.to_le_bytes());
         }
@@ -138,10 +137,9 @@ impl Scalar {
     /// exceeds the canonical range. Mirrors the upstream Lighter routine.
     #[must_use]
     pub fn from_le_bytes_reduce(bytes: [u8; SCALAR_BYTES]) -> Self {
-        let mut limbs = [0u64; LIMBS];
-
+        let mut limbs = [0_u64; LIMBS];
         for (i, slot) in limbs.iter_mut().enumerate() {
-            let mut chunk = [0u8; 8];
+            let mut chunk = [0_u8; 8];
             chunk.copy_from_slice(&bytes[i * 8..(i + 1) * 8]);
             *slot = u64::from_le_bytes(chunk);
         }
@@ -177,7 +175,7 @@ impl Scalar {
     #[inline]
     #[must_use]
     pub fn add_inner(self, rhs: Self) -> Self {
-        let mut r = [0u64; LIMBS];
+        let mut r = [0_u64; LIMBS];
         let mut carry: u8 = 0;
 
         for (i, slot) in r.iter_mut().enumerate() {
@@ -195,7 +193,7 @@ impl Scalar {
     #[inline]
     #[must_use]
     pub fn sub_inner(self, rhs: Self) -> (Self, u64) {
-        let mut r = [0u64; LIMBS];
+        let mut r = [0_u64; LIMBS];
         let mut borrow: u8 = 0;
 
         for (i, slot) in r.iter_mut().enumerate() {
@@ -217,7 +215,7 @@ impl Scalar {
     pub fn monty_mul(self, rhs: Self) -> Self {
         debug_assert!(self.is_canonical(), "Scalar::monty_mul: lhs not canonical",);
 
-        let mut r = [0u64; LIMBS];
+        let mut r = [0_u64; LIMBS];
         for m in rhs.0 {
             let f = (self.0[0].wrapping_mul(m).wrapping_add(r[0])).wrapping_mul(N0I);
 
@@ -255,7 +253,7 @@ impl Scalar {
     /// Poseidon2 digest.
     #[must_use]
     pub fn from_fp5(e: Fp5) -> Self {
-        let mut bytes = [0u8; SCALAR_BYTES];
+        let mut bytes = [0_u8; SCALAR_BYTES];
         let encoded = e.to_le_bytes();
         bytes.copy_from_slice(&encoded);
         Self::from_le_bytes_reduce(bytes)
@@ -266,11 +264,11 @@ impl Scalar {
     /// Iteration order is least-significant nibble first.
     #[must_use]
     pub fn split_to_4_bit_limbs(self) -> [u8; 80] {
-        let mut out = [0u8; 80];
+        let mut out = [0_u8; 80];
 
         for i in 0..LIMBS {
             for j in 0..16 {
-                out[i * 16 + j] = ((self.0[i] >> (j * 4)) & 0xF) as u8;
+                out[i * 16 + j] = ((self.0[i] >> (j * 4)) & 0xf) as u8;
             }
         }
         out
@@ -295,8 +293,8 @@ impl Scalar {
 pub fn recode_signed_from_limbs(limbs: &[u64], ss: &mut [i32], w: u32) {
     debug_assert!((2..=10).contains(&w), "window width must be in 2..=10");
 
-    let mw = (1u32 << w) - 1;
-    let hw = 1u32 << (w - 1);
+    let mw = (1_u32 << w) - 1;
+    let hw = 1_u32 << (w - 1);
 
     let mut acc: u64 = 0;
     let mut acc_len: i32 = 0;
@@ -423,25 +421,25 @@ mod tests {
     #[rstest]
     fn add_inner_carries_through_top_limb() {
         let scalar1 = Scalar([
-            0xFFFF_FFFF_FFFF_FFFF,
-            0xFFFF_FFFF_FFFF_FFFF,
-            0xFFFF_FFFF_FFFF_FFFF,
-            0xFFFF_FFFF_FFFF_FFFF,
-            0xFFFF_FFFF_FFFF_FFFF,
+            0xffff_ffff_ffff_ffff,
+            0xffff_ffff_ffff_ffff,
+            0xffff_ffff_ffff_ffff,
+            0xffff_ffff_ffff_ffff,
+            0xffff_ffff_ffff_ffff,
         ]);
         let scalar2 = Scalar([
-            0x00FF_FFFF_FFFE_EFFF,
+            0x00ff_ffff_fffe_efff,
             12_312_321_312,
-            0xFFFF_FFFF_FFFF_FFFF,
-            0x00FF_FFFF_FACD_FFFF,
-            0xBCAF_FFFF_FFFF_FFFF,
+            0xffff_ffff_ffff_ffff,
+            0x00ff_ffff_facd_ffff,
+            0xbcaf_ffff_ffff_ffff,
         ]);
         let expected = Scalar([
-            0x00FF_FFFF_FFFE_EFFE,
-            0x0000_0002_DDDF_1D20,
-            0xFFFF_FFFF_FFFF_FFFF,
-            0x00FF_FFFF_FACD_FFFF,
-            0xBCAF_FFFF_FFFF_FFFF,
+            0x00ff_ffff_fffe_effe,
+            0x0000_0002_dddf_1d20,
+            0xffff_ffff_ffff_ffff,
+            0x00ff_ffff_facd_ffff,
+            0xbcaf_ffff_ffff_ffff,
         ]);
         assert_eq!(scalar1.add_inner(scalar2), expected);
     }
@@ -459,20 +457,20 @@ mod tests {
     fn modular_sub_wraps_through_order() {
         let scalar1 = Scalar([1, 2, 0, 0, 0]);
         let scalar2 = Scalar([
-            0xFFFF_FFFF_FFFF_FFFF,
-            0xFFFF_FFFF_FFFF_FFFF,
-            0xFFFF_FFFF_FFFF_FFFF,
-            0xFFFF_FFFF_FFFF_FFFF,
-            0x0FFF_FFFF_FFFF_FFFF,
+            0xffff_ffff_ffff_ffff,
+            0xffff_ffff_ffff_ffff,
+            0xffff_ffff_ffff_ffff,
+            0xffff_ffff_ffff_ffff,
+            0x0fff_ffff_ffff_ffff,
         ]);
         assert!(scalar2.is_canonical());
 
         let result = scalar1 - scalar2;
         let expected = Scalar([
-            0xE80F_D996_948B_FFE3,
-            0xE888_5C39_D724_A09E,
-            0x7FFF_FFE6_CFB8_0639,
-            0x7FFF_FFF1_0000_0016,
+            0xe80f_d996_948b_ffe3,
+            0xe888_5c39_d724_a09e,
+            0x7fff_ffe6_cfb8_0639,
+            0x7fff_fff1_0000_0016,
             8_070_450_521_510_510_599,
         ]);
         assert_eq!(result, expected);
@@ -482,11 +480,11 @@ mod tests {
     fn select_picks_branch_by_mask() {
         let a0 = Scalar([1, 2, 3, 4, 5]);
         let a1 = Scalar([
-            0xFFFF_FFFF_FFFF_FFFF,
-            0xFFFF_FFFF_FFFF_FFFE,
-            0xFFFF_FFFF_FFFF_FFFD,
-            0xFFFF_FFFF_FFFF_FFFC,
-            0xFFFF_FFFF_FFFF_FFFB,
+            0xffff_ffff_ffff_ffff,
+            0xffff_ffff_ffff_fffe,
+            0xffff_ffff_ffff_fffd,
+            0xffff_ffff_ffff_fffc,
+            0xffff_ffff_ffff_fffb,
         ]);
         assert_eq!(Scalar::select(0, a0, a1), a0);
         assert_eq!(Scalar::select(u64::MAX, a0, a1), a1);
@@ -495,11 +493,11 @@ mod tests {
     #[rstest]
     fn one_is_multiplicative_identity() {
         let s = Scalar([
-            0x1234_5678_90AB_CDEF,
-            0xFEDC_BA98_7654_3210,
-            0x0123_4567_89AB_CDEF,
-            0xFEDC_BA98_7654_3210,
-            0x1234_5678_90AB_CDEF,
+            0x1234_5678_90ab_cdef,
+            0xfedc_ba98_7654_3210,
+            0x0123_4567_89ab_cdef,
+            0xfedc_ba98_7654_3210,
+            0x1234_5678_90ab_cdef,
         ]);
         assert!(s.is_canonical());
         assert_eq!(s * Scalar::ONE, s);
@@ -539,7 +537,7 @@ mod tests {
     /// Reconstruct a 5-limb scalar by repacking 80 little-endian 4-bit nibbles
     /// back into 5 u64s.
     fn reconstruct_from_4_bit_nibbles(nibbles: [u8; 80]) -> [u64; LIMBS] {
-        let mut out = [0u64; LIMBS];
+        let mut out = [0_u64; LIMBS];
         for (i, slot) in out.iter_mut().enumerate() {
             let mut v: u64 = 0;
             for j in 0..16 {
@@ -556,7 +554,7 @@ mod tests {
     fn reconstruct_from_signed_digits(ss: &[i32], w: u32) -> [u64; LIMBS] {
         // 5 + 2 buffer limbs to absorb intermediate overflow before
         // propagating carries.
-        let mut limbs = [0i128; LIMBS + 2];
+        let mut limbs = [0_i128; LIMBS + 2];
 
         for (i, &d) in ss.iter().enumerate() {
             let shift = (i as u64) * u64::from(w);
@@ -568,13 +566,14 @@ mod tests {
             // Each digit lies in roughly `-(2^(w-1)+1) ..= 2^(w-1)+1` and
             // `bit_off <= 63`, so the shifted value fits in i128.
             let shifted = (d as i128) << bit_off;
-            let lo_mask: i128 = (1i128 << 64) - 1;
+            let lo_mask: i128 = (1_i128 << 64) - 1;
             limbs[limb_idx] += shifted & lo_mask;
             if limb_idx + 1 < limbs.len() {
                 limbs[limb_idx + 1] += shifted >> 64;
             }
         }
-        let mut out = [0u64; LIMBS];
+
+        let mut out = [0_u64; LIMBS];
         let mut carry: i128 = 0;
         for (i, slot) in out.iter_mut().enumerate() {
             let v = limbs[i] + carry;
@@ -593,12 +592,12 @@ mod tests {
         // any trailing carry.
         use crate::signing::field::MODULUS;
 
-        let mut ss = [0i32; 66];
+        let mut ss = [0_i32; 66];
         let scalar = Scalar([
             MODULUS - 1,
             MODULUS - 2,
             MODULUS - 3,
-            0xFFFF_FFFF_FFFF_FFFF,
+            0xffff_ffff_ffff_ffff,
             MODULUS - 5,
         ]);
         scalar.recode_signed(&mut ss, 5);
@@ -719,11 +718,11 @@ mod tests {
         /// `recode_signed` reconstructs the canonical 5-limb value via
         /// `sum(ss[i] * 2^(w*i)) mod 2^320` for every supported window width.
         #[rstest]
-        fn prop_recode_signed_reconstructs(s in arb_scalar(), w in 2u32..=10) {
+        fn prop_recode_signed_reconstructs(s in arb_scalar(), w in 2_u32..=10) {
             // 320 bits divided by `w`, rounded up, plus 2 slack slots so the
             // final carry has somewhere to land regardless of window width.
-            let len = (320usize.div_ceil(w as usize)) + 2;
-            let mut ss = vec![0i32; len];
+            let len = (320_usize.div_ceil(w as usize)) + 2;
+            let mut ss = vec![0_i32; len];
             s.recode_signed(&mut ss, w);
             prop_assert_eq!(reconstruct_from_signed_digits(&ss, w), s.0);
 

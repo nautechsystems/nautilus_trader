@@ -369,7 +369,7 @@ mod tests {
 
     #[rstest]
     fn validate_rejects_invalid_utf8() {
-        static INVALID_UTF8: [u8; 1] = [0xFF];
+        static INVALID_UTF8: [u8; 1] = [0xff];
         let mut plugin_name = BorrowedStr::empty();
         plugin_name.ptr = INVALID_UTF8.as_ptr();
         plugin_name.len = INVALID_UTF8.len();

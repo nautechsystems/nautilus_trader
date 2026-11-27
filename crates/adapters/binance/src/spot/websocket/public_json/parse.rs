@@ -496,7 +496,7 @@ mod tests {
             permissions: vec![vec!["SPOT".to_string()]],
         };
 
-        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
         parse_spot_instrument_sbe(&symbol, ts, ts).unwrap()
     }
 
@@ -749,11 +749,11 @@ mod tests {
         let instrument = sample_instrument();
         let msg: BinanceSpotKlineMsg = serde_json::from_value(serde_json::json!({
             "e": "kline",
-            "E": 1700000000999_i64,
+            "E": 1_700_000_000_999_i64,
             "s": "ETHUSDT",
             "k": {
-                "t": 1700000000000_i64,
-                "T": 1700000000999_i64,
+                "t": 1_700_000_000_000_i64,
+                "T": 1_700_000_000_999_i64,
                 "s": "ETHUSDT",
                 "i": "1s",
                 "f": 201,
@@ -848,7 +848,7 @@ mod tests {
     fn test_parse_spot_ticker_rejects_invalid_decimal() {
         let instrument = sample_instrument();
         let mut msg: BinanceSpotTickerMsg = serde_json::from_value(serde_json::json!({
-            "E": 1700000000999_i64,
+            "E": 1_700_000_000_999_i64,
             "s": "ETHUSDT",
             "p": "1.1",
             "P": "2.2",
@@ -865,8 +865,8 @@ mod tests {
             "l": "13.1",
             "v": "14.1",
             "q": "15.1",
-            "O": 1699913600999_i64,
-            "C": 1700000000998_i64,
+            "O": 1_699_913_600_999_i64,
+            "C": 1_700_000_000_998_i64,
             "F": 301,
             "L": 399,
             "n": 99

@@ -993,7 +993,7 @@ mod tests {
         let response: AvgPrice = serde_json::from_str(&json).unwrap();
         assert_eq!(response.mins, 5);
         assert_eq!(response.price, "9.35751834");
-        assert_eq!(response.close_time, 1694061154503);
+        assert_eq!(response.close_time, 1_694_061_154_503);
     }
 
     #[rstest]

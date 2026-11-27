@@ -13,80 +13,66 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use alloy::primitives::U256;
-use hypersync_client::format::Hex;
 use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
-use nautilus_model::defi::{Block, Blockchain, hex::from_str_hex_to_u64};
+use nautilus_model::defi::{Block, Blockchain};
 use ustr::Ustr;
 
-/// Converts a HyperSync block format to our internal [`Block`] type.
+use super::HypersyncBlock;
+
+/// Converts a HyperSync block to the NautilusTrader domain type.
 ///
 /// # Errors
 ///
-/// Returns an error if required block fields are missing or if hex parsing fails.
+/// Returns an error if a required block field is absent or the timestamp overflows `u64` nanoseconds.
 pub fn transform_hypersync_block(
     chain: Blockchain,
-    received_block: hypersync_client::simple_types::Block,
-) -> Result<Block, anyhow::Error> {
+    received_block: HypersyncBlock,
+) -> anyhow::Result<Block> {
     let number = received_block
         .number
         .ok_or_else(|| anyhow::anyhow!("Missing block number"))?;
-    let gas_limit = from_str_hex_to_u64(
-        received_block
-            .gas_limit
-            .ok_or_else(|| anyhow::anyhow!("Missing gas limit"))?
-            .encode_hex()
-            .as_str(),
-    )?;
-    let gas_used = from_str_hex_to_u64(
-        received_block
-            .gas_used
-            .ok_or_else(|| anyhow::anyhow!("Missing gas used"))?
-            .encode_hex()
-            .as_str(),
-    )?;
-    let timestamp = from_str_hex_to_u64(
-        received_block
-            .timestamp
-            .ok_or_else(|| anyhow::anyhow!("Missing timestamp"))?
-            .encode_hex()
-            .as_str(),
-    )?;
+    let gas_limit = received_block
+        .gas_limit
+        .ok_or_else(|| anyhow::anyhow!("Missing gas limit"))?;
+    let gas_used = received_block
+        .gas_used
+        .ok_or_else(|| anyhow::anyhow!("Missing gas used"))?;
+    let timestamp = received_block
+        .timestamp
+        .and_then(|value| value.checked_mul(NANOSECONDS_IN_SECOND))
+        .ok_or_else(|| anyhow::anyhow!("Missing or out-of-range block timestamp"))?;
+    let hash = received_block
+        .hash
+        .ok_or_else(|| anyhow::anyhow!("Missing hash"))?;
+    let parent_hash = received_block
+        .parent_hash
+        .ok_or_else(|| anyhow::anyhow!("Missing parent hash"))?;
+    let miner = received_block
+        .miner
+        .ok_or_else(|| anyhow::anyhow!("Missing miner"))?;
+    let hash = hash.to_string();
+    let parent_hash = parent_hash.to_string();
+    let miner = Ustr::from(format!("{miner:#x}").as_str());
+    let ts_event = UnixNanos::new(timestamp);
 
     let mut block = Block::new(
-        received_block
-            .hash
-            .ok_or_else(|| anyhow::anyhow!("Missing hash"))?
-            .to_string(),
-        received_block
-            .parent_hash
-            .ok_or_else(|| anyhow::anyhow!("Missing parent hash"))?
-            .to_string(),
+        hash,
+        parent_hash,
         number,
-        Ustr::from(
-            received_block
-                .miner
-                .ok_or_else(|| anyhow::anyhow!("Missing miner"))?
-                .to_string()
-                .as_str(),
-        ),
+        miner,
         gas_limit,
         gas_used,
-        UnixNanos::new(timestamp * NANOSECONDS_IN_SECOND),
+        ts_event,
         Some(chain),
     );
 
-    if let Some(base_fee_hex) = received_block.base_fee_per_gas {
-        let s = base_fee_hex.encode_hex();
-        let val = U256::from_str_radix(s.trim_start_matches("0x"), 16)?;
-        block = block.with_base_fee(val);
+    if let Some(base_fee) = received_block.base_fee_per_gas {
+        block = block.with_base_fee(base_fee);
     }
 
-    if let (Some(used_hex), Some(excess_hex)) =
+    if let (Some(used), Some(excess)) =
         (received_block.blob_gas_used, received_block.excess_blob_gas)
     {
-        let used = U256::from_str_radix(used_hex.encode_hex().trim_start_matches("0x"), 16)?;
-        let excess = U256::from_str_radix(excess_hex.encode_hex().trim_start_matches("0x"), 16)?;
         block = block.with_blob_gas(used, excess);
     }
 

@@ -272,7 +272,10 @@ async fn test_livenode_streaming_records_typed_routes_to_feather() {
         quote_files.len(),
     );
 
-    let mut catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(catalog_dir.path())
+        .build()
+        .unwrap();
     assert_eq!(
         catalog.list_live_runs().unwrap(),
         vec![instance_id.to_string()],
@@ -295,30 +298,13 @@ async fn test_livenode_streaming_records_typed_routes_to_feather() {
             .unwrap();
     }
 
+    assert_eq!(catalog.query::<QuoteTick>().execute().unwrap(), quotes);
+    assert_eq!(catalog.query::<TradeTick>().execute().unwrap(), trades);
     assert_eq!(
-        catalog
-            .query::<QuoteTick>(None, None, None, None, None, true)
-            .unwrap(),
-        quotes,
-    );
-    assert_eq!(
-        catalog
-            .query::<TradeTick>(None, None, None, None, None, true)
-            .unwrap(),
-        trades,
-    );
-    assert_eq!(
-        catalog
-            .query::<OrderBookDelta>(None, None, None, None, None, true)
-            .unwrap(),
+        catalog.query::<OrderBookDelta>().execute().unwrap(),
         vec![delta],
     );
-    assert_eq!(
-        catalog
-            .query::<Bar>(None, None, None, None, None, true)
-            .unwrap(),
-        vec![bar],
-    );
+    assert_eq!(catalog.query::<Bar>().execute().unwrap(), vec![bar]);
 
     for record_type in [
         NautilusRecordType::OrderSubmitted,
@@ -418,7 +404,10 @@ async fn test_livenode_streaming_auto_flush_persists_before_stop() {
     node.stop().await.unwrap();
     node.dispose();
 
-    let mut catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(catalog_dir.path())
+        .build()
+        .unwrap();
     catalog
         .convert_stream_to_data(
             &instance_id.to_string(),
@@ -428,12 +417,7 @@ async fn test_livenode_streaming_auto_flush_persists_before_stop() {
             false,
         )
         .unwrap();
-    assert_eq!(
-        catalog
-            .query::<QuoteTick>(None, None, None, None, None, true)
-            .unwrap(),
-        quotes,
-    );
+    assert_eq!(catalog.query::<QuoteTick>().execute().unwrap(), quotes);
 }
 
 #[rstest]
@@ -481,7 +465,10 @@ async fn test_livenode_streaming_records_quotes_published_after_stop() {
     msgbus::publish_quote(quotes_topic, &quotes[1]);
     node.dispose();
 
-    let mut catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(catalog_dir.path())
+        .build()
+        .unwrap();
     catalog
         .convert_stream_to_data(
             &instance_id.to_string(),
@@ -491,12 +478,7 @@ async fn test_livenode_streaming_records_quotes_published_after_stop() {
             false,
         )
         .unwrap();
-    assert_eq!(
-        catalog
-            .query::<QuoteTick>(None, None, None, None, None, true)
-            .unwrap(),
-        quotes,
-    );
+    assert_eq!(catalog.query::<QuoteTick>().execute().unwrap(), quotes);
 }
 
 #[rstest]

@@ -31,8 +31,7 @@ use nautilus_model::defi::{
     Block, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolSwap, SharedChain, SharedDex,
     SharedPool, Token,
     data::{PoolFeeCollect, PoolFeeProtocolCollect, PoolFeeProtocolUpdate, PoolFlash},
-    pool_analysis::{position::PoolPosition, snapshot::PoolSnapshot},
-    tick_map::tick::PoolTick,
+    pool_analysis::snapshot::PoolSnapshot,
 };
 use sqlx::postgres::PgConnectOptions;
 
@@ -920,46 +919,9 @@ impl BlockchainCache {
         }
 
         if let Some(database) = &self.database {
-            // Save snapshot first (required for foreign key constraints)
             database
-                .add_pool_snapshot(self.chain.chain_id, dex, pool_identifier, snapshot)
+                .add_pool_snapshot_atomic(self.chain.chain_id, dex, pool_identifier, snapshot)
                 .await?;
-
-            let positions: Vec<(PoolIdentifier, PoolPosition)> = snapshot
-                .positions
-                .iter()
-                .map(|pos| (*pool_identifier, pos.clone()))
-                .collect();
-
-            if !positions.is_empty() {
-                database
-                    .add_pool_positions_batch(
-                        self.chain.chain_id,
-                        snapshot.block_position.number,
-                        snapshot.block_position.transaction_index,
-                        snapshot.block_position.log_index,
-                        &positions,
-                    )
-                    .await?;
-            }
-
-            let ticks: Vec<(PoolIdentifier, &PoolTick)> = snapshot
-                .ticks
-                .iter()
-                .map(|tick| (*pool_identifier, tick))
-                .collect();
-
-            if !ticks.is_empty() {
-                database
-                    .add_pool_ticks_batch(
-                        self.chain.chain_id,
-                        snapshot.block_position.number,
-                        snapshot.block_position.transaction_index,
-                        snapshot.block_position.log_index,
-                        &ticks,
-                    )
-                    .await?;
-            }
         }
 
         Ok(())
@@ -1205,7 +1167,11 @@ mod tests {
     use nautilus_model::defi::{
         AmmType, Block, Blockchain, Chain, Dex, PoolProfiler, SharedChain, SharedDex, Token,
         data::{DexPoolData, block::BlockPosition},
-        pool_analysis::snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
+        pool_analysis::{
+            position::PoolPosition,
+            snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
+        },
+        tick_map::tick::PoolTick,
     };
     use rstest::rstest;
     use sqlx::{
@@ -1929,6 +1895,317 @@ mod tests {
         Ok(())
     }
 
+    #[rstest]
+    #[case("pool_position")]
+    #[case("pool_tick")]
+    #[tokio::test]
+    async fn add_pool_snapshot_is_atomic_when_child_insert_fails(
+        #[case] failing_table: &str,
+    ) -> anyhow::Result<()> {
+        let Some(fixture) = pool_event_sync_fixture().await? else {
+            return Ok(());
+        };
+
+        let PoolEventSyncFixture {
+            mut cache,
+            schema,
+            chain,
+            pool,
+            ..
+        } = fixture;
+        let database = cache
+            .database
+            .as_ref()
+            .expect("cache database must be set")
+            .clone();
+        let ts = UnixNanos::from(1_700_000_000_123_456_789);
+        database
+            .add_pool_event_blocks_batch(chain.chain_id, &[test_block(100, ts)])
+            .await?;
+        execute_schema_statement(
+            &schema.admin_pool,
+            format!(
+                "ALTER TABLE {}.{failing_table} ADD CONSTRAINT reject_pool_snapshot_child CHECK (FALSE) NOT VALID",
+                schema.name
+            ),
+        )
+        .await?;
+        let snapshot = snapshot_with_complete_topology(&pool, 100, ts);
+
+        let failed_write = cache
+            .add_pool_snapshot(&DexType::UniswapV3, &pool.pool_identifier, &snapshot)
+            .await;
+        let failed_counts = snapshot_row_counts(&schema).await;
+        let failed_load = database
+            .load_latest_pool_snapshot(chain.chain_id, &pool.pool_identifier, None, true)
+            .await;
+
+        execute_schema_statement(
+            &schema.admin_pool,
+            format!(
+                "ALTER TABLE {}.{failing_table} DROP CONSTRAINT reject_pool_snapshot_child",
+                schema.name
+            ),
+        )
+        .await?;
+        let successful_write = cache
+            .add_pool_snapshot(&DexType::UniswapV3, &pool.pool_identifier, &snapshot)
+            .await;
+        let successful_load = database
+            .load_latest_pool_snapshot(chain.chain_id, &pool.pool_identifier, None, true)
+            .await;
+        let validation = database
+            .get_pool_snapshot_validation_state(chain.chain_id, &pool.pool_identifier, 100, 7, 9)
+            .await;
+
+        cache.database = None;
+        schema.cleanup().await?;
+
+        let error = failed_write.expect_err("child insertion should fail");
+        anyhow::ensure!(
+            format!("{error:#}").contains("reject_pool_snapshot_child"),
+            "unexpected child insertion failure: {error:#}"
+        );
+        assert_eq!(failed_counts?, (0, 0, 0));
+        assert!(failed_load?.is_none());
+        successful_write?;
+        let mut loaded = successful_load?.expect("successful snapshot should load");
+        let mut expected = snapshot.clone();
+        expected.block_position = expected
+            .block_position
+            .with_block_hash(Some(format!("0x{:064x}", 100)));
+        sort_snapshot_topology(&mut loaded);
+        sort_snapshot_topology(&mut expected);
+        assert_eq!(loaded, expected);
+        assert_eq!(validation?.as_deref(), Some("replay"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn add_pool_snapshot_failed_upsert_preserves_committed_snapshot() -> anyhow::Result<()> {
+        let Some(fixture) = pool_event_sync_fixture().await? else {
+            return Ok(());
+        };
+
+        let PoolEventSyncFixture {
+            mut cache,
+            schema,
+            chain,
+            pool,
+            ..
+        } = fixture;
+        let database = cache
+            .database
+            .as_ref()
+            .expect("cache database must be set")
+            .clone();
+        let ts = UnixNanos::from(1_700_000_000_123_456_789);
+        database
+            .add_pool_event_blocks_batch(chain.chain_id, &[test_block(100, ts)])
+            .await?;
+        let snapshot = snapshot_with_complete_topology(&pool, 100, ts);
+        cache
+            .add_pool_snapshot(&DexType::UniswapV3, &pool.pool_identifier, &snapshot)
+            .await?;
+        database
+            .set_pool_snapshot_validation_state(
+                chain.chain_id,
+                &pool.pool_identifier,
+                100,
+                7,
+                9,
+                "on_chain",
+            )
+            .await?;
+        let before = database
+            .load_latest_pool_snapshot(chain.chain_id, &pool.pool_identifier, None, true)
+            .await;
+
+        let mut changed = snapshot.clone();
+        changed.state.current_tick = 84;
+        changed.state.liquidity = 654_321;
+        changed.state.set_uniswap_v3_fee_protocol(0x53);
+        changed.analytics.total_swaps = 19;
+        changed.positions[0].liquidity = 5_000;
+        changed.positions[0].tokens_owed_0 = 1_103;
+        changed.ticks[0].liquidity_gross = 6_100;
+        changed.ticks[0].fee_growth_outside_0 = U256::from(6_301_u64);
+        execute_schema_statement(
+            &schema.admin_pool,
+            format!(
+                "ALTER TABLE {}.pool_tick ADD CONSTRAINT reject_pool_snapshot_child CHECK (FALSE) NOT VALID",
+                schema.name
+            ),
+        )
+        .await?;
+        let failed_write = cache
+            .add_pool_snapshot(&DexType::UniswapV3, &pool.pool_identifier, &changed)
+            .await;
+        let after = database
+            .load_latest_pool_snapshot(chain.chain_id, &pool.pool_identifier, None, true)
+            .await;
+        let validation = database
+            .get_pool_snapshot_validation_state(chain.chain_id, &pool.pool_identifier, 100, 7, 9)
+            .await;
+
+        cache.database = None;
+        schema.cleanup().await?;
+
+        let error = failed_write.expect_err("tick insertion should fail");
+        anyhow::ensure!(
+            format!("{error:#}").contains("reject_pool_snapshot_child"),
+            "unexpected tick insertion failure: {error:#}"
+        );
+        let mut before = before?.expect("initial snapshot should load");
+        let mut after = after?.expect("committed snapshot should remain loadable");
+        anyhow::ensure!(
+            before.state != changed.state
+                && before.positions != changed.positions
+                && before.ticks != changed.ticks,
+            "failed attempt must contain changed parent, position, and tick values"
+        );
+        sort_snapshot_topology(&mut before);
+        sort_snapshot_topology(&mut after);
+        anyhow::ensure!(
+            after == before,
+            "Committed snapshot changed after failed upsert: after={after:?}, before={before:?}"
+        );
+        let validation = validation?;
+        anyhow::ensure!(
+            validation.as_deref() == Some("on_chain"),
+            "Unexpected validation state after failed upsert: {validation:?}"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn database_pool_snapshot_methods_preserve_standalone_contracts() -> anyhow::Result<()> {
+        let Some(fixture) = pool_event_sync_fixture().await? else {
+            return Ok(());
+        };
+
+        let PoolEventSyncFixture {
+            cache,
+            schema,
+            chain,
+            pool,
+            ..
+        } = fixture;
+        let database = cache
+            .database
+            .as_ref()
+            .expect("cache database must be set")
+            .clone();
+        let ts = UnixNanos::from(1_700_000_000_123_456_789);
+        database
+            .add_pool_event_blocks_batch(chain.chain_id, &[test_block(100, ts)])
+            .await?;
+        let snapshot = snapshot_with_complete_topology(&pool, 100, ts);
+
+        let parent_write = database
+            .add_pool_snapshot(
+                chain.chain_id,
+                &DexType::UniswapV3,
+                &pool.pool_identifier,
+                &snapshot,
+            )
+            .await;
+        let parent_counts = snapshot_row_counts(&schema).await;
+        let positions: Vec<(PoolIdentifier, PoolPosition)> = snapshot
+            .positions
+            .iter()
+            .map(|position| (pool.pool_identifier, position.clone()))
+            .collect();
+        let positions_write = database
+            .add_pool_positions_batch(chain.chain_id, 100, 7, 9, &positions)
+            .await;
+        let ticks: Vec<(PoolIdentifier, &PoolTick)> = snapshot
+            .ticks
+            .iter()
+            .map(|tick| (pool.pool_identifier, tick))
+            .collect();
+        let ticks_write = database
+            .add_pool_ticks_batch(chain.chain_id, 100, 7, 9, &ticks)
+            .await;
+        let loaded = database
+            .load_latest_pool_snapshot(chain.chain_id, &pool.pool_identifier, None, true)
+            .await;
+
+        drop(cache);
+        schema.cleanup().await?;
+
+        parent_write?;
+        let parent_counts = parent_counts?;
+        anyhow::ensure!(
+            parent_counts == (1, 0, 0),
+            "Unexpected row counts after parent-only write: {parent_counts:?}"
+        );
+        positions_write?;
+        ticks_write?;
+        let mut loaded = loaded?.expect("standalone writes should load");
+        let mut expected = snapshot.clone();
+        expected.block_position = expected
+            .block_position
+            .with_block_hash(Some(format!("0x{:064x}", 100)));
+        sort_snapshot_topology(&mut loaded);
+        sort_snapshot_topology(&mut expected);
+        anyhow::ensure!(
+            loaded == expected,
+            "Unexpected standalone snapshot: loaded={loaded:?}, expected={expected:?}"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn add_pool_snapshot_rejects_empty_creation_block_stub() -> anyhow::Result<()> {
+        let Some(fixture) = pool_event_sync_fixture().await? else {
+            return Ok(());
+        };
+
+        let PoolEventSyncFixture {
+            mut cache,
+            schema,
+            chain,
+            pool,
+            ..
+        } = fixture;
+        let database = cache
+            .database
+            .as_ref()
+            .expect("cache database must be set")
+            .clone();
+        let ts = UnixNanos::from(1_700_000_000_123_456_789);
+        database
+            .add_pool_event_blocks_batch(chain.chain_id, &[test_block(pool.creation_block, ts)])
+            .await?;
+        let mut snapshot = snapshot_with_complete_topology(&pool, pool.creation_block, ts);
+        snapshot.positions.clear();
+        snapshot.ticks.clear();
+
+        let write = cache
+            .add_pool_snapshot(&DexType::UniswapV3, &pool.pool_identifier, &snapshot)
+            .await;
+        let counts = snapshot_row_counts(&schema).await;
+        let loaded = database
+            .load_latest_pool_snapshot(chain.chain_id, &pool.pool_identifier, None, true)
+            .await;
+
+        cache.database = None;
+        schema.cleanup().await?;
+
+        write?;
+        let counts = counts?;
+        anyhow::ensure!(
+            counts == (0, 0, 0),
+            "Unexpected row counts after creation-block stub rejection: {counts:?}"
+        );
+        anyhow::ensure!(
+            loaded?.is_none(),
+            "Creation-block stub snapshot was loadable"
+        );
+        Ok(())
+    }
+
     #[tokio::test]
     async fn load_latest_pool_snapshot_filters_by_validation_state() -> anyhow::Result<()> {
         let Some((database, schema)) = connect_cache_test_database().await? else {
@@ -1976,9 +2253,9 @@ mod tests {
 
         // replay@100, on_chain@150, invalid@200: one snapshot per block with a distinct verdict.
         for (block, state) in [
-            (100u64, "replay"),
-            (150u64, "on_chain"),
-            (200u64, "invalid"),
+            (100_u64, "replay"),
+            (150_u64, "on_chain"),
+            (200_u64, "invalid"),
         ] {
             let snapshot = PoolSnapshot::new(
                 instrument_id,
@@ -2412,6 +2689,135 @@ mod tests {
         }))
     }
 
+    fn snapshot_with_complete_topology(
+        pool: &Pool,
+        block: u64,
+        timestamp: UnixNanos,
+    ) -> PoolSnapshot {
+        let state = PoolState {
+            current_tick: 42,
+            price_sqrt_ratio_x96: U160::from(9_876_543_u64),
+            liquidity: 123_456,
+            protocol_fees_token0: U256::from(11_u64),
+            protocol_fees_token1: U256::from(22_u64),
+            fee_protocol: 0,
+            fee_protocol0_basis_points: Some(3_200),
+            fee_protocol1_basis_points: Some(4_100),
+            fee_growth_global_0: U256::from(33_u64),
+            fee_growth_global_1: U256::from(44_u64),
+        };
+
+        let analytics = PoolAnalytics {
+            total_amount0_deposited: U256::from(55_u64),
+            total_amount1_deposited: U256::from(66_u64),
+            total_amount0_collected: U256::from(77_u64),
+            total_amount1_collected: U256::from(88_u64),
+            total_swaps: 9,
+            total_mints: 8,
+            total_burns: 7,
+            total_fee_collects: 6,
+            total_flashes: 5,
+            liquidity_utilization_rate: 0.625,
+        };
+
+        let positions = vec![
+            PoolPosition {
+                owner: address!("0000000000000000000000000000000000000001"),
+                tick_lower: -120,
+                tick_upper: 60,
+                liquidity: 1_000,
+                fee_growth_inside_0_last: U256::from(101_u64),
+                fee_growth_inside_1_last: U256::from(102_u64),
+                tokens_owed_0: 103,
+                tokens_owed_1: 104,
+                total_amount0_deposited: U256::from(105_u64),
+                total_amount1_deposited: U256::from(106_u64),
+                total_amount0_collected: 107,
+                total_amount1_collected: 108,
+            },
+            PoolPosition {
+                owner: address!("0000000000000000000000000000000000000002"),
+                tick_lower: -120,
+                tick_upper: 60,
+                liquidity: 2_000,
+                fee_growth_inside_0_last: U256::from(201_u64),
+                fee_growth_inside_1_last: U256::from(202_u64),
+                tokens_owed_0: 203,
+                tokens_owed_1: 204,
+                total_amount0_deposited: U256::from(205_u64),
+                total_amount1_deposited: U256::from(206_u64),
+                total_amount0_collected: 207,
+                total_amount1_collected: 208,
+            },
+        ];
+        let ticks = vec![
+            PoolTick::new(
+                -120,
+                1_100,
+                1_000,
+                U256::from(301_u64),
+                U256::from(302_u64),
+                true,
+                90,
+            ),
+            PoolTick::new(
+                60,
+                3_100,
+                -1_000,
+                U256::from(401_u64),
+                U256::from(402_u64),
+                true,
+                91,
+            ),
+            PoolTick::new(
+                120,
+                2_100,
+                -2_000,
+                U256::from(501_u64),
+                U256::from(502_u64),
+                true,
+                92,
+            ),
+        ];
+        let block_position = BlockPosition::new(block, format!("0x{block:064x}"), 7, 9);
+
+        PoolSnapshot::new(
+            pool.instrument_id,
+            state,
+            positions,
+            ticks,
+            analytics,
+            block_position,
+            timestamp,
+            timestamp,
+        )
+    }
+
+    fn sort_snapshot_topology(snapshot: &mut PoolSnapshot) {
+        snapshot.positions.sort_by_key(|position| {
+            (
+                position.owner.to_string(),
+                position.tick_lower,
+                position.tick_upper,
+            )
+        });
+
+        snapshot.ticks.sort_by_key(|tick| tick.value);
+    }
+
+    async fn snapshot_row_counts(schema: &TestSchema) -> anyhow::Result<(i64, i64, i64)> {
+        let counts = sqlx::query_as::<_, (i64, i64, i64)>(AssertSqlSafe(format!(
+            "SELECT \
+                 (SELECT COUNT(*) FROM {0}.pool_snapshot), \
+                 (SELECT COUNT(*) FROM {0}.pool_position), \
+                 (SELECT COUNT(*) FROM {0}.pool_tick)",
+            schema.name
+        )))
+        .fetch_one(&schema.admin_pool)
+        .await?;
+        Ok(counts)
+    }
+
     fn protocol_fee_events(
         fixture: &PoolEventSyncFixture,
     ) -> (PoolFeeProtocolUpdate, PoolFeeProtocolCollect) {
@@ -2583,6 +2989,7 @@ mod tests {
             format!("CREATE DOMAIN {schema}.U256 AS NUMERIC(78, 0)"),
             format!("CREATE DOMAIN {schema}.U160 AS NUMERIC(49, 0)"),
             format!("CREATE DOMAIN {schema}.U128 AS NUMERIC(39, 0)"),
+            format!("CREATE DOMAIN {schema}.I128 AS NUMERIC(39, 0)"),
             format!(
                 r#"
                 CREATE TABLE {schema}."chain" (
@@ -2860,7 +3267,9 @@ mod tests {
                     total_amount1_deposited NUMERIC,
                     total_amount0_collected NUMERIC,
                     total_amount1_collected NUMERIC,
-                    PRIMARY KEY (chain_id, pool_identifier, snapshot_block, snapshot_transaction_index, snapshot_log_index, owner, tick_lower, tick_upper)
+                    PRIMARY KEY (chain_id, pool_identifier, snapshot_block, snapshot_transaction_index, snapshot_log_index, owner, tick_lower, tick_upper),
+                    FOREIGN KEY (chain_id, pool_identifier, snapshot_block, snapshot_transaction_index, snapshot_log_index)
+                        REFERENCES {schema}.pool_snapshot(chain_id, pool_identifier, block, transaction_index, log_index) ON DELETE CASCADE
                 )
                 "#
             ),
@@ -2879,7 +3288,9 @@ mod tests {
                     fee_growth_outside_1 NUMERIC NOT NULL,
                     initialized BOOLEAN NOT NULL,
                     last_updated_block BIGINT NOT NULL,
-                    PRIMARY KEY (chain_id, pool_identifier, snapshot_block, snapshot_transaction_index, snapshot_log_index, tick_value)
+                    PRIMARY KEY (chain_id, pool_identifier, snapshot_block, snapshot_transaction_index, snapshot_log_index, tick_value),
+                    FOREIGN KEY (chain_id, pool_identifier, snapshot_block, snapshot_transaction_index, snapshot_log_index)
+                        REFERENCES {schema}.pool_snapshot(chain_id, pool_identifier, block, transaction_index, log_index) ON DELETE CASCADE
                 )
                 "#
             ),

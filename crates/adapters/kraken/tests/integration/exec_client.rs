@@ -61,9 +61,16 @@ use nautilus_kraken::{
         enums::{KrakenEnvironment, KrakenProductType},
         parse::{parse_spot_instrument, parse_tokenized_instrument},
     },
-    config::KrakenExecutionClientConfig,
+    config::{KrakenDataClientConfig, KrakenExecutionClientConfig},
     execution::{KrakenFuturesExecutionClient, KrakenSpotExecutionClient},
     http::spot::models::{AssetPairInfo, AssetPairsResponse, KrakenResponse},
+    websocket::{
+        dispatch::{OrderIdentity, WsDispatchState},
+        spot_v2::{
+            client::KrakenSpotWebSocketClient, messages::KrakenWsExecutionData,
+            parse::parse_ws_fill_report,
+        },
+    },
 };
 use nautilus_live::{
     ExecutionClientCore,
@@ -97,7 +104,13 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
+
+use crate::common::{
+    CAPTURED_LIMIT_ORDER_ID, CAPTURED_MARKET_ORDER_ID, CAPTURED_STOP_ORDER_ID,
+    captured_snapshot_frames, captured_spot_frames, dispatch_spot_frames, usdc_eur_pair,
+};
 
 #[derive(Debug, Clone, Copy, Default)]
 enum SingleCancelResponse {
@@ -156,6 +169,7 @@ struct TestServerState {
     submit_request_count: Arc<AtomicUsize>,
     modify_request_count: Arc<AtomicUsize>,
     batch_submit_request_count: Arc<AtomicUsize>,
+    ws_batch_submit_request_count: Arc<AtomicUsize>,
     cancel_request_count: Arc<AtomicUsize>,
     batch_cancel_request_count: Arc<AtomicUsize>,
     cancel_all_request_count: Arc<AtomicUsize>,
@@ -198,8 +212,16 @@ struct TestServerState {
     closed_orders_repeat: Arc<AtomicBool>,
     /// Counts `/0/private/ClosedOrders` requests, so a test can assert the exact page count.
     closed_orders_request_count: Arc<AtomicUsize>,
+    /// Counts WebSocket connections, so a test can wait for the client to reconnect.
+    ws_connection_count: Arc<AtomicUsize>,
+    /// The params of each executions subscribe the server received, without the token.
+    ws_execution_subscriptions: Arc<std::sync::Mutex<Vec<Value>>>,
+    /// Pushes a message to each connected WebSocket; `WS_DROP` drops the connection instead.
     ws_message_tx: tokio::sync::broadcast::Sender<String>,
 }
+
+/// The `ws_message_tx` message that makes the server drop its WebSocket connections.
+const WS_DROP: &str = "drop";
 
 impl Default for TestServerState {
     fn default() -> Self {
@@ -213,9 +235,12 @@ impl Default for TestServerState {
             closed_orders_json: Arc::new(tokio::sync::Mutex::new(None)),
             closed_orders_repeat: Arc::new(AtomicBool::new(false)),
             closed_orders_request_count: Arc::new(AtomicUsize::new(0)),
+            ws_connection_count: Arc::new(AtomicUsize::new(0)),
+            ws_execution_subscriptions: Arc::new(std::sync::Mutex::new(Vec::new())),
             submit_request_count: Arc::new(AtomicUsize::new(0)),
             modify_request_count: Arc::new(AtomicUsize::new(0)),
             batch_submit_request_count: Arc::new(AtomicUsize::new(0)),
+            ws_batch_submit_request_count: Arc::new(AtomicUsize::new(0)),
             cancel_request_count: Arc::new(AtomicUsize::new(0)),
             batch_cancel_request_count: Arc::new(AtomicUsize::new(0)),
             cancel_all_request_count: Arc::new(AtomicUsize::new(0)),
@@ -253,6 +278,7 @@ async fn handle_ws_upgrade(ws: WebSocketUpgrade, State(state): State<TestServerS
 
 async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
     let mut ws_message_rx = state.ws_message_tx.subscribe();
+    state.ws_connection_count.fetch_add(1, Ordering::Relaxed);
 
     loop {
         let message = tokio::select! {
@@ -262,6 +288,9 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
             }
             message = ws_message_rx.recv() => {
                 let Ok(message) = message else { continue };
+                if message == WS_DROP {
+                    break;
+                }
                 if socket.send(Message::Text(message.into())).await.is_err() {
                     break;
                 }
@@ -274,6 +303,24 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                 let Ok(payload) = serde_json::from_str::<Value>(&text) else {
                     continue;
                 };
+
+                if payload.get("method").and_then(Value::as_str) == Some("subscribe")
+                    && payload["params"]["channel"] == "executions"
+                {
+                    let mut params = payload["params"].clone();
+                    params.as_object_mut().unwrap().remove("token");
+                    state
+                        .ws_execution_subscriptions
+                        .lock()
+                        .unwrap()
+                        .push(params);
+                }
+
+                if payload.get("method").and_then(Value::as_str) == Some("batch_add") {
+                    state
+                        .ws_batch_submit_request_count
+                        .fetch_add(1, Ordering::Relaxed);
+                }
 
                 if let Some(reply) = ws_reply(&payload)
                     && socket
@@ -320,7 +367,27 @@ fn ws_reply(payload: &Value) -> Option<Value> {
         }));
     }
 
+    // Kraken's documented shape: one result per order, in request order, without `success`
+    if payload.get("method").and_then(Value::as_str) == Some("batch_add") {
+        let orders = payload["params"]["orders"].as_array().map_or(0, Vec::len);
+        let result: Vec<Value> = (0..orders)
+            .map(|index| json!({"order_id": spot_ws_batch_venue_order_id(index)}))
+            .collect();
+        return Some(json!({
+            "method": "batch_add",
+            "req_id": payload["req_id"],
+            "success": true,
+            "result": result,
+            "time_in": "2026-05-05T10:00:00.123Z",
+            "time_out": "2026-05-05T10:00:00.125Z",
+        }));
+    }
+
     None
+}
+
+fn spot_ws_batch_venue_order_id(index: usize) -> String {
+    format!("OWSBAT-{index:05}-ACCEPT")
 }
 
 async fn handle_http_request(State(state): State<TestServerState>, req: Request) -> Response {
@@ -4389,7 +4456,7 @@ async fn test_futures_mass_status_skips_an_unsized_trigger_only_on_a_flat_contra
                 "PI_XBTUSD",
                 "0",
                 "0",
-                1680877245500,
+                1_680_877_245_500,
             )]));
     }
 
@@ -4577,7 +4644,7 @@ async fn test_futures_order_status_reports_resolve_the_history_tradeable(
             tradeable,
             "2",
             "0",
-            1680877245500,
+            1_680_877_245_500,
         )]));
 
     let reports = client
@@ -4605,7 +4672,7 @@ async fn test_futures_order_status_reports_fold_history_events_per_order() {
             "PI_XBTUSD",
             "2",
             "0",
-            1680877245500,
+            1_680_877_245_500,
         ),
         futures_history_element(
             "OrderUpdated",
@@ -4614,7 +4681,7 @@ async fn test_futures_order_status_reports_fold_history_events_per_order() {
             "PI_XBTUSD",
             "3",
             "0",
-            1680877245600,
+            1_680_877_245_600,
         ),
         futures_history_element(
             "OrderUpdated",
@@ -4623,7 +4690,7 @@ async fn test_futures_order_status_reports_fold_history_events_per_order() {
             "PI_XBTUSD",
             "3",
             "2",
-            1680877245700,
+            1_680_877_245_700,
         ),
     ]));
 
@@ -4657,7 +4724,7 @@ async fn test_futures_order_status_reports_keep_the_open_snapshot_over_history()
             "PI_XBTUSD",
             "1000",
             "500",
-            1680877245500,
+            1_680_877_245_500,
         )]));
 
     let reports = client
@@ -4700,7 +4767,7 @@ fn filled_history_json(order_uid: &str, order_type: &str) -> String {
         "PI_XBTUSD",
         "1000",
         "1000",
-        1680877245500,
+        1_680_877_245_500,
     )
     .replace(
         r#""orderType":"Limit""#,
@@ -4805,7 +4872,7 @@ async fn test_futures_history_canceled_partial_report_is_priced_from_its_fills(
             "PI_XBTUSD",
             "1000",
             "600",
-            1680877245500,
+            1_680_877_245_500,
         )]));
     *state.fills_response.lock().await = Some(futures_fills_json(&[
         ("f-1", "H-CANCELED-1", "200", "27000.0"),
@@ -4880,7 +4947,7 @@ async fn test_futures_history_filled_report_is_withheld_when_the_fills_read_fail
             "PI_XBTUSD",
             "1000",
             "1000",
-            1680877245600,
+            1_680_877_245_600,
         ),
         futures_history_element(
             "OrderPlaced",
@@ -4889,7 +4956,7 @@ async fn test_futures_history_filled_report_is_withheld_when_the_fills_read_fail
             "PI_XBTUSD",
             "500",
             "0",
-            1680877245500,
+            1_680_877_245_500,
         ),
     ]));
     *state.fills_response.lock().await =
@@ -5130,7 +5197,7 @@ fn executed_history_json(order_uid: &str) -> String {
         "PI_XBTUSD",
         "1000",
         "1000",
-        1680877245500,
+        1_680_877_245_500,
     )])
 }
 
@@ -5300,7 +5367,7 @@ async fn test_futures_mass_status_withholds_a_canceled_partial_with_no_fill() {
             "PI_XBTUSD",
             "1000",
             "400",
-            1680877245500,
+            1_680_877_245_500,
         )]));
 
     let snapshot = client
@@ -5440,7 +5507,7 @@ fn flat_round_trip_history_json() -> String {
             "Sell",
             "1000",
             "1000",
-            1680879600000,
+            1_680_879_600_000,
         ),
         futures_history_element_sided(
             "OrderUpdated",
@@ -5450,7 +5517,7 @@ fn flat_round_trip_history_json() -> String {
             "Buy",
             "1000",
             "1000",
-            1680876000000,
+            1_680_876_000_000,
         ),
     ])
 }
@@ -5490,9 +5557,9 @@ async fn test_futures_mass_status_withholds_a_closing_order_on_a_flat_instrument
 /// unreadable row is too old to withhold. A sibling keeps its report and fills either way, and the
 /// set is incomplete.
 #[rstest]
-#[case::uncached(false, 1680877245500, false, false)]
-#[case::cached(true, 1680877245500, false, true)]
-#[case::uncached_reported_from_a_newer_state(false, 1680877244000, true, true)]
+#[case::uncached(false, 1_680_877_245_500, false, false)]
+#[case::cached(true, 1_680_877_245_500, false, true)]
+#[case::uncached_reported_from_a_newer_state(false, 1_680_877_244_000, true, true)]
 #[tokio::test]
 async fn test_futures_mass_status_withholds_the_fills_of_an_uncached_order_the_read_withholds(
     #[case] order_cached: bool,
@@ -5534,7 +5601,7 @@ async fn test_futures_mass_status_withholds_the_fills_of_an_uncached_order_the_r
             "PI_XBTUSD",
             "1000",
             "0",
-            1680877245000,
+            1_680_877_245_000,
         ),
         futures_history_element(
             "OrderPlaced",
@@ -5543,7 +5610,7 @@ async fn test_futures_mass_status_withholds_the_fills_of_an_uncached_order_the_r
             "PI_XBTUSD",
             "1000",
             "0",
-            1680877245000,
+            1_680_877_245_000,
         ),
     ]));
     *state.fills_response.lock().await = Some(futures_recent_fills_json(&[
@@ -5604,7 +5671,7 @@ async fn test_futures_mass_status_keeps_a_withheld_order_fill_echoing_a_cached_o
             "PI_XBTUSD",
             "oops",
             "0",
-            1680877245500,
+            1_680_877_245_500,
         ),
         futures_history_element(
             "OrderPlaced",
@@ -5613,7 +5680,7 @@ async fn test_futures_mass_status_keeps_a_withheld_order_fill_echoing_a_cached_o
             "PI_XBTUSD",
             "1000",
             "0",
-            1680877245000,
+            1_680_877_245_000,
         ),
     ]));
     *state.fills_response.lock().await = Some(recent_fills_body(&[(
@@ -5677,7 +5744,7 @@ async fn test_futures_mass_status_withholds_a_lone_closing_order_on_a_flat_instr
             "Sell",
             "1000",
             "1000",
-            1680879600000,
+            1_680_879_600_000,
         ),
     ]));
     *state.fills_response.lock().await = Some(futures_recent_fills_json(&[(
@@ -5725,7 +5792,7 @@ async fn test_futures_mass_status_nets_an_open_order_fill_against_a_terminal_one
             "Sell",
             "500",
             "500",
-            1680879600000,
+            1_680_879_600_000,
         ),
     ]));
     *state.fills_response.lock().await = Some(futures_recent_fills_json(&[
@@ -5765,7 +5832,7 @@ async fn test_futures_mass_status_keeps_an_open_order_beside_a_withheld_terminal
             "Sell",
             "1000",
             "1000",
-            1680879600000,
+            1_680_879_600_000,
         ),
     ]));
     *state.fills_response.lock().await = Some(futures_recent_fills_json(&[
@@ -6050,7 +6117,7 @@ async fn test_futures_scoped_order_reads_reject_rows_of_another_held_instrument(
             "PI_XBTUSD",
             "1000",
             "0",
-            1680877245500,
+            1_680_877_245_500,
         ),
         futures_history_element(
             "OrderPlaced",
@@ -6059,7 +6126,7 @@ async fn test_futures_scoped_order_reads_reject_rows_of_another_held_instrument(
             "PF_ETHUSD",
             "1000",
             "0",
-            1680877245500,
+            1_680_877_245_500,
         ),
     ]));
 
@@ -7038,6 +7105,157 @@ async fn test_spot_local_submit_failure_emits_rejected_without_request() {
 }
 
 #[rstest]
+#[case::spot_single(true, false)]
+#[case::spot_list(true, true)]
+#[case::futures_single(false, false)]
+#[case::futures_list(false, true)]
+#[tokio::test]
+async fn test_submit_denies_unsupported_order_type(#[case] spot: bool, #[case] list: bool) {
+    let (client, mut rx, cache, instrument_id, state): (Box<dyn ExecutionClient>, _, _, _, _) =
+        if spot {
+            let (client, rx, cache, state) =
+                connected_spot_client_with_command_responses(CommandResponses::default()).await;
+
+            (
+                Box::new(client),
+                rx,
+                cache,
+                test_spot_instrument_id(),
+                state,
+            )
+        } else {
+            let (client, rx, cache, state) =
+                connected_client_with_command_responses(CommandResponses::default()).await;
+            (Box::new(client), rx, cache, test_instrument_id(), state)
+        };
+
+    while rx.try_recv().is_ok() {}
+
+    let order = OrderTestBuilder::new(OrderType::MarketToLimit)
+        .trader_id(test_trader_id())
+        .strategy_id(test_strategy_id())
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("unsupported-order-type"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("0.1"))
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    if list {
+        client
+            .submit_order_list(submit_order_list_command(
+                "OL-UNSUPPORTED-TYPE",
+                instrument_id,
+                std::slice::from_ref(&order),
+            ))
+            .unwrap();
+    } else {
+        client.submit_order(submit_order_command(&order)).unwrap();
+    }
+
+    let event = rx.try_recv().expect("missing OrderDenied");
+
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+        panic!("Expected OrderDenied, was {event:?}");
+    };
+
+    assert_eq!(denied.client_order_id, order.client_order_id());
+    assert_eq!(denied.reason, "UNSUPPORTED_ORDER_TYPE: MARKET_TO_LIMIT");
+    assert_eq!(
+        rx.try_recv().unwrap_err(),
+        tokio::sync::mpsc::error::TryRecvError::Empty
+    );
+    assert_eq!(state.submit_request_count.load(Ordering::Relaxed), 0);
+    assert_eq!(state.batch_submit_request_count.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
+#[case::spot(true)]
+#[case::futures(false)]
+#[tokio::test]
+async fn test_list_dispatches_supported_order_after_denying_unsupported_sibling(
+    #[case] spot: bool,
+) {
+    let limit_id = ClientOrderId::from("valid-sibling");
+
+    let (client, mut rx, cache, limit, state): (Box<dyn ExecutionClient>, _, _, _, _) = if spot {
+        let (addr, state) = start_test_server().await.unwrap();
+        let (mut client, rx, cache) =
+            create_test_spot_execution_client_with(addr, |config| config.use_ws_trade = true);
+        add_test_spot_account_to_cache(&cache);
+        client.connect().await.unwrap();
+        let limit = add_spot_limit_order_to_cache(&cache, limit_id);
+        (Box::new(client), rx, cache, limit, state)
+    } else {
+        let (client, rx, cache, state) =
+            connected_client_with_command_responses(CommandResponses::default()).await;
+        let limit = add_limit_order_to_cache(&cache, limit_id);
+        (Box::new(client), rx, cache, limit, state)
+    };
+
+    let instrument_id = limit.instrument_id();
+    let unsupported = OrderTestBuilder::new(OrderType::MarketToLimit)
+        .trader_id(test_trader_id())
+        .strategy_id(test_strategy_id())
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("unsupported-sibling"))
+        .quantity(Quantity::from("0.1"))
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(unsupported.clone(), None, None, false)
+        .unwrap();
+    let unsupported_id = unsupported.client_order_id();
+
+    client
+        .submit_order_list(submit_order_list_command(
+            "OL-UNSUPPORTED-SIBLING",
+            instrument_id,
+            &[unsupported, limit],
+        ))
+        .unwrap();
+
+    let event = recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Order(_))).await;
+
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+        panic!("Expected OrderDenied, was {event:?}");
+    };
+
+    let event = recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Order(_))).await;
+
+    let ExecutionEvent::Order(OrderEventAny::Submitted(submitted)) = event else {
+        panic!("Expected OrderSubmitted, was {event:?}");
+    };
+
+    let expected_requests = if spot {
+        &state.submit_request_count
+    } else {
+        &state.batch_submit_request_count
+    };
+
+    wait_for_count(expected_requests, 1).await;
+
+    assert_eq!(denied.client_order_id, unsupported_id);
+    assert_eq!(denied.reason, "UNSUPPORTED_ORDER_TYPE: MARKET_TO_LIMIT");
+    assert_eq!(submitted.client_order_id, limit_id);
+    assert_eq!(
+        state.submit_request_count.load(Ordering::Relaxed),
+        usize::from(spot)
+    );
+    assert_eq!(
+        state.batch_submit_request_count.load(Ordering::Relaxed),
+        usize::from(!spot)
+    );
+    assert_eq!(
+        state.ws_batch_submit_request_count.load(Ordering::Relaxed),
+        0
+    );
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_spot_ambiguous_submit_failure_does_not_emit_rejected() {
     let (client, mut rx, cache, state) =
@@ -7124,6 +7342,53 @@ async fn test_spot_ws_order_response_reaches_engine(#[case] reconnects: usize) {
         accepted.venue_order_id,
         VenueOrderId::from(SPOT_WS_VENUE_ORDER_ID)
     );
+}
+
+/// A same-instrument order list goes out as one WebSocket `batch_add`, and Kraken's documented
+/// response accepts each order with its venue order ID.
+#[rstest]
+#[tokio::test]
+async fn test_spot_ws_batch_add_response_reaches_engine() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) =
+        create_test_spot_execution_client_with(addr, |config| config.use_ws_trade = true);
+    add_test_spot_account_to_cache(&cache);
+    client.connect().await.unwrap();
+    let ids = [
+        ClientOrderId::new("spot-ws-batch-001"),
+        ClientOrderId::new("spot-ws-batch-002"),
+    ];
+    let orders: Vec<OrderAny> = ids
+        .iter()
+        .map(|id| add_spot_limit_order_to_cache(&cache, *id))
+        .collect();
+
+    client
+        .submit_order_list(submit_order_list_command(
+            "SPOT-WS-BATCH",
+            test_spot_instrument_id(),
+            &orders,
+        ))
+        .unwrap();
+
+    for (index, client_order_id) in ids.iter().enumerate() {
+        let event = recv_until(&mut rx, |event| {
+            matches!(
+                event,
+                ExecutionEvent::Order(OrderEventAny::Accepted(accepted))
+                    if accepted.client_order_id == *client_order_id
+            )
+        })
+        .await;
+        let ExecutionEvent::Order(OrderEventAny::Accepted(accepted)) = event else {
+            panic!("Expected OrderAccepted event, was {event:?}");
+        };
+        assert_eq!(
+            accepted.venue_order_id,
+            VenueOrderId::from(spot_ws_batch_venue_order_id(index).as_str())
+        );
+    }
+    assert_eq!(state.batch_submit_request_count.load(Ordering::Relaxed), 0);
 }
 
 #[rstest]
@@ -8396,6 +8661,117 @@ async fn test_futures_query_order_names_the_report_by_the_cached_order() {
         report.client_order_id,
         Some(ClientOrderId::from("query-owner-1"))
     );
+}
+
+/// The form fields of the first recorded command request to `path`, sorted, without the nonce.
+async fn recorded_command_fields(state: &TestServerState, path: &str) -> Vec<(String, String)> {
+    let requests = state.command_requests.lock().await;
+    let request = requests
+        .iter()
+        .find(|request| request.starts_with(path))
+        .expect("the command request is recorded");
+
+    let mut fields: Vec<(String, String)> = request
+        .split_whitespace()
+        .skip(1)
+        .flat_map(|part| part.split('&'))
+        .filter_map(|pair| pair.split_once('='))
+        .filter(|(key, _)| *key != "nonce")
+        .map(|(key, value)| (key.to_string(), value.to_string()))
+        .collect();
+    fields.sort();
+    fields
+}
+
+fn stop_limit_modify_command(
+    order: &OrderAny,
+    quantity: Option<&str>,
+    price: Option<&str>,
+    trigger_price: Option<&str>,
+) -> ModifyOrder {
+    ModifyOrder::new(
+        test_trader_id(),
+        Some(*KRAKEN_CLIENT_ID),
+        test_strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        Some(VenueOrderId::from("V-1")),
+        quantity.map(Quantity::from),
+        price.map(Price::from),
+        trigger_price.map(Price::from),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+fn add_stop_limit_order_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: ClientOrderId,
+) -> OrderAny {
+    let order = OrderTestBuilder::new(OrderType::StopLimit)
+        .trader_id(test_trader_id())
+        .strategy_id(test_strategy_id())
+        .instrument_id(test_instrument_id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1"))
+        .price(Price::from("47500"))
+        .trigger_price(Price::from("47600"))
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    order
+}
+
+/// A modify's new trigger price reaches Kraken Futures as the edit's `stopPrice`, beside any new
+/// size or limit price, and a modify without one sends none.
+#[rstest]
+#[case::trigger_only(None, None, Some("48000"), &[("orderId", "V-1"), ("stopPrice", "48000")])]
+#[case::price_and_trigger(
+    None,
+    Some("47900"),
+    Some("48000"),
+    &[("limitPrice", "47900"), ("orderId", "V-1"), ("stopPrice", "48000")]
+)]
+#[case::quantity_and_trigger(
+    Some("2"),
+    None,
+    Some("48000"),
+    &[("orderId", "V-1"), ("qtyMode", "ABSOLUTE"), ("size", "2"), ("stopPrice", "48000")]
+)]
+#[case::price_only(None, Some("47900"), None, &[("limitPrice", "47900"), ("orderId", "V-1")])]
+#[tokio::test]
+async fn test_futures_modify_sends_trigger_price_as_stop_price(
+    #[case] quantity: Option<&str>,
+    #[case] price: Option<&str>,
+    #[case] trigger_price: Option<&str>,
+    #[case] expected: &[(&str, &str)],
+) {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let order =
+        add_stop_limit_order_to_cache(&cache, ClientOrderId::new("futures-modify-trigger-001"));
+
+    client
+        .modify_order(stop_limit_modify_command(
+            &order,
+            quantity,
+            price,
+            trigger_price,
+        ))
+        .unwrap();
+
+    wait_for_count(&state.modify_request_count, 1).await;
+    let fields = recorded_command_fields(&state, "/derivatives/api/v3/editorder").await;
+    let expected: Vec<(String, String)> = expected
+        .iter()
+        .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+        .collect();
+    assert_eq!(fields, expected);
 }
 
 /// A cancel or edit names the order by one identifier: its venue order ID when known, else its
@@ -11406,4 +11782,836 @@ async fn test_whole_cancel_all_failure_does_not_emit_cancel_rejected() {
         matches!(event, OrderEventAny::CancelRejected(_))
     })
     .await;
+}
+
+/// An order another client places while the node runs reconciles from its executions frames: the
+/// engine creates it, fills it with its own trade's ID and fee, and books it to the EXTERNAL
+/// position. An amendment to a trigger the adapter cannot read leaves the fill applied once.
+#[rstest]
+#[case::market_sell(
+    CAPTURED_MARKET_ORDER_ID,
+    None,
+    OrderType::Market,
+    None,
+    "TCAP15-MARKT-000015",
+    dec!(0.009121),
+    PositionSide::Short
+)]
+#[case::stop_loss_limit_buy(
+    CAPTURED_STOP_ORDER_ID,
+    None,
+    OrderType::StopLimit,
+    Some(true),
+    "TCAP14-STLMT-000014",
+    dec!(0.009122),
+    PositionSide::Long
+)]
+#[case::stop_loss_limit_buy_amended_to_relative_trigger(
+    CAPTURED_STOP_ORDER_ID,
+    Some(json!({"reference": "last", "price": 1.0, "price_type": "pct"})),
+    OrderType::StopLimit,
+    Some(true),
+    "TCAP14-STLMT-000014",
+    dec!(0.009122),
+    PositionSide::Long
+)]
+fn test_spot_external_orders_reconcile_filled_with_their_fills(
+    #[case] order_id: &str,
+    #[case] amended_triggers: Option<Value>,
+    #[case] order_type: OrderType,
+    #[case] triggered: Option<bool>,
+    #[case] trade_id: &str,
+    #[case] fee: Decimal,
+    #[case] position_side: PositionSide,
+) {
+    let instrument = usdc_eur_pair();
+    let harness = usdc_eur_harness();
+    let mut frames = captured_spot_frames(order_id);
+
+    if let Some(triggers) = amended_triggers {
+        let mut amended = serde_json::to_value(&frames[0]).unwrap();
+        amended["exec_type"] = json!("amended");
+        amended["order_status"] = json!("new");
+        amended["triggers"] = triggers;
+        frames.insert(1, serde_json::from_value(amended).unwrap());
+    }
+    let events = dispatch_spot_frames(&frames, &WsDispatchState::new(), &instrument);
+    assert!(
+        events
+            .iter()
+            .flatten()
+            .all(|event| matches!(event, ExecutionEvent::Report(_)))
+    );
+    replay_spot_events(&harness, events);
+
+    let cache = harness.cache().borrow();
+    let orders = cache.orders(None, None, None, None, None);
+    assert_eq!(orders.len(), 1);
+    let order = &orders[0];
+    assert_eq!(
+        (
+            order.client_order_id(),
+            order.order_type(),
+            order.status(),
+            order.filled_qty(),
+            order.is_triggered(),
+            order.tags(),
+        ),
+        (
+            ClientOrderId::from(order_id),
+            order_type,
+            OrderStatus::Filled,
+            Quantity::from("5.00000000"),
+            triggered,
+            None,
+        ),
+    );
+    assert_eq!(order.trade_ids(), vec![&TradeId::from(trade_id)]);
+    assert_eq!(
+        order.commissions().values().copied().collect::<Vec<_>>(),
+        vec![Money::from_decimal(fee, Currency::EUR()).unwrap()],
+    );
+
+    let position = cache
+        .position(&PositionId::from("USDC/EUR.KRAKEN-EXTERNAL"))
+        .expect("external position");
+    assert_eq!(
+        (position.is_open(), position.side, position.quantity),
+        (true, position_side, Quantity::from("5.00000000")),
+    );
+}
+
+/// An engine harness for `usdc_eur_pair` with a cash account holding 100 EUR and 100 USDC.
+fn usdc_eur_harness() -> ExecutionHarness {
+    let harness = ExecutionHarness::new(
+        test_trader_id(),
+        *KRAKEN_CLIENT_ID,
+        test_account_id(),
+        usdc_eur_pair(),
+    );
+    let balance = |currency: &str| {
+        let total = Money::from(format!("100 {currency}").as_str());
+        AccountBalance::new(total, Money::new(0.0, total.currency), total)
+    };
+    let account_state = AccountState::new(
+        test_account_id(),
+        AccountType::Cash,
+        vec![balance("EUR"), balance("USDC")],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    );
+    let account = AccountAny::from_events(&[account_state]).unwrap();
+    harness.cache().borrow_mut().add_account(account).unwrap();
+    harness
+}
+
+/// Reconciles each report in `events` in the harness's engine and processes each order event.
+fn replay_spot_events(harness: &ExecutionHarness, events: Vec<Vec<ExecutionEvent>>) {
+    for event in events.into_iter().flatten() {
+        match event {
+            ExecutionEvent::Report(report) => harness
+                .exec_engine()
+                .borrow_mut()
+                .reconcile_execution_report(&report),
+            ExecutionEvent::Order(event) => harness.exec_engine().borrow_mut().process(&event),
+            other => panic!("expected a report or an order event, received {other:?}"),
+        }
+    }
+}
+
+/// An executions frame from its JSON fields.
+fn spot_frame(fields: Value) -> KrakenWsExecutionData {
+    serde_json::from_value(fields).unwrap()
+}
+
+/// `frame` with the JSON fields in `patch` replaced.
+fn patched_spot_frame(frame: &KrakenWsExecutionData, patch: Value) -> KrakenWsExecutionData {
+    let Value::Object(patch) = patch else {
+        panic!("expected the patch as a JSON object");
+    };
+    let mut value = serde_json::to_value(frame).unwrap();
+    for (key, field) in patch {
+        value[key] = field;
+    }
+    spot_frame(value)
+}
+
+/// The engine's only order.
+fn only_order(harness: &ExecutionHarness) -> OrderAny {
+    let cache = harness.cache().borrow();
+    let orders = cache.orders(None, None, None, None, None);
+    assert_eq!(orders.len(), 1);
+    orders[0].clone()
+}
+
+/// A tracked stop's amendment that omits `order_type` moves the engine order's trigger and limit
+/// to the static prices it states.
+#[rstest]
+fn test_spot_tracked_stop_amended_without_order_type_moves_its_trigger() {
+    let instrument = usdc_eur_pair();
+    let harness = usdc_eur_harness();
+    let client_order_id = ClientOrderId::from("O-TRACKED-STOP");
+    let quantity = Quantity::from("5.00000000");
+    let order = OrderTestBuilder::new(OrderType::StopLimit)
+        .trader_id(test_trader_id())
+        .strategy_id(test_strategy_id())
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(quantity)
+        .price(Price::from("0.9132"))
+        .trigger_price(Price::from("0.9121"))
+        .build();
+    let submitted = TestOrderEventStubs::submitted(&order, test_account_id());
+    {
+        let mut cache = harness.cache().borrow_mut();
+        cache
+            .add_order(order, None, Some(*KRAKEN_CLIENT_ID), false)
+            .unwrap();
+        cache.update_order(&submitted).unwrap();
+    }
+    let state = WsDispatchState::new();
+    state.register_identity(
+        client_order_id,
+        OrderIdentity {
+            strategy_id: test_strategy_id(),
+            instrument_id: instrument.id(),
+            order_side: OrderSide::Buy,
+            order_type: OrderType::StopLimit,
+            quantity,
+        },
+    );
+    let new = spot_frame(json!({
+        "order_id": "OTRK01-STLMT-000001",
+        "cl_ord_id": "O-TRACKED-STOP",
+        "exec_type": "new",
+        "order_status": "new",
+        "symbol": "USDC/EUR",
+        "order_qty": 5.0,
+        "timestamp": "2026-01-01T00:00:01.000000Z",
+    }));
+    let amended = spot_frame(json!({
+        "order_id": "OTRK01-STLMT-000001",
+        "exec_type": "amended",
+        "order_status": "new",
+        "order_qty": 5.0,
+        "limit_price": 0.914,
+        "triggers": {"reference": "last", "price": 0.9125, "price_type": "static"},
+        "timestamp": "2026-01-01T00:00:02.000000Z",
+    }));
+
+    replay_spot_events(
+        &harness,
+        dispatch_spot_frames(&[new, amended], &state, &instrument),
+    );
+
+    let order = only_order(&harness);
+    assert_eq!(
+        (order.status(), order.trigger_price(), order.price()),
+        (
+            OrderStatus::Accepted,
+            Some(Price::from("0.9125")),
+            Some(Price::from("0.9140")),
+        ),
+    );
+}
+
+/// A trade that states no cumulative quantity still counts toward the order's, so a later
+/// amendment that states none moves the engine order's quantity and limit rather than reading as
+/// a fill decrease.
+#[rstest]
+fn test_spot_external_amendment_after_trade_without_cumulative_moves_order_terms() {
+    let instrument = usdc_eur_pair();
+    let harness = usdc_eur_harness();
+    let captured = captured_spot_frames(CAPTURED_STOP_ORDER_ID);
+    let mut frames = captured[..3].to_vec();
+    frames.push(patched_spot_frame(
+        &captured[3],
+        json!({"last_qty": 2.0, "cost": 1.8244, "cum_qty": null, "cum_cost": null, "avg_price": null}),
+    ));
+    frames.push(spot_frame(json!({
+        "order_id": CAPTURED_STOP_ORDER_ID,
+        "exec_type": "amended",
+        "order_status": "partially_filled",
+        "order_qty": 8.0,
+        "limit_price": 0.914,
+        "timestamp": "2026-01-01T00:00:05.000000Z",
+    })));
+
+    replay_spot_events(
+        &harness,
+        dispatch_spot_frames(&frames, &WsDispatchState::new(), &instrument),
+    );
+
+    let order = only_order(&harness);
+    assert_eq!(
+        (
+            order.status(),
+            order.quantity(),
+            order.price(),
+            order.filled_qty(),
+        ),
+        (
+            OrderStatus::PartiallyFilled,
+            Quantity::from("8.00000000"),
+            Some(Price::from("0.9140")),
+            Quantity::from("2.00000000"),
+        ),
+    );
+    assert_eq!(
+        order.trade_ids(),
+        vec![&TradeId::from("TCAP14-STLMT-000014")]
+    );
+}
+
+/// The open-orders snapshot entry Kraken sends on resubscribe for a kept order another client grew
+/// from 5 to 10 during a reconnect, with the fields of the captured entry.
+fn grown_order_snapshot_entry() -> KrakenWsExecutionData {
+    patched_spot_frame(
+        &captured_snapshot_frames()[3],
+        json!({
+            "order_id": CAPTURED_STOP_ORDER_ID,
+            "order_type": "stop-loss-limit",
+            "order_qty": 10.0,
+            "limit_price": 0.9132,
+            "timestamp": "2026-01-01T00:00:09.000000Z",
+        }),
+    )
+}
+
+/// A kept order another client grows from 5 to 10 while the stream reconnects takes the grown
+/// quantity from Kraken's open-orders snapshot, so a trade at cumulative 5 leaves 5 open and the
+/// next trade fills them.
+#[rstest]
+fn test_spot_external_order_grown_during_reconnect_fills_past_kept_quantity() {
+    let instrument = usdc_eur_pair();
+    let harness = usdc_eur_harness();
+    let state = WsDispatchState::new();
+    let captured = captured_spot_frames(CAPTURED_STOP_ORDER_ID);
+    let trade = |exec_id: &str, cum_qty: Value, cum_cost: Value, timestamp: &str| {
+        patched_spot_frame(
+            &captured[3],
+            json!({"exec_id": exec_id, "cum_qty": cum_qty, "cum_cost": cum_cost, "timestamp": timestamp}),
+        )
+    };
+    let mut frames = captured[..3].to_vec();
+    frames.push(grown_order_snapshot_entry());
+    frames.push(trade(
+        "TGAP01-AAAAA-000001",
+        json!(5.0),
+        json!(4.561),
+        "2026-01-01T00:00:10.000000Z",
+    ));
+
+    replay_spot_events(&harness, dispatch_spot_frames(&frames, &state, &instrument));
+
+    let order = only_order(&harness);
+    assert_eq!(
+        (order.status(), order.quantity(), order.leaves_qty()),
+        (
+            OrderStatus::PartiallyFilled,
+            Quantity::from("10.00000000"),
+            Quantity::from("5.00000000"),
+        ),
+    );
+
+    let filled = patched_spot_frame(
+        &captured[4],
+        json!({"cum_qty": 10.0, "cum_cost": 9.122, "timestamp": "2026-01-01T00:00:12.000000Z"}),
+    );
+    replay_spot_events(
+        &harness,
+        dispatch_spot_frames(
+            &[
+                trade(
+                    "TGAP02-AAAAA-000002",
+                    json!(10.0),
+                    json!(9.122),
+                    "2026-01-01T00:00:11.000000Z",
+                ),
+                filled,
+            ],
+            &state,
+            &instrument,
+        ),
+    );
+
+    let order = only_order(&harness);
+    assert_eq!(
+        (order.status(), order.filled_qty()),
+        (OrderStatus::Filled, Quantity::from("10.00000000")),
+    );
+    assert_eq!(
+        order.trade_ids(),
+        vec![
+            &TradeId::from("TGAP01-AAAAA-000001"),
+            &TradeId::from("TGAP02-AAAAA-000002"),
+        ]
+    );
+}
+
+/// A kept order whose amendment is lost while the stream reconnects takes the amended quantity
+/// from Kraken's open-orders snapshot.
+#[rstest]
+fn test_spot_external_order_amended_during_reconnect_takes_snapshot_quantity() {
+    let instrument = usdc_eur_pair();
+    let harness = usdc_eur_harness();
+    let state = WsDispatchState::new();
+    let captured = captured_snapshot_frames();
+    let lost_amendment = [
+        captured[0].clone(),
+        captured[1].clone(),
+        captured[3].clone(),
+    ];
+
+    replay_spot_events(
+        &harness,
+        dispatch_spot_frames(&lost_amendment, &state, &instrument),
+    );
+
+    let order = only_order(&harness);
+    assert_eq!(
+        (
+            order.status(),
+            order.quantity(),
+            order.price(),
+            order.filled_qty(),
+        ),
+        (
+            OrderStatus::Accepted,
+            Quantity::from("6.00000000"),
+            Some(Price::from("0.4571")),
+            Quantity::from("0.00000000"),
+        ),
+    );
+
+    replay_spot_events(
+        &harness,
+        dispatch_spot_frames(&captured[4..], &state, &instrument),
+    );
+
+    let order = only_order(&harness);
+    assert_eq!(
+        (order.status(), order.quantity()),
+        (OrderStatus::Canceled, Quantity::from("6.00000000")),
+    );
+}
+
+/// Kraken's open-orders snapshot states no cumulative quantity, so a kept order it restates keeps
+/// the fills made before the reconnect while taking the quantity grown during it.
+#[rstest]
+fn test_spot_external_order_snapshot_keeps_fills_made_before_reconnect() {
+    let instrument = usdc_eur_pair();
+    let harness = usdc_eur_harness();
+    let state = WsDispatchState::new();
+    let captured = captured_snapshot_frames();
+    let trade = patched_spot_frame(
+        &captured_spot_frames(CAPTURED_STOP_ORDER_ID)[3],
+        json!({
+            "order_id": CAPTURED_LIMIT_ORDER_ID,
+            "order_type": "limit",
+            "exec_id": "TGAP03-AAAAA-000003",
+            "last_qty": 2.0,
+            "last_price": 0.4571,
+            "cost": 0.9142,
+            "cum_qty": 2.0,
+            "cum_cost": 0.9142,
+            "avg_price": 0.4571,
+            "liquidity_ind": "m",
+            "timestamp": "2026-01-01T00:00:01.500000Z",
+        }),
+    );
+    let snapshot = patched_spot_frame(
+        &captured[3],
+        json!({"order_qty": 10.0, "order_status": "partially_filled", "cum_cost": 0.9142}),
+    );
+    let frames = [captured[0].clone(), captured[1].clone(), trade, snapshot];
+
+    replay_spot_events(&harness, dispatch_spot_frames(&frames, &state, &instrument));
+
+    let order = only_order(&harness);
+    assert_eq!(
+        (
+            order.status(),
+            order.quantity(),
+            order.filled_qty(),
+            order.leaves_qty(),
+        ),
+        (
+            OrderStatus::PartiallyFilled,
+            Quantity::from("10.00000000"),
+            Quantity::from("2.00000000"),
+            Quantity::from("8.00000000"),
+        ),
+    );
+}
+
+/// An order first seen in Kraken's open-orders snapshot, placed while the stream was down, takes
+/// its shape from the snapshot entry, so a later frame stating only what changed keeps its terms.
+#[rstest]
+fn test_spot_external_order_first_seen_in_snapshot_keeps_its_terms() {
+    let instrument = usdc_eur_pair();
+    let harness = usdc_eur_harness();
+    let captured = captured_snapshot_frames();
+
+    replay_spot_events(
+        &harness,
+        dispatch_spot_frames(&captured[3..], &WsDispatchState::new(), &instrument),
+    );
+
+    let order = only_order(&harness);
+    assert_eq!(
+        (order.status(), order.quantity(), order.price()),
+        (
+            OrderStatus::Canceled,
+            Quantity::from("6.00000000"),
+            Some(Price::from("0.4571")),
+        ),
+    );
+}
+
+/// The executions frames of a limit buy of 0.0002 BTC/USDT at 70000.0 placed outside the node.
+fn external_btc_frame(fields: Value) -> String {
+    let Value::Object(fields) = fields else {
+        panic!("expected the fields as a JSON object");
+    };
+    let mut data = json!({
+        "order_id": "OGAP01-AAAAA-000001",
+        "symbol": "BTC/USDT",
+        "side": "buy",
+        "order_type": "limit",
+        "timestamp": "2026-04-11T00:00:00.000000Z",
+    });
+
+    for (key, field) in fields {
+        data[key] = field;
+    }
+    json!({"channel": "executions", "type": "update", "data": [data]}).to_string()
+}
+
+/// After the executions stream reconnects, the client resubscribes asking for a snapshot of the
+/// open orders, so a kept order's trade carries the quantity the snapshot restates.
+#[rstest]
+#[tokio::test]
+async fn test_spot_ws_reconnect_restates_kept_orders_from_snapshot() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) = create_test_spot_execution_client_with(addr, |_| {});
+    add_test_spot_account_to_cache(&cache);
+    client.connect().await.unwrap();
+    let is_report = |event: &ExecutionEvent| matches!(event, ExecutionEvent::Report(_));
+    let push = |message: String| state.ws_message_tx.send(message).unwrap();
+
+    push(external_btc_frame(json!({
+        "exec_type": "pending_new",
+        "order_status": "pending_new",
+        "order_qty": 0.0002,
+        "limit_price": 70000.0,
+        "time_in_force": "GTC",
+    })));
+    recv_until(&mut rx, is_report).await;
+    state.ws_message_tx.send(WS_DROP.to_string()).unwrap();
+    wait_until_async(
+        || async { state.ws_execution_subscriptions.lock().unwrap().len() >= 2 },
+        Duration::from_secs(5),
+    )
+    .await;
+    let snapshot = {
+        let mut message: Value = serde_json::from_str(&external_btc_frame(json!({
+            "exec_type": "new",
+            "order_status": "new",
+            "order_qty": 0.0003,
+            "cum_cost": 0.0,
+            "limit_price": 70000.0,
+            "time_in_force": "GTC",
+            "amended": true,
+        })))
+        .unwrap();
+        message["type"] = json!("snapshot");
+        message.to_string()
+    };
+    push(snapshot);
+    recv_until(&mut rx, is_report).await;
+    push(external_btc_frame(json!({
+        "exec_type": "trade",
+        "exec_id": "TGAP01-AAAAA-000001",
+        "order_status": "partially_filled",
+        "last_qty": 0.0002,
+        "last_price": 70000.0,
+        "cum_qty": 0.0002,
+        "avg_price": 70000.0,
+        "liquidity_ind": "m",
+        "timestamp": "2026-04-11T00:00:01.000000Z",
+    })));
+    let traded = recv_until(&mut rx, is_report).await;
+
+    let subscriptions = state.ws_execution_subscriptions.lock().unwrap().clone();
+    assert_eq!(
+        subscriptions
+            .iter()
+            .map(|params| (params["snap_orders"].clone(), params["snap_trades"].clone()))
+            .collect::<Vec<_>>(),
+        vec![(json!(false), json!(false)), (json!(true), json!(false))],
+    );
+    let ExecutionEvent::Report(ExecutionReport::OrderWithFills(report, fills)) = &traded else {
+        panic!("expected the trade's status with its fill, received {traded:?}");
+    };
+    assert_eq!(
+        (report.order_status, report.quantity, fills.len()),
+        (
+            OrderStatus::PartiallyFilled,
+            Quantity::from("0.00030000"),
+            1
+        ),
+    );
+}
+
+/// A shape kept before the client disconnects is dropped when it connects again: that
+/// subscription restates no open order, so a later trade of the order reports alone.
+#[rstest]
+#[tokio::test]
+async fn test_spot_connect_drops_order_shapes_kept_before() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) = create_test_spot_execution_client_with(addr, |_| {});
+    add_test_spot_account_to_cache(&cache);
+    client.connect().await.unwrap();
+    let is_report = |event: &ExecutionEvent| matches!(event, ExecutionEvent::Report(_));
+    let push = |message: String| state.ws_message_tx.send(message).unwrap();
+
+    push(external_btc_frame(json!({
+        "exec_type": "pending_new",
+        "order_status": "pending_new",
+        "order_qty": 0.0002,
+        "limit_price": 70000.0,
+        "time_in_force": "GTC",
+    })));
+    recv_until(&mut rx, is_report).await;
+    client.disconnect().await.unwrap();
+    client.connect().await.unwrap();
+    wait_for_count(&state.ws_connection_count, 2).await;
+    push(external_btc_frame(json!({
+        "exec_type": "trade",
+        "exec_id": "TGAP02-AAAAA-000002",
+        "order_status": "partially_filled",
+        "last_qty": 0.0001,
+        "last_price": 70000.0,
+        "cum_qty": 0.0001,
+        "avg_price": 70000.0,
+        "liquidity_ind": "m",
+        "timestamp": "2026-04-11T00:00:01.000000Z",
+    })));
+
+    let traded = recv_until(&mut rx, is_report).await;
+    assert!(
+        matches!(&traded, ExecutionEvent::Report(ExecutionReport::Order(_))),
+        "expected the trade's status alone, received {traded:?}"
+    );
+}
+
+#[rstest]
+fn test_spot_external_reconnect_leaves_missed_fill_for_rest() {
+    let instrument = usdc_eur_pair();
+    let harness = usdc_eur_harness();
+    let state = WsDispatchState::new();
+    let captured = captured_snapshot_frames();
+    let snapshot = patched_spot_frame(
+        &captured[3],
+        json!({"order_qty": 10.0, "order_status": "partially_filled", "cum_qty": 2.0}),
+    );
+    let trade = patched_spot_frame(
+        &captured_spot_frames(CAPTURED_STOP_ORDER_ID)[3],
+        json!({
+            "order_id": CAPTURED_LIMIT_ORDER_ID,
+            "order_type": "limit",
+            "exec_id": "TGAP02-AAAAA-000002",
+            "last_qty": 2.0,
+            "last_price": 0.4571,
+            "cum_qty": 4.0,
+            "cum_cost": 1.8284,
+            "avg_price": 0.4571,
+            "timestamp": "2026-01-01T00:00:10.000000Z"
+        }),
+    );
+
+    let frames = [
+        captured[0].clone(),
+        captured[1].clone(),
+        snapshot,
+        trade.clone(),
+    ];
+
+    replay_spot_events(&harness, dispatch_spot_frames(&frames, &state, &instrument));
+    let before_rest = only_order(&harness);
+
+    let missed = patched_spot_frame(
+        &trade,
+        json!({
+            "exec_id": "TGAP01-AAAAA-000001",
+            "cum_qty": 2.0,
+            "cum_cost": 0.9142,
+            "timestamp": "2026-01-01T00:00:03.000000Z"
+        }),
+    );
+    let missed = parse_ws_fill_report(
+        &missed,
+        &instrument,
+        test_account_id(),
+        UnixNanos::default(),
+    )
+    .unwrap();
+    harness
+        .exec_engine()
+        .borrow_mut()
+        .reconcile_execution_report(&ExecutionReport::Fill(Box::new(missed)));
+
+    let amend = spot_frame(json!({
+        "order_id": CAPTURED_LIMIT_ORDER_ID,
+        "exec_type": "amended",
+        "order_status": "partially_filled",
+        "order_qty": 12.0,
+        "limit_price": 0.4572,
+        "timestamp": "2026-01-01T00:00:11.000000Z",
+    }));
+    replay_spot_events(
+        &harness,
+        dispatch_spot_frames(&[amend], &state, &instrument),
+    );
+    let after_rest = only_order(&harness);
+
+    assert_eq!(before_rest.filled_qty(), Quantity::from("2.00000000"));
+    assert_eq!(
+        before_rest.trade_ids(),
+        vec![&TradeId::from("TGAP02-AAAAA-000002")]
+    );
+    assert_eq!(
+        (
+            after_rest.filled_qty(),
+            after_rest.quantity(),
+            after_rest.price()
+        ),
+        (
+            Quantity::from("4.00000000"),
+            Quantity::from("12.00000000"),
+            Some(Price::from("0.4572"))
+        )
+    );
+    assert_eq!(
+        after_rest.trade_ids(),
+        vec![
+            &TradeId::from("TGAP02-AAAAA-000002"),
+            &TradeId::from("TGAP01-AAAAA-000001")
+        ]
+    );
+}
+
+#[rstest]
+#[case::missing_side("side")]
+#[case::missing_exec_id("exec_id")]
+fn test_spot_external_failed_trade_parse_can_retry(#[case] field: &str) {
+    let instrument = usdc_eur_pair();
+    let harness = usdc_eur_harness();
+    let state = WsDispatchState::new();
+    let captured = captured_spot_frames(CAPTURED_MARKET_ORDER_ID);
+    let invalid = patched_spot_frame(&captured[2], json!({ (field): null }));
+    let frames = [captured[0].clone(), captured[1].clone(), invalid];
+    replay_spot_events(&harness, dispatch_spot_frames(&frames, &state, &instrument));
+    let before_retry = only_order(&harness);
+
+    replay_spot_events(
+        &harness,
+        dispatch_spot_frames(&captured[2..], &state, &instrument),
+    );
+    let after_retry = only_order(&harness);
+
+    assert_eq!(before_retry.status(), OrderStatus::Accepted);
+    assert_eq!(before_retry.filled_qty(), Quantity::from("0.00000000"));
+    assert!(before_retry.trade_ids().is_empty());
+    assert_eq!(after_retry.status(), OrderStatus::Filled);
+    assert_eq!(after_retry.filled_qty(), Quantity::from("5.00000000"));
+    assert_eq!(
+        after_retry.trade_ids(),
+        vec![&TradeId::from("TCAP15-MARKT-000015")]
+    );
+}
+
+#[rstest]
+fn test_spot_external_snapshot_preserves_iceberg_display_and_gtd_expiry() {
+    let instrument = usdc_eur_pair();
+    let harness = usdc_eur_harness();
+    let captured = captured_snapshot_frames();
+    let snapshot = patched_spot_frame(
+        &captured[3],
+        json!({
+            "order_type": "iceberg",
+            "time_in_force": "GTD",
+            "expire_time": "2026-01-02T00:00:00Z",
+            "post_only": true,
+            "display_qty": 1.5,
+        }),
+    );
+    let frames = [snapshot, captured[4].clone()];
+    replay_spot_events(
+        &harness,
+        dispatch_spot_frames(&frames, &WsDispatchState::new(), &instrument),
+    );
+    let order = only_order(&harness);
+
+    assert_eq!(order.status(), OrderStatus::Canceled);
+    assert_eq!(order.quantity(), Quantity::from("6.00000000"));
+    assert_eq!(order.time_in_force(), TimeInForce::Gtd);
+    assert_eq!(
+        order.expire_time(),
+        Some(UnixNanos::from(1_767_312_000_000_000_000_u64))
+    );
+    assert_eq!(order.display_qty(), Some(Quantity::from("1.50000000")));
+    assert!(order.is_post_only());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_ws_reconnect_preserves_snapshot_opt_out() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let config = create_test_spot_exec_config(addr);
+
+    let mut client = KrakenSpotWebSocketClient::new(
+        KrakenDataClientConfig {
+            api_key: Some(config.api_key.clone()),
+            api_secret: Some(config.api_secret.clone()),
+            base_url: config.base_url.clone(),
+            ws_private_url: Some(config.ws_url()),
+            ..Default::default()
+        },
+        CancellationToken::new(),
+        None,
+    )
+    .unwrap();
+
+    client.connect().await.unwrap();
+    client.authenticate().await.unwrap();
+    client.subscribe_executions(false, false).await.unwrap();
+
+    wait_until_async(
+        || async { state.ws_execution_subscriptions.lock().unwrap().len() == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+    state.ws_message_tx.send(WS_DROP.to_string()).unwrap();
+    wait_until_async(
+        || async { state.ws_execution_subscriptions.lock().unwrap().len() >= 2 },
+        Duration::from_secs(5),
+    )
+    .await;
+    client.close().await.unwrap();
+
+    let subscriptions = state.ws_execution_subscriptions.lock().unwrap();
+    assert_eq!(
+        subscriptions
+            .iter()
+            .map(|params| (params["snap_orders"].clone(), params["snap_trades"].clone()))
+            .collect::<Vec<_>>(),
+        vec![(json!(false), json!(false)), (json!(false), json!(false))],
+    );
 }

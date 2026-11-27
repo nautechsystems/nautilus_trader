@@ -20,13 +20,14 @@ use std::{
 
 use async_trait::async_trait;
 use nautilus_common::{
-    cache::Cache,
+    cache::{Cache, CacheView},
     clients::ExecutionClient,
     clock::{Clock, VirtualClock},
     messages::execution::{
         BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
         QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
+    msgbus::{InstrumentSubscription, TypedHandler},
 };
 use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
@@ -35,7 +36,7 @@ use nautilus_model::{
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     orders::OrderAny,
     reports::FillReport,
     types::{AccountBalance, MarginBalance},
@@ -56,6 +57,7 @@ pub struct StubExecutionClient {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     received_instruments: Rc<RefCell<Vec<InstrumentAny>>>,
+    instrument_subscription: Option<Rc<InstrumentSubscription>>,
     start_count: Rc<Cell<usize>>,
     stop_count: Rc<Cell<usize>>,
     reset_count: Rc<Cell<usize>>,
@@ -91,6 +93,7 @@ impl StubExecutionClient {
             clock: clock.unwrap_or_else(|| Rc::new(RefCell::new(VirtualClock::new()))),
             cache: Rc::new(RefCell::new(Cache::new(None, None))),
             received_instruments: Rc::new(RefCell::new(Vec::new())),
+            instrument_subscription: None,
             start_count: Rc::new(Cell::new(0)),
             stop_count: Rc::new(Cell::new(0)),
             reset_count: Rc::new(Cell::new(0)),
@@ -112,6 +115,32 @@ impl StubExecutionClient {
     #[must_use]
     pub fn with_handles_all_order_venues(mut self) -> Self {
         self.handles_all_order_venues = true;
+        self
+    }
+
+    /// Subscribes the stub to instrument updates for its live routing tests.
+    #[must_use]
+    pub fn with_instrument_subscription(mut self, cache: CacheView) -> Self {
+        let received = Rc::clone(&self.received_instruments);
+        let client_id = self.client_id;
+        let native_venue = self.venue;
+        let handles_all = self.handles_all_order_venues;
+
+        let handler = TypedHandler::from(move |instrument: &InstrumentAny| {
+            let venue = instrument.id().venue;
+            if venue == native_venue || {
+                let cache = cache.borrow();
+                cache.client_id_for_venue(&venue) == Some(&client_id)
+                    && (handles_all || cache.client_route_for_venue(&venue).is_some())
+            } {
+                received.borrow_mut().push(instrument.clone());
+            }
+        });
+
+        self.instrument_subscription = Some(Rc::new(InstrumentSubscription::new(
+            "data.instrument.*".into(),
+            handler,
+        )));
         self
     }
 

@@ -97,13 +97,9 @@ impl ParquetDataCatalog {
     /// use nautilus_core::UnixNanos;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     ///
     /// // Consolidate all files in the catalog
     /// catalog.consolidate_catalog(None, None, None, None)?;
@@ -170,13 +166,9 @@ impl ParquetDataCatalog {
     /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     ///
     /// // Consolidate all quote files for a specific instrument
     /// catalog.consolidate_data(
@@ -465,13 +457,9 @@ impl ParquetDataCatalog {
     /// use nautilus_core::UnixNanos;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     ///
     /// // Consolidate all files in the catalog by 1-day periods
     /// catalog.consolidate_catalog_by_period(
@@ -627,13 +615,9 @@ impl ParquetDataCatalog {
     /// use nautilus_model::data::NautilusDataType;
     /// use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(
-    ///     std::path::Path::new("/tmp/nautilus_data"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None,
-    /// );
+    /// let mut catalog = ParquetDataCatalog::builder()
+    ///     .uri("/tmp/nautilus_data")
+    ///     .build()?;
     ///
     /// // Consolidate all quote files by 1-day periods
     /// catalog.consolidate_data_by_period(
@@ -1083,14 +1067,15 @@ impl ParquetDataCatalog {
         // Use optimize_file_loading=false to match Python behavior:
         // During consolidation, we want to read only the specific files being consolidated,
         // not the entire directory. This ensures precise file control during consolidation.
-        self.query::<T>(
-            instrument_ids,
-            Some(UnixNanos::from(query_info.query_start)),
-            Some(UnixNanos::from(query_info.query_end)),
-            None,
-            Some(files.to_vec()),
-            false, // optimize_file_loading=false for precise file control during consolidation
-        )
+        let start = UnixNanos::from(query_info.query_start);
+        let end = UnixNanos::from(query_info.query_end);
+        self.query::<T>()
+            .maybe_identifiers(instrument_ids)
+            .start(start)
+            .end(end)
+            .files(files.to_vec())
+            .optimize_file_loading(false)
+            .execute()
     }
 
     // Queries the custom data of one consolidation period from `files` only.
@@ -1459,10 +1444,13 @@ mod tests {
     #[rstest]
     fn repeated_consolidation_preserves_windows_encoded_target() {
         let root = tempfile::tempdir().unwrap();
-        let catalog = ParquetDataCatalog::new(root.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(root.path())
+            .build()
+            .unwrap();
         let id = "io:ANTH-USD-PERP.HYPERLIQUID";
 
-        let trades = [10_000u64, 20_000].map(|ts| {
+        let trades = [10_000_u64, 20_000].map(|ts| {
             TradeTick::new(
                 InstrumentId::from(id),
                 Price::from("12.34"),
@@ -1520,7 +1508,9 @@ mod tests {
 
             let actual = stored_batches
                 .into_iter()
-                .flat_map(|batch| TradeTick::decode_batch(schema.metadata(), batch).unwrap())
+                .flat_map(|batch| {
+                    TradeTick::decode_batch(&schema.metadata().into(), batch).unwrap()
+                })
                 .collect::<Vec<_>>();
 
             assert_eq!(target, stored);

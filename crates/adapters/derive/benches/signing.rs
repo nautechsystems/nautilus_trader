@@ -58,7 +58,7 @@ fn sample_trade() -> TradeModuleData {
         asset_address: "0x000000000000000000000000000000000000abcd"
             .parse()
             .unwrap(),
-        sub_id: U256::from(42u64),
+        sub_id: U256::from(42_u64),
         limit_price: dec!(3500),
         amount: dec!(1),
         max_fee: dec!(1000),

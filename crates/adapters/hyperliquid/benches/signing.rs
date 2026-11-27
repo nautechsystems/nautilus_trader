@@ -58,7 +58,7 @@ fn make_sign_request(action: &HyperliquidExchangeAction) -> SignRequest {
     SignRequest {
         action: None,
         action_bytes: Some(action_bytes),
-        time_nonce: TimeNonce::from_millis(1733833200000),
+        time_nonce: TimeNonce::from_millis(1_733_833_200_000),
         action_type: HyperliquidActionType::L1,
         is_testnet: false,
         vault_address: None,
@@ -108,7 +108,7 @@ fn bench_sign_l1_with_vault(c: &mut Criterion) {
     let request = SignRequest {
         action: None,
         action_bytes: Some(action_bytes),
-        time_nonce: TimeNonce::from_millis(1733833200000),
+        time_nonce: TimeNonce::from_millis(1_733_833_200_000),
         action_type: HyperliquidActionType::L1,
         is_testnet: false,
         vault_address: Some(

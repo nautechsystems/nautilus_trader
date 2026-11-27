@@ -29,7 +29,7 @@ use arrow::{
     },
     buffer::{OffsetBuffer, ScalarBuffer},
     compute::{cast, take_record_batch},
-    datatypes::{DataType as ArrowDataType, Field, Fields, Schema, TimeUnit},
+    datatypes::{DataType as ArrowDataType, Field, Fields, Metadata, Schema, TimeUnit},
     record_batch::RecordBatch,
 };
 use futures::{StreamExt, TryStreamExt};
@@ -911,10 +911,10 @@ fn with_target_custom_type_name(candidate: &SchemaCandidate, schema: &Schema) ->
 /// schemas untouched.
 fn inject_type_name_metadata(schema: &Schema, type_name: &str) -> Schema {
     let mut schema = schema.clone();
-    schema
-        .metadata
-        .entry("type_name".to_string())
-        .or_insert_with(|| type_name.to_string());
+    if !schema.metadata.contains_key("type_name") {
+        schema.metadata.insert("type_name", type_name);
+    }
+
     schema
 }
 
@@ -1103,7 +1103,7 @@ fn round_trip_migrated_batches(
                     let mut instruments = Vec::new();
 
                     for batch in &$batches {
-                        let metadata = batch.schema().metadata().clone();
+                        let metadata = batch.schema_ref().metadata().into();
                         instruments.extend(decode_instrument_any_batch(&metadata, batch)?);
                     }
 
@@ -1371,8 +1371,8 @@ fn is_legacy_instrument_schema(schema: &Schema) -> bool {
 }
 
 // Legacy catalogs name the instrument type under `class`; current schemas use `type_name`
-fn legacy_instrument_metadata(metadata: &HashMap<String, String>) -> HashMap<String, String> {
-    let mut metadata = metadata.clone();
+fn legacy_instrument_metadata(metadata: &Metadata) -> HashMap<String, String> {
+    let mut metadata = HashMap::from(metadata);
     if let Some(instrument_type) = metadata.remove(LEGACY_KEY_CLASS) {
         metadata.insert(KEY_TYPE_NAME.to_string(), instrument_type);
     }
@@ -1997,14 +1997,10 @@ mod tests {
             .join(precision_dir)
             .join("bars.parquet");
         fs::copy(fixture, bar_dir.join("bars.parquet")).unwrap();
-        let source = crate::backend::parquet::catalog::ParquetDataCatalog::from_uri(
-            source_path.to_str().unwrap(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let source = crate::backend::parquet::catalog::ParquetDataCatalog::builder()
+            .uri(&source_path)
+            .build()
+            .unwrap();
 
         let plan = build_catalog_migration_plan(&source).unwrap();
 
@@ -2042,14 +2038,10 @@ mod tests {
         let mut writer = ::parquet::arrow::ArrowWriter::try_new(file, schema, None).unwrap();
         writer.write(&batch).unwrap();
         writer.close().unwrap();
-        let source = crate::backend::parquet::catalog::ParquetDataCatalog::from_uri(
-            source_path.to_str().unwrap(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let source = crate::backend::parquet::catalog::ParquetDataCatalog::builder()
+            .uri(&source_path)
+            .build()
+            .unwrap();
 
         let plan = build_catalog_migration_plan(&source).unwrap();
         let error = plan.ensure_ready().unwrap_err();
@@ -2435,7 +2427,7 @@ mod tests {
         for batch in part.batches {
             let schema = batch.schema();
             assert_eq!(schema, fresh.schema());
-            decoded.extend(T::decode_batch(schema.metadata(), batch).unwrap());
+            decoded.extend(T::decode_batch(&schema.metadata().into(), batch).unwrap());
         }
 
         assert_eq!(part.row_count, expected.len());

@@ -64,15 +64,16 @@ Before running:
   see [installation](../getting_started/installation.md).
 - Check provider retention for the historical examples' fixed past windows.
 
-Set `MARKET_ID` in the example you plan to run to an [active Polymarket outcome ID](#selecting-an-outcome).
-Run from the repository root:
+Use the [Python discovery example](#discovering-an-outcome-in-python) or the
+[active-market endpoint](#selecting-an-outcome) to find an active Polymarket outcome ID. Set the shell
+variable `MARKET_ID` to that exact ID, then pass it to the tester from the repository root.
 
 ```bash tab="Rust"
-CARGO_BUILD_JOBS=8 cargo run --locked -p nautilus-finfeed --example node_data_tester
+CARGO_BUILD_JOBS=8 cargo run --locked -p nautilus-finfeed --example node_data_tester -- "$MARKET_ID"
 ```
 
 ```bash tab="Python"
-uv run --project python --no-sync python examples/live/finfeed/data_tester.py
+uv run --project python --no-sync python examples/live/finfeed/data_tester.py "$MARKET_ID"
 ```
 
 The [Rust](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/finfeed/examples/node_data_tester.rs)
@@ -83,7 +84,7 @@ examples register the factory with `LiveNode` and route `DataTester` through `FI
 
 | Setting           | Example value                                             |
 | ----------------- | --------------------------------------------------------- |
-| Outcome           | Active Polymarket outcome ID set in `MARKET_ID`.          |
+| Outcome           | Active Polymarket outcome ID passed at launch.            |
 | Subscriptions     | Quotes, trades, L2 book replacements; logs incoming data. |
 | Stop timer        | 60 seconds including startup; shutdown can take longer.   |
 | Managed allowance | Eight attempts; no application retries.                   |
@@ -324,8 +325,11 @@ credentials without sending requests; the client keeps no instrument metadata ca
   sub-microsecond precision. A start must precede its end.
 - History: Supply `date` or `time_start` (optional `time_end`), never a date with time bounds.
   `get_ohlcv_latest` rejects bounds.
-- Raw trade/quote/book history: Use a date or covering UTC-hour bounds, then filter locally. Explicit
-  bounds within one UTC hour fail before spending an attempt; date and start-only selectors are accepted.
+- For raw trade, quote, and book history, request the covering UTC hours and filter locally. For example,
+  to read from `00:15` to `00:45` UTC, send `00:00` and `01:00` as the bounds. Requests within a
+  single UTC hour can return empty arrays even when the covering hour contains data.
+  `FinFeedHttpClient` rejects these bounds before sending a request or spending an attempt.
+  It also accepts a date or a start-only selector.
 
 Constructors parse dates/times; awaiting the call checks remaining query rules before admission.
 Query objects and result properties have no setters.
@@ -459,9 +463,9 @@ Raw REST access preserves the provider's values.
 
 #### Coverage and truncation
 
-**Native history paginates automatically**. Raw REST history remains single-response; partial-hour native
-windows expand retrieval and filter locally. Raw explicit bounds within one UTC hour are rejected because
-FinFeed can return empty arrays despite data in a covering response.
+**Pass the exact window to `FinFeedDataLoader` or the native data client.** For trades, quotes,
+and books, they fetch the covering UTC hours, paginate, and apply your window locally. This works
+for windows within a single hour. [Raw REST history](#python-rest-access) returns one response.
 
 Trades/quotes/books need at least one attempt per touched UTC hour, including the end hour. For 31 days:
 745 attempts midnight-to-midnight, or 744 ending before the final midnight. Default 10-second pacing alone
@@ -524,9 +528,11 @@ For a historical point, use an offset-bearing RFC 3339 timestamp in
 
 **Ordering and bounds**:
 
-- Preserve source order and original `ts_event`, including backward exchange clocks. A group's `ts_init`
-  is the cumulative maximum of all its rows' processing clocks (`time_coinapi`, otherwise `time_exchange`)
-  and the preceding group. Every delta shares that value; **it is not measured receipt time**.
+- Preserve source order and original `ts_event`, including backward exchange clocks. An `OrderBook` logs an
+  `Out-of-order update` or `Out-of-order snapshot` warning when it applies a record with an earlier
+  `ts_event`. A group's `ts_init` is the cumulative maximum of all its rows' processing clocks
+  (`time_coinapi`, otherwise `time_exchange`) and the preceding group. Every delta shares that value;
+  **it is not measured receipt time**.
 - Groups at or before `start` build the seed; groups in `(start, end]` publish. Bounds use this derived clock,
   so an in-window exchange timestamp can be excluded and an earlier one emitted. The generated seed uses
   `start` for both clocks; point snapshots use the requested time as `ts_last`.
@@ -781,8 +787,8 @@ config = FinFeedDataClientConfig(
 node = (
     LiveNode.builder("FINFEED-DATA-TESTER", TraderId("TESTER-001"), Environment.LIVE)
     .with_reconciliation(False)
-    .with_timeout_connection(60)
-    .with_timeout_portfolio(0)
+    .with_timeout_connection_secs(60)
+    .with_timeout_portfolio_secs(0)
     .add_data_client(None, FinFeedDataClientFactory(), config)
     .build()
 )
@@ -805,7 +811,7 @@ and a 60-second stop timer. For general setup, see [Configure live trading](../h
 | `http_timeout_secs`       | `http.timeout_secs`            | `300`                     | Transport timeout per request, in seconds.                                      |
 | `max_concurrent_requests` | `http.max_concurrent_requests` | `1`                       | Managed requests in flight on this instance.                                    |
 | `attempt_budget`          | `http.attempt_budget`          | `100`                     | Lifetime FinFeed managed attempts per connection generation.                    |
-| `min_request_interval_ms` | `http.min_request_interval_ms` | `10000`                   | Shared spacing between attempt starts, in milliseconds.                         |
+| `min_request_interval_ms` | `http.min_request_interval_ms` | `10000`                   | Shared minimum interval (milliseconds) between request attempt starts.          |
 | `connect_timeout_secs`    | `connect_timeout_secs`         | `120`                     | Entire bootstrap deadline in seconds.                                           |
 
 Each `FinFeedInstrumentSelection` requires `exchange_id` and `market_ids`, with no selection defaults.
@@ -816,10 +822,10 @@ concurrency and attempt allowance must be positive.
 
 #### Polling
 
-| Python keyword     | Rust field         | Default | Meaning                                    |
-| ------------------ | ------------------ | ------- | ------------------------------------------ |
-| `poll_interval_ms` | `poll_interval_ms` | `10000` | Delay after each endpoint poll completes.  |
-| `poll_limit`       | `poll_limit`       | `100`   | Maximum latest quotes and trades per list. |
+| Python keyword     | Rust field         | Default | Meaning                                                     |
+| ------------------ | ------------------ | ------- | ----------------------------------------------------------- |
+| `poll_interval_ms` | `poll_interval_ms` | `10000` | Interval (milliseconds) after each endpoint poll completes. |
+| `poll_limit`       | `poll_limit`       | `100`   | Maximum latest quotes and trades per list.                  |
 
 Polling accepts `[100, 86400000]` milliseconds and a `poll_limit` in `[1, 10000]`.
 OHLCV requests use `poll_limit + 1` rows for a running period: at most 10001, within the market
@@ -894,7 +900,7 @@ allowances reserve extra room:
 For the first row, retain the [tester](#defaults-and-request-cost) selection and subscriptions, set
 `attempt_budget=3200`, and keep `poll_interval_ms=60000`, `http_timeout_secs=10`,
 `max_concurrent_requests=1`, `max_retries=0`, `connect_timeout_secs=45`, and node
-`.with_timeout_connection(60)`. Set `RUN_SECONDS` to 86400 plus allowed startup time: its timer includes startup.
+`.with_timeout_connection_secs(60)`. Set `RUN_SECONDS` to 86400 plus allowed startup time: its timer includes startup.
 
 For larger selections, replace the IDs, subscriptions, poll delay, allowance, and both deadlines with the
 chosen row. See [public controls](#public-controls-and-defaults) for equivalent Rust fields.

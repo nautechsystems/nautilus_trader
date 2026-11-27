@@ -115,7 +115,7 @@ impl BlackScholesReal for f32 {
         }
 
         let exponent = ((bits >> 23) as i32 - 127) as Self;
-        let mantissa = Self::from_bits((bits & 0x007F_FFFF) | 0x3f80_0000);
+        let mantissa = Self::from_bits((bits & 0x007f_ffff) | 0x3f80_0000);
         let x = (mantissa - 1.0) / (mantissa + 1.0);
         let x2 = x * x;
         let mut res = 0.239_282_85_f32;
@@ -434,7 +434,7 @@ mod tests {
     fn old_ln_formula(input: f32) -> f32 {
         let bits = input.to_bits();
         let exponent = ((bits >> 23) as i32 - 127) as f32;
-        let mantissa = f32::from_bits((bits & 0x007F_FFFF) | 0x3f80_0000);
+        let mantissa = f32::from_bits((bits & 0x007f_ffff) | 0x3f80_0000);
         let x = (mantissa - 1.0) / (mantissa + 1.0);
         let x2 = x * x;
         let mut res = 0.239_282_85_f32;
@@ -621,13 +621,13 @@ mod tests {
 
     #[rstest]
     fn test_compute_greeks_accuracy_vs_exact() {
-        let s = 100.0f64;
-        let k = 100.0f64;
-        let t = 1.0f64;
-        let r = 0.05f64;
-        let b = 0.05f64; // cost of carry
-        let vol = 0.2f64;
-        let multiplier = 1.0f64;
+        let s = 100.0_f64;
+        let k = 100.0_f64;
+        let t = 1.0_f64;
+        let r = 0.05_f64;
+        let b = 0.05_f64; // cost of carry
+        let vol = 0.2_f64;
+        let multiplier = 1.0_f64;
 
         // Compute using fast f32 method
         let g_fast = compute_greeks::<f32>(
@@ -682,13 +682,13 @@ mod tests {
 
     #[rstest]
     fn test_put_theta_with_cost_of_carry_not_equal_to_rate() {
-        let s = 100.0f64;
-        let k = 100.0f64;
-        let t = 1.0f64;
-        let r = 0.05f64;
-        let b = 0.0f64; // cost of carry != r (e.g. futures option)
-        let vol = 0.2f64;
-        let multiplier = 1.0f64;
+        let s = 100.0_f64;
+        let k = 100.0_f64;
+        let t = 1.0_f64;
+        let r = 0.05_f64;
+        let b = 0.0_f64; // cost of carry != r (e.g. futures option)
+        let vol = 0.2_f64;
+        let multiplier = 1.0_f64;
 
         let g_fast = compute_greeks::<f32>(
             s as f32, k as f32, t as f32, r as f32, b as f32, vol as f32, false,
@@ -708,14 +708,14 @@ mod tests {
 
     #[rstest]
     fn test_compute_iv_and_greeks_halley_accuracy() {
-        let s = 100.0f64;
-        let k = 100.0f64;
-        let t = 1.0f64;
-        let r = 0.05f64;
-        let b = 0.05f64; // cost of carry
-        let vol_true = 0.2f64; // True volatility
-        let initial_guess = 0.25f64; // Initial guess (25% higher than true)
-        let multiplier = 1.0f64;
+        let s = 100.0_f64;
+        let k = 100.0_f64;
+        let t = 1.0_f64;
+        let r = 0.05_f64;
+        let b = 0.05_f64; // cost of carry
+        let vol_true = 0.2_f64; // True volatility
+        let initial_guess = 0.25_f64; // Initial guess (25% higher than true)
+        let multiplier = 1.0_f64;
 
         // Compute the exact price using the true volatility
         let g_exact = black_scholes_greeks_exact(s, r, b, vol_true, true, k, t);
@@ -790,12 +790,12 @@ mod tests {
 
     #[rstest]
     fn test_print_halley_iv() {
-        let s = 100.0f64;
-        let k = 100.0f64;
-        let t = 1.0f64;
-        let r = 0.05f64;
-        let b = 0.05f64;
-        let vol_true = 0.2f64;
+        let s = 100.0_f64;
+        let k = 100.0_f64;
+        let t = 1.0_f64;
+        let r = 0.05_f64;
+        let b = 0.05_f64;
+        let vol_true = 0.2_f64;
 
         let g_exact = black_scholes_greeks_exact(s, r, b, vol_true, true, k, t);
         let mkt_price = g_exact.price;
@@ -831,14 +831,14 @@ mod tests {
 
     #[rstest]
     fn test_compute_iv_and_greeks_deep_itm_otm() {
-        let t = 1.0f64;
-        let r = 0.05f64;
-        let b = 0.05f64;
-        let vol_true = 0.2f64;
+        let t = 1.0_f64;
+        let r = 0.05_f64;
+        let b = 0.05_f64;
+        let vol_true = 0.2_f64;
 
         // Deep ITM: s=150, k=100 (spot is 50% above strike)
-        let s_itm = 150.0f64;
-        let k_itm = 100.0f64;
+        let s_itm = 150.0_f64;
+        let k_itm = 100.0_f64;
         let g_exact_itm = black_scholes_greeks_exact(s_itm, r, b, vol_true, true, k_itm, t);
         let mkt_price_itm = g_exact_itm.price;
 
@@ -865,8 +865,8 @@ mod tests {
         println!("Relative error: {rel_error_itm:.4}%");
 
         // Deep OTM: s=50, k=100 (spot is 50% below strike)
-        let s_otm = 50.0f64;
-        let k_otm = 100.0f64;
+        let s_otm = 50.0_f64;
+        let k_otm = 100.0_f64;
         let g_exact_otm = black_scholes_greeks_exact(s_otm, r, b, vol_true, true, k_otm, t);
         let mkt_price_otm = g_exact_otm.price;
 

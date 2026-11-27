@@ -537,7 +537,7 @@ async fn published_examples_preserve_discovery_and_raw_response_fields() {
                 period_id: Some("10DAY".into()),
                 unit_name: Some("day".into()),
                 unit_count: Some(10),
-                length_seconds: 864000,
+                length_seconds: 864_000,
                 length_months: 0,
                 display_name: Some("10 Days".into()),
             },
@@ -2197,7 +2197,7 @@ async fn explicit_https_proxy_uses_tls_and_http_proxy_tunnels_https() {
     let (listener, address) = bind_peer().await;
     let tls = task::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
-        let mut header = [0u8; 5];
+        let mut header = [0_u8; 5];
         stream.read_exact(&mut header).await.unwrap();
         header
     });

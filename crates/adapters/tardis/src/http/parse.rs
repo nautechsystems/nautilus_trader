@@ -890,6 +890,7 @@ mod tests {
         assert_eq!(instrument.underlying().unwrap().as_str(), "BTC");
         assert_eq!(instrument.base_currency(), Some(Currency::BTC()));
         assert_eq!(instrument.quote_currency(), Currency::BTC());
+        assert_eq!(instrument.strike_currency(), Some(Currency::USD()));
         assert_eq!(instrument.settlement_currency(), Currency::BTC());
         assert!(instrument.is_inverse());
         assert_eq!(instrument.price_precision(), 4);
@@ -910,6 +911,25 @@ mod tests {
         assert_eq!(instrument.max_quantity(), None);
         assert_eq!(instrument.min_notional(), None);
         assert_eq!(instrument.max_notional(), None);
+    }
+
+    #[rstest]
+    #[case::usd_index("USD", Currency::USD())]
+    #[case::usdc_index("USDC", Currency::USDC())]
+    fn test_bybit_usdc_option_currencies(#[case] quote: &str, #[case] strike_currency: Currency) {
+        let json = load_test_json("instrument_option.json");
+        let mut info: TardisInstrumentInfo = serde_json::from_str(&json).unwrap();
+        info.exchange = TardisExchange::BybitOptions;
+        info.quote_currency = quote.into();
+        info.settlement_currency = Some("USDC".into());
+        info.inverse = Some(false);
+
+        let instruments = parse_instrument_any(&info, None, Some(UnixNanos::default()), false);
+
+        assert_eq!(instruments.len(), 1);
+        assert_eq!(instruments[0].strike_currency(), Some(strike_currency));
+        assert_eq!(instruments[0].quote_currency(), Currency::USDC());
+        assert_eq!(instruments[0].settlement_currency(), Currency::USDC());
     }
 
     #[rstest]

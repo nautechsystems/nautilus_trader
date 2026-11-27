@@ -89,7 +89,7 @@ fn bench_lookup(c: &mut Criterion) {
 
         let ahash = populated_ahash(size);
         group.bench_with_input(BenchmarkId::new("AHashMap", size), &size, |b, _| {
-            let mut idx = 0usize;
+            let mut idx = 0_usize;
             b.iter(|| {
                 let v = ahash.get(&ks[idx % ks.len()]).copied();
                 black_box(v);
@@ -99,7 +99,7 @@ fn bench_lookup(c: &mut Criterion) {
 
         let index = populated_index(size);
         group.bench_with_input(BenchmarkId::new("IndexMap", size), &size, |b, _| {
-            let mut idx = 0usize;
+            let mut idx = 0_usize;
             b.iter(|| {
                 let v = index.get(&ks[idx % ks.len()]).copied();
                 black_box(v);

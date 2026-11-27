@@ -25,7 +25,7 @@ use nautilus_indicators::indicator::{Indicator, MovingAverage};
 use nautilus_model::{
     data::QuoteTick,
     identifiers::{InstrumentId, StrategyId, TraderId},
-    types::{Price, Quantity},
+    types::{Price, Quantity, price::ERROR_PRICE},
 };
 use nautilus_portfolio::portfolio::Portfolio;
 use rstest::rstest;
@@ -100,6 +100,40 @@ fn test_on_quote_returns_ok_before_emas_initialized() {
     let q = quote("1.00000", "1.00010", 1);
     assert!(strategy.on_quote(&q).is_ok());
     assert!(strategy.prev_fast_above.is_none());
+}
+
+#[rstest]
+fn test_error_price_leaves_both_emas_untouched() {
+    let mut strategy = create_strategy(3, 5);
+    let mut invalid = quote("1.25", "1.25", 1);
+    invalid.bid_price = ERROR_PRICE;
+    invalid.ask_price = ERROR_PRICE;
+
+    let e = strategy.on_quote(&invalid).unwrap_err();
+
+    assert_eq!(
+        e.to_string(),
+        format!(
+            "Cannot calculate midpoint for {} from an invalid quote",
+            invalid.instrument_id
+        ),
+    );
+    assert_eq!(strategy.ema_fast.count(), 0);
+    assert_eq!(strategy.ema_slow.count(), 0);
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+#[case("1.25000000000000001")]
+#[case("1.250000000000000001")]
+fn test_native_quote_updates_both_emas(#[case] price: &str) {
+    let mut strategy = create_strategy(3, 5);
+    let quote = quote(price, price, 1);
+    strategy.on_quote(&quote).unwrap();
+
+    assert_eq!(strategy.ema_fast.count(), 1);
+    assert_eq!(strategy.ema_slow.count(), 1);
+    assert_eq!(strategy.prev_fast_above, None);
 }
 
 #[rstest]

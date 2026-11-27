@@ -398,7 +398,7 @@ mod tests {
             Ustr::from("0x742E4422b21FB8B4dF463F28689AC98bD56c39e0"),
             21000,
             20000,
-            UnixNanos::from(1_640_995_200_000_000_000u64),
+            UnixNanos::from(1_640_995_200_000_000_000_u64),
             None,
         );
 
@@ -442,7 +442,7 @@ mod tests {
         assert_eq!(block.gas_limit, 35_894_433);
 
         assert_eq!(block.base_fee_per_gas, Some(U256::from(0x1862_a795_u64)));
-        assert_eq!(block.blob_gas_used, Some(U256::from(0xc0000u64)));
+        assert_eq!(block.blob_gas_used, Some(U256::from(0xc0000_u64)));
         assert_eq!(block.excess_blob_gas, Some(U256::from(0x0484_0000_u64)));
     }
 
@@ -476,7 +476,7 @@ mod tests {
         );
         assert_eq!(block.gas_used, 19_336_980);
         assert_eq!(block.gas_limit, 30_000_000);
-        assert_eq!(block.base_fee_per_gas, Some(U256::from(0x19eu64)));
+        assert_eq!(block.base_fee_per_gas, Some(U256::from(0x19e_u64)));
         assert!(block.blob_gas_used.is_none()); // Not applicable on Polygon
         assert!(block.excess_blob_gas.is_none()); // Not applicable on Polygon
     }
@@ -512,7 +512,7 @@ mod tests {
         assert_eq!(block.gas_used, 91_213_350);
         assert_eq!(block.gas_limit, 120_000_000);
 
-        assert_eq!(block.base_fee_per_gas, Some(U256::from(0xaae54u64)));
+        assert_eq!(block.base_fee_per_gas, Some(U256::from(0xaae54_u64)));
         assert_eq!(block.blob_gas_used, Some(U256::ZERO));
         assert_eq!(block.excess_blob_gas, Some(U256::ZERO));
     }
@@ -562,20 +562,20 @@ mod tests {
             Ustr::from("0x0000000000000000000000000000000000000000"),
             100_000,
             50_000,
-            UnixNanos::from(1_700_000_000u64),
+            UnixNanos::from(1_700_000_000_u64),
             Some(Blockchain::Arbitrum),
         );
 
         let block = block
-            .with_base_fee(U256::from(1_000u64))
-            .with_blob_gas(U256::from(0x10u8), U256::from(0x20u8))
-            .with_l1_fee_components(U256::from(30_000u64), 1_234, 1_000_000);
+            .with_base_fee(U256::from(1_000_u64))
+            .with_blob_gas(U256::from(0x10_u8), U256::from(0x20_u8))
+            .with_l1_fee_components(U256::from(30_000_u64), 1_234, 1_000_000);
 
         assert_eq!(block.chain, Some(chains::ARBITRUM.name));
-        assert_eq!(block.base_fee_per_gas, Some(U256::from(1_000u64)));
-        assert_eq!(block.blob_gas_used, Some(U256::from(0x10u8)));
-        assert_eq!(block.excess_blob_gas, Some(U256::from(0x20u8)));
-        assert_eq!(block.l1_gas_price, Some(U256::from(30_000u64)));
+        assert_eq!(block.base_fee_per_gas, Some(U256::from(1_000_u64)));
+        assert_eq!(block.blob_gas_used, Some(U256::from(0x10_u8)));
+        assert_eq!(block.excess_blob_gas, Some(U256::from(0x20_u8)));
+        assert_eq!(block.l1_gas_price, Some(U256::from(30_000_u64)));
         assert_eq!(block.l1_gas_used, Some(1_234));
         assert_eq!(block.l1_fee_scalar, Some(1_000_000));
     }

@@ -1197,7 +1197,7 @@ mod tests {
     fn test_instrument() -> InstrumentAny {
         let market: GammaMarket = load("gamma_market.json");
         let defs = parse_gamma_market(&market).unwrap();
-        create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap()
+        create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000_u64)).unwrap()
     }
 
     fn bind_instrument_to_user_trade(instrument: &mut InstrumentAny, trade: &PolymarketUserTrade) {
@@ -1504,7 +1504,7 @@ mod tests {
                 instrument.id(),
                 new_id,
                 Quantity::from("7.999990"),
-                UnixNanos::from(900u64),
+                UnixNanos::from(900_u64),
             ),
         );
         tracker.buffer_report_for_test(
@@ -1520,9 +1520,9 @@ mod tests {
                 OrderStatus::Filled,
                 Quantity::from("8.000000"),
                 Quantity::from("7.999990"),
-                UnixNanos::from(1_000u64),
-                UnixNanos::from(1_000u64),
-                UnixNanos::from(1_000u64),
+                UnixNanos::from(1_000_u64),
+                UnixNanos::from(1_000_u64),
+                UnixNanos::from(1_000_u64),
                 None,
             ),
         );
@@ -2571,7 +2571,7 @@ mod tests {
             None,
             None,
             ts_event,
-            UnixNanos::from(1_000_000_100u64),
+            UnixNanos::from(1_000_000_100_u64),
             Some(UUID4::new()),
         )
     }
@@ -2607,7 +2607,7 @@ mod tests {
             &ctx,
             &instruments,
             FillReportScope::new(None, None),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
             None,
             None,
         )
@@ -2655,7 +2655,7 @@ mod tests {
             &ctx,
             &instruments,
             FillReportScope::new(Some(instrument_id), Some(target_venue_order_id)),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
             None,
             None,
         )
@@ -2707,7 +2707,7 @@ mod tests {
             &ctx,
             &instruments,
             FillReportScope::new(None, None),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
             None,
             None,
         )
@@ -2752,7 +2752,7 @@ mod tests {
             &ctx,
             &instruments,
             FillReportScope::new(None, None),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
             None,
             None,
         )
@@ -2798,7 +2798,7 @@ mod tests {
             &ctx,
             &instruments,
             FillReportScope::new(None, None),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
             None,
             None,
         )
@@ -2821,7 +2821,7 @@ mod tests {
         bind_instrument_to_trade(&mut instrument, &taker);
         set_taker_fee_rate(
             &mut instrument,
-            Decimal::from_i128_with_scale(100_000_000_000_000_000_000_000_000i128, 0),
+            Decimal::from_i128_with_scale(100_000_000_000_000_000_000_000_000_i128, 0),
         );
         let mut maker = taker.clone();
         maker.id = "trade-valid-maker".to_string();
@@ -2847,7 +2847,7 @@ mod tests {
             &ctx,
             &instruments,
             FillReportScope::new(None, None),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
             None,
             None,
         )
@@ -2857,7 +2857,7 @@ mod tests {
             &ctx,
             &instruments,
             FillReportScope::new(None, None),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
             None,
             None,
         );
@@ -2913,7 +2913,7 @@ mod tests {
                 &ctx,
                 &instruments,
                 scope,
-                UnixNanos::from(1_000_000_000u64),
+                UnixNanos::from(1_000_000_000_u64),
                 None,
                 None,
             )
@@ -2942,7 +2942,7 @@ mod tests {
 
     #[rstest]
     #[case::unbounded(None)]
-    #[case::bounded(Some(UnixNanos::from(1u64)))]
+    #[case::bounded(Some(UnixNanos::from(1_u64)))]
     fn test_confirmed_trade_without_match_time_fails_unbounded_and_counts_bounded(
         #[case] lookback_start: Option<UnixNanos>,
     ) {
@@ -2970,7 +2970,7 @@ mod tests {
             &ctx,
             &instruments,
             FillReportScope::new(None, None),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
             None,
             lookback_start,
         );
@@ -3069,7 +3069,7 @@ mod tests {
         let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
         let mut order = test_quote_market_order("O-UNKNOWN-FILL", instrument_id);
         let venue_order_id = VenueOrderId::from("0xunknown-fill-order");
-        let fill_ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        let fill_ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
         let (emitter, mut receiver) = test_emitter();
         let fill_tracker = Arc::new(OrderFillTrackerMap::new());
         let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
@@ -3207,7 +3207,7 @@ mod tests {
                         instrument_id,
                         venue_order_id,
                         venue_fill_qty,
-                        UnixNanos::from(900u64),
+                        UnixNanos::from(900_u64),
                     ),
                     FillCorrectionMetadata {
                         venue_trade_id: venue_trade_id.to_string(),
@@ -3231,7 +3231,7 @@ mod tests {
                 last_px: Price::new(0.50, 4),
                 commission: Money::zero(Currency::pUSD()),
                 taker_fee_basis: None,
-                ts_event: UnixNanos::from(900u64),
+                ts_event: UnixNanos::from(900_u64),
             }],
         });
 
@@ -3340,7 +3340,7 @@ mod tests {
                 last_px: Price::new(0.50, 4),
                 commission: Money::zero(Currency::pUSD()),
                 taker_fee_basis: None,
-                ts_event: UnixNanos::from(900u64),
+                ts_event: UnixNanos::from(900_u64),
             }],
         });
         assert!(
@@ -3351,7 +3351,7 @@ mod tests {
                         instrument_id,
                         venue_order_id,
                         venue_fill_qty,
-                        UnixNanos::from(900u64)
+                        UnixNanos::from(900_u64)
                     ),
                     FillCorrectionMetadata {
                         venue_trade_id: venue_trade_id.to_string(),
@@ -3431,7 +3431,7 @@ mod tests {
             last_px: Price::new(0.50, 4),
             commission: Money::zero(Currency::pUSD()),
             taker_fee_basis: None,
-            ts_event: UnixNanos::from(900u64),
+            ts_event: UnixNanos::from(900_u64),
         };
         let _ = settlement.admit_stream_trade(&AdmittedTrade {
             venue_trade_id: venue_trade_id.to_string(),
@@ -3455,7 +3455,7 @@ mod tests {
                         instrument_id,
                         venue_order_id,
                         venue_fill_qty,
-                        UnixNanos::from(900u64),
+                        UnixNanos::from(900_u64),
                     ),
                     FillCorrectionMetadata {
                         venue_trade_id: venue_trade_id.to_string(),
@@ -3514,9 +3514,9 @@ mod tests {
             status,
             Quantity::new(10.0, 0),
             Quantity::new(0.0, 0),
-            UnixNanos::from(1_000u64),
-            UnixNanos::from(1_000u64),
-            UnixNanos::from(1_000u64),
+            UnixNanos::from(1_000_u64),
+            UnixNanos::from(1_000_u64),
+            UnixNanos::from(1_000_u64),
             None,
         );
         fill_tracker.buffer_report_for_test(venue_order_id, report);
@@ -3574,9 +3574,9 @@ mod tests {
             OrderStatus::Rejected,
             Quantity::new(10.0, 0),
             Quantity::new(0.0, 0),
-            UnixNanos::from(1_000u64),
-            UnixNanos::from(1_000u64),
-            UnixNanos::from(1_000u64),
+            UnixNanos::from(1_000_u64),
+            UnixNanos::from(1_000_u64),
+            UnixNanos::from(1_000_u64),
             None,
         );
         report.cancel_reason = Some("  invalid post-only order:\norder crosses book  ".to_string());
@@ -3635,9 +3635,9 @@ mod tests {
             OrderStatus::Canceled,
             submitted_qty,
             venue_fill_qty,
-            UnixNanos::from(1_000u64),
-            UnixNanos::from(1_000u64),
-            UnixNanos::from(1_000u64),
+            UnixNanos::from(1_000_u64),
+            UnixNanos::from(1_000_u64),
+            UnixNanos::from(1_000_u64),
             None,
         );
         fill_tracker.buffer_report_for_test(venue_order_id, cancel_report);
@@ -3647,7 +3647,7 @@ mod tests {
                 instrument_id,
                 venue_order_id,
                 venue_fill_qty,
-                UnixNanos::from(900u64),
+                UnixNanos::from(900_u64),
             ),
         );
 
@@ -3713,9 +3713,9 @@ mod tests {
             OrderStatus::Filled,
             submitted_qty,
             submitted_qty,
-            UnixNanos::from(1_000u64),
-            UnixNanos::from(1_000u64),
-            UnixNanos::from(1_000u64),
+            UnixNanos::from(1_000_u64),
+            UnixNanos::from(1_000_u64),
+            UnixNanos::from(1_000_u64),
             None,
         );
         fill_tracker.buffer_report_for_test(venue_order_id, filled_report);
@@ -3725,7 +3725,7 @@ mod tests {
                 instrument_id,
                 venue_order_id,
                 venue_fill_qty,
-                UnixNanos::from(900u64),
+                UnixNanos::from(900_u64),
             ),
         );
 

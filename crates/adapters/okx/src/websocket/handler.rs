@@ -34,14 +34,16 @@ use std::{
 
 use dashmap::{DashMap, mapref::entry::Entry};
 use nautilus_common::{cache::fifo::FifoCacheMap, live::dst::time};
-use nautilus_core::{AtomicTime, string::secret::REDACTED};
+use nautilus_core::{AtomicTime, UnixNanos, string::secret::REDACTED};
 pub use nautilus_live::book::snapshot::SnapshotGate;
 use nautilus_model::identifiers::ClientOrderId;
 use nautilus_network::{
     RECONNECTED,
     error::SendError,
     retry::{RetryError, RetryManager, create_websocket_retry_manager},
-    websocket::{AuthTracker, SubscriptionState, TEXT_PING, TEXT_PONG, WebSocketClient},
+    websocket::{
+        AuthTracker, MessageHandler, SubscriptionState, TEXT_PING, TEXT_PONG, WebSocketClient,
+    },
 };
 use serde_json::{Map, Value};
 use tokio_tungstenite::tungstenite::Message;
@@ -53,7 +55,7 @@ use super::{
     error::OKXWsError,
     messages::{
         OKXOrderMsg, OKXSubscription, OKXSubscriptionArg, OKXWebSocketArg, OKXWebSocketError,
-        OKXWsFrame, OKXWsMessage,
+        OKXWsFrame, OKXWsInbound, OKXWsMessage,
     },
     subscription::{is_topic_subscribed, topic_from_subscription_arg, topic_from_websocket_arg},
 };
@@ -145,8 +147,8 @@ pub(super) struct OKXWsFeedHandler {
     signal: Arc<AtomicBool>,
     inner: Option<Arc<WebSocketClient>>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
-    raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
-    out_tx: tokio::sync::mpsc::UnboundedSender<OKXWsMessage>,
+    raw_rx: tokio::sync::mpsc::UnboundedReceiver<(Message, UnixNanos)>,
+    out_tx: tokio::sync::mpsc::UnboundedSender<OKXWsInbound<OKXWsMessage>>,
     auth_tracker: AuthTracker,
     requires_auth: bool,
     subscriptions_state: SubscriptionState,
@@ -166,8 +168,8 @@ impl OKXWsFeedHandler {
     pub(super) fn new(
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
-        raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
-        out_tx: tokio::sync::mpsc::UnboundedSender<OKXWsMessage>,
+        raw_rx: tokio::sync::mpsc::UnboundedReceiver<(Message, UnixNanos)>,
+        out_tx: tokio::sync::mpsc::UnboundedSender<OKXWsInbound<OKXWsMessage>>,
         auth_tracker: AuthTracker,
         requires_auth: bool,
         subscriptions_state: SubscriptionState,
@@ -196,8 +198,8 @@ impl OKXWsFeedHandler {
         self.signal.load(Ordering::Acquire)
     }
 
-    pub(super) fn send(&self, msg: OKXWsMessage) -> Result<(), ()> {
-        self.out_tx.send(msg).map_err(|_| ())
+    pub(super) fn send(&self, msg: impl Into<OKXWsInbound<OKXWsMessage>>) -> Result<(), ()> {
+        self.out_tx.send(msg.into()).map_err(|_| ())
     }
 
     async fn send_with_retry(
@@ -258,9 +260,12 @@ impl OKXWsFeedHandler {
         }
     }
 
-    pub(super) async fn next(&mut self) -> Option<OKXWsMessage> {
+    pub(super) async fn next_inbound(
+        &mut self,
+        market_data: bool,
+    ) -> Option<OKXWsInbound<OKXWsMessage>> {
         if let Some(message) = self.pending_messages.pop_front() {
-            return Some(message);
+            return Some(message.into());
         }
 
         let mut poll_raw_next = false;
@@ -380,14 +385,19 @@ impl OKXWsFeedHandler {
                 }
 
                 msg = self.raw_rx.recv() => {
-                    let event = match msg {
-                        Some(msg) => match Self::parse_raw_message(msg) {
-                            Some(event) => event,
-                            None => continue,
-                        },
-                        None => {
-                            log::debug!("WebSocket stream closed");
-                            return None;
+                    let Some((msg, received_at)) = msg else {
+                        log::debug!("WebSocket stream closed");
+                        return None;
+                    };
+                    let event = match Self::parse_raw_frame(msg, market_data) {
+                        Some(event) => event,
+                        None => continue,
+                    };
+
+                    let event = match event {
+                        OKXWsInbound::Standard(event) | OKXWsInbound::Timestamped { message: event, .. } => event,
+                        OKXWsInbound::MarketData { inst_id, data } => {
+                            return Some(OKXWsInbound::MarketData { inst_id, data });
                         }
                     };
 
@@ -402,7 +412,7 @@ impl OKXWsFeedHandler {
                         } => {
                             if code == OKX_SUCCESS_CODE {
                                 self.auth_tracker.succeed();
-                                return Some(OKXWsMessage::Authenticated);
+                                return Some(OKXWsMessage::Authenticated.into());
                             }
 
                             self.auth_tracker.fail(msg.clone());
@@ -416,10 +426,10 @@ impl OKXWsFeedHandler {
                             self.pending_messages.push_back(OKXWsMessage::Error(error));
                         }
                         OKXWsFrame::BookData { arg, action, data } => {
-                            return Some(OKXWsMessage::BookData { arg, action, data });
+                            return Some(OKXWsMessage::BookData { arg, action, data }.into());
                         }
                         OKXWsFrame::RpiBookData { arg, action, data } => {
-                            return Some(OKXWsMessage::RpiBookData { arg, action, data });
+                            return Some(OKXWsMessage::RpiBookData { arg, action, data }.into());
                         }
                         OKXWsFrame::OrderResponse {
                             id, op, code, msg, data,
@@ -440,11 +450,17 @@ impl OKXWsFeedHandler {
 
                             return Some(OKXWsMessage::OrderResponse {
                                 id, op, code, msg, data, client_order_ids,
-                            });
+                            }.into());
                         }
                         OKXWsFrame::Data { arg, data } => {
                             if let Some(output) = self.route_data_message(arg, data) {
-                                return Some(output);
+                                return Some(match output {
+                                    OKXWsMessage::Instruments(_) => OKXWsInbound::Timestamped {
+                                        message: output,
+                                        received_at,
+                                    },
+                                    _ => output.into(),
+                                });
                             }
                         }
                         OKXWsFrame::Error { arg, code, msg } => {
@@ -458,7 +474,7 @@ impl OKXWsFeedHandler {
                                     inst_id: arg.inst_id,
                                     code,
                                     msg,
-                                });
+                                }.into());
                             }
 
                             let error = OKXWebSocketError {
@@ -467,10 +483,10 @@ impl OKXWsFeedHandler {
                                 conn_id: None,
                                 timestamp: self.clock.get_time_ns().as_u64(),
                             };
-                            return Some(OKXWsMessage::Error(error));
+                            return Some(OKXWsMessage::Error(error).into());
                         }
                         OKXWsFrame::Reconnected => {
-                            return Some(OKXWsMessage::Reconnected);
+                            return Some(OKXWsMessage::Reconnected.into());
                         }
                         OKXWsFrame::Subscription {
                             event, arg, code, msg,
@@ -485,7 +501,7 @@ impl OKXWsFeedHandler {
                                     inst_id: arg.inst_id,
                                     code: code.unwrap_or_default(),
                                     msg: msg.unwrap_or_default(),
-                                });
+                                }.into());
                             }
                         }
                         OKXWsFrame::ChannelConnCount { .. } => {}
@@ -802,9 +818,7 @@ impl OKXWsFeedHandler {
         Ok(())
     }
 
-    pub(crate) fn parse_raw_message(
-        msg: tokio_tungstenite::tungstenite::Message,
-    ) -> Option<OKXWsFrame> {
+    fn parse_raw_frame(msg: Message, market_data: bool) -> Option<OKXWsInbound<OKXWsFrame>> {
         match msg {
             tokio_tungstenite::tungstenite::Message::Text(text) => {
                 if text == TEXT_PONG {
@@ -814,17 +828,17 @@ impl OKXWsFeedHandler {
 
                 if text == TEXT_PING {
                     log::trace!("Received ping from OKX (text)");
-                    return Some(OKXWsFrame::Ping);
+                    return Some(OKXWsFrame::Ping.into());
                 }
 
                 if text == RECONNECTED {
                     log::debug!("Received WebSocket reconnection signal");
-                    return Some(OKXWsFrame::Reconnected);
+                    return Some(OKXWsFrame::Reconnected.into());
                 }
                 log::trace!("Received WebSocket message: {text}");
 
-                match serde_json::from_str(&text) {
-                    Ok(ws_event) => match &ws_event {
+                match OKXWsInbound::decode(&text, market_data) {
+                    Ok(OKXWsInbound::Standard(ws_event) | OKXWsInbound::Timestamped { message: ws_event, .. }) => (match &ws_event {
                         OKXWsFrame::Error { arg, code, msg } => {
                             let level = error_frame_level(arg.as_ref(), code, msg);
                             log::log!(level, "WebSocket error: {code} - {msg}");
@@ -844,6 +858,7 @@ impl OKXWsFeedHandler {
                                      event={event}, code={code}, error={msg}"
                                 );
                             }
+
                             Some(ws_event)
                         }
                         OKXWsFrame::Subscription {
@@ -898,13 +913,15 @@ impl OKXWsFeedHandler {
                                     log::debug!("Order success details: {success_msg}");
                                 }
                             }
+
                             Some(ws_event)
                         }
                         OKXWsFrame::Reconnected => {
                             log::warn!("Unexpected Reconnected event from deserialization");
                             None
                         }
-                    },
+                    }).map(OKXWsInbound::Standard),
+                    Ok(frame) => Some(frame),
                     Err(e) => {
                         log::error!("Failed to parse message: {e}: {text}");
                         None
@@ -913,7 +930,7 @@ impl OKXWsFeedHandler {
             }
             Message::Ping(_payload) => {
                 log::trace!("Received binary ping frame from OKX");
-                Some(OKXWsFrame::Ping)
+                Some(OKXWsFrame::Ping.into())
             }
             Message::Pong(payload) => {
                 log::trace!("Received pong frame from OKX ({} bytes)", payload.len());
@@ -1144,6 +1161,30 @@ fn create_okx_retry_error(error: RetryError) -> OKXWsError {
     }
 }
 
+pub(super) fn channel_timestamped_messages(
+    clock: &'static AtomicTime,
+) -> (
+    MessageHandler,
+    tokio::sync::mpsc::UnboundedReceiver<(Message, UnixNanos)>,
+) {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+
+    let handler: MessageHandler = Arc::new(move |message| {
+        let received_at = clock.get_time_ns();
+
+        match Message::try_from(message) {
+            Ok(message) => {
+                if let Err(e) = tx.send((message, received_at)) {
+                    log::debug!("Failed to send OKX message to channel: {e}");
+                }
+            }
+            Err(e) => log::debug!("Dropping OKX message that failed legacy conversion: {e}"),
+        }
+    });
+
+    (handler, rx)
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -1165,10 +1206,7 @@ mod tests {
     use nautilus_network::{
         mode::{ConnectionMode, ReconnectRequestOutcome},
         ratelimiter::{RateLimiter, quota::Quota},
-        websocket::{
-            AuthTracker, SubscriptionState, TransportBackend, WebSocketConfig,
-            channel_message_handler,
-        },
+        websocket::{AuthTracker, SubscriptionState, TransportBackend, WebSocketConfig},
     };
     use rstest::rstest;
     use rust_decimal::Decimal;
@@ -1193,6 +1231,18 @@ mod tests {
             parse::{FeeCache, FilledQtyCache},
         },
     };
+
+    impl OKXWsFeedHandler {
+        async fn next(&mut self) -> Option<OKXWsMessage> {
+            self.next_inbound(false)
+                .await
+                .and_then(OKXWsInbound::into_standard)
+        }
+
+        pub(crate) fn parse_raw_message(msg: Message) -> Option<OKXWsFrame> {
+            Self::parse_raw_frame(msg, false).and_then(OKXWsInbound::into_standard)
+        }
+    }
 
     fn create_handler() -> OKXWsFeedHandler {
         let signal = Arc::new(AtomicBool::new(false));
@@ -1265,7 +1315,7 @@ mod tests {
 
         let message = tokio::time::timeout(Duration::from_secs(1), async {
             tokio::select! {
-                message = out_rx.recv() => message,
+                message = out_rx.recv() => message.and_then(OKXWsInbound::into_standard),
                 message = handler.next() => panic!("Unexpected handler return: {message:?}"),
             }
         })
@@ -1319,11 +1369,17 @@ mod tests {
         }
 
         raw_tx
-            .send(Message::Text(RECONNECTED.to_string().into()))
+            .send((
+                Message::Text(RECONNECTED.to_string().into()),
+                get_atomic_clock_realtime().get_time_ns(),
+            ))
             .unwrap();
 
         raw_tx
-            .send(Message::Text(RECONNECTED.to_string().into()))
+            .send((
+                Message::Text(RECONNECTED.to_string().into()),
+                get_atomic_clock_realtime().get_time_ns(),
+            ))
             .unwrap();
 
         let messages = tokio::time::timeout(Duration::from_secs(1), async {
@@ -1333,10 +1389,10 @@ mod tests {
             }
 
             [
-                out_rx.recv().await,
-                out_rx.recv().await,
-                out_rx.recv().await,
-                out_rx.recv().await,
+                out_rx.recv().await.and_then(OKXWsInbound::into_standard),
+                out_rx.recv().await.and_then(OKXWsInbound::into_standard),
+                out_rx.recv().await.and_then(OKXWsInbound::into_standard),
+                out_rx.recv().await.and_then(OKXWsInbound::into_standard),
             ]
         })
         .await
@@ -1380,7 +1436,10 @@ mod tests {
                 .unwrap();
         }
         raw_tx
-            .send(Message::Text(RECONNECTED.to_string().into()))
+            .send((
+                Message::Text(RECONNECTED.to_string().into()),
+                get_atomic_clock_realtime().get_time_ns(),
+            ))
             .unwrap();
 
         let message = handler.next().await;
@@ -1406,7 +1465,7 @@ mod tests {
             }
         });
 
-        let (message_handler, raw_rx) = channel_message_handler();
+        let (message_handler, raw_rx) = channel_timestamped_messages(get_atomic_clock_realtime());
         let client = WebSocketClient::builder()
             .config(WebSocketConfig::builder().url(url).build().unwrap())
             .message_handler(message_handler)
@@ -1513,7 +1572,7 @@ mod tests {
             }
         });
 
-        let (message_handler, raw_rx) = channel_message_handler();
+        let (message_handler, raw_rx) = channel_timestamped_messages(get_atomic_clock_realtime());
         let client = WebSocketClient::builder()
             .config(WebSocketConfig::builder().url(url).build().unwrap())
             .message_handler(message_handler)
@@ -1576,7 +1635,7 @@ mod tests {
             while socket.next().await.is_some() {}
         });
 
-        let (message_handler, raw_rx) = channel_message_handler();
+        let (message_handler, raw_rx) = channel_timestamped_messages(get_atomic_clock_realtime());
         let client = WebSocketClient::builder()
             .config(WebSocketConfig::builder().url(url).build().unwrap())
             .message_handler(message_handler)
@@ -1698,7 +1757,8 @@ mod tests {
             ),
             Vec::new(),
         ));
-        let (message_handler, raw_rx) = channel_message_handler();
+
+        let (message_handler, raw_rx) = channel_timestamped_messages(get_atomic_clock_realtime());
         let client = WebSocketClient::builder()
             .config(WebSocketConfig::builder().url(url).build().unwrap())
             .message_handler(message_handler)
@@ -2364,7 +2424,7 @@ mod tests {
             frames
         });
 
-        let (message_handler, raw_rx) = channel_message_handler();
+        let (message_handler, raw_rx) = channel_timestamped_messages(get_atomic_clock_realtime());
         let client = WebSocketClient::builder()
             .config(WebSocketConfig::builder().url(url).build().unwrap())
             .message_handler(message_handler)
@@ -2593,7 +2653,7 @@ mod tests {
         send.await;
         tokio::time::resume();
 
-        let failure = peer.messages.try_recv().unwrap();
+        let failure = peer.messages.try_recv().unwrap().into_standard().unwrap();
         assert!(matches!(failure, OKXWsMessage::SendFailed {
             request_id, client_order_ids, op: Some(OKXWsOperation::CancelOrder),
             error: OKXWsError::TransportSend(SendError::Timeout),
@@ -2643,7 +2703,7 @@ mod tests {
         let mut next = Box::pin(peer.handler.next());
         assert!(futures_util::poll!(next.as_mut()).is_pending());
         drop(next);
-        let overflow = peer.messages.try_recv().unwrap();
+        let overflow = peer.messages.try_recv().unwrap().into_standard().unwrap();
         assert!(
             matches!(overflow, OKXWsMessage::SendFailed { request_id, client_order_ids, op: Some(OKXWsOperation::AmendOrder), error: OKXWsError::TransportSend(SendError::BufferFull) }
             if request_id == "overflow" && client_order_ids == vec![ClientOrderId::from("OOVERFLOW")])
@@ -2671,7 +2731,7 @@ mod tests {
         peer.handler.inner.as_ref().unwrap().disconnect().await;
         drop(peer.handler);
         for index in 0..PENDING_SENDS_CAPACITY {
-            let message = peer.messages.try_recv().unwrap();
+            let message = peer.messages.try_recv().unwrap().into_standard().unwrap();
 
             let OKXWsMessage::SendFailed {
                 request_id,
@@ -2700,7 +2760,7 @@ mod tests {
             }
         }
 
-        let unread = peer.messages.try_recv().unwrap();
+        let unread = peer.messages.try_recv().unwrap().into_standard().unwrap();
         assert!(
             matches!(unread, OKXWsMessage::SendFailed { request_id, client_order_ids, op: Some(OKXWsOperation::Order), error: OKXWsError::TransportSend(SendError::Closed) }
             if request_id == "unread" && client_order_ids == vec![ClientOrderId::from("OUNREAD")])
@@ -2737,9 +2797,17 @@ mod tests {
         let expected_orders: Vec<OKXOrderMsg> =
             serde_json::from_value(orders_frame["data"].clone()).unwrap();
 
-        raw_tx.send(Message::Text(orders.into())).unwrap();
         raw_tx
-            .send(Message::Text(fixture["response"].to_string().into()))
+            .send((
+                Message::Text(orders.into()),
+                get_atomic_clock_realtime().get_time_ns(),
+            ))
+            .unwrap();
+        raw_tx
+            .send((
+                Message::Text(fixture["response"].to_string().into()),
+                get_atomic_clock_realtime().get_time_ns(),
+            ))
             .unwrap();
 
         let ws_client = peer.handler.inner.as_ref().unwrap();
@@ -2819,7 +2887,10 @@ mod tests {
         let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         peer.handler.raw_rx = raw_rx;
         raw_tx
-            .send(Message::Text(fixture[fixture_key].to_string().into()))
+            .send((
+                Message::Text(fixture[fixture_key].to_string().into()),
+                get_atomic_clock_realtime().get_time_ns(),
+            ))
             .unwrap();
 
         let message = peer.handler.next().await.unwrap();
@@ -2859,10 +2930,16 @@ mod tests {
         let fixture: Value =
             serde_json::from_str(&load_test_json("ws_reconnect_queued_frames.json")).unwrap();
         raw_tx
-            .send(Message::Text(fixture["login_failure"].to_string().into()))
+            .send((
+                Message::Text(fixture["login_failure"].to_string().into()),
+                get_atomic_clock_realtime().get_time_ns(),
+            ))
             .unwrap();
         raw_tx
-            .send(Message::Text(load_test_json("ws_orders.json").into()))
+            .send((
+                Message::Text(load_test_json("ws_orders.json").into()),
+                get_atomic_clock_realtime().get_time_ns(),
+            ))
             .unwrap();
         assert!(matches!(
             peer.handler.next().await,
@@ -2892,7 +2969,7 @@ mod tests {
         let server = tokio::spawn(async move {
             let (socket, _) = listener.accept().await.unwrap();
             let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
-            let mut header = [0u8; 1];
+            let mut header = [0_u8; 1];
             tokio::io::AsyncReadExt::read_exact(socket.get_mut(), &mut header)
                 .await
                 .unwrap();
@@ -2907,7 +2984,7 @@ mod tests {
             }
         });
 
-        let (message_handler, raw_rx) = channel_message_handler();
+        let (message_handler, raw_rx) = channel_timestamped_messages(get_atomic_clock_realtime());
         let client = WebSocketClient::builder()
             .config(
                 WebSocketConfig::builder()
@@ -2940,7 +3017,7 @@ mod tests {
             .pending_sends
             .push_back(order_send("x".repeat(64 * 1024 * 1024), 17));
         handler.send_pending().await;
-        let failure = messages.try_recv().unwrap();
+        let failure = messages.try_recv().unwrap().into_standard().unwrap();
 
         let OKXWsMessage::SendFailed {
             request_id,
@@ -2979,11 +3056,11 @@ mod tests {
         let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         handler.raw_rx = raw_rx;
         raw_tx
-            .send(Message::Text(
+            .send((Message::Text(
                 json!({"id":"17", "op":"cancel-order", "code":"50124", "msg":"Refused", "data":[]})
                     .to_string()
                     .into(),
-            ))
+            ), get_atomic_clock_realtime().get_time_ns()))
             .unwrap();
         let response = handler.next().await.unwrap();
         assert!(matches!(response, OKXWsMessage::OrderResponse {
@@ -3025,7 +3102,7 @@ mod tests {
         handler: OKXWsFeedHandler,
         commands: tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
         frames: tokio::sync::mpsc::UnboundedReceiver<String>,
-        messages: tokio::sync::mpsc::UnboundedReceiver<OKXWsMessage>,
+        messages: tokio::sync::mpsc::UnboundedReceiver<OKXWsInbound<OKXWsMessage>>,
         server: tokio::task::JoinHandle<()>,
     }
 
@@ -3052,7 +3129,7 @@ mod tests {
             }
         });
 
-        let (message_handler, raw_rx) = channel_message_handler();
+        let (message_handler, raw_rx) = channel_timestamped_messages(get_atomic_clock_realtime());
         let client = WebSocketClient::builder()
             .config(WebSocketConfig::builder().url(url).build().unwrap())
             .message_handler(message_handler)
@@ -3153,7 +3230,10 @@ mod tests {
             response.as_object_mut().unwrap().remove("data");
         }
         raw_tx
-            .send(Message::Text(response.to_string().into()))
+            .send((
+                Message::Text(response.to_string().into()),
+                get_atomic_clock_realtime().get_time_ns(),
+            ))
             .unwrap();
         let response = peer.handler.next().await.unwrap();
         let unrelated = ClientOrderId::from("OUNRELATED");
@@ -3257,10 +3337,13 @@ mod tests {
             (Some("17"), OKXWsOperation::CancelOrder),
         ] {
             raw_tx
-                .send(Message::Text(
-                    json!({"id":id, "op":op, "code":"50124", "msg":"Refused", "data":[]})
-                        .to_string()
-                        .into(),
+                .send((
+                    Message::Text(
+                        json!({"id":id, "op":op, "code":"50124", "msg":"Refused", "data":[]})
+                            .to_string()
+                            .into(),
+                    ),
+                    get_atomic_clock_realtime().get_time_ns(),
                 ))
                 .unwrap();
             let response = peer.handler.next().await.unwrap();
@@ -3317,10 +3400,11 @@ mod tests {
         if reverse {
             data.reverse();
         }
-        raw_tx.send(Message::Text(json!({"id":"17", "op":"batch-orders", "code":"2", "msg":"Partial failure", "data":data}).to_string().into())).unwrap();
+
+        raw_tx.send((Message::Text(json!({"id":"17", "op":"batch-orders", "code":"2", "msg":"Partial failure", "data":data}).to_string().into()), get_atomic_clock_realtime().get_time_ns())).unwrap();
         let response = peer.handler.next().await.unwrap();
         let (events, state) = dispatch_response(response, &ids);
-        raw_tx.send(Message::Text(json!({"id":"17", "op":"batch-orders", "code":"50124", "msg":"Late reply", "data":[]}).to_string().into())).unwrap();
+        raw_tx.send((Message::Text(json!({"id":"17", "op":"batch-orders", "code":"50124", "msg":"Late reply", "data":[]}).to_string().into()), get_atomic_clock_realtime().get_time_ns())).unwrap();
         let duplicate = peer.handler.next().await.unwrap();
         let OKXWsMessage::OrderResponse {
             client_order_ids, ..
@@ -3362,11 +3446,11 @@ mod tests {
         tokio::time::pause();
         tokio::time::advance(ORDER_RESPONSE_TTL).await;
         raw_tx
-            .send(Message::Text(
+            .send((Message::Text(
                 json!({"id":"1", "op":"cancel-order", "code":"50124", "msg":"Too late", "data":[]})
                     .to_string()
                     .into(),
-            ))
+            ), get_atomic_clock_realtime().get_time_ns()))
             .unwrap();
         let response = peer.handler.next().await.unwrap();
         tokio::time::resume();

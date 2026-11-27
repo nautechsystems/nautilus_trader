@@ -441,7 +441,7 @@ pub trait ExecutionAlgorithm: DataActor {
     /// Spawns a market order from a primary order.
     ///
     /// Creates a new market order with:
-    /// - A unique client order ID: `{primary_id}-E{sequence}`.
+    /// - A client order ID from [`ExecutionAlgorithmCore::spawn_client_order_id`].
     /// - The primary order's trader ID, strategy ID, and instrument ID.
     /// - The algorithm's `exec_algorithm_id`.
     /// - `exec_spawn_id` set to the primary order's client order ID.
@@ -512,7 +512,7 @@ pub trait ExecutionAlgorithm: DataActor {
     /// Spawns a limit order from a primary order.
     ///
     /// Creates a new limit order with:
-    /// - A unique client order ID: `{primary_id}-E{sequence}`
+    /// - A client order ID from [`ExecutionAlgorithmCore::spawn_client_order_id`]
     /// - The primary order's trader ID, strategy ID, and instrument ID
     /// - The algorithm's `exec_algorithm_id`
     /// - `exec_spawn_id` set to the primary order's client order ID
@@ -598,7 +598,7 @@ pub trait ExecutionAlgorithm: DataActor {
     /// Spawns a market-to-limit order from a primary order.
     ///
     /// Creates a new market-to-limit order with:
-    /// - A unique client order ID: `{primary_id}-E{sequence}`
+    /// - A client order ID from [`ExecutionAlgorithmCore::spawn_client_order_id`]
     /// - The primary order's trader ID, strategy ID, and instrument ID
     /// - The algorithm's `exec_algorithm_id`
     /// - `exec_spawn_id` set to the primary order's client order ID
@@ -1885,7 +1885,7 @@ fn muldiv_floor_u128(a: u128, b: u128, c: u128) -> u128 {
 
 /// Returns the 256-bit product of two `u128` values as `(high, low)` halves.
 fn mul_wide_u128(a: u128, b: u128) -> (u128, u128) {
-    const MASK: u128 = (1u128 << 64) - 1;
+    const MASK: u128 = (1_u128 << 64) - 1;
     let (a_hi, a_lo) = (a >> 64, a & MASK);
     let (b_hi, b_lo) = (b >> 64, b & MASK);
 
@@ -1904,7 +1904,7 @@ fn mul_wide_u128(a: u128, b: u128) -> (u128, u128) {
 /// truncating toward zero. Requires `hi < c` so the quotient fits `u128`.
 fn div_wide_u128(hi: u128, lo: u128, c: u128) -> u128 {
     let mut rem = hi;
-    let mut quotient = 0u128;
+    let mut quotient = 0_u128;
 
     for i in (0..u128::BITS).rev() {
         // A carry out of the shift means the true remainder is rem + 2^128,
@@ -3306,6 +3306,64 @@ mod tests {
     }
 
     #[rstest]
+    #[case("O202611200910100010002")]
+    #[case("c023d8c0bdfd4399b101689255a6217b")]
+    #[case("Desk_1")]
+    fn test_algorithm_spawn_limit_preserves_primary_id_with_compact_child(
+        #[case] primary_id: &str,
+    ) {
+        let mut algo = create_test_algorithm();
+        register_algorithm(&mut algo);
+
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let mut primary = OrderAny::Market(MarketOrder::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRAT-001"),
+            instrument_id,
+            ClientOrderId::from(primary_id),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            TimeInForce::Gtc,
+            UUID4::new(),
+            0.into(),
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ));
+
+        let price = Price::from("50000.0");
+        let spawned = algo
+            .spawn_limit(
+                &mut primary,
+                Quantity::from("0.5"),
+                price,
+                TimeInForce::Gtc,
+                None,  // expire_time
+                false, // post_only
+                false, // reduce_only
+                None,  // display_qty
+                None,  // emulation_trigger
+                None,  // tags
+                false, // reduce_primary
+            )
+            .unwrap();
+
+        let id = spawned.client_order_id.as_str();
+        assert_eq!(id.len(), 32);
+        assert!(id.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert_eq!(spawned.exec_spawn_id, Some(ClientOrderId::from(primary_id)));
+        assert_eq!(spawned.instrument_id, instrument_id);
+        assert_eq!(spawned.order_side(), OrderSide::Buy);
+    }
+
+    #[rstest]
     fn test_algorithm_spawn_market_to_limit_creates_valid_order() {
         let mut algo = create_test_algorithm();
         register_algorithm(&mut algo);
@@ -3504,8 +3562,8 @@ mod tests {
         // a * b overflows u128; the exact quotient is a - a/c, fractionally
         // under a, so an implementation that rounds instead of flooring
         // returns a. This is the shape of the Decimal-fallback defect.
-        let a = 10u128.pow(30);
-        let b = 7 * 10u128.pow(30);
+        let a = 10_u128.pow(30);
+        let b = 7 * 10_u128.pow(30);
         let c = b + 1;
         assert!(a.checked_mul(b).is_none());
         assert_eq!(muldiv_floor_u128(a, b, c), a - 1);

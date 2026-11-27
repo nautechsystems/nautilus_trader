@@ -476,7 +476,7 @@ impl PolymarketPositionClient {
             .and_then(|()| validate_outcomes(&outcomes))
             .map_err(|e| Error::bad_request(e.to_string()))?;
         let yes_id = U256::from_be_slice(requested.as_slice()) << 8;
-        let position_ids = [yes_id, yes_id + U256::from(1u8)];
+        let position_ids = [yes_id, yes_id + U256::from(1_u8)];
 
         for id in ids {
             let id =

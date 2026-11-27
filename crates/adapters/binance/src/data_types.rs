@@ -736,7 +736,10 @@ mod tests {
 
         register_binance_custom_data();
         let temp_dir = TempDir::new().unwrap();
-        let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
         let mut catalog = catalog;
         let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
         let ids = vec![instrument_id.to_string()];

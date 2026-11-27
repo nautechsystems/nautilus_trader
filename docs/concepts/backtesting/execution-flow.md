@@ -111,6 +111,24 @@ the engine releases it:
 Market data for another instrument does not activate an older command against stale market state. Commands
 with a future arrival timestamp stay in the inflight queue.
 
+#### Market data latency
+
+At `ts_init`, the backtest engine applies each quote or book update to the simulated exchange, then delivers
+it to subscribed strategies. If you use feed receipt time for `ts_init`, the exchange book also waits
+until receipt time to reflect that update.
+
+To approximate a venue that sees quotes at event time and a strategy that sees them later, you can replay
+quotes at event time and add the feed delay to commands triggered by those quotes. Check whether a fill,
+timer, or update from another feed during the delay could change the strategy's decision. The approximation
+requires the same commands to reach the venue in the same order and at the same times as with delayed delivery.
+
+For example, a strategy buys on a quote only when flat. A quote occurs at 100 ms and the feed delay is
+50 ms. At 120 ms the strategy receives a fill on an earlier order and becomes long.
+
+- **Delayed delivery**: The strategy sees the quote at 150 ms, when it is already long, and skips the buy.
+- **Event-time replay**: The strategy sees the quote at 100 ms while flat and submits a buy. Command latency
+  delays that extra order after the strategy has submitted it.
+
 ### Sandbox inbound latency
 
 `SandboxExecutionClientConfig.latency_model` accepts a `StaticLatencyModel` or a

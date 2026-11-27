@@ -4,6 +4,7 @@ Feature: Startup reconciliation
   An unresolved included position report blocks startup.
 
   The ETH scenarios use an ETH/USDT perpetual instrument and a USDT margin account.
+  The ES scenarios use E-mini S&P 500 futures with a 0.25-point tick and a contract multiplier of 50 USD per index point.
 
   Background:
     Given startup reconciliation is enabled
@@ -96,6 +97,24 @@ Feature: Startup reconciliation
         | short | start      | -5.000     |
         | short | run        | -5.000     |
 
+    @hedging @recovery
+    Scenario Outline: Recover both legs of a net-flat hedge using <entrypoint>
+      Given the cache has the ESZ21 futures contract and a USD margin account
+      And the scripted execution client uses HEDGING accounting
+      And the venue reports a long position of 5 ESZ21 contracts at 4500.25 USD with venue position ID HEDGE-LONG
+      And the venue reports a short position of 5 ESZ21 contracts at 4503.75 USD with venue position ID HEDGE-SHORT
+      When the live node starts using <entrypoint>
+      Then startup succeeds
+      And the strategy observes both reported hedge legs when it starts
+      And the portfolio exposes 0 ESZ21 contracts when the strategy starts
+      And the actor and strategy each start once
+      And the venue receives a startup mass-status request
+
+      Examples:
+        | entrypoint |
+        | start      |
+        | run        |
+
     @unrecoverable
     Scenario Outline: Block startup when the opening price is missing using <entrypoint>
       Given the venue reports a long position of 5.000 ETH
@@ -123,6 +142,27 @@ Feature: Startup reconciliation
       And no position is cached
       And the venue receives a startup mass-status request
       And the execution client is disconnected
+
+      Examples:
+        | entrypoint |
+        | start      |
+        | run        |
+
+    @instrument_scope
+    Scenario Outline: Recover an in-scope position alongside an excluded report using <entrypoint>
+      Given the cache has the ESZ21 futures contract and a USD margin account
+      And the execution client uses NETTING accounting
+      And startup reconciliation is limited to ESZ21.GLBX
+      And the venue reports a long position of 5 ESZ21 contracts
+      And the position report has no venue position ID
+      And its average opening price is 4500.25 USD
+      And the venue also reports a long position of 3 ESH22 contracts without an opening price
+      When the live node starts using <entrypoint>
+      Then startup succeeds
+      And the strategy observes a long position of 5 ESZ21 contracts at 4500.25 USD when it starts
+      And the portfolio exposes 5 ESZ21 contracts when the strategy starts
+      And the actor and strategy each start once
+      And the venue receives a startup mass-status request
 
       Examples:
         | entrypoint |
@@ -300,6 +340,29 @@ Feature: Startup reconciliation
         | source  |
         | cached  |
         | claimed |
+
+    @retained_close @restart_replay
+    Scenario: Replay the same closing executions after restart
+      Given the cache has the ESZ21 futures contract and a USD margin account
+      And the execution client uses NETTING accounting
+      And a retained long position holds 3 ESZ21 contracts bought at 4500.00 USD with a 6.75 USD fee
+      And the client cannot provide complete position coverage
+      And the closing order is cached
+      And the bounded history starts after the opening trade
+      And the venue reports a closing order filled at an average of 4502.25 USD and no position
+      And the venue reports these closing executions
+        | quantity | price   | fee  |
+        | 1        | 4501.75 | 2.25 |
+        | 2        | 4502.50 | 4.50 |
+      When the live node starts and restarts using start, replaying the same reports against the recovered orders and position
+      Then startup succeeds
+      And the closing order is FILLED
+      And the closing executions are recorded once on the order and position when the strategy starts
+      And the retained position is flat with realized profit of 324.00 USD and total fees of 13.50 USD when the strategy starts
+      And exactly one position is cached
+      And the portfolio exposes 0 ESZ21 contracts when the strategy starts
+      And the actor and strategy each start once
+      And the venue receives a startup mass-status request
 
     @retained_close @incomplete
     Scenario: Incomplete history cannot establish a safe position reduction

@@ -189,7 +189,7 @@ mod tests {
     fn test_deserialize_opt_hex_u256_present() {
         let json = "\"0x1a\"";
         let value: Option<U256> = serde_json::from_str(json).unwrap();
-        assert_eq!(value, Some(U256::from(26u8)));
+        assert_eq!(value, Some(U256::from(26_u8)));
     }
 
     #[rstest]

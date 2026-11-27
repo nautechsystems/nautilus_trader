@@ -10,7 +10,7 @@
     "positions": 225,
     "accounts": 1,
     "account_digest": "blake3:ba1b5311a979bcfb6b58a4a9c478b4f00d0c577ce0c5c9cb3328f84ee921d9fc",
-    "state_digest": "blake3:7df0da1f2aec6bb893d3bd665c9130a3e7534c9002d92dd01d1ec92e5e2ddac1"
+    "state_digest": "blake3:51893012e4495862f85add9911c52596ab1738f803abbd4527bd610d27492f1c"
   },
   "numerical_values": {
     "/position_snapshots/0/realized_return": "3f83ecc2b2134392",
@@ -246,8 +246,8 @@
     "/statistics/pnls/USDT/Max Winner": "402beb367a0f9097",
     "/statistics/pnls/USDT/Min Loser": "bf5b328b6d86ec18",
     "/statistics/pnls/USDT/Min Winner": "3faff583a53b8e4c",
-    "/statistics/pnls/USDT/PnL (total)": "c053d945308bc000",
-    "/statistics/pnls/USDT/PnL% (total)": "bf8042939c813a93",
+    "/statistics/pnls/USDT/PnL (total)": "c053d945308bb906",
+    "/statistics/pnls/USDT/PnL% (total)": "bf8042939c8134db",
     "/statistics/pnls/USDT/Win Rate": "3fc907f6e5d4c3b3",
     "/statistics/returns/Average (Return)": "bee4d042230ea000",
     "/statistics/returns/Average Loss (Return)": "bee4d042230ea000",

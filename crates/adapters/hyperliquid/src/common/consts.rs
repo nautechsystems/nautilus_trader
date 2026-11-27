@@ -60,6 +60,7 @@ pub const HYPERLIQUID_BUILDER_APPROVAL_DOCS_URL: &str =
     "https://nautilustrader.io/docs/nightly/integrations/hyperliquid/#builder-fee-approval";
 
 /// Hyperliquid signing chain ID (0x66eee = 421614 decimal).
+#[allow(clippy::unreadable_literal, reason = "chain ID")]
 pub const HYPERLIQUID_CHAIN_ID: u64 = 421614;
 
 /// Key carrying the venue asset index on an instrument's `info` map.

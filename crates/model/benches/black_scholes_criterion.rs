@@ -19,14 +19,14 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use nautilus_model::data::black_scholes::{compute_greeks, compute_iv_and_greeks};
 
 fn bench_compute_iv_and_greeks_f32(c: &mut Criterion) {
-    let mkt_price = 10.45058f32;
-    let s = 100.0f32;
-    let k = 100.0f32;
-    let t = 1.0f32;
-    let r = 0.05f32;
-    let b = 0.05f32;
+    let mkt_price = 10.45058_f32;
+    let s = 100.0_f32;
+    let k = 100.0_f32;
+    let t = 1.0_f32;
+    let r = 0.05_f32;
+    let b = 0.05_f32;
     let is_call = true;
-    let initial_guess = 0.2f32;
+    let initial_guess = 0.2_f32;
 
     c.bench_function("compute_iv_and_greeks_f32", |b_bench| {
         b_bench.iter(|| {
@@ -45,12 +45,12 @@ fn bench_compute_iv_and_greeks_f32(c: &mut Criterion) {
 }
 
 fn bench_compute_greeks_f32(c: &mut Criterion) {
-    let s = 100.0f32;
-    let k = 100.0f32;
-    let t = 1.0f32;
-    let r = 0.05f32;
-    let b = 0.05f32;
-    let vol = 0.2f32;
+    let s = 100.0_f32;
+    let k = 100.0_f32;
+    let t = 1.0_f32;
+    let r = 0.05_f32;
+    let b = 0.05_f32;
+    let vol = 0.2_f32;
     let is_call = true;
 
     c.bench_function("compute_greeks_f32", |b_bench| {

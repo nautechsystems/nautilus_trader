@@ -2481,7 +2481,7 @@ async fn non_reopened_void_survives_modify_and_reconnect(#[case] reduce_before_r
     let report = &mut replacement["instructionReports"][0];
     report["cancelInstructionReport"]["instruction"]["betId"] = Value::from(original_id.as_str());
     report["cancelInstructionReport"]["sizeCancelled"] = Value::from(4);
-    report["placeInstructionReport"]["instruction"]["selectionId"] = Value::from(123456789);
+    report["placeInstructionReport"]["instruction"]["selectionId"] = Value::from(123_456_789);
     report["placeInstructionReport"]["instruction"]["limitOrder"]["size"] = Value::from(4);
     report["placeInstructionReport"]["instruction"]["limitOrder"]["price"] = Value::from(5);
     h.mock_state

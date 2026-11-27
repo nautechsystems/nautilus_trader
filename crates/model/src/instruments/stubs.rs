@@ -177,6 +177,7 @@ pub fn crypto_option_btc_deribit(
         .raw_symbol(Symbol::from("BTC-13JAN23-16000-P"))
         .underlying(Currency::from("BTC"))
         .quote_currency(Currency::from("USD"))
+        .strike_currency(Currency::from("USD"))
         .settlement_currency(Currency::from("BTC"))
         .is_inverse(false)
         .option_kind(OptionKind::Put)
@@ -334,7 +335,7 @@ pub fn default_fx_ccy(symbol: Symbol, venue: Option<Venue>) -> CurrencyPair {
         "FOREX_5DECIMAL"
     };
     let price_increment = Price::new(
-        1.0 / 10.0f64.powi(i32::from(price_precision)),
+        1.0 / 10.0_f64.powi(i32::from(price_precision)),
         price_precision,
     );
     CurrencyPair::builder()
@@ -474,7 +475,9 @@ pub fn option_contract_appl() -> OptionContract {
         .underlying(Ustr::from("AAPL"))
         .option_kind(OptionKind::Call)
         .strike_price(Price::from("149.0"))
-        .currency(Currency::USD())
+        .quote_currency(Currency::USD())
+        .settlement_currency(Currency::USD())
+        .strike_currency(Currency::USD())
         .activation_ns(UnixNanos::from(activation))
         .expiration_ns(UnixNanos::from(expiration))
         .price_precision(2)

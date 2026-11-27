@@ -20,7 +20,7 @@ use std::{
 
 use ahash::AHashMap;
 use anyhow::Context;
-use databento::dbn::{self, InstrumentDefMsg};
+use databento::dbn::{self, InstrumentDefMsg, InstrumentDefRec};
 use dbn::{
     Publisher,
     decode::{DbnMetadata, DecodeStream, dbn::Decoder},
@@ -43,7 +43,9 @@ use super::{
 };
 use crate::{
     common::{build_publisher_venue_map, load_publishers},
-    decode::{DatabentoDecodeConfig, decode_instrument_def_msg},
+    decode::{
+        DatabentoDecodeConfig, decode_instrument_def_msg, skip_glbx_outright_without_multiplier,
+    },
     symbology::MetadataCache,
 };
 
@@ -268,8 +270,6 @@ impl DatabentoDataLoader {
         let decoder = Decoder::from_zstd_file(filepath)?;
         let mut dbn_stream = decoder.decode_stream::<InstrumentDefMsg>();
 
-        // Loop over skipped records (Ok(None)) so one unsupported class does not
-        // terminate the stream
         Ok(std::iter::from_fn(move || {
             loop {
                 let advance = dbn_stream
@@ -280,6 +280,9 @@ impl DatabentoDataLoader {
                 }
 
                 let rec = dbn_stream.get()?;
+                if skip_glbx_outright_without_multiplier(rec) {
+                    continue;
+                }
 
                 let result: anyhow::Result<Option<InstrumentAny>> = (|| {
                     let record = dbn::RecordRef::from(rec);
@@ -372,7 +375,7 @@ impl DatabentoDataLoader {
         bars_timestamp_on_close: Option<bool>,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<(Option<Data>, Option<Data>)>> + '_>
     where
-        T: dbn::Record + dbn::HasRType + 'static,
+        T: dbn::v3::HasRType + 'static,
     {
         let decoder = Decoder::from_zstd_file(filepath)?;
         let mut metadata_cache = if instrument_id.is_none() {
@@ -807,7 +810,7 @@ impl DatabentoDataLoader {
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<InstrumentStatus>> + '_>
     where
-        T: dbn::Record + dbn::HasRType + 'static,
+        T: dbn::v3::HasRType + 'static,
     {
         let decoder = Decoder::from_zstd_file(filepath)?;
         let mut metadata_cache = if instrument_id.is_none() {
@@ -862,7 +865,7 @@ impl DatabentoDataLoader {
         price_precision: Option<u8>,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<DatabentoImbalance>> + '_>
     where
-        T: dbn::Record + dbn::HasRType + 'static,
+        T: dbn::v3::HasRType + 'static,
     {
         let decoder = Decoder::from_zstd_file(filepath)?;
         let mut metadata_cache = if instrument_id.is_none() {
@@ -932,7 +935,7 @@ impl DatabentoDataLoader {
         price_precision: Option<u8>,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<DatabentoStatistics>> + '_>
     where
-        T: dbn::Record + dbn::HasRType + 'static,
+        T: dbn::v3::HasRType + 'static,
     {
         let decoder = Decoder::from_zstd_file(filepath)?;
         let mut metadata_cache = if instrument_id.is_none() {
@@ -1301,7 +1304,7 @@ mod tests {
         let count = loader
             .read_order_book_deltas(&path, Some(instrument_id), None)
             .unwrap()
-            .map(|result| result.map(|_| 1usize))
+            .map(|result| result.map(|_| 1_usize))
             .sum::<anyhow::Result<usize>>()
             .unwrap();
 
@@ -1426,8 +1429,8 @@ mod tests {
         assert_eq!(first_quote.ask_price, Price::from("3720.50"));
         assert_eq!(first_quote.bid_size, Quantity::from(24));
         assert_eq!(first_quote.ask_size, Quantity::from(11));
-        assert_eq!(first_quote.ts_event, 1609160400006136329);
-        assert_eq!(first_quote.ts_init, 1609160400006136329);
+        assert_eq!(first_quote.ts_event, 1_609_160_400_006_136_329);
+        assert_eq!(first_quote.ts_init, 1_609_160_400_006_136_329);
     }
 
     #[rstest]
@@ -1449,8 +1452,8 @@ mod tests {
         assert_eq!(first_quote.ask_price, Price::from("3720.50"));
         assert_eq!(first_quote.bid_size, Quantity::from(24));
         assert_eq!(first_quote.ask_size, Quantity::from(11));
-        assert_eq!(first_quote.ts_event, 1609160400006136329);
-        assert_eq!(first_quote.ts_init, 1609160400006136329);
+        assert_eq!(first_quote.ts_event, 1_609_160_400_006_136_329);
+        assert_eq!(first_quote.ts_init, 1_609_160_400_006_136_329);
     }
 
     #[rstest]
@@ -1472,8 +1475,8 @@ mod tests {
         assert_eq!(quotes[0].ask_price, Price::from("3720.50"));
         assert_eq!(quotes[0].bid_size, Quantity::from(24));
         assert_eq!(quotes[0].ask_size, Quantity::from(11));
-        assert_eq!(quotes[0].ts_event, 1609160400006136329);
-        assert_eq!(quotes[0].ts_init, 1609160400006136329);
+        assert_eq!(quotes[0].ts_event, 1_609_160_400_006_136_329);
+        assert_eq!(quotes[0].ts_init, 1_609_160_400_006_136_329);
     }
 
     #[rstest]
@@ -1631,8 +1634,8 @@ mod tests {
         // Assert first record fields match Python test expectations
         let first = &statuses[0];
         assert_eq!(first.instrument_id, instrument_id);
-        assert_eq!(first.ts_event.as_u64(), 1609110000000000000);
-        assert_eq!(first.ts_init.as_u64(), 1609113600000000000);
+        assert_eq!(first.ts_event.as_u64(), 1_609_110_000_000_000_000);
+        assert_eq!(first.ts_init.as_u64(), 1_609_113_600_000_000_000);
     }
 
     #[rstest]
@@ -1718,6 +1721,39 @@ mod tests {
             InstrumentId::new(Symbol::from(raw), Venue::from("GLBX"))
         );
         assert_eq!(legacy_instruments[0].raw_symbol(), Symbol::from(raw));
+    }
+
+    #[rstest]
+    fn test_strict_loader_skips_glbx_definition_without_multiplier(
+        mut loader_without_seed: DatabentoDataLoader,
+    ) {
+        let path = test_data_path().join("test_data.definition.futures_contract.dbn.zst");
+        let mut decoder = Decoder::from_zstd_file(path).unwrap();
+        let metadata = decoder.metadata().clone();
+        let definition = decoder
+            .decode_record::<InstrumentDefMsg>()
+            .unwrap()
+            .unwrap()
+            .clone();
+        let mut missing_multiplier = definition.clone();
+        missing_multiplier.unit_of_measure_qty = dbn::UNDEF_PRICE;
+        missing_multiplier.exchange.fill(0);
+        let mut replay = tempfile::NamedTempFile::new().unwrap();
+
+        {
+            let mut encoder = dbn::encode::dbn::Encoder::with_zstd(&mut replay, &metadata).unwrap();
+            encoder.encode_record(&missing_multiplier).unwrap();
+            encoder.encode_record(&definition).unwrap();
+            encoder.flush().unwrap();
+        }
+
+        let instruments = loader_without_seed
+            .load_instruments(replay.path(), true, false, None)
+            .unwrap();
+
+        assert_eq!(instruments.len(), 1);
+        assert_eq!(instruments[0].id(), InstrumentId::from("ESU26.XCME"));
+        assert_eq!(instruments[0].multiplier(), Quantity::from(50));
     }
 
     #[rstest]

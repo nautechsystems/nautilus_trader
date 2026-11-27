@@ -4376,23 +4376,23 @@ impl DataActorCore {
     }
 
     /// Registers an indicator to receive quote ticks for an instrument.
-    pub fn register_indicator_for_quote_ticks(
+    pub fn register_indicator_for_quotes(
         &mut self,
         instrument_id: InstrumentId,
         indicator: SharedActorIndicator,
     ) {
         self.indicators
-            .register_indicator_for_quote_ticks(instrument_id, indicator);
+            .register_indicator_for_quotes(instrument_id, indicator);
     }
 
     /// Registers an indicator to receive trade ticks for an instrument.
-    pub fn register_indicator_for_trade_ticks(
+    pub fn register_indicator_for_trades(
         &mut self,
         instrument_id: InstrumentId,
         indicator: SharedActorIndicator,
     ) {
         self.indicators
-            .register_indicator_for_trade_ticks(instrument_id, indicator);
+            .register_indicator_for_trades(instrument_id, indicator);
     }
 
     /// Registers an indicator to receive bars for a bar type.

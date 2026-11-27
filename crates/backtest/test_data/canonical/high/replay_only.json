@@ -10,7 +10,7 @@
     "positions": 0,
     "accounts": 1,
     "account_digest": "blake3:405c9f219087dbff0f0641cfdc5fc41c84296981f4158bc9ea0978a1c81aee2c",
-    "state_digest": "blake3:5e1c0d02ba51b5d348442b0b2292712c99b7e507f214034560da5eb20ce087ac"
+    "state_digest": "blake3:d8c6d32c21a95a2b25c43c0d6204e7946e74bc3b0ec4de595237c9c9606df5e3"
   },
   "numerical_values": {
     "/statistics/pnls/USDT/Avg Loser": "nan",

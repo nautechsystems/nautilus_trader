@@ -28,7 +28,7 @@
 #[cfg(feature = "mimalloc")]
 mod allocator;
 
-use std::{fmt::Debug, path::Path, str::FromStr};
+use std::{fmt::Debug, str::FromStr};
 
 use nautilus_backtest::{
     config::{BacktestDataConfig, BacktestRunConfig, BacktestVenueConfig},
@@ -331,7 +331,7 @@ fn load_option_metadata(
     venue: Venue,
     underlying: &str,
 ) -> anyhow::Result<Vec<OptionMetadata>> {
-    let catalog = ParquetDataCatalog::new(Path::new(catalog_path), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder().uri(catalog_path).build()?;
     let instruments = catalog.query_instruments(None)?;
 
     let options: Vec<OptionMetadata> = instruments
@@ -407,7 +407,7 @@ fn option_metadata(instrument: &InstrumentAny) -> Option<OptionMetadata> {
         InstrumentAny::OptionContract(option) => Some(OptionMetadata {
             instrument_id: option.id,
             underlying: option.underlying,
-            settlement_currency: option.currency.code,
+            settlement_currency: option.settlement_currency.code,
             expiration_ns: option.expiration_ns.as_u64(),
             strike: option.strike_price,
         }),

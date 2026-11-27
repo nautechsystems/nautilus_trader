@@ -338,7 +338,7 @@ mod tests {
     fn test_sma_matches_reference_series() {
         const PERIOD: usize = 5;
 
-        let prices: Vec<f64> = (1u32..=15)
+        let prices: Vec<f64> = (1_u32..=15)
             .map(|n| f64::from(n * (n + 1) / 2) * 0.37)
             .collect();
 

@@ -2356,7 +2356,7 @@ mod tests {
     const ERROR_AUTH_INVALID_FIXTURE: &str =
         include_str!("../test_data/polybolt_error_auth_invalid.json");
 
-    const TWAP_OBSERVATION_TS: u64 = 1791355667000;
+    const TWAP_OBSERVATION_TS: u64 = 1_791_355_667_000;
     const SEQUENCE_GAP_STEP: u64 = 1000;
 
     fn crypto_twap_data_type_without_window(symbol: &str) -> DataType {
@@ -2483,7 +2483,7 @@ mod tests {
         assert_eq!(envelope.v, 1);
         assert_eq!(envelope.channel, "price.crypto");
         assert_eq!(envelope.seq, 2);
-        assert_eq!(envelope.ts, 1791355667000);
+        assert_eq!(envelope.ts, 1_791_355_667_000);
         assert!(!envelope.snapshot);
         assert_eq!(envelope.dropped, None);
         assert_eq!(
@@ -2492,7 +2492,7 @@ mod tests {
                 "full_accuracy_value": "84290.833784311415570432",
                 "source": "chainlink",
                 "symbol": "btcusd",
-                "timestamp": 1791355667000_u64,
+                "timestamp": 1_791_355_667_000_u64,
                 "value": 84290.83378431141,
             })
         );
@@ -2812,7 +2812,7 @@ mod tests {
         assert_eq!(payload.window_seconds, 60);
         assert_eq!(payload.value, dec!(84291.577380840025358336));
         assert_eq!(payload.observation_timestamp_ms, TWAP_OBSERVATION_TS);
-        assert_eq!(payload.message_timestamp_ms, 1791355667000);
+        assert_eq!(payload.message_timestamp_ms, 1_791_355_667_000);
         assert_eq!(
             payload.ts_event,
             UnixNanos::from_millis(TWAP_OBSERVATION_TS)
@@ -2830,9 +2830,9 @@ mod tests {
             .expect("valid TWAP snapshot");
 
         let expected = [
-            (1791355549000_u64, dec!(84308.348647635372998656)),
-            (1791355550000_u64, dec!(84308.296819943225163776)),
-            (1791355666000_u64, dec!(84291.78433204316536832)),
+            (1_791_355_549_000_u64, dec!(84308.348647635372998656)),
+            (1_791_355_550_000_u64, dec!(84308.296819943225163776)),
+            (1_791_355_666_000_u64, dec!(84291.78433204316536832)),
         ];
 
         for (timestamp, value) in expected {
@@ -2840,7 +2840,7 @@ mod tests {
             let payload = twap_payload(&custom);
             assert_eq!(payload.observation_timestamp_ms, timestamp);
             assert_eq!(payload.value, value);
-            assert_eq!(payload.message_timestamp_ms, 1791355666000);
+            assert_eq!(payload.message_timestamp_ms, 1_791_355_666_000);
             assert_eq!(payload.window_seconds, 60);
         }
 
@@ -2876,7 +2876,7 @@ mod tests {
         assert!(error.to_string().contains("full_accuracy_value"), "{error}");
         assert_eq!(
             twap_payload(&next_custom(&mut rx)).observation_timestamp_ms,
-            1791355549000,
+            1_791_355_549_000,
             "points before the malformed one are still emitted",
         );
         assert!(rx.try_recv().is_err());
@@ -3265,7 +3265,7 @@ mod tests {
             "v": 1,
             "channel": "price.crypto.twap",
             "seq": 3,
-            "ts": 1791355667000_u64
+            "ts": 1_791_355_667_000_u64
         });
 
         let error = feed
@@ -3284,7 +3284,7 @@ mod tests {
         let (feed, mut rx) = make_feed();
         feed.track_subscribe(crypto_twap_data_type("btcusd", 60))
             .expect("track 60-second TWAP");
-        let frame = json!({"ts": 1791355667000_u64, "payload": {}});
+        let frame = json!({"ts": 1_791_355_667_000_u64, "payload": {}});
 
         let error = feed
             .handle_text_message(&frame.to_string(), 0)
@@ -3302,7 +3302,7 @@ mod tests {
         let (feed, mut rx) = make_feed();
         feed.track_subscribe(crypto_twap_data_type("btcusd", 60))
             .expect("track 60-second TWAP");
-        let frame = json!({"v": 1, "channel": "price.polymarket", "ts": 1791355667000_u64});
+        let frame = json!({"v": 1, "channel": "price.polymarket", "ts": 1_791_355_667_000_u64});
 
         feed.handle_text_message(&frame.to_string(), 0)
             .expect("malformed unrelated channel remains ignorable");
@@ -3317,7 +3317,7 @@ mod tests {
             "v": 1,
             "channel": "price.polymarket",
             "seq": 1,
-            "ts": 1791355667000_u64,
+            "ts": 1_791_355_667_000_u64,
             "payload": {}
         });
 
@@ -3343,9 +3343,9 @@ mod tests {
         assert_eq!(payload.symbol, "btcusd");
         assert_eq!(payload.source, "chainlink");
         assert_eq!(payload.value, dec!(84290.833784311415570432));
-        assert_eq!(payload.price_timestamp_ms, 1791355667000);
-        assert_eq!(payload.message_timestamp_ms, 1791355667000);
-        assert_eq!(payload.ts_event, UnixNanos::from_millis(1791355667000));
+        assert_eq!(payload.price_timestamp_ms, 1_791_355_667_000);
+        assert_eq!(payload.message_timestamp_ms, 1_791_355_667_000);
+        assert_eq!(payload.ts_event, UnixNanos::from_millis(1_791_355_667_000));
     }
 
     #[rstest]
@@ -3396,8 +3396,8 @@ mod tests {
         let mut update = fixture_json(CRYPTO_UPDATE_FIXTURE);
         update["payload"]["symbol"] = json!("ethusd");
         update["payload"]["full_accuracy_value"] = json!("2450.110000000000000000");
-        update["payload"]["timestamp"] = json!(1791355670000_u64);
-        update["ts"] = json!(1791355670004_u64);
+        update["payload"]["timestamp"] = json!(1_791_355_670_000_u64);
+        update["ts"] = json!(1_791_355_670_004_u64);
 
         feed.handle_text_message(&update.to_string(), 0)
             .expect("valid crypto update");
@@ -3407,8 +3407,8 @@ mod tests {
         assert_eq!(custom.data_type, eth_data_type);
         assert_eq!(payload.symbol, "ethusd");
         assert_eq!(payload.value, dec!(2450.110000000000000000));
-        assert_eq!(payload.price_timestamp_ms, 1791355670000);
-        assert_eq!(payload.message_timestamp_ms, 1791355670004);
+        assert_eq!(payload.price_timestamp_ms, 1_791_355_670_000);
+        assert_eq!(payload.message_timestamp_ms, 1_791_355_670_004);
         assert!(rx.try_recv().is_err());
     }
 
@@ -3513,9 +3513,9 @@ mod tests {
             .expect("valid crypto snapshot");
 
         let expected = [
-            (1791355549000_u64, dec!(84307.27064946722471936)),
-            (1791355550000_u64, dec!(84307.023637929491693568)),
-            (1791355666000_u64, dec!(84290.764561459730972672)),
+            (1_791_355_549_000_u64, dec!(84307.27064946722471936)),
+            (1_791_355_550_000_u64, dec!(84307.023637929491693568)),
+            (1_791_355_666_000_u64, dec!(84290.764561459730972672)),
         ];
 
         for (timestamp, value) in expected {
@@ -3526,7 +3526,7 @@ mod tests {
             assert_eq!(payload.source, "chainlink");
             assert_eq!(payload.value, value);
             assert_eq!(payload.price_timestamp_ms, timestamp);
-            assert_eq!(payload.message_timestamp_ms, 1791355666000);
+            assert_eq!(payload.message_timestamp_ms, 1_791_355_666_000);
         }
 
         assert!(rx.try_recv().is_err());
@@ -3552,9 +3552,9 @@ mod tests {
         assert_eq!(payload.symbol, "aapl");
         assert_eq!(payload.source, "pyth");
         assert_eq!(payload.value, dec!(333.81));
-        assert_eq!(payload.price_timestamp_ms, 1791355668000);
-        assert_eq!(payload.message_timestamp_ms, 1791355668000);
-        assert_eq!(payload.received_at_ms, Some(1791355668000));
+        assert_eq!(payload.price_timestamp_ms, 1_791_355_668_000);
+        assert_eq!(payload.message_timestamp_ms, 1_791_355_668_000);
+        assert_eq!(payload.received_at_ms, Some(1_791_355_668_000));
         assert!(!payload.is_carried_forward);
     }
 
@@ -3605,9 +3605,9 @@ mod tests {
         let mut update = fixture_json(EQUITY_UPDATE_FIXTURE);
         update["payload"]["symbol"] = json!("msft");
         update["payload"]["full_accuracy_value"] = json!("432.1537");
-        update["payload"]["timestamp"] = json!(1791355669000_u64);
-        update["payload"]["received_at"] = json!(1791355669007_u64);
-        update["ts"] = json!(1791355669020_u64);
+        update["payload"]["timestamp"] = json!(1_791_355_669_000_u64);
+        update["payload"]["received_at"] = json!(1_791_355_669_007_u64);
+        update["ts"] = json!(1_791_355_669_020_u64);
 
         feed.handle_text_message(&update.to_string(), 0)
             .expect("valid equity update");
@@ -3617,9 +3617,9 @@ mod tests {
         assert_eq!(custom.data_type, msft_data_type);
         assert_eq!(payload.symbol, "msft");
         assert_eq!(payload.value, dec!(432.1537));
-        assert_eq!(payload.price_timestamp_ms, 1791355669000);
-        assert_eq!(payload.message_timestamp_ms, 1791355669020);
-        assert_eq!(payload.received_at_ms, Some(1791355669007));
+        assert_eq!(payload.price_timestamp_ms, 1_791_355_669_000);
+        assert_eq!(payload.message_timestamp_ms, 1_791_355_669_020);
+        assert_eq!(payload.received_at_ms, Some(1_791_355_669_007));
         assert!(rx.try_recv().is_err());
     }
 
@@ -3633,7 +3633,7 @@ mod tests {
         feed.handle_text_message(EQUITY_SNAPSHOT_FIXTURE, 0)
             .expect("valid equity snapshot");
 
-        for timestamp in [1791355548200_u64, 1791355548400, 1791355667800] {
+        for timestamp in [1_791_355_548_200_u64, 1_791_355_548_400, 1_791_355_667_800] {
             let custom = next_custom(&mut rx);
             let payload = equity_payload(&custom);
             assert_eq!(custom.data_type, data_type);
@@ -3641,7 +3641,7 @@ mod tests {
             assert_eq!(payload.source, "pyth");
             assert_eq!(payload.value, dec!(333.81));
             assert_eq!(payload.price_timestamp_ms, timestamp);
-            assert_eq!(payload.message_timestamp_ms, 1791355667800);
+            assert_eq!(payload.message_timestamp_ms, 1_791_355_667_800);
             assert_eq!(payload.received_at_ms, None);
             assert!(!payload.is_carried_forward);
         }

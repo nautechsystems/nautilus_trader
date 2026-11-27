@@ -83,11 +83,12 @@ fn make_btc_option(strike: &str, kind: OptionKind) -> InstrumentAny {
             .raw_symbol(Symbol::from(raw_symbol_str))
             .underlying(Currency::from("BTC"))
             .quote_currency(Currency::USD())
+            .strike_currency(Currency::USD())
             .settlement_currency(Currency::from("BTC"))
             .is_inverse(false)
             .option_kind(kind)
             .strike_price(Price::from(strike))
-            .activation_ns(UnixNanos::from(1_671_696_000_000_000_000u64))
+            .activation_ns(UnixNanos::from(1_671_696_000_000_000_000_u64))
             .expiration_ns(UnixNanos::from(EXPIRATION_NS))
             .price_precision(3)
             .size_precision(1)
@@ -206,7 +207,10 @@ fn build_catalog() -> (
 ) {
     let temp_dir = TempDir::new().unwrap();
     let catalog_path = temp_dir.path().to_str().unwrap().to_string();
-    let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
 
     let call = make_btc_option(STRIKE, OptionKind::Call);
     let put = make_btc_option(STRIKE, OptionKind::Put);

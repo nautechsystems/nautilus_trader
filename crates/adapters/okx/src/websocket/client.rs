@@ -35,7 +35,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
-use futures_util::Stream;
+use futures_util::{Stream, StreamExt};
 use nautilus_common::live::dst::time;
 use nautilus_core::{
     AtomicMap, AtomicTime, UUID4, UnixNanos,
@@ -61,7 +61,7 @@ use nautilus_network::{
     ratelimiter::quota::Quota,
     websocket::{
         AUTHENTICATION_TIMEOUT_SECS, AuthTracker, SubscriptionState, TEXT_PING, TransportBackend,
-        WebSocketClient, WebSocketConfig, channel_message_handler,
+        WebSocketClient, WebSocketConfig,
     },
 };
 use parking_lot::Mutex;
@@ -75,8 +75,8 @@ use super::{
     error::OKXWsError,
     handler::{HandlerCommand, OKXWsFeedHandler, SnapshotGate},
     messages::{
-        OKXAuthentication, OKXAuthenticationArg, OKXSubscriptionArg, OKXWsMessage, OKXWsRequest,
-        WsAmendOrderParamsBuilder, WsAttachAlgoOrdParams, WsCancelOrderParamsBuilder,
+        OKXAuthentication, OKXAuthenticationArg, OKXSubscriptionArg, OKXWsInbound, OKXWsMessage,
+        OKXWsRequest, WsAmendOrderParamsBuilder, WsAttachAlgoOrdParams, WsCancelOrderParamsBuilder,
         WsMassCancelParams, WsPostOrderParamsBuilder,
     },
     subscription::{is_topic_subscribed, topic_from_subscription_arg},
@@ -234,7 +234,7 @@ pub struct OKXWebSocketClient {
     signal: Arc<AtomicBool>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
-    out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<OKXWsMessage>>>,
+    out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<OKXWsInbound<OKXWsMessage>>>>,
     handler_tasks: Arc<TaskGroup>,
     connect_lock: Arc<tokio::sync::Mutex<()>>,
     handler_abort: Arc<Mutex<CancellationToken>>,
@@ -648,6 +648,14 @@ impl OKXWebSocketClient {
     ///
     /// Returns an error if the connection process fails.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
+        self.connect_inner(false).await
+    }
+
+    pub(crate) async fn connect_market_data(&mut self) -> anyhow::Result<()> {
+        self.connect_inner(true).await
+    }
+
+    async fn connect_inner(&mut self, market_data: bool) -> anyhow::Result<()> {
         let connect_lock = Arc::clone(&self.connect_lock);
         let _connect_guard = connect_lock.lock().await;
 
@@ -681,7 +689,7 @@ impl OKXWebSocketClient {
         // Reset signal so is_active()/is_closed() work after a previous close()
         self.signal.store(false, Ordering::Release);
 
-        let (message_handler, raw_rx) = channel_message_handler();
+        let (message_handler, raw_rx) = super::handler::channel_timestamped_messages(self.clock);
 
         // No-op ping handler: handler owns the WebSocketClient and responds to pings directly
         // in the message loop for minimal latency (see handler.rs TEXT_PONG response)
@@ -766,7 +774,7 @@ impl OKXWebSocketClient {
         let connection_mode = ws_client.connection_mode_atomic();
         let reconnect_handle = ws_client.reconnect_handle();
 
-        let (msg_tx, rx) = tokio::sync::mpsc::unbounded_channel::<OKXWsMessage>();
+        let (msg_tx, rx) = tokio::sync::mpsc::unbounded_channel::<OKXWsInbound<OKXWsMessage>>();
 
         self.out_rx = Some(Arc::new(rx));
 
@@ -831,11 +839,11 @@ impl OKXWebSocketClient {
                             log::debug!("Handler task aborted");
                             break;
                         }
-                        message = handler.next() => message,
+                        message = handler.next_inbound(market_data) => message,
                     };
 
                     match message {
-                        Some(OKXWsMessage::Reconnected) => {
+                        Some(OKXWsInbound::Standard(OKXWsMessage::Reconnected)) => {
                             let epoch = ws_client.connection_epoch();
 
                             if !advance_reconnect_epoch(
@@ -893,7 +901,7 @@ impl OKXWebSocketClient {
                                 break;
                             }
                         }
-                        Some(OKXWsMessage::Authenticated) => {
+                        Some(OKXWsInbound::Standard(OKXWsMessage::Authenticated)) => {
                             if has_reconnected {
                                 resubscribe_all();
                             }
@@ -1001,6 +1009,13 @@ impl OKXWebSocketClient {
     /// - The websocket is not connected.
     /// - `stream_data` has already been called somewhere else (stream receiver is then taken).
     pub fn stream(&mut self) -> impl Stream<Item = OKXWsMessage> + 'static {
+        self.inbound_stream()
+            .filter_map(|message| std::future::ready(message.into_standard()))
+    }
+
+    pub(crate) fn inbound_stream(
+        &mut self,
+    ) -> impl Stream<Item = OKXWsInbound<OKXWsMessage>> + 'static {
         let rx = self
             .out_rx
             .take()
@@ -1121,17 +1136,8 @@ impl OKXWebSocketClient {
     }
 
     async fn subscribe(&self, args: Vec<OKXSubscriptionArg>) -> Result<(), OKXWsError> {
-        // Send the command first; only update local state on success
-        self.cmd_tx
-            .read()
-            .await
-            .send(HandlerCommand::Subscribe { args: args.clone() })
-            .map_err(|e| {
-                OKXWsError::ClientError(format!("Failed to send subscribe command: {e}"))
-            })?;
-
-        self.record_subscriptions(&args);
-        Ok(())
+        let sender = self.cmd_tx.read().await;
+        self.send_subscription(&sender, &args, true)
     }
 
     fn record_subscriptions(&self, args: &[OKXSubscriptionArg]) {
@@ -1147,17 +1153,64 @@ impl OKXWebSocketClient {
     }
 
     async fn unsubscribe(&self, args: Vec<OKXSubscriptionArg>) -> Result<(), OKXWsError> {
-        self.cmd_tx
-            .read()
-            .await
-            .send(HandlerCommand::Unsubscribe { args: args.clone() })
-            .map_err(|e| {
-                OKXWsError::ClientError(format!("Failed to send unsubscribe command: {e}"))
-            })?;
+        let sender = self.cmd_tx.read().await;
+        self.send_subscription(&sender, &args, false)
+    }
 
-        for arg in &args {
-            let topic = topic_from_subscription_arg(arg);
-            self.subscriptions_state.mark_unsubscribe(&topic);
+    pub(crate) fn queue_quote_subscription(
+        &self,
+        instrument_id: InstrumentId,
+        channel: OKXWsChannel,
+        subscribe: bool,
+    ) -> Result<(), OKXWsError> {
+        // The data client owns sender publication and serializes it with quote commands
+        let sender = self.cmd_tx.try_read().map_err(|_| {
+            OKXWsError::HandlerUnavailable("WebSocket handler sender is being replaced".into())
+        })?;
+
+        let args = [OKXSubscriptionArg {
+            channel,
+            inst_type: None,
+            inst_family: None,
+            inst_id: Some(instrument_id.symbol.inner()),
+        }];
+
+        self.send_subscription(&sender, &args, subscribe)
+    }
+
+    fn send_subscription(
+        &self,
+        sender: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
+        args: &[OKXSubscriptionArg],
+        subscribe: bool,
+    ) -> Result<(), OKXWsError> {
+        let (command, operation) = if subscribe {
+            (
+                HandlerCommand::Subscribe {
+                    args: args.to_vec(),
+                },
+                "subscribe",
+            )
+        } else {
+            (
+                HandlerCommand::Unsubscribe {
+                    args: args.to_vec(),
+                },
+                "unsubscribe",
+            )
+        };
+
+        sender.send(command).map_err(|e| {
+            OKXWsError::ClientError(format!("Failed to send {operation} command: {e}"))
+        })?;
+
+        if subscribe {
+            self.record_subscriptions(args);
+        } else {
+            for arg in args {
+                let topic = topic_from_subscription_arg(arg);
+                self.subscriptions_state.mark_unsubscribe(&topic);
+            }
         }
 
         Ok(())

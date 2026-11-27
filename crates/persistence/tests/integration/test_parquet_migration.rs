@@ -82,10 +82,8 @@ fn migration_preserves_released_quotes_and_instruments(#[case] precision: &str) 
     assert_eq!(dry_run.migrated_files, 0);
     assert!(!target.exists());
     let report = migrate_parquet_catalog(config(&source, &target, false)).unwrap();
-    let mut catalog = ParquetDataCatalog::new(&target, None, None, None, None);
-    let actual = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let mut catalog = ParquetDataCatalog::builder().uri(&target).build().unwrap();
+    let actual = catalog.query::<QuoteTick>().execute().unwrap();
     let instruments = catalog.query_instruments(None).unwrap();
     let intervals = catalog
         .get_intervals(&NautilusDataType::QuoteTick.into(), Some("AUD/USD.SIM"))
@@ -223,10 +221,8 @@ fn migration_partial_failure_preserves_sources_and_requires_empty_retry() {
     let fresh = temporary.path().join("recovered");
 
     let report = migrate_parquet_catalog(config(&source, &fresh, false)).unwrap();
-    let mut catalog = ParquetDataCatalog::new(&fresh, None, None, None, None);
-    let actual = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let mut catalog = ParquetDataCatalog::builder().uri(&fresh).build().unwrap();
+    let actual = catalog.query::<QuoteTick>().execute().unwrap();
 
     assert_eq!(report.migrated_files, 2);
     assert_eq!(report.migrated_rows, 2);
@@ -292,11 +288,16 @@ fn runtime_queries_reject_legacy_catalogs(
         fs::write(target, bytes).unwrap();
     }
 
-    let mut catalog = ParquetDataCatalog::new(temporary.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(temporary.path())
+        .build()
+        .unwrap();
 
     let result = match query {
         "typed" => catalog
-            .query::<QuoteTick>(None, None, None, predicate, None, true)
+            .query::<QuoteTick>()
+            .maybe_where_clause(predicate)
+            .execute()
             .map(|_| ()),
         "pages" => {
             let query = CatalogQuery::new(NautilusDataType::QuoteTick)
@@ -359,16 +360,12 @@ fn runtime_queries_and_migration_accept_non_instrument_class_metadata() {
     writer.write(&batch).unwrap();
     writer.close().unwrap();
     let original = catalog_files(&source);
-    let mut catalog = ParquetDataCatalog::new(&source, None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder().uri(&source).build().unwrap();
 
-    let quotes = catalog
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let quotes = catalog.query::<QuoteTick>().execute().unwrap();
     let report = migrate_parquet_catalog(config(&source, &target, false)).unwrap();
-    let mut destination = ParquetDataCatalog::new(&target, None, None, None, None);
-    let migrated = destination
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let mut destination = ParquetDataCatalog::builder().uri(&target).build().unwrap();
+    let migrated = destination.query::<QuoteTick>().execute().unwrap();
 
     assert_eq!(report.migrated_files, 1);
     assert_eq!(report.migrated_rows, 1);
@@ -453,7 +450,7 @@ fn migration_converts_class_instruments(
     assert!(!target.exists());
 
     let report = migrate_parquet_catalog(config(&source, &target, false)).unwrap();
-    let destination = ParquetDataCatalog::new(&target, None, None, None, None);
+    let destination = ParquetDataCatalog::builder().uri(&target).build().unwrap();
     let migrated = destination.query_instruments(None).unwrap();
     let destination_files = catalog_files(&target);
     let schema = ParquetRecordBatchReaderBuilder::try_new(
@@ -462,7 +459,7 @@ fn migration_converts_class_instruments(
     .unwrap()
     .schema()
     .clone();
-    let mut source_catalog = ParquetDataCatalog::new(&source, None, None, None, None);
+    let mut source_catalog = ParquetDataCatalog::builder().uri(&source).build().unwrap();
     let runtime_error = source_catalog.query_instruments(None).unwrap_err();
     let filtered_error = source_catalog
         .query_instruments_filtered_with_where(None, None, None, Some("false"))
@@ -500,12 +497,10 @@ fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
 
     let expected: Value =
         serde_json::from_slice(&fs::read(source.join("expected.json")).unwrap()).unwrap();
-    let mut catalog = ParquetDataCatalog::new(&target, None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder().uri(&target).build().unwrap();
     macro_rules! check_rows {
         ($ty:ty, $key:literal, $many:expr) => {{
-            let actual = catalog
-                .query::<$ty>(None, None, None, None, None, true)
-                .unwrap();
+            let actual = catalog.query::<$ty>().execute().unwrap();
             let expected_rows = if $many {
                 expected[$key].clone()
             } else {
@@ -529,9 +524,7 @@ fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
         order.order_id = 0;
     }
 
-    let depths = catalog
-        .query::<OrderBookDepth>(None, None, None, None, None, true)
-        .unwrap();
+    let depths = catalog.query::<OrderBookDepth>().execute().unwrap();
     assert_eq!(depths, vec![expected_depth]);
     let instruments = catalog.query_instruments(None).unwrap();
     assert_eq!(
@@ -553,7 +546,7 @@ fn develop_catalog_migrates_to_final_arrow_without_changing_source() {
         .into_iter()
         .flat_map(|batch| {
             let schema = batch.schema();
-            AccountState::decode_typed_batch(schema.metadata(), batch).unwrap()
+            AccountState::decode_typed_batch(&schema.metadata().into(), batch).unwrap()
         })
         .collect::<Vec<_>>();
 
@@ -667,10 +660,8 @@ fn migration_into_target_with_url_syntax_in_path(#[case] directory: &str) {
     let bar: Bar = serde_json::from_value(expected["bar"].clone()).unwrap();
 
     let report = migrate_parquet_catalog(config(&source, &target, false)).unwrap();
-    let mut catalog = ParquetDataCatalog::new(&target, None, None, None, None);
-    let bars = catalog
-        .query::<Bar>(None, None, None, None, None, true)
-        .unwrap();
+    let mut catalog = ParquetDataCatalog::builder().uri(&target).build().unwrap();
+    let bars = catalog.query::<Bar>().execute().unwrap();
     let mut destinations = fs::read_dir(temporary.path())
         .unwrap()
         .map(|entry| entry.unwrap().file_name())
@@ -688,14 +679,12 @@ fn migrated_catalog_consolidates_with_fresh_writes() {
     let temporary = TempDir::new().unwrap();
     let target = temporary.path().join("migrated");
     migrate_parquet_catalog(config(&fixture_path(), &target, false)).unwrap();
-    let mut catalog = ParquetDataCatalog::new(&target, None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder().uri(&target).build().unwrap();
     let fresh_offset_ns = 86_400_000_000_000;
 
     macro_rules! write_later_copy {
         ($ty:ty) => {{
-            let migrated = catalog
-                .query::<$ty>(None, None, None, None, None, true)
-                .unwrap();
+            let migrated = catalog.query::<$ty>().execute().unwrap();
             let fresh = migrated
                 .iter()
                 .cloned()
@@ -720,9 +709,7 @@ fn migrated_catalog_consolidates_with_fresh_writes() {
 
     macro_rules! query {
         ($ty:ty) => {
-            catalog
-                .query::<$ty>(None, None, None, None, None, true)
-                .unwrap()
+            catalog.query::<$ty>().execute().unwrap()
         };
     }
     assert_eq!(query!(QuoteTick), quotes);
@@ -802,7 +789,7 @@ fn migration_preserves_empty_coverage_files(
         fs::read(target.join(expected_relative)).unwrap(),
         Vec::<u8>::new()
     );
-    let catalog = ParquetDataCatalog::new(&target, None, None, None, None);
+    let catalog = ParquetDataCatalog::builder().uri(&target).build().unwrap();
     assert_eq!(
         catalog
             .get_intervals(&data_type, Some("AUDUSD.SIM"))
@@ -1038,16 +1025,20 @@ fn remote_migration_preserves_encoded_object_paths(#[case] prefix: &str) {
     let source_file = storage.path().join(&relative);
     fs::create_dir_all(source_file.parent().unwrap()).unwrap();
     fs::write(&source_file, &fixture.1).unwrap();
-    let mut source = ParquetDataCatalog::new(storage.path(), None, None, None, None);
+    let mut source = ParquetDataCatalog::builder()
+        .uri(storage.path())
+        .build()
+        .unwrap();
     source.base_path = prefix.to_string();
     source.original_uri = format!("s3://test-bucket/{prefix}");
     source.object_store = Arc::new(LocalFileSystem::new_with_prefix(storage.path()).unwrap());
-    let mut target = ParquetDataCatalog::new(destination.path(), None, None, None, None);
+    let mut target = ParquetDataCatalog::builder()
+        .uri(destination.path())
+        .build()
+        .unwrap();
 
     let report = target.migrate_from_legacy_parquet_catalog(&source).unwrap();
-    let actual = target
-        .query::<QuoteTick>(None, None, None, None, None, true)
-        .unwrap();
+    let actual = target.query::<QuoteTick>().execute().unwrap();
     let expected: Value =
         serde_json::from_slice(&fs::read(fixture_path().join("expected.json")).unwrap()).unwrap();
     let expected: Vec<QuoteTick> = serde_json::from_value(expected["quotes"].clone()).unwrap();

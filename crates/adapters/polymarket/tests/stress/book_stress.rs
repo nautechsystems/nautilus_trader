@@ -162,7 +162,13 @@ async fn churn(args: &StressArgs, ids: &[InstrumentId]) -> String {
             // A reconnect while a recovering book's events are held
             2 => {
                 start_held_recovery(&mut session, id).await;
+                let siblings = ids
+                    .iter()
+                    .copied()
+                    .filter(|sibling| *sibling != id)
+                    .collect::<Vec<_>>();
 
+                session.healthy(&siblings).await;
                 reconnect_all(&mut session);
                 session.fault(&id).hold = false;
                 session.healthy(ids).await;
@@ -390,33 +396,25 @@ async fn wait_oracle(session: &mut PolymarketSession) {
         .await;
 }
 
-// Breaks the hash of a resubscribed book's snapshot so it needs recovery, then holds every
-// later event for the book so none can complete it; returns the book's replacement attempts
-// before the recovery. A book event relayed before the hold starts can still complete the
-// recovery, which then fails the caller's wait
+// Corrupts the reconnect snapshot of an established book to force recovery with the normal
+// retry budget, then holds subsequent events. Returns the replacement attempts before recovery.
 async fn start_held_recovery(session: &mut PolymarketSession, id: InstrumentId) -> usize {
-    let corrupted = {
+    let held = {
         let mut fault = session.fault(&id);
         fault.corrupt = 1;
-        fault.corrupted
+        fault.hold_snapshot_after_corrupt = true;
+        fault.held
     };
 
-    resubscribe(session, id).await;
     let attempts = session.venue().attempts(&id);
+    reconnect_all(session);
 
     session
         .until(
-            Duration::from_secs(30),
-            "subscribe snapshot rejected",
-            |s| s.fault(&id).corrupted > corrupted,
+            Duration::from_secs(60),
+            "replacement attempted with snapshots held",
+            |s| s.venue().attempts(&id) > attempts && s.fault(&id).held > held,
         )
-        .await;
-
-    session.fault(&id).hold = true;
-    session
-        .until(Duration::from_secs(60), "replacement attempted", |s| {
-            s.venue().attempts(&id) > attempts
-        })
         .await;
 
     attempts

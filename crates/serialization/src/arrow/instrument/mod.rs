@@ -1126,7 +1126,9 @@ mod tests {
             .underlying(Ustr::from("AAPL"))
             .option_kind(OptionKind::Call)
             .strike_price(Price::from("100.00"))
-            .currency(Currency::from("USD"))
+            .quote_currency(Currency::from("USD"))
+            .settlement_currency(Currency::from("USD"))
+            .strike_currency(Currency::from("USD"))
             .activation_ns(1.into())
             .expiration_ns(2.into())
             .price_precision(2)
@@ -1930,6 +1932,44 @@ mod tests {
     }
 
     #[rstest]
+    fn test_option_schemas_order_shared_fields_consistently() {
+        let listed = OptionContract::get_schema(None);
+        let crypto = CryptoOption::get_schema(None);
+        let listed_fields: Vec<_> = listed
+            .fields()
+            .iter()
+            .map(|field| field.name().as_str())
+            .filter(|name| !matches!(*name, "asset_class" | "exchange"))
+            .collect();
+        let crypto_fields: Vec<_> = crypto
+            .fields()
+            .iter()
+            .map(|field| field.name().as_str())
+            .filter(|name| !matches!(*name, "is_inverse" | "max_notional" | "min_notional"))
+            .collect();
+
+        assert_eq!(listed_fields, crypto_fields);
+    }
+
+    #[rstest]
+    #[case::option_contract(InstrumentAny::OptionContract(
+        nautilus_model::instruments::stubs::option_contract_appl()
+    ))]
+    #[case::crypto_option(InstrumentAny::CryptoOption(crypto_option_btc_deribit(
+        3,
+        1,
+        Price::from("0.001"),
+        Quantity::from("0.1")
+    )))]
+    fn test_option_requires_strike_currency_in_arrow(#[case] instrument: InstrumentAny) {
+        let metadata = instrument.metadata();
+        let batch = InstrumentAny::encode_batch(&metadata, &[instrument]).unwrap();
+        let missing = batch_without_column(&batch, "strike_currency");
+        let error = decode_instrument_any_batch(&metadata, &missing).unwrap_err();
+        assert!(error.to_string().contains("strike_currency"));
+    }
+
+    #[rstest]
     #[case::option_contract(InstrumentAny::OptionContract(
         nautilus_model::instruments::stubs::option_contract_appl()
     ))]
@@ -1946,13 +1986,18 @@ mod tests {
             _ => unreachable!("option fixtures only"),
         };
 
-        for (known, style, settlement) in [
-            (true, Some("AMERICAN"), Some("CASH")),
-            (true, Some("EUROPEAN"), Some("PHYSICAL")),
-            (false, Some("BERMUDAN"), Some("CASH")),
-            (true, Some("EUROPEAN"), None),
-            (true, None, Some("PHYSICAL")),
-            (false, None, None),
+        for (known, style, settlement, premium) in [
+            (true, Some("AMERICAN"), Some("CASH"), Some("UPFRONT")),
+            (
+                true,
+                Some("EUROPEAN"),
+                Some("PHYSICAL"),
+                Some("FUTURES_STYLE"),
+            ),
+            (false, Some("BERMUDAN"), Some("CASH"), None),
+            (true, Some("EUROPEAN"), None, Some("FUTURES_STYLE")),
+            (true, None, Some("PHYSICAL"), None),
+            (false, None, None, None),
         ] {
             let mut encoded = serde_json::to_value(&instrument).unwrap();
             let fields = encoded
@@ -1961,26 +2006,43 @@ mod tests {
                 .values_mut()
                 .next()
                 .unwrap();
+            fields["strike_currency"] = serde_json::json!("JPY");
+            fields["settlement_currency"] = serde_json::json!("EUR");
             fields["underlying_instrument_id"] =
                 serde_json::to_value(known.then_some(underlying_id)).unwrap();
+            fields["premium_style"] = serde_json::to_value(premium).unwrap();
             fields["exercise_style"] = serde_json::to_value(style).unwrap();
             fields["settlement_type"] = serde_json::to_value(settlement).unwrap();
             let instrument: InstrumentAny = serde_json::from_value(encoded.clone()).unwrap();
             let metadata = instrument.metadata();
             let batch =
                 InstrumentAny::encode_batch(&metadata, std::slice::from_ref(&instrument)).unwrap();
+            let schema = batch.schema();
+            let exercise_index = schema.index_of("exercise_style").unwrap();
+            assert_eq!(
+                schema.index_of("premium_style").unwrap() + 1,
+                exercise_index
+            );
+            assert_eq!(
+                schema.index_of("settlement_type").unwrap(),
+                exercise_index + 1
+            );
             let restored = decode_instrument_any_batch(&metadata, &batch).unwrap();
             assert_eq!(serde_json::to_value(&restored[0]).unwrap(), encoded);
             assert_eq!(string_column_value(&batch, "option_kind"), Some(kind));
+            assert_eq!(string_column_value(&batch, "premium_style"), premium);
             assert_eq!(string_column_value(&batch, "exercise_style"), style);
+            assert_eq!(string_column_value(&batch, "settlement_type"), settlement);
 
             let legacy = batch_without_column(&batch, "underlying_instrument_id");
+            let legacy = batch_without_column(&legacy, "premium_style");
             let legacy = batch_without_column(&legacy, "exercise_style");
             let legacy = batch_without_column(&legacy, "settlement_type");
             let decoded = decode_instrument_any_batch(&metadata, &legacy).unwrap();
             let restored = serde_json::to_value(&decoded[0]).unwrap();
             let fields = restored.as_object().unwrap().values().next().unwrap();
             assert_eq!(fields["underlying_instrument_id"], serde_json::Value::Null);
+            assert_eq!(fields["premium_style"], serde_json::Value::Null);
             assert_eq!(fields["exercise_style"], serde_json::Value::Null);
             assert_eq!(fields["settlement_type"], serde_json::Value::Null);
         }
@@ -1998,7 +2060,12 @@ mod tests {
     )))]
     fn test_invalid_option_terms_return_field_error(
         #[case] instrument: InstrumentAny,
-        #[values("underlying_instrument_id", "exercise_style", "settlement_type")]
+        #[values(
+            "underlying_instrument_id",
+            "exercise_style",
+            "settlement_type",
+            "premium_style"
+        )]
         field: &'static str,
     ) {
         let metadata = instrument.metadata();

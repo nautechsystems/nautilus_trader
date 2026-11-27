@@ -486,7 +486,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.5
+    rev: v0.17.6
     hooks:
       - id: ruff
         name: ruff
@@ -524,7 +524,7 @@ repos:
         files: "\\.py$"
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.13.7 # Must match [uv] in .nautilus-engineering/tools.toml
+    rev: 0.13.9 # Must match [uv] in .nautilus-engineering/tools.toml
     hooks:
       - id: uv-lock
         args: ["--project", "python"]
@@ -548,7 +548,7 @@ repos:
         pass_filenames: false
 
   - repo: https://github.com/kynan/nbstripout
-    rev: 0.9.1
+    rev: 0.9.2
     hooks:
       - id: nbstripout
 
@@ -556,7 +556,7 @@ repos:
   #  Markdown formatting and linting
   ##############################################################################
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.24.1
+    rev: v0.24.2
     hooks:
       - id: markdownlint-cli2
         name: markdownlint

@@ -2316,7 +2316,7 @@ mod tests {
         let ticket = state.ledger.begin_refresh();
         state
             .ledger
-            .apply_refresh(ticket, Decimal::new(1000001, 4), HashMap::new())
+            .apply_refresh(ticket, Decimal::new(1_000_001, 4), HashMap::new())
             .unwrap();
         state
     }

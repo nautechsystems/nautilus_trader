@@ -32,7 +32,7 @@ use nautilus_model::{
         OptionKind, OrderSide, SettlementType,
     },
     identifiers::{InstrumentId, TradeId},
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     types::{
         Currency, Price, Quantity,
         fixed::{FIXED_PRECISION, FIXED_PRECISION_STANDARD, check_fixed_precision},
@@ -190,7 +190,7 @@ mod cmbp_trade_id_property_tests {
             ts_recv in any::<u64>(),
             price in any::<i64>(),
             size in any::<u32>(),
-            side_byte in 0u8..128,
+            side_byte in 0_u8..128,
         ) {
             let instrument_id = InstrumentId::from("ES.c.0.GLBX");
             let side = side_byte as c_char;
@@ -210,7 +210,7 @@ mod cmbp_trade_id_property_tests {
             ts_recv in any::<u64>(),
             price in any::<i64>(),
             size in any::<u32>(),
-            side_byte in 0u8..128,
+            side_byte in 0_u8..128,
         ) {
             let instrument_id = InstrumentId::from("ES.c.0.GLBX");
             let side = side_byte as c_char;
@@ -1119,7 +1119,7 @@ fn test_decode_bbo_1s_msg() {
     assert_eq!(quote.bid_size, quantity_from_str("18"));
     assert_eq!(quote.ask_size, quantity_from_str("13"));
     assert_eq!(quote.ts_event, msg.ts_recv);
-    assert_eq!(quote.ts_event, 1609113600000000000);
+    assert_eq!(quote.ts_event, 1_609_113_600_000_000_000);
     assert_eq!(quote.ts_init, 0);
 }
 
@@ -1141,7 +1141,7 @@ fn test_decode_bbo_1m_msg() {
     assert_eq!(quote.bid_size, quantity_from_str("18"));
     assert_eq!(quote.ask_size, quantity_from_str("13"));
     assert_eq!(quote.ts_event, msg.ts_recv);
-    assert_eq!(quote.ts_event, 1609113600000000000);
+    assert_eq!(quote.ts_event, 1_609_113_600_000_000_000);
     assert_eq!(quote.ts_init, 0);
 }
 
@@ -1354,7 +1354,9 @@ fn test_decode_definition_msg_option_contract(
     assert_eq!(call.option_kind, OptionKind::Call);
     assert_eq!(call.strike_price, Price::from("9600.00"));
     assert_eq!(call.underlying, underlying);
-    assert_eq!(call.currency, Currency::from("USD"));
+    assert_eq!(call.quote_currency, Currency::USD());
+    assert_eq!(call.settlement_currency, Currency::USD());
+    assert_eq!(call.strike_currency, Currency::USD());
     assert_eq!(call.multiplier, quantity(50));
     assert_eq!(call.exercise_style, Some(ExerciseStyle::American));
     assert_eq!(call.settlement_type, Some(SettlementType::Physical));
@@ -1379,6 +1381,51 @@ fn test_decode_definition_msg_option_contract(
     assert_eq!(put.raw_symbol.as_str(), "ESU6 P6575");
     assert_eq!(put.option_kind, OptionKind::Put);
     assert_eq!(put.strike_price, Price::from("6575.00"));
+}
+
+#[rstest]
+#[case("futures_contract", b'F', "ESU6.XCME")]
+#[case("option", b'C', "ESU6 C9600.XCME")]
+#[case("option", b'P', "ESU6 P6575.XCME")]
+fn test_glbx_outright_requires_multiplier(
+    #[case] fixture: &str,
+    #[case] class: u8,
+    #[case] instrument_id: InstrumentId,
+    #[values(0, dbn::UNDEF_PRICE)] missing: i64,
+) {
+    let path = test_data_path().join(format!("test_data.definition.{fixture}.dbn.zst"));
+    let mut stream = Decoder::from_zstd_file(path)
+        .unwrap()
+        .decode_stream::<dbn::InstrumentDefMsg>();
+
+    let mut msg = loop {
+        let msg = stream.next().unwrap().unwrap();
+        if msg.instrument_class as u8 == class {
+            break msg.clone();
+        }
+    };
+
+    msg.unit_of_measure_qty = 1_000_000_000;
+    let explicit = decode_instrument_def_msg(&msg, instrument_id, None, None)
+        .unwrap()
+        .unwrap();
+    msg.unit_of_measure_qty = missing;
+    let skipped = decode_instrument_def_msg(&msg, instrument_id, None, None).unwrap();
+    let error = if class == b'F' {
+        decode_futures_contract(&msg, instrument_id, None).unwrap_err()
+    } else {
+        decode_option_contract(&msg, instrument_id, None, None).unwrap_err()
+    };
+
+    assert_eq!(explicit.multiplier(), quantity(1));
+    assert!(skipped.is_none());
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "GLBX {} {instrument_id} has no multiplier in `unit_of_measure_qty`",
+            if class == b'F' { "future" } else { "option" }
+        )
+    );
 }
 
 #[rstest]
@@ -1440,6 +1487,7 @@ fn test_option_strikes_use_sufficient_precision(
     let mut msg = decoder.next().unwrap().unwrap().clone();
     msg.strike_price = raw;
     msg.strike_price_currency = cstr(strike_currency);
+    msg.settl_currency = cstr("EUR");
 
     let option =
         decode_option_contract(&msg, InstrumentId::from("ESU6 C9600.GLBX"), None, None).unwrap();
@@ -1447,7 +1495,9 @@ fn test_option_strikes_use_sufficient_precision(
     assert_eq!(option.strike_price.raw(), Price::from(expected).raw());
     assert_eq!(option.strike_price.precision, precision);
     assert_eq!(option.strike_price.as_decimal(), expected.parse().unwrap());
-    assert_eq!(option.currency, Currency::USD());
+    assert_eq!(option.quote_currency, Currency::USD());
+    assert_eq!(option.strike_currency, Currency::from(strike_currency));
+    assert_eq!(option.settlement_currency, Currency::EUR());
 }
 
 #[rstest]
@@ -1670,6 +1720,7 @@ fn option_definition_msg(
         exchange: cstr::<5>(exchange),
         cfi: cstr::<7>("OCXXXX"),
         currency: cstr::<4>("USD"),
+        strike_price_currency: cstr::<4>("USD"),
         strike_price: 5_000_000_000_000,
         min_price_increment: 10_000_000,
         unit_of_measure_qty,

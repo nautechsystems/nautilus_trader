@@ -385,7 +385,7 @@ impl PyPolymarketDataLoader {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let trades = client
-                .request_trade_ticks(
+                .request_trades(
                     instrument.id,
                     &condition_id,
                     &token_id,

@@ -46,7 +46,10 @@ fn test_continuous_future_request_serves_segments_from_catalog(
     );
 
     let catalog_dir = CatalogTempDir::new("continuous-future-segments");
-    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(catalog_dir.path())
+        .build()
+        .unwrap();
     let esh_bar_type = BarType::from("ESH24.GLBX-1-MINUTE-LAST-EXTERNAL");
     let esm_bar_type = BarType::from("ESM24.GLBX-1-MINUTE-LAST-EXTERNAL");
 
@@ -498,7 +501,10 @@ fn test_catalog_start_ns_prefill_custom_data_without_identifier_merges_catalog_i
     let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
     let type_name = "CustomFeed";
     let catalog_dir = CatalogTempDir::new("custom-no-identifier");
-    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(catalog_dir.path())
+        .build()
+        .unwrap();
     write_custom_catalog_file(
         &catalog_dir,
         &catalog,
@@ -2003,6 +2009,7 @@ fn test_request_instrument_catalog_uses_latest_record(
     mut audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
+    #[values(false, true)] bounded: bool,
 ) {
     let _ = stub_msgbus;
     let mut earlier = audusd_sim.clone();
@@ -2030,7 +2037,7 @@ fn test_request_instrument_catalog_uses_latest_record(
 
     let req = RequestCommand::Instrument(RequestInstrument::new(
         instrument_id,
-        None,
+        bounded.then(|| UnixNanos::from(1000).to_datetime_utc()),
         None,
         Some(client_id),
         parent_id,
@@ -2044,6 +2051,14 @@ fn test_request_instrument_catalog_uses_latest_record(
     assert_eq!(received[0].correlation_id, parent_id);
     assert_eq!(received[0].instrument_id, instrument_id);
     assert_eq!(received[0].data.ts_init(), UnixNanos::from(2_000));
+    assert_eq!(
+        data_engine
+            .cache()
+            .borrow()
+            .instrument(&instrument_id)
+            .map(Instrument::ts_init),
+        (!bounded).then_some(UnixNanos::from(2_000))
+    );
     assert_eq!(data_engine.request_pipeline_count(), 0);
 }
 
@@ -2055,6 +2070,7 @@ fn test_request_instruments_catalog_applies_only_last(
     stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
     venue: Venue,
+    #[values(false, true)] bounded: bool,
 ) {
     let _ = stub_msgbus;
     let mut audusd_earlier = audusd_sim.clone();
@@ -2086,7 +2102,7 @@ fn test_request_instruments_catalog_applies_only_last(
 
     let req = RequestCommand::Instruments(RequestInstruments::new(
         None,
-        None,
+        bounded.then(|| UnixNanos::from(3000).to_datetime_utc()),
         Some(client_id),
         Some(venue),
         parent_id,
@@ -2108,6 +2124,15 @@ fn test_request_instruments_catalog_applies_only_last(
         ids_and_timestamps,
         vec![(audusd_id, 2_000), (gbpusd_id, 3_000)]
     );
+    let cache = data_engine.cache().borrow();
+
+    for (id, timestamp) in ids_and_timestamps {
+        assert_eq!(
+            cache.instrument(&id).map(Instrument::ts_init),
+            (!bounded).then_some(UnixNanos::from(timestamp))
+        );
+    }
+
     assert_eq!(data_engine.request_pipeline_count(), 0);
 }
 
@@ -2781,7 +2806,10 @@ fn test_request_book_depth_no_client_no_catalog_emits_empty(
 #[cfg(feature = "streaming")]
 fn register_empty_catalog(data_engine: &mut DataEngine, label: &str) -> CatalogTempDir {
     let catalog_dir = CatalogTempDir::new(label);
-    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(catalog_dir.path())
+        .build()
+        .unwrap();
     data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
 }
@@ -2793,7 +2821,10 @@ fn register_quote_catalog(
     last_timestamp: u64,
 ) -> CatalogTempDir {
     let catalog_dir = CatalogTempDir::new("quotes");
-    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(catalog_dir.path())
+        .build()
+        .unwrap();
     catalog
         .write_to_parquet(
             &[QuoteTick::new(
@@ -2821,7 +2852,10 @@ fn register_trade_catalog(
     last_timestamp: u64,
 ) -> CatalogTempDir {
     let catalog_dir = CatalogTempDir::new("trades");
-    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(catalog_dir.path())
+        .build()
+        .unwrap();
     catalog
         .write_to_parquet(
             &[TradeTick::new(
@@ -2849,7 +2883,10 @@ fn register_bar_catalog(
     last_timestamp: u64,
 ) -> CatalogTempDir {
     let catalog_dir = CatalogTempDir::new("bars");
-    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(catalog_dir.path())
+        .build()
+        .unwrap();
     catalog
         .write_to_parquet(
             &[Bar::new(
@@ -2878,7 +2915,10 @@ fn register_custom_catalog(
     last_timestamp: u64,
 ) -> CatalogTempDir {
     let catalog_dir = CatalogTempDir::new("custom");
-    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(catalog_dir.path())
+        .build()
+        .unwrap();
     write_custom_catalog_file(
         &catalog_dir,
         &catalog,
@@ -2923,7 +2963,10 @@ fn register_bar_catalog_with_bars(
     interval: Option<(u64, u64)>,
 ) -> CatalogTempDir {
     let catalog_dir = CatalogTempDir::new(label);
-    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(catalog_dir.path())
+        .build()
+        .unwrap();
 
     let (start, end) = match interval {
         Some((s, e)) => (Some(UnixNanos::from(s)), Some(UnixNanos::from(e))),
@@ -3036,7 +3079,10 @@ fn register_funding_catalog_with_rates(
     interval: Option<(u64, u64)>,
 ) -> CatalogTempDir {
     let catalog_dir = CatalogTempDir::new(label);
-    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(catalog_dir.path())
+        .build()
+        .unwrap();
 
     let (start, end) = match interval {
         Some((s, e)) => (Some(UnixNanos::from(s)), Some(UnixNanos::from(e))),
@@ -3085,7 +3131,10 @@ fn register_custom_catalog_with_data(
 ) -> CatalogTempDir {
     ensure_engine_custom_data_registered();
     let catalog_dir = CatalogTempDir::new(label);
-    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(catalog_dir.path())
+        .build()
+        .unwrap();
 
     let (start, end) = match interval {
         Some((s, e)) => (Some(UnixNanos::from(s)), Some(UnixNanos::from(e))),
@@ -3129,7 +3178,10 @@ fn register_instrument_catalog_with_instruments(
     instruments: Vec<InstrumentAny>,
 ) -> CatalogTempDir {
     let catalog_dir = CatalogTempDir::new(label);
-    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(catalog_dir.path())
+        .build()
+        .unwrap();
     catalog.write_instruments(instruments).unwrap();
     data_engine.register_catalog(Box::new(catalog), None);
     catalog_dir
@@ -3157,7 +3209,10 @@ fn register_depth_catalog_with_depths(
     interval: Option<(u64, u64)>,
 ) -> CatalogTempDir {
     let catalog_dir = CatalogTempDir::new(label);
-    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(catalog_dir.path())
+        .build()
+        .unwrap();
 
     let (start, end) = match interval {
         Some((s, e)) => (Some(UnixNanos::from(s)), Some(UnixNanos::from(e))),
@@ -3197,7 +3252,10 @@ fn test_bar_list_prefills_each_catalog_start_independently(
     let first = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL");
     let second = BarType::from("AUD/USD.SIM-5-MINUTE-LAST-EXTERNAL");
     let catalog_dir = CatalogTempDir::new("bar-list-starts");
-    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(catalog_dir.path())
+        .build()
+        .unwrap();
 
     for (bar_type, timestamp) in [(first, 3_000), (second, if equal { 3_000 } else { 7_000 })] {
         let bar = make_bar(
@@ -3424,7 +3482,10 @@ fn test_batch_writeback_records_only_successful_source_coverage(
         &mut engine,
     );
     let directory = CatalogTempDir::new("batch-source-writeback");
-    let catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(directory.path())
+        .build()
+        .unwrap();
     let seed = quote_tick(second, "2.00000", "2.00010", 500);
     catalog
         .write_to_parquet(
@@ -3495,7 +3556,10 @@ fn test_batch_writeback_records_only_successful_source_coverage(
     };
 
     assert_eq!(response.data.as_ref(), &vec![quote]);
-    let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(directory.path())
+        .build()
+        .unwrap();
 
     for id in [first, second] {
         let missing = CatalogReader::get_missing_intervals_for_request(
@@ -3568,7 +3632,10 @@ fn test_single_request_writeback_coverage_boundaries(
         &mut engine,
     );
     let directory = CatalogTempDir::new("single-writeback");
-    let catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(directory.path())
+        .build()
+        .unwrap();
 
     let (seed_start, seed_end, seed_ts) = if write_error {
         (1500, 2500, 1500)
@@ -3668,7 +3735,10 @@ fn test_single_request_writeback_coverage_boundaries(
 
     assert_eq!(returned.data.as_ref(), expected.as_slice());
     assert_eq!(engine.request_pipeline_count(), 0);
-    let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(directory.path())
+        .build()
+        .unwrap();
     let missing = CatalogReader::get_missing_intervals_for_request(
         &mut catalog,
         UnixNanos::from(1000),
@@ -3817,7 +3887,10 @@ fn test_quote_schema_request_bypasses_canonical_catalog(
         &mut engine,
     );
     let directory = CatalogTempDir::new("quote-schema-read");
-    let catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(directory.path())
+        .build()
+        .unwrap();
     let canonical = ids
         .iter()
         .map(|id| quote_tick(*id, "9.00000", "9.00010", 1500))
@@ -3936,7 +4009,11 @@ fn test_remapped_response_does_not_certify_concrete_contract_coverage(
         &mut engine,
     );
     let directory = CatalogTempDir::new("remapped-source-coverage");
-    let catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+    let catalog = ParquetDataCatalog::builder()
+        .uri(directory.path())
+        .build()
+        .unwrap();
+
     let seeds = [
         quote_tick(first, "3.00000", "3.00010", 500),
         quote_tick(second, "4.00000", "4.00010", 500),
@@ -4023,7 +4100,10 @@ fn test_remapped_response_does_not_certify_concrete_contract_coverage(
 
     assert_eq!(response.data.as_ref(), rows.as_slice());
     assert_eq!(response.instrument_ids, vec![parent]);
-    let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(directory.path())
+        .build()
+        .unwrap();
 
     for (id, seed) in [first, second].into_iter().zip(seeds) {
         let missing = CatalogReader::get_missing_intervals_for_request(
@@ -4049,7 +4129,12 @@ fn test_remapped_response_does_not_certify_concrete_contract_coverage(
 
 #[cfg(feature = "streaming")]
 #[rstest]
-fn test_instrument_writeback_serves_next_request_from_catalog(
+#[case::unbounded(false, false)]
+#[case::bounded(true, false)]
+#[case::split_bounded(true, true)]
+fn test_instrument_catalog_writeback_requires_single_complete_response(
+    #[case] bounded: bool,
+    #[case] split: bool,
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
     cache: Rc<RefCell<Cache>>,
@@ -4072,9 +4157,11 @@ fn test_instrument_writeback_serves_next_request_from_catalog(
     );
     let _directory = register_empty_catalog(&mut engine, "instrument-writeback");
 
+    let start = bounded.then_some(UnixNanos::default());
+
     let mut request = RequestInstrument::new(
         id,
-        None,
+        start.as_ref().map(UnixNanos::to_datetime_utc),
         None,
         Some(client_id),
         UUID4::new(),
@@ -4087,21 +4174,22 @@ fn test_instrument_writeback_serves_next_request_from_catalog(
         .execute_request(RequestCommand::Instrument(request.clone()))
         .unwrap();
 
-    let response = InstrumentResponse::new(
+    let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
         request.request_id,
         client_id,
         id,
         instrument.clone(),
-        None,
+        start,
         None,
         UnixNanos::from(3001),
         None,
-    );
-    engine.response_envelope(DataResponseEnvelope::new(
-        DataResponse::Instrument(Box::new(response)),
-        true,
-        None,
-    ));
+    )));
+
+    if split {
+        engine.response_envelope(DataResponseEnvelope::new(response.clone(), false, None));
+    }
+
+    engine.response_envelope(DataResponseEnvelope::new(response, true, None));
     request.request_id = UUID4::new();
     request.params = None;
     let (handler, saver) = get_response_saving_handler::<InstrumentResponse>(None);
@@ -4112,9 +4200,16 @@ fn test_instrument_writeback_serves_next_request_from_catalog(
         .unwrap();
 
     let received = saver.get_messages();
-    assert_eq!(received.len(), 1);
-    assert_eq!(received[0].data, instrument);
-    assert_eq!(recorded_request_instrument(&recorder).len(), 1);
+    assert_eq!(received.len(), usize::from(!split));
+
+    if let Some(response) = received.first() {
+        assert_eq!(response.data, instrument);
+    }
+
+    assert_eq!(
+        recorded_request_instrument(&recorder).len(),
+        1 + usize::from(split)
+    );
     assert_eq!(engine.request_pipeline_count(), 0);
 }
 
@@ -4126,6 +4221,7 @@ fn test_instrument_list_catalog_merge_preserves_current_client_definition(
     stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
     venue: Venue,
+    #[values(false, true)] bounded: bool,
 ) {
     let _ = stub_msgbus;
     audusd_sim.ts_init = UnixNanos::from(1000);
@@ -4146,11 +4242,13 @@ fn test_instrument_list_catalog_merge_preserves_current_client_definition(
     let root = UUID4::new();
     let (handler, saver) = get_typed_message_saving_handler::<DataResponseEnvelope>(None);
     msgbus::register_response_handler(&root, handler);
+    let start = bounded.then_some(UnixNanos::from(500));
+    let end = bounded.then_some(UnixNanos::from(2000));
     engine
         .execute_request(RequestCommand::Instrument(RequestInstrument::new(
             [cached.id(), fetched.id()],
-            Some(UnixNanos::from(500).to_datetime_utc()),
-            Some(UnixNanos::from(2000).to_datetime_utc()),
+            start.as_ref().map(UnixNanos::to_datetime_utc),
+            end.as_ref().map(UnixNanos::to_datetime_utc),
             Some(client_id),
             root,
             UnixNanos::from(4000),
@@ -4165,8 +4263,8 @@ fn test_instrument_list_catalog_merge_preserves_current_client_definition(
         client_id,
         fetched.id(),
         fetched.clone(),
-        Some(UnixNanos::from(500)),
-        Some(UnixNanos::from(2000)),
+        start,
+        end,
         UnixNanos::from(4001),
         None,
     ))));
@@ -4181,10 +4279,21 @@ fn test_instrument_list_catalog_merge_preserves_current_client_definition(
     };
 
     assert_eq!(response.data, vec![cached.clone(), fetched.clone()]);
-    assert_eq!(response.start, Some(UnixNanos::from(500)));
-    assert_eq!(response.end, Some(UnixNanos::from(2000)));
-    assert_eq!(cache.borrow().instrument(&cached.id()), Some(&cached));
-    assert_eq!(cache.borrow().instrument(&fetched.id()), Some(&fetched));
+
+    if bounded {
+        assert_eq!(response.start, start);
+        assert_eq!(response.end, end);
+    }
+
+    let cache = cache.borrow();
+
+    for definition in [&cached, &fetched] {
+        assert_eq!(
+            cache.instrument(&definition.id()).map(Instrument::ts_init),
+            (!bounded).then(|| definition.ts_init())
+        );
+    }
+
     assert_eq!(engine.request_pipeline_count(), 0);
 }
 
@@ -4228,7 +4337,10 @@ fn test_trade_schema_preserves_source_rows_and_catalog_isolation(
         &mut engine,
     );
     let directory = CatalogTempDir::new("trade-schema-isolation");
-    let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(directory.path())
+        .build()
+        .unwrap();
     let canonical = ids
         .iter()
         .map(|id| make_trade(*id, "9.00000", 3, &format!("sequence-{id}"), 1500))
@@ -4334,7 +4446,10 @@ fn test_trade_schema_preserves_source_rows_and_catalog_isolation(
     assert_eq!(response.start, Some(UnixNanos::from(1000)));
     assert_eq!(response.end, Some(UnixNanos::from(3000)));
     assert_eq!(engine.request_pipeline_count(), 0);
-    let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(directory.path())
+        .build()
+        .unwrap();
 
     for (id, seed) in ids.iter().zip(canonical) {
         let query = CatalogQuery::new(NautilusDataType::TradeTick)

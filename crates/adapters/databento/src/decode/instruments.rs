@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use ahash::AHashMap;
-use databento::dbn;
+use databento::dbn::{self, InstrumentDefRec};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{AssetClass, ExerciseStyle, SettlementType},
@@ -46,13 +46,18 @@ use crate::symbology::resolve_futures_instrument_id;
 /// Returns an error if decoding the `InstrumentDefMsg` fails.
 ///
 /// Returns `Ok(None)` for instrument classes with no Nautilus equivalent (`'I'` Index,
-/// `'B'` Bond, or any future class) and FX spots that cannot be mapped to known currencies.
+/// `'B'` Bond, or any future class), FX spots that cannot be mapped to known currencies,
+/// and GLBX outright futures and options with a zero or undefined `unit_of_measure_qty`.
 pub fn decode_instrument_def_msg(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: Option<UnixNanos>,
     decode_config: Option<&DatabentoDecodeConfig>,
 ) -> anyhow::Result<Option<InstrumentAny>> {
+    if skip_glbx_outright_without_multiplier(msg) {
+        return Ok(None);
+    }
+
     match msg.instrument_class as u8 as char {
         'K' => Ok(Some(InstrumentAny::Equity(decode_equity(
             msg,
@@ -203,12 +208,17 @@ pub fn decode_equity(
 ///
 /// # Errors
 ///
-/// Returns an error if parsing or constructing `FuturesContract` fails.
+/// Returns an error if parsing or constructing `FuturesContract` fails or if a GLBX definition
+/// has a zero or undefined `unit_of_measure_qty`.
 pub fn decode_futures_contract(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: Option<UnixNanos>,
 ) -> anyhow::Result<FuturesContract> {
+    if glbx_multiplier_is_missing(msg) {
+        anyhow::bail!("GLBX future {instrument_id} has no multiplier in `unit_of_measure_qty`");
+    }
+
     let raw_symbol = Symbol::new_checked(msg.raw_symbol()?)?;
     let currency = parse_currency_or_usd_default(msg.currency());
     let exchange = Ustr::from(msg.exchange()?);
@@ -287,16 +297,35 @@ pub fn decode_futures_spread(
 ///
 /// # Errors
 ///
-/// Returns an error if parsing or constructing `OptionContract` fails.
+/// Returns an error if parsing or constructing `OptionContract` fails or if a GLBX definition
+/// has a zero or undefined `unit_of_measure_qty`.
 pub fn decode_option_contract(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
     ts_init: Option<UnixNanos>,
     decode_config: Option<&DatabentoDecodeConfig>,
 ) -> anyhow::Result<OptionContract> {
+    if glbx_multiplier_is_missing(msg) {
+        anyhow::bail!("GLBX option {instrument_id} has no multiplier in `unit_of_measure_qty`");
+    }
+
     let raw_symbol = Symbol::new_checked(msg.raw_symbol()?)?;
-    let currency = parse_currency_or_usd_default(msg.currency());
-    let strike_price_currency = parse_currency_or_usd_default(msg.strike_price_currency());
+    let dataset = msg.hd.publisher().ok().map(|p| p.dataset());
+    let quote_currency = match msg.currency()? {
+        "" if dataset == Some(dbn::Dataset::OpraPillar) => Currency::USD(),
+        code => code.parse()?,
+    };
+
+    let strike_currency = match msg.strike_price_currency()? {
+        "" if dataset == Some(dbn::Dataset::OpraPillar) => Currency::USD(),
+        code => code.parse()?,
+    };
+
+    let settlement_currency = match msg.settl_currency()? {
+        "" => quote_currency,
+        code => code.parse()?,
+    };
+
     let exchange = Ustr::from(msg.exchange()?);
     let mut underlying = decode_underlying(msg.underlying()?, &instrument_id.symbol);
     if instrument_id
@@ -325,11 +354,10 @@ pub fn decode_option_contract(
         asset_class
     };
     let option_kind = parse_option_kind(msg.instrument_class)?;
-    let strike_precision =
-        precision_from_raw(msg.strike_price).max(strike_price_currency.precision);
+    let strike_precision = precision_from_raw(msg.strike_price).max(strike_currency.precision);
     let strike_price = decode_price(msg.strike_price, strike_precision, "strike_price")
         .map_err(|e| anyhow::anyhow!("{instrument_id}: {e}"))?;
-    let dataset = msg.hd.publisher().ok().map(|p| p.dataset());
+
     let (exercise_style, settlement_type) = match parse_cfi_option_terms(msg.cfi()?) {
         (None, None) if dataset == Some(dbn::Dataset::OpraPillar) => {
             opra_option_terms(underlying.as_str()).unzip()
@@ -337,7 +365,7 @@ pub fn decode_option_contract(
         terms => terms,
     };
 
-    let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
+    let price_increment = decode_price_increment(msg.min_price_increment, quote_currency.precision);
     let multiplier =
         decode_option_multiplier(dataset, msg.contract_multiplier, msg.unit_of_measure_qty)?;
     let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
@@ -358,7 +386,9 @@ pub fn decode_option_contract(
         .underlying(underlying)
         .option_kind(option_kind)
         .strike_price(strike_price)
-        .currency(currency)
+        .quote_currency(quote_currency)
+        .settlement_currency(settlement_currency)
+        .strike_currency(strike_currency)
         .activation_ns(decode_optional_timestamp(msg.activation).unwrap_or_default())
         .expiration_ns(expiration)
         .price_precision(price_increment.precision)
@@ -482,4 +512,25 @@ pub fn decode_option_spread(
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()?)
+}
+
+pub(crate) fn skip_glbx_outright_without_multiplier(msg: &dbn::InstrumentDefMsg) -> bool {
+    if matches!(msg.instrument_class as u8, b'F' | b'C' | b'P') && glbx_multiplier_is_missing(msg) {
+        let raw_symbol = msg.raw_symbol().unwrap_or_default();
+        let instrument_id = msg.hd.instrument_id;
+        log::warn!(
+            "Skipping GLBX outright definition {raw_symbol} (DBN instrument ID {instrument_id}), no multiplier in `unit_of_measure_qty`"
+        );
+        return true;
+    }
+
+    false
+}
+
+fn glbx_multiplier_is_missing(msg: &dbn::InstrumentDefMsg) -> bool {
+    matches!(msg.unit_of_measure_qty, 0 | dbn::UNDEF_PRICE)
+        && msg
+            .hd
+            .publisher()
+            .is_ok_and(|publisher| publisher.dataset() == dbn::Dataset::GlbxMdp3)
 }

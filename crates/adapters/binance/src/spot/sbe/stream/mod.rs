@@ -257,7 +257,7 @@ mod tests {
 
     #[rstest]
     fn test_message_header_too_short() {
-        let buf = [0u8; 7];
+        let buf = [0_u8; 7];
         let err = MessageHeader::decode(&buf).unwrap_err();
         assert_eq!(
             err,
@@ -271,7 +271,7 @@ mod tests {
     #[rstest]
     fn test_group_size_too_large() {
         // Craft a buffer with num_in_group = MAX_GROUP_SIZE + 1
-        let mut buf = [0u8; 6];
+        let mut buf = [0_u8; 6];
         let count = (MAX_GROUP_SIZE + 1) as u32;
         buf[2..6].copy_from_slice(&count.to_le_bytes());
 
@@ -288,14 +288,14 @@ mod tests {
     #[rstest]
     fn test_decode_var_string8_truncated() {
         // Length says 10 bytes, but only 5 available
-        let buf = [10u8, b'H', b'E', b'L', b'L'];
+        let buf = [10_u8, b'H', b'E', b'L', b'L'];
         let err = decode_var_string8(&buf).unwrap_err();
         assert!(matches!(err, SbeDecodeError::BufferTooShort { .. }));
     }
 
     #[rstest]
     fn test_decode_var_string8_valid() {
-        let buf = [5u8, b'H', b'E', b'L', b'L', b'O'];
+        let buf = [5_u8, b'H', b'E', b'L', b'L', b'O'];
         let (s, consumed) = decode_var_string8(&buf).unwrap();
         assert_eq!(s, "HELLO");
         assert_eq!(consumed, 6);

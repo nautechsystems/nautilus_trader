@@ -2243,7 +2243,7 @@ mod tests {
                 for op in &ops {
                     match op {
                         Operation::AddReference(topic) => {
-                            let count = expected.entry(topic.clone()).or_insert(0usize);
+                            let count = expected.entry(topic.clone()).or_insert(0_usize);
                             let should_subscribe = *count == 0;
                             *count += 1;
                             prop_assert_eq!(state.add_reference(topic), should_subscribe);

@@ -201,15 +201,7 @@ impl RunnerMetricsDelta {
     /// Returns zero when the channel dispatched no messages.
     #[must_use]
     pub fn channel_mean_dispatch_ns(&self, channel: SystemChannel) -> u64 {
-        let (dispatched, dispatch_busy_ns) = match channel {
-            SystemChannel::TimeEvents => (self.time_events, self.time_events_busy_ns),
-            SystemChannel::ExecEvents => (self.exec_events, self.exec_events_busy_ns),
-            SystemChannel::ExecCommands => (self.exec_commands, self.exec_commands_busy_ns),
-            SystemChannel::DataEvents => (self.data_events, self.data_events_busy_ns),
-            SystemChannel::DataCommands => (self.data_commands, self.data_commands_busy_ns),
-        };
-
-        dispatch_busy_ns.checked_div(dispatched).unwrap_or(0)
+        self.channel_dispatch_stats(channel).1
     }
 
     /// Returns the total nanoseconds spent in timed runner-loop work.
@@ -218,6 +210,19 @@ impl RunnerMetricsDelta {
         self.dispatch_busy_ns
             .saturating_add(self.maintenance_busy_ns)
             .saturating_add(self.external_msgbus_busy_ns)
+    }
+
+    pub(super) fn channel_dispatch_stats(&self, channel: SystemChannel) -> (u64, u64) {
+        let (dispatched, dispatch_busy_ns) = match channel {
+            SystemChannel::TimeEvents => (self.time_events, self.time_events_busy_ns),
+            SystemChannel::ExecEvents => (self.exec_events, self.exec_events_busy_ns),
+            SystemChannel::ExecCommands => (self.exec_commands, self.exec_commands_busy_ns),
+            SystemChannel::DataEvents => (self.data_events, self.data_events_busy_ns),
+            SystemChannel::DataCommands => (self.data_commands, self.data_commands_busy_ns),
+        };
+
+        let mean_dispatch_ns = dispatch_busy_ns.checked_div(dispatched).unwrap_or(0);
+        (dispatched, mean_dispatch_ns)
     }
 }
 

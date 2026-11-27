@@ -213,6 +213,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::enums::MarketStatusAction>()?;
     m.add_class::<crate::enums::OmsType>()?;
     m.add_class::<crate::enums::OptionKind>()?;
+    m.add_class::<crate::enums::OptionPremiumStyle>()?;
     m.add_class::<crate::enums::OptionSideFilter>()?;
     m.add_class::<crate::enums::OtoTriggerMode>()?;
     m.add_class::<crate::enums::OrderSide>()?;

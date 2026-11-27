@@ -259,8 +259,8 @@ mod tests {
             100,
             taker_buy_base_volume,
             dec!(28.46694368),
-            UnixNanos::from(1_650_000_000_000_000_000u64),
-            UnixNanos::from(1_650_000_000_000_000_000u64),
+            UnixNanos::from(1_650_000_000_000_000_000_u64),
+            UnixNanos::from(1_650_000_000_000_000_000_u64),
         )
     }
 
@@ -327,7 +327,10 @@ mod tests {
 
         ensure_custom_data_registered::<BinanceBar>();
         let temp_dir = TempDir::new().unwrap();
-        let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let catalog = ParquetDataCatalog::builder()
+            .uri(temp_dir.path())
+            .build()
+            .unwrap();
         let mut catalog = catalog;
         let bar = stub_binance_bar();
         let bar_type_str = bar.bar_type.to_string();

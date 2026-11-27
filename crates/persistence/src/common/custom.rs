@@ -337,7 +337,7 @@ pub fn decode_custom_batches_to_data(
                 .map_err(|e| anyhow::anyhow!("Failed to create new batch: {e}"))?;
         }
 
-        let metadata = batch.schema().metadata().clone();
+        let metadata = batch.schema_ref().metadata().into();
         let decoded = decode_batch_to_data(&metadata, batch, true)?;
         file_data.extend(decoded);
     }
@@ -584,7 +584,7 @@ mod tests {
         ensure_custom_data_registered::<RustTestCustomData>();
         let custom = test_custom("A", 10, 10, None);
         let batch = prepare_custom_data_batch(&[&custom]).unwrap().0;
-        let mut metadata = batch.schema().metadata().clone();
+        let mut metadata = HashMap::from(batch.schema_ref().metadata());
         metadata.remove("type_name");
 
         if let Some(type_name) = type_name {

@@ -51,6 +51,7 @@ impl PolymarketDataClient {
 
         let watchlist = self.resolve_poll_watchlist.clone();
         let instruments = self.instruments.clone();
+        let cache = self.cache.clone();
         let owner_lock = self.resolve_watch_apply_mutex.clone();
         let closed_condition_ids = self.subscriptions.closed_condition_ids.clone();
 
@@ -60,6 +61,7 @@ impl PolymarketDataClient {
                 &closed_condition_ids,
                 &watchlist,
                 &instruments,
+                cache.as_ref(),
                 event,
             );
         });
@@ -535,7 +537,7 @@ impl PolymarketDataClient {
             self.shutdown_errors.push(e.to_string());
         }
 
-        self.subscriptions.book_sync.clear();
+        self.subscriptions.book_sync.disconnect();
         self.subscriptions.book_integrity.lock().clear();
 
         if let Err(e) = self.polybolt_feed.disconnect().await {
@@ -2062,8 +2064,8 @@ mod tests {
         client.config.resolve_poll_enabled = false;
         client.config.resolve_poll_interval_secs = 1;
 
-        let watched_count = 8usize;
-        let unwatched_count = 5usize;
+        let watched_count = 8_usize;
+        let unwatched_count = 5_usize;
         let mut retired_ids = Vec::new();
 
         for index in 0..watched_count {

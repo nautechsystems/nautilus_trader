@@ -856,7 +856,7 @@ mod tests {
             .send(Message::Text(expected.to_string().into()))
             .unwrap();
         connection.frame().await;
-        expected["ts"] = 1609459201_i64.into();
+        expected["ts"] = 1_609_459_201_i64.into();
         connection
             .frames
             .send(Message::Text(expected.to_string().into()))
@@ -1272,8 +1272,8 @@ mod tests {
                 panic!("Expected heartbeat, received {frame:?}");
             };
 
-            assert_eq!(heartbeat.ts, 1609459200);
-            assert_eq!(heartbeat.tn, 123456789);
+            assert_eq!(heartbeat.ts, 1_609_459_200);
+            assert_eq!(heartbeat.tn, 123_456_789);
         }
     }
 

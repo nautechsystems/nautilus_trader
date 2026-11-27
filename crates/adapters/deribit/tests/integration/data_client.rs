@@ -127,7 +127,7 @@ async fn subscription_event_trade_symbols(
     symbols
 }
 
-async fn collect_trade_ticks(
+async fn collect_trades(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     expected_count: usize,
 ) -> Vec<TradeTick> {
@@ -385,21 +385,21 @@ async fn handle_get_combo_instrument(id: u64) -> Response {
             "maker_commission": 0.0,
             "taker_commission": 0.0,
             "instrument_type": "reversed",
-            "creation_timestamp": 1719561600000_i64,
+            "creation_timestamp": 1_719_561_600_000_i64,
             "is_active": true,
             "tick_size": 0.01,
             "contract_size": 1.0,
-            "instrument_id": 456789,
+            "instrument_id": 456_789,
             "min_trade_amount": 1.0,
             "settlement_currency": "BTC",
             "base_currency": "BTC",
             "counter_currency": "USD",
             "quote_currency": "USD",
-            "expiration_timestamp": 1767225600000_i64,
+            "expiration_timestamp": 1_767_225_600_000_i64,
             "tick_size_steps": []
         },
-        "usIn": 1765308000000000_u64,
-        "usOut": 1765308000000500_u64,
+        "usIn": 1_765_308_000_000_000_u64,
+        "usOut": 1_765_308_000_000_500_u64,
         "usDiff": 500,
         "testnet": true
     }))
@@ -434,13 +434,13 @@ async fn handle_get_combos(state: &TestServerState, id: u64) -> Response {
                         "instrument_name": "BTC-27DEC24"
                     }
                 ],
-                "creation_timestamp": 1719561600000_i64,
-                "instrument_id": 456789,
-                "state_timestamp": 1719561600000_i64
+                "creation_timestamp": 1_719_561_600_000_i64,
+                "instrument_id": 456_789,
+                "state_timestamp": 1_719_561_600_000_i64
             }
         ],
-        "usIn": 1765308000000000_u64,
-        "usOut": 1765308000000500_u64,
+        "usIn": 1_765_308_000_000_000_u64,
+        "usOut": 1_765_308_000_000_500_u64,
         "usDiff": 500,
         "testnet": true
     }))
@@ -595,8 +595,8 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                 "id": id,
                                 "result": subscribed_channels,
                                 "testnet": true,
-                                "usIn": 1699999999000000_u64,
-                                "usOut": 1699999999001000_u64,
+                                "usIn": 1_699_999_999_000_000_u64,
+                                "usOut": 1_699_999_999_001_000_u64,
                                 "usDiff": 1000
                             });
 
@@ -717,8 +717,8 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                 "enabled_features": []
                             },
                             "testnet": true,
-                            "usIn": 1699999999000000_u64,
-                            "usOut": 1699999999001000_u64,
+                            "usIn": 1_699_999_999_000_000_u64,
+                            "usOut": 1_699_999_999_001_000_u64,
                             "usDiff": 1000
                         });
 
@@ -933,10 +933,23 @@ async fn test_data_client_request_instrument_refetches_when_cached() {
     .await;
 
     let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+
+    let [
+        DataEvent::Data(Data::Instrument(published)),
+        DataEvent::Response(_),
+    ] = events.as_slice()
+    else {
+        panic!("expected instrument update followed by the requested response, was {events:?}");
+    };
+
     let response = instrument_response(&events).expect("instrument response");
     assert_eq!(response.correlation_id, first_request_id);
     assert_eq!(response.client_id, *DERIBIT_CLIENT_ID);
     assert_eq!(response.instrument_id, instrument_id);
+    assert_eq!(published.id(), instrument_id);
+    assert_eq!(published.ts_init(), response.data.ts_init());
+    assert_eq!(published.price_increment(), response.data.price_increment());
+    assert_eq!(published.size_increment(), response.data.size_increment());
 
     state.fail_get_instrument.store(true, Ordering::Relaxed);
 
@@ -1278,7 +1291,7 @@ async fn test_data_client_subscribe_combo_legs_delivers_parent_and_leg_trades() 
     )
     .await;
 
-    let trades = collect_trade_ticks(&mut rx, 3).await;
+    let trades = collect_trades(&mut rx, 3).await;
     let instrument_ids = trades
         .iter()
         .map(|trade| trade.instrument_id)
@@ -1862,14 +1875,19 @@ async fn test_subscribe_quotes_uncached_instrument_lazy_loads() {
         .subscribe_quotes(cmd)
         .expect("subscribe should accept uncached instrument when auto_load is enabled");
 
-    let quote = tokio::time::timeout(TEST_TIMEOUT, async {
+    let (quote, published) = tokio::time::timeout(TEST_TIMEOUT, async {
+        let mut published = false;
+
         loop {
             let event = rx.recv().await.expect("channel closed");
-
-            if let DataEvent::Data(Data::Quote(quote)) = event
-                && quote.instrument_id == option_id
-            {
-                break quote;
+            match event {
+                DataEvent::Data(Data::Instrument(instrument)) if instrument.id() == option_id => {
+                    published = true;
+                }
+                DataEvent::Data(Data::Quote(quote)) if quote.instrument_id == option_id => {
+                    break (quote, published);
+                }
+                _ => {}
             }
         }
     })
@@ -1877,6 +1895,7 @@ async fn test_subscribe_quotes_uncached_instrument_lazy_loads() {
     .expect("timeout waiting for lazy-loaded option quote");
 
     assert_eq!(quote.instrument_id, option_id);
+    assert!(published, "the definition must arrive before quote data");
 
     client.disconnect().await.unwrap();
 }
@@ -2667,8 +2686,9 @@ async fn test_scheduled_instrument_refresh_publishes_and_caches_definitions(
 
     advance_refresh_clock(Duration::from_secs(60)).await;
     let mut refreshed = AHashMap::new();
-    while refreshed.len() < 3 {
-        let instrument = recv_instrument(&mut rx, Duration::from_secs(15)).await;
+
+    for _ in 0..2 {
+        let instrument = recv_instrument(&mut rx, TEST_TIMEOUT).await;
         refreshed.insert(instrument.id(), instrument);
     }
 
@@ -2858,25 +2878,30 @@ async fn test_scheduled_instrument_refresh_preserves_combo_legs_when_combos_fail
 
     state.fail_get_combos.store(true, Ordering::Relaxed);
     let combo_id = InstrumentId::from("BTC-COMBO-1.DERIBIT");
+    let mut rows = instrument_rows();
+    instrument_row_mut(&mut rows, "BTC-COMBO-1")["tick_size"] = json!(0.02);
+    *state.instruments_response.lock().await = Some(instruments_body(&rows));
     advance_refresh_clock(Duration::from_secs(60)).await;
 
-    let refreshed = loop {
-        let instrument = recv_instrument(&mut rx, Duration::from_secs(15)).await;
-        if instrument.id() == combo_id {
-            break instrument;
-        }
-    };
+    let refreshed = recv_instrument(&mut rx, TEST_TIMEOUT).await;
+    assert_eq!(refreshed.id(), combo_id);
+    assert_eq!(refreshed.price_increment().as_decimal(), dec!(0.02));
 
     let InstrumentAny::CryptoFuturesSpread(spread) = refreshed else {
         panic!("expected futures spread, was {refreshed:?}");
     };
+
     let legs = spread
         .info
         .as_ref()
-        .and_then(|info| info.get("deribit_combo_legs"))
-        .and_then(Value::as_array)
-        .expect("combo legs missing after refresh");
-    assert_eq!(legs.len(), 2);
+        .and_then(|info| info.get("deribit_combo_legs"));
+    assert_eq!(
+        legs,
+        Some(&json!([
+            {"amount": "-1", "instrument_id": "BTC-PERPETUAL.DERIBIT", "instrument_name": "BTC-PERPETUAL"},
+            {"amount": "1", "instrument_id": "BTC-27DEC24.DERIBIT", "instrument_name": "BTC-27DEC24"},
+        ])),
+    );
 
     wait_until_async(
         || async { *state.connection_count.lock().await > 0 },

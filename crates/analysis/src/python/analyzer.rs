@@ -19,11 +19,15 @@ use nautilus_core::{UnixNanos, python::to_pyvalue_err};
 use nautilus_model::{
     identifiers::PositionId,
     position::Position,
-    types::{Currency, Money, fixed::check_float_precision},
+    types::{Currency, Money},
 };
 use pyo3::prelude::*;
 
-use crate::{Returns, analyzer::PortfolioAnalyzer, python::statistic::statistic_from_pyobject};
+use crate::{
+    Returns,
+    analyzer::{PortfolioAnalyzer, check_position_pnl_precision, check_realized_pnl_precision},
+    python::statistic::statistic_from_pyobject,
+};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -100,6 +104,7 @@ impl PortfolioAnalyzer {
     /// - No currency specified for a multi-currency portfolio.
     /// - Unrealized PnL currency not matching the specified currency.
     /// - Specified currency not found in account balances.
+    /// - A money value exceeds the supported float precision.
     #[pyo3(name = "get_performance_stats_pnls")]
     fn py_get_performance_stats_pnls(
         &self,
@@ -168,6 +173,7 @@ impl PortfolioAnalyzer {
             .map(|position| position.extract::<Position>(py).map_err(Into::into))
             .collect::<PyResult<Vec<Position>>>()?;
 
+        check_position_pnl_precision(&positions).map_err(to_pyvalue_err)?;
         self.add_positions(&positions);
         Ok(())
     }
@@ -184,7 +190,7 @@ impl PortfolioAnalyzer {
         ts_event: u64,
         realized_pnl: &Money,
     ) -> PyResult<()> {
-        check_float_precision(realized_pnl.currency.precision).map_err(to_pyvalue_err)?;
+        check_realized_pnl_precision(*position_id, realized_pnl).map_err(to_pyvalue_err)?;
         self.add_trade(position_id, UnixNanos::from(ts_event), realized_pnl);
         Ok(())
     }
@@ -201,7 +207,7 @@ impl PortfolioAnalyzer {
         ts_event: u64,
         realized_pnl: &Money,
     ) -> PyResult<()> {
-        check_float_precision(realized_pnl.currency.precision).map_err(to_pyvalue_err)?;
+        check_realized_pnl_precision(*position_id, realized_pnl).map_err(to_pyvalue_err)?;
         self.record_trade(position_id, UnixNanos::from(ts_event), realized_pnl);
         Ok(())
     }
@@ -276,6 +282,8 @@ impl PortfolioAnalyzer {
     /// - No currency is specified in a multi-currency portfolio.
     /// - The specified currency is not found in account balances.
     /// - The unrealized PnL currency does not match the specified currency.
+    /// - A money value exceeds the supported float precision.
+    /// - The fixed-point PnL calculation overflows.
     #[pyo3(name = "total_pnl")]
     fn py_total_pnl(
         &self,
@@ -294,6 +302,8 @@ impl PortfolioAnalyzer {
     /// - No currency is specified in a multi-currency portfolio.
     /// - The specified currency is not found in account balances.
     /// - The unrealized PnL currency does not match the specified currency.
+    /// - A money value exceeds the supported float precision.
+    /// - The fixed-point PnL calculation overflows.
     #[pyo3(name = "total_pnl_percentage")]
     fn py_total_pnl_percentage(
         &self,

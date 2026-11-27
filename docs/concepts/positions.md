@@ -335,6 +335,11 @@ The position side selects the formula. Premium-based inverse instruments (such a
 the premium in the base currency. Thus, they use the standard formula and report PnL and notional value in the
 base currency.
 
+Other inverse instruments average opening fills by base currency value. When a fill adds to an open
+position, the new `avg_px_open` is the weighted harmonic mean
+`(open_qty + fill_qty) / (open_qty / avg_px_open + fill_qty / fill_px)`. Here `open_qty` and
+`avg_px_open` are the quantity and average before the fill. A partial reduction keeps the existing average.
+
 ### Unrealized PnL
 
 `unrealized_pnl()` calculates PnL for an open position from the supplied `price`. You can pass a
@@ -422,9 +427,11 @@ the calculation fails.
 ### Pricing and valuation
 
 - `avg_px_open`: Decimal average entry price.
-- `avg_px_close`: Decimal average exit price when closing.
+- `avg_px_close`: Decimal quantity-weighted arithmetic average of exit fills.
 - `realized_pnl`: Realized profit/loss.
-- `realized_return`: Floating-point return ratio (for example, 0.05 for 5%).
+- `realized_return`: Floating-point return ratio (for example, 0.05 for 5%). Non-premium inverse
+  positions divide cumulative gross closing PnL by the entry notional consumed by those closes.
+  Both amounts are in the settlement currency. The ratio excludes fees and funding.
 - `quote_currency`: Quote currency of the instrument.
 - `base_currency`: Base currency if applicable.
 - `settlement_currency`: Currency for PnL settlement.
@@ -505,10 +512,11 @@ The fallible fill, adjustment, settlement, purge, and fill-void operations leave
 
 ### Cost basis and rounding
 
-Opening and closing cost accumulators retain the amounts behind average prices. A rounded average never
-feeds the cost basis. A partial reduction retains unallocated opening cost, and the final reduction consumes
-that remainder. A separate Decimal PnL remainder retains fractions below the native Money scale between
-updates.
+For non-premium inverse positions, opening cost is the open quantity times the harmonic mean
+described in [Realized PnL](#realized-pnl). A partial reduction keeps that mean and updates the cost
+for the remaining quantity. Other cost accumulators retain fill values independently of rounded
+average prices. The final reduction consumes all remaining opening cost. A separate Decimal PnL
+remainder retains fractions below the native Money scale between updates.
 
 Derived Money amounts round midpoint to even at the native scale: nine decimal places in standard mode and
 16 in high-precision mode. A currency with a finer supported precision uses that precision instead. Currency

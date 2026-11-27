@@ -27,7 +27,7 @@ use nautilus_model::{
 /// [`InstrumentAny`]'s `PartialEq` compares only the instrument ID, and definitions carry
 /// per-fetch timestamps that always change - so neither is usable for detecting "real" updates.
 /// This compares the fields a strategy prices and sizes against, ignoring timestamps.
-fn economics_differ(a: &InstrumentAny, b: &InstrumentAny) -> bool {
+pub(crate) fn economics_differ(a: &InstrumentAny, b: &InstrumentAny) -> bool {
     a.margin_init() != b.margin_init()
         || a.margin_maint() != b.margin_maint()
         || a.price_precision() != b.price_precision()

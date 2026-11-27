@@ -20,6 +20,7 @@ use std::fmt::Debug;
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::string::secret::SecretString;
+use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::{enums::AccountType, identifiers::AccountId};
 use nautilus_network::{url_origin, websocket::TransportBackend};
 use serde::{Deserialize, Serialize};
@@ -88,6 +89,9 @@ pub struct KrakenDataClientConfig {
     pub max_requests_per_second: Option<u32>,
     #[builder(default)]
     pub transport_backend: TransportBackend,
+    /// Time to wait for a book snapshot in seconds. Zero disables snapshot deadlines.
+    #[builder(default = DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS)]
+    pub book_snapshot_timeout_secs: u64,
 }
 
 impl Debug for KrakenDataClientConfig {
@@ -115,6 +119,10 @@ impl Debug for KrakenDataClientConfig {
             .field("ws_idle_timeout_ms", &self.ws_idle_timeout_ms)
             .field("max_requests_per_second", &self.max_requests_per_second)
             .field("transport_backend", &self.transport_backend)
+            .field(
+                "book_snapshot_timeout_secs",
+                &self.book_snapshot_timeout_secs,
+            )
             .finish()
     }
 }
@@ -131,6 +139,7 @@ nautilus_core::impl_pyo3_config_getters!(KrakenDataClientConfig {
     ws_idle_timeout_ms: u64,
     max_requests_per_second: Option<u32>,
     transport_backend: TransportBackend,
+    book_snapshot_timeout_secs: u64,
 });
 
 impl Default for KrakenDataClientConfig {
@@ -510,6 +519,16 @@ validate_l3_checksum = false
         let config: KrakenDataClientConfig = toml::from_str("ws_idle_timeout_ms = 0").unwrap();
 
         assert_eq!(config.ws_idle_timeout_ms, 0);
+    }
+
+    #[rstest]
+    #[case::default("", 10)]
+    #[case::disabled("book_snapshot_timeout_secs = 0", 0)]
+    #[case::configured("book_snapshot_timeout_secs = 37", 37)]
+    fn test_data_config_book_snapshot_timeout(#[case] input: &str, #[case] expected: u64) {
+        let config: KrakenDataClientConfig = toml::from_str(input).unwrap();
+
+        assert_eq!(config.book_snapshot_timeout_secs, expected);
     }
 
     #[rstest]

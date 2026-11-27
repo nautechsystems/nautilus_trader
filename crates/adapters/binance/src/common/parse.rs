@@ -21,7 +21,7 @@
 use std::str::FromStr;
 
 use anyhow::Context;
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::{Params, nanos::UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, QuoteTick,
@@ -43,6 +43,7 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use serde_json::Value;
 
+use super::instruments::CONTRACT_TYPE_INFO_KEY;
 use crate::{
     common::{
         consts::BINANCE,
@@ -65,8 +66,8 @@ use crate::{
         },
     },
 };
-const CONTRACT_TYPE_PERPETUAL: &str = "PERPETUAL";
-const CONTRACT_TYPE_TRADIFI_PERPETUAL: &str = "TRADIFI_PERPETUAL";
+pub(crate) const CONTRACT_TYPE_PERPETUAL: &str = "PERPETUAL";
+pub(crate) const CONTRACT_TYPE_TRADIFI_PERPETUAL: &str = "TRADIFI_PERPETUAL";
 const CONTRACT_TYPE_CURRENT_WEEK: &str = "CURRENT_WEEK";
 const CONTRACT_TYPE_NEXT_WEEK: &str = "NEXT_WEEK";
 const CONTRACT_TYPE_CURRENT_MONTH: &str = "CURRENT_MONTH";
@@ -128,6 +129,7 @@ fn parse_tradifi_asset_class(symbol: &BinanceFuturesUsdSymbol) -> anyhow::Result
     match underlying_type {
         "EQUITY" | "CN_EQUITY" | "KR_EQUITY" | "HK_EQUITY" | "PREMARKET" => Ok(AssetClass::Equity),
         "COMMODITY" => Ok(AssetClass::Commodity),
+        "FX" => Ok(AssetClass::FX),
         _ => anyhow::bail!(
             "Unsupported underlying type '{underlying_type}' for TRADIFI_PERPETUAL symbol '{}'",
             symbol.symbol
@@ -308,6 +310,14 @@ pub(crate) fn parse_usdm_instrument_with_fees(
         Delivery,
     }
 
+    if symbol.status != BinanceTradingStatus::Trading {
+        anyhow::bail!(
+            "Symbol '{}' is not trading (status: {:?})",
+            symbol.symbol,
+            symbol.status
+        );
+    }
+
     let contract_kind = match symbol.contract_type.as_str() {
         CONTRACT_TYPE_PERPETUAL => ContractKind::CryptoPerpetual,
         CONTRACT_TYPE_TRADIFI_PERPETUAL => ContractKind::TradFi(parse_tradifi_asset_class(symbol)?),
@@ -323,14 +333,6 @@ pub(crate) fn parse_usdm_instrument_with_fees(
             symbol.symbol,
         ),
     };
-
-    if symbol.status != BinanceTradingStatus::Trading {
-        anyhow::bail!(
-            "Symbol '{}' is not trading (status: {:?})",
-            symbol.symbol,
-            symbol.status
-        );
-    }
 
     let quote_currency = get_currency(symbol.quote_asset.as_str());
     let settlement_currency = get_currency(symbol.margin_asset.as_str());
@@ -360,6 +362,15 @@ pub(crate) fn parse_usdm_instrument_with_fees(
 
     let min_notional = parse_futures_min_notional(&symbol.filters, quote_currency);
 
+    let contract_info = Params::new(
+        [(
+            CONTRACT_TYPE_INFO_KEY.to_owned(),
+            serde_json::Value::from(symbol.contract_type.as_str()),
+        )]
+        .into_iter()
+        .collect(),
+    );
+
     let margin_maint = Decimal::new(1, 1);
 
     match contract_kind {
@@ -384,6 +395,7 @@ pub(crate) fn parse_usdm_instrument_with_fees(
                 .maybe_min_price(min_price)
                 .margin_init(Decimal::ONE)
                 .margin_maint(margin_maint)
+                .info(contract_info)
                 .ts_event(ts_event)
                 .ts_init(ts_init)
                 .build()?;
@@ -409,6 +421,7 @@ pub(crate) fn parse_usdm_instrument_with_fees(
                 .maybe_min_price(min_price)
                 .margin_init(Decimal::ONE)
                 .margin_maint(margin_maint)
+                .info(contract_info)
                 .ts_event(ts_event)
                 .ts_init(ts_init)
                 .build()
@@ -439,6 +452,7 @@ pub(crate) fn parse_usdm_instrument_with_fees(
                 .maybe_min_price(min_price)
                 .margin_init(Decimal::ONE)
                 .margin_maint(margin_maint)
+                .info(contract_info)
                 .ts_event(ts_event)
                 .ts_init(ts_init)
                 .build()
@@ -528,6 +542,15 @@ pub(crate) fn parse_coinm_instrument_with_fees(
 
     let min_notional = parse_futures_min_notional(&symbol.filters, quote_currency);
 
+    let contract_info = Params::new(
+        [(
+            CONTRACT_TYPE_INFO_KEY.to_owned(),
+            serde_json::Value::from(symbol.contract_type.as_str()),
+        )]
+        .into_iter()
+        .collect(),
+    );
+
     let margin_maint = Decimal::new(1, 1);
 
     if is_perpetual {
@@ -551,6 +574,7 @@ pub(crate) fn parse_coinm_instrument_with_fees(
             .maybe_min_price(min_price)
             .margin_init(Decimal::ONE)
             .margin_maint(margin_maint)
+            .info(contract_info)
             .ts_event(ts_event)
             .ts_init(ts_init)
             .build()
@@ -581,6 +605,7 @@ pub(crate) fn parse_coinm_instrument_with_fees(
             .maybe_min_price(min_price)
             .margin_init(Decimal::ONE)
             .margin_maint(margin_maint)
+            .info(contract_info)
             .ts_event(ts_event)
             .ts_init(ts_init)
             .build()
@@ -1740,8 +1765,9 @@ mod tests {
     #[rstest]
     fn test_quote_to_l1_deltas_maps_all_fields() {
         let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
-        let ts_event = UnixNanos::from(1_700_000_000_000_000_001u64);
-        let ts_init = UnixNanos::from(1_700_000_000_000_000_002u64);
+        let ts_event = UnixNanos::from(1_700_000_000_000_000_001_u64);
+        let ts_init = UnixNanos::from(1_700_000_000_000_000_002_u64);
+
         let quote = QuoteTick::new(
             instrument_id,
             Price::from("42000.01"),
@@ -1799,8 +1825,8 @@ mod tests {
             Price::from("42000.02"),
             Quantity::from("0.00000"),
             Quantity::from("0.00000"),
-            UnixNanos::from(1_700_000_000_000_000_001u64),
-            UnixNanos::from(1_700_000_000_000_000_002u64),
+            UnixNanos::from(1_700_000_000_000_000_001_u64),
+            UnixNanos::from(1_700_000_000_000_000_002_u64),
         );
 
         let actual = quote_to_l1_deltas(quote, 12345);
@@ -1859,8 +1885,8 @@ mod tests {
             symbol: Ustr::from("BTCUSDT"),
             pair: Ustr::from("BTCUSDT"),
             contract_type: "PERPETUAL".to_string(),
-            delivery_date: 4133404800000,
-            onboard_date: 1569398400000,
+            delivery_date: 4_133_404_800_000,
+            onboard_date: 1_569_398_400_000,
             status: BinanceTradingStatus::Trading,
             maint_margin_percent: "2.5000".to_string(),
             required_margin_percent: "5.0000".to_string(),
@@ -2020,8 +2046,8 @@ mod tests {
     ) {
         let decoded = crate::spot::http::parse::decode_exchange_info(wire).unwrap();
         let symbol: BinanceSymbolJson = serde_json::from_str(json).unwrap();
-        let ts_event = UnixNanos::from(123u64);
-        let ts_init = UnixNanos::from(456u64);
+        let ts_event = UnixNanos::from(123_u64);
+        let ts_init = UnixNanos::from(456_u64);
         let sbe =
             parse_spot_instrument_sbe_with_fees(&decoded.symbols[0], ts_event, ts_init).unwrap();
         let json = parse_spot_instrument_json_with_fees(&symbol, ts_event, ts_init).unwrap();
@@ -2122,7 +2148,7 @@ mod tests {
     }
 
     fn sample_spot_instrument() -> InstrumentAny {
-        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
         parse_spot_instrument_sbe(&sample_spot_symbol_sbe(), ts, ts).unwrap()
     }
 
@@ -2164,7 +2190,7 @@ mod tests {
     #[rstest]
     fn test_parse_usdm_perpetual() {
         let symbol = sample_usdm_symbol();
-        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
 
         let result = parse_usdm_instrument(&symbol, ts, ts);
         assert!(result.is_ok(), "Failed: {:?}", result.err());
@@ -2196,6 +2222,7 @@ mod tests {
     #[case::hong_kong_equity("0700USDT", "0700", "HK_EQUITY", AssetClass::Equity)]
     #[case::premarket("SPCXUSDT", "SPCX", "PREMARKET", AssetClass::Equity)]
     #[case::commodity("XAUUSDT", "XAU", "COMMODITY", AssetClass::Commodity)]
+    #[case::fx("USDBRLUSDT", "USDBRL", "FX", AssetClass::FX)]
     fn test_parse_usdm_tradifi_perpetual(
         #[case] raw_symbol: &str,
         #[case] underlying: &str,
@@ -2203,7 +2230,7 @@ mod tests {
         #[case] expected_asset_class: AssetClass,
     ) {
         let symbol = sample_tradifi_usdm_symbol(raw_symbol, underlying, Some(underlying_type));
-        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
 
         let instrument = parse_usdm_instrument(&symbol, ts, ts).unwrap();
         match instrument {
@@ -2241,7 +2268,7 @@ mod tests {
         #[case] expected_error: &str,
     ) {
         let symbol = sample_tradifi_usdm_symbol("SNDKUSDT", "SNDK", underlying_type);
-        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
 
         let error = parse_usdm_instrument(&symbol, ts, ts).unwrap_err();
         assert_eq!(error.to_string(), expected_error);
@@ -2260,7 +2287,7 @@ mod tests {
         symbol.contract_type = contract_type.to_string();
         symbol.onboard_date = 1_774_598_400_000;
         symbol.delivery_date = 1_790_323_200_000;
-        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
 
         let result = parse_usdm_instrument(&symbol, ts, ts).unwrap();
         let InstrumentAny::CryptoFuture(future) = result else {
@@ -2304,7 +2331,7 @@ mod tests {
     fn test_parse_usdm_unsupported_contract_type_fails() {
         let mut symbol = sample_usdm_symbol();
         symbol.contract_type = "UNKNOWN".to_string();
-        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
 
         let error = parse_usdm_instrument(&symbol, ts, ts).unwrap_err();
 
@@ -2324,7 +2351,7 @@ mod tests {
             "maxQty": "1000",
             "minQty": "0.001"
         })];
-        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
 
         let result = parse_usdm_instrument(&symbol, ts, ts);
         assert!(result.is_err());
@@ -2339,7 +2366,7 @@ mod tests {
     #[rstest]
     fn test_parse_coinm_perpetual() {
         let symbol = sample_coinm_symbol();
-        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
 
         let result = parse_coinm_instrument(&symbol, ts, ts).unwrap();
 
@@ -2371,7 +2398,7 @@ mod tests {
         symbol.contract_type = contract_type.to_string();
         symbol.onboard_date = 1_774_598_400_000;
         symbol.delivery_date = 1_790_323_200_000;
-        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
 
         let result = parse_coinm_instrument(&symbol, ts, ts).unwrap();
         let InstrumentAny::CryptoFuture(future) = result else {
@@ -2408,7 +2435,7 @@ mod tests {
     fn test_parse_coinm_month_contract_fails() {
         let mut symbol = sample_coinm_symbol();
         symbol.contract_type = CONTRACT_TYPE_CURRENT_MONTH.to_string();
-        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
 
         let error = parse_coinm_instrument(&symbol, ts, ts).unwrap_err();
 
@@ -2422,7 +2449,7 @@ mod tests {
     #[rstest]
     fn test_parse_spot_instrument_sbe() {
         let symbol = sample_spot_symbol_sbe();
-        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
 
         let result = parse_spot_instrument_sbe(&symbol, ts, ts).unwrap();
 
@@ -2443,7 +2470,7 @@ mod tests {
     fn test_not_trading_parse_errors_stay_debug_for_bulk_loads() {
         let mut symbol = sample_spot_symbol_sbe();
         symbol.status = 3;
-        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
         let error = parse_spot_instrument_sbe(&symbol, ts, ts).unwrap_err();
 
         assert!(is_not_trading_error(&error));
@@ -2452,8 +2479,35 @@ mod tests {
     }
 
     #[rstest]
+    #[case::delivering(BinanceTradingStatus::Delivering, "CURRENT_QUARTER DELIVERING", None)]
+    #[case::pending_tradifi(
+        BinanceTradingStatus::PendingTrading,
+        "TRADIFI_PERPETUAL",
+        Some("COIN")
+    )]
+    fn test_usdm_non_trading_skips_warn_only_for_explicit_symbols(
+        #[case] status: BinanceTradingStatus,
+        #[case] contract_type: &str,
+        #[case] underlying_type: Option<&str>,
+    ) {
+        let mut symbol = sample_usdm_symbol();
+        symbol.status = status;
+        symbol.contract_type = contract_type.to_string();
+        symbol.underlying_type = underlying_type.map(str::to_string);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
+
+        let error = parse_usdm_instrument(&symbol, ts, ts).unwrap_err();
+
+        assert!(
+            !should_warn_on_instrument_parse_error(true, false, &error),
+            "Unexpected warning in bulk load: {error}"
+        );
+        assert!(should_warn_on_instrument_parse_error(true, true, &error));
+    }
+
+    #[rstest]
     fn test_all_producers_emit_detectable_not_trading_errors() {
-        let ts = UnixNanos::from(1_700_000_000_000_000_000u64);
+        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
 
         let mut sbe = sample_spot_symbol_sbe();
         sbe.status = 3;
@@ -2519,7 +2573,8 @@ mod tests {
                 },
             ],
         };
-        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000_u64);
 
         let result = parse_spot_trades_sbe(&trades, &instrument, ts_init).unwrap();
 
@@ -2531,7 +2586,7 @@ mod tests {
         assert_eq!(result[0].trade_id, TradeId::new("1"));
         assert_eq!(
             result[0].ts_event,
-            UnixNanos::from(1_700_000_000_000_000_000u64)
+            UnixNanos::from(1_700_000_000_000_000_000_u64)
         );
         assert_eq!(result[0].ts_init, ts_init);
         assert_eq!(result[1].aggressor_side, AggressorSide::Sell);
@@ -2575,7 +2630,8 @@ mod tests {
             symbol: "ETHUSDT".to_string(),
             expiry_reason: None,
         };
-        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000_u64);
 
         let report = parse_order_status_report_sbe(
             &order,
@@ -2612,11 +2668,11 @@ mod tests {
         );
         assert_eq!(
             report.ts_accepted,
-            UnixNanos::from(1_700_000_000_000_000_000u64)
+            UnixNanos::from(1_700_000_000_000_000_000_u64)
         );
         assert_eq!(
             report.ts_last,
-            UnixNanos::from(1_700_000_000_100_000_000u64)
+            UnixNanos::from(1_700_000_000_100_000_000_u64)
         );
         assert_eq!(report.ts_init, ts_init);
     }
@@ -2654,7 +2710,8 @@ mod tests {
             fills: vec![],
             expiry_reason: None,
         };
-        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000_u64);
 
         let report = parse_new_order_response_sbe(
             &response,
@@ -2687,11 +2744,11 @@ mod tests {
         assert!(!report.post_only);
         assert_eq!(
             report.ts_accepted,
-            UnixNanos::from(1_700_000_000_000_000_000u64)
+            UnixNanos::from(1_700_000_000_000_000_000_u64)
         );
         assert_eq!(
             report.ts_last,
-            UnixNanos::from(1_700_000_000_000_000_000u64)
+            UnixNanos::from(1_700_000_000_000_000_000_u64)
         );
     }
 
@@ -2716,7 +2773,8 @@ mod tests {
             symbol: "ETHUSDT".to_string(),
             commission_asset: "USDT".to_string(),
         };
-        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000_u64);
 
         let report = parse_fill_report_sbe(
             &trade,
@@ -2738,7 +2796,7 @@ mod tests {
         assert_eq!(report.commission.as_f64(), 0.0001);
         assert_eq!(
             report.ts_event,
-            UnixNanos::from(1_700_000_000_000_000_000u64)
+            UnixNanos::from(1_700_000_000_000_000_000_u64)
         );
         assert_eq!(report.ts_init, ts_init);
         assert!(report.client_order_id.is_none());
@@ -2771,7 +2829,8 @@ mod tests {
                 taker_buy_quote_volume: 9_901_i128.to_le_bytes(),
             }],
         };
-        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000_u64);
 
         let bars = parse_klines_to_binance_bars(&klines, bar_type, &instrument, ts_init).unwrap();
 
@@ -2788,7 +2847,7 @@ mod tests {
         assert_eq!(bars[0].taker_buy_quote_volume, dec!(99.01));
         assert_eq!(
             bars[0].ts_event,
-            UnixNanos::from(1_700_000_059_999_000_000u64)
+            UnixNanos::from(1_700_000_059_999_000_000_u64)
         );
         assert_eq!(bars[0].ts_init, ts_init);
     }

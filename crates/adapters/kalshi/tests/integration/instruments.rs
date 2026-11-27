@@ -167,7 +167,7 @@ fn invalid_grids_are_rejected(#[case] name: &str) {
 #[case("settled")]
 fn captured_definitions_preserve_all_instrument_fields(#[case] name: &str) {
     let (market, event) = definition(name);
-    let received = UnixNanos::from(1_999_999_999_111_222_333u64);
+    let received = UnixNanos::from(1_999_999_999_111_222_333_u64);
     let instrument = parse_instrument(&market, &event, received).unwrap();
     assert_eq!(
         instrument.id.to_string(),
@@ -364,14 +364,14 @@ async fn consecutive_requests_emit_fresh_correlated_definitions() {
 
         let config = KalshiDataClientConfig { base_url_http: Some(format!("http://{address}/trade-api/v2").into()), ..Default::default() };
         let http = KalshiHttpClient::new(&config).unwrap();
-        let clock = Box::leak(Box::new(AtomicTime::new(false, UnixNanos::from(1_999_999_999_000_000_001u64))));
+        let clock = Box::leak(Box::new(AtomicTime::new(false, UnixNanos::from(1_999_999_999_000_000_001_u64))));
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         let provider = KalshiInstrumentProvider::new(http, clock, sender.into());
         let id = parse_instrument_id(&ticker).unwrap();
         let mut schemes = Vec::new();
 
         for round in 0..2 {
-            let now = UnixNanos::from(1_999_999_999_000_000_001u64 + round);
+            let now = UnixNanos::from(1_999_999_999_000_000_001_u64 + round);
             clock.set_time(now);
 
             let params = Params::new([
@@ -461,7 +461,7 @@ async fn paginated_bulk_requests_refresh_and_apply_filters() {
         });
 
         let config = KalshiDataClientConfig {base_url_http:Some(format!("http://{address}/trade-api/v2").into()),..Default::default()};
-        let clock = Box::leak(Box::new(AtomicTime::new(false,UnixNanos::from(1_999_999_999_000_000_000u64))));
+        let clock = Box::leak(Box::new(AtomicTime::new(false,UnixNanos::from(1_999_999_999_000_000_000_u64))));
         let (sender,mut receiver)=tokio::sync::mpsc::unbounded_channel();
         let provider=KalshiInstrumentProvider::new(KalshiHttpClient::new(&config).unwrap(),clock,sender.into());
         let start=jiff::Timestamp::from_str("2026-10-17T00:00:00Z").unwrap();
@@ -481,7 +481,7 @@ async fn paginated_bulk_requests_refresh_and_apply_filters() {
             provider.request_instruments(RequestInstruments::new(Some(start),Some(end),Some(*KALSHI_CLIENT_ID),Some(*KALSHI_VENUE),request_id,UnixNanos::from(1),Some(params.clone()))).await.unwrap();
             let DataEvent::Response(DataResponse::Instruments(response))=receiver.try_recv().unwrap() else {panic!("expected instruments response")};
             assert_eq!(response.correlation_id,request_id);assert_eq!(response.client_id,*KALSHI_CLIENT_ID);assert_eq!(response.venue,*KALSHI_VENUE);
-            assert_eq!(response.start,Some(UnixNanos::from(1_792_195_200_000_000_000u64)));assert_eq!(response.end,Some(UnixNanos::from(1_792_281_600_000_000_000u64)));
+            assert_eq!(response.start,Some(UnixNanos::from(1_792_195_200_000_000_000_u64)));assert_eq!(response.end,Some(UnixNanos::from(1_792_281_600_000_000_000_u64)));
             assert_eq!(response.ts_init,clock.get_time_ns());assert_eq!(response.params,Some(params));assert_eq!(response.data.len(),1);
             let InstrumentAny::BinaryOption(instrument)=&response.data[0] else {panic!("expected binary option")};
             assert_eq!(instrument.id,parse_instrument_id(&ticker).unwrap());assert_eq!(instrument.description.unwrap().as_str(),format!("Bulk outcome {round}"));
@@ -656,7 +656,7 @@ async fn failed_requests_never_emit_partial_or_mismatched_definitions() {
                     _ => unreachable!(),
                 };
 
-                params.push((key.into(), 2_000_000_000i64.into()));
+                params.push((key.into(), 2_000_000_000_i64.into()));
             }
 
             let params = Params::new(params.into_iter().collect());
@@ -723,7 +723,7 @@ async fn request_time_windows_are_inclusive_and_use_timestamp_fallback(
         let values = fixtures();
         let definition = &values["definitions"]["live"];
         let mut market = definition["market"].clone();
-        let now = UnixNanos::from(1_999_999_999_000_000_001u64);
+        let now = UnixNanos::from(1_999_999_999_000_000_001_u64);
         let timestamp = if missing {
             i128::from(now.as_u64())
         } else {

@@ -18,46 +18,60 @@
 //! This script propagates version information through the `NAUTILUS_VERSION` and
 //! `NAUTILUS_USER_AGENT` compile-time environment variables.
 
-use std::path::PathBuf;
+const NAUTILUS_VERSION: &str = "2.0.0rc10";
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=Cargo.toml");
-    println!("cargo:rerun-if-changed=../Cargo.toml");
-    println!("cargo:rerun-if-changed=../../python/pyproject.toml");
 
-    // The Python manifest is unavailable when this crate builds from a published package
-    let nautilus_version = "2.0.0";
+    #[cfg(feature = "extension-module")]
+    check_python_package_version();
 
-    if let Some(pyproject_version) = try_read_pyproject_version() {
-        assert!(
-            pyproject_version.starts_with(nautilus_version),
-            "Version mismatch: pyproject.toml={pyproject_version}, hardcoded={nautilus_version}",
-        );
-    }
-
-    // Set compile-time environment variables
-    println!("cargo:rustc-env=NAUTILUS_VERSION={nautilus_version}");
-    println!("cargo:rustc-env=NAUTILUS_USER_AGENT=NautilusTrader/{nautilus_version}");
+    println!("cargo:rustc-env=NAUTILUS_VERSION={NAUTILUS_VERSION}");
+    println!("cargo:rustc-env=NAUTILUS_USER_AGENT=NautilusTrader/{NAUTILUS_VERSION}");
 }
 
-fn try_read_pyproject_version() -> Option<String> {
-    let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let path = crate_dir
-        .parent()
-        .and_then(|p| p.parent())
-        .map(|p| p.join("python/pyproject.toml"))?;
+#[cfg(feature = "extension-module")]
+fn check_python_package_version() {
+    use std::path::Path;
 
-    if path.exists()
-        && let Ok(contents) = std::fs::read_to_string(path)
-        && let Ok(value) = toml::from_str::<toml::Value>(&contents)
-        && let Some(version) = value
-            .get("project")
-            .and_then(|p| p.get("version"))
-            .and_then(|v| v.as_str())
-    {
-        return Some(version.to_string());
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    if !crate_dir.ends_with("crates/core") {
+        return;
     }
 
-    None
+    let workspace = crate_dir.join("../..");
+
+    // Maturin moves the Python manifest to the root of the source distribution
+    let manifest = if workspace.join("PKG-INFO").is_file() {
+        workspace.join("pyproject.toml")
+    } else {
+        workspace.join("python/pyproject.toml")
+    };
+
+    if !manifest.is_file() {
+        return;
+    }
+
+    println!("cargo:rerun-if-changed={}", manifest.display());
+    let contents = std::fs::read_to_string(manifest).expect("read Python package manifest");
+    let manifest = contents
+        .parse::<toml::Table>()
+        .expect("parse Python package manifest");
+    let version = manifest["project"]["version"]
+        .as_str()
+        .expect("read Python package version");
+
+    let matches_base_version = version
+        .strip_prefix(NAUTILUS_VERSION)
+        .is_some_and(|suffix| {
+            matches!(
+                suffix.as_bytes(),
+                [] | [b'a'..=b'z' | b'+' | b'-', ..] | [b'.', b'a'..=b'z', ..]
+            )
+        });
+
+    assert!(
+        matches_base_version,
+        "Python package version {version} does not match Rust version {NAUTILUS_VERSION}"
+    );
 }

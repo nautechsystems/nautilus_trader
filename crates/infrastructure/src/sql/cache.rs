@@ -24,8 +24,8 @@ use nautilus_common::{
     cache::{
         CacheConfig,
         database::{
-            CacheDatabaseAdapter, CacheDatabaseFactory, CacheMap, POSITION_OMS_KEY_PREFIX,
-            register_loaded_currencies,
+            CacheDatabaseAdapter, CacheDatabaseFactory, CacheMap, CacheOrderIndexes,
+            POSITION_OMS_KEY_PREFIX, register_loaded_currencies,
         },
     },
     live::{block_on_nautilus_with, get_runtime},
@@ -61,7 +61,7 @@ use ustr::Ustr;
 
 use crate::sql::{
     models::general::GeneralRow,
-    pg::{connect_pg, get_postgres_connect_options},
+    pg::get_postgres_connect_options,
     queries::{
         CACHE_DATABASE_KEY_PREFIX, DatabaseQueries, trader_general_key_prefix, trader_key_prefix,
     },
@@ -156,6 +156,74 @@ mod tests {
         assert_eq!(config.username, Some("user".to_string()));
         assert_eq!(config.password, Some("pass".to_string()));
         assert_eq!(config.database, Some("nautilus".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_flush_queues_behind_pending_write_and_waits_for_result() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy_with(PgConnectOptions::new().host("127.0.0.1").port(1));
+        pool.close().await;
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let handle = tokio::spawn(async {});
+        let trader_id = TraderId::from("TRADER-001");
+        let writer_pool = pool.clone();
+
+        let mut database = PostgresCacheDatabase {
+            pool,
+            trader_id,
+            tx: DatabaseWriter(tx),
+            handle,
+        };
+
+        database
+            .add("flush-order".to_string(), Bytes::from_static(b"pending"))
+            .unwrap();
+
+        let flush = tokio::task::spawn_blocking(move || database.flush());
+        let deadline = Duration::from_secs(5);
+
+        let (write, command) = tokio::time::timeout(deadline, async {
+            // Leave the write unprocessed until the flush command arrives
+            (rx.recv().await, rx.recv().await)
+        })
+        .await
+        .unwrap();
+
+        let Some(WriteCommand::Query(DatabaseQuery::Add(key, value))) = write else {
+            panic!("Expected the pending write before the flush command");
+        };
+
+        assert!(
+            matches!(command.as_ref(), Some(WriteCommand::Flush(_))),
+            "Expected a flush command on the writer queue"
+        );
+
+        let mut buffer = WriteBuffer::default();
+        let flow = handle_query(
+            command,
+            &mut buffer,
+            Duration::ZERO,
+            &writer_pool,
+            &trader_id,
+        )
+        .await;
+        let error = tokio::time::timeout(deadline, flush)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_err();
+
+        assert_eq!(
+            key,
+            "cache-database:trader:10:TRADER-001:general:flush-order"
+        );
+        assert_eq!(value, b"pending");
+        assert_eq!(flow, ControlFlow::Continue(()));
+        assert_eq!(
+            error.to_string(),
+            "Failed to flush Postgres cache for TRADER-001: attempted to acquire a connection on a closed pool"
+        );
     }
 
     #[cfg(feature = "defi")]
@@ -315,6 +383,7 @@ pub enum DatabaseQuery {
 }
 
 impl PostgresCacheDatabase {
+    // panics-doc-ok (transitive via PostgreSQL connection options)
     /// Connects to the Postgres cache database using the concrete backend configuration.
     ///
     /// Loads, trader-owned writes and flushes are scoped to `trader_id`, and account events are
@@ -322,36 +391,36 @@ impl PostgresCacheDatabase {
     ///
     /// # Errors
     ///
-    /// Returns an error if establishing the database connection fails, if the schema is out of
+    /// Returns an error if either database pool fails to connect, if the schema is out of
     /// date, if any account events have no trader (the error lists the accounts to assign), or if
     /// checking account ownership fails.
     ///
     /// # Panics
     ///
-    /// Panics if the internal Postgres pool connection attempt (`connect_pg`) unwraps on error.
+    /// Panics if `config.port` is unset and `POSTGRES_PORT` is not a valid `u16`.
     pub async fn connect(
         config: PostgresCacheConfig,
         trader_id: TraderId,
     ) -> Result<Self, sqlx::Error> {
-        let pg_connect_options = get_postgres_connect_options(
+        let pg_connect_options: PgConnectOptions = get_postgres_connect_options(
             config.host,
             config.port,
             config.username,
             config.password,
             config.database,
-        );
-        let pool = connect_pg(pg_connect_options.clone().into()).await.unwrap();
+        )
+        .into();
+        let pool = PgPool::connect_with(pg_connect_options.clone()).await?;
         check_schema_migrated(&pool).await?;
         check_account_ownership(&pool).await?;
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 
+        let writer_pool = get_runtime()
+            .spawn(PgPool::connect_with(pg_connect_options))
+            .await
+            .map_err(|e| sqlx::Error::Io(std::io::Error::other(e)))??;
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let handle = get_runtime().spawn(async move {
-            Box::pin(Self::process_commands(
-                rx,
-                pg_connect_options.clone().into(),
-                trader_id,
-            ))
-            .await;
+            Box::pin(Self::process_commands(rx, writer_pool, trader_id)).await;
         });
         Ok(Self {
             pool,
@@ -386,15 +455,13 @@ impl PostgresCacheDatabase {
 
     async fn process_commands(
         mut rx: tokio::sync::mpsc::UnboundedReceiver<WriteCommand>,
-        pg_connect_options: PgConnectOptions,
+        pool: PgPool,
         trader_id: TraderId,
     ) {
         log_task_started(CACHE_PROCESS);
 
-        let pool = connect_pg(pg_connect_options).await.unwrap();
-
         // Buffering
-        let mut buffer = VecDeque::new();
+        let mut buffer = WriteBuffer::default();
 
         // TODO: expose this via configuration once tests are fixed
         let buffer_interval = Duration::from_millis(0);
@@ -435,7 +502,7 @@ impl PostgresCacheDatabase {
             }
         }
 
-        if !buffer.is_empty() {
+        if !buffer.commands.is_empty() {
             drain_buffer(&pool, &trader_id, &mut buffer).await;
         }
 
@@ -538,6 +605,8 @@ impl DatabaseWriter {
 #[derive(Debug)]
 enum WriteCommand {
     Query(DatabaseQuery),
+    OrderReplacement(OrderReplacement),
+    OrderUpdate(OrderEventAny, UUID4),
     Position {
         id: PositionId,
         event: OrderFilled,
@@ -545,6 +614,22 @@ enum WriteCommand {
         oms_type: OmsType,
     },
     Flush(tokio::sync::oneshot::Sender<anyhow::Result<()>>),
+}
+
+#[derive(Default)]
+struct WriteBuffer {
+    commands: VecDeque<WriteCommand>,
+    order_replacements: OrderReplacements,
+}
+
+type OrderReplacements = AHashMap<(TraderId, ClientOrderId), OrderReplacement>;
+
+#[derive(Debug)]
+struct OrderReplacement {
+    init: OrderInitialized,
+    client_id: Option<ClientId>,
+    prior_event_ids: Vec<String>,
+    first_update_id: Option<UUID4>,
 }
 
 impl From<DatabaseQuery> for WriteCommand {
@@ -611,7 +696,10 @@ async fn check_schema_migrated(pool: &PgPool) -> Result<(), sqlx::Error> {
     }
 
     check_trader_keys(pool).await?;
+    check_required_columns(pool).await
+}
 
+async fn check_required_columns(pool: &PgPool) -> Result<(), sqlx::Error> {
     let missing: Vec<String> = sqlx::query_scalar(
         "SELECT required.table_name || '.' || required.column_name
         FROM (VALUES
@@ -622,6 +710,8 @@ async fn check_schema_migrated(pool: &PgPool) -> Result<(), sqlx::Error> {
             ('instrument', 'info'),
             ('instrument', 'tick_scheme'),
             ('instrument', 'underlying_instrument_id'),
+            ('instrument', 'strike_currency'),
+            ('instrument', 'premium_style'),
             ('instrument', 'exercise_style'),
             ('instrument', 'settlement_type'),
             ('account_event', 'info'),
@@ -736,7 +826,7 @@ async fn check_account_ownership(pool: &PgPool) -> Result<(), sqlx::Error> {
 
 async fn handle_query(
     maybe_msg: Option<WriteCommand>,
-    buffer: &mut VecDeque<WriteCommand>,
+    buffer: &mut WriteBuffer,
     buffer_interval: Duration,
     pool: &PgPool,
     trader_id: &TraderId,
@@ -749,7 +839,7 @@ async fn handle_query(
     let msg = match msg {
         #[cfg(feature = "defi")]
         WriteCommand::Query(DatabaseQuery::DefiCurrency(currency, reply)) => {
-            if !buffer.is_empty() {
+            if !buffer.commands.is_empty() {
                 drain_buffer(pool, trader_id, buffer).await;
             }
 
@@ -759,7 +849,7 @@ async fn handle_query(
         }
         #[cfg(feature = "defi")]
         WriteCommand::Query(DatabaseQuery::DefiInstrument(instrument, migration, reply)) => {
-            if !buffer.is_empty() {
+            if !buffer.commands.is_empty() {
                 drain_buffer(pool, trader_id, buffer).await;
             }
 
@@ -769,7 +859,14 @@ async fn handle_query(
         }
         WriteCommand::Flush(reply) => {
             drain_buffer(pool, trader_id, buffer).await;
-            let _ = reply.send(DatabaseQueries::delete_trader(pool, trader_id).await);
+            let result = DatabaseQueries::delete_trader(pool, trader_id).await;
+            if result.is_ok() {
+                buffer
+                    .order_replacements
+                    .retain(|(owner, _), _| owner != trader_id);
+            }
+
+            let _ = reply.send(result);
             return ControlFlow::Continue(());
         }
         WriteCommand::Query(DatabaseQuery::Close) => {
@@ -779,8 +876,7 @@ async fn handle_query(
         other => other,
     };
 
-    buffer.push_back(msg);
-
+    buffer.commands.push_back(msg);
     if buffer_interval.is_zero() {
         drain_buffer(pool, trader_id, buffer).await;
     }
@@ -789,13 +885,13 @@ async fn handle_query(
 }
 
 async fn flush_buffer(
-    buffer: &mut VecDeque<WriteCommand>,
+    buffer: &mut WriteBuffer,
     pool: &PgPool,
     trader_id: &TraderId,
     flush_timer: &mut Pin<&mut tokio::time::Sleep>,
     buffer_interval: Duration,
 ) {
-    if !buffer.is_empty() {
+    if !buffer.commands.is_empty() {
         drain_buffer(pool, trader_id, buffer).await;
     }
     flush_timer.as_mut().reset(Instant::now() + buffer_interval);
@@ -888,6 +984,25 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         })
     }
 
+    fn load_order_indexes(&self) -> LocalBoxFuture<'_, anyhow::Result<CacheOrderIndexes>> {
+        let pool = self.pool.clone();
+        let trader_id = self.trader_id;
+        Box::pin(async move {
+            tokio::spawn(async move {
+                let order_position =
+                    DatabaseQueries::load_index_order_position(&pool, &trader_id).await?;
+                let order_client =
+                    DatabaseQueries::load_distinct_order_event_client_ids(&pool, &trader_id)
+                        .await?;
+                Ok(CacheOrderIndexes {
+                    order_position,
+                    order_client,
+                })
+            })
+            .await?
+        })
+    }
+
     fn load(&self) -> anyhow::Result<AHashMap<String, Bytes>> {
         let pool = self.pool.clone();
         let trader_id = self.trader_id;
@@ -970,23 +1085,13 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     async fn load_positions(&self) -> anyhow::Result<AHashMap<PositionId, Position>> {
         let pool = self.pool.clone();
         let trader_id = self.trader_id;
-        let (tx, rx) = std::sync::mpsc::channel();
-
-        tokio::spawn(async move {
-            let result = DatabaseQueries::load_positions(&pool, &trader_id)
-                .await
-                .map(|positions| {
-                    positions
-                        .into_iter()
-                        .map(|position| (position.id, position))
-                        .collect()
-                });
-
-            if let Err(e) = tx.send(result) {
-                log::error!("Failed to send positions: {e:?}");
-            }
-        });
-        rx.recv()?
+        let positions =
+            tokio::spawn(async move { DatabaseQueries::load_positions(&pool, &trader_id).await })
+                .await??;
+        Ok(positions
+            .into_iter()
+            .map(|position| (position.id, position))
+            .collect())
     }
 
     async fn load_greeks(&self) -> anyhow::Result<AHashMap<InstrumentId, GreeksData>> {
@@ -1076,26 +1181,19 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     async fn load_account(&self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>> {
         let pool = self.pool.clone();
         let trader_id = self.trader_id;
-        let account_id = account_id.to_owned();
-        let (tx, rx) = std::sync::mpsc::channel();
+        let account_id = *account_id;
+        let result = tokio::spawn(async move {
+            DatabaseQueries::load_account(&pool, &account_id, &trader_id).await
+        })
+        .await?;
 
-        tokio::spawn(async move {
-            let result = DatabaseQueries::load_account(&pool, &account_id, &trader_id).await;
-            match result {
-                Ok(account) => {
-                    if let Err(e) = tx.send(account) {
-                        log::error!("Failed to send account {account_id}: {e:?}");
-                    }
-                }
-                Err(e) => {
-                    log::error!("Failed to load account {account_id}: {e:?}");
-                    if let Err(e) = tx.send(None) {
-                        log::error!("Failed to send None for account {account_id}: {e:?}");
-                    }
-                }
+        match result {
+            Ok(account) => Ok(account),
+            Err(e) => {
+                log::error!("Failed to load account {account_id}: {e:?}");
+                Ok(None)
             }
-        });
-        Ok(rx.recv()?)
+        }
     }
 
     async fn load_order(
@@ -1104,39 +1202,29 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     ) -> anyhow::Result<Option<OrderAny>> {
         let pool = self.pool.clone();
         let trader_id = self.trader_id;
-        let client_order_id = client_order_id.to_owned();
-        let (tx, rx) = std::sync::mpsc::channel();
+        let client_order_id = *client_order_id;
+        let result = tokio::spawn(async move {
+            DatabaseQueries::load_order(&pool, &client_order_id, &trader_id).await
+        })
+        .await?;
 
-        tokio::spawn(async move {
-            let result = DatabaseQueries::load_order(&pool, &client_order_id, &trader_id).await;
-            match result {
-                Ok(order) => {
-                    if let Err(e) = tx.send(order) {
-                        log::error!("Failed to send order {client_order_id}: {e:?}");
-                    }
-                }
-                Err(e) => {
-                    log::error!("Failed to load order {client_order_id}: {e:?}");
-                    let _ = tx.send(None);
-                }
+        match result {
+            Ok(order) => Ok(order),
+            Err(e) => {
+                log::error!("Failed to load order {client_order_id}: {e:?}");
+                Ok(None)
             }
-        });
-        Ok(rx.recv()?)
+        }
     }
 
     async fn load_position(&self, position_id: &PositionId) -> anyhow::Result<Option<Position>> {
         let pool = self.pool.clone();
         let trader_id = self.trader_id;
-        let position_id = position_id.to_owned();
-        let (tx, rx) = std::sync::mpsc::channel();
-
+        let position_id = *position_id;
         tokio::spawn(async move {
-            let result = DatabaseQueries::load_position(&pool, &position_id, &trader_id).await;
-            if let Err(e) = tx.send(result) {
-                log::error!("Failed to send position {position_id}: {e:?}");
-            }
-        });
-        rx.recv()?
+            DatabaseQueries::load_position(&pool, &position_id, &trader_id).await
+        })
+        .await?
     }
 
     fn load_actor(&self, actor_id: &ActorId) -> anyhow::Result<AHashMap<String, Bytes>> {
@@ -1274,8 +1362,27 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn add_order(&self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()> {
-        let query = DatabaseQuery::AddOrder(order_initialized_event(order), client_id);
-        self.tx.send(query).map_err(|e| {
+        let original = order.init_event();
+        let command = match order.last_event() {
+            OrderEventAny::Initialized(init) if init.event_id != original.event_id => {
+                let prior_event_ids = order
+                    .events()
+                    .into_iter()
+                    .rev()
+                    .skip(1)
+                    .map(|event| event.clone().into_boxed().id().to_string())
+                    .collect();
+                WriteCommand::OrderReplacement(OrderReplacement {
+                    init: init.clone(),
+                    client_id,
+                    prior_event_ids,
+                    first_update_id: None,
+                })
+            }
+            _ => DatabaseQuery::AddOrder(original.clone(), client_id).into(),
+        };
+
+        self.tx.send(command).map_err(|e| {
             anyhow::anyhow!("Failed to send query add_order to database message handler: {e}")
         })
     }
@@ -1686,6 +1793,13 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         })
     }
 
+    fn update_order_from_state(&self, order: &OrderAny) -> anyhow::Result<()> {
+        let command = WriteCommand::OrderUpdate(order.last_event().clone(), order.init_id());
+        self.tx.send(command).map_err(|e| {
+            anyhow::anyhow!("Failed to send query update_order to database message handler: {e}")
+        })
+    }
+
     fn update_position(&self, position: &Position) -> anyhow::Result<()> {
         let query = if position.requires_replay_state() {
             DatabaseQuery::AddPositionSnapshot(PositionSnapshot::from_replay_state(position, None))
@@ -1744,10 +1858,6 @@ fn account_last_event(account: &AccountAny) -> anyhow::Result<AccountState> {
         .ok_or_else(|| anyhow::anyhow!("Cannot persist account with no events: {}", account.id()))
 }
 
-fn order_initialized_event(order: &OrderAny) -> OrderInitialized {
-    order.init_event().clone()
-}
-
 fn position_last_event(position: &Position) -> anyhow::Result<OrderFilled> {
     position
         .last_event()
@@ -1760,10 +1870,28 @@ fn position_replay_snapshot(position: &Position) -> Option<Box<PositionSnapshot>
         .then(|| Box::new(PositionSnapshot::from_replay_state(position, None)))
 }
 
-async fn drain_buffer(pool: &PgPool, trader_id: &TraderId, buffer: &mut VecDeque<WriteCommand>) {
-    for command in buffer.drain(..) {
+async fn drain_buffer(pool: &PgPool, trader_id: &TraderId, buffer: &mut WriteBuffer) {
+    for command in buffer.commands.drain(..) {
         let result = match command {
-            WriteCommand::Query(query) => execute_query(pool, trader_id, query).await,
+            WriteCommand::OrderReplacement(replacement) => {
+                // Expose the replacement only once a later event can commit with it.
+                let key = (replacement.init.trader_id, replacement.init.client_order_id);
+                if let Some(pending) = buffer.order_replacements.get_mut(&key)
+                    && pending.init.event_id == replacement.init.event_id
+                {
+                    pending.client_id = replacement.client_id.or(pending.client_id);
+                } else {
+                    buffer.order_replacements.insert(key, replacement);
+                }
+
+                Ok(())
+            }
+            WriteCommand::OrderUpdate(event, init_id) => {
+                write_order_update(pool, &mut buffer.order_replacements, event, Some(init_id)).await
+            }
+            WriteCommand::Query(query) => {
+                execute_query(pool, trader_id, &mut buffer.order_replacements, query).await
+            }
             WriteCommand::Position {
                 id,
                 event,
@@ -1791,6 +1919,7 @@ async fn drain_buffer(pool: &PgPool, trader_id: &TraderId, buffer: &mut VecDeque
 async fn execute_query(
     pool: &PgPool,
     trader_id: &TraderId,
+    order_replacements: &mut OrderReplacements,
     query: DatabaseQuery,
 ) -> anyhow::Result<()> {
     match query {
@@ -1801,7 +1930,11 @@ async fn execute_query(
         DatabaseQuery::Close => Ok(()),
         DatabaseQuery::Add(key, value) => DatabaseQueries::add(pool, key, value).await,
         DatabaseQuery::Delete(key) => DatabaseQueries::delete(pool, &key).await,
-        DatabaseQuery::DeleteOrder(id) => DatabaseQueries::delete_order(pool, *trader_id, id).await,
+        DatabaseQuery::DeleteOrder(id) => {
+            DatabaseQueries::delete_order(pool, *trader_id, id).await?;
+            order_replacements.remove(&(*trader_id, id));
+            Ok(())
+        }
         DatabaseQuery::DeletePosition(id) => {
             DatabaseQueries::delete_position(pool, *trader_id, id).await
         }
@@ -1839,7 +1972,7 @@ async fn execute_query(
         DatabaseQuery::AddGreeks(greeks) => DatabaseQueries::add_greeks(pool, &greeks).await,
         DatabaseQuery::AddYieldCurve(curve) => DatabaseQueries::add_yield_curve(pool, &curve).await,
         DatabaseQuery::UpdateOrder(event) => {
-            DatabaseQueries::add_order_event(pool, event.into_boxed(), None).await
+            write_order_update(pool, order_replacements, event, None).await
         }
         DatabaseQuery::UpdatePosition(event) => {
             DatabaseQueries::update_position(pool, &event).await
@@ -1852,4 +1985,43 @@ async fn execute_query(
             DatabaseQueries::index_order_clients(pool, trader_id, &claims).await
         }
     }
+}
+
+async fn write_order_update(
+    pool: &PgPool,
+    order_replacements: &mut OrderReplacements,
+    event: OrderEventAny,
+    init_id: Option<UUID4>,
+) -> anyhow::Result<()> {
+    let key = (event.trader_id(), event.client_order_id());
+    let event = event.into_boxed();
+
+    let Some(replacement) = order_replacements.get_mut(&key) else {
+        return DatabaseQueries::add_order_event(pool, event, None).await;
+    };
+
+    // Reload can restore the original order while this replacement is pending
+    if init_id.is_some_and(|id| id != replacement.init.event_id) {
+        order_replacements.remove(&key);
+        return DatabaseQueries::add_order_event(pool, event, None).await;
+    }
+
+    let event_id = event.id();
+    let first_update_id = replacement.first_update_id.get_or_insert(event_id);
+    let client_order_id = key.1;
+    anyhow::ensure!(
+        *first_update_id == event_id,
+        "Cannot persist order {client_order_id} event {event_id} before replacement event {first_update_id}"
+    );
+
+    DatabaseQueries::add_order_replacement(
+        pool,
+        replacement.init.clone(),
+        replacement.client_id,
+        &replacement.prior_event_ids,
+        event,
+    )
+    .await?;
+    order_replacements.remove(&key);
+    Ok(())
 }

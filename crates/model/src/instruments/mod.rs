@@ -135,7 +135,7 @@ impl FromStr for NautilusInstrumentType {
     }
 }
 use crate::{
-    enums::{AssetClass, InstrumentClass, OptionKind},
+    enums::{AssetClass, InstrumentClass, OptionKind, OrderSide},
     identifiers::{InstrumentId, Symbol, Venue},
     types::{
         Currency, ERROR_PRICE, Money, Price, Quantity,
@@ -300,6 +300,11 @@ pub trait Instrument: Any + Send {
     fn option_kind(&self) -> Option<OptionKind>;
     fn exchange(&self) -> Option<Ustr>;
     fn strike_price(&self) -> Option<Price>;
+
+    fn strike_currency(&self) -> Option<Currency> {
+        None
+    }
+
     fn strategy_type(&self) -> Option<Ustr> {
         None
     }
@@ -730,6 +735,30 @@ pub trait Instrument: Any + Send {
         Some(price)
     }
 
+    /// Returns the tick at or below a buy limit or at or above a sell limit,
+    /// then steps `n` ticks away from the limit. Returns `None` outside the price grid.
+    fn next_price_from_decimal(&self, side: OrderSide, value: Decimal, n: i32) -> Option<Price> {
+        let precision = self.price_precision();
+        let price = match self.tick_scheme_rule() {
+            Some(rule) => rule.next_price_from_decimal(side, value, n, precision)?,
+            None => tick_scheme::next_price_on_increment(
+                side,
+                value,
+                n,
+                self.price_increment(),
+                precision,
+            )?,
+        };
+
+        if self.min_price().is_some_and(|min| price < min)
+            || self.max_price().is_some_and(|max| price > max)
+        {
+            return None;
+        }
+
+        Some(price)
+    }
+
     #[inline]
     fn next_bid_prices(&self, value: f64, n: usize) -> Vec<Price> {
         let mut prices = Vec::with_capacity(n);
@@ -868,7 +897,7 @@ mod tests {
     }
 
     pub(super) fn default_price_increment(precision: u8) -> Price {
-        let step = 10f64.powi(-i32::from(precision));
+        let step = 10_f64.powi(-i32::from(precision));
         Price::new(step, precision)
     }
 
@@ -1246,6 +1275,23 @@ mod tests {
     }
 
     #[rstest]
+    #[case(OrderSide::Buy, dec!(10000.000000000000000001), 0, "10000.00")]
+    #[case(OrderSide::Sell, dec!(10000.000000000000000001), 0, "10000.01")]
+    #[case(OrderSide::Buy, dec!(10000.00), 1, "9999.99")]
+    #[case(OrderSide::Sell, dec!(10000.00), 1, "10000.01")]
+    fn decimal_tick_navigation(
+        currency_pair_btcusdt: CurrencyPair,
+        #[case] side: OrderSide,
+        #[case] value: Decimal,
+        #[case] offset: i32,
+        #[case] expected: &str,
+    ) {
+        let result = currency_pair_btcusdt.next_price_from_decimal(side, value, offset);
+
+        assert_eq!(result, Some(Price::from(expected)));
+    }
+
+    #[rstest]
     fn tick_navigation_uses_tick_scheme() {
         let instrument = CurrencyPair::builder()
             .instrument_id(InstrumentId::from("TEST.VENUE"))
@@ -1268,6 +1314,10 @@ mod tests {
         );
         assert_eq!(instrument.next_bid_price(1.23, 0), Some(Price::new(1.2, 2)));
         assert_eq!(instrument.next_ask_price(1.23, 0), Some(Price::new(1.3, 2)));
+        assert_eq!(
+            instrument.next_price_from_decimal(OrderSide::Sell, dec!(1.200000000000000001), 0),
+            Some(Price::from("1.30")),
+        );
     }
 
     #[rstest]
@@ -1635,7 +1685,7 @@ mod tests {
             currency_pair_btcusdt.price_precision(),
             currency_pair_btcusdt.min_price_increment_precision(),
         );
-        let step = 10f64.powi(-i32::from(rounding_precision));
+        let step = 10_f64.powi(-i32::from(rounding_precision));
         let base_even_multiple = 42.0;
         let base_value = step * base_even_multiple;
         let delta = step / 2000.0;
@@ -1953,7 +2003,7 @@ mod tests {
 
     proptest! {
         #[rstest]
-        fn make_price_qty_fuzz(input in 0.0001f64..1e8) {
+        fn make_price_qty_fuzz(input in 0.0001_f64..1e8) {
             let instrument = currency_pair_btcusdt();
             let price = instrument.make_price(input);
             prop_assert!(price.as_f64().is_finite());
@@ -2082,12 +2132,12 @@ mod tests {
     #[case::dp14(Decimal::new(100_000_000_000_000_000, 14), Decimal::new(2, 0), 500.0)]
     #[case::dp15(Decimal::new(1_000_000_000_000_000_000, 15), Decimal::new(2, 0), 500.0)]
     #[case::dp16(
-        Decimal::from_i128_with_scale(10_000_000_000_000_000_000i128, 16),
+        Decimal::from_i128_with_scale(10_000_000_000_000_000_000_i128, 16),
         Decimal::new(2, 0),
         500.0
     )]
     #[case::dp17(
-        Decimal::from_i128_with_scale(100_000_000_000_000_000_000i128, 17),
+        Decimal::from_i128_with_scale(100_000_000_000_000_000_000_i128, 17),
         Decimal::new(2, 0),
         500.0
     )]

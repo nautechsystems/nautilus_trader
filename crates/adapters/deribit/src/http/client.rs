@@ -958,13 +958,12 @@ impl DeribitHttpClient {
             GetInstrumentsParams::new(currency)
         };
 
-        // Call raw client
+        let ts_init = self.generate_ts_init();
         let full_response = self.inner.get_instruments(params).await?;
         let result = full_response
             .result
             .ok_or_else(|| anyhow::anyhow!("No result in response"))?;
         let ts_event = extract_server_timestamp(full_response.us_out)?;
-        let ts_init = self.generate_ts_init();
         let combo_by_id = self.combo_map_for_instruments(currency, &result).await;
 
         // Parse each instrument
@@ -1029,13 +1028,12 @@ impl DeribitHttpClient {
             instrument_name: instrument_id.symbol.to_string(),
         };
 
+        let ts_init = self.generate_ts_init();
         let full_response = self.inner.get_instrument(params).await?;
         let response = full_response
             .result
             .ok_or_else(|| anyhow::anyhow!("No result in response"))?;
         let ts_event = extract_server_timestamp(full_response.us_out)?;
-        let ts_init = self.generate_ts_init();
-
         match parse_deribit_instrument_any(&response, ts_init, ts_event)? {
             Some(mut instrument) => {
                 if Self::is_combo_kind(response.kind) {

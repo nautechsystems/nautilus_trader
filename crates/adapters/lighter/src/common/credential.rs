@@ -221,7 +221,7 @@ impl Credential {
     /// Returns an error if the secret is not 40-byte hex, with or without a
     /// `0x` prefix.
     pub fn private_key(&self) -> anyhow::Result<PrivateKey> {
-        let mut bytes = [0u8; SCALAR_BYTES];
+        let mut bytes = [0_u8; SCALAR_BYTES];
         let secret =
             str::from_utf8(&self.api_secret).context("Lighter API secret must be UTF-8")?;
         let decoded = decode_private_key_hex(secret)?;

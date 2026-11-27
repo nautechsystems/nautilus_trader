@@ -160,7 +160,7 @@ impl MovingAverage for DoubleExponentialMovingAverage {
             return;
         }
 
-        self.value = 2.0f64.mul_add(self.ema1.value(), -self.ema2.value());
+        self.value = 2.0_f64.mul_add(self.ema1.value(), -self.ema2.value());
         self.initialized = true;
     }
 }

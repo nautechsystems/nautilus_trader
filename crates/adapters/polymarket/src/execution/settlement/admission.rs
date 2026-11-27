@@ -1475,7 +1475,7 @@ mod tests {
                 last_px: Price::from("0.3700"),
                 commission: Money::zero(Currency::pUSD()),
                 taker_fee_basis: None,
-                ts_event: UnixNanos::from(1_735_689_600_000_000_000u64),
+                ts_event: UnixNanos::from(1_735_689_600_000_000_000_u64),
             })
             .collect();
 

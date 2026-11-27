@@ -153,7 +153,7 @@ impl SettlementRegistry {
         inner.session += 1;
         inner.session_orders.clear();
 
-        let mut requested = 0usize;
+        let mut requested = 0_usize;
 
         for record in inner.records.values_mut() {
             if record.settlement == SettlementState::Provisional

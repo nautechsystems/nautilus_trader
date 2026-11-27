@@ -26,7 +26,7 @@ struct QuoteStream {
     client: BybitDataClient,
     ws: BybitWebSocketClient,
     tasks: TaskSpawner,
-    instruments: AHashMap<Ustr, InstrumentAny>,
+    instruments: AHashMap<InstrumentId, InstrumentAny>,
     product_type: BybitProductType,
     funding_cache: AHashMap<Ustr, super::super::FundingCacheEntry>,
     receiver: tokio::sync::mpsc::UnboundedReceiver<DataEvent>,

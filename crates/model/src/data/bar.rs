@@ -2445,25 +2445,25 @@ mod property_tests {
         prop_oneof![
             (
                 Just(BarAggregation::Millisecond),
-                prop::sample::select(vec![1usize, 2, 5, 10, 25, 50, 100, 250, 500]),
+                prop::sample::select(vec![1_usize, 2, 5, 10, 25, 50, 100, 250, 500]),
             ),
             (
                 Just(BarAggregation::Second),
-                prop::sample::select(vec![1usize, 2, 3, 5, 10, 15, 30]),
+                prop::sample::select(vec![1_usize, 2, 3, 5, 10, 15, 30]),
             ),
             (
                 Just(BarAggregation::Minute),
-                prop::sample::select(vec![1usize, 2, 5, 15, 30]),
+                prop::sample::select(vec![1_usize, 2, 5, 15, 30]),
             ),
             (
                 Just(BarAggregation::Hour),
-                prop::sample::select(vec![1usize, 2, 4, 12]),
+                prop::sample::select(vec![1_usize, 2, 4, 12]),
             ),
             (
                 Just(BarAggregation::Day),
-                prop::sample::select(vec![1usize, 2, 3]),
+                prop::sample::select(vec![1_usize, 2, 3]),
             ),
-            (Just(BarAggregation::Week), Just(1usize)),
+            (Just(BarAggregation::Week), Just(1_usize)),
         ]
     }
 
@@ -2474,11 +2474,11 @@ mod property_tests {
             // 30-day proxy interval, which is unsound for calendar months
             (
                 Just(BarAggregation::Month),
-                prop::sample::select(vec![1usize, 2, 3, 4, 6, 12]),
+                prop::sample::select(vec![1_usize, 2, 3, 4, 6, 12]),
             ),
-            (Just(BarAggregation::Tick), 1usize..=10_000),
-            (Just(BarAggregation::Volume), 1usize..=10_000),
-            (Just(BarAggregation::Value), 1usize..=10_000),
+            (Just(BarAggregation::Tick), 1_usize..=10_000),
+            (Just(BarAggregation::Volume), 1_usize..=10_000),
+            (Just(BarAggregation::Value), 1_usize..=10_000),
         ]
     }
 
@@ -2533,8 +2533,8 @@ mod property_tests {
         #[rstest]
         fn prop_get_time_bar_start_alignment(
             (aggregation, step) in time_spec_strategy(),
-            epoch_secs in 946_684_800i64..2_524_608_000i64,
-            subsec_nanos in 0u32..1_000_000_000u32,
+            epoch_secs in 946_684_800_i64..2_524_608_000_i64,
+            subsec_nanos in 0_u32..1_000_000_000_u32,
         ) {
             let instrument_id = InstrumentId::from("AAPL.XNAS");
             let spec = BarSpecification::new(step, aggregation, PriceType::Last);

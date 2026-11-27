@@ -844,7 +844,7 @@ impl StressVenue for Binance {
             base_url_http: Some(format!("http://{proxy}")),
             base_url_ws: Some(format!("ws://{proxy}/ws")),
             spot_market_data_mode: self.product.market_data_mode,
-            instrument_refresh_interval_secs: 0,
+            update_instruments_interval_mins: 0,
             instrument_status_poll_secs: 0,
             book_snapshot_timeout_secs: args.timeout_secs(),
             // Boundary probes count recovery attempts by REST requests, so requests must not retry

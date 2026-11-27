@@ -167,3 +167,10 @@ name = "kraken-hurst-vpin-live"
 path = "examples/node_hurst_vpin_live.rs"
 required-features = ["examples"]
 doc = false
+
+[[test]]
+name = "kraken-book-stress"
+path = "tests/stress/book_stress.rs"
+harness = false
+test = false
+required-features = ["examples"]

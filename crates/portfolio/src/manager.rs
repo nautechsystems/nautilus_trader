@@ -24,7 +24,7 @@ use nautilus_model::{
     accounts::{
         Account, AccountAny, BaseAccount, BettingAccount, CashAccount, MarginAccount, WalletAccount,
     },
-    enums::{AccountType, OrderSide, OrderType, PriceType},
+    enums::{AccountType, OptionPremiumStyle, OrderSide, OrderType, PriceType},
     events::{AccountState, OrderFilled},
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
@@ -129,6 +129,22 @@ impl AccountsManager {
                 let mut pnl_list = pnls;
                 self.update_balance_multi_currency(&mut account, fill, &mut pnl_list)
             }
+        };
+
+        let updated = if let AccountAny::Margin(margin) = &mut account
+            && instrument.premium_style() == Some(OptionPremiumStyle::FuturesStyle)
+        {
+            updated.and_then(|posted| {
+                anyhow::ensure!(
+                    posted,
+                    "Cannot post fees for futures-style option fill {}",
+                    fill.trade_id
+                );
+                margin.record_option_variation_fill(instrument, fill)?;
+                Ok(true)
+            })
+        } else {
+            updated
         };
 
         if !matches!(updated, Ok(true)) {

@@ -819,8 +819,8 @@ impl DydxHttpClient {
         &self,
         symbol: Option<String>,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
-        let markets_response = self.inner.get_markets().await?;
         let ts_init = self.generate_ts_init();
+        let markets_response = self.inner.get_markets().await?;
 
         let mut instruments = Vec::new();
         let mut skipped_inactive = 0;
@@ -870,7 +870,7 @@ impl DydxHttpClient {
     /// This is a convenience method that fetches instruments and populates both
     /// the symbol-based and CLOB pair ID-based caches.
     ///
-    /// On success, existing caches are cleared and repopulated atomically.
+    /// On success, replaces the snapshot while preserving definitions newer than the request.
     /// On failure, existing caches are preserved (no partial updates).
     ///
     /// # Errors
@@ -878,11 +878,10 @@ impl DydxHttpClient {
     /// Returns an error if the HTTP request fails.
     pub async fn fetch_and_cache_instruments(&self) -> anyhow::Result<()> {
         // Fetch first - preserve existing cache on network failure
-        let markets_response = self.inner.get_markets().await?;
         let ts_init = self.generate_ts_init();
+        let markets_response = self.inner.get_markets().await?;
 
-        let mut parsed_instruments = Vec::new();
-        let mut parsed_markets = Vec::new();
+        let mut items = Vec::new();
         let mut skipped_inactive = 0;
 
         for (ticker, market) in markets_response.markets {
@@ -897,8 +896,7 @@ impl DydxHttpClient {
 
             match super::parse::parse_instrument_any(&market, ts_init) {
                 Ok(instrument) => {
-                    parsed_instruments.push(instrument);
-                    parsed_markets.push(market);
+                    items.push((instrument, market));
                 }
                 Err(e) => {
                     log::error!("Failed to parse instrument {ticker}: {e}");
@@ -906,17 +904,8 @@ impl DydxHttpClient {
             }
         }
 
-        // Only clear and repopulate cache after successful fetch and parse
-        self.instrument_cache.clear();
-
-        // Zip instruments with their market data for bulk insert
-        let items: Vec<_> = parsed_instruments.into_iter().zip(parsed_markets).collect();
-
-        if !items.is_empty() {
-            self.instrument_cache.insert_many(items.clone());
-        }
-
-        let count = items.len();
+        self.instrument_cache.replace_instruments(items, ts_init);
+        let count = self.instrument_cache.len();
 
         if skipped_inactive > 0 {
             log::debug!("Cached {count} instruments, skipped {skipped_inactive} inactive");
@@ -936,8 +925,21 @@ impl DydxHttpClient {
         &self,
         ticker: &str,
     ) -> anyhow::Result<Option<InstrumentAny>> {
-        let markets_response = self.inner.get_market(ticker).await?;
+        let Some((instrument, market)) = self.fetch_single_instrument(ticker).await? else {
+            return Ok(None);
+        };
+
+        self.instrument_cache.insert(instrument.clone(), market);
+        log::debug!("Fetched and cached new instrument: {ticker}");
+        Ok(Some(instrument))
+    }
+
+    pub(crate) async fn fetch_single_instrument(
+        &self,
+        ticker: &str,
+    ) -> anyhow::Result<Option<(InstrumentAny, super::models::PerpetualMarket)>> {
         let ts_init = self.generate_ts_init();
+        let markets_response = self.inner.get_market(ticker).await?;
 
         // The API returns all markets if ticker not found, so check specifically
         if let Some(market) = markets_response.markets.get(ticker) {
@@ -950,11 +952,7 @@ impl DydxHttpClient {
             }
 
             let instrument = parse_instrument_any(market, ts_init)?;
-            self.instrument_cache
-                .insert(instrument.clone(), market.clone());
-
-            log::debug!("Fetched and cached new instrument: {ticker}");
-            return Ok(Some(instrument));
+            return Ok(Some((instrument, market.clone())));
         }
 
         Ok(None)

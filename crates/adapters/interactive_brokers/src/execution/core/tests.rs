@@ -25,6 +25,7 @@ use ibapi::{
 use nautilus_common::{
     cache::Cache,
     live::{runner::replace_exec_event_sender, sender::EventSender},
+    msgbus::{publish_instrument, switchboard::get_instrument_topic},
 };
 use nautilus_core::Params;
 use nautilus_live::{ExecutionClientCore, execution::failure::CommandFailure};
@@ -3947,7 +3948,7 @@ fn test_fill_report_collector_uses_provider_resolved_stock_venue() {
     let instrument_id = equity.id();
     client
         .instrument_provider
-        .insert_test_instrument(InstrumentAny::from(equity), 265598, 1);
+        .insert_test_instrument(InstrumentAny::from(equity), 265_598, 1);
     let exec_data = create_test_stock_execution_data(0, 123, "exec-aapl-001");
     let cmd = GenerateFillReportsBuilder::default()
         .ts_init(UnixNanos::default())
@@ -5779,7 +5780,7 @@ fn test_account_state_sender_delivers_from_worker_thread() {
     let send_account_state = client.account_state_sender();
     let balances = vec![
         AccountBalance::from_total_and_free(
-            Decimal::new(100050, 2),
+            Decimal::new(100_050, 2),
             Decimal::new(90025, 2),
             Currency::USD(),
         )
@@ -5829,7 +5830,7 @@ fn test_account_state_carries_configured_base_currency() {
     .unwrap();
     let balances = vec![
         AccountBalance::from_total_and_free(
-            Decimal::new(100050, 2),
+            Decimal::new(100_050, 2),
             Decimal::new(90025, 2),
             Currency::USD(),
         )
@@ -5852,7 +5853,7 @@ fn test_account_state_has_no_base_currency_by_default() {
     let (client, mut rx, _cache) = create_test_execution_client();
     let balances = vec![
         AccountBalance::from_total_and_free(
-            Decimal::new(100050, 2),
+            Decimal::new(100_050, 2),
             Decimal::new(90025, 2),
             Currency::USD(),
         )
@@ -5959,11 +5960,16 @@ fn test_upsert_position_report_replaces_duplicate_for_same_instrument() {
     let mut reports = Vec::new();
 
     let first =
-        create_test_position_report(mnq, PositionSide::Short, "1", Decimal::new(2450025, 2), 1);
-    let btc_report =
-        create_test_position_report(btc, PositionSide::Long, "0.01", Decimal::new(8750000, 2), 2);
+        create_test_position_report(mnq, PositionSide::Short, "1", Decimal::new(2_450_025, 2), 1);
+    let btc_report = create_test_position_report(
+        btc,
+        PositionSide::Long,
+        "0.01",
+        Decimal::new(8_750_000, 2),
+        2,
+    );
     let resent =
-        create_test_position_report(mnq, PositionSide::Short, "1", Decimal::new(2450025, 2), 3);
+        create_test_position_report(mnq, PositionSide::Short, "1", Decimal::new(2_450_025, 2), 3);
 
     assert!(!IbReportClient::upsert_position_report(&mut reports, first));
     assert!(!IbReportClient::upsert_position_report(
@@ -5995,7 +6001,7 @@ fn test_upsert_position_report_keeps_latest_quantity_for_changed_position() {
     let mut reports = Vec::new();
 
     let stale =
-        create_test_position_report(mnq, PositionSide::Short, "1", Decimal::new(2450025, 2), 1);
+        create_test_position_report(mnq, PositionSide::Short, "1", Decimal::new(2_450_025, 2), 1);
     let flat = create_test_position_report(mnq, PositionSide::Flat, "0", Decimal::ZERO, 2);
 
     IbReportClient::upsert_position_report(&mut reports, stale);
@@ -6486,7 +6492,7 @@ fn test_fill_report_collector_moves_combo_leg_fills_to_evidence() {
 // ZCZ6 as a data client caches it: IB contract and price magnifier 100 in `info`
 fn create_magnified_zc_future() -> InstrumentAny {
     let contract = Contract {
-        contract_id: 815824252,
+        contract_id: 815_824_252,
         symbol: IBSymbol::from("ZC"),
         security_type: SecurityType::Future,
         exchange: Exchange::from("CBOT"),
@@ -6527,6 +6533,37 @@ fn create_magnified_zc_future() -> InstrumentAny {
 }
 
 #[rstest]
+#[case::explicit(Some(*IB_CLIENT_ID), false, true)]
+#[case::default(None, true, true)]
+#[case::explicit_other(Some(ClientId::from("OTHER")), true, false)]
+fn test_instrument_subscription_follows_broker_routes(
+    #[case] route: Option<ClientId>,
+    #[case] default_broker: bool,
+    #[case] receives: bool,
+) {
+    let (mut client, _, cache) = create_test_execution_client();
+    let instrument = create_magnified_zc_future();
+    let id = instrument.id();
+    if let Some(route) = route {
+        cache.borrow_mut().add_client_route(route, id.venue);
+    }
+
+    if default_broker {
+        cache.borrow_mut().set_default_client(client.client_id());
+    }
+
+    client.start().unwrap();
+    publish_instrument(get_instrument_topic(id), &instrument);
+
+    let provider = &client.instrument_provider;
+    assert_eq!(provider.find(&id).as_ref(), receives.then_some(&instrument));
+    assert_eq!(
+        provider.get_price_magnifier(&id),
+        if receives { 100 } else { 1 }
+    );
+}
+
+#[rstest]
 fn instrument_cached_after_client_creation_prices_orders_with_its_magnifier() {
     let (client, _exec_receiver, cache) = create_test_execution_client();
     let instrument = create_magnified_zc_future();
@@ -6554,7 +6591,7 @@ fn instrument_cached_after_client_creation_prices_orders_with_its_magnifier() {
             .resolve_contract_for_instrument(instrument_id)
             .unwrap()
             .contract_id,
-        815824252
+        815_824_252
     );
 }
 
@@ -6856,7 +6893,7 @@ fn seed_instruments_from_cache_adds_instruments_loaded_by_data_client() {
     let absent_id = InstrumentId::from("MSFT.NASDAQ");
 
     let contract = Contract {
-        contract_id: 265598,
+        contract_id: 265_598,
         symbol: IBSymbol::from("AAPL"),
         security_type: SecurityType::Stock,
         exchange: Exchange::from("SMART"),

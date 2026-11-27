@@ -473,7 +473,7 @@ mod tests {
         let symbol = serde_json::json!("LTCBTC");
         let side = serde_json::json!("BUY");
         let quantity = serde_json::json!("1");
-        let timestamp = serde_json::json!(1_499_827_319_559i64);
+        let timestamp = serde_json::json!(1_499_827_319_559_i64);
         let api_key = serde_json::json!("mykey");
         let unsorted = [
             ("symbol", &symbol),
@@ -746,7 +746,8 @@ mod tests {
     #[rstest]
     fn test_ed25519_rejects_raw_32_byte_seed() {
         // Accepting raw seeds would silently misclassify base64 HMAC secrets as Ed25519
-        let seed = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, [0xABu8; 32]);
+        let seed =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, [0xab_u8; 32]);
 
         let result = Ed25519Credential::new("test_key".into(), seed.into());
 

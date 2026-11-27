@@ -397,7 +397,7 @@ mod tests {
         #[case] operation: &str,
         #[case] signature: &str,
         #[values(false, true)] padded: bool,
-        #[values(1u8, 2u8)] module: u8,
+        #[values(1_u8, 2_u8)] module: u8,
     ) {
         let native = format!("0x{module:02x}{}", "23".repeat(30));
 

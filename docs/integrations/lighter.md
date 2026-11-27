@@ -680,9 +680,8 @@ Use `post_only` on limit-style orders. The adapter does not synthesize maker-onl
 The adapter maps Lighter's `canceled-post-only` status to `OrderCanceled` after acceptance or fills,
 otherwise to `OrderRejected` with `due_post_only=true`.
 
-Lighter Mainnet testing confirms `reduce_only=true` closes perpetual positions. Invalid reduce-only opens can
-be dropped without a venue order report. `ResolveLocally` reconciles them as `INFLIGHT_TIMEOUT` without a venue
-rejection reason; the default `RetainUnresolved` leaves them `SUBMITTED`.
+Lighter Mainnet testing confirms `reduce_only=true` closes perpetual positions. Lighter can drop invalid
+reduce-only opens without an order report. See [Outcome recovery](#outcome-recovery).
 
 ### Advanced order features
 
@@ -874,17 +873,23 @@ current WebSocket order shape matches. A `sendTx` or `sendTxBatch` acknowledgeme
 execution. Unresolved modifications use bounded REST transaction and order lookups starting two seconds
 after submission; see [outcome recovery](#outcome-recovery).
 
-While modification is pending:
+While an amend is pending, affected WebSocket order updates and fills wait for the amend outcome
+or terminal recovery. HTTP reports that could apply the amend or fills wait for those events to
+reach the cache.
 
-- Affected WebSocket order frames and fills wait for publication of `OrderUpdated`, `OrderModifyDenied`,
-  or `OrderModifyRejected`.
-- HTTP reports that could apply the amendment or fill wait for the cache to apply that event.
+| Request                                      | Behavior while modification is pending                     |
+| -------------------------------------------- | ---------------------------------------------------------- |
+| Single-order status lookup and `query_order` | Can return an unchanged working report as `PendingUpdate`. |
+| Bulk order reports and mass status           | Withhold the order and mark the result incomplete.         |
 
-| Request                            | Behavior while modification is pending                     |
-| ---------------------------------- | ---------------------------------------------------------- |
-| Single-order status lookup         | Can return an unchanged working report as `PendingUpdate`. |
-| Bulk order reports and mass status | Withhold the order and mark the result incomplete.         |
-| `query_order`                      | Emits no report.                                           |
+- **Amend outcome unknown.** After transaction retries end, a terminal row can release held events if
+  it matches the bound venue order and last confirmed terms, and real trades cover its reported fills.
+- **Amend confirmed or rejected.** The adapter publishes the outcome before fills. Once the cache applies
+  the outcome, reconciliation can supply missing trades. Even after retries end, the adapter denies new
+  amends and cancels on a confirmed terminal order and keeps tracking it until real trades cover its fills.
+
+For fully filled orders, targeted trade recovery applies venue quantity reductions before the closing
+fill. Orders with inferred fills follow the regular terminal reconciliation rules.
 
 Reports can lag by several seconds. Position reconciliation withholds affected instruments until their
 execution events reach the cache.
@@ -897,6 +902,9 @@ the effective quantity. The adapter then:
 1. Publishes the effective quantity.
 1. Releases real fills.
 1. Reconciles terminal status.
+
+For an unfilled child, the adapter can publish the terminal status from the venue order record alone.
+If an earlier order report or buffered update records fills, the adapter still queries trades.
 
 Resting children publish trigger events once their modification resolves.
 
@@ -913,9 +921,33 @@ During this delay:
 
 #### Outcome recovery
 
-Order updates and transaction lookups resolve create and cancel outcomes. REST recovery, including pending
-modifications, performs up to three lookups at two-second intervals while the pending action remains current.
-It validates transaction hash, type, account, API key, and original submission nonce.
+**Lighter requires the default `RetainUnresolved` policy for the whole node.** `LiveNode` rejects
+`ResolveLocally` at build time because a local timeout could close an order before Lighter recovers
+[fills held during an amend](#modification-confirmation).
+
+With `RetainUnresolved`, an amend or cancel timeout restores an accepted order's prior status so
+late fills and venue updates can apply. This follows the
+[adapter policy](../developer_guide/adapters.md#submission-recovery-policy) of keeping venue-specific
+recovery in the adapter.
+
+Order updates and transaction lookups resolve creates and cancels. REST recovery makes up to three
+lookups at two-second intervals while the command, including an amend, remains current. Each lookup
+checks the transaction hash, type, account, API key, and original submission nonce.
+
+[Unresolved submissions](../concepts/execution/reconciliation.md#submission-recovery) stay `SUBMITTED`
+after retries. If any remain at [shutdown](../concepts/live.md#submission-recovery-at-shutdown),
+`LiveNode` stops and returns an error listing their client order IDs.
+
+After an execution WebSocket reconnect, the adapter looks up `CreateOrder` transactions that received
+no `sendTx` response by their signed hashes. A confirmed failure emits `OrderRejected`. If an executed
+transaction's receipt identifies the order, the adapter emits `OrderAccepted` with the venue order ID.
+For post-only creates, the receipt supplies the venue order ID and the usual order updates determine
+acceptance. Grouped creates, subsequent order status, and fills recover through the usual execution paths.
+
+While the WebSocket stays connected, `query_order` checks the signed transaction hash of an unanswered
+market or IOC limit order without a venue order ID. It uses the receipt to find the exact terminal
+order and recover its outcome. If the terminal row or a fully filled order's trade history is still
+incomplete, the order stays in `SUBMITTED` for a later query.
 
 Resolved or superseded cancels stop their probes, including requests waiting for REST quota.
 When a cancel transaction executes, recovery retries missing or nonterminal order status within the same three lookups.
@@ -945,9 +977,7 @@ own and receives no independent denial or rejection.
 Cancellation and expiry events wait until **real fills cover the venue's cumulative filled quantity**.
 Events with no missing fills publish immediately.
 
-**Recovery limits**:
-
-Recovery fetches the order's trades and skips fills already published:
+Recovery fetches the order's trades and skips fills already published.
 
 - **Normal operation**: starts two seconds after the event begins waiting, with at most three
   attempts and a two-second timeout per attempt. Interrupted requests count toward this limit.
@@ -956,10 +986,11 @@ Recovery fetches the order's trades and skips fills already published:
   their remaining attempts for up to seven seconds. If those tasks do not stop, shutdown fails;
   events stay withheld until a later shutdown completes.
 
-While an event waits, reconciliation withholds its order and fill reports and its instrument's
-position report. When recovery exhausts its retries or shutdown deadline, the adapter logs the missing quantity
-and publishes the original terminal event **without creating fills**. Reconciliation must recover
-the missing quantity.
+For ordinary cancellations and expiries, reconciliation withholds order, fill, and instrument
+position reports during recovery. At the retry or shutdown limit, the adapter logs the missing
+quantity and publishes the terminal event without synthesizing fills. Reconciliation must recover
+the missing fills.
+[Terminal events held during an amend](#modification-confirmation) still require full trade coverage.
 
 Targeted and bulk status collection can return cancellation and expiry reports before real fills
 arrive, so native reconciliation can fetch companion fills. Other statuses, direct event publication,
@@ -1416,8 +1447,12 @@ Venue `shutdown` notices request immediate reconnect through the shared WebSocke
 notices are ignored. Normal subscription replay, [nonce recovery](#nonce-recovery), and
 [account stream readiness](#account-stream-readiness) apply.
 
-The old stream stops before its replacement is ready. Fresh snapshots and HTTP reconciliation recover the
-gap. Subsequent server closes, including `1012`, use the same reconnect path.
+The old stream stops before its replacement is ready. Fresh snapshots restore stream state.
+Set `open_check_interval_secs` to enable
+[periodic open-order checks](../concepts/execution/reconciliation.md#order-consistency-checks) and recover
+terminal order updates missed during the gap. In open-only mode, the checks skip missing orders whose
+last update falls outside `open_check_lookback_mins`, which defaults to 60 minutes. Subsequent server
+closes, including `1012`, use the same reconnect path.
 
 ### Private authentication
 
@@ -1497,7 +1532,7 @@ and the data client check field presence, including environment fallback; they d
 | `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket.                      |
 | `http_timeout_secs`                | `60`      | HTTP request timeout in seconds.                                |
 | `ws_timeout_secs`                  | `30`      | WebSocket connection and reconnection timeout.                  |
-| `update_instruments_interval_mins` | `60`      | Instrument metadata refresh interval in minutes; 0 disables it. |
+| `update_instruments_interval_mins` | `60`      | Interval (minutes) between metadata refreshes. `0` disables it. |
 | `book_snapshot_timeout_secs`       | `10`      | Initial, reconnect, and recovery snapshot wait.                 |
 | `rest_quota_per_min`               | `None`    | REST quota override; unset or 0 keeps 60 req/min.               |
 | `transport_backend`                | Default   | WebSocket transport backend.                                    |

@@ -1060,7 +1060,7 @@ mod tests {
                 runner.atb,
                 Some(vec![PV {
                     price: expected_price,
-                    volume: Decimal::from(9_007_199_254_740_993u64)
+                    volume: Decimal::from(9_007_199_254_740_993_u64)
                 }])
             );
             assert_eq!(
@@ -1105,11 +1105,12 @@ mod tests {
 
     #[rstest]
     fn test_matched_order_decimal_routes() {
-        let value = serde_json::json!(["0.1234567890123456789012345678", 9007199254740993u64]);
+        let value =
+            serde_json::json!(["0.1234567890123456789012345678", 9_007_199_254_740_993_u64]);
 
         let expected = MatchedOrder {
             price: Decimal::from_str_exact("0.1234567890123456789012345678").unwrap(),
-            size: Decimal::from(9_007_199_254_740_993u64),
+            size: Decimal::from(9_007_199_254_740_993_u64),
         };
 
         assert_eq!(
@@ -1427,7 +1428,7 @@ mod tests {
 
                 let runners = race.rrc.as_ref().unwrap();
                 assert_eq!(runners.len(), 1);
-                assert_eq!(runners[0].id, Some(7390417));
+                assert_eq!(runners[0].id, Some(7_390_417));
                 assert!((runners[0].lat.unwrap() - 51.4189543).abs() < 1e-6);
                 assert!((runners[0].spd.unwrap() - 17.8).abs() < 1e-6);
                 assert!((runners[0].sfq.unwrap() - 2.07).abs() < 1e-6);
@@ -1439,7 +1440,7 @@ mod tests {
 
                 let order = progress.ord.as_ref().unwrap();
                 assert_eq!(order.len(), 5);
-                assert_eq!(order[0], 7390417);
+                assert_eq!(order[0], 7_390_417);
 
                 let jumps = progress.jumps.as_ref().unwrap();
                 assert_eq!(jumps.len(), 2);
@@ -1461,7 +1462,10 @@ mod tests {
                 assert_eq!(runners.len(), 5);
 
                 let ids: Vec<i64> = runners.iter().filter_map(|r| r.id).collect();
-                assert_eq!(ids, vec![35467839, 24947967, 299569, 31422647, 41694785]);
+                assert_eq!(
+                    ids,
+                    vec![35_467_839, 24_947_967, 299_569, 31_422_647, 41_694_785]
+                );
             }
             other => panic!("Expected RaceChange, was {other:?}"),
         }

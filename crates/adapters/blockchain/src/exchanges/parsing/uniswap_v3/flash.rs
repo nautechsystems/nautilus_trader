@@ -79,7 +79,6 @@ pub fn parse_flash_event_hypersync(
 
         let pool_address = Address::from_slice(
             log.address
-                .clone()
                 .expect("Contract address should be set in logs")
                 .as_ref(),
         );
@@ -229,7 +228,7 @@ mod tests {
         let expected_paid0 = U256::from_str_radix("220c6ab980636512", 16).unwrap();
         assert_eq!(event.paid0, expected_paid0);
         assert_eq!(event.paid1, U256::ZERO);
-        assert_eq!(event.block_number, 266982862);
+        assert_eq!(event.block_number, 266_982_862);
     }
 
     #[rstest]
@@ -260,7 +259,7 @@ mod tests {
         let expected_paid0 = U256::from_str_radix("220c6ab980636512", 16).unwrap();
         assert_eq!(event.paid0, expected_paid0);
         assert_eq!(event.paid1, U256::ZERO);
-        assert_eq!(event.block_number, 266982862);
+        assert_eq!(event.block_number, 266_982_862);
     }
 
     #[rstest]

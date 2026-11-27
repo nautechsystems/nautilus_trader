@@ -302,9 +302,7 @@ pub fn parse_ws_candle(
 
     let ts_event = millis_to_nanos(candle.t)?;
 
-    Ok(Bar::new(
-        *bar_type, open, high, low, close, volume, ts_event, ts_init,
-    ))
+    Bar::new_checked(*bar_type, open, high, low, close, volume, ts_event, ts_init)
 }
 
 /// Parses a WebSocket order update message into an [`OrderStatusReport`].
@@ -718,7 +716,7 @@ mod tests {
                 limit_px: dec!(50000.0),
                 sz: dec!(0.5),
                 oid: 12345,
-                timestamp: 1704470400000,
+                timestamp: 1_704_470_400_000,
                 orig_sz: dec!(1.0),
                 cloid: Some("test-order-1".to_string()),
                 tif: Some(HyperliquidTimeInForce::Alo),
@@ -731,7 +729,7 @@ mod tests {
                 order_type: None,
             },
             status: HyperliquidOrderStatusEnum::Open,
-            status_timestamp: 1704470400000,
+            status_timestamp: 1_704_470_400_000,
         };
 
         let result = parse_ws_order_status_report(&order_data, &instrument, account_id, ts_init);
@@ -772,7 +770,7 @@ mod tests {
                 limit_px: dec!(50000.0),
                 sz: dec!(1.0),
                 oid: 12345,
-                timestamp: 1704470400000,
+                timestamp: 1_704_470_400_000,
                 orig_sz: dec!(1.0),
                 cloid: Some("test-rejection".to_string()),
                 tif: Some(HyperliquidTimeInForce::Alo),
@@ -785,7 +783,7 @@ mod tests {
                 order_type: None,
             },
             status,
-            status_timestamp: 1704470400000,
+            status_timestamp: 1_704_470_400_000,
         };
 
         let report = parse_ws_order_status_report(
@@ -811,7 +809,7 @@ mod tests {
             px: dec!(50000.0),
             sz: dec!(0.1),
             side: HyperliquidSide::Buy,
-            time: 1704470400000,
+            time: 1_704_470_400_000,
             start_position: dec!(0.0),
             dir: HyperliquidFillDirection::OpenLong,
             closed_pnl: dec!(0.0),
@@ -846,7 +844,7 @@ mod tests {
             px: dec!(50000.0),
             sz: dec!(0.1),
             side: HyperliquidSide::Sell,
-            time: 1704470400000,
+            time: 1_704_470_400_000,
             start_position: dec!(0.1),
             dir: HyperliquidFillDirection::CloseLong,
             closed_pnl: dec!(-25.0),
@@ -1273,7 +1271,7 @@ mod tests {
         assert!(row.is_snapshot);
         assert_eq!(row.user, data.user);
         assert_eq!(row.coin, "xyz:HOOD");
-        assert_eq!(row.twap_id, Some(2081397));
+        assert_eq!(row.twap_id, Some(2_081_397));
         assert!(row.instrument_id.is_none());
         assert_eq!(row.side, OrderSide::Buy);
         assert_eq!(row.size.to_string(), "100.0");

@@ -577,7 +577,7 @@ async fn call(
                 exchange_index: 3,
                 client_order_id: Some("client-a".into()),
                 updated_client_order_id: Some("client-b".into()),
-                expiration_time: Some(1792112600)
+                expiration_time: Some(1_792_112_600)
             }
         )),
         "decrease" => value!(client.decrease_order(

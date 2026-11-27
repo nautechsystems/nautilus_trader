@@ -276,7 +276,7 @@ async fn test_spot_http_logging_and_wire_url() {
         .unwrap();
     let request = task.await.unwrap();
     assert_eq!(client.base_url(), url);
-    assert_eq!(result.unixtime, 1700000001);
+    assert_eq!(result.unixtime, 1_700_000_001);
     assert_eq!(result.rfc1123, "Tue, 14 Nov 2023 22:13:21 GMT");
     assert!(request.starts_with("GET /URL_SECRET_PATH/0/public/Time HTTP/1.1\r\n"));
     assert!(debug.contains(&format!("base_url: \"http://{addr}\"")));

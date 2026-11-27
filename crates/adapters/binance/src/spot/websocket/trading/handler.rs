@@ -1279,14 +1279,14 @@ mod tests {
         #[case] event_time_us: i64,
         #[case] expected_ms: i64,
     ) {
-        let mut buf = vec![0u8; message_header_codec::ENCODED_LENGTH];
+        let mut buf = vec![0_u8; message_header_codec::ENCODED_LENGTH];
         buf.extend_from_slice(&event_time_us.to_le_bytes());
         assert_eq!(parse_server_shutdown_event_time_ms(&buf), expected_ms);
     }
 
     #[rstest]
     fn test_parse_server_shutdown_event_time_ms_short_buffer_returns_zero() {
-        let buf = vec![0u8; message_header_codec::ENCODED_LENGTH + 4];
+        let buf = vec![0_u8; message_header_codec::ENCODED_LENGTH + 4];
         assert_eq!(parse_server_shutdown_event_time_ms(&buf), 0);
     }
 

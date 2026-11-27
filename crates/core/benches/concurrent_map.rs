@@ -106,7 +106,7 @@ fn bench_single_thread_read(c: &mut Criterion) {
 
         let dash = populated_dashmap(&keys);
         group.bench_with_input(BenchmarkId::new("DashMap", size), &size, |b, _| {
-            let mut idx = 0usize;
+            let mut idx = 0_usize;
             b.iter(|| {
                 let key = &keys[idx % keys.len()];
                 let val = dash.get(key).map(|r| *r.value());
@@ -117,7 +117,7 @@ fn bench_single_thread_read(c: &mut Criterion) {
 
         let rwl = populated_rwlock(&keys);
         group.bench_with_input(BenchmarkId::new("RwLockAHashMap", size), &size, |b, _| {
-            let mut idx = 0usize;
+            let mut idx = 0_usize;
             b.iter(|| {
                 let key = &keys[idx % keys.len()];
                 let guard = rwl.read();
@@ -130,7 +130,7 @@ fn bench_single_thread_read(c: &mut Criterion) {
 
         let atomic = populated_atomic_map(&keys);
         group.bench_with_input(BenchmarkId::new("AtomicMap", size), &size, |b, _| {
-            let mut idx = 0usize;
+            let mut idx = 0_usize;
             b.iter(|| {
                 let key = &keys[idx % keys.len()];
                 let val = atomic.load().get(key).copied();
@@ -487,9 +487,9 @@ fn bench_atomic_map_read_patterns(c: &mut Criterion) {
     group.throughput(Throughput::Elements(ATOMIC_MAP_LOOKUPS_PER_ITER as u64));
 
     group.bench_function("get_cloned_each_lookup", |b| {
-        let mut idx = 0usize;
+        let mut idx = 0_usize;
         b.iter(|| {
-            let mut sum = 0u64;
+            let mut sum = 0_u64;
 
             for _ in 0..ATOMIC_MAP_LOOKUPS_PER_ITER {
                 let key = &keys[idx % keys.len()];
@@ -502,9 +502,9 @@ fn bench_atomic_map_read_patterns(c: &mut Criterion) {
     });
 
     group.bench_function("load_each_lookup", |b| {
-        let mut idx = 0usize;
+        let mut idx = 0_usize;
         b.iter(|| {
-            let mut sum = 0u64;
+            let mut sum = 0_u64;
 
             for _ in 0..ATOMIC_MAP_LOOKUPS_PER_ITER {
                 let key = &keys[idx % keys.len()];
@@ -518,10 +518,10 @@ fn bench_atomic_map_read_patterns(c: &mut Criterion) {
     });
 
     group.bench_function("load_once_guard", |b| {
-        let mut idx = 0usize;
+        let mut idx = 0_usize;
         b.iter(|| {
             let guard = atomic.load();
-            let mut sum = 0u64;
+            let mut sum = 0_u64;
 
             for _ in 0..ATOMIC_MAP_LOOKUPS_PER_ITER {
                 let key = &keys[idx % keys.len()];

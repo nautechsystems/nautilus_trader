@@ -148,7 +148,7 @@ impl Indicators {
     }
 
     /// Registers an indicator to receive quote ticks for an instrument.
-    pub fn register_indicator_for_quote_ticks(
+    pub fn register_indicator_for_quotes(
         &mut self,
         instrument_id: InstrumentId,
         indicator: SharedActorIndicator,
@@ -158,7 +158,7 @@ impl Indicators {
     }
 
     /// Registers an indicator to receive trade ticks for an instrument.
-    pub fn register_indicator_for_trade_ticks(
+    pub fn register_indicator_for_trades(
         &mut self,
         instrument_id: InstrumentId,
         indicator: SharedActorIndicator,
@@ -484,10 +484,10 @@ mod tests {
         ))
         .unwrap();
 
-        indicators.register_indicator_for_quote_ticks(quote.instrument_id, registered.clone());
-        indicators.register_indicator_for_quote_ticks(quote.instrument_id, registered.clone());
-        indicators.register_indicator_for_trade_ticks(trade.instrument_id, registered.clone());
-        indicators.register_indicator_for_trade_ticks(trade.instrument_id, registered.clone());
+        indicators.register_indicator_for_quotes(quote.instrument_id, registered.clone());
+        indicators.register_indicator_for_quotes(quote.instrument_id, registered.clone());
+        indicators.register_indicator_for_trades(trade.instrument_id, registered.clone());
+        indicators.register_indicator_for_trades(trade.instrument_id, registered.clone());
         indicators.register_indicator_for_bars(external_bar_type, registered.clone());
         indicators.register_indicator_for_bars(external_bar_type, registered);
 
@@ -508,8 +508,8 @@ mod tests {
         let second = Rc::new(TrackingIndicator::new());
         let quote = QuoteTick::default();
 
-        indicators.register_indicator_for_quote_ticks(quote.instrument_id, first.clone());
-        indicators.register_indicator_for_quote_ticks(quote.instrument_id, second.clone());
+        indicators.register_indicator_for_quotes(quote.instrument_id, first.clone());
+        indicators.register_indicator_for_quotes(quote.instrument_id, second.clone());
 
         first.set_initialized(true);
 
@@ -526,7 +526,7 @@ mod tests {
         let indicator = Rc::new(ErrorIndicator::new());
         let quote = QuoteTick::default();
 
-        indicators.register_indicator_for_quote_ticks(quote.instrument_id, indicator);
+        indicators.register_indicator_for_quotes(quote.instrument_id, indicator);
 
         let err = indicators.handle_quote(&quote).unwrap_err();
 
@@ -541,7 +541,7 @@ mod tests {
         let bar_indicator = Rc::new(ErrorIndicator::new());
         let mut indicators = Indicators::default();
 
-        indicators.register_indicator_for_trade_ticks(trade.instrument_id, trade_indicator);
+        indicators.register_indicator_for_trades(trade.instrument_id, trade_indicator);
         indicators.register_indicator_for_bars(bar.bar_type, bar_indicator);
 
         let trade_error = indicators.handle_trade(&trade).unwrap_err();
@@ -558,9 +558,8 @@ mod tests {
         let tracking_indicator = Rc::new(TrackingIndicator::new());
         let mut indicators = Indicators::default();
 
-        indicators
-            .register_indicator_for_quote_ticks(quote.instrument_id, tracking_indicator.clone());
-        indicators.register_indicator_for_quote_ticks(quote.instrument_id, error_indicator);
+        indicators.register_indicator_for_quotes(quote.instrument_id, tracking_indicator.clone());
+        indicators.register_indicator_for_quotes(quote.instrument_id, error_indicator);
 
         let error = indicators.handle_quotes(&[quote, quote]).unwrap_err();
 
@@ -578,8 +577,8 @@ mod tests {
         let registered: SharedActorIndicator = indicator.clone();
         let mut indicators = Indicators::default();
 
-        indicators.register_indicator_for_quote_ticks(quote.instrument_id, registered.clone());
-        indicators.register_indicator_for_trade_ticks(trade.instrument_id, registered.clone());
+        indicators.register_indicator_for_quotes(quote.instrument_id, registered.clone());
+        indicators.register_indicator_for_trades(trade.instrument_id, registered.clone());
         indicators.register_indicator_for_bars(bar.bar_type, registered);
 
         assert!(!indicators.initialized().unwrap());

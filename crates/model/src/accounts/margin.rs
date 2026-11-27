@@ -26,8 +26,11 @@
 //!
 //! - **Other instruments**: Only realize PnL on position reduction (fill side opposite to
 //!   entry). Use the minimum of fill and position quantity to avoid double-counting.
+//! - **Futures-style options**: Collect fees on the fill and settle price changes at clearing
+//!   prices in simulation.
 
 use std::{
+    collections::BTreeMap,
     fmt::Display,
     hash::{Hash, Hasher},
     ops::{Deref, DerefMut},
@@ -35,9 +38,11 @@ use std::{
 
 use ahash::AHashMap;
 use indexmap::IndexMap;
-use nautilus_core::correctness::{
-    CorrectnessResult, CorrectnessResultExt, FAILED, check_positive_decimal,
+use nautilus_core::{
+    UUID4,
+    correctness::{CorrectnessResult, CorrectnessResultExt, FAILED, check_positive_decimal},
 };
+use ruint::aliases::U512;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -48,13 +53,15 @@ use crate::{
         fill_position_pnl,
         margin_model::{MarginModel, MarginModelHandle},
     },
-    enums::{AccountType, OrderSide},
+    data::InstrumentClose,
+    enums::{AccountType, InstrumentCloseType, OptionPremiumStyle, OrderSide},
     events::{AccountState, OrderFilled},
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
-    position::{Position, amount, notional},
+    position::{Position, amount, decimal_quotient, notional, rounded_quotient},
     types::{
         AccountBalance, Currency, MarginBalance, Money, Price, Quantity,
+        fixed::FIXED_PRECISION,
         money::{MONEY_RAW_MAX, MONEY_RAW_MIN, MoneyRaw},
     },
 };
@@ -85,6 +92,8 @@ pub struct MarginAccount {
     pub default_leverage: Decimal,
     #[serde(skip, default = "MarginModelHandle::default")]
     margin_model: MarginModelHandle,
+    #[serde(skip)]
+    option_variations: Option<BTreeMap<InstrumentId, OptionVariation>>,
 }
 
 impl MarginAccount {
@@ -100,6 +109,7 @@ impl MarginAccount {
             account_margins,
             default_leverage: Decimal::ONE,
             margin_model: MarginModelHandle::default(),
+            option_variations: None,
         }
     }
 
@@ -112,7 +122,202 @@ impl MarginAccount {
             account_margins: self.account_margins.clone(),
             default_leverage: self.default_leverage,
             margin_model: self.margin_model.clone(),
+            option_variations: self.option_variations.clone(),
         }
+    }
+
+    /// Returns the clearing balances of futures-style options by instrument.
+    pub fn option_variations(&self) -> impl Iterator<Item = (InstrumentId, &OptionVariation)> {
+        self.option_variations
+            .iter()
+            .flatten()
+            .map(|(id, variation)| (*id, variation))
+    }
+
+    /// Returns the unsettled clearing balance recorded for an option.
+    #[must_use]
+    pub fn option_variation(&self, instrument_id: &InstrumentId) -> Option<&OptionVariation> {
+        self.option_variations.as_ref()?.get(instrument_id)
+    }
+
+    /// Initializes an empty ledger for a simulator that posts option clearing prices.
+    pub fn initialize_option_variations(&mut self) {
+        self.option_variations = Some(BTreeMap::new());
+    }
+
+    /// Records a futures-style option trade in the current clearing cycle.
+    ///
+    /// # Errors
+    /// Returns an error if currencies are incompatible, the ledger is unavailable,
+    /// the price is invalid, or the clearing value or quantity exceeds supported bounds.
+    pub fn record_option_variation_fill(
+        &mut self,
+        instrument: &InstrumentAny,
+        fill: &OrderFilled,
+    ) -> anyhow::Result<()> {
+        let instrument_id = instrument.id();
+        let currency = instrument.settlement_currency();
+        anyhow::ensure!(
+            fill.currency == currency
+                && instrument.quote_currency() == currency
+                && instrument.cost_currency() == currency,
+            "An explicit conversion is required for futures-style option {instrument_id} in {currency}"
+        );
+
+        let variations = self.option_variations.as_mut().ok_or_else(|| {
+            anyhow::anyhow!("Option variation is unavailable for {instrument_id}")
+        })?;
+
+        let mut variation = variations.get(&instrument_id).copied().unwrap_or_default();
+
+        let quantity = match fill.order_side {
+            OrderSide::Buy => fill.last_qty.as_decimal(),
+            OrderSide::Sell => -fill.last_qty.as_decimal(),
+        };
+
+        let value = option_clearing_value(instrument, fill.last_px, quantity)?;
+        variation.quantity = variation.quantity.checked_add(quantity).ok_or_else(|| {
+            anyhow::anyhow!("Option clearing quantity overflow for {instrument_id}")
+        })?;
+
+        variation.basis = variation
+            .basis
+            .checked_add(value)
+            .ok_or_else(|| anyhow::anyhow!("Option clearing basis overflow for {instrument_id}"))?;
+        variations.insert(instrument_id, variation);
+        Ok(())
+    }
+
+    /// Posts an official clearing price, returning the applied account event if cash moved.
+    ///
+    /// # Errors
+    /// Returns an error if the close is invalid, out of order, or conflicts with a prior close.
+    /// Also returns an error if the ledger or a required balance is unavailable, the amount exceeds
+    /// supported precision, or the net quantity is nonzero at final settlement.
+    pub fn settle_option_variation(
+        &mut self,
+        instrument: &InstrumentAny,
+        close: InstrumentClose,
+    ) -> anyhow::Result<Option<AccountState>> {
+        let instrument_id = instrument.id();
+        anyhow::ensure!(
+            close.instrument_id == instrument_id
+                && matches!(
+                    close.close_type,
+                    InstrumentCloseType::Settlement | InstrumentCloseType::ContractExpired
+                ),
+            "Invalid option clearing event for {instrument_id}"
+        );
+
+        if self.option_settlement_is_duplicate(close)? {
+            return Ok(None);
+        }
+
+        let variations = self.option_variations.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("Option variation is unavailable for {instrument_id}")
+        })?;
+
+        let mut variation = variations.get(&instrument_id).copied().unwrap_or_default();
+
+        if close.close_type == InstrumentCloseType::ContractExpired {
+            anyhow::ensure!(
+                variation.quantity.is_zero(),
+                "Cannot clear final option variation for {instrument_id} with an open quantity"
+            );
+        }
+
+        let cash = variation.pending_cash(instrument, close.close_price)?;
+        let basis = variation
+            .basis
+            .checked_add(cash.as_decimal())
+            .ok_or_else(|| anyhow::anyhow!("Option clearing basis overflow for {instrument_id}"))?;
+
+        let event = if cash.is_zero() {
+            None
+        } else {
+            let currency = cash.currency;
+
+            let total = self
+                .balances
+                .get(&currency)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("No {currency} balance for option clearing of {instrument_id}")
+                })?
+                .total;
+
+            let total = total.checked_add(cash).ok_or_else(|| {
+                anyhow::anyhow!("Option clearing balance overflow for {instrument_id}")
+            })?;
+
+            let balance = self.balance_locking_margins(total);
+            let margins = self
+                .margins
+                .values()
+                .chain(self.account_margins.values())
+                .copied()
+                .collect();
+
+            let event = AccountState::new(
+                self.id,
+                self.account_type,
+                vec![balance],
+                margins,
+                true,
+                UUID4::new(),
+                close.ts_event,
+                close.ts_init,
+                self.base_currency,
+            );
+
+            self.apply(event.clone())?;
+            Some(event)
+        };
+
+        variation.basis = basis;
+        variation.last_settlement = Some(close);
+        if let Some(variations) = &mut self.option_variations {
+            if close.close_type == InstrumentCloseType::ContractExpired {
+                variations.remove(&instrument_id);
+            } else {
+                variations.insert(instrument_id, variation);
+            }
+        }
+
+        Ok(event)
+    }
+
+    /// Checks whether the listing account or a position owner already processed this close.
+    ///
+    /// # Errors
+    /// Returns an error if the close has a sentinel price, conflicts with a prior close, or
+    /// arrives out of order.
+    pub fn option_settlement_is_duplicate(&self, close: InstrumentClose) -> anyhow::Result<bool> {
+        let instrument_id = close.instrument_id;
+        anyhow::ensure!(
+            !close.close_price.is_sentinel(),
+            "Invalid option clearing price for {instrument_id}"
+        );
+
+        let prior = self
+            .option_variation(&instrument_id)
+            .and_then(|variation| variation.last_settlement);
+
+        let Some(prior) = prior else {
+            return Ok(false);
+        };
+
+        let duplicate = (prior.close_type, prior.ts_event) == (close.close_type, close.ts_event);
+        anyhow::ensure!(
+            !duplicate || prior.close_price == close.close_price,
+            "Conflicting option clearing prices for {instrument_id} at {}",
+            close.ts_event
+        );
+        anyhow::ensure!(
+            prior.ts_event <= close.ts_event,
+            "Out-of-order option clearing price for {instrument_id} at {}",
+            close.ts_event
+        );
+        Ok(duplicate)
     }
 
     pub fn set_margin_model(&mut self, model: MarginModelHandle) {
@@ -370,7 +575,7 @@ impl MarginAccount {
     }
 
     /// Returns every margin balance reserved in `currency`, per-instrument entries first.
-    fn margins_in(&self, currency: Currency) -> impl Iterator<Item = &MarginBalance> {
+    pub fn margins_in(&self, currency: Currency) -> impl Iterator<Item = &MarginBalance> {
         self.margins
             .values()
             .chain(self.account_margins.values())
@@ -631,15 +836,21 @@ impl Account for MarginAccount {
         fill: &OrderFilled,
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>> {
-        if let Some(commission) = fill.commission {
-            amount(commission)?;
+        fill.commission.map(amount).transpose()?;
+        let net_pnl = fill_position_pnl(instrument, fill, position.as_ref())?;
+        if instrument.premium_style() == Some(OptionPremiumStyle::FuturesStyle) {
+            anyhow::ensure!(
+                self.option_variations.is_some(),
+                "Cannot account for {} without option variation settlement",
+                instrument.id()
+            );
+            return Ok(Vec::new());
         }
 
         let reduces = position.as_ref().is_some_and(|position| {
             position.quantity.is_positive() && position.entry != fill.order_side
         });
 
-        let net_pnl = fill_position_pnl(instrument, fill, position.as_ref())?;
         let mut pnls: Vec<Money> = Vec::new();
 
         // For premium-based instruments, realize the notional value as a cash flow on every fill
@@ -692,6 +903,103 @@ impl Account for MarginAccount {
     }
 }
 
+/// The unsettled quantity and marked cost of a futures-style option.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct OptionVariation {
+    quantity: Decimal,
+    basis: Decimal,
+    last_settlement: Option<InstrumentClose>,
+}
+
+impl OptionVariation {
+    /// Returns the signed net quantity carried into the next clearing cycle.
+    #[must_use]
+    pub const fn quantity(&self) -> Decimal {
+        self.quantity
+    }
+
+    /// Values pending variation at the supplied prices for the open positions.
+    ///
+    /// Returns `None` if a position has no price. A flat ledger still contributes unsettled cash.
+    ///
+    /// # Errors
+    /// Returns an error if the marked value or pending variation exceeds the supported precision.
+    pub fn pending_equity<'a>(
+        &self,
+        instrument: &InstrumentAny,
+        positions: impl IntoIterator<Item = &'a Position>,
+        mut price: impl FnMut(&Position) -> Option<Price>,
+    ) -> anyhow::Result<Option<Money>> {
+        let mut value = Decimal::ZERO;
+
+        for position in positions {
+            let Some(price) = price(position) else {
+                return Ok(None);
+            };
+
+            let position_value = option_clearing_value(instrument, price, position.signed_qty)?;
+            value = value
+                .checked_add(position_value)
+                .ok_or_else(|| anyhow::anyhow!("Option equity overflow for {}", instrument.id()))?;
+        }
+
+        self.cash_at_value(instrument, value).map(Some)
+    }
+
+    fn pending_cash(&self, instrument: &InstrumentAny, price: Price) -> anyhow::Result<Money> {
+        let value = option_clearing_value(instrument, price, self.quantity)?;
+        self.cash_at_value(instrument, value)
+    }
+
+    fn cash_at_value(&self, instrument: &InstrumentAny, value: Decimal) -> anyhow::Result<Money> {
+        let amount = value
+            .checked_sub(self.basis)
+            .ok_or_else(|| anyhow::anyhow!("Option variation overflow for {}", instrument.id()))?;
+        Ok(Money::from_decimal_native(
+            amount,
+            instrument.settlement_currency(),
+        )?)
+    }
+}
+
+fn option_clearing_value(
+    instrument: &InstrumentAny,
+    price: Price,
+    quantity: Decimal,
+) -> anyhow::Result<Decimal> {
+    let overflow = || anyhow::anyhow!("Option clearing value overflow for {}", instrument.id());
+    anyhow::ensure!(
+        !price.is_sentinel() && (price.raw() >= 0 || instrument.allows_negative_price()),
+        "Invalid option clearing price for {}",
+        instrument.id()
+    );
+    let multiplier = instrument.multiplier();
+    let price_scale = u32::from(price.precision.max(FIXED_PRECISION));
+    let multiplier_scale = u32::from(multiplier.precision.max(FIXED_PRECISION));
+    let currency_scale = u32::from(instrument.settlement_currency().precision);
+    let excess = (price_scale + multiplier_scale)
+        .checked_sub(currency_scale)
+        .ok_or_else(overflow)?;
+    let product = U512::from(price.raw().unsigned_abs()) * U512::from(multiplier.raw());
+    let ten = U512::from(10_u8);
+    let divisor = ten.checked_pow(U512::from(excess)).ok_or_else(overflow)?;
+    let unit = rounded_quotient(product, divisor);
+    let value = unit * U512::from(quantity.mantissa().unsigned_abs());
+    let negative = (price.raw() < 0) ^ quantity.is_sign_negative();
+    let scale = currency_scale + quantity.scale();
+    let result_scale = scale.min(Decimal::MAX_SCALE);
+    let mut divisor = ten.pow(U512::from(scale - result_scale));
+    for scale in (0..=result_scale).rev() {
+        if let Some(value) = decimal_quotient(value, divisor, scale, negative) {
+            return Ok(value);
+        }
+
+        divisor *= ten;
+    }
+
+    Err(overflow())
+}
+
 impl PartialEq for MarginAccount {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
@@ -736,7 +1044,11 @@ mod tests {
             margin_model::{MarginModel, MarginModelHandle},
             stubs::*,
         },
-        enums::{AccountType, LiquiditySide, OrderSide, OrderType},
+        data::InstrumentClose,
+        enums::{
+            AccountType, InstrumentCloseType, LiquiditySide, OptionPremiumStyle, OrderSide,
+            OrderType,
+        },
         events::{AccountState, account::stubs::*, order::spec::OrderFilledSpec},
         fees::{MakerTakerFeeRates, MakerTakerFeeSchedule},
         identifiers::{
@@ -744,7 +1056,7 @@ mod tests {
             stubs::{uuid4, *},
         },
         instruments::{
-            CryptoOption, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny,
+            CryptoOption, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, OptionContract,
             stubs::{binary_option, option_contract_appl, *},
         },
         orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -2122,6 +2434,205 @@ mod tests {
             .unwrap();
 
         assert_eq!(pnls, vec![Money::from(expected)]);
+    }
+
+    #[rstest]
+    fn test_option_variation_checks_money_bounds_after_scaling(
+        mut option_contract_appl: OptionContract,
+    ) {
+        option_contract_appl.multiplier = Quantity::from(10_000);
+        let instrument = option_contract_appl.into_any();
+        let value =
+            super::option_clearing_value(&instrument, Price::from("1000000.00"), dec!(0.000001));
+        assert_eq!(value.unwrap(), dec!(10_000));
+    }
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    #[case::below_half_cent("0.0999999999999998", dec!(1))]
+    #[case::above_half_cent("0.0999999999999999", dec!(2))]
+    fn test_option_variation_rounds_the_exact_contract_value(
+        mut option_contract_appl: OptionContract,
+        #[case] multiplier: &str,
+        #[case] expected: Decimal,
+    ) {
+        option_contract_appl.multiplier = Quantity::from(multiplier);
+        let instrument = option_contract_appl.into_any();
+        let value =
+            super::option_clearing_value(&instrument, Price::from("0.1500000000000003"), dec!(100));
+        assert_eq!(value.unwrap(), expected);
+    }
+
+    #[rstest]
+    fn test_option_variation_rejects_error_price_on_new_and_repeated_cycles(
+        mut margin_account: MarginAccount,
+        option_contract_appl: OptionContract,
+        #[values(1, 2)] ts_event: u64,
+    ) {
+        let instrument = option_contract_appl.into_any();
+        margin_account.initialize_option_variations();
+
+        let close = InstrumentClose::new(
+            instrument.id(),
+            Price::from("0.00"),
+            InstrumentCloseType::Settlement,
+            1.into(),
+            1.into(),
+        );
+
+        assert_eq!(
+            margin_account
+                .settle_option_variation(&instrument, close)
+                .unwrap(),
+            None
+        );
+
+        let invalid = InstrumentClose {
+            close_price: crate::types::price::ERROR_PRICE,
+            ts_event: ts_event.into(),
+            ts_init: 2.into(),
+            ..close
+        };
+
+        let error = margin_account
+            .settle_option_variation(&instrument, invalid)
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!("Invalid option clearing price for {}", instrument.id())
+        );
+    }
+
+    #[rstest]
+    #[case::whole("2", "5.00", "6.00", "7.00", dec!(2))]
+    #[case::fractional("0.1", "1.00", "1.04", "1.08", dec!(0.004))]
+    #[case::negative("2", "-1.00", "-0.50", "0.00", dec!(1))]
+    fn test_option_variation_clears_flat_ledger_and_ignores_retransmission(
+        mut margin_account: MarginAccount,
+        mut option_contract_appl: OptionContract,
+        #[case] qty: &str,
+        #[case] buy_price: &str,
+        #[case] mark_price: &str,
+        #[case] sell_price: &str,
+        #[case] first_variation: Decimal,
+    ) {
+        option_contract_appl.premium_style = Some(OptionPremiumStyle::FuturesStyle);
+        let option = option_contract_appl.into_any();
+        let currency = Currency::USD();
+        let original = margin_account.balance_total(Some(currency)).unwrap();
+        let first_total =
+            Money::from_decimal_exact(original.as_decimal() + first_variation, currency).unwrap();
+        let final_total =
+            Money::from_decimal_exact(original.as_decimal() + first_variation * dec!(2), currency)
+                .unwrap();
+        let qty = Quantity::from(qty);
+
+        margin_account.initialize_option_variations();
+        let buy = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(option.id())
+            .side(OrderSide::Buy)
+            .quantity(qty)
+            .build();
+        let fill = TestOrderEventStubs::filled(
+            &buy,
+            &option,
+            None,
+            None,
+            Some(Price::from(buy_price)),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        margin_account
+            .record_option_variation_fill(&option, &fill.into())
+            .unwrap();
+
+        let first = InstrumentClose::new(
+            option.id(),
+            Price::from(mark_price),
+            InstrumentCloseType::Settlement,
+            1.into(),
+            1.into(),
+        );
+
+        margin_account
+            .settle_option_variation(&option, first)
+            .unwrap()
+            .unwrap();
+
+        let sell = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(option.id())
+            .side(OrderSide::Sell)
+            .quantity(qty)
+            .build();
+        let fill = TestOrderEventStubs::filled(
+            &sell,
+            &option,
+            None,
+            None,
+            Some(Price::from(sell_price)),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        margin_account
+            .record_option_variation_fill(&option, &fill.into())
+            .unwrap();
+
+        let duplicate = InstrumentClose {
+            ts_init: 2.into(),
+            ..first
+        };
+
+        assert_eq!(
+            margin_account
+                .settle_option_variation(&option, duplicate)
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            margin_account.balance_total(Some(currency)),
+            Some(first_total)
+        );
+
+        let conflict = InstrumentClose {
+            close_price: Price::from("8.00"),
+            ..duplicate
+        };
+
+        let e = margin_account
+            .settle_option_variation(&option, conflict)
+            .unwrap_err();
+        assert_eq!(
+            e.to_string(),
+            format!(
+                "Conflicting option clearing prices for {} at 1",
+                option.id()
+            )
+        );
+        assert_eq!(
+            margin_account.balance_total(Some(currency)),
+            Some(first_total)
+        );
+
+        let next = InstrumentClose {
+            ts_event: 2.into(),
+            ..conflict
+        };
+
+        let event = margin_account
+            .settle_option_variation(&option, next)
+            .unwrap()
+            .unwrap();
+        assert_eq!(event.balances[0].total, final_total);
+        assert_eq!(
+            margin_account.balance_total(Some(currency)),
+            Some(final_total)
+        );
     }
 
     #[rstest]

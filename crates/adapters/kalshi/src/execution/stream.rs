@@ -39,7 +39,7 @@ use rust_decimal::Decimal;
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    KalshiExecutionSnapshot,
+    InstrumentDefinitions, KalshiExecutionSnapshot,
     account::ReservationId,
     collect_recovery_snapshot,
     context::{OrderPlan, PrivateState, RecoveryContextError, Settlement},
@@ -59,13 +59,17 @@ use crate::{
     },
 };
 
+pub(super) enum PrivateStreamCommand {
+    Refresh,
+}
+
 pub(super) struct PrivateStream {
     pub(super) config: KalshiExecutionClientConfig,
     pub(super) http: KalshiHttpClient,
     pub(super) emitter: ExecutionEventEmitter,
     pub(super) data_sender: Option<EventSender<DataEvent>>,
     pub(super) state: Arc<Mutex<PrivateState>>,
-    pub(super) definitions: HashMap<InstrumentId, BinaryOption>,
+    pub(super) definitions: Arc<InstrumentDefinitions>,
     pub(super) instruments: HashSet<InstrumentId>,
     pub(super) ready: Arc<AtomicBool>,
     pub(super) ws_client: KalshiWebSocketClient,
@@ -73,9 +77,9 @@ pub(super) struct PrivateStream {
 
 impl PrivateStream {
     pub(super) async fn run(
-        mut self,
+        self,
         mut receiver: tokio::sync::mpsc::UnboundedReceiver<KalshiWsEvent>,
-        mut requests: tokio::sync::mpsc::UnboundedReceiver<()>,
+        mut requests: tokio::sync::mpsc::UnboundedReceiver<PrivateStreamCommand>,
         cancellation: CancellationToken,
         startup: tokio::sync::oneshot::Sender<anyhow::Result<()>>,
     ) {
@@ -87,6 +91,10 @@ impl PrivateStream {
             let recover = tokio::select! {
                 biased;
                 () = cancellation.cancelled() => break,
+                request = requests.recv() => match request {
+                    Some(PrivateStreamCommand::Refresh) => true,
+                    None => break,
+                },
                 event = receiver.recv() => match event {
                     Some(KalshiWsEvent::Ready { .. }) => {
                         self.ready.store(false, Ordering::Release);
@@ -105,7 +113,6 @@ impl PrivateStream {
                     Some(_) => false,
                     None => break,
                 },
-                request = requests.recv() => if request.is_some() { true } else { break },
                 _ = interval.tick() => self.ws_client.is_active(),
             };
 
@@ -154,7 +161,7 @@ impl PrivateStream {
     }
 
     async fn recover(
-        &mut self,
+        &self,
         receiver: &mut tokio::sync::mpsc::UnboundedReceiver<KalshiWsEvent>,
     ) -> anyhow::Result<()> {
         let epoch = self
@@ -273,12 +280,11 @@ impl PrivateStream {
         for position in &snapshot.positions {
             let id = crate::common::parse::parse_instrument_id(&position.ticker)?;
             let definition = self
-                .definitions
-                .get(&id)
+                .instrument_definition(&id)
                 .context("private position definition missing")?;
             let report = reports::position(
                 position,
-                definition,
+                &definition,
                 self.emitter.account_id(),
                 snapshot.ts_init,
             )?;
@@ -316,11 +322,10 @@ impl PrivateStream {
         } in settlements
         {
             let definition = self
-                .definitions
-                .get(&id)
+                .instrument_definition(&id)
                 .context("settlement instrument definition missing")?;
             state.settle(
-                definition,
+                &definition,
                 value,
                 ts_settled,
                 snapshot.ts_init,
@@ -364,7 +369,12 @@ impl PrivateStream {
             .collect();
 
         for id in pending {
-            if !self.definitions.contains_key(&id) {
+            if !self
+                .definitions
+                .read()
+                .expect("instrument definitions lock is not poisoned")
+                .contains_key(&id)
+            {
                 let market = crate::providers::KalshiInstrumentProvider::load_market(
                     &self.http,
                     id.symbol.as_str(),
@@ -712,7 +722,7 @@ impl PrivateStream {
     }
 
     async fn load_definitions(
-        &mut self,
+        &self,
         snapshot: &KalshiExecutionSnapshot,
         settlements: &[Settlement],
     ) -> anyhow::Result<()> {
@@ -747,9 +757,33 @@ impl PrivateStream {
 
         for ticker in needed {
             let id = crate::common::parse::parse_instrument_id(&ticker)?;
-            if !self.definitions.contains_key(&id) {
-                let definition = load_definition(&self.http, &ticker, snapshot.ts_init).await?;
-                super::validate_definition(&definition, self.config.exchange_index)?;
+            if !self
+                .definitions
+                .read()
+                .expect("instrument definitions lock is not poisoned")
+                .contains_key(&id)
+            {
+                let definition = load_definition(&self.http, &ticker, snapshot.ts_init)
+                    .await
+                    .and_then(|definition| {
+                        super::validate_definition(&definition, self.config.exchange_index)?;
+                        Ok(definition)
+                    });
+
+                let mut definitions = self
+                    .definitions
+                    .write()
+                    .expect("instrument definitions lock is not poisoned");
+
+                if definitions.get(&id).is_some_and(|current| {
+                    definition
+                        .as_ref()
+                        .map_or(true, |loaded| current.ts_init >= loaded.ts_init)
+                }) {
+                    continue;
+                }
+
+                let definition = definition?;
                 if let Some(sender) = &self.data_sender {
                     let data = InstrumentAny::BinaryOption(definition.clone()).into();
                     sender
@@ -757,11 +791,16 @@ impl PrivateStream {
                         .map_err(|_| anyhow::anyhow!("private instrument receiver closed"))?;
                 }
 
-                self.definitions.insert(id, definition);
+                definitions.insert(id, definition);
             }
         }
 
-        for definition in self.definitions.values() {
+        for definition in self
+            .definitions
+            .read()
+            .expect("instrument definitions lock is not poisoned")
+            .values()
+        {
             super::validate_definition(definition, self.config.exchange_index)?;
         }
 
@@ -778,8 +817,7 @@ impl PrivateStream {
         for source in &snapshot.orders {
             let id = crate::common::parse::parse_instrument_id(&source.ticker)?;
             let definition = self
-                .definitions
-                .get(&id)
+                .instrument_definition(&id)
                 .context("private definition missing")?;
 
             let context = {
@@ -794,13 +832,13 @@ impl PrivateStream {
                         || self.instruments.contains(&id),
                     "external fill instrument must be loaded before execution connects"
                 );
-                state.recovery_order(source, definition, &self.emitter, snapshot.ts_init)?
+                state.recovery_order(source, &definition, &self.emitter, snapshot.ts_init)?
             };
 
             let Some(context) = context else {
                 reports::order(
                     source,
-                    definition,
+                    &definition,
                     self.emitter.account_id(),
                     None,
                     snapshot.ts_init,
@@ -844,7 +882,7 @@ impl PrivateStream {
             {
                 let mut report = reports::fill(
                     fill,
-                    definition,
+                    &definition,
                     self.emitter.account_id(),
                     source,
                     snapshot.ts_init,
@@ -857,7 +895,7 @@ impl PrivateStream {
                 .state
                 .lock()
                 .expect("private state lock is not poisoned")
-                .plan_order(source, &fills, definition, &self.emitter, snapshot.ts_init)?;
+                .plan_order(source, &fills, &definition, &self.emitter, snapshot.ts_init)?;
 
             if plan
                 .as_ref()
@@ -897,10 +935,17 @@ impl PrivateStream {
         price: Decimal,
     ) -> anyhow::Result<Decimal> {
         let definition = self
-            .definitions
-            .get(&instrument_id)
+            .instrument_definition(&instrument_id)
             .context("pending order instrument metadata is missing")?;
-        super::account::hold(&self.http, definition, side, qty, price).await
+        super::account::hold(&self.http, &definition, side, qty, price).await
+    }
+
+    fn instrument_definition(&self, id: &InstrumentId) -> Option<BinaryOption> {
+        self.definitions
+            .read()
+            .expect("instrument definitions lock is not poisoned")
+            .get(id)
+            .cloned()
     }
 }
 
@@ -1047,7 +1092,7 @@ mod tests {
             emitter,
             data_sender: None,
             state: Arc::clone(&state),
-            definitions: HashMap::new(),
+            definitions: Arc::new(InstrumentDefinitions::default()),
             instruments: HashSet::new(),
             ready: Arc::clone(&ready),
             ws_client,
@@ -1109,7 +1154,11 @@ mod tests {
 
         let mut private = stream(&KalshiDataClientConfig::default());
         private.instruments.insert(instrument.id);
-        private.definitions.insert(instrument.id, instrument);
+        private
+            .definitions
+            .write()
+            .unwrap()
+            .insert(instrument.id, instrument);
 
         let snapshot = KalshiExecutionSnapshot {
             orders,
@@ -1210,9 +1259,9 @@ mod tests {
         });
 
         let server = tokio::spawn(server); // tokio-import-ok
-        let mut private = stream(&transport);
+        let private = stream(&transport);
         let id = instrument.id;
-        private.definitions.insert(id, instrument);
+        private.definitions.write().unwrap().insert(id, instrument);
         let result = private
             .hold(id, OrderSide::Buy, Decimal::ONE, Decimal::new(6001, 4))
             .await;
@@ -1272,7 +1321,7 @@ mod tests {
 
         let server = tokio::spawn(server); // tokio-import-ok
         let mut private = stream(&transport);
-        private.definitions.insert(id, instrument);
+        private.definitions.write().unwrap().insert(id, instrument);
         let (sender, _output) = tokio::sync::mpsc::unbounded_channel();
         private.emitter.set_sender(sender);
         private
@@ -2005,8 +2054,8 @@ mod tests {
             serde_json::from_value(definitions["definitions"]["live"]["event"].clone()).unwrap();
         let instrument = parse_instrument(&market, &event, UnixNanos::from(1)).unwrap();
         let id = instrument.id;
-        let mut private = stream(&KalshiDataClientConfig::default());
-        private.definitions.insert(id, instrument);
+        let private = stream(&KalshiDataClientConfig::default());
+        private.definitions.write().unwrap().insert(id, instrument);
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(id)
             .quantity(Quantity::from("1.00"))

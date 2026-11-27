@@ -284,13 +284,13 @@ mod tests {
 
     #[rstest]
     fn as_text_returns_none_for_invalid_utf8() {
-        let msg = Message::Text(Bytes::from_static(&[0xFF, 0xFE]));
+        let msg = Message::Text(Bytes::from_static(&[0xff, 0xfe]));
         assert!(msg.as_text().is_none());
     }
 
     #[rstest]
     fn as_text_returns_none_for_non_text() {
-        assert!(Message::binary(vec![1u8]).as_text().is_none());
+        assert!(Message::binary(vec![1_u8]).as_text().is_none());
         assert!(Message::ping(Bytes::new()).as_text().is_none());
         assert!(Message::Close(None).as_text().is_none());
     }

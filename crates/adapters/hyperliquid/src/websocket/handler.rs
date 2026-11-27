@@ -16,7 +16,7 @@
 //! WebSocket message handler for Hyperliquid.
 
 use std::{
-    collections::{BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque, btree_map::Entry},
     future::Future,
     sync::{
         Arc,
@@ -29,7 +29,7 @@ use nautilus_common::cache::fifo::FifoCache;
 use nautilus_core::{AtomicTime, Params, nanos::UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_live::book::snapshot::SnapshotGate;
 use nautilus_model::{
-    data::{BarType, CustomData, Data, DataType},
+    data::{Bar, BarType, CustomData, Data, DataType},
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     types::Price,
@@ -67,7 +67,7 @@ use super::{
     trades::TradeStreamUses,
 };
 use crate::{
-    common::consts::HEARTBEAT_INTERVAL,
+    common::{consts::HEARTBEAT_INTERVAL, parse::millis_to_nanos},
     data_types::{
         HyperliquidAllDexsAssetCtxs, HyperliquidAllMids, HyperliquidDexAssetCtx,
         HyperliquidImpactPrices,
@@ -75,6 +75,7 @@ use crate::{
 };
 
 const HEARTBEAT_MESSAGE: &str = r#"{"method":"ping"}"#;
+const CANDLE_COMPLETION_GRACE_MS: u64 = 2_000;
 
 /// Commands sent from the outer client to the inner message handler.
 #[derive(Debug)]
@@ -262,8 +263,8 @@ pub(super) struct FeedHandler {
     message_buffer: VecDeque<NautilusWsMessage>,
     instruments: AHashMap<Ustr, InstrumentAny>,
     cloid_cache: CloidCache,
-    bar_types_cache: AHashMap<String, BarType>,
-    bar_cache: AHashMap<String, CandleData>,
+    candles: CandleStreams,
+    candle_expiry: Option<CandleExpiry>,
     asset_context_subs: AHashMap<Ustr, AHashSet<AssetContextDataType>>,
     trade_subs: AHashMap<Ustr, TradeStreamUses>,
     all_dex_asset_ctxs_instrument_ids: AHashMap<Ustr, Vec<Option<InstrumentId>>>,
@@ -317,8 +318,8 @@ impl FeedHandler {
             message_buffer: VecDeque::new(),
             instruments: AHashMap::new(),
             cloid_cache,
-            bar_types_cache: AHashMap::new(),
-            bar_cache: AHashMap::new(),
+            candles: CandleStreams::default(),
+            candle_expiry: None,
             asset_context_subs: AHashMap::new(),
             trade_subs: AHashMap::new(),
             all_dex_asset_ctxs_instrument_ids: AHashMap::new(),
@@ -380,6 +381,15 @@ impl FeedHandler {
                 log::debug!("Handler shutting down: input stream closed");
                 return None;
             }
+
+            if let Some(message) = self.emit_expired_candles() {
+                return Some(message);
+            }
+
+            let candle_deadline = self
+                .candles
+                .deadline()
+                .filter(|_| self.candle_expiry.is_none());
 
             tokio::select! {
                 cmd = self.cmd_rx.recv(), if !self.cmd_closed => {
@@ -504,11 +514,10 @@ impl FeedHandler {
                             self.instruments.insert(coin, inst);
                         }
                         HandlerCommand::AddBarType { key, bar_type } => {
-                            self.bar_types_cache.insert(key, bar_type);
+                            self.candles.register(key, bar_type);
                         }
                         HandlerCommand::RemoveBarType { key } => {
-                            self.bar_types_cache.remove(&key);
-                            self.bar_cache.remove(&key);
+                            self.candles.unregister(&key);
                         }
                         HandlerCommand::UpdateAssetContextSubs { coin, data_types } => {
                             let previous_data_types = self.asset_context_subs.get(&coin).cloned();
@@ -554,6 +563,9 @@ impl FeedHandler {
                         self.raw_closed = true;
                         continue;
                     };
+                    if let Some(expiry) = &mut self.candle_expiry {
+                        expiry.frames_remaining -= 1;
+                    }
 
                     match raw_msg {
                         Message::Text(text) => {
@@ -604,6 +616,13 @@ impl FeedHandler {
 
                                     let ts_init = self.clock.get_time_ns();
 
+                                    if let HyperliquidWsMessage::Candle { data } = msg {
+                                        if let Some(bar) = self.candles.observe(data, &self.instruments, ts_init) {
+                                            return Some(NautilusWsMessage::Candle(bar));
+                                        }
+                                        continue;
+                                    }
+
                                     if let HyperliquidWsMessage::L2 { data } = msg {
                                         if let Some(message) = self.handle_compact_book(data, ts_init) {
                                             return Some(message);
@@ -623,7 +642,6 @@ impl FeedHandler {
                                         context,
                                         &self.instruments,
                                         &self.cloid_cache,
-                                        &self.bar_types_cache,
                                         self.account_id,
                                         ts_init,
                                         &self.asset_context_subs,
@@ -632,7 +650,6 @@ impl FeedHandler {
                                         &mut self.processed_trade_ids,
                                         &mut self.processed_public_trade_ids,
                                         &mut self.asset_context_caches,
-                                        &mut self.bar_cache,
                                         &self.all_dex_asset_ctxs_instrument_ids,
                                         self.all_mids_data_types.as_slice(),
                                     );
@@ -671,6 +688,14 @@ impl FeedHandler {
                     }
                 }
 
+                through = wait_for_candle_deadline(self.clock, candle_deadline), if candle_deadline.is_some() => {
+                    // Drain only the frames already queued so an active feed cannot defer expiry indefinitely
+                    self.candle_expiry = Some(CandleExpiry {
+                        through,
+                        frames_remaining: self.raw_rx.len(),
+                    });
+                }
+
                 _ = self.heartbeat.tick() => {
                     if self.client.as_ref().is_some_and(WebSocketClient::is_active)
                         && let Err(e) = self.send_with_retry(
@@ -683,6 +708,26 @@ impl FeedHandler {
 
             }
         }
+    }
+
+    fn emit_expired_candles(&mut self) -> Option<NautilusWsMessage> {
+        let CandleExpiry {
+            through,
+            frames_remaining: 0,
+        } = self.candle_expiry?
+        else {
+            return None;
+        };
+
+        self.candle_expiry = None;
+        let ts_init = self.clock.get_time_ns();
+        self.candles.expire(
+            through,
+            &self.instruments,
+            ts_init,
+            &mut self.message_buffer,
+        );
+        self.message_buffer.pop_front()
     }
 
     fn prepare_compact_request(&mut self, request: &HyperliquidWsRequest) -> Option<Ustr> {
@@ -954,7 +999,6 @@ impl FeedHandler {
         context: FrameContext,
         instruments: &AHashMap<Ustr, InstrumentAny>,
         cloid_cache: &CloidCache,
-        bar_types: &AHashMap<String, BarType>,
         account_id: Option<AccountId>,
         ts_init: UnixNanos,
         asset_context_subs: &AHashMap<Ustr, AHashSet<AssetContextDataType>>,
@@ -963,7 +1007,6 @@ impl FeedHandler {
         processed_trade_ids: &mut FifoCache<u64, 10_000>,
         processed_public_trade_ids: &mut FifoCache<(Ustr, u64), 10_000>,
         asset_context_caches: &mut AssetContextCaches,
-        bar_cache: &mut AHashMap<String, CandleData>,
         all_dex_asset_ctxs_instrument_ids: &AHashMap<Ustr, Vec<Option<InstrumentId>>>,
         all_mids_data_types: &[DataType],
     ) -> Vec<NautilusWsMessage> {
@@ -1115,13 +1158,6 @@ impl FeedHandler {
                     depth_subs,
                     ts_init,
                 ));
-            }
-            HyperliquidWsMessage::Candle { data } => {
-                if let Some(msg) =
-                    Self::handle_candle(&data, instruments, bar_types, bar_cache, ts_init)
-                {
-                    result.push(msg);
-                }
             }
             HyperliquidWsMessage::ActiveAssetCtx { data }
             | HyperliquidWsMessage::ActiveSpotAssetCtx { data } => {
@@ -1376,52 +1412,6 @@ impl FeedHandler {
         }
 
         out
-    }
-
-    fn handle_candle(
-        data: &CandleData,
-        instruments: &AHashMap<Ustr, InstrumentAny>,
-        bar_types: &AHashMap<String, BarType>,
-        bar_cache: &mut AHashMap<String, CandleData>,
-        ts_init: UnixNanos,
-    ) -> Option<NautilusWsMessage> {
-        let key = format!("candle:{}:{}", data.s, data.i);
-
-        let mut closed_bar = None;
-
-        if let Some(cached) = bar_cache.get(&key) {
-            // Emit cached bar when close_time changes, indicating the previous period closed
-            if cached.close_time != data.close_time {
-                log::debug!(
-                    "Bar period changed for {}: prev_close_time={}, new_close_time={}",
-                    data.s,
-                    cached.close_time,
-                    data.close_time
-                );
-                closed_bar = Some(cached.clone());
-            }
-        }
-
-        bar_cache.insert(key.clone(), data.clone());
-
-        if let Some(closed_data) = closed_bar {
-            if let Some(bar_type) = bar_types.get(&key) {
-                if let Some(instrument) = instruments.get(&data.s) {
-                    match parse_ws_candle(&closed_data, instrument, bar_type, ts_init) {
-                        Ok(bar) => return Some(NautilusWsMessage::Candle(bar)),
-                        Err(e) => {
-                            log::error!("Error parsing closed candle: {e}");
-                        }
-                    }
-                } else {
-                    log::debug!("No instrument found for coin: {}", data.s);
-                }
-            } else {
-                log::debug!("No bar type found for key: {key}");
-            }
-        }
-
-        None
     }
 
     fn handle_asset_context(
@@ -1749,6 +1739,176 @@ impl FeedHandler {
     }
 }
 
+#[derive(Clone, Copy)]
+struct CandleExpiry {
+    through: UnixNanos,
+    frames_remaining: usize,
+}
+
+#[derive(Default)]
+struct CandleStreams {
+    streams: AHashMap<String, CandleStream>,
+    deadlines: BTreeMap<UnixNanos, AHashSet<String>>,
+}
+
+impl CandleStreams {
+    fn register(&mut self, key: String, bar_type: BarType) {
+        self.streams
+            .entry(key)
+            .and_modify(|stream| stream.bar_type = bar_type)
+            .or_insert(CandleStream {
+                bar_type,
+                pending: None,
+                last_emitted: None,
+            });
+    }
+
+    fn unregister(&mut self, key: &str) {
+        if let Some(stream) = self.streams.remove(key)
+            && let Some(pending) = stream.pending
+        {
+            Self::remove_deadline(&mut self.deadlines, key, pending.deadline);
+        }
+    }
+
+    fn deadline(&self) -> Option<UnixNanos> {
+        self.deadlines
+            .first_key_value()
+            .map(|(&deadline, _)| deadline)
+    }
+
+    fn observe(
+        &mut self,
+        data: CandleData,
+        instruments: &AHashMap<Ustr, InstrumentAny>,
+        ts_init: UnixNanos,
+    ) -> Option<Bar> {
+        let key = format!("candle:{}:{}", data.s, data.i);
+        let stream = self.streams.get_mut(&key)?;
+        let instrument = instruments.get(&data.s)?;
+
+        if stream
+            .last_emitted
+            .is_some_and(|close| data.close_time <= close)
+        {
+            return None;
+        }
+
+        if let Some(pending) = &mut stream.pending {
+            match data.close_time.cmp(&pending.data.close_time) {
+                std::cmp::Ordering::Less => return None,
+                std::cmp::Ordering::Equal => {
+                    pending.data = data;
+                    return None;
+                }
+                std::cmp::Ordering::Greater => {}
+            }
+        }
+
+        // Hyperliquid reports the interval's last millisecond inclusively
+        let Some(deadline) = data
+            .close_time
+            .checked_add(1 + CANDLE_COMPLETION_GRACE_MS)
+            .and_then(|millis| millis_to_nanos(millis).ok())
+        else {
+            log::warn!(
+                "Candle deadline is out of range for {key}: {}",
+                data.close_time
+            );
+            return None;
+        };
+
+        let previous = stream.pending.replace(PendingCandle { data, deadline });
+        if let Some(previous) = &previous {
+            Self::remove_deadline(&mut self.deadlines, &key, previous.deadline);
+        }
+
+        self.deadlines.entry(deadline).or_default().insert(key);
+
+        previous.and_then(|pending| stream.emit(&pending.data, instrument, ts_init))
+    }
+
+    fn expire(
+        &mut self,
+        through: UnixNanos,
+        instruments: &AHashMap<Ustr, InstrumentAny>,
+        ts_init: UnixNanos,
+        output: &mut VecDeque<NautilusWsMessage>,
+    ) {
+        while let Some(entry) = self.deadlines.first_entry()
+            && *entry.key() <= through
+        {
+            for key in entry.remove() {
+                if let Some(stream) = self.streams.get_mut(&key)
+                    && let Some(pending) = stream.pending.take()
+                    && let Some(instrument) = instruments.get(&pending.data.s)
+                    && let Some(bar) = stream.emit(&pending.data, instrument, ts_init)
+                {
+                    output.push_back(NautilusWsMessage::Candle(bar));
+                }
+            }
+        }
+    }
+
+    fn remove_deadline(
+        deadlines: &mut BTreeMap<UnixNanos, AHashSet<String>>,
+        key: &str,
+        deadline: UnixNanos,
+    ) {
+        if let Entry::Occupied(mut entry) = deadlines.entry(deadline) {
+            entry.get_mut().remove(key);
+            if entry.get().is_empty() {
+                entry.remove();
+            }
+        }
+    }
+}
+
+struct CandleStream {
+    bar_type: BarType,
+    pending: Option<PendingCandle>,
+    last_emitted: Option<u64>,
+}
+
+impl CandleStream {
+    fn emit(
+        &mut self,
+        data: &CandleData,
+        instrument: &InstrumentAny,
+        ts_init: UnixNanos,
+    ) -> Option<Bar> {
+        match parse_ws_candle(data, instrument, &self.bar_type, ts_init) {
+            Ok(bar) => {
+                self.last_emitted = Some(data.close_time);
+                Some(bar)
+            }
+            Err(e) => {
+                log::error!("Error parsing closed candle: {e}");
+                None
+            }
+        }
+    }
+}
+
+struct PendingCandle {
+    data: CandleData,
+    deadline: UnixNanos,
+}
+
+async fn wait_for_candle_deadline(clock: &AtomicTime, deadline: Option<UnixNanos>) -> UnixNanos {
+    let Some(deadline) = deadline else {
+        return std::future::pending().await;
+    };
+
+    loop {
+        let now = clock.get_time_ns();
+        match deadline.duration_since(&now) {
+            Some(delay) if !delay.is_zero() => tokio::time::sleep(delay.into()).await,
+            _ => return now,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 struct CompactBookStream {
     book: Option<CompactBook>,
@@ -2016,8 +2176,9 @@ pub(crate) fn create_hyperliquid_timeout_error(msg: String) -> HyperliquidWsErro
 #[cfg(test)]
 pub(super) mod tests {
     use std::{
+        collections::VecDeque,
         sync::{
-            Arc, Once,
+            Arc, LazyLock, Once,
             atomic::{AtomicBool, AtomicUsize, Ordering},
         },
         time::Duration,
@@ -2026,15 +2187,16 @@ pub(super) mod tests {
     use ahash::{AHashMap, AHashSet};
     use log::{Level, LevelFilter, Log, Metadata, Record};
     use nautilus_common::cache::fifo::FifoCacheMap;
-    use nautilus_core::nanos::UnixNanos;
+    use nautilus_core::{AtomicTime, nanos::UnixNanos};
     use nautilus_live::book::snapshot::SnapshotGate;
     use nautilus_model::{
-        data::Data,
+        data::{Bar, BarType, Data},
         identifiers::{ClientOrderId, InstrumentId, Symbol},
         instruments::{CryptoPerpetual, Instrument, InstrumentAny},
         types::{Currency, Price, Quantity},
     };
     use nautilus_network::{
+        RECONNECTED,
         error::SendError,
         retry::{RetryConfig, RetryError, RetryManager},
         websocket::SubscriptionState,
@@ -2053,15 +2215,16 @@ pub(super) mod tests {
             client::{AssetContextDataType, CLOID_CACHE_CAPACITY, CloidCache},
             error::HyperliquidWsError,
             messages::{
-                HyperliquidWsRequest, NautilusWsMessage, PerpsAssetCtx, PostRequest,
-                SharedAssetCtx, SpotAssetCtx, SubscriptionRequest, WsActiveAssetCtxData,
-                WsAllDexsAssetCtxsData, WsBookData, WsLevelData,
+                CandleData, HyperliquidWsMessage, HyperliquidWsRequest, NautilusWsMessage,
+                PerpsAssetCtx, PostRequest, SharedAssetCtx, SpotAssetCtx, SubscriptionRequest,
+                WsActiveAssetCtxData, WsAllDexsAssetCtxsData, WsBookData, WsLevelData,
             },
             post::PostRouter,
             rate_limits::WebSocketRateLimits,
         },
-        AllMidsDataTypeCache, AssetContextCaches, FeedHandler, HandlerCommand, PostSendError,
-        send_post_before_deadline, send_post_with_retry, should_retry_post_send,
+        AllMidsDataTypeCache, AssetContextCaches, CandleExpiry, CandleStreams, FeedHandler,
+        HandlerCommand, PostSendError, send_post_before_deadline, send_post_with_retry,
+        should_retry_post_send,
     };
     use crate::{
         common::consts::{
@@ -2071,6 +2234,13 @@ pub(super) mod tests {
     };
 
     const SECRET_MARKER: &str = "OUTBOUND_SECRET_MARKER";
+    // Hyperliquid mainnet candleSnapshot data wrapped in the WebSocket candle envelope
+    const CANDLE_FRAME: &str = include_str!("../../test_data/ws_candle.json");
+    const CANDLE_KEY: &str = "candle:BTC:1m";
+    const CANDLE_DEADLINE_NS: u64 = 1_795_656_902_000_000_000;
+
+    static CANDLE_EXPIRED_CLOCK: LazyLock<AtomicTime> =
+        LazyLock::new(|| AtomicTime::new(false, UnixNanos::from(CANDLE_DEADLINE_NS + 1)));
 
     struct LogCapture {
         messages: Mutex<Vec<String>>,
@@ -2212,6 +2382,386 @@ pub(super) mod tests {
     }
 
     #[rstest]
+    fn candle_expiry_publishes_latest_revision_once_at_deadline() {
+        let (mut candles, instruments, first) = candle_stream();
+
+        let latest = CandleData {
+            c: dec!(60704.0),
+            v: dec!(11.456),
+            ..first
+        };
+
+        let before = UnixNanos::from(CANDLE_DEADLINE_NS - 1);
+        let deadline = UnixNanos::from(CANDLE_DEADLINE_NS);
+        let emitted_at = UnixNanos::from(CANDLE_DEADLINE_NS + 10);
+        let mut output = VecDeque::new();
+
+        assert!(candles.observe(first, &instruments, before).is_none());
+        assert!(
+            candles
+                .observe(latest.clone(), &instruments, before)
+                .is_none()
+        );
+        assert_eq!(candles.deadline(), Some(deadline));
+        candles.expire(before, &instruments, before, &mut output);
+        assert!(output.is_empty());
+
+        candles.expire(deadline, &instruments, emitted_at, &mut output);
+
+        let Some(NautilusWsMessage::Candle(bar)) = output.pop_front() else {
+            panic!("expected a candle at its deadline");
+        };
+
+        assert_eq!(bar, expected_candle("60704.0", "11.456", emitted_at));
+
+        assert!(candles.observe(latest, &instruments, emitted_at).is_none());
+        assert_eq!(candles.deadline(), None);
+        candles.expire(emitted_at, &instruments, emitted_at, &mut output);
+        assert!(output.is_empty());
+    }
+
+    #[rstest]
+    fn candle_rollover_ignores_older_updates_and_disarms_previous_deadline() {
+        let (mut candles, instruments, first) = candle_stream();
+
+        let older = CandleData {
+            t: first.t - 60_000,
+            close_time: first.close_time - 60_000,
+            ..first
+        };
+
+        let next = CandleData {
+            t: first.t + 60_000,
+            close_time: first.close_time + 60_000,
+            ..first
+        };
+
+        let rollover_at = UnixNanos::from(1_795_656_900_500_000_000);
+        let mut output = VecDeque::new();
+
+        assert!(
+            candles
+                .observe(first.clone(), &instruments, rollover_at)
+                .is_none()
+        );
+        assert!(candles.observe(older, &instruments, rollover_at).is_none());
+
+        let bar = candles.observe(next, &instruments, rollover_at).unwrap();
+        assert_eq!(bar, expected_candle("60702.0", "23.642", rollover_at));
+        assert!(candles.observe(first, &instruments, rollover_at).is_none());
+        let first_deadline = UnixNanos::from(CANDLE_DEADLINE_NS);
+        candles.expire(first_deadline, &instruments, first_deadline, &mut output);
+        assert!(output.is_empty());
+        assert_eq!(
+            candles.deadline(),
+            Some(UnixNanos::from(1_795_656_962_000_000_000))
+        );
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn candle_expiry_consumes_failed_conversion(#[case] missing_instrument: bool) {
+        let (mut candles, mut instruments, mut candle) = candle_stream();
+        if !missing_instrument {
+            candle.t = u64::MAX;
+        }
+
+        let deadline = UnixNanos::from(CANDLE_DEADLINE_NS);
+        assert!(candles.observe(candle, &instruments, deadline).is_none());
+
+        if missing_instrument {
+            instruments.clear();
+        }
+
+        let mut output = VecDeque::new();
+
+        candles.expire(deadline, &instruments, deadline, &mut output);
+
+        assert_eq!(candles.deadline(), None);
+        assert!(output.is_empty());
+        assert!(candles.streams[CANDLE_KEY].pending.is_none());
+    }
+
+    #[rstest]
+    fn candle_expiry_discards_invalid_ohlc_and_accepts_a_later_revision() {
+        let (mut candles, instruments, valid) = candle_stream();
+
+        let invalid = CandleData {
+            c: dec!(60730.0),
+            ..valid
+        };
+
+        let deadline = UnixNanos::from(CANDLE_DEADLINE_NS);
+        let mut output = VecDeque::new();
+
+        assert!(candles.observe(invalid, &instruments, deadline).is_none());
+        candles.expire(deadline, &instruments, deadline, &mut output);
+        assert!(output.is_empty());
+        assert_eq!(candles.deadline(), None);
+
+        assert!(candles.observe(valid, &instruments, deadline).is_none());
+        candles.expire(deadline, &instruments, deadline, &mut output);
+
+        let Some(NautilusWsMessage::Candle(bar)) = output.pop_front() else {
+            panic!("expected a valid revision to publish after the malformed candle");
+        };
+
+        assert_eq!(bar, expected_candle("60702.0", "23.642", deadline));
+        assert!(output.is_empty());
+    }
+
+    #[rstest]
+    fn candle_unsubscribe_clears_pending_and_emitted_state() {
+        let (mut candles, instruments, first) = candle_stream();
+
+        let next = CandleData {
+            t: first.t + 60_000,
+            close_time: first.close_time + 60_000,
+            ..first
+        };
+
+        let now = UnixNanos::from(CANDLE_DEADLINE_NS);
+        assert!(candles.observe(first.clone(), &instruments, now).is_none());
+        assert!(candles.observe(next.clone(), &instruments, now).is_some());
+
+        candles.unregister(CANDLE_KEY);
+        assert!(candles.observe(next, &instruments, now).is_none());
+        assert_eq!(candles.deadline(), None);
+
+        candles.register(CANDLE_KEY.to_string(), candle_bar_type());
+        assert!(candles.observe(first, &instruments, now).is_none());
+        assert_eq!(candles.deadline(), Some(now));
+    }
+
+    #[rstest]
+    fn candle_expiry_publishes_all_intervals_at_shared_deadline() {
+        let (mut candles, instruments, minute) = candle_stream();
+        let five_min_type = BarType::from("BTC-PERP.HYPERLIQUID-5-MINUTE-LAST-EXTERNAL");
+        candles.register("candle:BTC:5m".to_string(), five_min_type);
+
+        let five_min = CandleData {
+            t: minute.t - 240_000,
+            i: Ustr::from("5m"),
+            ..minute
+        };
+
+        let deadline = UnixNanos::from(CANDLE_DEADLINE_NS);
+        let mut output = VecDeque::new();
+
+        assert!(candles.observe(minute, &instruments, deadline).is_none());
+        assert!(candles.observe(five_min, &instruments, deadline).is_none());
+        candles.expire(deadline, &instruments, deadline, &mut output);
+
+        let mut bars: Vec<_> = output
+            .into_iter()
+            .map(|message| {
+                let NautilusWsMessage::Candle(bar) = message else {
+                    panic!("expected a candle");
+                };
+
+                bar
+            })
+            .collect();
+
+        bars.sort_by_key(|bar| bar.ts_event);
+        let one_min_bar = expected_candle("60702.0", "23.642", deadline);
+
+        let five_min_bar = Bar {
+            bar_type: five_min_type,
+            ts_event: UnixNanos::from(1_795_656_600_000_000_000),
+            ..one_min_bar
+        };
+
+        assert_eq!(bars, [five_min_bar, one_min_bar]);
+        assert_eq!(candles.deadline(), None);
+    }
+
+    #[rstest]
+    #[case(u64::MAX)]
+    #[case(u64::MAX / 1_000_000)]
+    fn candle_deadline_rejects_overflow(#[case] close_time: u64) {
+        let (mut candles, instruments, mut candle) = candle_stream();
+        candle.close_time = close_time;
+        let now = UnixNanos::from(CANDLE_DEADLINE_NS);
+
+        assert!(candles.observe(candle, &instruments, now).is_none());
+        assert_eq!(candles.deadline(), None);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn candle_handler_expires_after_queued_revisions_and_deduplicates_after_reconnect() {
+        let mut handler = compact_handler();
+        handler.clock = &CANDLE_EXPIRED_CLOCK;
+        handler
+            .candles
+            .register(CANDLE_KEY.to_string(), candle_bar_type());
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.raw_rx = raw_rx;
+        let mut revision: serde_json::Value = serde_json::from_str(CANDLE_FRAME).unwrap();
+        revision["data"]["c"] = json!("60704.0");
+        revision["data"]["v"] = json!("11.456");
+        raw_tx.send(Message::Text(CANDLE_FRAME.into())).unwrap();
+        raw_tx
+            .send(Message::Text(revision.to_string().into()))
+            .unwrap();
+
+        let message = tokio::time::timeout(Duration::from_secs(1), handler.next())
+            .await
+            .unwrap();
+
+        let Some(NautilusWsMessage::Candle(bar)) = message else {
+            panic!("expected latest candle without a next-interval frame");
+        };
+
+        assert_eq!(
+            bar,
+            expected_candle("60704.0", "11.456", CANDLE_EXPIRED_CLOCK.get_time_ns())
+        );
+
+        for frame in [RECONNECTED, CANDLE_FRAME, RECONNECTED] {
+            raw_tx.send(Message::Text(frame.into())).unwrap();
+        }
+
+        for _ in 0..2 {
+            let message = tokio::time::timeout(Duration::from_secs(1), handler.next())
+                .await
+                .unwrap();
+            assert!(matches!(message, Some(NautilusWsMessage::Reconnected)));
+        }
+
+        assert_eq!(handler.candles.deadline(), None);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn candle_handler_expires_before_processing_frames_beyond_the_snapshot() {
+        let mut handler = compact_handler();
+        handler.clock = &CANDLE_EXPIRED_CLOCK;
+        let (candles, _, first) = candle_stream();
+        handler.candles = candles;
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.raw_rx = raw_rx;
+        let deadline = UnixNanos::from(CANDLE_DEADLINE_NS);
+        assert!(
+            handler
+                .candles
+                .observe(first, &handler.instruments, deadline)
+                .is_none()
+        );
+
+        let mut revision: serde_json::Value = serde_json::from_str(CANDLE_FRAME).unwrap();
+        revision["data"]["c"] = json!("60704.0");
+        raw_tx
+            .send(Message::Text(revision.to_string().into()))
+            .unwrap();
+        handler.candle_expiry = Some(CandleExpiry {
+            through: deadline,
+            frames_remaining: handler.raw_rx.len(),
+        });
+
+        revision["data"]["c"] = json!("60706.0");
+        raw_tx
+            .send(Message::Text(revision.to_string().into()))
+            .unwrap();
+
+        let message = tokio::time::timeout(Duration::from_secs(1), handler.next())
+            .await
+            .unwrap();
+
+        let Some(NautilusWsMessage::Candle(bar)) = message else {
+            panic!("expected a candle after the frames pending at the deadline");
+        };
+
+        assert_eq!(
+            bar,
+            expected_candle("60704.0", "23.642", CANDLE_EXPIRED_CLOCK.get_time_ns())
+        );
+        assert_eq!(handler.raw_rx.len(), 1);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn candle_handler_wakes_at_a_future_deadline_with_no_further_frames() {
+        static CLOCK: LazyLock<AtomicTime> = LazyLock::new(|| {
+            AtomicTime::new(false, UnixNanos::from(CANDLE_DEADLINE_NS - 2_000_000_000))
+        });
+
+        let mut handler = compact_handler();
+        handler.clock = &CLOCK;
+        handler
+            .candles
+            .register(CANDLE_KEY.to_string(), candle_bar_type());
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.raw_rx = raw_rx;
+        raw_tx.send(Message::Text(CANDLE_FRAME.into())).unwrap();
+
+        let wake_at = tokio::time::Instant::now() + Duration::from_secs(2);
+
+        let message = {
+            let next = handler.next();
+            tokio::pin!(next);
+            assert!(futures_util::poll!(next.as_mut()).is_pending());
+
+            CLOCK.set_time(UnixNanos::from(CANDLE_DEADLINE_NS - 1_000_000));
+            tokio::time::advance(Duration::from_millis(1_999)).await;
+            assert!(futures_util::poll!(next.as_mut()).is_pending());
+
+            CLOCK.set_time(UnixNanos::from(CANDLE_DEADLINE_NS));
+            tokio::time::advance(Duration::from_millis(1)).await;
+            tokio::time::timeout(Duration::from_secs(1), next)
+                .await
+                .unwrap()
+        };
+
+        let timer_tick = Duration::from_millis(1);
+        assert!((wake_at..=wake_at + timer_tick).contains(&tokio::time::Instant::now()));
+
+        let Some(NautilusWsMessage::Candle(bar)) = message else {
+            panic!("expected the timer to publish a candle from the idle feed");
+        };
+
+        assert_eq!(
+            bar,
+            expected_candle("60702.0", "23.642", UnixNanos::from(CANDLE_DEADLINE_NS))
+        );
+
+        let next = handler.next();
+        tokio::pin!(next);
+        assert!(futures_util::poll!(next.as_mut()).is_pending());
+    }
+
+    fn candle_stream() -> (CandleStreams, AHashMap<Ustr, InstrumentAny>, CandleData) {
+        let HyperliquidWsMessage::Candle { data } = serde_json::from_str(CANDLE_FRAME).unwrap()
+        else {
+            panic!("expected candle fixture");
+        };
+
+        let mut candles = CandleStreams::default();
+        candles.register(CANDLE_KEY.to_string(), candle_bar_type());
+        let instruments = AHashMap::from([(Ustr::from("BTC"), btc_perp())]);
+        (candles, instruments, data)
+    }
+
+    fn candle_bar_type() -> BarType {
+        BarType::from("BTC-PERP.HYPERLIQUID-1-MINUTE-LAST-EXTERNAL")
+    }
+
+    fn expected_candle(close: &str, volume: &str, ts_init: UnixNanos) -> Bar {
+        Bar::new(
+            candle_bar_type(),
+            Price::from("60705.0"),
+            Price::from("60728.0"),
+            Price::from("60663.0"),
+            Price::from(close),
+            Quantity::from(volume),
+            UnixNanos::from(1_795_656_840_000_000_000),
+            ts_init,
+        )
+    }
+
+    #[rstest]
     #[tokio::test]
     async fn compact_replacement_waits_for_current_ack_and_new_baseline() {
         use super::super::messages::{WsCompactBookData, WsCompactBookUpdate};
@@ -2246,7 +2796,7 @@ pub(super) mod tests {
         handler.confirm_compact_request(&sub, "unsubscribe");
         handler.confirm_compact_request(&sub, "subscribe");
         let update: WsCompactBookUpdate = serde_json::from_value(json!({
-            "c":"BTC","t":1700000000000_u64,"r":[[],[]],
+            "c":"BTC","t":1_700_000_000_000_u64,"r":[[],[]],
             "l":[[{"p":"100","s":"2"}],[]],
         }))
         .unwrap();
@@ -2316,7 +2866,7 @@ pub(super) mod tests {
             .unwrap();
         handler.send(old).unwrap();
         let invalid = serde_json::from_value(json!({
-            "c":"BTC","t":1700000000001_u64,"r":[[9],[]],"l":[[],[]],
+            "c":"BTC","t":1_700_000_000_001_u64,"r":[[9],[]],"l":[[],[]],
         }))
         .unwrap();
         let error = handler

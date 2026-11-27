@@ -25,7 +25,7 @@ use std::{
 };
 
 use dashmap::DashMap;
-use nautilus_core::string::secret::SecretString;
+use nautilus_core::string::secret::{REDACTED, SecretString};
 use nautilus_live::book::snapshot::SnapshotGate;
 use nautilus_network::{
     error::SendError,
@@ -513,11 +513,8 @@ impl BybitWsFeedHandler {
                                 self.auth_tracker.succeed();
                                 log::debug!("WebSocket authenticated");
                             } else {
-                                let error_msg = auth_response
-                                    .ret_msg
-                                    .as_deref()
-                                    .unwrap_or("Authentication rejected");
-                                self.auth_tracker.fail(error_msg);
+                                let error_msg = auth_failure_text(auth_response.ret_msg.as_deref());
+                                self.auth_tracker.fail(error_msg.as_str());
                                 log::error!("WebSocket authentication failed: error={error_msg}");
                             }
                             return Some(BybitWsMessage::Auth(auth_response));
@@ -530,12 +527,13 @@ impl BybitWsFeedHandler {
                             // A rejected authentication also arrives as ErrorResponse.
                             if resp.op == Some(BybitWsOperation::Auth) {
                                 self.auth_deadline = None;
-                                let error_msg = resp
-                                    .ret_msg
-                                    .as_deref()
-                                    .unwrap_or("Authentication rejected");
-                                self.auth_tracker.fail(error_msg);
+                                let error_msg = auth_failure_text(resp.ret_msg.as_deref());
+                                self.auth_tracker.fail(error_msg.as_str());
                                 log::error!("WebSocket authentication failed: error={error_msg}");
+                                let mut sanitized = resp.clone();
+                                sanitized.ret_msg = Some(error_msg);
+                                let error = BybitWebSocketError::from_response(&sanitized);
+                                return Some(BybitWsMessage::Error(error));
                             }
 
                             if let Some(op) = &resp.op {
@@ -595,7 +593,10 @@ impl BybitWsFeedHandler {
                             return Some(BybitWsMessage::Reconnected);
                         }
                         BybitWsFrame::Unknown(value) => {
-                            log::debug!("Unknown WebSocket frame: {value}");
+                            log::debug!(
+                                "Unknown WebSocket frame: {}",
+                                unknown_frame_summary(&value)
+                            );
                         }
                     }
                 }
@@ -738,12 +739,12 @@ impl BybitWsFeedHandler {
                     return None;
                 }
 
-                log::trace!("Raw websocket message: {text}");
+                log::trace!("Raw websocket message: {} bytes", text.len());
 
                 let value: serde_json::Value = match serde_json::from_str(&text) {
                     Ok(v) => v,
                     Err(e) => {
-                        log::error!("Failed to parse WebSocket message: {e}: {text}");
+                        log::error!("{}", malformed_frame_message(&e, &text));
                         return None;
                     }
                 };
@@ -760,7 +761,6 @@ impl BybitWsFeedHandler {
             }
             Message::Binary(msg) => {
                 log::debug!("Raw binary frame ({} bytes)", msg.len());
-                log::trace!("Raw binary: {msg:?}");
                 None
             }
             Message::Close(_) => {
@@ -794,6 +794,338 @@ fn is_already_subscribed_error(error_msg: &str) -> bool {
     error_msg
         .to_ascii_lowercase()
         .contains("already subscribed")
+}
+
+fn auth_failure_text(ret_msg: Option<&str>) -> String {
+    ret_msg
+        .map(sanitized_log_text)
+        .filter(|message| !message.is_empty())
+        .unwrap_or_else(|| "Authentication rejected".to_string())
+}
+
+fn malformed_frame_message(error: &serde_json::Error, text: &str) -> String {
+    let len = text.len();
+    if frame_carries_auth(text) {
+        return format!("Failed to parse WebSocket authentication message: {error} ({len} bytes)");
+    }
+
+    match sanitized_excerpt(text) {
+        Some(excerpt) => format!("Failed to parse WebSocket message: {error}: {excerpt}"),
+        None => format!("Failed to parse WebSocket message: {error} ({len} bytes)"),
+    }
+}
+
+fn unknown_frame_summary(value: &serde_json::Value) -> String {
+    let Some(object) = value.as_object() else {
+        return "non-object".to_string();
+    };
+
+    let mut keys = Vec::new();
+
+    for key in object.keys() {
+        if key.len() >= 16 {
+            keys.push(REDACTED.to_string());
+        } else {
+            keys.push(key.clone());
+        }
+    }
+
+    keys.sort();
+    format!("keys={keys:?}")
+}
+
+fn frame_carries_auth(text: &str) -> bool {
+    let mut scan = AuthScan::default();
+    for ch in text.chars() {
+        scan.push(ch);
+    }
+
+    scan.finish()
+}
+
+#[derive(Default)]
+struct AuthScan {
+    depth: i32,
+    in_string: bool,
+    escape: bool,
+    expect_key: bool,
+    collecting_key: bool,
+    collecting_op: bool,
+    last_key_is_op: bool,
+    buffer: String,
+    last_op: Option<String>,
+    incomplete_op: Option<String>,
+}
+
+impl AuthScan {
+    fn push(&mut self, ch: char) {
+        if self.in_string {
+            self.push_string(ch);
+            return;
+        }
+
+        self.push_structural(ch);
+    }
+
+    fn push_string(&mut self, ch: char) {
+        if self.escape {
+            self.escape = false;
+
+            if self.collecting_key || self.collecting_op {
+                self.buffer.push(ch);
+            }
+
+            return;
+        }
+
+        if ch == '\\' {
+            self.escape = true;
+            return;
+        }
+
+        if ch == '"' {
+            self.close_string();
+            return;
+        }
+
+        if self.collecting_key || self.collecting_op {
+            self.buffer.push(ch);
+        }
+    }
+
+    fn close_string(&mut self) {
+        self.in_string = false;
+
+        if self.collecting_op {
+            self.last_op = Some(std::mem::take(&mut self.buffer));
+            self.incomplete_op = None;
+            self.collecting_op = false;
+            return;
+        }
+
+        if self.collecting_key {
+            self.last_key_is_op = self.buffer.eq_ignore_ascii_case("op");
+            self.buffer.clear();
+            self.collecting_key = false;
+            return;
+        }
+
+        self.buffer.clear();
+    }
+
+    fn push_structural(&mut self, ch: char) {
+        match ch {
+            '"' => self.open_string(),
+            '{' => self.open_container(true),
+            '[' => self.open_container(false),
+            '}' | ']' => self.close_container(),
+            ',' if self.depth == 1 => {
+                self.expect_key = true;
+                self.last_key_is_op = false;
+            }
+            _ => {}
+        }
+    }
+
+    fn open_string(&mut self) {
+        self.in_string = true;
+        self.buffer.clear();
+
+        if self.depth == 1 && self.expect_key {
+            self.collecting_key = true;
+            self.expect_key = false;
+            return;
+        }
+
+        if self.depth == 1 && self.last_key_is_op {
+            self.collecting_op = true;
+            self.last_key_is_op = false;
+        }
+    }
+
+    fn open_container(&mut self, object: bool) {
+        self.depth += 1;
+
+        if object && self.depth == 1 {
+            self.expect_key = true;
+        }
+
+        self.last_key_is_op = false;
+    }
+
+    fn close_container(&mut self) {
+        self.depth -= 1;
+        self.expect_key = false;
+        self.last_key_is_op = false;
+    }
+
+    fn finish(mut self) -> bool {
+        if self.collecting_op {
+            self.incomplete_op = Some(self.buffer);
+        }
+
+        self.last_op
+            .is_some_and(|op| op.eq_ignore_ascii_case("auth"))
+            || self
+                .incomplete_op
+                .is_some_and(|op| "auth".starts_with(&op.to_ascii_lowercase()))
+    }
+}
+
+fn sanitized_excerpt(text: &str) -> Option<String> {
+    let mut excerpt = ExcerptScan::default();
+    for ch in text.chars() {
+        excerpt.push(ch);
+    }
+
+    excerpt.finish()
+}
+
+#[derive(Default)]
+struct ExcerptScan {
+    output: String,
+    unquoted: String,
+    in_string: bool,
+    escape: bool,
+    unsafe_unquoted: bool,
+}
+
+impl ExcerptScan {
+    fn push(&mut self, ch: char) {
+        if self.in_string {
+            self.push_string(ch);
+            return;
+        }
+
+        self.push_outside(ch);
+    }
+
+    fn push_string(&mut self, ch: char) {
+        if self.escape {
+            self.escape = false;
+            return;
+        }
+
+        if ch == '\\' {
+            self.escape = true;
+            return;
+        }
+
+        if ch == '"' {
+            self.in_string = false;
+            self.output.push('"');
+        }
+    }
+
+    fn push_outside(&mut self, ch: char) {
+        if ch == '"' {
+            self.flush_unquoted();
+            self.in_string = true;
+            self.output.push('"');
+            return;
+        }
+
+        if is_log_control(ch) {
+            self.flush_unquoted();
+            self.output.push('?');
+            return;
+        }
+
+        if ch.is_ascii_alphanumeric() {
+            self.unquoted.push(ch);
+            return;
+        }
+
+        self.flush_unquoted();
+        self.output.push(ch);
+    }
+
+    fn flush_unquoted(&mut self) {
+        flush_unquoted_token(
+            &mut self.output,
+            &mut self.unquoted,
+            &mut self.unsafe_unquoted,
+        );
+    }
+
+    fn finish(mut self) -> Option<String> {
+        if self.in_string {
+            self.output.push('"');
+        }
+
+        self.flush_unquoted();
+
+        if self.unsafe_unquoted {
+            return None;
+        }
+
+        let mut excerpt: String = self.output.chars().take(96).collect();
+        if self.output.chars().count() > 96 {
+            excerpt.push_str("...");
+        }
+
+        Some(excerpt)
+    }
+}
+
+fn flush_unquoted_token(output: &mut String, token: &mut String, unsafe_unquoted: &mut bool) {
+    if !token.is_empty() {
+        *unsafe_unquoted = true;
+    }
+
+    output.push_str(token);
+    token.clear();
+}
+
+fn sanitized_log_text(text: &str) -> String {
+    let mut output = String::new();
+    let mut token = String::new();
+
+    for ch in text.chars() {
+        if ch.is_ascii_alphanumeric() {
+            token.push(ch);
+            continue;
+        }
+
+        flush_redacted_token(&mut output, &mut token);
+        if is_log_control(ch) {
+            output.push('?');
+        } else {
+            output.push(ch);
+        }
+    }
+
+    flush_redacted_token(&mut output, &mut token);
+    let mut bounded: String = output.chars().take(80).collect();
+    if output.chars().count() > 80 {
+        bounded.push_str("...");
+    }
+
+    bounded
+}
+
+fn flush_redacted_token(output: &mut String, token: &mut String) {
+    if token.len() >= 12 {
+        output.push_str(REDACTED);
+    } else {
+        output.push_str(token);
+    }
+
+    token.clear();
+}
+
+fn is_log_control(ch: char) -> bool {
+    ch.is_control()
+        || matches!(
+            ch,
+            '\u{200B}'..='\u{200D}'
+                | '\u{2060}'
+                | '\u{2066}'..='\u{2069}'
+                | '\u{202A}'..='\u{202E}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{FEFF}'
+        )
 }
 
 #[cfg(test)]
@@ -1270,6 +1602,48 @@ mod tests {
         assert!(pending.is_empty());
         assert_eq!(request, subscription_request("subscribe", sentinel));
         handler.inner.as_ref().unwrap().disconnect().await;
+    }
+
+    #[rstest]
+    #[case(
+        r#"{"op":"auth","args":["SECRETKEY12345678","signature-secret"]}"#,
+        true
+    )]
+    #[case(
+        r#"{"note":"\"op\":\"subscribe\"","op":"auth","args":["SECRETKEY12345678"]}"#,
+        true
+    )]
+    #[case(r#"{"op":"subscribe","op":"AUTH","args":["SECRETKEY12345678"]}"#, true)]
+    #[case(r#"{"args":["SECRETKEY12345678"],"op":"au"#, true)]
+    #[case(r#"{"topic":"publicTrade.BTCUSDT","data":{"p":"1"}}"#, false)]
+    fn frame_auth_classification_uses_last_top_level_op(#[case] text: &str, #[case] auth: bool) {
+        assert_eq!(frame_carries_auth(text), auth, "{text}");
+    }
+
+    #[rstest]
+    fn malformed_auth_frame_log_omits_payload() {
+        let text = r#"{"args":["SECRETKEY12345678","signature-secret"],"op":"au"#;
+        let error = serde_json::from_str::<serde_json::Value>(text).unwrap_err();
+        let message = malformed_frame_message(&error, text);
+
+        assert!(message.contains("authentication message"), "{message}");
+        assert!(!message.contains("SECRETKEY12345678"), "{message}");
+        assert!(!message.contains("signature-secret"), "{message}");
+    }
+
+    #[rstest]
+    fn malformed_non_auth_frame_uses_bounded_excerpt_without_string_contents() {
+        let text = format!(
+            "{{\"topic\":\"publicTrade.BTCUSDT\",\"note\":\"{}\"}}",
+            "x".repeat(200)
+        );
+        let error =
+            serde_json::from_str::<serde_json::Value>(&format!("{text} trailing")).unwrap_err();
+        let message = malformed_frame_message(&error, &text);
+
+        assert!(message.contains('{'), "{message}");
+        assert!(!message.contains(&"x".repeat(12)), "{message}");
+        assert!(message.chars().count() < 220, "{message}");
     }
 
     #[rstest]

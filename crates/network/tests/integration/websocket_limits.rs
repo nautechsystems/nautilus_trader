@@ -155,7 +155,7 @@ async fn tunnel_connect(stream: TcpStream, upstream: SocketAddr) -> std::io::Res
     let mut client_read = reader.into_inner();
 
     let client_to_upstream = async {
-        let mut buf = vec![0u8; 8192];
+        let mut buf = vec![0_u8; 8192];
         loop {
             let n = client_read.read(&mut buf).await?;
             if n == 0 {
@@ -169,7 +169,7 @@ async fn tunnel_connect(stream: TcpStream, upstream: SocketAddr) -> std::io::Res
     };
 
     let upstream_to_client = async {
-        let mut buf = vec![0u8; 8192];
+        let mut buf = vec![0_u8; 8192];
         loop {
             let n = upstream_read.read(&mut buf).await?;
             if n == 0 {

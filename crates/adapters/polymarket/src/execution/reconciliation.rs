@@ -245,6 +245,38 @@ pub(crate) fn checked_venue_order_id(value: &str, evidence: &str) -> anyhow::Res
         .with_context(|| format!("{evidence} has invalid venue order ID {value:?}"))
 }
 
+// Pre-rc9 cache entries preserve the Gamma response without a top-level protocol field.
+// Use that saved evidence, without rewriting instruments or defaulting unknown protocols.
+fn validate_cached_execution_market(instrument: &InstrumentAny) -> anyhow::Result<()> {
+    let info = instrument.info();
+    if let Some(info) = info
+        && !info.contains_key(MARKET_VERSION_KEY)
+        && let Some(raw) = info.get_str("gamma_market")
+    {
+        #[derive(serde::Deserialize)]
+        struct SavedMarket {
+            #[serde(rename = "conditionId")]
+            condition_id: String,
+            version: Option<String>,
+        }
+        let market: SavedMarket =
+            serde_json::from_str(raw).context("Cannot read protocol from saved Gamma market")?;
+        anyhow::ensure!(
+            info.get_str("condition_id")
+                .is_some_and(|id| id.eq_ignore_ascii_case(&market.condition_id)),
+            "Saved Gamma condition does not match cached Polymarket instrument",
+        );
+        return validate_execution_market(
+            market.version.as_deref(),
+            instrument.raw_symbol().as_str(),
+        );
+    }
+    validate_execution_market(
+        info.and_then(|info| info.get_str(MARKET_VERSION_KEY)),
+        instrument.raw_symbol().as_str(),
+    )
+}
+
 pub(crate) fn validate_instrument_binding(
     instrument: &InstrumentAny,
     condition_id: &str,
@@ -254,12 +286,7 @@ pub(crate) fn validate_instrument_binding(
         anyhow::bail!("expected Polymarket BinaryOption instrument, found {instrument:?}");
     };
 
-    validate_execution_market(
-        instrument
-            .info()
-            .and_then(|info| info.get_str(MARKET_VERSION_KEY)),
-        instrument.raw_symbol().as_str(),
-    )?;
+    validate_cached_execution_market(instrument)?;
     let instrument_condition = binary
         .info
         .as_ref()
@@ -1192,7 +1219,7 @@ pub(crate) fn build_order_reports_from_orders(
     load_ids: Option<&[InstrumentId]>,
 ) -> anyhow::Result<(Vec<OrderStatusReport>, usize)> {
     let mut reports = Vec::new();
-    let mut filtered = 0usize;
+    let mut filtered = 0_usize;
     let mut selected_orders = AHashMap::new();
 
     for order in orders {
@@ -1387,12 +1414,7 @@ fn build_reconciliation_position_report(
             ))
         })?;
 
-    validate_execution_market(
-        instrument
-            .info()
-            .and_then(|info| info.get_str(MARKET_VERSION_KEY)),
-        instrument.raw_symbol().as_str(),
-    )?;
+    validate_cached_execution_market(&instrument)?;
 
     Ok(build_position_report_from_reportable_position(
         position, account_id, ts_init,
@@ -1594,6 +1616,44 @@ pub(crate) async fn generate_mass_status(
     Ok(Some(mass_status))
 }
 
+pub(crate) async fn wallet_instrument_ids(
+    http_client: &PolymarketClobHttpClient,
+    data_api_client: &PolymarketDataApiHttpClient,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
+    ctx: &FillContext<'_>,
+    load_ids: Option<&[InstrumentId]>,
+    resolved_balances: &ResolvedBalanceScope,
+) -> anyhow::Result<Vec<InstrumentId>> {
+    let mut orders = http_client
+        .get_orders(GetOrdersParams::default())
+        .await
+        .context("failed to fetch wallet orders")?;
+
+    let mut required =
+        filter_unsupported_orders(http_client, &mut orders, instruments, ctx, None, load_ids)
+            .await?;
+
+    if ctx.signer_type != PolymarketSignerType::Session {
+        let mut positions = data_api_client
+            .get_positions(ctx.user_address)
+            .await
+            .context("failed to fetch wallet positions")?;
+
+        let position_ids = filter_unsupported_positions(
+            http_client,
+            &mut positions,
+            instruments,
+            None,
+            load_ids,
+            resolved_balances,
+        )
+        .await?;
+        required.extend(position_ids);
+    }
+
+    Ok(required)
+}
+
 pub(crate) async fn filter_unsupported_orders(
     http_client: &PolymarketClobHttpClient,
     orders: &mut Vec<PolymarketOpenOrder>,
@@ -1601,7 +1661,7 @@ pub(crate) async fn filter_unsupported_orders(
     ctx: &FillContext<'_>,
     instrument_filter: Option<InstrumentId>,
     load_ids: Option<&[InstrumentId]>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<InstrumentId>> {
     orders.retain(|order| {
         instruments
             .get_cloned(&order.asset_id)
@@ -1643,7 +1703,13 @@ pub(crate) async fn filter_unsupported_orders(
         true
     });
 
-    Ok(())
+    Ok(orders
+        .iter()
+        .filter(|order| requires_lookup(order))
+        .map(|order| {
+            instrument_id_from_market_token(order.market.as_str(), order.asset_id.as_str())
+        })
+        .collect())
 }
 
 pub(crate) async fn filter_unsupported_positions(
@@ -1653,7 +1719,7 @@ pub(crate) async fn filter_unsupported_positions(
     instrument_filter: Option<InstrumentId>,
     load_ids: Option<&[InstrumentId]>,
     resolved_balances: &ResolvedBalanceScope,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<InstrumentId>> {
     let collection_load_ids = instrument_filter.is_none().then_some(load_ids).flatten();
 
     positions.retain(|position| {
@@ -1689,16 +1755,15 @@ pub(crate) async fn filter_unsupported_positions(
         true
     });
 
-    Ok(())
+    Ok(positions
+        .iter()
+        .filter(|position| requires_lookup(position))
+        .map(|position| instrument_id_from_market_token(&position.condition_id, &position.asset))
+        .collect())
 }
 
 fn execution_protocol_supported(instrument: &InstrumentAny) -> bool {
-    match validate_execution_market(
-        instrument
-            .info()
-            .and_then(|info| info.get_str(MARKET_VERSION_KEY)),
-        instrument.raw_symbol().as_str(),
-    ) {
+    match validate_cached_execution_market(instrument) {
         Ok(()) => true,
         Err(e) => {
             log::warn!(
@@ -2365,7 +2430,10 @@ fn instrument_in_load_ids_scope(
     }
 }
 
-fn polymarket_instrument_ids_equivalent(left: InstrumentId, right: InstrumentId) -> bool {
+pub(super) fn polymarket_instrument_ids_equivalent(
+    left: InstrumentId,
+    right: InstrumentId,
+) -> bool {
     if left == right {
         return true;
     }
@@ -2579,8 +2647,9 @@ pub(crate) fn cap_order_report_filled_qty(
     confirmed_filled: Option<Decimal>,
     non_reopened_voided: Quantity,
 ) {
+    // A whole-share order can have fractional confirmed fills.
     let confirmed_filled = confirmed_filled
-        .and_then(|qty| Quantity::from_decimal_dp(qty, report.quantity.precision).ok())
+        .and_then(|qty| Quantity::from_decimal(qty).ok())
         .unwrap_or_else(|| Quantity::zero(report.quantity.precision));
 
     let capped = report.filled_qty.min(local_filled.max(confirmed_filled));
@@ -2727,6 +2796,17 @@ mod tests {
 
         let mut info = IndexMap::clone(binary.info.as_ref().unwrap());
         info.insert(MARKET_VERSION_KEY.into(), serde_json::json!(version));
+        // Explicit invalid metadata must not be rescued by a valid saved response.
+        info.insert(
+            "gamma_market".into(),
+            serde_json::json!(
+                serde_json::json!({
+                    "conditionId": TEST_CONDITION_ID,
+                    "version": "v1",
+                })
+                .to_string()
+            ),
+        );
         binary.info = Some(Params::new(info));
         let instrument = InstrumentAny::BinaryOption(binary);
         let error =
@@ -2751,6 +2831,90 @@ mod tests {
             None,
         );
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case::v1("v1", true, true)]
+    #[case::v2("v2", true, true)]
+    #[case::unknown("v3", true, false)]
+    #[case::different_condition("v1", false, false)]
+    fn test_legacy_gamma_protocol_preserves_fill_reconciliation(
+        #[case] version: &str,
+        #[case] matching_condition: bool,
+        #[case] supported: bool,
+    ) {
+        let InstrumentAny::BinaryOption(mut binary) = test_instrument() else {
+            unreachable!()
+        };
+        let mut info = IndexMap::clone(binary.info.as_ref().unwrap());
+        info.shift_remove(MARKET_VERSION_KEY);
+        let saved = serde_json::json!({
+            "conditionId": if matching_condition { TEST_CONDITION_ID } else { "other" },
+            "version": version,
+        });
+        info.insert("gamma_market".into(), serde_json::json!(saved.to_string()));
+        binary.info = Some(Params::new(info));
+        let instrument = InstrumentAny::BinaryOption(binary);
+        let original = serde_json::to_value(&instrument).unwrap();
+        assert_eq!(execution_protocol_supported(&instrument), supported);
+        let instruments = AtomicMap::new();
+        instruments.insert(Ustr::from(TEST_TOKEN_ID), instrument.clone());
+        let ctx = test_fill_context();
+        let trade = confirmed_taker_trade();
+        let result = build_fill_reports_from_trades(
+            std::slice::from_ref(&trade),
+            &ctx,
+            &instruments,
+            FillReportScope::new(None, None),
+            UnixNanos::from(1),
+            None,
+            None,
+        );
+
+        if supported {
+            let (reports, _) = result.unwrap();
+            let (mut expected, _) = build_fill_reports_from_trades(
+                &[trade],
+                &ctx,
+                &test_instruments(),
+                FillReportScope::new(None, None),
+                UnixNanos::from(1),
+                None,
+                None,
+            )
+            .unwrap();
+            assert!(!reports.is_empty());
+            assert_eq!(reports.len(), expected.len());
+            // Report IDs are generated independently; all economic and routing fields must match.
+            for (actual, baseline) in reports.iter().zip(&mut expected) {
+                baseline.report_id = actual.report_id;
+            }
+            assert_eq!(
+                serde_json::to_value(reports).unwrap(),
+                serde_json::to_value(expected).unwrap()
+            );
+        } else {
+            assert!(result.is_err());
+        }
+        assert_eq!(serde_json::to_value(&instrument).unwrap(), original);
+    }
+
+    #[rstest]
+    #[case::malformed(None)]
+    #[case::missing_version(Some(serde_json::json!({"conditionId": TEST_CONDITION_ID})))]
+    #[case::null_version(Some(serde_json::json!({"conditionId": TEST_CONDITION_ID, "version": null})))]
+    fn test_legacy_gamma_protocol_rejects_unusable_evidence(
+        #[case] saved: Option<serde_json::Value>,
+    ) {
+        let raw = saved.map_or_else(|| "{".to_string(), |value| value.to_string());
+        let InstrumentAny::BinaryOption(mut binary) = test_instrument() else {
+            unreachable!()
+        };
+        let mut info = IndexMap::clone(binary.info.as_ref().unwrap());
+        info.shift_remove(MARKET_VERSION_KEY);
+        info.insert("gamma_market".into(), serde_json::json!(raw));
+        binary.info = Some(Params::new(info));
+        assert!(validate_cached_execution_market(&InstrumentAny::BinaryOption(binary)).is_err());
     }
 
     #[rstest]
@@ -3103,7 +3267,7 @@ mod tests {
                 Some(&cached),
                 None,
             ),
-            UnixNanos::from(123_000_000_000u64),
+            UnixNanos::from(123_000_000_000_u64),
         );
 
         if let Some(expected_error) = expected_error {
@@ -3132,7 +3296,7 @@ mod tests {
             "../../test_data/decimal_precision_position.json"
         ))
         .unwrap();
-        let ts = UnixNanos::from(123_456_789u64);
+        let ts = UnixNanos::from(123_456_789_u64);
         let account_id = AccountId::from("POLYMARKET-001");
         let report =
             build_position_report_from_reportable_position(&position, account_id, ts).unwrap();
@@ -3166,7 +3330,7 @@ mod tests {
         let report = build_position_report_from_reportable_position(
             &positions[position_index],
             AccountId::from("POLYMARKET-001"),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         )
         .expect("fixture position is reportable");
 
@@ -3184,7 +3348,7 @@ mod tests {
         let report = build_position_report_from_reportable_position(
             &position,
             AccountId::from("POLYMARKET-001"),
-            UnixNanos::from(1_000_000_000u64),
+            UnixNanos::from(1_000_000_000_u64),
         )
         .expect("fixture position is reportable");
 
@@ -3516,6 +3680,94 @@ mod tests {
         .expect_err("owned open order with contradictory outcome must fail");
 
         assert!(error.to_string().contains("outcome"));
+    }
+
+    #[rstest]
+    #[case("1.130000")]
+    #[case("0.250000")]
+    #[case("2.750001")]
+    fn mass_status_preserves_fractional_fills_after_order_replay(#[case] matched: &str) {
+        use nautilus_execution::reconciliation::generate_reconciliation_order_snapshot_events;
+        use nautilus_model::{
+            events::order::spec::OrderUpdatedSpec,
+            orders::{
+                builder::OrderTestBuilder,
+                stubs::{OrderFilledTestBuilder, TestOrderEventStubs},
+            },
+        };
+
+        let instrument = test_instrument();
+        let ctx = test_fill_context();
+        let venue_id = VenueOrderId::from("V-1");
+        let price = Price::from("0.50");
+        let quantity = Quantity::from("39");
+        let filled = Quantity::from(matched);
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .price(price)
+            .quantity(quantity)
+            .build();
+        order
+            .apply(TestOrderEventStubs::submitted(&order, ctx.account_id))
+            .unwrap();
+        // The adapter can attach the signed venue ID before the venue acknowledges it.
+        let updated = OrderUpdatedSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(instrument.id())
+            .client_order_id(order.client_order_id())
+            .account_id(ctx.account_id)
+            .venue_order_id(venue_id)
+            .quantity(quantity)
+            .price(price)
+            .build();
+        order.apply(OrderEventAny::Updated(updated)).unwrap();
+        order
+            .apply(TestOrderEventStubs::accepted(
+                &order,
+                ctx.account_id,
+                venue_id,
+            ))
+            .unwrap();
+        let fill = OrderFilledTestBuilder::new(&order, &instrument)
+            .last_px(price)
+            .last_qty(filled)
+            .liquidity_side(LiquiditySide::Maker)
+            .build();
+        order.apply(fill).unwrap();
+        let restored =
+            OrderAny::from_events(order.events().into_iter().cloned().collect()).unwrap();
+
+        let row = PolymarketOpenOrder {
+            id: venue_id.to_string(),
+            market: Ustr::from(TEST_CONDITION_ID),
+            asset_id: Ustr::from(TEST_TOKEN_ID),
+            original_size: quantity.as_decimal(),
+            price: price.as_decimal(),
+            size_matched: matched.parse().unwrap(),
+            ..unmapped_open_order()
+        };
+        let now = ctx.clock.get_time_ns();
+        let (mut reports, _) =
+            build_order_reports_from_orders(&[row], &test_instruments(), &ctx, None, now, None)
+                .unwrap();
+        assert_eq!(reports[0].filled_qty, filled);
+        cap_order_reports_to_confirmed_fills(&mut reports, &[], &ctx.settlement, [&restored], true)
+            .unwrap();
+        let report = &reports[0];
+        let events = generate_reconciliation_order_snapshot_events(
+            &restored,
+            report,
+            Some(&instrument),
+            now,
+        );
+        assert!(
+            events.is_empty(),
+            "filled_qty={}, events={events:?}",
+            report.filled_qty
+        );
+        assert_eq!(report.filled_qty, filled);
     }
 
     #[rstest]

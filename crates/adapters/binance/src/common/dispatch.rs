@@ -239,7 +239,11 @@ impl WsDispatchState {
                 continue;
             }
 
-            self.cleanup_terminal(cid);
+            self.cleanup_terminal_with_venue_order(
+                cid,
+                report.instrument_id,
+                report.venue_order_id,
+            );
             self.clear_terminal_status_pending(&cid);
         }
 
@@ -526,15 +530,134 @@ impl WsDispatchState {
         self.orders_terminal.lock().contains_key(cid)
     }
 
-    /// Removes active order context, retaining bounded replay evidence for tracked orders.
-    pub fn cleanup_terminal(&self, cid: ClientOrderId) {
-        if self.cancels_unresolved.contains(&cid) {
-            self.cancels_unresolved.remove(&cid);
+    pub(crate) fn register_cancels(&self, targets: impl Iterator<Item = CancelTarget> + Clone) {
+        // Publish first so concurrent terminal cleanup can see the registrations
+        let mut inserted = AHashSet::new();
+        self.cancels_unresolved.rcu(|pending| {
+            inserted.clear();
+
+            for target in targets.clone() {
+                if pending.insert(target.client_order_id) {
+                    inserted.insert(target.client_order_id);
+                }
+            }
+        });
+
+        for target in targets {
+            if inserted.contains(&target.client_order_id) && !self.is_cancel_terminal(&target) {
+                inserted.remove(&target.client_order_id);
+            }
         }
 
+        // The execution client registers commands synchronously, so these insertions cannot race another registration
+        if !inserted.is_empty() {
+            self.cancels_unresolved.rcu(|pending| {
+                for cid in &inserted {
+                    pending.remove(cid);
+                }
+            });
+        }
+    }
+
+    fn is_cancel_terminal(&self, target: &CancelTarget) -> bool {
+        !self.order_identities.contains_key(&target.client_order_id)
+            && self
+                .orders_terminal
+                .lock()
+                .get(&target.client_order_id)
+                .and_then(|order| order.cancel_binding)
+                .is_some_and(|binding| binding.matches(target))
+    }
+
+    /// Removes active order context, retaining bounded replay evidence for tracked orders.
+    pub fn cleanup_terminal(&self, cid: ClientOrderId) {
+        self.cleanup_terminal_bound(cid, None);
+    }
+
+    pub(crate) fn cleanup_terminal_with_venue_order(
+        &self,
+        cid: ClientOrderId,
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId,
+    ) {
+        let binding = TerminalCancelBinding {
+            instrument_id,
+            venue_order_id: Some(venue_order_id),
+            algo_order_ids: None,
+        };
+
+        self.cleanup_terminal_bound(cid, Some(binding));
+    }
+
+    pub(crate) fn cleanup_terminal_with_algo_order(
+        &self,
+        cid: ClientOrderId,
+        instrument_id: InstrumentId,
+        algo_order_id: VenueOrderId,
+        actual_order_id: Option<VenueOrderId>,
+    ) {
+        let current = actual_order_id
+            .or_else(|| {
+                self.algo_order_ids
+                    .get(&cid)
+                    .filter(|ids| ids.algo == algo_order_id)
+                    .map(|ids| ids.current)
+            })
+            .unwrap_or(algo_order_id);
+
+        let binding = TerminalCancelBinding {
+            instrument_id,
+            venue_order_id: None,
+            algo_order_ids: Some(AlgoOrderIds {
+                algo: algo_order_id,
+                current,
+            }),
+        };
+
+        self.cleanup_terminal_bound(cid, Some(binding));
+    }
+
+    pub(crate) fn record_terminal_algo_parent(
+        &self,
+        cid: ClientOrderId,
+        instrument_id: InstrumentId,
+        algo_order_id: VenueOrderId,
+        actual_order_id: VenueOrderId,
+    ) {
+        if let Some(binding) = self
+            .orders_terminal
+            .lock()
+            .get_mut(&cid)
+            .and_then(|order| order.cancel_binding.as_mut())
+            && binding.instrument_id == instrument_id
+            && binding.venue_order_id == Some(actual_order_id)
+            && binding.algo_order_ids.is_none()
+        {
+            binding.algo_order_ids = Some(AlgoOrderIds {
+                algo: algo_order_id,
+                current: actual_order_id,
+            });
+        }
+    }
+
+    fn cleanup_terminal_bound(&self, cid: ClientOrderId, binding: Option<TerminalCancelBinding>) {
         if let Entry::Occupied(entry) = self.order_identities.entry(cid) {
-            self.mark_terminal(cid);
+            let mut binding = binding.unwrap_or(TerminalCancelBinding {
+                instrument_id: entry.get().instrument_id,
+                venue_order_id: None,
+                algo_order_ids: None,
+            });
+
+            binding.algo_order_ids = binding
+                .algo_order_ids
+                .or_else(|| self.algo_order_ids.get(&cid).map(|ids| *ids));
+
+            self.mark_terminal_status(cid, Some(binding), None, None);
             entry.remove();
+        }
+
+        if self.cancels_unresolved.contains(&cid) {
+            self.cancels_unresolved.remove(&cid);
         }
 
         self.order_lists.remove(&cid);
@@ -547,7 +670,7 @@ impl WsDispatchState {
     }
 
     pub(crate) fn mark_terminal(&self, cid: ClientOrderId) {
-        self.mark_terminal_status(cid, None, None);
+        self.mark_terminal_status(cid, None, None, None);
     }
 
     pub(crate) fn mark_terminal_status_pending(
@@ -556,7 +679,7 @@ impl WsDispatchState {
         strategy_id: StrategyId,
         qty_pending: Option<Quantity>,
     ) {
-        self.mark_terminal_status(cid, Some(strategy_id), qty_pending);
+        self.mark_terminal_status(cid, None, Some(strategy_id), qty_pending);
     }
 
     pub(crate) fn has_terminal_qty_pending(&self, cid: &ClientOrderId) -> bool {
@@ -593,11 +716,16 @@ impl WsDispatchState {
     fn mark_terminal_status(
         &self,
         cid: ClientOrderId,
+        cancel_binding: Option<TerminalCancelBinding>,
         strategy_pending: Option<StrategyId>,
         qty_pending: Option<Quantity>,
     ) {
         let mut terminal = self.orders_terminal.lock();
-        if terminal.contains_key(&cid) {
+        if let Some(order) = terminal.get_mut(&cid) {
+            if cancel_binding.is_some() {
+                order.cancel_binding = cancel_binding;
+            }
+
             return;
         }
 
@@ -608,6 +736,7 @@ impl WsDispatchState {
         terminal.insert(
             cid,
             TerminalOrderState {
+                cancel_binding,
                 trade_ids,
                 strategy_pending,
                 qty_pending: strategy_pending.zip(qty_pending),
@@ -618,9 +747,46 @@ impl WsDispatchState {
 
 #[derive(Debug)]
 struct TerminalOrderState {
+    cancel_binding: Option<TerminalCancelBinding>,
     trade_ids: AHashSet<TradeId>,
     strategy_pending: Option<StrategyId>,
     qty_pending: Option<(StrategyId, Quantity)>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TerminalCancelBinding {
+    instrument_id: InstrumentId,
+    venue_order_id: Option<VenueOrderId>,
+    algo_order_ids: Option<AlgoOrderIds>,
+}
+
+impl TerminalCancelBinding {
+    fn matches(self, target: &CancelTarget) -> bool {
+        self.instrument_id == target.instrument_id
+            && target.venue_order_id.is_none_or(|venue_id| {
+                self.venue_order_id == Some(venue_id)
+                    || self
+                        .algo_order_ids
+                        .is_some_and(|ids| ids.algo == venue_id || ids.current == venue_id)
+            })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct CancelTarget {
+    pub(crate) client_order_id: ClientOrderId,
+    pub(crate) instrument_id: InstrumentId,
+    pub(crate) venue_order_id: Option<VenueOrderId>,
+}
+
+impl From<&OrderAny> for CancelTarget {
+    fn from(order: &OrderAny) -> Self {
+        Self {
+            client_order_id: order.client_order_id(),
+            instrument_id: order.instrument_id(),
+            venue_order_id: order.venue_order_id(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -690,6 +856,9 @@ pub fn ensure_accepted_emitted(
 
 #[cfg(test)]
 mod tests {
+    use std::{thread, time::Duration};
+
+    use nautilus_common::testing::wait_until;
     use nautilus_model::{
         enums::{OrderStatus, OrderType},
         events::order::spec::{OrderFilledSpec, OrderUpdatedSpec},
@@ -699,6 +868,105 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case::reused_venue("SOLUSDC.BINANCE", Some("671208"), false, true)]
+    #[case::reused_instrument("ADAUSDC.BINANCE", Some("930584"), false, true)]
+    #[case::client_id_only("SOLUSDC.BINANCE", None, false, false)]
+    #[case::active_identity("SOLUSDC.BINANCE", Some("930584"), true, true)]
+    fn test_cancel_registration_retains_reused_and_unknown_ids(
+        #[case] instrument: &str,
+        #[case] venue_id: Option<&str>,
+        #[case] active: bool,
+        #[case] unresolved: bool,
+    ) {
+        let state = WsDispatchState::default();
+        let reused = ClientOrderId::from("reused");
+        let closed = ClientOrderId::from("closed");
+        let unknown = ClientOrderId::from("unknown");
+        let instrument_id = InstrumentId::from("SOLUSDC.BINANCE");
+        let venue_order_id = VenueOrderId::from("930584");
+        let mut builder = OrderTestBuilder::new(OrderType::Limit);
+        builder
+            .instrument_id(instrument_id)
+            .quantity(Quantity::from("3.75"))
+            .price(Price::from("142.37"));
+
+        let order = builder.client_order_id(reused).build();
+        state.restore_order(&order, None, 2);
+        let identity = state.order_identities.get(&reused).unwrap().clone();
+        let order = builder.client_order_id(closed).build();
+        state.restore_order(&order, None, 2);
+        state.cleanup_terminal_with_venue_order(reused, instrument_id, venue_order_id);
+        state.cleanup_terminal_with_venue_order(closed, instrument_id, venue_order_id);
+        if active {
+            state.order_identities.insert(reused, identity);
+        }
+
+        let reused = CancelTarget {
+            client_order_id: reused,
+            instrument_id: InstrumentId::from(instrument),
+            venue_order_id: venue_id.map(VenueOrderId::from),
+        };
+
+        let closed = CancelTarget {
+            client_order_id: closed,
+            instrument_id,
+            venue_order_id: Some(venue_order_id),
+        };
+
+        let unknown = CancelTarget {
+            client_order_id: unknown,
+            instrument_id,
+            venue_order_id: None,
+        };
+
+        let replayed = CancelTarget {
+            client_order_id: reused.client_order_id,
+            ..closed
+        };
+
+        state.register_cancels([replayed, reused, closed, unknown].into_iter());
+        state.register_cancels(std::iter::once(replayed));
+
+        let mut expected = AHashSet::from_iter([unknown.client_order_id]);
+        expected.extend(unresolved.then_some(reused.client_order_id));
+        assert_eq!(**state.cancels_unresolved.load(), expected);
+    }
+
+    #[rstest]
+    #[case::publication_only(false)]
+    #[case::registration(true)]
+    fn test_terminal_cleanup_clears_cancel_published_during_removal(#[case] register: bool) {
+        let state = WsDispatchState::default();
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(ClientOrderId::from("cancel-in-terminal-window"))
+            .instrument_id(InstrumentId::from("AVAXUSDT.BINANCE"))
+            .quantity(Quantity::from("4.25"))
+            .build();
+        let cid = order.client_order_id();
+        let target = CancelTarget::from(&order);
+        state.restore_order(&order, None, 2);
+
+        thread::scope(|scope| {
+            let terminal = state.orders_terminal.lock();
+
+            scope.spawn(|| state.cleanup_terminal(cid));
+            let timeout = Duration::from_secs(2);
+            wait_until(|| state.order_identities.try_get(&cid).is_locked(), timeout);
+            if register {
+                scope.spawn(|| state.register_cancels(std::iter::once(target)));
+                wait_until(|| state.cancels_unresolved.contains(&cid), timeout);
+            } else {
+                // Isolate cleanup's ordering from the registration recheck
+                state.cancels_unresolved.insert(cid);
+            }
+
+            drop(terminal);
+        });
+
+        assert!(state.cancels_unresolved.is_empty());
+    }
 
     #[rstest]
     #[case::submitted(false)]
@@ -1095,7 +1363,11 @@ mod tests {
             UnixNanos::default(),
             None,
         );
+
+        let cancel = CancelTarget::from(&order);
+        state.register_cancels(std::iter::once(cancel));
         state.restore_terminal_fills(&IndexMap::from([(old_id, report.clone())]), &[]);
+        assert!(state.cancels_unresolved.contains(&order.client_order_id()));
         assert!(!state.is_terminal(&order.client_order_id()));
         assert!(
             state
@@ -1105,6 +1377,9 @@ mod tests {
         report.venue_order_id = current_id;
         state.restore_terminal_fills(&IndexMap::from([(current_id, report)]), &[]);
         assert!(state.is_terminal(&order.client_order_id()));
+        assert!(state.cancels_unresolved.is_empty());
+        state.register_cancels(std::iter::once(cancel));
+        assert!(state.cancels_unresolved.is_empty());
         assert!(
             !state
                 .order_identities

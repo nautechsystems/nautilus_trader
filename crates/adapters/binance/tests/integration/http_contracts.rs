@@ -74,7 +74,7 @@ async fn test_signed_query_assembly(
             0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22,
             0x04, 0x20,
         ];
-        der.extend_from_slice(&[0xABu8; 32]);
+        der.extend_from_slice(&[0xab_u8; 32]);
         STANDARD.encode(der)
     } else {
         "test-secret".to_string()
@@ -675,7 +675,7 @@ async fn test_algo_cancel_success_status_preserves_venue_error(
     #[values(-2011, -2013, -2015)] code: i64,
 ) {
     let app = Router::new().fallback(any(move || async move {
-        axum::Json(serde_json::json!({"algoId": 123456789_i64, "clientAlgoId": "algo-test", "code": code.to_string(), "msg": "cancel rejected"}))
+        axum::Json(serde_json::json!({"algoId": 123_456_789_i64, "clientAlgoId": "algo-test", "code": code.to_string(), "msg": "cancel rejected"}))
     }));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

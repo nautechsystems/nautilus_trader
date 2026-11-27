@@ -33,14 +33,14 @@ use common::fixed_hashed_msg;
 fn make_state() -> [Fp; WIDTH] {
     let mut state = [Fp::ZERO; WIDTH];
     for (i, slot) in state.iter_mut().enumerate() {
-        *slot = Fp::from_u64_reduce(0x9E37_79B9_7F4A_7C15u64.wrapping_mul(i as u64 + 1));
+        *slot = Fp::from_u64_reduce(0x9e37_79b9_7f4a_7c15_u64.wrapping_mul(i as u64 + 1));
     }
     state
 }
 
 fn make_inputs(len: usize) -> Vec<Fp> {
     (0..len)
-        .map(|i| Fp::from_u64_reduce(0xBB67_AE85_84CA_A73Bu64.wrapping_mul(i as u64 + 1)))
+        .map(|i| Fp::from_u64_reduce(0xbb67_ae85_84ca_a73b_u64.wrapping_mul(i as u64 + 1)))
         .collect()
 }
 
@@ -61,7 +61,7 @@ fn bench_permute(c: &mut Criterion) {
 fn bench_hash_no_pad(c: &mut Criterion) {
     let mut group = c.benchmark_group("Poseidon2::hash_no_pad");
 
-    for &len in &[1usize, RATE, 2 * RATE, 3 * RATE] {
+    for &len in &[1_usize, RATE, 2 * RATE, 3 * RATE] {
         let input = make_inputs(len);
         group.throughput(Throughput::Elements(len as u64));
         group.bench_function(format!("len={len}"), |b| {
@@ -74,7 +74,7 @@ fn bench_hash_no_pad(c: &mut Criterion) {
 fn bench_hash_to_quintic_extension(c: &mut Criterion) {
     let mut group = c.benchmark_group("Poseidon2::hash_to_quintic_extension");
 
-    for &len in &[5usize, 10, 16] {
+    for &len in &[5_usize, 10, 16] {
         let input = make_inputs(len);
         group.bench_function(format!("len={len}"), |b| {
             b.iter(|| hash_to_quintic_extension(black_box(&input)));

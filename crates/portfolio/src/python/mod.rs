@@ -502,8 +502,9 @@ impl PyPortfolio {
     }
 
     #[pyo3(name = "statistics")]
-    fn py_statistics(&self) -> PortfolioStatistics {
-        self.0.borrow().statistics()
+    fn py_statistics(&self) -> PyResult<PortfolioStatistics> {
+        let analyzer = self.0.borrow().try_analyzer().map_err(to_pyvalue_err)?;
+        Ok(analyzer.statistics())
     }
 
     /// Registers a portfolio statistic for inclusion in portfolio and backtest analysis.

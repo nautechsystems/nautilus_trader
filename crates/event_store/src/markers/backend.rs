@@ -501,7 +501,7 @@ mod tests {
             ts_event: UnixNanos::from(1),
             ts_init: UnixNanos::from(2),
             same_ts_ordinal: 0,
-            record_fingerprint: [0u8; 32],
+            record_fingerprint: [0_u8; 32],
         }
     }
 

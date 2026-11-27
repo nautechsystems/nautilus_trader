@@ -22,8 +22,10 @@
 //!
 //! Requires `COINAPI_API_KEY`. Connecting spends one REST credit on filtered symbol metadata, and
 //! each historical request spends credits per 100 returned records within `CREDIT_BUDGET`.
+//! Each historical request returns at most 60 records from the last hour. REST attempts start at
+//! least seven seconds apart on this client.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, num::NonZeroUsize};
 
 use nautilus_coinapi::{
     common::consts::COINAPI_CLIENT_ID,
@@ -51,14 +53,14 @@ const PRICE_PRECISION: u8 = 3;
 const BOOK_DEPTH: usize = 10;
 const BAR_SPEC: &str = "1-MINUTE-LAST-EXTERNAL";
 const CREDIT_BUDGET: u64 = 10;
+const HISTORY_LIMIT: NonZeroUsize = NonZeroUsize::new(60).unwrap();
+const MIN_REQUEST_INTERVAL_MS: u64 = 7_000;
 
 // A connection streams one book channel, so enable deltas or depth, not both
 const SUBSCRIBE_BOOK_DELTAS: bool = false;
 const SUBSCRIBE_BOOK_DEPTH: bool = false;
 const MANAGE_BOOK: bool = true;
 
-// An unbounded history request can spend the whole remaining budget and leave none for other
-// requests, so enable one request per run
 const REQUEST_INSTRUMENTS: bool = false;
 const REQUEST_BOOK_SNAPSHOT: bool = false;
 const REQUEST_QUOTES: bool = false;
@@ -88,6 +90,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }])
         .price_precisions(HashMap::from([(instrument_id, PRICE_PRECISION)]))
         .credit_budget(CREDIT_BUDGET)
+        .min_request_interval_ms(MIN_REQUEST_INTERVAL_MS)
         .build(); // Reads 'COINAPI_API_KEY' env var
 
     let client_factory = CoinApiDataClientFactory::new();
@@ -116,6 +119,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .request_quotes(REQUEST_QUOTES)
         .request_trades(REQUEST_TRADES)
         .request_bars(REQUEST_BARS)
+        .request_limit(HISTORY_LIMIT)
         .build()?;
 
     let tester = DataTester::new(tester_config);

@@ -58,6 +58,8 @@ use nautilus_execution::{
         latency::{LatencyModelHandle, StaticLatencyModel},
     },
 };
+#[cfg(feature = "defi")]
+use nautilus_model::enums::CurrencyType;
 use nautilus_model::{
     accounts::{Account, AccountAny, CashAccount, MarginAccount},
     data::{
@@ -89,7 +91,8 @@ use nautilus_model::{
     position::Position,
     stubs::TestDefault,
     types::{
-        AccountBalance, Currency, MarginBalance, Money, Price, Quantity, money::MONEY_RAW_MAX,
+        AccountBalance, Currency, MarginBalance, Money, Price, Quantity,
+        money::{MONEY_RAW_MAX, MoneyRaw},
         price::PRICE_UNDEF,
     },
 };
@@ -431,7 +434,8 @@ fn test_liquidation_closes_all_breached_currencies_in_one_pass(
     let _ = clock.borrow_mut().advance_time(UnixNanos::from(3), true);
     exchange
         .borrow_mut()
-        .process_liquidations(UnixNanos::from(3));
+        .process_liquidations(UnixNanos::from(3))
+        .unwrap();
 
     let mut liquidated = saving_handler
         .get_messages()
@@ -640,6 +644,122 @@ fn test_liquidation_bar_fallback_refreshes_between_checks(audusd_sim: CurrencyPa
     assert_eq!(actual, vec![false, true]);
 }
 
+#[rstest]
+#[case(-1, true)]
+#[case(0, true)]
+#[case(1, false)]
+fn test_liquidation_at_fixed_point_threshold(
+    audusd_sim: CurrencyPair,
+    #[case] equity_offset: i8,
+    #[case] liquidated: bool,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let (exchange, cache) = liquidation_fallback_exchange(&instrument, OrderSide::Buy, &clock);
+    let currency = Currency::USD();
+    let maintenance = Money::from_mantissa_exponent(1_000_000_000, 0, currency);
+    let total = Money::from_raw(maintenance.raw() + MoneyRaw::from(equity_offset), currency);
+    let balance = AccountBalance::new(total, Money::zero(currency), total);
+
+    let Some(AccountAny::Margin(mut account)) = cache
+        .borrow()
+        .account_for_venue_owned(&instrument.id().venue)
+    else {
+        panic!("expected margin account");
+    };
+
+    account.base.balances.insert(currency, balance);
+    account.update_margin(MarginBalance::new(
+        Money::zero(currency),
+        maintenance,
+        Some(instrument.id()),
+    ));
+    cache
+        .borrow_mut()
+        .update_account_owned(AccountAny::Margin(account))
+        .unwrap();
+    add_fx_quote(&exchange, &cache, instrument.id(), "1.00000", "1.00010");
+
+    let actual = run_liquidation_check(&exchange, &clock, UnixNanos::from(3));
+
+    assert_eq!(actual, liquidated);
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+#[case(16, true)]
+#[case(17, false)]
+#[case(18, false)]
+fn test_liquidation_checks_money_precision(
+    mut audusd_sim: CurrencyPair,
+    #[case] precision: u8,
+    #[case] supported: bool,
+    #[values("balance", "maintenance margin", "unrealized PnL")] field: &str,
+) {
+    let usd = Currency::USD();
+    let currency = Currency::new("USD", precision, 840, "US Dollar", CurrencyType::Fiat);
+    if field == "unrealized PnL" {
+        audusd_sim.quote_currency = currency;
+    }
+
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let (exchange, cache) = liquidation_fallback_exchange(&instrument, OrderSide::Buy, &clock);
+    let account = cache.borrow().account_for_venue_owned(&Venue::from("SIM"));
+
+    let Some(AccountAny::Margin(mut account)) = account else {
+        panic!("expected margin account");
+    };
+
+    let source = match field {
+        "balance" => {
+            let total = Money::from_decimal(1000.into(), currency).unwrap();
+            let balance = AccountBalance::new(total, Money::zero(currency), total);
+            account.base.balances.insert(usd, balance);
+            "balance for SIM-001 (USD)".to_string()
+        }
+        "maintenance margin" => {
+            // The margin's currency and the maintenance amount share a code, with distinct scales
+            account
+                .margins
+                .get_mut(&instrument.id())
+                .unwrap()
+                .maintenance = Money::from_decimal(10.into(), currency).unwrap();
+            format!("maintenance margin for {} (USD)", instrument.id())
+        }
+        "unrealized PnL" => {
+            format!(
+                "value for P-T-LIQUIDATION-FALLBACK ({}, USD)",
+                instrument.id()
+            )
+        }
+        _ => unreachable!(),
+    };
+
+    cache
+        .borrow_mut()
+        .update_account_owned(AccountAny::Margin(account))
+        .unwrap();
+    add_fx_quote(&exchange, &cache, instrument.id(), "0.99000", "0.99010");
+    let saver = register_order_event_saving_handler();
+    let ts = UnixNanos::from(3);
+    let _ = clock.borrow_mut().advance_time(ts, true);
+
+    let result = exchange.borrow_mut().process_liquidations(ts);
+    if supported {
+        result.unwrap();
+        assert_eq!(saver.get_messages().iter().filter(|event| matches!(event, OrderEventAny::Filled(fill) if fill.client_order_id.as_str().starts_with("LIQUIDATION-"))).count(), 1);
+    } else {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!(
+                "Cannot check liquidation {source}: Fixed-point precision {precision} exceeds maximum float precision 16"
+            ),
+        );
+        assert!(saver.get_messages().is_empty());
+    }
+}
+
 // Opens 100,000 AUD/USD at 1.00000 on `side` against 1,000 USD and 10 USD maintenance margin,
 // so the account is safe at 1.00000 and a 0.01000 adverse move takes equity to zero.
 fn liquidation_fallback_exchange(
@@ -721,7 +841,7 @@ fn run_liquidation_check(
 ) -> bool {
     let saving_handler = register_order_event_saving_handler();
     let _ = clock.borrow_mut().advance_time(ts_now, true);
-    exchange.borrow_mut().process_liquidations(ts_now);
+    exchange.borrow_mut().process_liquidations(ts_now).unwrap();
 
     saving_handler.get_messages().iter().any(|event| {
         matches!(
@@ -1613,9 +1733,11 @@ fn matching_option_contract(kind: OptionKind) -> InstrumentAny {
             .underlying(Ustr::from("AAPL"))
             .option_kind(kind)
             .strike_price(Price::from("150.00"))
-            .currency(Currency::USD())
+            .quote_currency(Currency::USD())
+            .settlement_currency(Currency::USD())
+            .strike_currency(Currency::USD())
             .activation_ns(UnixNanos::default())
-            .expiration_ns(UnixNanos::from(2_000_000_000_000_000_000u64))
+            .expiration_ns(UnixNanos::from(2_000_000_000_000_000_000_u64))
             .price_precision(2)
             .price_increment(Price::from("0.01"))
             .multiplier(Quantity::from(100))
@@ -1639,12 +1761,13 @@ fn matching_crypto_option(kind: OptionKind) -> InstrumentAny {
             .raw_symbol(Symbol::from(symbol))
             .underlying(Currency::from("BTC"))
             .quote_currency(Currency::from("USD"))
+            .strike_currency(Currency::from("USD"))
             .settlement_currency(Currency::from("BTC"))
             .is_inverse(false)
             .option_kind(kind)
             .strike_price(Price::from("50000.00"))
             .activation_ns(UnixNanos::default())
-            .expiration_ns(UnixNanos::from(2_000_000_000_000_000_000u64))
+            .expiration_ns(UnixNanos::from(2_000_000_000_000_000_000_u64))
             .price_precision(2)
             .size_precision(1)
             .price_increment(Price::from("0.01"))
@@ -5062,7 +5185,7 @@ fn add_fx_position_with_side(
         Some(Price::from(price)),
         Some(Quantity::from(quantity)),
         None,
-        Some(Money::new(0.0, instrument.quote_currency())),
+        Some(Money::zero(instrument.quote_currency())),
         Some(UnixNanos::from(1)),
         Some(AccountId::from("SIM-001")),
     );

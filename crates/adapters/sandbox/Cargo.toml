@@ -39,12 +39,7 @@ python = [
   "pyo3-stub-gen",
 ]
 high-precision = ["nautilus-model/high-precision"]
-example-databento = [
-  "dep:nautilus-databento",
-  "dep:nautilus-live",
-  "dep:dotenvy",
-  "nautilus-live/node",
-]
+example-databento = ["nautilus-databento/live", "nautilus-live/node"]
 
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
@@ -67,21 +62,20 @@ rust_decimal = { workspace = true }
 serde = { workspace = true }
 ustr = { workspace = true }
 
-nautilus-databento = { workspace = true, features = ["live"], optional = true }
-nautilus-live = { workspace = true, optional = true }
-
-dotenvy = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-data = { workspace = true }
+nautilus-databento = { workspace = true }
 nautilus-live = { workspace = true }
+nautilus-portfolio = { workspace = true }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
 ] }
 nautilus-trading = { workspace = true }
 
+dotenvy = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
 tokio = { workspace = true }

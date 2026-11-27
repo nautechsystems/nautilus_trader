@@ -165,8 +165,8 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
             "side": "B",
             "px": "98450.00",
             "sz": "0.5",
-            "time": 1703875200000u64,
-            "tid": 123456u64,
+            "time": 1_703_875_200_000_u64,
+            "tid": 123_456_u64,
             "hash": "0xabc123",
             "users": ["0xbuyer", "0xseller"]
         }]
@@ -215,8 +215,8 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                         "candle" => json!({
                                             "channel": "candle",
                                             "data": {
-                                                "t": 1703875200000u64,
-                                                "T": 1703875260000u64,
+                                                "t": 1_703_875_200_000_u64,
+                                                "T": 1_703_875_260_000_u64,
                                                 "s": "BTC",
                                                 "i": "1m",
                                                 "o": "98450.00",
@@ -237,7 +237,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                                                 "coin": "BTC",
                                                 "bid": "98450.00",
                                                 "ask": "98451.00",
-                                                "time": 1703875200000u64
+                                                "time": 1_703_875_200_000_u64
                                             }
                                         }),
                                         "allMids" => allmids_payload.clone(),

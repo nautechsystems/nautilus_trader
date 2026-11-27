@@ -62,7 +62,7 @@ impl ParquetDataCatalog {
                 let schema =
                     read_parquet_schema_from_object_store(self.object_store.clone(), &object_path)
                         .await?;
-                Ok::<HashMap<String, String>, anyhow::Error>(schema.metadata().clone())
+                Ok::<HashMap<String, String>, anyhow::Error>(schema.metadata().into())
             })?;
 
             let table_name = format!("{table_prefix}_{index}");

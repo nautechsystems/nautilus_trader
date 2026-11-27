@@ -853,8 +853,8 @@ mod tests {
 
     fn build_book_from_response(resp: &ClobBookResponse) -> OrderBook {
         let instrument_id = InstrumentId::from("TEST.POLYMARKET");
-        let price_precision = 2u8;
-        let size_precision = 2u8;
+        let price_precision = 2_u8;
+        let size_precision = 2_u8;
         let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
         for (i, level) in resp.bids.iter().enumerate() {

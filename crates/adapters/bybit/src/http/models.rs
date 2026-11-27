@@ -26,8 +26,8 @@ use crate::common::{
     enums::{
         BybitAccountType, BybitApiKeyType, BybitCancelType, BybitContractType, BybitCreateType,
         BybitExecType, BybitInnovationFlag, BybitInstrumentStatus, BybitMarginMode,
-        BybitMarginTrading, BybitOptionType, BybitOrderSide, BybitOrderStatus, BybitOrderType,
-        BybitPositionIdx, BybitPositionSide, BybitPositionStatus, BybitProductType,
+        BybitMarginTrading, BybitMarketUnit, BybitOptionType, BybitOrderSide, BybitOrderStatus,
+        BybitOrderType, BybitPositionIdx, BybitPositionSide, BybitPositionStatus, BybitProductType,
         BybitRepayStatus, BybitSmpType, BybitStopOrderType, BybitSymbolType, BybitTimeInForce,
         BybitTpSlMode, BybitTriggerDirection, BybitTriggerType, BybitUnifiedMarginStatus,
         BybitWithdrawStatus, BybitWithdrawType,
@@ -39,8 +39,8 @@ use crate::common::{
     },
     parse::{
         bool_or_int, deserialize_decimal_or_zero, deserialize_i32_or_string,
-        deserialize_optional_decimal_or_zero, deserialize_optional_symbol_type,
-        deserialize_string_to_u8, masked_secret, on_off_bool,
+        deserialize_optional_decimal_or_zero, deserialize_optional_market_unit,
+        deserialize_optional_symbol_type, deserialize_string_to_u8, masked_secret, on_off_bool,
     },
 };
 
@@ -897,6 +897,12 @@ pub struct BybitOrder {
     pub symbol: Ustr,
     pub price: String,
     pub qty: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_market_unit",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub market_unit: Option<BybitMarketUnit>,
     pub side: BybitOrderSide,
     pub is_leverage: String,
     #[serde(deserialize_with = "deserialize_i32_or_string")]
@@ -1641,9 +1647,10 @@ impl BybitAccountDetails {
     }
 
     #[getter]
+    #[pyo3(name = "api_key_masked")]
     #[must_use]
-    pub fn api_key(&self) -> &str {
-        self.api_key.expose_secret()
+    pub fn py_api_key_masked(&self) -> String {
+        nautilus_core::string::secret::mask_api_key(self.api_key.expose_secret())
     }
 
     #[getter]

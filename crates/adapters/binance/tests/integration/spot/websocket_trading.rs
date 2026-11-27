@@ -105,7 +105,7 @@ impl TestServerState {
 }
 
 fn create_sbe_header(block_length: u16, template_id: u16) -> [u8; 8] {
-    let mut header = [0u8; 8];
+    let mut header = [0_u8; 8];
     header[0..2].copy_from_slice(&block_length.to_le_bytes());
     header[2..4].copy_from_slice(&template_id.to_le_bytes());
     header[4..6].copy_from_slice(&SBE_SCHEMA_ID.to_le_bytes());
@@ -166,19 +166,19 @@ fn build_new_order_full_response(order_id: u64, client_order_id: &str, symbol: &
     buf.extend_from_slice(&SBE_SCHEMA_VERSION.to_le_bytes());
 
     // Fixed fields block - fill with zeros and set key fields
-    let mut block = vec![0u8; usize::from(block_length)];
+    let mut block = vec![0_u8; usize::from(block_length)];
 
     // priceExponent at offset 0 (i8)
-    block[0] = 0xFE; // -2
+    block[0] = 0xfe; // -2
 
     // qtyExponent at offset 1 (i8)
-    block[1] = 0xFD; // -3
+    block[1] = 0xfd; // -3
 
     // orderId at offset 2 (u64)
     block[2..10].copy_from_slice(&order_id.to_le_bytes());
 
     // orderListId at offset 10 (i64) - set to -1 for no list
-    block[10..18].copy_from_slice(&(-1i64).to_le_bytes());
+    block[10..18].copy_from_slice(&(-1_i64).to_le_bytes());
 
     // transactTime at offset 18 (i64)
     let now_us = std::time::SystemTime::now()
@@ -188,16 +188,16 @@ fn build_new_order_full_response(order_id: u64, client_order_id: &str, symbol: &
     block[18..26].copy_from_slice(&now_us.to_le_bytes());
 
     // price mantissa at offset 26 (i64)
-    block[26..34].copy_from_slice(&50000i64.to_le_bytes());
+    block[26..34].copy_from_slice(&50000_i64.to_le_bytes());
 
     // origQty mantissa at offset 34 (u64)
-    block[34..42].copy_from_slice(&1000u64.to_le_bytes());
+    block[34..42].copy_from_slice(&1000_u64.to_le_bytes());
 
     // executedQty mantissa at offset 42 (u64)
-    block[42..50].copy_from_slice(&0u64.to_le_bytes());
+    block[42..50].copy_from_slice(&0_u64.to_le_bytes());
 
     // cummulativeQuoteQty mantissa at offset 50 (u64)
-    block[50..58].copy_from_slice(&0u64.to_le_bytes());
+    block[50..58].copy_from_slice(&0_u64.to_le_bytes());
 
     // status at offset 58 (u8)
     block[58] = 0; // NEW
@@ -250,8 +250,8 @@ fn build_cancel_open_orders_response() -> Vec<u8> {
     let order_list = build_cancel_order_list_response();
     let mut buf = Vec::new();
     buf.extend_from_slice(&create_sbe_header(0, CANCEL_OPEN_ORDERS_TEMPLATE_ID));
-    buf.extend_from_slice(&0u16.to_le_bytes());
-    buf.extend_from_slice(&1u32.to_le_bytes());
+    buf.extend_from_slice(&0_u16.to_le_bytes());
+    buf.extend_from_slice(&1_u32.to_le_bytes());
     buf.extend_from_slice(&(order_list.len() as u16).to_le_bytes());
     buf.extend_from_slice(&order_list);
     buf
@@ -259,18 +259,18 @@ fn build_cancel_open_orders_response() -> Vec<u8> {
 
 fn build_cancel_order_list_response() -> Vec<u8> {
     const REPORT_BLOCK_LENGTH: usize = 135;
-    let orders = [(12345i64, "order-list-1"), (12346i64, "order-list-2")];
+    let orders = [(12345_i64, "order-list-1"), (12346_i64, "order-list-2")];
     let mut buf = Vec::new();
     buf.extend_from_slice(&create_sbe_header(21, CANCEL_ORDER_LIST_TEMPLATE_ID));
-    buf.extend_from_slice(&44i64.to_le_bytes());
+    buf.extend_from_slice(&44_i64.to_le_bytes());
     buf.push(1); // contingency_type (OCO)
     buf.push(2); // list_status_type (ALL_DONE)
     buf.push(2); // list_order_status (ALL_DONE)
-    buf.extend_from_slice(&1_734_300_000_000_000i64.to_le_bytes());
-    buf.push((-8i8) as u8);
-    buf.push((-8i8) as u8);
+    buf.extend_from_slice(&1_734_300_000_000_000_i64.to_le_bytes());
+    buf.push((-8_i8) as u8);
+    buf.push((-8_i8) as u8);
 
-    buf.extend_from_slice(&8u16.to_le_bytes());
+    buf.extend_from_slice(&8_u16.to_le_bytes());
     buf.extend_from_slice(&(orders.len() as u16).to_le_bytes());
     for (order_id, client_order_id) in orders {
         buf.extend_from_slice(&order_id.to_le_bytes());
@@ -283,12 +283,12 @@ fn build_cancel_order_list_response() -> Vec<u8> {
     for (order_id, orig_client_order_id) in orders {
         let report_start = buf.len();
         buf.extend_from_slice(&order_id.to_le_bytes());
-        buf.extend_from_slice(&44i64.to_le_bytes());
-        buf.extend_from_slice(&1_734_300_000_000_000i64.to_le_bytes());
-        buf.extend_from_slice(&100_000_000_000i64.to_le_bytes());
-        buf.extend_from_slice(&10_000_000i64.to_le_bytes());
-        buf.extend_from_slice(&0i64.to_le_bytes());
-        buf.extend_from_slice(&0i64.to_le_bytes());
+        buf.extend_from_slice(&44_i64.to_le_bytes());
+        buf.extend_from_slice(&1_734_300_000_000_000_i64.to_le_bytes());
+        buf.extend_from_slice(&100_000_000_000_i64.to_le_bytes());
+        buf.extend_from_slice(&10_000_000_i64.to_le_bytes());
+        buf.extend_from_slice(&0_i64.to_le_bytes());
+        buf.extend_from_slice(&0_i64.to_le_bytes());
         buf.push(3); // status (CANCELED)
         buf.push(0); // time_in_force (GTC)
         buf.push(1); // order_type (LIMIT)

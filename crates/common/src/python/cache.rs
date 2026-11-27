@@ -521,14 +521,14 @@ impl PyCache {
         self.0.borrow().book_update_count(&instrument_id)
     }
 
-    #[pyo3(name = "has_quote_ticks")]
-    fn py_has_quote_ticks(&self, instrument_id: InstrumentId) -> bool {
-        self.0.borrow().has_quote_ticks(&instrument_id)
+    #[pyo3(name = "has_quotes")]
+    fn py_has_quotes(&self, instrument_id: InstrumentId) -> bool {
+        self.0.borrow().has_quotes(&instrument_id)
     }
 
-    #[pyo3(name = "has_trade_ticks")]
-    fn py_has_trade_ticks(&self, instrument_id: InstrumentId) -> bool {
-        self.0.borrow().has_trade_ticks(&instrument_id)
+    #[pyo3(name = "has_trades")]
+    fn py_has_trades(&self, instrument_id: InstrumentId) -> bool {
+        self.0.borrow().has_trades(&instrument_id)
     }
 
     #[pyo3(name = "has_mark_prices")]
@@ -1895,8 +1895,8 @@ impl Cache {
     /// All stateful fields are reset to their initial value. Instruments,
     /// currencies, and synthetics are retained when `drop_instruments_on_reset`
     /// is `false` so that repeated backtest runs can reuse the same dataset. External order claims
-    /// and execution client account, route, and external client registrations are retained so
-    /// registered strategy and client routing remain configured across resets.
+    /// and execution client account, route, external client, and OMS registrations are retained
+    /// along with strategy OMS overrides.
     #[pyo3(name = "reset")]
     fn py_reset(&mut self) {
         self.reset();
@@ -1912,9 +1912,9 @@ impl Cache {
 
     /// Purges all closed orders from the cache that are older than `buffer_secs`.
     ///
-    ///
     /// Only orders that have been closed for at least this amount of time will be purged.
     /// A value of 0 means purge all closed orders regardless of when they were closed.
+    /// Applies the spawn order retention rule in `Self.purge_order`.
     ///
     /// When `purge_from_database` is true, also requests deletion from the backing database.
     ///
@@ -2024,7 +2024,10 @@ impl Cache {
 
     /// Purges the order with the `client_order_id` from the cache (if found).
     ///
-    /// For safety, an order is prevented from being purged if it's open.
+    /// Skips open orders with a warning. Purging an order retains its fills in cached positions.
+    ///
+    /// Retains a spawn order with fills while another order in the spawn has a nonterminal OTO
+    /// child that uses the spawn's filled quantity.
     ///
     /// When `purge_from_database` is true, also requests deletion from the backing database.
     ///
@@ -2045,7 +2048,8 @@ impl Cache {
 
     /// Purges the position with the `position_id` from the cache (if found).
     ///
-    /// For safety, a position is prevented from being purged if it's open.
+    /// Skips open positions with a warning. Clears `Self.position_id` lookups that point to the
+    /// purged position. Preserves pre-fill assignments when the position has yet to be created.
     ///
     /// When `purge_from_database` is true, also requests deletion from the backing database.
     ///
@@ -2179,9 +2183,10 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// Returns an error if the client order ID exists and `replace_existing` is false, a
-    /// replacement claims another order's venue order ID, or the backing reports a DeFi currency
-    /// integrity error.
+    /// Returns an error if:
+    /// - The client order ID exists and `replace_existing` is false.
+    /// - The order claims a venue order ID that belongs to another order.
+    /// - The backing reports a DeFi currency integrity error.
     #[pyo3(name = "add_order")]
     fn py_add_order(
         &mut self,
@@ -2559,15 +2564,15 @@ impl Cache {
     }
 
     /// Returns whether the cache contains quotes for the `instrument_id`.
-    #[pyo3(name = "has_quote_ticks")]
-    fn py_has_quote_ticks(&self, instrument_id: InstrumentId) -> bool {
-        self.has_quote_ticks(&instrument_id)
+    #[pyo3(name = "has_quotes")]
+    fn py_has_quotes(&self, instrument_id: InstrumentId) -> bool {
+        self.has_quotes(&instrument_id)
     }
 
     /// Returns whether the cache contains trades for the `instrument_id`.
-    #[pyo3(name = "has_trade_ticks")]
-    fn py_has_trade_ticks(&self, instrument_id: InstrumentId) -> bool {
-        self.has_trade_ticks(&instrument_id)
+    #[pyo3(name = "has_trades")]
+    fn py_has_trades(&self, instrument_id: InstrumentId) -> bool {
+        self.has_trades(&instrument_id)
     }
 
     /// Returns whether the cache contains mark price updates for the `instrument_id`.

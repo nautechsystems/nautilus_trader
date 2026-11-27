@@ -2512,7 +2512,7 @@ mod tests {
         let instrument_provider = create_test_instrument_provider();
         let instrument = equity_aapl();
         let instrument_id = instrument.id();
-        instrument_provider.insert_test_instrument(InstrumentAny::from(instrument), 265598, 1);
+        instrument_provider.insert_test_instrument(InstrumentAny::from(instrument), 265_598, 1);
         let account_id = AccountId::from("IB-001");
         let contract = Contract::default();
 

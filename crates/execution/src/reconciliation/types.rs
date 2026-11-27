@@ -130,4 +130,6 @@ pub struct ReconciliationResult {
     pub order_only_ids: IndexSet<VenueOrderId>,
     /// Fills that recover order state only because they precede the current position lifecycle.
     pub order_only_fill_keys: IndexSet<(AccountId, InstrumentId, TradeId)>,
+    /// Synthetic opening orders that replace a reported lifecycle, keyed by instrument.
+    pub lifecycle_replacements: IndexMap<InstrumentId, VenueOrderId>,
 }

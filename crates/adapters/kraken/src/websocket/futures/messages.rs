@@ -639,7 +639,7 @@ mod tests {
         assert_eq!(trade.side, KrakenOrderSide::Sell);
         assert_eq!(trade.qty, dec!(15000));
         assert_eq!(trade.price, dec!(34969.5));
-        assert_eq!(trade.seq, 653355);
+        assert_eq!(trade.seq, 653_355);
     }
 
     #[rstest]

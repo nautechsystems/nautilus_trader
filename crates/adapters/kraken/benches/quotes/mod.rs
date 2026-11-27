@@ -13,13 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::hint::black_box;
+use std::{hint::black_box, sync::LazyLock};
 
 use criterion::{BatchSize, Criterion, Throughput};
 
 use super::*;
 
 const MESSAGE_COUNT: usize = 128;
+static CLOCK: LazyLock<AtomicTime> = LazyLock::new(|| AtomicTime::new(false, UnixNanos::new(1)));
 
 #[derive(Debug)]
 struct QuoteStream {
@@ -29,8 +30,9 @@ struct QuoteStream {
     quotes_subscribed: Arc<AtomicSet<InstrumentId>>,
     deltas_subscribed: Arc<AtomicSet<InstrumentId>>,
     books: AHashMap<InstrumentId, OrderBook>,
+    book_sync: BookSyncTracker,
+    stream: BookStream,
     quotes: DashMap<InstrumentId, QuoteTick>,
-    sequence: Arc<AtomicU64>,
     clock: &'static AtomicTime,
 }
 
@@ -114,8 +116,13 @@ pub(crate) fn bench_quotes(c: &mut Criterion) {
         // Include wire conversion, book application, deduplication, dispatch, and draining
         group.bench_function(name, |b| {
             b.iter_batched_ref(
-                || messages.clone(),
-                |messages| black_box(stream.run(black_box(messages))),
+                || {
+                    let mut stream = QuoteStream::new(instrument.clone(), quotes, deltas);
+                    stream.handle(KrakenFuturesWsMessage::BookSnapshot(initial.clone()));
+                    stream.drain();
+                    (stream, messages.clone())
+                },
+                |(stream, messages)| black_box(stream.run(black_box(messages))),
                 BatchSize::SmallInput,
             );
         });
@@ -195,6 +202,7 @@ pub(crate) fn bench_snapshots(c: &mut Criterion) {
 
 impl QuoteStream {
     fn new(instrument: InstrumentAny, quotes: bool, deltas: bool) -> Self {
+        CLOCK.set_time(UnixNanos::new(1));
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         let instrument_id = instrument.id();
         let instruments = Arc::new(AtomicMap::new());
@@ -209,6 +217,9 @@ impl QuoteStream {
             deltas_subscribed.insert(instrument_id);
         }
 
+        let mut book_sync = BookSyncTracker::default();
+        book_sync.track(instrument_id, 0, Instant::now());
+
         Self {
             sender: sender.into(),
             receiver,
@@ -216,22 +227,24 @@ impl QuoteStream {
             quotes_subscribed,
             deltas_subscribed,
             books: AHashMap::new(),
+            book_sync,
+            stream: BookStream::new(0),
             quotes: DashMap::new(),
-            sequence: Arc::new(AtomicU64::new(0)),
-            clock: Box::leak(Box::new(AtomicTime::new(false, UnixNanos::new(1)))),
+            clock: &CLOCK,
         }
     }
 
     fn handle(&mut self, message: KrakenFuturesWsMessage) {
         KrakenFuturesDataClient::handle_ws_message(
             message,
+            Some(&self.stream),
             &self.sender,
             &self.instruments,
             &self.quotes_subscribed,
             &self.deltas_subscribed,
             &mut self.books,
             &self.quotes,
-            &self.sequence,
+            &mut self.book_sync,
             self.clock,
         );
     }

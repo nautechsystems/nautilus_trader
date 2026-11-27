@@ -2285,19 +2285,19 @@ impl PyLiveNodeBuilder {
         self.update_builder(|builder| builder.with_save_state(save_state))
     }
 
-    #[pyo3(name = "with_timeout_connection")]
-    fn py_with_timeout_connection(&self, timeout_secs: u64) -> PyResult<Self> {
-        self.update_builder(|builder| builder.with_timeout_connection(timeout_secs))
+    #[pyo3(name = "with_timeout_connection_secs")]
+    fn py_with_timeout_connection_secs(&self, timeout_secs: u64) -> PyResult<Self> {
+        self.update_builder(|builder| builder.with_timeout_connection_secs(timeout_secs))
     }
 
-    #[pyo3(name = "with_timeout_reconciliation")]
-    fn py_with_timeout_reconciliation(&self, timeout_secs: u64) -> PyResult<Self> {
-        self.update_builder(|builder| builder.with_timeout_reconciliation(timeout_secs))
+    #[pyo3(name = "with_timeout_reconciliation_secs")]
+    fn py_with_timeout_reconciliation_secs(&self, timeout_secs: u64) -> PyResult<Self> {
+        self.update_builder(|builder| builder.with_timeout_reconciliation_secs(timeout_secs))
     }
 
-    #[pyo3(name = "with_timeout_portfolio")]
-    fn py_with_timeout_portfolio(&self, timeout_secs: u64) -> PyResult<Self> {
-        self.update_builder(|builder| builder.with_timeout_portfolio(timeout_secs))
+    #[pyo3(name = "with_timeout_portfolio_secs")]
+    fn py_with_timeout_portfolio_secs(&self, timeout_secs: u64) -> PyResult<Self> {
+        self.update_builder(|builder| builder.with_timeout_portfolio_secs(timeout_secs))
     }
 
     #[pyo3(name = "with_timeout_disconnection_secs")]
@@ -2308,11 +2308,6 @@ impl PyLiveNodeBuilder {
     #[pyo3(name = "with_delay_post_stop_secs")]
     fn py_with_delay_post_stop_secs(&self, delay_secs: u64) -> PyResult<Self> {
         self.update_builder(|builder| builder.with_delay_post_stop_secs(delay_secs))
-    }
-
-    #[pyo3(name = "with_delay_shutdown_secs")]
-    fn py_with_delay_shutdown_secs(&self, delay_secs: u64) -> PyResult<Self> {
-        self.update_builder(|builder| builder.with_delay_shutdown_secs(delay_secs))
     }
 
     #[pyo3(name = "with_reconciliation")]
@@ -3189,17 +3184,15 @@ primary = KeyboardInterrupt("run failed")
             .unwrap()
             .py_with_reconciliation(false)
             .unwrap()
-            .py_with_timeout_connection(0)
+            .py_with_timeout_connection_secs(0)
             .unwrap()
-            .py_with_timeout_reconciliation(0)
+            .py_with_timeout_reconciliation_secs(0)
             .unwrap()
-            .py_with_timeout_portfolio(0)
+            .py_with_timeout_portfolio_secs(0)
             .unwrap()
             .py_with_timeout_disconnection_secs(0)
             .unwrap()
             .py_with_delay_post_stop_secs(0)
-            .unwrap()
-            .py_with_delay_shutdown_secs(0)
             .unwrap()
         })
     }
@@ -3883,8 +3876,8 @@ def add_data_client():
                 Price::from("0.9000"),
                 Price::from("1.0500"),
                 Quantity::from("1000"),
-                UnixNanos::from(1_700_000_000_000_000_000u64),
-                UnixNanos::from(1_700_000_000_000_000_001u64),
+                UnixNanos::from(1_700_000_000_000_000_000_u64),
+                UnixNanos::from(1_700_000_000_000_000_001_u64),
             )
         }
     }
@@ -3956,7 +3949,7 @@ def add_data_client():
                 vec![Self::make_bar(bar_type)],
                 None,
                 None,
-                UnixNanos::from(1_700_000_000_000_000_002u64),
+                UnixNanos::from(1_700_000_000_000_000_002_u64),
                 None,
             );
 
@@ -4319,7 +4312,7 @@ class ClaimsStrategy(Strategy):
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(1)
-            .with_timeout_connection(1)
+            .with_timeout_connection_secs(1)
             .build()
             .map(PyLiveNode::new)
             .unwrap();
@@ -4368,7 +4361,7 @@ class ClaimsStrategy(Strategy):
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
-            .with_timeout_connection(1)
+            .with_timeout_connection_secs(1)
             .build()
             .map(PyLiveNode::new)
             .unwrap();
@@ -4632,8 +4625,7 @@ class ClaimsStrategy(Strategy):
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
-            .with_delay_shutdown_secs(0)
-            .with_timeout_connection(0)
+            .with_timeout_connection_secs(0)
             .with_timeout_disconnection_secs(0)
             .build()
             .map(PyLiveNode::new)
@@ -4673,7 +4665,7 @@ class ClaimsStrategy(Strategy):
         let node = LiveNode::builder(TraderId::from("TEST-001"), Environment::Sandbox)
             .unwrap()
             .with_reconciliation(false)
-            .with_timeout_connection(1)
+            .with_timeout_connection_secs(1)
             .add_data_client_with_routing(
                 Some("IB".to_string()),
                 Box::new(VenueLessDataClientFactory),
@@ -4697,7 +4689,7 @@ class ClaimsStrategy(Strategy):
         let node = LiveNode::builder(TraderId::from("TEST-001"), Environment::Sandbox)
             .unwrap()
             .with_reconciliation(false)
-            .with_timeout_connection(1)
+            .with_timeout_connection_secs(1)
             .add_data_client_with_routing(
                 Some("IB".to_string()),
                 Box::new(VenueLessDataClientFactory),
@@ -4718,7 +4710,7 @@ class ClaimsStrategy(Strategy):
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(1)
-            .with_timeout_connection(1)
+            .with_timeout_connection_secs(1)
             .build()
             .map(PyLiveNode::new)
             .unwrap();
@@ -4777,7 +4769,7 @@ class ClaimsStrategy(Strategy):
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
-            .with_timeout_connection(1)
+            .with_timeout_connection_secs(1)
             .with_timeout_disconnection_secs(0)
             .add_data_client(
                 Some("TEST_DISCONNECT_FAILURE".to_string()),
@@ -4821,7 +4813,7 @@ class ClaimsStrategy(Strategy):
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
-            .with_timeout_connection(1)
+            .with_timeout_connection_secs(1)
             .build()
             .map(PyLiveNode::new)
             .unwrap();
@@ -4896,7 +4888,7 @@ class ClaimsStrategy(Strategy):
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
-            .with_timeout_connection(1)
+            .with_timeout_connection_secs(1)
             .build()
             .map(PyLiveNode::new)
             .unwrap();
@@ -4939,7 +4931,7 @@ class ClaimsStrategy(Strategy):
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
-            .with_timeout_connection(1)
+            .with_timeout_connection_secs(1)
             .build()
             .map(PyLiveNode::new)
             .unwrap();
@@ -4984,7 +4976,7 @@ class ClaimsStrategy(Strategy):
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
-            .with_timeout_connection(1)
+            .with_timeout_connection_secs(1)
             .build()
             .map(PyLiveNode::new)
             .unwrap();
@@ -5475,7 +5467,7 @@ class NoConfigActorAlgorithm(ActorAlgorithm):
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
-            .with_timeout_connection(1)
+            .with_timeout_connection_secs(1)
             .build()
             .map(PyLiveNode::new)
             .unwrap();
@@ -5531,7 +5523,7 @@ class NoConfigActorAlgorithm(ActorAlgorithm):
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
-            .with_timeout_connection(1)
+            .with_timeout_connection_secs(1)
             .build()
             .map(PyLiveNode::new)
             .unwrap();
@@ -5643,7 +5635,7 @@ class NoConfigActorAlgorithm(ActorAlgorithm):
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
-            .with_timeout_connection(1)
+            .with_timeout_connection_secs(1)
             .build()
             .map(PyLiveNode::new)
             .unwrap();
@@ -5749,7 +5741,7 @@ class NoConfigActorAlgorithm(ActorAlgorithm):
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
-            .with_timeout_connection(1)
+            .with_timeout_connection_secs(1)
             .build()
             .map(PyLiveNode::new)
             .unwrap();
@@ -5853,7 +5845,7 @@ class NoConfigActorAlgorithm(ActorAlgorithm):
             .unwrap()
             .with_reconciliation(false)
             .with_delay_post_stop_secs(0)
-            .with_timeout_connection(1)
+            .with_timeout_connection_secs(1)
             .add_data_client(
                 Some("TEST_DATA".to_string()),
                 Box::new(factory),

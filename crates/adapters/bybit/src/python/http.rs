@@ -96,10 +96,10 @@ impl BybitRawHttpClient {
     }
 
     #[getter]
-    #[pyo3(name = "api_key")]
+    #[pyo3(name = "api_key_masked")]
     #[must_use]
-    pub fn py_api_key(&self) -> Option<String> {
-        self.credential().map(|c| c.api_key().to_string())
+    pub fn py_api_key_masked(&self) -> Option<String> {
+        self.credential().map(|c| c.api_key_masked())
     }
 
     /// Returns the configured receive window in milliseconds.
@@ -238,13 +238,6 @@ impl BybitHttpClient {
     #[must_use]
     pub fn py_base_url(&self) -> &str {
         self.base_url()
-    }
-
-    #[getter]
-    #[pyo3(name = "api_key")]
-    #[must_use]
-    pub fn py_api_key(&self) -> Option<&str> {
-        self.credential().map(|c| c.api_key())
     }
 
     #[getter]
@@ -961,7 +954,7 @@ impl BybitHttpClient {
             let trades = client
                 .request_trades(product_type, instrument_id, limit)
                 .await
-                .map_err(to_pyvalue_err)?;
+                .map_err(|e| to_pyvalue_err(format_args!("{e:#}")))?;
 
             Python::attach(|py| {
                 let py_trades: PyResult<Vec<_>> = trades

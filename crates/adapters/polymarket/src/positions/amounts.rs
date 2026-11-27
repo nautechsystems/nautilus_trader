@@ -38,7 +38,7 @@ pub fn pusd_to_base_units(amount: Decimal) -> Result<U256> {
         )));
     }
 
-    let scale = Decimal::from(10u32.pow(PUSD_SCALE));
+    let scale = Decimal::from(10_u32.pow(PUSD_SCALE));
 
     let scaled = amount.checked_mul(scale).ok_or_else(|| {
         Error::bad_request(format!(
@@ -68,7 +68,7 @@ pub fn pusd_to_base_units(amount: Decimal) -> Result<U256> {
 pub fn base_units_to_pusd(base_units: U256) -> Result<Decimal> {
     let mut mantissa = base_units;
     let mut scale = PUSD_SCALE;
-    let ten = U256::from(10u8);
+    let ten = U256::from(10_u8);
     while scale > 0 && mantissa % ten == U256::ZERO {
         mantissa /= ten;
         scale -= 1;
@@ -95,10 +95,10 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[case(dec!(1), 1_000_000u64)]
-    #[case(dec!(1.5), 1_500_000u64)]
-    #[case(dec!(0.000001), 1u64)]
-    #[case(dec!(1.000000), 1_000_000u64)]
+    #[case(dec!(1), 1_000_000_u64)]
+    #[case(dec!(1.5), 1_500_000_u64)]
+    #[case(dec!(0.000001), 1_u64)]
+    #[case(dec!(1.000000), 1_000_000_u64)]
     fn test_pusd_to_base_units_exact(#[case] amount: Decimal, #[case] expected: u64) {
         assert_eq!(pusd_to_base_units(amount).unwrap(), U256::from(expected));
     }
@@ -125,7 +125,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(U256::from(1u128 << 96))]
+    #[case(U256::from(1_u128 << 96))]
     #[case(U256::from(u128::MAX))]
     #[case(U256::MAX)]
     fn test_base_units_to_pusd_rejects_overflow(#[case] amount: U256) {
@@ -134,13 +134,13 @@ mod tests {
 
     #[rstest]
     fn test_base_units_to_pusd_decimal_boundaries() {
-        let max = U256::from((1u128 << 96) - 1);
+        let max = U256::from((1_u128 << 96) - 1);
         assert_eq!(
             base_units_to_pusd(max).unwrap(),
             dec!(79228162514264337593543.950335)
         );
         assert_eq!(
-            base_units_to_pusd(max * U256::from(1_000_000u64)).unwrap(),
+            base_units_to_pusd(max * U256::from(1_000_000_u64)).unwrap(),
             Decimal::MAX
         );
         assert_eq!(base_units_to_pusd(U256::ZERO).unwrap(), Decimal::ZERO);

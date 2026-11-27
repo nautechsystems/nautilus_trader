@@ -22,10 +22,11 @@
 
 use std::sync::Arc;
 
+use nautilus_common::messages::ExecutionReport;
 use nautilus_core::{AtomicMap, UUID4, UnixNanos};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
-    enums::OrderStatus,
+    enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{
         OrderAccepted, OrderCanceled, OrderEventAny, OrderExpired, OrderTriggered, OrderUpdated,
     },
@@ -46,9 +47,17 @@ use crate::{
     websocket::spot_v2::{
         enums::KrakenExecType,
         messages::KrakenWsExecutionData,
-        parse::{parse_ws_fill_report, parse_ws_order_status_report},
+        parse::{RetainedOrderFields, parse_ws_fill_report, parse_ws_retained_order_status_report},
     },
 };
+
+/// What the dispatch keeps of a spot order this client does not track: the fields its frames
+/// stated, and whether one reported it triggered.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SpotOrderShape {
+    retained: RetainedOrderFields,
+    triggered: bool,
+}
 
 /// Dispatches a Kraken Spot v2 execution message.
 #[expect(clippy::too_many_arguments)]
@@ -80,6 +89,7 @@ pub fn execution(
     if is_terminal_exec_type(exec.exec_type) {
         state.forget_order_symbol(&exec.order_id);
         state.forget_order_client_id(&exec.order_id);
+        state.forget_spot_order_shape(&exec.order_id);
     }
 }
 
@@ -165,8 +175,31 @@ fn execution_inner(
 
     let identity = resolved_id.and_then(|cid| state.lookup_identity(&cid));
 
-    // Status update.
-    match parse_ws_order_status_report(exec, instrument, account_id, cached_qty, ts_init) {
+    if identity.is_none()
+        && shaped_execution(
+            exec,
+            resolved_id,
+            instrument,
+            cached_qty,
+            state,
+            emitter,
+            account_id,
+            ts_init,
+        )
+    {
+        return;
+    }
+
+    // Status update. A tracked order's frame can omit its type, which the client submitted.
+    match parse_ws_retained_order_status_report(
+        exec,
+        None,
+        identity.as_ref().map(|identity| identity.order_type),
+        instrument,
+        account_id,
+        cached_qty,
+        ts_init,
+    ) {
         Ok(mut report) => {
             if let Some(cid) = resolved_id {
                 report = report.with_client_order_id(cid);
@@ -223,6 +256,183 @@ fn execution_inner(
             }
             Err(e) => log::error!("Failed to parse fill report: {e}"),
         }
+    }
+}
+
+/// Reports a frame of an untracked order completed from the order's shape. Returns false when the
+/// order has no shape, leaving the frame to report only what it states.
+#[expect(clippy::too_many_arguments)]
+fn shaped_execution(
+    exec: &KrakenWsExecutionData,
+    resolved_id: Option<ClientOrderId>,
+    instrument: &InstrumentAny,
+    cached_qty: Option<Decimal>,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+) -> bool {
+    let Some(mut shape) = state
+        .spot_order_shape(&exec.order_id)
+        .or_else(|| seed_order_shape(exec, instrument, account_id, cached_qty, ts_init))
+    else {
+        return false;
+    };
+
+    let fill = if exec.exec_type == KrakenExecType::Trade {
+        match parse_ws_fill_report(exec, instrument, account_id, ts_init) {
+            Ok(mut fill) => {
+                if let Some(cid) = resolved_id {
+                    fill.client_order_id = Some(cid);
+                }
+
+                shape.retained.record_fill(&fill);
+                Some(fill)
+            }
+            Err(e) => {
+                log::error!("Failed to parse fill report: {e}");
+                return true;
+            }
+        }
+    } else {
+        None
+    };
+
+    shape.retained.merge(exec);
+    let status = match parse_ws_retained_order_status_report(
+        exec,
+        Some(&shape.retained),
+        None,
+        instrument,
+        account_id,
+        cached_qty,
+        ts_init,
+    ) {
+        Ok(mut report) => {
+            if let Some(cid) = resolved_id {
+                report = report.with_client_order_id(cid);
+            }
+            report.order_status = untracked_order_status(&report, &shape);
+            shape.triggered |= report.order_status == OrderStatus::Triggered;
+            report
+        }
+        Err(e) => {
+            log::error!("Failed to parse order status report: {e}");
+            return true;
+        }
+    };
+
+    route_shaped_report(exec, status, fill, shape, state, emitter);
+    true
+}
+
+fn route_shaped_report(
+    exec: &KrakenWsExecutionData,
+    status: OrderStatusReport,
+    fill: Option<FillReport>,
+    shape: SpotOrderShape,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+) {
+    let trade_id = fill.as_ref().map(|fill| fill.trade_id);
+    // Apply order terms before fills even when REST has already booked fills this stream missed
+    let report = ExecutionReport::OrderWithFills(Box::new(status), fill.into_iter().collect());
+    let route = || emitter.try_send_execution_report(report);
+    let result = match trade_id {
+        Some(trade_id) => state.route_trade(trade_id, route),
+        None => route().map(|()| true),
+    };
+
+    match result {
+        Ok(true) => state.store_spot_order_shape(&exec.order_id, shape),
+        Ok(false) => log::debug!("Skipping duplicate external spot fill: {trade_id:?}"),
+        Err(e) => log::warn!("{e}"),
+    }
+}
+
+/// Returns the shape of an untracked order from its `pending_new` frame or its open-orders
+/// snapshot entry, when the engine can build the order from it.
+fn seed_order_shape(
+    exec: &KrakenWsExecutionData,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    cached_qty: Option<Decimal>,
+    ts_init: UnixNanos,
+) -> Option<SpotOrderShape> {
+    // A snapshot entry states the whole order as `new`; an update's `new` frame states too little
+    // to build the order from
+    if !matches!(
+        exec.exec_type,
+        KrakenExecType::PendingNew | KrakenExecType::New
+    ) {
+        return None;
+    }
+    let mut shape = SpotOrderShape::default();
+    shape.retained.merge(exec);
+    let report = parse_ws_retained_order_status_report(
+        exec,
+        Some(&shape.retained),
+        None,
+        instrument,
+        account_id,
+        cached_qty,
+        ts_init,
+    )
+    .ok()?;
+    can_create_order(&report).then_some(shape)
+}
+
+/// Restates a Kraken status the engine cannot apply to an order it holds as external.
+fn untracked_order_status(report: &OrderStatusReport, shape: &SpotOrderShape) -> OrderStatus {
+    match report.order_status {
+        // `pending_new` is an order Kraken has validated, and the engine creates an external
+        // order only from an accepted or later status.
+        OrderStatus::Submitted => OrderStatus::Accepted,
+        // A triggered order's limit reaching the book reports `new`; once filled, the engine holds
+        // the order partially filled, which has no triggered transition.
+        OrderStatus::Accepted if shape.triggered && report.filled_qty.is_zero() => {
+            OrderStatus::Triggered
+        }
+        // A trade can state `partially_filled` for the fill that completes the order
+        OrderStatus::PartiallyFilled if report.filled_qty >= report.quantity => OrderStatus::Filled,
+        OrderStatus::Filled if report.filled_qty < report.quantity => OrderStatus::PartiallyFilled,
+        status => status,
+    }
+}
+
+/// Returns whether the engine can build an external order from `report`, by the fields each order
+/// type's constructor requires.
+fn can_create_order(report: &OrderStatusReport) -> bool {
+    let Some(side) = report.order_side else {
+        return false;
+    };
+
+    if !report.quantity.is_positive() || report.display_qty.is_some_and(|qty| qty > report.quantity)
+    {
+        return false;
+    }
+
+    if report.time_in_force == TimeInForce::Gtd
+        && (report.order_type == OrderType::Market || report.expire_time.unwrap_or_default() == 0)
+    {
+        return false;
+    }
+
+    let has_trigger = report.trigger_price.is_some() && report.trigger_type.is_some();
+    match report.order_type {
+        OrderType::Market => true,
+        OrderType::Limit => report.price.is_some(),
+        OrderType::StopMarket | OrderType::MarketIfTouched => has_trigger,
+        OrderType::StopLimit => report.price.is_some() && has_trigger,
+        OrderType::LimitIfTouched => {
+            has_trigger
+                && match (report.price, report.trigger_price, side) {
+                    (Some(price), Some(trigger), OrderSide::Buy) => trigger <= price,
+                    (Some(price), Some(trigger), OrderSide::Sell) => trigger >= price,
+                    _ => false,
+                }
+        }
+        _ => false,
     }
 }
 
@@ -294,6 +504,11 @@ fn status_tracked(
             emitter.send_order_event(OrderEventAny::Accepted(accepted));
         }
         OrderStatus::Triggered => {
+            // A reconnect's open-orders snapshot restates a triggered order
+            if !state.insert_triggered(client_order_id) {
+                return;
+            }
+
             // Stop / take-profit transition. Synthesize Accepted first if the
             // venue compressed placement and trigger into one message.
             ensure_accepted_emitted(
@@ -450,9 +665,122 @@ pub fn is_terminal_exec_type(exec_type: KrakenExecType) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::{
+        enums::TriggerType,
+        identifiers::{InstrumentId, VenueOrderId},
+        types::Price,
+    };
     use rstest::rstest;
 
     use super::*;
+
+    /// A buy of 1 in `order_type`, GTC and accepted, with the given limit and `LastPrice` trigger.
+    fn report(
+        order_type: OrderType,
+        price: Option<&str>,
+        trigger: Option<&str>,
+    ) -> OrderStatusReport {
+        let mut report = OrderStatusReport::new(
+            AccountId::from("KRAKEN-001"),
+            InstrumentId::from("BTC/USDT.KRAKEN"),
+            None,
+            VenueOrderId::from("V-1"),
+            Some(OrderSide::Buy),
+            order_type,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            Quantity::from("1"),
+            Quantity::from("0"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+        report.price = price.map(Price::from);
+        report.trigger_price = trigger.map(Price::from);
+        report.trigger_type = trigger.map(|_| TriggerType::LastPrice);
+        report
+    }
+
+    /// The engine builds an external order only from a report carrying what its type's constructor
+    /// requires, so a report lacking it never carries the order's fills.
+    #[rstest]
+    #[case::market(report(OrderType::Market, None, None), true)]
+    #[case::limit(report(OrderType::Limit, Some("100"), None), true)]
+    #[case::limit_without_price(report(OrderType::Limit, None, None), false)]
+    #[case::stop_market(report(OrderType::StopMarket, None, Some("90")), true)]
+    #[case::stop_market_without_trigger(report(OrderType::StopMarket, None, None), false)]
+    #[case::market_if_touched(report(OrderType::MarketIfTouched, None, Some("110")), true)]
+    #[case::market_if_touched_without_trigger(
+        report(OrderType::MarketIfTouched, None, None),
+        false
+    )]
+    #[case::stop_limit(report(OrderType::StopLimit, Some("100"), Some("90")), true)]
+    #[case::stop_limit_without_price(report(OrderType::StopLimit, None, Some("90")), false)]
+    #[case::stop_limit_without_trigger(report(OrderType::StopLimit, Some("100"), None), false)]
+    #[case::trigger_without_type(
+        OrderStatusReport { trigger_type: None, ..report(OrderType::StopMarket, None, Some("90")) },
+        false
+    )]
+    #[case::buy_limit_if_touched(report(OrderType::LimitIfTouched, Some("100"), Some("90")), true)]
+    #[case::buy_limit_if_touched_trigger_above_limit(
+        report(OrderType::LimitIfTouched, Some("100"), Some("110")),
+        false
+    )]
+    #[case::sell_limit_if_touched(
+        OrderStatusReport {
+            order_side: Some(OrderSide::Sell),
+            ..report(OrderType::LimitIfTouched, Some("100"), Some("110"))
+        },
+        true
+    )]
+    #[case::sell_limit_if_touched_trigger_below_limit(
+        OrderStatusReport {
+            order_side: Some(OrderSide::Sell),
+            ..report(OrderType::LimitIfTouched, Some("100"), Some("90"))
+        },
+        false
+    )]
+    #[case::limit_if_touched_without_trigger(
+        report(OrderType::LimitIfTouched, Some("100"), None),
+        false
+    )]
+    #[case::trailing_stop_market(report(OrderType::TrailingStopMarket, None, Some("90")), false)]
+    #[case::trailing_stop_limit(
+        report(OrderType::TrailingStopLimit, Some("100"), Some("90")),
+        false
+    )]
+    #[case::no_side(
+        OrderStatusReport { order_side: None, ..report(OrderType::Market, None, None) },
+        false
+    )]
+    #[case::zero_quantity(
+        OrderStatusReport { quantity: Quantity::from("0"), ..report(OrderType::Market, None, None) },
+        false
+    )]
+    #[case::gtd_market(
+        OrderStatusReport {
+            time_in_force: TimeInForce::Gtd,
+            expire_time: Some(UnixNanos::from(1)),
+            ..report(OrderType::Market, None, None)
+        },
+        false
+    )]
+    #[case::gtd_limit_without_expiry(
+        OrderStatusReport { time_in_force: TimeInForce::Gtd, ..report(OrderType::Limit, Some("100"), None) },
+        false
+    )]
+    #[case::gtd_limit(
+        OrderStatusReport {
+            time_in_force: TimeInForce::Gtd,
+            expire_time: Some(UnixNanos::from(1)),
+            ..report(OrderType::Limit, Some("100"), None)
+        },
+        true
+    )]
+    fn test_can_create_order(#[case] report: OrderStatusReport, #[case] expected: bool) {
+        assert_eq!(can_create_order(&report), expected);
+    }
 
     #[rstest]
     #[case::filled(KrakenExecType::Filled, true)]

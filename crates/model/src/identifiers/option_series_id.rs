@@ -427,7 +427,7 @@ mod tests {
             Venue::new("DERIBIT"),
             Ustr::from("BTC"),
             Ustr::from("BTC"),
-            UnixNanos::from(1_700_000_000_000_000_000u64),
+            UnixNanos::from(1_700_000_000_000_000_000_u64),
         )
     }
 
@@ -436,7 +436,7 @@ mod tests {
         let venue = Venue::new("DERIBIT");
         let underlying = Ustr::from("BTC");
         let settlement = Ustr::from("BTC");
-        let expiration_ns = UnixNanos::from(1_700_000_000_000_000_000u64);
+        let expiration_ns = UnixNanos::from(1_700_000_000_000_000_000_u64);
 
         let id = OptionSeriesId::new_derived(venue, underlying, settlement, expiration_ns);
 
@@ -476,7 +476,7 @@ mod tests {
         assert_eq!(id.settlement_currency, Ustr::from("BTC"));
         assert_eq!(
             id.expiration_ns,
-            UnixNanos::from(1_700_000_000_000_000_000u64)
+            UnixNanos::from(1_700_000_000_000_000_000_u64)
         );
     }
 
@@ -487,7 +487,7 @@ mod tests {
         assert_eq!(id.underlying, Ustr::from("BTC"));
         assert_eq!(
             id.expiration_ns,
-            UnixNanos::from(1_700_000_000_000_000_000u64)
+            UnixNanos::from(1_700_000_000_000_000_000_u64)
         );
     }
 
@@ -499,7 +499,7 @@ mod tests {
         // Date parses as midnight UTC (1699920000 seconds)
         assert_eq!(
             id.expiration_ns,
-            UnixNanos::from(1_699_920_000_000_000_000u64)
+            UnixNanos::from(1_699_920_000_000_000_000_u64)
         );
     }
 
@@ -571,7 +571,7 @@ mod tests {
             Venue::new("DERIBIT"),
             Ustr::from("ETH"),
             Ustr::from("ETH"),
-            UnixNanos::from(1_700_000_000_000_000_000u64),
+            UnixNanos::from(1_700_000_000_000_000_000_u64),
         );
         assert_ne!(id1, id2);
     }
@@ -583,7 +583,7 @@ mod tests {
             Venue::new("DERIBIT"),
             Ustr::from("ETH"),
             Ustr::from("ETH"),
-            UnixNanos::from(1_700_000_000_000_000_000u64),
+            UnixNanos::from(1_700_000_000_000_000_000_u64),
         );
 
         let mut set = HashSet::new();
@@ -621,7 +621,7 @@ mod tests {
         assert_eq!(id.settlement_currency, Ustr::from("BTC"));
         assert_eq!(
             id.expiration_ns,
-            UnixNanos::from(1_743_120_000_000_000_000u64)
+            UnixNanos::from(1_743_120_000_000_000_000_u64)
         );
     }
 
@@ -679,7 +679,7 @@ mod tests {
         assert_eq!(id.settlement_currency, Ustr::from("USDC"));
         assert_eq!(
             id.expiration_ns,
-            UnixNanos::from(1_673_596_800_000_000_000u64)
+            UnixNanos::from(1_673_596_800_000_000_000_u64)
         );
     }
 
@@ -689,7 +689,7 @@ mod tests {
             "DERIBIT",
             "ETH",
             "USDC",
-            UnixNanos::from(1_700_000_000_000_000_000u64),
+            UnixNanos::from(1_700_000_000_000_000_000_u64),
             None,
         )
         .unwrap();
@@ -699,7 +699,7 @@ mod tests {
         assert_eq!(id.settlement_currency, Ustr::from("USDC"));
         assert_eq!(
             id.expiration_ns,
-            UnixNanos::from(1_700_000_000_000_000_000u64)
+            UnixNanos::from(1_700_000_000_000_000_000_u64)
         );
     }
 
@@ -709,7 +709,7 @@ mod tests {
             "",
             "ETH",
             "USDC",
-            UnixNanos::from(1_700_000_000_000_000_000u64),
+            UnixNanos::from(1_700_000_000_000_000_000_u64),
             None,
         )
         .unwrap_err();
@@ -738,7 +738,7 @@ mod tests {
             "DÉRIBIT",
             "ETH",
             "USDC",
-            UnixNanos::from(1_700_000_000_000_000_000u64),
+            UnixNanos::from(1_700_000_000_000_000_000_u64),
             None,
         )
         .unwrap_err();
@@ -761,7 +761,7 @@ mod tests {
             "DERIBIT",
             "",
             "",
-            UnixNanos::from(1_700_000_000_000_000_000u64),
+            UnixNanos::from(1_700_000_000_000_000_000_u64),
             None,
         )
         .unwrap_err();
@@ -819,7 +819,7 @@ mod tests {
             Venue::from("DERIBIT"),
             Ustr::from("BTC"),
             Ustr::from(settlement),
-            UnixNanos::from(1_700_000_000_123_456_789u64),
+            UnixNanos::from(1_700_000_000_123_456_789_u64),
             instrument,
         );
         let display = id.to_string();
@@ -838,7 +838,7 @@ mod tests {
             Venue::from("XCME"),
             Ustr::from("ES"),
             Ustr::from("USD"),
-            UnixNanos::from(17u64),
+            UnixNanos::from(17_u64),
             InstrumentId::from("ESH6.XCME"),
         );
 

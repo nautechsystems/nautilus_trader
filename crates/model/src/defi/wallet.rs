@@ -299,7 +299,8 @@ mod tests {
             "NU".to_string(),
             18,
         );
-        let amount = U256::from(10342u64) * U256::from(10u64).pow(U256::from(18u64));
+
+        let amount = U256::from(10342_u64) * U256::from(10_u64).pow(U256::from(18_u64));
         let balance = TokenBalance::new(amount, token);
 
         let quantity = balance.as_quantity().unwrap();
@@ -374,7 +375,7 @@ mod tests {
 
     #[rstest]
     fn test_token_balance_set_amount_usd(weth: Token) {
-        let amount = U256::from(1u64) * U256::from(10u64).pow(U256::from(18u64));
+        let amount = U256::from(1_u64) * U256::from(10_u64).pow(U256::from(18_u64));
         let mut balance = TokenBalance::new(amount, weth);
 
         assert!(balance.amount_usd.is_none());
@@ -426,8 +427,8 @@ mod tests {
     fn test_wallet_balance_add_token_balance(usdc: Token, weth: Token) {
         let mut wallet = WalletBalance::new(HashSet::new());
 
-        let usdc_balance = TokenBalance::new(U256::from(100_000_000u64), usdc); // 100 USDC
-        let weth_balance = TokenBalance::new(U256::from(10u64).pow(U256::from(18u64)), weth); // 1 WETH
+        let usdc_balance = TokenBalance::new(U256::from(100_000_000_u64), usdc); // 100 USDC
+        let weth_balance = TokenBalance::new(U256::from(10_u64).pow(U256::from(18_u64)), weth); // 1 WETH
 
         wallet.add_token_balance(usdc_balance);
         wallet.add_token_balance(weth_balance);

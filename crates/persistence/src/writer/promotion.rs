@@ -43,7 +43,9 @@ use crate::{
         },
         storage::StorageBackend,
     },
+    errors::CatalogOverlapError,
     writer::{
+        feather::FEATHER_EXTENSION,
         run::{FeatherSessionSource, RunStatus},
         traits::StreamingSink,
     },
@@ -54,9 +56,18 @@ pub(crate) fn list_session_feather_files(
     environment: Environment,
     instance_id: &str,
 ) -> anyhow::Result<Vec<String>> {
+    list_session_files(storage, environment, instance_id, FEATHER_EXTENSION)
+}
+
+pub(crate) fn list_session_files(
+    storage: &StorageBackend,
+    environment: Environment,
+    instance_id: &str,
+    extension: &str,
+) -> anyhow::Result<Vec<String>> {
     let run_directory = format!("{}/{instance_id}", environment_directory(environment));
-    let mut files =
-        block_on_nautilus_with(|| storage.list_files(&run_directory, Some(".feather")))?;
+    let suffix = format!(".{extension}");
+    let mut files = block_on_nautilus_with(|| storage.list_files(&run_directory, Some(&suffix)))?;
     files.sort();
     Ok(files)
 }
@@ -211,9 +222,11 @@ where
 
         let pending_result = self.take_pending_error();
 
-        background_result?;
-        promotion_result?;
-        pending_result
+        join_results([
+            background_result.map(drop),
+            promotion_result,
+            pending_result,
+        ])
     }
 
     fn close(&mut self) -> anyhow::Result<()> {
@@ -231,10 +244,24 @@ where
             Ok(())
         };
 
-        background_result?;
-        promotion_result?;
-        pending_result
+        join_results([
+            background_result.map(drop),
+            promotion_result,
+            pending_result,
+        ])
     }
+}
+
+// Each result can name different staged files, so every error reaches the caller, and a lone
+// error keeps its type.
+pub(crate) fn join_results(
+    results: impl IntoIterator<Item = anyhow::Result<()>>,
+) -> anyhow::Result<()> {
+    results
+        .into_iter()
+        .filter_map(Result::err)
+        .reduce(|joined, e| anyhow::anyhow!("{joined:#}; {e:#}"))
+        .map_or(Ok(()), Err)
 }
 
 pub(crate) trait PromotionBackend: Send + 'static {
@@ -251,6 +278,10 @@ pub(crate) trait PromotionBackend: Send + 'static {
     ) -> anyhow::Result<Option<FeatherConversionSummary>>;
 
     fn delete_file(&mut self, source: &Self::Source, file: &str) -> anyhow::Result<()>;
+
+    /// Renames a staged file out of the Feather listing so later promotions skip it, and
+    /// returns its new path.
+    fn set_aside_file(&mut self, source: &Self::Source, file: &str) -> anyhow::Result<String>;
 }
 
 pub(crate) struct PromotionScope {
@@ -345,16 +376,14 @@ where
         self
     }
 
-    pub(crate) fn execute(self) -> PromotionResult {
-        let files = self.files.clone();
-        let schedule = self.schedule.clone();
-
-        let result = match panic::catch_unwind(AssertUnwindSafe(|| self.execute_inner())) {
+    pub(crate) fn execute(mut self) -> PromotionResult {
+        let mut result = match panic::catch_unwind(AssertUnwindSafe(|| self.execute_inner())) {
             Ok(result) => result,
             Err(payload) => PromotionResult {
-                files,
+                files: std::mem::take(&mut self.files),
                 committed_paths: Vec::new(),
                 deleted_paths: Vec::new(),
+                refused_paths: Vec::new(),
                 partial_converted: Vec::new(),
                 run_state_recorded: false,
                 converted: Err(anyhow::anyhow!(
@@ -365,7 +394,29 @@ where
             },
         };
 
-        if let Some(schedule) = schedule {
+        if !result.run_state_recorded
+            && let Err(conversion_error) = &mut result.converted
+        {
+            let message = format!("{conversion_error:#}");
+
+            match self.backend.record_run_state(
+                &self.source,
+                &self.staging_uri,
+                RunStatus::Failed,
+                false,
+                Some(&message),
+            ) {
+                Ok(()) => result.run_state_recorded = true,
+                Err(e) => {
+                    *conversion_error = anyhow::anyhow!(
+                        "{message}; {} failed to record failed run state: {e}",
+                        B::NAME,
+                    );
+                }
+            }
+        }
+
+        if let Some(schedule) = self.schedule {
             schedule
                 .lock()
                 .expect("promotion schedule lock poisoned")
@@ -383,10 +434,11 @@ where
         clippy::too_many_lines,
         reason = "the promotion loop keeps conversion, promoted-record fallback, and deletion accounting together"
     )]
-    fn execute_inner(mut self) -> PromotionResult {
+    fn execute_inner(&mut self) -> PromotionResult {
         let mut converted = Vec::new();
         let mut committed_paths = Vec::new();
         let mut deleted_paths = Vec::new();
+        let mut refused_paths = Vec::new();
         let mut errors = Vec::new();
         let mut promoted_recorded = false;
         let mut record_error = None;
@@ -469,20 +521,38 @@ where
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    let e = e.context(format!(
-                        "{} promotion failed for Feather file '{file}'",
-                        B::NAME,
-                    ));
-                    errors.push(format!("{e:#}"));
+                    let mut context =
+                        format!("{} promotion failed for Feather file '{file}'", B::NAME);
+
+                    // Retrying a file that overlaps the catalog cannot succeed until the catalog
+                    // changes, so it leaves the listing for the user to resolve.
+                    if e.downcast_ref::<CatalogOverlapError>().is_some() {
+                        match self.backend.set_aside_file(&self.source, file) {
+                            Ok(refused) => {
+                                refused_paths.push(file.clone());
+                                context = format!("{context}, set aside as '{refused}'");
+                            }
+                            Err(e) => errors.push(format!(
+                                "{:#}",
+                                e.context(format!(
+                                    "{} failed to set aside Feather file '{file}'",
+                                    B::NAME,
+                                )),
+                            )),
+                        }
+                    }
+
+                    errors.push(format!("{:#}", e.context(context)));
                 }
             }
         }
 
         if let Some(e) = record_error {
             return PromotionResult {
-                files: self.files,
+                files: std::mem::take(&mut self.files),
                 committed_paths,
                 deleted_paths,
+                refused_paths,
                 partial_converted: converted,
                 run_state_recorded: false,
                 converted: Err(
@@ -512,17 +582,19 @@ where
             };
 
             return PromotionResult {
-                files: self.files,
+                files: std::mem::take(&mut self.files),
                 committed_paths,
                 deleted_paths,
+                refused_paths,
                 partial_converted: converted,
                 run_state_recorded,
                 converted: Err(anyhow::anyhow!(errors.join("; "))),
             };
         }
 
-        if !converted.is_empty()
-            && !B::RECORDS_PROMOTED_ATOMICALLY
+        let record_status = !converted.is_empty() && !B::RECORDS_PROMOTED_ATOMICALLY;
+
+        if record_status
             && let Err(e) = self.backend.record_run_state(
                 &self.source,
                 &self.staging_uri,
@@ -532,9 +604,10 @@ where
             )
         {
             return PromotionResult {
-                files: self.files,
+                files: std::mem::take(&mut self.files),
                 committed_paths,
                 deleted_paths,
+                refused_paths,
                 partial_converted: converted,
                 run_state_recorded: false,
                 converted: Err(
@@ -543,18 +616,13 @@ where
             };
         }
 
-        let run_state_recorded = if B::RECORDS_PROMOTED_ATOMICALLY {
-            promoted_recorded
-        } else {
-            !converted.is_empty()
-        };
-
         PromotionResult {
-            files: self.files,
+            files: std::mem::take(&mut self.files),
             committed_paths,
             deleted_paths,
+            refused_paths,
             partial_converted: Vec::new(),
-            run_state_recorded,
+            run_state_recorded: record_status || promoted_recorded,
             converted: Ok(converted),
         }
     }
@@ -568,6 +636,7 @@ pub struct PromotionResult {
     pub(crate) files: Vec<String>,
     pub(crate) committed_paths: Vec<String>,
     pub(crate) deleted_paths: Vec<String>,
+    pub(crate) refused_paths: Vec<String>,
     pub(crate) partial_converted: Vec<FeatherConversionSummary>,
     pub(crate) run_state_recorded: bool,
     pub(crate) converted: anyhow::Result<Vec<FeatherConversionSummary>>,
@@ -901,6 +970,7 @@ impl PromotionSchedule {
             .committed_paths
             .iter()
             .chain(&result.deleted_paths)
+            .chain(&result.refused_paths)
             .collect::<AHashSet<_>>();
 
         for file in &result.files {
@@ -1012,6 +1082,14 @@ pub(crate) mod tests {
             self.state.lock().unwrap().deleted.push(file.to_string());
             Ok(())
         }
+
+        fn set_aside_file(
+            &mut self,
+            _source: &FeatherSessionSource,
+            _file: &str,
+        ) -> anyhow::Result<String> {
+            unreachable!("tests refuse no files")
+        }
     }
 
     impl StagedPromotionBackend for RecordingBackend {
@@ -1114,6 +1192,7 @@ pub(crate) mod tests {
         calls: Vec<&'static str>,
         promote_on_flush: bool,
         promote_on_close: bool,
+        promote_fails: bool,
     }
 
     impl FailingBackgroundSink {
@@ -1122,6 +1201,7 @@ pub(crate) mod tests {
                 calls: Vec::new(),
                 promote_on_flush,
                 promote_on_close,
+                promote_fails: false,
             }
         }
     }
@@ -1183,6 +1263,7 @@ pub(crate) mod tests {
 
         fn promote(&mut self) -> anyhow::Result<Vec<FeatherConversionSummary>> {
             self.calls.push("promote");
+            anyhow::ensure!(!self.promote_fails, "close promotion failed");
             Ok(Vec::new())
         }
 
@@ -1269,6 +1350,21 @@ pub(crate) mod tests {
                 "take_pending_error",
                 "promote",
             ]
+        );
+    }
+
+    #[rstest]
+    fn close_returns_background_and_promotion_errors() {
+        let mut sink = FailingBackgroundSink {
+            promote_fails: true,
+            ..FailingBackgroundSink::new(false, true)
+        };
+
+        let e = StreamingSink::close(&mut sink).unwrap_err();
+
+        assert_eq!(
+            e.to_string(),
+            "background promotion failed; close promotion failed"
         );
     }
 

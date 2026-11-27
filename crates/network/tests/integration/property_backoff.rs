@@ -38,11 +38,11 @@ use rstest::rstest;
 /// Generate valid backoff parameters.
 fn backoff_params_strategy() -> impl Strategy<Value = (Duration, Duration, f64, u64, bool)> {
     (
-        1u64..=5000u64,   // initial_ms: 1ms to 5s
-        10u64..=60000u64, // max_ms: 10ms to 60s
-        1.1f64..=10.0f64, // factor: reasonable exponential growth
-        0u64..=1000u64,   // jitter_ms: 0 to 1s
-        any::<bool>(),    // immediate_first
+        1_u64..=5000_u64,   // initial_ms: 1ms to 5s
+        10_u64..=60000_u64, // max_ms: 10ms to 60s
+        1.1_f64..=10.0_f64, // factor: reasonable exponential growth
+        0_u64..=1000_u64,   // jitter_ms: 0 to 1s
+        any::<bool>(),      // immediate_first
     )
         .prop_filter("max >= initial", |(initial_ms, max_ms, _, _, _)| {
             max_ms >= initial_ms
@@ -60,9 +60,9 @@ fn backoff_params_strategy() -> impl Strategy<Value = (Duration, Duration, f64, 
 
 fn exact_progression_strategy() -> impl Strategy<Value = (u64, u64, u64, bool)> {
     (
-        1u64..=1_000_000_000,
-        0u64..=1_000_000_000,
-        prop::sample::select(vec![1u64, 2, 3, 10, 100]),
+        1_u64..=1_000_000_000,
+        0_u64..=1_000_000_000,
+        prop::sample::select(vec![1_u64, 2, 3, 10, 100]),
         any::<bool>(),
     )
         .prop_map(|(initial_nanos, headroom_nanos, factor, immediate_first)| {
@@ -92,7 +92,7 @@ proptest! {
     #[rstest]
     fn backoff_grows_exponentially_to_max(
         (initial, max, factor, jitter_ms, immediate_first) in backoff_params_strategy(),
-        iterations in 1usize..=20
+        iterations in 1_usize..=20
     ) {
         let mut backoff = ExponentialBackoff::new(initial, max, factor, jitter_ms, immediate_first)
             .expect("Valid backoff parameters");
@@ -163,7 +163,7 @@ proptest! {
     #[rstest]
     fn jitter_within_bounds(
         (initial, max, factor, jitter_ms, immediate_first) in backoff_params_strategy(),
-        iterations in 1usize..=50
+        iterations in 1_usize..=50
     ) {
         // Only test with non-zero jitter
         prop_assume!(jitter_ms > 0);
@@ -205,7 +205,7 @@ proptest! {
     #[rstest]
     fn reset_restores_initial_state(
         (initial, max, factor, jitter_ms, immediate_first) in backoff_params_strategy(),
-        advance_iterations in 1usize..=10
+        advance_iterations in 1_usize..=10
     ) {
         let mut backoff = ExponentialBackoff::new(initial, max, factor, jitter_ms, immediate_first)
             .expect("Valid backoff parameters");
@@ -256,7 +256,7 @@ proptest! {
     #[rstest]
     fn immediate_first_behavior(
         (initial, max, factor, jitter_ms, _) in backoff_params_strategy(),
-        subsequent_calls in 1usize..=5
+        subsequent_calls in 1_usize..=5
     ) {
         // Test with immediate_first = true
         let mut backoff = ExponentialBackoff::new(initial, max, factor, jitter_ms, true)
@@ -290,7 +290,7 @@ proptest! {
     #[rstest]
     fn eventually_reaches_maximum(
         (initial, max, factor, jitter_ms, immediate_first) in backoff_params_strategy(),
-        excess_iterations in 1usize..=10
+        excess_iterations in 1_usize..=10
     ) {
         // Only test cases where growth is meaningful
         prop_assume!(factor > 1.1);
@@ -330,7 +330,7 @@ proptest! {
     #[rstest]
     fn base_progression_matches_integer_oracle(
         (initial_nanos, max_nanos, factor, immediate_first) in exact_progression_strategy(),
-        iterations in 1usize..=10
+        iterations in 1_usize..=10
     ) {
         let initial = Duration::from_nanos(initial_nanos);
         let max = Duration::from_nanos(max_nanos);
@@ -356,9 +356,9 @@ proptest! {
     /// Property: Factor bounds should be respected.
     #[rstest]
     fn factor_bounds_respected(
-        initial_ms in 1u64..=1000u64,
-        max_ms in 1000u64..=10000u64,
-        jitter_ms in 0u64..=100u64,
+        initial_ms in 1_u64..=1000_u64,
+        max_ms in 1000_u64..=10000_u64,
+        jitter_ms in 0_u64..=100_u64,
         immediate_first in any::<bool>()
     ) {
         let initial = Duration::from_millis(initial_ms);

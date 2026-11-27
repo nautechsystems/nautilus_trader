@@ -923,7 +923,7 @@ mod tests {
             id,
             sid: 7,
             seq: Some(seq),
-            sending_ts_ms: Some(1700000000001),
+            sending_ts_ms: Some(1_700_000_000_001),
             msg: payload,
         }
     }
@@ -2487,7 +2487,9 @@ mod tests {
 
         let replacement = batch(&mut output);
         assert_eq!(replacement.sequence, 2);
-        let mut clear = OrderBookDelta::clear(id, 2, UnixNanos::from(1700000000001000000), now);
+        let mut clear =
+            OrderBookDelta::clear(id, 2, UnixNanos::from(1_700_000_000_001_000_000), now);
+
         if shape <= 1 {
             clear.flags |= RecordFlag::F_LAST as u8;
         }
@@ -2738,12 +2740,37 @@ mod tests {
             let replay = peer.command().await;
             assert_eq!(replay["cmd"], "subscribe");
 
+            let mut replacement_id = None;
+
             loop {
                 let event = input.recv().await.unwrap();
                 books.event(&event, &instruments, &sender, now).unwrap();
 
+                if let KalshiWsEvent::BookSnapshotRequested {
+                    generation: 2, id, ..
+                } = event
+                {
+                    replacement_id = Some(id);
+                }
+
                 if let Ok(DataEvent::Data(Data::BookDeltas(batch))) = output.try_recv() {
-                    assert_eq!(batch.sequence, 2);
+                    let KalshiWsEvent::Message {
+                        generation: 2,
+                        message: KalshiWsMessage::OrderbookSnapshot(snapshot),
+                    } = event
+                    else {
+                        panic!("expected a snapshot from the replayed subscription, was {event:?}");
+                    };
+
+                    // The replay snapshot can arrive before the recovery task starts its request
+                    let expected_sequence = if snapshot.id.is_some() {
+                        assert_eq!(snapshot.id, replacement_id);
+                        2
+                    } else {
+                        1
+                    };
+
+                    assert_eq!(batch.sequence, expected_sequence);
                     assert_eq!(
                         batch.flags,
                         RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8

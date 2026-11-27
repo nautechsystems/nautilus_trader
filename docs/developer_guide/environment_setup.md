@@ -1,6 +1,7 @@
 # Environment Setup
 
 Use an editor with current Rust and Python language support, such as PyCharm or Visual Studio Code.
+For VS Code, see [Python editor settings](#python-editor-settings).
 
 [uv](https://docs.astral.sh/uv) is the preferred tool for handling all Python virtual environments and dependencies.
 
@@ -8,10 +9,6 @@ Use an editor with current Rust and Python language support, such as PyCharm or 
 
 Source builds and the Rust crates require [Rust](https://www.rust-lang.org)
 ([installation guide](https://www.rust-lang.org/tools/install)).
-
-[Cap'n Proto](https://capnproto.org) tooling is retained for HyperSync development. Its pinned version
-is specified in `.nautilus-engineering/tools.toml`. Ubuntu's default package is typically too old,
-so you may need to install from source (see below).
 
 :::info
 NautilusTrader *must* compile and run on **Linux, macOS, and Windows**. Please keep portability in
@@ -53,7 +50,6 @@ export PATH="$HOME/.local/bin:$PATH"
 
 cargo install cargo-binstall --version "$(bash scripts/cargo-tool-version.sh cargo-binstall)" --locked
 make install-tools
-./scripts/install-capnp.sh
 
 make sync
 source python/.venv/bin/activate
@@ -84,17 +80,14 @@ test dependencies from the repository root:
 make sync
 ```
 
-For Python 3.15, exclude documentation dependencies. Set these variables before running sync, build,
-or test targets in the same shell:
+Set `UV_PYTHON` to select a specific interpreter for sync, build, and test targets:
 
 ```bash
 export UV_PYTHON=3.15
-export UV_SYNC_FLAGS="--inexact --no-group docs"
 make sync
 ```
 
-Documentation builds use Python 3.14. The `docs` dependency group supports Python 3.13 and 3.14
-because PyYAML does not yet publish Python 3.15 wheels.
+Use `make sync-python-docs` to install documentation dependencies on Python 3.13 through 3.15.
 
 For frequent development, install a debug build of the package into `python/.venv`:
 
@@ -123,9 +116,6 @@ This installs:
   `osv-scanner` (vulnerability scanner).
 - **uv**, installed at the shared pinned version. The supported local uv minor series is defined in
   `python/pyproject.toml`.
-
-Cap'n Proto is also pinned in `.nautilus-engineering/tools.toml` but installs separately. See the
-[Cap'n Proto](#capn-proto) section below.
 
 Fuzz targets also require a Rust nightly toolchain at runtime because `cargo-fuzz` uses
 `libfuzzer-sys` and unstable compiler flags:
@@ -168,7 +158,7 @@ to read current version numbers exists, do not copy them into docs, runner image
 | `.nautilus-engineering/tools.toml`        | Shared engineering tools.                                |
 | `tools.toml`                              | NautilusTrader-specific tools without a native manifest. |
 
-The shared catalog includes uv, `prek`, `pip-audit`, `osv-scanner`, Cap'n Proto, and common Cargo
+The shared catalog includes uv, `prek`, `pip-audit`, `osv-scanner`, and common Cargo
 tools. The local catalog retains the docs.rs nightly, Miri toolchain, and `pypi-attestations` pins.
 
 The Makefile reads these via `scripts/cargo-tool-version.sh`, `scripts/tool-version.sh`, and
@@ -278,7 +268,8 @@ Python dependencies are managed by [uv](https://docs.astral.sh/uv). The `[tool.u
 - **`required-version`**: local uv commands accept any patch release in the supported minor series. If your
   local uv is outside that range, `uv lock` and `uv sync` fail with a version mismatch.
   `.nautilus-engineering/tools.toml` separately pins the exact version used by CI, Docker, pre-commit, and
-  `make install-uv`. The stub targets run through `make sync`, so they enforce the same supported range. See
+  `make install-uv`. The stub and build targets sync development dependencies and enforce the same
+  supported range. See
   [Generated Python artifacts](rust.md#generated-python-artifacts).
 - **`exclude-newer = "7 days"`**: `uv lock` ignores package versions published within the last 7 days. This
   gives the community time to detect and quarantine compromised releases before they enter the lockfile. The
@@ -291,7 +282,9 @@ Python dependencies are managed by [uv](https://docs.astral.sh/uv). The `[tool.u
   uv 0.11.8+ stores the friendly/ISO form as `exclude-newer-span` inside `python/uv.lock`. It emits a sentinel
   `exclude-newer` timestamp alongside that field for backwards compatibility. `python/uv.lock` uses that
   format.
-- **`exclude-newer-package = { ruff = "3 days" }`**: Ruff uses the shared three-day native-tool cooldown.
+- **`exclude-newer-package`**: Ruff uses `ruff = "3 days"` to follow the shared three-day
+  native-tool cooldown. The temporary PyYAML cutoff makes Python 3.15 wheels eligible.
+  See `python/pyproject.toml` for the removal date.
 - **`no-build-package`**: explicit list of all third-party packages locked in `python/uv.lock`. `uv` refuses
   to build any of them from source. In normal operation, uv prefers wheels, so the setting is a no-op. It
   triggers only if a listed package stops publishing wheels for the target platform. In that case, `uv lock`
@@ -413,7 +406,7 @@ The Python package and the standalone Nautilus CLI are separate build artifacts.
 Cargo's binary directory. See the
 [Nautilus CLI developer guide](#nautilus-cli-developer-guide) when changing or using the CLI.
 
-After changing Rust bindings or Python package code, use a debug build for normal development. It
+After changing Rust code used by the Python package, use a debug build for normal development. It
 skips release optimization and LTO, which reduces build time and peak memory use:
 
 ```bash
@@ -434,18 +427,31 @@ CARGO_PROFILE_RELEASE_LTO=thin make build
 This override applies only to that command. Use the default fat LTO profile for performance
 measurements.
 
+Profile the verification wheel build from `python/` after syncing development dependencies.
+
+```bash
+CARGO_BUILD_JOBS=8 uv run --no-sync maturin build --locked --profile ci-pr-wheel --timings
+```
+
+Cargo writes the timing report under `target/cargo-timings/` at the repository root by default.
+Use a fresh target directory for a cold build and the same directory after an edit to measure rebuild time.
+
 ### Refresh after pulling changes
 
-Use the command that updates the affected artifact. The build targets call their prerequisites, so
-`make build-debug` also syncs Python dependencies and regenerates Python type stubs.
+Use the command for the affected artifact. The build targets sync the locked development dependencies.
+Python-only edits to an editable installation take effect the next time Python imports the files.
+Run `uv lock --project python` after editing dependencies in `pyproject.toml`.
 
-| Changed input                                       | Command                      | Updated artifact                                  |
-| --------------------------------------------------- | ---------------------------- | ------------------------------------------------- |
-| `python/pyproject.toml` or `python/uv.lock`         | `make sync`                  | Dependencies in `python/.venv`.                   |
-| Rust bindings, Python package code, or stub sources | `make build-debug`           | Debug Python package and generated type stubs.    |
-| CLI code, SQL initialization code, or `schema/sql`  | `make install-cli`           | Standalone `nautilus` binary in Cargo's bin path. |
-| Cargo, uv, `prek`, or OSV Scanner tool pins         | `make install-tools`         | Pinned development tools.                         |
-| Cap'n Proto version in the shared catalog           | `./scripts/install-capnp.sh` | Cap'n Proto compiler.                             |
+| Changed input                                      | Command              | Updated artifact                                     |
+| -------------------------------------------------- | -------------------- | ---------------------------------------------------- |
+| `python/pyproject.toml` or `python/uv.lock`        | `make sync`          | Development and test dependencies in `python/.venv`. |
+| Rust code used by Python                           | `make build-debug`   | Editable Python package and debug extension.         |
+| PyO3 bindings, wrapped Rust docs, or stub sources  | `make py-stubs`      | Generated Python type stubs and PyO3 docstrings.     |
+| CLI code, SQL initialization code, or `schema/sql` | `make install-cli`   | Standalone `nautilus` binary in Cargo's bin path.    |
+| Cargo, uv, `prek`, or OSV Scanner tool pins        | `make install-tools` | Pinned development tools.                            |
+
+For a Python-only change after the editable build, run a focused test from the repository root
+with `uv run --project python --no-sync pytest python/tests/unit/test_public_module_names.py`.
 
 The environment variables in [Configure environment variables](#4-configure-environment-variables)
 contain checkout-specific paths. After switching checkouts, changing the selected Python version,
@@ -460,49 +466,6 @@ python --version
 
 In Fish, use `source python/.venv/bin/activate.fish` for activation. Activation alone does not refresh
 `PYO3_PYTHON`. Repeat the environment variable commands above for the selected checkout.
-
-## Cap'n Proto
-
-[Cap'n Proto](https://capnproto.org) tooling remains available for HyperSync development. The pinned
-HyperSync dependencies ship generated Rust bindings, so normal builds do not regenerate their schemas.
-NautilusTrader does not provide Cap'n Proto codecs.
-The required version is defined in `.nautilus-engineering/tools.toml`.
-
-Install the correct version for your platform:
-
-```bash tab="Script (Linux/macOS)"
-./scripts/install-capnp.sh
-```
-
-```bash tab="macOS (Homebrew)"
-brew install capnp
-```
-
-```bash tab="Linux (source)"
-CAPNP_VERSION=$(bash scripts/tool-version.sh capnp)
-cd ~
-wget https://capnproto.org/capnproto-c++-${CAPNP_VERSION}.tar.gz
-tar xzf capnproto-c++-${CAPNP_VERSION}.tar.gz
-cd capnproto-c++-${CAPNP_VERSION}
-./configure
-make -j$(nproc)
-sudo make install
-sudo ldconfig
-```
-
-```bash tab="Windows (Chocolatey)"
-choco install capnproto
-```
-
-Verify the installed version matches the shared catalog:
-
-```bash
-capnp --version
-```
-
-The install script ensures the pinned version is installed. If Homebrew or Chocolatey provides
-an older version, install from source or see the
-[Cap'n Proto installation guide](https://capnproto.org/install.html).
 
 ## Faster builds
 
@@ -714,6 +677,53 @@ for a disposable database or after confirming that the data can be deleted.
 :::
 
 Run `nautilus database --help` for the complete command syntax.
+
+## Python editor settings
+
+The repository does not ship shared editor settings; `.gitignore` excludes `.vscode/`, so each
+contributor keeps their own. For VS Code, install the
+[Ruff](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff) and
+[Python](https://marketplace.visualstudio.com/items?itemName=ms-python.python) (with Pylance)
+extensions. [Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml)
+is optional and formats TOML with taplo, like the pre-commit hook. For Rust, see
+[Rust analyzer settings](#rust-analyzer-settings).
+
+Add these settings to the workspace `.vscode/settings.json`:
+
+```json tab="VSCode"
+{
+    "python.defaultInterpreterPath": "${workspaceFolder}/python/.venv/bin/python",
+    "ruff.importStrategy": "fromEnvironment",
+    "ruff.configuration": "${workspaceFolder}/python/pyproject.toml",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/docs/tutorials"
+    ],
+    "[python]": {
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.formatOnSave": true
+    }
+}
+```
+
+- `python.defaultInterpreterPath` points to the uv-managed environment at `python/.venv`. On Windows,
+  use `${workspaceFolder}/python/.venv/Scripts/python.exe`. VS Code reads this setting only until an
+  interpreter is selected for the workspace, so in an existing workspace run
+  **Python: Select Interpreter** once and choose `python/.venv`.
+- `ruff.importStrategy` makes the extension use the Ruff version pinned in `python/.venv` instead of
+  its bundled version, which may lint and format differently.
+- `ruff.configuration` points to the Ruff configuration in `python/pyproject.toml`. There is no Ruff
+  configuration at the repository root, so without this setting the extension falls back to Ruff
+  defaults and reports false import-sorting (`I001`) errors.
+- `python.analysis.extraPaths` lets Pylance resolve the tutorial strategy imports, such as
+  `ema_cross`, that examples load from `docs/tutorials` by changing `sys.path` at runtime. Add other
+  directories that examples insert into `sys.path` the same way.
+
+:::note
+Format-on-save is close to the project style but not identical. `make format` also runs
+`scripts/format-python.py --fix` and `cargo +nightly fmt`, and the pre-commit hooks run further
+Python formatters, so `make format` and `make pre-commit` remain the source of truth. VS Code skips
+format-on-save when `files.autoSave` is `afterDelay`.
+:::
 
 ## Rust analyzer settings
 

@@ -62,19 +62,13 @@ pub fn parse_mint_event_hypersync(dex: SharedDex, log: &HypersyncLog) -> anyhow:
 
     // Extract int24 tickLower from topic2 (stored as a 32-byte padded value)
     let tick_lower = match log.topics.get(2).and_then(|t| t.as_ref()) {
-        Some(topic) => {
-            let tick_lower_bytes: [u8; 32] = topic.as_ref().try_into()?;
-            i32::from_be_bytes(tick_lower_bytes[28..32].try_into()?)
-        }
+        Some(topic) => i32::from_be_bytes(topic[28..32].try_into()?),
         None => anyhow::bail!("Missing tickLower in topic2 when parsing mint event"),
     };
 
     // Extract int24 tickUpper from topic3 (stored as a 32-byte padded value)
     let tick_upper = match log.topics.get(3).and_then(|t| t.as_ref()) {
-        Some(topic) => {
-            let tick_upper_bytes: [u8; 32] = topic.as_ref().try_into()?;
-            i32::from_be_bytes(tick_upper_bytes[28..32].try_into()?)
-        }
+        Some(topic) => i32::from_be_bytes(topic[28..32].try_into()?),
         None => anyhow::bail!("Missing tickUpper in topic3 when parsing mint event"),
     };
 
@@ -94,7 +88,6 @@ pub fn parse_mint_event_hypersync(dex: SharedDex, log: &HypersyncLog) -> anyhow:
 
         let pool_address = Address::from_slice(
             log.address
-                .clone()
                 .expect("Contract address should be set in logs")
                 .as_ref(),
         );
@@ -245,9 +238,9 @@ mod tests {
             event.owner.to_string().to_lowercase(),
             "0xc36442b4a4522e871399cd717abdd847ab11fe88"
         );
-        assert_eq!(event.tick_lower, -887272);
-        assert_eq!(event.tick_upper, 887272);
-        assert_eq!(event.block_number, 391193311);
+        assert_eq!(event.tick_lower, -887_272);
+        assert_eq!(event.tick_upper, 887_272);
+        assert_eq!(event.block_number, 391_193_311);
         let expected_amount = u128::from_str_radix("74009aac72ba0a9b1c", 16).unwrap();
         assert_eq!(event.amount, expected_amount);
         let expected_amount0 = U256::from_str_radix("1e4d2be93cf3635c879b1", 16).unwrap();
@@ -274,9 +267,9 @@ mod tests {
             event.owner.to_string().to_lowercase(),
             "0xc36442b4a4522e871399cd717abdd847ab11fe88"
         );
-        assert_eq!(event.tick_lower, -887272);
-        assert_eq!(event.tick_upper, 887272);
-        assert_eq!(event.block_number, 391193311);
+        assert_eq!(event.tick_lower, -887_272);
+        assert_eq!(event.tick_upper, 887_272);
+        assert_eq!(event.block_number, 391_193_311);
         let expected_amount = u128::from_str_radix("74009aac72ba0a9b1c", 16).unwrap();
         assert_eq!(event.amount, expected_amount);
         let expected_amount0 = U256::from_str_radix("1e4d2be93cf3635c879b1", 16).unwrap();
@@ -306,7 +299,7 @@ mod tests {
             error.to_string(),
             format!("Topic must be 32 bytes, was {byte_len}")
         );
-        assert_eq!(event.block_number, 391193311);
+        assert_eq!(event.block_number, 391_193_311);
     }
 
     #[rstest]

@@ -32,7 +32,11 @@ use nautilus_execution::engine::{
 };
 #[cfg(feature = "high-precision")]
 use nautilus_model::{
-    accounts::MarginAccount, enums::AccountType, events::AccountState, types::AccountBalance,
+    accounts::MarginAccount,
+    enums::{AccountType, OptionPremiumStyle},
+    events::AccountState,
+    instruments::stubs::option_contract_appl,
+    types::AccountBalance,
 };
 use nautilus_model::{
     accounts::{Account, AccountAny, CashAccount},
@@ -166,6 +170,7 @@ struct NettingReopen {
 #[cfg(feature = "high-precision")]
 #[rstest]
 #[case::margin_opening_product(false, RejectedFill::OpeningProduct)]
+#[case::futures_style_opening_product(false, RejectedFill::FuturesStyleOpeningProduct)]
 #[case::cash_opening_product(true, RejectedFill::OpeningProduct)]
 #[case::margin_original_flip_commission(false, RejectedFill::FlipCommission)]
 #[case::cash_original_flip_commission(true, RejectedFill::FlipCommission)]
@@ -178,7 +183,16 @@ fn test_rejected_fill_preserves_account_and_position(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let mut engine = ExecutionEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
-    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    let futures_style = matches!(scenario, RejectedFill::FuturesStyleOpeningProduct);
+    let instrument = if futures_style {
+        let mut option = option_contract_appl();
+        option.id = InstrumentId::from("OPTION.SIM");
+        option.premium_style = Some(OptionPremiumStyle::FuturesStyle);
+        InstrumentAny::OptionContract(option)
+    } else {
+        InstrumentAny::CurrencyPair(audusd_sim())
+    };
+
     let account_id = AccountId::test_default();
     let position_id = PositionId::from("P-REJECTED-FILL");
     let total = Money::from("100 USD");
@@ -206,7 +220,12 @@ fn test_rejected_fill_preserves_account_and_position(
     let account = if cash {
         AccountAny::Cash(CashAccount::new(state, true, false))
     } else {
-        AccountAny::Margin(MarginAccount::new(state, true))
+        let mut margin = MarginAccount::new(state, true);
+        if futures_style {
+            margin.initialize_option_variations();
+        }
+
+        AccountAny::Margin(margin)
     };
 
     cache.borrow_mut().add_account(account).unwrap();
@@ -225,7 +244,7 @@ fn test_rejected_fill_preserves_account_and_position(
         .unwrap();
 
     let (opening, qty, px, side, commission) = match scenario {
-        RejectedFill::OpeningProduct => (
+        RejectedFill::OpeningProduct | RejectedFill::FuturesStyleOpeningProduct => (
             None,
             "0.0000000000000001",
             "0.0000000000000001",
@@ -309,6 +328,17 @@ fn test_rejected_fill_preserves_account_and_position(
 
     engine.process(&fill);
 
+    if futures_style {
+        let cache = cache.borrow();
+        let account = cache.account_ref(&account_id).unwrap();
+
+        let AccountAny::Margin(margin) = &*account else {
+            unreachable!();
+        };
+
+        assert!(margin.option_variations().next().is_none());
+    }
+
     assert_eq!(
         serde_json::to_value(cache.borrow().account_owned(&account_id)).unwrap(),
         account_before
@@ -334,6 +364,7 @@ fn test_rejected_fill_preserves_account_and_position(
 #[cfg(feature = "high-precision")]
 enum RejectedFill {
     OpeningProduct,
+    FuturesStyleOpeningProduct,
     FlipCommission,
     CumulativeCost,
 }
@@ -789,8 +820,9 @@ fn test_current_cycle_fill_void_keeps_snapshot_frames(
 }
 
 #[rstest]
-fn test_current_cycle_fill_void_rollback_keeps_earlier_snapshots(
+fn test_current_cycle_fill_void_rollback_reports_replayed_close(
     #[values(false, true)] carry_replay_events_on_reopen: bool,
+    #[values(false, true)] earlier_cycle: bool,
 ) {
     let reducing = FillSpec {
         last_px: CYCLE_2_OPEN.last_px,
@@ -802,6 +834,13 @@ fn test_current_cycle_fill_void_rollback_keeps_earlier_snapshots(
         ..CYCLE_2_LONG_OPEN
     };
 
+    let mut fills = Vec::new();
+    if earlier_cycle {
+        fills.extend([CYCLE_1_OPEN, CYCLE_1_CLOSE]);
+    }
+
+    fills.extend([CYCLE_2_OPEN, reducing, reopening]);
+
     let NettingReopen {
         mut execution_engine,
         mut portfolio,
@@ -809,16 +848,7 @@ fn test_current_cycle_fill_void_rollback_keeps_earlier_snapshots(
         instrument_id,
         position_id,
         account_id,
-    } = run_netting_scenario_with_replay(
-        &[
-            CYCLE_1_OPEN,
-            CYCLE_1_CLOSE,
-            CYCLE_2_OPEN,
-            reducing,
-            reopening,
-        ],
-        carry_replay_events_on_reopen,
-    );
+    } = run_netting_scenario_with_replay(&fills, carry_replay_events_on_reopen);
 
     let first = build_fill_void_from_cached_fill(&execution_engine, CYCLE_2_OPEN);
     execution_engine.process(&first);
@@ -831,7 +861,26 @@ fn test_current_cycle_fill_void_rollback_keeps_earlier_snapshots(
         intermediate.events[0].trade_id,
         TradeId::from(reopening.trade_id)
     );
-    assert_eq!(cache.borrow().position_snapshot_count(&position_id), 1);
+    let snapshot_count = usize::from(earlier_cycle);
+    assert_eq!(
+        cache.borrow().position_snapshot_count(&position_id),
+        snapshot_count
+    );
+
+    let records = portfolio
+        .analyzer()
+        .trade_pnl_records(Some(&Currency::USD()))
+        .unwrap();
+    let mut pnls: Vec<_> = records.into_iter().map(|(_, _, pnl)| pnl).collect();
+    pnls.sort_by(f64::total_cmp);
+
+    let expected: &[f64] = if earlier_cycle {
+        &[-3.2, -2.0, 16.0]
+    } else {
+        &[-3.2, -2.0]
+    };
+
+    assert_eq!(pnls, expected);
 
     let mut second = build_fill_void_from_cached_fill(&execution_engine, reopening);
 
@@ -847,10 +896,20 @@ fn test_current_cycle_fill_void_rollback_keeps_earlier_snapshots(
     assert_eq!(position.side, PositionSide::Flat);
     assert_eq!(position.quantity, Quantity::zero(0));
     assert_eq!(position.realized_pnl, Some(Money::from("-3.20 USD")));
-    assert_eq!(cache.borrow().position_snapshot_count(&position_id), 1);
+    assert_eq!(
+        cache.borrow().position_snapshot_count(&position_id),
+        snapshot_count
+    );
+
+    let expected = if earlier_cycle {
+        "12.80 USD"
+    } else {
+        "-3.20 USD"
+    };
+
     assert_eq!(
         portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id), None),
-        Some(Money::from("12.80 USD")),
+        Some(Money::from(expected)),
     );
 }
 

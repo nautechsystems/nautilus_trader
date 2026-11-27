@@ -553,8 +553,8 @@ mod tests {
             Price::from("101.00"),
             Quantity::from("1.0"),
             Quantity::from("1.0"),
-            UnixNanos::from(1u64),
-            UnixNanos::from(1u64),
+            UnixNanos::from(1_u64),
+            UnixNanos::from(1_u64),
         )
     }
 
@@ -563,7 +563,7 @@ mod tests {
             Venue::new("DERIBIT"),
             ustr::Ustr::from("BTC"),
             ustr::Ustr::from("BTC"),
-            UnixNanos::from(1_700_000_000_000_000_000u64),
+            UnixNanos::from(1_700_000_000_000_000_000_u64),
         )
     }
 
@@ -676,8 +676,8 @@ mod tests {
             ask_iv: Some(0.66),
             underlying_price: Some(50_000.0),
             open_interest: None,
-            ts_event: UnixNanos::from(1u64),
-            ts_init: UnixNanos::from(2u64),
+            ts_event: UnixNanos::from(1_u64),
+            ts_init: UnixNanos::from(2_u64),
         };
         let data = crate::data::Data::OptionGreeks(greeks);
 
@@ -694,8 +694,8 @@ mod tests {
             atm_strike: None,
             calls: BTreeMap::new(),
             puts: BTreeMap::new(),
-            ts_event: UnixNanos::from(1u64),
-            ts_init: UnixNanos::from(1u64),
+            ts_event: UnixNanos::from(1_u64),
+            ts_init: UnixNanos::from(1_u64),
         };
 
         assert!(slice.is_empty());
@@ -739,8 +739,8 @@ mod tests {
             atm_strike: Some(strike),
             calls,
             puts,
-            ts_event: UnixNanos::from(1u64),
-            ts_init: UnixNanos::from(1u64),
+            ts_event: UnixNanos::from(1_u64),
+            ts_init: UnixNanos::from(1_u64),
         };
 
         assert!(!slice.is_empty());
@@ -760,8 +760,8 @@ mod tests {
             atm_strike: None,
             calls: BTreeMap::new(),
             puts: BTreeMap::new(),
-            ts_event: UnixNanos::from(1u64),
-            ts_init: UnixNanos::from(1u64),
+            ts_event: UnixNanos::from(1_u64),
+            ts_init: UnixNanos::from(1_u64),
         };
 
         let display = format!("{slice}");
@@ -776,11 +776,11 @@ mod tests {
             atm_strike: None,
             calls: BTreeMap::new(),
             puts: BTreeMap::new(),
-            ts_event: UnixNanos::from(1u64),
-            ts_init: UnixNanos::from(42u64),
+            ts_event: UnixNanos::from(1_u64),
+            ts_init: UnixNanos::from(42_u64),
         };
 
-        assert_eq!(slice.ts_init(), UnixNanos::from(42u64));
+        assert_eq!(slice.ts_init(), UnixNanos::from(42_u64));
     }
 
     // -- StrikeRange::resolve tests --

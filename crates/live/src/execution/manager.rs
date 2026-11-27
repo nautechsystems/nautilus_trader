@@ -55,19 +55,22 @@ use nautilus_common::{
     },
     msgbus::{self, MessagingSwitchboard, switchboard},
 };
-use nautilus_core::{DurationNanos, UUID4, UnixNanos, datetime::mins_to_secs};
+use nautilus_core::{
+    DurationNanos, UUID4, UnixNanos, correctness::CorrectnessResult, datetime::mins_to_secs,
+};
 use nautilus_execution::{
     engine::ExecutionEngine,
     reconciliation::{
         RECONCILIATION_ORDER_TAG, ReconciliationResult as AdjustedReports,
-        calculate_reconciliation_price, create_inferred_fill_for_qty,
-        create_reconciliation_rejected, create_reconciliation_triggered,
-        fill_precedes_snapshot_reconciled_position,
+        bound_inverse_reconciliation_price, calculate_reconciliation_price,
+        create_inferred_fill_for_qty, create_reconciliation_rejected,
+        create_reconciliation_triggered, fill_precedes_snapshot_reconciled_position,
         generate_external_order_status_events_with_commission,
         generate_reconciliation_order_pre_fill_events,
         generate_reconciliation_order_snapshot_events_with_commission,
         incremental_inferred_fill_price_and_liquidity, inferred_fill_price_and_liquidity,
-        initialize_external_order_price, position_prices_match, preserve_order_amendment,
+        initialize_external_order_price, inverse_reconciliation_price_ceiling,
+        mark_lifecycle_replacement_fill, position_prices_match, preserve_order_amendment,
         process_mass_status_for_reconciliation,
         process_mass_status_for_reconciliation_without_synthetic_reports,
         reconcile_order_report_with_commission, should_reconciliation_update,
@@ -114,7 +117,7 @@ use super::{
         distinct_position_reports, has_active_inferred_fill, is_exact_order_match,
         order_report_has_missing_fills, position_avg_px, position_crosses_zero,
         position_qty_aggregates, resolve_inferred_fill_commission, responsible_client_ids,
-        should_project_fill, sort_reconciliation_events,
+        should_project_fill, sort_reconciliation_events, weighted_entry_px,
     },
     submission::{SubmissionRecoveryExhausted, SubmissionRecoveryPolicy, SubmissionRecoverySource},
 };
@@ -768,33 +771,7 @@ impl ExecutionManager {
 
         self.validate_mass_status_order_sources(mass_status);
 
-        // Publish raw reports before any state mutation (including fill adjustment
-        // below, which can synthesize replacement order/fill reports). The
-        // execution engine's per-report `reconcile_*` entry points are bypassed by
-        // this path, so the capture seam lives here.
-        let raw_order_status_topic =
-            MessagingSwitchboard::reconciliation_raw_order_status_report_topic();
-
-        for report in mass_status.order_reports().values() {
-            msgbus::publish_any(raw_order_status_topic, report);
-        }
-
-        let raw_fill_topic = MessagingSwitchboard::reconciliation_raw_fill_report_topic();
-
-        for fills in mass_status.fill_reports().values() {
-            for fill in fills {
-                msgbus::publish_any(raw_fill_topic, fill);
-            }
-        }
-
-        let raw_position_topic =
-            MessagingSwitchboard::reconciliation_raw_position_status_report_topic();
-
-        for reports in mass_status.position_reports().values() {
-            for report in reports {
-                msgbus::publish_any(raw_position_topic, report);
-            }
-        }
+        Self::publish_raw_mass_status_reports(mass_status);
 
         if exec_engine
             .borrow()
@@ -841,6 +818,7 @@ impl ExecutionManager {
             .get_client(&mass_status.client_id)
             .and_then(|client| client.venue_order_ids(mass_status));
         let mut adjusted_reports = self.adjust_mass_status_fills(mass_status);
+        self.preserve_cached_replacement_fills(mass_status, &mut adjusted_reports);
         Self::preserve_external_order_history(
             mass_status,
             order_venue_ids.as_ref(),
@@ -851,22 +829,23 @@ impl ExecutionManager {
             fills: adjusted_fill_reports,
             order_only_ids,
             order_only_fill_keys,
-        } = adjusted_reports;
+            ..
+        } = &adjusted_reports;
 
         let bounded_order_only_ids =
-            self.order_only_ids(mass_status, &adjusted_order_reports, &adjusted_fill_reports);
+            self.order_only_ids(mass_status, adjusted_order_reports, adjusted_fill_reports);
 
         let mut events = Vec::new();
         let mut external_orders = Vec::new();
-        let mut orders_reconciled = 0usize;
-        let mut external_orders_created = 0usize;
-        let mut open_orders_initialized = 0usize;
-        let mut orders_skipped_no_instrument = 0usize;
-        let mut orders_skipped_duplicate = 0usize;
-        let mut fills_applied = 0usize;
+        let mut orders_reconciled = 0_usize;
+        let mut external_orders_created = 0_usize;
+        let mut open_orders_initialized = 0_usize;
+        let mut orders_skipped_no_instrument = 0_usize;
+        let mut orders_skipped_duplicate = 0_usize;
+        let mut fills_applied = 0_usize;
         let mut fill_queue = ReconciliationFillQueue::default();
 
-        let fill_reports = &adjusted_fill_reports;
+        let fill_reports = adjusted_fill_reports;
         let mut seen_fill_keys: IndexSet<FillKey> = IndexSet::new();
 
         for fills in fill_reports.values() {
@@ -882,8 +861,8 @@ impl ExecutionManager {
             }
         }
 
-        let order_reports = &adjusted_order_reports;
-        let mut orders_skipped_filtered = 0usize;
+        let order_reports = adjusted_order_reports;
+        let mut orders_skipped_filtered = 0_usize;
         let mut orders_projected: IndexMap<ClientOrderId, OrderAny> = IndexMap::new();
 
         for report in order_reports.values().filter(|report| {
@@ -1121,11 +1100,7 @@ impl ExecutionManager {
                 continue;
             }
 
-            let order = first_fill
-                .client_order_id
-                .as_ref()
-                .and_then(|id| self.get_order(*id))
-                .or_else(|| self.get_order_by_venue_order_id(*venue_order_id));
+            let order = self.cached_order_for_fill(first_fill);
 
             // Skip if resolved order's client_order_id is filtered (venue_order_id lookup path)
             if let Some(ref order) = order
@@ -1227,6 +1202,7 @@ impl ExecutionManager {
             }
         }
 
+        Self::mark_lifecycle_replacements(&mut events, &adjusted_reports.lifecycle_replacements);
         sort_reconciliation_events(&mut events);
 
         let recover_closing_fills = mass_status.lookback_start().is_some()
@@ -1248,8 +1224,8 @@ impl ExecutionManager {
                 fill,
                 &retained_fill_state,
                 &reported_fill_keys,
-                &order_only_ids,
-                &order_only_fill_keys,
+                order_only_ids,
+                order_only_fill_keys,
             );
             let bounded = !historical && bounded_order_only_ids.contains(&fill.venue_order_id);
 
@@ -1275,8 +1251,16 @@ impl ExecutionManager {
             let withheld_position_id =
                 (uncovered && !recovered && self.applied_fill_key(fill) != Some(fill_key))
                     .then(|| exec_engine.borrow().reconciliation_position_id(fill));
+
             if historical || bounded && !recovered {
-                exec_engine.borrow_mut().project_reconciliation_fill(fill);
+                Self::project_mass_reconciliation_fill(
+                    &mut exec_engine.borrow_mut(),
+                    fill,
+                    historical,
+                    &reported_fill_keys,
+                    &retained_fill_state,
+                    &adjusted_reports,
+                );
             } else {
                 exec_engine.borrow_mut().process(event);
             }
@@ -1306,56 +1290,12 @@ impl ExecutionManager {
             }
         }
 
-        let mut positions_created = 0usize;
-
-        if !self.config.filter_position_reports {
-            // Collect instruments with fills that lack venue_position_id (can't attribute to
-            // specific hedge position, so must skip all hedge reports for that instrument)
-            let instruments_with_unattributed_fills: IndexSet<InstrumentId> = mass_status
-                .fill_reports()
-                .values()
-                .flatten()
-                .filter(|f| !f.last_qty.is_zero() && f.venue_position_id.is_none())
-                .map(|f| f.instrument_id)
-                .chain(
-                    mass_status
-                        .order_reports()
-                        .values()
-                        .filter(|r| !r.filled_qty.is_zero() && r.venue_position_id.is_none())
-                        .map(|r| r.instrument_id),
-                )
-                .collect();
-
-            for (instrument_id, reports) in mass_status.position_reports() {
-                if !self.should_reconcile_instrument(&instrument_id) {
-                    log::debug!(
-                        "Skipping position reports for {instrument_id}: not in reconciliation_instrument_ids"
-                    );
-                    continue;
-                }
-
-                for report in reports {
-                    if report.venue_position_id.is_some_and(|venue_position_id| {
-                        unapplied_fill_position_ids.contains(&venue_position_id)
-                    }) {
-                        continue;
-                    }
-
-                    if let Some(position_events) = self.reconcile_position_report(
-                        &report,
-                        mass_status.account_id,
-                        &instruments_with_unattributed_fills,
-                    ) {
-                        for event in position_events {
-                            exec_engine.borrow_mut().process(&event);
-                            events.push(event);
-                        }
-
-                        positions_created += 1;
-                    }
-                }
-            }
-        }
+        let positions_created = self.apply_mass_status_positions(
+            mass_status,
+            exec_engine,
+            &unapplied_fill_position_ids,
+            &mut events,
+        );
 
         if orders_skipped_no_instrument > 0 {
             log::warn!("{orders_skipped_no_instrument} orders skipped (instrument not in cache)");
@@ -1412,6 +1352,203 @@ impl ExecutionManager {
             external_orders,
             unresolved_positions: self.unresolved_mass_status_positions(mass_status),
         }
+    }
+
+    fn publish_raw_mass_status_reports(mass_status: &ExecutionMassStatus) {
+        // Publish raw reports before any state mutation (including fill adjustment
+        // below, which can synthesize replacement order/fill reports). The
+        // execution engine's per-report `reconcile_*` entry points are bypassed by
+        // this path, so the capture seam lives here.
+        let raw_order_status_topic =
+            MessagingSwitchboard::reconciliation_raw_order_status_report_topic();
+
+        for report in mass_status.order_reports().values() {
+            msgbus::publish_any(raw_order_status_topic, report);
+        }
+
+        let raw_fill_topic = MessagingSwitchboard::reconciliation_raw_fill_report_topic();
+
+        for fills in mass_status.fill_reports().values() {
+            for fill in fills {
+                msgbus::publish_any(raw_fill_topic, fill);
+            }
+        }
+
+        let raw_position_topic =
+            MessagingSwitchboard::reconciliation_raw_position_status_report_topic();
+
+        for reports in mass_status.position_reports().values() {
+            for report in reports {
+                msgbus::publish_any(raw_position_topic, report);
+            }
+        }
+    }
+
+    fn apply_mass_status_positions(
+        &self,
+        mass_status: &ExecutionMassStatus,
+        exec_engine: &RefCell<ExecutionEngine>,
+        unapplied_fill_position_ids: &IndexSet<PositionId>,
+        events: &mut Vec<OrderEventAny>,
+    ) -> usize {
+        if self.config.filter_position_reports {
+            return 0;
+        }
+
+        // Collect instruments with fills that lack venue_position_id (can't attribute to
+        // specific hedge position, so must skip all hedge reports for that instrument)
+        let instruments_with_unattributed_fills: IndexSet<InstrumentId> = mass_status
+            .fill_reports()
+            .values()
+            .flatten()
+            .filter(|f| !f.last_qty.is_zero() && f.venue_position_id.is_none())
+            .map(|f| f.instrument_id)
+            .chain(
+                mass_status
+                    .order_reports()
+                    .values()
+                    .filter(|r| !r.filled_qty.is_zero() && r.venue_position_id.is_none())
+                    .map(|r| r.instrument_id),
+            )
+            .collect();
+
+        let mut positions_created = 0;
+
+        for (instrument_id, reports) in mass_status.position_reports() {
+            if !self.should_reconcile_instrument(&instrument_id) {
+                log::debug!(
+                    "Skipping position reports for {instrument_id}: not in reconciliation_instrument_ids"
+                );
+                continue;
+            }
+
+            for report in reports {
+                if report.venue_position_id.is_some_and(|venue_position_id| {
+                    unapplied_fill_position_ids.contains(&venue_position_id)
+                }) {
+                    continue;
+                }
+
+                let Some(position_events) = self.reconcile_position_report(
+                    &report,
+                    mass_status.account_id,
+                    &instruments_with_unattributed_fills,
+                ) else {
+                    continue;
+                };
+
+                for event in position_events {
+                    exec_engine.borrow_mut().process(&event);
+                    events.push(event);
+                }
+
+                positions_created += 1;
+            }
+        }
+
+        positions_created
+    }
+
+    fn project_mass_reconciliation_fill(
+        engine: &mut ExecutionEngine,
+        fill: &OrderFilled,
+        historical: bool,
+        reported_fill_keys: &IndexSet<FillKey>,
+        retained_fill_state: &RetainedFillState,
+        adjusted_reports: &AdjustedReports,
+    ) {
+        let fill_key = (fill.account_id, fill.instrument_id, fill.trade_id);
+        if !historical
+            || retained_fill_state.fill_keys.contains(&fill_key)
+            || adjusted_reports.order_only_fill_keys.contains(&fill_key)
+        {
+            engine.project_reconciliation_fill(fill);
+            return;
+        }
+
+        let replacement = adjusted_reports
+            .lifecycle_replacements
+            .get(&fill.instrument_id)
+            .copied()
+            .filter(|_| {
+                adjusted_reports
+                    .order_only_ids
+                    .contains(&fill.venue_order_id)
+            });
+
+        let can_check_snapshot = if replacement.is_some() {
+            reported_fill_keys.contains(&fill_key)
+        } else {
+            retained_fill_state.fill_precedes_netting_lifecycle(fill)
+        };
+
+        if can_check_snapshot {
+            engine.project_reconciliation_fill_with_snapshot(fill, replacement);
+        } else {
+            engine.project_reconciliation_fill(fill);
+        }
+    }
+
+    fn mark_lifecycle_replacements(
+        events: &mut [OrderEventAny],
+        replacements: &IndexMap<InstrumentId, VenueOrderId>,
+    ) {
+        if replacements.is_empty() {
+            return;
+        }
+
+        for event in events {
+            if let OrderEventAny::Filled(fill) = event
+                && replacements.get(&fill.instrument_id) == Some(&fill.venue_order_id)
+            {
+                mark_lifecycle_replacement_fill(fill);
+            }
+        }
+    }
+
+    fn preserve_cached_replacement_fills(
+        &self,
+        mass_status: &ExecutionMassStatus,
+        adjusted: &mut AdjustedReports,
+    ) {
+        if adjusted.lifecycle_replacements.is_empty() {
+            return;
+        }
+
+        for (venue_order_id, mut fills) in mass_status.fill_reports() {
+            let Some(first) = fills.first() else {
+                continue;
+            };
+
+            if !adjusted
+                .lifecycle_replacements
+                .contains_key(&first.instrument_id)
+                || adjusted.fills.contains_key(&venue_order_id)
+            {
+                continue;
+            }
+
+            let Some(order) = self.cached_order_for_fill(first) else {
+                continue;
+            };
+
+            fills.retain(|fill| {
+                !fill.last_qty.is_zero()
+                    && fill.instrument_id == order.instrument_id()
+                    && Some(fill.account_id) == order.account_id()
+            });
+
+            if !fills.is_empty() {
+                adjusted.order_only_ids.insert(venue_order_id);
+                adjusted.fills.insert(venue_order_id, fills);
+            }
+        }
+    }
+
+    fn cached_order_for_fill(&self, fill: &FillReport) -> Option<OrderAny> {
+        fill.client_order_id
+            .and_then(|id| self.get_order(id))
+            .or_else(|| self.get_order_by_venue_order_id(fill.venue_order_id))
     }
 
     fn preserve_external_order_history(
@@ -1632,6 +1769,12 @@ impl ExecutionManager {
         cached_positions: &[Position],
         reports: &[PositionStatusReport],
     ) -> bool {
+        let divides_notional_by_price = cached_positions.first().is_some_and(|position| {
+            position
+                .instrument_class
+                .divides_notional_by_price(position.is_inverse)
+        });
+
         for negative in [false, true] {
             let reports: Vec<_> = reports
                 .iter()
@@ -1649,14 +1792,14 @@ impl ExecutionManager {
                 continue;
             }
 
-            let Some((venue_value, venue_qty)) = reports.iter().try_fold(
-                (Decimal::ZERO, Decimal::ZERO),
-                |(value, quantity), report| {
-                    let price = report.avg_px_open.filter(|price| *price > Decimal::ZERO)?;
-                    let qty = report.signed_decimal_qty.abs();
-                    Some((value + price * qty, quantity + qty))
-                },
-            ) else {
+            let entries = reports.iter().map(|report| {
+                let price = report.avg_px_open.filter(|price| *price > Decimal::ZERO)?;
+                Some((report.signed_decimal_qty.abs(), price))
+            });
+
+            let Some((venue_qty, venue_avg_px)) =
+                weighted_entry_px(entries, divides_notional_by_price)
+            else {
                 return false;
             };
 
@@ -1681,7 +1824,7 @@ impl ExecutionManager {
                 continue;
             }
 
-            let Some(cached_avg_px) = position_avg_px(positions) else {
+            let Some(cached_avg_px) = position_avg_px(positions, divides_notional_by_price) else {
                 return false;
             };
 
@@ -1691,12 +1834,7 @@ impl ExecutionManager {
                 .filter_map(|report| report.avg_px_open_precision)
                 .min();
 
-            if !position_prices_match(
-                cached_avg_px,
-                venue_value / venue_qty,
-                None,
-                venue_precision,
-            ) {
+            if !position_prices_match(cached_avg_px, venue_avg_px, None, venue_precision) {
                 return false;
             }
         }
@@ -2249,14 +2387,7 @@ impl ExecutionManager {
         }
 
         let mut filtered_orders = self.filtered_open_orders_for_reconciliation();
-        filtered_orders.sort_by_key(|order| {
-            let client_order_id = order.client_order_id();
-
-            (
-                self.order_query_recency.last_marked(&client_order_id),
-                client_order_id,
-            )
-        });
+        filtered_orders.sort_by_key(|order| self.order_query_priority(order));
 
         let mut queries = Vec::new();
         for order in filtered_orders {
@@ -2294,6 +2425,18 @@ impl ExecutionManager {
         }
 
         queries
+    }
+
+    fn order_query_priority(
+        &self,
+        order: &OrderAny,
+    ) -> (Option<dst::time::Instant>, ClientOrderId) {
+        let client_order_id = order.client_order_id();
+
+        (
+            self.order_query_recency.last_marked(&client_order_id),
+            client_order_id,
+        )
     }
 
     fn create_order_query(
@@ -2395,11 +2538,13 @@ impl ExecutionManager {
                 order.filled_qty(),
                 commission_client.is_some_and(ExecutionClient::requires_authoritative_fills),
             ) {
-                targeted_candidates.push((
+                let responsible_clients = IndexSet::from([sourced.client_id]);
+                targeted_candidates.push(TargetedOrderCandidate {
                     order,
-                    IndexSet::from([sourced.client_id]),
-                    Some(report),
-                ));
+                    responsible_clients,
+                    report: Some(report),
+                });
+
                 continue;
             }
 
@@ -2495,25 +2640,39 @@ impl ExecutionManager {
 
             self.order_coverage_warnings.shift_remove(&client_order_id);
             if let Some(order) = self.prepare_missing_order_query(client_order_id) {
-                targeted_candidates.push((order, responsible_clients.clone(), None));
+                targeted_candidates.push(TargetedOrderCandidate {
+                    order,
+                    responsible_clients: responsible_clients.clone(),
+                    report: None,
+                });
             }
         }
 
-        targeted_candidates.sort_by_key(|(order, _, _)| {
-            let client_order_id = order.client_order_id();
+        let targeted_queries = self.plan_targeted_order_queries(targeted_candidates);
 
-            (
-                self.order_query_recency.last_marked(&client_order_id),
-                client_order_id,
-            )
-        });
+        OpenOrderReconciliationResult {
+            events,
+            targeted_queries,
+        }
+    }
+
+    fn plan_targeted_order_queries(
+        &mut self,
+        mut candidates: Vec<TargetedOrderCandidate>,
+    ) -> Vec<TargetedOrderQuery> {
+        candidates.sort_by_key(|candidate| self.order_query_priority(&candidate.order));
 
         let query_limit = self.config.max_single_order_queries_per_cycle as usize;
-        let mut planned_queries = 0usize;
-        let mut cap_deferred_orders = 0usize;
+        let mut planned_queries = 0_usize;
+        let mut cap_deferred_orders = 0_usize;
         let mut targeted_queries = Vec::new();
 
-        for (order, responsible_clients, report) in targeted_candidates {
+        for TargetedOrderCandidate {
+            order,
+            responsible_clients,
+            report,
+        } in candidates
+        {
             let client_order_id = order.client_order_id();
 
             let required_queries = responsible_clients.len();
@@ -2566,10 +2725,7 @@ impl ExecutionManager {
             );
         }
 
-        OpenOrderReconciliationResult {
-            events,
-            targeted_queries,
-        }
+        targeted_queries
     }
 
     /// Reconciles targeted reports, using absence only in full-history mode.
@@ -3022,11 +3178,10 @@ impl ExecutionManager {
     #[must_use]
     pub fn is_unapplied_fill_report_expired(&self, report: &FillReport) -> bool {
         let fill_key = (report.account_id, report.instrument_id, report.trade_id);
-        self.fills_unapplied.contains_key(&fill_key)
-            && !self.fills_unapplied.within(
-                &fill_key,
-                Duration::from(self.config.position_check_threshold_ns),
-            )
+        let threshold = Duration::from(self.config.position_check_threshold_ns);
+        self.fills_unapplied
+            .elapsed(&fill_key)
+            .is_some_and(|elapsed| elapsed >= threshold)
     }
 
     /// Checks whether cached position fills match the report, including quantity and commission.
@@ -3895,7 +4050,21 @@ impl ExecutionManager {
         let venue_signed_qty = comparison.venue_signed_qty;
         let venue_report = comparison.venue_report.as_ref();
 
-        let cached_avg_px = position_avg_px(cached_positions);
+        let divides_notional_by_price = instrument
+            .instrument_class()
+            .divides_notional_by_price(instrument.is_inverse());
+
+        if divides_notional_by_price
+            && inverse_accumulation_has_opposing_legs(
+                cached_positions.iter(),
+                cached_signed_qty,
+                venue_report,
+            )
+        {
+            return None;
+        }
+
+        let cached_avg_px = position_avg_px(cached_positions, divides_notional_by_price);
         let venue_avg_px = venue_report.and_then(|r| r.avg_px_open);
         let venue_position_id = venue_report.and_then(|report| report.venue_position_id);
         let venue_ts_last = venue_report.map_or(ts_now, |r| r.ts_last);
@@ -3936,42 +4105,36 @@ impl ExecutionManager {
                 OrderSide::Sell
             };
 
-            let reconciliation_px = calculate_reconciliation_price(
+            let fill_px = reconciliation_fill_px(
+                instrument,
                 cached_signed_qty,
                 cached_avg_px,
                 venue_signed_qty,
                 venue_avg_px,
                 venue_report.map_or_default(|report| report.avg_px_open_reconciliation),
                 venue_report.and_then(|report| report.avg_px_open_precision),
+            )?;
+            let quantity =
+                Quantity::from_decimal_dp(qty_diff.abs(), instrument.size_precision()).ok()?;
+            let order_report = create_position_reconciliation_report(
+                instrument,
+                account_id,
+                order_side,
+                quantity,
+                fill_px,
+                venue_position_id,
+                None,
+                ts_now,
+                venue_ts_last,
             );
 
-            reconciliation_px
-                .or(venue_avg_px)
-                .or(cached_avg_px)
-                .and_then(|fill_px| {
-                    let quantity =
-                        Quantity::from_decimal_dp(qty_diff.abs(), instrument.size_precision())
-                            .ok()?;
-                    let order_report = create_position_reconciliation_report(
-                        instrument,
-                        account_id,
-                        order_side,
-                        quantity,
-                        fill_px,
-                        venue_position_id,
-                        None,
-                        ts_now,
-                        venue_ts_last,
-                    );
+            log::info!(
+                color = LogColor::Blue as u8;
+                "Generating synthetic fill for position reconciliation {instrument_id}: side={order_side:?}, qty={}, px={fill_px}", qty_diff.abs(),
+            );
 
-                    log::info!(
-                        color = LogColor::Blue as u8;
-                        "Generating synthetic fill for position reconciliation {instrument_id}: side={order_side:?}, qty={}, px={fill_px}", qty_diff.abs(),
-                    );
-
-                    let events = self.handle_synthetic_order(&order_report, account_id, instrument);
-                    Some(events)
-                })
+            let events = self.handle_synthetic_order(&order_report, account_id, instrument);
+            Some(events)
         }
     }
 
@@ -4251,6 +4414,9 @@ impl ExecutionManager {
         log::debug!("Reconciling NET position for {instrument_id}");
 
         let instrument = self.get_instrument(&instrument_id)?;
+        let divides_notional_by_price = instrument
+            .instrument_class()
+            .divides_notional_by_price(instrument.is_inverse());
 
         let (cached_signed_qty, cached_avg_px) = {
             let cache = self.cache.borrow();
@@ -4260,7 +4426,21 @@ impl ExecutionManager {
                 .iter()
                 .map(|position| position.signed_decimal_qty())
                 .sum::<Decimal>();
-            let cached_avg_px = position_avg_px(positions.iter().map(|position| &**position));
+
+            if divides_notional_by_price
+                && inverse_accumulation_has_opposing_legs(
+                    positions.iter().map(|position| &**position),
+                    cached_signed_qty,
+                    Some(report),
+                )
+            {
+                return None;
+            }
+
+            let cached_avg_px = position_avg_px(
+                positions.iter().map(|position| &**position),
+                divides_notional_by_price,
+            );
 
             (cached_signed_qty, cached_avg_px)
         };
@@ -4387,18 +4567,15 @@ impl ExecutionManager {
             OrderSide::Sell
         };
 
-        let reconciliation_px = calculate_reconciliation_price(
+        let fill_px = reconciliation_fill_px(
+            instrument,
             cached_signed_qty,
             current_avg_px,
             venue_signed_qty,
             report.avg_px_open,
             report.avg_px_open_reconciliation,
             report.avg_px_open_precision,
-        );
-
-        let fill_px = reconciliation_px
-            .or(report.avg_px_open)
-            .or(current_avg_px)?;
+        )?;
 
         let ts_now = self.clock.borrow().timestamp_ns();
         let order_report = create_position_reconciliation_report(
@@ -4822,71 +4999,45 @@ impl ExecutionManager {
                     | OrderStatus::PartiallyFilled
                     | OrderStatus::Triggered
             );
-        let mut prepared_fills = Vec::new();
-        let mut prepared_fill_keys = fill_queue
-            .as_deref()
-            .map_or_default(|queue| queue.pending_fill_keys.clone());
 
-        if replace_inferred_fill {
-            let mut sorted_fills: Vec<&FillReport> = fills.to_vec();
-            sorted_fills.sort_by_key(|fill| fill.ts_event);
-
-            if fill_queue.is_none() {
+        let replacements = if replace_inferred_fill {
+            let Some(queue) = fill_queue else {
                 log::error!(
                     "Cannot reconcile external order {client_order_id}: fill queue is unavailable"
                 );
                 return (Vec::new(), None);
-            }
+            };
 
-            for fill in sorted_fills {
-                if let Some((fill_event, fill_key)) =
-                    self.create_order_fill(&order, fill, instrument, &prepared_fill_keys)
-                {
-                    prepared_fill_keys.insert(fill_key);
-                    prepared_fills.push((fill_event, fill_key));
-                }
-            }
-        }
-
-        let real_fill_total: Decimal = prepared_fills
-            .iter()
-            .map(|(fill, _)| fill.last_qty.as_decimal())
-            .sum();
-        let report_filled = report.filled_qty.as_decimal();
-        let inferred_qty = if report_filled.is_zero()
-            || matches!(
-                report.order_status,
-                OrderStatus::Accepted | OrderStatus::Triggered
-            ) {
-            None
-        } else if replace_inferred_fill {
-            if real_fill_total < report_filled {
-                match Quantity::from_decimal_dp(
-                    report_filled - real_fill_total,
-                    instrument.size_precision(),
-                ) {
-                    Ok(quantity) => Some(quantity),
-                    Err(e) => {
-                        log::error!(
-                            "Cannot reconcile external order {client_order_id}: residual fill quantity is invalid: {e}"
-                        );
-                        return (Vec::new(), None);
-                    }
-                }
-            } else {
-                None
-            }
-        } else if matches!(
-            report.order_status,
-            OrderStatus::PartiallyFilled
-                | OrderStatus::Filled
-                | OrderStatus::Canceled
-                | OrderStatus::Expired
-                | OrderStatus::Voided
-        ) {
-            Some(report.filled_qty)
+            let prepared_fills = self.prepare_external_order_fills(
+                &order,
+                fills,
+                instrument,
+                &queue.pending_fill_keys,
+            );
+            Some((queue, prepared_fills))
         } else {
             None
+        };
+
+        let replacement_filled_qty = replacements.as_ref().map(|(_, fills)| {
+            fills
+                .iter()
+                .map(|(fill, _)| fill.last_qty.as_decimal())
+                .sum()
+        });
+
+        let inferred_qty = match Self::external_order_inferred_fill_qty(
+            report,
+            instrument,
+            replacement_filled_qty,
+        ) {
+            Ok(quantity) => quantity,
+            Err(e) => {
+                log::error!(
+                    "Cannot reconcile external order {client_order_id}: residual fill quantity is invalid: {e}"
+                );
+                return (Vec::new(), None);
+            }
         };
 
         let requires_authoritative_fills =
@@ -4900,7 +5051,12 @@ impl ExecutionManager {
                         OrderStatus::Canceled | OrderStatus::Expired
                     ));
 
-        if defer_terminal && !requires_authoritative_fills && prepared_fills.is_empty() {
+        if defer_terminal
+            && !requires_authoritative_fills
+            && replacements
+                .as_ref()
+                .is_none_or(|(_, fills)| fills.is_empty())
+        {
             log::warn!(
                 "Deferring terminal reconciliation for claimed order {client_order_id}: fill reports are incomplete"
             );
@@ -5004,7 +5160,7 @@ impl ExecutionManager {
             order_events.retain(|event| matches!(event, OrderEventAny::Accepted(_)));
         }
 
-        if replace_inferred_fill {
+        if let Some((fill_queue, prepared_fills)) = replacements {
             let terminal_event = order_events.pop_if(|event| {
                 matches!(
                     event,
@@ -5013,9 +5169,6 @@ impl ExecutionManager {
             });
 
             order_events.pop_if(|event| matches!(event, OrderEventAny::Filled(_)));
-
-            let fill_queue =
-                fill_queue.expect("fill queue availability was checked before cache mutation");
             for (fill_event, fill_key) in prepared_fills {
                 fill_queue.push(&mut order_events, fill_event, fill_key);
             }
@@ -5051,6 +5204,63 @@ impl ExecutionManager {
         (order_events, Some(metadata))
     }
 
+    fn prepare_external_order_fills(
+        &self,
+        order: &OrderAny,
+        fills: &[&FillReport],
+        instrument: &InstrumentAny,
+        pending_fill_keys: &IndexSet<FillKey>,
+    ) -> Vec<(OrderFilled, FillKey)> {
+        let mut sorted_fills = fills.to_vec();
+        sorted_fills.sort_by_key(|fill| fill.ts_event);
+        let mut prepared_fills = Vec::new();
+        let mut prepared_fill_keys = pending_fill_keys.clone();
+
+        for fill in sorted_fills {
+            if let Some((fill_event, fill_key)) =
+                self.create_order_fill(order, fill, instrument, &prepared_fill_keys)
+            {
+                prepared_fill_keys.insert(fill_key);
+                prepared_fills.push((fill_event, fill_key));
+            }
+        }
+
+        prepared_fills
+    }
+
+    fn external_order_inferred_fill_qty(
+        report: &OrderStatusReport,
+        instrument: &InstrumentAny,
+        replacement_filled_qty: Option<Decimal>,
+    ) -> CorrectnessResult<Option<Quantity>> {
+        let report_filled = report.filled_qty.as_decimal();
+        if report_filled.is_zero()
+            || matches!(
+                report.order_status,
+                OrderStatus::Accepted | OrderStatus::Triggered
+            )
+        {
+            return Ok(None);
+        }
+
+        match replacement_filled_qty {
+            Some(quantity) if quantity < report_filled => {
+                Quantity::from_decimal_dp(report_filled - quantity, instrument.size_precision())
+                    .map(Some)
+            }
+            Some(_) => Ok(None),
+            None => Ok(matches!(
+                report.order_status,
+                OrderStatus::PartiallyFilled
+                    | OrderStatus::Filled
+                    | OrderStatus::Canceled
+                    | OrderStatus::Expired
+                    | OrderStatus::Voided
+            )
+            .then_some(report.filled_qty)),
+        }
+    }
+
     fn publish_order_event(event: &OrderEventAny) {
         let topic = switchboard::get_event_order_topic(event.strategy_id());
         msgbus::publish_order_event(topic, event);
@@ -5061,13 +5271,15 @@ impl ExecutionManager {
     /// When historical fills don't fully explain the current position (e.g., lookback window
     /// started mid-position), this creates synthetic fills to align with the venue position.
     fn adjust_mass_status_fills(&self, mass_status: &ExecutionMassStatus) -> AdjustedReports {
-        let mut final_orders: IndexMap<VenueOrderId, OrderStatusReport> =
-            mass_status.order_reports();
-        let mut final_fills: IndexMap<VenueOrderId, Vec<FillReport>> = mass_status.fill_reports();
-        let mut order_only_ids = IndexSet::new();
-        let mut order_only_fill_keys = IndexSet::new();
+        let mut adjusted = AdjustedReports {
+            orders: mass_status.order_reports(),
+            fills: mass_status.fill_reports(),
+            order_only_ids: IndexSet::new(),
+            order_only_fill_keys: IndexSet::new(),
+            lifecycle_replacements: IndexMap::new(),
+        };
 
-        final_fills.retain(|_, fills| {
+        adjusted.fills.retain(|_, fills| {
             fills.retain(|fill| {
                 if fill.last_qty.is_zero() {
                     log::warn!("Skipping zero-quantity fill report: {fill}");
@@ -5081,12 +5293,7 @@ impl ExecutionManager {
         });
 
         if self.config.filter_position_reports {
-            return AdjustedReports {
-                orders: final_orders,
-                fills: final_fills,
-                order_only_ids,
-                order_only_fill_keys,
-            };
+            return adjusted;
         }
 
         let mut instruments_to_adjust = Vec::new();
@@ -5142,12 +5349,7 @@ impl ExecutionManager {
         }
 
         if instruments_to_adjust.is_empty() {
-            return AdjustedReports {
-                orders: final_orders,
-                fills: final_fills,
-                order_only_ids,
-                order_only_fill_keys,
-            };
+            return adjusted;
         }
 
         log_info!(
@@ -5170,17 +5372,24 @@ impl ExecutionManager {
 
             match result {
                 Ok(result) => {
-                    order_only_ids.extend(result.order_only_ids);
-                    order_only_fill_keys.extend(result.order_only_fill_keys);
-                    final_orders.retain(|_, order| order.instrument_id != instrument_id);
-                    final_fills.retain(|_, fills| {
+                    adjusted.order_only_ids.extend(result.order_only_ids);
+                    adjusted
+                        .order_only_fill_keys
+                        .extend(result.order_only_fill_keys);
+                    adjusted
+                        .lifecycle_replacements
+                        .extend(result.lifecycle_replacements);
+                    adjusted
+                        .orders
+                        .retain(|_, order| order.instrument_id != instrument_id);
+                    adjusted.fills.retain(|_, fills| {
                         fills
                             .first()
                             .is_none_or(|f| f.instrument_id != instrument_id)
                     });
 
-                    final_orders.extend(result.orders);
-                    final_fills.extend(result.fills);
+                    adjusted.orders.extend(result.orders);
+                    adjusted.fills.extend(result.fills);
                 }
                 Err(e) => {
                     log::warn!("Failed to adjust fills for {instrument_id}: {e}");
@@ -5190,17 +5399,12 @@ impl ExecutionManager {
 
         log_info!(
             "After adjustment: {} order(s), {} fill group(s)",
-            final_orders.len(),
-            final_fills.len(),
+            adjusted.orders.len(),
+            adjusted.fills.len(),
             color = LogColor::Blue
         );
 
-        AdjustedReports {
-            orders: final_orders,
-            fills: final_fills,
-            order_only_ids,
-            order_only_fill_keys,
-        }
+        adjusted
     }
 
     fn applied_fill_key(&self, fill: &OrderFilled) -> Option<FillKey> {
@@ -5284,6 +5488,97 @@ impl ExecutionManager {
 
         Some((event, fill_key))
     }
+}
+
+struct TargetedOrderCandidate {
+    order: OrderAny,
+    responsible_clients: IndexSet<ClientId>,
+    report: Option<OrderStatusReport>,
+}
+
+fn reconciliation_fill_px(
+    instrument: &InstrumentAny,
+    cached_signed_qty: Decimal,
+    cached_avg_px: Option<Decimal>,
+    venue_signed_qty: Decimal,
+    venue_avg_px: Option<Decimal>,
+    avg_px_reconciliation: AvgPxReconciliation,
+    avg_px_precision: Option<u8>,
+) -> Option<Decimal> {
+    let divides_notional_by_price = instrument
+        .instrument_class()
+        .divides_notional_by_price(instrument.is_inverse());
+
+    let reconciliation_px = calculate_reconciliation_price(
+        cached_signed_qty,
+        cached_avg_px,
+        venue_signed_qty,
+        venue_avg_px,
+        avg_px_reconciliation,
+        avg_px_precision,
+        divides_notional_by_price,
+    );
+
+    if divides_notional_by_price
+        && avg_px_reconciliation == AvgPxReconciliation::Match
+        && same_side_accumulation(cached_signed_qty, venue_signed_qty)
+        && let Some(cached_px) = cached_avg_px
+        && let Some(venue_px) = venue_avg_px
+    {
+        let cached_qty = cached_signed_qty.abs();
+        let added_qty = venue_signed_qty.abs() - cached_qty;
+        let fill_qty = Quantity::from_decimal_dp(added_qty, instrument.size_precision()).ok()?;
+        if fill_qty.as_decimal() != added_qty {
+            return None;
+        }
+
+        let fill_px = (cached_px > Decimal::ZERO && venue_px > Decimal::ZERO)
+            .then(|| {
+                reconciliation_px
+                    .unwrap_or_else(|| inverse_reconciliation_price_ceiling(instrument))
+            })
+            .and_then(|px| bound_inverse_reconciliation_price(px, instrument))
+            .filter(|&px| {
+                let entries = [Some((cached_qty, cached_px)), Some((added_qty, px))];
+                weighted_entry_px(entries.into_iter(), true).is_some_and(|(_, projected_px)| {
+                    position_prices_match(projected_px, venue_px, None, avg_px_precision)
+                })
+            });
+
+        if fill_px.is_none() {
+            let instrument_id = instrument.id();
+            log::warn!(
+                "Cannot reconcile {instrument_id}: no fill price moves the cached position {cached_signed_qty} @ {cached_px} to the venue position {venue_signed_qty} @ {venue_px}"
+            );
+        }
+
+        return fill_px;
+    }
+
+    reconciliation_px.or(venue_avg_px).or(cached_avg_px)
+}
+
+fn inverse_accumulation_has_opposing_legs<'a>(
+    mut positions: impl Iterator<Item = &'a Position>,
+    cached_signed_qty: Decimal,
+    report: Option<&PositionStatusReport>,
+) -> bool {
+    report.is_some_and(|report| {
+        report.avg_px_open.is_some()
+            && report.avg_px_open_reconciliation == AvgPxReconciliation::Match
+            && (same_side_accumulation(cached_signed_qty, report.signed_decimal_qty)
+                || (cached_signed_qty.is_zero() && !report.signed_decimal_qty.is_zero()))
+            && positions.any(|position| {
+                position.signed_decimal_qty().is_sign_negative()
+                    != cached_signed_qty.is_sign_negative()
+            })
+    })
+}
+
+fn same_side_accumulation(cached_signed_qty: Decimal, venue_signed_qty: Decimal) -> bool {
+    !cached_signed_qty.is_zero()
+        && cached_signed_qty.is_sign_negative() == venue_signed_qty.is_sign_negative()
+        && venue_signed_qty.abs() > cached_signed_qty.abs()
 }
 
 fn format_log_samples<T>(items: &[T], format_item: impl Fn(&T) -> String) -> String {

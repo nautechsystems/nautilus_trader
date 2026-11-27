@@ -36,7 +36,7 @@ use nautilus_model::{
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId,
-        TraderId,
+        TraderId, VenueOrderId,
     },
     instruments::{CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_option_btc_deribit},
     orders::{Order, OrderAny, builder::OrderTestBuilder},
@@ -45,6 +45,8 @@ use nautilus_model::{
 };
 use nautilus_portfolio::portfolio::Portfolio;
 use rstest::rstest;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 use super::{DeltaNeutralVol, DeltaNeutralVolConfig};
@@ -226,7 +228,7 @@ fn test_portfolio_delta_zero_with_no_positions() {
 fn test_portfolio_delta_from_call_position() {
     let mut strategy = create_strategy();
     strategy.call_delta = 0.25;
-    strategy.call_position = -10.0;
+    strategy.call_position = dec!(-10.0);
     assert!((strategy.portfolio_delta() - (-2.5)).abs() < 1e-10);
 }
 
@@ -234,7 +236,7 @@ fn test_portfolio_delta_from_call_position() {
 fn test_portfolio_delta_from_put_position() {
     let mut strategy = create_strategy();
     strategy.put_delta = -0.25;
-    strategy.put_position = -10.0;
+    strategy.put_position = dec!(-10.0);
     assert!((strategy.portfolio_delta() - 2.5).abs() < 1e-10);
 }
 
@@ -243,27 +245,27 @@ fn test_portfolio_delta_strangle_with_hedge() {
     let mut strategy = create_strategy();
 
     strategy.call_delta = 0.20;
-    strategy.call_position = -5.0;
+    strategy.call_position = dec!(-5.0);
 
     strategy.put_delta = -0.20;
-    strategy.put_position = -5.0;
+    strategy.put_position = dec!(-5.0);
 
     assert!(strategy.portfolio_delta().abs() < 1e-10);
-    strategy.hedge_position = 0.5;
+    strategy.hedge_position = dec!(0.5);
     assert!((strategy.portfolio_delta() - 0.5).abs() < 1e-10);
 }
 
 #[rstest]
 fn test_should_rehedge_true_above_threshold() {
     let mut strategy = create_initialized_strategy();
-    strategy.hedge_position = 1.0;
+    strategy.hedge_position = dec!(1.0);
     assert!(strategy.should_rehedge());
 }
 
 #[rstest]
 fn test_should_rehedge_false_below_threshold() {
     let mut strategy = create_strategy();
-    strategy.hedge_position = 0.3;
+    strategy.hedge_position = dec!(0.3);
     assert!(!strategy.should_rehedge());
 }
 
@@ -284,7 +286,7 @@ fn test_should_rehedge_with_custom_threshold() {
     strategy.put_delta = -0.20;
     strategy.call_delta_ready = true;
     strategy.put_delta_ready = true;
-    strategy.hedge_position = 0.15;
+    strategy.hedge_position = dec!(0.15);
     assert!(strategy.should_rehedge());
 }
 
@@ -297,7 +299,7 @@ fn test_should_rehedge_false_with_only_one_ready_leg() {
     strategy.put_instrument_id = Some(InstrumentId::from("BTC-USD-260327-65000-P.OKX"));
     strategy.call_delta = 0.20;
     strategy.call_delta_ready = true;
-    strategy.hedge_position = 0.15;
+    strategy.hedge_position = dec!(0.15);
     assert!(!strategy.should_rehedge());
 }
 
@@ -305,11 +307,11 @@ fn test_should_rehedge_false_with_only_one_ready_leg() {
 fn test_hedge_direction_sell_when_portfolio_delta_positive() {
     let mut strategy = create_initialized_strategy();
     strategy.call_delta = 0.30;
-    strategy.call_position = -10.0;
+    strategy.call_position = dec!(-10.0);
     strategy.put_delta = -0.10;
-    strategy.put_position = -10.0;
+    strategy.put_position = dec!(-10.0);
 
-    strategy.hedge_position = 5.0;
+    strategy.hedge_position = dec!(5.0);
 
     let delta = strategy.portfolio_delta();
     assert!((delta - 3.0).abs() < 1e-10);
@@ -327,9 +329,9 @@ fn test_hedge_direction_sell_when_portfolio_delta_positive() {
 fn test_hedge_direction_buy_when_portfolio_delta_negative() {
     let mut strategy = create_initialized_strategy();
     strategy.call_delta = 0.30;
-    strategy.call_position = -10.0;
+    strategy.call_position = dec!(-10.0);
     strategy.put_delta = -0.10;
-    strategy.put_position = -10.0;
+    strategy.put_position = dec!(-10.0);
 
     let delta = strategy.portfolio_delta();
     assert!((delta - (-2.0)).abs() < 1e-10);
@@ -346,10 +348,10 @@ fn test_hedge_direction_buy_when_portfolio_delta_negative() {
 #[rstest]
 fn test_position_tracking_hedge_buy_fill() {
     let mut strategy = create_strategy();
-    assert_eq!(strategy.hedge_position, 0.0);
+    assert_eq!(strategy.hedge_position, dec!(0.0));
 
-    strategy.hedge_position += 1.5;
-    assert!((strategy.hedge_position - 1.5).abs() < 1e-10);
+    strategy.hedge_position += dec!(1.5);
+    assert_eq!(strategy.hedge_position, dec!(1.5));
     assert!((strategy.portfolio_delta() - 1.5).abs() < 1e-10);
 }
 
@@ -359,8 +361,8 @@ fn test_position_tracking_option_sell_fill() {
     strategy.call_instrument_id = Some(InstrumentId::from("BTC-USD-260327-75000-C.OKX"));
     strategy.call_delta = 0.25;
 
-    strategy.call_position -= 5.0;
-    assert!((strategy.call_position - (-5.0)).abs() < 1e-10);
+    strategy.call_position -= dec!(5.0);
+    assert_eq!(strategy.call_position, dec!(-5));
     assert!((strategy.portfolio_delta() - (-1.25)).abs() < 1e-10);
 }
 
@@ -374,8 +376,8 @@ fn test_position_tracking_cumulative_fills() {
     strategy.call_delta_ready = true;
     strategy.put_delta_ready = true;
 
-    strategy.call_position = -5.0;
-    strategy.put_position = -5.0;
+    strategy.call_position = dec!(-5.0);
+    strategy.put_position = dec!(-5.0);
 
     assert!(strategy.portfolio_delta().abs() < 1e-10);
     assert!(!strategy.should_rehedge());
@@ -385,10 +387,93 @@ fn test_position_tracking_cumulative_fills() {
     assert!((strategy.portfolio_delta() - (-0.75)).abs() < 1e-10);
     assert!(strategy.should_rehedge());
 
-    strategy.hedge_position += 0.75;
+    strategy.hedge_position += dec!(0.75);
 
     assert!(strategy.portfolio_delta().abs() < 1e-10);
     assert!(!strategy.should_rehedge());
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+#[case(dec!(2.00000000000000001))]
+#[case(dec!(2.000000000000000001))]
+fn test_native_tracked_fill_keeps_exact_position(#[case] amount: Decimal) {
+    let mut strategy = create_entry_ready_strategy();
+    register_strategy(&mut strategy);
+    strategy.hedge_position = dec!(10);
+    let qty = Quantity::from_decimal_dp(amount, amount.scale() as u8).unwrap();
+    let fill = OrderFilledSpec::builder()
+        .strategy_id(strategy.strategy_id().unwrap())
+        .instrument_id(strategy.call_instrument_id.unwrap())
+        .client_order_id(ClientOrderId::from("O-FILL-PRECISION"))
+        .order_side(OrderSide::Sell)
+        .last_qty(qty)
+        .build();
+
+    strategy.on_order_filled(&fill);
+
+    assert_eq!(strategy.call_position, -amount);
+    assert_eq!(strategy.order_filled_qty[&fill.client_order_id], amount);
+    assert!(strategy.should_rehedge());
+    assert!(!strategy.should_enter_strangle());
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_native_entry_premium_rounds_up_before_applying_tick_offset() {
+    let mut strategy = create_initialized_strategy();
+    strategy.config.entry_premium_offset_ticks = Some(1);
+    register_strategy(&mut strategy);
+    let call = strategy.call_instrument_id.unwrap();
+    let put = strategy.put_instrument_id.unwrap();
+    let cache = strategy.core.cache_rc();
+
+    for (id, kind) in [(call, OptionKind::Call), (put, OptionKind::Put)] {
+        let mut instrument =
+            crypto_option_btc_deribit(3, 1, Price::from("0.001"), Quantity::from("0.1"));
+        instrument.id = id;
+        instrument.option_kind = kind;
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CryptoOption(instrument))
+            .unwrap();
+    }
+
+    let (handler, commands) = get_typed_into_message_saving_handler::<TradingCommand>(None);
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::risk_engine_queue_execute(),
+        handler,
+    );
+
+    strategy
+        .on_quote(&quote_tick(
+            call,
+            "10.000000000000000000",
+            "10.000000000000000001",
+        ))
+        .unwrap();
+    strategy
+        .on_quote(&quote_tick(
+            put,
+            "8.500000000000000000",
+            "8.500000000000000001",
+        ))
+        .unwrap();
+
+    let cache = cache.borrow();
+    let messages = commands.get_messages();
+    assert_eq!(messages.len(), 2);
+
+    for (message, id, price) in [(&messages[0], call, "10.002"), (&messages[1], put, "8.502")] {
+        let TradingCommand::SubmitOrder(command) = message else {
+            panic!("Expected SubmitOrder, received {message:?}");
+        };
+
+        let order = cache.order(&command.client_order_id).unwrap();
+        assert_eq!(order.instrument_id(), id);
+        assert_eq!(order.order_side(), OrderSide::Sell);
+        assert_eq!(order.price(), Some(Price::from(price)));
+    }
 }
 
 #[rstest]
@@ -429,7 +514,7 @@ fn test_greeks_initialized_true_when_both_legs_ready() {
 #[rstest]
 fn test_should_rehedge_false_when_greeks_not_initialized() {
     let mut strategy = create_strategy();
-    strategy.hedge_position = 10.0;
+    strategy.hedge_position = dec!(10.0);
     assert!(!strategy.should_rehedge());
 }
 
@@ -442,7 +527,7 @@ fn test_hedge_pending_default_false() {
 #[rstest]
 fn test_hedge_pending_blocks_rehedge() {
     let mut strategy = create_initialized_strategy();
-    strategy.hedge_position = 5.0;
+    strategy.hedge_position = dec!(5.0);
     assert!(strategy.should_rehedge());
 
     strategy.hedge_pending = true;
@@ -526,10 +611,22 @@ fn test_on_option_greeks_initializes_both_legs_before_rehedging() {
 }
 
 #[rstest]
-fn test_rehedge_skips_quantity_rounded_to_zero() {
+#[case(dec!(0.4), None, None)]
+#[case(dec!(2.5), None, Some(Quantity::from(3)))]
+#[case(dec!(0), Some(0.499_999_999_999_999_94), Some(Quantity::from(2)))]
+fn test_rehedge_rounds_to_contract_precision(
+    #[case] delta: Decimal,
+    #[case] call_delta: Option<f64>,
+    #[case] expected: Option<Quantity>,
+) {
     let mut strategy = create_initialized_strategy();
     strategy.config.rehedge_delta_threshold = 0.1;
-    strategy.hedge_position = 0.4;
+    strategy.hedge_position = delta;
+    if let Some(call_delta) = call_delta {
+        strategy.call_position = dec!(5);
+        strategy.call_delta = call_delta;
+    }
+
     register_strategy(&mut strategy);
     strategy
         .core
@@ -539,6 +636,11 @@ fn test_rehedge_skips_quantity_rounded_to_zero() {
         .unwrap();
 
     assert!(strategy.should_rehedge());
+    let (handler, commands) = get_typed_into_message_saving_handler::<TradingCommand>(None);
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::risk_engine_queue_execute(),
+        handler,
+    );
 
     let event = TimeEvent::new(
         Ustr::from("delta_rehedge"),
@@ -548,8 +650,22 @@ fn test_rehedge_skips_quantity_rounded_to_zero() {
     );
     DataActor::on_time_event(&mut strategy, &event).unwrap();
 
-    // The latch stays clear, so a later rehedge at an expressible size is not blocked.
-    assert!(!strategy.hedge_pending);
+    let messages = commands.get_messages();
+    assert_eq!(strategy.hedge_pending, expected.is_some());
+
+    if let Some(quantity) = expected {
+        let [TradingCommand::SubmitOrder(command)] = messages.as_slice() else {
+            panic!("Expected one hedge order, received {messages:?}");
+        };
+
+        let cache = strategy.cache();
+        let order = cache.order(&command.client_order_id).unwrap();
+        assert_eq!(order.instrument_id(), strategy.config.hedge_instrument_id);
+        assert_eq!(order.order_side(), OrderSide::Sell);
+        assert_eq!(order.quantity(), quantity);
+    } else {
+        assert!(messages.is_empty());
+    }
 }
 
 #[rstest]
@@ -584,16 +700,16 @@ fn test_on_stop_leaves_positions_unchanged() {
     register_strategy(&mut strategy);
 
     strategy.subscribed_greeks = vec![call_id, put_id];
-    strategy.call_position = -5.0;
-    strategy.put_position = -5.0;
-    strategy.hedge_position = 0.75;
+    strategy.call_position = dec!(-5.0);
+    strategy.put_position = dec!(-5.0);
+    strategy.hedge_position = dec!(0.75);
     strategy.hedge_pending = true;
 
     strategy.on_stop().unwrap();
 
-    assert_eq!(strategy.call_position, -5.0);
-    assert_eq!(strategy.put_position, -5.0);
-    assert_eq!(strategy.hedge_position, 0.75);
+    assert_eq!(strategy.call_position, dec!(-5.0));
+    assert_eq!(strategy.put_position, dec!(-5.0));
+    assert_eq!(strategy.hedge_position, dec!(0.75));
     assert!(strategy.subscribed_greeks.is_empty());
     assert!(!strategy.hedge_pending);
 }
@@ -607,8 +723,7 @@ fn test_fill_on_unknown_instrument_ignored() {
 
     let unknown_id = InstrumentId::from("ETH-USD-SWAP.OKX");
 
-    let signed_qty = 1.0;
-
+    let signed_qty = dec!(1);
     if unknown_id == strategy.config.hedge_instrument_id {
         strategy.hedge_position += signed_qty;
     } else if Some(unknown_id) == strategy.call_instrument_id {
@@ -617,9 +732,9 @@ fn test_fill_on_unknown_instrument_ignored() {
         strategy.put_position += signed_qty;
     }
 
-    assert!((strategy.call_position - original_call).abs() < 1e-10);
-    assert!((strategy.put_position - original_put).abs() < 1e-10);
-    assert!((strategy.hedge_position - original_hedge).abs() < 1e-10);
+    assert_eq!(strategy.call_position, original_call);
+    assert_eq!(strategy.put_position, original_put);
+    assert_eq!(strategy.hedge_position, original_hedge);
 }
 
 #[rstest]
@@ -667,8 +782,8 @@ fn test_on_order_expired_clears_hedge_pending() {
 #[rstest]
 fn test_delta_drift_crosses_threshold_boundary() {
     let mut strategy = create_initialized_strategy();
-    strategy.call_position = -10.0;
-    strategy.put_position = -10.0;
+    strategy.call_position = dec!(-10.0);
+    strategy.put_position = dec!(-10.0);
 
     assert!(!strategy.should_rehedge());
 
@@ -682,7 +797,7 @@ fn test_delta_drift_crosses_threshold_boundary() {
     assert!((strategy.portfolio_delta() - (-0.8)).abs() < 1e-10);
     assert!(strategy.should_rehedge());
 
-    strategy.hedge_position = 0.8;
+    strategy.hedge_position = dec!(0.8);
     assert!(strategy.portfolio_delta().abs() < 1e-10);
     assert!(!strategy.should_rehedge());
 
@@ -718,14 +833,14 @@ fn test_should_enter_strangle_false_when_config_disabled() {
 #[rstest]
 fn test_should_enter_strangle_false_with_existing_call_position() {
     let mut strategy = create_entry_ready_strategy();
-    strategy.call_position = -5.0;
+    strategy.call_position = dec!(-5.0);
     assert!(!strategy.should_enter_strangle());
 }
 
 #[rstest]
 fn test_should_enter_strangle_false_with_existing_put_position() {
     let mut strategy = create_entry_ready_strategy();
-    strategy.put_position = -5.0;
+    strategy.put_position = dec!(-5.0);
     assert!(!strategy.should_enter_strangle());
 }
 
@@ -912,9 +1027,9 @@ fn test_on_reset_restores_constructor_state() {
         ..Default::default()
     });
 
-    strategy.call_position = -2.0;
-    strategy.put_position = -3.0;
-    strategy.hedge_position = 4.0;
+    strategy.call_position = dec!(-2.0);
+    strategy.put_position = dec!(-3.0);
+    strategy.hedge_position = dec!(4.0);
     strategy
         .order_filled_qty
         .insert(ClientOrderId::from("O-RESET"), 7.into());
@@ -936,9 +1051,9 @@ fn test_on_reset_restores_constructor_state() {
     assert_eq!(strategy.put_greeks, None);
     assert!(!strategy.call_delta_ready);
     assert!(!strategy.put_delta_ready);
-    assert_eq!(strategy.call_position, 0.0);
-    assert_eq!(strategy.put_position, 0.0);
-    assert_eq!(strategy.hedge_position, 0.0);
+    assert_eq!(strategy.call_position, dec!(0.0));
+    assert_eq!(strategy.put_position, dec!(0.0));
+    assert_eq!(strategy.hedge_position, dec!(0.0));
     assert!(strategy.order_filled_qty.is_empty());
     assert!(!strategy.hedge_pending);
     assert!(!strategy.entry_attempted);
@@ -972,10 +1087,10 @@ fn test_full_hedge_fill_void_restores_timer_hedge() {
             .unwrap();
     }
 
-    strategy.call_position = -10.0;
+    strategy.call_position = dec!(-10.0);
     strategy.hedge_pending = true;
     strategy.on_order_filled(&fill);
-    assert_eq!(strategy.hedge_position, 2.0);
+    assert_eq!(strategy.hedge_position, dec!(2.0));
     assert_eq!(strategy.portfolio_delta(), 0.0);
     assert!(!strategy.hedge_pending);
 
@@ -1001,7 +1116,7 @@ fn test_full_hedge_fill_void_restores_timer_hedge() {
 
     strategy.on_order_fill_voided(&voided);
     assert_eq!(position.signed_qty, 0.into());
-    assert_eq!(strategy.hedge_position, 0.0);
+    assert_eq!(strategy.hedge_position, dec!(0.0));
     assert_eq!(strategy.portfolio_delta(), -2.0);
 
     let (handler, commands) = get_typed_into_message_saving_handler::<TradingCommand>(None);
@@ -1037,13 +1152,13 @@ fn test_full_hedge_fill_void_restores_timer_hedge() {
 }
 
 #[rstest]
-#[case(0, [-6.0, -8.0, 7.0], [-2.0, -8.0, 7.0])]
-#[case(1, [-6.0, -8.0, 7.0], [-6.0, -3.0, 7.0])]
-#[case(2, [-6.0, -8.0, 7.0], [-6.0, -8.0, 1.0])]
+#[case(0, [-6, -8, 7], [-2, -8, 7])]
+#[case(1, [-6, -8, 7], [-6, -3, 7])]
+#[case(2, [-6, -8, 7], [-6, -8, 1])]
 fn test_fill_void_corrects_only_affected_leg_and_preserves_external_baseline(
     #[case] leg: usize,
-    #[case] mut initial: [f64; 3],
-    #[case] mut expected: [f64; 3],
+    #[case] mut initial: [i32; 3],
+    #[case] mut expected: [i32; 3],
 ) {
     let (mut strategy, mut positions) = start_strategy_with_positions();
     assert_eq!(
@@ -1052,7 +1167,7 @@ fn test_fill_void_corrects_only_affected_leg_and_preserves_external_baseline(
             strategy.put_position,
             strategy.hedge_position
         ],
-        initial
+        initial.map(Decimal::from)
     );
 
     for position in &positions {
@@ -1098,14 +1213,15 @@ fn test_fill_void_corrects_only_affected_leg_and_preserves_external_baseline(
         .add_position(&own, OmsType::Hedging)
         .unwrap();
     strategy.on_order_filled(&own_fill);
-    initial[leg] += 2.0;
-    expected[leg] += 2.0;
+    initial[leg] += 2;
+    expected[leg] += 2;
     strategy.hedge_pending = true;
 
     let mut voided = OrderFillVoidedSpec::builder()
         .strategy_id(fill.strategy_id)
         .instrument_id(fill.instrument_id)
         .client_order_id(fill.client_order_id)
+        .venue_order_id(fill.venue_order_id)
         .trade_id(fill.trade_id)
         .order_side(fill.order_side)
         .position_id(position.id)
@@ -1123,9 +1239,9 @@ fn test_fill_void_corrects_only_affected_leg_and_preserves_external_baseline(
     strategy.on_order_fill_voided(&voided);
     let mut partial = initial;
     partial[leg] += if fill.order_side == OrderSide::Buy {
-        -1.0
+        -1
     } else {
-        1.0
+        1
     };
 
     assert_eq!(
@@ -1134,7 +1250,7 @@ fn test_fill_void_corrects_only_affected_leg_and_preserves_external_baseline(
             strategy.put_position,
             strategy.hedge_position
         ],
-        partial
+        partial.map(Decimal::from)
     );
 
     voided.voided_qty = fill.last_qty;
@@ -1155,7 +1271,7 @@ fn test_fill_void_corrects_only_affected_leg_and_preserves_external_baseline(
             strategy.put_position,
             strategy.hedge_position
         ],
-        expected
+        expected.map(Decimal::from)
     );
     assert_eq!(strategy.order_filled_qty[&fill.client_order_id], 0.into());
     assert!(strategy.hedge_pending);
@@ -1198,11 +1314,13 @@ fn start_strategy_with_positions() -> (DeltaNeutralVol, [Position; 3]) {
             (strategy_id, [4, 5, 6][leg]),
         ] {
             let client_order_id = format!("O-{leg}-{owner}");
+            let venue_order_id = format!("V-{leg}-{owner}");
             let position_id = format!("P-{leg}-{owner}");
             let fill = OrderFilledSpec::builder()
                 .strategy_id(owner)
                 .instrument_id(instrument.id())
                 .client_order_id(ClientOrderId::new(client_order_id))
+                .venue_order_id(VenueOrderId::new(venue_order_id))
                 .position_id(PositionId::new(position_id))
                 .last_qty(Quantity::from(qty))
                 .last_px(Price::from("100.0"))
@@ -1267,7 +1385,7 @@ fn test_fill_void_ignores_other_strategy_fills_in_shared_venue_position() {
     cache.borrow_mut().update_position(position).unwrap();
     strategy.on_order_filled(&own_fill);
     assert_eq!(position.signed_qty, 17.into());
-    assert_eq!(strategy.hedge_position, 9.0);
+    assert_eq!(strategy.hedge_position, dec!(9.0));
 
     let voided = OrderFillVoidedSpec::builder()
         .strategy_id(own_fill.strategy_id)
@@ -1288,9 +1406,9 @@ fn test_fill_void_ignores_other_strategy_fills_in_shared_venue_position() {
         .unwrap();
     strategy.on_order_fill_voided(&voided);
     assert_eq!(position.signed_qty, 15.into());
-    assert_eq!(strategy.call_position, -6.0);
-    assert_eq!(strategy.put_position, -8.0);
-    assert_eq!(strategy.hedge_position, 7.0);
+    assert_eq!(strategy.call_position, dec!(-6.0));
+    assert_eq!(strategy.put_position, dec!(-8.0));
+    assert_eq!(strategy.hedge_position, dec!(7.0));
     assert_eq!(
         strategy.order_filled_qty[&own_fill.client_order_id],
         0.into()
@@ -1332,7 +1450,7 @@ fn test_timer_drops_applied_quantities_for_purged_orders() {
             strategy.put_position,
             strategy.hedge_position
         ],
-        [-6.0, -8.0, 7.0]
+        [-6, -8, 7].map(Decimal::from)
     );
 }
 
@@ -1379,7 +1497,7 @@ fn test_fill_void_preserves_other_fills_on_same_order() {
         .unwrap();
     strategy.hedge_pending = true;
     strategy.on_order_filled(&first);
-    assert_eq!(strategy.hedge_position, 2.0);
+    assert_eq!(strategy.hedge_position, dec!(2.0));
     assert_eq!(strategy.order_filled_qty[&first.client_order_id], 2.into());
     assert!(strategy.hedge_pending);
 
@@ -1390,7 +1508,7 @@ fn test_fill_void_preserves_other_fills_on_same_order() {
         .update_order(&OrderEventAny::Filled(second.clone()))
         .unwrap();
     strategy.on_order_filled(&second);
-    assert_eq!(strategy.hedge_position, 5.0);
+    assert_eq!(strategy.hedge_position, dec!(5.0));
     assert_eq!(strategy.order_filled_qty[&first.client_order_id], 5.into());
     assert!(!strategy.hedge_pending);
 
@@ -1413,7 +1531,7 @@ fn test_fill_void_preserves_other_fills_on_same_order() {
         .unwrap();
     strategy.on_order_fill_voided(&voided);
     assert_eq!(position.signed_qty, 3.into());
-    assert_eq!(strategy.hedge_position, 3.0);
+    assert_eq!(strategy.hedge_position, dec!(3.0));
     assert_eq!(strategy.order_filled_qty[&first.client_order_id], 3.into());
     assert!(!strategy.hedge_pending);
 }
@@ -1422,9 +1540,9 @@ fn test_fill_void_preserves_other_fills_on_same_order() {
 fn test_fill_void_without_cached_order_preserves_exposure(#[values(false, true)] tracked: bool) {
     let mut strategy = create_initialized_strategy();
     register_strategy(&mut strategy);
-    strategy.call_position = -2.0;
-    strategy.put_position = -3.0;
-    strategy.hedge_position = 4.0;
+    strategy.call_position = dec!(-2.0);
+    strategy.put_position = dec!(-3.0);
+    strategy.hedge_position = dec!(4.0);
     strategy.hedge_pending = true;
     let client_order_id = ClientOrderId::from("O-NOT-CACHED");
     if tracked {
@@ -1442,7 +1560,7 @@ fn test_fill_void_without_cached_order_preserves_exposure(#[values(false, true)]
             strategy.put_position,
             strategy.hedge_position
         ],
-        [-2.0, -3.0, 4.0]
+        [-2, -3, 4].map(Decimal::from)
     );
     assert_eq!(
         strategy.order_filled_qty.get(&client_order_id).copied(),

@@ -128,6 +128,30 @@ impl DeriveHttpError {
     pub fn is_transport_error(&self) -> bool {
         matches!(self, Self::Transport(_))
     }
+
+    pub(crate) fn redacted_message(&self) -> String {
+        match self {
+            Self::Transport(_) => "transport error".to_string(),
+            Self::Http { status, .. } => format!("HTTP {status}"),
+            Self::JsonRpc { code, .. } => format!("JSON-RPC error {code}"),
+            Self::MissingResult { method } => format!("missing result for `{method}`"),
+            Self::Decode(_) | Self::Serde(_) => "JSON decode error".to_string(),
+            Self::Retry(RetryError::Canceled) => "request canceled".to_string(),
+            Self::Retry(RetryError::OperationTimeout { timeout_ms }) => {
+                format!("request timed out after {timeout_ms} ms")
+            }
+            Self::Retry(RetryError::ElapsedBudgetExceeded {
+                attempt,
+                max_attempts,
+                ..
+            }) => format!("retry budget exceeded ({attempt}/{max_attempts})"),
+            Self::Retry(RetryError::InvalidConfiguration { .. }) => {
+                "invalid retry configuration".to_string()
+            }
+            Self::Auth(_) => "authentication error".to_string(),
+            Self::MissingCredentials { method } => format!("missing credentials for `{method}`"),
+        }
+    }
 }
 
 impl From<HttpClientError> for DeriveHttpError {

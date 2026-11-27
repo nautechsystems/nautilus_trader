@@ -255,7 +255,7 @@ fn purged_instrument_retains_order_guard() {
 fn replacement_failure(mode: &str) -> &'static str {
     match mode {
         "history" | "archive" | "scoped_archive" | "unrelated_archive" => "position history",
-        "orders" | "order_snapshot" => "nonterminal order",
+        "orders" | "order_snapshot" | "released_order_open" => "nonterminal order",
         "intents" => "active swap intents",
         _ => "No authoritative execution-store check",
     }
@@ -907,11 +907,55 @@ mod redis_tests {
             .unwrap();
         let _: () = con.del(keys).await.unwrap();
         database.close().unwrap();
+        let cause = error.downcast_ref::<IntegrityError>().unwrap();
         assert!(
-            error
+            cause
                 .to_string()
                 .contains(&format!("Conflicting DeFi currency definition for {code}")),
             "{error:#}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn mixed_case_instrument_key_cannot_alias_canonical_record() {
+        let key = format!("DEFI-{}", UUID4::new());
+        let mut database = adapter(&key, SerializationEncoding::Json).await;
+
+        let InstrumentAny::CurrencyPair(mut pair) = instrument(823_130, true) else {
+            unreachable!();
+        };
+
+        let mixed_case_id = format!("0x{}.Ethereum:UniswapV4", "Ab".repeat(32));
+        pair.id = InstrumentId::from(mixed_case_id.as_str());
+        let expected = pair.into_any();
+        database.add_instrument(&expected).unwrap();
+        let loaded = database.load_instruments().await.unwrap();
+        assert_eq!(
+            serde_json::to_value(&loaded[&expected.id()]).unwrap(),
+            serde_json::to_value(&expected).unwrap(),
+        );
+
+        let mut con = database.database.con.clone();
+        let mixed_case_key = format!(
+            "{}:instruments:{mixed_case_id}",
+            database.database.trader_key
+        );
+        let _: () = con.rpush(&mixed_case_key, "not a string").await.unwrap();
+        let result = database.load_instruments().await;
+        let keys: Vec<String> = con
+            .keys(format!("{}:*", database.database.trader_key))
+            .await
+            .unwrap();
+        let _: () = con.del(keys).await.unwrap();
+        database.close().unwrap();
+
+        let error = result.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Redis cache key '{mixed_case_key}' does not match canonical ID '{}'",
+                expected.id()
+            ),
         );
     }
 
@@ -1011,6 +1055,10 @@ mod redis_tests {
 mod postgres_tests {
     use nautilus_infrastructure::sql::{
         cache::PostgresCacheDatabase, pg::get_postgres_connect_options, queries::DatabaseQueries,
+    };
+    use nautilus_model::{
+        enums::TriggerType,
+        events::{OrderCanceled, OrderReleased},
     };
     use rstest::rstest;
     use sqlx::{AssertSqlSafe, PgPool, postgres::PgPoolOptions};
@@ -1581,7 +1629,10 @@ mod postgres_tests {
             cache.dispose();
             pool.close().await;
 
-            if mode == "clear" || mode == "unrelated_archive" {
+            if matches!(
+                mode.as_str(),
+                "clear" | "unrelated_archive" | "released_order_closed"
+            ) {
                 result.unwrap();
                 assert_instrument(&restored, &pair, 823_121);
                 assert_instrument(&cached.unwrap(), &pair, 823_121);
@@ -1608,6 +1659,8 @@ mod postgres_tests {
             "scoped_archive",
             "unrelated_archive",
             "orders",
+            "released_order_open",
+            "released_order_closed",
             "intents",
             "unavailable",
         ] {
@@ -1686,6 +1739,83 @@ mod postgres_tests {
                 .await
                 .unwrap();
             DatabaseQueries::add_order(pool, order.init_event().clone(), None)
+                .await
+                .unwrap();
+        }
+
+        if matches!(mode, "released_order_open" | "released_order_closed") {
+            store_released_order(pool, legacy.id(), mode == "released_order_closed").await;
+        }
+    }
+
+    async fn store_released_order(pool: &PgPool, instrument_id: InstrumentId, closed: bool) {
+        let original = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument_id)
+            .quantity(Quantity::from("1.0"))
+            .trigger_price(Price::from("100.00"))
+            .emulation_trigger(TriggerType::BidAsk)
+            .build();
+        let mut replacement = original.init_event().clone();
+
+        let release = OrderReleased::new(
+            replacement.trader_id,
+            replacement.strategy_id,
+            instrument_id,
+            replacement.client_order_id,
+            Price::from("101.00"),
+            UUID4::new(),
+            1.into(),
+            1.into(),
+        );
+
+        let release_id = release.event_id.to_string();
+
+        DatabaseQueries::add_order(pool, replacement.clone(), None)
+            .await
+            .unwrap();
+        DatabaseQueries::add_order_event(pool, Box::new(release), None)
+            .await
+            .unwrap();
+
+        replacement.order_type = OrderType::Market;
+        replacement.trigger_type = None;
+        replacement.trigger_price = None;
+        replacement.emulation_trigger = None;
+        replacement.event_id = UUID4::new();
+        replacement.ts_event = 1.into();
+        replacement.ts_init = 1.into();
+        let replacement_id = replacement.event_id.to_string();
+        DatabaseQueries::add_order(pool, replacement, None)
+            .await
+            .unwrap();
+
+        // Reproduce the shared transaction timestamp independently of row insertion order
+        sqlx::query(
+            "UPDATE order_event SET created_at = (SELECT created_at FROM order_event WHERE id = $1)
+             WHERE id = $2",
+        )
+        .bind(release_id)
+        .bind(replacement_id)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        if closed {
+            let canceled = OrderCanceled::new(
+                original.trader_id(),
+                original.strategy_id(),
+                instrument_id,
+                original.client_order_id(),
+                UUID4::new(),
+                2.into(),
+                2.into(),
+                false,
+                None,
+                None,
+                None,
+            );
+
+            DatabaseQueries::add_order_event(pool, Box::new(canceled), None)
                 .await
                 .unwrap();
         }

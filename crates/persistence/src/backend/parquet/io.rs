@@ -25,7 +25,7 @@ use anyhow::Context;
 use arrow::{
     array::UInt64Array,
     compute::{SortColumn, SortOptions, concat_batches, lexsort_to_indices, take_record_batch},
-    datatypes::Schema,
+    datatypes::{Metadata, Schema},
     record_batch::RecordBatch,
 };
 use nautilus_serialization::arrow::{
@@ -604,12 +604,12 @@ fn reconcile_consolidation_schema_with_sources(
         metadata
     };
 
-    let is_precision_fallback = |metadata: &HashMap<String, String>| {
+    let is_precision_fallback = |metadata: &Metadata| {
         metadata.get(KEY_PRICE_PRECISION).map(String::as_str) == Some("0")
             && metadata.get(KEY_SIZE_PRECISION).map(String::as_str) == Some("0")
     };
 
-    let has_precision = |metadata: &HashMap<String, String>| {
+    let has_precision = |metadata: &Metadata| {
         metadata.contains_key(KEY_PRICE_PRECISION) && metadata.contains_key(KEY_SIZE_PRECISION)
     };
 
@@ -1649,12 +1649,12 @@ mod tests {
                 (
                     "ts_event".to_string(),
                     None,
-                    vec![Encoding::RLE, Encoding::DELTA_BINARY_PACKED],
+                    vec![Encoding::DELTA_BINARY_PACKED],
                 ),
                 (
                     "ts_init".to_string(),
                     None,
-                    vec![Encoding::RLE, Encoding::DELTA_BINARY_PACKED],
+                    vec![Encoding::DELTA_BINARY_PACKED],
                 ),
             ],
         );

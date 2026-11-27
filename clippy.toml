@@ -1,6 +1,7 @@
 cognitive-complexity-threshold = 10
 allow-expect-in-tests = true
 allow-unwrap-in-tests = true
+unreadable-literal-lint-fractions = false
 disallowed-methods = [
   { path = "getrandom::fill", reason = "raw OS RNG bypasses DST seed control", replacement = "a cfg-gated DST RNG seam", allow-invalid = true },
   { path = "getrandom::u32", reason = "raw OS RNG bypasses DST seed control", replacement = "a cfg-gated DST RNG seam", allow-invalid = true },

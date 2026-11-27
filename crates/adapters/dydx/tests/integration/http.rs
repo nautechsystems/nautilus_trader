@@ -106,8 +106,8 @@ fn load_test_instruments() -> Value {
                 "quantumConversionExponent": -9,
                 "tickSize": "1",
                 "stepSize": "0.001",
-                "stepBaseQuantums": 1000000,
-                "subticksPerTick": 100000
+                "stepBaseQuantums": 1_000_000,
+                "subticksPerTick": 100_000
             },
             "ETH-USD": {
                 "clobPairId": "1",
@@ -126,7 +126,7 @@ fn load_test_instruments() -> Value {
                 "quantumConversionExponent": -9,
                 "tickSize": "0.1",
                 "stepSize": "0.01",
-                "stepBaseQuantums": 1000000,
+                "stepBaseQuantums": 1_000_000,
                 "subticksPerTick": 10000
             }
         }
@@ -893,7 +893,7 @@ async fn test_get_time() {
             get(|| async {
                 Json(json!({
                     "iso": "2024-01-01T00:00:00.000Z",
-                    "epoch": 1704067200000_i64
+                    "epoch": 1_704_067_200_000_i64
                 }))
             }),
         )
@@ -911,7 +911,7 @@ async fn test_get_time() {
         DydxRawHttpClient::new(Some(base_url), 5, None, DydxNetwork::Mainnet, None).unwrap();
 
     let result = client.get_time().await.unwrap();
-    assert_eq!(result.epoch_ms, 1704067200000);
+    assert_eq!(result.epoch_ms, 1_704_067_200_000);
 }
 
 #[rstest]
@@ -1379,7 +1379,7 @@ async fn test_connection_pool_reuse() {
                     *c += 1;
                     Json(json!({
                         "iso": "2024-01-01T00:00:00.000Z",
-                        "epoch": 1704067200000_i64
+                        "epoch": 1_704_067_200_000_i64
                     }))
                 }
             }),
@@ -1444,8 +1444,8 @@ async fn test_concurrent_requests() {
                                 "quantumConversionExponent": -9,
                                 "tickSize": "1",
                                 "stepSize": "0.001",
-                                "stepBaseQuantums": 1000000,
-                                "subticksPerTick": 100000
+                                "stepBaseQuantums": 1_000_000,
+                                "subticksPerTick": 100_000
                             }
                         }
                     }))
@@ -1510,7 +1510,7 @@ async fn test_request_timeout_short() {
                 tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
                 Json(json!({
                     "iso": "2024-01-01T00:00:00.000Z",
-                    "epoch": 1704067200000_i64
+                    "epoch": 1_704_067_200_000_i64
                 }))
             }),
         )
@@ -1592,8 +1592,8 @@ async fn test_large_instruments_response() {
                 "quantumConversionExponent": -9,
                 "tickSize": "1",
                 "stepSize": "0.001",
-                "stepBaseQuantums": 1000000,
-                "subticksPerTick": 100000
+                "stepBaseQuantums": 1_000_000,
+                "subticksPerTick": 100_000
             }),
         );
     }
@@ -1697,7 +1697,7 @@ async fn test_mixed_success_and_error_responses() {
                     if *c % 2 == 0 {
                         Json(json!({
                             "iso": "2024-01-01T00:00:00.000Z",
-                            "epoch": 1704067200000_i64
+                            "epoch": 1_704_067_200_000_i64
                         }))
                         .into_response()
                     } else {
@@ -1898,8 +1898,8 @@ async fn mock_markets_pagination() -> Json<Value> {
                 "quantumConversionExponent": -9,
                 "tickSize": "1",
                 "stepSize": "0.001",
-                "stepBaseQuantums": 1000000,
-                "subticksPerTick": 100000
+                "stepBaseQuantums": 1_000_000,
+                "subticksPerTick": 100_000
             }
         }
     }))
@@ -2159,7 +2159,7 @@ async fn test_get_historical_funding() {
     assert_eq!(result.historical_funding[0].ticker, "BTC-USD");
     assert_eq!(result.historical_funding[0].rate.to_string(), "0.000002375");
     assert_eq!(result.historical_funding[0].price.to_string(), "89993.8");
-    assert_eq!(result.historical_funding[0].effective_at_height, 66622979);
+    assert_eq!(result.historical_funding[0].effective_at_height, 66_622_979);
     assert_eq!(result.historical_funding[1].rate.to_string(), "0.000000375");
     assert_eq!(result.historical_funding[2].rate.to_string(), "0.000000625");
 }

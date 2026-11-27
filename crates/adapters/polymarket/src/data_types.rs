@@ -138,10 +138,10 @@ mod tests {
             "chainlink".to_string(),
             60,
             dec!(84291.577380840025358336),
-            1791355667000,
-            1791355667000,
-            UnixNanos::from_millis(1791355667000),
-            UnixNanos::from_millis(1791355667148),
+            1_791_355_667_000,
+            1_791_355_667_000,
+            UnixNanos::from_millis(1_791_355_667_000),
+            UnixNanos::from_millis(1_791_355_667_148),
         );
 
         let encoded = serde_json::to_string(&value).expect("serialize exact TWAP value");
@@ -153,10 +153,10 @@ mod tests {
             "chainlink".to_string(),
             60,
             dec!(84291.577380840025358337),
-            1791355667000,
-            1791355667000,
-            UnixNanos::from_millis(1791355667000),
-            UnixNanos::from_millis(1791355667148),
+            1_791_355_667_000,
+            1_791_355_667_000,
+            UnixNanos::from_millis(1_791_355_667_000),
+            UnixNanos::from_millis(1_791_355_667_148),
         );
         let adjacent_encoded =
             serde_json::to_string(&adjacent).expect("serialize adjacent exact TWAP value");

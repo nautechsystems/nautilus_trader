@@ -192,8 +192,7 @@ pub fn load_tardis_deribit_deltas(limit: Option<usize>) -> Vec<OrderBookDelta> {
 fn load_deltas_from_parquet(filepath: &Path, limit: Option<usize>) -> Vec<OrderBookDelta> {
     let file = File::open(filepath).unwrap();
     let mut builder = ParquetRecordBatchReaderBuilder::try_new(file).unwrap();
-    let metadata = builder.schema().metadata().clone();
-
+    let metadata = builder.schema().metadata().into();
     if let Some(limit) = limit {
         builder = builder.with_limit(limit);
     }

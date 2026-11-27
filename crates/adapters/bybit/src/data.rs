@@ -34,23 +34,24 @@ use nautilus_common::{
     messages::{
         DataEvent,
         data::{
-            BarsResponse, BookResponse, DataResponse, FundingRatesResponse, InstrumentResponse,
-            InstrumentsResponse, OptionChainReferencePriceResponse, RequestBars,
-            RequestBookSnapshot, RequestFundingRates, RequestInstrument, RequestInstruments,
-            RequestOptionChainReferencePrice, RequestTrades, SubscribeBars, SubscribeBookDeltas,
-            SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
-            SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
-            SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, TradesResponse,
-            UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeCustomData, UnsubscribeFundingRates,
-            UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentStatus,
-            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks,
-            UnsubscribeQuotes, UnsubscribeTrades,
+            BarsResponse, BookResponse, DataRequestFailed, DataResponse, FundingRatesResponse,
+            InstrumentResponse, InstrumentsResponse, OptionChainReferencePriceResponse,
+            RequestBars, RequestBookSnapshot, RequestFundingRates, RequestInstrument,
+            RequestInstruments, RequestOptionChainReferencePrice, RequestTrades, SubscribeBars,
+            SubscribeBookDeltas, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
+            SubscribeInstrument, SubscribeInstrumentStatus, SubscribeInstruments,
+            SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
+            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeCustomData,
+            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+            UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
+            UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
 use nautilus_core::{
-    AtomicMap, AtomicSet, UnixNanos,
+    AtomicMap, AtomicSet, UUID4, UnixNanos,
     datetime::datetime_to_unix_nanos,
+    string::secret::SecretString,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -60,7 +61,7 @@ use nautilus_live::{
 use nautilus_model::{
     data::{BarType, CustomData, Data, DataType, QuoteTick},
     enums::{BookType, MarketStatusAction},
-    identifiers::{ClientId, InstrumentId, Venue},
+    identifiers::{ClientId, InstrumentId, Symbol, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::book::OrderBook,
     types::Price,
@@ -80,14 +81,18 @@ use crate::{
             BYBIT_BOOK_DEPTHS, BYBIT_DEFAULT_ORDERBOOK_DEPTH, BYBIT_OPTION_BOOK_DEPTHS,
             BYBIT_OPTION_DEFAULT_ORDERBOOK_DEPTH, BYBIT_QUOTE_DEPTH, BYBIT_VENUE,
         },
+        credential::credential_env_vars,
         enums::BybitProductType,
-        instruments::diff_and_emit_instruments,
+        instruments::economics_differ,
         parse::{extract_raw_symbol, make_bybit_symbol},
         status::{diff_and_emit_statuses, emit_status},
     },
-    config::BybitDataClientConfig,
+    config::{BybitDataClientConfig, diagnostic_credential},
     data_types::register_bybit_custom_data,
-    http::client::BybitHttpClient,
+    http::{
+        client::{BybitHttpClient, BybitRecentTradeParseError},
+        models::BybitTickerOption,
+    },
     websocket::{
         client::BybitWebSocketClient,
         messages::{BybitWsMessage, BybitWsOrderbookDepthMsg},
@@ -116,6 +121,7 @@ pub struct BybitDataClient {
     shutdown_errors: Vec<String>,
     data_sender: EventSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    instrument_publish_lock: Arc<parking_lot::Mutex<()>>,
     book_depths: Arc<AtomicMap<InstrumentId, u32>>,
     book_sync: BookSyncTracker,
     quote_subs: Arc<AtomicSet<InstrumentId>>,
@@ -153,29 +159,37 @@ impl BybitDataClient {
             .as_ref()
             .map(|value| value.expose_secret().to_owned());
 
-        let http_client = if let Some((api_key, api_secret)) = config.resolved_api_credentials() {
-            BybitHttpClient::with_credentials(
-                api_key,
-                api_secret,
-                Some(config.http_base_url()),
-                config.http_timeout_secs,
-                config.max_retries,
-                config.retry_delay_initial_ms,
-                config.retry_delay_max_ms,
-                config.recv_window_ms,
-                proxy_url.clone(),
-            )?
-        } else {
-            BybitHttpClient::new(
-                Some(config.http_base_url()),
-                config.http_timeout_secs,
-                config.max_retries,
-                config.retry_delay_initial_ms,
-                config.retry_delay_max_ms,
-                config.recv_window_ms,
-                proxy_url.clone(),
-            )?
-        };
+        let (key_var, secret_var) = credential_env_vars(config.environment);
+        let api_key = diagnostic_credential(config.api_key.as_ref(), key_var);
+        let api_secret = diagnostic_credential(config.api_secret.as_ref(), secret_var);
+        let http_client =
+            if let (Some(api_key), Some(api_secret)) = (api_key.clone(), api_secret.clone()) {
+                BybitHttpClient::with_credentials(
+                    api_key.into_inner(),
+                    api_secret.into_inner(),
+                    Some(config.http_base_url()),
+                    config.http_timeout_secs,
+                    config.max_retries,
+                    config.retry_delay_initial_ms,
+                    config.retry_delay_max_ms,
+                    config.recv_window_ms,
+                    proxy_url.clone(),
+                )?
+            } else {
+                BybitHttpClient::new(
+                    Some(config.http_base_url()),
+                    config.http_timeout_secs,
+                    config.max_retries,
+                    config.retry_delay_initial_ms,
+                    config.retry_delay_max_ms,
+                    config.recv_window_ms,
+                    proxy_url.clone(),
+                )?
+                .redact_secret_origin(
+                    api_key.as_ref().map(SecretString::expose_secret),
+                    api_secret.as_ref().map(SecretString::expose_secret),
+                )?
+            };
 
         // Create a WebSocket client for each product type (default to Linear if empty)
         let product_types = if config.product_types.is_empty() {
@@ -194,6 +208,10 @@ impl BybitDataClient {
                     config.heartbeat_interval_secs,
                     config.transport_backend,
                     proxy_url.clone(),
+                )
+                .redact_secret_origin(
+                    api_key.as_ref().map(SecretString::expose_secret),
+                    api_secret.as_ref().map(SecretString::expose_secret),
                 )
                 .with_socket_control(
                     socket_factory.control(format!("bybit-{}-data-streams", product_type.as_str())),
@@ -216,6 +234,7 @@ impl BybitDataClient {
             shutdown_errors: Vec::new(),
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
+            instrument_publish_lock: Arc::new(parking_lot::Mutex::new(())),
             book_depths: Arc::new(AtomicMap::new()),
             book_sync: BookSyncTracker::default(),
             quote_subs: Arc::new(AtomicSet::new()),
@@ -319,11 +338,13 @@ impl BybitDataClient {
     fn spawn_instrument_polling(
         &self,
         product_types: &[BybitProductType],
-        poll_secs: u64,
+        poll_interval: Option<Duration>,
+        refresh_interval: Option<Duration>,
     ) -> anyhow::Result<()> {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
         let instruments = self.instruments.clone();
+        let instrument_publish_lock = self.instrument_publish_lock.clone();
         let status_cache = self.status_cache.clone();
         let status_subs = self.instrument_status_subs.clone();
         let instrument_subs = self.instrument_subs.clone();
@@ -333,81 +354,90 @@ impl BybitDataClient {
         let product_types = product_types.to_vec();
 
         let future = async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(poll_secs));
-            interval.tick().await; // Skip first immediate tick
+            let mut poll = poll_interval.map(instrument_interval);
+            let mut refresh = refresh_interval.map(instrument_interval);
 
             loop {
-                tokio::select! {
-                    _ = interval.tick() => {
-                        let all_flag = subscribe_all_instruments.load(Ordering::Relaxed);
-                        let want_instruments = all_flag || !instrument_subs.is_empty();
-                        let want_statuses = !status_subs.is_empty();
-                        if !want_instruments && !want_statuses {
-                            continue;
-                        }
+                let refresh_all = tokio::select! {
+                    () = instrument_tick(&mut refresh) => true,
+                    () = instrument_tick(&mut poll) => false,
+                    () = cancel.cancelled() => break,
+                };
 
-                        let mut all_statuses = AHashMap::new();
+                let want_instruments = refresh_all
+                    || subscribe_all_instruments.load(Ordering::Relaxed)
+                    || !instrument_subs.is_empty();
+                let want_statuses = poll_interval.is_some() && !status_subs.is_empty();
+                if !want_instruments && !want_statuses {
+                    continue;
+                }
 
-                        if want_instruments {
-                            let subs: Option<AHashSet<InstrumentId>> = if all_flag {
-                                None
-                            } else {
-                                Some((**instrument_subs.load()).clone())
-                            };
-                            let mut inst_cache = (**instruments.load()).clone();
+                let mut all_statuses = AHashMap::new();
 
-                            for &pt in &product_types {
-                                match http.request_instruments_with_statuses(pt).await {
-                                    Ok((fetched, statuses)) => {
-                                        diff_and_emit_instruments(
-                                            &fetched, &mut inst_cache, subs.as_ref(), &sender,
-                                        );
+                if want_instruments {
+                    for &pt in &product_types {
+                        let result = tokio::select! {
+                            biased;
+                            () = cancel.cancelled() => return,
+                            result = Box::pin(http.fetch_instruments_with_statuses(pt)) => result,
+                        };
 
-                                        for (id, action) in statuses {
-                                            if inst_cache.contains_key(&id) {
-                                                all_statuses.insert(id, action);
-                                            }
-                                        }
-                                    }
-                                    Err(e) => {
-                                        log::warn!("Bybit instrument poll failed for {pt:?}: {e}");
-                                    }
+                        match result {
+                            Ok((fetched, statuses)) => {
+                                let _publish_guard = instrument_publish_lock.lock();
+
+                                if cancel.is_cancelled() {
+                                    return;
                                 }
-                            }
 
-                            instruments.store(inst_cache);
-                        } else {
-                            for &pt in &product_types {
-                                match http.request_instrument_statuses(pt).await {
-                                    Ok(new_statuses) => {
-                                        let inst_guard = instruments.load();
-                                        for (id, action) in new_statuses {
-                                            if inst_guard.contains_key(&id) {
-                                                all_statuses.insert(id, action);
-                                            }
-                                        }
-                                    }
-                                    Err(e) => {
-                                        log::warn!("Bybit instrument status poll failed for {pt:?}: {e}");
-                                    }
-                                }
-                            }
-                        }
+                                apply_instrument_definitions(
+                                    &http,
+                                    &instruments,
+                                    &sender,
+                                    &fetched,
+                                    false,
+                                );
 
-                        if want_statuses {
-                            let ts = clock.get_time_ns();
-                            let mut cache = (**status_cache.load()).clone();
-                            let subs_guard = status_subs.load();
-                            diff_and_emit_statuses(
-                                &all_statuses, &mut cache, Some(&subs_guard), &sender, ts, ts,
-                            );
-                            status_cache.store(cache);
+                                all_statuses.extend(statuses);
+                            }
+                            Err(e) => {
+                                log::warn!("Bybit instrument poll failed for {pt:?}: {e}");
+                            }
                         }
                     }
-                    () = cancel.cancelled() => {
-                        log::debug!("Bybit instrument polling task cancelled");
+                } else {
+                    for &pt in &product_types {
+                        match http.request_instrument_statuses(pt).await {
+                            Ok(new_statuses) => all_statuses.extend(new_statuses),
+                            Err(e) => {
+                                log::warn!("Bybit instrument status poll failed for {pt:?}: {e}");
+                            }
+                        }
+                    }
+                }
+
+                if want_statuses {
+                    let _publish_guard = instrument_publish_lock.lock();
+
+                    if cancel.is_cancelled() {
                         break;
                     }
+
+                    let ts = clock.get_time_ns();
+                    let mut cache = (**status_cache.load()).clone();
+                    let subs_guard = status_subs.load();
+                    let instruments = instruments.load();
+                    all_statuses
+                        .retain(|id, _| subs_guard.contains(id) || instruments.contains_key(id));
+                    diff_and_emit_statuses(
+                        &all_statuses,
+                        &mut cache,
+                        Some(&subs_guard),
+                        &sender,
+                        ts,
+                        ts,
+                    );
+                    status_cache.store(cache);
                 }
             }
         };
@@ -415,7 +445,9 @@ impl BybitDataClient {
         self.session_tasks
             .spawn(future)
             .context("failed to register Bybit instrument polling task")?;
-        log::debug!("Instrument polling started: interval={poll_secs}s");
+        log::debug!(
+            "Instrument polling started: poll={poll_interval:?}, refresh={refresh_interval:?}"
+        );
         Ok(())
     }
 
@@ -522,7 +554,7 @@ type FundingCacheEntry = (Option<String>, Option<String>, Option<String>);
 fn handle_ws_message(
     message: &BybitWsMessage,
     data_sender: &EventSender<DataEvent>,
-    instruments: &AHashMap<Ustr, InstrumentAny>,
+    instruments: &AHashMap<InstrumentId, InstrumentAny>,
     product_type: Option<BybitProductType>,
     trade_subs: &Arc<AtomicSet<InstrumentId>>,
     ticker_subs: &Arc<AtomicMap<InstrumentId, AHashSet<&'static str>>>,
@@ -543,7 +575,7 @@ fn handle_ws_message(
     let ts_init = clock.get_time_ns();
     let resolve = |raw_symbol: &Ustr| -> Option<&InstrumentAny> {
         let key = product_type.map_or(*raw_symbol, |pt| make_bybit_symbol(raw_symbol, pt));
-        instruments.get(&key)
+        instruments.get(&InstrumentId::new(Symbol::from(key), *BYBIT_VENUE))
     };
 
     match message {
@@ -900,11 +932,60 @@ fn handle_orderbook_deltas(
     }
 }
 
-fn upsert_instrument(
-    cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-    instrument: InstrumentAny,
+fn apply_instrument_definitions(
+    http: &BybitHttpClient,
+    cache: &AtomicMap<InstrumentId, InstrumentAny>,
+    sender: &EventSender<DataEvent>,
+    instruments: &[InstrumentAny],
+    publish_unchanged: bool,
 ) {
-    cache.insert(instrument.id(), instrument);
+    let current = cache.load();
+    let mut accepted = Vec::new();
+    let mut changed = Vec::new();
+
+    for instrument in instruments {
+        let previous = current.get(&instrument.id());
+        if previous.is_some_and(|previous| previous.ts_init() > instrument.ts_init()) {
+            continue;
+        }
+
+        if publish_unchanged
+            || previous.is_none_or(|previous| economics_differ(previous, instrument))
+        {
+            changed.push(instrument);
+        }
+
+        accepted.push(instrument.clone());
+    }
+
+    if accepted.is_empty() {
+        return;
+    }
+
+    http.cache_instruments(&accepted);
+    cache.rcu(|map| {
+        for instrument in &accepted {
+            map.insert(instrument.id(), instrument.clone());
+        }
+    });
+
+    for instrument in changed {
+        send_data(sender, instrument.clone().into());
+    }
+}
+
+fn instrument_interval(period: Duration) -> tokio::time::Interval {
+    let mut interval = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    interval
+}
+
+async fn instrument_tick(interval: &mut Option<tokio::time::Interval>) {
+    if let Some(interval) = interval {
+        interval.tick().await;
+    } else {
+        std::future::pending::<()>().await;
+    }
 }
 
 fn reset_option_quotes(
@@ -939,6 +1020,7 @@ impl DataClient for BybitDataClient {
 
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping {id}", id = self.client_id);
+        let _publish_guard = self.instrument_publish_lock.lock();
         self.session_tasks.begin_shutdown();
         self.command_tasks.begin_shutdown();
         for ws_client in &self.ws_clients {
@@ -950,6 +1032,7 @@ impl DataClient for BybitDataClient {
 
     fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting {id}", id = self.client_id);
+        let _publish_guard = self.instrument_publish_lock.lock();
         self.session_tasks.begin_shutdown();
         self.command_tasks.begin_shutdown();
         for ws_client in &self.ws_clients {
@@ -1007,21 +1090,24 @@ impl DataClient for BybitDataClient {
         for product_type in &product_types {
             let fetched = self
                 .http_client
-                .request_instruments(*product_type, None, None)
+                .fetch_instruments(*product_type, None, None)
                 .await
                 .with_context(|| {
                     format!("failed to request Bybit instruments for {product_type:?}")
                 })?;
 
-            self.http_client.cache_instruments(&fetched);
-
-            self.instruments.rcu(|m| {
-                for instrument in &fetched {
-                    m.insert(instrument.id(), instrument.clone());
-                }
-            });
-
             all_instruments.extend(fetched);
+        }
+
+        {
+            let _publish_guard = self.instrument_publish_lock.lock();
+            apply_instrument_definitions(
+                &self.http_client,
+                &self.instruments,
+                &self.data_sender,
+                &all_instruments,
+                true,
+            );
         }
 
         // Seed instrument status cache from initial fetch
@@ -1065,22 +1151,6 @@ impl DataClient for BybitDataClient {
             self.status_cache.store(status_map);
         }
 
-        for instrument in all_instruments {
-            if let Err(e) = self.data_sender.send(DataEvent::Data(instrument.into())) {
-                log::warn!("Failed to send instrument: {e}");
-            }
-        }
-
-        // Build instruments map keyed by full Nautilus symbol for parsing
-        let instruments_by_symbol: Arc<AHashMap<Ustr, InstrumentAny>> = {
-            let guard = self.instruments.load();
-            let mut map = AHashMap::new();
-            for instrument in guard.values() {
-                map.insert(instrument.id().symbol.inner(), instrument.clone());
-            }
-            Arc::new(map)
-        };
-
         let session_result = async {
             for ws_client in &mut self.ws_clients {
                 ws_client
@@ -1110,7 +1180,7 @@ impl DataClient for BybitDataClient {
                 let liquidation_subs = self.liquidation_subs.clone();
                 let bar_types_cache = ws_client.bar_types_cache().clone();
                 let bars_timestamp_on_close = self.config.bars_timestamp_on_close;
-                let instruments = Arc::clone(&instruments_by_symbol);
+                let instruments = self.instruments.clone();
                 let clock = self.clock;
                 let cancel = self.cancellation_token.clone();
                 let ws_client = ws_client.clone();
@@ -1126,7 +1196,7 @@ impl DataClient for BybitDataClient {
                                 handle_ws_message(
                                     &message,
                                     &sender,
-                                    &instruments,
+                                    &instruments.load(),
                                     product_type,
                                     &trade_subs,
                                     &ticker_subs,
@@ -1157,10 +1227,19 @@ impl DataClient for BybitDataClient {
                     .context("failed to register Bybit WebSocket stream task")?;
             }
 
-            if let Some(poll_secs) = self.config.instrument_poll_interval_secs
-                && poll_secs > 0
-            {
-                self.spawn_instrument_polling(&product_types, poll_secs)?;
+            let poll_interval = self
+                .config
+                .instrument_poll_interval_secs
+                .filter(|&secs| secs > 0)
+                .map(Duration::from_secs);
+            let refresh_interval = self
+                .config
+                .update_instruments_interval_mins
+                .filter(|&mins| mins > 0)
+                .map(|mins| Duration::from_secs(mins.saturating_mul(60)));
+
+            if poll_interval.is_some() || refresh_interval.is_some() {
+                self.spawn_instrument_polling(&product_types, poll_interval, refresh_interval)?;
             }
 
             Ok::<(), anyhow::Error>(())
@@ -1923,6 +2002,8 @@ impl DataClient for BybitDataClient {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
         let instruments_cache = self.instruments.clone();
+        let instrument_publish_lock = self.instrument_publish_lock.clone();
+        let cancel = self.command_tasks.cancellation_token();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let venue = self.venue();
@@ -1932,6 +2013,8 @@ impl DataClient for BybitDataClient {
         let clock = self.clock;
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
+        let publish = start.is_none() && end.is_none();
+
         let product_types = if self.config.product_types.is_empty() {
             vec![BybitProductType::Linear]
         } else {
@@ -1942,20 +2025,45 @@ impl DataClient for BybitDataClient {
             let mut all_instruments = Vec::new();
 
             for product_type in product_types {
-                match http.request_instruments(product_type, None, None).await {
-                    Ok(instruments) => {
-                        instruments_cache.rcu(|cache| {
-                            for instrument in &instruments {
-                                cache.insert(instrument.id(), instrument.clone());
-                            }
-                        });
+                let Some(result) = cancel
+                    .run_until_cancelled(Box::pin(http.fetch_instruments(product_type, None, None)))
+                    .await
+                else {
+                    return;
+                };
 
-                        all_instruments.extend(instruments);
-                    }
+                match result {
+                    Ok(instruments) => all_instruments.extend(instruments),
                     Err(e) => {
-                        log::error!("Failed to fetch instruments for {product_type:?}: {e:?}");
+                        send_request_failed(
+                            &sender,
+                            request_id,
+                            format!(
+                                "failed to fetch Bybit instruments for {product_type:?}: {e:#}"
+                            ),
+                            &instrument_publish_lock,
+                            &cancel,
+                        );
+
+                        return;
                     }
                 }
+            }
+
+            let _publish_guard = instrument_publish_lock.lock();
+
+            if cancel.is_cancelled() {
+                return;
+            }
+
+            if publish {
+                apply_instrument_definitions(
+                    &http,
+                    &instruments_cache,
+                    &sender,
+                    &all_instruments,
+                    false,
+                );
             }
 
             let response = DataResponse::Instruments(InstrumentsResponse::new(
@@ -1983,6 +2091,8 @@ impl DataClient for BybitDataClient {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
         let instruments = self.instruments.clone();
+        let instrument_publish_lock = self.instrument_publish_lock.clone();
+        let cancel = self.command_tasks.cancellation_token();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let start = request.start;
@@ -1991,21 +2101,44 @@ impl DataClient for BybitDataClient {
         let clock = self.clock;
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
+        let publish = start.is_none() && end.is_none();
 
         let product_type = BybitProductType::from_suffix(instrument_id.symbol.as_str())
             .unwrap_or(BybitProductType::Linear);
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str()).to_string();
 
         self.spawn_command(async move {
-            match http
-                .request_instruments(product_type, Some(raw_symbol), None)
+            let Some(result) = cancel
+                .run_until_cancelled(Box::pin(http.fetch_instruments(
+                    product_type,
+                    Some(raw_symbol),
+                    None,
+                )))
                 .await
-                .context("fetch instrument from API")
-            {
+            else {
+                return;
+            };
+
+            match result.context("fetch instrument from API") {
                 Ok(fetched) => {
                     if let Some(instrument) = fetched.into_iter().find(|i| i.id() == instrument_id)
                     {
-                        upsert_instrument(&instruments, instrument.clone());
+                        let _publish_guard = instrument_publish_lock.lock();
+
+                        if cancel.is_cancelled() {
+                            return;
+                        }
+
+                        if publish {
+                            let definitions = std::slice::from_ref(&instrument);
+                            apply_instrument_definitions(
+                                &http,
+                                &instruments,
+                                &sender,
+                                definitions,
+                                false,
+                            );
+                        }
 
                         let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
                             request_id,
@@ -2086,6 +2219,8 @@ impl DataClient for BybitDataClient {
 
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
+        let instrument_publish_lock = self.instrument_publish_lock.clone();
+        let cancel = self.command_tasks.cancellation_token();
         let start = request.start;
         let end = request.end;
         let limit = request.limit.map(|n| n.get() as u32);
@@ -2120,6 +2255,15 @@ impl DataClient for BybitDataClient {
                     if let Err(e) = sender.send(DataEvent::Response(response)) {
                         log::error!("Failed to send trades response: {e}");
                     }
+                }
+                Err(e) if e.is::<BybitRecentTradeParseError>() => {
+                    send_request_failed(
+                        &sender,
+                        request_id,
+                        format!("{e:#}"),
+                        &instrument_publish_lock,
+                        &cancel,
+                    );
                 }
                 Err(e) => log::error!("Trade request failed: {e:?}"),
             }
@@ -2243,6 +2387,8 @@ impl DataClient for BybitDataClient {
         let instrument_id = request.instrument_id;
         let http_client = self.http_client.clone();
         let sender = self.data_sender.clone();
+        let instrument_publish_lock = self.instrument_publish_lock.clone();
+        let cancel = self.command_tasks.cancellation_token();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id());
         let params = request.params;
@@ -2256,40 +2402,36 @@ impl DataClient for BybitDataClient {
                 base_coin: None,
                 exp_date: None,
             };
-            let price = match http_client.request_option_tickers_raw_with_params(&query).await {
-                Ok(tickers) => tickers.into_iter().find_map(|ticker| {
-                    let decimal = ticker.underlying_price.parse::<Decimal>().ok()?;
-                    if decimal <= Decimal::ZERO {
-                        return None;
-                    }
 
-                    match Price::from_decimal(decimal) {
-                        Ok(price) => Some(price),
-                        Err(e) => {
-                            log::warn!(
-                                "Invalid Bybit option-chain reference price for {instrument_id}: {e}"
-                            );
-                            None
-                        }
-                    }
-                }),
+            let price = match http_client
+                .request_option_tickers_raw_with_params(&query)
+                .await
+                .and_then(|tickers| option_chain_reference_price(&tickers))
+            {
+                Ok(price) => price,
                 Err(e) => {
-                    log::error!(
-                        "Option-chain reference price request failed for {series_id}: {e:?}"
+                    send_request_failed(
+                        &sender,
+                        request_id,
+                        format!(
+                            "option-chain reference price request failed for {series_id}: {e:#}"
+                        ),
+                        &instrument_publish_lock,
+                        &cancel,
                     );
-                    None
+                    return;
                 }
             };
-            let response = DataResponse::OptionChainReferencePrice(
-                OptionChainReferencePriceResponse::new(
+
+            let response =
+                DataResponse::OptionChainReferencePrice(OptionChainReferencePriceResponse::new(
                     request_id,
                     client_id,
                     series_id,
                     price,
                     clock.get_time_ns(),
                     params,
-                ),
-            );
+                ));
 
             if let Err(e) = sender.send(DataEvent::Response(response)) {
                 log::error!("Failed to send option-chain reference price response: {e}");
@@ -2298,6 +2440,56 @@ impl DataClient for BybitDataClient {
 
         Ok(())
     }
+}
+
+fn send_request_failed(
+    sender: &EventSender<DataEvent>,
+    request_id: UUID4,
+    reason: String,
+    publish_lock: &parking_lot::Mutex<()>,
+    cancel: &CancellationToken,
+) {
+    let _publish_guard = publish_lock.lock();
+
+    if cancel.is_cancelled() {
+        return;
+    }
+
+    let failure = DataEvent::RequestFailed(DataRequestFailed {
+        request_id,
+        reason,
+        response: None,
+    });
+
+    if let Err(e) = sender.send(failure) {
+        log::error!("Failed to send data request failure for {request_id}: {e}");
+    }
+}
+
+fn option_chain_reference_price(tickers: &[BybitTickerOption]) -> anyhow::Result<Option<Price>> {
+    for ticker in tickers {
+        let decimal = ticker
+            .underlying_price
+            .parse::<Decimal>()
+            .with_context(|| {
+                format!(
+                    "failed to parse Bybit option underlying price '{}'",
+                    ticker.underlying_price
+                )
+            })?;
+
+        if decimal <= Decimal::ZERO {
+            continue;
+        }
+
+        let price = Price::from_decimal(decimal).with_context(|| {
+            format!("failed to convert Bybit option underlying price {decimal}")
+        })?;
+
+        return Ok(Some(price));
+    }
+
+    Ok(None)
 }
 
 impl BybitDataClient {
@@ -2473,8 +2665,8 @@ pub(crate) mod tests {
     use ustr::Ustr;
 
     use super::{
-        BybitDataClient, handle_orderbook_deltas, handle_ws_message, remove_owned_liquidation_sub,
-        validate_orderbook_depth,
+        BybitDataClient, apply_instrument_definitions, handle_orderbook_deltas, handle_ws_message,
+        remove_owned_liquidation_sub, validate_orderbook_depth,
     };
     use crate::{
         book::{BookSequenceOutcome, sync::BookSyncTracker},
@@ -2506,6 +2698,67 @@ pub(crate) mod tests {
         parse_linear_instrument(instrument, ts, ts).unwrap()
     }
 
+    #[rstest]
+    #[tokio::test]
+    async fn test_stale_instrument_update_keeps_newer_parser_definitions() {
+        let (sender, mut events) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(sender);
+        let client =
+            BybitDataClient::new(*BYBIT_CLIENT_ID, BybitDataClientConfig::default()).unwrap();
+        let instrument = linear_instrument();
+        let id = instrument.id();
+        let expected_increment = instrument.price_increment();
+        let mut unchanged = instrument.clone();
+
+        let InstrumentAny::CryptoPerpetual(definition) = &mut unchanged else {
+            panic!("expected a linear perpetual instrument");
+        };
+
+        definition.ts_init = UnixNanos::new(instrument.ts_init().as_u64() + 2);
+        let accepted_at = definition.ts_init;
+        let mut stale = instrument.clone();
+
+        let InstrumentAny::CryptoPerpetual(definition) = &mut stale else {
+            panic!("expected a linear perpetual instrument");
+        };
+
+        definition.ts_init = UnixNanos::new(instrument.ts_init().as_u64() + 1);
+        definition.price_precision = 2;
+        definition.price_increment = Price::from("0.05");
+
+        for incoming in [instrument, unchanged, stale] {
+            apply_instrument_definitions(
+                &client.http_client,
+                &client.instruments,
+                &client.data_sender,
+                &[incoming],
+                false,
+            );
+        }
+
+        let DataEvent::Data(Data::Instrument(published)) = events.try_recv().unwrap() else {
+            panic!("expected a live instrument definition");
+        };
+
+        assert_eq!(published.id(), id);
+        assert_eq!(published.price_increment(), expected_increment);
+        assert_eq!(
+            events.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
+
+        for cached in [
+            client.instruments.get_cloned(&id).unwrap(),
+            client
+                .http_client
+                .get_instrument(&id.symbol.inner())
+                .unwrap(),
+        ] {
+            assert_eq!(cached.ts_init(), accepted_at);
+            assert_eq!(cached.price_increment(), expected_increment);
+        }
+    }
+
     fn tradfi_linear_instrument() -> InstrumentAny {
         let json = load_test_json("http_get_instruments_linear.json");
         let response: BybitInstrumentLinearResponse = serde_json::from_str(&json).unwrap();
@@ -2535,10 +2788,10 @@ pub(crate) mod tests {
         parse_option_instrument(instrument, ts, ts).unwrap()
     }
 
-    fn build_instruments(instruments: &[InstrumentAny]) -> AHashMap<Ustr, InstrumentAny> {
+    fn build_instruments(instruments: &[InstrumentAny]) -> AHashMap<InstrumentId, InstrumentAny> {
         let mut map = AHashMap::new();
         for inst in instruments {
-            map.insert(inst.id().symbol.inner(), inst.clone());
+            map.insert(inst.id(), inst.clone());
         }
         map
     }
@@ -2610,7 +2863,7 @@ pub(crate) mod tests {
 
     fn handle_liquidation_message(
         msg: BybitWsLiquidationMsg,
-        instruments: &AHashMap<Ustr, InstrumentAny>,
+        instruments: &AHashMap<InstrumentId, InstrumentAny>,
         liquidation_subs: &Arc<AtomicMap<InstrumentId, Arc<DataType>>>,
         ts_init: UnixNanos,
     ) -> Vec<CustomData> {
@@ -2662,6 +2915,26 @@ pub(crate) mod tests {
             .as_any()
             .downcast_ref::<BybitLiquidation>()
             .expect("expected BybitLiquidation")
+    }
+
+    #[tokio::test]
+    async fn data_client_redacts_override_when_only_the_key_is_configured() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+
+        let config = BybitDataClientConfig {
+            api_key: Some("secret99".into()),
+            base_url_http: Some("https://secret99.example.com/v5".to_string()),
+            base_url_ws_public: Some("wss://secret99.example.com/v5/public/linear".to_string()),
+            product_types: vec![BybitProductType::Linear],
+            ..Default::default()
+        };
+
+        let client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
+        let debug = format!("{client:?}");
+
+        assert!(debug.contains("<redacted>"));
+        assert!(!debug.contains("secret99"), "{debug}");
     }
 
     #[tokio::test]
@@ -3968,7 +4241,7 @@ pub(crate) mod tests {
         let instrument_id = instrument.id();
 
         // Key the instrument by the fixture ticker symbol with OPTION suffix
-        let ticker_key = Ustr::from("BTC-6JAN23-17500-C-OPTION");
+        let ticker_key = InstrumentId::from("BTC-6JAN23-17500-C-OPTION.BYBIT");
         let mut instruments = AHashMap::new();
         instruments.insert(ticker_key, instrument);
 
@@ -4028,7 +4301,10 @@ pub(crate) mod tests {
         let instrument = option_instrument();
         let instrument_id = instrument.id();
         let mut instruments = AHashMap::new();
-        instruments.insert(Ustr::from("BTC-6JAN23-17500-C-OPTION"), instrument.clone());
+        instruments.insert(
+            InstrumentId::from("BTC-6JAN23-17500-C-OPTION.BYBIT"),
+            instrument.clone(),
+        );
 
         let (trade_subs, ticker_subs, quote_subs, book_depths, greeks_subs, bar_types) =
             empty_subs();
@@ -4341,7 +4617,7 @@ pub(crate) mod tests {
         let instrument = linear_instrument();
 
         let mut map = AHashMap::new();
-        map.insert(instrument.id().symbol.inner(), instrument.clone());
+        map.insert(instrument.id(), instrument.clone());
 
         let (trade_subs, ticker_subs, quote_subs, book_depths, greeks_subs, bar_types) =
             empty_subs();
@@ -4526,6 +4802,10 @@ pub(crate) mod tests {
                 "explicit_key_with_env_secret",
                 &[("BYBIT_API_SECRET", MAINNET_SECRET)],
             ),
+            (
+                "debug_redacts_env_host",
+                &[("BYBIT_DEMO_API_KEY", DEMO_KEY)],
+            ),
         ];
 
         for (case, env) in cases {
@@ -4584,6 +4864,21 @@ pub(crate) mod tests {
                 CONFIG_KEY,
                 MAINNET_SECRET,
             ),
+            "debug_redacts_env_host" => {
+                let config = BybitDataClientConfig {
+                    environment: BybitEnvironment::Demo,
+                    base_url_ws_public: Some(format!("wss://{DEMO_KEY}.example.com/public")),
+                    ..Default::default()
+                };
+
+                let debug = format!("{config:?}");
+
+                assert!(
+                    debug.contains("base_url_ws_public: Some(\"<redacted>\")"),
+                    "{debug}"
+                );
+                assert!(!debug.contains(DEMO_KEY), "{debug}");
+            }
             #[cfg(feature = "python")]
             "python_explicit" => assert_credential(
                 &python_client(

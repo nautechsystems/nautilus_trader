@@ -574,8 +574,7 @@ fn bench_high_volume(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("High volume throughput");
     group.measurement_time(Duration::from_secs(10));
-
-    for msg_count in [100_000u64, 1_000_000] {
+    for msg_count in [100_000_u64, 1_000_000] {
         group.throughput(Throughput::Elements(msg_count));
 
         group.bench_with_input(
@@ -770,8 +769,7 @@ fn bench_refcell_overhead(c: &mut Criterion) {
 // pattern-vs-wildcard match.
 fn bench_subscribe_with_cached_topics(c: &mut Criterion) {
     let mut group = c.benchmark_group("Subscribe with cached topics");
-
-    for cached_count in [0u64, 16, 64, 256] {
+    for cached_count in [0_u64, 16, 64, 256] {
         group.throughput(Throughput::Elements(1));
         group.bench_with_input(
             BenchmarkId::new("Any-based", cached_count),

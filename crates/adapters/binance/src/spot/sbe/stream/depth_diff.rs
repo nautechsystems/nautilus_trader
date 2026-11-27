@@ -125,28 +125,28 @@ mod tests {
     use crate::spot::sbe::stream::{STREAM_SCHEMA_ID, template_id};
 
     fn make_valid_buffer(num_bids: usize, num_asks: usize) -> Vec<u8> {
-        let level_block_len = 16u16;
+        let level_block_len = 16_u16;
         let body_size = 26
             + 4
             + (num_bids * level_block_len as usize)
             + 4
             + (num_asks * level_block_len as usize)
             + 8;
-        let mut buf = vec![0u8; 8 + body_size];
+        let mut buf = vec![0_u8; 8 + body_size];
 
         // Header
-        buf[0..2].copy_from_slice(&26u16.to_le_bytes()); // block_length
+        buf[0..2].copy_from_slice(&26_u16.to_le_bytes()); // block_length
         buf[2..4].copy_from_slice(&template_id::DEPTH_DIFF_STREAM_EVENT.to_le_bytes());
         buf[4..6].copy_from_slice(&STREAM_SCHEMA_ID.to_le_bytes());
-        buf[6..8].copy_from_slice(&0u16.to_le_bytes()); // version
+        buf[6..8].copy_from_slice(&0_u16.to_le_bytes()); // version
 
         // Body
         let body = &mut buf[8..];
-        body[0..8].copy_from_slice(&1000000i64.to_le_bytes()); // event_time_us
-        body[8..16].copy_from_slice(&12345i64.to_le_bytes()); // first_book_update_id
-        body[16..24].copy_from_slice(&12350i64.to_le_bytes()); // last_book_update_id
-        body[24] = (-2i8) as u8; // price_exponent
-        body[25] = (-8i8) as u8; // qty_exponent
+        body[0..8].copy_from_slice(&1_000_000_i64.to_le_bytes()); // event_time_us
+        body[8..16].copy_from_slice(&12345_i64.to_le_bytes()); // first_book_update_id
+        body[16..24].copy_from_slice(&12350_i64.to_le_bytes()); // last_book_update_id
+        body[24] = (-2_i8) as u8; // price_exponent
+        body[25] = (-8_i8) as u8; // qty_exponent
 
         let mut offset = 26;
 
@@ -157,8 +157,9 @@ mod tests {
 
         // Bids
         for i in 0..num_bids {
-            body[offset..offset + 8].copy_from_slice(&(4200000i64 - i as i64 * 100).to_le_bytes());
-            body[offset + 8..offset + 16].copy_from_slice(&100000000i64.to_le_bytes());
+            body[offset..offset + 8]
+                .copy_from_slice(&(4_200_000_i64 - i as i64 * 100).to_le_bytes());
+            body[offset + 8..offset + 16].copy_from_slice(&100_000_000_i64.to_le_bytes());
             offset += level_block_len as usize;
         }
 
@@ -169,8 +170,9 @@ mod tests {
 
         // Asks
         for i in 0..num_asks {
-            body[offset..offset + 8].copy_from_slice(&(4200100i64 + i as i64 * 100).to_le_bytes());
-            body[offset + 8..offset + 16].copy_from_slice(&200000000i64.to_le_bytes());
+            body[offset..offset + 8]
+                .copy_from_slice(&(4_200_100_i64 + i as i64 * 100).to_le_bytes());
+            body[offset + 8..offset + 16].copy_from_slice(&200_000_000_i64.to_le_bytes());
             offset += level_block_len as usize;
         }
 
@@ -186,7 +188,7 @@ mod tests {
         let buf = make_valid_buffer(3, 2);
         let event = DepthDiffStreamEvent::decode(&buf).unwrap();
 
-        assert_eq!(event.event_time_us, 1000000);
+        assert_eq!(event.event_time_us, 1_000_000);
         assert_eq!(event.first_book_update_id, 12345);
         assert_eq!(event.last_book_update_id, 12350);
         assert_eq!(event.bids.len(), 3);
@@ -246,7 +248,7 @@ mod tests {
         for header in [asks_header, bids_header] {
             for index in (0..2).rev() {
                 let end = header + 4 + (index + 1) * width;
-                buf.splice(end..end, [0xFF; 3]);
+                buf.splice(end..end, [0xff; 3]);
             }
 
             buf[header..header + 2].copy_from_slice(&((width + 3) as u16).to_le_bytes());
@@ -289,7 +291,7 @@ mod tests {
     #[rstest]
     fn test_decode_wrong_schema() {
         let mut buf = make_valid_buffer(3, 2);
-        buf[4..6].copy_from_slice(&99u16.to_le_bytes());
+        buf[4..6].copy_from_slice(&99_u16.to_le_bytes());
         let err = DepthDiffStreamEvent::decode(&buf).unwrap_err();
         assert!(matches!(err, StreamDecodeError::SchemaMismatch { .. }));
     }

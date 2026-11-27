@@ -49,7 +49,10 @@ fn liquidation_data_type(instrument_id: InstrumentId) -> DataType {
 fn liquidation_catalog_round_trip_preserves_fields() {
     register_bybit_custom_data();
     let temp_dir = TempDir::new().unwrap();
-    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    let mut catalog = ParquetDataCatalog::builder()
+        .uri(temp_dir.path())
+        .build()
+        .unwrap();
     let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
     let data_type = liquidation_data_type(instrument_id);
 

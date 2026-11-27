@@ -128,7 +128,7 @@ mod tests {
 
     #[rstest]
     fn test_clock_memoizes_primary_clock() {
-        let calls = Rc::new(Cell::new(0usize));
+        let calls = Rc::new(Cell::new(0_usize));
         let calls_in_factory = calls.clone();
         let factory = ClockFactory::new(move || {
             calls_in_factory.set(calls_in_factory.get() + 1);
@@ -161,14 +161,14 @@ mod tests {
             .as_any_mut()
             .downcast_mut::<VirtualClock>()
             .unwrap()
-            .set_time(42u64.into());
+            .set_time(42_u64.into());
         let first = factory.create_component_clock();
         primary
             .borrow_mut()
             .as_any_mut()
             .downcast_mut::<VirtualClock>()
             .unwrap()
-            .set_time(84u64.into());
+            .set_time(84_u64.into());
         let second = factory.create_component_clock();
 
         assert_eq!(first.borrow().timestamp_ns().as_u64(), 42);

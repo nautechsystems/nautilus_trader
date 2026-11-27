@@ -185,12 +185,15 @@ class ExecutionAlgorithmConfig:
     def __init__(
         self,
         exec_algorithm_id: model.ExecAlgorithmId | str | None = None,
+        use_hyphens_in_client_order_ids: bool | None = None,
         log_events: bool = True,
         log_commands: bool = True,
         _kwargs: dict | None = ...,
     ) -> None: ...
     @property
     def exec_algorithm_id(self) -> model.ExecAlgorithmId | None: ...
+    @property
+    def use_hyphens_in_client_order_ids(self) -> bool | None: ...
     @property
     def log_events(self) -> bool: ...
     @property
@@ -553,10 +556,10 @@ class Strategy:
     @property
     def registered_indicators(self) -> list: ...
     def indicators_initialized(self) -> bool: ...
-    def register_indicator_for_quote_ticks(
+    def register_indicator_for_quotes(
         self, instrument_id: model.InstrumentId, indicator: typing.Any
     ) -> None: ...
-    def register_indicator_for_trade_ticks(
+    def register_indicator_for_trades(
         self, instrument_id: model.InstrumentId, indicator: typing.Any
     ) -> None: ...
     def register_indicator_for_bars(

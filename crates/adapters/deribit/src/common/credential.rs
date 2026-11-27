@@ -258,7 +258,7 @@ mod tests {
             "test_client_secret".to_string(),
         );
 
-        let timestamp = 1609459200000i64;
+        let timestamp = 1_609_459_200_000_i64;
         let nonce = "550e8400-e29b-41d4-a716-446655440000";
         let request_data = "POST\n/api/v2\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"private/get_account_summaries\",\"params\":{}}\n";
 
@@ -457,7 +457,7 @@ mod tests {
             "test_client_secret".to_string(),
         );
 
-        let timestamp = 1576074319000u64;
+        let timestamp = 1_576_074_319_000_u64;
         let nonce = "1iqt2wls";
         let data = "";
 
@@ -483,7 +483,7 @@ mod tests {
         // Expected signature from docs: 56590594f97921b09b18f166befe0d1319b198bbcdad7ca73382de2f88fe9aa1
         let credential = Credential::new("AMANDA".to_string(), "AMANDASECRECT".to_string());
 
-        let timestamp = 1576074319000u64;
+        let timestamp = 1_576_074_319_000_u64;
         let nonce = "1iqt2wls";
         let data = "";
 
@@ -497,7 +497,7 @@ mod tests {
 
     #[rstest]
     #[case(1000, 2000)]
-    #[case(1576074319000, 1576074320000)]
+    #[case(1_576_074_319_000, 1_576_074_320_000)]
     fn test_sign_ws_auth_changes_with_timestamp(#[case] ts1: u64, #[case] ts2: u64) {
         let credential = Credential::new("key".to_string(), "secret".to_string());
         let nonce = "nonce";
@@ -514,7 +514,7 @@ mod tests {
     #[case("abc123", "xyz789")]
     fn test_sign_ws_auth_changes_with_nonce(#[case] nonce1: &str, #[case] nonce2: &str) {
         let credential = Credential::new("key".to_string(), "secret".to_string());
-        let timestamp = 1576074319000u64;
+        let timestamp = 1_576_074_319_000_u64;
         let data = "";
 
         let sig1 = credential.sign_ws_auth(timestamp, nonce1, data);

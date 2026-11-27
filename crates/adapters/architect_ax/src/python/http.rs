@@ -267,9 +267,9 @@ impl AxHttpClient {
     /// - The instrument is not found in the cache.
     /// - The HTTP request fails.
     /// - Trade parsing fails.
-    #[pyo3(name = "request_trade_ticks")]
+    #[pyo3(name = "request_trades")]
     #[pyo3(signature = (instrument_id, limit=None, start=None, end=None))]
-    fn py_request_trade_ticks<'py>(
+    fn py_request_trades<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
@@ -284,7 +284,7 @@ impl AxHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let trades = client
-                .request_trade_ticks(symbol, limit, start_nanos, end_nanos)
+                .request_trades(symbol, limit, start_nanos, end_nanos)
                 .await
                 .map_err(to_pyvalue_err)?;
 

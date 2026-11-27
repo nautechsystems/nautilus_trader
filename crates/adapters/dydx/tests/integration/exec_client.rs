@@ -203,8 +203,8 @@ fn create_test_instrument() -> InstrumentAny {
         open_interest: dec!(500000000),
         atomic_resolution: -10,
         quantum_conversion_exponent: -9,
-        subticks_per_tick: 100000,
-        step_base_quantums: 1000000,
+        subticks_per_tick: 100_000,
+        step_base_quantums: 1_000_000,
         is_reduce_only: false,
     };
 
@@ -662,7 +662,7 @@ async fn test_parse_block_height_websocket_message() {
 
     assert_eq!(
         block_msg.contents.block_height.parse::<u64>().unwrap(),
-        9876543210_u64,
+        9_876_543_210_u64,
         "Block height string should parse to correct u64"
     );
 }

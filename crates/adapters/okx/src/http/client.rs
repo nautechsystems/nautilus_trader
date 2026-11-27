@@ -135,14 +135,15 @@ use crate::{
         },
         models::OKXInstrument,
         parse::{
-            extract_inst_family, is_okx_spread_symbol, is_order_status_report_more_advanced,
-            okx_instrument_type, okx_instrument_type_from_symbol,
-            parse_account_state_with_completeness, parse_base_quote_from_symbol, parse_candlestick,
-            parse_fill_report, parse_funding_rate, parse_index_price_update, parse_instrument_any,
-            parse_mark_price_update, parse_millisecond_timestamp, parse_order_status_report,
-            parse_position_status_report, parse_price, parse_quantity,
-            parse_spot_position_quantity, parse_spread_fill_report, parse_spread_instrument,
-            parse_spread_order_status_report, parse_trade_tick, prefer_rpi_response_fields,
+            INST_ID_CODE_INFO_KEY, TRADE_QUOTE_CCY_LIST_INFO_KEY, extract_inst_family,
+            is_okx_spread_symbol, is_order_status_report_more_advanced, okx_instrument_type,
+            okx_instrument_type_from_symbol, parse_account_state_with_completeness,
+            parse_base_quote_from_symbol, parse_candlestick, parse_fill_report, parse_funding_rate,
+            parse_index_price_update, parse_instrument_any, parse_mark_price_update,
+            parse_millisecond_timestamp, parse_order_status_report, parse_position_status_report,
+            parse_price, parse_quantity, parse_spot_position_quantity, parse_spread_fill_report,
+            parse_spread_instrument, parse_spread_order_status_report, parse_trade_tick,
+            prefer_rpi_response_fields,
         },
     },
     http::models::{OKXCandlestick, OKXTrade},
@@ -321,6 +322,32 @@ mod tests {
         resolve_okx_error_code, resolve_okx_error_message,
     };
     use crate::http::models::OKXFeeRate;
+
+    #[rstest]
+    fn test_public_quote_currencies_refresh_until_account_override() {
+        let client = OKXHttpClient::new(
+            Some("http://127.0.0.1:1".into()),
+            1,
+            0,
+            1,
+            1,
+            OKXEnvironment::Demo,
+            None,
+        )
+        .unwrap();
+        let symbol = Ustr::from("BTC-USD");
+        let usd = Ustr::from("USD");
+        let usdc = Ustr::from("USDC");
+        let usdt = Ustr::from("USDT");
+
+        client.apply_trade_quote_ccy_lists([(symbol, vec![usd])], false);
+        client.apply_trade_quote_ccy_lists([(symbol, vec![usdc])], false);
+        assert_eq!(client.trade_quote_ccy_list(&symbol), Some(vec![usdc]));
+
+        client.cache_trade_quote_ccy_lists([(symbol, vec![usdt])]);
+        client.apply_trade_quote_ccy_lists([(symbol, vec![usd])], false);
+        assert_eq!(client.trade_quote_ccy_list(&symbol), Some(vec![usdt]));
+    }
 
     #[rstest]
     #[case::empty("")]
@@ -689,7 +716,7 @@ mod tests {
     async fn test_request_bars_paged_is_truncated_at_the_page_cap() {
         // A day of minute candles, a window ten days long: two history pages of 100 cannot reach the start
         let first: Timestamp = "2026-09-01T00:00:00Z".parse().unwrap();
-        let candles: Vec<serde_json::Value> = (0..1_440i64)
+        let candles: Vec<serde_json::Value> = (0..1_440_i64)
             .rev()
             .map(|index| {
                 let ts = first.as_millisecond() + index * 60_000;
@@ -2490,6 +2517,12 @@ pub enum OKXHistoryCoverage {
     Unverified,
 }
 
+#[derive(Clone, Debug)]
+struct TradeQuoteCurrencyList {
+    currencies: Vec<Ustr>,
+    account_specific: bool,
+}
+
 /// Provides a higher-level HTTP client for the [OKX](https://okx.com) REST API.
 ///
 /// This client wraps the underlying `OKXHttpInnerClient` to handle conversions
@@ -2507,7 +2540,7 @@ pub struct OKXHttpClient {
     pub(crate) inner: Arc<OKXRawHttpClient>,
     pub(crate) instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
     inst_id_codes: Arc<AtomicMap<Ustr, u64>>,
-    trade_quote_ccy_lists: Arc<AtomicMap<Ustr, Vec<Ustr>>>,
+    trade_quote_ccy_lists: Arc<AtomicMap<Ustr, TradeQuoteCurrencyList>>,
     spot_trade_quote_ccy: Arc<Mutex<Option<Ustr>>>,
     cache_initialized: AtomicBool,
 }
@@ -2797,7 +2830,35 @@ impl OKXHttpClient {
     }
 
     pub(crate) fn inst_id_code(&self, symbol: &Ustr) -> Option<u64> {
-        self.inst_id_codes.get_cloned(symbol)
+        self.instruments_cache
+            .load()
+            .get(symbol)
+            .and_then(Instrument::info)
+            .and_then(|info| info.get_u64(INST_ID_CODE_INFO_KEY))
+            .or_else(|| self.inst_id_codes.get_cloned(symbol))
+    }
+
+    pub(crate) fn trade_quote_ccy_list(&self, symbol: &Ustr) -> Option<Vec<Ustr>> {
+        Self::quote_currencies(
+            self.instruments_cache.load().get(symbol),
+            self.trade_quote_ccy_lists.load().get(symbol),
+        )
+    }
+
+    fn quote_currencies(
+        instrument: Option<&InstrumentAny>,
+        fallback: Option<&TradeQuoteCurrencyList>,
+    ) -> Option<Vec<Ustr>> {
+        if let Some(list) = fallback.filter(|list| list.account_specific) {
+            return Some(list.currencies.clone());
+        }
+
+        instrument
+            .and_then(Instrument::info)
+            .and_then(|info| info.get(TRADE_QUOTE_CCY_LIST_INFO_KEY))
+            .and_then(|value| Vec::<Ustr>::deserialize(value).ok())
+            .filter(|currencies| !currencies.is_empty())
+            .or_else(|| fallback.map(|list| list.currencies.clone()))
     }
 
     pub(crate) fn is_spread(&self, instrument_id: InstrumentId) -> bool {
@@ -2824,10 +2885,26 @@ impl OKXHttpClient {
         &self,
         mappings: impl IntoIterator<Item = (Ustr, Vec<Ustr>)>,
     ) {
+        self.apply_trade_quote_ccy_lists(mappings, true);
+    }
+
+    fn apply_trade_quote_ccy_lists(
+        &self,
+        mappings: impl IntoIterator<Item = (Ustr, Vec<Ustr>)>,
+        account_specific: bool,
+    ) {
         let entries: Vec<_> = mappings.into_iter().collect();
         self.trade_quote_ccy_lists.rcu(|m| {
-            for (inst_id, list) in &entries {
-                m.insert(*inst_id, list.clone());
+            for (inst_id, currencies) in &entries {
+                if account_specific || m.get(inst_id).is_none_or(|list| !list.account_specific) {
+                    m.insert(
+                        *inst_id,
+                        TradeQuoteCurrencyList {
+                            currencies: currencies.clone(),
+                            account_specific,
+                        },
+                    );
+                }
             }
         });
     }
@@ -2835,17 +2912,24 @@ impl OKXHttpClient {
     /// Returns a snapshot of cached `tradeQuoteCcyList` values.
     #[must_use]
     pub fn trade_quote_ccy_lists_snapshot(&self) -> Vec<(Ustr, Vec<Ustr>)> {
-        self.trade_quote_ccy_lists
-            .load()
-            .iter()
-            .map(|(inst_id, list)| (*inst_id, list.clone()))
+        let instruments = self.instruments_cache.load();
+        let fallback = self.trade_quote_ccy_lists.load();
+        let symbols: AHashSet<_> = instruments.keys().chain(fallback.keys()).copied().collect();
+        symbols
+            .into_iter()
+            .filter_map(|symbol| {
+                Self::quote_currencies(instruments.get(&symbol), fallback.get(&symbol))
+                    .map(|currencies| (symbol, currencies))
+            })
             .collect()
     }
 
     fn cache_trade_quote_ccy_list_from_instrument(&self, instrument: &OKXInstrument) {
         if !instrument.trade_quote_ccy_list.is_empty() {
-            self.trade_quote_ccy_lists
-                .insert(instrument.inst_id, instrument.trade_quote_ccy_list.clone());
+            self.apply_trade_quote_ccy_lists(
+                [(instrument.inst_id, instrument.trade_quote_ccy_list.clone())],
+                false,
+            );
         }
     }
 
@@ -2858,12 +2942,7 @@ impl OKXHttpClient {
             .spot_trade_quote_ccy
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let available = self
-            .trade_quote_ccy_lists
-            .load()
-            .get(&inst_id)
-            .cloned()
-            .unwrap_or_default();
+        let available = self.trade_quote_ccy_list(&inst_id).unwrap_or_default();
         spot_trade_quote_ccy_wire_value(
             instrument_type,
             configured.as_ref().map(Ustr::as_str),
@@ -3050,6 +3129,8 @@ impl OKXHttpClient {
             );
         }
 
+        let ts_init = self.generate_ts_init();
+
         let resp = if instrument_type == OKXInstrumentType::Events {
             let series_ids = if let Some(series_id) = instrument_family.clone() {
                 vec![series_id]
@@ -3094,8 +3175,6 @@ impl OKXHttpClient {
                 .map_err(|e| anyhow::anyhow!(e))?
         };
 
-        let ts_init = self.generate_ts_init();
-
         let mut instruments: Vec<InstrumentAny> = Vec::new();
         let mut inst_id_codes: Vec<(Ustr, u64)> = Vec::new();
         let mut trade_quote_ccy_lists: Vec<(Ustr, Vec<Ustr>)> = Vec::new();
@@ -3131,7 +3210,7 @@ impl OKXHttpClient {
             }
         }
 
-        self.cache_trade_quote_ccy_lists(trade_quote_ccy_lists);
+        self.apply_trade_quote_ccy_lists(trade_quote_ccy_lists, false);
         self.inst_id_codes
             .rcu(|codes| codes.extend(inst_id_codes.iter().copied()));
 
@@ -3164,13 +3243,13 @@ impl OKXHttpClient {
         &self,
         params: GetSpreadsParams,
     ) -> anyhow::Result<(Vec<InstrumentAny>, Vec<String>)> {
+        let ts_init = self.generate_ts_init();
         let resp = self
             .inner
             .get_spreads(params)
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
-        let ts_init = self.generate_ts_init();
         let mut instruments = Vec::new();
         let mut parse_failures = Vec::new();
 
@@ -3200,14 +3279,37 @@ impl OKXHttpClient {
         &self,
         instrument_id: InstrumentId,
     ) -> anyhow::Result<InstrumentAny> {
+        let instrument = self.fetch_instrument(instrument_id).await?;
+        Ok(self.cache_latest_instrument(&instrument))
+    }
+
+    pub(crate) fn cache_latest_instrument(&self, instrument: &InstrumentAny) -> InstrumentAny {
+        let symbol = instrument.raw_symbol().inner();
+        let mut current = instrument.clone();
+        self.instruments_cache.rcu(|cache| {
+            let cached = cache.entry(symbol).or_insert_with(|| instrument.clone());
+            if cached.ts_init() <= instrument.ts_init() {
+                *cached = instrument.clone();
+            }
+
+            current = cached.clone();
+        });
+
+        self.cache_initialized.store(true, Ordering::Release);
+        current
+    }
+
+    pub(crate) async fn fetch_instrument(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<InstrumentAny> {
         let symbol = instrument_id.symbol.as_str();
         if self.is_spread(instrument_id) {
-            let instrument = self.request_spread_instrument(symbol).await?;
-            self.cache_instrument(instrument.clone());
-            return Ok(instrument);
+            return self.request_spread_instrument(symbol).await;
         }
 
         let instrument_type = okx_instrument_type_from_symbol(symbol);
+        let ts_init = self.generate_ts_init();
 
         let resp = if instrument_type == OKXInstrumentType::Events {
             let series = self
@@ -3269,7 +3371,6 @@ impl OKXHttpClient {
             .into());
         }
 
-        let ts_init = self.generate_ts_init();
         let Some(instrument) = parse_instrument_any(raw_inst, None, None, ts_init)
             .map_err(|e| OKXInstrumentDefinitionError::new(symbol, e))?
         else {
@@ -3280,12 +3381,12 @@ impl OKXHttpClient {
             .into());
         };
 
-        self.cache_instrument(instrument.clone());
-
         Ok(instrument)
     }
 
     async fn request_spread_instrument(&self, symbol: &str) -> anyhow::Result<InstrumentAny> {
+        let ts_init = self.generate_ts_init();
+
         let resp = self
             .inner
             .get_spreads(GetSpreadsParams {
@@ -3298,7 +3399,6 @@ impl OKXHttpClient {
         let raw_spread = resp
             .first()
             .ok_or_else(|| anyhow::anyhow!("Spread instrument {symbol} not found"))?;
-        let ts_init = self.generate_ts_init();
 
         parse_spread_instrument(raw_spread, None, None, ts_init)
             .map_err(|e| OKXInstrumentDefinitionError::new(symbol, e).into())
@@ -3900,13 +4000,13 @@ impl OKXHttpClient {
         // standalone `before` requests (type=2)
         if matches!(mode, Mode::Backward | Mode::Range) {
             let mut before_trade_id: Option<String> = None;
-            let mut pages = 0usize;
+            let mut pages = 0_usize;
             let mut page_results: Vec<Vec<TradeTick>> = Vec::new();
             let mut seen_trades: AHashSet<(String, i64)> = AHashSet::new();
-            let mut unique_count = 0usize;
-            let mut consecutive_empty_pages = 0usize;
+            let mut unique_count = 0_usize;
+            let mut consecutive_empty_pages = 0_usize;
             let mut coverage = OKXHistoryCoverage::Unverified;
-            let mut parse_failures = 0usize;
+            let mut parse_failures = 0_usize;
 
             // Only apply default limit when there's no start boundary
             // (start provides a natural stopping point, end alone allows infinite backward pagination)
@@ -3981,8 +4081,8 @@ impl OKXHttpClient {
 
                 let mut page_trades: Vec<TradeTick> = Vec::with_capacity(raw.len());
                 let mut hit_start_boundary = false;
-                let mut filtered_out = 0usize;
-                let mut duplicates = 0usize;
+                let mut filtered_out = 0_usize;
+                let mut duplicates = 0_usize;
 
                 for r in &raw {
                     // Historical trades use their own time as ts_init: the data engine trims
@@ -4370,7 +4470,7 @@ impl OKXHttpClient {
         let inst = self.instrument_from_cache_by_id(instrument_id)?;
 
         let mut out: Vec<Bar> = Vec::new();
-        let mut pages = 0usize;
+        let mut pages = 0_usize;
 
         // IMPORTANT: OKX API has COUNTER-INTUITIVE semantics (same for bars and trades):
         // - after=X returns records with timestamp < X (upper bound, despite the name!)
@@ -4406,7 +4506,7 @@ impl OKXHttpClient {
         }
 
         let mut have_latest_first_page = false;
-        let mut progressless_loops = 0u8;
+        let mut progressless_loops = 0_u8;
         let mut truncated = false;
         // Open times of candles OKX has not confirmed yet; they rule out a covered window
         let mut unconfirmed: Vec<UnixNanos> = Vec::new();
@@ -8217,9 +8317,7 @@ impl OKXHttpClient {
         let result = if is_spread {
             self.request_spread_instrument(symbol.as_str())
                 .await
-                .inspect(|instrument| {
-                    self.cache_instrument(instrument.clone());
-                })
+                .map(|instrument| self.cache_latest_instrument(&instrument))
         } else {
             self.request_instrument(instrument_id).await
         };

@@ -2237,6 +2237,7 @@ async fn test_exec_client_demo_cancel_filled_confirmation_emits_no_event() {
 
 #[rstest]
 #[tokio::test]
+#[allow(clippy::unreadable_literal, reason = "Bybit error codes")]
 async fn test_exec_client_demo_batch_cancel_failure_preserves_owning_strategies() {
     let (addr, state) = start_test_server().await.unwrap();
     let (mut client, mut rx, cache) = create_test_demo_execution_client(addr);
@@ -2757,6 +2758,7 @@ async fn test_exec_client_batch_modify_orders_payload(#[values(true, false)] dem
 
 #[rstest]
 #[tokio::test]
+#[allow(clippy::unreadable_literal, reason = "Bybit error codes")]
 async fn test_exec_client_batch_modify_venue_rejection_uses_amend_correlation() {
     let (addr, state) = start_test_server().await.unwrap();
     let (mut client, mut rx, cache) = create_test_execution_client(addr);

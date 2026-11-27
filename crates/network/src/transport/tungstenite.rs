@@ -238,7 +238,7 @@ mod tests {
 
     #[rstest]
     fn try_from_text_rejects_invalid_utf8() {
-        let neutral = Message::Text(Bytes::from_static(&[0xFF, 0xFE]));
+        let neutral = Message::Text(Bytes::from_static(&[0xff, 0xfe]));
         let err = tungstenite::Message::try_from(neutral).unwrap_err();
         assert!(matches!(err, TransportError::InvalidUtf8));
     }

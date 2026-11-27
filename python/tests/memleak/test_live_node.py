@@ -30,6 +30,7 @@ from nautilus_trader.config import LoggerConfig
 from nautilus_trader.live import LiveNode
 from nautilus_trader.live import NodeState
 from nautilus_trader.model import TraderId
+from nautilus_trader.testkit.functions import eventually
 from tests.unit.test_component_ownership import OwnershipExecutionAlgorithm
 from tests.unit.test_component_ownership import OwnershipStrategy
 
@@ -48,7 +49,6 @@ _NODE_CONFIG = LiveNodeConfig(
     timeout_portfolio_secs=0,
     timeout_disconnection_secs=0,
     delay_post_stop_secs=0,
-    timeout_shutdown_secs=0,
 )
 
 _ACTOR_CONFIG = ImportableActorConfig(
@@ -101,11 +101,10 @@ async def _run_live_node() -> tuple[
     task = asyncio.create_task(node.run_async())
 
     try:
-        async with asyncio.timeout(10.0):
-            while not handle.is_running:
-                if task.done():
-                    await task
-                await asyncio.sleep(0)
+        await eventually(lambda: handle.is_running or task.done(), timeout_secs=10.0)
+        if not handle.is_running:
+            await task
+            pytest.fail("Live node stopped before it became ready")
 
         assert cache.orders() == []
         assert cache.positions() == []

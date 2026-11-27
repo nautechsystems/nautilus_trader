@@ -23,6 +23,9 @@
 //!
 //! Adding or subtracting two `Price` values requires matching effective fixed-point scales.
 //! These operations panic on a scale mismatch.
+//! An intermediate result can exceed the domain bounds if it fits the backing integer.
+//! Use [`Price::from_raw_checked`] to validate a completed result. The constructor also
+//! accepts price sentinels.
 //! Comparisons and hashes account for scale differences without rounding.
 //! Without the `defi` feature, constructors restrict values to a single storage scale.
 //!
@@ -374,8 +377,10 @@ impl Price {
         })
     }
 
+    /// Returns whether this price is an undefined or error sentinel.
+    #[must_use]
     #[inline]
-    fn is_sentinel(self) -> bool {
+    pub fn is_sentinel(self) -> bool {
         // ERROR_PRICE uses precision == u8::MAX as its sentinel marker, distinct from
         // valid high-precision values (e.g. defi `from_wei` uses precision 18 which is
         // > FIXED_PRECISION but is not a sentinel).
@@ -1705,6 +1710,20 @@ mod tests {
     }
 
     #[rstest]
+    fn test_arithmetic_allows_raw_intermediates() {
+        let one_unit = Price::from_raw(1, FIXED_PRECISION);
+        let max = Price::from_raw(PRICE_RAW_MAX, FIXED_PRECISION);
+        let min = Price::from_raw(PRICE_RAW_MIN, FIXED_PRECISION);
+        let above_max = max + one_unit;
+        let below_min = min - one_unit;
+
+        assert_eq!(above_max.raw(), PRICE_RAW_MAX + 1);
+        assert_eq!(below_min.raw(), PRICE_RAW_MIN - 1);
+        assert_eq!(above_max - one_unit, max);
+        assert_eq!(below_min + one_unit, min);
+    }
+
+    #[rstest]
     fn test_mixed_precision_add() {
         let p1 = Price::new(10.5, 1);
         let p2 = Price::new(5.25, 2);
@@ -1764,7 +1783,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_raw_price_i64() {
-        let raw_scaled_by_1e9 = 42_000_000_000i64; // 42.0 * 10^9
+        let raw_scaled_by_1e9 = 42_000_000_000_i64; // 42.0 * 10^9
         let decoded = decode_raw_price_i64(raw_scaled_by_1e9);
         let price = Price::from_raw(decoded, FIXED_PRECISION);
         assert!(
@@ -2010,12 +2029,12 @@ mod property_tests {
     /// Strategy to exercise both typical and extreme precision values.
     fn precision_strategy() -> impl Strategy<Value = u8> {
         let upper = float_precision_upper_bound();
-        prop_oneof![Just(0u8), 0u8..=upper, Just(FIXED_PRECISION),]
+        prop_oneof![Just(0_u8), 0_u8..=upper, Just(FIXED_PRECISION),]
     }
 
     fn precision_strategy_non_zero() -> impl Strategy<Value = u8> {
         let upper = float_precision_upper_bound().max(1);
-        prop_oneof![Just(upper), Just(FIXED_PRECISION.max(1)), 1u8..=upper,]
+        prop_oneof![Just(upper), Just(FIXED_PRECISION.max(1)), 1_u8..=upper,]
     }
 
     /// Strategy to generate a valid (precision, raw) pair where raw is properly scaled.
@@ -2144,12 +2163,12 @@ mod property_tests {
         /// Property: String parsing should be consistent with precision inference
         #[rstest]
         fn prop_price_string_parsing_precision(
-            integral in 0u32..1_000_000,
-            fractional in 0u32..1_000_000,
+            integral in 0_u32..1_000_000,
+            fractional in 0_u32..1_000_000,
             precision in precision_strategy_non_zero()
         ) {
             // Create a decimal string with exactly 'precision' decimal places
-            let pow = 10u128.pow(u32::from(precision));
+            let pow = 10_u128.pow(u32::from(precision));
             let fractional_mod = u128::from(fractional) % pow;
             let fractional_str = format!("{:0width$}", fractional_mod, width = precision as usize);
             let price_str = format!("{integral}.{fractional_str}");

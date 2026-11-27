@@ -1682,8 +1682,8 @@ mod tests {
         assert_eq!(quote.instrument_id, instrument.id());
         assert_eq!(quote.bid_price, instrument.make_price(92283.5));
         assert_eq!(quote.ask_price, instrument.make_price(92284.0));
-        assert_eq!(quote.bid_size, instrument.make_qty(117660.0, None));
-        assert_eq!(quote.ask_size, instrument.make_qty(186520.0, None));
+        assert_eq!(quote.bid_size, instrument.make_qty(117_660.0, None));
+        assert_eq!(quote.ask_size, instrument.make_qty(186_520.0, None));
         assert_eq!(quote.ts_event, UnixNanos::new(1_765_541_474_086_000_000));
     }
 
@@ -1708,7 +1708,7 @@ mod tests {
         assert_eq!(quote.instrument_id, instrument.id());
         assert_eq!(quote.bid_price, instrument.make_price(92288.0));
         assert_eq!(quote.ask_price, instrument.make_price(92288.5));
-        assert_eq!(quote.bid_size, instrument.make_qty(133440.0, None));
+        assert_eq!(quote.bid_size, instrument.make_qty(133_440.0, None));
         assert_eq!(quote.ask_size, instrument.make_qty(99470.0, None));
         assert_eq!(quote.ts_event, UnixNanos::new(1_765_541_767_174_000_000));
     }
@@ -1882,7 +1882,7 @@ mod tests {
         assert_eq!(first_bid.action, BookAction::Add);
         assert_eq!(first_bid.order.side, OrderSide::Buy.into());
         assert_eq!(first_bid.order.price, instrument.make_price(89532.5));
-        assert_eq!(first_bid.order.size, instrument.make_qty(254900.0, None));
+        assert_eq!(first_bid.order.size, instrument.make_qty(254_900.0, None));
 
         // Verify first ask was parsed correctly from [89533.0, 91570.0]
         let first_ask = &deltas.deltas[11];

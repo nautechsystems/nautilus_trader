@@ -111,8 +111,8 @@ fn build_order_response(request_id: &str, order_id: i64, symbol: &str, status: &
             "closePosition": false,
             "workingType": "CONTRACT_PRICE",
             "priceProtect": false,
-            "updateTime": 1700000000000_i64,
-            "time": 1700000000000_i64,
+            "updateTime": 1_700_000_000_000_i64,
+            "time": 1_700_000_000_000_i64,
         },
         "rateLimits": []
     })

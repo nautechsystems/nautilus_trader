@@ -69,7 +69,7 @@ fn decode_value(value: &Value) {
 
 fn read_u64(data: &[u8], offset: usize) -> Option<u64> {
     let bytes = data.get(offset..offset + 8)?;
-    let mut buf = [0u8; 8];
+    let mut buf = [0_u8; 8];
     buf.copy_from_slice(bytes);
     Some(u64::from_le_bytes(buf))
 }

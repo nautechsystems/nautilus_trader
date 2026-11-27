@@ -1538,14 +1538,13 @@ mod tests {
     #[tokio::test]
     async fn test_wait_for_retry_delay_returns_false_when_signaled() {
         let stream_signal = Arc::new(AtomicBool::new(true));
-        let signal = Arc::clone(&stream_signal);
-        let fut = async move { wait_for_retry_delay(Duration::from_secs(30), &signal).await };
-
-        let handle = tokio::spawn(fut);
-
-        wait_until_async(|| async { handle.is_finished() }, Duration::from_secs(1)).await;
-
-        assert!(!handle.await.unwrap());
+        let completed = tokio::time::timeout(
+            Duration::from_secs(1),
+            wait_for_retry_delay(Duration::from_secs(30), &stream_signal),
+        )
+        .await
+        .expect("a signaled retry delay should return immediately");
+        assert!(!completed);
     }
 
     #[rstest]
@@ -1795,10 +1794,7 @@ mod tests {
 #[cfg(target_os = "linux")] // Run Redis tests on Linux platforms only
 #[cfg(test)]
 mod serial_tests {
-    use std::{
-        sync::{atomic::AtomicUsize, mpsc},
-        thread,
-    };
+    use std::{sync::atomic::AtomicUsize, thread};
 
     #[cfg(feature = "python")]
     use nautilus_common::python::msgbus::get_global_msgbus_factory_registry;
@@ -1822,13 +1818,17 @@ mod serial_tests {
     #[fixture]
     async fn redis_connection() -> ConnectionManager {
         let config = RedisMessageBusConfig {
-            connection_timeout: 1,
             number_of_retries: 0,
             ..Default::default()
         };
-        create_redis_connection(MSGBUS_STREAM, &config)
-            .await
-            .expect("A running Redis service is required for this test")
+
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            create_redis_connection(MSGBUS_STREAM, &config),
+        )
+        .await
+        .expect("Redis test fixture did not connect before its deadline")
+        .expect("A running Redis service is required for this test")
     }
 
     fn redis_msgbus_factory(config: RedisMessageBusConfig) -> Box<dyn MessageBusBackingFactory> {
@@ -2150,13 +2150,16 @@ mod serial_tests {
             connection_timeout: 20,
             ..Default::default()
         };
+
         let stream_signal = Arc::new(AtomicBool::new(true));
-        let signal = Arc::clone(&stream_signal);
-        let handle = tokio::spawn(async move { connect_stream_connection(&config, &signal).await });
-
-        wait_until_async(|| async { handle.is_finished() }, Duration::from_secs(1)).await;
-
-        assert!(handle.await.unwrap().unwrap().is_none());
+        let connection = tokio::time::timeout(
+            Duration::from_secs(1),
+            connect_stream_connection(&config, &stream_signal),
+        )
+        .await
+        .expect("a signaled Redis connection should return immediately")
+        .unwrap();
+        assert!(connection.is_none());
     }
 
     #[rstest]
@@ -2325,7 +2328,10 @@ mod serial_tests {
         for topic in &backlog {
             tx.send(test_bus_message(topic)).unwrap();
         }
-        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        tokio::time::timeout(Duration::from_secs(5), proxy.reconnect_rejected.notified())
+            .await
+            .expect("the publisher should try to reconnect during the outage");
 
         assert_eq!(read_stream_topics(&mut con, &stream_key).await, ["first"]);
         assert!(!handle.is_finished());
@@ -2452,7 +2458,7 @@ mod serial_tests {
     }
 
     #[rstest]
-    #[tokio::test(flavor = "multi_thread")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_two_live_nodes_publish_and_ingest_external_redis_stream(
         #[future] redis_connection: ConnectionManager,
     ) {
@@ -2474,77 +2480,36 @@ mod serial_tests {
         let quote = QuoteTick::default();
         let trade = TradeTick::default();
         let ready_topic = "test.quotes.ready";
-        let (built_tx, built_rx) = mpsc::channel::<()>();
-        let (ready_tx, ready_rx) = mpsc::channel::<()>();
-        let (quote_tx, quote_rx) = mpsc::channel::<QuoteTick>();
-        let (trade_tx, trade_rx) = mpsc::channel::<TradeTick>();
+        let (built_tx, built_rx) = tokio::sync::oneshot::channel();
+        let (ready_tx, mut ready_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (quote_tx, mut quote_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (trade_tx, mut trade_rx) = tokio::sync::mpsc::unbounded_channel();
 
-        let node_b = thread::spawn({
-            let redis_config = redis_config.clone();
-            move || -> anyhow::Result<()> {
-                let runtime = tokio::runtime::Builder::new_multi_thread()
-                    .worker_threads(2)
-                    .enable_all()
-                    .build()?;
+        // Finish Python and shared runtime initialization before waiting on node readiness
+        let node_b_factory = redis_msgbus_factory(redis_config.clone());
 
-                runtime.block_on(async move {
-                    let config = LiveNodeConfig {
-                        environment: Environment::Sandbox,
-                        trader_id: TraderId::from("NODEB-001"),
-                        msgbus: Some(node_b_msgbus),
-                        exec_engine: LiveExecutionEngineConfig {
-                            reconciliation: false,
-                            ..Default::default()
-                        },
-                        delay_post_stop: Duration::ZERO,
-                        timeout_connection: Duration::from_millis(500),
-                        timeout_disconnection: Duration::from_millis(500),
-                        ..Default::default()
-                    };
-                    let mut node = LiveNodeBuilder::from_config(config)?
-                        .with_external_msgbus_factory(redis_msgbus_factory(redis_config))
-                        .build()?;
-                    let handle = node.handle();
-                    let quote_handler = TypedHandler::from({
-                        let quote_tx = quote_tx.clone();
-                        let handle = handle.clone();
-                        move |quote: &QuoteTick| {
-                            let _ = quote_tx.send(*quote);
-                            handle.stop();
-                        }
-                    });
-                    let trade_handler = TypedHandler::from(move |trade: &TradeTick| {
-                        let _ = trade_tx.send(*trade);
-                    });
+        let publisher_config = LiveNodeConfig {
+            environment: Environment::Sandbox,
+            trader_id: trader_a,
+            instance_id: Some(instance_a),
+            msgbus: Some(node_a_msgbus),
+            exec_engine: LiveExecutionEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_connection: Duration::from_millis(500),
+            timeout_disconnection: Duration::from_millis(500),
+            ..Default::default()
+        };
 
-                    let ready_handler = TypedHandler::from(move |_: &QuoteTick| {
-                        let _ = ready_tx.send(());
-                    });
+        let _node_a = LiveNodeBuilder::from_config(publisher_config)
+            .unwrap()
+            .with_external_msgbus_factory(Box::new(redis_config))
+            .build()
+            .unwrap();
 
-                    msgbus::subscribe_quotes(ready_topic.into(), ready_handler, None);
-                    msgbus::subscribe_quotes("data.quotes.*".into(), quote_handler, None);
-                    msgbus::subscribe_trades("data.trades.*".into(), trade_handler, None);
-                    msgbus::get_message_bus()
-                        .borrow_mut()
-                        .add_streaming_type(BusPayloadType::QuoteTick);
-                    built_tx.send(())?;
-                    let result = tokio::time::timeout(Duration::from_secs(10), node.run()).await;
-                    msgbus::get_message_bus().borrow_mut().dispose();
-
-                    match result {
-                        Ok(Ok(())) => Ok(()),
-                        Ok(Err(e)) => Err(e),
-                        Err(e) => anyhow::bail!("node B timed out: {e}"),
-                    }
-                })
-            }
-        });
-
-        built_rx
-            .recv_timeout(Duration::from_secs(5))
-            .expect("node B should build and register subscriptions");
-
-        let node_a = thread::spawn(move || -> anyhow::Result<()> {
+        let node_b = thread::spawn(move || -> anyhow::Result<()> {
             let runtime = tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(2)
                 .enable_all()
@@ -2553,9 +2518,8 @@ mod serial_tests {
             runtime.block_on(async move {
                 let config = LiveNodeConfig {
                     environment: Environment::Sandbox,
-                    trader_id: trader_a,
-                    instance_id: Some(instance_a),
-                    msgbus: Some(node_a_msgbus),
+                    trader_id: TraderId::from("NODEB-001"),
+                    msgbus: Some(node_b_msgbus),
                     exec_engine: LiveExecutionEngineConfig {
                         reconciliation: false,
                         ..Default::default()
@@ -2565,40 +2529,72 @@ mod serial_tests {
                     timeout_disconnection: Duration::from_millis(500),
                     ..Default::default()
                 };
-                let _node = LiveNodeBuilder::from_config(config)?
-                    .with_external_msgbus_factory(Box::new(redis_config))
+
+                let mut node = LiveNodeBuilder::from_config(config)?
+                    .with_external_msgbus_factory(node_b_factory)
                     .build()?;
+                let handle = node.handle();
 
-                // A running node does not guarantee its Redis reader has set its initial cursor
-                wait_until_async(
-                    || {
-                        let ready = ready_rx.try_recv().is_ok();
+                let quote_handler = TypedHandler::from(move |quote: &QuoteTick| {
+                    let _ = quote_tx.send(*quote);
+                    handle.stop();
+                });
 
-                        if !ready {
-                            msgbus::publish_quote(ready_topic.into(), &quote);
-                        }
+                let trade_handler = TypedHandler::from(move |trade: &TradeTick| {
+                    let _ = trade_tx.send(*trade);
+                });
 
-                        async move { ready }
-                    },
-                    Duration::from_secs(5),
-                )
-                .await;
+                let ready_handler = TypedHandler::from(move |_: &QuoteTick| {
+                    let _ = ready_tx.send(());
+                });
 
-                msgbus::publish_trade("data.trades.TEST".into(), &trade);
-                msgbus::publish_quote("data.quotes.TEST".into(), &quote);
+                msgbus::subscribe_quotes(ready_topic.into(), ready_handler, None);
+                msgbus::subscribe_quotes("data.quotes.*".into(), quote_handler, None);
+                msgbus::subscribe_trades("data.trades.*".into(), trade_handler, None);
+                msgbus::get_message_bus()
+                    .borrow_mut()
+                    .add_streaming_type(BusPayloadType::QuoteTick);
+                built_tx
+                    .send(())
+                    .expect("node A should await subscriptions");
+                let result = tokio::time::timeout(Duration::from_secs(10), node.run()).await;
                 msgbus::get_message_bus().borrow_mut().dispose();
 
-                Ok(())
+                match result {
+                    Ok(Ok(())) => Ok(()),
+                    Ok(Err(e)) => Err(e),
+                    Err(e) => anyhow::bail!("node B timed out: {e}"),
+                }
             })
         });
 
-        node_a
-            .join()
-            .expect("node A thread should not panic")
-            .expect("node A should publish externally");
-        let received_quote = quote_rx
-            .recv_timeout(Duration::from_secs(10))
-            .expect("node B should republish the registered quote type");
+        tokio::time::timeout(Duration::from_secs(5), built_rx)
+            .await
+            .expect("node B should build and register subscriptions")
+            .expect("node B exited before registering subscriptions");
+
+        // A running node does not guarantee its Redis reader has set its initial cursor
+        wait_until_async(
+            || {
+                let ready = ready_rx.try_recv().is_ok();
+                if !ready {
+                    msgbus::publish_quote(ready_topic.into(), &quote);
+                }
+
+                async move { ready }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        msgbus::publish_trade("data.trades.TEST".into(), &trade);
+        msgbus::publish_quote("data.quotes.TEST".into(), &quote);
+        msgbus::get_message_bus().borrow_mut().dispose();
+
+        let received_quote = tokio::time::timeout(Duration::from_secs(10), quote_rx.recv())
+            .await
+            .expect("node B should republish the registered quote type")
+            .expect("node B exited before republishing the quote");
         node_b
             .join()
             .expect("node B thread should not panic")
@@ -2794,44 +2790,20 @@ mod serial_tests {
         rx: &mut tokio::sync::mpsc::Receiver<BusMessage>,
         timeout: Duration,
     ) -> BusMessage {
-        let mut received = None;
-
-        wait_until_async(
-            || {
-                if received.is_none() {
-                    received = rx.try_recv().ok();
-                }
-
-                let has_received = received.is_some();
-                async move { has_received }
-            },
-            timeout,
-        )
-        .await;
-
-        received.unwrap()
+        tokio::time::timeout(timeout, rx.recv())
+            .await
+            .expect("timed out waiting for a Redis stream message")
+            .expect("the Redis stream ended before delivering a message")
     }
 
     async fn receive_unbounded_bus_message(
         rx: &mut tokio::sync::mpsc::UnboundedReceiver<BusMessage>,
         timeout: Duration,
     ) -> BusMessage {
-        let mut received = None;
-
-        wait_until_async(
-            || {
-                if received.is_none() {
-                    received = rx.try_recv().ok();
-                }
-
-                let has_received = received.is_some();
-                async move { has_received }
-            },
-            timeout,
-        )
-        .await;
-
-        received.unwrap()
+        tokio::time::timeout(timeout, rx.recv())
+            .await
+            .expect("timed out waiting for the Redis heartbeat")
+            .expect("the Redis heartbeat channel closed before delivering a message")
     }
 
     fn test_bus_message(topic: &str) -> BusMessage {
@@ -2890,6 +2862,7 @@ mod serial_tests {
         accepting: Arc<AtomicBool>,
         open_connections: Arc<AtomicUsize>,
         disconnect_tx: Arc<tokio::sync::watch::Sender<u64>>,
+        reconnect_rejected: Arc<tokio::sync::Notify>,
     }
 
     impl RedisProxy {
@@ -2899,10 +2872,12 @@ mod serial_tests {
             let accepting = Arc::new(AtomicBool::new(true));
             let open_connections = Arc::new(AtomicUsize::new(0));
             let disconnect_tx = Arc::new(tokio::sync::watch::channel(0_u64).0);
+            let reconnect_rejected = Arc::new(tokio::sync::Notify::new());
 
             let accepting_clone = Arc::clone(&accepting);
             let open_connections_clone = Arc::clone(&open_connections);
             let disconnect_tx_clone = Arc::clone(&disconnect_tx);
+            let reconnect_rejected_clone = Arc::clone(&reconnect_rejected);
 
             tokio::spawn(async move {
                 while let Ok((mut inbound, _)) = listener.accept().await {
@@ -2910,7 +2885,9 @@ mod serial_tests {
                     let mut disconnect_rx = disconnect_tx_clone.subscribe();
 
                     if !accepting_clone.load(Ordering::SeqCst) {
-                        continue; // Closing the socket at once fails the client's first command
+                        drop(inbound);
+                        reconnect_rejected_clone.notify_one();
+                        continue;
                     }
 
                     let open_connections = Arc::clone(&open_connections_clone);
@@ -2935,6 +2912,7 @@ mod serial_tests {
                 accepting,
                 open_connections,
                 disconnect_tx,
+                reconnect_rejected,
             }
         }
 

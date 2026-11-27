@@ -45,7 +45,7 @@ def fixture_catalog(tmp_path_factory: pytest.TempPathFactory) -> ParquetDataCata
     Fixture catalog initialized outside Memray's tracked test call.
     """
     catalog = ParquetDataCatalog(str(tmp_path_factory.mktemp("memray-catalog")))
-    catalog.write_quote_ticks(_QUOTES)
+    catalog.write_quotes(_QUOTES)
     return catalog
 
 
@@ -68,5 +68,5 @@ def test_repeated_catalog_queries_release_native_allocations(
 
 
 def _query_quotes(catalog: ParquetDataCatalog) -> tuple[int, int, int]:
-    quotes = catalog.query_quote_ticks([str(_INSTRUMENT_ID)])
+    quotes = catalog.query_quotes([str(_INSTRUMENT_ID)])
     return len(quotes), quotes[0].ts_init, quotes[-1].ts_init

@@ -743,25 +743,25 @@ mod tests {
         assert_eq!(deltas.instrument_id, instrument_id);
         assert_eq!(deltas.flags, RecordFlag::F_LAST as u8);
         assert_eq!(deltas.sequence, 0);
-        assert_eq!(deltas.ts_event, UnixNanos::from(1571830193469000000));
-        assert_eq!(deltas.ts_init, UnixNanos::from(1571830193469000000));
+        assert_eq!(deltas.ts_event, UnixNanos::from(1_571_830_193_469_000_000));
+        assert_eq!(deltas.ts_init, UnixNanos::from(1_571_830_193_469_000_000));
         assert_eq!(
             deltas.deltas[0].instrument_id,
             InstrumentId::from("XBTUSD.BITMEX")
         );
         assert_eq!(deltas.deltas[0].action, BookAction::Update);
         assert_eq!(deltas.deltas[0].order.price, Price::from("7985"));
-        assert_eq!(deltas.deltas[0].order.size, Quantity::from(283318));
+        assert_eq!(deltas.deltas[0].order.size, Quantity::from(283_318));
         assert_eq!(deltas.deltas[0].order.order_id, 0);
         assert_eq!(deltas.deltas[0].flags, RecordFlag::F_LAST as u8);
         assert_eq!(deltas.deltas[0].sequence, 0);
         assert_eq!(
             deltas.deltas[0].ts_event,
-            UnixNanos::from(1571830193469000000)
+            UnixNanos::from(1_571_830_193_469_000_000)
         );
         assert_eq!(
             deltas.deltas[0].ts_init,
-            UnixNanos::from(1571830193469000000)
+            UnixNanos::from(1_571_830_193_469_000_000)
         );
     }
 
@@ -788,40 +788,58 @@ mod tests {
             RecordFlag::F_LAST as u8 + RecordFlag::F_SNAPSHOT as u8
         );
         assert_eq!(deltas.sequence, 0);
-        assert_eq!(deltas.ts_event, UnixNanos::from(1572010786950000000));
-        assert_eq!(deltas.ts_init, UnixNanos::from(1572010786961000000));
+        assert_eq!(deltas.ts_event, UnixNanos::from(1_572_010_786_950_000_000));
+        assert_eq!(deltas.ts_init, UnixNanos::from(1_572_010_786_961_000_000));
 
         // CLEAR delta
         assert_eq!(clear_delta.instrument_id, instrument_id);
         assert_eq!(clear_delta.action, BookAction::Clear);
         assert_eq!(clear_delta.flags, RecordFlag::F_SNAPSHOT as u8);
         assert_eq!(clear_delta.sequence, 0);
-        assert_eq!(clear_delta.ts_event, UnixNanos::from(1572010786950000000));
-        assert_eq!(clear_delta.ts_init, UnixNanos::from(1572010786961000000));
+        assert_eq!(
+            clear_delta.ts_event,
+            UnixNanos::from(1_572_010_786_950_000_000)
+        );
+        assert_eq!(
+            clear_delta.ts_init,
+            UnixNanos::from(1_572_010_786_961_000_000)
+        );
 
         // First bid delta
         assert_eq!(bid_delta.instrument_id, instrument_id);
         assert_eq!(bid_delta.action, BookAction::Add);
         assert_eq!(bid_delta.order.side, OrderSide::Buy.into());
         assert_eq!(bid_delta.order.price, Price::from("7633.5"));
-        assert_eq!(bid_delta.order.size, Quantity::from(1906067));
+        assert_eq!(bid_delta.order.size, Quantity::from(1_906_067));
         assert_eq!(bid_delta.order.order_id, 0);
         assert_eq!(bid_delta.flags, RecordFlag::F_SNAPSHOT as u8);
         assert_eq!(bid_delta.sequence, 0);
-        assert_eq!(bid_delta.ts_event, UnixNanos::from(1572010786950000000));
-        assert_eq!(bid_delta.ts_init, UnixNanos::from(1572010786961000000));
+        assert_eq!(
+            bid_delta.ts_event,
+            UnixNanos::from(1_572_010_786_950_000_000)
+        );
+        assert_eq!(
+            bid_delta.ts_init,
+            UnixNanos::from(1_572_010_786_961_000_000)
+        );
 
         // First ask delta
         assert_eq!(ask_delta.instrument_id, instrument_id);
         assert_eq!(ask_delta.action, BookAction::Add);
         assert_eq!(ask_delta.order.side, OrderSide::Sell.into());
         assert_eq!(ask_delta.order.price, Price::from("7634.0"));
-        assert_eq!(ask_delta.order.size, Quantity::from(1467849));
+        assert_eq!(ask_delta.order.size, Quantity::from(1_467_849));
         assert_eq!(ask_delta.order.order_id, 0);
         assert_eq!(ask_delta.flags, RecordFlag::F_SNAPSHOT as u8);
         assert_eq!(ask_delta.sequence, 0);
-        assert_eq!(ask_delta.ts_event, UnixNanos::from(1572010786950000000));
-        assert_eq!(ask_delta.ts_init, UnixNanos::from(1572010786961000000));
+        assert_eq!(
+            ask_delta.ts_event,
+            UnixNanos::from(1_572_010_786_950_000_000)
+        );
+        assert_eq!(
+            ask_delta.ts_init,
+            UnixNanos::from(1_572_010_786_961_000_000)
+        );
     }
 
     #[rstest]
@@ -840,13 +858,13 @@ mod tests {
         assert_eq!(depth.instrument_id, instrument_id);
         assert_eq!(depth.flags, RecordFlag::F_SNAPSHOT as u8);
         assert_eq!(depth.sequence, 0);
-        assert_eq!(depth.ts_event, UnixNanos::from(1572010786950000000));
-        assert_eq!(depth.ts_init, UnixNanos::from(1572010786961000000));
+        assert_eq!(depth.ts_event, UnixNanos::from(1_572_010_786_950_000_000));
+        assert_eq!(depth.ts_init, UnixNanos::from(1_572_010_786_961_000_000));
 
         // Check first bid level
         assert_eq!(depth.bids[0].side, OrderSide::Buy.into());
         assert_eq!(depth.bids[0].price, Price::from("7633.5"));
-        assert_eq!(depth.bids[0].size, Quantity::from(1906067));
+        assert_eq!(depth.bids[0].size, Quantity::from(1_906_067));
         assert_eq!(depth.bids[0].order_id, 0);
         assert_eq!(depth.bid_counts[0], 1);
 
@@ -859,7 +877,7 @@ mod tests {
         // Check first ask level
         assert_eq!(depth.asks[0].side, OrderSide::Sell.into());
         assert_eq!(depth.asks[0].price, Price::from("7634.0"));
-        assert_eq!(depth.asks[0].size, Quantity::from(1467849));
+        assert_eq!(depth.asks[0].size, Quantity::from(1_467_849));
         assert_eq!(depth.asks[0].order_id, 0);
         assert_eq!(depth.ask_counts[0], 1);
 
@@ -933,11 +951,11 @@ mod tests {
 
         assert_eq!(quote.instrument_id, instrument_id);
         assert_eq!(quote.bid_price, Price::from("7633.5"));
-        assert_eq!(quote.bid_size, Quantity::from(1906067));
+        assert_eq!(quote.bid_size, Quantity::from(1_906_067));
         assert_eq!(quote.ask_price, Price::from("7634.0"));
-        assert_eq!(quote.ask_size, Quantity::from(1467849));
-        assert_eq!(quote.ts_event, UnixNanos::from(1572010786950000000));
-        assert_eq!(quote.ts_init, UnixNanos::from(1572010786961000000));
+        assert_eq!(quote.ask_size, Quantity::from(1_467_849));
+        assert_eq!(quote.ts_event, UnixNanos::from(1_572_010_786_950_000_000));
+        assert_eq!(quote.ts_init, UnixNanos::from(1_572_010_786_961_000_000));
     }
 
     #[rstest]
@@ -955,8 +973,8 @@ mod tests {
         assert_eq!(trade.price, Price::from("7996"));
         assert_eq!(trade.size, Quantity::from(50));
         assert_eq!(trade.aggressor_side, AggressorSide::Sell);
-        assert_eq!(trade.ts_event, UnixNanos::from(1571826769669000000));
-        assert_eq!(trade.ts_init, UnixNanos::from(1571826769740000000));
+        assert_eq!(trade.ts_event, UnixNanos::from(1_571_826_769_669_000_000));
+        assert_eq!(trade.ts_init, UnixNanos::from(1_571_826_769_740_000_000));
     }
 
     fn build_trade_msg_without_id() -> TradeMsg {
@@ -1013,8 +1031,8 @@ mod tests {
         assert_eq!(bar.low, Price::from("7623"));
         assert_eq!(bar.close, Price::from("7623.5"));
         assert_eq!(bar.volume, Quantity::from(37034));
-        assert_eq!(bar.ts_event, UnixNanos::from(1572009100000000000));
-        assert_eq!(bar.ts_init, UnixNanos::from(1572009100369000000));
+        assert_eq!(bar.ts_event, UnixNanos::from(1_572_009_100_000_000_000));
+        assert_eq!(bar.ts_init, UnixNanos::from(1_572_009_100_369_000_000));
     }
 
     #[rstest]

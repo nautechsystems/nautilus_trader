@@ -37,31 +37,14 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use nautilus_binance::{
-    common::{
-        bar::BinanceBar,
-        consts::{BINANCE_CLIENT_ID, BINANCE_VENUE},
-        enums::BinanceEnvironment,
-    },
-    config::{BinanceDataClientConfig, BinanceSpotMarketDataMode},
-    data_types::BinanceSpotTicker,
-    spot::{
-        BinanceSpotDataClient,
-        http::client::BinanceRawSpotHttpClient,
-        sbe::{
-            generated::symbol_status::SymbolStatus,
-            spot::{SBE_SCHEMA_ID, SBE_SCHEMA_VERSION},
-            stream::{STREAM_SCHEMA_ID, template_id},
-        },
-    },
-};
 use nautilus_common::{
     clients::DataClient,
     live::runner::{replace_system_event_sender, set_data_event_sender},
     messages::{
         DataEvent, SystemEvent,
         data::{
-            DataResponse, RequestBars, RequestBookSnapshot, RequestCustomData, RequestTrades,
+            DataResponse, RequestBars, RequestBookSnapshot, RequestCustomData, RequestInstrument,
+            RequestInstruments, RequestTrades,
             subscribe::{
                 SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth, SubscribeCustomData,
                 SubscribeQuotes, SubscribeTrades,
@@ -90,6 +73,26 @@ use parking_lot::Mutex;
 use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::json;
+
+use crate::{
+    common::{
+        bar::BinanceBar,
+        consts::{BINANCE_CLIENT_ID, BINANCE_VENUE},
+        enums::BinanceEnvironment,
+        testing::{advance_instrument_clock, publish_instrument_snapshots, spawn_instrument_timer},
+    },
+    config::{BinanceDataClientConfig, BinanceSpotMarketDataMode},
+    data_types::BinanceSpotTicker,
+    spot::{
+        BinanceSpotDataClient,
+        http::client::BinanceRawSpotHttpClient,
+        sbe::{
+            generated::symbol_status::SymbolStatus,
+            spot::{SBE_SCHEMA_ID, SBE_SCHEMA_VERSION},
+            stream::{STREAM_SCHEMA_ID, template_id},
+        },
+    },
+};
 
 const TEST_API_KEY: &str = "test-api-key";
 const TEST_API_SECRET: &str = "MC4CAQAwBQYDK2VwBCIEIJ1hsZ3v/VpguoRK9JLsLMREScVpezJpGXA7rAMcrn9g";
@@ -147,7 +150,7 @@ impl Default for DataTestServerConfig {
 }
 
 fn create_sbe_header(block_length: u16, template_id: u16) -> [u8; 8] {
-    let mut header = [0u8; 8];
+    let mut header = [0_u8; 8];
     header[0..2].copy_from_slice(&block_length.to_le_bytes());
     header[2..4].copy_from_slice(&template_id.to_le_bytes());
     header[4..6].copy_from_slice(&SBE_SCHEMA_ID.to_le_bytes());
@@ -156,7 +159,7 @@ fn create_sbe_header(block_length: u16, template_id: u16) -> [u8; 8] {
 }
 
 fn create_group_header(block_length: u16, count: u32) -> [u8; 6] {
-    let mut header = [0u8; 6];
+    let mut header = [0_u8; 6];
     header[0..2].copy_from_slice(&block_length.to_le_bytes());
     header[2..6].copy_from_slice(&count.to_le_bytes());
     header
@@ -181,8 +184,8 @@ fn build_depth_response(last_update_id: i64, bids: &[(i64, i64)], asks: &[(i64, 
     let mut buf = Vec::new();
     buf.extend_from_slice(&header);
     buf.extend_from_slice(&last_update_id.to_le_bytes());
-    buf.push((-2i8) as u8);
-    buf.push((-5i8) as u8);
+    buf.push((-2_i8) as u8);
+    buf.push((-5_i8) as u8);
 
     buf.extend_from_slice(&create_group_header(16, bids.len() as u32));
     for (price, qty) in bids {
@@ -244,7 +247,7 @@ fn build_klines_response(close_time_us: i64, span_us: i64) -> Vec<u8> {
 
 fn build_sbe_price_filter(exponent: i8, min_price: i64, max_price: i64, tick_size: i64) -> Vec<u8> {
     let mut buf = Vec::new();
-    buf.extend_from_slice(&25u16.to_le_bytes());
+    buf.extend_from_slice(&25_u16.to_le_bytes());
     buf.extend_from_slice(&PRICE_FILTER_TEMPLATE_ID.to_le_bytes());
     buf.extend_from_slice(&SBE_SCHEMA_ID.to_le_bytes());
     buf.extend_from_slice(&SBE_SCHEMA_VERSION.to_le_bytes());
@@ -257,7 +260,7 @@ fn build_sbe_price_filter(exponent: i8, min_price: i64, max_price: i64, tick_siz
 
 fn build_sbe_lot_size_filter(exponent: i8, min_qty: i64, max_qty: i64, step_size: i64) -> Vec<u8> {
     let mut buf = Vec::new();
-    buf.extend_from_slice(&25u16.to_le_bytes());
+    buf.extend_from_slice(&25_u16.to_le_bytes());
     buf.extend_from_slice(&LOT_SIZE_FILTER_TEMPLATE_ID.to_le_bytes());
     buf.extend_from_slice(&SBE_SCHEMA_ID.to_le_bytes());
     buf.extend_from_slice(&SBE_SCHEMA_VERSION.to_le_bytes());
@@ -291,7 +294,7 @@ fn build_exchange_info_response(symbols: &[(&str, &str, &str, SymbolStatus)]) ->
         buf.push(8); // quote_asset_precision
         buf.push(8); // base_commission_precision
         buf.push(8); // quote_commission_precision
-        buf.extend_from_slice(&0b0000_0111u16.to_le_bytes()); // order_types
+        buf.extend_from_slice(&0b0000_0111_u16.to_le_bytes()); // order_types
         buf.push(1); // iceberg_allowed
         buf.push(1); // oco_allowed
         buf.push(0); // oto_allowed
@@ -332,23 +335,23 @@ fn sbe_response(body: Vec<u8>) -> impl IntoResponse {
 }
 
 fn build_sbe_trades_stream_event(symbol: &str) -> Vec<u8> {
-    let trade_block_len = 25u16;
-    let num_trades = 1usize;
+    let trade_block_len = 25_u16;
+    let num_trades = 1_usize;
     let body_size = 18 + 6 + (num_trades * trade_block_len as usize) + 1 + symbol.len();
-    let mut buf = vec![0u8; 8 + body_size];
+    let mut buf = vec![0_u8; 8 + body_size];
 
     // Header (stream schema)
-    buf[0..2].copy_from_slice(&18u16.to_le_bytes()); // block_length
+    buf[0..2].copy_from_slice(&18_u16.to_le_bytes()); // block_length
     buf[2..4].copy_from_slice(&template_id::TRADES_STREAM_EVENT.to_le_bytes());
     buf[4..6].copy_from_slice(&STREAM_SCHEMA_ID.to_le_bytes());
-    buf[6..8].copy_from_slice(&0u16.to_le_bytes()); // version
+    buf[6..8].copy_from_slice(&0_u16.to_le_bytes()); // version
 
     // Body
     let body = &mut buf[8..];
-    body[0..8].copy_from_slice(&1_000_000i64.to_le_bytes()); // event_time_us
-    body[8..16].copy_from_slice(&1_000_001i64.to_le_bytes()); // transact_time_us
-    body[16] = (-2i8) as u8; // price_exponent
-    body[17] = (-8i8) as u8; // qty_exponent
+    body[0..8].copy_from_slice(&1_000_000_i64.to_le_bytes()); // event_time_us
+    body[8..16].copy_from_slice(&1_000_001_i64.to_le_bytes()); // transact_time_us
+    body[16] = (-2_i8) as u8; // price_exponent
+    body[17] = (-8_i8) as u8; // qty_exponent
 
     // Group header (trades)
     body[18..20].copy_from_slice(&trade_block_len.to_le_bytes());
@@ -356,9 +359,9 @@ fn build_sbe_trades_stream_event(symbol: &str) -> Vec<u8> {
 
     // Trade entry
     let offset = 24;
-    body[offset..offset + 8].copy_from_slice(&1i64.to_le_bytes()); // id
-    body[offset + 8..offset + 16].copy_from_slice(&4_200_000i64.to_le_bytes()); // price
-    body[offset + 16..offset + 24].copy_from_slice(&100_000_000i64.to_le_bytes()); // qty
+    body[offset..offset + 8].copy_from_slice(&1_i64.to_le_bytes()); // id
+    body[offset + 8..offset + 16].copy_from_slice(&4_200_000_i64.to_le_bytes()); // price
+    body[offset + 16..offset + 24].copy_from_slice(&100_000_000_i64.to_le_bytes()); // qty
     body[offset + 24] = 1; // is_buyer_maker
 
     // Symbol varString8
@@ -370,9 +373,9 @@ fn build_sbe_trades_stream_event(symbol: &str) -> Vec<u8> {
 }
 
 fn build_sbe_depth_snapshot_stream_event(symbol: &str) -> Vec<u8> {
-    let level_block_len = 16u16; // price i64 + qty i64
-    let num_bids = 2u16;
-    let num_asks = 2u16;
+    let level_block_len = 16_u16; // price i64 + qty i64
+    let num_bids = 2_u16;
+    let num_asks = 2_u16;
 
     // Body: 18 fixed + 2 group headers (4 bytes each, u16+u16) + levels + symbol var
     let body_size = 18
@@ -382,20 +385,20 @@ fn build_sbe_depth_snapshot_stream_event(symbol: &str) -> Vec<u8> {
         + (num_asks as usize * level_block_len as usize)
         + 1
         + symbol.len();
-    let mut buf = vec![0u8; 8 + body_size];
+    let mut buf = vec![0_u8; 8 + body_size];
 
     // Header (stream schema)
-    buf[0..2].copy_from_slice(&18u16.to_le_bytes()); // block_length
+    buf[0..2].copy_from_slice(&18_u16.to_le_bytes()); // block_length
     buf[2..4].copy_from_slice(&template_id::DEPTH_SNAPSHOT_STREAM_EVENT.to_le_bytes());
     buf[4..6].copy_from_slice(&STREAM_SCHEMA_ID.to_le_bytes());
-    buf[6..8].copy_from_slice(&0u16.to_le_bytes()); // version
+    buf[6..8].copy_from_slice(&0_u16.to_le_bytes()); // version
 
     // Body
     let body = &mut buf[8..];
-    body[0..8].copy_from_slice(&1_000_000i64.to_le_bytes()); // event_time_us
-    body[8..16].copy_from_slice(&99999i64.to_le_bytes()); // book_update_id
-    body[16] = (-2i8) as u8; // price_exponent
-    body[17] = (-8i8) as u8; // qty_exponent
+    body[0..8].copy_from_slice(&1_000_000_i64.to_le_bytes()); // event_time_us
+    body[8..16].copy_from_slice(&99999_i64.to_le_bytes()); // book_update_id
+    body[16] = (-2_i8) as u8; // price_exponent
+    body[17] = (-8_i8) as u8; // qty_exponent
 
     // Bids group header (u16 block_length + u16 num_in_group)
     let mut off = 18;
@@ -404,13 +407,13 @@ fn build_sbe_depth_snapshot_stream_event(symbol: &str) -> Vec<u8> {
     off += 4;
 
     // Bid 1: price 42000.00, qty 1.00000000
-    body[off..off + 8].copy_from_slice(&4_200_000i64.to_le_bytes());
-    body[off + 8..off + 16].copy_from_slice(&100_000_000i64.to_le_bytes());
+    body[off..off + 8].copy_from_slice(&4_200_000_i64.to_le_bytes());
+    body[off + 8..off + 16].copy_from_slice(&100_000_000_i64.to_le_bytes());
     off += level_block_len as usize;
 
     // Bid 2: price 41999.00, qty 2.00000000
-    body[off..off + 8].copy_from_slice(&4_199_900i64.to_le_bytes());
-    body[off + 8..off + 16].copy_from_slice(&200_000_000i64.to_le_bytes());
+    body[off..off + 8].copy_from_slice(&4_199_900_i64.to_le_bytes());
+    body[off + 8..off + 16].copy_from_slice(&200_000_000_i64.to_le_bytes());
     off += level_block_len as usize;
 
     // Asks group header
@@ -419,13 +422,13 @@ fn build_sbe_depth_snapshot_stream_event(symbol: &str) -> Vec<u8> {
     off += 4;
 
     // Ask 1: price 42001.00, qty 0.50000000
-    body[off..off + 8].copy_from_slice(&4_200_100i64.to_le_bytes());
-    body[off + 8..off + 16].copy_from_slice(&50_000_000i64.to_le_bytes());
+    body[off..off + 8].copy_from_slice(&4_200_100_i64.to_le_bytes());
+    body[off + 8..off + 16].copy_from_slice(&50_000_000_i64.to_le_bytes());
     off += level_block_len as usize;
 
     // Ask 2: price 42002.00, qty 1.50000000
-    body[off..off + 8].copy_from_slice(&4_200_200i64.to_le_bytes());
-    body[off + 8..off + 16].copy_from_slice(&150_000_000i64.to_le_bytes());
+    body[off..off + 8].copy_from_slice(&4_200_200_i64.to_le_bytes());
+    body[off + 8..off + 16].copy_from_slice(&150_000_000_i64.to_le_bytes());
     off += level_block_len as usize;
 
     // Symbol varString8
@@ -440,31 +443,31 @@ fn build_sbe_depth_diff_stream_event(
     first_update_id: i64,
     last_update_id: i64,
 ) -> Vec<u8> {
-    let level_block_len = 16u16;
-    let num_bids = 1u16;
-    let num_asks = 0u16;
+    let level_block_len = 16_u16;
+    let num_bids = 1_u16;
+    let num_asks = 0_u16;
     let body_size = 26 + 4 + (num_bids as usize * level_block_len as usize) + 4 + 1 + symbol.len();
-    let mut buf = vec![0u8; 8 + body_size];
+    let mut buf = vec![0_u8; 8 + body_size];
 
-    buf[0..2].copy_from_slice(&26u16.to_le_bytes());
+    buf[0..2].copy_from_slice(&26_u16.to_le_bytes());
     buf[2..4].copy_from_slice(&template_id::DEPTH_DIFF_STREAM_EVENT.to_le_bytes());
     buf[4..6].copy_from_slice(&STREAM_SCHEMA_ID.to_le_bytes());
-    buf[6..8].copy_from_slice(&0u16.to_le_bytes());
+    buf[6..8].copy_from_slice(&0_u16.to_le_bytes());
 
     let body = &mut buf[8..];
-    body[0..8].copy_from_slice(&1_000_100i64.to_le_bytes());
+    body[0..8].copy_from_slice(&1_000_100_i64.to_le_bytes());
     body[8..16].copy_from_slice(&first_update_id.to_le_bytes());
     body[16..24].copy_from_slice(&last_update_id.to_le_bytes());
-    body[24] = (-2i8) as u8;
-    body[25] = (-5i8) as u8;
+    body[24] = (-2_i8) as u8;
+    body[25] = (-5_i8) as u8;
 
     let mut off = 26;
     body[off..off + 2].copy_from_slice(&level_block_len.to_le_bytes());
     body[off + 2..off + 4].copy_from_slice(&num_bids.to_le_bytes());
     off += 4;
 
-    body[off..off + 8].copy_from_slice(&4_199_900i64.to_le_bytes());
-    body[off + 8..off + 16].copy_from_slice(&125_000i64.to_le_bytes());
+    body[off..off + 8].copy_from_slice(&4_199_900_i64.to_le_bytes());
+    body[off + 8..off + 16].copy_from_slice(&125_000_i64.to_le_bytes());
     off += level_block_len as usize;
 
     body[off..off + 2].copy_from_slice(&level_block_len.to_le_bytes());
@@ -526,11 +529,11 @@ fn build_json_kline_stream_event(symbol: &str) -> String {
         "stream": format!("{}@kline_1s", symbol.to_lowercase()),
         "data": {
             "e": "kline",
-            "E": 1700000000999_i64,
+            "E": 1_700_000_000_999_i64,
             "s": symbol,
             "k": {
-                "t": 1700000000000_i64,
-                "T": 1700000000999_i64,
+                "t": 1_700_000_000_000_i64,
+                "T": 1_700_000_000_999_i64,
                 "s": symbol,
                 "i": "1s",
                 "f": 201,
@@ -556,7 +559,7 @@ fn build_json_ticker_stream_event(symbol: &str) -> String {
         "stream": format!("{}@ticker", symbol.to_lowercase()),
         "data": {
             "e": "24hrTicker",
-            "E": 1700000000999_i64,
+            "E": 1_700_000_000_999_i64,
             "s": symbol,
             "p": "100.01",
             "P": "0.25",
@@ -573,8 +576,8 @@ fn build_json_ticker_stream_event(symbol: &str) -> String {
             "l": "41500.00",
             "v": "1234.50000",
             "q": "51777172.50",
-            "O": 1699913600999_i64,
-            "C": 1700000000998_i64,
+            "O": 1_699_913_600_999_i64,
+            "C": 1_700_000_000_998_i64,
             "F": 301,
             "L": 399,
             "n": 99
@@ -585,24 +588,24 @@ fn build_json_ticker_stream_event(symbol: &str) -> String {
 
 fn build_sbe_best_bid_ask_stream_event(symbol: &str) -> Vec<u8> {
     let body_size = 50 + 1 + symbol.len();
-    let mut buf = vec![0u8; 8 + body_size];
+    let mut buf = vec![0_u8; 8 + body_size];
 
     // Header (stream schema)
-    buf[0..2].copy_from_slice(&50u16.to_le_bytes()); // block_length
+    buf[0..2].copy_from_slice(&50_u16.to_le_bytes()); // block_length
     buf[2..4].copy_from_slice(&template_id::BEST_BID_ASK_STREAM_EVENT.to_le_bytes());
     buf[4..6].copy_from_slice(&STREAM_SCHEMA_ID.to_le_bytes());
-    buf[6..8].copy_from_slice(&0u16.to_le_bytes()); // version
+    buf[6..8].copy_from_slice(&0_u16.to_le_bytes()); // version
 
     // Body
     let body = &mut buf[8..];
-    body[0..8].copy_from_slice(&1_000_000i64.to_le_bytes()); // event_time_us
-    body[8..16].copy_from_slice(&12345i64.to_le_bytes()); // book_update_id
-    body[16] = (-2i8) as u8; // price_exponent
-    body[17] = (-8i8) as u8; // qty_exponent
-    body[18..26].copy_from_slice(&4_200_000i64.to_le_bytes()); // bid_price
-    body[26..34].copy_from_slice(&100_000_000i64.to_le_bytes()); // bid_qty
-    body[34..42].copy_from_slice(&4_200_100i64.to_le_bytes()); // ask_price
-    body[42..50].copy_from_slice(&200_000_000i64.to_le_bytes()); // ask_qty
+    body[0..8].copy_from_slice(&1_000_000_i64.to_le_bytes()); // event_time_us
+    body[8..16].copy_from_slice(&12345_i64.to_le_bytes()); // book_update_id
+    body[16] = (-2_i8) as u8; // price_exponent
+    body[17] = (-8_i8) as u8; // qty_exponent
+    body[18..26].copy_from_slice(&4_200_000_i64.to_le_bytes()); // bid_price
+    body[26..34].copy_from_slice(&100_000_000_i64.to_le_bytes()); // bid_qty
+    body[34..42].copy_from_slice(&4_200_100_i64.to_le_bytes()); // ask_price
+    body[42..50].copy_from_slice(&200_000_000_i64.to_le_bytes()); // ask_qty
 
     // Symbol varString8
     body[50] = symbol.len() as u8;
@@ -994,7 +997,7 @@ async fn test_client_creation() {
     let (client, _rx) = create_test_data_client(base_url_http, base_url_ws);
 
     assert_eq!(client.client_id(), *BINANCE_CLIENT_ID);
-    assert_eq!(client.venue(), Some(*BINANCE_VENUE));
+    assert_eq!(DataClient::venue(&client), Some(*BINANCE_VENUE));
     assert!(!client.is_connected());
 }
 
@@ -3174,6 +3177,305 @@ fn expected_l1_deltas(quote: QuoteTick, sequence: u64) -> OrderBookDeltas {
 }
 
 #[rstest]
+#[case::single(false, false)]
+#[case::bulk(true, false)]
+#[case::date_bounded(false, true)]
+#[tokio::test]
+async fn test_instrument_request_publication(#[case] bulk: bool, #[case] bounded: bool) {
+    let addr = start_data_test_server().await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    set_data_event_sender(tx);
+
+    let config = BinanceDataClientConfig {
+        base_url_http: Some(format!("http://{addr}")),
+        base_url_ws: Some(format!("ws://{addr}/ws")),
+        spot_market_data_mode: BinanceSpotMarketDataMode::Json,
+        instrument_status_poll_secs: 0,
+        update_instruments_interval_mins: 0,
+        ..Default::default()
+    };
+
+    let client = BinanceSpotDataClient::new(*BINANCE_CLIENT_ID, config).unwrap();
+    let id = InstrumentId::from("BTCUSDT.BINANCE");
+    let request_id = UUID4::new();
+    let end = bounded.then(|| "2025-01-01T00:00:00Z".parse().unwrap());
+
+    if bulk {
+        client
+            .request_instruments(RequestInstruments::new(
+                None,
+                end,
+                Some(*BINANCE_CLIENT_ID),
+                DataClient::venue(&client),
+                request_id,
+                UnixNanos::default(),
+                None,
+            ))
+            .unwrap();
+    } else {
+        client
+            .request_instrument(RequestInstrument::new(
+                id,
+                None,
+                end,
+                Some(*BINANCE_CLIENT_ID),
+                request_id,
+                UnixNanos::default(),
+                None,
+            ))
+            .unwrap();
+    }
+
+    let published = if bounded {
+        None
+    } else {
+        let Some(DataEvent::Data(Data::Instrument(instrument))) =
+            tokio::time::timeout(Duration::from_secs(2), rx.recv())
+                .await
+                .unwrap()
+        else {
+            panic!("expected instrument update before the response");
+        };
+
+        Some(instrument)
+    };
+
+    let returned = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+        .await
+        .unwrap();
+
+    let (correlation_id, returned) = match returned {
+        Some(DataEvent::Response(DataResponse::Instrument(response))) if !bulk => {
+            (response.correlation_id, response.data)
+        }
+        Some(DataEvent::Response(DataResponse::Instruments(response))) if bulk => (
+            response.correlation_id,
+            response
+                .data
+                .into_iter()
+                .find(|instrument| instrument.id() == id)
+                .unwrap(),
+        ),
+        other => panic!("expected instrument response, was {other:?}"),
+    };
+
+    assert_eq!(correlation_id, request_id);
+    assert_eq!(returned.id(), id);
+
+    if let Some(published) = published {
+        assert_eq!(published.id(), id);
+        assert_eq!(published.ts_init(), returned.ts_init());
+        assert_eq!(published.price_increment(), returned.price_increment());
+        assert_eq!(published.size_increment(), returned.size_increment());
+    }
+}
+
+#[rstest]
+#[case::single(false)]
+#[case::bulk(true)]
+#[tokio::test]
+async fn test_reset_cancels_in_flight_instrument_requests(#[case] bulk: bool) {
+    let (request_tx, mut requests) = tokio::sync::mpsc::unbounded_channel();
+
+    let addr = start_data_test_server_with_config(DataTestServerConfig {
+        exchange_info_requests: Some(request_tx),
+        ..Default::default()
+    })
+    .await;
+
+    let (sender, mut events) = tokio::sync::mpsc::unbounded_channel();
+    set_data_event_sender(sender);
+
+    let mut client = BinanceSpotDataClient::new(
+        *BINANCE_CLIENT_ID,
+        BinanceDataClientConfig {
+            base_url_http: Some(format!("http://{addr}")),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let request_id = UUID4::new();
+
+    if bulk {
+        client
+            .request_instruments(RequestInstruments::new(
+                None,
+                None,
+                Some(*BINANCE_CLIENT_ID),
+                DataClient::venue(&client),
+                request_id,
+                UnixNanos::default(),
+                None,
+            ))
+            .unwrap();
+    } else {
+        client
+            .request_instrument(RequestInstrument::new(
+                InstrumentId::from("BTCUSDT.BINANCE"),
+                None,
+                None,
+                Some(*BINANCE_CLIENT_ID),
+                request_id,
+                UnixNanos::default(),
+                None,
+            ))
+            .unwrap();
+    }
+
+    let blocked = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    client.reset().unwrap();
+    let _ = blocked.send(
+        sbe_response(build_exchange_info_response(&[(
+            "BTCUSDT",
+            "BTC",
+            "USDT",
+            SymbolStatus::Trading,
+        )]))
+        .into_response(),
+    );
+    client.disconnect().await.unwrap();
+
+    assert_eq!(
+        events.try_recv().unwrap_err(),
+        tokio::sync::mpsc::error::TryRecvError::Empty
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_refresh_retains_halted_symbol_after_explicit_instrument_request() {
+    let (request_tx, mut requests) = tokio::sync::mpsc::unbounded_channel();
+
+    let addr = start_data_test_server_with_config(DataTestServerConfig {
+        exchange_info_requests: Some(request_tx),
+        ..Default::default()
+    })
+    .await;
+
+    let (sender, mut events) = tokio::sync::mpsc::unbounded_channel();
+    set_data_event_sender(sender);
+
+    let mut client = BinanceSpotDataClient::new(
+        *BINANCE_CLIENT_ID,
+        BinanceDataClientConfig {
+            base_url_http: Some(format!("http://{addr}")),
+            base_url_ws: Some(format!("ws://{addr}/ws")),
+            spot_market_data_mode: BinanceSpotMarketDataMode::Json,
+            instrument_status_poll_secs: 0,
+            update_instruments_interval_mins: 0,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let response = |status| {
+        sbe_response(build_exchange_info_response(&[(
+            "BTCUSDT", "BTC", "USDT", status,
+        )]))
+        .into_response()
+    };
+
+    let serve_bootstrap = async {
+        let request = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        request.send(response(SymbolStatus::Trading)).unwrap();
+        requests
+    };
+
+    let (connected, mut requests) = tokio::join!(client.connect(), serve_bootstrap);
+    connected.unwrap();
+
+    let Some(DataEvent::Data(Data::Instrument(initial))) = events.recv().await else {
+        panic!("expected bootstrap instrument");
+    };
+
+    client.config.update_instruments_interval_mins = 1;
+    let mut timers = tokio::task::JoinSet::new();
+    spawn_instrument_timer(
+        &mut timers,
+        client.instrument_refresh(Some(Default::default())).unwrap(),
+    )
+    .await;
+    advance_instrument_clock(Duration::from_secs(59)).await;
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), requests.recv())
+            .await
+            .is_err(),
+        "instrument refresh started before the configured minute elapsed",
+    );
+    advance_instrument_clock(Duration::from_secs(1)).await;
+
+    let first = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    first.send(response(SymbolStatus::Halt)).unwrap();
+    let event = tokio::time::timeout(Duration::from_secs(5), events.recv())
+        .await
+        .unwrap();
+
+    let Some(DataEvent::Data(Data::InstrumentStatus(halted))) = event else {
+        panic!("expected halt status, was {event:?}");
+    };
+
+    assert_eq!(halted.instrument_id, initial.id());
+    assert_eq!(halted.action, MarketStatusAction::Halt);
+
+    let request_id = UUID4::new();
+    client
+        .request_instruments(RequestInstruments::new(
+            None,
+            None,
+            Some(*BINANCE_CLIENT_ID),
+            DataClient::venue(&client),
+            request_id,
+            UnixNanos::default(),
+            None,
+        ))
+        .unwrap();
+    let explicit = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    explicit.send(response(SymbolStatus::Halt)).unwrap();
+    let event = tokio::time::timeout(Duration::from_secs(5), events.recv())
+        .await
+        .unwrap();
+
+    let Some(DataEvent::Response(DataResponse::Instruments(result))) = event else {
+        panic!("expected instruments response, was {event:?}");
+    };
+
+    assert_eq!(result.correlation_id, request_id);
+    assert!(result.data.is_empty());
+
+    advance_instrument_clock(Duration::from_secs(60)).await;
+    let next = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    next.send(response(SymbolStatus::Halt)).unwrap();
+    advance_instrument_clock(Duration::from_secs(60)).await;
+    let barrier = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        events.try_recv().unwrap_err(),
+        tokio::sync::mpsc::error::TryRecvError::Empty
+    );
+    client.reset().unwrap();
+    let _ = barrier.send(response(SymbolStatus::Halt));
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
 #[case::poll_first(true)]
 #[case::refresh_first(false)]
 #[tokio::test]
@@ -3193,8 +3495,8 @@ async fn test_instrument_status_updates_do_not_overlap(#[case] poll_first: bool)
         base_url_http: Some(format!("http://{addr}")),
         base_url_ws: Some(format!("ws://{addr}/ws")),
         spot_market_data_mode: BinanceSpotMarketDataMode::Json,
-        instrument_status_poll_secs: if poll_first { 1 } else { 2 },
-        instrument_refresh_interval_secs: if poll_first { 2 } else { 1 },
+        instrument_status_poll_secs: 0,
+        update_instruments_interval_mins: 0,
         ..Default::default()
     };
 
@@ -3214,63 +3516,88 @@ async fn test_instrument_status_updates_do_not_overlap(#[case] poll_first: bool)
     };
 
     let serve_initial = async {
-        for _ in 0..2 {
-            let request = tokio::time::timeout(Duration::from_secs(5), requests.recv())
-                .await
-                .unwrap()
-                .unwrap();
-            request.send(response("BTCUSDT", "BTC", false)).unwrap();
-        }
-    };
-
-    let (connected, ()) = tokio::join!(client.connect(), serve_initial);
-    connected.unwrap();
-
-    if !poll_first {
-        let catalog = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+        let request = tokio::time::timeout(Duration::from_secs(5), requests.recv())
             .await
             .unwrap()
             .unwrap();
-        catalog.send(response("ETHUSDT", "ETH", false)).unwrap();
-    }
+        request.send(response("BTCUSDT", "BTC", false)).unwrap();
+    };
+
+    let mut previous_non_trading = None;
+    let refresh = BinanceSpotDataClient::refresh_instrument_catalog(
+        &client.http_client,
+        &client.config.instrument_provider,
+        client.config.us,
+        &client.instruments,
+        &client.status_cache,
+        &client.instrument_update_lock,
+        (&client.instrument_publish_lock, &client.cancellation_token),
+        &client.ws_client,
+        &client.data_sender,
+        client.clock,
+        &mut previous_non_trading,
+    );
+    let (refreshed, ()) = tokio::join!(refresh, serve_initial);
+    refreshed.unwrap();
+
+    let poll_secs = if poll_first { 59 } else { 61 };
+    client.config.instrument_status_poll_secs = poll_secs;
+    client.config.update_instruments_interval_mins = 1;
+    let mut timers = tokio::task::JoinSet::new();
+    spawn_instrument_timer(&mut timers, client.instrument_status_poll().unwrap()).await;
+    spawn_instrument_timer(
+        &mut timers,
+        client.instrument_refresh(previous_non_trading).unwrap(),
+    )
+    .await;
+    advance_instrument_clock(Duration::from_secs(poll_secs.min(60))).await;
 
     let blocked = tokio::time::timeout(Duration::from_secs(5), requests.recv())
         .await
         .unwrap()
         .unwrap();
 
-    // Hold the older response through the other task's next scheduled update
-    let overlapping = tokio::time::timeout(Duration::from_millis(1500), requests.recv()).await;
-    assert!(overlapping.is_err(), "overlapping exchange info request");
+    let request_id = UUID4::new();
 
-    let (symbol, base) = if poll_first {
-        ("BTCUSDT", "BTC")
-    } else {
-        ("ETHUSDT", "ETH")
-    };
-
-    blocked.send(response(symbol, base, true)).unwrap();
-
-    if poll_first {
-        let catalog = tokio::time::timeout(Duration::from_secs(5), requests.recv())
-            .await
-            .unwrap()
+    if !poll_first {
+        client
+            .request_instruments(RequestInstruments::new(
+                None,
+                None,
+                Some(*BINANCE_CLIENT_ID),
+                DataClient::venue(&client),
+                request_id,
+                UnixNanos::default(),
+                None,
+            ))
             .unwrap();
-        catalog.send(response("ETHUSDT", "ETH", false)).unwrap();
     }
 
-    let status = tokio::time::timeout(Duration::from_secs(5), requests.recv())
-        .await
-        .unwrap()
-        .unwrap();
-    status.send(response("ETHUSDT", "ETH", false)).unwrap();
+    // Hold the older response through the other task's next scheduled update
+    advance_instrument_clock(Duration::from_secs(2)).await;
+    let overlapping = tokio::time::timeout(Duration::from_millis(100), requests.recv()).await;
+    assert!(overlapping.is_err(), "overlapping exchange info request");
 
-    // The next request proves that the preceding update has published its snapshot
-    let next = tokio::time::timeout(Duration::from_secs(5), requests.recv())
-        .await
-        .unwrap()
-        .unwrap();
-    next.send(response("ETHUSDT", "ETH", false)).unwrap();
+    blocked.send(response("BTCUSDT", "BTC", true)).unwrap();
+
+    let eth_snapshot = || response("ETHUSDT", "ETH", false);
+    publish_instrument_snapshots(
+        &mut requests,
+        &client.instrument_update_lock,
+        if poll_first { 1 } else { 2 },
+        eth_snapshot,
+    )
+    .await;
+
+    advance_instrument_clock(Duration::from_secs(62)).await;
+    publish_instrument_snapshots(
+        &mut requests,
+        &client.instrument_update_lock,
+        2,
+        eth_snapshot,
+    )
+    .await;
+
     tokio::select! {
         result = client.disconnect() => result.unwrap(),
         () = async {
@@ -3284,28 +3611,31 @@ async fn test_instrument_status_updates_do_not_overlap(#[case] poll_first: bool)
     let eth = InstrumentId::from("ETHUSDT.BINANCE");
     let mut statuses = Vec::new();
     let mut instruments = Vec::new();
+    let mut instrument_responses = Vec::new();
 
     while let Ok(event) = events.try_recv() {
         match event {
             DataEvent::Data(Data::InstrumentStatus(status)) => statuses.push(status),
             DataEvent::Data(Data::Instrument(instrument)) => instruments.push(instrument.id()),
+            DataEvent::Response(DataResponse::Instruments(response)) => {
+                instrument_responses.push((response.correlation_id, response.data[0].id()));
+            }
             _ => {}
         }
     }
 
-    let changes = if poll_first {
-        vec![
-            (btc, MarketStatusAction::Halt),
-            (eth, MarketStatusAction::Trading),
-            (btc, MarketStatusAction::NotAvailableForTrading),
-        ]
-    } else {
-        vec![
-            (eth, MarketStatusAction::Halt),
-            (btc, MarketStatusAction::NotAvailableForTrading),
-            (eth, MarketStatusAction::Trading),
-        ]
-    };
+    let mut changes = [
+        (btc, MarketStatusAction::Halt),
+        (eth, MarketStatusAction::Trading),
+        (btc, MarketStatusAction::NotAvailableForTrading),
+    ];
+
+    assert_eq!(statuses.len(), 3);
+
+    // The poll may remove BTC before the explicit request adds ETH to the catalog
+    if !poll_first && statuses[1].instrument_id == btc {
+        changes.swap(1, 2);
+    }
 
     let expected = changes
         .into_iter()
@@ -3325,11 +3655,18 @@ async fn test_instrument_status_updates_do_not_overlap(#[case] poll_first: bool)
         })
         .collect::<Vec<_>>();
 
-    assert_eq!(statuses.len(), 3);
     assert_eq!(statuses, expected);
     assert!(instruments.len() >= 2);
     assert_eq!(instruments[0], btc);
     assert!(instruments[1..].iter().all(|id| *id == eth));
+
+    let expected_responses = if poll_first {
+        vec![]
+    } else {
+        vec![(request_id, eth)]
+    };
+
+    assert_eq!(instrument_responses, expected_responses);
 }
 
 #[rstest]

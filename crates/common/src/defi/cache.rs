@@ -102,28 +102,54 @@ impl Cache {
         );
     }
 
+    /// Checks a batch of instrument definitions against the cache and each other.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a currency conflicts with existing state or the instrument cannot be
+    /// migrated safely.
+    pub fn validate_instrument_currency_integrity(
+        &self,
+        instruments: &[InstrumentAny],
+    ) -> anyhow::Result<()> {
+        let mut previous_by_id = AHashMap::new();
+
+        for instrument in instruments {
+            self.check_instrument_migration(instrument)?;
+            for code in currency::instrument_codes(instrument)? {
+                self.check_cached_token_currency(Ustr::from(&code))?;
+            }
+
+            if let Some(previous) = previous_by_id.insert(instrument.id(), instrument) {
+                Self::check_instrument_currency_identities(previous, instrument)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn check_cached_token_currency(&self, code: Ustr) -> anyhow::Result<()> {
+        if let Some(existing) = self.currency(&code) {
+            anyhow::ensure!(
+                self.defi.contains_currency(&code),
+                "Legacy currency occupies token code {code}"
+            );
+            currency::check(*existing)?;
+        }
+
+        Ok(())
+    }
+
     pub(crate) fn check_instrument_migration(
         &self,
         instrument: &InstrumentAny,
     ) -> anyhow::Result<Option<InstrumentMigration>> {
         let id = instrument.id();
         let previous = self.instrument(&id);
-
-        let changed = previous.is_some_and(|previous| {
-            previous.base_currency() != instrument.base_currency()
-                || previous.quote_currency() != instrument.quote_currency()
-                || previous.settlement_currency() != instrument.settlement_currency()
-        });
-
-        if let Some(previous) = previous
-            && changed
-            && !currency::instrument_codes(previous)?.is_empty()
-        {
-            return Err(IntegrityError(
-                "Cannot change a token instrument's currency identities".into(),
-            )
-            .into());
-        }
+        let changed = previous
+            .map(|previous| Self::check_instrument_currency_identities(previous, instrument))
+            .transpose()?
+            .unwrap_or(false);
 
         if currency::instrument_codes(instrument)?.is_empty() {
             return Ok(None);
@@ -138,6 +164,24 @@ impl Cache {
         }
 
         Ok(Some(migration))
+    }
+
+    fn check_instrument_currency_identities(
+        previous: &InstrumentAny,
+        instrument: &InstrumentAny,
+    ) -> anyhow::Result<bool> {
+        let changed = previous.base_currency() != instrument.base_currency()
+            || previous.quote_currency() != instrument.quote_currency()
+            || previous.settlement_currency() != instrument.settlement_currency()
+            || previous.strike_currency() != instrument.strike_currency();
+        if changed && !currency::instrument_codes(previous)?.is_empty() {
+            return Err(IntegrityError(
+                "Cannot change a token instrument's currency identities".into(),
+            )
+            .into());
+        }
+
+        Ok(changed)
     }
 
     pub(crate) fn instrument_migration(

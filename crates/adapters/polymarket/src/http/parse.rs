@@ -1045,7 +1045,7 @@ mod tests {
     fn test_create_instrument_from_def() {
         let market = load_gamma_market("gamma_market.json");
         let defs = parse_gamma_market(&market).unwrap();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let instrument = create_instrument_from_def(&defs[0], ts_init).unwrap();
 
@@ -1071,7 +1071,7 @@ mod tests {
     fn test_create_instrument_info_params() {
         let market = load_gamma_market("gamma_market.json");
         let defs = parse_gamma_market(&market).unwrap();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let instrument = create_instrument_from_def(&defs[0], ts_init).unwrap();
 
@@ -1124,7 +1124,8 @@ mod tests {
         let defs = parse_gamma_market(&market).unwrap();
 
         let instrument =
-            create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap();
+            create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000_u64)).unwrap();
+
         let InstrumentAny::BinaryOption(binary) = instrument else {
             panic!("Expected BinaryOption");
         };
@@ -1193,7 +1194,8 @@ mod tests {
         let defs = parse_gamma_market(&market).unwrap();
         assert_eq!(defs[0].end_date.as_deref(), Some("2026-08-22T16:05:00Z"));
         let instrument =
-            create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap();
+            create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000_u64)).unwrap();
+
         let InstrumentAny::BinaryOption(binary) = instrument else {
             panic!("Expected BinaryOption");
         };
@@ -1223,7 +1225,8 @@ mod tests {
         let defs = parse_gamma_market(&market).unwrap();
 
         let instrument =
-            create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap();
+            create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000_u64)).unwrap();
+
         let InstrumentAny::BinaryOption(binary) = instrument else {
             panic!("Expected BinaryOption");
         };
@@ -1248,7 +1251,8 @@ mod tests {
         // state in `resolution_metadata`. Closure is stamped on the live Gamma path instead.
         for def in [&defs[0], &closed_defs[0]] {
             let instrument =
-                create_instrument_from_def(def, UnixNanos::from(1_000_000_000u64)).unwrap();
+                create_instrument_from_def(def, UnixNanos::from(1_000_000_000_u64)).unwrap();
+
             let binary = match &instrument {
                 InstrumentAny::BinaryOption(binary) => binary,
                 other => panic!("Expected BinaryOption, was {other:?}"),
@@ -1263,7 +1267,7 @@ mod tests {
     fn test_create_instrument_info_params_includes_game_id_and_fee_schedule() {
         let market = load_gamma_market("gamma_market_sports_market_money_line.json");
         let defs = parse_gamma_market(&market).unwrap();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let instrument = create_instrument_from_def(&defs[0], ts_init).unwrap();
 
@@ -1287,7 +1291,7 @@ mod tests {
     fn test_instruments_from_defs_batch() {
         let market = load_gamma_market("gamma_market.json");
         let defs = parse_gamma_market(&market).unwrap();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let instruments = instruments_from_defs(&defs, ts_init);
 
@@ -1300,7 +1304,7 @@ mod tests {
         let valid_defs = parse_gamma_market(&market).unwrap();
         market.order_price_min_tick_size = Some(UNSUPPORTED_TICK_SIZE.parse().unwrap());
         let invalid_defs = parse_gamma_market(&market).unwrap();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
         let expected = create_instrument_from_def(&valid_defs[1], ts_init).unwrap();
         let defs = [invalid_defs[0].clone(), valid_defs[1].clone()];
 
@@ -1343,7 +1347,7 @@ mod tests {
         let mut market = load_gamma_market("gamma_market.json");
         market.order_price_min_tick_size = Some(tick_size.parse().unwrap());
         let defs = parse_gamma_market(&market).unwrap();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let instrument = create_instrument_from_def(&defs[0], ts_init).unwrap();
 
@@ -1380,7 +1384,7 @@ mod tests {
         let mut market = load_gamma_market("gamma_market.json");
         market.order_price_min_tick_size = Some(dec!(0.01));
         let defs = parse_gamma_market(&market).unwrap();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let instrument = create_instrument_from_def(&defs[0], ts_init).unwrap();
         let tick = instrument.price_increment();
@@ -1405,13 +1409,13 @@ mod tests {
     fn test_rebuild_instrument_with_tick_size() {
         let market = load_gamma_market("gamma_market.json");
         let defs = parse_gamma_market(&market).unwrap();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         // The active tick changes independently of canonical price precision
         let instrument = create_instrument_from_def(&defs[0], ts_init).unwrap();
         assert_eq!(instrument.price_precision(), POLYMARKET_PRICE_PRECISION);
 
-        let ts_event = UnixNanos::from(2_000_000_000u64);
+        let ts_event = UnixNanos::from(2_000_000_000_u64);
         let rebuilt =
             rebuild_instrument_with_tick_size(&instrument, "0.001", ts_event, ts_event).unwrap();
 
@@ -1438,7 +1442,7 @@ mod tests {
     ) {
         let market = load_gamma_market("gamma_market.json");
         let defs = parse_gamma_market(&market).unwrap();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
         let instrument = create_instrument_from_def(&defs[0], ts_init).unwrap();
         let instrument =
             rebuild_instrument_with_tick_size(&instrument, old_tick, ts_init, ts_init).unwrap();
@@ -1465,7 +1469,7 @@ mod tests {
     fn test_rebuild_instrument_with_tick_size_rejects_unsupported_tick_precision() {
         let market = load_gamma_market("gamma_market.json");
         let defs = parse_gamma_market(&market).unwrap();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
         let instrument = create_instrument_from_def(&defs[0], ts_init).unwrap();
         let error =
             rebuild_instrument_with_tick_size(&instrument, UNSUPPORTED_TICK_SIZE, ts_init, ts_init)
@@ -1483,10 +1487,10 @@ mod tests {
     fn test_rebuild_instrument_preserves_fields() {
         let market = load_gamma_market("gamma_market.json");
         let defs = parse_gamma_market(&market).unwrap();
-        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000_u64);
 
         let instrument = create_instrument_from_def(&defs[0], ts_init).unwrap();
-        let ts_event = UnixNanos::from(2_000_000_000u64);
+        let ts_event = UnixNanos::from(2_000_000_000_u64);
         let rebuilt =
             rebuild_instrument_with_tick_size(&instrument, "0.01", ts_event, ts_event).unwrap();
 

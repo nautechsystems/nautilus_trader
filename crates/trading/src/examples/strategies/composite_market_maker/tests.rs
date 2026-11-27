@@ -47,6 +47,7 @@ use nautilus_model::{
 };
 use nautilus_portfolio::portfolio::Portfolio;
 use rstest::rstest;
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use ustr::Ustr;
 
@@ -82,7 +83,6 @@ fn create_strategy(
         .build();
 
     let mut strategy = CompositeMarketMaker::new(config);
-    strategy.price_precision = Some(PRECISION);
     strategy.instrument = Some(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()));
     strategy
 }
@@ -129,23 +129,23 @@ fn test_config_defaults() {
 #[rstest]
 fn test_should_requote_true_when_no_previous_quote() {
     let strategy = create_strategy(5, 0.0, 0.0, Quantity::from("10.0"), 5);
-    assert!(strategy.should_requote(price("1000.00"), 0.0));
+    assert!(strategy.should_requote(dec!(1000.00), dec!(0.0)));
 }
 
 #[rstest]
 fn test_should_requote_false_within_threshold() {
     let mut strategy = create_strategy(5, 0.0, 0.0, Quantity::from("10.0"), 5);
-    strategy.last_quoted_anchor = Some(price("1000.00"));
-    strategy.last_quoted_residual = Some(0.0);
-    assert!(!strategy.should_requote(price("1000.30"), 0.0));
+    strategy.last_quoted_anchor = Some(dec!(1000.00));
+    strategy.last_quoted_residual = Some(dec!(0.0));
+    assert!(!strategy.should_requote(dec!(1000.30), dec!(0.0)));
 }
 
 #[rstest]
 fn test_should_requote_true_at_threshold() {
     let mut strategy = create_strategy(5, 0.0, 0.0, Quantity::from("10.0"), 5);
-    strategy.last_quoted_anchor = Some(price("1000.00"));
-    strategy.last_quoted_residual = Some(0.0);
-    assert!(strategy.should_requote(price("1000.50"), 0.0));
+    strategy.last_quoted_anchor = Some(dec!(1000.00));
+    strategy.last_quoted_residual = Some(dec!(0.0));
+    assert!(strategy.should_requote(dec!(1000.50), dec!(0.0)));
 }
 
 #[rstest]
@@ -153,21 +153,21 @@ fn test_should_requote_on_residual_change_when_anchor_static() {
     // requote_threshold_bps=5 -> 0.5 price units on 1000 anchor.
     // signal_skew_factor=10.0, residual_delta=0.06 -> price impact 0.6 units.
     let mut strategy = create_strategy(5, 0.0, 10.0, Quantity::from("10.0"), 5);
-    strategy.last_quoted_anchor = Some(price("1000.00"));
-    strategy.last_quoted_residual = Some(0.0);
+    strategy.last_quoted_anchor = Some(dec!(1000.00));
+    strategy.last_quoted_residual = Some(dec!(0.0));
 
     // Anchor unchanged but residual moved enough to clear the threshold.
-    assert!(strategy.should_requote(price("1000.00"), 0.06));
+    assert!(strategy.should_requote(dec!(1000.00), dec!(0.06)));
 }
 
 #[rstest]
 fn test_should_not_requote_when_residual_change_below_threshold() {
     // 5 bps threshold on 1000 = 0.5 units. signal_skew=10, residual_delta=0.04 -> 0.4 units.
     let mut strategy = create_strategy(5, 0.0, 10.0, Quantity::from("10.0"), 5);
-    strategy.last_quoted_anchor = Some(price("1000.00"));
-    strategy.last_quoted_residual = Some(0.0);
+    strategy.last_quoted_anchor = Some(dec!(1000.00));
+    strategy.last_quoted_residual = Some(dec!(0.0));
 
-    assert!(!strategy.should_requote(price("1000.00"), 0.04));
+    assert!(!strategy.should_requote(dec!(1000.00), dec!(0.04)));
 }
 
 #[rstest]
@@ -175,10 +175,10 @@ fn test_residual_gate_inactive_when_signal_skew_zero() {
     // With signal_skew_factor=0 the residual cannot shift quotes, so changes
     // in residual must not trigger a requote on their own.
     let mut strategy = create_strategy(5, 0.0, 0.0, Quantity::from("10.0"), 5);
-    strategy.last_quoted_anchor = Some(price("1000.00"));
-    strategy.last_quoted_residual = Some(0.0);
+    strategy.last_quoted_anchor = Some(dec!(1000.00));
+    strategy.last_quoted_residual = Some(dec!(0.0));
 
-    assert!(!strategy.should_requote(price("1000.00"), 1.0));
+    assert!(!strategy.should_requote(dec!(1000.00), dec!(1.0)));
 }
 
 #[rstest]
@@ -186,7 +186,7 @@ fn test_should_requote_true_with_signal_skew_when_no_previous_quote() {
     // First quote: no last anchor and no last residual; even with the residual
     // gate active, should_requote must return true so the strategy seeds quotes.
     let strategy = create_strategy(5, 0.0, 10.0, Quantity::from("10.0"), 5);
-    assert!(strategy.should_requote(price("1000.00"), 0.05));
+    assert!(strategy.should_requote(dec!(1000.00), dec!(0.05)));
 }
 
 #[rstest]
@@ -198,9 +198,9 @@ fn test_signal_residual_unavailable_without_signal() {
 #[rstest]
 fn test_signal_residual_normalized_against_baseline() {
     let mut strategy = create_strategy(5, 0.0, 1.0, Quantity::from("10.0"), 5);
-    strategy.signal_baseline = Some(100.0);
-    strategy.last_signal = Some(110.0);
-    assert!((strategy.signal_residual().unwrap() - 0.10).abs() < 1e-9);
+    strategy.signal_baseline = Some(dec!(100.0));
+    strategy.last_signal = Some(dec!(110.0));
+    assert_eq!(strategy.signal_residual(), Some(dec!(0.10)));
 }
 
 #[rstest]
@@ -213,35 +213,33 @@ fn test_signal_residual_normalized_against_baseline() {
 #[case::overflow(Some(f64::MIN_POSITIVE))]
 fn test_signal_residual_unavailable_with_invalid_baseline(#[case] baseline: Option<f64>) {
     let mut strategy = create_strategy(5, 0.0, 1.0, Quantity::from("10.0"), 5);
-    strategy.signal_baseline = baseline;
-    strategy.last_signal = Some(110.0);
+    strategy.signal_baseline = baseline.and_then(|value| Decimal::try_from(value).ok());
+    strategy.last_signal = Some(dec!(110.0));
     assert_eq!(strategy.signal_residual(), None);
 }
 
 #[rstest]
 #[case::missing(None)]
-#[case::zero(Some(0.0))]
-#[case::negative(Some(-100.0))]
-#[case::nan(Some(f64::NAN))]
-#[case::infinite(Some(f64::INFINITY))]
-fn test_signal_residual_unavailable_with_invalid_signal(#[case] signal: Option<f64>) {
+#[case::zero(Some(dec!(0)))]
+#[case::negative(Some(dec!(-100)))]
+fn test_signal_residual_unavailable_with_invalid_signal(#[case] signal: Option<Decimal>) {
     let mut strategy = create_strategy(5, 0.0, 1.0, Quantity::from("10.0"), 5);
-    strategy.signal_baseline = Some(100.0);
+    strategy.signal_baseline = Some(dec!(100));
     strategy.last_signal = signal;
     assert_eq!(strategy.signal_residual(), None);
 }
 
 #[rstest]
-#[case::captured(None, "990.00", "1010.00", 0.0)]
-#[case::explicit(Some(100.0), "995.00", "1015.00", 0.5)]
+#[case::captured(None, "990.00", "1010.00", dec!(0))]
+#[case::explicit(Some(100.0), "995.00", "1015.00", dec!(0.5))]
 fn test_target_quotes_wait_for_signal_then_submit(
     #[case] baseline: Option<f64>,
     #[case] bid: &str,
     #[case] ask: &str,
-    #[case] residual: f64,
+    #[case] residual: Decimal,
 ) {
     let mut strategy = create_strategy(100, 0.0, 10.0, Quantity::from("10.0"), 5);
-    strategy.signal_baseline = baseline;
+    strategy.signal_baseline = baseline.and_then(|value| Decimal::try_from(value).ok());
     let commands = register_strategy(&mut strategy);
 
     strategy
@@ -260,7 +258,10 @@ fn test_target_quotes_wait_for_signal_then_submit(
     );
     assert_eq!(strategy.last_quoted_anchor, None);
     assert_eq!(strategy.last_quoted_residual, None);
-    assert_eq!(strategy.signal_baseline, baseline);
+    assert_eq!(
+        strategy.signal_baseline,
+        baseline.map(|value| Decimal::try_from(value).unwrap())
+    );
 
     strategy
         .on_quote(&quote(signal_id(), "149.00", "151.00"))
@@ -271,9 +272,12 @@ fn test_target_quotes_wait_for_signal_then_submit(
         .unwrap();
 
     assert_submitted_quotes(&strategy, &commands, bid, ask);
-    assert_eq!(strategy.signal_baseline, Some(baseline.unwrap_or(150.0)));
-    assert_eq!(strategy.last_signal, Some(150.0));
-    assert_eq!(strategy.last_quoted_anchor, Some(price("1000.00")));
+    assert_eq!(
+        strategy.signal_baseline,
+        Some(Decimal::try_from(baseline.unwrap_or(150.0)).unwrap())
+    );
+    assert_eq!(strategy.last_signal, Some(dec!(150.0)));
+    assert_eq!(strategy.last_quoted_anchor, Some(dec!(1000.00)));
     assert_eq!(strategy.last_quoted_residual, Some(residual));
 }
 
@@ -311,10 +315,10 @@ fn test_target_quotes_wait_with_invalid_explicit_baseline(#[case] baseline: f64)
         0
     );
     assert_eq!(
-        strategy.signal_baseline.unwrap().to_bits(),
+        strategy.config.signal_baseline.unwrap().to_bits(),
         baseline.to_bits()
     );
-    assert_eq!(strategy.last_signal, Some(150.0));
+    assert_eq!(strategy.last_signal, Some(dec!(150.0)));
     assert_eq!(strategy.last_quoted_anchor, None);
     assert_eq!(strategy.last_quoted_residual, None);
 }
@@ -349,8 +353,8 @@ fn test_invalid_signal_quote_does_not_unlock_target_quotes(#[case] bid: &str, #[
 
     assert_submitted_quotes(&strategy, &commands, "990.00", "1010.00");
     strategy.on_quote(&quote(signal_id(), bid, ask)).unwrap();
-    assert_eq!(strategy.last_signal, Some(150.0));
-    assert_eq!(strategy.signal_baseline, Some(150.0));
+    assert_eq!(strategy.last_signal, Some(dec!(150.0)));
+    assert_eq!(strategy.signal_baseline, Some(dec!(150.0)));
 }
 
 #[rstest]
@@ -406,13 +410,13 @@ fn test_ready_signal_preserves_requote_threshold_and_pending_exposure(
 
     if can_quote {
         assert_submitted_quotes(&strategy, &commands, "990.60", "1010.60");
-        assert!((strategy.last_quoted_residual.unwrap() - 0.06).abs() < 1e-9);
+        assert_eq!(strategy.last_quoted_residual, Some(dec!(0.06)));
     } else {
         assert!(commands.get_messages().is_empty());
-        assert_eq!(strategy.last_quoted_residual, Some(0.0));
+        assert_eq!(strategy.last_quoted_residual, Some(dec!(0.0)));
     }
 
-    assert_eq!(strategy.last_quoted_anchor, Some(price("1000.00")));
+    assert_eq!(strategy.last_quoted_anchor, Some(dec!(1000.00)));
 }
 
 #[rstest]
@@ -447,14 +451,14 @@ fn test_reset_requires_a_new_signal_before_quoting() {
         .unwrap();
 
     assert_submitted_quotes(&strategy, &commands, "990.00", "1010.00");
-    assert_eq!(strategy.signal_baseline, Some(120.0));
-    assert_eq!(strategy.last_signal, Some(120.0));
+    assert_eq!(strategy.signal_baseline, Some(dec!(120.0)));
+    assert_eq!(strategy.last_signal, Some(dec!(120.0)));
 }
 
 #[rstest]
 fn test_target_quotes_submit_without_signal_when_skew_disabled() {
     let mut strategy = create_strategy(100, 0.0, 0.0, Quantity::from("10.0"), 5);
-    strategy.signal_baseline = Some(f64::NAN);
+    strategy.config.signal_baseline = Some(f64::NAN);
     let commands = register_strategy(&mut strategy);
 
     strategy
@@ -463,8 +467,8 @@ fn test_target_quotes_submit_without_signal_when_skew_disabled() {
 
     assert_submitted_quotes(&strategy, &commands, "990.00", "1010.00");
     assert_eq!(strategy.last_signal, None);
-    assert_eq!(strategy.last_quoted_anchor, Some(price("1000.00")));
-    assert_eq!(strategy.last_quoted_residual, Some(0.0));
+    assert_eq!(strategy.last_quoted_anchor, Some(dec!(1000.00)));
+    assert_eq!(strategy.last_quoted_residual, Some(dec!(0.0)));
 }
 
 fn register_strategy(
@@ -472,10 +476,11 @@ fn register_strategy(
 ) -> TypedIntoMessageSavingHandler<TradingCommand> {
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
-    cache
-        .borrow_mut()
-        .add_instrument(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()))
-        .unwrap();
+    let instrument = strategy
+        .instrument
+        .clone()
+        .unwrap_or_else(|| InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()));
+    cache.borrow_mut().add_instrument(instrument).unwrap();
 
     let portfolio = Rc::new(RefCell::new(Portfolio::new(
         clock.clone(),
@@ -493,6 +498,88 @@ fn register_strategy(
         handler,
     );
     commands
+}
+
+#[rstest]
+fn test_coarse_tick_quotes_use_unrounded_anchor() {
+    let mut strategy = create_strategy(50, 0.0, 0.0, Quantity::from("10.0"), 5);
+    let mut instrument = crypto_perpetual_ethusdt();
+    instrument.price_precision = 0;
+    instrument.price_increment = Price::from("1");
+    strategy.instrument = Some(InstrumentAny::CryptoPerpetual(instrument));
+    let commands = register_strategy(&mut strategy);
+
+    strategy
+        .on_quote(&quote(instrument_id(), "100", "101"))
+        .unwrap();
+
+    assert_eq!(strategy.last_quoted_anchor, Some(dec!(100.5)));
+    assert_submitted_quotes(&strategy, &commands, "99", "102");
+}
+
+#[rstest]
+fn test_failed_replacement_skew_preserves_resting_orders() {
+    let mut strategy = create_strategy(100, 0.0, 0.0, Quantity::from("10.0"), 5);
+    strategy.config.on_cancel_resubmit = true;
+    let commands = register_strategy(&mut strategy);
+    strategy
+        .on_quote(&quote(instrument_id(), "1000", "1000"))
+        .unwrap();
+    let cache = strategy.core.cache_rc();
+    let account = AccountId::from("ACC-001");
+
+    for message in commands.get_messages() {
+        let TradingCommand::SubmitOrder(command) = message else {
+            panic!("Expected SubmitOrder, received {message:?}");
+        };
+
+        let mut cache = cache.borrow_mut();
+        let order = cache.order(&command.client_order_id).unwrap().clone();
+        cache
+            .update_order(&TestOrderEventStubs::submitted(&order, account))
+            .unwrap();
+        cache
+            .update_order(&TestOrderEventStubs::accepted(
+                &order,
+                account,
+                VenueOrderId::from(command.client_order_id.as_str()),
+            ))
+            .unwrap();
+    }
+
+    let (handler, cancels) = get_typed_into_message_saving_handler::<TradingCommand>(None);
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::exec_engine_queue_execute(),
+        handler,
+    );
+    commands.clear();
+    strategy.config.inventory_skew_factor = f64::MAX;
+
+    let result = strategy.on_quote(&quote(instrument_id(), "1010", "1010"));
+
+    assert!(result.is_err());
+    assert_eq!(
+        cache
+            .borrow()
+            .orders_open_count(None, None, None, None, None),
+        2
+    );
+    assert!(commands.get_messages().is_empty());
+    assert!(cancels.get_messages().is_empty());
+    assert!(strategy.pending_self_cancels.is_empty());
+    assert_eq!(strategy.last_quoted_anchor, Some(dec!(1000)));
+}
+
+#[rstest]
+fn test_compute_quotes_reports_skewed_price_overflow() {
+    let strategy = create_strategy(50, 1e16, 0.0, Quantity::from("10.0"), 5);
+    let position = dec!(-7922816251426.433759354395);
+
+    let e = strategy
+        .compute_quotes(dec!(1000), Decimal::ZERO, position, position, position)
+        .unwrap_err();
+
+    assert_eq!(e.to_string(), "Skewed bid price exceeds the decimal range");
 }
 
 fn assert_submitted_quotes(
@@ -528,19 +615,19 @@ fn test_should_requote_on_residual_with_zero_anchor() {
     // An anchor of zero short-circuits the residual gate to false to avoid
     // dividing by zero, even with a residual change far above the threshold.
     let mut strategy = create_strategy(5, 0.0, 10.0, Quantity::from("10.0"), 5);
-    strategy.last_quoted_anchor = Some(price("1000.00"));
-    strategy.last_quoted_residual = Some(0.0);
+    strategy.last_quoted_anchor = Some(dec!(1000.00));
+    strategy.last_quoted_residual = Some(dec!(0.0));
 
-    assert!(!strategy.should_requote_on_residual(1.0, price("0.00")));
+    assert!(!strategy.should_requote_on_residual(dec!(1.0), dec!(0.00)));
 }
 
 #[rstest]
 fn test_should_requote_on_anchor_with_zero_last_anchor() {
     // A zero last anchor short-circuits to true so the next quote can place.
     let mut strategy = create_strategy(5, 0.0, 0.0, Quantity::from("10.0"), 5);
-    strategy.last_quoted_anchor = Some(price("0.00"));
+    strategy.last_quoted_anchor = Some(dec!(0.00));
 
-    assert!(strategy.should_requote_on_anchor(price("1000.00")));
+    assert!(strategy.should_requote_on_anchor(dec!(1000.00)));
 }
 
 #[rstest]
@@ -548,7 +635,7 @@ fn test_compute_quotes_flat_no_signal_symmetric() {
     // 10 bps half-spread on 1000 anchor -> 1.00 each side.
     let strategy = create_strategy(10, 0.0, 0.0, Quantity::from("10.0"), 5);
     let quotes = strategy
-        .compute_quotes(price("1000.00"), 0.0, 0.0, dec!(0), dec!(0))
+        .compute_quotes(dec!(1000.00), dec!(0.0), dec!(0.0), dec!(0), dec!(0))
         .unwrap();
 
     assert_eq!(quotes.len(), 2);
@@ -561,7 +648,7 @@ fn test_compute_quotes_inventory_skew_long_shifts_down() {
     // 100 bps half-spread, inv_skew=1.0, net_position=2.0 -> total shift -2.0.
     let strategy = create_strategy(100, 1.0, 0.0, Quantity::from("10.0"), 5);
     let quotes = strategy
-        .compute_quotes(price("1000.00"), 0.0, 2.0, dec!(2), dec!(2))
+        .compute_quotes(dec!(1000.00), dec!(0.0), dec!(2.0), dec!(2), dec!(2))
         .unwrap();
 
     assert_eq!(quotes.len(), 2);
@@ -574,7 +661,7 @@ fn test_compute_quotes_inventory_skew_long_shifts_down() {
 fn test_compute_quotes_inventory_skew_short_shifts_up() {
     let strategy = create_strategy(100, 1.0, 0.0, Quantity::from("10.0"), 5);
     let quotes = strategy
-        .compute_quotes(price("1000.00"), 0.0, -2.0, dec!(-2), dec!(-2))
+        .compute_quotes(dec!(1000.00), dec!(0.0), dec!(-2.0), dec!(-2), dec!(-2))
         .unwrap();
 
     assert_eq!(quotes.len(), 2);
@@ -588,7 +675,7 @@ fn test_compute_quotes_signal_skew_positive_residual_lifts() {
     // 100 bps half-spread, signal_skew=10.0, residual=+0.05 -> total shift +0.50.
     let strategy = create_strategy(100, 0.0, 10.0, Quantity::from("10.0"), 5);
     let quotes = strategy
-        .compute_quotes(price("1000.00"), 0.05, 0.0, dec!(0), dec!(0))
+        .compute_quotes(dec!(1000.00), dec!(0.05), dec!(0.0), dec!(0), dec!(0))
         .unwrap();
 
     assert_eq!(quotes.len(), 2);
@@ -603,7 +690,7 @@ fn test_compute_quotes_combined_skew() {
     // sig_skew=10.0 with residual=+0.05 -> +0.5. total shift = +0.5 - 2.0 = -1.5.
     let strategy = create_strategy(100, 1.0, 10.0, Quantity::from("10.0"), 5);
     let quotes = strategy
-        .compute_quotes(price("1000.00"), 0.05, 2.0, dec!(2), dec!(2))
+        .compute_quotes(dec!(1000.00), dec!(0.05), dec!(2.0), dec!(2), dec!(2))
         .unwrap();
 
     assert_eq!(quotes.len(), 2);
@@ -616,7 +703,7 @@ fn test_compute_quotes_max_position_blocks_buy() {
     // worst_long=10.0 already at cap, trade_size=0.1 -> buy blocked.
     let strategy = create_strategy(10, 0.0, 0.0, Quantity::from("10.0"), 5);
     let quotes = strategy
-        .compute_quotes(price("1000.00"), 0.0, 10.0, dec!(10), dec!(10))
+        .compute_quotes(dec!(1000.00), dec!(0.0), dec!(10.0), dec!(10), dec!(10))
         .unwrap();
 
     assert_eq!(quotes.len(), 1);
@@ -627,7 +714,7 @@ fn test_compute_quotes_max_position_blocks_buy() {
 fn test_compute_quotes_max_position_blocks_sell() {
     let strategy = create_strategy(10, 0.0, 0.0, Quantity::from("10.0"), 5);
     let quotes = strategy
-        .compute_quotes(price("1000.00"), 0.0, -10.0, dec!(-10), dec!(-10))
+        .compute_quotes(dec!(1000.00), dec!(0.0), dec!(-10.0), dec!(-10), dec!(-10))
         .unwrap();
 
     assert_eq!(quotes.len(), 1);
@@ -640,10 +727,10 @@ fn test_compute_quotes_skew_preserves_spread() {
     // spread (ask - bid) is invariant in skew under the symmetric model.
     let strategy = create_strategy(50, 0.5, 5.0, Quantity::from("10.0"), 5);
     let flat = strategy
-        .compute_quotes(price("1000.00"), 0.0, 0.0, dec!(0), dec!(0))
+        .compute_quotes(dec!(1000.00), dec!(0.0), dec!(0.0), dec!(0), dec!(0))
         .unwrap();
     let skewed = strategy
-        .compute_quotes(price("1000.00"), 0.02, 3.0, dec!(3), dec!(3))
+        .compute_quotes(dec!(1000.00), dec!(0.02), dec!(3.0), dec!(3), dec!(3))
         .unwrap();
 
     assert_eq!(flat.len(), 2);
@@ -665,7 +752,7 @@ fn test_compute_quotes_errors_when_instrument_not_resolved() {
     let strategy = CompositeMarketMaker::new(config);
 
     let err = strategy
-        .compute_quotes(price("1000.00"), 0.0, 0.0, dec!(0), dec!(0))
+        .compute_quotes(dec!(1000.00), dec!(0.0), dec!(0.0), dec!(0), dec!(0))
         .unwrap_err()
         .to_string();
 
@@ -673,7 +760,7 @@ fn test_compute_quotes_errors_when_instrument_not_resolved() {
 }
 
 #[rstest]
-fn test_on_quote_errors_when_price_precision_not_resolved() {
+fn test_on_quote_errors_when_instrument_not_resolved() {
     let config = CompositeMarketMakerConfig::builder()
         .instrument_id(instrument_id())
         .signal_instrument_id(signal_id())
@@ -681,12 +768,11 @@ fn test_on_quote_errors_when_price_precision_not_resolved() {
         .trade_size(Quantity::from("0.100"))
         .build();
     let mut strategy = CompositeMarketMaker::new(config);
-    strategy.instrument = Some(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()));
 
     let tick = quote(instrument_id(), "1000.00", "1000.10");
     let err = strategy.on_quote(&tick).unwrap_err().to_string();
 
-    assert_eq!(err, "Cannot handle quote: price_precision is not resolved");
+    assert_eq!(err, "Cannot handle quote: instrument is not resolved");
 }
 
 fn order_canceled(client_order_id: &str) -> OrderCanceled {
@@ -707,24 +793,30 @@ fn create_cancel_resubmit_strategy() -> CompositeMarketMaker {
         .on_cancel_resubmit(true)
         .build();
 
-    let mut strategy = CompositeMarketMaker::new(config);
-    strategy.price_precision = Some(PRECISION);
-    strategy
+    CompositeMarketMaker::new(config)
 }
 
 #[rstest]
-fn test_signal_tick_updates_last_signal_and_captures_baseline_once() {
-    // Two signal ticks: baseline must capture the first mid and stay there;
-    // last_signal must reflect the latest mid.
+#[case(2)]
+#[cfg_attr(feature = "defi", case(17))]
+#[cfg_attr(feature = "defi", case(18))]
+fn test_signal_tick_updates_last_signal_and_captures_baseline_once(#[case] precision: u8) {
     let mut strategy = create_strategy(5, 0.0, 1.0, Quantity::from("10.0"), 5);
     let first = quote(signal_id(), "100.00", "100.00");
-    let second = quote(signal_id(), "120.00", "120.00");
+    let next_mid = dec!(120) + Decimal::new(1, u32::from(precision));
+    let second_price = Price::from_decimal_dp(next_mid, precision).unwrap();
+
+    let second = QuoteTick {
+        bid_price: second_price,
+        ask_price: second_price,
+        ..quote(signal_id(), "120.00", "120.00")
+    };
 
     strategy.on_quote(&first).unwrap();
     strategy.on_quote(&second).unwrap();
 
-    assert_eq!(strategy.signal_baseline, Some(100.0));
-    assert_eq!(strategy.last_signal, Some(120.0));
+    assert_eq!(strategy.last_signal, Some(next_mid));
+    assert_eq!(strategy.signal_baseline, Some(dec!(100.0)));
 }
 
 #[rstest]
@@ -740,14 +832,13 @@ fn test_signal_tick_does_not_overwrite_explicit_baseline() {
         .signal_baseline(50.0)
         .build();
     let mut strategy = CompositeMarketMaker::new(config);
-    strategy.price_precision = Some(PRECISION);
     strategy.instrument = Some(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()));
 
     let tick = quote(signal_id(), "120.00", "120.00");
     strategy.on_quote(&tick).unwrap();
 
-    assert_eq!(strategy.signal_baseline, Some(50.0));
-    assert_eq!(strategy.last_signal, Some(120.0));
+    assert_eq!(strategy.signal_baseline, Some(dec!(50.0)));
+    assert_eq!(strategy.last_signal, Some(dec!(120.0)));
 }
 
 #[rstest]
@@ -769,8 +860,8 @@ fn test_on_quote_ignores_unrelated_instrument() {
 #[rstest]
 fn test_on_order_canceled_self_cancel_preserves_anchor() {
     let mut strategy = create_cancel_resubmit_strategy();
-    strategy.last_quoted_anchor = Some(price("1000.00"));
-    strategy.last_quoted_residual = Some(0.05);
+    strategy.last_quoted_anchor = Some(dec!(1000.00));
+    strategy.last_quoted_residual = Some(dec!(0.05));
     strategy
         .pending_self_cancels
         .insert(ClientOrderId::from("O-001"));
@@ -779,15 +870,15 @@ fn test_on_order_canceled_self_cancel_preserves_anchor() {
     strategy.on_order_canceled(&event);
 
     assert!(strategy.pending_self_cancels.is_empty());
-    assert_eq!(strategy.last_quoted_anchor, Some(price("1000.00")));
-    assert_eq!(strategy.last_quoted_residual, Some(0.05));
+    assert_eq!(strategy.last_quoted_anchor, Some(dec!(1000.00)));
+    assert_eq!(strategy.last_quoted_residual, Some(dec!(0.05)));
 }
 
 #[rstest]
 fn test_on_order_canceled_protocol_cancel_resets_anchor() {
     let mut strategy = create_cancel_resubmit_strategy();
-    strategy.last_quoted_anchor = Some(price("1000.00"));
-    strategy.last_quoted_residual = Some(0.05);
+    strategy.last_quoted_anchor = Some(dec!(1000.00));
+    strategy.last_quoted_residual = Some(dec!(0.05));
 
     let event = order_canceled("O-999");
     strategy.on_order_canceled(&event);
@@ -805,8 +896,8 @@ fn test_on_order_filled_keeps_self_cancel_marker_until_full_fill(
 ) {
     let mut strategy = create_cancel_resubmit_strategy();
     register_strategy(&mut strategy);
-    strategy.last_quoted_anchor = Some(price("1000.00"));
-    strategy.last_quoted_residual = Some(0.05);
+    strategy.last_quoted_anchor = Some(dec!(1000.00));
+    strategy.last_quoted_residual = Some(dec!(0.05));
     let order_id = ClientOrderId::from("O-001");
     strategy.pending_self_cancels.insert(order_id);
 
@@ -861,16 +952,16 @@ fn test_on_order_filled_keeps_self_cancel_marker_until_full_fill(
     }
 
     assert!(strategy.pending_self_cancels.is_empty());
-    assert_eq!(strategy.last_quoted_anchor, Some(price("1000.00")));
-    assert_eq!(strategy.last_quoted_residual, Some(0.05));
+    assert_eq!(strategy.last_quoted_anchor, Some(dec!(1000.00)));
+    assert_eq!(strategy.last_quoted_residual, Some(dec!(0.05)));
 }
 
 #[rstest]
 fn test_on_order_filled_clears_self_cancel_marker_when_fill_closes_order_voided() {
     let mut strategy = create_cancel_resubmit_strategy();
     register_strategy(&mut strategy);
-    strategy.last_quoted_anchor = Some(price("1000.00"));
-    strategy.last_quoted_residual = Some(0.05);
+    strategy.last_quoted_anchor = Some(dec!(1000.00));
+    strategy.last_quoted_residual = Some(dec!(0.05));
     let cache = strategy.core.cache_rc();
     let order_id = ClientOrderId::from("O-001");
     strategy.pending_self_cancels.insert(order_id);
@@ -946,22 +1037,22 @@ fn test_on_order_filled_clears_self_cancel_marker_when_fill_closes_order_voided(
 
     assert_eq!(order.status(), OrderStatus::Voided);
     assert!(strategy.pending_self_cancels.is_empty());
-    assert_eq!(strategy.last_quoted_anchor, Some(price("1000.00")));
-    assert_eq!(strategy.last_quoted_residual, Some(0.05));
+    assert_eq!(strategy.last_quoted_anchor, Some(dec!(1000.00)));
+    assert_eq!(strategy.last_quoted_residual, Some(dec!(0.05)));
 }
 
 #[rstest]
 fn test_on_order_canceled_without_resubmit_does_nothing() {
     // on_cancel_resubmit=false: a protocol cancel must not reset state.
     let mut strategy = create_strategy(5, 0.0, 0.0, Quantity::from("10.0"), 5);
-    strategy.last_quoted_anchor = Some(price("1000.00"));
-    strategy.last_quoted_residual = Some(0.05);
+    strategy.last_quoted_anchor = Some(dec!(1000.00));
+    strategy.last_quoted_residual = Some(dec!(0.05));
 
     let event = order_canceled("O-999");
     strategy.on_order_canceled(&event);
 
-    assert_eq!(strategy.last_quoted_anchor, Some(price("1000.00")));
-    assert_eq!(strategy.last_quoted_residual, Some(0.05));
+    assert_eq!(strategy.last_quoted_anchor, Some(dec!(1000.00)));
+    assert_eq!(strategy.last_quoted_residual, Some(dec!(0.05)));
 }
 
 fn order_rejected(client_order_id: &str) -> OrderRejected {
@@ -988,8 +1079,8 @@ fn order_expired(client_order_id: &str) -> OrderExpired {
 #[rstest]
 fn test_on_order_rejected_discards_pending_and_resets_anchor() {
     let mut strategy = create_strategy(5, 0.0, 0.0, Quantity::from("10.0"), 5);
-    strategy.last_quoted_anchor = Some(price("1000.00"));
-    strategy.last_quoted_residual = Some(0.05);
+    strategy.last_quoted_anchor = Some(dec!(1000.00));
+    strategy.last_quoted_residual = Some(dec!(0.05));
     strategy
         .pending_self_cancels
         .insert(ClientOrderId::from("O-001"));
@@ -1005,8 +1096,8 @@ fn test_on_order_rejected_discards_pending_and_resets_anchor() {
 fn test_on_order_rejected_unknown_id_still_resets_anchor() {
     // Reject of an id that is not in pending_self_cancels still resets state.
     let mut strategy = create_strategy(5, 0.0, 0.0, Quantity::from("10.0"), 5);
-    strategy.last_quoted_anchor = Some(price("1000.00"));
-    strategy.last_quoted_residual = Some(0.05);
+    strategy.last_quoted_anchor = Some(dec!(1000.00));
+    strategy.last_quoted_residual = Some(dec!(0.05));
 
     strategy.on_order_rejected(order_rejected("O-999"));
 
@@ -1017,8 +1108,8 @@ fn test_on_order_rejected_unknown_id_still_resets_anchor() {
 #[rstest]
 fn test_on_order_expired_discards_pending_and_resets_anchor() {
     let mut strategy = create_strategy(5, 0.0, 0.0, Quantity::from("10.0"), 5);
-    strategy.last_quoted_anchor = Some(price("1000.00"));
-    strategy.last_quoted_residual = Some(0.05);
+    strategy.last_quoted_anchor = Some(dec!(1000.00));
+    strategy.last_quoted_residual = Some(dec!(0.05));
     strategy
         .pending_self_cancels
         .insert(ClientOrderId::from("O-001"));
@@ -1033,8 +1124,8 @@ fn test_on_order_expired_discards_pending_and_resets_anchor() {
 #[rstest]
 fn test_on_order_expired_unknown_id_still_resets_anchor() {
     let mut strategy = create_strategy(5, 0.0, 0.0, Quantity::from("10.0"), 5);
-    strategy.last_quoted_anchor = Some(price("1000.00"));
-    strategy.last_quoted_residual = Some(0.05);
+    strategy.last_quoted_anchor = Some(dec!(1000.00));
+    strategy.last_quoted_residual = Some(dec!(0.05));
 
     strategy.on_order_expired(order_expired("O-999"));
 
@@ -1045,10 +1136,10 @@ fn test_on_order_expired_unknown_id_still_resets_anchor() {
 #[rstest]
 fn test_on_reset_clears_all_state() {
     let mut strategy = create_strategy(5, 0.0, 0.0, Quantity::from("10.0"), 5);
-    strategy.last_quoted_anchor = Some(price("1000.00"));
-    strategy.last_quoted_residual = Some(0.05);
-    strategy.signal_baseline = Some(100.0);
-    strategy.last_signal = Some(110.0);
+    strategy.last_quoted_anchor = Some(dec!(1000.00));
+    strategy.last_quoted_residual = Some(dec!(0.05));
+    strategy.signal_baseline = Some(dec!(100.0));
+    strategy.last_signal = Some(dec!(110.0));
     strategy
         .pending_self_cancels
         .insert(ClientOrderId::from("O-001"));
@@ -1056,7 +1147,6 @@ fn test_on_reset_clears_all_state() {
     strategy.on_reset().unwrap();
 
     assert!(strategy.instrument.is_none());
-    assert!(strategy.price_precision.is_none());
     assert_eq!(strategy.last_quoted_anchor, None);
     assert_eq!(strategy.last_quoted_residual, None);
     // Reset reverts baseline to the configured value (None when unset)
@@ -1078,14 +1168,13 @@ fn test_on_reset_reverts_signal_baseline_to_config_value() {
         .signal_baseline(50.0)
         .build();
     let mut strategy = CompositeMarketMaker::new(config);
-    strategy.price_precision = Some(PRECISION);
     strategy.instrument = Some(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()));
     // Mutate baseline away from the configured value before resetting.
-    strategy.signal_baseline = Some(200.0);
-    strategy.last_signal = Some(220.0);
+    strategy.signal_baseline = Some(dec!(200.0));
+    strategy.last_signal = Some(dec!(220.0));
 
     strategy.on_reset().unwrap();
 
-    assert_eq!(strategy.signal_baseline, Some(50.0));
+    assert_eq!(strategy.signal_baseline, Some(dec!(50.0)));
     assert_eq!(strategy.last_signal, None);
 }

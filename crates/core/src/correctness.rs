@@ -1088,12 +1088,12 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0u8, 0u8, "left", "right", true)]
-    #[case(1u8, 1u8, "left", "right", true)]
-    #[case(0u8, 1u8, "left", "right", false)]
-    #[case(1u8, 0u8, "left", "right", false)]
-    #[case(10i32, 10i32, "left", "right", true)]
-    #[case(10i32, 20i32, "left", "right", false)]
+    #[case(0_u8, 0_u8, "left", "right", true)]
+    #[case(1_u8, 1_u8, "left", "right", true)]
+    #[case(0_u8, 1_u8, "left", "right", false)]
+    #[case(1_u8, 0_u8, "left", "right", false)]
+    #[case(10_i32, 10_i32, "left", "right", true)]
+    #[case(10_i32, 20_i32, "left", "right", false)]
     #[case("hello", "hello", "left", "right", true)]
     #[case("hello", "world", "left", "right", false)]
     fn test_check_equal<T: PartialEq + Debug + Display>(

@@ -28,16 +28,27 @@ Greeks-relevant metadata varies by instrument type:
 - `BinaryOption`: has `expiration_ns` and `outcome`/`description`, but no
   `strike_price`, `option_kind`, or `underlying`.
 
-Vanilla `OptionContract` and `CryptoOption` also carry three optional contract fields:
+Both vanilla option types require `strike_currency` for the strike price, `quote_currency` for the premium,
+and `settlement_currency` for settlement. For example, a Deribit inverse BTC option has a USD strike,
+a BTC premium, and BTC settlement.
+
+When upgrading, update positional Python calls to match each constructor signature. For stored definitions
+that lack `strike_currency`, recover the currency terms from the venue or data provider. Rewrite affected
+JSON, MessagePack, and Arrow records. Apply the updated PostgreSQL schema before rewriting affected rows.
+PostgreSQL appends `strike_currency` to existing tables. Select the currency columns by name when
+exporting data from both fresh and upgraded databases.
+
+Vanilla `OptionContract` and `CryptoOption` also carry optional contract fields:
 
 - `underlying_instrument_id`: the actual underlying instrument. It is independent of
   `OptionSeriesId.underlying_instrument_id`, which supplies the reference price.
+- `premium_style`: when [option premiums and variation move cash](#premium-style).
 - `exercise_style`: when the holder can exercise the option.
 - `settlement_type`: what the option delivers on exercise.
 
 See [Exercise style and settlement type](#exercise-style-and-settlement-type) for the values.
 
-Adapters set these fields as follows:
+Adapters leave `premium_style` unset. They set the other contract fields as follows:
 
 - **Interactive Brokers**: fills the underlying ID when the provider has already resolved that contract
   to an instrument; unresolved IDs remain `None`. The exercise style and settlement type remain `None`.
@@ -52,13 +63,28 @@ Adapters set these fields as follows:
 - **Databento**: sets the exercise style and settlement type from each
   [option definition](../integrations/databento.md#option-exercise-style-and-settlement-type).
 
-Deribit, Derive, OKX, Bybit, and Tardis instrument definitions carry neither field, so these adapters apply
-each venue's contract specification. Tardis applies the Deribit, OKX, and Bybit rules and leaves both fields
-`None` for other source exchanges.
+Deribit, Derive, OKX, Bybit, and Tardis instrument definitions omit exercise style and settlement type, so
+these adapters apply each venue's contract specification. Tardis applies the Deribit, OKX, and Bybit rules
+and leaves exercise style and settlement type unset for other source exchanges.
 
 Rust builders and Python constructors accept these fields. JSON, dictionaries, Arrow, and PostgreSQL
-preserve them; missing fields in older JSON and Arrow records load as `None`. Equality and hashing use
-only the instrument ID. The matching engine and Greeks calculator do not read these fields.
+preserve them. An otherwise valid JSON or Arrow record loads each omitted field as `None`.
+
+The [Greeks calculator](greeks.md#instrument-greeks) uses `underlying_instrument_id` to find the pricing
+reference. Equality and hashing depend only on the instrument ID.
+
+[Simulated expiry settlement](#simulated-expiry-settlement) requires `underlying_instrument_id` and
+`settlement_type`.
+
+### Premium style
+
+Premium style is independent of exercise style and settlement type.
+
+| `premium_style` | Cash flow                                |
+| --------------- | ---------------------------------------- |
+| `UPFRONT`       | Exchange the premium at each fill.       |
+| `FUTURES_STYLE` | Settle price changes in clearing cycles. |
+| `None`          | Exchange the premium at each fill.       |
 
 ### Exercise style and settlement type
 
@@ -82,6 +108,68 @@ European-style and cash-settled.
 | `CASH`     | Pays the intrinsic value in the settlement currency.  |
 | `PHYSICAL` | Delivers a position in the underlying.                |
 | `None`     | Unknown, or no single type represents the settlement. |
+
+## Simulated premium and variation
+
+Futures-style options require a simulated margin account with a starting balance in the settlement
+currency. The premium, cost, and settlement currencies must match. Trading fees post on the fill.
+
+- Supply each official option clearing price as an [`InstrumentClose`](data/instrument_close.md)
+  of type `SETTLEMENT`. Place it after any fills at the same replay timestamp that belong to the cycle.
+- Reuse `ts_event` for a repeat of the same price. Replay rejects a conflicting price or an older
+  clearing cycle. Clearing rows at or after scheduled expiry have no cash effect.
+- The first cycle measures variation from the fill price. Later cycles use the previous clearing price
+  for carried quantity and fill prices for new fills. The simulator rounds the value per contract in the
+  settlement currency before multiplying by quantity.
+
+Portfolio equity includes pending variation, even when the position is flat. Position PnL measures
+the full trade from entry. The account balance reflects variation after each clearing row or expiry.
+
+[Cash settlement](#cash-settlement) or [physical settlement](#physical-settlement) determines the
+value of the final option fill. After the expiry fills close the position, the account books the
+remaining cash flow against the last clearing basis.
+
+## Simulated expiry settlement
+
+The simulator exercises options at expiry for every `exercise_style`.
+
+### Backtest inputs
+
+- Set `underlying_instrument_id` and `settlement_type` from the contract if the adapter leaves them unset.
+- Load the underlying under its exact ID, including its venue. Its quote currency must match the strike currency.
+- Supply trade ticks for a tradable underlying or index price updates for an `IndexInstrument`.
+
+If an input is missing at expiry, the option market closes and positions stay open. Later option data,
+an `InstrumentClose`, or another expiry timer on the venue can trigger a retry.
+See [expiry timing](backtesting/execution-flow.md#deferred-option-settlement).
+
+A currency mismatch causes a terminal settlement error and leaves positions open.
+
+### Cash settlement
+
+The simulator uses the `CONTRACT_EXPIRED` price when supplied. Otherwise it pays intrinsic value.
+The premium, cost, and settlement currencies must match.
+
+For a linear payout based on intrinsic value, the strike currency must also match the settlement currency.
+
+For an inverse payout based on intrinsic value, use an index reference or an underlying whose base
+currency matches the settlement currency. The simulator divides intrinsic value by the underlying
+price and rounds to the option's price precision.
+
+### Physical settlement
+
+An in-the-money option closes at zero and delivers the underlying at the strike to the option position's
+account. The account must support trading the underlying. The simulator uses the originating execution
+client when available.
+
+Physical settlement requires a deliverable underlying. Reference indexes and spreads are ineligible.
+Delivery also fails if the underlying expired before the settlement attempt.
+
+An out-of-the-money option closes at the supplied `CONTRACT_EXPIRED` price or at zero if no price was supplied.
+
+For cross-venue netting delivery, an open position owned by another account blocks delivery into that slot.
+Netting positions are keyed by instrument and strategy. Use distinct strategy IDs to keep separate
+positions when trading the same underlying on different accounts.
 
 ## Simulated spread execution
 
@@ -271,17 +359,22 @@ def on_option_chain(self, chain) -> None:
 - **Routing**: Wire subscription commands retain the selected client and venue parameters. Chain-owned
   Greeks feeds use the client's default convention coverage. Incoming data uses instrument-based topics
   and is not isolated by client.
-- **Retirement**: Streamed `Close` and `NotAvailableForTrading` statuses, including backtest events, retire
-  contracts across owners. A chain that receives a quote or Greeks tick at expiry retires the contract
-  for all owners. The series expiry timer also applies across owners. Statuses from historical requests
-  do not change chain membership. Retirements persist across client replacement and disconnect.
-  Engine reset or disposal clears them. A streamed `Trading` status restores eligibility for later
-  definitions or subscriptions.
 - **Actor cleanup**: Actor unsubscribe, reset, fault, and disposal release only that actor's chain.
 - **Engine cleanup**: Client removal releases that client's chains and pending reference-price requests before
   removing the adapter. Engine reset, disposal, and explicit disconnect remove all chain managers, handlers,
   timers, pending requests, and wire subscription ownership. After engine-side cleanup, unsubscribe, then
   subscribe again to resume the actor's chain.
+
+#### Contract retirement
+
+Streamed `Close` and `NotAvailableForTrading` statuses retire contracts for all owners, including in
+backtests. Statuses from historical requests leave chain membership unchanged.
+
+The series expiry timer retires the series for all owners. At expiry, a quote or Greeks tick received by a
+delta chain also retires the series for all owners. For other ranges, the tick retires the contract for all owners.
+
+Retirements survive client replacement and disconnect. Engine reset or disposal clears them.
+A streamed `Trading` status restores eligibility for later definitions or subscriptions.
 
 ### Strike range filtering
 
@@ -303,17 +396,26 @@ from `OptionGreeks.underlying_price` updates in the selected convention. The eng
 from a reference price fetched over HTTP, before WebSocket updates arrive. As ATM shifts, the active strike
 set rebalances automatically.
 
-`Delta` resolves from venue-provided Greeks: a strike is active when its call or put delta magnitude (calls
-positive, puts negative, compared by absolute value) falls within `tolerance` of `target`. A typical
-out-of-the-money target such as `0.25` selects a strike on each side of ATM.
+#### Delta discovery and selection
 
-Bootstrap and fallback depend on the available data:
+`Delta` uses venue-provided Greeks. A strike matches when the absolute call or put delta is within
+`tolerance` of `target`. An out-of-the-money target such as `0.25` typically selects a strike on each side of ATM.
 
-- **Before ATM is known**: `Delta` is deferred like other dynamic ranges.
-- **After ATM is known**: `Delta` falls back to an ATM-relative window when no active strike's Greeks match
-  the band, including before any Greeks arrive. This window includes five strikes either side of ATM.
-- **Before switching to selected delta strikes**: the aggregator waits until each fallback leg has
-  Greeks in the selected convention so partial early updates do not drop neighboring strikes.
+Once ATM is known, the chain subscribes to the nearest cached strike and up to ten on either side.
+It keeps at most one call and one put per strike, up to 42 contracts. It chooses the lowest instrument ID
+when contracts share a strike and option kind.
+
+The discovery window follows the nearest ATM strike with a five-second cooldown. Listings and retirements
+can update it immediately. The reported ATM strike can move before the window does.
+
+The chain subscribes to incoming contracts before releasing outgoing contracts to keep shared feeds active.
+
+If any fallback leg lacks Greeks in the selected convention, or if no strike matches, the slice uses
+the window's center strike and up to five on each side.
+
+When all fallback legs have Greeks and a strike matches, the slice includes the matching strikes in
+the window. The slice includes both quoted legs at each strike, so one can have an out-of-band delta
+or `greeks=None`.
 
 ### Greeks convention
 
@@ -338,9 +440,9 @@ The `snapshot_interval_ms` parameter controls publishing behavior:
 - **Snapshot mode** (`snapshot_interval_ms=1000`): Quotes and Greeks accumulate in a
   buffer and publish as an `OptionChainSlice` on a timer. Suitable for periodic
   portfolio rebalancing or UI display.
-- **Raw mode** (`snapshot_interval_ms=None`): Each quote or Greeks update in the selected convention
-  for an active instrument publishes a slice immediately. Suitable for latency-sensitive
-  strategies that react to individual updates.
+- **Raw mode** (`snapshot_interval_ms=None`): A quote or selected-convention Greeks update for a
+  subscribed instrument triggers publication if the slice has quotes. For `Delta`, updates from any
+  discovery contract can trigger a slice with the same strikes and leg values as the previous slice.
 
 `subscribe_option_chain` raises `ValueError` for `snapshot_interval_ms=0`. Use `None` for raw mode.
 
@@ -393,10 +495,8 @@ self.subscribe_option_chain(
 )
 ```
 
-Use `snapshot_interval_ms=None` for raw mode. Raw mode publishes a slice after each
-quote or Greeks update in the selected convention for an active instrument. Use an integer interval for
-thinned snapshots. Thinned mode accumulates the latest BBO and Greeks per instrument
-and publishes the chain on the timer cadence, reducing event volume for large chains.
+Use an integer interval to reduce publication volume for large chains. See
+[Snapshot vs. raw mode](#snapshot-vs-raw-mode).
 
 Each `OptionChainSlice` joins the latest BBO and Greeks by instrument, then groups the result by strike and
 option kind. A quote can arrive before Greeks, and Greeks can arrive before a quote. The aggregator keeps
@@ -415,8 +515,9 @@ takers against the opposing replayed BBO. Passive limit orders rest on the simul
 book and can fill as makers when later BBO updates trade through the limit price.
 The model does not simulate L2 queue position for options.
 
-Structural option fee models are configured on the simulated venue, not inferred
-from the venue name:
+### Configure option fees
+
+Set the fee model explicitly on the simulated venue. The venue name does not select one.
 
 ```python
 from decimal import Decimal
@@ -437,6 +538,26 @@ okx_like = TieredNotionalOptionFeeModel(
 Pass one of these objects as `fee_model` on `BacktestVenueConfig`. The Rust surface
 uses `FeeModelAny::CappedOption(CappedOptionFeeModel::new(...))` and
 `FeeModelAny::TieredNotionalOption(TieredNotionalOptionFeeModel::new(...))`.
+
+#### Underlying prices for fees
+
+The engine looks up the cached instrument by `underlying_instrument_id`. It prefers the last trade,
+then the mark price, then the midpoint.
+
+The underlying quote currency must match the premium currency for linear options or the strike
+currency for inverse options. A known mismatch leaves the fee model without a price.
+
+If the underlying or its market price is missing, the engine can use cached `OptionGreeks.underlying_price`.
+`OptionGreeks` carries no price currency, so linear options require matching strike and premium currencies
+for this fallback.
+
+`CappedOptionFeeModel` requires a defined, non-negative underlying price for linear options.
+If the underlying is priced in the strike currency, its price can serve as the expiry reference.
+A capped linear fee needs a price in the premium currency. If the currencies differ, choose a fee
+model that supports the contract's terms.
+
+If the required price is missing or invalid, the backtest engine rejects unacknowledged market orders
+and cancels acknowledged ones before they consume liquidity.
 
 See `examples/backtest/tardis_option_chain.py` and the Rust `tardis-option-chain`
 example in `crates/backtest/examples/`.
@@ -520,35 +641,35 @@ option series, allowing instant bootstrap without waiting for WebSocket ticks.
 
 ### Bootstrap and rebalancing
 
-For dynamic strike ranges (`AtmRelative`, `AtmPercent`, and `Delta`), the active instrument set cannot be
-determined until the ATM price is known. Two bootstrap paths are available:
+Dynamic strike ranges (`AtmRelative`, `AtmPercent`, and `Delta`) need an ATM price to select instruments.
 
-**Instant bootstrap (reference price available)**:
+#### Bootstrap with a reference price
 
-1. `DataEngine` receives `SubscribeOptionChain`, resolves eligible instruments for the series from the cache,
-   excluding retirements, and requests a reference price from the data client.
-2. When the reference price response arrives, the engine creates the manager with
-   the ATM price pre-seeded. The manager computes the active strike set during
-   construction.
-3. The engine subscribes the active instruments immediately.
+1. On `SubscribeOptionChain`, `DataEngine` finds eligible cached instruments for the series, excludes
+   retired contracts, and requests a reference price from the data client.
+1. When the price arrives, the engine creates the manager with that ATM price. The manager computes
+   the active strikes during construction.
+1. The engine subscribes the active instruments immediately.
 
-**Deferred bootstrap (no reference price)**:
+#### Bootstrap without a reference price
 
-1. The engine has no matching client or cached option instrument, or the client reports no reference price.
-   The request can also fail or time out after 30 seconds.
-2. The engine creates the manager with no initial ATM price. The active set is
-   empty. When the request reached a client with a cached sample option, the engine
-   subscribes that sample's Greeks as the bootstrap source. Without a client or sample,
-   bootstrap still depends on relevant Greeks data already flowing from another
-   subscription.
-1. The manager bootstraps the active instrument set when a Greeks update in the selected convention
-   includes an `underlying_price`. It registers message bus handlers and queues the wire subscriptions
-   for the engine to drain. The sample subscription becomes part of the active set or is released.
+Without a reference price, the manager starts with an empty active set and no ATM price. This can
+happen when there is no matching client or cached option, the client returns no price, or the request
+fails or times out after 30 seconds.
 
-Once bootstrapped, the aggregator monitors ATM drift. On each snapshot timer tick,
-the manager calls the aggregator's `check_rebalance()` which returns any instruments
-to add or remove. A hysteresis threshold and cooldown period prevent thrashing near
-strike boundaries.
+If the request reached a client with a cached sample option, the engine subscribes to that option's Greeks.
+Without a client or sample, bootstrap depends on relevant Greeks already flowing from another subscription.
+
+The manager selects the active instruments when a Greeks update in the selected convention includes an
+`underlying_price`. It registers message bus handlers and queues wire subscriptions for the engine to drain.
+The sample subscription joins the active set or the manager releases it.
+
+#### Rebalancing
+
+Once bootstrapped, the manager checks for an ATM rebalance when preparing each slice.
+Price-based dynamic ranges use a hysteresis threshold and cooldown to limit churn near strike
+boundaries. `Delta` uses the cooldown for ATM moves and also updates discovery when the contract
+list changes.
 
 ## OptionGreeks data type
 

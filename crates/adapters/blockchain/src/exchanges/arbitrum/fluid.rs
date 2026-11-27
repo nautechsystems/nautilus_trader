@@ -40,7 +40,7 @@ pub static FLUID_DEX: LazyLock<DexExtended> = LazyLock::new(|| {
         chains::ARBITRUM.clone(),
         DexType::FluidDEX,
         "0x91716C4EDA1Fb55e84Bf8b4c7085f84285c19085",
-        269528370,
+        269_528_370,
         AmmType::CLAMM,
         "DexT1Deployed(address,uint256,address,address)",
         "",

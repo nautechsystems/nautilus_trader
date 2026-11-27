@@ -15,8 +15,9 @@
 
 //! Parsers from Lighter REST payloads to Nautilus domain types.
 
+use ahash::AHashMap;
 use anyhow::Context;
-use nautilus_core::UnixNanos;
+use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, FundingRateUpdate, OrderBookDelta, OrderBookDeltas, TradeTick,
@@ -36,7 +37,7 @@ use crate::{
             funding_rate_from_percent, parse_millis_to_nanos, parse_secs_to_nanos,
             price_from_decimal, quantity_from_decimal,
         },
-        symbol::{MarketRegistry, format_instrument_id_with_venue},
+        symbol::{MARKET_ID_INFO_KEY, MarketRegistry, format_instrument_id_with_venue},
     },
     http::models::{
         LighterCandle, LighterFunding, LighterFundingDirection, LighterOrderBook,
@@ -46,7 +47,8 @@ use crate::{
 };
 
 pub fn register_order_books(registry: &MarketRegistry, order_books: &[LighterOrderBook]) {
-    for order_book in order_books {
+    let rows = order_books.iter().map(|row| (row, row));
+    for order_book in preferred_order_books(registry, rows) {
         register_order_book(registry, order_book);
     }
 }
@@ -55,8 +57,9 @@ pub fn register_perp_order_book_details(
     registry: &MarketRegistry,
     details: &[LighterPerpOrderBookDetail],
 ) {
-    for detail in details {
-        register_order_book(registry, &detail.order_book);
+    let rows = details.iter().map(|row| (&row.order_book, &row.order_book));
+    for order_book in preferred_order_books(registry, rows) {
+        register_order_book(registry, order_book);
     }
 }
 
@@ -64,8 +67,9 @@ pub fn register_spot_order_book_details(
     registry: &MarketRegistry,
     details: &[LighterSpotOrderBookDetail],
 ) {
-    for detail in details {
-        register_order_book(registry, &detail.order_book);
+    let rows = details.iter().map(|row| (&row.order_book, &row.order_book));
+    for order_book in preferred_order_books(registry, rows) {
+        register_order_book(registry, order_book);
     }
 }
 
@@ -108,11 +112,8 @@ pub fn parse_order_book_details_instruments_with_status(
     let mut first_error = None;
     let mut supported_len = 0_usize;
 
-    for detail in perp_details {
-        if !is_supported_product(&detail.order_book) {
-            continue;
-        }
-
+    let rows = perp_details.iter().map(|row| (&row.order_book, row));
+    for detail in preferred_order_books(registry, rows) {
         supported_len += 1;
 
         match parse_perp_instrument(registry, detail, ts_init) {
@@ -127,11 +128,8 @@ pub fn parse_order_book_details_instruments_with_status(
         }
     }
 
-    for detail in spot_details {
-        if !is_supported_product(&detail.order_book) {
-            continue;
-        }
-
+    let rows = spot_details.iter().map(|row| (&row.order_book, row));
+    for detail in preferred_order_books(registry, rows) {
         supported_len += 1;
 
         match parse_spot_instrument(registry, detail, ts_init) {
@@ -451,11 +449,40 @@ fn snapshot_flags(processed: usize, total_levels: usize) -> u8 {
     flags
 }
 
-fn register_order_book(registry: &MarketRegistry, order_book: &LighterOrderBook) {
-    if !is_supported_product(order_book) {
-        return;
+fn preferred_order_books<'a, T>(
+    registry: &MarketRegistry,
+    rows: impl Iterator<Item = (&'a LighterOrderBook, T)>,
+) -> impl Iterator<Item = T> {
+    let mut indices = AHashMap::new();
+    let mut selected: Vec<(LighterMarketStatus, T)> = Vec::new();
+
+    for (order_book, row) in rows {
+        if !is_supported_product(order_book) {
+            continue;
+        }
+
+        let id = format_instrument_id_with_venue(
+            order_book.symbol.as_str(),
+            order_book.market_type,
+            registry.venue(),
+        );
+        let status = order_book.status;
+
+        if let Some(&index) = indices.get(&id) {
+            let (previous, _) = &selected[index];
+            if *previous != LighterMarketStatus::Active || status == LighterMarketStatus::Active {
+                selected[index] = (status, row);
+            }
+        } else {
+            indices.insert(id, selected.len());
+            selected.push((status, row));
+        }
     }
 
+    selected.into_iter().map(|(_, row)| row)
+}
+
+fn register_order_book(registry: &MarketRegistry, order_book: &LighterOrderBook) {
     registry.insert(
         order_book.market_id,
         order_book.symbol.as_str(),
@@ -525,6 +552,14 @@ fn parse_perp_instrument(
         .maybe_min_notional(min_notional(order_book, quote_currency)?)
         .margin_init(margin_fraction(detail.default_initial_margin_fraction))
         .margin_maint(margin_fraction(detail.maintenance_margin_fraction))
+        .info(Params::new(
+            [(
+                MARKET_ID_INFO_KEY.to_owned(),
+                serde_json::Value::from(order_book.market_id),
+            )]
+            .into_iter()
+            .collect(),
+        ))
         .ts_event(ts_init)
         .ts_init(ts_init)
         .build()
@@ -569,6 +604,14 @@ fn parse_spot_instrument(
         .maybe_min_quantity(min_quantity(order_book, detail.size_decimals)?)
         .maybe_max_notional(max_notional(order_book, quote_currency)?)
         .maybe_min_notional(min_notional(order_book, quote_currency)?)
+        .info(Params::new(
+            [(
+                MARKET_ID_INFO_KEY.to_owned(),
+                serde_json::Value::from(order_book.market_id),
+            )]
+            .into_iter()
+            .collect(),
+        ))
         .ts_event(ts_init)
         .ts_init(ts_init)
         .build()
@@ -704,7 +747,7 @@ mod tests {
 
     fn stub_trade(is_maker_ask: bool) -> LighterTrade {
         LighterTrade {
-            trade_id: 19209006902,
+            trade_id: 19_209_006_902,
             trade_id_str: Some("19209006902".to_string()),
             tx_hash: "000000128b1ee814".to_string(),
             trade_type: LighterTradeType::Trade,
@@ -712,19 +755,19 @@ mod tests {
             size: Decimal::from_str("0.1336").unwrap(),
             price: Decimal::from_str("2352.73").unwrap(),
             usd_amount: Decimal::from_str("314.343").unwrap(),
-            ask_id: 281476929510102,
+            ask_id: 281_476_929_510_102,
             ask_id_str: Some("281476929510102".to_string()),
-            bid_id: 562947905631053,
+            bid_id: 562_947_905_631_053,
             bid_id_str: Some("562947905631053".to_string()),
             ask_client_id: 0,
             ask_client_id_str: Some("0".to_string()),
-            bid_client_id: 7001011966,
+            bid_client_id: 7_001_011_966,
             bid_client_id_str: Some("7001011966".to_string()),
             ask_account_id: 91249,
-            bid_account_id: 281474976618239,
+            bid_account_id: 281_474_976_618_239,
             is_maker_ask,
-            block_height: 227535535,
-            timestamp: 1777941384181,
+            block_height: 227_535_535,
+            timestamp: 1_777_941_384_181,
             taker_fee: Some(238),
             taker_position_size_before: Some(Decimal::from_str("-31.5754").unwrap()),
             taker_entry_quote_before: Some(Decimal::from_str("72515.683629").unwrap()),
@@ -735,7 +778,7 @@ mod tests {
             maker_entry_quote_before: Some(Decimal::from_str("3399.343032").unwrap()),
             maker_initial_margin_fraction_before: Some(500),
             maker_position_sign_changed: None,
-            transaction_time: 1777941384181586,
+            transaction_time: 1_777_941_384_181_586,
             ask_account_pnl: None,
             bid_account_pnl: None,
         }
@@ -786,7 +829,7 @@ mod tests {
             daily_chart: Default::default(),
             market_config: LighterMarketConfig {
                 market_margin_mode: LighterPositionMarginMode::Cross,
-                insurance_fund_account_index: 281474976710655,
+                insurance_fund_account_index: 281_474_976_710_655,
                 liquidation_mode: 0,
                 force_reduce_only: false,
                 trading_hours: String::new(),
@@ -1038,24 +1081,24 @@ mod tests {
             message: None,
             total_asks: 1,
             asks: vec![LighterSimpleOrder {
-                order_index: 281476929510110,
+                order_index: 281_476_929_510_110,
                 order_id: "281476929510110".to_string(),
-                owner_account_index: 712440,
+                owner_account_index: 712_440,
                 initial_base_amount: Decimal::from_str("0.0050").unwrap(),
                 remaining_base_amount: Decimal::from_str("0.0050").unwrap(),
                 price: Decimal::from_str("2352.74").unwrap(),
-                order_expiry: 1780360584479,
+                order_expiry: 1_780_360_584_479,
                 transaction_time: 0,
             }],
             total_bids: 1,
             bids: vec![LighterSimpleOrder {
-                order_index: 562947905631047,
+                order_index: 562_947_905_631_047,
                 order_id: "562947905631047".to_string(),
-                owner_account_index: 281474976619400,
+                owner_account_index: 281_474_976_619_400,
                 initial_base_amount: Decimal::from_str("0.2125").unwrap(),
                 remaining_base_amount: Decimal::from_str("0.2125").unwrap(),
                 price: Decimal::from_str("2352.71").unwrap(),
-                order_expiry: 1780360585134,
+                order_expiry: 1_780_360_585_134,
                 transaction_time: 0,
             }],
         };
@@ -1132,11 +1175,11 @@ mod tests {
             bids: vec![LighterSimpleOrder {
                 order_index: -1,
                 order_id: "-1".to_string(),
-                owner_account_index: 281474976619400,
+                owner_account_index: 281_474_976_619_400,
                 initial_base_amount: Decimal::from_str("0.2125").unwrap(),
                 remaining_base_amount: Decimal::from_str("0.2125").unwrap(),
                 price: Decimal::from_str("2352.71").unwrap(),
-                order_expiry: 1780360585134,
+                order_expiry: 1_780_360_585_134,
                 transaction_time: 0,
             }],
         };
@@ -1164,13 +1207,13 @@ mod tests {
             asks: vec![],
             total_bids: 1,
             bids: vec![LighterSimpleOrder {
-                order_index: 562947905631047,
+                order_index: 562_947_905_631_047,
                 order_id: "562947905631047".to_string(),
-                owner_account_index: 281474976619400,
+                owner_account_index: 281_474_976_619_400,
                 initial_base_amount: Decimal::from_str("0.2125").unwrap(),
                 remaining_base_amount: Decimal::ZERO,
                 price: Decimal::from_str("2352.71").unwrap(),
-                order_expiry: 1780360585134,
+                order_expiry: 1_780_360_585_134,
                 transaction_time: 0,
             }],
         };
@@ -1388,7 +1431,7 @@ mod tests {
             daily_chart: Default::default(),
             market_config: LighterMarketConfig {
                 market_margin_mode: LighterPositionMarginMode::Cross,
-                insurance_fund_account_index: 281474976710655,
+                insurance_fund_account_index: 281_474_976_710_655,
                 liquidation_mode: 0,
                 force_reduce_only: false,
                 trading_hours: String::new(),
@@ -1432,7 +1475,7 @@ mod tests {
             daily_chart: Default::default(),
             market_config: LighterMarketConfig {
                 market_margin_mode: LighterPositionMarginMode::Cross,
-                insurance_fund_account_index: 281474976710655,
+                insurance_fund_account_index: 281_474_976_710_655,
                 liquidation_mode: 0,
                 force_reduce_only: false,
                 trading_hours: String::new(),
@@ -1449,6 +1492,44 @@ mod tests {
 
         assert!(err.to_string().contains("negative quantity"));
         assert!(registry.is_empty());
+    }
+
+    #[rstest]
+    #[case::active_first(false)]
+    #[case::inactive_first(true)]
+    fn test_instrument_details_prefer_active_market(#[case] reverse: bool) {
+        let registry = MarketRegistry::new();
+        let mut active = stub_perp_detail("ASELS", 10_635);
+        active.order_book.status = LighterMarketStatus::Active;
+        let mut inactive = stub_perp_detail("ASELS", 8_286);
+        inactive.order_book.status = LighterMarketStatus::Inactive;
+        let mut details = [active, inactive];
+        if reverse {
+            details.reverse();
+        }
+
+        let instruments = parse_order_book_details_instruments_with_status(
+            &registry,
+            &details,
+            &[],
+            UnixNanos::from(1),
+        )
+        .unwrap();
+
+        let id = instrument_id("ASELS-PERP");
+
+        let [(instrument, status)] = instruments.as_slice() else {
+            panic!("expected a single definition for {id}");
+        };
+
+        assert_eq!(instrument.id(), id);
+        assert_eq!(*status, LighterMarketStatus::Active);
+        assert_eq!(
+            instrument.info().unwrap().get_i64(MARKET_ID_INFO_KEY),
+            Some(10_635)
+        );
+        assert_eq!(registry.market_index(&id), Some(10_635));
+        assert_eq!(registry.instrument_id(8_286), None);
     }
 
     #[rstest]

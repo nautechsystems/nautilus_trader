@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS "instrument" (
     asset_class ASSET_CLASS,
     underlying TEXT,
     base_currency TEXT REFERENCES currency(id),
+    strike_currency TEXT REFERENCES currency(id),
     quote_currency TEXT REFERENCES currency(id),
     settlement_currency TEXT REFERENCES currency(id),
     isin TEXT,
@@ -81,8 +82,22 @@ CREATE TABLE IF NOT EXISTS "instrument" (
 );
 
 ALTER TABLE "instrument" ADD COLUMN IF NOT EXISTS info JSON;
+ALTER TABLE "instrument" ADD COLUMN IF NOT EXISTS strike_currency TEXT REFERENCES currency(id);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT FROM pg_constraint WHERE conrelid = 'instrument'::regclass
+        AND conname = 'instrument_option_currencies_check'
+    ) THEN
+        ALTER TABLE "instrument" ADD CONSTRAINT instrument_option_currencies_check
+            CHECK (kind NOT IN ('OPTION_CONTRACT', 'CRYPTO_OPTION') OR
+                (strike_currency IS NOT NULL AND quote_currency IS NOT NULL AND settlement_currency IS NOT NULL))
+            NOT VALID;
+    END IF;
+END $$;
 ALTER TABLE "instrument" ADD COLUMN IF NOT EXISTS tick_scheme TEXT;
 ALTER TABLE "instrument" ADD COLUMN IF NOT EXISTS underlying_instrument_id TEXT;
+ALTER TABLE "instrument" ADD COLUMN IF NOT EXISTS premium_style TEXT;
 ALTER TABLE "instrument" ADD COLUMN IF NOT EXISTS exercise_style TEXT;
 ALTER TABLE "instrument" ADD COLUMN IF NOT EXISTS settlement_type TEXT;
 ALTER TABLE "instrument" ADD COLUMN IF NOT EXISTS defi_currency_codes TEXT[];

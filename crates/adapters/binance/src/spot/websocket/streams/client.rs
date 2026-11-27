@@ -866,7 +866,7 @@ mod tests {
         // (no PKCS#8 OID), standing in for an HMAC key. SBE market-data streams
         // require Ed25519, so construction must fail with guidance that names
         // HMAC, not the raw OID error.
-        let secret = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, [0u8; 48]);
+        let secret = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, [0_u8; 48]);
 
         let result = BinanceSpotWebSocketClient::new(
             None,

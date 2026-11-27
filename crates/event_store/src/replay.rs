@@ -2505,6 +2505,18 @@ mod tests {
             &[],
         ),
         cache_mutation(
+            // Reapplied by execution client registration on every node start
+            "add_client_execution_settings",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            // Reapplied by strategy OMS registration on every node start
+            "set_strategy_oms_type",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
             // Reapplied by execution client routing setup on every node start
             "add_client_route",
             CacheMutationRecoveryClass::SnapshotOwned,
@@ -2680,6 +2692,11 @@ mod tests {
         ),
         cache_mutation(
             "add_instrument_close",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "cache_instrument_close",
             CacheMutationRecoveryClass::SnapshotOwned,
             &[],
         ),
@@ -2872,6 +2889,12 @@ mod tests {
                 PAYLOAD_TYPE_ORDER_FILLED,
                 PAYLOAD_TYPE_ORDER_FILL_VOIDED,
             ],
+        ),
+        cache_mutation(
+            // Redis restores activation independently of the event-store tail
+            "store_trailing_stop_activation",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
         ),
         cache_mutation(
             "update_order_pending_cancel_local",

@@ -15,7 +15,12 @@
 
 //! Sandbox execution client implementation.
 
-use std::{cell::RefCell, collections::BinaryHeap, fmt::Debug, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    collections::BinaryHeap,
+    fmt::Debug,
+    rc::Rc,
+};
 
 use ahash::{AHashMap, AHashSet};
 use async_trait::async_trait;
@@ -35,8 +40,8 @@ use nautilus_common::{
         },
     },
     msgbus::{
-        self, MStr, MessagingSwitchboard, Pattern, TypedHandler,
-        typed_handler::ShareableMessageHandler,
+        self, InstrumentSubscription, MStr, MessagingSwitchboard, Pattern, TypedHandler,
+        switchboard::get_instruments_pattern, typed_handler::ShareableMessageHandler,
     },
     timer::{TimeEvent, TimeEventCallback},
 };
@@ -56,13 +61,13 @@ use nautilus_model::{
         Bar, InstrumentClose, InstrumentStatus, OrderBookDeltas, OrderBookDepth, QuoteTick,
         TradeTick,
     },
-    enums::OmsType,
+    enums::{OmsType, TriggerType},
     events::{OrderCancelDenied, OrderEventAny, OrderModifyDenied, OrderRejected, PositionEvent},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, MarginBalance, Money},
+    types::{AccountBalance, MarginBalance, Money, Price},
 };
 use ustr::Ustr;
 
@@ -70,6 +75,8 @@ use crate::config::SandboxExecutionClientConfig;
 
 // Bounds retained state for quote-only instruments that expire without event-driven cleanup
 const EXPIRED_ENGINE_SWEEP_INTERVAL: DurationNanos = DurationNanos::from_mins(1);
+const NO_LAST_PRICE: &str = "none";
+const STALE_LAST_PRICE_PREFIX: &str = "stale:";
 
 /// A sandbox execution client for paper trading against live market data.
 ///
@@ -77,16 +84,24 @@ const EXPIRED_ENGINE_SWEEP_INTERVAL: DurationNanos = DurationNanos::from_mins(1)
 /// to match orders against market data. This enables strategy testing in real-time
 /// without actual order execution on exchanges.
 ///
+/// After restoring an open stop, the client waits for a live book update before replaying
+/// cached quotes or trades for that instrument. Market orders can be rejected until live
+/// liquidity arrives. An orderly stop saves the last price used by open stops for recovery.
+///
 /// Order status reports use cached orders with a venue order ID for this account and venue.
 /// Full-history requests include retained closed orders.
 pub struct SandboxExecutionClient {
     core: RefCell<ExecutionClientCore>,
     factory: OrderEventFactory,
     config: SandboxExecutionClientConfig,
-    inner: Rc<RefCell<SandboxInner>>,
-    handlers: RefCell<Option<RegisteredHandlers>>,
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
+    inner: Rc<RefCell<SandboxInner>>,
+    instrument_subscription: Option<InstrumentSubscription>,
+    handlers: RefCell<Option<RegisteredHandlers>>,
+    /// Set by `reset`, so the next `connect` reports the starting balances whatever account
+    /// the shared cache still holds.
+    reset_pending: Cell<bool>,
 }
 
 struct RegisteredHandlers {
@@ -185,6 +200,7 @@ impl SandboxExecutionClient {
                 fill_model,
                 fee_model,
                 matching_engines: AHashMap::new(),
+                awaiting_market_data: AHashSet::new(),
                 next_engine_raw_id: 0,
                 balances,
                 event_handler: None,
@@ -209,10 +225,12 @@ impl SandboxExecutionClient {
             core: RefCell::new(core),
             factory,
             config,
-            inner,
-            handlers: RefCell::new(None),
             clock,
             cache,
+            inner,
+            instrument_subscription: None,
+            handlers: RefCell::new(None),
+            reset_pending: Cell::new(false),
         })
     }
 
@@ -435,15 +453,29 @@ impl SandboxExecutionClient {
             .cancel_timer(&inbound_alert_name(client_id));
     }
 
-    fn get_current_account_balances(&self) -> Vec<AccountBalance> {
+    // Prefers the cached account, which holds the state restored from a durable cache
+    // on restart, so fees, realized PnL and locked margin survive a reconnect. Margins
+    // are included because applying an event replaces a margin account's margins.
+    fn get_current_account_state(&self) -> (Vec<AccountBalance>, Vec<MarginBalance>) {
         let account_id = self.core.borrow().account_id;
         let cache = self.cache.borrow();
 
-        if let Some(account) = cache.account(&account_id) {
-            return account.balances().into_values().collect();
-        }
+        let Some(account) = cache.account(&account_id) else {
+            return (self.get_account_balances(), Vec::new());
+        };
 
-        self.get_account_balances()
+        let balances = reported_balances(&account);
+        let margins = match &*account {
+            AccountAny::Margin(margin) => margin
+                .margins
+                .values()
+                .chain(margin.account_margins.values())
+                .copied()
+                .collect(),
+            _ => Vec::new(),
+        };
+
+        (balances, margins)
     }
 
     fn sync_cached_account_config(&self) -> anyhow::Result<()> {
@@ -571,12 +603,19 @@ impl SandboxExecutionClient {
         Ok(())
     }
 
-    /// Resets the sandbox to its initial state.
+    /// Resets the matching engines and marks the client disconnected.
+    ///
+    /// The next connection restores the configured starting balances and clears margins.
+    /// Cancel open orders before resetting this client in isolation. If open orders remain
+    /// in this account's cache, reconnecting fails. Resetting the execution engine clears
+    /// cached orders for all clients.
     pub fn reset(&self) {
         let mut inner = self.inner.borrow_mut();
         for engine in inner.matching_engines.values_mut() {
             engine.reset();
         }
+
+        inner.awaiting_market_data.clear();
 
         inner.balances.clear();
         for money in &self.config.starting_balances {
@@ -587,6 +626,8 @@ impl SandboxExecutionClient {
 
         inner.clear_inbound_queue();
         self.cancel_inbound_alert();
+        self.reset_pending.set(true);
+        self.core.borrow().set_disconnected();
 
         log::info!(
             "Sandbox execution client reset: venue={}",
@@ -603,8 +644,141 @@ impl SandboxExecutionClient {
             .collect()
     }
 
+    fn reset_account_state(&self, ts_event: UnixNanos) -> anyhow::Result<()> {
+        self.ensure_reset_orders_cleared()?;
+        let account_id = self.core.borrow().account_id;
+        let mut balances = self.get_account_balances();
+
+        {
+            let cache = self.cache.borrow();
+            if let Some(account) = cache.account_ref(&account_id) {
+                let mut currencies: AHashSet<_> =
+                    balances.iter().map(|balance| balance.currency).collect();
+                let reservations = match &*account {
+                    AccountAny::Cash(cash) => Some(cash.balances_locked.keys()),
+                    AccountAny::Betting(betting) => Some(betting.balances_locked.keys()),
+                    _ => None,
+                };
+                let reserved_currencies = reservations
+                    .into_iter()
+                    .flatten()
+                    .map(|(_, currency)| *currency);
+
+                let cached_balances = account.balances();
+
+                // A balance-less snapshot with no margins preserves the existing margins
+                let margin_currencies = match &*account {
+                    AccountAny::Margin(margin)
+                        if balances.is_empty() && cached_balances.is_empty() =>
+                    {
+                        Some(
+                            margin
+                                .margins
+                                .values()
+                                .chain(margin.account_margins.values()),
+                        )
+                    }
+                    _ => None,
+                };
+
+                let margin_currencies = margin_currencies
+                    .into_iter()
+                    .flatten()
+                    .map(|margin| margin.currency);
+
+                // A reset can rewind the clock, so explicitly zero omitted currencies
+                let currencies_to_reset = cached_balances
+                    .into_keys()
+                    .chain(reserved_currencies)
+                    .chain(margin_currencies);
+
+                for currency in currencies_to_reset {
+                    if currencies.insert(currency) {
+                        let zero = Money::zero(currency);
+                        balances.push(AccountBalance::new(zero, zero, zero));
+                    }
+                }
+            }
+        }
+
+        // A fresh simulated venue snapshot clears local reservations when applied
+        let event_id = self.send_account_state(balances, Vec::new(), true, ts_event, None);
+        let applied = self
+            .cache
+            .borrow()
+            .account_ref(&account_id)
+            .and_then(|account| account.last_event())
+            .is_some_and(|event| event.event_id == event_id);
+        anyhow::ensure!(
+            applied,
+            "Sandbox reset account state was not applied for {account_id}"
+        );
+        self.sync_cached_account_config()
+    }
+
+    fn send_account_state(
+        &self,
+        balances: Vec<AccountBalance>,
+        margins: Vec<MarginBalance>,
+        reported: bool,
+        ts_event: UnixNanos,
+        info: Option<Params>,
+    ) -> UUID4 {
+        let ts_init = self.clock.borrow().timestamp_ns();
+        let state = self
+            .factory
+            .generate_account_state(balances, margins, reported, ts_event, ts_init, info);
+        let endpoint = MessagingSwitchboard::portfolio_update_account();
+        msgbus::send_account_state(endpoint, &state);
+        state.event_id
+    }
+
+    fn ensure_reset_orders_cleared(&self) -> anyhow::Result<()> {
+        let account_id = self.core.borrow().account_id;
+        let has_open_orders = self.cache.borrow().has_orders_open(
+            Some(&self.config.venue),
+            None,
+            None,
+            Some(&account_id),
+            None,
+        );
+        anyhow::ensure!(
+            !has_open_orders,
+            "Cannot reset Sandbox account {account_id} with open cached orders. Reset the execution engine to clear them"
+        );
+        Ok(())
+    }
+
     fn get_order(&self, client_order_id: &ClientOrderId) -> anyhow::Result<OrderAny> {
         Ok(self.cache.borrow().try_order_owned(client_order_id)?)
+    }
+}
+
+impl SandboxExecutionClient {
+    fn subscribe_instruments(&mut self) {
+        if self.instrument_subscription.is_some() {
+            return;
+        }
+
+        let inner = Rc::clone(&self.inner);
+        self.instrument_subscription = Some(InstrumentSubscription::new(
+            get_instruments_pattern(self.venue()),
+            TypedHandler::from(move |instrument: &InstrumentAny| {
+                Self::apply_instrument(&inner, instrument.clone());
+            }),
+        ));
+    }
+
+    fn apply_instrument(inner: &RefCell<SandboxInner>, instrument: InstrumentAny) {
+        let instrument_id = instrument.id();
+        let mut inner = inner.borrow_mut();
+        if let Some(engine) = inner.matching_engines.get_mut(&instrument_id)
+            && let Err(e) = engine.update_instrument(instrument)
+        {
+            log::error!("Failed to update instrument {instrument_id} in sandbox engine: {e}");
+        }
+
+        inner.drain_oto_commands();
     }
 }
 
@@ -640,15 +814,7 @@ impl ExecutionClient for SandboxExecutionClient {
     }
 
     fn on_instrument(&mut self, instrument: InstrumentAny) {
-        let instrument_id = instrument.id();
-        let mut inner = self.inner.borrow_mut();
-        if let Some(engine) = inner.matching_engines.get_mut(&instrument_id)
-            && let Err(e) = engine.update_instrument(instrument)
-        {
-            log::error!("Failed to update instrument {instrument_id} in sandbox engine: {e}");
-        }
-
-        inner.drain_oto_commands();
+        Self::apply_instrument(&self.inner, instrument);
     }
 
     fn get_account(&self) -> Option<AccountAny> {
@@ -657,6 +823,8 @@ impl ExecutionClient for SandboxExecutionClient {
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         Self::reset(self);
         Ok(())
     }
@@ -669,19 +837,19 @@ impl ExecutionClient for SandboxExecutionClient {
         ts_event: UnixNanos,
         info: Option<Params>,
     ) -> anyhow::Result<()> {
-        let ts_init = self.clock.borrow().timestamp_ns();
-        let state = self
-            .factory
-            .generate_account_state(balances, margins, reported, ts_event, ts_init, info);
-        let endpoint = MessagingSwitchboard::portfolio_update_account();
-        msgbus::send_account_state(endpoint, &state);
-        self.sync_cached_account_config()?;
-        Ok(())
+        self.send_account_state(balances, margins, reported, ts_event, info);
+        self.sync_cached_account_config()
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         if self.core.borrow().is_started() {
             return Ok(());
+        }
+
+        if self.reset_pending.get() {
+            self.ensure_reset_orders_cleared()?;
         }
 
         if let Some(sender) = try_get_exec_event_sender() {
@@ -715,6 +883,8 @@ impl ExecutionClient for SandboxExecutionClient {
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
+
         if self.core.borrow().is_stopped() {
             return Ok(());
         }
@@ -731,6 +901,7 @@ impl ExecutionClient for SandboxExecutionClient {
             let mut inner = self.inner.borrow_mut();
             let discarded = inner.take_inbound_queue();
             inner.refuse_discarded(discarded);
+            inner.checkpoint_last_prices();
         }
 
         self.core.borrow().set_stopped();
@@ -743,14 +914,21 @@ impl ExecutionClient for SandboxExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         if self.core.borrow().is_connected() {
             return Ok(());
         }
 
-        let balances = self.get_account_balances();
         let ts_event = self.clock.borrow().timestamp_ns();
-        self.generate_account_state(balances, vec![], false, ts_event, None)?;
 
+        if self.reset_pending.get() {
+            self.reset_account_state(ts_event)?;
+            self.reset_pending.set(false);
+        } else {
+            let (balances, margins) = self.get_current_account_state();
+            self.generate_account_state(balances, margins, false, ts_event, None)?;
+        }
         self.core.borrow().set_connected();
         log::info!(
             "Sandbox execution client connected: venue={}",
@@ -871,9 +1049,9 @@ impl ExecutionClient for SandboxExecutionClient {
     }
 
     fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
-        let balances = self.get_current_account_balances();
+        let (balances, margins) = self.get_current_account_state();
         let ts_event = self.clock.borrow().timestamp_ns();
-        self.generate_account_state(balances, vec![], false, ts_event, None)?;
+        self.generate_account_state(balances, margins, false, ts_event, None)?;
         Ok(())
     }
 
@@ -967,6 +1145,31 @@ impl ExecutionClient for SandboxExecutionClient {
     }
 }
 
+// The cache restores aggregate balances for cash and betting accounts without their
+// per-instrument reservations. Report only locks backed by a reservation the portfolio can release.
+fn reported_balances(account: &AccountAny) -> Vec<AccountBalance> {
+    let balances = account.balances();
+    let currencies = balances.keys().copied();
+    let balances = match account {
+        AccountAny::Cash(cash) => {
+            let mut cash = cash.clone();
+            for currency in currencies {
+                cash.recalculate_balance(currency);
+            }
+            cash.base.balances
+        }
+        AccountAny::Betting(betting) => {
+            let mut betting = betting.clone();
+            for currency in currencies {
+                betting.recalculate_balance(currency);
+            }
+            betting.base.balances
+        }
+        _ => balances,
+    };
+    balances.into_values().collect()
+}
+
 fn order_status_report(order: &OrderAny, ts_init: UnixNanos) -> Option<OrderStatusReport> {
     let mut report = order.to_order_status_report(None)?;
     report.ts_init = ts_init;
@@ -989,6 +1192,7 @@ struct SandboxInner {
     fill_model: FillModelHandle,
     fee_model: FeeModelHandle,
     matching_engines: AHashMap<InstrumentId, OrderMatchingEngine>,
+    awaiting_market_data: AHashSet<InstrumentId>,
     next_engine_raw_id: u32,
     balances: AHashMap<String, Money>,
     /// Forwards order events to the runner's execution channel once `start` finds a sender; shared
@@ -1065,20 +1269,90 @@ impl SandboxInner {
         for (order, account_id) in open_orders {
             let instrument_id = order.instrument_id();
             let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
-            match instrument {
-                Some(instrument) => {
-                    self.ensure_matching_engine(&instrument);
 
-                    if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
-                        engine.restore_open_order(&order, account_id);
-                    }
+            let Some(instrument) = instrument else {
+                log::warn!(
+                    "No instrument for {instrument_id} to restore open order {}",
+                    order.client_order_id()
+                );
+                continue;
+            };
+
+            self.ensure_matching_engine(&instrument);
+
+            if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
+                let order_id = order.client_order_id();
+                let restoring_stop =
+                    order.trigger_type().is_some() && !engine.order_exists(order_id);
+                engine.restore_open_order(&order, account_id);
+
+                if restoring_stop
+                    && engine.order_exists(order_id)
+                    && engine.get_book().update_count == 0
+                {
+                    self.awaiting_market_data.insert(instrument_id);
                 }
-                None => {
-                    log::warn!(
-                        "No instrument for {instrument_id} to restore open order {}",
-                        order.client_order_id()
-                    );
+            }
+        }
+
+        self.restore_last_prices();
+    }
+
+    fn restore_last_prices(&mut self) {
+        let cache = self.cache.borrow();
+
+        for (instrument_id, engine) in &mut self.matching_engines {
+            if engine.get_core().last.is_some() || !has_last_price_orders(engine) {
+                continue;
+            }
+
+            let key = last_price_key(self.account_id, *instrument_id);
+            let data = match cache.get(&key) {
+                Ok(Some(data)) => data,
+                Ok(_) => continue,
+                Err(e) => {
+                    log::warn!("Failed to read Sandbox last price for {instrument_id}: {e}");
+                    continue;
                 }
+            };
+
+            let Some((last, last_stale)) = decode_last_price(data) else {
+                log::warn!("Ignoring invalid Sandbox last price for {instrument_id}");
+                continue;
+            };
+
+            match last {
+                Some(price) if price.precision != engine.instrument.price_precision() => {
+                    log::warn!("Ignoring invalid Sandbox last price precision for {instrument_id}");
+                }
+                _ => engine.restore_last_price(last, last_stale),
+            }
+        }
+    }
+
+    fn checkpoint_last_prices(&self) {
+        let mut cache = self.cache.borrow_mut();
+        if !cache.has_backing() {
+            return;
+        }
+
+        for (instrument_id, engine) in &self.matching_engines {
+            if !has_last_price_orders(engine) {
+                continue;
+            }
+
+            let key = last_price_key(self.account_id, *instrument_id);
+            let (last, last_stale) = engine.last_price_state();
+            let value = last.map_or_else(|| NO_LAST_PRICE.to_owned(), |price| price.to_string());
+
+            let value = if last_stale {
+                format!("{STALE_LAST_PRICE_PREFIX}{value}")
+            } else {
+                value
+            };
+
+            if let Err(e) = cache.add(&key, value.into()) {
+                log::error!("Failed to checkpoint Sandbox last price for {instrument_id}: {e}");
             }
         }
     }
@@ -1304,6 +1578,7 @@ impl SandboxInner {
         }
 
         self.matching_engines.remove(&instrument_id);
+        self.awaiting_market_data.remove(&instrument_id);
         self.cache
             .borrow_mut()
             .purge_instrument_skip_order_guard(instrument_id);
@@ -1637,6 +1912,15 @@ impl SandboxInner {
         let Some(engine) = self.matching_engines.get_mut(&instrument_id) else {
             return;
         };
+
+        // Wait for live book data before replay can affect a recovered stop
+        if self.awaiting_market_data.contains(&instrument_id) {
+            if engine.get_book().update_count == 0 {
+                return;
+            }
+
+            self.awaiting_market_data.remove(&instrument_id);
+        }
 
         // Cached ticks initialize an empty engine; replay would replenish consumed liquidity
         if self.config.liquidity_consumption
@@ -2071,6 +2355,38 @@ fn check_bar_or_drop(context: &str, bar: &Bar, instrument: &InstrumentAny) -> bo
         instrument.size_precision(),
     );
     false
+}
+
+fn has_last_price_orders(engine: &OrderMatchingEngine) -> bool {
+    engine.get_core().iter_orders().any(|order| {
+        matches!(
+            order.trigger_type,
+            Some(TriggerType::LastPrice | TriggerType::LastOrBidAsk)
+        )
+    })
+}
+
+fn last_price_key(account_id: AccountId, instrument_id: InstrumentId) -> String {
+    let account_id = account_id.as_str();
+    format!(
+        "sandbox:last_price:{}:{account_id}:{instrument_id}",
+        account_id.len()
+    )
+}
+
+fn decode_last_price(data: &[u8]) -> Option<(Option<Price>, bool)> {
+    let data = std::str::from_utf8(data).ok()?;
+    let (value, last_stale) = data
+        .strip_prefix(STALE_LAST_PRICE_PREFIX)
+        .map_or((data, false), |price| (price, true));
+
+    let last = if value == NO_LAST_PRICE {
+        None
+    } else {
+        Some(value.parse().ok()?)
+    };
+
+    Some((last, last_stale))
 }
 
 fn quote_matches_instrument_precision(quote: &QuoteTick, instrument: &InstrumentAny) -> bool {

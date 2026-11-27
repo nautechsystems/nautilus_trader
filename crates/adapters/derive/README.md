@@ -34,6 +34,7 @@ The system spans research, simulation, and live execution, providing research-to
 
 See the [integration guide](../../../docs/integrations/derive.md) for client settings,
 credentials, and connection setup.
+For RWA options and perpetuals, see [RWA setup](../../../docs/integrations/derive.md#real-world-assets).
 
 ## Feature flags
 

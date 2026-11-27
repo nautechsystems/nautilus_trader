@@ -344,6 +344,282 @@ async fn test_replacement_resolution_preserves_child(
     }
 }
 
+#[rstest]
+#[case::confirmed_child(false, false, None)]
+#[case::ambiguous_replace(true, false, None)]
+#[case::ambiguous_replace_queried(true, true, None)]
+#[case::ambiguous_replace_unfilled_terminal(true, false, Some(0))]
+#[case::ambiguous_replace_partial_terminal(true, false, Some(40))]
+#[tokio::test]
+async fn test_cancel_before_replacement_promotion(
+    #[case] ambiguous: bool,
+    #[case] later_query: bool,
+    #[case] terminal_filled_qty: Option<u64>,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let parent = VenueOrderId::from("OID-CANCEL-PARENT");
+    let child = VenueOrderId::from("OID-CANCEL-CHILD");
+    *state.replace_order_oid.lock().await = Some(child.to_string());
+
+    let mut replacement = load_test_data("ws_order_replaced_live.json");
+    replacement["ro"]["oid"] = parent.as_str().into();
+    replacement["no"]["oid"] = child.as_str().into();
+    if let Some(filled_qty) = terminal_filled_qty {
+        replacement["ro"]["o"] = "CANCELED".into();
+        replacement["ro"]["xq"] = filled_qty.into();
+        replacement["ro"]["rq"] = 0.into();
+        *state.fills_payload.lock().await = Some(serde_json::json!({"fills": []}));
+    }
+
+    *state.orders_payload.lock().await =
+        Some(serde_json::json!({"orders": [replacement["ro"], replacement["no"]]}));
+
+    let mut parent_status = load_test_data("captured/order-status-replaced.json");
+    parent_status["status"]["order_id"] = parent.as_str().into();
+
+    if ambiguous {
+        state
+            .replace_order_fail
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        parent_status["status"]["state"] = "ACCEPTED".into();
+        parent_status["status"]["remaining_quantity"] = 100.into();
+    }
+
+    if let Some(filled_qty) = terminal_filled_qty {
+        parent_status["status"]["state"] = "CANCELED".into();
+        parent_status["status"]["filled_quantity"] = filled_qty.into();
+        parent_status["status"]["remaining_quantity"] = 0.into();
+    }
+
+    let mut child_status = load_test_data("http_get_order_status.json");
+    child_status["status"]["order_id"] = child.as_str().into();
+    child_status["status"]["state"] = "ACCEPTED".into();
+    child_status["status"]["filled_quantity"] = 0.into();
+    child_status["status"]["remaining_quantity"] = 100.into();
+    let mut status_responses = state.order_status_responses.lock().await;
+    if later_query {
+        status_responses.push((
+            parent.to_string(),
+            400,
+            serde_json::json!({"error": "status unavailable"}),
+        ));
+    }
+
+    status_responses.extend([
+        (parent.to_string(), 200, parent_status.clone()),
+        (child.to_string(), 200, child_status),
+    ]);
+    drop(status_responses);
+
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    drain_rx(&mut rx);
+
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("S-001");
+    let client_order_id = ClientOrderId::from("O-CANCEL-REPLACE");
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+    client.register_external_order(
+        client_order_id,
+        parent,
+        instrument_id,
+        strategy_id,
+        0.into(),
+    );
+
+    let mut modify = ModifyOrder::new(
+        trader_id,
+        Some(*AX_CLIENT_ID),
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        Some(parent),
+        None,
+        Some(Price::from("1.0926")),
+        None,
+        UUID4::new(),
+        0.into(),
+        None,
+        None,
+    );
+
+    client.modify_order(modify.clone()).unwrap();
+    wait_for_pending_tasks(&client).await;
+
+    if later_query {
+        state
+            .replace_order_fail
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        modify.command_id = UUID4::new();
+        client.modify_order(modify).unwrap();
+        wait_for_pending_tasks(&client).await;
+        let mut rejected =
+            load_test_data("captured/post-only-replace-rejected.json")["events"][1].clone();
+        rejected["oid"] = parent.as_str().into();
+        state.order_injected_events.lock().await.push(rejected);
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap();
+        assert!(
+            matches!(event, Some(ExecutionEvent::Order(OrderEventAny::ModifyRejected(event))) if event.venue_order_id == Some(parent))
+        );
+    }
+
+    client
+        .cancel_order(CancelOrder::new(
+            trader_id,
+            Some(*AX_CLIENT_ID),
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            Some(parent),
+            UUID4::new(),
+            0.into(),
+            None,
+            None,
+        ))
+        .unwrap();
+    wait_for_pending_tasks(&client).await;
+
+    if let Some(filled_qty) = terminal_filled_qty {
+        assert!(
+            state
+                .get_messages()
+                .await
+                .iter()
+                .all(|message| message["t"] != "x")
+        );
+        assert_terminal_recovery(&mut client, &mut rx, parent, filled_qty).await;
+        return;
+    }
+
+    let query = QueryOrder::new(
+        trader_id,
+        Some(*AX_CLIENT_ID),
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        Some(parent),
+        UUID4::new(),
+        0.into(),
+        None,
+        None,
+    );
+
+    let canceled_id = if ambiguous { parent } else { child };
+    if !ambiguous || later_query {
+        assert!(
+            state
+                .get_messages()
+                .await
+                .iter()
+                .all(|message| message["t"] != "x")
+        );
+
+        let report = query_order_report(&client, &query, &mut rx).await;
+        assert_eq!(report.venue_order_id, canceled_id);
+        assert_eq!(report.order_status, OrderStatus::Accepted);
+    }
+
+    wait_until_async(
+        || async {
+            state
+                .get_messages()
+                .await
+                .iter()
+                .any(|message| message["t"] == "x")
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let messages = state.get_messages().await;
+    let cancels: Vec<_> = messages
+        .iter()
+        .filter(|message| message["t"] == "x")
+        .collect();
+    assert_eq!(cancels.len(), 1);
+
+    assert_eq!(cancels[0]["oid"], canceled_id.as_str());
+
+    if later_query {
+        parent_status["status"]["state"] = "CANCELED".into();
+        parent_status["status"]["remaining_quantity"] = 0.into();
+        state
+            .order_status_responses
+            .lock()
+            .await
+            .retain(|(id, _, _)| id != parent.as_str());
+        state
+            .order_status_responses
+            .lock()
+            .await
+            .push((parent.to_string(), 200, parent_status));
+        let canceled = query_order_report(&client, &query, &mut rx).await;
+        assert_eq!(canceled.venue_order_id, parent);
+        assert_eq!(canceled.order_status, OrderStatus::Canceled);
+        client.disconnect().await.unwrap();
+    } else if ambiguous {
+        let queries = state.order_status_queries.lock().await;
+        assert_eq!(queries.len(), 1);
+        assert_eq!(queries[0].order_id.as_deref(), Some(parent.as_str()));
+        drop(queries);
+
+        let mut event = load_test_data("ws_order_canceled.json");
+        event["xr"] = "".into();
+        event["o"]["oid"] = parent.as_str().into();
+        state.order_injected_events.lock().await.push(event);
+        let next = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap();
+
+        let Some(ExecutionEvent::Order(OrderEventAny::Canceled(event))) = next else {
+            panic!("expected terminal cancellation, received {next:?}");
+        };
+
+        assert_eq!(event.client_order_id, client_order_id);
+        assert_eq!(event.venue_order_id, Some(parent));
+        client.disconnect().await.unwrap();
+    } else {
+        let error = client.disconnect().await.unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("AX cancellations unresolved at disconnect")
+        );
+    }
+}
+
+async fn assert_terminal_recovery(
+    client: &mut AxExecutionClient,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    parent: VenueOrderId,
+    filled_qty: u64,
+) {
+    if filled_qty == 0 {
+        let event = rx.try_recv().unwrap();
+
+        let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
+            panic!("expected a terminal order report, received {event:?}");
+        };
+
+        assert_eq!(report.venue_order_id, parent);
+        assert_eq!(report.order_status, OrderStatus::Canceled);
+        assert_eq!(report.filled_qty, Quantity::from("0"));
+        client.disconnect().await.unwrap();
+    } else {
+        assert!(rx.try_recv().is_err());
+        let error = client.disconnect().await.unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("AX cancellations unresolved at disconnect")
+        );
+    }
+}
+
 async fn query_order_report(
     client: &AxExecutionClient,
     command: &QueryOrder,

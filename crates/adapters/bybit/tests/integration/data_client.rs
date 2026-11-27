@@ -35,9 +35,11 @@ use axum::{
         Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
+    http::StatusCode,
     response::{IntoResponse, Json, Response},
     routing::get,
 };
+use jiff::Timestamp;
 use nautilus_bybit::{
     common::{
         consts::{BYBIT_CLIENT_ID, BYBIT_VENUE},
@@ -46,6 +48,7 @@ use nautilus_bybit::{
     config::BybitDataClientConfig,
     data::BybitDataClient,
     data_types::BybitLiquidation,
+    http::client::BybitHttpClient,
 };
 use nautilus_common::{
     clients::DataClient,
@@ -54,20 +57,22 @@ use nautilus_common::{
         DataEvent, SystemEvent,
         data::{
             DataResponse, RequestBars, RequestBookSnapshot, RequestFundingRates, RequestInstrument,
-            RequestInstruments, RequestOptionChainReferencePrice, SubscribeBars,
-            SubscribeBookDeltas, SubscribeCustomData, SubscribeInstrumentStatus,
-            SubscribeInstruments, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
-            UnsubscribeCustomData, UnsubscribeQuotes,
+            RequestInstruments, RequestOptionChainReferencePrice, RequestTrades, SubscribeBars,
+            SubscribeBookDeltas, SubscribeCustomData, SubscribeInstrument,
+            SubscribeInstrumentStatus, SubscribeInstruments, SubscribeQuotes, SubscribeTrades,
+            UnsubscribeBookDeltas, UnsubscribeCustomData, UnsubscribeQuotes,
         },
         system::SocketState,
     },
     testing::wait_until_async,
 };
-use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{
+    Params, UUID4, UnixNanos, datetime::datetime_to_unix_nanos, time::get_atomic_clock_realtime,
+};
 use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::{BarType, CustomData, Data, DataType, OrderBookDeltas, QuoteTick},
-    enums::{BookAction, BookType, PositionSide, RecordFlag},
+    enums::{BookAction, BookType, MarketStatusAction, PositionSide, RecordFlag},
     identifiers::{InstrumentId, OptionSeriesId},
     instruments::Instrument,
     types::{Price, Quantity},
@@ -78,11 +83,18 @@ use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use ustr::Ustr;
 
+#[path = "../../../../network/tests/integration/common/client_logging.rs"]
+#[allow(dead_code, reason = "these tests reuse only the shared log capture")]
+mod client_logging;
+
+use client_logging::{capture_logs, messages};
+
 #[derive(Clone)]
 struct TestServerState {
     connection_count: Arc<tokio::sync::Mutex<usize>>,
     upgrade_count: Arc<AtomicUsize>,
     instrument_requests: Arc<AtomicUsize>,
+    new_option_listed: Arc<AtomicBool>,
     instrument_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     upgrade_gate: tokio::sync::watch::Sender<bool>,
     socket_drops: Arc<tokio::sync::Mutex<HashMap<usize, tokio::sync::oneshot::Sender<()>>>>,
@@ -95,6 +107,11 @@ struct TestServerState {
     book_updates: Arc<tokio::sync::Mutex<Vec<Value>>>,
     book_snapshot_drops: Arc<AtomicUsize>,
     liquidation_frame: Arc<tokio::sync::Mutex<Option<Value>>>,
+    instrument_error_categories: Arc<tokio::sync::Mutex<Vec<String>>>,
+    instruments_empty: Arc<AtomicBool>,
+    trade_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
+    trade_response: Arc<tokio::sync::Mutex<Option<(StatusCode, Value)>>>,
+    trade_response_gate: Arc<tokio::sync::Mutex<Option<Arc<tokio::sync::Notify>>>>,
 }
 
 impl Default for TestServerState {
@@ -103,6 +120,7 @@ impl Default for TestServerState {
             connection_count: Arc::new(tokio::sync::Mutex::new(0)),
             upgrade_count: Arc::new(AtomicUsize::new(0)),
             instrument_requests: Arc::new(AtomicUsize::new(0)),
+            new_option_listed: Arc::default(),
             instrument_queries: Arc::default(),
             upgrade_gate: tokio::sync::watch::channel(true).0,
             socket_drops: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
@@ -115,6 +133,11 @@ impl Default for TestServerState {
             book_updates: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             book_snapshot_drops: Arc::new(AtomicUsize::new(0)),
             liquidation_frame: Arc::new(tokio::sync::Mutex::new(None)),
+            instrument_error_categories: Arc::default(),
+            instruments_empty: Arc::default(),
+            trade_queries: Arc::default(),
+            trade_response: Arc::default(),
+            trade_response_gate: Arc::default(),
         }
     }
 }
@@ -155,14 +178,40 @@ async fn handle_get_instruments(
                     "retCode": 10001,
                     "retMsg": "Invalid category",
                     "result": {},
-                    "time": 1704470400123i64
+                    "time": 1_704_470_400_123_i64
                 })),
             )
                 .into_response();
         }
     };
 
-    let instruments = load_test_data(filename);
+    if state
+        .instrument_error_categories
+        .lock()
+        .await
+        .iter()
+        .any(|failed| Some(failed.as_str()) == category)
+    {
+        return Json(json!({
+            "retCode": 10001,
+            "retMsg": "product fetch failed",
+            "result": {},
+            "retExtInfo": {},
+            "time": 1_704_470_400_123_i64
+        }))
+        .into_response();
+    }
+
+    let mut instruments = load_test_data(filename);
+    if state.instruments_empty.load(Ordering::Relaxed) {
+        instruments["result"]["list"] = json!([]);
+    } else if category == Some("option") && state.new_option_listed.load(Ordering::Relaxed) {
+        let list = instruments["result"]["list"].as_array_mut().unwrap();
+        let mut listed = list[0].clone();
+        listed["symbol"] = json!("ETH-26JUN26-16500-P");
+        list.push(listed);
+    }
+
     Json(instruments).into_response()
 }
 
@@ -180,7 +229,7 @@ async fn handle_get_server_time() -> impl IntoResponse {
             "timeNano": "1704470400123456789"
         },
         "retExtInfo": {},
-        "time": 1704470400123i64
+        "time": 1_704_470_400_123_i64
     }))
 }
 
@@ -194,6 +243,31 @@ async fn handle_get_klines(Query(query): Query<HashMap<String, String>>) -> impl
     assert_eq!(query.get("symbol").map(String::as_str), Some("BTCUSDT"));
     assert_eq!(query.get("interval").map(String::as_str), Some("5"));
     Json(load_test_data("http_get_klines_linear.json"))
+}
+
+async fn handle_get_recent_trades(
+    State(state): State<TestServerState>,
+    Query(query): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    state.trade_queries.lock().await.push(query);
+    let gate = state.trade_response_gate.lock().await.clone();
+    if let Some(gate) = gate {
+        gate.notified().await;
+    }
+
+    let (status, payload) = state
+        .trade_response
+        .lock()
+        .await
+        .clone()
+        .unwrap_or_else(|| {
+            (
+                StatusCode::OK,
+                load_test_data("http_get_trades_recent.json"),
+            )
+        });
+
+    (status, Json(payload))
 }
 
 async fn handle_get_funding_history() -> impl IntoResponse {
@@ -466,6 +540,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/v5/market/instruments-info", get(handle_get_instruments))
         .route("/v5/market/orderbook", get(handle_get_orderbook))
         .route("/v5/market/kline", get(handle_get_klines))
+        .route("/v5/market/recent-trade", get(handle_get_recent_trades))
         .route(
             "/v5/market/funding/history",
             get(handle_get_funding_history),
@@ -605,20 +680,8 @@ async fn wait_for_server_topics(state: &TestServerState, expected: &[&str]) {
     .await;
 }
 
-#[rstest]
-#[case::valid(0, "97000.125", Some("97000.125"))]
-#[case::zero(0, "0", None)]
-#[case::negative(0, "-1", None)]
-#[case::invalid(0, "not_a_number", None)]
-#[case::venue_error(10001, "97000.125", None)]
-#[tokio::test]
-async fn test_option_chain_reference_price_response(
-    #[case] ret_code: i64,
-    #[case] value: &str,
-    #[case] expected: Option<&str>,
-) {
-    let (addr, state) = start_test_server().await.unwrap();
-    *state.ticker_response.lock().await = Some(json!({
+fn option_ticker_response(ret_code: i64, underlying_price: &str) -> Value {
+    json!({
         "retCode": ret_code,
         "retMsg": if ret_code == 0 { "OK" } else { "Invalid request" },
         "result": {
@@ -638,7 +701,7 @@ async fn test_option_chain_reference_price_response(
                 "markPrice": "2.5",
                 "indexPrice": "96900",
                 "markIv": "0.45",
-                "underlyingPrice": value,
+                "underlyingPrice": underlying_price,
                 "openInterest": "10",
                 "turnover24h": "20",
                 "volume24h": "30",
@@ -653,8 +716,112 @@ async fn test_option_chain_reference_price_response(
             }]
         },
         "retExtInfo": {},
-        "time": 1704470400123_i64
-    }));
+        "time": 1_704_470_400_123_i64
+    })
+}
+
+fn assert_recent_trade_has_no_time_bounds(query: &HashMap<String, String>) {
+    for key in ["start", "end", "startTime", "endTime"] {
+        assert!(
+            !query.contains_key(key),
+            "recent-trade query included {key}, was {query:?}"
+        );
+    }
+}
+
+async fn recv_first_request_failed(
+    receiver: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    request_id: UUID4,
+) -> String {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        match receiver.recv().await {
+            Some(DataEvent::RequestFailed(failure)) if failure.request_id == request_id => {
+                assert!(
+                    failure.response.is_none(),
+                    "request failure included a payload: {failure:?}"
+                );
+                failure.reason
+            }
+            Some(event) => panic!("failed request emitted {event:?} before the failure"),
+            None => panic!("data event channel closed"),
+        }
+    })
+    .await
+    .expect("timeout waiting for request failure")
+}
+
+fn assert_no_instrument_publication(
+    receiver: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+) {
+    while let Ok(event) = receiver.try_recv() {
+        let published = matches!(
+            event,
+            DataEvent::Response(_)
+                | DataEvent::RequestFailed(_)
+                | DataEvent::Data(Data::Instrument(_))
+        );
+        assert!(
+            !published,
+            "failed instrument request emitted {event:?} after completion"
+        );
+    }
+}
+
+async fn recv_request_failed(
+    receiver: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    request_id: UUID4,
+) -> String {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match receiver.recv().await {
+                Some(DataEvent::RequestFailed(failure)) if failure.request_id == request_id => {
+                    assert!(
+                        failure.response.is_none(),
+                        "request failure included a payload: {failure:?}"
+                    );
+                    return failure.reason;
+                }
+                Some(DataEvent::Response(response)) if response.correlation_id() == &request_id => {
+                    panic!("failed request emitted a success response: {response:?}");
+                }
+                Some(_) => {}
+                None => panic!("data event channel closed"),
+            }
+        }
+    })
+    .await
+    .expect("timeout waiting for request failure")
+}
+
+async fn wait_for_log(needle: &str) {
+    wait_until_async(
+        || async {
+            messages()
+                .iter()
+                .any(|(_, message)| message.contains(needle))
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
+#[rstest]
+#[case::valid(Some("97000.125"), Some("97000.125"))]
+#[case::zero(Some("0"), None)]
+#[case::negative(Some("-1"), None)]
+#[case::empty(None, None)]
+#[tokio::test]
+async fn test_option_chain_reference_price_response(
+    #[case] value: Option<&str>,
+    #[case] expected: Option<&str>,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let mut payload = option_ticker_response(0, value.unwrap_or("0"));
+    if value.is_none() {
+        payload["result"]["list"] = json!([]);
+    }
+
+    *state.ticker_response.lock().await = Some(payload);
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(tx);
     let client = BybitDataClient::new(*BYBIT_CLIENT_ID, create_test_config(addr)).unwrap();
@@ -665,7 +832,7 @@ async fn test_option_chain_reference_price_response(
         UnixNanos::from(1_743_120_000_000_000_000),
     );
     let instrument_id = InstrumentId::from("BTC-28MAR25-90000-C-OPTION.BYBIT");
-    let params = Params::new([("test-case".to_string(), json!(ret_code))].into());
+    let params = Params::new([("test-case".to_string(), json!("reference-price"))].into());
 
     let request = RequestOptionChainReferencePrice::new(
         series_id,
@@ -707,6 +874,424 @@ async fn test_option_chain_reference_price_response(
         queries[0].get("symbol").map(String::as_str),
         Some("BTC-28MAR25-90000-C")
     );
+}
+
+#[rstest]
+#[case::invalid(0, "not_a_number", "failed to parse Bybit option underlying price")]
+#[case::unrepresentable(
+    0,
+    "79228162514264337593543950335",
+    "failed to convert Bybit option underlying price"
+)]
+#[case::venue_error(10001, "97000.125", "10001")]
+#[tokio::test]
+async fn test_option_chain_reference_price_failure_sends_no_response(
+    #[case] ret_code: i64,
+    #[case] value: &str,
+    #[case] cause: &str,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.ticker_response.lock().await = Some(option_ticker_response(ret_code, value));
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, create_test_config(addr)).unwrap();
+    let series_id = OptionSeriesId::new_derived(
+        *BYBIT_VENUE,
+        Ustr::from("BTC"),
+        Ustr::from("USDC"),
+        UnixNanos::from(1_743_120_000_000_000_000),
+    );
+
+    let request = RequestOptionChainReferencePrice::new(
+        series_id,
+        InstrumentId::from("BTC-28MAR25-90000-C-OPTION.BYBIT"),
+        Some(*BYBIT_CLIENT_ID),
+        UUID4::new(),
+        UnixNanos::from(42),
+        None,
+    );
+
+    let request_id = request.request_id;
+
+    client
+        .request_option_chain_reference_price(request)
+        .expect("request option-chain reference price");
+    let reason = recv_first_request_failed(&mut rx, request_id).await;
+    client.disconnect().await.unwrap();
+
+    assert!(
+        reason.contains("option-chain reference price request failed"),
+        "{reason}"
+    );
+    assert!(reason.contains(cause), "{reason}");
+    assert_eq!(state.ticker_queries.lock().await.len(), 1);
+    assert_eq!(
+        rx.try_recv().unwrap_err(),
+        tokio::sync::mpsc::error::TryRecvError::Empty
+    );
+}
+
+#[rstest]
+#[case::only_product(vec![BybitProductType::Linear], "linear", "Linear")]
+#[case::later_product(vec![BybitProductType::Linear, BybitProductType::Spot], "spot", "Spot")]
+#[tokio::test]
+async fn test_request_instruments_product_failure_sends_no_response(
+    #[case] product_types: Vec<BybitProductType>,
+    #[case] failed_category: &str,
+    #[case] failed_log: &str,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    state
+        .instrument_error_categories
+        .lock()
+        .await
+        .push(failed_category.to_string());
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut config = create_test_config(addr);
+    config.product_types = product_types;
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
+
+    let request = RequestInstruments::new(
+        None,
+        None,
+        Some(*BYBIT_CLIENT_ID),
+        Some(*BYBIT_VENUE),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let request_id = request.request_id;
+
+    client.request_instruments(request).unwrap();
+    let reason = recv_first_request_failed(&mut rx, request_id).await;
+    client.disconnect().await.unwrap();
+
+    assert!(
+        reason.contains(&format!(
+            "failed to fetch Bybit instruments for {failed_log}"
+        )),
+        "{reason}"
+    );
+    assert_no_instrument_publication(&mut rx);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_instruments_empty_catalog_succeeds() {
+    let (addr, state) = start_test_server().await.unwrap();
+    state.instruments_empty.store(true, Ordering::Relaxed);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, create_test_config(addr)).unwrap();
+
+    let request = RequestInstruments::new(
+        None,
+        None,
+        Some(*BYBIT_CLIENT_ID),
+        Some(*BYBIT_VENUE),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let request_id = request.request_id;
+
+    client.request_instruments(request).unwrap();
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for instruments response")
+        .expect("data event channel closed");
+    client.disconnect().await.unwrap();
+
+    let DataEvent::Response(DataResponse::Instruments(response)) = event else {
+        panic!("expected empty instruments response, received {event:?}");
+    };
+
+    assert_eq!(response.correlation_id, request_id);
+    assert_eq!(response.client_id, *BYBIT_CLIENT_ID);
+    assert_eq!(response.venue, *BYBIT_VENUE);
+    assert!(response.data.is_empty());
+    assert_no_instrument_publication(&mut rx);
+}
+
+fn recent_trades_with_missing_price() -> Value {
+    let mut trades = load_test_data("http_get_trades_recent.json");
+    let list = trades["result"]["list"]
+        .as_array_mut()
+        .expect("recent-trade list");
+    let mut bad = list[0].clone();
+    bad.as_object_mut().expect("recent trade").remove("price");
+    bad["execId"] = json!("missing-price");
+    list.push(bad);
+    trades
+}
+
+fn recent_trades_with_unparsed_row() -> Value {
+    let mut trades = load_test_data("http_get_trades_recent.json");
+    let list = trades["result"]["list"]
+        .as_array_mut()
+        .expect("recent-trade list");
+    let mut bad = list[0].clone();
+    bad["execId"] = json!("bad-trade");
+    bad["price"] = json!("not_a_price");
+    list.push(bad);
+    trades
+}
+
+fn venue_error_recent_trades() -> Value {
+    json!({
+        "retCode": 10001,
+        "retMsg": "Invalid request",
+        "result": {},
+        "retExtInfo": {},
+        "time": 1_704_470_400_123_i64
+    })
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_trades_parse_failure_returns_error() {
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.trade_response.lock().await = Some((StatusCode::OK, recent_trades_with_unparsed_row()));
+    let client =
+        BybitHttpClient::new(Some(format!("http://{addr}")), 10, 0, 1, 1, 5_000, None).unwrap();
+    let instruments = client
+        .request_instruments(BybitProductType::Linear, None, None)
+        .await
+        .unwrap();
+    let instrument_id = instruments[0].id();
+    client.cache_instruments(&instruments);
+
+    let error = client
+        .request_trades(BybitProductType::Linear, instrument_id, None)
+        .await
+        .expect_err("unparsed recent trade must fail the request");
+    let rendered = format!("{error:#}");
+
+    assert!(
+        rendered.contains("failed to parse Bybit recent trade 'bad-trade'"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("Failed to parse trade.price='not_a_price'"),
+        "{rendered}"
+    );
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_unparsed_trade_sends_no_response() {
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.trade_response.lock().await = Some((StatusCode::OK, recent_trades_with_unparsed_row()));
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, create_test_config(addr)).unwrap();
+    client.connect().await.unwrap();
+
+    let request = RequestTrades::new(
+        InstrumentId::from("BTCUSDT-LINEAR.BYBIT"),
+        None,
+        None,
+        None,
+        Some(*BYBIT_CLIENT_ID),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let request_id = request.request_id;
+
+    client.request_trades(request).unwrap();
+    let reason = recv_request_failed(&mut rx, request_id).await;
+
+    assert!(
+        reason.contains("failed to parse Bybit recent trade 'bad-trade'"),
+        "{reason}"
+    );
+    assert!(
+        reason.contains("Failed to parse trade.price='not_a_price'"),
+        "{reason}"
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_missing_trade_field_fails_request() {
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.trade_response.lock().await = Some((StatusCode::OK, recent_trades_with_missing_price()));
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, create_test_config(addr)).unwrap();
+    client.connect().await.unwrap();
+
+    let request = RequestTrades::new(
+        InstrumentId::from("BTCUSDT-LINEAR.BYBIT"),
+        None,
+        None,
+        None,
+        Some(*BYBIT_CLIENT_ID),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let request_id = request.request_id;
+
+    client.request_trades(request).unwrap();
+    let reason = recv_request_failed(&mut rx, request_id).await;
+
+    assert!(
+        reason.contains("failed to parse Bybit recent trades"),
+        "{reason}"
+    );
+    assert!(reason.contains("missing field `price`"), "{reason}");
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_trade_parse_failure_after_reset_sends_nothing() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let gate = Arc::new(tokio::sync::Notify::new());
+    *state.trade_response_gate.lock().await = Some(gate.clone());
+    *state.trade_response.lock().await = Some((StatusCode::OK, recent_trades_with_missing_price()));
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, create_test_config(addr)).unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let request = RequestTrades::new(
+        InstrumentId::from("BTCUSDT-LINEAR.BYBIT"),
+        None,
+        None,
+        None,
+        Some(*BYBIT_CLIENT_ID),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    client.request_trades(request).unwrap();
+    wait_until_async(
+        || async { !state.trade_queries.lock().await.is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
+    client.reset().unwrap();
+    gate.notify_one();
+    client.disconnect().await.unwrap();
+
+    assert_eq!(
+        rx.try_recv().unwrap_err(),
+        tokio::sync::mpsc::error::TryRecvError::Empty
+    );
+}
+
+#[rstest]
+#[case::venue(StatusCode::OK, venue_error_recent_trades())]
+#[case::redirect(StatusCode::FOUND, json!({}))]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_trade_http_error_sends_nothing(
+    #[case] status: StatusCode,
+    #[case] payload: Value,
+) {
+    let _logs = capture_logs().await;
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.trade_response.lock().await = Some((status, payload));
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, create_test_config(addr)).unwrap();
+    client.connect().await.unwrap();
+
+    let request = RequestTrades::new(
+        InstrumentId::from("BTCUSDT-LINEAR.BYBIT"),
+        None,
+        None,
+        None,
+        Some(*BYBIT_CLIENT_ID),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    client.request_trades(request).unwrap();
+    wait_for_log("Trade request failed").await;
+    client.disconnect().await.unwrap();
+
+    while let Ok(event) = rx.try_recv() {
+        assert!(
+            !matches!(event, DataEvent::Response(_) | DataEvent::RequestFailed(_)),
+            "HTTP trade failure emitted {event:?}"
+        );
+    }
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_ranged_trade_request_echoes_bounds_without_ignoring_ranged_endpoint() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, create_test_config(addr)).unwrap();
+    client.connect().await.unwrap();
+
+    let start = Timestamp::from_second(1_700_000_000).unwrap();
+    let end = Timestamp::from_second(1_700_000_060).unwrap();
+    let limit = std::num::NonZeroUsize::new(5).unwrap();
+
+    let request = RequestTrades::new(
+        InstrumentId::from("BTCUSDT-LINEAR.BYBIT"),
+        Some(start),
+        Some(end),
+        Some(limit),
+        Some(*BYBIT_CLIENT_ID),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let request_id = request.request_id;
+    client.request_trades(request).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(DataEvent::Response(DataResponse::Trades(response))) = rx.recv().await
+                && response.correlation_id == request_id
+            {
+                break response;
+            }
+        }
+    })
+    .await
+    .expect("timeout waiting for trades response");
+
+    let queries = state.trade_queries.lock().await;
+
+    assert_eq!(queries.len(), 1);
+    assert_recent_trade_has_no_time_bounds(&queries[0]);
+    assert_eq!(
+        queries[0].get("category").map(String::as_str),
+        Some("linear")
+    );
+    assert_eq!(
+        queries[0].get("symbol").map(String::as_str),
+        Some("BTCUSDT")
+    );
+    assert_eq!(queries[0].get("limit").map(String::as_str), Some("5"));
+    assert_eq!(event.correlation_id, request_id);
+    assert_eq!(
+        event.instrument_ids,
+        vec![InstrumentId::from("BTCUSDT-LINEAR.BYBIT")]
+    );
+    assert_eq!(event.data.len(), 1);
+    assert_eq!(event.start, datetime_to_unix_nanos(Some(start)));
+    assert_eq!(event.end, datetime_to_unix_nanos(Some(end)));
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -1414,6 +1999,66 @@ async fn test_data_client_emits_instruments_on_connect() {
     );
 
     client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_instrument_poll_refreshes_new_listing_without_definition_subscription() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    set_data_event_sender(tx);
+    let mut config = create_test_config(addr);
+    config.product_types = vec![BybitProductType::Option];
+    config.base_url_ws_public = Some(format!("ws://{addr}/v5/public/option"));
+    config.instrument_poll_interval_secs = Some(1);
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    let existing = InstrumentId::from("ETH-26JUN26-16000-P-OPTION.BYBIT");
+    let listed = InstrumentId::from("ETH-26JUN26-16500-P-OPTION.BYBIT");
+    client
+        .subscribe_instrument(SubscribeInstrument::new(
+            existing,
+            Some(*BYBIT_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    client
+        .subscribe_instrument_status(SubscribeInstrumentStatus::new(
+            listed,
+            Some(*BYBIT_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    state.new_option_listed.store(true, Ordering::Relaxed);
+
+    let (definitions, status) = tokio::time::timeout(Duration::from_secs(5), async {
+        let mut definitions = Vec::new();
+
+        loop {
+            match rx.recv().await.unwrap() {
+                DataEvent::Data(Data::Instrument(definition)) => definitions.push(definition.id()),
+                DataEvent::Data(Data::InstrumentStatus(status)) => break (definitions, status),
+                _ => {}
+            }
+        }
+    })
+    .await
+    .unwrap();
+
+    client.disconnect().await.unwrap();
+
+    assert_eq!(definitions, vec![existing, listed]);
+    assert_eq!(status.instrument_id, listed);
+    assert_eq!(status.action, MarketStatusAction::Trading);
 }
 
 #[rstest]

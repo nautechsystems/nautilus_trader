@@ -21,6 +21,13 @@ value is as Kraken returned it, with two-space indentation.
   canceled untriggered, and a stop-loss-limit, a take-profit-limit and a trailing-stop-limit
   canceled after triggering (`misc` is `stopped` or `touched`).
 
+`http_query_orders_stop_loss_limit_filled.json` is a QueryOrders response Kraken returned on
+2026-11-18, read through Kraken's CLI, for a 5 USDC buy stop-loss-limit on USDC/EUR placed on a live
+account through AddOrder with trigger `0.9121` and limit `0.9132`. It triggered and filled at
+`0.9122`: `descr.price` keeps the trigger, while `stopprice` reads `0.91220000`, the market price
+that triggered it. The order ID, trade ID and timestamps are replaced; every other value is as
+Kraken returned it.
+
 `http_open_orders_doc_example.json` and `http_query_orders_doc_example.json` are the complete
 response examples from Kraken's
 [Get Open Orders](https://docs.kraken.com/api-reference/account-data/get-open-orders) and
@@ -31,17 +38,36 @@ endpoints and received equal rows. The query example's stop-loss-limit row `OBCM
 describes its order as `@ limit 27500.0` with `price2` `0`, a form neither capture returned for a
 canceled or triggered stop-loss-limit, so no test asserts it.
 
-Five robustness tests change captured rows: a malformed `descr.price`, an empty or relative
-`stopprice`, an untriggered trailing-stop-limit's offset written unsigned, a triggered
-take-profit-limit's side flipped with its trigger and limit exchanged, and the same row flipped
-with both prices at the limit. Those variants are not venue responses.
+Eight robustness tests change captured rows: a malformed `descr.price`, an empty or relative
+trailing-stop `stopprice`, an empty or relative stop-loss `descr.price`, a malformed `stopprice` on
+the filled stop-loss-limit, an untriggered trailing-stop-limit's offset written unsigned, a triggered
+take-profit-limit's side flipped with its trigger and limit exchanged, the same row flipped with
+both prices at the limit, and a limit row's order type replaced with `iceberg`. Those variants are
+not venue responses.
 
 ## Spot executions frames
 
 `ws_executions_pending_new_doc_example.json` and `ws_executions_trade_doc_example.json` are the
 `pending_new` and `trade` update frames from Kraken's
 [executions channel documentation](https://docs.kraken.com/exchange/api-reference/spot-websocket-v2/executions),
-retrieved on 2026-10-13 and unchanged apart from whitespace.
+retrieved on 2026-10-13 and unchanged apart from whitespace. A test replaces the `pending_new`
+frame's `order_type` with `iceberg`; that variant is not a venue response.
+
+`ws_executions_external_orders.json` holds the nine `update` frames of two USDC/EUR orders another
+client placed on a live account: a stop-loss-limit buy of 5 that triggered and filled, then a market
+sell of 5. They were captured on a second executions subscription through Kraken's CLI, which
+re-serializes frames. Order IDs, execution IDs, `trade_id` values and timestamps are replaced; every
+other value is as received. The CLI printed the second frame's `order_status` as `unknown`, which it
+prints for any value outside its catalog. The file has `triggered`, inferred because the node logged
+no deserialization error for that frame.
+
+`ws_executions_order_snapshot.json` holds the executions frames of a USDC/EUR post-only limit buy
+of 5 placed on a live account, amended to 6 and canceled, as received directly from Kraken on two
+subscriptions. The `pending_new`, `new`, `amended` and `canceled` updates arrived on one subscribed
+without `snap_orders`. Between the amendment and the cancel, a second subscription with
+`snap_orders` received the `snapshot` frame, which the file holds in arrival order. The order ID
+and timestamps are replaced; every other value is as received. The snapshot entry states the
+amended quantity and the amendment's timestamp, and no `cum_qty`.
 
 ## Futures edit response
 
@@ -75,11 +101,9 @@ the immediate size reduction and delayed reprice described in the
 [Maker Protection guide](https://docs.kraken.com/exchange/guides/futures/maker-protection).
 These sources were retrieved on 2026-10-31. No source supplies this exact split-amend WebSocket sequence.
 
-The fixture treats open-orders `qty` as the current total size and `filled` as cumulative fills.
-The open-orders reference calls `qty` the order's quantity without explicitly distinguishing total
-from remaining size. The fills reference separately defines `remaining_order_qty` as unfilled size.
-This interpretation matches the adapter; the synthetic sequence does not independently verify it
-against venue messages.
+The fixture follows the [live report in #5694](https://github.com/nautechsystems/nautilus_trader/issues/5694).
+On a resting partial fill, `qty` is the open remainder and `filled` is the cumulative fill.
+The total order size is `qty + filled`.
 
 The five frames describe one `PF_APEUSD` buy order: placement of 0.0040 at 70000.0, reduction to
 0.0025 at 70000.0, a maker fill of 0.0007 at the old price, its cumulative open-order update, and
@@ -98,3 +122,11 @@ not certify venue activation, feed ordering, margin reservation, REST response e
 `http_amend_order_spot.json` is the successful response example from Kraken's
 [Amend Order reference](https://docs.kraken.com/api-reference/trading/amend-order),
 retrieved on 2026-11-16, with two-space indentation.
+
+## Spot WebSocket batch_add response
+
+`ws_batch_add_response_doc_example.json` is the response example from Kraken's
+[Spot WebSocket v2 `batch_add` reference](https://docs.kraken.com/exchange/api-reference/spot-websocket-v2/batch_add),
+retrieved on 2026-11-22, with its `time_out` as published. No WebSocket `batch_add` response has
+been captured. `ws_batch_add_response_partial.json` is synthetic: it nests per-order results, each
+with its own `success`, under `result.orders`, a shape the reference does not describe.

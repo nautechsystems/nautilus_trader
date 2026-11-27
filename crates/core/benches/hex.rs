@@ -24,21 +24,21 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use nautilus_core::hex;
 
 fn bench_encode_32(c: &mut Criterion) {
-    let data = [0xdeu8; 32];
+    let data = [0xde_u8; 32];
     c.bench_function("hex::encode (32 bytes)", |b| {
         b.iter(|| hex::encode(black_box(&data)));
     });
 }
 
 fn bench_encode_64(c: &mut Criterion) {
-    let data = [0xabu8; 64];
+    let data = [0xab_u8; 64];
     c.bench_function("hex::encode (64 bytes)", |b| {
         b.iter(|| hex::encode(black_box(&data)));
     });
 }
 
 fn bench_encode_256(c: &mut Criterion) {
-    let data = [0x42u8; 256];
+    let data = [0x42_u8; 256];
     c.bench_function("hex::encode (256 bytes)", |b| {
         b.iter(|| hex::encode(black_box(&data)));
     });
@@ -66,7 +66,7 @@ fn bench_decode_512(c: &mut Criterion) {
 }
 
 fn bench_encode_prefixed_32(c: &mut Criterion) {
-    let data = [0xdeu8; 32];
+    let data = [0xde_u8; 32];
     c.bench_function("hex::encode_prefixed (32 bytes)", |b| {
         b.iter(|| hex::encode_prefixed(black_box(&data)));
     });
@@ -80,7 +80,7 @@ fn bench_decode_array_32(c: &mut Criterion) {
 }
 
 fn bench_roundtrip_32(c: &mut Criterion) {
-    let data = [0x7fu8; 32];
+    let data = [0x7f_u8; 32];
     c.bench_function("hex roundtrip (32 bytes)", |b| {
         b.iter(|| {
             let encoded = hex::encode(black_box(&data));

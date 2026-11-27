@@ -39,7 +39,7 @@ const PAYLOAD_SIZES: &[usize] = &[256, 1024, 4096];
 fn entry_with_payload(size: usize) -> EventStoreEntry {
     let topic: Topic = "exec.command.SubmitOrder".into();
     let payload_type = Ustr::from("SubmitOrder");
-    let payload = Bytes::from(vec![0xABu8; size]);
+    let payload = Bytes::from(vec![0xab_u8; size]);
     let headers = Headers::empty();
     let ts_init = UnixNanos::from(1_700_000_000_000_000_000);
     let ts_publish = UnixNanos::from(1_700_000_000_000_000_001);

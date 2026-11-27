@@ -356,10 +356,10 @@ fn test_process_block(data_engine: Rc<RefCell<DataEngine>>, data_client: DataCli
     let block = Block::new(
         "0x123".to_string(),
         "0x456".to_string(),
-        1u64,
+        1_u64,
         "miner".into(),
-        1000000u64,
-        500000u64,
+        1_000_000_u64,
+        500_000_u64,
         UnixNanos::from(1),
         Some(blockchain),
     );
@@ -418,15 +418,15 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
-    let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
+    let initial_price = U160::from(79_228_162_514_264_337_593_543_950_336_u128); // sqrt(1) * 2^96
     pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
@@ -443,7 +443,7 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         dex,
         instrument_id,
         pool.pool_identifier,
-        1000u64,
+        1000_u64,
         "0x123".to_string(),
         0,
         0,
@@ -453,8 +453,8 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
         Address::from([0x12; 20]),
         I256::from_str("1000000000000000000").unwrap(),
         I256::from_str("400000000000000").unwrap(),
-        U160::from(59000000000000u128),
-        1000000,
+        U160::from(59_000_000_000_000_u128),
+        1_000_000,
         100,
     );
 
@@ -528,15 +528,15 @@ fn test_process_pool_liquidity_update(
         Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
-    let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
+    let initial_price = U160::from(79_228_162_514_264_337_593_543_950_336_u128); // sqrt(1) * 2^96
     pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
@@ -554,15 +554,15 @@ fn test_process_pool_liquidity_update(
         instrument_id,
         pool.pool_identifier,
         PoolLiquidityUpdateType::Mint,
-        1000u64,
+        1000_u64,
         "0x123".to_string(),
         0,
         0,
         None,
         Address::from([0x12; 20]),
-        100u128,
-        U256::from(1000000u128),
-        U256::from(2000000u128),
+        100_u128,
+        U256::from(1_000_000_u128),
+        U256::from(2_000_000_u128),
         -100,
         100,
         UnixNanos::default(),
@@ -640,15 +640,15 @@ fn test_process_pool_fee_collect(
         Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
-    let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
+    let initial_price = U160::from(79_228_162_514_264_337_593_543_950_336_u128); // sqrt(1) * 2^96
     pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
@@ -665,13 +665,13 @@ fn test_process_pool_fee_collect(
         dex,
         instrument_id,
         pool.pool_identifier,
-        1000u64,
+        1000_u64,
         "0x123".to_string(),
         0,
         0,
         Address::from([0x12; 20]),
-        500000u128,
-        300000u128,
+        500_000_u128,
+        300_000_u128,
         -100,
         100,
         UnixNanos::default(),
@@ -745,15 +745,15 @@ fn test_process_pool_flash(data_engine: Rc<RefCell<DataEngine>>, data_client: Da
         Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
-    let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
+    let initial_price = U160::from(79_228_162_514_264_337_593_543_950_336_u128); // sqrt(1) * 2^96
     pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
@@ -770,7 +770,7 @@ fn test_process_pool_flash(data_engine: Rc<RefCell<DataEngine>>, data_client: Da
         dex,
         instrument_id,
         pool.pool_identifier,
-        1000u64,
+        1000_u64,
         "0x123".to_string(),
         0,
         0,
@@ -778,10 +778,10 @@ fn test_process_pool_flash(data_engine: Rc<RefCell<DataEngine>>, data_client: Da
         UnixNanos::default(),
         Address::from([0x12; 20]),
         Address::from([0x34; 20]),
-        U256::from(1000000u128),
-        U256::from(500000u128),
-        U256::from(5000u128),
-        U256::from(2500u128),
+        U256::from(1_000_000_u128),
+        U256::from(500_000_u128),
+        U256::from(5000_u128),
+        U256::from(2500_u128),
     );
 
     let sub = DefiSubscribeCommand::PoolFlashEvents(SubscribePoolFlashEvents {
@@ -857,15 +857,15 @@ fn test_pool_updater_processes_swap_updates_profiler(
         Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
-    let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
+    let initial_price = U160::from(79_228_162_514_264_337_593_543_950_336_u128); // sqrt(1) * 2^96
     pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
     let pool_identifier = pool.pool_identifier;
@@ -883,15 +883,15 @@ fn test_pool_updater_processes_swap_updates_profiler(
         instrument_id,
         PoolIdentifier::from_address(Address::from([0x12; 20])),
         PoolLiquidityUpdateType::Mint,
-        999u64,
+        999_u64,
         "0x122".to_string(),
         0,
         0,
         None,
-        Address::from([0xAB; 20]),
-        10000u128, // Add significant liquidity
-        U256::from(1000000u128),
-        U256::from(2000000u128),
+        Address::from([0xab; 20]),
+        10000_u128, // Add significant liquidity
+        U256::from(1_000_000_u128),
+        U256::from(2_000_000_u128),
         -1000, // Wide range
         1000,
         UnixNanos::default(),
@@ -946,7 +946,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
         .simulate_swap_through_ticks(
             I256::from_str("100").unwrap(),
             true,
-            U160::from(56022770974786139918731938227u128),
+            U160::from(56_022_770_974_786_139_918_731_938_227_u128),
             true,
         )
         .unwrap()
@@ -1047,15 +1047,15 @@ fn test_pool_updater_processes_mint_updates_profiler(
         Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
-    let initial_price = U160::from(79228162514264337593543950336u128);
+    let initial_price = U160::from(79_228_162_514_264_337_593_543_950_336_u128);
     pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
@@ -1093,15 +1093,15 @@ fn test_pool_updater_processes_mint_updates_profiler(
         instrument_id,
         PoolIdentifier::from_address(Address::from([0x12; 20])),
         PoolLiquidityUpdateType::Mint,
-        1000u64,
+        1000_u64,
         "0x123".to_string(),
         0,
         0,
         None,
-        Address::from([0xAB; 20]),
-        1000u128, // liquidity amount
-        U256::from(100000u128),
-        U256::from(200000u128),
+        Address::from([0xab; 20]),
+        1000_u128, // liquidity amount
+        U256::from(100_000_u128),
+        U256::from(200_000_u128),
         -100, // tick_lower
         100,  // tick_upper
         UnixNanos::default(),
@@ -1172,15 +1172,15 @@ fn test_pool_updater_processes_burn_updates_profiler(
         Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
-    let initial_price = U160::from(79228162514264337593543950336u128);
+    let initial_price = U160::from(79_228_162_514_264_337_593_543_950_336_u128);
     pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
@@ -1191,7 +1191,7 @@ fn test_pool_updater_processes_burn_updates_profiler(
     profiler.initialize(initial_price).unwrap();
 
     // First mint some liquidity
-    let owner = Address::from([0xAB; 20]);
+    let owner = Address::from([0xab; 20]);
 
     let mint = PoolLiquidityUpdate::new(
         Arc::clone(&chain),
@@ -1199,15 +1199,15 @@ fn test_pool_updater_processes_burn_updates_profiler(
         instrument_id,
         PoolIdentifier::from_address(Address::from([0x12; 20])),
         PoolLiquidityUpdateType::Mint,
-        1000u64,
+        1000_u64,
         "0x123".to_string(),
         0,
         0,
         None,
         owner,
-        1000u128,
-        U256::from(100000u128),
-        U256::from(200000u128),
+        1000_u128,
+        U256::from(100_000_u128),
+        U256::from(200_000_u128),
         -100,
         100,
         UnixNanos::default(),
@@ -1243,15 +1243,15 @@ fn test_pool_updater_processes_burn_updates_profiler(
         instrument_id,
         PoolIdentifier::from_address(Address::from([0x12; 20])),
         PoolLiquidityUpdateType::Burn,
-        1001u64,
+        1001_u64,
         "0x124".to_string(),
         0,
         0,
         None,
         owner,
-        500u128, // burn half the liquidity
-        U256::from(50000u128),
-        U256::from(100000u128),
+        500_u128, // burn half the liquidity
+        U256::from(50000_u128),
+        U256::from(100_000_u128),
         -100,
         100,
         UnixNanos::default(),
@@ -1323,15 +1323,15 @@ fn test_pool_updater_processes_collect_updates_profiler(
         Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
-    let initial_price = U160::from(79228162514264337593543950336u128);
+    let initial_price = U160::from(79_228_162_514_264_337_593_543_950_336_u128);
     pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
@@ -1355,22 +1355,22 @@ fn test_pool_updater_processes_collect_updates_profiler(
     data_engine.borrow_mut().execute(cmd);
 
     // Create and process collect event
-    let owner = Address::from([0xAB; 20]);
+    let owner = Address::from([0xab; 20]);
 
     let collect = PoolFeeCollect::new(
         chain,
         dex,
         instrument_id,
         PoolIdentifier::from_address(Address::from([0x12; 20])),
-        1000u64,
+        1000_u64,
         "0x123".to_string(),
         0,
         0,
         owner,
-        50000u128, // amount0
-        30000u128, // amount1
-        -100,      // tick_lower
-        100,       // tick_upper
+        50000_u128, // amount0
+        30000_u128, // amount1
+        -100,       // tick_lower
+        100,        // tick_upper
         UnixNanos::default(),
         UnixNanos::default(),
     );
@@ -1438,15 +1438,15 @@ fn test_pool_updater_processes_flash_updates_profiler(
         Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::from_address(Address::from([0x12; 20])),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
-    let initial_price = U160::from(79228162514264337593543950336u128);
+    let initial_price = U160::from(79_228_162_514_264_337_593_543_950_336_u128);
     pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
@@ -1470,15 +1470,15 @@ fn test_pool_updater_processes_flash_updates_profiler(
     data_engine.borrow_mut().execute(cmd);
 
     // Create and process flash event
-    let initiator = Address::from([0xAB; 20]);
-    let recipient = Address::from([0xCD; 20]);
+    let initiator = Address::from([0xab; 20]);
+    let recipient = Address::from([0xcd; 20]);
 
     let flash = PoolFlash::new(
         chain,
         dex,
         instrument_id,
         PoolIdentifier::from_address(Address::from([0x12; 20])),
-        1000u64,
+        1000_u64,
         "0x123".to_string(),
         0,
         0,
@@ -1486,10 +1486,10 @@ fn test_pool_updater_processes_flash_updates_profiler(
         UnixNanos::default(),
         initiator,
         recipient,
-        U256::from(1000000u128), // amount0
-        U256::from(500000u128),  // amount1
-        U256::from(5000u128),    // paid0
-        U256::from(2500u128),    // paid1
+        U256::from(1_000_000_u128), // amount0
+        U256::from(500_000_u128),   // amount1
+        U256::from(5000_u128),      // paid0
+        U256::from(2500_u128),      // paid1
     );
 
     let mut data_engine = data_engine.borrow_mut();
@@ -1545,9 +1545,10 @@ fn test_process_defi_pools_publishes_distinct_tradable_instruments(
         "QUOTE".to_string(),
         6,
     );
-    let address_a = Address::from([0xAA; 20]);
-    let address_b = Address::from([0xBB; 20]);
-    let address_invalid = Address::from([0xCC; 20]);
+
+    let address_a = Address::from([0xaa; 20]);
+    let address_b = Address::from([0xbb; 20]);
+    let address_invalid = Address::from([0xcc; 20]);
 
     let pool_a = Pool::new(
         Arc::clone(&chain),
@@ -1720,15 +1721,15 @@ fn test_setup_pool_updater_skips_snapshot_when_pool_in_cache(
         dex,
         Address::from([0x88; 20]),
         PoolIdentifier::from_address(Address::from([0x88; 20])),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
-    let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
+    let initial_price = U160::from(79_228_162_514_264_337_593_543_950_336_u128); // sqrt(1) * 2^96
     pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
@@ -1804,15 +1805,15 @@ fn test_pool_events_publish_while_snapshot_pending(
         instrument_id,
         pool.pool_identifier,
         PoolLiquidityUpdateType::Mint,
-        1001u64,
+        1001_u64,
         "0x124".to_string(),
         0,
         0,
         None,
         Address::from([0x12; 20]),
-        100u128,
-        U256::from(1000000u128),
-        U256::from(2000000u128),
+        100_u128,
+        U256::from(1_000_000_u128),
+        U256::from(2_000_000_u128),
         -100,
         100,
         UnixNanos::default(),
@@ -1824,13 +1825,13 @@ fn test_pool_events_publish_while_snapshot_pending(
         Arc::clone(&pool.dex),
         instrument_id,
         pool.pool_identifier,
-        1002u64,
+        1002_u64,
         "0x125".to_string(),
         0,
         0,
         Address::from([0x12; 20]),
-        500000u128,
-        300000u128,
+        500_000_u128,
+        300_000_u128,
         -100,
         100,
         UnixNanos::default(),
@@ -1842,7 +1843,7 @@ fn test_pool_events_publish_while_snapshot_pending(
         Arc::clone(&pool.dex),
         instrument_id,
         pool.pool_identifier,
-        1003u64,
+        1003_u64,
         "0x126".to_string(),
         0,
         0,
@@ -1850,10 +1851,10 @@ fn test_pool_events_publish_while_snapshot_pending(
         UnixNanos::default(),
         Address::from([0x12; 20]),
         Address::from([0x34; 20]),
-        U256::from(1000000u128),
-        U256::from(500000u128),
-        U256::from(5000u128),
-        U256::from(2500u128),
+        U256::from(1_000_000_u128),
+        U256::from(500_000_u128),
+        U256::from(5000_u128),
+        U256::from(2500_u128),
     );
 
     let (swap_handler, swap_saver) = get_typed_message_saving_handler::<PoolSwap>(None);
@@ -2069,11 +2070,11 @@ fn test_setup_pool_updater_does_not_cache_profiler_on_initialize_failure(
         dex,
         Address::from([0x99; 20]),
         PoolIdentifier::from_address(Address::from([0x99; 20])),
-        0u64,
+        0_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
@@ -2081,7 +2082,7 @@ fn test_setup_pool_updater_does_not_cache_profiler_on_initialize_failure(
     // from its sqrt price. setup_pool_updater calls PoolProfiler::initialize which
     // must return InitialTickMismatch and must not cache the half-initialized profiler.
     // Pool::initialize asserts consistency, so set the fields directly.
-    let initial_price = U160::from(79228162514264337593543950336u128); // sqrt(1) * 2^96
+    let initial_price = U160::from(79_228_162_514_264_337_593_543_950_336_u128); // sqrt(1) * 2^96
     let real_tick = get_tick_at_sqrt_ratio(initial_price);
     pool.initial_sqrt_price_x96 = Some(initial_price);
     pool.initial_tick = Some(real_tick + 100);
@@ -2171,17 +2172,17 @@ fn test_pool_arrival_with_snapshot_pending_does_not_create_profiler(
     let mut pool = Pool::new(
         chain,
         dex,
-        Address::from([0xAA; 20]),
-        PoolIdentifier::from_address(Address::from([0xAA; 20])),
-        12_345_678u64,
+        Address::from([0xaa; 20]),
+        PoolIdentifier::from_address(Address::from([0xaa; 20])),
+        12_345_678_u64,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
-    let initial_price = U160::from(79228162514264337593543950336u128);
+    let initial_price = U160::from(79_228_162_514_264_337_593_543_950_336_u128);
     pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
@@ -2287,17 +2288,17 @@ fn test_pool_snapshot_handler_refuses_empty_stub_at_creation_block(
     let mut pool = Pool::new(
         chain,
         dex,
-        Address::from([0xBB; 20]),
-        PoolIdentifier::from_address(Address::from([0xBB; 20])),
+        Address::from([0xbb; 20]),
+        PoolIdentifier::from_address(Address::from([0xbb; 20])),
         creation_block,
         token0,
         token1,
-        Some(500u32),
-        Some(10u32),
+        Some(500_u32),
+        Some(10_u32),
         UnixNanos::from(1),
     );
 
-    let initial_price = U160::from(79228162514264337593543950336u128);
+    let initial_price = U160::from(79_228_162_514_264_337_593_543_950_336_u128);
     pool.initialize(initial_price, get_tick_at_sqrt_ratio(initial_price));
     let instrument_id = pool.instrument_id;
 
@@ -2390,8 +2391,8 @@ fn test_process_option_greeks_caches_and_publishes(
         ask_iv: Some(0.67),
         underlying_price: Some(50000.0),
         open_interest: Some(1000.0),
-        ts_event: UnixNanos::from(1u64),
-        ts_init: UnixNanos::from(1u64),
+        ts_event: UnixNanos::from(1_u64),
+        ts_init: UnixNanos::from(1_u64),
     };
 
     data_engine.borrow_mut().process(&greeks);
@@ -2628,10 +2629,10 @@ fn test_process_defi_data_increments_data_count(
     let block = Block::new(
         "0x123".to_string(),
         "0x456".to_string(),
-        1u64,
+        1_u64,
         "miner".into(),
-        1000000u64,
-        500000u64,
+        1_000_000_u64,
+        500_000_u64,
         UnixNanos::from(1),
         Some(blockchain),
     );

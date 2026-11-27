@@ -171,9 +171,8 @@ pub(crate) fn parse_l3_snapshot(
 /// Parses a Kraken L3 incremental update into an optional `OrderBookDeltas` batch.
 ///
 /// Returns the parsed `OrderBookDeltas` (or `None` when no deltas were produced) paired
-/// with the update's `ts_event`. The `ts_event` is returned in both cases so callers can
-/// run checksum verification and emit clear deltas even when the update produced no
-/// outward changes (for example, a batch consisting only of `modify` events for orders
+/// with the update's `ts_event`. An update can produce no outward changes, for example
+/// a batch consisting only of `modify` events for orders
 /// that were depth-pruned locally).
 ///
 /// Kraken queues each price level by order timestamp, so an order can join ahead of orders
@@ -749,8 +748,8 @@ mod tests {
         let snap = load_snapshot();
         let instrument = make_instrument();
         let hasher = BookOrderIdHasher::new();
-        let mut sequence = 0u64;
-        let mut arrival = 0u64;
+        let mut sequence = 0_u64;
+        let mut arrival = 0_u64;
         let mut open_orders = AHashMap::new();
         parse_l3_snapshot(
             &snap,
@@ -770,8 +769,8 @@ mod tests {
         let snap = load_snapshot();
         let instrument = make_instrument();
         let hasher = BookOrderIdHasher::new();
-        let mut sequence = 0u64;
-        let mut arrival = 0u64;
+        let mut sequence = 0_u64;
+        let mut arrival = 0_u64;
         let mut open_orders = AHashMap::new();
 
         let result = parse_l3_snapshot(
@@ -795,8 +794,8 @@ mod tests {
         let snap = load_snapshot();
         let instrument = make_instrument();
         let hasher = BookOrderIdHasher::new();
-        let mut sequence = 0u64;
-        let mut arrival = 0u64;
+        let mut sequence = 0_u64;
+        let mut arrival = 0_u64;
         let mut open_orders = AHashMap::new();
 
         let result = parse_l3_snapshot(
@@ -836,7 +835,7 @@ mod tests {
         let update = load_update("ws_l3_update_add.json");
         let instrument = make_instrument();
         let hasher = BookOrderIdHasher::new();
-        let mut sequence = 0u64;
+        let mut sequence = 0_u64;
         let (mut open_orders, mut arrival) = populated_open_orders();
 
         let (deltas, _ts_event) = parse_l3_update(
@@ -862,7 +861,7 @@ mod tests {
         let update = load_update("ws_l3_update_add.json");
         let instrument = make_instrument();
         let hasher = BookOrderIdHasher::new();
-        let mut sequence = 0u64;
+        let mut sequence = 0_u64;
         let (mut open_orders, mut arrival) = populated_open_orders();
         let pruned_order_id = hasher.hash("order-bid-3");
 
@@ -892,7 +891,7 @@ mod tests {
         let update = load_update("ws_l3_update_modify_qty.json");
         let instrument = make_instrument();
         let hasher = BookOrderIdHasher::new();
-        let mut sequence = 0u64;
+        let mut sequence = 0_u64;
         let (mut open_orders, mut arrival) = populated_open_orders();
 
         let (deltas, _ts_event) = parse_l3_update(
@@ -916,7 +915,7 @@ mod tests {
     fn test_parse_l3_update_modify_same_numeric_price_differing_raw_triggers_delete_add() {
         let instrument = make_instrument();
         let hasher = BookOrderIdHasher::new();
-        let mut sequence = 0u64;
+        let mut sequence = 0_u64;
         let (mut open_orders, mut arrival) = populated_open_orders();
         let order_id = hasher.hash("order-ask-1");
         let cached_raw = open_orders
@@ -974,7 +973,7 @@ mod tests {
         let update = load_update("ws_l3_update_modify_price.json");
         let instrument = make_instrument();
         let hasher = BookOrderIdHasher::new();
-        let mut sequence = 0u64;
+        let mut sequence = 0_u64;
         let (mut open_orders, mut arrival) = populated_open_orders();
 
         let (deltas, _ts_event) = parse_l3_update(
@@ -1026,7 +1025,7 @@ mod tests {
         let update = bid_1_modify_update(order_qty);
         let instrument = make_instrument();
         let hasher = BookOrderIdHasher::new();
-        let mut sequence = 100u64;
+        let mut sequence = 100_u64;
         let (mut open_orders, mut arrival) = populated_open_orders();
         let bid_1 = hasher.hash("order-bid-1");
         let bid_2 = hasher.hash("order-bid-2");
@@ -1064,7 +1063,7 @@ mod tests {
         let update = bid_1_modify_update("0.4");
         let instrument = make_instrument();
         let hasher = BookOrderIdHasher::new();
-        let mut sequence = 100u64;
+        let mut sequence = 100_u64;
         let (mut open_orders, mut arrival) = populated_open_orders();
         let bid_1 = hasher.hash("order-bid-1");
         let seq_before = open_orders[&bid_1].seq;
@@ -1092,7 +1091,7 @@ mod tests {
         let update = load_update("ws_l3_update_delete.json");
         let instrument = make_instrument();
         let hasher = BookOrderIdHasher::new();
-        let mut sequence = 0u64;
+        let mut sequence = 0_u64;
         let (mut open_orders, mut arrival) = populated_open_orders();
 
         let (deltas, _ts_event) = parse_l3_update(
@@ -1117,8 +1116,8 @@ mod tests {
     fn test_parse_l3_update_empty_returns_none() {
         let instrument = make_instrument();
         let hasher = BookOrderIdHasher::new();
-        let mut sequence = 0u64;
-        let mut arrival = 0u64;
+        let mut sequence = 0_u64;
+        let mut arrival = 0_u64;
         let mut open_orders = AHashMap::new();
 
         let empty_update = KrakenL3UpdateData {

@@ -217,7 +217,7 @@ mod tests {
     #[should_panic(expected = "raw wei value exceeds 128-bit range")]
     fn test_from_wei_overflow() {
         let eth = Currency::new("ETH", 18, 0, "Ethereum", CurrencyType::Crypto);
-        let overflow_wei = U256::from(u128::MAX) + U256::from(1u64);
+        let overflow_wei = U256::from(u128::MAX) + U256::from(1_u64);
         Money::from_wei(overflow_wei, eth);
     }
 

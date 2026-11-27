@@ -42,6 +42,7 @@ pub(super) use ibapi::{
     prelude::{StreamExt, SubscriptionItemStreamExt},
     subscriptions::SubscriptionItem,
 };
+use nautilus_common::msgbus::{InstrumentSubscription, TypedHandler};
 pub(super) use nautilus_common::{
     cache::{Cache, fifo::FifoCacheMap},
     clients::{ExecutionClient, ExecutionReportTask},
@@ -151,6 +152,7 @@ pub struct InteractiveBrokersExecutionClient {
     pub(super) is_connected: Arc<AtomicBool>,
     /// IB API client (shared per host/port/client_id when both data and execution connect).
     pub(super) ib_client: Option<SharedClientHandle>,
+    instrument_subscription: Option<InstrumentSubscription>,
     /// Tasks serving execution commands.
     pub(super) pending_tasks: TaskGroup,
     /// Tasks serving the active connection session.
@@ -464,6 +466,7 @@ impl InteractiveBrokersExecutionClient {
             instrument_provider,
             is_connected: Arc::new(AtomicBool::new(false)),
             ib_client: None,
+            instrument_subscription: None,
             pending_tasks,
             session_tasks,
             next_order_id: Arc::new(Mutex::new(0)),
@@ -956,6 +959,29 @@ impl InteractiveBrokersExecutionClient {
         self.core.set_disconnected();
         tasks_result
     }
+
+    fn subscribe_instruments(&mut self) {
+        if self.instrument_subscription.is_some() {
+            return;
+        }
+
+        let core = self.core.clone();
+        let provider = Arc::clone(&self.instrument_provider);
+
+        let handler = TypedHandler::from(move |instrument: &InstrumentAny| {
+            let venue = instrument.id().venue;
+            if venue == core.venue
+                || core.cache().client_id_for_venue(&venue) == Some(&core.client_id)
+            {
+                provider.update_cached_instrument(instrument.clone());
+            }
+        });
+
+        self.instrument_subscription = Some(InstrumentSubscription::new(
+            "data.instrument.*".into(),
+            handler,
+        ));
+    }
 }
 
 // Implementation of ExecutionClient trait
@@ -981,6 +1007,11 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
     // contract transformation remains the authority for actual venue support.
     fn handles_order_venue(&self, _venue: Venue) -> bool {
         true
+    }
+
+    fn on_instrument(&mut self, instrument: InstrumentAny) {
+        self.instrument_provider
+            .update_cached_instrument(instrument);
     }
 
     fn oms_type(&self) -> OmsType {
@@ -1019,11 +1050,12 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
-        // Start is handled by connect() for live clients
+        self.subscribe_instruments();
         Ok(())
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
+        self.instrument_subscription.take();
         self.begin_task_shutdown();
         Ok(())
     }
@@ -1107,6 +1139,8 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
+        self.subscribe_instruments();
+
         if self.is_connected.load(Ordering::Relaxed)
             && self.session_tasks.is_open()
             && self.pending_tasks.is_open()
@@ -2196,7 +2230,24 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
     }
 }
 
+const IB_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
+    OrderType::Market,
+    OrderType::Limit,
+    OrderType::StopMarket,
+    OrderType::StopLimit,
+    OrderType::MarketToLimit,
+    OrderType::MarketIfTouched,
+    OrderType::LimitIfTouched,
+    OrderType::TrailingStopMarket,
+    OrderType::TrailingStopLimit,
+];
+
 fn validate_order(order: &impl Order) -> Result<(), OrderDeniedReason> {
+    let order_type = order.order_type();
+    if !IB_SUPPORTED_ORDER_TYPES.contains(&order_type) {
+        return Err(OrderDeniedReason::UnsupportedOrderType { order_type });
+    }
+
     if order.is_reduce_only() {
         return Err(OrderDeniedReason::UnsupportedReduceOnly);
     }

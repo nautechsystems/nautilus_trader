@@ -47,7 +47,7 @@ use thiserror::Error;
 
 /// Base epoch for timestamp encoding: 2020-01-01 00:00:00 UTC.
 /// This gives us ~136 years of range with 32-bit seconds.
-pub const DYDX_BASE_EPOCH: i64 = 1577836800;
+pub const DYDX_BASE_EPOCH: i64 = 1_577_836_800;
 
 /// Value used to identify legacy/numeric client IDs.
 /// When `client_metadata == 4`, the client_id is treated as a literal numeric ID.
@@ -60,9 +60,9 @@ pub const MAX_SAFE_CLIENT_ID: u32 = u32::MAX - 1000;
 /// Bit positions for client_metadata packing.
 const TRADER_SHIFT: u32 = 22; // Bits [31:22]
 const STRATEGY_SHIFT: u32 = 12; // Bits [21:12]
-const COUNT_MASK: u32 = 0xFFF; // Bits [11:0] = 12 bits
-const TRADER_MASK: u32 = 0x3FF; // 10 bits
-const STRATEGY_MASK: u32 = 0x3FF; // 10 bits
+const COUNT_MASK: u32 = 0xfff; // Bits [11:0] = 12 bits
+const TRADER_MASK: u32 = 0x3ff; // 10 bits
+const STRATEGY_MASK: u32 = 0x3ff; // 10 bits
 
 /// Marker value for client_metadata to identify sequential allocation.
 /// Sequential IDs use: client_id = counter (unique), client_metadata = SEQUENTIAL_METADATA_MARKER

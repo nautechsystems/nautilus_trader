@@ -510,7 +510,7 @@ mod tests {
     #[rstest]
     fn test_order_book_deltas_hash_uses_instrument_id_and_sequence() {
         let instrument_id = InstrumentId::from("EURUSD.SIM");
-        let sequence = 123u64;
+        let sequence = 123_u64;
 
         // Create separate hasher to verify what's being hashed
         let mut expected_hasher = DefaultHasher::new();

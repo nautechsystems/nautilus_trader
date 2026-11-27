@@ -44,7 +44,7 @@ use nautilus_model::identifiers::InstrumentId;
 fn bench_trading_commands(c: &mut Criterion) {
     let mut group = c.benchmark_group("trading_commands");
     let endpoint = MessagingSwitchboard::exec_engine_execute();
-    let received = Rc::new(Cell::new(0usize));
+    let received = Rc::new(Cell::new(0_usize));
     let observed = received.clone();
     msgbus::register_trading_command_endpoint(
         endpoint,

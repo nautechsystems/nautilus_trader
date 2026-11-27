@@ -368,7 +368,7 @@ mod tests {
     fn write_catalog(path: &Path) {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim());
         let instrument_id = instrument.id();
-        let catalog = ParquetDataCatalog::new(path, None, None, None, None);
+        let catalog = ParquetDataCatalog::builder().uri(path).build().unwrap();
         catalog.write_instruments(vec![instrument]).unwrap();
         catalog
             .write_to_parquet(&generate_quotes(instrument_id), None, None, None)

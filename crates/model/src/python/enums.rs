@@ -26,9 +26,9 @@ use crate::{
         BarAggregation, BarIntervalType, BetSide, BookAction, BookType, ContingencyType,
         ContinuousFutureAdjustmentType, CurrencyType, ExerciseStyle, GreeksConvention,
         InstrumentClass, InstrumentCloseType, LiquiditySide, MarketStatus, MarketStatusAction,
-        OmsType, OptionKind, OptionSideFilter, OrderSide, OrderStatus, OrderType, OtoTriggerMode,
-        PositionAdjustmentType, PositionSide, PriceType, RecordFlag, SettlementType, TimeInForce,
-        TradingState, TrailingOffsetType, TriggerType,
+        OmsType, OptionKind, OptionPremiumStyle, OptionSideFilter, OrderSide, OrderStatus,
+        OrderType, OtoTriggerMode, PositionAdjustmentType, PositionSide, PriceType, RecordFlag,
+        SettlementType, TimeInForce, TradingState, TrailingOffsetType, TriggerType,
     },
     python::common::EnumIterator,
 };
@@ -1014,6 +1014,50 @@ impl OmsType {
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl OptionKind {
     /// The kind of option contract.
+    #[new]
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object(py);
+        Self::py_from_str(&t, value)
+    }
+
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn name(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn value(&self) -> u8 {
+        *self as u8
+    }
+
+    #[classmethod]
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
+        EnumIterator::new::<Self>(py)
+    }
+
+    #[classmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
+        let tokenized = data_str.to_uppercase();
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl OptionPremiumStyle {
+    /// The timing of an option's premium and variation cash flows.
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);

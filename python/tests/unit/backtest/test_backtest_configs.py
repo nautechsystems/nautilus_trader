@@ -79,7 +79,11 @@ def test_engine_config_defaults() -> None:
     assert config.shutdown_on_error is False
     assert config.bypass_logging is False
     assert config.run_analysis is True
-    assert config.timeout_connection == 60.0
+    assert config.timeout_connection_secs == 60.0
+    assert config.timeout_reconciliation_secs == 30.0
+    assert config.timeout_portfolio_secs == 10.0
+    assert config.timeout_disconnection_secs == 10.0
+    assert config.delay_post_stop_secs == 10.0
 
 
 def test_engine_config_with_params() -> None:
@@ -95,6 +99,11 @@ def test_engine_config_with_params() -> None:
         shutdown_on_error=True,
         bypass_logging=True,
         run_analysis=False,
+        timeout_connection_secs=11,
+        timeout_reconciliation_secs=22,
+        timeout_portfolio_secs=33,
+        timeout_disconnection_secs=44,
+        delay_post_stop_secs=55,
         logging=logging,
         instance_id=instance_id,
     )
@@ -104,6 +113,11 @@ def test_engine_config_with_params() -> None:
     assert config.shutdown_on_error is True
     assert config.bypass_logging is True
     assert config.run_analysis is False
+    assert config.timeout_connection_secs == 11.0
+    assert config.timeout_reconciliation_secs == 22.0
+    assert config.timeout_portfolio_secs == 33.0
+    assert config.timeout_disconnection_secs == 44.0
+    assert config.delay_post_stop_secs == 55.0
     assert config.logging.print_config is True
     assert config.instance_id == instance_id
 

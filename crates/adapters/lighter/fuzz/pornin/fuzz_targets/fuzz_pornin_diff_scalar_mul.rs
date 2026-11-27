@@ -30,9 +30,9 @@ fuzz_target!(|data: &[u8]| {
     if data.len() < INPUT_LEN {
         return;
     }
-    let mut s_buf = [0u8; SCALAR_BYTES];
+    let mut s_buf = [0_u8; SCALAR_BYTES];
     s_buf.copy_from_slice(&data[..SCALAR_BYTES]);
-    let mut seed_buf = [0u8; SCALAR_BYTES];
+    let mut seed_buf = [0_u8; SCALAR_BYTES];
     seed_buf.copy_from_slice(&data[SCALAR_BYTES..INPUT_LEN]);
 
     let ours_seed = Scalar::from_le_bytes_reduce(seed_buf);

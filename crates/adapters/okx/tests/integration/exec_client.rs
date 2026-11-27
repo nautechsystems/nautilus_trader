@@ -53,7 +53,7 @@ use nautilus_common::{
             report::{GenerateFillReports, GenerateOrderStatusReport, GenerateOrderStatusReports},
         },
     },
-    msgbus::{self, MessagingSwitchboard, TypedIntoHandler},
+    msgbus::{self, MessagingSwitchboard, ShareableMessageHandler, TypedIntoHandler},
     testing::wait_until_async,
 };
 use nautilus_core::{
@@ -63,6 +63,7 @@ use nautilus_live::{
     ExecutionClientCore, ExecutionEventEmitter,
     execution::context::OrderIdentity,
     manager::{ExecutionManager, ExecutionManagerConfig},
+    runner::AsyncRunner,
 };
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
@@ -2645,17 +2646,20 @@ fn load_test_data(filename: &str) -> serde_json::Value {
 }
 
 fn swap_instrument(symbol: &str) -> InstrumentAny {
-    let response: OKXResponse<OKXInstrument> =
-        serde_json::from_value(load_test_data("http_get_instruments_swap.json")).unwrap();
-    let raw = response
-        .data
-        .iter()
-        .find(|instrument| instrument.inst_id == Ustr::from(symbol))
-        .unwrap_or_else(|| panic!("expected {symbol} fixture"));
-
-    parse_instrument_any(raw, None, None, UnixNanos::default())
+    let raw = swap_instrument_definition(symbol);
+    parse_instrument_any(&raw, None, None, UnixNanos::default())
         .unwrap()
         .unwrap_or_else(|| panic!("expected parsed {symbol} instrument"))
+}
+
+fn swap_instrument_definition(symbol: &str) -> OKXInstrument {
+    let response: OKXResponse<OKXInstrument> =
+        serde_json::from_value(load_test_data("http_get_instruments_swap.json")).unwrap();
+    response
+        .data
+        .into_iter()
+        .find(|instrument| instrument.inst_id == Ustr::from(symbol))
+        .unwrap_or_else(|| panic!("expected {symbol} fixture"))
 }
 
 fn regular_order_detail_response(params: &HashMap<String, String>) -> serde_json::Value {
@@ -8982,16 +8986,27 @@ async fn test_filtered_stream_registers_metadata_before_replaying_orders_and_fil
 }
 
 #[rstest]
-#[case::positions("positions", false)]
-#[case::cached_positions("positions", true)]
-#[case::algo("algo", false)]
-#[case::spread("spread", false)]
+#[case::positions("positions", false, false)]
+#[case::cached_positions("positions", true, false)]
+#[case::superseded_positions("positions", false, true)]
+#[case::algo("algo", false, false)]
+#[case::spread("spread", false, false)]
 #[tokio::test]
 async fn test_filtered_stream_recovers_other_instrument_messages(
     #[case] kind: &str,
     #[case] cached: bool,
+    #[case] superseded: bool,
 ) {
     let mut server = BootstrapServer::start_with_active_orders(false).await;
+    let endpoint = MessagingSwitchboard::data_engine_process();
+
+    if superseded {
+        msgbus::register_any(
+            endpoint,
+            ShareableMessageHandler::from_typed(msgbus::send_response_envelope),
+        );
+    }
+
     let (mut client, mut rx, cache) = server.connect_filtered_with_spreads(kind == "spread").await;
 
     let mut message = match kind {
@@ -9025,7 +9040,7 @@ async fn test_filtered_stream_recovers_other_instrument_messages(
 
     if cached {
         let response = load_test_data("http_get_instruments_swap.json");
-        let raw = serde_json::from_value(
+        let mut raw: OKXInstrument = serde_json::from_value(
             response["data"]
                 .as_array()
                 .unwrap()
@@ -9035,6 +9050,7 @@ async fn test_filtered_stream_recovers_other_instrument_messages(
                 .clone(),
         )
         .unwrap();
+        raw.inst_id_code = None;
         let instrument = parse_instrument_any(&raw, None, None, UnixNanos::default())
             .unwrap()
             .unwrap();
@@ -9073,7 +9089,27 @@ async fn test_filtered_stream_recovers_other_instrument_messages(
 
     assert_eq!(instrument.id(), target);
     assert!(rx.try_recv().is_err());
-    register_stream_definition(&cache, &instrument);
+    let mut accepted = *instrument;
+    if superseded {
+        let InstrumentAny::CryptoPerpetual(definition) = &mut accepted else {
+            panic!("expected swap instrument");
+        };
+
+        definition.ts_init = UnixNanos::from(definition.ts_init.as_u64() + 1);
+        definition.price_precision = 2;
+        definition.price_increment = Price::from("0.05");
+        cache.borrow_mut().add_instrument(accepted.clone()).unwrap();
+
+        let completion = tokio::time::timeout(Duration::from_secs(5), data.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(&completion, DataEvent::ResponseEnvelope(response)
+            if response.completed() && response.response().is_none()));
+        AsyncRunner::handle_data_event(completion);
+    } else {
+        register_stream_definition(&cache, &accepted);
+    }
 
     for _ in 0..2 {
         let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
@@ -9102,11 +9138,16 @@ async fn test_filtered_stream_recovers_other_instrument_messages(
 
         assert_eq!(
             serde_json::to_value(cache.borrow().instrument(&target).unwrap()).unwrap(),
-            serde_json::to_value(&*instrument).unwrap()
+            serde_json::to_value(&accepted).unwrap()
         );
     }
 
     client.disconnect().await.unwrap();
+
+    if superseded {
+        msgbus::deregister_any(endpoint);
+    }
+
     assert!(server.requests.try_recv().is_err());
     server.assert_closed().await;
 }
@@ -11225,7 +11266,12 @@ async fn test_filtered_execution_recovers_current_instrument(
         });
 
     if cached_definition {
-        client.on_instrument(swap_instrument("BTC-USDT-SWAP"));
+        let mut raw = swap_instrument_definition("BTC-USDT-SWAP");
+        raw.inst_id_code = None;
+        let instrument = parse_instrument_any(&raw, None, None, UnixNanos::default())
+            .unwrap()
+            .unwrap();
+        client.on_instrument(instrument);
     }
 
     let cache_sink = Rc::clone(&cache);

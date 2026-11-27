@@ -694,6 +694,7 @@ pub struct PolymarketExecutionClientConfig {
     pub base_url_http: Option<String>,
     pub base_url_ws: Option<String>,
     pub base_url_data_api: Option<String>,
+    pub base_url_gamma: Option<String>,
     /// Optional HTTP or HTTPS proxy URL for all HTTP and WebSocket transports.
     pub proxy_url: Option<SecretString>,
     #[builder(default = 60)]
@@ -728,6 +729,7 @@ nautilus_core::impl_pyo3_config_getters!(PolymarketExecutionClientConfig {
     base_url_http: Option<String>,
     base_url_ws: Option<String>,
     base_url_data_api: Option<String>,
+    base_url_gamma: Option<String>,
     http_timeout_secs: u64,
     max_retries: u32,
     retry_delay_initial_ms: u64,
@@ -856,6 +858,13 @@ impl PolymarketExecutionClientConfig {
         self.base_url_data_api
             .clone()
             .unwrap_or_else(|| urls::data_api_url().to_string())
+    }
+
+    #[must_use]
+    pub fn gamma_url(&self) -> String {
+        self.base_url_gamma
+            .clone()
+            .unwrap_or_else(|| urls::gamma_api_url().to_string())
     }
 }
 

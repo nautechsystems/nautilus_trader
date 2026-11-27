@@ -353,16 +353,13 @@ pub(crate) fn catalog_data_type_from_session_feather_path(
     }
 
     let type_segment = components[type_index].as_str();
-    let file_name = components.last().map_or(type_segment, String::as_str);
 
-    let type_name = if type_segment.ends_with(".feather") {
-        file_name
-            .strip_suffix(".feather")
-            .and_then(|stem| stem.rsplit_once('_').map(|(type_name, _)| type_name))
-            .unwrap_or(type_segment)
-    } else {
-        type_segment
-    };
+    // A flat file's name starts with its type, and a refused one keeps that name
+    let type_name = type_segment
+        .strip_suffix(".feather")
+        .or_else(|| type_segment.strip_suffix(".feather.refused"))
+        .and_then(|stem| stem.rsplit_once('_').map(|(type_name, _)| type_name))
+        .unwrap_or(type_segment);
 
     catalog_data_type_from_path(type_name)
 }
@@ -691,6 +688,12 @@ mod tests {
         Some("custom")
     )]
     #[case::type_without_identifier("backtest/run-1/quotes/0001.feather", "quotes", None)]
+    #[case::refused(
+        "backtest/run-1/quotes/EURUSD.SIM/0001.feather.refused",
+        "quotes",
+        Some("EURUSD.SIM")
+    )]
+    #[case::flat_refused("backtest/run-1/quotes_1000-1.1.feather.refused", "quotes", None)]
     #[case::instrument_class_folder(
         "backtest/run-1/instruments/currency_pair/instruments_1.feather",
         "instruments",

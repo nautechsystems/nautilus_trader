@@ -495,7 +495,7 @@ fn test_spread_market_fill_emits_combo_and_leg_fills(
     cache.borrow_mut().add_instrument(leg_b.clone()).unwrap();
     cache.borrow_mut().add_instrument(spread.clone()).unwrap();
 
-    let ts = UnixNanos::from(1_715_248_800_000_000_000u64);
+    let ts = UnixNanos::from(1_715_248_800_000_000_000_u64);
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock.borrow_mut().set_time(ts);
     cache
@@ -629,7 +629,7 @@ fn test_spread_market_fill_sweeping_l2_levels_emits_leg_fills_per_fill(
     cache.borrow_mut().add_instrument(leg_b.clone()).unwrap();
     cache.borrow_mut().add_instrument(spread.clone()).unwrap();
 
-    let ts = UnixNanos::from(1_715_248_800_000_000_000u64);
+    let ts = UnixNanos::from(1_715_248_800_000_000_000_u64);
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
     clock.borrow_mut().set_time(ts);
     cache
@@ -908,56 +908,49 @@ fn test_spread_partial_fills_charge_leg_fees_once(
 #[rstest]
 #[case::missing_instrument(
     "((1))ESM4___(1)NQM4.XCME",
-    false,
-    true,
+    (false, true),
     "12930.50",
     OrderType::Market,
     TimeInForce::Gtc
 )]
 #[case::missing_quote(
     "((1))ESM4___(1)NQM4.XCME",
-    true,
-    false,
+    (true, false),
     "12930.50",
     OrderType::Market,
     TimeInForce::Gtc
 )]
 #[case::native_id(
     "ES-NQ.XCME",
-    true,
-    true,
+    (true, true),
     "12930.50",
     OrderType::Market,
     TimeInForce::Gtc
 )]
 #[case::duplicate_legs(
     "((1))ESM4___(1)ESM4.XCME",
-    true,
-    true,
+    (true, true),
     "0.25",
     OrderType::Market,
     TimeInForce::Gtc
 )]
 #[case::invalid_price_grid(
     "((1))ESM4___(1)NQM4.XCME",
-    true,
-    true,
+    (true, true),
     "12930.60",
     OrderType::Market,
     TimeInForce::Gtc
 )]
 #[case::initial_market_to_limit(
     "((1))ESM4___(1)NQM4.XCME",
-    true,
-    false,
+    (true, false),
     "12930.50",
     OrderType::MarketToLimit,
     TimeInForce::Gtc
 )]
 #[case::initial_market_to_limit_ioc(
     "((1))ESM4___(1)NQM4.XCME",
-    true,
-    false,
+    (true, false),
     "12930.50",
     OrderType::MarketToLimit,
     TimeInForce::Ioc
@@ -965,12 +958,13 @@ fn test_spread_partial_fills_charge_leg_fees_once(
 fn test_spread_preparation_failure_emits_no_fills(
     #[from(spread_account_id)] account_id: AccountId,
     #[case] spread_id: &str,
-    #[case] leg_b_present: bool,
-    #[case] leg_b_quoted: bool,
+    #[case] leg_b_state: (bool, bool),
     #[case] spread_price: &str,
     #[case] order_type: OrderType,
     #[case] time_in_force: TimeInForce,
+    #[values(false, true)] deferred: bool,
 ) {
+    let (leg_b_present, leg_b_quoted) = leg_b_state;
     let cache = spread_cache(account_id);
     let events = order_event_handler_with_cache(cache.clone());
     let leg_a = futures_contract_with_id("ESM4.XCME", "ESM4");
@@ -998,16 +992,27 @@ fn test_spread_preparation_failure_emits_no_fills(
         Some(AccountType::Margin),
         None,
     );
+    let pending = Rc::new(RefCell::new(Vec::new()));
+    if deferred {
+        let events = pending.clone();
+        engine.set_event_handler(Rc::new(move |event| events.borrow_mut().push(event)));
+    }
+
     engine.process_quote_tick(&spread_quote(spread.id(), spread_price, spread_price));
     let mut order = OrderTestBuilder::new(order_type)
         .instrument_id(spread.id())
         .side(OrderSide::Buy)
         .quantity(Quantity::from(3))
         .time_in_force(time_in_force)
-        .submit(true)
+        .submit(!deferred || order_type != OrderType::MarketToLimit)
         .build();
     assert_eq!(order.price(), None);
     engine.process_order(&mut order, account_id);
+    assert!(!engine.order_exists(order.client_order_id()));
+
+    for event in pending.take() {
+        msgbus::send_order_event(MessagingSwitchboard::exec_engine_process(), event);
+    }
 
     assert_eq!(saved_fills(&events), Vec::new());
     assert_eq!(
@@ -1023,7 +1028,14 @@ fn test_spread_preparation_failure_emits_no_fills(
         .order(&order.client_order_id())
         .unwrap()
         .clone();
-    assert_eq!(order.status(), OrderStatus::Canceled);
+
+    let expected_status = if deferred && order_type == OrderType::MarketToLimit {
+        OrderStatus::Rejected
+    } else {
+        OrderStatus::Canceled
+    };
+
+    assert_eq!(order.status(), expected_status);
     assert_eq!(order.filled_qty(), Quantity::from(0));
     assert_eq!(order.price(), None);
 }
@@ -1467,6 +1479,13 @@ fn test_option_spread_fees_use_each_leg_underlying_price_context(
     let mut leg_a = option_contract_appl();
     leg_a.id = InstrumentId::from("AAPL-C150.OPRA");
     leg_a.raw_symbol = leg_a.id.symbol;
+    let underlying = underlying_equity("NASDAQ");
+    let underlying_id = underlying.id;
+    cache
+        .borrow_mut()
+        .add_instrument(underlying.into())
+        .unwrap();
+    leg_a.underlying_instrument_id = Some(underlying_id);
     leg_a.multiplier = Quantity::from(100);
     leg_a.activation_ns = UnixNanos::default();
     let mut leg_b = leg_a.clone();
@@ -1490,7 +1509,7 @@ fn test_option_spread_fees_use_each_leg_underlying_price_context(
 
     cache_leg_quote(&cache, leg_a.id(), "10.00", "10.00");
     cache_leg_quote(&cache, leg_b.id(), "1.00", "1.00");
-    cache_leg_quote(&cache, InstrumentId::from("AAPL.OPRA"), "150.00", "150.00");
+    cache_leg_quote(&cache, underlying_id, "150.00", "150.00");
     let fee_model = CappedOptionFeeModel::new(dec!(0.001), dec!(0.002), None).unwrap();
 
     let matching = OrderMatchingEngine::new(
@@ -2101,6 +2120,7 @@ fn test_market_to_limit_slippage_error_preserves_conversion_boundary(
     #[from(spread_account_id)] account_id: AccountId,
     #[case] spread_order: bool,
     #[case] time_in_force: TimeInForce,
+    #[values(false, true)] deferred: bool,
 ) {
     let cache = spread_cache(account_id);
     let events = order_event_handler_with_cache(cache.clone());
@@ -2111,7 +2131,7 @@ fn test_market_to_limit_slippage_error_preserves_conversion_boundary(
 
     if let InstrumentAny::FuturesContract(contract) = &mut instrument {
         contract.activation_ns = UnixNanos::default();
-        contract.expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
+        contract.expiration_ns = UnixNanos::from(2_000_000_000_000_000_000_u64);
     }
 
     for definition in [&leg_a, &leg_b, &instrument] {
@@ -2135,15 +2155,26 @@ fn test_market_to_limit_slippage_error_preserves_conversion_boundary(
         checks_before_failure: 0,
     }));
 
+    let pending = Rc::new(RefCell::new(Vec::new()));
+    if deferred {
+        let events = pending.clone();
+        engine.set_event_handler(Rc::new(move |event| events.borrow_mut().push(event)));
+    }
+
     engine.process_quote_tick(&spread_quote(instrument.id(), "12930.25", "12930.50"));
     let mut order = OrderTestBuilder::new(OrderType::MarketToLimit)
         .instrument_id(instrument.id())
         .side(OrderSide::Buy)
         .quantity(Quantity::from(1))
         .time_in_force(time_in_force)
-        .submit(true)
+        .submit(!deferred)
         .build();
     engine.process_order(&mut order, account_id);
+    assert_eq!(engine.order_exists(order.client_order_id()), !spread_order);
+
+    for event in pending.take() {
+        msgbus::send_order_event(MessagingSwitchboard::exec_engine_process(), event);
+    }
 
     let updates: Vec<_> = events
         .get_messages()
@@ -2165,7 +2196,14 @@ fn test_market_to_limit_slippage_error_preserves_conversion_boundary(
     if spread_order {
         assert_eq!(updates, Vec::new());
         assert_eq!(order.price(), None);
-        assert_eq!(order.status(), OrderStatus::Canceled);
+
+        let expected_status = if deferred {
+            OrderStatus::Rejected
+        } else {
+            OrderStatus::Canceled
+        };
+
+        assert_eq!(order.status(), expected_status);
     } else {
         assert_eq!(updates.len(), 1);
         assert_eq!(updates[0].price, Some(Price::from("12930.50")));
@@ -2457,7 +2495,7 @@ fn futures_spread_with_generic_id(instrument_id: &str, symbol: &str) -> Instrume
             Ustr::from("ES_NQ"),
             Ustr::from("SPREAD"),
             UnixNanos::default(),
-            UnixNanos::from(2_000_000_000_000_000_000u64),
+            UnixNanos::from(2_000_000_000_000_000_000_u64),
             Currency::USD(),
             2,
             Price::from("0.25"),

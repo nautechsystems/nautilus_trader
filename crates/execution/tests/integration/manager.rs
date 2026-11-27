@@ -3990,39 +3990,44 @@ fn test_handle_oto_exec_spawn_update_uses_filled_sibling_position() {
 }
 
 #[rstest]
-fn test_handle_oto_fill_uses_completed_and_active_spawn_totals() {
+#[case::members_only(false, false)]
+#[case::purge_primary(true, false)]
+#[case::purge_closed_orders(true, true)]
+fn test_handle_oto_fill_uses_completed_and_active_spawn_totals(
+    #[case] purge_primary: bool,
+    #[case] bulk_purge: bool,
+) {
     let (clock, cache) = create_test_components();
     let mut manager = OrderManager::new(clock, cache.clone(), false);
     let instrument = InstrumentAny::CurrencyPair(audusd_sim());
     let spawn_id = ClientOrderId::from("O-SPAWN");
-    let first_id = ClientOrderId::from("O-SPAWN-1");
+    let first_id = if purge_primary {
+        spawn_id
+    } else {
+        ClientOrderId::from("O-SPAWN-1")
+    };
+
     let second_id = ClientOrderId::from("O-SPAWN-2");
     let child_id = ClientOrderId::from("O-CHILD");
     let exec_algorithm_id = ExecAlgorithmId::from("TWAP");
-    let first = OrderTestBuilder::new(OrderType::Limit)
-        .instrument_id(instrument.id())
-        .client_order_id(first_id)
-        .side(OrderSide::Buy)
-        .price(Price::from("1.00000"))
-        .quantity(Quantity::from(60_000))
-        .contingency_type(ContingencyType::Oto)
-        .linked_order_ids(vec![child_id])
-        .exec_algorithm_id(exec_algorithm_id)
-        .exec_spawn_id(spawn_id)
-        .submit(true)
-        .build();
-    let second = OrderTestBuilder::new(OrderType::Limit)
-        .instrument_id(instrument.id())
-        .client_order_id(second_id)
-        .side(OrderSide::Buy)
-        .price(Price::from("1.00000"))
-        .quantity(Quantity::from(40_000))
-        .contingency_type(ContingencyType::Oto)
-        .linked_order_ids(vec![child_id])
-        .exec_algorithm_id(exec_algorithm_id)
-        .exec_spawn_id(spawn_id)
-        .submit(true)
-        .build();
+
+    let spawn_order = |id, quantity| {
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(id)
+            .side(OrderSide::Buy)
+            .price(Price::from("1.00000"))
+            .quantity(quantity)
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_id])
+            .exec_algorithm_id(exec_algorithm_id)
+            .exec_spawn_id(spawn_id)
+            .submit(true)
+            .build()
+    };
+
+    let first = spawn_order(first_id, Quantity::from(60_000));
+    let second = spawn_order(second_id, Quantity::from(40_000));
     let child = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(instrument.id())
         .client_order_id(child_id)
@@ -4048,6 +4053,41 @@ fn test_handle_oto_fill_uses_completed_and_active_spawn_totals() {
         "T-SPAWN-1",
         Quantity::from(60_000),
     );
+
+    let expected_filled_qty = if bulk_purge {
+        let completed_id = ClientOrderId::from("O-SPAWN-COMPLETED");
+        let completed = spawn_order(completed_id, Quantity::from(20_000));
+        cache
+            .borrow_mut()
+            .add_order(completed.clone(), None, None, false)
+            .unwrap();
+        apply_accepted(&cache, &completed, "V-SPAWN-COMPLETED");
+        apply_fill(
+            &cache,
+            &completed,
+            &instrument,
+            "T-SPAWN-COMPLETED",
+            completed.quantity(),
+        );
+        Quantity::from(90_000)
+    } else {
+        Quantity::from(70_000)
+    };
+
+    let purge = |cache: &mut Cache| {
+        if bulk_purge {
+            cache
+                .purge_closed_orders(UnixNanos::from(1), 0, false)
+                .unwrap();
+        } else {
+            cache.purge_order(first_id, false).unwrap();
+        }
+    };
+
+    if purge_primary {
+        purge(&mut cache.borrow_mut());
+    }
+
     let event = apply_fill(
         &cache,
         &second,
@@ -4062,7 +4102,7 @@ fn test_handle_oto_fill_uses_completed_and_active_spawn_totals() {
         actions.first(),
         Some(OrderManagerAction::ModifyLocalQuantity { order, quantity })
             if order.client_order_id() == child_id
-                && *quantity == Quantity::from(70_000)
+                && *quantity == expected_filled_qty
     ));
 
     let update = apply_update(&cache, &second, Quantity::from(50_000));
@@ -4077,8 +4117,27 @@ fn test_handle_oto_fill_uses_completed_and_active_spawn_totals() {
     assert!(matches!(
         corrective.as_slice(),
         [OrderManagerAction::ModifyLocalQuantity { order, quantity }]
-            if order.client_order_id() == child_id && *quantity == Quantity::from(70_000)
+            if order.client_order_id() == child_id && *quantity == expected_filled_qty
     ));
+
+    if purge_primary {
+        assert!(cache.borrow().order_exists(&first_id));
+        apply_accepted(&cache, &child, "V-OTO-CHILD");
+        let canceled = TestOrderEventStubs::canceled(
+            &child,
+            AccountId::from("ACCOUNT-001"),
+            Some(VenueOrderId::from("V-OTO-CHILD")),
+        );
+        let mut cache = cache.borrow_mut();
+        cache.update_order(&canceled).unwrap();
+        purge(&mut cache);
+
+        assert!(!cache.order_exists(&first_id));
+        assert_eq!(
+            cache.exec_spawn_total_filled_qty(&spawn_id, false),
+            Some(Quantity::from(10_000)),
+        );
+    }
 }
 
 #[rstest]

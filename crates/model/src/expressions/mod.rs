@@ -264,7 +264,7 @@ mod prop_tests {
 
     fn finite_f64() -> impl Strategy<Value = f64> {
         prop_oneof![
-            -1e12f64..1e12,
+            -1e12_f64..1e12,
             prop::num::f64::NORMAL,
             Just(0.0),
             Just(-0.0),

@@ -101,6 +101,12 @@ Plain `#[rstest]` bodies run outside a madsim runtime. In that context, the seam
 `SystemTime::now()`, which uses the same real syscall as a normal build. Production paths under
 simulation run inside a madsim runtime and receive virtual time.
 
+Use `nautilus_core::time::block_on_simulation` to give a run fresh state for the global realtime
+`AtomicTime`. All tasks polled during the call share this state. The previous state returns when
+the call ends or panics. Direct `Runtime::block_on` calls share the active clock scope or use
+process-wide state outside a scope. This also applies to the run started by `#[madsim::test]`.
+Use `block_on_simulation` for each nested runtime that needs its own clock scope.
+
 #### Monotonic time
 
 Monotonic reads route through `nautilus_common::live::dst::time::Instant`. Normal builds resolve

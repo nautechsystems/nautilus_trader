@@ -148,7 +148,7 @@ async fn handle_ping() -> Response {
 }
 
 async fn handle_time() -> Response {
-    json_response(&json!({"serverTime": 1700000000000_i64}))
+    json_response(&json!({"serverTime": 1_700_000_000_000_i64}))
 }
 
 async fn handle_exchange_info(State(state): State<TestServerState>) -> Response {
@@ -169,9 +169,9 @@ async fn handle_coinm_exchange_info(State(state): State<TestServerState>) -> Res
 
 async fn handle_depth() -> Response {
     json_response(&json!({
-        "lastUpdateId": 1027024,
-        "E": 1700000000000_i64,
-        "T": 1700000000000_i64,
+        "lastUpdateId": 1_027_024,
+        "E": 1_700_000_000_000_i64,
+        "T": 1_700_000_000_000_i64,
         "bids": [["50000.00", "1.000"], ["49999.00", "2.000"]],
         "asks": [["50001.00", "0.500"], ["50002.00", "1.500"]]
     }))
@@ -373,7 +373,7 @@ async fn handle_open_interest_hist(raw_query: RawQuery) -> Response {
                 "symbol": "BTCUSDT",
                 "sumOpenInterest": "100.0",
                 "sumOpenInterestValue": "1000.0",
-                "timestamp": 1700000000000_i64
+                "timestamp": 1_700_000_000_000_i64
             }
         ]));
     }
@@ -559,7 +559,7 @@ async fn test_server_time() {
     let client = create_raw_client(&addr, None, None);
 
     let result: serde_json::Value = client.get("time", None::<&()>, false, false).await.unwrap();
-    assert_eq!(result["serverTime"], 1700000000000_i64);
+    assert_eq!(result["serverTime"], 1_700_000_000_000_i64);
 }
 
 #[rstest]

@@ -218,7 +218,7 @@ mod tests {
                 false,
             ),
         ];
-        let decoded = StubRemoteData::decode_data_batch(schema.metadata(), batch).unwrap();
+        let decoded = StubRemoteData::decode_data_batch(&schema.metadata().into(), batch).unwrap();
 
         let [Data::Custom(custom)] = decoded.as_slice() else {
             panic!("expected one native custom data value");
@@ -307,7 +307,7 @@ mod tests {
         let data = unsafe {
             ArrayData::builder(DataType::List(Arc::clone(&child)))
                 .len(3)
-                .add_buffer(Buffer::from_slice_ref([0i32, 1, 2, 3]))
+                .add_buffer(Buffer::from_slice_ref([0_i32, 1, 2, 3]))
                 .add_child_data(values.into_data())
                 .build_unchecked()
         };
@@ -329,7 +329,7 @@ mod tests {
         let data = unsafe {
             ArrayData::builder(DataType::List(Arc::clone(&child)))
                 .len(2)
-                .add_buffer(Buffer::from_slice_ref([0i32, 1, 2]))
+                .add_buffer(Buffer::from_slice_ref([0_i32, 1, 2]))
                 .add_child_data(values.into_data())
                 .build_unchecked()
         };
@@ -351,8 +351,8 @@ mod tests {
         let values = Int64Array::from(vec![Some(1), None, Some(3)]);
         let data = ArrayData::builder(DataType::ListView(Arc::clone(&child)))
             .len(2)
-            .add_buffer(Buffer::from_slice_ref([0i32, 1]))
-            .add_buffer(Buffer::from_slice_ref([1i32, 2]))
+            .add_buffer(Buffer::from_slice_ref([0_i32, 1]))
+            .add_buffer(Buffer::from_slice_ref([1_i32, 2]))
             .add_child_data(values.into_data())
             .build()
             .unwrap();

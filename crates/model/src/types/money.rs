@@ -23,6 +23,8 @@
 //!
 //! Adding or subtracting two `Money` values requires matching effective fixed-point scales.
 //! These operations panic on a scale mismatch.
+//! An intermediate result can exceed the domain bounds if it fits the backing integer.
+//! Use [`Money::from_raw_checked`] to validate a completed result.
 //! Comparisons and hashes account for scale differences without rounding.
 //!
 //! | Operation         | Result    | Notes                             |
@@ -1613,6 +1615,21 @@ mod tests {
         let result = money1 - money2;
         assert!(approx_eq!(f64, result.as_f64(), 750.0, epsilon = 1e-9));
         assert_eq!(result.currency, usd);
+    }
+
+    #[rstest]
+    fn test_arithmetic_allows_raw_intermediates() {
+        let usd = Currency::USD();
+        let one_unit = Money::from_raw(1, usd);
+        let max = Money::from_raw(MONEY_RAW_MAX, usd);
+        let min = Money::from_raw(MONEY_RAW_MIN, usd);
+        let above_max = max + one_unit;
+        let below_min = min - one_unit;
+
+        assert_eq!(above_max.raw(), MONEY_RAW_MAX + 1);
+        assert_eq!(below_min.raw(), MONEY_RAW_MIN - 1);
+        assert_eq!(above_max - one_unit, max);
+        assert_eq!(below_min + one_unit, min);
     }
 
     #[rstest]

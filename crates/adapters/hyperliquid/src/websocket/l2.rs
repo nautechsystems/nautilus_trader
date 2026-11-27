@@ -262,7 +262,7 @@ mod tests {
         };
         let mut book = CompactBook::new(snapshot);
         book.apply(update).unwrap();
-        assert_eq!(book.data.time, 1793945698742);
+        assert_eq!(book.data.time, 1_793_945_698_742);
         assert_eq!(book.data.levels[0].len(), 20);
         assert_eq!(book.data.levels[1].len(), 20);
         assert_eq!(

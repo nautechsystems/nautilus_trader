@@ -179,7 +179,7 @@ mod tests {
         let owner = address!("1234567890123456789012345678901234567890");
         let tick_lower = -100;
         let tick_upper = 100;
-        let liquidity = 1000i128;
+        let liquidity = 1000_i128;
 
         let position = PoolPosition::new(owner, tick_lower, tick_upper, liquidity);
 

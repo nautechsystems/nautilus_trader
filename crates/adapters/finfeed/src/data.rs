@@ -275,8 +275,19 @@ impl DataClient for FinFeedDataClient {
         .await
         .context("FinFeed bootstrap timed out")?;
 
-        if let Err(Error::Http { status, .. }) = &loaded {
-            log::error!("FinFeed bootstrap failed with HTTP status {status}");
+        match &loaded {
+            Err(Error::Http { status, .. }) => {
+                log::error!("FinFeed bootstrap failed with HTTP status {status}");
+            }
+            Err(
+                e @ (Error::Definition { .. }
+                | Error::Unavailable(_)
+                | Error::Validation(_)
+                | Error::KalshiMetadata),
+            ) => {
+                log::error!("FinFeed bootstrap failed: {}", e.to_string().escape_debug());
+            }
+            _ => {}
         }
 
         let loaded = loaded?;

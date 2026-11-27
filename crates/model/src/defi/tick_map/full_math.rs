@@ -205,13 +205,12 @@ impl FullMath {
             return U256::ZERO;
         }
 
-        if x == U256::from(1u128) {
-            return U256::from(1u128);
+        if x == U256::from(1_u128) {
+            return U256::from(1_u128);
         }
 
         let mut z = x;
-        let mut y = (x + U256::from(1u128)) >> 1;
-
+        let mut y = (x + U256::from(1_u128)) >> 1;
         while y < z {
             z = y;
             y = (x / z + z) >> 1;
@@ -531,8 +530,8 @@ mod tests {
     #[rstest]
     fn test_truncate_to_u128_preserves_small_values() {
         // Small value (fits in u128) should be preserved exactly
-        let value = U256::from(12345u128);
-        assert_eq!(FullMath::truncate_to_u128(value), 12345u128);
+        let value = U256::from(12345_u128);
+        assert_eq!(FullMath::truncate_to_u128(value), 12345_u128);
 
         // u128::MAX should be preserved
         let max_value = U256::from(u128::MAX);
@@ -548,7 +547,7 @@ mod tests {
 
         // Value with both high and low bits set:
         // High 128 bits = 0xFFFF...FFFF, Low 128 bits = 0x1234
-        let value = (U256::from(u128::MAX) << 128) | U256::from(0x1234u128);
-        assert_eq!(FullMath::truncate_to_u128(value), 0x1234u128);
+        let value = (U256::from(u128::MAX) << 128) | U256::from(0x1234_u128);
+        assert_eq!(FullMath::truncate_to_u128(value), 0x1234_u128);
     }
 }

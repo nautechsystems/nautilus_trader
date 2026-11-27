@@ -13,20 +13,28 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use ahash::AHashMap;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
-    enums::{LiquiditySide, OptionKind, OrderSide, OrderType, PriceType, TimeInForce},
+    accounts::{Account, AccountAny},
+    enums::{
+        LiquiditySide, OmsType, OptionKind, OptionPremiumStyle, OrderSide, OrderType, PriceType,
+        SettlementType, TimeInForce,
+    },
     events::{OrderEventAny, OrderFilled},
-    identifiers::{ClientOrderId, InstrumentId, TradeId, VenueOrderId},
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId,
+    },
     instruments::{Instrument, InstrumentAny},
     orders::{MarketOrder, Order, OrderAny, OrderCore},
     position::Position,
-    types::{Money, Price, Quantity},
+    types::{Money, Price, Quantity, fixed::FIXED_PRECISION, quantity::QuantityRaw},
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::OrderMatchingEngine;
+use crate::engine::netting_position_id;
 
 impl OrderMatchingEngine {
     pub(super) fn process_option_expiry(&mut self, ts_now: UnixNanos) -> anyhow::Result<bool> {
@@ -45,76 +53,68 @@ impl OrderMatchingEngine {
             return Ok(true);
         }
 
-        let underlying = match self.instrument.underlying() {
-            Some(u) => u,
-            None => {
-                return Ok(self.option_settlement_retry(
-                    "missing-underlying",
-                    &format!("No underlying for option {instrument_id}"),
-                ));
+        let (underlying_id, settlement_type) = match &self.instrument {
+            InstrumentAny::OptionContract(option) => {
+                (option.underlying_instrument_id, option.settlement_type)
             }
+            InstrumentAny::CryptoOption(option) => {
+                (option.underlying_instrument_id, option.settlement_type)
+            }
+            _ => unreachable!("Option expiry requires a vanilla option"),
         };
 
-        let same_venue_id = InstrumentId::from(format!("{underlying}.{}", self.venue).as_str());
-
-        let lookup = {
-            let cache = self.cache.borrow();
-            if cache.instrument(&same_venue_id).is_some() {
-                UnderlyingLookup::Found(same_venue_id)
-            } else {
-                let matches: Vec<InstrumentId> = cache
-                    .instrument_ids(None)
-                    .into_iter()
-                    .filter(|id| id.symbol.as_str() == underlying.as_str())
-                    .copied()
-                    .collect();
-
-                match matches.len() {
-                    0 => UnderlyingLookup::NotFound,
-                    1 => {
-                        let resolved = matches[0];
-                        log::info!(
-                            "Resolved underlying for option {instrument_id} via cross-venue fallback: {resolved}"
-                        );
-                        UnderlyingLookup::Found(resolved)
-                    }
-                    _ => UnderlyingLookup::Ambiguous(matches),
-                }
-            }
+        let Some(settlement_type) = settlement_type else {
+            return Ok(self.option_settlement_retry(
+                "missing-settlement-type",
+                &format!("No settlement type for option {instrument_id}"),
+            ));
         };
 
-        let underlying_id = match lookup {
-            UnderlyingLookup::Found(id) => id,
-            UnderlyingLookup::NotFound => {
-                return Ok(self.option_settlement_retry(
-                    "missing-underlying-instrument",
-                    &format!("No underlying instrument for option {instrument_id}"),
-                ));
-            }
-            UnderlyingLookup::Ambiguous(candidates) => {
-                let names = candidates
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                return Ok(self.option_settlement_retry(
-                    "ambiguous-underlying-instrument",
-                    &format!("Ambiguous underlying for option {instrument_id}: {names}"),
-                ));
-            }
+        let Some(underlying_id) = underlying_id else {
+            return Ok(self.option_settlement_retry(
+                "missing-underlying-id",
+                &format!("No underlying instrument ID for option {instrument_id}"),
+            ));
         };
 
-        let underlying_instrument = self
-            .cache
-            .borrow()
-            .instrument(&underlying_id)
-            .cloned()
-            .expect("underlying instrument resolved above");
+        anyhow::ensure!(
+            underlying_id != instrument_id,
+            "Option {instrument_id} cannot be its own underlying"
+        );
 
-        // Resolve the underlying price by the underlying's instrument type. An index
-        // is disseminated via `IndexPriceUpdate` (it does not trade), so its level is
-        // held in the cache's index-price store rather than the trade/quote `price(...)`
-        // store; a tradeable underlying (e.g. an equity) keeps the `Last` trade lookup.
+        let underlying_instrument = self.cache.borrow().instrument(&underlying_id).cloned();
+
+        let Some(underlying_instrument) = underlying_instrument else {
+            return Ok(self.option_settlement_retry(
+                "missing-underlying-instrument",
+                &format!(
+                    "Underlying instrument {underlying_id} for option {instrument_id} is not cached"
+                ),
+            ));
+        };
+
+        if settlement_type == SettlementType::Physical {
+            anyhow::ensure!(
+                !matches!(underlying_instrument, InstrumentAny::IndexInstrument(_)),
+                "Cannot physically deliver reference index {underlying_id}"
+            );
+            anyhow::ensure!(
+                !underlying_instrument.is_spread(),
+                "Cannot physically deliver spread underlying {underlying_id}"
+            );
+        }
+
+        let underlying_currency = underlying_instrument.quote_currency();
+        let strike_currency = self
+            .instrument
+            .strike_currency()
+            .expect("Option must have strike currency");
+        anyhow::ensure!(
+            underlying_currency == strike_currency,
+            "Underlying {underlying_id} is priced in {underlying_currency}, option {instrument_id} has a {strike_currency} strike"
+        );
+
+        // Index levels arrive as IndexPriceUpdate events, separately from trade prices
         let underlying_price = {
             let cache = self.cache.borrow();
             if matches!(underlying_instrument, InstrumentAny::IndexInstrument(_)) {
@@ -129,7 +129,7 @@ impl OrderMatchingEngine {
             None => {
                 return Ok(self.option_settlement_retry(
                     "missing-underlying-price",
-                    &format!("No underlying price for option {instrument_id}"),
+                    &format!("No price for underlying {underlying_id} of option {instrument_id}"),
                 ));
             }
         };
@@ -148,13 +148,12 @@ impl OrderMatchingEngine {
             .instrument_close
             .as_ref()
             .map(|close| close.close_price);
-        let should_exercise = self.option_should_exercise(underlying_price);
 
         let plan = self.option_create_settlement_plan(
             &positions,
             &underlying_instrument,
             underlying_price,
-            should_exercise,
+            settlement_type,
             ts_now,
             option_close_price,
         )?;
@@ -176,46 +175,81 @@ impl OrderMatchingEngine {
         positions: &[Position],
         underlying_instrument: &InstrumentAny,
         underlying_price: Price,
-        should_exercise: bool,
+        settlement_type: SettlementType,
         ts_now: UnixNanos,
         option_close_price: Option<Price>,
     ) -> anyhow::Result<OptionSettlementPlan> {
-        let mut legs = Vec::new();
+        let should_exercise = self.option_should_exercise(underlying_price);
+        if settlement_type == SettlementType::Physical && should_exercise {
+            let mut legs = Vec::with_capacity(positions.len() * 2);
+            let mut netting_owners = AHashMap::new();
 
-        for position in positions {
-            if should_exercise {
-                self.option_plan_exercise_position(
-                    &mut legs,
+            for position in positions {
+                let client_id =
+                    self.option_position_client_id(position, underlying_instrument.id());
+                self.validate_option_delivery_netting(
+                    position,
+                    underlying_instrument.id(),
+                    client_id,
+                    &mut netting_owners,
+                )?;
+                legs.extend(self.option_plan_physical_settlement(
                     position,
                     underlying_instrument,
-                    underlying_price,
+                    client_id,
                     ts_now,
-                    option_close_price,
-                )?;
-            } else {
-                let close_px = option_close_price
-                    .unwrap_or_else(|| Price::zero(self.instrument.price_precision()));
-                legs.push(self.option_plan_close(position, close_px, ts_now, "OTM"));
+                )?);
             }
+
+            return Ok(OptionSettlementPlan { legs });
         }
+
+        if settlement_type == SettlementType::Cash {
+            let settlement_currency = self.instrument.settlement_currency();
+            anyhow::ensure!(
+                self.instrument.quote_currency() == settlement_currency
+                    && self.instrument.cost_currency() == settlement_currency,
+                "Currency conversion is required for cash settlement of {} in {settlement_currency}",
+                self.instrument.id()
+            );
+        }
+
+        let price = match (option_close_price, should_exercise) {
+            (Some(price), _) => price,
+            (None, true) => {
+                self.option_cash_settlement_price(underlying_price, underlying_instrument)?
+            }
+            (None, false) => Price::zero(self.instrument.price_precision()),
+        };
+
+        anyhow::ensure!(
+            !price.is_sentinel(),
+            "Invalid option expiry price for {}",
+            self.instrument.id()
+        );
+
+        let tag = if should_exercise { "CASH" } else { "OTM" };
+        let legs = positions
+            .iter()
+            .map(|position| self.option_plan_close(position, price, ts_now, tag))
+            .collect();
 
         Ok(OptionSettlementPlan { legs })
     }
 
-    fn option_apply_settlement_plan(&mut self, plan: OptionSettlementPlan) -> anyhow::Result<()> {
+    fn option_apply_settlement_plan(&self, plan: OptionSettlementPlan) -> anyhow::Result<()> {
         self.option_register_settlement_plan(&plan)?;
-
-        for leg in &plan.legs {
-            self.account_ids
-                .insert(leg.fill.trader_id, leg.fill.account_id);
-        }
-
         for leg in &plan.legs {
             self.publish_order_initialized(&leg.order);
         }
 
         for leg in &plan.legs {
-            self.generate_order_accepted(&leg.order, leg.fill.venue_order_id);
+            let event = self.create_order_accepted_for_account(
+                &leg.order,
+                leg.fill.venue_order_id,
+                leg.fill.account_id,
+            );
+            self.dispatch_order_event(event);
         }
 
         for leg in plan.legs {
@@ -230,7 +264,12 @@ impl OrderMatchingEngine {
             let client_order_id = leg.order.client_order_id();
             let mut cache = self.cache.borrow_mut();
             cache
-                .add_order(leg.order.clone(), leg.fill.position_id, None, false)
+                .add_order(
+                    leg.order.clone(),
+                    leg.fill.position_id,
+                    leg.client_id,
+                    false,
+                )
                 .map_err(|e| {
                     anyhow::anyhow!("cannot add settlement order {client_order_id}: {e}")
                 })?;
@@ -262,16 +301,15 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn option_settlement_price(&self, underlying_price: Price, cash_settled: bool) -> Price {
+    fn option_cash_settlement_price(
+        &self,
+        underlying_price: Price,
+        underlying_instrument: &InstrumentAny,
+    ) -> anyhow::Result<Price> {
         let strike = self
             .instrument
             .strike_price()
-            .expect("option must have strike");
-
-        if !cash_settled {
-            return strike;
-        }
-
+            .expect("Option must have strike");
         let spot = underlying_price.as_decimal();
         let strike_value = strike.as_decimal();
         let intrinsic = match self.instrument.option_kind() {
@@ -279,62 +317,122 @@ impl OrderMatchingEngine {
             _ => (strike_value - spot).max(Decimal::ZERO),
         };
 
-        // Inverse options quote the premium in the base currency, so the quote-point
-        // payout converts at the settlement spot.
-        let (value, precision) = if self.instrument.is_inverse() {
-            let value = intrinsic
-                .checked_div(spot)
-                .expect("inverse option settlement requires a positive underlying price");
-            (value, self.instrument.price_precision())
-        } else {
-            (intrinsic, strike.precision)
-        };
+        let settlement_currency = self.instrument.settlement_currency();
 
-        Price::from_decimal_dp(value, precision).expect("Invalid option settlement price")
-    }
+        if self.instrument.is_inverse() {
+            if !matches!(underlying_instrument, InstrumentAny::IndexInstrument(_)) {
+                let base_currency = underlying_instrument.base_currency().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Underlying {} has no base currency for inverse settlement",
+                        underlying_instrument.id()
+                    )
+                })?;
 
-    fn option_plan_exercise_position(
-        &self,
-        legs: &mut Vec<OptionSettlementLeg>,
-        position: &Position,
-        underlying_instrument: &InstrumentAny,
-        underlying_price: Price,
-        ts_now: UnixNanos,
-        option_close_price: Option<Price>,
-    ) -> anyhow::Result<()> {
-        if matches!(underlying_instrument, InstrumentAny::IndexInstrument(_)) {
-            let close_px = option_close_price
-                .unwrap_or_else(|| self.option_settlement_price(underlying_price, true));
-            legs.push(self.option_plan_close(position, close_px, ts_now, "CASH"));
-        } else {
-            legs.extend(self.option_plan_physical_settlement(
-                position,
-                underlying_instrument,
-                underlying_price,
-                ts_now,
+                anyhow::ensure!(
+                    base_currency == settlement_currency,
+                    "Cannot settle {} in {settlement_currency} using underlying base currency {base_currency}",
+                    self.instrument.id()
+                );
+            }
+
+            // Convert the strike-currency payout to the premium currency at settlement spot
+            let value = intrinsic.checked_div(spot).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Cannot convert intrinsic value {intrinsic} at settlement spot {spot}"
+                )
+            })?;
+
+            return Ok(Price::from_decimal_dp(
+                value,
+                self.instrument.price_precision(),
             )?);
         }
 
-        Ok(())
+        anyhow::ensure!(
+            self.instrument.strike_currency() == Some(settlement_currency),
+            "Cannot settle intrinsic value of {} in {settlement_currency} without converting its strike currency",
+            self.instrument.id()
+        );
+        Ok(Price::from_decimal_dp(
+            intrinsic,
+            strike.precision.max(underlying_price.precision),
+        )?)
     }
 
     fn option_plan_physical_settlement(
         &self,
         position: &Position,
         underlying_instrument: &InstrumentAny,
-        underlying_price: Price,
+        client_id: Option<ClientId>,
         ts_now: UnixNanos,
     ) -> anyhow::Result<[OptionSettlementLeg; 2]> {
+        let underlying_id = underlying_instrument.id();
+        let futures_style =
+            underlying_instrument.premium_style() == Some(OptionPremiumStyle::FuturesStyle);
+
+        let account_type = {
+            let cache = self.cache.borrow();
+            let account = cache.account_ref(&position.account_id);
+            if futures_style {
+                if let Some(close) = cache.instrument_expiry_close(&underlying_id)
+                    && close.ts_init <= ts_now
+                {
+                    anyhow::bail!(
+                        "Cannot deliver {underlying_id}: underlying expired at {}",
+                        close.ts_init
+                    );
+                }
+
+                let currency = underlying_instrument.settlement_currency();
+                anyhow::ensure!(
+                    matches!(account.as_deref(), Some(AccountAny::Margin(margin)) if margin.balance_total(Some(currency)).is_some()),
+                    "Cannot deliver futures-style option {underlying_id} to {} without a margin account balance in {currency}",
+                    position.account_id
+                );
+            }
+
+            account.map_or(self.account_type, |account| account.account_type())
+        };
+
+        Self::validate_account_instrument(account_type, underlying_instrument)?;
+        if let Some(expiration) = underlying_instrument.expiration_ns()
+            && expiration != UnixNanos::default()
+            && (expiration < ts_now || (futures_style && expiration == ts_now))
+        {
+            anyhow::bail!("Cannot deliver {underlying_id}: underlying expired at {expiration}");
+        }
+
         let multiplier = self.instrument.multiplier();
         let position_qty = position.quantity.as_decimal();
-        let underlying_multiplier = underlying_instrument.multiplier().as_decimal();
+        let underlying_multiplier = underlying_instrument.multiplier();
         let underlying_precision = underlying_instrument.size_precision();
-        let delivery = position_qty * multiplier.as_decimal() / underlying_multiplier;
+        let exercise_qty = position_qty
+            .checked_mul(multiplier.as_decimal())
+            .ok_or_else(|| anyhow::anyhow!("Option exercise quantity exceeds decimal range"))?;
+
+        let delivery = exercise_qty.checked_div(underlying_multiplier.as_decimal()).ok_or_else(|| {
+            anyhow::anyhow!("Cannot divide exercise quantity {exercise_qty} by underlying multiplier {underlying_multiplier}")
+        })?;
+
         let underlying_qty = Quantity::from_decimal_dp(delivery, underlying_precision)?;
-        if underlying_qty.as_decimal() != delivery {
+        let precision = FIXED_PRECISION
+            .max(position.quantity.precision)
+            .max(multiplier.precision)
+            .max(underlying_qty.precision)
+            .max(underlying_multiplier.precision);
+
+        let scaled = |qty: Quantity| {
+            let extra = u32::from(precision - qty.precision.max(FIXED_PRECISION));
+            qty.raw() * QuantityRaw::pow(10, extra)
+        };
+
+        // Check the full fixed-point products because Decimal multiplication can round
+        if !underlying_qty.is_positive()
+            || scaled(underlying_qty).carrying_mul(scaled(underlying_multiplier), 0)
+                != scaled(position.quantity).carrying_mul(scaled(multiplier), 0)
+        {
             anyhow::bail!(
-                "cannot deliver {delivery} {} at size precision {underlying_precision}",
-                underlying_instrument.id()
+                "cannot deliver {delivery} {underlying_id} at size precision {underlying_precision}"
             );
         }
 
@@ -349,7 +447,10 @@ impl OrderMatchingEngine {
         let open_venue_order_id =
             VenueOrderId::from(format!("EXPIRATION-{venue}-{}", UUID4::new()));
         let open_trade_id = TradeId::from(UUID4::new().to_string());
-        let settlement_px = self.option_settlement_price(underlying_price, false);
+        let settlement_px = self
+            .instrument
+            .strike_price()
+            .expect("Option must have strike");
 
         // Delivery at strike carries the intrinsic value, so the option leg closes at zero
         // whatever the `InstrumentClose` price.
@@ -405,12 +506,95 @@ impl OrderMatchingEngine {
             OptionSettlementLeg {
                 order: close_order,
                 fill: option_fill,
+                client_id,
             },
             OptionSettlementLeg {
                 order: open_order,
                 fill: underlying_fill,
+                client_id,
             },
         ])
+    }
+
+    fn validate_option_delivery_netting(
+        &self,
+        position: &Position,
+        underlying_id: InstrumentId,
+        client_id: Option<ClientId>,
+        netting_owners: &mut AHashMap<PositionId, AccountId>,
+    ) -> anyhow::Result<()> {
+        let cache = self.cache.borrow();
+        if cache.resolve_oms_type(position.strategy_id, client_id) == OmsType::Hedging {
+            return Ok(());
+        }
+
+        let delivery_id = netting_position_id(underlying_id, position.strategy_id);
+        let planned_owner = netting_owners
+            .entry(delivery_id)
+            .or_insert(position.account_id);
+        anyhow::ensure!(
+            *planned_owner == position.account_id,
+            "Cannot deliver {underlying_id} to {}: settlement already plans netting position {delivery_id} for account {planned_owner}",
+            position.account_id,
+        );
+
+        if let Some(existing) = cache.position_ref(&delivery_id)
+            && existing.is_open()
+            && existing.account_id != position.account_id
+        {
+            anyhow::bail!(
+                "Cannot deliver {underlying_id} to {}: netting position {} belongs to account {}",
+                position.account_id,
+                existing.id,
+                existing.account_id,
+            );
+        }
+
+        self.validate_pending_option_deliveries(position, underlying_id)
+    }
+
+    fn validate_pending_option_deliveries(
+        &self,
+        position: &Position,
+        underlying_id: InstrumentId,
+    ) -> anyhow::Result<()> {
+        let cache = self.cache.borrow();
+        for order in cache.orders_refs(
+            None,
+            Some(&underlying_id),
+            Some(&position.strategy_id),
+            None,
+            None,
+        ) {
+            let client_order_id = order.client_order_id();
+            if order.is_closed()
+                || !client_order_id.as_str().starts_with("EXPIRATION-")
+                || !order
+                    .tags()
+                    .is_some_and(|tags| tags.iter().any(|tag| tag.ends_with("_PHYSICAL_OPEN")))
+            {
+                continue;
+            }
+
+            let client_id = cache.client_id(&client_order_id);
+            if cache.resolve_oms_type(order.strategy_id(), client_id.copied()) == OmsType::Hedging {
+                continue;
+            }
+
+            let pending_account = order.account_id().or_else(|| {
+                client_id
+                    .and_then(|id| cache.account_id_for_client(id))
+                    .copied()
+            });
+
+            anyhow::ensure!(
+                pending_account == Some(position.account_id),
+                "Cannot deliver {underlying_id} to {}: pending netting delivery {client_order_id} has a different or unknown account",
+                position.account_id,
+            );
+        }
+
+        Ok(())
     }
 
     fn option_plan_close(
@@ -443,7 +627,34 @@ impl OrderMatchingEngine {
             trade_id,
             ts_now,
         );
-        OptionSettlementLeg { order, fill }
+
+        OptionSettlementLeg {
+            order,
+            fill,
+            client_id: self.option_position_client_id(position, self.instrument.id()),
+        }
+    }
+
+    fn option_position_client_id(
+        &self,
+        position: &Position,
+        instrument_id: InstrumentId,
+    ) -> Option<ClientId> {
+        let cache = self.cache.borrow();
+        cache
+            .client_id(&position.opening_order_id)
+            .filter(|id| cache.account_id_for_client(id) == Some(&position.account_id))
+            .copied()
+            .or_else(|| {
+                cache
+                    .client_id_for_venue(&self.venue)
+                    .filter(|id| cache.account_id_for_client(id) == Some(&position.account_id))
+                    .copied()
+            })
+            .or_else(|| {
+                cache.unique_client_id_for_account(position.account_id, Some(instrument_id.venue))
+            })
+            .or_else(|| cache.unique_client_id_for_account(position.account_id, None))
     }
 
     #[expect(clippy::too_many_arguments)]
@@ -555,15 +766,10 @@ impl OrderMatchingEngine {
     }
 }
 
-enum UnderlyingLookup {
-    Found(InstrumentId),
-    NotFound,
-    Ambiguous(Vec<InstrumentId>),
-}
-
 struct OptionSettlementLeg {
     order: OrderAny,
     fill: OrderFilled,
+    client_id: Option<ClientId>,
 }
 
 struct OptionSettlementPlan {

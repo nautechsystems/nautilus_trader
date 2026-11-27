@@ -7,28 +7,28 @@ GIT_TAG:=$(shell git rev-parse --abbrev-ref HEAD)
 IMAGE_FULL?=$(IMAGE):$(GIT_TAG)
 
 # Shared and NautilusTrader-specific Cargo tool versions
-CARGO_AUDIT_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-audit)
-CARGO_BINSTALL_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-binstall)
-CARGO_CODSPEED_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-codspeed)
-CARGO_DENY_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-deny)
-CARGO_EDIT_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-edit)
-CARGO_FUZZ_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-fuzz)
-CARGO_HAWK_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-hawk)
-CARGO_LLVM_COV_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-llvm-cov)
-CARGO_MACHETE_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-machete)
-CARGO_NEXTEST_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-nextest)
-CARGO_VET_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-vet)
-RUST_CODE_ANALYSIS_VERSION := $(shell bash scripts/cargo-tool-version.sh rust-code-analysis-cli)
-CBINDGEN_VERSION := $(shell bash scripts/cargo-tool-version.sh cbindgen)
-FLAMEGRAPH_VERSION := $(shell bash scripts/cargo-tool-version.sh flamegraph)
-LYCHEE_VERSION := $(shell bash scripts/cargo-tool-version.sh lychee)
+CARGO_AUDIT_VERSION = $(shell bash scripts/cargo-tool-version.sh cargo-audit)
+CARGO_BINSTALL_VERSION = $(shell bash scripts/cargo-tool-version.sh cargo-binstall)
+CARGO_CODSPEED_VERSION = $(shell bash scripts/cargo-tool-version.sh cargo-codspeed)
+CARGO_DENY_VERSION = $(shell bash scripts/cargo-tool-version.sh cargo-deny)
+CARGO_EDIT_VERSION = $(shell bash scripts/cargo-tool-version.sh cargo-edit)
+CARGO_FUZZ_VERSION = $(shell bash scripts/cargo-tool-version.sh cargo-fuzz)
+CARGO_HAWK_VERSION = $(shell bash scripts/cargo-tool-version.sh cargo-hawk)
+CARGO_LLVM_COV_VERSION = $(shell bash scripts/cargo-tool-version.sh cargo-llvm-cov)
+CARGO_MACHETE_VERSION = $(shell bash scripts/cargo-tool-version.sh cargo-machete)
+CARGO_NEXTEST_VERSION = $(shell bash scripts/cargo-tool-version.sh cargo-nextest)
+CARGO_VET_VERSION = $(shell bash scripts/cargo-tool-version.sh cargo-vet)
+RUST_CODE_ANALYSIS_VERSION = $(shell bash scripts/cargo-tool-version.sh rust-code-analysis-cli)
+CBINDGEN_VERSION = $(shell bash scripts/cargo-tool-version.sh cbindgen)
+FLAMEGRAPH_VERSION = $(shell bash scripts/cargo-tool-version.sh flamegraph)
+LYCHEE_VERSION = $(shell bash scripts/cargo-tool-version.sh lychee)
 # Shared and NautilusTrader-specific tool versions
-PREK_VERSION := $(shell bash scripts/tool-version.sh prek)
-NIGHTLY_TOOLCHAIN := $(shell bash scripts/tool-version.sh miri) # Pinned nightly, shared with Miri
-DOCSRS_TOOLCHAIN := $(shell bash scripts/tool-version.sh nightly)
-SOCKET_CLI_VERSION := $(shell bash scripts/tool-version.sh socket-cli)
-TOKEI_VERSION := $(shell bash scripts/tool-version.sh tokei)
-UV_VERSION := $(shell bash scripts/uv-version.sh)
+PREK_VERSION = $(shell bash scripts/tool-version.sh prek)
+NIGHTLY_TOOLCHAIN = $(shell bash scripts/tool-version.sh miri) # Pinned nightly, shared with Miri
+DOCSRS_TOOLCHAIN = $(shell bash scripts/tool-version.sh nightly)
+SOCKET_CLI_VERSION = $(shell bash scripts/tool-version.sh socket-cli)
+TOKEI_VERSION = $(shell bash scripts/tool-version.sh tokei)
+UV_VERSION = $(shell bash scripts/uv-version.sh)
 UV_REQUIRED_SPEC := $(shell awk -F'"' '\
 	/^\[tool\.uv\]/ { in_section=1; next } \
 	/^\[/ { in_section=0 } \
@@ -52,8 +52,7 @@ endif
 
 TEST_ENV := bash "$(CURDIR)/scripts/strip-adapter-env.bash"
 
-# UV_SYNC_FLAGS controls whether uv keeps packages not managed by this project
-# Set UV_SYNC_FLAGS= to make uv prune packages not in python/uv.lock
+# Set UV_SYNC_FLAGS= on standalone make sync to prune packages outside its groups
 UV_SYNC_FLAGS ?= --inexact
 
 # TARGET_DIR controls where Cargo places build artifacts
@@ -223,15 +222,9 @@ SIM_FILTERSET := package(nautilus-common) + package(nautilus-event-store) + \
 	(package(nautilus-core) & test(~virtual_time))
 SIM_HIGH_PRECISION_PACKAGES := -p nautilus-common -p nautilus-execution
 
-# The simulation cfg travels through RUSTFLAGS, not `--config` target rustflags:
-# an exported RUSTFLAGS replaces every config rustflags value, and CI exports
-# RUSTFLAGS="-D warnings" from setup-rust-toolchain, which silently dropped the
-# cfg and compiled all cfg(madsim) code out of the build. Prepending composes
-# with inherited flags so the cfg survives any environment. The env var also
-# displaces the .cargo/config.toml rustflags for these lanes (the Linux link
-# flags); CI already built under that override, and no sim-lane target needs
-# them to link.
-SIM_RUSTFLAGS := --cfg madsim
+# RUSTFLAGS replaces Cargo's configured target flags, including -Dwarnings.
+# Keep the simulation cfg and warning policy when the caller supplies RUSTFLAGS.
+SIM_RUSTFLAGS := --cfg madsim -Dwarnings
 
 CARGO_BUILD_JOB_TARGETS := install install-debug build build-debug build-wheel py-stubs check-code \
 	check-code-sim check-code-standard-precision \
@@ -316,8 +309,19 @@ RESET  := \033[0m
 
 #== Installation
 
-.PHONY: sync
-sync:  #-- Sync Python dependencies without building the package
+.PHONY: sync sync-python-dev sync-python-docs
+PYTHON_ADDITIVE_SYNCS := sync-python-dev sync-python-docs
+ifneq ($(filter pytest-collect-fast pytest-isolated,$(MAKECMDGOALS)),)
+PYTHON_ADDITIVE_SYNCS += sync
+endif
+$(PYTHON_ADDITIVE_SYNCS): override UV_SYNC_FLAGS := $(strip $(filter-out --inexact,$(UV_SYNC_FLAGS)) --inexact)
+
+sync: PYTHON_SYNC_GROUPS := --group dev --group test --extra visualization
+sync:  #-- Sync Python development and test dependencies
+sync-python-dev: PYTHON_SYNC_GROUPS := --group dev
+sync-python-docs: PYTHON_SYNC_GROUPS := --group docs
+sync-python-docs:  #-- Sync Python documentation dependencies
+sync sync-python-dev sync-python-docs:
 	@if [ -z "$(UV_REQUIRED_SPEC)" ]; then \
 		printf "$(RED)ERROR: Could not find required-version in python/pyproject.toml$(RESET)\n"; \
 		exit 1; \
@@ -328,7 +332,7 @@ sync:  #-- Sync Python dependencies without building the package
 		exit 1; \
 	fi
 	$(info $(M) Syncing Python dependencies...)
-	$Q cd python && VIRTUAL_ENV= uv sync --all-groups --all-extras --no-install-package nautilus-trader $(UV_SYNC_FLAGS)
+	$Q cd python && VIRTUAL_ENV= uv sync --locked $(PYTHON_SYNC_GROUPS) --no-install-project $(UV_SYNC_FLAGS)
 
 .PHONY: install
 install: check-cargo-cooldown build  #-- Install the package in release mode
@@ -338,20 +342,36 @@ install-debug: check-cargo-cooldown build-debug  #-- Install the package in debu
 
 #== Build
 
+PYTHON_DEBUG_CHECK_GOALS := pytest pytest-doctest pytest-memray ty
+PYTHON_EDITABLE_BUILDS := $(filter install install-debug build build-debug,$(MAKECMDGOALS)) \
+	$(if $(filter $(PYTHON_DEBUG_CHECK_GOALS),$(MAKECMDGOALS)),build-debug)
+
+# Share the dependency sync across combined build and check goals
+ifneq ($(filter sync $(PYTHON_DEBUG_CHECK_GOALS) pytest-isolated \
+	$(if $(strip $(PYTHON_EXTENSION_PATH) $(PYTHON_EDITABLE_BUILDS)),pytest-collect-fast),$(MAKECMDGOALS)),)
+PYTHON_BUILD_SYNC := sync
+else
+PYTHON_BUILD_SYNC := sync-python-dev
+endif
+
 .PHONY: build
-build: check-cargo-cooldown py-stubs  #-- Build and install the package in release mode
+build: check-cargo-cooldown check-package-version $(PYTHON_BUILD_SYNC)  #-- Build and install the package in release mode
 	$(info $(M) Building the Python extension in release mode...)
-	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=$(TARGET_DIR) uv run --no-sync maturin develop --release --locked
+	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR="$(TARGET_DIR)" uv run --no-sync maturin develop --release --locked
 
 .PHONY: build-debug
-build-debug: check-cargo-cooldown py-stubs  #-- Build and install the package in debug mode
+build-debug: check-cargo-cooldown check-package-version $(PYTHON_BUILD_SYNC)  #-- Build and install the package in debug mode
 	$(info $(M) Building the Python extension in debug mode...)
-	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=$(TARGET_DIR) uv run --no-sync maturin develop --profile $(CARGO_CI_PROFILE) --locked
+	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR="$(TARGET_DIR)" uv run --no-sync maturin develop --profile $(CARGO_CI_PROFILE) --locked
 
 .PHONY: build-wheel
-build-wheel: check-cargo-cooldown sync  #-- Build a wheel distribution in release mode
+build-wheel: check-cargo-cooldown check-package-version $(PYTHON_BUILD_SYNC)  #-- Build a wheel distribution in release mode
 	$(info $(M) Building the Python wheel in release mode...)
-	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=$(TARGET_DIR) uv run --no-sync maturin build --release --locked --out ../dist
+	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR="$(TARGET_DIR)" uv run --no-sync maturin build --release --locked --out ../dist
+
+ifneq ($(filter py-stubs,$(MAKECMDGOALS)),)
+build build-debug build-wheel: py-stubs
+endif
 
 .PHONY: py-stub-input-list-force
 py-stub-input-list-force:
@@ -366,15 +386,19 @@ $(PY_STUB_INPUT_LIST): py-stub-input-list-force
 		rm "$$py_stub_input_tmp"; \
 	fi
 
-$(PY_STUB_STAMP): $(PY_STUB_INPUTS) $(PY_STUB_INPUT_LIST) | check-cargo-cooldown sync
+$(PY_STUB_STAMP): $(PY_STUB_INPUTS) $(PY_STUB_INPUT_LIST) | check-cargo-cooldown $(PYTHON_BUILD_SYNC)
 	$(info $(M) Generating Python type stubs...)
 	$Q mkdir -p "$(dir $(PY_STUB_STAMP))"
 	$Q cd python && VIRTUAL_ENV= NAUTILUS_STUB_PROFILE=$(CARGO_CI_PROFILE) \
-		CARGO_TARGET_DIR=$(TARGET_DIR) uv run --no-sync python generate_stubs.py
+		CARGO_TARGET_DIR="$(TARGET_DIR)" uv run --no-sync python generate_stubs.py
 	$Q touch "$(PY_STUB_STAMP)"
 
 .PHONY: py-stubs
 py-stubs: check-cargo-cooldown $(PY_STUB_STAMP)  #-- Regenerate Python type stubs when their inputs change
+
+.PHONY: check-package-version
+check-package-version:
+	$Q bash scripts/package-version.sh --check >/dev/null
 
 .PHONY: check-generated-drift
 check-generated-drift:  #-- Check generated stubs and docstrings are committed
@@ -480,6 +504,30 @@ check-all-targets: check-cargo-cooldown  #-- Run clippy on all targets including
 	@cargo clippy --locked --workspace --all-targets --features "$(CARGO_FEATURES),examples" --profile nextest -- -D warnings
 	@printf "$(GREEN)All-targets check passed$(RESET)\n"
 
+.PHONY: check-all-targets-macos
+check-all-targets-macos:  #-- Check all Rust targets for macOS (Linux requires MACOS_SDKROOT)
+ifeq ($(HOST_OS),Darwin)
+	@$(MAKE) --no-print-directory check-all-targets \
+		CARGO_BUILD_TARGET=host-tuple CARGO_TARGET_DIR="$(TARGET_DIR)/macos"
+else ifeq ($(HOST_OS),Linux)
+ifneq ($(strip $(MACOS_SDKROOT)),)
+	@if [ ! -d "$$MACOS_SDKROOT" ]; then \
+		printf 'macOS SDK directory not found: %s\n' "$$MACOS_SDKROOT" >&2; \
+		exit 1; \
+	fi
+	@CC_aarch64_apple_darwin="$${CC_aarch64_apple_darwin:-clang}" \
+		CXX_aarch64_apple_darwin="$${CXX_aarch64_apple_darwin:-clang++}" \
+		AR_aarch64_apple_darwin="$${AR_aarch64_apple_darwin:-llvm-ar}" \
+		$(MAKE) --no-print-directory check-all-targets \
+		CARGO_BUILD_TARGET=aarch64-apple-darwin CARGO_TARGET_DIR="$(TARGET_DIR)/macos" \
+		PYO3_CROSS_PYTHON_VERSION=3.13 SDKROOT="$$MACOS_SDKROOT"
+else
+	@printf '%s\n' 'Skipping macOS all-targets check. Set MACOS_SDKROOT to enable it on Linux.'
+endif
+else
+	@printf '%s\n' 'Skipping macOS all-targets check. It runs on macOS or a configured Linux host.'
+endif
+
 # Time a block of make sub-targets. Use as:
 #   @$(timer_start) \
 #       $(MAKE) ... \
@@ -513,18 +561,23 @@ pre-flight-steps:
 	@$(timer_start) \
 		$(MAKE) --no-print-directory sync \
 		&& $(MAKE) --no-print-directory format \
+		&& $(MAKE) --no-print-directory check-jiff-features \
 		&& $(MAKE) --no-print-directory test-scripts-quiet \
 		&& $(MAKE) --no-print-directory check-cargo-cooldown \
-		&& $(MAKE) --no-print-directory check-code EXTRA_FEATURES="hypersync,nautilus-common/sbe" \
+		&& $(MAKE) --no-print-directory check-all-targets \
+			CARGO_BUILD_TARGET=host-tuple EXTRA_FEATURES="hypersync,nautilus-common/sbe" \
+		&& $(MAKE) --no-print-directory ruff \
+		&& { [ "$(HOST_OS)" = Darwin ] || $(MAKE) --no-print-directory check-all-targets-macos; } \
 		&& $(MAKE) --no-print-directory check-code-sim \
 		&& $(MAKE) --no-print-directory cargo-test-sim \
 		&& $(MAKE) --no-print-directory cargo-test-extras \
 		&& $(MAKE) --no-print-directory cargo-test-postgres-changed \
-		&& $(MAKE) --no-print-directory build-debug \
+		&& $(MAKE) --no-print-directory -o sync-python-dev py-stubs \
 		&& $(MAKE) --no-print-directory check-generated-drift \
-		&& $(MAKE) --no-print-directory pytest \
-		&& $(MAKE) --no-print-directory pytest-doctest ty \
-		&& $(MAKE) --no-print-directory pytest-isolated \
+		&& $(MAKE) --no-print-directory -o sync-python-dev build-debug \
+		&& $(MAKE) --no-print-directory -o build-debug pytest \
+		&& $(MAKE) --no-print-directory -o build-debug pytest-doctest ty \
+		&& $(MAKE) --no-print-directory -o sync pytest-isolated \
 		&& $(MAKE) --no-print-directory security-audit \
 	$(call timer_end,Pre-flight)
 
@@ -670,7 +723,7 @@ socket-scan:  #-- Scan dependency manifests with Socket and report alerts withou
 docs: check-cargo-cooldown docs-python docs-rust  #-- Build all documentation (Python and Rust)
 
 .PHONY: docs-python
-docs-python:  #-- Build Python documentation with Sphinx
+docs-python: sync-python-docs  #-- Build Python documentation with Sphinx
 	VIRTUAL_ENV= uv run --project python --no-sync sphinx-build -M html ./docs/api_reference ./api_reference
 
 # Path to extra HTML injected into every rustdoc <head>. Left empty here so the
@@ -1206,7 +1259,11 @@ MIRI_PROPTEST_CASES ?= 4
 # pointer/integer code where Miri provides the most signal. Miri runs ~10-100x
 # slower than native, so we narrow the default scope; pass the override above
 # (or `MIRI_CORE_FILTER=`) to widen it.
-MIRI_CORE_FILTER ?= -E 'test(/^(string::stack_str|nanos|uuid|hex|correctness|datetime)::/)'
+# Exhaustive date and byte sweeps are inexpensive natively and costly under Miri
+MIRI_CORE_FILTER ?= -E 'test(/^(string::stack_str|nanos|uuid|hex|correctness|datetime)::/) \
+	and not test(=datetime::tests::test_formatters_match_jiff_on_every_representable_utc_day) \
+	and not test(=hex::tests::test_decode_checks_every_byte_across_wide_chunks) \
+	and not test(=nanos::tests::test_digit_parser_validates_every_byte_position)'
 # `collections::` covers AtomicMap/AtomicSet, which are backed by arc-swap.
 # arc-swap runs Miri with permissive provenance, so use the same provenance
 # policy for this slice while keeping strict provenance for in-tree pointer code.
@@ -1424,8 +1481,12 @@ export PYTEST_XDIST_AUTO_NUM_WORKERS := $(shell \
 endif
 
 .PHONY: pytest-collect-fast
+ifneq ($(strip $(PYTHON_EXTENSION_PATH) $(PYTHON_EDITABLE_BUILDS)),)
+pytest-collect-fast: sync
+endif
+pytest-collect-fast pytest-isolated: $(PYTHON_EDITABLE_BUILDS)
 pytest-collect-fast:  #-- Collect Python tests against the existing extension
-	@if [ -z "$(PYTHON_EXTENSION_PATH)" ]; then \
+	@if [ -z "$(strip $(PYTHON_EXTENSION_PATH) $(PYTHON_EDITABLE_BUILDS))" ]; then \
 		printf "$(YELLOW)Skipping Python test collection: run \`make build-debug\` first$(RESET)\n"; \
 	else \
 		printf "$(M) Collecting Python tests without rebuilding...\n"; \
@@ -1439,7 +1500,7 @@ pytest: build-debug  #-- Run Python tests
 	$Q cd python && $(PYTHON_TEST_ENV) VIRTUAL_ENV= $(TEST_ENV) uv run --no-sync pytest -qq -rfE tests/unit/test_live_node.py
 
 .PHONY: pytest-isolated
-pytest-isolated:  #-- Check the existing Python build outside the source checkout
+pytest-isolated: sync  #-- Check the existing Python build outside the source checkout
 	$Q $(TEST_ENV) bash scripts/test-python-isolation.bash
 
 .PHONY: pytest-doctest

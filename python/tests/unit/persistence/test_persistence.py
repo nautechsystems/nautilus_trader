@@ -92,7 +92,7 @@ def test_migration_preserves_released_catalog_values(tmp_path: Path, precision: 
     assert catalog.migrate_from_legacy_parquet_path(str(source)) == 4
     quotes = [QuoteTick.from_dict(value).to_dict() for value in expected["quotes"]]
     instrument = CurrencyPair.from_dict(expected["instrument"]).to_dict()
-    assert [row.to_dict() for row in catalog.query_quote_ticks()] == quotes
+    assert [row.to_dict() for row in catalog.query_quotes()] == quotes
     assert [row.to_dict() for row in catalog.instruments()] == [instrument]
     assert {path: path.read_bytes() for path in originals} == originals
 
@@ -192,10 +192,10 @@ def test_catalog_write_and_read_quotes(tmp_path: Path) -> None:
         TestDataProviderPyo3.quote_tick(instrument_id=AUDUSD_SIM, ts_event=2, ts_init=2),
     ]
 
-    catalog.write_quote_ticks(quotes)
+    catalog.write_quotes(quotes)
 
     intervals = catalog.get_intervals(NautilusDataType.QuoteTick, "AUD/USD.SIM")
-    loaded = catalog.query_quote_ticks(["AUD/USD.SIM"])
+    loaded = catalog.query_quotes(["AUD/USD.SIM"])
 
     assert intervals == [(1, 2)]
     assert loaded == quotes
@@ -214,10 +214,10 @@ def test_catalog_write_and_read_trades(tmp_path: Path) -> None:
         TestDataProviderPyo3.trade_tick(instrument_id=AUDUSD_SIM, ts_event=2, ts_init=2),
     ]
 
-    catalog.write_trade_ticks(trades)
+    catalog.write_trades(trades)
 
     intervals = catalog.get_intervals(NautilusDataType.TradeTick, "AUD/USD.SIM")
-    loaded = catalog.query_trade_ticks(["AUD/USD.SIM"])
+    loaded = catalog.query_trades(["AUD/USD.SIM"])
 
     assert intervals == [(1, 2)]
     assert loaded == trades
@@ -449,7 +449,7 @@ def test_catalog_list_parquet_files_with_typed_selectors(tmp_path: Path) -> None
         TestDataProviderPyo3.quote_tick(instrument_id=AUDUSD_SIM, ts_event=1, ts_init=1),
     ]
 
-    catalog.write_quote_ticks(quotes)
+    catalog.write_quotes(quotes)
     currency_pair = TestInstrumentProvider.default_fx_ccy("AUD/USD")
     equity = TestInstrumentProvider.aapl_equity()
     catalog.write_instruments([currency_pair, equity])
@@ -538,9 +538,9 @@ def test_catalog_query_handles_multiple_instrument_identifier_patterns(tmp_path:
     ]
 
     for quote in quotes:
-        catalog.write_quote_ticks([quote])
+        catalog.write_quotes([quote])
 
-    loaded = catalog.query_quote_ticks([str(instrument_id) for instrument_id in instrument_ids])
+    loaded = catalog.query_quotes([str(instrument_id) for instrument_id in instrument_ids])
 
     assert loaded == quotes
 
@@ -597,12 +597,12 @@ def test_trade_tick_wrangler_rejects_malformed_trade_ids_and_recovers(
     """
     wrangler = TradeTickDataWrangler("ETHUSDT.BINANCE", 2, 5)
 
-    ticks = [
+    trades = [
         TestDataProviderPyo3.trade_tick(price="1234.56", size="1.23456", ts_event=12, ts_init=34),
         TestDataProviderPyo3.trade_tick(price="2345.67", size="8.90123", ts_event=56, ts_init=78),
     ]
 
-    valid_bytes = trades_to_arrow_record_batch_bytes(ticks)
+    valid_bytes = trades_to_arrow_record_batch_bytes(trades)
     batch = next(pa.ipc.open_stream(valid_bytes))
     batch = batch.set_column(
         batch.schema.get_field_index("trade_id"),
@@ -617,7 +617,7 @@ def test_trade_tick_wrangler_rejects_malformed_trade_ids_and_recovers(
         wrangler.process_record_batch_bytes(sink.getvalue().to_pybytes())
 
     assert str(exc_info.value) == f"Error parsing `trade_id`: {message}"
-    assert wrangler.process_record_batch_bytes(valid_bytes) == ticks
+    assert wrangler.process_record_batch_bytes(valid_bytes) == trades
 
 
 def test_bar_wrangler_construction() -> None:
@@ -897,7 +897,7 @@ def test_streaming_writer_promotes_into_catalog(tmp_path: Path) -> None:
     writer.close()
 
     assert writer.backend == "Parquet"
-    assert ParquetDataCatalog(str(catalog_path)).query_quote_ticks() == [quote]
+    assert ParquetDataCatalog(str(catalog_path)).query_quotes() == [quote]
 
 
 @pytest.mark.parametrize("automatic", [False, True])
