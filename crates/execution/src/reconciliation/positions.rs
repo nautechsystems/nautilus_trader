@@ -105,8 +105,7 @@ fn process_mass_status_for_reconciliation_inner(
         }
     };
 
-    let extracted =
-        extract_fills_for_instrument(mass_status, instrument_id, divides_notional_by_price);
+    let extracted = extract_fills_for_instrument(mass_status, instrument_id);
     let fill_snapshots = extracted.snapshots;
     let mut order_map = extracted.orders;
     let mut fill_map = extracted.fills;
@@ -428,11 +427,7 @@ fn synthetic_opening_fill(
             if divides_notional_by_price {
                 inverse_synthetic_opening_price(fills, venue_position, max_px)?
             } else {
-                fill.px = linear_synthetic_opening_price(fills, venue_position)?;
-                if !opening_matches(&fill, fills, venue_position, tolerance, false) {
-                    return None;
-                }
-                fill.px
+                linear_synthetic_opening_price(&fill, fills, venue_position, tolerance)?
             }
         }
     };
@@ -477,15 +472,42 @@ fn opening_matches(
 }
 
 fn linear_synthetic_opening_price(
+    opening: &FillSnapshot,
     fills: &[FillSnapshot],
     venue_position: &VenuePositionSnapshot,
+    tolerance: Decimal,
 ) -> Option<Decimal> {
-    if venue_position.avg_px <= Decimal::ZERO {
+    // A venue that rounds its average reports up to half a unit below the unrounded value and one
+    // that truncates up to a full unit, so the half-unit midpoint stays inside either report when
+    // the exact back-solve leaves no positive opening price
+    let half_unit = venue_position
+        .avg_px_precision
+        .and_then(|precision| Decimal::try_new(5, u32::from(precision) + 1).ok());
+    let target_avg_pxs = std::iter::once(venue_position.avg_px)
+        .chain(half_unit.map(|half_unit| venue_position.avg_px + half_unit));
+
+    target_avg_pxs
+        .filter_map(|target_avg_px| {
+            undo_linear_fills(fills, venue_position.signed_qty(), target_avg_px)
+        })
+        .find(|px| {
+            let mut candidate = opening.clone();
+            candidate.px = *px;
+            opening_matches(&candidate, fills, venue_position, tolerance, false)
+        })
+}
+
+fn undo_linear_fills(
+    fills: &[FillSnapshot],
+    target_signed_qty: Decimal,
+    target_avg_px: Decimal,
+) -> Option<Decimal> {
+    if target_avg_px <= Decimal::ZERO {
         return None;
     }
 
-    let mut qty = venue_position.signed_qty();
-    let mut avg_px = Some(venue_position.avg_px);
+    let mut qty = target_signed_qty;
+    let mut avg_px = Some(target_avg_px);
 
     // Undo the fills in replay order backwards, since reductions retain the prior average
     for fill in fills.iter().rev() {
@@ -493,7 +515,7 @@ fn linear_synthetic_opening_price(
         let prior_qty = qty - fill_qty;
         if prior_qty.is_zero() || prior_qty.is_sign_negative() != qty.is_sign_negative() {
             // Closing or flipping erases the average of the earlier position
-            return Some(venue_position.avg_px);
+            return Some(target_avg_px);
         }
 
         if fill_qty.is_sign_negative() == qty.is_sign_negative() {
@@ -877,7 +899,6 @@ struct ExtractedFills {
 fn extract_fills_for_instrument(
     mass_status: &ExecutionMassStatus,
     instrument_id: InstrumentId,
-    divides_notional_by_price: bool,
 ) -> ExtractedFills {
     let mut snapshots = Vec::new();
     let mut order_map = IndexMap::new();
@@ -921,19 +942,15 @@ fn extract_fills_for_instrument(
         }
     }
 
-    if divides_notional_by_price {
-        // Startup queues reported orders first and then orphan fills, retaining ties by queue order
-        snapshots.sort_by_key(|fill| {
-            (
-                fill.ts_event,
-                order_map
-                    .get_index_of(&fill.venue_order_id)
-                    .unwrap_or(usize::MAX),
-            )
-        });
-    } else {
-        snapshots.sort_by_key(|fill| fill.ts_event);
-    }
+    // Startup queues reported orders first and then orphan fills, retaining ties by queue order
+    snapshots.sort_by_key(|fill| {
+        (
+            fill.ts_event,
+            order_map
+                .get_index_of(&fill.venue_order_id)
+                .unwrap_or(usize::MAX),
+        )
+    });
 
     ExtractedFills {
         snapshots,
