@@ -2163,16 +2163,17 @@ orders. Exact restrictions vary by venue. Consult the adapter guide.
 These tests require a `CryptoOption` instrument. Use an OTM option with
 reasonable liquidity for fills.
 
-| TC      | Name                          | Description                                                           | Skip when           |
-| ------- | ----------------------------- | --------------------------------------------------------------------- | ------------------- |
-| TC-E90  | Limit BUY option              | Place a limit buy on an option instrument.                            | No options support. |
-| TC-E91  | Limit SELL option             | Place a limit sell on an option instrument.                           | No options support. |
-| TC-E92  | Limit with alt pricing        | Place a limit order with adapter-specific pricing via `order_params`. | No alt pricing.     |
-| TC-E94  | Unsupported order type denied | Submit an order type the adapter rejects for options.                 | No options support. |
-| TC-E96  | Conditional order rejected    | Submit a stop/conditional order on an option. Expect rejection.       | No options support. |
-| TC-E99  | FOK limit option              | Place a FOK limit order on an option instrument.                      | No FOK options.     |
-| TC-E100 | Cancel option order           | Cancel an open limit order on an option instrument.                   | No options support. |
-| TC-E101 | Reconcile option position     | Reconcile an open option position from a prior session.               | No options support. |
+| TC      | Name                          | Description                                                           | Skip when                     |
+| ------- | ----------------------------- | --------------------------------------------------------------------- | ----------------------------- |
+| TC-E90  | Limit BUY option              | Place a limit buy on an option instrument.                            | No options support.           |
+| TC-E91  | Limit SELL option             | Place a limit sell on an option instrument.                           | No options support.           |
+| TC-E92  | Limit with alt pricing        | Place a limit order with adapter-specific pricing via `order_params`. | No alt pricing.               |
+| TC-E94  | Unsupported order type denied | Submit an order type the adapter rejects for options.                 | No options support.           |
+| TC-E96  | Conditional order rejected    | Submit an unsupported conditional order on an option.                 | Conditional type supported.   |
+| TC-E97  | Conditional order accepted    | Submit and cancel a supported conditional order on an option.         | Conditional type unsupported. |
+| TC-E99  | FOK limit option              | Place a FOK limit order on an option instrument.                      | No FOK options.               |
+| TC-E100 | Cancel option order           | Cancel an open limit order on an option instrument.                   | No options support.           |
+| TC-E101 | Reconcile option position     | Reconcile an open option position from a prior session.               | No options support.           |
 
 ### TC-E90: Limit BUY option
 
@@ -2271,10 +2272,10 @@ ExecTesterConfig(
 | Field              | Value                                                                                                       |
 | ------------------ | ----------------------------------------------------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, option instrument loaded.                                                                |
-| **Action**         | Submit a conditional order on an option instrument.                                                         |
+| **Action**         | Submit an unsupported conditional order on an option instrument.                                            |
 | **Event sequence** | Adapter-dependent: `OrderDenied` (pre-submission) or `OrderSubmitted` -> `OrderRejected` (post-submission). |
 | **Pass criteria**  | Order does not fill. Reason references unsupported conditional order type.                                  |
-| **Skip when**      | Adapter does not support options, or adapter supports conditionals for options.                             |
+| **Skip when**      | Adapter does not support options or supports the selected conditional order type.                           |
 
 **Considerations**:
 
@@ -2283,6 +2284,16 @@ ExecTesterConfig(
   `TRAILING_STOP_MARKET`).
 - ExecTester can trigger conditional orders via `enable_stop_buys`/`enable_stop_sells`
   with `stop_order_type` on an option instrument.
+
+### TC-E97: Conditional order accepted for options
+
+| Field              | Value                                                                                                 |
+| ------------------ | ----------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, option instrument loaded, quotes flowing.                                          |
+| **Action**         | Submit a supported conditional order with a trigger away from the market, then cancel it.             |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderPendingCancel` -> `OrderCanceled`. |
+| **Pass criteria**  | Venue accepts the correct trigger price and side. The order stays untriggered and closes on cancel.   |
+| **Skip when**      | Adapter does not support the selected conditional order type for options.                             |
 
 ### TC-E99: FOK limit option
 

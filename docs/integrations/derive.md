@@ -577,9 +577,9 @@ record. Private WebSocket streams remain subaccount-wide.
 
 When `private/get_order` returns `11006` for a known venue ID, the adapter searches paginated
 `private/get_order_history` for that exact ID. It does not infer an unproved replacement binding
-from an order label. An unresolved successor blocks startup or report generation. It also rejects
-individual cancel and modify commands and returns an error for batch cancel and `cancel_all_orders`
-before transmission. Ambiguous state-changing requests remain unreplayed.
+from an order label. An unresolved successor blocks startup or report generation. The adapter also
+denies individual cancels and modifies and returns an error for batch cancel and `cancel_all_orders`
+before transmission.
 
 While the process retains a replacement's signing nonce and target, a native REST row can resolve
 it using the same parent-ID and nonce checks as a WebSocket row. Replacement history reads start
@@ -855,6 +855,23 @@ malformed reply leaves the stored setting uncertain. Coordinate other clients an
 Low-level order conversion leaves MMP disabled. Set `mmp: Some(true)` on eligible payloads sent through
 `execution_handle().submit_order` and sign with a [lifetime of at most 15 minutes](#signature-expiry).
 
+### Individual cancellation
+
+For a known venue order ID or an in-flight local submit or replacement, `cancel_order` uses
+the authenticated session active when the command arrives. During a local write, it waits up to
+`ws_timeout_secs` (10 seconds by default) for the current venue order ID. For a regular submit,
+it checks the signed nonce against an authenticated WebSocket or REST order record. Once the
+binding is proved, normal rate limits and the full venue response timeout apply.
+
+- If the order becomes terminal before enqueue, the adapter sends neither a cancel nor an event.
+- If the wait expires or the venue order ID or session changes before enqueue, the adapter emits
+  `OrderCancelDenied`.
+- If an earlier submit ends ambiguously and its venue order ID remains unproved, the adapter denies
+  an individual cancel immediately.
+- A second individual cancel for the same order receives `OrderCancelDenied` while the first is pending.
+
+See [Order rejection semantics](#order-rejection-semantics) for responses after enqueue.
+
 ### Bulk cancellation
 
 #### Selection and routing
@@ -868,7 +885,8 @@ Derive supports both multi-order cancellation methods exposed by `Strategy`.
 
 The Derive execution client applies these methods as follows:
 
-- **Explicit orders**: `cancel_orders` cancels each requested regular or trigger order individually.
+- **Explicit orders**: `cancel_orders` cancels each requested regular or trigger order. It can cancel a
+  pending submit by label when a venue order ID is unavailable.
 - **Strategy-only**: `cancel_all_orders` with `strategy_only=True` expands cached matches into
   individual cancels.
 - **Side-filtered**: `cancel_all_orders` with `strategy_only=False` and a Buy or Sell filter selects

@@ -46,7 +46,7 @@ use nautilus_live::{
     task::{SharedTaskSlot, TaskJoinOutcome, TaskSlot, finish_task},
 };
 use nautilus_network::{
-    ConnectionUrl,
+    ConnectionUrl, SocketState, SocketStateSink,
     backoff::ExponentialBackoff,
     http::create_standard_nautilus_headers,
     mode::{ConnectionMode, ReconnectRequestOutcome},
@@ -56,7 +56,7 @@ use nautilus_network::{
         WebSocketReconnectHandle, channel_epoch_message_handler,
     },
 };
-use parking_lot::Mutex;
+use parking_lot::{Mutex, MutexGuard};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::value::RawValue;
 use tokio_util::sync::CancellationToken;
@@ -178,7 +178,7 @@ impl ReconnectCoverage {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct ReconnectSocket {
     mode: Arc<AtomicU8>,
     epoch: Arc<AtomicU64>,
@@ -187,6 +187,11 @@ pub(crate) struct ReconnectSocket {
 }
 
 impl ReconnectSocket {
+    pub(crate) fn active_epoch(&self) -> Option<u64> {
+        let epoch = self.epoch.load(Ordering::Acquire);
+        self.is_active(epoch).then_some(epoch)
+    }
+
     pub(crate) fn pending(&self) -> Option<ReconnectWindow> {
         self.coverage.lock().pending
     }
@@ -196,16 +201,20 @@ impl ReconnectSocket {
             && self.authenticated_epoch.load(Ordering::Acquire) == epoch
     }
 
+    pub(crate) fn commit_recovery<R>(&self, epoch: u64, commit: impl FnOnce() -> R) -> Option<R> {
+        let _coverage = self.coverage.lock();
+        self.is_active(epoch).then(commit)
+    }
+
     pub(crate) fn publish(
         &self,
         window: ReconnectWindow,
         complete: bool,
         send: impl FnOnce() -> anyhow::Result<()>,
     ) -> anyhow::Result<bool> {
-        let mut coverage = self.coverage.lock();
-        if coverage.pending != Some(window) || !self.is_active(window.epoch) {
+        let Some(mut coverage) = self.lock_current(window) else {
             return Ok(false);
-        }
+        };
 
         // A disconnect after this check still records a gap at the next recovery
         send()?;
@@ -215,6 +224,11 @@ impl ReconnectSocket {
         }
 
         Ok(true)
+    }
+
+    fn lock_current(&self, window: ReconnectWindow) -> Option<MutexGuard<'_, ReconnectCoverage>> {
+        let coverage = self.coverage.lock();
+        (coverage.pending == Some(window) && self.is_active(window.epoch)).then_some(coverage)
     }
 }
 
@@ -505,7 +519,7 @@ impl DeriveWebSocketClient {
         let client = WebSocketClient::epoch_builder()
             .config(cfg)
             .epoch_handler(epoch_handler)
-            .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
+            .maybe_state_sink(self.transport_state_sink())
             .connect()
             .await
             .map_err(|e| DeriveWsError::transport(e.to_string()))?;
@@ -624,6 +638,28 @@ impl DeriveWebSocketClient {
 
         setup_guard.disarm();
         Ok(())
+    }
+
+    fn transport_state_sink(&self) -> Option<SocketStateSink> {
+        let Some(coverage) = self.reconnect_coverage.clone() else {
+            return self.socket_control.as_ref().map(SocketControl::sink);
+        };
+
+        let authenticated_epoch = Arc::clone(&self.authenticated_epoch);
+
+        let invalidate = move |state| {
+            if state == SocketState::Disconnected {
+                // Publish transport loss after any recovery commit already holding the window
+                let _coverage = coverage.lock();
+                authenticated_epoch.store(UNAUTHENTICATED_CONNECTION_EPOCH, Ordering::Release);
+            }
+        };
+
+        Some(if let Some(control) = &self.socket_control {
+            control.sink_with(invalidate)
+        } else {
+            SocketStateSink::new(invalidate)
+        })
     }
 
     pub(crate) fn begin_shutdown(&self) {
@@ -1531,12 +1567,26 @@ impl DeriveWebSocketSubscriptionHandle {
     where
         C: Into<DeriveWsChannel>,
     {
-        let channels = channels.into_iter().map(Into::into).collect::<Vec<_>>();
+        let _guard = self.subscription_lock.lock().await;
+        self.send_unsubscribe_channels(channels.into_iter().map(Into::into).collect())
+            .await
+    }
+
+    pub(crate) async fn unsubscribe_ownerless_channels(
+        &self,
+        channels: &mut Vec<String>,
+        has_owners: impl Fn(&str) -> bool,
+    ) -> Result<()> {
+        let _guard = self.subscription_lock.lock().await;
+        channels.retain(|channel| !has_owners(channel) && self.has_subscription(channel));
+        self.send_unsubscribe_channels(channels.iter().cloned().map(Into::into).collect())
+            .await
+    }
+
+    async fn send_unsubscribe_channels(&self, channels: Vec<DeriveWsChannel>) -> Result<()> {
         if channels.is_empty() {
             return Ok(());
         }
-
-        let _guard = self.subscription_lock.lock().await;
 
         for topic in channel_topics(&channels) {
             self.subscriptions.mark_unsubscribe(&topic);
@@ -1562,7 +1612,62 @@ impl DeriveWebSocketSubscriptionHandle {
     }
 }
 
+pub(crate) enum BoundCancelAdmission<G> {
+    Send(G),
+    Activated,
+    Stop,
+}
+
 impl DeriveWsExecutionHandle {
+    pub(crate) async fn cancel_bound_order<G>(
+        &self,
+        params: &DeriveCancelParams,
+        trigger: Option<&DeriveCancelTriggerOrderParams>,
+        epoch: u64,
+        mut before_enqueue: impl FnMut(bool) -> BoundCancelAdmission<G>,
+    ) -> Result<Option<DeriveOrder>> {
+        let mut trigger = trigger;
+        loop {
+            let (method, instrument, body) = match trigger {
+                Some(trigger) => (
+                    methods::PRIVATE_CANCEL_TRIGGER_ORDER,
+                    None,
+                    serde_json::to_string(trigger)?,
+                ),
+                None => (
+                    methods::PRIVATE_CANCEL,
+                    Some(params.instrument_name),
+                    serde_json::to_string(params)?,
+                ),
+            };
+
+            self.require_authenticated(method).await?;
+            self.rate_limiter
+                .await_class_ready(rate_class_for_method(method), instrument.as_ref())
+                .await;
+            let cmd_tx = self.cmd_tx.read().await.clone();
+
+            let response = match before_enqueue(trigger.is_some()) {
+                BoundCancelAdmission::Send(_guard) => {
+                    enqueue_request(&cmd_tx, method, SecretString::from(body), Some(epoch))?
+                }
+                BoundCancelAdmission::Activated => {
+                    trigger = None;
+                    continue;
+                }
+                BoundCancelAdmission::Stop => return Ok(None),
+            };
+
+            let response = await_response(response, method, self.request_timeout).await?;
+            return if trigger.is_some() {
+                Ok(Some(serde_json::from_str(response.get())?))
+            } else {
+                decode_default_result::<DeriveEmptyResult>(&response)?;
+                Ok(None)
+            };
+        }
+    }
+
     /// Returns the current WebSocket connection id used by trigger orders.
     #[must_use]
     pub fn conn_id(&self) -> String {
@@ -1583,7 +1688,7 @@ impl DeriveWsExecutionHandle {
         let reservation = self
             .reserve_matching_request(methods::PRIVATE_ORDER, &params.instrument_name)
             .await?;
-        self.submit_order_after_rate_limit(params, reservation)
+        self.submit_order_after_rate_limit(params, reservation, || {})
             .await
             .map(|result| result.order)
     }
@@ -1592,12 +1697,14 @@ impl DeriveWsExecutionHandle {
         &self,
         params: &DeriveOrderParams,
         reservation: MatchingRateLimitReservation,
+        before_enqueue: impl FnOnce(),
     ) -> Result<DeriveOrderResult> {
         self.ensure_authenticated(methods::PRIVATE_ORDER)?;
         debug_assert_eq!(reservation.method, methods::PRIVATE_ORDER);
         let cmd_tx = self.cmd_tx.read().await.clone();
         self.ensure_authenticated(reservation.method)?;
         self.commit_matching_reservation(reservation)?;
+        before_enqueue();
         let result: DeriveOrderResult = send_request_typed_after_rate_limit(
             &self.rate_limiter,
             &cmd_tx,
@@ -1635,7 +1742,7 @@ impl DeriveWsExecutionHandle {
         params: &DeriveTriggerOrderParams,
         reservation: MatchingRateLimitReservation,
     ) -> Result<DeriveOrderResult> {
-        self.submit_order_after_rate_limit(&params.order, reservation)
+        self.submit_order_after_rate_limit(&params.order, reservation, || {})
             .await
     }
 
@@ -2009,6 +2116,16 @@ where
             .await;
     }
 
+    let response = enqueue_request(cmd_tx, method, params, connection_epoch)?;
+    await_response(response, method, timeout).await
+}
+
+fn enqueue_request(
+    cmd_tx: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
+    method: &'static str,
+    params: SecretString,
+    connection_epoch: Option<u64>,
+) -> Result<tokio::sync::oneshot::Receiver<Result<Box<RawValue>>>> {
     let (response_tx, response_rx) = tokio::sync::oneshot::channel();
     cmd_tx
         .send(HandlerCommand::Request {
@@ -2020,6 +2137,14 @@ where
         })
         .map_err(|_| DeriveWsError::NotConnected)?;
 
+    Ok(response_rx)
+}
+
+async fn await_response(
+    response_rx: tokio::sync::oneshot::Receiver<Result<Box<RawValue>>>,
+    method: &'static str,
+    timeout: Duration,
+) -> Result<Box<RawValue>> {
     // On timeout the handler's `pending` entry leaks until the next reconnect's
     // `fail_pending` drains it; the later send to the dropped receiver is a
     // no-op logged at debug.
@@ -2598,6 +2723,90 @@ mod tests {
         assert_eq!(socket.pending(), Some(window));
         assert!(socket.publish(window, true, || Ok(())).unwrap());
         assert_eq!(socket.pending(), None);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_transport_loss_waits_for_admitted_recovery_commit() {
+        use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
+        use nautilus_model::identifiers::ClientId;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(async move {
+            while let Ok((socket, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+                    while socket.next().await.is_some() {}
+                });
+            }
+        });
+
+        let registry = SocketReconnectRegistry::default();
+        let client_id = ClientId::from("DERIVE");
+        let endpoint = "derive-recovery-commit";
+        let mut client = DeriveWebSocketClient::new(
+            Some(url),
+            DeriveEnvironment::Testnet,
+            TransportBackend::default(),
+            None,
+        )
+        .with_socket_control(SocketControl::with_registry(
+            client_id, None, endpoint, &registry,
+        ))
+        .with_execution_recovery();
+        client.connect().await.unwrap();
+
+        let socket = client.reconnect_socket().unwrap();
+
+        let window = ReconnectWindow {
+            epoch: socket.epoch.load(Ordering::Acquire),
+            start: UnixNanos::from(20),
+        };
+
+        socket.coverage.lock().pending = Some(window);
+        socket
+            .authenticated_epoch
+            .store(window.epoch, Ordering::Release);
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let committing_socket = socket.clone();
+        let commit = tokio::task::spawn_blocking(move || {
+            committing_socket.commit_recovery(window.epoch, || {
+                entered_tx.send(()).unwrap();
+                release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            })
+        });
+
+        entered_rx.await.unwrap();
+
+        let handle = registry.handle(client_id, Ustr::from(endpoint)).unwrap();
+        let mut reconnect = tokio::task::spawn_blocking(move || handle.request_reconnect());
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while socket.is_active(window.epoch) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("transport starts reconnecting");
+
+        let early = tokio::time::timeout(Duration::from_millis(100), &mut reconnect).await;
+        release_tx.send(()).unwrap();
+        assert_eq!(commit.await.unwrap(), Some(()));
+        assert!(
+            early.is_err(),
+            "loss was published during a recovery commit"
+        );
+        assert_eq!(
+            reconnect.await.unwrap(),
+            SocketReconnectRequestOutcome::Accepted
+        );
+        assert_eq!(
+            socket.commit_recovery(window.epoch, || panic!("stale window")),
+            None::<()>
+        );
+        client.disconnect().await.unwrap();
+        server.abort();
     }
 
     #[tokio::test]
@@ -3557,11 +3766,42 @@ mod tests {
         assert!(matches!(result, Err(DeriveWsError::Serde(_))));
     }
 
+    #[tokio::test]
+    async fn test_unsubscribe_revalidates_ownership_after_waiting_for_subscription_lock() {
+        let client = DeriveWebSocketClient::new(
+            None,
+            DeriveEnvironment::Testnet,
+            TransportBackend::default(),
+            None,
+        );
+
+        let handle = client.subscription_handle();
+        let channel = "ticker_slim.ETH-PERP.1000";
+        handle.subscriptions.mark_subscribe(channel);
+        handle.subscriptions.confirm_subscribe(channel);
+        let mut channels = vec![channel.to_string()];
+        let ownership = AtomicBool::new(false);
+        let subscription = handle.subscription_lock.lock().await;
+        let unsubscribe = handle
+            .unsubscribe_ownerless_channels(&mut channels, |_| ownership.load(Ordering::Relaxed));
+        tokio::pin!(unsubscribe);
+        assert!(futures_util::poll!(unsubscribe.as_mut()).is_pending());
+
+        ownership.store(true, Ordering::Relaxed);
+        drop(subscription);
+        unsubscribe.await.unwrap();
+
+        assert!(handle.has_subscription(channel));
+    }
+
     #[rstest]
     #[case::pending(false)]
     #[case::fired_during_pacing(true)]
     #[tokio::test]
-    async fn test_trigger_cancel_selects_endpoint_after_pacing(#[case] fires: bool) {
+    async fn test_trigger_cancel_selects_endpoint_after_pacing(
+        #[case] fires: bool,
+        #[values(false, true)] check_binding: bool,
+    ) {
         let client = DeriveWebSocketClient::new(
             None,
             DeriveEnvironment::Testnet,
@@ -3595,8 +3835,27 @@ mod tests {
         let active = AtomicBool::new(false);
         let trigger = DeriveCancelTriggerOrderParams::new(42, "paced-trigger");
         let regular = DeriveCancelParams::new(42, "ETH-PERP", "paced-trigger");
-        let cancel = handle
-            .cancel_trigger_order_current(&trigger, &regular, || active.load(Ordering::Acquire));
+
+        let cancel = async {
+            if check_binding {
+                handle
+                    .cancel_bound_order(&regular, Some(&trigger), 2, |is_trigger| {
+                        if is_trigger && active.load(Ordering::Acquire) {
+                            BoundCancelAdmission::Activated
+                        } else {
+                            BoundCancelAdmission::Send(())
+                        }
+                    })
+                    .await
+            } else {
+                handle
+                    .cancel_trigger_order_current(&trigger, &regular, || {
+                        active.load(Ordering::Acquire)
+                    })
+                    .await
+            }
+        };
+
         tokio::pin!(cancel);
         assert!(futures_util::poll!(cancel.as_mut()).is_pending());
         assert!(cmd_rx.try_recv().is_err());
@@ -3615,6 +3874,7 @@ mod tests {
             let HandlerCommand::Request {
                 method,
                 params,
+                connection_epoch,
                 response_tx,
                 ..
             } = cmd_rx.recv().await.unwrap()
@@ -3631,6 +3891,7 @@ mod tests {
             };
 
             assert_eq!(method, expected_method);
+            assert_eq!(connection_epoch, check_binding.then_some(2));
             assert_eq!(params["subaccount_id"], serde_json::json!(42));
             assert_eq!(params["order_id"], serde_json::json!("paced-trigger"));
             assert_eq!(

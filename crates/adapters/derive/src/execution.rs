@@ -102,9 +102,10 @@ use crate::{
             DeriveTimeInForce,
         },
         parse::{
-            STRATEGY_REASON_MAX_CHARS, derive_order_type_to_nautilus_for_order,
-            derive_rejection_due_post_only, derive_status_to_nautilus, format_instrument_id,
-            format_venue_symbol, parse_derive_instrument_any, strategy_rejection_reason,
+            STRATEGY_REASON_MAX_CHARS, derive_order_side_to_nautilus,
+            derive_order_type_to_nautilus_for_order, derive_rejection_due_post_only,
+            derive_status_to_nautilus, format_instrument_id, format_venue_symbol,
+            parse_derive_instrument_any, strategy_rejection_reason,
         },
         retry::{http_retry_config, is_write_outcome_ambiguous_ws},
     },
@@ -116,7 +117,7 @@ use crate::{
             DeriveSubaccount, DeriveTrade,
         },
         parse::{
-            CommissionError, parse_derive_order_to_report_with_precision,
+            CommissionError, ms_to_nanos, parse_derive_order_to_report_with_precision,
             parse_derive_position_to_report_with_precision, parse_derive_subaccount_to_balances,
             parse_derive_trade_to_fill_report_with_precision,
         },
@@ -139,7 +140,7 @@ use crate::{
         DeriveOrdersSubscriptionData, DeriveTradesSubscriptionData, DeriveWebSocketClient,
         DeriveWsChannel, DeriveWsCredentials, DeriveWsError, DeriveWsExecutionHandle,
         DeriveWsMessage, OrderIdentity, WsDispatchState,
-        client::{ReconnectSocket, ReconnectWindow},
+        client::{BoundCancelAdmission, ReconnectSocket, ReconnectWindow},
         dispatch::{OrderBinding, ReplaceCompletion},
         parse::parse_ticker_quote_from_rest,
     },
@@ -184,6 +185,7 @@ pub struct DeriveExecutionClient {
     pending_tasks: TaskGroup,
     shutdown_errors: Vec<String>,
     dispatch_state: Arc<WsDispatchState>,
+    local_order_writes: Arc<Mutex<AHashMap<ClientOrderId, LocalOrderWrite>>>,
     reconciliation_request: Mutex<Option<ReconciliationSnapshotRequest>>,
     reconciliation_lookback: Arc<OnceLock<Option<DurationNanos>>>,
 }
@@ -292,6 +294,7 @@ impl DeriveExecutionClient {
             pending_tasks,
             shutdown_errors: Vec::new(),
             dispatch_state,
+            local_order_writes: Arc::default(),
             reconciliation_request: Mutex::new(None),
             reconciliation_lookback: Arc::new(OnceLock::new()),
         })
@@ -379,6 +382,354 @@ impl DeriveExecutionClient {
         if let Err(e) = self.pending_tasks.spawn(future) {
             log::warn!("Skipping Derive {description} after shutdown began: {e}");
         }
+    }
+
+    fn track_local_order_write(
+        &self,
+        client_order_id: ClientOrderId,
+        supersede: bool,
+    ) -> Option<LocalOrderWriteGuard> {
+        let mut writes = self.local_order_writes.lock();
+        if writes
+            .get(&client_order_id)
+            .is_some_and(|write| !supersede || write.cancel_pending)
+        {
+            return None;
+        }
+
+        let write = LocalOrderWrite::default();
+        let task = Arc::clone(&write.task);
+        writes.insert(client_order_id, write);
+        Some(LocalOrderWriteGuard {
+            writes: Arc::clone(&self.local_order_writes),
+            client_order_id,
+            task,
+        })
+    }
+
+    fn track_local_replace(
+        &self,
+        order: &OrderAny,
+        venue_order_id: VenueOrderId,
+        quantity: Quantity,
+        price: Option<Price>,
+    ) -> Option<LocalOrderWriteGuard> {
+        let client_order_id = order.client_order_id();
+        let state = &self.dispatch_state;
+        let _delivery = state.delivery_guard();
+        if ensure_order_binding_resolved(state, client_order_id).is_err()
+            || state.submit_binding_unproved(&client_order_id)
+            || state
+                .bound_venue_order_id(&client_order_id)
+                .is_some_and(|current| current != venue_order_id)
+        {
+            return None;
+        }
+
+        let write = self.track_local_order_write(client_order_id, true)?;
+        state.restore_order(order, false);
+        state.mark_pending_modify(client_order_id, venue_order_id);
+        state.record_modify_target(client_order_id, quantity, price);
+        Some(write)
+    }
+
+    fn spawn_deferred_cancel(&self, cmd: CancelOrder, fallback: Option<(VenueOrderId, bool)>) {
+        let mut cancel = DeferredCancel {
+            cmd,
+            fallback,
+            writes: Arc::clone(&self.local_order_writes),
+            emitter: self.emitter.clone(),
+            clock: self.clock,
+            settled: false,
+            enqueued: false,
+        };
+
+        let Some(socket) = self.ws_client.reconnect_socket() else {
+            cancel.deny("Derive session is unavailable for deferred cancel");
+            return;
+        };
+
+        let Some(epoch) = socket.active_epoch() else {
+            cancel.deny("Derive session is unavailable for deferred cancel");
+            return;
+        };
+
+        let dispatch_state = Arc::clone(&self.dispatch_state);
+        let account_id = self.core.account_id;
+        let ws_exec = self.ws_exec.clone();
+        let subaccount_id = self.credential.subaccount_id();
+        let timeout = self
+            .config
+            .ws_timeout_secs
+            .map_or(WS_REQUEST_TIMEOUT, Duration::from_secs);
+
+        let Some(deadline) = Instant::now().checked_add(timeout) else {
+            cancel.deny("Derive deferred cancel timeout is too large");
+            return;
+        };
+
+        self.spawn_task("deferred_cancel", async move {
+            let (venue_order_id, is_trigger) = match time::timeout(
+                deadline.saturating_duration_since(Instant::now()),
+                cancel.wait_for_binding(&dispatch_state),
+            )
+            .await
+            {
+                Ok(Some(binding)) => binding,
+                Ok(None) => return Ok(()),
+                Err(_) => {
+                    let _delivery = dispatch_state.delivery_guard();
+                    if !cancel.settle_if_terminal(&dispatch_state) {
+                        cancel.deny("Derive deferred cancel expired before transmission");
+                    }
+
+                    return Ok(());
+                }
+            };
+
+            let venue_symbol = format_venue_symbol(&cancel.cmd.instrument_id)?;
+            let regular =
+                DeriveCancelParams::new(subaccount_id, venue_symbol.as_str(), venue_order_id.as_str());
+
+            let trigger = is_trigger.then(|| {
+                DeriveCancelTriggerOrderParams::new(subaccount_id, venue_order_id.as_str())
+            });
+
+            let outcome = ws_exec
+                .cancel_bound_order(&regular, trigger.as_ref(), epoch, |is_trigger| {
+                    cancel.check_enqueue(&dispatch_state, &socket, epoch, (venue_order_id, is_trigger))
+                })
+                .await;
+
+            match outcome {
+                Ok(Some(order)) => {
+                    cancel.settle();
+                    emit_trigger_cancel_result(
+                        &order, Some(venue_order_id), &cancel.cmd, &cancel.emitter, &dispatch_state,
+                        account_id, cancel.clock,
+                    )?;
+                }
+                Ok(None) => cancel.settle(),
+                Err(e) => {
+                    let (failure, _) = ws_command_failure(&e);
+                    if let CommandFailure::Ambiguous(reason) = &failure {
+                        let client_order_id = cancel.cmd.client_order_id;
+                        log::warn!("Derive deferred cancel for {client_order_id} returned ambiguous WS outcome: {reason}; awaiting reconciliation");
+                    }
+
+                    cancel.finish(Some(venue_order_id), failure);
+                }
+            }
+
+            Ok(())
+        });
+    }
+
+    fn cancel_individual_order_now(&self, cmd: CancelOrder) -> anyhow::Result<()> {
+        let state = &self.dispatch_state;
+        let client_order_id = cmd.client_order_id;
+        let current = state.bound_venue_order_id(&client_order_id);
+        let missing_binding = cmd.venue_order_id.is_none()
+            && current.is_none()
+            && state
+                .identity(&client_order_id)
+                .is_some_and(|identity| !is_derive_trigger_order_type(identity.order_type));
+
+        if missing_binding || state.submit_binding_unproved(&client_order_id) {
+            emit_cancel_failure(
+                &self.emitter,
+                cmd.strategy_id,
+                cmd.instrument_id,
+                client_order_id,
+                None,
+                CommandFailure::not_sent("Derive cancel could not prove the current venue order"),
+                self.clock.get_time_ns(),
+                Some(cmd.command_id),
+            );
+            return Ok(());
+        }
+
+        if (current.is_some() || cmd.venue_order_id.is_some())
+            && ensure_order_binding_resolved(state, client_order_id).is_ok()
+        {
+            let fallback = cmd.venue_order_id.map(|venue_order_id| {
+                let is_trigger = self
+                    .core
+                    .cache()
+                    .order(&client_order_id)
+                    .is_some_and(|order| is_derive_trigger_order_type(order.order_type()));
+                (venue_order_id, is_trigger)
+            });
+
+            self.local_order_writes.lock().insert(
+                client_order_id,
+                LocalOrderWrite {
+                    cancel_pending: true,
+                    task_finished: true,
+                    ..Default::default()
+                },
+            );
+
+            self.spawn_deferred_cancel(cmd, fallback);
+            return Ok(());
+        }
+
+        self.cancel_order_now(cmd)
+    }
+
+    fn cancel_order_now(&self, cmd: CancelOrder) -> anyhow::Result<()> {
+        if let Err(e) = ensure_order_binding_resolved(&self.dispatch_state, cmd.client_order_id) {
+            emit_cancel_failure(
+                &self.emitter,
+                cmd.strategy_id,
+                cmd.instrument_id,
+                cmd.client_order_id,
+                self.dispatch_state
+                    .bound_venue_order_id(&cmd.client_order_id)
+                    .or(cmd.venue_order_id),
+                CommandFailure::not_sent(e.to_string()),
+                self.clock.get_time_ns(),
+                Some(cmd.command_id),
+            );
+            return Ok(());
+        }
+
+        let http_client = self.http_client.clone();
+        let ws_exec = self.ws_exec.clone();
+        let subaccount_id = self.credential.subaccount_id();
+        let venue_symbol = format_venue_symbol(&cmd.instrument_id)?.to_string();
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
+        let account_id = self.core.account_id;
+        let dispatch_state = self.dispatch_state.clone();
+        let strategy_id = cmd.strategy_id;
+        let instrument_id = cmd.instrument_id;
+        let client_order_id = cmd.client_order_id;
+        let venue_order_id = dispatch_state
+            .bound_venue_order_id(&client_order_id)
+            .or(cmd.venue_order_id);
+        let is_trigger_order = self
+            .core
+            .cache()
+            .order(&client_order_id)
+            .is_some_and(|order| is_derive_trigger_order_type(order.order_type()));
+
+        self.spawn_task("cancel_order", async move {
+            let venue_order_id = if venue_order_id.is_none() && is_trigger_order
+                && !dispatch_state.trigger_active(&client_order_id)
+            {
+                match resolve_trigger_cancel_id(&http_client, &dispatch_state, subaccount_id, client_order_id, venue_symbol.as_str()).await {
+                    Ok(id) => Some(id),
+                    Err(reason) => {
+                        log::warn!("Cannot cancel trigger order {client_order_id}: {reason}");
+                        emit_cancel_failure(
+                            &emitter,
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            None,
+                            CommandFailure::not_sent(&reason),
+                            clock.get_time_ns(),
+                            Some(cmd.command_id),
+                        );
+                        return Ok(());
+                    }
+                }
+            } else { dispatch_state.bound_venue_order_id(&client_order_id).or(venue_order_id) };
+
+            let is_trigger_order = is_trigger_order && !dispatch_state.trigger_active(&client_order_id);
+            let expected_cancel_id = venue_order_id;
+            let outcome = match venue_order_id {
+                Some(venue_order_id) if is_trigger_order => {
+                    ws_exec
+                        .cancel_trigger_order_current(
+                            &DeriveCancelTriggerOrderParams::new(subaccount_id, venue_order_id.as_str()),
+                            &DeriveCancelParams::new(subaccount_id, venue_symbol.as_str(), venue_order_id.as_str()),
+                            || dispatch_state.trigger_active(&client_order_id),
+                        )
+                        .await
+                }
+                Some(venue_order_id) => ws_exec
+                    .cancel_order(&DeriveCancelParams::new(
+                        subaccount_id,
+                        venue_symbol.as_str(),
+                        venue_order_id.as_str(),
+                    ))
+                    .await
+                    .map(|()| None),
+                None => ws_exec
+                    .cancel_by_label(&DeriveCancelByLabelParams::new(
+                        subaccount_id,
+                        client_order_id.as_str(),
+                    ))
+                    .await
+                    .map(|result| {
+                        if result.cancelled_orders == 0 {
+                            let reason = "no open order matched the client_order_id label";
+                            log::debug!(
+                                "Derive rejected cancel for {client_order_id}: {reason}"
+                            );
+                            let ts = clock.get_time_ns();
+                            emit_cancel_failure(
+                                &emitter,
+                                strategy_id,
+                                instrument_id,
+                                client_order_id,
+                                None,
+                                CommandFailure::venue_rejected(reason),
+                                ts,
+                                Some(cmd.command_id),
+                            );
+                        }
+
+                        None
+                    }),
+            };
+
+            match outcome.map_err(|e| ws_command_failure(&e)) {
+                Ok(Some(canceled_order)) => {
+                    emit_trigger_cancel_result(&canceled_order, expected_cancel_id, &cmd, &emitter, &dispatch_state, account_id, clock)?;
+                }
+                Ok(None) => {}
+                // See docs/integrations/derive.md "Order rejection semantics".
+                Err((CommandFailure::Ambiguous(reason), _)) => {
+                    log::warn!(
+                        "Derive cancel for {client_order_id} returned ambiguous WS outcome: {reason}; awaiting reconciliation",
+                    );
+                }
+                Err((failure, _)) => {
+                    log::debug!("Derive rejected cancel for {client_order_id}: {failure:?}");
+                    let ts = clock.get_time_ns();
+                    emit_cancel_failure(
+                        &emitter,
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        venue_order_id,
+                        failure,
+                        ts,
+                        Some(cmd.command_id),
+                    );
+                }
+            }
+
+            Ok(())
+        });
+
+        Ok(())
+    }
+
+    fn deny_duplicate_cancel(&self, cmd: &CancelOrder) {
+        emit_cancel_failure(
+            &self.emitter,
+            cmd.strategy_id,
+            cmd.instrument_id,
+            cmd.client_order_id,
+            cmd.venue_order_id,
+            CommandFailure::not_sent("A Derive cancel is already pending"),
+            self.clock.get_time_ns(),
+            Some(cmd.command_id),
+        );
     }
 
     fn abort_pending_tasks(&self) {
@@ -561,6 +912,7 @@ impl DeriveExecutionClient {
             report_observations: None,
             load_ids: self.config.load_ids.clone(),
             reconnect_position_instruments: AHashSet::new(),
+            recovery_session: None,
         }
     }
 
@@ -578,11 +930,12 @@ impl DeriveExecutionClient {
     {
         let _delivery = self.dispatch_state.delivery_guard();
 
-        // Resolving a pending replacement can emit events, so retain the inline path
+        // Resolving a pending write can emit events, so retain the inline path
         if self
             .dispatch_state
-            .unresolved_client_order_id(instrument_id)
+            .unresolved_client_order_id(instrument_id, true)
             .is_some()
+            || self.dispatch_state.has_unproved_submit(instrument_id)
         {
             return None;
         }
@@ -678,7 +1031,7 @@ impl DeriveExecutionClient {
             if (order.is_open() || order.is_inflight())
                 && cache.client_id(&order.client_order_id()) == Some(&self.core.client_id)
             {
-                self.dispatch_state.restore_order(&order);
+                self.dispatch_state.restore_order(&order, true);
             }
         }
     }
@@ -887,7 +1240,7 @@ impl DeriveExecutionClient {
             request,
             reconciliation.clone(),
             Arc::clone(&self.reconciliation_lookback),
-            socket,
+            socket.clone(),
         ))?;
 
         let session_spawner = self
@@ -932,13 +1285,26 @@ impl DeriveExecutionClient {
                                     log::warn!("Skipping Derive account refresh after shutdown began: {e}");
                                 }
                             }
-                            Some(message) => handle_ws_message(
-                                message,
-                                &emitter,
-                                account_id,
-                                clock,
-                                &dispatch_state,
-                            ),
+                            Some(message) => {
+                                let epoch = socket.active_epoch();
+                                for (client_order_id, instrument_id, venue_order_id) in handle_ws_message(
+                                    message, &emitter, account_id, clock, &dispatch_state,
+                                ) {
+                                    let Some(epoch) = epoch else { break };
+                                    let mut context = reconciliation.clone();
+                                    context.recovery_session = Some((socket.clone(), epoch));
+                                    let task_cancellation = cancellation.clone();
+                                    if let Err(e) = session_spawner.spawn(async move {
+                                        tokio::select! {
+                                            biased;
+                                            () = task_cancellation.cancelled() => {}
+                                            () = context.reconcile_submit_fill(Some(client_order_id), instrument_id, venue_order_id, &[], &[]) => {}
+                                        }
+                                    }) {
+                                        log::warn!("Skipping Derive fill verification after shutdown began: {e}");
+                                    }
+                                }
+                            }
                             None => break,
                         }
                     }
@@ -1132,7 +1498,7 @@ impl ExecutionClient for DeriveExecutionClient {
             && order.venue_order_id() == Some(venue_order_id)
             && cache.client_id(&client_order_id) == Some(&self.core.client_id)
         {
-            self.dispatch_state.restore_order(&order);
+            self.dispatch_state.restore_order(&order, true);
         }
     }
 
@@ -1457,8 +1823,13 @@ impl ExecutionClient for DeriveExecutionClient {
         }
 
         let is_trigger_order = is_derive_trigger_order_type(order.order_type());
+        let signature_expiry_secs = if is_trigger_order {
+            TRIGGER_ORDER_SIGNATURE_TTL.as_secs()
+        } else {
+            self.signing.signature_expiry_secs
+        };
+
         let cancel_on_disconnect = self.config.cancel_on_disconnect;
-        let market_quote = (order.order_type() == OrderType::Market).then_some(());
 
         let venue_symbol = format_venue_symbol(&cmd.instrument_id)?.to_string();
         let http_client = self.http_client.clone();
@@ -1482,8 +1853,16 @@ impl ExecutionClient for DeriveExecutionClient {
             order_type: order.order_type(),
         };
 
+        let Some(write) = self.track_local_order_write(order.client_order_id(), false) else {
+            log::warn!(
+                "Ignoring duplicate Derive submit for {}",
+                order.client_order_id()
+            );
+            return Ok(());
+        };
+
         self.dispatch_state
-            .register_identity(order.client_order_id(), identity);
+            .register_submit(order.client_order_id(), identity);
         self.dispatch_state.record_order_shape(
             order.client_order_id(),
             order.quantity(),
@@ -1496,6 +1875,8 @@ impl ExecutionClient for DeriveExecutionClient {
         let dispatch_state = self.dispatch_state.clone();
 
         self.spawn_task("submit_order", async move {
+            let _write = write;
+
             let instrument = match cached_or_fetch_instrument(
                 &http_client,
                 &instruments,
@@ -1543,115 +1924,19 @@ impl ExecutionClient for DeriveExecutionClient {
                 return Ok(());
             }
 
-            // Avoid signing against a quote captured before instrument resolution
-            let explicit_price = if market_quote.is_some() {
-                let quote = match refresh_market_order_quote(
-                    &http_client,
-                    &venue_symbol,
-                    &instrument,
-                    clock,
-                )
-                .await
-                {
-                    Ok(quote) => quote,
-                    Err(e) => {
-                        let reason = format!(
-                            "market-order quote refresh failed for {}: {e}",
-                            order_for_task.client_order_id(),
-                        );
-                        log::warn!("{reason}");
-                        dispatch_state.forget(&order_for_task.client_order_id());
-                        let ts = clock.get_time_ns();
-                        emit_submit_failure(
-                            &emitter,
-                            &order_for_task,
-                            CommandFailure::not_sent(&reason),
-                            ts,
-                            false,
-                        );
-                        return Ok(());
-                    }
-                };
-
-                match market_order_limit_price(
-                    &quote,
-                    order_for_task.order_side(),
-                    slippage_bps,
-                    instrument.tick_size,
-                ) {
-                    Some(p) => Some(p),
-                    None => {
-                        let reason = format!(
-                            "market-order slippage bound is non-positive for {} ({} bps)",
-                            order_for_task.client_order_id(),
-                            slippage_bps,
-                        );
-                        log::warn!("{reason}");
-                        dispatch_state.forget(&order_for_task.client_order_id());
-                        let ts = clock.get_time_ns();
-                        emit_submit_failure(
-                            &emitter,
-                            &order_for_task,
-                            CommandFailure::not_sent(&reason),
-                            ts,
-                            false,
-                        );
-                        return Ok(());
-                    }
+            let explicit_price = match resolve_submit_price(
+                &http_client, &venue_symbol, &instrument, &order_for_task, clock, slippage_bps,
+            ).await {
+                Ok(price) => price,
+                Err(e) => {
+                    log::warn!("{e}");
+                    dispatch_state.forget(&order_for_task.client_order_id());
+                    emit_submit_failure(
+                        &emitter, &order_for_task, CommandFailure::not_sent(e.to_string()),
+                        clock.get_time_ns(), false,
+                    );
+                    return Ok(());
                 }
-            } else if matches!(
-                order_for_task.order_type(),
-                OrderType::StopMarket | OrderType::MarketIfTouched
-            ) {
-                let trigger_price = match order_for_task.trigger_price() {
-                    Some(price) => price.as_decimal(),
-                    None => {
-                        let reason = format!(
-                            "trigger market order {} is missing trigger_price",
-                            order_for_task.client_order_id(),
-                        );
-                        log::warn!("{reason}");
-                        dispatch_state.forget(&order_for_task.client_order_id());
-                        let ts = clock.get_time_ns();
-                        emit_submit_failure(
-                            &emitter,
-                            &order_for_task,
-                            CommandFailure::not_sent(&reason),
-                            ts,
-                            false,
-                        );
-                        return Ok(());
-                    }
-                };
-
-                match trigger_market_limit_price(
-                    trigger_price,
-                    order_for_task.order_side(),
-                    slippage_bps,
-                    instrument.tick_size,
-                ) {
-                    Some(p) => Some(p),
-                    None => {
-                        let reason = format!(
-                            "trigger market-order slippage bound is non-positive for {} ({} bps)",
-                            order_for_task.client_order_id(),
-                            slippage_bps,
-                        );
-                        log::warn!("{reason}");
-                        dispatch_state.forget(&order_for_task.client_order_id());
-                        let ts = clock.get_time_ns();
-                        emit_submit_failure(
-                            &emitter,
-                            &order_for_task,
-                            CommandFailure::not_sent(&reason),
-                            ts,
-                            false,
-                        );
-                        return Ok(());
-                    }
-                }
-            } else {
-                None
             };
 
             let matching_reservation = match ws_exec
@@ -1681,15 +1966,7 @@ impl ExecutionClient for DeriveExecutionClient {
                 }
             };
 
-            let expiry =
-                match normal_order_signature_expiry(
-                    clock,
-                    if is_trigger_order {
-                        TRIGGER_ORDER_SIGNATURE_TTL.as_secs()
-                    } else {
-                        signing.signature_expiry_secs
-                    },
-                ) {
+            let expiry = match normal_order_signature_expiry(clock, signature_expiry_secs) {
                     Ok(expiry) => expiry,
                     Err(e) => {
                         log::warn!(
@@ -1789,47 +2066,13 @@ impl ExecutionClient for DeriveExecutionClient {
                 payload.limit_price,
             );
 
-            match ws_exec
-                .submit_order_after_rate_limit(&payload, matching_reservation)
-                .await
-                .map_err(|e| ws_command_failure(&e))
-            {
-                Ok(result) => {
-                    dispatch_order_result(
-                        result,
-                        order_for_task.client_order_id(),
-                        &emitter,
-                        account_id,
-                        clock,
-                        &dispatch_state,
-                    );
-                    log::debug!(
-                        "Order submitted: client_order_id={}",
-                        order_for_task.client_order_id(),
-                    );
-                }
-                // See docs/integrations/derive.md "Order rejection semantics".
-                Err((CommandFailure::Ambiguous(reason), _)) => {
-                    log::warn!(
-                        "Derive submit for {} returned ambiguous WS outcome: {reason}; awaiting reconciliation",
-                        order_for_task.client_order_id(),
-                    );
-                }
-                Err((failure, due_post_only)) => {
-                    log::debug!(
-                        "Derive rejected order {}: {failure:?}",
-                        order_for_task.client_order_id(),
-                    );
+            let outcome = ws_exec
+                .submit_order_after_rate_limit(&payload, matching_reservation, || {
+                    dispatch_state.record_submit_nonce(order_for_task.client_order_id(), nonce);
+                })
+                .await;
 
-                    if dispatch_state
-                        .take_identity(&order_for_task.client_order_id())
-                        .is_some()
-                    {
-                        let ts = clock.get_time_ns();
-                        emit_submit_failure(&emitter, &order_for_task, failure, ts, due_post_only);
-                    }
-                }
-            }
+            dispatch_submit_outcome(outcome, &order_for_task, &emitter, account_id, clock, &dispatch_state);
 
             Ok(())
         });
@@ -1839,7 +2082,6 @@ impl ExecutionClient for DeriveExecutionClient {
 
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         let orders = self.core.get_orders_for_list(&cmd.order_list)?;
-
         if orders.iter().any(|order| {
             order.is_contingency()
                 || order.is_child_order()
@@ -1893,146 +2135,44 @@ impl ExecutionClient for DeriveExecutionClient {
     }
 
     fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
-        if let Err(e) = ensure_order_binding_resolved(&self.dispatch_state, cmd.client_order_id) {
-            emit_cancel_failure(
-                &self.emitter,
-                cmd.strategy_id,
-                cmd.instrument_id,
-                cmd.client_order_id,
-                self.dispatch_state
-                    .bound_venue_order_id(&cmd.client_order_id)
-                    .or(cmd.venue_order_id),
-                CommandFailure::not_sent(e.to_string()),
-                self.clock.get_time_ns(),
-                Some(cmd.command_id),
-            );
+        let _delivery = self.dispatch_state.delivery_guard();
+
+        if self
+            .dispatch_state
+            .is_cancel_terminal(&cmd.client_order_id, cmd.instrument_id)
+            || self
+                .core
+                .cache()
+                .order(&cmd.client_order_id)
+                .is_some_and(|order| {
+                    order.instrument_id() == cmd.instrument_id && order.is_closed()
+                })
+        {
             return Ok(());
         }
 
-        let http_client = self.http_client.clone();
-        let ws_exec = self.ws_exec.clone();
-        let subaccount_id = self.credential.subaccount_id();
-        let venue_symbol = format_venue_symbol(&cmd.instrument_id)?.to_string();
-        let emitter = self.emitter.clone();
-        let clock = self.clock;
-        let account_id = self.core.account_id;
-        let dispatch_state = self.dispatch_state.clone();
-        let strategy_id = cmd.strategy_id;
-        let instrument_id = cmd.instrument_id;
-        let client_order_id = cmd.client_order_id;
-        let venue_order_id = dispatch_state
-            .bound_venue_order_id(&client_order_id)
-            .or(cmd.venue_order_id);
-        let is_trigger_order = self
-            .core
-            .cache()
-            .order(&client_order_id)
-            .is_some_and(|order| is_derive_trigger_order_type(order.order_type()));
-
-        self.spawn_task("cancel_order", async move {
-            let venue_order_id = if venue_order_id.is_none() && is_trigger_order
-                && !dispatch_state.trigger_active(&client_order_id)
-            {
-                match resolve_trigger_cancel_id(&http_client, &dispatch_state, subaccount_id, client_order_id, venue_symbol.as_str()).await {
-                    Ok(id) => Some(id),
-                    Err(reason) => {
-                        log::warn!("Cannot cancel trigger order {client_order_id}: {reason}");
-                        emit_cancel_failure(
-                            &emitter,
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            None,
-                            CommandFailure::not_sent(&reason),
-                            clock.get_time_ns(),
-                            Some(cmd.command_id),
-                        );
-                        return Ok(());
-                    }
+        let defer = {
+            let mut writes = self.local_order_writes.lock();
+            if let Some(write) = writes.get_mut(&cmd.client_order_id) {
+                if write.cancel_pending {
+                    drop(writes);
+                    self.deny_duplicate_cancel(&cmd);
+                    return Ok(());
                 }
-            } else { dispatch_state.bound_venue_order_id(&client_order_id).or(venue_order_id) };
 
-            let is_trigger_order = is_trigger_order && !dispatch_state.trigger_active(&client_order_id);
-            let expected_cancel_id = venue_order_id;
-
-            let outcome = match venue_order_id {
-                Some(venue_order_id) if is_trigger_order => {
-                    ws_exec
-                        .cancel_trigger_order_current(
-                            &DeriveCancelTriggerOrderParams::new(subaccount_id, venue_order_id.as_str()),
-                            &DeriveCancelParams::new(subaccount_id, venue_symbol.as_str(), venue_order_id.as_str()),
-                            || dispatch_state.trigger_active(&client_order_id),
-                        )
-                        .await
-                }
-                Some(venue_order_id) => ws_exec
-                    .cancel_order(&DeriveCancelParams::new(
-                        subaccount_id,
-                        venue_symbol.as_str(),
-                        venue_order_id.as_str(),
-                    ))
-                    .await
-                    .map(|()| None),
-                None => ws_exec
-                    .cancel_by_label(&DeriveCancelByLabelParams::new(
-                        subaccount_id,
-                        client_order_id.as_str(),
-                    ))
-                    .await
-                    .map(|result| {
-                        if result.cancelled_orders == 0 {
-                            let reason = "no open order matched the client_order_id label";
-                            log::debug!(
-                                "Derive rejected cancel for {client_order_id}: {reason}"
-                            );
-                            let ts = clock.get_time_ns();
-                            emit_cancel_failure(
-                                &emitter,
-                                strategy_id,
-                                instrument_id,
-                                client_order_id,
-                                None,
-                                CommandFailure::venue_rejected(reason),
-                                ts,
-                                Some(cmd.command_id),
-                            );
-                        }
-
-                        None
-                    }),
-            };
-
-            match outcome.map_err(|e| ws_command_failure(&e)) {
-                Ok(Some(canceled_order)) => {
-                    emit_trigger_cancel_result(&canceled_order, expected_cancel_id, &cmd, &emitter, &dispatch_state, account_id, clock)?;
-                }
-                Ok(None) => {}
-                // See docs/integrations/derive.md "Order rejection semantics".
-                Err((CommandFailure::Ambiguous(reason), _)) => {
-                    log::warn!(
-                        "Derive cancel for {client_order_id} returned ambiguous WS outcome: {reason}; awaiting reconciliation",
-                    );
-                }
-                Err((failure, _)) => {
-                    log::debug!("Derive rejected cancel for {client_order_id}: {failure:?}");
-                    let ts = clock.get_time_ns();
-                    emit_cancel_failure(
-                        &emitter,
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        venue_order_id,
-                        failure,
-                        ts,
-                        Some(cmd.command_id),
-                    );
-                }
+                write.cancel_pending = true;
+                true
+            } else {
+                false
             }
+        };
 
+        if defer {
+            self.spawn_deferred_cancel(cmd, None);
             Ok(())
-        });
-
-        Ok(())
+        } else {
+            self.cancel_individual_order_now(cmd)
+        }
     }
 
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
@@ -2126,7 +2266,7 @@ impl ExecutionClient for DeriveExecutionClient {
         }
 
         for inner in cmd.cancels {
-            self.cancel_order(inner)?;
+            self.cancel_order_now(inner)?;
         }
 
         Ok(())
@@ -2246,24 +2386,24 @@ impl ExecutionClient for DeriveExecutionClient {
         let voi_str = venue_order_id.to_string();
         let command_id = cmd.command_id;
 
-        {
-            let _delivery = dispatch_state.delivery_guard();
-            if !dispatch_state.mark_pending_modify(client_order_id, stale_venue_order_id) {
-                emit_modify_failure(
-                    &emitter,
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    Some(stale_venue_order_id),
-                    CommandFailure::not_sent("Another modify is pending"),
-                    clock.get_time_ns(),
-                    Some(cmd.command_id),
-                );
-                return Ok(());
-            }
-
-            dispatch_state.record_modify_target(client_order_id, target_quantity, target_price);
-        }
+        let Some(write) = self.track_local_replace(
+            &order_for_task,
+            stale_venue_order_id,
+            target_quantity,
+            target_price,
+        ) else {
+            emit_modify_failure(
+                &emitter,
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                Some(stale_venue_order_id),
+                CommandFailure::not_sent("Another Derive order command is pending"),
+                clock.get_time_ns(),
+                Some(cmd.command_id),
+            );
+            return Ok(());
+        };
 
         let mut unsent = UnsentModify {
             command: Some(cmd),
@@ -2274,6 +2414,8 @@ impl ExecutionClient for DeriveExecutionClient {
         };
 
         self.spawn_task("modify_order", async move {
+            let _write = write;
+
             let instrument = match cached_or_fetch_instrument(
                 &http_client,
                 &instruments,
@@ -2863,6 +3005,7 @@ struct DeriveReconciliationContext {
     report_observations: Option<Arc<Mutex<ReportObservations>>>,
     load_ids: Option<Vec<InstrumentId>>,
     reconnect_position_instruments: AHashSet<InstrumentId>,
+    recovery_session: Option<(ReconnectSocket, u64)>,
 }
 
 impl DeriveReconciliationContext {
@@ -2888,7 +3031,7 @@ impl DeriveReconciliationContext {
     }
 
     async fn recover_after_reconnect(
-        &self,
+        mut self,
         lookback: &OnceLock<Option<DurationNanos>>,
         socket: &ReconnectSocket,
         window: ReconnectWindow,
@@ -2916,6 +3059,7 @@ impl DeriveReconciliationContext {
         log::info!(
             "Generating Derive reconnect ExecutionMassStatus (lookback_start={lookback_start:?})"
         );
+        self.recovery_session = Some((socket.clone(), window.epoch));
         let mass_status = Box::pin(self.generate_mass_status(lookback, ts_init, false)).await?;
         let order_count = mass_status.order_reports().len();
         let fill_count: usize = mass_status.fill_reports().values().map(Vec::len).sum();
@@ -2990,7 +3134,9 @@ impl DeriveReconciliationContext {
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
         self.ensure_order_context()?;
-        self.resolve_pending_modifies(cmd.instrument_id).await?;
+        self.resolve_pending_modifies(cmd.instrument_id, false)
+            .await?;
+
         if cmd.venue_order_id.is_none() && cmd.client_order_id.is_none() {
             anyhow::bail!(
                 "Derive generate_order_status_report requires venue_order_id or client_order_id"
@@ -3011,17 +3157,28 @@ impl DeriveReconciliationContext {
         let client_order_id = ClientOrderId::new_checked(order.label)
             .ok()
             .or(cmd.client_order_id);
-
+        let instrument_id = format_instrument_id(order.instrument_name)?;
         if let Ok(venue_order_id) = VenueOrderId::new_checked(&order.order_id) {
-            self.validate_report_binding(
-                client_order_id,
-                venue_order_id,
-                format_instrument_id(order.instrument_name)?,
-            )?;
+            if let Some(cid) = client_order_id
+                && cmd.instrument_id.is_none_or(|id| id == instrument_id)
+                && cmd.venue_order_id.is_none_or(|id| id == venue_order_id)
+            {
+                let successors = self.collect_submit_successors(&order).await?;
+                self.reconcile_submit_order(
+                    &order,
+                    cid,
+                    instrument_id,
+                    venue_order_id,
+                    successors.iter(),
+                    &[],
+                );
+            }
+
+            self.validate_report_binding(client_order_id, venue_order_id, instrument_id)?;
         }
 
         if let Some(binding) = client_order_id.and_then(|cid| self.order_binding(cid))
-            && binding.identity.instrument_id == format_instrument_id(order.instrument_name)?
+            && binding.identity.instrument_id == instrument_id
             && let Some(current) = binding.venue_order_id
             && order.order_id != current.as_str()
         {
@@ -3084,6 +3241,7 @@ impl DeriveReconciliationContext {
             report = report.with_client_order_id(client_order_id);
         }
 
+        self.reconcile_submit(&order, &mut report, &[]);
         self.observe_trigger_order(&order, &report);
         self.project_order_report(&order, report, &[], false)
             .await
@@ -3104,7 +3262,8 @@ impl DeriveReconciliationContext {
             );
 
             self.ensure_order_context()?;
-            self.resolve_pending_modifies(cmd.instrument_id).await?;
+            self.resolve_pending_modifies(cmd.instrument_id, false)
+                .await?;
             let orders = self.collect_order_records(&cmd).await?;
             self.generate_order_status_reports_from_records(
                 &cmd,
@@ -3226,8 +3385,14 @@ impl DeriveReconciliationContext {
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<CollectedReports<OrderStatusReport>> {
         self.ensure_order_context()?;
-        self.resolve_pending_modifies(cmd.instrument_id).await?;
+        self.resolve_pending_modifies(cmd.instrument_id, false)
+            .await?;
         let orders = self.collect_scoped_order_records(cmd).await?;
+        let open = if cmd.open_only {
+            Vec::new()
+        } else {
+            self.collect_submit_open_orders(&orders).await?
+        };
 
         let mut reports = self
             .generate_order_status_reports_from_records(
@@ -3235,7 +3400,7 @@ impl DeriveReconciliationContext {
                 orders,
                 &AHashSet::new(),
                 false,
-                &[],
+                &open,
                 false,
             )
             .await?;
@@ -3286,6 +3451,7 @@ impl DeriveReconciliationContext {
                 ts_init,
             ) {
                 Ok(mut report) => {
+                    self.reconcile_submit(order, &mut report, &known_orders);
                     self.validate_report_binding(
                         report.client_order_id,
                         report.venue_order_id,
@@ -3344,6 +3510,7 @@ impl DeriveReconciliationContext {
     async fn resolve_pending_modifies(
         &self,
         instrument_id: Option<InstrumentId>,
+        allow_deferred_submits: bool,
     ) -> anyhow::Result<()> {
         if self.report_observations.is_some() {
             return ensure_bindings_resolved(&self.dispatch_state, instrument_id);
@@ -3352,7 +3519,7 @@ impl DeriveReconciliationContext {
         while let Some(client_order_id) = {
             let _delivery = self.dispatch_state.delivery_guard();
             self.dispatch_state
-                .unresolved_client_order_id(instrument_id)
+                .unresolved_client_order_id(instrument_id, !allow_deferred_submits)
         } {
             let identity = self
                 .dispatch_state
@@ -3691,8 +3858,18 @@ impl DeriveReconciliationContext {
         cmd: GenerateFillReports,
         retain_untracked: bool,
     ) -> anyhow::Result<CollectedReports<FillReport>> {
-        self.resolve_pending_modifies(cmd.instrument_id).await?;
-        let (all_trades, mut records_complete) = self.collect_trade_records(&cmd).await?;
+        let trades = self.collect_trade_records(&cmd).await?;
+        self.fill_reports_from_records(&cmd, trades, retain_untracked, &[])
+            .await
+    }
+
+    async fn fill_reports_from_records(
+        &self,
+        cmd: &GenerateFillReports,
+        (all_trades, mut records_complete): (Vec<DeriveTrade>, bool),
+        retain_untracked: bool,
+        order_sources: &[&[DeriveOrder]],
+    ) -> anyhow::Result<CollectedReports<FillReport>> {
         let mut complete = true;
 
         let ts_init = self.clock.get_time_ns();
@@ -3703,8 +3880,10 @@ impl DeriveReconciliationContext {
 
         let mut reports = Vec::with_capacity(all_trades.len());
         let mut seen_trade_ids = AHashSet::new();
+        let mut checked_submits = AHashSet::new();
+        let mut unresolved = None;
 
-        for trade in all_trades {
+        for trade in &all_trades {
             if !instrument_in_scope(trade.instrument_name.as_str(), self.load_ids.as_deref()) {
                 continue;
             }
@@ -3721,37 +3900,32 @@ impl DeriveReconciliationContext {
             complete &= price_precision.is_some();
 
             match parse_derive_trade_to_fill_report_with_precision(
-                &trade,
+                trade,
                 self.account_id,
                 Currency::USDC(),
                 price_precision,
                 size_precision,
                 ts_init,
             ) {
-                Ok(Some(report)) => {
-                    self.validate_report_binding(
-                        report.client_order_id,
-                        report.venue_order_id,
-                        report.instrument_id,
-                    )?;
-                    self.observe_trigger_fill(&report);
-                    let retain = retain_untracked
-                        && report
-                            .client_order_id
-                            .is_some_and(|id| self.order_binding(id).is_none());
-
-                    if self.dispatch_state.contains_trade(&report.trade_id) && !retain
-                        || !seen_trade_ids.insert(report.trade_id)
-                    {
-                        log::debug!(
-                            "Skipping duplicate Derive fill (trade_id={}) in generate_fill_reports",
-                            report.trade_id,
-                        );
-                        continue;
+                Ok(Some(report)) => match self
+                    .reconcile_fill_report(
+                        &report,
+                        order_sources,
+                        &all_trades,
+                        &mut checked_submits,
+                        retain_untracked,
+                    )
+                    .await
+                {
+                    Ok(true) if seen_trade_ids.insert(report.trade_id) => reports.push(report),
+                    Ok(_) => log::debug!(
+                        "Skipping duplicate Derive fill (trade_id={}) in generate_fill_reports",
+                        report.trade_id,
+                    ),
+                    Err(e) => {
+                        unresolved.get_or_insert(e);
                     }
-
-                    reports.push(report);
-                }
+                },
                 Ok(None) => records_complete = false,
                 Err(e) if e.is::<CommissionError>() => {
                     return Err(e.context(format!(
@@ -3774,6 +3948,10 @@ impl DeriveReconciliationContext {
             }
         }
 
+        if let Some(e) = unresolved {
+            return Err(e);
+        }
+
         Ok(CollectedReports {
             reports,
             complete: complete && records_complete,
@@ -3781,10 +3959,53 @@ impl DeriveReconciliationContext {
         })
     }
 
+    async fn reconcile_fill_report(
+        &self,
+        report: &FillReport,
+        order_sources: &[&[DeriveOrder]],
+        trades: &[DeriveTrade],
+        checked_submits: &mut AHashSet<(ClientOrderId, InstrumentId, VenueOrderId)>,
+        retain_untracked: bool,
+    ) -> anyhow::Result<bool> {
+        if let Some(client_order_id) = report.client_order_id
+            && self
+                .dispatch_state
+                .submit_binding_unproved(&client_order_id)
+            && checked_submits.insert((
+                client_order_id,
+                report.instrument_id,
+                report.venue_order_id,
+            ))
+        {
+            self.reconcile_submit_fill(
+                Some(client_order_id),
+                report.instrument_id,
+                report.venue_order_id,
+                order_sources,
+                trades,
+            )
+            .await;
+        }
+
+        self.validate_report_binding(
+            report.client_order_id,
+            report.venue_order_id,
+            report.instrument_id,
+        )?;
+        self.observe_trigger_fill(report);
+        let retain = retain_untracked
+            && report
+                .client_order_id
+                .is_some_and(|id| self.order_binding(id).is_none());
+        Ok(!self.dispatch_state.contains_trade(&report.trade_id) || retain)
+    }
+
     async fn collect_trade_records(
         &self,
         cmd: &GenerateFillReports,
     ) -> anyhow::Result<(Vec<DeriveTrade>, bool)> {
+        self.resolve_pending_modifies(cmd.instrument_id, true)
+            .await?;
         let mut records_complete = true;
         let instrument_name = cmd.instrument_id.map(|id| id.symbol.as_str().to_string());
         let mut pages = PaginationCursor::new();
@@ -3908,10 +4129,10 @@ impl DeriveReconciliationContext {
         let position_cmd =
             GeneratePositionStatusReports::new(UUID4::new(), ts_now, None, None, None, None, None);
 
-        let (history, open, fills, positions) = tokio::join!(
+        let (history, open, trades, positions) = tokio::join!(
             async {
                 self.ensure_order_context()?;
-                self.resolve_pending_modifies(None).await?;
+                self.resolve_pending_modifies(None, true).await?;
                 self.collect_scoped_order_records(&history_order_cmd)
                     .await
                     .map(|reports| CollectedReports {
@@ -3922,7 +4143,7 @@ impl DeriveReconciliationContext {
             },
             async {
                 self.ensure_order_context()?;
-                self.resolve_pending_modifies(None).await?;
+                self.resolve_pending_modifies(None, true).await?;
                 self.collect_scoped_order_records(&open_order_cmd)
                     .await
                     .map(|reports| CollectedReports {
@@ -3931,25 +4152,22 @@ impl DeriveReconciliationContext {
                         records_complete: true,
                     })
             },
-            self.generate_fill_reports(fill_cmd, startup),
+            self.collect_trade_records(&fill_cmd),
             self.generate_position_status_snapshot(&position_cmd),
         );
-        let history = collect_mass_reports(history, "order history", allow_partial)?;
-        let open = collect_mass_reports(open, "open orders", allow_partial)?;
+        let mut history = collect_mass_reports(history, "order history", allow_partial)?;
+        let mut open = collect_mass_reports(open, "open orders", allow_partial)?;
+        self.detach_conflicting_submit_labels(history.reports.iter_mut().chain(&mut open.reports));
 
-        let fills = match fills {
-            Err(e)
-                if e.downcast_ref::<DeriveHttpError>().is_some_and(|cause| {
-                    matches!(
-                        cause,
-                        DeriveHttpError::Decode(_) | DeriveHttpError::Serde(_)
-                    )
-                }) =>
-            {
-                return Err(reconnect_source_error(e, startup, "Derive fill history"));
-            }
-            other => collect_mass_reports(other, "fill history", allow_partial)?,
-        };
+        let fills = self
+            .collect_mass_fill_reports(
+                &fill_cmd,
+                trades,
+                &[&history.reports, &open.reports],
+                startup,
+                allow_partial,
+            )
+            .await?;
 
         let (position_snapshot, positions_complete) =
             PositionStatusSnapshot::for_mass_status(positions, allow_partial)?;
@@ -4186,6 +4404,37 @@ impl DeriveReconciliationContext {
 
         self.ensure_order_context()?;
         Ok(mass_status)
+    }
+
+    async fn collect_mass_fill_reports(
+        &self,
+        cmd: &GenerateFillReports,
+        trades: anyhow::Result<(Vec<DeriveTrade>, bool)>,
+        order_sources: &[&[DeriveOrder]],
+        startup: bool,
+        allow_partial: bool,
+    ) -> anyhow::Result<CollectedReports<FillReport>> {
+        let fills = match trades {
+            Ok(records) => {
+                self.fill_reports_from_records(cmd, records, startup, order_sources)
+                    .await
+            }
+            Err(e) => Err(e),
+        };
+
+        match fills {
+            Err(e)
+                if e.downcast_ref::<DeriveHttpError>().is_some_and(|cause| {
+                    matches!(
+                        cause,
+                        DeriveHttpError::Decode(_) | DeriveHttpError::Serde(_)
+                    )
+                }) =>
+            {
+                Err(reconnect_source_error(e, startup, "Derive fill history"))
+            }
+            other => collect_mass_reports(other, "fill history", allow_partial),
+        }
     }
 
     fn ensure_replacement_fills(
@@ -4498,6 +4747,273 @@ impl DeriveReconciliationContext {
         Ok(())
     }
 
+    fn reconcile_submit(
+        &self,
+        order: &DeriveOrder,
+        report: &mut OrderStatusReport,
+        known_orders: &[&DeriveOrder],
+    ) {
+        let state = &self.dispatch_state;
+        let _delivery = state.delivery_guard();
+
+        let Some((client_order_id, _)) =
+            tracked_order_identity(report.client_order_id, report.instrument_id, state)
+        else {
+            return;
+        };
+
+        if state.submit_binding_unproved(&client_order_id)
+            && !self.reconcile_submit_order(
+                order,
+                client_order_id,
+                report.instrument_id,
+                report.venue_order_id,
+                known_orders.iter().copied(),
+                &[],
+            )
+        {
+            report.client_order_id = None;
+        }
+    }
+
+    fn detach_conflicting_submit_labels<'a>(
+        &self,
+        orders: impl Iterator<Item = &'a mut DeriveOrder>,
+    ) {
+        let state = &self.dispatch_state;
+        let _delivery = state.delivery_guard();
+        if !state.has_unproved_submit(None) {
+            return;
+        }
+
+        // A fill can confirm a pending submit and discard its nonce before order projection
+        for order in orders {
+            if let (Ok(cid), Ok(instrument_id)) = (
+                ClientOrderId::new_checked(order.label),
+                format_instrument_id(order.instrument_name),
+            ) && order.replaced_order_id.is_none()
+                && !state.submit_nonce_matches(&cid, order.nonce)
+                && tracked_order_identity(Some(cid), instrument_id, state).is_some()
+            {
+                order.label = Ustr::default();
+            }
+        }
+    }
+
+    async fn collect_submit_open_orders(
+        &self,
+        orders: &[DeriveOrder],
+    ) -> anyhow::Result<Vec<DeriveOrder>> {
+        if !orders
+            .iter()
+            .any(|order| self.submit_needs_successors(order))
+        {
+            return Ok(Vec::new());
+        }
+
+        Ok(self
+            .http_client
+            .get_open_orders(&DeriveGetOpenOrdersParams::new(self.subaccount_id))
+            .await?
+            .orders)
+    }
+
+    async fn collect_submit_successors(
+        &self,
+        order: &DeriveOrder,
+    ) -> anyhow::Result<Vec<DeriveOrder>> {
+        if !self.submit_needs_successors(order) {
+            return Ok(Vec::new());
+        }
+
+        let mut orders = self
+            .collect_submit_open_orders(std::slice::from_ref(order))
+            .await?;
+
+        if linked_submit_successor(order, orders.iter()).is_some() {
+            return Ok(orders);
+        }
+
+        let cmd = GenerateOrderStatusReports::new(
+            UUID4::new(),
+            self.clock.get_time_ns(),
+            false,
+            Some(format_instrument_id(order.instrument_name)?),
+            Some(ms_to_nanos(order.creation_timestamp)),
+            None,
+            None,
+            None,
+        );
+
+        orders.extend(self.collect_order_records(&cmd).await?);
+        Ok(orders)
+    }
+
+    fn submit_needs_successors(&self, order: &DeriveOrder) -> bool {
+        let state = &self.dispatch_state;
+        self.report_observations.is_none()
+            && order.order_status == DeriveOrderStatus::Cancelled
+            && ClientOrderId::new_checked(order.label).is_ok_and(|id| {
+                state.submit_binding_unproved(&id)
+                    && state.submit_nonce_matches(&id, order.nonce)
+                    && !VenueOrderId::new_checked(&order.order_id).is_ok_and(|venue_id| {
+                        state.binding_unresolved(&id) && state.knows_venue_leg(&id, venue_id)
+                    })
+            })
+    }
+
+    async fn reconcile_submit_fill(
+        &self,
+        client_order_id: Option<ClientOrderId>,
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId,
+        order_sources: &[&[DeriveOrder]],
+        trades: &[DeriveTrade],
+    ) {
+        let Some(client_order_id) = client_order_id else {
+            return;
+        };
+
+        let state = &self.dispatch_state;
+
+        if self.report_observations.is_some()
+            || !state.submit_binding_unproved(&client_order_id)
+            || tracked_order_identity(Some(client_order_id), instrument_id, state).is_none()
+        {
+            return;
+        }
+
+        let orders = order_sources.iter().flat_map(|orders| orders.iter());
+        if orders.clone().any(|order| {
+            order.order_id == venue_order_id.as_str()
+                && matches!(
+                    order.order_status,
+                    DeriveOrderStatus::Filled | DeriveOrderStatus::Cancelled
+                )
+                && self.reconcile_submit_order(
+                    order,
+                    client_order_id,
+                    instrument_id,
+                    venue_order_id,
+                    orders.clone(),
+                    trades,
+                )
+        }) {
+            return;
+        }
+
+        let order = fetch_order_record(
+            &self.http_client,
+            self.subaccount_id,
+            venue_order_id,
+            Some(instrument_id),
+        )
+        .await;
+
+        if let Ok(order) = order {
+            let successors = if order_sources.is_empty() {
+                let Ok(successors) = self.collect_submit_successors(&order).await else {
+                    return;
+                };
+
+                successors
+            } else {
+                Vec::new()
+            };
+
+            self.reconcile_submit_order(
+                &order,
+                client_order_id,
+                instrument_id,
+                venue_order_id,
+                orders.chain(successors.iter()),
+                trades,
+            );
+        }
+    }
+
+    fn reconcile_submit_order<'a>(
+        &self,
+        order: &DeriveOrder,
+        client_order_id: ClientOrderId,
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId,
+        known_orders: impl Iterator<Item = &'a DeriveOrder>,
+        trades: &[DeriveTrade],
+    ) -> bool {
+        let state = &self.dispatch_state;
+        let _delivery = state.delivery_guard();
+        if !state.submit_binding_unproved(&client_order_id)
+            || !state.submit_nonce_matches(&client_order_id, order.nonce)
+            || order.order_id != venue_order_id.as_str()
+            || !order_response_matches(order, client_order_id, instrument_id, state)
+            || !tracked_order_identity(Some(client_order_id), instrument_id, state).is_some_and(
+                |(_, identity)| {
+                    derive_order_side_to_nautilus(order.direction) == identity.order_side
+                },
+            )
+        {
+            return false;
+        }
+
+        if self.report_observations.is_some() {
+            return true;
+        }
+
+        let deliver = || {
+            if let Some(successor) = linked_submit_successor(order, known_orders) {
+                state.defer_binding(client_order_id, successor);
+            }
+
+            if state.binding_unresolved(&client_order_id)
+                && !self.prepare_submit_parent(order, client_order_id, venue_order_id, trades)
+            {
+                return;
+            }
+
+            dispatch_order_row(
+                order,
+                &self.emitter,
+                self.account_id,
+                self.clock,
+                state,
+                self.clock.get_time_ns(),
+            );
+        };
+
+        if let Some((socket, epoch)) = &self.recovery_session {
+            socket.commit_recovery(*epoch, deliver).is_some()
+        } else {
+            deliver();
+            true
+        }
+    }
+
+    fn prepare_submit_parent(
+        &self,
+        order: &DeriveOrder,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        trades: &[DeriveTrade],
+    ) -> bool {
+        let state = &self.dispatch_state;
+        state.record_venue_leg(client_order_id, venue_order_id);
+        for trade in trades
+            .iter()
+            .filter(|trade| trade.order_id == order.order_id && trade.label == order.label)
+        {
+            state.defer_trade(client_order_id, trade.clone());
+        }
+
+        if !state.has_deferred_trade(&client_order_id, venue_order_id) {
+            return false;
+        }
+
+        // Bind the proved parent to replay its fills while terminal status stays fenced
+        state.record_venue_order_id(client_order_id, venue_order_id);
+        true
+    }
+
     fn observe_trigger_order(&self, order: &DeriveOrder, report: &OrderStatusReport) {
         if let Some(observations) = &self.report_observations {
             if tracked_order_identity(
@@ -4532,6 +5048,26 @@ impl DeriveReconciliationContext {
             observe_trigger_fill(&self.dispatch_state, report);
         }
     }
+}
+
+fn linked_submit_successor<'a>(
+    parent: &DeriveOrder,
+    mut orders: impl Iterator<Item = &'a DeriveOrder>,
+) -> Option<VenueOrderId> {
+    orders.find_map(|order| {
+        if order.replaced_order_id.as_deref() == Some(parent.order_id.as_str())
+            && order.order_id != parent.order_id
+            && order.label == parent.label
+            && order.subaccount_id == parent.subaccount_id
+            && order.instrument_name == parent.instrument_name
+            && order.direction == parent.direction
+            && order.order_status != DeriveOrderStatus::Rejected
+        {
+            VenueOrderId::new_checked(&order.order_id).ok()
+        } else {
+            None
+        }
+    })
 }
 
 fn instrument_in_scope(instrument_name: &str, load_ids: Option<&[InstrumentId]>) -> bool {
@@ -4633,6 +5169,7 @@ fn validate_report_binding(
     if let Some((client_order_id, _)) =
         tracked_order_identity(client_order_id, instrument_id, dispatch_state)
         && !dispatch_state.knows_venue_leg(&client_order_id, venue_order_id)
+        && !dispatch_state.submit_binding_unproved(&client_order_id)
     {
         dispatch_state.defer_binding(client_order_id, venue_order_id);
     }
@@ -4667,7 +5204,7 @@ fn ensure_bindings_resolved(
     instrument_id: Option<InstrumentId>,
 ) -> anyhow::Result<()> {
     let _delivery = dispatch_state.delivery_guard();
-    if let Some(client_order_id) = dispatch_state.unresolved_client_order_id(instrument_id) {
+    if let Some(client_order_id) = dispatch_state.unresolved_client_order_id(instrument_id, true) {
         return Err(UnresolvedOrderBinding(client_order_id).into());
     }
 
@@ -5162,7 +5699,7 @@ fn handle_ws_message(
     account_id: AccountId,
     clock: &'static AtomicTime,
     dispatch_state: &WsDispatchState,
-) {
+) -> AHashSet<(ClientOrderId, InstrumentId, VenueOrderId)> {
     flush_pending_delivery(emitter, account_id, clock, dispatch_state);
 
     let payload = match message {
@@ -5170,7 +5707,7 @@ fn handle_ws_message(
         DeriveWsMessage::Authenticated
         | DeriveWsMessage::Reconnected
         | DeriveWsMessage::SessionRecoveryFailed(_)
-        | DeriveWsMessage::BookSubscription { .. } => return,
+        | DeriveWsMessage::BookSubscription { .. } => return AHashSet::new(),
     };
 
     let channel = DeriveWsChannel::from(payload.channel.as_str());
@@ -5181,7 +5718,7 @@ fn handle_ws_message(
         && *subaccount_id != dispatch_state.subaccount_id()
     {
         log::warn!("Ignoring Derive private frame for an unexpected subaccount");
-        return;
+        return AHashSet::new();
     }
 
     let is_orders_channel = matches!(channel, DeriveWsChannel::Orders { .. });
@@ -5195,7 +5732,7 @@ fn handle_ws_message(
                     "Failed to decode Derive orders frame on channel {}: {e}",
                     payload.channel,
                 );
-                return;
+                return AHashSet::new();
             }
         };
 
@@ -5208,12 +5745,40 @@ fn handle_ws_message(
                     "Failed to decode Derive trades frame on channel {}: {e}",
                     payload.channel,
                 );
-                return;
+                return AHashSet::new();
             }
         };
 
+        let _delivery = dispatch_state.delivery_guard();
+        let verify = data
+            .trades
+            .iter()
+            .filter_map(|trade| unproved_trade_binding(dispatch_state, trade))
+            .collect();
         dispatch_trades_payload(data, emitter, account_id, clock, dispatch_state);
+        return verify;
     }
+
+    AHashSet::new()
+}
+
+fn unproved_trade_binding(
+    state: &WsDispatchState,
+    trade: &DeriveTrade,
+) -> Option<(ClientOrderId, InstrumentId, VenueOrderId)> {
+    let client_order_id = ClientOrderId::new_checked(trade.label).ok()?;
+    if !state.submit_binding_unproved(&client_order_id)
+        || !state.owns_subaccount(trade.subaccount_id)
+    {
+        return None;
+    }
+
+    let instrument_id = format_instrument_id(trade.instrument_name).ok()?;
+    let venue_order_id = VenueOrderId::new_checked(&trade.order_id).ok()?;
+    state
+        .identity(&client_order_id)
+        .filter(|identity| identity.instrument_id == instrument_id)?;
+    Some((client_order_id, instrument_id, venue_order_id))
 }
 
 /// Dispatches a parsed `{subaccount_id}.orders` payload to the execution event
@@ -5249,8 +5814,6 @@ fn dispatch_order_row(
         return;
     }
 
-    observe_order_binding(dispatch_state, order);
-
     let (price_precision, size_precision) =
         report_precision(dispatch_state, order.instrument_name.as_str());
 
@@ -5273,6 +5836,23 @@ fn dispatch_order_row(
         }
     };
 
+    let identity =
+        tracked_order_identity(report.client_order_id, report.instrument_id, dispatch_state);
+
+    let unproved_submit = identity.is_some_and(|(client_order_id, _)| {
+        dispatch_state.submit_binding_unproved(&client_order_id)
+    });
+
+    if unproved_submit
+        && let Some((client_order_id, identity)) = identity
+        && (!dispatch_state.submit_nonce_matches(&client_order_id, order.nonce)
+            || report.order_side != Some(identity.order_side))
+    {
+        dispatch_submit_conflict(dispatch_state, emitter, client_order_id, report);
+        return;
+    }
+
+    observe_order_binding(dispatch_state, order);
     observe_trigger_order(dispatch_state, order, &report);
     if report
         .client_order_id
@@ -5281,11 +5861,26 @@ fn dispatch_order_row(
         return;
     }
 
-    let identity =
-        tracked_order_identity(report.client_order_id, report.instrument_id, dispatch_state);
-
     match identity {
         Some((client_order_id, identity)) => {
+            let deferred_trades = if unproved_submit {
+                dispatch_verified_submit_fills(
+                    &report,
+                    client_order_id,
+                    identity,
+                    emitter,
+                    account_id,
+                    clock,
+                    dispatch_state,
+                )
+            } else {
+                Vec::new()
+            };
+
+            if dispatch_state.is_terminal(&client_order_id, report.instrument_id) {
+                return;
+            }
+
             dispatch_tracked_order_report(
                 order,
                 &report,
@@ -5297,6 +5892,19 @@ fn dispatch_order_row(
                 dispatch_state,
                 ts_init,
             );
+
+            if unproved_submit {
+                dispatch_state.confirm_submit_binding(&client_order_id, report.venue_order_id);
+                dispatch_submit_trades(
+                    deferred_trades,
+                    client_order_id,
+                    report.venue_order_id,
+                    emitter,
+                    account_id,
+                    clock,
+                    dispatch_state,
+                );
+            }
         }
         None => {
             if report.client_order_id.is_some_and(|cid| {
@@ -5310,6 +5918,99 @@ fn dispatch_order_row(
             emitter.send_order_status_report(report);
         }
     }
+}
+
+fn dispatch_submit_conflict(
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+    client_order_id: ClientOrderId,
+    mut report: OrderStatusReport,
+) {
+    if !state.binding_deferred(&client_order_id, report.venue_order_id) {
+        report.client_order_id = None;
+        emitter.send_order_status_report(report);
+    }
+}
+
+fn dispatch_verified_submit_fills(
+    report: &OrderStatusReport,
+    client_order_id: ClientOrderId,
+    identity: OrderIdentity,
+    emitter: &ExecutionEventEmitter,
+    account_id: AccountId,
+    clock: &'static AtomicTime,
+    state: &WsDispatchState,
+) -> Vec<DeriveTrade> {
+    let trades = state.take_deferred_trades(&client_order_id);
+    let venue_order_id = report.venue_order_id;
+    if report.order_status == OrderStatus::Rejected
+        || state
+            .bound_venue_order_id(&client_order_id)
+            .is_some_and(|current| current != venue_order_id)
+        || !trades
+            .iter()
+            .any(|trade| trade.order_id == venue_order_id.as_str())
+    {
+        return trades;
+    }
+
+    state.record_venue_order_id(client_order_id, venue_order_id);
+    state.confirm_submit_binding(&client_order_id, venue_order_id);
+    ensure_accepted_emitted(
+        emitter,
+        state,
+        client_order_id,
+        identity,
+        venue_order_id,
+        account_id,
+        report.ts_accepted,
+        report.ts_init,
+    );
+    dispatch_submit_trades(
+        trades,
+        client_order_id,
+        venue_order_id,
+        emitter,
+        account_id,
+        clock,
+        state,
+    );
+    Vec::new()
+}
+
+fn dispatch_submit_trades(
+    mut trades: Vec<DeriveTrade>,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    emitter: &ExecutionEventEmitter,
+    account_id: AccountId,
+    clock: &'static AtomicTime,
+    dispatch_state: &WsDispatchState,
+) {
+    trades.sort_unstable_by(|a, b| (a.timestamp, &a.trade_id).cmp(&(b.timestamp, &b.trade_id)));
+    let mut ready = Vec::with_capacity(trades.len());
+    for mut trade in trades {
+        if trade.order_id != venue_order_id.as_str() {
+            if VenueOrderId::new_checked(&trade.order_id)
+                .is_ok_and(|id| dispatch_state.binding_deferred(&client_order_id, id))
+            {
+                dispatch_state.defer_trade(client_order_id, trade);
+                continue;
+            }
+
+            trade.label = Ustr::default();
+        }
+
+        ready.push(trade);
+    }
+
+    dispatch_trades_payload(
+        DeriveTradesSubscriptionData { trades: ready },
+        emitter,
+        account_id,
+        clock,
+        dispatch_state,
+    );
 }
 
 #[expect(
@@ -5503,6 +6204,14 @@ fn dispatch_trade_row(
     }
 
     if let Some((client_order_id, _)) = identity
+        && dispatch_state.submit_binding_unproved(&client_order_id)
+        && !dispatch_state.knows_venue_leg(&client_order_id, report.venue_order_id)
+    {
+        dispatch_state.defer_trade(client_order_id, trade);
+        return;
+    }
+
+    if let Some((client_order_id, _)) = identity
         && dispatch_state
             .bound_venue_order_id(&client_order_id)
             .is_some()
@@ -5556,24 +6265,25 @@ fn dispatch_trade_row(
         }
     };
 
-    if delivered {
-        dispatch_state.check_and_insert_trade(report.trade_id);
-
-        if let Some((client_order_id, _)) = identity
-            && dispatch_state.identity(&client_order_id).is_none()
-        {
-            dispatch_trades_payload(
-                DeriveTradesSubscriptionData {
-                    trades: dispatch_state.take_deferred_trades(&client_order_id),
-                },
-                emitter,
-                account_id,
-                clock,
-                dispatch_state,
-            );
-        }
-    } else {
+    if !delivered {
         dispatch_state.retain_trade(trade);
+        return;
+    }
+
+    dispatch_state.check_and_insert_trade(report.trade_id);
+
+    if let Some((client_order_id, _)) = identity
+        && dispatch_state.identity(&client_order_id).is_none()
+    {
+        dispatch_trades_payload(
+            DeriveTradesSubscriptionData {
+                trades: dispatch_state.take_deferred_trades(&client_order_id),
+            },
+            emitter,
+            account_id,
+            clock,
+            dispatch_state,
+        );
     }
 }
 
@@ -6040,6 +6750,53 @@ fn decode_replace_completion(
     }
 }
 
+fn dispatch_submit_outcome(
+    outcome: Result<DeriveOrderResult, DeriveWsError>,
+    order: &OrderAny,
+    emitter: &ExecutionEventEmitter,
+    account_id: AccountId,
+    clock: &'static AtomicTime,
+    dispatch_state: &WsDispatchState,
+) {
+    match outcome.map_err(|e| ws_command_failure(&e)) {
+        Ok(result) => {
+            dispatch_order_result(
+                result,
+                order.client_order_id(),
+                emitter,
+                account_id,
+                clock,
+                dispatch_state,
+            );
+            log::debug!(
+                "Order submitted: client_order_id={}",
+                order.client_order_id(),
+            );
+        }
+        // See docs/integrations/derive.md "Order rejection semantics".
+        Err((CommandFailure::Ambiguous(reason), _)) => {
+            log::warn!(
+                "Derive submit for {} returned ambiguous WS outcome: {reason}; awaiting reconciliation",
+                order.client_order_id(),
+            );
+        }
+        Err((failure, due_post_only)) => {
+            log::debug!(
+                "Derive rejected order {}: {failure:?}",
+                order.client_order_id(),
+            );
+
+            if dispatch_state
+                .take_identity(&order.client_order_id())
+                .is_some()
+            {
+                let ts = clock.get_time_ns();
+                emit_submit_failure(emitter, order, failure, ts, due_post_only);
+            }
+        }
+    }
+}
+
 fn dispatch_order_result(
     result: DeriveOrderResult,
     client_order_id: ClientOrderId,
@@ -6050,8 +6807,16 @@ fn dispatch_order_result(
 ) {
     let _delivery = dispatch_state.delivery_guard();
     let mut is_current = false;
+    let mut newly_proved = None;
 
     if let Some(identity) = dispatch_state.identity(&client_order_id) {
+        if !dispatch_state.submit_nonce_matches(&client_order_id, result.order.nonce) {
+            log::warn!(
+                "Derive submit response nonce does not match {client_order_id}; awaiting reconciliation"
+            );
+            return;
+        }
+
         if !order_response_matches(
             &result.order,
             client_order_id,
@@ -6065,14 +6830,13 @@ fn dispatch_order_result(
             is_current = dispatch_state
                 .bound_venue_order_id(&client_order_id)
                 .is_none_or(|bound| bound == venue_order_id);
-            if is_current
-                && !matches!(
-                    result.order.order_status,
-                    DeriveOrderStatus::Rejected | DeriveOrderStatus::Unknown
-                )
-            {
+            if is_current && submit_response_proves_binding(&result, venue_order_id) {
                 dispatch_state.record_venue_order_id(client_order_id, venue_order_id);
-                let ts = clock.get_time_ns();
+                newly_proved = dispatch_state
+                    .confirm_submit_binding(&client_order_id, venue_order_id)
+                    .then_some(venue_order_id);
+                let ts_event = ms_to_nanos(result.order.creation_timestamp);
+                let ts_init = clock.get_time_ns();
                 ensure_accepted_emitted(
                     emitter,
                     dispatch_state,
@@ -6080,8 +6844,8 @@ fn dispatch_order_result(
                     identity,
                     venue_order_id,
                     account_id,
-                    ts,
-                    ts,
+                    ts_event,
+                    ts_init,
                 );
             }
         } else {
@@ -6091,6 +6855,18 @@ fn dispatch_order_result(
                 identity.instrument_id.to_string(),
             );
         }
+    }
+
+    if let Some(venue_order_id) = newly_proved {
+        dispatch_submit_trades(
+            dispatch_state.take_deferred_trades(&client_order_id),
+            client_order_id,
+            venue_order_id,
+            emitter,
+            account_id,
+            clock,
+            dispatch_state,
+        );
     }
 
     dispatch_trades_payload(
@@ -6113,6 +6889,23 @@ fn dispatch_order_result(
             clock,
             dispatch_state,
         );
+    }
+}
+
+fn submit_response_proves_binding(
+    result: &DeriveOrderResult,
+    venue_order_id: VenueOrderId,
+) -> bool {
+    match result.order.order_status {
+        DeriveOrderStatus::Rejected => false,
+        DeriveOrderStatus::Unknown => result.trades.iter().any(|trade| {
+            trade.order_id == venue_order_id.as_str()
+                && trade.subaccount_id == result.order.subaccount_id
+                && trade.label == result.order.label
+                && trade.instrument_name == result.order.instrument_name
+                && trade.direction == result.order.direction
+        }),
+        _ => true,
     }
 }
 
@@ -6272,10 +7065,13 @@ fn emit_tracked_order_event(
         return;
     }
 
-    if matches!(
-        report.order_status,
-        OrderStatus::Accepted | OrderStatus::PartiallyFilled | OrderStatus::Filled
-    ) {
+    let record_binding = match report.order_status {
+        OrderStatus::Accepted | OrderStatus::PartiallyFilled | OrderStatus::Filled => true,
+        OrderStatus::Canceled => dispatch_state.submit_binding_unproved(&client_order_id),
+        _ => false,
+    };
+
+    if record_binding {
         dispatch_state.record_venue_order_id(client_order_id, venue_order_id);
     }
 
@@ -6585,6 +7381,175 @@ fn resolve_submit_nonce(
     }
 }
 
+#[derive(Debug, Default)]
+struct LocalOrderWrite {
+    task: Arc<()>,
+    task_finished: bool,
+    cancel_pending: bool,
+}
+
+struct LocalOrderWriteGuard {
+    writes: Arc<Mutex<AHashMap<ClientOrderId, LocalOrderWrite>>>,
+    client_order_id: ClientOrderId,
+    task: Arc<()>,
+}
+
+impl Drop for LocalOrderWriteGuard {
+    fn drop(&mut self) {
+        let mut writes = self.writes.lock();
+        if let Some(write) = writes.get_mut(&self.client_order_id)
+            && Arc::ptr_eq(&self.task, &write.task)
+        {
+            if write.cancel_pending {
+                write.task_finished = true;
+            } else {
+                writes.remove(&self.client_order_id);
+            }
+        }
+    }
+}
+
+struct DeferredCancel {
+    cmd: CancelOrder,
+    fallback: Option<(VenueOrderId, bool)>,
+    writes: Arc<Mutex<AHashMap<ClientOrderId, LocalOrderWrite>>>,
+    emitter: ExecutionEventEmitter,
+    clock: &'static AtomicTime,
+    settled: bool,
+    enqueued: bool,
+}
+
+impl DeferredCancel {
+    fn check_enqueue<'a>(
+        &mut self,
+        state: &'a WsDispatchState,
+        socket: &ReconnectSocket,
+        epoch: u64,
+        expected: (VenueOrderId, bool),
+    ) -> BoundCancelAdmission<parking_lot::ReentrantMutexGuard<'a, ()>> {
+        let delivery = state.delivery_guard();
+        let binding = self.binding(state);
+
+        if self.settled {
+            return BoundCancelAdmission::Stop;
+        }
+
+        if !socket.is_active(epoch) {
+            self.deny("Derive session changed before deferred cancel");
+            return BoundCancelAdmission::Stop;
+        }
+
+        if expected.1 && binding == Some((expected.0, false)) {
+            return BoundCancelAdmission::Activated;
+        }
+
+        if binding != Some(expected) {
+            self.deny("Derive order changed before deferred cancel");
+            return BoundCancelAdmission::Stop;
+        }
+
+        self.enqueued = true;
+        BoundCancelAdmission::Send(delivery)
+    }
+
+    async fn wait_for_binding(&mut self, state: &WsDispatchState) -> Option<(VenueOrderId, bool)> {
+        loop {
+            let updated = state.binding_updated();
+            let binding = self.binding(state);
+            if binding.is_some() || self.settled {
+                return binding;
+            }
+
+            updated.await;
+        }
+    }
+
+    fn binding(&mut self, state: &WsDispatchState) -> Option<(VenueOrderId, bool)> {
+        let _delivery = state.delivery_guard();
+        let client_order_id = self.cmd.client_order_id;
+
+        if self.settle_if_terminal(state) {
+            return None;
+        }
+
+        if state.submit_binding_unproved(&client_order_id)
+            || ensure_order_binding_resolved(state, client_order_id).is_err()
+        {
+            return None;
+        }
+
+        let binding = match state.identity(&client_order_id) {
+            Some(identity)
+                if identity.instrument_id == self.cmd.instrument_id
+                    && (identity.strategy_id == self.cmd.strategy_id
+                        || identity.strategy_id.is_external()) =>
+            {
+                state
+                    .bound_venue_order_id(&client_order_id)
+                    .map(|id| (id, is_derive_trigger_order_type(identity.order_type)))
+                    .or(self.fallback)
+            }
+            Some(_) => None,
+            None => self.fallback,
+        };
+
+        binding.map(|(id, trigger)| (id, trigger && !state.trigger_active(&client_order_id)))
+    }
+
+    fn settle_if_terminal(&mut self, state: &WsDispatchState) -> bool {
+        if state.is_cancel_terminal(&self.cmd.client_order_id, self.cmd.instrument_id) {
+            self.settle();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn deny(&mut self, reason: &str) {
+        self.finish(None, CommandFailure::not_sent(reason));
+    }
+
+    fn finish(&mut self, venue_order_id: Option<VenueOrderId>, failure: CommandFailure) {
+        self.settle();
+        emit_cancel_failure(
+            &self.emitter,
+            self.cmd.strategy_id,
+            self.cmd.instrument_id,
+            self.cmd.client_order_id,
+            venue_order_id,
+            failure,
+            self.clock.get_time_ns(),
+            Some(self.cmd.command_id),
+        );
+    }
+
+    fn settle(&mut self) {
+        if self.settled {
+            return;
+        }
+
+        self.settled = true;
+        let mut writes = self.writes.lock();
+        if let Some(write) = writes.get_mut(&self.cmd.client_order_id) {
+            if write.task_finished {
+                writes.remove(&self.cmd.client_order_id);
+            } else {
+                write.cancel_pending = false;
+            }
+        }
+    }
+}
+
+impl Drop for DeferredCancel {
+    fn drop(&mut self) {
+        if !self.settled && !self.enqueued {
+            self.deny("Derive deferred cancel stopped before transmission");
+        } else {
+            self.settle();
+        }
+    }
+}
+
 struct UnsentModify {
     command: Option<ModifyOrder>,
     venue_order_id: VenueOrderId,
@@ -6683,6 +7648,43 @@ fn normal_order_signature_expiry(
             "signature expiry overflows Derive signature_expiry_sec: now {now_secs}s plus TTL {ttl_secs}s"
         )
     })
+}
+
+async fn resolve_submit_price(
+    http_client: &DeriveHttpClient,
+    venue_symbol: &str,
+    instrument: &DeriveInstrument,
+    order: &OrderAny,
+    clock: &'static AtomicTime,
+    slippage_bps: u32,
+) -> anyhow::Result<Option<Decimal>> {
+    let client_order_id = order.client_order_id();
+    let side = order.order_side();
+    let tick_size = instrument.tick_size;
+
+    match order.order_type() {
+        OrderType::Market => {
+            let quote = refresh_market_order_quote(http_client, venue_symbol, instrument, clock)
+                .await
+                .map_err(|e| {
+                    anyhow::anyhow!("market-order quote refresh failed for {client_order_id}: {e}")
+                })?;
+
+            let price = market_order_limit_price(&quote, side, slippage_bps, tick_size)
+                .ok_or_else(|| anyhow::anyhow!("market-order slippage bound is non-positive for {client_order_id} ({slippage_bps} bps)"))?;
+            Ok(Some(price))
+        }
+        OrderType::StopMarket | OrderType::MarketIfTouched => {
+            let trigger_price = order.trigger_price().with_context(|| {
+                format!("trigger market order {client_order_id} is missing trigger_price")
+            })?;
+
+            let price = trigger_market_limit_price(trigger_price.as_decimal(), side, slippage_bps, tick_size)
+                .ok_or_else(|| anyhow::anyhow!("trigger market-order slippage bound is non-positive for {client_order_id} ({slippage_bps} bps)"))?;
+            Ok(Some(price))
+        }
+        _ => Ok(None),
+    }
 }
 
 async fn refresh_market_order_quote(
@@ -7357,7 +8359,7 @@ mod tests {
                 false,
             )))
             .unwrap();
-        client.dispatch_state.restore_order(&order);
+        client.dispatch_state.restore_order(&order, true);
         client.dispatch_state.forget(&cid);
         order
             .apply(OrderEventAny::Canceled(OrderCanceled::new(
@@ -10181,23 +11183,28 @@ mod tests {
     }
 
     #[rstest]
-    fn test_report_tasks_keep_pending_replacement_inline() {
+    #[case::replacement(false)]
+    #[case::submit(true)]
+    fn test_report_tasks_keep_pending_write_inline(#[case] pending_submit: bool) {
         let client = test_client_with_instrument();
         let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
         let cid = ClientOrderId::from("PENDING-REPORT");
-        client.dispatch_state.register_identity(
-            cid,
-            OrderIdentity {
-                instrument_id,
-                strategy_id: StrategyId::from("REPORT-001"),
-                order_side: OrderSide::Buy,
-                order_type: OrderType::Limit,
-            },
-        );
 
-        client
-            .dispatch_state
-            .mark_pending_modify(cid, VenueOrderId::from("pending-native"));
+        let identity = OrderIdentity {
+            instrument_id,
+            strategy_id: StrategyId::from("REPORT-001"),
+            order_side: OrderSide::Buy,
+            order_type: OrderType::Limit,
+        };
+
+        if pending_submit {
+            client.dispatch_state.register_submit(cid, identity);
+        } else {
+            client.dispatch_state.register_identity(cid, identity);
+            client
+                .dispatch_state
+                .mark_pending_modify(cid, VenueOrderId::from("pending-native"));
+        }
 
         let single = GenerateOrderStatusReport::new(
             UUID4::new(),
@@ -10248,6 +11255,13 @@ mod tests {
                 .generate_position_status_reports_task(&positions)
                 .is_some()
         );
+
+        let unrelated = GenerateFillReports {
+            instrument_id: Some(InstrumentId::from("BTC-PERP.DERIVE")),
+            ..fills
+        };
+
+        assert!(client.generate_fill_reports_task(&unrelated).is_some());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

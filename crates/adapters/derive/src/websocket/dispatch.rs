@@ -83,6 +83,7 @@ pub struct WsDispatchState {
     subaccount_id: u64,
     delivery: ReentrantMutex<()>,
     order_identities: Mutex<AHashMap<ClientOrderId, OrderIdentity>>,
+    binding_updates: tokio::sync::Notify,
     instrument_precisions: Mutex<AHashMap<InstrumentId, (u8, u8)>>,
     emitted_accepted: Mutex<AHashSet<ClientOrderId>>,
     triggers_active: Mutex<AHashSet<ClientOrderId>>,
@@ -93,6 +94,7 @@ pub struct WsDispatchState {
     filled_orders: Mutex<FifoCache<ClientOrderId, ORDER_DEDUP_CAPACITY>>,
     emitted_trades: Mutex<FifoCache<TradeId, TRADE_DEDUP_CAPACITY>>,
     bound_venue_order_ids: Mutex<AHashMap<ClientOrderId, VenueOrderId>>,
+    submit_nonces: Mutex<AHashMap<ClientOrderId, Option<u64>>>,
     pending_modifies: Mutex<AHashMap<ClientOrderId, VenueOrderId>>,
     modify_nonces: Mutex<AHashMap<ClientOrderId, u64>>,
     deferred_trades: Mutex<AHashMap<ClientOrderId, Vec<DeriveTrade>>>,
@@ -111,6 +113,7 @@ impl WsDispatchState {
             subaccount_id,
             delivery: Default::default(),
             order_identities: Default::default(),
+            binding_updates: tokio::sync::Notify::new(),
             instrument_precisions: Default::default(),
             emitted_accepted: Default::default(),
             triggers_active: Default::default(),
@@ -121,6 +124,7 @@ impl WsDispatchState {
             filled_orders: Default::default(),
             emitted_trades: Default::default(),
             bound_venue_order_ids: Default::default(),
+            submit_nonces: Default::default(),
             pending_modifies: Default::default(),
             modify_nonces: Default::default(),
             deferred_trades: Default::default(),
@@ -142,6 +146,10 @@ impl WsDispatchState {
 
     pub(crate) fn delivery_guard(&self) -> ReentrantMutexGuard<'_, ()> {
         self.delivery.lock()
+    }
+
+    pub(crate) fn binding_updated(&self) -> tokio::sync::futures::Notified<'_> {
+        self.binding_updates.notified()
     }
 
     /// Records price and size precision for execution report parsing.
@@ -181,7 +189,57 @@ impl WsDispatchState {
         self.order_identities.lock().get(client_order_id).copied()
     }
 
-    pub(crate) fn restore_order(&self, order: &OrderAny) {
+    pub(crate) fn register_submit(&self, client_order_id: ClientOrderId, identity: OrderIdentity) {
+        let _delivery = self.delivery_guard();
+        self.submit_nonces.lock().insert(client_order_id, None);
+        self.register_identity(client_order_id, identity);
+    }
+
+    pub(crate) fn record_submit_nonce(&self, client_order_id: ClientOrderId, nonce: u64) {
+        let _delivery = self.delivery_guard();
+
+        if let Some(pending) = self.submit_nonces.lock().get_mut(&client_order_id) {
+            *pending = Some(nonce);
+        }
+    }
+
+    pub(crate) fn submit_nonce_matches(&self, client_order_id: &ClientOrderId, nonce: u64) -> bool {
+        self.submit_nonces
+            .lock()
+            .get(client_order_id)
+            .is_none_or(|pending| *pending == Some(nonce))
+    }
+
+    pub(crate) fn submit_binding_unproved(&self, client_order_id: &ClientOrderId) -> bool {
+        self.submit_nonces.lock().contains_key(client_order_id)
+    }
+
+    pub(crate) fn has_unproved_submit(&self, instrument_id: Option<InstrumentId>) -> bool {
+        self.submit_nonces.lock().keys().any(|client_order_id| {
+            self.identity(client_order_id)
+                .is_some_and(|identity| instrument_id.is_none_or(|id| id == identity.instrument_id))
+        })
+    }
+
+    pub(crate) fn confirm_submit_binding(
+        &self,
+        client_order_id: &ClientOrderId,
+        venue_order_id: VenueOrderId,
+    ) -> bool {
+        let _delivery = self.delivery_guard();
+
+        let confirmed = !self.binding_unresolved(client_order_id)
+            && self.bound_venue_order_id(client_order_id) == Some(venue_order_id)
+            && self.submit_nonces.lock().remove(client_order_id).is_some();
+
+        if confirmed {
+            self.binding_updates.notify_waiters();
+        }
+
+        confirmed
+    }
+
+    pub(crate) fn restore_order(&self, order: &OrderAny, recover_pending_modify: bool) {
         let _delivery = self.delivery_guard();
         let client_order_id = order.client_order_id();
         if self.identity(&client_order_id).is_some()
@@ -213,7 +271,7 @@ impl WsDispatchState {
 
         if let Some(venue_order_id) = order.venue_order_id() {
             self.record_venue_order_id(client_order_id, venue_order_id);
-            if order.status() == OrderStatus::PendingUpdate {
+            if recover_pending_modify && order.status() == OrderStatus::PendingUpdate {
                 self.mark_pending_modify(client_order_id, venue_order_id);
             }
         }
@@ -265,11 +323,13 @@ impl WsDispatchState {
         self.emitted_accepted.lock().remove(client_order_id);
         self.triggers_active.lock().remove(client_order_id);
         self.bound_venue_order_ids.lock().remove(client_order_id);
+        self.submit_nonces.lock().remove(client_order_id);
         self.venue_order_legs.lock().remove(client_order_id);
         self.pending_modifies.lock().remove(client_order_id);
         self.modify_nonces.lock().remove(client_order_id);
         self.modify_targets.lock().remove(client_order_id);
         self.unresolved_bindings.lock().remove(client_order_id);
+        self.binding_updates.notify_waiters();
     }
 
     pub(crate) fn mark_trigger_active(&self, client_order_id: ClientOrderId) {
@@ -314,6 +374,16 @@ impl WsDispatchState {
             .lock()
             .get(client_order_id)
             .is_some_and(|binding| binding.identity.instrument_id == instrument_id)
+    }
+
+    pub(crate) fn is_cancel_terminal(
+        &self,
+        client_order_id: &ClientOrderId,
+        instrument_id: InstrumentId,
+    ) -> bool {
+        self.is_terminal(client_order_id, instrument_id)
+            || self.contains_canceled(client_order_id)
+            || self.contains_filled(client_order_id)
     }
 
     pub(crate) fn record_order_shape(
@@ -402,6 +472,7 @@ impl WsDispatchState {
         self.bound_venue_order_ids
             .lock()
             .insert(client_order_id, venue_order_id);
+        self.binding_updates.notify_waiters();
     }
 
     pub(crate) fn record_venue_leg(
@@ -472,19 +543,36 @@ impl WsDispatchState {
             })
     }
 
+    pub(crate) fn binding_deferred(
+        &self,
+        client_order_id: &ClientOrderId,
+        venue_order_id: VenueOrderId,
+    ) -> bool {
+        self.unresolved_bindings
+            .lock()
+            .get(client_order_id)
+            .is_some_and(|legs| legs.contains(&venue_order_id))
+    }
+
     pub(crate) fn unresolved_client_order_id(
         &self,
         instrument_id: Option<InstrumentId>,
+        include_unproved_submits: bool,
     ) -> Option<ClientOrderId> {
         let mut ids: Vec<_> = self.unresolved_bindings.lock().keys().copied().collect();
         ids.extend(self.pending_modifies.lock().keys().copied());
         ids.sort_unstable();
         ids.dedup();
         ids.into_iter().find(|client_order_id| {
-            self.identity(client_order_id).is_some_and(|identity| {
-                instrument_id.is_none_or(|instrument_id| identity.instrument_id == instrument_id)
-            }) && (self.binding_unresolved(client_order_id)
-                || self.pending_modify(client_order_id).is_some())
+            (include_unproved_submits
+                || !self.submit_binding_unproved(client_order_id)
+                || !self.venue_order_legs.lock().contains_key(client_order_id))
+                && self.identity(client_order_id).is_some_and(|identity| {
+                    instrument_id
+                        .is_none_or(|instrument_id| identity.instrument_id == instrument_id)
+                })
+                && (self.binding_unresolved(client_order_id)
+                    || self.pending_modify(client_order_id).is_some())
         })
     }
 
@@ -500,6 +588,21 @@ impl WsDispatchState {
         }) {
             trades.push(trade);
         }
+    }
+
+    pub(crate) fn has_deferred_trade(
+        &self,
+        client_order_id: &ClientOrderId,
+        venue_order_id: VenueOrderId,
+    ) -> bool {
+        self.deferred_trades
+            .lock()
+            .get(client_order_id)
+            .is_some_and(|trades| {
+                trades
+                    .iter()
+                    .any(|trade| trade.order_id == venue_order_id.as_str())
+            })
     }
 
     pub(crate) fn take_deferred_trades(&self, client_order_id: &ClientOrderId) -> Vec<DeriveTrade> {
@@ -584,6 +687,7 @@ impl WsDispatchState {
         self.pending_modifies.lock().remove(client_order_id);
         self.modify_nonces.lock().remove(client_order_id);
         self.modify_targets.lock().remove(client_order_id);
+        self.binding_updates.notify_waiters();
     }
 
     pub(crate) fn record_modify_nonce(&self, client_order_id: ClientOrderId, nonce: u64) {
@@ -654,6 +758,7 @@ impl WsDispatchState {
         bound.insert(client_order_id, venue_order_id);
         if terminal {
             pending.remove(&client_order_id);
+            self.binding_updates.notify_waiters();
         }
 
         true
@@ -682,6 +787,7 @@ impl WsDispatchState {
 
         pending.remove(client_order_id);
         self.modify_nonces.lock().remove(client_order_id);
+        self.binding_updates.notify_waiters();
         true
     }
 
@@ -711,6 +817,7 @@ impl WsDispatchState {
         }
 
         cache.add(client_order_id);
+        self.binding_updates.notify_waiters();
         false
     }
 
@@ -726,6 +833,7 @@ impl WsDispatchState {
         let mut cache = self.filled_orders.lock();
         if !cache.contains(&client_order_id) {
             cache.add(client_order_id);
+            self.binding_updates.notify_waiters();
         }
     }
 

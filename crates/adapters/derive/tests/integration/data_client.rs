@@ -144,6 +144,7 @@ struct WsState {
     unsubscribe_frames: Arc<tokio::sync::Mutex<Vec<Value>>>,
     subscribe_failures: Arc<AtomicUsize>,
     unsubscribe_failures: Arc<AtomicUsize>,
+    unsubscribe_reply_gate: Arc<tokio::sync::Mutex<Option<tokio::sync::oneshot::Receiver<()>>>>,
     deferred_subscribe_responses: Arc<AtomicUsize>,
     subscribe_response_gate: Arc<tokio::sync::Semaphore>,
     subscribe_response_count: Arc<AtomicUsize>,
@@ -161,6 +162,7 @@ impl Default for WsState {
             unsubscribe_frames: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             subscribe_failures: Arc::new(AtomicUsize::new(0)),
             unsubscribe_failures: Arc::new(AtomicUsize::new(0)),
+            unsubscribe_reply_gate: Arc::default(),
             deferred_subscribe_responses: Arc::new(AtomicUsize::new(0)),
             subscribe_response_gate: Arc::new(tokio::sync::Semaphore::new(0)),
             subscribe_response_count: Arc::new(AtomicUsize::new(0)),
@@ -518,36 +520,7 @@ async fn handle_ws(socket: WebSocket, state: WsState) {
                         }
                     }
                     "unsubscribe" => {
-                        state.unsubscribe_frames.lock().await.push(payload.clone());
-                        if state.subscribe_response_count.load(Ordering::SeqCst) == 0 {
-                            state
-                                .unsubscribe_before_subscribe_response
-                                .store(true, Ordering::SeqCst);
-                        }
-
-                        let reject = state
-                            .unsubscribe_failures
-                            .try_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
-                                remaining.checked_sub(1)
-                            })
-                            .is_ok();
-
-                        let reply = if reject {
-                            json!({"id": id, "error": {"code": -32603, "message": "unsubscribe denied"}})
-                        } else {
-                            let status: serde_json::Map<String, Value> =
-                                payload["params"]["channels"]
-                                    .as_array()
-                                    .unwrap()
-                                    .iter()
-                                    .map(|channel| {
-                                        (channel.as_str().unwrap().to_string(), json!("ok"))
-                                    })
-                                    .collect();
-
-                            json!({"id": id, "result": {"status": status, "remaining_subscriptions": []}})
-                        };
-
+                        let reply = unsubscribe_reply(&state, &payload, id).await;
                         if !send_ws_message(&sender, reply).await {
                             break;
                         }
@@ -561,6 +534,40 @@ async fn handle_ws(socket: WebSocket, state: WsState) {
     }
 
     state.connection_count.fetch_sub(1, Ordering::SeqCst);
+}
+
+async fn unsubscribe_reply(state: &WsState, payload: &Value, id: u64) -> Value {
+    state.unsubscribe_frames.lock().await.push(payload.clone());
+    let gate = state.unsubscribe_reply_gate.lock().await.take();
+    if let Some(gate) = gate {
+        let _ = gate.await;
+    }
+
+    if state.subscribe_response_count.load(Ordering::SeqCst) == 0 {
+        state
+            .unsubscribe_before_subscribe_response
+            .store(true, Ordering::SeqCst);
+    }
+
+    let reject = state
+        .unsubscribe_failures
+        .try_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+            remaining.checked_sub(1)
+        })
+        .is_ok();
+
+    if reject {
+        json!({"id": id, "error": {"code": -32603, "message": "unsubscribe denied"}})
+    } else {
+        let status: serde_json::Map<String, Value> = payload["params"]["channels"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|channel| (channel.as_str().unwrap().to_string(), json!("ok")))
+            .collect();
+
+        json!({"id": id, "result": {"status": status, "remaining_subscriptions": []}})
+    }
 }
 
 async fn send_ws_message(
@@ -1078,6 +1085,115 @@ async fn test_shared_orderbook_channel_unsubscribes_after_last_owner() {
         .count();
     assert_eq!(subscribe_count, 1);
     assert_eq!(ws_state.unsubscribes().await.len(), 1);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::batch_pending_channels(false, false)]
+#[case::retain_reattached_channel(true, false)]
+#[case::release_while_subscribing(false, true)]
+#[tokio::test]
+async fn test_pending_channel_unsubscribes_are_batched(
+    #[case] reattach_ticker: bool,
+    #[case] pending_ticker: bool,
+) {
+    let ws_state = WsState::default();
+    let rest_addr = start_rest_server(RestState::default()).await;
+    let ws_addr = start_ws_server(ws_state.clone()).await;
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+    let mut client = connect_with_eth_currency(rest_addr, ws_addr).await;
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let book = "orderbook.ETH-PERP.1.10";
+    let ticker = "ticker_slim.ETH-PERP.1000";
+    let trades = "trades.perp.ETH";
+
+    client
+        .subscribe_book_deltas(subscribe_book_deltas(instrument_id, Some(10), None))
+        .unwrap();
+    client
+        .subscribe_trades(subscribe_trades(instrument_id))
+        .unwrap();
+
+    for channel in [book, trades] {
+        wait_for_subscribe(&ws_state, channel).await;
+    }
+
+    if pending_ticker {
+        ws_state
+            .deferred_subscribe_responses
+            .store(1, Ordering::SeqCst);
+    }
+
+    client
+        .subscribe_quotes(subscribe_quotes(instrument_id, None))
+        .unwrap();
+    wait_for_subscribe(&ws_state, ticker).await;
+
+    let (release_reply, gate) = tokio::sync::oneshot::channel();
+    *ws_state.unsubscribe_reply_gate.lock().await = Some(gate);
+    client
+        .unsubscribe_book_deltas(&unsubscribe_book_deltas(instrument_id, None))
+        .unwrap();
+
+    if pending_ticker {
+        let book_transition = client.channel_subscriptions.transition(book);
+        wait_until_async(
+            || async { book_transition.try_lock().is_err() },
+            Duration::from_secs(3),
+        )
+        .await;
+    } else {
+        wait_for_unsubscribe(&ws_state, book).await;
+    }
+
+    let trades_transition = client.channel_subscriptions.transition(trades);
+    let trades_guard = if reattach_ticker {
+        Some(trades_transition.lock().await)
+    } else {
+        None
+    };
+
+    client
+        .unsubscribe_quotes(&unsubscribe_quotes(instrument_id, None))
+        .unwrap();
+    client
+        .unsubscribe_trades(&unsubscribe_trades(instrument_id))
+        .unwrap();
+
+    if pending_ticker {
+        ws_state.subscribe_response_gate.add_permits(1);
+        wait_for_unsubscribe(&ws_state, book).await;
+    }
+
+    release_reply.send(()).unwrap();
+
+    if reattach_ticker {
+        let ticker_transition = client.channel_subscriptions.transition(ticker);
+        wait_until_async(
+            || async { ticker_transition.try_lock().is_err() },
+            Duration::from_secs(3),
+        )
+        .await;
+        client
+            .subscribe_quotes(subscribe_quotes(instrument_id, None))
+            .unwrap();
+    }
+
+    drop(trades_guard);
+    wait_for_unsubscribe(&ws_state, trades).await;
+    let frames = ws_state.unsubscribes().await;
+    assert_eq!(frames.len(), 2);
+    assert_eq!(frames[0]["params"]["channels"], json!([book]));
+
+    let expected = if reattach_ticker {
+        json!([trades])
+    } else {
+        json!([ticker, trades])
+    };
+
+    assert_eq!(frames[1]["params"]["channels"], expected);
 
     client.disconnect().await.unwrap();
 }

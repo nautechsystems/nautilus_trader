@@ -18,12 +18,18 @@ Contract and lifecycle tests for running a `LiveNode` on a caller-owned asyncio 
 
 import asyncio
 import gc
+import os
 import signal
+import sys
 import threading
 import time
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
+from http.server import BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer
+from pathlib import Path
+from textwrap import dedent
 
 import pytest
 from strategies.acceptance import DualTimer
@@ -605,6 +611,81 @@ def test_owned_run_installs_and_restores_the_python_signal_handler() -> None:
     assert signal.getsignal(signal.SIGINT) is original, "owned mode did not restore the handler"
 
     node.dispose()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX process signals")
+async def test_owned_run_observes_sigint_during_client_startup(tmp_path: Path) -> None:
+    """
+    Handle SIGINT while a data client is still connecting.
+    """
+    received = threading.Event()
+    release = threading.Event()
+
+    class HeldResponse(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            received.set()
+            release.wait(timeout=15)
+            self.send_error(400, "startup probe complete")
+
+    code = dedent("""
+        import sys
+
+        from nautilus_trader.adapters.derive import DeriveDataClientConfig, DeriveDataClientFactory, DeriveEnvironment
+        from nautilus_trader.common import Environment
+        from nautilus_trader.live import LiveNode, NodeState
+        from nautilus_trader.model import TraderId
+
+        node = (
+            LiveNode.builder("SIGINT-TEST", TraderId("TESTER-001"), Environment.SANDBOX)
+            .with_delay_post_stop_secs(0)
+            .add_data_client(None, DeriveDataClientFactory(), DeriveDataClientConfig(
+                environment=DeriveEnvironment.TESTNET, currencies=["ETH"], base_url_rest=sys.argv[1],
+            ))
+            .build()
+        )
+        handle = node.handle()
+        try:
+            node.run()
+        except RuntimeError as e:
+            assert str(e) == "Failed to connect data clients: DERIVE", e
+        assert handle.state == NodeState.STOPPED
+        """)
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), HeldResponse) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        log_path = tmp_path / "startup.log"
+
+        def read_log() -> str:
+            return log_path.read_text(encoding="utf-8", errors="replace")
+
+        with log_path.open("wb") as log:
+            address = f"http://127.0.0.1:{server.server_port}"
+            process = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-c",
+                code,
+                address,
+                stdout=log,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            try:
+                assert await asyncio.to_thread(received.wait, 20), read_log()
+                process.send_signal(signal.SIGINT)
+                await eventually(
+                    lambda: "Received SIGINT, shutting down" in read_log(),
+                    timeout_secs=8.0,
+                )
+                release.set()
+                assert await asyncio.wait_for(process.wait(), timeout=15) == 0, read_log()
+            finally:
+                release.set()
+
+                if process.returncode is None:
+                    process.kill()
+                    await process.wait()
+                server.shutdown()
+                thread.join()
 
 
 async def test_closing_a_run_on_a_live_loop_does_not_block_it() -> None:

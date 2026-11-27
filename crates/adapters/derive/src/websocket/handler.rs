@@ -393,7 +393,7 @@ impl FeedHandler {
                 return;
             }
 
-            authenticated_epoch
+            connection_epoch.unwrap_or(authenticated_epoch)
         } else {
             connection_epoch.unwrap_or(current_epoch)
         };
@@ -1247,6 +1247,93 @@ mod tests {
             Err(DeriveWsError::NotConnected) => {}
             other => panic!("expected NotConnected, was {other:?}"),
         }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_queued_private_cancel_cannot_cross_reauthentication() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let peer = tokio::spawn(async move {
+            let (first, _) = listener.accept().await.unwrap();
+            let first = tokio_tungstenite::accept_async(first).await.unwrap();
+            let (second, _) = listener.accept().await.unwrap();
+            let mut second = tokio_tungstenite::accept_async(second).await.unwrap();
+            drop(first);
+
+            while let Some(Ok(message)) = second.next().await {
+                if let Message::Text(text) = message {
+                    panic!("unexpected private request on new connection: {text}");
+                }
+            }
+        });
+
+        let (reconnected_tx, mut reconnected_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let socket = Arc::new(
+            WebSocketClient::builder()
+                .config(
+                    WebSocketConfig::builder()
+                        .url(format!("ws://{address}"))
+                        .build()
+                        .unwrap(),
+                )
+                .message_handler(Arc::new(move |message| {
+                    if message.as_text() == Some(RECONNECTED) {
+                        let _ = reconnected_tx.send(());
+                    }
+                }))
+                .connect()
+                .await
+                .unwrap(),
+        );
+
+        let previous = socket.connection_epoch();
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        let queued = (previous, response_tx);
+        let (send_tx, mut send_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let authenticated_epoch = Arc::new(AtomicU64::new(previous));
+        let mut handler = feed_handler(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            Arc::new(AtomicU64::new(1)),
+            AuthTracker::new(),
+            Arc::clone(&authenticated_epoch),
+        );
+        handler.client = Some(Arc::clone(&socket));
+        handler.send_tx = Some(send_tx);
+
+        assert!(socket.request_reconnect());
+        tokio::time::timeout(Duration::from_secs(3), reconnected_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let current = socket.connection_epoch();
+        assert_eq!(current, previous + 1);
+        authenticated_epoch.store(current, Ordering::Release);
+
+        let (epoch, response_tx) = queued;
+        handler.dispatch_request(
+            "private/cancel",
+            secret_json(json!({"subaccount_id": 42, "order_id": "old-session", "instrument_name": "ETH-PERP"})),
+            Some(epoch), None, response_tx,
+        );
+        assert!(matches!(
+            send_rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+        assert!(matches!(
+            response_rx.await.unwrap(),
+            Err(DeriveWsError::NotConnected)
+        ));
+        socket.disconnect().await;
+        tokio::time::timeout(Duration::from_secs(3), peer)
+            .await
+            .unwrap()
+            .unwrap();
     }
 
     #[rstest]

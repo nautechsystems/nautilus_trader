@@ -946,28 +946,28 @@ impl DeriveDataClient {
         Ok(())
     }
 
-    fn unsubscribe_channel_owner(&self, owner: ChannelOwner) -> anyhow::Result<()> {
+    fn unsubscribe_channel_owner(&self, owner: ChannelOwner) {
         let lifecycle = self.subscription_lifecycle();
 
         let Some(removed) = lifecycle.remove(owner) else {
-            return Ok(());
+            return;
         };
 
         if !removed.channel_empty {
-            return Ok(());
+            return;
         }
 
         let Some(channel) = removed.channel else {
-            return Ok(());
+            return;
         };
 
-        let request = ChannelRequest::from_channel(&channel)?;
-        let ws = self.ws_handle();
-        self.spawn_task("unsubscribe_channel", async move {
-            run_channel_unsubscribe(lifecycle, request, ws).await
-        });
-
-        Ok(())
+        if lifecycle.registry.queue_unsubscribe(channel) {
+            let ws = self.ws_handle();
+            let cancellation = self.cancellation_token.clone();
+            self.spawn_task("unsubscribe_channels", async move {
+                drain_unsubscribes(lifecycle, ws, cancellation).await
+            });
+        }
     }
 }
 
@@ -1356,13 +1356,15 @@ impl DataClient for DeriveDataClient {
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
         execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
-            self.unsubscribe_channel_owner(ChannelOwner::BookDeltas(instrument_id))
+            self.unsubscribe_channel_owner(ChannelOwner::BookDeltas(instrument_id));
+            Ok(())
         })
     }
 
     fn unsubscribe_book_depth(&mut self, cmd: &UnsubscribeBookDepth) -> anyhow::Result<()> {
         execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
-            self.unsubscribe_channel_owner(ChannelOwner::BookDepth(instrument_id))
+            self.unsubscribe_channel_owner(ChannelOwner::BookDepth(instrument_id));
+            Ok(())
         })
     }
 
@@ -1371,13 +1373,16 @@ impl DataClient for DeriveDataClient {
             self.unsubscribe_channel_owner(ChannelOwner::Ticker {
                 instrument_id,
                 feed: TickerFeed::Quote,
-            })
+            });
+
+            Ok(())
         })
     }
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
         execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
-            self.unsubscribe_channel_owner(ChannelOwner::Trades(instrument_id))
+            self.unsubscribe_channel_owner(ChannelOwner::Trades(instrument_id));
+            Ok(())
         })
     }
 
@@ -1386,7 +1391,9 @@ impl DataClient for DeriveDataClient {
             self.unsubscribe_channel_owner(ChannelOwner::Ticker {
                 instrument_id,
                 feed: TickerFeed::Mark,
-            })
+            });
+
+            Ok(())
         })
     }
 
@@ -1395,7 +1402,9 @@ impl DataClient for DeriveDataClient {
             self.unsubscribe_channel_owner(ChannelOwner::Ticker {
                 instrument_id,
                 feed: TickerFeed::Index,
-            })
+            });
+
+            Ok(())
         })
     }
 
@@ -1404,7 +1413,9 @@ impl DataClient for DeriveDataClient {
             self.unsubscribe_channel_owner(ChannelOwner::Ticker {
                 instrument_id,
                 feed: TickerFeed::Funding,
-            })
+            });
+
+            Ok(())
         })
     }
 
@@ -1413,7 +1424,9 @@ impl DataClient for DeriveDataClient {
             self.unsubscribe_channel_owner(ChannelOwner::Ticker {
                 instrument_id,
                 feed: TickerFeed::Greeks,
-            })
+            });
+
+            Ok(())
         })
     }
 
@@ -2165,6 +2178,7 @@ struct ChannelSubscriptionState {
 struct ChannelSubscriptionRegistry {
     state: Mutex<ChannelSubscriptionState>,
     transitions: DashMap<String, Weak<tokio::sync::Mutex<()>>>,
+    pending_unsubscribes: Mutex<Option<Vec<String>>>,
 }
 
 const TRANSITION_GC_THRESHOLD: usize = 256;
@@ -2285,32 +2299,41 @@ async fn run_channel_subscribe(
         .dispatch
         .book_sync
         .subscription_written(&channel, lifecycle.snapshot_timeout);
-    if !lifecycle.has_owners(&channel)
-        && let Err(e) = request.unsubscribe(&ws).await
-    {
-        log::error!("Failed to clean up stale Derive channel `{channel}`: {e}");
-        ws.forget_subscription(&channel);
-    }
 
     Ok(())
 }
 
-async fn run_channel_unsubscribe(
+async fn drain_unsubscribes(
     lifecycle: SubscriptionLifecycle,
-    request: ChannelRequest,
     ws: DeriveWebSocketSubscriptionHandle,
+    cancellation: CancellationToken,
 ) -> anyhow::Result<()> {
-    let channel = request.channel().to_string();
-    let transition = lifecycle.registry.transition(&channel);
-    let _guard = transition.lock().await;
+    while let Some(mut pending) = lifecycle.registry.next_unsubscribes() {
+        pending.sort_unstable();
+        pending.dedup();
 
-    if lifecycle.has_owners(&channel) || !ws.has_subscription(&channel) {
-        return Ok(());
-    }
+        let mut guards = Vec::with_capacity(pending.len());
+        let mut channels = Vec::with_capacity(pending.len());
+        for channel in pending {
+            let guard = lifecycle.registry.transition(&channel).lock_owned().await;
+            guards.push(guard);
+            channels.push(channel);
+        }
 
-    if let Err(e) = request.unsubscribe(&ws).await {
-        log::error!("Failed to unsubscribe from Derive channel `{channel}`: {e}");
-        ws.forget_subscription(&channel);
+        tokio::select! {
+            biased;
+            () = cancellation.cancelled() => break,
+            result = ws.unsubscribe_ownerless_channels(&mut channels, |channel| lifecycle.has_owners(channel)) => {
+                if let Err(e) = result
+                    && !cancellation.is_cancelled()
+                {
+                    log::error!("Failed to unsubscribe from Derive channels {channels:?}: {e}");
+                    for channel in channels {
+                        ws.forget_subscription(&channel);
+                    }
+                }
+            }
+        }
     }
 
     Ok(())
@@ -2468,6 +2491,31 @@ impl SubscriptionDispatchState {
 }
 
 impl ChannelSubscriptionRegistry {
+    fn queue_unsubscribe(&self, channel: String) -> bool {
+        let mut pending = self.pending_unsubscribes.lock();
+        match pending.as_mut() {
+            Some(channels) => {
+                channels.push(channel);
+                false
+            }
+            None => {
+                *pending = Some(vec![channel]);
+                true
+            }
+        }
+    }
+
+    fn next_unsubscribes(&self) -> Option<Vec<String>> {
+        let mut pending = self.pending_unsubscribes.lock();
+        let channels = pending.as_mut()?;
+        if channels.is_empty() {
+            *pending = None;
+            return None;
+        }
+
+        Some(std::mem::take(channels))
+    }
+
     fn transition(&self, channel: &str) -> Arc<tokio::sync::Mutex<()>> {
         if self.transitions.len() >= TRANSITION_GC_THRESHOLD {
             self.transitions
@@ -2485,6 +2533,7 @@ impl ChannelSubscriptionRegistry {
     }
 
     fn clear(&self) {
+        *self.pending_unsubscribes.lock() = None;
         let mut state = self.state.lock();
         let next_generation = state.next_generation;
 

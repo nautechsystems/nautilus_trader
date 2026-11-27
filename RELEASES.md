@@ -186,6 +186,7 @@ Released on TBD (UTC).
 - Fixed live startup connecting execution clients after a stop request during data connection
 - Fixed `LiveNode::start` skipping reconciliation for instruments sent during execution connect
 - Fixed `LiveNode::start` timing out when execution clients wait for account registration
+- Fixed `LiveNode::run` handling SIGINT and SIGTERM only after startup
 - Fixed live node panics on excessive `timeout_connection`, `timeout_disconnection`, or `delay_post_stop` values
 - Fixed panics when analytics, backtests, or data aggregation convert values at precision 17 or 18
 - Fixed a process abort when strategies close positions with `GTD` by returning an error before submission
@@ -251,6 +252,9 @@ Released on TBD (UTC).
 - Fixed Derive reconnect ignoring the startup reconciliation lookback (#5709), thanks for reporting @Aviksaikat
 - Fixed Derive execution staying offline after transient WebSocket failures (#5759), thanks for reporting @Aviksaikat
 - Fixed Derive startup timing out on orders or positions in instruments not yet in the cache
+- Fixed Derive individual cancels racing a local submit or replacement
+- Fixed Derive submit acknowledgments using the local receipt time as the venue acceptance timestamp
+- Fixed Derive data shutdown timing out while unsubscribing from channels one request at a time
 - Fixed FinFeed dropping `Retry-After` on failed reads and missing HTTP dates and retryable 5xx cooldowns
 - Fixed FinFeed resetting request spacing on reconnect
 - Fixed Hyperliquid venue timestamps losing nanosecond exactness through float conversion
