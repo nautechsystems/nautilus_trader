@@ -125,8 +125,10 @@ impl CfdSwapModule {
 
     /// Creates a new CFD swap module that rolls over in `rollover_time_zone`.
     ///
-    /// Booking dates are the weekdays of the rollover time zone. Each date books once: a rollover
-    /// time skipped by a clock change books right after it, and a repeated one books the first time.
+    /// Booking dates are the weekdays of the rollover time zone, and each date books once. A
+    /// rollover time in a DST gap shifts forward by the gap, so a position closed after the clock
+    /// change but before the shifted time gets no swap for that day. A repeated rollover time uses
+    /// its first occurrence.
     #[must_use]
     pub fn new_with_time_zone(
         rates: Vec<CfdSwapRate>,
