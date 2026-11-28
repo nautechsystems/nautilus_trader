@@ -107,7 +107,7 @@ use nautilus_model::{
         own::{OwnOrderBook, should_handle_own_book_order},
     },
     orders::{Order, OrderAny, OrderError, OrderList},
-    position::{Position, PositionReplayEvent},
+    position::{Position, PositionFillOutcome, PositionReplayEvent},
     types::{
         Currency, ERROR_PRICE, Money, Price, Quantity,
         fixed::{FIXED_PRECISION, MAX_FLOAT_PRECISION, check_fixed_precision},
@@ -4816,10 +4816,11 @@ impl Cache {
 
     /// Updates a cached position by applying an order fill in place.
     ///
-    /// Returns a transient copy of the updated state without stored history. The canonical cached
-    /// position retains its complete history. A fill without a position ID uses `position_id`.
+    /// Returns a history-free copy of the current state. An ignored fill leaves the canonical
+    /// position and its history unchanged, without updating indexes or persistence. A fill without
+    /// a position ID uses `position_id`.
     ///
-    /// Persistence failures are logged without failing the operation.
+    /// Ordinary persistence failures are logged; backing DeFi currency integrity errors propagate.
     ///
     /// # Errors
     ///
@@ -4830,6 +4831,30 @@ impl Cache {
         position_id: PositionId,
         fill: &OrderFilled,
     ) -> anyhow::Result<Position> {
+        match self.update_position_from_fill_if_applied(position_id, fill)? {
+            Some(position) => Ok(position),
+            None => self
+                .position(&position_id)
+                .map(|position| position.clone_without_events())
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Position {position_id} missing after ignored fill")
+                }),
+        }
+    }
+
+    /// Applies a fill, updating persistence and indexes only if the position changed.
+    ///
+    /// Returns a history-free copy on application or `None` for an ignored fill.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the position is missing, the fill fails validation, or the backing
+    /// reports a DeFi currency integrity error.
+    pub fn update_position_from_fill_if_applied(
+        &mut self,
+        position_id: PositionId,
+        fill: &OrderFilled,
+    ) -> anyhow::Result<Option<Position>> {
         let Some(position_cell) = self.positions.get(&position_id).cloned() else {
             anyhow::bail!("Cannot update position {position_id}: not found in cache");
         };
@@ -4845,7 +4870,9 @@ impl Cache {
 
         let position = {
             let mut position = position_cell.borrow_mut();
-            position.try_apply(fill)?;
+            if position.try_apply_with_outcome(fill)? == PositionFillOutcome::Ignored {
+                return Ok(None);
+            }
             position.clone_without_events()
         };
 
@@ -4858,7 +4885,7 @@ impl Cache {
             )?;
         }
 
-        Ok(position)
+        Ok(Some(position))
     }
 
     /// Updates a cached position by applying an adjustment in place.

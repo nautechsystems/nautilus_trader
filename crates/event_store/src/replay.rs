@@ -2919,6 +2919,11 @@ mod tests {
             &[PAYLOAD_TYPE_ORDER_FILLED],
         ),
         cache_mutation(
+            "update_position_from_fill_if_applied",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_ORDER_FILLED],
+        ),
+        cache_mutation(
             "update_position_from_instrument_close",
             CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
             &[PAYLOAD_TYPE_INSTRUMENT_CLOSE],

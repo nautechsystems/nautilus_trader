@@ -10,7 +10,7 @@
 //! Redis mode requires a disposable loopback Redis instance supplied by the runner.
 //! Timings include adapter submission, not Redis acknowledgement or durable persistence.
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     hint::black_box,
     rc::Rc,
     time::{Duration, Instant},
@@ -20,6 +20,7 @@ use nautilus_common::{
     cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
     clock::VirtualClock,
     live::get_runtime,
+    msgbus::{self, TypedHandler},
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_execution::engine::{
@@ -31,7 +32,7 @@ use nautilus_infrastructure::redis::cache::{
 use nautilus_model::{
     accounts::AccountAny,
     enums::{LiquiditySide, OmsType, OrderSide, OrderType, PositionSide},
-    events::{OrderEventAny, OrderFilled, order::spec::OrderFilledSpec},
+    events::{OrderEventAny, OrderFilled, PositionEvent, order::spec::OrderFilledSpec},
     identifiers::{AccountId, ClientId, ClientOrderId, PositionId, TradeId, TraderId},
     instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
     orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -348,6 +349,24 @@ pub(crate) fn run(
         });
     }
 
+    let duplicate_flip = (full && mode == "flip" && first == "duplicate").then(|| {
+        let side = if (count - 1).is_multiple_of(2) {
+            OrderSide::Buy
+        } else {
+            OrderSide::Sell
+        };
+        builder.event("DUPLICATE-FLIP", TradeId::from("T-OPEN-0"), side, 3)
+    });
+    let position_events = Rc::new(Cell::new(0));
+    if duplicate_flip.is_some() {
+        let count = Rc::clone(&position_events);
+        msgbus::subscribe_position_events(
+            "events.position.*".into(),
+            TypedHandler::from(move |_: &PositionEvent| count.set(count.get() + 1)),
+            None,
+        );
+    }
+
     if let Some(key) = &trader_key {
         writer_barrier(&cache.borrow(), port, key);
     }
@@ -411,7 +430,12 @@ pub(crate) fn run(
     }
 
     for (step, events) in steps.iter().enumerate() {
+        let events_before_flip = position_events.get();
         let ns = process(&mut engine, &events.flip);
+
+        if duplicate_flip.is_some() {
+            assert_eq!(position_events.get(), events_before_flip + 2);
+        }
         println!("{backend},{start},{first},{n},{step},flip,{ns}");
         check(&cache.borrow(), id, step, n, false);
         let mut unique_applied = false;
@@ -435,7 +459,15 @@ pub(crate) fn run(
 
         for (op, event, is_unique) in ordered {
             let before = (!is_unique).then(|| state(&cache.borrow(), id, full));
+            let events_before_fill = position_events.get();
             let ns = process(&mut engine, event);
+
+            if duplicate_flip.is_some() {
+                assert_eq!(
+                    position_events.get(),
+                    events_before_fill + usize::from(is_unique)
+                );
+            }
             println!("{backend},{start},{first},{n},{step},{op},{ns}");
 
             if is_unique {
@@ -462,6 +494,20 @@ pub(crate) fn run(
             );
         }
     }
+
+    if let Some(event) = &duplicate_flip {
+        let before = state(&cache.borrow(), id, true);
+        let snapshots_before = cache.borrow().position_snapshot_count(&id);
+        let events_before = position_events.get();
+        engine.process(event);
+        assert_eq!(state(&cache.borrow(), id, true), before);
+        assert_eq!(
+            cache.borrow().position_snapshot_count(&id),
+            snapshots_before
+        );
+        assert_eq!(position_events.get(), events_before);
+    }
+
     let expected_economics = state(&cache.borrow(), id, false);
     let expected_full = if virtual_id || reopening {
         Some(state(&cache.borrow(), id, true))
@@ -523,6 +569,18 @@ pub(crate) fn run(
                 );
             }
             assert_eq!(actual, expected, "Redis lost complete replay state");
+        }
+
+        if full && mode == "flip" && first == "duplicate" {
+            let positions = get_runtime().block_on(a.load_positions()).unwrap();
+            let bulk = positions
+                .get(&id)
+                .expect("Bulk reload omitted the position");
+            assert_eq!(
+                serde_json::to_value(bulk).unwrap(),
+                serde_json::to_value(&restored).unwrap(),
+                "Direct and bulk reload disagree"
+            );
         }
         a.close().unwrap();
         println!("{backend},{start},{first},{n},{count},reload,{reload}");

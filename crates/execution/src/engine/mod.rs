@@ -85,7 +85,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orderbook::own::{OwnBookOrder, OwnOrderBook, should_handle_own_book_order},
     orders::{FILL_REPORT_ORDER_TAG, Order, OrderAny, OrderError},
-    position::{Position, PositionReplayEvent},
+    position::{Position, PositionFillOutcome, PositionReplayEvent},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{Money, Quantity},
 };
@@ -5090,24 +5090,13 @@ impl ExecutionEngine {
         &self,
         position: &mut Position,
         fill: &OrderFilled,
-    ) -> Option<PositionEvent> {
-        if let Err(e) = position.try_apply(fill) {
-            log::error!(
-                "Failed to apply fill {} to position {}: {e}",
-                fill.trade_id,
-                position.id
-            );
-            return None;
+    ) -> anyhow::Result<Option<PositionEvent>> {
+        if position.try_apply_with_outcome(fill)? == PositionFillOutcome::Ignored {
+            return Ok(None);
         }
 
-        // Check if position is closed after applying the fill
-        let is_closed = position.is_closed();
-
-        // Update position in cache - this should handle the closed state tracking
-        if let Err(e) = self.cache.borrow_mut().update_position(position) {
-            log::error!("Failed to update position: {e:?}");
-            return None;
-        }
+        // Persist and refresh cache state only for a fill the position applied.
+        self.cache.borrow_mut().update_position(position)?;
 
         // Create position state snapshot if enabled
         if self.config.snapshot_positions {
@@ -5116,12 +5105,12 @@ impl ExecutionEngine {
 
         let ts_init = self.clock.borrow().timestamp_ns();
 
-        if is_closed {
+        if position.is_closed() {
             let event = PositionClosed::create(position, fill, UUID4::new(), ts_init);
-            Some(PositionEvent::PositionClosed(event))
+            Ok(Some(PositionEvent::PositionClosed(event)))
         } else {
             let event = PositionChanged::create(position, fill, UUID4::new(), ts_init);
-            Some(PositionEvent::PositionChanged(event))
+            Ok(Some(PositionEvent::PositionChanged(event)))
         }
     }
 
@@ -5163,9 +5152,10 @@ impl ExecutionEngine {
         let position = match self
             .cache
             .borrow_mut()
-            .update_position_from_fill(position_id, fill)
+            .update_position_from_fill_if_applied(position_id, fill)
         {
-            Ok(position) => position,
+            Ok(Some(position)) => position,
+            Ok(None) => return None,
             Err(e) => {
                 log::error!("Failed to update position: {e:?}");
                 return None;
@@ -5330,15 +5320,24 @@ impl ExecutionEngine {
             return position_events;
         }
 
-        // A database error can leave the closing fill applied in memory
-        if let Some(position_event) = self.update_position(position, &fill_split1) {
-            position_events.push(position_event);
-        } else if !position
-            .events
-            .last()
-            .is_some_and(|event| event.event_id == fill_split1.event_id)
-        {
-            return position_events;
+        match self.update_position(position, &fill_split1) {
+            Ok(Some(event)) => position_events.push(event),
+            Ok(None) => return position_events,
+            Err(e) => {
+                log::error!(
+                    "Failed to apply or persist closing fill {} for position {}: {e:?}",
+                    fill_split1.trade_id,
+                    position.id
+                );
+                // A database error can leave the closing fill applied in memory.
+                if !position
+                    .events
+                    .last()
+                    .is_some_and(|event| event.event_id == fill_split1.event_id)
+                {
+                    return position_events;
+                }
+            }
         }
 
         // Snapshot closed position before reusing ID (NETTING mode)
@@ -5674,6 +5673,65 @@ mod tests {
         );
         assert!(cache.borrow().is_position_open(&position.id));
         assert!(!cache.borrow().is_position_closed(&position.id));
+    }
+
+    #[rstest]
+    #[case::continuing(OrderSide::Buy, 1)]
+    #[case::would_flip(OrderSide::Sell, 2)]
+    fn historical_duplicate_has_no_position_effect(#[case] side: OrderSide, #[case] quantity: u64) {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut engine = ExecutionEngine::new(
+            Rc::new(RefCell::new(VirtualClock::new())),
+            Rc::clone(&cache),
+            None,
+        );
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let id = PositionId::from("AUDUSD-DUPLICATE");
+        let opening = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(id)
+            .trade_id(TradeId::from("T-HISTORICAL"))
+            .last_qty(Quantity::from(1))
+            .last_px(Price::from("1.00000"))
+            .order_side(OrderSide::Buy)
+            .build();
+        let mut position = Position::new(&instrument, opening.clone());
+        let next = |trade, order_side, quantity| {
+            let mut fill = opening.clone();
+            fill.trade_id = TradeId::from(trade);
+            fill.client_order_id = ClientOrderId::from(trade);
+            fill.event_id = UUID4::new();
+            fill.order_side = order_side;
+            fill.last_qty = Quantity::from(quantity);
+            fill
+        };
+        position
+            .try_apply(&next("T-CLOSE", OrderSide::Sell, 1))
+            .unwrap();
+        position
+            .try_apply(&next("T-REOPEN", OrderSide::Buy, 1))
+            .unwrap();
+        let before = serde_json::to_value(&position).unwrap();
+        cache
+            .borrow_mut()
+            .add_position_without_order(&position, OmsType::Netting)
+            .unwrap();
+
+        let events = engine.handle_position_update(
+            &instrument,
+            next("T-HISTORICAL", side, quantity),
+            OmsType::Netting,
+        );
+
+        assert!(events.is_empty());
+        let cache = cache.borrow();
+        assert!(cache.is_position_open(&id));
+        assert!(!cache.is_position_closed(&id));
+        assert_eq!(cache.position_snapshot_count(&id), 0);
+        assert_eq!(
+            serde_json::to_value(&*cache.position(&id).unwrap()).unwrap(),
+            before
+        );
     }
 
     #[rstest]

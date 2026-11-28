@@ -286,7 +286,10 @@ with socket.socket() as server:
             if argv[2] != "memory":
                 seen_ports.append(int(argv[3]))
             duplicate = (
-                argv[2] == "redis-nonvirtual" and argv[5] == "duplicate" and argv[-1] == "flip"
+                argv[0].endswith("baseline-engine")
+                and argv[2] == "redis-nonvirtual"
+                and argv[5] == "duplicate"
+                and argv[-1] == "flip"
             )
 
             if duplicate:
@@ -306,6 +309,8 @@ with socket.socket() as server:
                     str(RUNNER),
                     *command[2:],
                     str(output),
+                    "--legacy-duplicate-reload",
+                    "baseline",
                     "--baseline-allocations",
                     str(root / "baseline-engine"),
                     "--head-allocations",
@@ -337,6 +342,14 @@ with socket.socket() as server:
             message="Redis cleanup missing",
         )
         results = json.loads((output / "run-results.json").read_text())
+        for row in results:
+            tag = row["tag"]
+            if tag.endswith("duplicate-flip") and "redis-nonvirtual" in tag:
+                expected = 2 if tag.startswith("check-baseline-") else 0
+                require(
+                    condition=row["code"] == row["expected"] == expected,
+                    message="Legacy expectation leaked across binary variants",
+                )
         allocation_count = sum(r["tag"].startswith("allocations-") for r in results)
         expected_allocations = 64
         require(
