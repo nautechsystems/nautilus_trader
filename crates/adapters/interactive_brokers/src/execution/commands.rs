@@ -47,11 +47,13 @@ impl InteractiveBrokersExecutionClient {
         ib_account: Ustr,
         order_submit_lock: &Arc<tokio::sync::Mutex<()>>,
         request_timeout_secs: u64,
+        leg_contracts: &SpreadLegContracts,
     ) -> anyhow::Result<()> {
         let price_magnifier = instrument_provider.ensure_price_magnifier_async(
             client,
             cmd.instrument_id,
             Duration::from_secs(request_timeout_secs),
+            leg_contracts,
         );
         let Some(prepared) = Self::prepare_submit_order(
             cmd,
@@ -260,12 +262,14 @@ impl InteractiveBrokersExecutionClient {
         instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
         ib_account: Ustr,
         request_timeout_secs: u64,
+        leg_contracts: &SpreadLegContracts,
     ) -> anyhow::Result<()> {
         instrument_provider
             .ensure_price_magnifier_async(
                 client,
                 cmd.instrument_id,
                 Duration::from_secs(request_timeout_secs),
+                leg_contracts,
             )
             .await?;
 
@@ -536,6 +540,7 @@ impl InteractiveBrokersExecutionClient {
         strategy_id: StrategyId,
         order_submit_lock: &Arc<tokio::sync::Mutex<()>>,
         request_timeout_secs: u64,
+        leg_contracts: &SpreadLegContracts,
     ) -> anyhow::Result<()> {
         let mut instrument_ids: Vec<_> = orders.iter().map(OrderAny::instrument_id).collect();
         instrument_ids.sort_unstable();
@@ -548,6 +553,7 @@ impl InteractiveBrokersExecutionClient {
                         client,
                         instrument_id,
                         Duration::from_secs(request_timeout_secs),
+                        leg_contracts,
                     )
                     .await?;
             }

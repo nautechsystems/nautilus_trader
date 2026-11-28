@@ -4033,6 +4033,57 @@ fn test_report_contract_resolution_uses_cached_bag_spread_id() {
 }
 
 #[tokio::test]
+async fn test_handle_spread_execution_resolves_tracked_leg_after_alias_remap() {
+    let instrument_provider = create_test_instrument_provider();
+    let mut leg = equity_aapl();
+    leg.id = create_test_leg_instrument();
+    let leg_id = leg.id;
+    let spread = create_test_option_spread();
+    let spread_instrument_id = spread.id;
+    instrument_provider.insert_test_instrument(InstrumentAny::from(leg), 12345, 1);
+    instrument_provider.insert_test_instrument(InstrumentAny::from(spread), 54321, 1);
+    instrument_provider.insert_test_contract_id_mapping(
+        12345,
+        InstrumentId::new(leg_id.symbol, Venue::from("CBOE")),
+    );
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let orders = OrderTracker::new(NATIVE_CLIENT_ID);
+    let exec_data = create_test_execution_data(213, "exec-001", 3.0, 5.25, "BOT");
+    let client_order_id = ClientOrderId::from("O-001");
+    let context = create_tracked_order_context(client_order_id, spread_instrument_id);
+    insert_tracked_order(&orders, exec_data.execution.order_id, context.clone());
+    let fill = SpreadFillContext {
+        client_order_id,
+        spread_instrument_id,
+        commission: 1.0,
+        commission_currency: "USD",
+        ts_init: UnixNanos::new(0),
+        account_id: AccountId::from("IB-001"),
+    };
+
+    let resolved = InteractiveBrokersExecutionClient::handle_spread_execution(
+        &exec_data,
+        &fill,
+        &instrument_provider,
+        &exec_sender.clone().into(),
+        &orders,
+        &context,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(resolved, Some(leg_id));
+
+    match exec_receiver.try_recv().unwrap() {
+        ExecutionEvent::Order(OrderEventAny::Filled(fill)) => {
+            assert_eq!(fill.instrument_id, leg_id);
+        }
+        other => panic!("unexpected leg event: {other:?}"),
+    }
+    assert!(exec_receiver.try_recv().is_err());
+}
+
+#[tokio::test]
 async fn test_handle_spread_execution_emits_only_leg_fill_event() {
     let instrument_provider = create_test_instrument_provider();
     let mut leg = equity_aapl();
@@ -8154,5 +8205,81 @@ async fn test_run_order_update_stream_stops_when_bind_fails_with_shutdown() {
         calls.load(Ordering::SeqCst),
         1,
         "no retry after a bind failed with a shutdown"
+    );
+}
+
+#[rstest]
+fn spread_leg_contracts_are_read_only_for_a_spread_without_a_price_magnifier(
+    #[values(false, true)] spread_built: bool,
+) {
+    let (client, _rx, cache) = create_test_execution_client();
+    let legs = [
+        (InstrumentId::from("AAPL.NASDAQ"), 265_598),
+        (InstrumentId::from("MSFT.NASDAQ"), 272_093),
+    ];
+    let instrument_with_contract = |instrument_id: InstrumentId, contract: Option<&Contract>| {
+        let info = contract.map(|contract| {
+            Params::new(
+                [(
+                    String::from("contract"),
+                    crate::common::contracts::contract_to_json_value(contract),
+                )]
+                .into(),
+            )
+        });
+        InstrumentAny::from(
+            CurrencyPair::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::from(instrument_id.symbol.as_str()))
+                .base_currency(Currency::from("EUR"))
+                .quote_currency(Currency::from("USD"))
+                .price_precision(2)
+                .size_precision(0)
+                .price_increment(Price::from("0.01"))
+                .size_increment(Quantity::from(1))
+                .maybe_info(info)
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
+    };
+
+    for (leg_id, contract_id) in legs {
+        let contract = Contract {
+            contract_id,
+            symbol: IBSymbol::from(leg_id.symbol.as_str()),
+            security_type: SecurityType::Stock,
+            exchange: Exchange::from("SMART"),
+            currency: IBCurrency::from("USD"),
+            ..Default::default()
+        };
+        cache
+            .borrow_mut()
+            .add_instrument(instrument_with_contract(leg_id, Some(&contract)))
+            .unwrap();
+    }
+    let spread_id =
+        crate::common::spreads::create_spread_instrument_id(&[(legs[0].0, 1), (legs[1].0, -1)])
+            .unwrap();
+
+    if spread_built {
+        client.instrument_provider.insert_test_instrument(
+            instrument_with_contract(spread_id, None),
+            0,
+            1,
+        );
+    }
+
+    let leg_contracts = client.unbuilt_spread_leg_contracts([spread_id]);
+
+    let mut contract_ids: Vec<_> = leg_contracts
+        .iter()
+        .map(|(leg_id, contract)| (*leg_id, contract.contract_id))
+        .collect();
+    contract_ids.sort_unstable();
+    assert_eq!(
+        contract_ids,
+        if spread_built { vec![] } else { legs.to_vec() }
     );
 }
