@@ -83,11 +83,12 @@ mod serial_tests {
         instruments::{
             FuturesSpread, Instrument, InstrumentAny, OptionSpread, SyntheticInstrument,
             stubs::{
-                audusd_sim, binary_option, cfd_gold, commodity_gold, crypto_future_btcusdt,
-                crypto_futures_spread_btc_deribit, crypto_option_btc_deribit,
-                crypto_option_spread_btc_deribit, crypto_perpetual_ethusdt, currency_pair_ethusdt,
-                equity_aapl, futures_contract_es, futures_spread_es, index_instrument_spx,
-                option_contract_appl, option_spread, perpetual_contract_eurusd,
+                audusd_sim, betting, binary_option, cfd_gold, commodity_gold,
+                crypto_future_btcusdt, crypto_futures_spread_btc_deribit,
+                crypto_option_btc_deribit, crypto_option_spread_btc_deribit,
+                crypto_perpetual_ethusdt, currency_pair_ethusdt, equity_aapl, futures_contract_es,
+                futures_spread_es, index_instrument_spx, option_contract_appl, option_spread,
+                perpetual_contract_eurusd,
             },
         },
         orders::{Order, OrderAny, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -1593,28 +1594,32 @@ mod serial_tests {
     }
 
     #[rstest]
-    #[case("underlying_instrument_id")]
-    #[case("strike_currency")]
-    #[case("premium_style")]
-    #[case("exercise_style")]
-    #[case("settlement_type")]
-    #[case("tick_scheme")]
+    #[case("instrument", "underlying_instrument_id")]
+    #[case("instrument", "strike_currency")]
+    #[case("instrument", "premium_style")]
+    #[case("instrument", "exercise_style")]
+    #[case("instrument", "settlement_type")]
+    #[case("instrument", "tick_scheme")]
+    #[case("betting_instrument", "selection_handicap")]
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn test_connect_requires_option_terms_schema_migration(#[case] column: &str) {
+    async fn test_connect_requires_instrument_schema_migration(
+        #[case] table: &str,
+        #[case] column: &str,
+    ) {
         let mut database = get_test_pg_cache_database().await.unwrap();
         reset_test_database(&database).await;
         database.close().unwrap();
         let options = get_postgres_connect_options(None, None, None, None, None);
         let pool = connect_test_pg(options.into()).await.unwrap();
         sqlx::query(AssertSqlSafe(format!(
-            "ALTER TABLE instrument RENAME COLUMN {column} TO hidden_test_column"
+            "ALTER TABLE {table} RENAME COLUMN {column} TO hidden_test_column"
         )))
         .execute(&pool)
         .await
         .unwrap();
         let blocked = get_test_pg_cache_database().await;
         sqlx::query(AssertSqlSafe(format!(
-            "ALTER TABLE instrument RENAME COLUMN hidden_test_column TO {column}"
+            "ALTER TABLE {table} RENAME COLUMN hidden_test_column TO {column}"
         )))
         .execute(&pool)
         .await
@@ -1626,8 +1631,302 @@ mod serial_tests {
             blocked
                 .unwrap_err()
                 .to_string()
-                .contains(&format!("missing cache columns instrument.{column}"))
+                .contains(&format!("missing cache columns {table}.{column}"))
         );
+    }
+
+    #[rstest]
+    #[case::missing(
+        "ALTER TRIGGER instrument_delete_betting_metadata ON instrument RENAME TO hidden_test_trigger",
+        "ALTER TRIGGER hidden_test_trigger ON instrument RENAME TO instrument_delete_betting_metadata"
+    )]
+    #[case::disabled(
+        "ALTER TABLE instrument DISABLE TRIGGER instrument_delete_betting_metadata",
+        "ALTER TABLE instrument ENABLE TRIGGER instrument_delete_betting_metadata"
+    )]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_connect_requires_betting_cleanup_trigger(
+        #[case] hide_trigger: &'static str,
+        #[case] restore_trigger: &'static str,
+    ) {
+        let mut database = get_test_pg_cache_database().await.unwrap();
+        sqlx::query(hide_trigger)
+            .execute(&database.pool)
+            .await
+            .unwrap();
+        let blocked = get_test_pg_cache_database().await;
+        sqlx::query(restore_trigger)
+            .execute(&database.pool)
+            .await
+            .unwrap();
+
+        let mut restored = get_test_pg_cache_database().await.unwrap();
+        restored.close().unwrap();
+        database.close().unwrap();
+
+        assert!(
+            blocked
+                .unwrap_err()
+                .to_string()
+                .contains("missing or disabled instrument_delete_betting_metadata trigger")
+        );
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_betting_instrument_round_trip() {
+        let mut original = betting();
+        original.event_id = u64::MAX;
+        original.event_name = Ustr::from("Conference final");
+        original.market_start_time = UnixNanos::from(1_700_000_000_000_000_456_u64);
+        original.selection_handicap = -1.5;
+        original.ts_event = UnixNanos::from(1_700_000_000_000_000_123_u64);
+        original.ts_init = UnixNanos::from(1_700_000_000_000_000_789_u64);
+
+        let mut replacement = original.clone();
+        original.max_price = None;
+        original.min_price = None;
+        replacement.event_type_id = 2;
+        replacement.event_type_name = Ustr::from("Tennis");
+        replacement.competition_id = 3;
+        replacement.competition_name = Ustr::from("Australian Open");
+        replacement.event_id = 4;
+        replacement.event_name = Ustr::from("Women's final");
+        replacement.event_country_code = Ustr::from("AU");
+        replacement.event_open_date = UnixNanos::from(1_800_000_000_000_000_123_u64);
+        replacement.betting_type = Ustr::from("LINE");
+        replacement.market_id = Ustr::from("1-55555555");
+        replacement.market_name = Ustr::from("Total games");
+        replacement.market_type = Ustr::from("OVER_UNDER");
+        replacement.market_start_time = UnixNanos::from(1_800_000_000_000_000_456_u64);
+        replacement.selection_id = 5;
+        replacement.selection_name = Ustr::from("Over");
+        replacement.selection_handicap = 21.5;
+        replacement.tick_scheme = Some(Ustr::from("FIXED_PRECISION_2"));
+
+        let mut other = betting();
+        other.id = InstrumentId::from("1-77777777.BETFAIR");
+        other.raw_symbol = Symbol::from("1-77777777");
+        other.market_id = Ustr::from("1-77777777");
+
+        let original = original.into_any();
+        let replacement = replacement.into_any();
+        let other = other.into_any();
+        let mut writer = get_test_pg_cache_database().await.unwrap();
+        writer.add_currency(&original.quote_currency()).unwrap();
+        writer.add_instrument(&original).unwrap();
+        writer.add_instrument(&other).unwrap();
+        writer.close().unwrap();
+
+        let mut restarted = get_test_pg_cache_database().await.unwrap();
+        let id = original.id();
+        let loaded = restarted.load_instrument(&id).await.unwrap().unwrap();
+        assert_entirely_equal(&loaded, &original);
+
+        DatabaseQueries::add_instrument(&restarted.pool, "BETTING", Box::new(replacement.clone()))
+            .await
+            .unwrap();
+        let (_, recovered) = restarted.load_for_recovery(false).await.unwrap();
+        assert_entirely_equal(&recovered.instruments[&id], &replacement);
+        assert_entirely_equal(&recovered.instruments[&other.id()], &other);
+
+        sqlx::query("DELETE FROM instrument WHERE id = $1")
+            .bind(id.to_string())
+            .execute(&restarted.pool)
+            .await
+            .unwrap();
+        let metadata: Option<String> = sqlx::query_scalar(
+            "SELECT instrument_id FROM betting_instrument WHERE instrument_id = $1",
+        )
+        .bind(id.to_string())
+        .fetch_optional(&restarted.pool)
+        .await
+        .unwrap();
+        assert_eq!(metadata, None);
+
+        reset_test_database(&restarted).await;
+        restarted.close().unwrap();
+    }
+
+    #[rstest]
+    #[case::missing(None, "missing betting_instrument row")]
+    #[case::negative_id(Some("-1"), "event_type_id")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_betting_instrument_reports_invalid_metadata(
+        #[case] event_type_id: Option<&str>,
+        #[case] expected_error: &str,
+    ) {
+        let expected = betting().into_any();
+        let id = expected.id();
+        let mut writer = get_test_pg_cache_database().await.unwrap();
+        writer.add_currency(&expected.quote_currency()).unwrap();
+        writer.add_instrument(&expected).unwrap();
+        writer.close().unwrap();
+
+        let mut restarted = get_test_pg_cache_database().await.unwrap();
+
+        if let Some(event_type_id) = event_type_id {
+            sqlx::query(
+                "UPDATE betting_instrument SET event_type_id = $2 WHERE instrument_id = $1",
+            )
+            .bind(id.to_string())
+            .bind(event_type_id)
+            .execute(&restarted.pool)
+            .await
+            .unwrap();
+        } else {
+            sqlx::query("DELETE FROM betting_instrument WHERE instrument_id = $1")
+                .bind(id.to_string())
+                .execute(&restarted.pool)
+                .await
+                .unwrap();
+        }
+
+        let single = restarted.load_instrument(&id).await.unwrap_err();
+        let bulk = restarted.load_for_recovery(false).await.unwrap_err();
+        for error in [single, bulk] {
+            let message = format!("{error:#}");
+            assert!(message.contains(&format!("Invalid betting instrument row {id}")));
+            assert!(message.contains(expected_error));
+        }
+
+        DatabaseQueries::add_instrument(&restarted.pool, "BETTING", Box::new(expected.clone()))
+            .await
+            .unwrap();
+        let (_, recovered) = restarted.load_for_recovery(false).await.unwrap();
+        assert_entirely_equal(&recovered.instruments[&id], &expected);
+
+        reset_test_database(&restarted).await;
+        restarted.close().unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_betting_instrument_upsert_rolls_back_on_metadata_error() {
+        let mut database = get_test_pg_cache_database().await.unwrap();
+        let original = betting();
+        let id = original.id();
+        DatabaseQueries::add_currency(&database.pool, original.quote_currency())
+            .await
+            .unwrap();
+        DatabaseQueries::add_instrument(&database.pool, "BETTING", Box::new(original.clone()))
+            .await
+            .unwrap();
+
+        sqlx::query(
+            "ALTER TABLE betting_instrument ADD CONSTRAINT test_reject_event_type
+             CHECK (event_type_id <> '2')",
+        )
+        .execute(&database.pool)
+        .await
+        .unwrap();
+
+        let mut replacement = original.clone();
+        replacement.event_type_id = 2;
+        replacement.raw_symbol = Symbol::from("replacement");
+        let failed =
+            DatabaseQueries::add_instrument(&database.pool, "BETTING", Box::new(replacement)).await;
+
+        sqlx::query("ALTER TABLE betting_instrument DROP CONSTRAINT test_reject_event_type")
+            .execute(&database.pool)
+            .await
+            .unwrap();
+
+        assert!(
+            failed
+                .unwrap_err()
+                .to_string()
+                .contains("test_reject_event_type")
+        );
+        let loaded = database.load_instrument(&id).await.unwrap().unwrap();
+        assert_entirely_equal(&loaded, &original.into_any());
+
+        reset_test_database(&database).await;
+        database.close().unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_betting_instrument_clears_metadata_after_concurrent_kind_change() {
+        let mut database = get_test_pg_cache_database().await.unwrap();
+        let replacement = audusd_sim();
+        let id = replacement.id();
+        for currency in [replacement.base_currency, replacement.quote_currency] {
+            DatabaseQueries::add_currency(&database.pool, currency)
+                .await
+                .unwrap();
+        }
+
+        let mut transaction = database.pool.begin().await.unwrap();
+        let writer_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *transaction)
+            .await
+            .unwrap();
+
+        // The uncommitted insert is invisible to the DeFi writer's preliminary row lookup
+        sqlx::query(
+            "WITH inserted AS (
+                INSERT INTO instrument (
+                    id, kind, raw_symbol, price_precision, price_increment, margin_init,
+                    margin_maint, ts_event, ts_init
+                )
+                VALUES ($1, 'BETTING', 'race', 2, '0.01', '0', '0', '1', '2')
+                RETURNING id
+             )
+             INSERT INTO betting_instrument (
+                instrument_id, event_type_id, event_type_name, competition_id, competition_name,
+                event_id, event_name, event_country_code, event_open_date, betting_type, market_id,
+                market_name, market_type, market_start_time, selection_id, selection_name, selection_handicap
+             )
+             SELECT id, '1', 'Tennis', '2', 'Open', '3', 'Final', 'AU', '4', 'ODDS', 'market',
+                    'Winner', 'MATCH_ODDS', '5', '6', 'Player', 0.0
+             FROM inserted",
+        )
+        .bind(id.to_string())
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+
+        let pool = database.pool.clone();
+        let replace = tokio::spawn(async move {
+            DatabaseQueries::add_instrument(&pool, "CURRENCY_PAIR", Box::new(replacement)).await
+        });
+
+        wait_until_async(
+            || async {
+                sqlx::query_scalar::<_, bool>(
+                    r#"SELECT EXISTS (
+                        SELECT 1 FROM pg_stat_activity
+                        WHERE $1 = ANY(pg_blocking_pids(pid))
+                          AND query LIKE '%INSERT INTO "instrument"%'
+                    )"#,
+                )
+                .bind(writer_pid)
+                .fetch_one(&database.pool)
+                .await
+                .unwrap()
+            },
+            POSTGRES_SETUP_TIMEOUT,
+        )
+        .await;
+
+        transaction.commit().await.unwrap();
+        replace.await.unwrap().unwrap();
+
+        let loaded = database.load_instrument(&id).await.unwrap();
+        let metadata: Option<String> = sqlx::query_scalar(
+            "SELECT instrument_id FROM betting_instrument WHERE instrument_id = $1",
+        )
+        .bind(id.to_string())
+        .fetch_optional(&database.pool)
+        .await
+        .unwrap();
+
+        assert!(matches!(loaded, Some(InstrumentAny::CurrencyPair(pair)) if pair.id == id));
+        assert_eq!(metadata, None);
+
+        reset_test_database(&database).await;
+        database.close().unwrap();
     }
 
     #[rstest]

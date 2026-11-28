@@ -219,8 +219,10 @@ Deletions and heartbeats follow the [persistence failure policy](#persistence-fa
 - Actor and strategy state persistence supports `load_state` and `save_state`.
 - The `cache-database:` key prefix is reserved for backing data. User entries with this prefix do not restore.
 
-Run `nautilus database init` to create the `greeks` and `yield_curve` tables before connecting,
-even with `save_market_data = false`.
+Run [`nautilus database init`](../developer_guide/environment_setup.md#database-commands) before
+connecting to a new cache database or using an existing one after upgrading NautilusTrader.
+The schema includes the `greeks` and `yield_curve` tables, which are required even with
+`save_market_data = false`.
 
 :::warning Legacy position OMS metadata
 Legacy keys omit the trader ID. Postgres skips unscoped `position_oms:` keys when loading application
@@ -242,6 +244,22 @@ The error lists the accounts. After initialization, assign each one:
 nautilus database assign-account --account-id <ACCOUNT_ID> --trader-id <TRADER_ID>
 ```
 
+:::
+
+:::warning Legacy betting instruments
+Earlier versions stored betting instruments without their event, market, or selection metadata.
+Recovery stops with `Invalid betting instrument row <ID>` if the matching `betting_instrument`
+row is missing or its metadata is invalid.
+
+1. Stop older nodes that write betting instruments to this database. Upgrade them before restarting
+   so new writes include betting metadata.
+1. Connect with `PostgresCacheDatabase::connect` from Rust. Get the complete definition for the
+   instrument ID from an authoritative source, such as the venue. Pass it to
+   `CacheDatabaseAdapter::add_instrument` and call `close()` to drain pending writes.
+1. Reconnect and verify that `load_instrument` returns the repaired definition before restarting the node.
+
+Keep the instrument row during repair. Deleting it affects all traders sharing the database and
+cascades to its betting metadata, orders, positions, order and position events, trades, quotes, and bars.
 :::
 
 #### Redis

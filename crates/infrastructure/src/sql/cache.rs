@@ -696,7 +696,29 @@ async fn check_schema_migrated(pool: &PgPool) -> Result<(), sqlx::Error> {
     }
 
     check_trader_keys(pool).await?;
-    check_required_columns(pool).await
+    check_required_columns(pool).await?;
+
+    let has_betting_cleanup: bool = sqlx::query_scalar(
+        "SELECT EXISTS (
+            SELECT 1 FROM pg_trigger
+            WHERE tgrelid = 'instrument'::regclass
+              AND tgname = 'instrument_delete_betting_metadata'
+              AND tgenabled IN ('O', 'A')
+        )",
+    )
+    .fetch_one(pool)
+    .await?;
+
+    if has_betting_cleanup {
+        return Ok(());
+    }
+
+    Err(sqlx::Error::Configuration(
+        format!(
+            "Postgres schema is out of date, missing or disabled instrument_delete_betting_metadata trigger: {SCHEMA_MIGRATION_COMMAND}"
+        )
+        .into(),
+    ))
 }
 
 async fn check_required_columns(pool: &PgPool) -> Result<(), sqlx::Error> {
@@ -714,6 +736,23 @@ async fn check_required_columns(pool: &PgPool) -> Result<(), sqlx::Error> {
             ('instrument', 'premium_style'),
             ('instrument', 'exercise_style'),
             ('instrument', 'settlement_type'),
+            ('betting_instrument', 'instrument_id'),
+            ('betting_instrument', 'event_type_id'),
+            ('betting_instrument', 'event_type_name'),
+            ('betting_instrument', 'competition_id'),
+            ('betting_instrument', 'competition_name'),
+            ('betting_instrument', 'event_id'),
+            ('betting_instrument', 'event_name'),
+            ('betting_instrument', 'event_country_code'),
+            ('betting_instrument', 'event_open_date'),
+            ('betting_instrument', 'betting_type'),
+            ('betting_instrument', 'market_id'),
+            ('betting_instrument', 'market_name'),
+            ('betting_instrument', 'market_type'),
+            ('betting_instrument', 'market_start_time'),
+            ('betting_instrument', 'selection_id'),
+            ('betting_instrument', 'selection_name'),
+            ('betting_instrument', 'selection_handicap'),
             ('account_event', 'info'),
             ('account_event', 'trader_id'),
             ('order_position_index', 'trader_id'),

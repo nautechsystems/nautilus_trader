@@ -106,6 +106,39 @@ ALTER TABLE "instrument" ADD COLUMN IF NOT EXISTS defi_currency_codes TEXT[];
 ALTER TABLE "instrument" DROP COLUMN IF EXISTS maker_fee;
 ALTER TABLE "instrument" DROP COLUMN IF EXISTS taker_fee;
 
+CREATE TABLE IF NOT EXISTS "betting_instrument" (
+    instrument_id TEXT PRIMARY KEY REFERENCES instrument(id) ON DELETE CASCADE,
+    event_type_id TEXT NOT NULL,
+    event_type_name TEXT NOT NULL,
+    competition_id TEXT NOT NULL,
+    competition_name TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    event_name TEXT NOT NULL,
+    event_country_code TEXT NOT NULL,
+    event_open_date TEXT NOT NULL,
+    betting_type TEXT NOT NULL,
+    market_id TEXT NOT NULL,
+    market_name TEXT NOT NULL,
+    market_type TEXT NOT NULL,
+    market_start_time TEXT NOT NULL,
+    selection_id TEXT NOT NULL,
+    selection_name TEXT NOT NULL,
+    selection_handicap DOUBLE PRECISION NOT NULL
+);
+
+-- An upsert can wait for a concurrent insert after taking its statement snapshot
+CREATE OR REPLACE FUNCTION instrument_delete_betting_metadata()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM betting_instrument WHERE instrument_id = OLD.id;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE OR REPLACE TRIGGER instrument_delete_betting_metadata
+    AFTER UPDATE OF kind ON "instrument"
+    FOR EACH ROW WHEN (OLD.kind = 'BETTING' AND NEW.kind IS DISTINCT FROM OLD.kind)
+    EXECUTE FUNCTION instrument_delete_betting_metadata();
+
 -- Instrument closes are stored independently of instrument metadata.
 CREATE TABLE IF NOT EXISTS "instrument_close" (
     instrument_id TEXT PRIMARY KEY NOT NULL,

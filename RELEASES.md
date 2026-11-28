@@ -72,6 +72,7 @@ Released on TBD (UTC).
 - Changed capped linear option fees to require the declared underlying's quote currency to match the premium currency
 - Changed PostgreSQL option underlying, exercise, settlement, and spread tick columns; run `nautilus database init`
 - Changed PostgreSQL cache startup to require `instrument.premium_style`; run `nautilus database init`
+- Changed PostgreSQL cache startup to require `betting_instrument`. Run `nautilus database init` and repair legacy rows
 - Changed PostgreSQL OMS recovery to restore `UNSPECIFIED` for legacy positions whose OMS metadata has no trader ID
 - Changed PostgreSQL `Cache::add` to persist per trader and skip legacy shared user entries on restore
 - Changed Redis cache startup and PostgreSQL bulk position loads to fail on unreadable records
@@ -173,6 +174,7 @@ Released on TBD (UTC).
 - Fixed PostgreSQL cache restoring another trader's OMS type when position IDs overlap
 - Fixed PostgreSQL `FuturesSpread` reloads panicking
 - Fixed PostgreSQL `OptionSpread` reloads panicking and dropping `tick_scheme`
+- Fixed PostgreSQL dropping betting instrument metadata and failing recovery (#5786), thanks for reporting @nstkhv
 - Fixed PostgreSQL persistence of emulated order releases and recovery when both initializations are stored
 - Fixed local catalog paths with `#`, `%`, or `?` in queries, migration, and run manifests
 - Fixed `ParquetDataCatalog::new` converting non-UTF-8 paths lossily, which could open another catalog

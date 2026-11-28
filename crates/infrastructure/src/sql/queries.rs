@@ -35,7 +35,10 @@ use nautilus_model::{
         position::snapshot::PositionSnapshot,
     },
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, TraderId},
-    instruments::{CryptoOption, Instrument, InstrumentAny, OptionContract, SyntheticInstrument},
+    instruments::{
+        BettingInstrument, CryptoOption, Instrument, InstrumentAny, OptionContract,
+        SyntheticInstrument,
+    },
     orders::{Order, OrderAny},
     position::Position,
     types::Currency,
@@ -74,6 +77,13 @@ use crate::{
 pub(super) const CACHE_DATABASE_KEY_PREFIX: &str = "cache-database:";
 const TRADER_KEY_PREFIX: &str = "trader:";
 const GENERAL_KEY_PREFIX: &str = "general:";
+
+macro_rules! select_instruments {
+    () => {
+        "SELECT instrument.*, betting_instrument.*
+         FROM instrument LEFT JOIN betting_instrument ON betting_instrument.instrument_id = instrument.id"
+    };
+}
 
 // A replacement initialization and its first update share a transaction timestamp
 macro_rules! order_event_replay_order {
@@ -458,6 +468,10 @@ impl DatabaseQueries {
         Self::write_instrument(pool, kind, instrument).await
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the instrument upsert keeps its ordered column bindings with the statement"
+    )]
     async fn write_instrument<'e>(
         executor: impl sqlx::Executor<'e, Database = Postgres>,
         kind: &str,
@@ -465,6 +479,7 @@ impl DatabaseQueries {
     ) -> anyhow::Result<()> {
         let instrument_any = instrument.as_ref() as &dyn Any;
         let instrument_any: &dyn Any = match instrument_any.downcast_ref::<InstrumentAny>() {
+            Some(InstrumentAny::Betting(betting)) => betting,
             Some(InstrumentAny::OptionContract(option)) => option,
             Some(InstrumentAny::CryptoOption(option)) => option,
             _ => instrument_any,
@@ -489,20 +504,51 @@ impl DatabaseQueries {
                 (None, None, None, None)
             };
 
+        let betting = instrument_any.downcast_ref::<BettingInstrument>();
+        let (max_price, min_price, tick_scheme) = if let Some(betting) = betting {
+            (betting.max_price, betting.min_price, betting.tick_scheme)
+        } else {
+            (
+                instrument.max_price(),
+                instrument.min_price(),
+                instrument.tick_scheme(),
+            )
+        };
+
         sqlx::query(r#"
-            INSERT INTO "instrument" (
-                id, kind, raw_symbol, base_currency, underlying, quote_currency, settlement_currency, isin, asset_class, exchange,
-                strategy_type, multiplier, option_kind, is_inverse, strike_price, activation_ns, expiration_ns, price_precision, size_precision,
-                price_increment, size_increment, margin_init, margin_maint, lot_size, max_quantity, min_quantity, max_notional,
-                min_notional, max_price, min_price, ts_init, ts_event, info, underlying_instrument_id, premium_style, exercise_style, settlement_type, tick_scheme, strike_currency, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::asset_class, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33::json, $34, $35, $36, $37, $38, $39, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ON CONFLICT (id)
-            DO UPDATE
-            SET
-                kind = $2, raw_symbol = $3, base_currency= $4, underlying = $5, quote_currency = $6, settlement_currency = $7, isin = $8, asset_class = $9, exchange = $10,
-                 strategy_type = $11, multiplier = $12, option_kind = $13, is_inverse = $14, strike_price = $15, activation_ns = $16, expiration_ns = $17 , price_precision = $18, size_precision = $19,
-                 price_increment = $20, size_increment = $21, margin_init = $22, margin_maint = $23, lot_size = $24, max_quantity = $25,
-                 min_quantity = $26, max_notional = $27, min_notional = $28, max_price = $29, min_price = $30, ts_init = $31,  ts_event = $32, info = $33::json, underlying_instrument_id = $34, premium_style = $35, exercise_style = $36, settlement_type = $37, tick_scheme = $38, strike_currency = $39, updated_at = CURRENT_TIMESTAMP
+            WITH saved AS (
+                INSERT INTO "instrument" (
+                    id, kind, raw_symbol, base_currency, underlying, quote_currency, settlement_currency, isin, asset_class, exchange,
+                    strategy_type, multiplier, option_kind, is_inverse, strike_price, activation_ns, expiration_ns, price_precision, size_precision,
+                    price_increment, size_increment, margin_init, margin_maint, lot_size, max_quantity, min_quantity, max_notional,
+                    min_notional, max_price, min_price, ts_init, ts_event, info, underlying_instrument_id, premium_style, exercise_style, settlement_type, tick_scheme, strike_currency, created_at, updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::asset_class, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33::json, $34, $35, $36, $37, $38, $39, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT (id)
+                DO UPDATE
+                SET
+                    kind = $2, raw_symbol = $3, base_currency= $4, underlying = $5, quote_currency = $6, settlement_currency = $7, isin = $8, asset_class = $9, exchange = $10,
+                     strategy_type = $11, multiplier = $12, option_kind = $13, is_inverse = $14, strike_price = $15, activation_ns = $16, expiration_ns = $17 , price_precision = $18, size_precision = $19,
+                     price_increment = $20, size_increment = $21, margin_init = $22, margin_maint = $23, lot_size = $24, max_quantity = $25,
+                     min_quantity = $26, max_notional = $27, min_notional = $28, max_price = $29, min_price = $30, ts_init = $31,  ts_event = $32, info = $33::json, underlying_instrument_id = $34, premium_style = $35, exercise_style = $36, settlement_type = $37, tick_scheme = $38, strike_currency = $39, updated_at = CURRENT_TIMESTAMP
+                RETURNING id
+            )
+            INSERT INTO betting_instrument (
+                instrument_id, event_type_id, event_type_name, competition_id, competition_name,
+                event_id, event_name, event_country_code, event_open_date, betting_type, market_id,
+                market_name, market_type, market_start_time, selection_id, selection_name, selection_handicap
+            )
+            SELECT id, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55
+            FROM saved
+            WHERE $2 = 'BETTING'
+            ON CONFLICT (instrument_id) DO UPDATE SET
+                event_type_id = EXCLUDED.event_type_id, event_type_name = EXCLUDED.event_type_name,
+                competition_id = EXCLUDED.competition_id, competition_name = EXCLUDED.competition_name,
+                event_id = EXCLUDED.event_id, event_name = EXCLUDED.event_name,
+                event_country_code = EXCLUDED.event_country_code, event_open_date = EXCLUDED.event_open_date,
+                betting_type = EXCLUDED.betting_type, market_id = EXCLUDED.market_id, market_name = EXCLUDED.market_name,
+                market_type = EXCLUDED.market_type, market_start_time = EXCLUDED.market_start_time,
+                selection_id = EXCLUDED.selection_id, selection_name = EXCLUDED.selection_name,
+                selection_handicap = EXCLUDED.selection_handicap
             "#)
             .bind(instrument.id().to_string())
             .bind(kind)
@@ -532,8 +578,8 @@ impl DatabaseQueries {
             .bind(instrument.min_quantity().map(|x| x.to_string()))
             .bind(instrument.max_notional().map(|x| x.to_string()))
             .bind(instrument.min_notional().map(|x| x.to_string()))
-            .bind(instrument.max_price().map(|x| x.to_string()))
-            .bind(instrument.min_price().map(|x| x.to_string()))
+            .bind(max_price.map(|x| x.to_string()))
+            .bind(min_price.map(|x| x.to_string()))
             .bind(instrument.ts_init().to_string())
             .bind(instrument.ts_event().to_string())
             .bind(instrument.info().map(serde_json::to_string).transpose()?)
@@ -541,12 +587,28 @@ impl DatabaseQueries {
             .bind(premium_style.map(|style| style.to_string()))
             .bind(exercise_style.map(|style| style.to_string()))
             .bind(settlement_type.map(|kind| kind.to_string()))
-            .bind(instrument.tick_scheme().map(|scheme| scheme.to_string()))
+            .bind(tick_scheme.map(|scheme| scheme.to_string()))
             .bind(instrument.strike_currency().map(|currency| currency.code.as_str()))
+            .bind(betting.map(|b| b.event_type_id.to_string()))
+            .bind(betting.map(|b| b.event_type_name.as_str()))
+            .bind(betting.map(|b| b.competition_id.to_string()))
+            .bind(betting.map(|b| b.competition_name.as_str()))
+            .bind(betting.map(|b| b.event_id.to_string()))
+            .bind(betting.map(|b| b.event_name.as_str()))
+            .bind(betting.map(|b| b.event_country_code.as_str()))
+            .bind(betting.map(|b| b.event_open_date.to_string()))
+            .bind(betting.map(|b| b.betting_type.as_str()))
+            .bind(betting.map(|b| b.market_id.as_str()))
+            .bind(betting.map(|b| b.market_name.as_str()))
+            .bind(betting.map(|b| b.market_type.as_str()))
+            .bind(betting.map(|b| b.market_start_time.to_string()))
+            .bind(betting.map(|b| b.selection_id.to_string()))
+            .bind(betting.map(|b| b.selection_name.as_str()))
+            .bind(betting.map(|b| b.selection_handicap))
             .execute(executor)
             .await
             .map(|_| ())
-            .map_err(|e| anyhow::anyhow!("Failed to insert item {} into instrument table: {:?}", instrument.id(), e))
+            .map_err(|e| anyhow::anyhow!("Failed to persist instrument {}: {:?}", instrument.id(), e))
     }
 
     #[cfg(feature = "defi")]
@@ -1038,7 +1100,7 @@ impl DatabaseQueries {
         connection: &mut PgConnection,
         instrument_id: &InstrumentId,
     ) -> anyhow::Result<Option<InstrumentAny>> {
-        let row = sqlx::query("SELECT * FROM instrument WHERE id = $1")
+        let row = sqlx::query(concat!(select_instruments!(), " WHERE instrument.id = $1"))
             .bind(instrument_id.to_string())
             .fetch_optional(&mut *connection)
             .await?;
@@ -1065,9 +1127,7 @@ impl DatabaseQueries {
     ///
     /// Returns an error if the SELECT operation fails.
     pub async fn load_instruments(pool: &PgPool) -> anyhow::Result<Vec<InstrumentAny>> {
-        let rows = sqlx::query("SELECT * FROM instrument")
-            .fetch_all(pool)
-            .await?;
+        let rows = sqlx::query(select_instruments!()).fetch_all(pool).await?;
         let mut instruments = Vec::with_capacity(rows.len());
         #[cfg(feature = "defi")]
         let mut connection = pool.acquire().await?;

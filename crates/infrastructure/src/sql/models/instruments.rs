@@ -35,7 +35,7 @@ use rust_decimal::Decimal;
 use sqlx::{FromRow, Row, error::BoxDynError, postgres::PgRow, types::Json};
 use ustr::Ustr;
 
-use crate::sql::models::{decode_money, enums::AssetClassPg, read_u8, read_u64};
+use crate::sql::models::{decode_money, enums::AssetClassPg, read_u8};
 
 #[derive(Debug)]
 pub struct InstrumentAnyRow(pub InstrumentAny);
@@ -99,7 +99,7 @@ impl<'r> FromRow<'r, PgRow> for InstrumentAnyRow {
         let kind = row.try_get::<String, _>("kind")?;
         if kind == "BETTING" {
             Ok(Self(InstrumentAny::Betting(
-                BettingInstrumentRow::from_row(row).unwrap().0,
+                BettingInstrumentRow::from_row(row)?.0,
             )))
         } else if kind == "BINARY_OPTION" {
             Ok(Self(InstrumentAny::BinaryOption(
@@ -175,141 +175,78 @@ impl<'r> FromRow<'r, PgRow> for InstrumentAnyRow {
     }
 }
 
-// TODO: New/updated schema required to support betting instrument loading
 impl<'r> FromRow<'r, PgRow> for BettingInstrumentRow {
-    #[expect(
-        clippy::too_many_lines,
-        reason = "SQL row mapping mirrors the full betting instrument constructor"
-    )]
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
-        let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
-        let event_type_id = read_u64(row, "event_type_id")?;
-        let event_type_name = row
-            .try_get::<String, _>("event_type_name")
-            .map(|res| Ustr::from(res.as_str()))?;
-        let competition_id = read_u64(row, "competition_id")?;
-        let competition_name = row
-            .try_get::<String, _>("competition_name")
-            .map(|res| Ustr::from(res.as_str()))?;
-        let event_id = read_u64(row, "event_id")?;
-        let event_name = row
-            .try_get::<String, _>("event_name")
-            .map(|res| Ustr::from(res.as_str()))?;
-        let event_country_code = row
-            .try_get::<String, _>("event_country_code")
-            .map(|res| Ustr::from(res.as_str()))?;
-        let event_open_date = row
-            .try_get::<String, _>("event_open_date")
-            .map(UnixNanos::from)?;
-        let betting_type = row
-            .try_get::<String, _>("betting_type")
-            .map(|res| Ustr::from(res.as_str()))?;
-        let market_id = row
-            .try_get::<String, _>("market_id")
-            .map(|res| Ustr::from(res.as_str()))?;
-        let market_name = row
-            .try_get::<String, _>("market_name")
-            .map(|res| Ustr::from(res.as_str()))?;
-        let market_type = row
-            .try_get::<String, _>("market_type")
-            .map(|res| Ustr::from(res.as_str()))?;
-        let market_start_time = row
-            .try_get::<String, _>("market_start_time")
-            .map(UnixNanos::from)?;
-        let selection_id = read_u64(row, "selection_id")?;
-        let selection_name = row
-            .try_get::<String, _>("selection_name")
-            .map(|res| Ustr::from(res.as_str()))?;
-        let selection_handicap = row.try_get::<f64, _>("selection_handicap")?;
-        let currency = row
-            .try_get::<String, _>("quote_currency")
-            .map(Currency::from)?;
-        let price_precision = read_u8(row, "price_precision")?;
-        let size_precision = read_u8(row, "size_precision")?;
-        let price_increment = row
-            .try_get::<String, _>("price_increment")
-            .map(Price::from)?;
-        let size_increment = row
-            .try_get::<String, _>("size_increment")
-            .map(Quantity::from)?;
-        let max_quantity = row
-            .try_get::<Option<String>, _>("max_quantity")
-            .ok()
-            .and_then(|res| res.map(|value| Quantity::from(value.as_str())));
-        let min_quantity = row
-            .try_get::<Option<String>, _>("min_quantity")
-            .ok()
-            .and_then(|res| res.map(|value| Quantity::from(value.as_str())));
-        let max_notional = row
-            .try_get::<Option<String>, _>("max_notional")
-            .ok()
-            .flatten()
-            .map(|value| decode_money(&value, "max_notional"))
-            .transpose()?;
-        let min_notional = row
-            .try_get::<Option<String>, _>("min_notional")
-            .ok()
-            .flatten()
-            .map(|value| decode_money(&value, "min_notional"))
-            .transpose()?;
-        let max_price = row
-            .try_get::<Option<String>, _>("max_price")
-            .ok()
-            .and_then(|res| res.map(|value| Price::from(value.as_str())));
-        let min_price = row
-            .try_get::<Option<String>, _>("min_price")
-            .ok()
-            .and_then(|res| res.map(|value| Price::from(value.as_str())));
-        let margin_init = row
-            .try_get::<String, _>("margin_init")
-            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
-        let margin_maint = row
-            .try_get::<String, _>("margin_maint")
-            .map(|res| Some(Decimal::from_str(res.as_str()).unwrap()))?;
-        let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
-        let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
+        let result = (|| {
+            let instrument_id: Option<&str> = row.try_get("instrument_id")?;
+            if instrument_id.is_none() {
+                return Err(sqlx::Error::Decode("missing betting_instrument row".into()));
+            }
 
-        let info: Option<Json<Params>> = row.try_get("info")?;
+            let read_label = |column| row.try_get::<&str, _>(column).map(Ustr::from);
 
-        let inst = BettingInstrument::builder()
-            .instrument_id(id)
-            .raw_symbol(raw_symbol)
-            .event_type_id(event_type_id)
-            .event_type_name(event_type_name)
-            .competition_id(competition_id)
-            .competition_name(competition_name)
-            .event_id(event_id)
-            .event_name(event_name)
-            .event_country_code(event_country_code)
-            .event_open_date(event_open_date)
-            .betting_type(betting_type)
-            .market_id(market_id)
-            .market_name(market_name)
-            .market_type(market_type)
-            .market_start_time(market_start_time)
-            .selection_id(selection_id)
-            .selection_name(selection_name)
-            .selection_handicap(selection_handicap)
-            .currency(currency)
-            .price_precision(price_precision)
-            .size_precision(size_precision)
-            .price_increment(price_increment)
-            .size_increment(size_increment)
-            .maybe_max_quantity(max_quantity)
-            .maybe_min_quantity(min_quantity)
-            .maybe_max_notional(max_notional)
-            .maybe_min_notional(min_notional)
-            .maybe_max_price(max_price)
-            .maybe_min_price(min_price)
-            .maybe_margin_init(margin_init)
-            .maybe_margin_maint(margin_maint)
-            .maybe_info(info.map(|info| info.0))
-            .ts_event(ts_event)
-            .ts_init(ts_init)
-            .build()
-            .unwrap();
-        Ok(Self(inst))
+            let read_money = |column| {
+                row.try_get::<Option<&str>, _>(column)?
+                    .map(|value| decode_money(value, column))
+                    .transpose()
+            };
+
+            let tick_scheme: Option<&str> = row.try_get("tick_scheme")?;
+            let info: Option<Json<Params>> = row.try_get("info")?;
+
+            let instrument = BettingInstrument::builder()
+                .instrument_id(read_parsed(row, "id")?)
+                .raw_symbol(read_symbol(row)?)
+                .event_type_id(read_parsed(row, "event_type_id")?)
+                .event_type_name(read_label("event_type_name")?)
+                .competition_id(read_parsed(row, "competition_id")?)
+                .competition_name(read_label("competition_name")?)
+                .event_id(read_parsed(row, "event_id")?)
+                .event_name(read_label("event_name")?)
+                .event_country_code(read_label("event_country_code")?)
+                .event_open_date(read_parsed::<u64>(row, "event_open_date")?.into())
+                .betting_type(read_label("betting_type")?)
+                .market_id(read_label("market_id")?)
+                .market_name(read_label("market_name")?)
+                .market_type(read_label("market_type")?)
+                .market_start_time(read_parsed::<u64>(row, "market_start_time")?.into())
+                .selection_id(read_parsed(row, "selection_id")?)
+                .selection_name(read_label("selection_name")?)
+                .selection_handicap(row.try_get::<f64, _>("selection_handicap")?)
+                .currency(read_parsed(row, "quote_currency")?)
+                .price_precision(read_u8(row, "price_precision")?)
+                .size_precision(read_u8(row, "size_precision")?)
+                .price_increment(read_parsed(row, "price_increment")?)
+                .size_increment(read_parsed(row, "size_increment")?)
+                .maybe_max_quantity(read_optional_parsed(row, "max_quantity")?)
+                .maybe_min_quantity(read_optional_parsed(row, "min_quantity")?)
+                .maybe_max_notional(read_money("max_notional")?)
+                .maybe_min_notional(read_money("min_notional")?)
+                .maybe_max_price(read_optional_parsed(row, "max_price")?)
+                .maybe_min_price(read_optional_parsed(row, "min_price")?)
+                .margin_init(read_parsed_with(
+                    row,
+                    "margin_init",
+                    Decimal::from_str_exact,
+                )?)
+                .margin_maint(read_parsed_with(
+                    row,
+                    "margin_maint",
+                    Decimal::from_str_exact,
+                )?)
+                .maybe_tick_scheme(tick_scheme.map(Ustr::from))
+                .maybe_info(info.map(|info| info.0))
+                .ts_event(read_parsed::<u64>(row, "ts_event")?.into())
+                .ts_init(read_parsed::<u64>(row, "ts_init")?.into())
+                .build()
+                .map_err(|e| sqlx::Error::Decode(e.to_string().into()))?;
+            Ok(Self(instrument))
+        })();
+
+        result.map_err(|e: sqlx::Error| {
+            let id = row.try_get::<&str, _>("id").unwrap_or("<unknown>");
+            sqlx::Error::Decode(format!("Invalid betting instrument row {id}: {e}").into())
+        })
     }
 }
 

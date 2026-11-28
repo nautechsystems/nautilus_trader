@@ -44,15 +44,6 @@ pub(crate) fn read_usize(row: &PgRow, column: &str) -> Result<usize, sqlx::Error
     i32_to_usize(value, column)
 }
 
-pub(crate) fn read_u64(row: &PgRow, column: &str) -> Result<u64, sqlx::Error> {
-    let value = row.try_get::<i64, _>(column)?;
-    i64_to_u64(value, column)
-}
-
-pub(crate) fn i64_to_u64(value: i64, label: &str) -> Result<u64, sqlx::Error> {
-    u64::try_from(value).map_err(|e| decode_error(label, value, e))
-}
-
 pub(crate) fn decode_money(value: &str, label: &str) -> Result<Money, sqlx::Error> {
     Money::from_str_exact(value).map_err(|e| decode_error(label, value, e))
 }
@@ -77,7 +68,7 @@ fn decode_error(label: &str, value: impl Display, error: impl Display) -> sqlx::
 mod tests {
     use rstest::rstest;
 
-    use super::{i32_to_u8, i32_to_u16, i32_to_usize, i64_to_u64};
+    use super::{i32_to_u8, i32_to_u16, i32_to_usize};
 
     #[rstest]
     #[case::negative(-1, "Invalid price_precision value -1")]
@@ -102,13 +93,6 @@ mod tests {
         let error = i32_to_usize(-1, "step").unwrap_err();
 
         assert_decode_error_contains(&error, "Invalid step value -1");
-    }
-
-    #[rstest]
-    fn i64_to_u64_rejects_negative_values() {
-        let error = i64_to_u64(-1, "duration_ns").unwrap_err();
-
-        assert_decode_error_contains(&error, "Invalid duration_ns value -1");
     }
 
     fn assert_decode_error_contains(error: &sqlx::Error, expected: &str) {

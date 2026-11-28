@@ -1832,7 +1832,7 @@ fn run_live_node_detached(py: Python<'_>, node: &mut LiveNode, mode: NodeRunMode
             get_runtime().block_on(async { (*ptr.0).run_with_mode(mode).await })
         })
     }
-    .map_err(to_pyruntime_err)
+    .map_err(|e| to_pyruntime_err(format_args!("{e:#}")))
 }
 
 #[allow(unsafe_code)]
@@ -3346,6 +3346,35 @@ primary = KeyboardInterrupt("run failed")
 
         node.node_mut().unwrap().dispose();
         get_message_bus().borrow_mut().dispose();
+    }
+
+    #[rstest]
+    fn test_python_run_reports_cache_database_error_chain() {
+        get_global_cache_database_factory_registry()
+            .register(
+                "TestCacheDatabaseFactory".to_string(),
+                extract_test_cache_database_factory,
+            )
+            .unwrap();
+        Python::initialize();
+        let factory = TestCacheDatabaseFactory::new(None);
+        let node = state_factory_builder(&factory).py_build().unwrap();
+
+        let message = Python::attach(|py| {
+            let error = super::run_live_node_detached(
+                py,
+                &mut node.node_mut().unwrap(),
+                NodeRunMode::Hosted,
+            )
+            .unwrap_err();
+            node.py_dispose(py).unwrap();
+            error.value(py).to_string()
+        });
+
+        assert_eq!(
+            message,
+            "failed to create cache database backing: Test cache database unavailable"
+        );
     }
 
     #[rstest]
