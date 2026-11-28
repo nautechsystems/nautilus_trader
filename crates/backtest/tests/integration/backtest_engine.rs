@@ -21,12 +21,13 @@ use std::{
 };
 
 use indexmap::IndexMap;
+use jiff::civil::{Time, Weekday};
 use nautilus_backtest::{
     config::{BacktestEngineConfig, SimulatedVenueConfig},
     engine::BacktestEngine,
     modules::{
-        AccountAdjustmentOutcome, ExchangeContext, SimulationModule, SimulationModuleHandle,
-        SimulationModuleResult,
+        AccountAdjustmentOutcome, CfdSwapModule, ExchangeContext, SimulationModule,
+        SimulationModuleHandle, SimulationModuleResult,
     },
     result::CanonicalBacktestResult,
 };
@@ -41,7 +42,7 @@ use nautilus_common::{
     nautilus_actor,
     timer::{TimeEvent, TimeEventCallback},
 };
-use nautilus_core::{DurationNanos, UUID4, UnixNanos};
+use nautilus_core::{DurationNanos, UUID4, UnixNanos, datetime::get_timezone};
 use nautilus_execution::{
     engine::stubs::StubExecutionClient,
     models::{
@@ -1442,6 +1443,31 @@ fn test_run_with_empty_data(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let bt_result = engine.get_result();
     assert_eq!(bt_result.iterations, 0);
     assert_eq!(bt_result.total_orders, 0);
+}
+
+#[rstest]
+fn test_run_with_empty_data_and_new_york_cfd_swap_rollover() {
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    let venue_config = SimulatedVenueConfig::builder()
+        .venue(Venue::from("SIM"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(vec![Money::from("1_000_000 USD")])
+        .modules(vec![SimulationModuleHandle::new(
+            CfdSwapModule::new_with_time_zone(
+                vec![],
+                Time::constant(17, 0, 0, 0),
+                Weekday::Wednesday,
+                get_timezone("America/New_York").unwrap(),
+            ),
+        )])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+        .build()
+        .unwrap();
+    engine.add_venue(venue_config).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
 }
 
 #[rstest]
