@@ -132,7 +132,13 @@ pub trait PortfolioStatistic: Debug {
                     if *entry == 0.0 {
                         *entry = value;
                     } else if value != 0.0 {
-                        *entry = (1.0 + *entry).mul_add(1.0 + value, -1.0);
+                        let previous = *entry;
+                        *entry = if previous.abs() <= 0.5 && value.abs() <= 0.5 {
+                            // Use a + b + ab to avoid cancellation after adding 1.
+                            previous.mul_add(value, previous + value)
+                        } else {
+                            (1.0 + previous).mul_add(1.0 + value, -1.0)
+                        };
                     }
                 })
                 .or_insert(value);
@@ -175,6 +181,10 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::statistics::{
+        returns_kurtosis::ReturnsKurtosis, returns_skewness::ReturnsSkewness,
+        returns_volatility::ReturnsVolatility, value_at_risk::ValueAtRisk,
+    };
 
     #[derive(Debug)]
     struct DummyStat;
@@ -250,6 +260,84 @@ mod tests {
                 (UnixNanos::from(2 * NANOS_PER_DAY), 0.1),
             ]),
         );
+    }
+
+    #[rstest]
+    fn test_downsample_preserves_sign_of_nearly_offsetting_returns() {
+        let small = 2.0_f64.powi(-30);
+        let residual = 2.0_f64.powi(-53);
+        let first = small + residual;
+        // These binary powers give the exact compounded return in binary64.
+        let expected = residual - first * small;
+        let returns = Returns::from([
+            (UnixNanos::from(BASE_NS), first),
+            (UnixNanos::from(BASE_NS + 1), -small),
+        ]);
+
+        let daily = DummyStat.downsample_to_daily_bins(&returns);
+        let value = *daily.values().next().unwrap();
+        let var = ValueAtRisk::new(None)
+            .calculate_from_returns(&returns)
+            .unwrap();
+        assert!(expected > 0.0);
+        assert_eq!(value.to_bits(), expected.to_bits());
+        assert_eq!(var.to_bits(), expected.to_bits());
+    }
+
+    #[rstest]
+    fn test_downsample_preserves_large_return_when_zero_is_appended() {
+        let single = Returns::from([(UnixNanos::from(BASE_NS), 1.3)]);
+        let with_zero = Returns::from([
+            (UnixNanos::from(BASE_NS), 1.3),
+            (UnixNanos::from(BASE_NS + 1), 0.0),
+        ]);
+
+        let single_daily = DummyStat.downsample_to_daily_bins(&single);
+        let with_zero_daily = DummyStat.downsample_to_daily_bins(&with_zero);
+        let expected = 1.3_f64.to_bits();
+        assert_eq!(single_daily.values().next().unwrap().to_bits(), expected);
+        assert_eq!(with_zero_daily.values().next().unwrap().to_bits(), expected);
+    }
+
+    #[rstest]
+    fn test_downsample_preserves_utc_boundary_and_total_loss() {
+        let returns = Returns::from([
+            (UnixNanos::from(NANOS_PER_DAY - 2), 0.125),
+            (UnixNanos::from(NANOS_PER_DAY - 1), -0.25),
+            (UnixNanos::from(NANOS_PER_DAY), -1.0),
+            (UnixNanos::from(NANOS_PER_DAY + 1), 1.0e20),
+        ]);
+
+        let daily = DummyStat.downsample_to_daily_bins(&returns);
+        assert_eq!(daily.len(), 2);
+        assert_eq!(
+            daily[&UnixNanos::from(0)].to_bits(),
+            (-0.15625_f64).to_bits()
+        );
+        assert_eq!(
+            daily[&UnixNanos::from(NANOS_PER_DAY)].to_bits(),
+            (-1.0_f64).to_bits()
+        );
+    }
+
+    #[rstest]
+    fn test_constant_daily_returns_have_zero_volatility_and_undefined_moments() {
+        let returns = (0..10)
+            .map(|day| (UnixNanos::from(BASE_NS + day * NANOS_PER_DAY), 0.01))
+            .collect::<Returns>();
+
+        let volatility = ReturnsVolatility::new(None)
+            .calculate_from_returns(&returns)
+            .unwrap();
+        let skewness = ReturnsSkewness::new()
+            .calculate_from_returns(&returns)
+            .unwrap();
+        let kurtosis = ReturnsKurtosis::new()
+            .calculate_from_returns(&returns)
+            .unwrap();
+        assert_eq!(volatility.to_bits(), 0.0_f64.to_bits());
+        assert!(skewness.is_nan());
+        assert!(kurtosis.is_nan());
     }
 
     #[rstest]
