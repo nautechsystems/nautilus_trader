@@ -502,8 +502,16 @@ total at or below the filled quantity.
 
 A modify's new trigger price goes to Kraken Futures as the edit's `stopPrice`,
 and the open-orders update that follows emits `OrderUpdated` with the new
-trigger. Kraken Spot receives it as the WebSocket amend's `trigger_price`. A
-Spot amend sent over REST does not carry a new trigger price.
+trigger. Kraken Spot receives it as the amend's `trigger_price`, over WebSocket or
+REST, and the `amended` executions frame that follows emits `OrderUpdated` with
+the new trigger. Kraken Spot holds a trailing stop's trigger at an offset from
+the market, while a modify carries an absolute trigger price. A modify that
+moves the trigger of an order the node holds as a Spot trailing stop is denied
+with `OrderModifyDenied` and nothing is sent, and one that restates the trigger
+goes out without it. Reconciliation rebuilds a Kraken trailing stop from a venue
+report as a stop-market or stop-limit order, so a restated trigger is also left
+out of a stop it created, while a moved trigger is sent as given. A modify left
+with nothing to change is denied.
 
 Kraken Futures reports each edit's outcome in `editStatus.status`. `edited` and `filled` confirm the
 edit, and the private feeds carry the update or the fills. These statuses refuse the edit and emit

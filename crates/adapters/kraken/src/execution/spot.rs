@@ -16,6 +16,7 @@
 //! Kraken Spot execution client implementation.
 
 use std::{
+    borrow::Cow,
     collections::{BTreeSet, HashSet},
     future::Future,
     sync::Arc,
@@ -620,15 +621,66 @@ impl KrakenSpotExecutionClient {
     }
 
     fn modify_single_order(&self, cmd: &ModifyOrder) {
+        // Kraken holds a trailing stop's trigger at an offset from the market, while a modify
+        // carries an absolute trigger price: a modify that moves the trigger of an order held as a
+        // trailing stop is denied, and one that restates it goes out without it. Reconciliation
+        // rebuilds a Kraken trailing stop as a stop, so a restated trigger is also left out of a
+        // stop it created. Any other stop sends the trigger as given, since its cached trigger
+        // lags an amend in flight and the restated value may undo that amend.
+        let cached = self.core.cache().order(&cmd.client_order_id).map(|order| {
+            let is_trailing = matches!(
+                order.order_type(),
+                OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+            );
+            let may_trail = is_trailing
+                || (order.init_event().reconciliation
+                    && matches!(
+                        order.order_type(),
+                        OrderType::StopMarket | OrderType::StopLimit
+                    ));
+            (is_trailing, may_trail, order.trigger_price())
+        });
+
+        let deny = |reason: &str| {
+            log::warn!("{reason}: client_order_id={}", cmd.client_order_id);
+            self.emitter.emit_order_modify_denied_event(
+                cmd.strategy_id,
+                cmd.instrument_id,
+                cmd.client_order_id,
+                cmd.venue_order_id,
+                reason,
+                self.clock.get_time_ns(),
+                Some(cmd.command_id),
+            );
+        };
+
+        let mut cmd = Cow::Borrowed(cmd);
+
+        if let (Some((is_trailing, may_trail, current)), Some(trigger)) =
+            (cached, cmd.trigger_price)
+        {
+            if may_trail && current == Some(trigger) {
+                if cmd.quantity.is_none() && cmd.price.is_none() {
+                    deny("Kraken Spot amend has nothing to change: the trigger is unchanged");
+                    return;
+                }
+
+                cmd.to_mut().trigger_price = None;
+            } else if is_trailing {
+                deny("A Kraken Spot trailing stop's trigger is an offset, not an absolute price");
+                return;
+            }
+        }
+
         let use_ws_trade = resolve_use_ws_trade(cmd.params.as_ref(), self.config.use_ws_trade);
         if use_ws_trade && self.ws.is_active() {
-            match self.amend_via_ws(cmd) {
+            match self.amend_via_ws(&cmd) {
                 Ok(()) => return,
                 Err(e) => log::warn!("Kraken WS amend_order fallback to REST: {e}"),
             }
         }
 
-        self.amend_via_rest(cmd);
+        self.amend_via_rest(&cmd);
     }
 
     fn amend_via_rest(&self, cmd: &ModifyOrder) {
@@ -639,6 +691,7 @@ impl KrakenSpotExecutionClient {
         let instrument_id = cmd.instrument_id;
         let quantity = cmd.quantity;
         let price = cmd.price;
+        let trigger_price = cmd.trigger_price;
 
         log::debug!(
             "Modifying order: venue_order_id={venue_order_id:?}, client_order_id={client_order_id}"
@@ -656,7 +709,7 @@ impl KrakenSpotExecutionClient {
                     venue_order_id,
                     quantity,
                     price,
-                    None,
+                    trigger_price,
                 )
                 .await
             {
