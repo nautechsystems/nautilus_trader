@@ -126,13 +126,16 @@ class OptionalAnnotatedData:
     values: dict[str, int] | None = None
 
 
+OptionalInstrumentId = Optional[InstrumentId]  # noqa: UP045
+
+
 @customdataclass
 class TypingOptionalAnnotatedData:
     """
     Custom data using typing.Optional and reversed union order.
     """
 
-    instrument_id: Optional[InstrumentId] = None  # noqa: UP045
+    instrument_id: OptionalInstrumentId = None
     note: None | str = None  # noqa: RUF036
 
 
@@ -223,7 +226,7 @@ def test_typing_optional_and_reversed_union_roundtrip(representation: str) -> No
 
 def test_optional_custom_data_catalog_and_json_envelope_roundtrip(tmp_path: Path) -> None:
     """
-    Round-trip optional customdataclass records through ParquetDataCatalog and CustomData JSON.
+    Round-trip optional fields through the Parquet catalog and CustomData JSON.
     """
     register_custom_data_class(OptionalCatalogSignal)
     catalog = ParquetDataCatalog(str(tmp_path))
