@@ -2108,6 +2108,32 @@ fn pending_modify_checks_trailing_trigger_only_when_requested(
     assert_eq!(pending.matches(&order), expected);
 }
 
+/// A correctly applied amendment must read as applied when IB echoes the size one
+/// representable step away, which is larger than a fixed `1e-9` above 2^23 units.
+#[rstest]
+#[case(8_388_608.0)]
+#[case(10_000_000.0)]
+#[case(123_456_789.0)]
+fn pending_modify_tolerance_scales_with_the_size_of_the_order(#[case] size: f64) {
+    let pending = PendingModifyValues {
+        total_quantity: Some(size),
+        limit_price: Some(100.0),
+        aux_price: None,
+        trail_stop_price: None,
+    };
+    let mut order = IBOrder {
+        total_quantity: size + f64::EPSILON * size,
+        limit_price: Some(100.0),
+        ..Default::default()
+    };
+
+    assert!(pending.matches(&order));
+
+    // A real difference at the same scale is still refused.
+    order.total_quantity = size + 1.0;
+    assert!(!pending.matches(&order));
+}
+
 #[rstest]
 #[case::stop_trigger("STP", None, (false, false, true), (None, None, Some(1.5), None))]
 #[case::stop_quantity("STP", None, (true, false, false), (Some(2.0), None, None, None))]
