@@ -2538,13 +2538,17 @@ pub fn parse_option_instrument(
     })?;
     let multiplier = parse_multiplier_product(definition)?;
     let lot_size = size_increment;
-    let max_quantity = if definition.max_mkt_sz.is_empty() {
+    let (field, raw) = if definition.max_lmt_sz.is_empty() {
+        ("max_mkt_sz", definition.max_mkt_sz.as_str())
+    } else {
+        ("max_lmt_sz", definition.max_lmt_sz.as_str())
+    };
+    let max_quantity = if raw.is_empty() {
         None
     } else {
-        Some(Quantity::from_str(&definition.max_mkt_sz).map_err(|e| {
+        Some(Quantity::from_str(raw).map_err(|e| {
             anyhow::anyhow!(
-                "Failed to parse `max_mkt_sz` '{}' for {}: {e}",
-                definition.max_mkt_sz,
+                "Failed to parse `{field}` '{raw}' for {}: {e}",
                 definition.inst_id
             )
         })?)
@@ -3990,7 +3994,7 @@ mod tests {
         assert_eq!(instrument.multiplier(), Quantity::from("0.01"));
         assert_eq!(instrument.lot_size(), Some(Quantity::from(1)));
         assert_eq!(instrument.min_quantity(), Some(Quantity::from(1)));
-        assert_eq!(instrument.max_quantity(), Some(Quantity::from(5000)));
+        assert_eq!(instrument.max_quantity(), Some(Quantity::from(1_000_000)));
         assert_eq!(instrument.max_notional(), None);
         assert_eq!(instrument.min_notional(), None);
         assert_eq!(instrument.max_price(), None);
@@ -3998,6 +4002,37 @@ mod tests {
         assert_eq!(option.option_kind, OptionKind::Call);
         assert_eq!(option.exercise_style, Some(ExerciseStyle::European));
         assert_eq!(option.settlement_type, Some(SettlementType::Cash));
+    }
+
+    #[rstest]
+    #[case::fallback_to_max_mkt_sz("", "5000", Some(5000), None)]
+    #[case::both_empty("", "", None, None)]
+    #[case::prefers_max_lmt_sz("2", "5000", Some(2), None)]
+    #[case::ignores_invalid_max_mkt_sz_when_max_lmt_sz_present("2", "bad", Some(2), None)]
+    #[case::invalid_max_lmt_sz("bad", "5000", None, Some("max_lmt_sz"))]
+    #[case::invalid_max_mkt_sz_fallback("", "bad", None, Some("max_mkt_sz"))]
+    fn test_parse_option_instrument_max_quantity(
+        #[case] limit: &str,
+        #[case] market: &str,
+        #[case] expected: Option<u64>,
+        #[case] error_field: Option<&str>,
+    ) {
+        let json_data = load_test_json("http_get_instruments_option.json");
+        let mut response: OKXResponse<OKXInstrument> = serde_json::from_str(&json_data).unwrap();
+        let definition = response.data.first_mut().unwrap();
+        definition.max_lmt_sz = limit.to_string();
+        definition.max_mkt_sz = market.to_string();
+
+        let result = parse_option_instrument(definition, None, None, UnixNanos::default());
+        if let Some(field) = error_field {
+            let error = result.unwrap_err().to_string();
+            assert!(
+                error.contains(&format!("Failed to parse `{field}`")),
+                "{error}"
+            );
+        } else {
+            assert_eq!(result.unwrap().max_quantity(), expected.map(Quantity::from));
+        }
     }
 
     #[rstest]
