@@ -65,7 +65,7 @@ pub(super) fn parse_order_data_to_report(
 
     let mut report = parse_order_status_to_report(
         &OrderStatus {
-            order_id: data.order_id,
+            order_id: api_order_id(data),
             status: data.order_state.status.clone(),
             filled: data.order.filled_quantity,
             remaining: (data.order.total_quantity - data.order.filled_quantity).max(0.0),
@@ -479,6 +479,16 @@ pub(crate) fn should_use_avg_fill_price(avg_fill_price: f64, instrument_id: &Ins
         && (avg_fill_price > 0.0 || is_spread_instrument_id(instrument_id))
 }
 
+/// Returns the API order ID of an IB order. A completed order reports `-1` at the top level and
+/// carries the ID on the order.
+pub(crate) fn api_order_id(data: &OrderData) -> i32 {
+    if data.order_id == -1 {
+        data.order.order_id
+    } else {
+        data.order_id
+    }
+}
+
 pub(crate) fn ib_venue_order_id(order_id: i32, perm_id: i64) -> VenueOrderId {
     if perm_id != 0 {
         VenueOrderId::new(format!("PERM-{perm_id}"))
@@ -497,6 +507,12 @@ pub(crate) fn normalized_order_ref(order_ref: &str) -> Option<&str> {
             .rsplit_once(':')
             .map_or(order_ref, |(base, _)| base),
     )
+}
+
+/// Returns the client order ID an IB order ref gives, or `None` when the normalized ref is not a
+/// valid client order ID, which leaves an order report with its venue order ID only.
+pub(crate) fn order_ref_client_order_id(order_ref: &str) -> Option<ClientOrderId> {
+    normalized_order_ref(order_ref).and_then(|order_ref| ClientOrderId::new_checked(order_ref).ok())
 }
 
 /// Parse an IB execution to a Nautilus FillReport.
@@ -676,9 +692,7 @@ pub fn parse_order_status_to_report(
 
     let venue_order_id = ib_venue_order_id(order_status.order_id, order_status.perm_id);
 
-    let client_order_id = order
-        .and_then(|order| normalized_order_ref(&order.order_ref))
-        .map(ClientOrderId::new);
+    let client_order_id = order.and_then(|order| order_ref_client_order_id(&order.order_ref));
 
     // Map order type from IB order if available
     let order_type = order.map_or(OrderType::Market, |order| {
@@ -1969,6 +1983,44 @@ mod tests {
     }
 
     #[rstest]
+    #[case::whitespace("   ")]
+    #[case::non_ascii("O-É:7")]
+    #[case::empty_base(":7")]
+    fn test_parse_order_status_to_report_drops_invalid_order_ref(#[case] order_ref: &str) {
+        let order_status = OrderStatus {
+            order_id: 0,
+            status: OrderStatusKind::Filled,
+            filled: 10.0,
+            remaining: 0.0,
+            average_fill_price: Some(150.25),
+            perm_id: 123_456,
+            parent_id: 0,
+            last_fill_price: Some(150.25),
+            client_id: 0,
+            why_held: String::new(),
+            market_cap_price: Some(0.0),
+        };
+        let order = Order {
+            total_quantity: 10.0,
+            order_ref: order_ref.to_string(),
+            ..Default::default()
+        };
+
+        let report = parse_order_status_to_report(
+            &order_status,
+            Some(&order),
+            create_test_instrument_id(),
+            AccountId::from("IB-001"),
+            &create_test_instrument_provider(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.client_order_id, None);
+        assert_eq!(report.venue_order_id.to_string(), "PERM-123456");
+    }
+
+    #[rstest]
     #[case::remaining_quantity(70.0, false)]
     #[case::original_quantity(0.0, true)]
     #[case::both_quantities(70.0, true)]
@@ -2858,6 +2910,36 @@ mod tests {
         .unwrap();
 
         assert_eq!(report.ts_last, UnixNanos::from(expected_ts_last));
+    }
+
+    #[rstest]
+    #[case::open(5, 9)]
+    #[case::completed(-1, 5)]
+    fn test_parse_order_data_to_report_uses_api_order_id_without_perm_id(
+        #[case] data_order_id: i32,
+        #[case] order_order_id: i32,
+    ) {
+        let data = OrderData {
+            order_id: data_order_id,
+            order: Order {
+                order_id: order_order_id,
+                total_quantity: 1.0,
+                order_type: "MKT".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let report = parse_order_data_to_report(
+            &data,
+            create_test_instrument_id(),
+            AccountId::from("IB-001"),
+            &create_test_instrument_provider(),
+            UnixNanos::new(7),
+        )
+        .unwrap();
+
+        assert_eq!(report.venue_order_id, VenueOrderId::from("5"));
     }
 
     #[cfg(feature = "execution")]
