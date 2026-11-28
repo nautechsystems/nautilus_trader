@@ -96,7 +96,7 @@ use nautilus_model::{
     },
     events::{
         AccountState, OrderAccepted, OrderCanceled, OrderEventAny, OrderEventType,
-        OrderInitialized, OrderPendingUpdate, OrderSubmitted, OrderUpdated,
+        OrderInitialized, OrderPendingCancel, OrderPendingUpdate, OrderSubmitted, OrderUpdated,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId,
@@ -9931,22 +9931,52 @@ async fn test_modify_order_denies_trigger_order() {
 }
 
 #[rstest]
-#[case::with_venue_ids(false)]
-#[case::with_pending_submit(true)]
+#[case::owner("S-1", false, false)]
+#[case::other_strategy("SUPERVISOR-2", false, false)]
+#[case::other_strategy_after_private_acceptance("SUPERVISOR-2", true, false)]
+#[case::other_strategy_individual_first("S-1", true, true)]
 #[tokio::test]
-async fn test_batch_cancel_orders_fans_out_per_order(#[case] pending_submit: bool) {
-    let rest_state = RestState::default();
-    let ws_state = WsState::default();
-    let mut tc = build_client(rest_state, ws_state.clone()).await;
-    tc.client.connect().await.expect("connect succeeds");
+async fn test_batch_cancel_orders_routes_each_order_by_its_current_binding(
+    #[case] caller: &str,
+    #[case] private_acceptance: bool,
+    #[case] individual_first: bool,
+) {
+    let rest = RestState::default();
+    let ws = WsState::default();
+    let mut tc = build_client(rest.clone(), ws.clone()).await;
+    tc.client.connect().await.unwrap();
 
     let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let order = build_limit_order(
+        instrument_id,
+        ClientOrderId::from("STRAT-O-1"),
+        OrderSide::Buy,
+        Price::from("3500.00"),
+        Quantity::from("1.000"),
+    );
+    add_order_to_cache(&tc.cache, order.clone(), Some(ClientId::from("DERIVE")));
 
-    let inner = |label: &str, venue_id: Option<&str>| {
+    let instrument_response = if !private_acceptance || individual_first {
+        Some(rest.get_instrument_response.lock().await)
+    } else {
+        None
+    };
+
+    let rpc_reply = ws.write_reply_delay.lock().await;
+    if private_acceptance {
+        *ws.order_notification_before_reply.lock().await = Some(make_subscription_frame(
+            &format!("{TEST_SUBACCOUNT}.orders"),
+            &json!([sample_order_json()]),
+        ));
+    }
+
+    let caller = StrategyId::from(caller);
+
+    let cancel = |label: &str, venue_id: Option<&str>| {
         CancelOrder::new(
-            TraderId::from("TRADER-001"),
+            order.trader_id(),
             Some(ClientId::from("DERIVE")),
-            StrategyId::from("S-1"),
+            caller,
             instrument_id,
             ClientOrderId::from(label),
             venue_id.map(VenueOrderId::from),
@@ -9957,25 +9987,51 @@ async fn test_batch_cancel_orders_fans_out_per_order(#[case] pending_submit: boo
         )
     };
 
-    let mut cancels = vec![inner("ord-A", Some("ord-A")), inner("ord-B", Some("ord-B"))];
+    tc.client.submit_order(submit_cmd(&order)).unwrap();
 
-    if pending_submit {
-        let order = build_limit_order(
-            instrument_id,
-            ClientOrderId::from("pending"),
-            OrderSide::Buy,
-            Price::from("3500.00"),
-            Quantity::from("1.000"),
-        );
-        add_order_to_cache(&tc.cache, order.clone(), Some(ClientId::from("DERIVE")));
-        tc.client.submit_order(submit_cmd(&order)).unwrap();
-        cancels.push(inner("pending", None));
+    let label = order.client_order_id();
+
+    let instrument_response = if individual_first {
+        tc.client
+            .cancel_order(CancelOrder {
+                strategy_id: StrategyId::from("SUPERVISOR-2"),
+                ..cancel(label.as_str(), None)
+            })
+            .unwrap();
+
+        drop(instrument_response);
+        None
+    } else {
+        instrument_response
+    };
+
+    let is_accepted =
+        |ev: &ExecutionEvent| matches!(ev, ExecutionEvent::Order(OrderEventAny::Accepted(_)));
+
+    let accepted = if private_acceptance {
+        Some(drain_until(&mut tc.rx, is_accepted, "accepted before submit reply").await)
+    } else {
+        None
+    };
+
+    let venue_id = private_acceptance.then_some("ord-mock-1");
+    let duplicate = cancel(label.as_str(), venue_id);
+    let duplicate_id = duplicate.command_id;
+    let mut cancels = vec![
+        cancel("known", Some("ord-known")),
+        cancel("untracked", None),
+    ];
+
+    if !individual_first {
+        cancels.push(cancel(label.as_str(), venue_id));
     }
 
+    cancels.push(duplicate);
+
     let cmd = BatchCancelOrders::new(
-        TraderId::from("TRADER-001"),
+        order.trader_id(),
         Some(ClientId::from("DERIVE")),
-        StrategyId::from("S-1"),
+        caller,
         instrument_id,
         cancels,
         UUID4::new(),
@@ -9983,41 +10039,218 @@ async fn test_batch_cancel_orders_fans_out_per_order(#[case] pending_submit: boo
         None,
         None,
     );
-    tc.client.batch_cancel_orders(cmd).expect("batch_cancel Ok");
 
-    wait_until(
-        || {
-            let state = ws_state.clone();
-            async move {
-                state.cancelled_orders.lock().await.len() == 2
-                    && state.cancelled_labels.lock().await.len() == usize::from(pending_submit)
-            }
-        },
-        "two cancels posted",
+    tc.client.batch_cancel_orders(cmd).unwrap();
+
+    let denied = drain_until(
+        &mut tc.rx,
+        |event| matches!(event, ExecutionEvent::Order(OrderEventAny::CancelDenied(_))),
+        "duplicate batch cancel denied before submit reply",
     )
     .await;
 
-    tc.client.disconnect().await.expect("disconnect");
+    let ExecutionEvent::Order(OrderEventAny::CancelDenied(denied)) = denied else {
+        unreachable!()
+    };
 
-    let mut ids: Vec<_> = ws_state
+    assert_eq!(denied.client_order_id, label);
+    assert_eq!(denied.strategy_id, order.strategy_id());
+    assert_eq!(denied.causation_id, Some(duplicate_id));
+    assert_eq!(
+        ws.submitted_orders.lock().await.len(),
+        usize::from(private_acceptance)
+    );
+    drop(instrument_response);
+    drop(rpc_reply);
+
+    wait_until(
+        || async {
+            ws.cancelled_orders.lock().await.len() == 2
+                && !ws.cancelled_labels.lock().await.is_empty()
+        },
+        "known and newly accepted orders canceled by ID and untracked order by label",
+    )
+    .await;
+
+    let accepted = match accepted {
+        Some(event) => event,
+        None => drain_until(&mut tc.rx, is_accepted, "pending order accepted").await,
+    };
+
+    let ExecutionEvent::Order(accepted) = accepted else {
+        unreachable!()
+    };
+
+    let accepted_order = tc.cache.borrow_mut().update_order(&accepted).unwrap();
+    let venue_id = accepted_order.venue_order_id().unwrap();
+    assert_eq!(accepted_order.client_order_id(), label);
+    assert_eq!(venue_id, VenueOrderId::from("ord-mock-1"));
+
+    let mut ids: Vec<_> = ws
         .cancelled_orders
         .lock()
         .await
         .iter()
-        .map(|b| b["order_id"].as_str().unwrap().to_string())
+        .map(|body| body["order_id"].as_str().unwrap().to_owned())
         .collect();
     ids.sort_unstable();
-    assert_eq!(ids, ["ord-A", "ord-B"]);
+    assert_eq!(ids, ["ord-known", "ord-mock-1"]);
+    assert_eq!(
+        *ws.cancelled_labels.lock().await,
+        [json!({"subaccount_id": TEST_SUBACCOUNT, "label": "untracked"})]
+    );
 
-    if pending_submit {
-        assert_eq!(
-            *ws_state.cancelled_labels.lock().await,
-            [json!({
-                "subaccount_id": TEST_SUBACCOUNT,
-                "label": "pending",
-            })]
+    let mut native = rest.get_order_responses.lock().await[venue_id.as_str()].clone();
+    native["order_status"] = json!("cancelled");
+    native["last_update_timestamp"] = json!(1_700_000_002_000_i64);
+    ws.push_notification(make_subscription_frame(
+        &format!("{TEST_SUBACCOUNT}.orders"),
+        &json!([native]),
+    ));
+    let canceled = drain_until(
+        &mut tc.rx,
+        |event| matches!(event, ExecutionEvent::Order(OrderEventAny::Canceled(_))),
+        "pending batch item canceled",
+    )
+    .await;
+
+    let ExecutionEvent::Order(canceled) = canceled else {
+        unreachable!()
+    };
+
+    let closed_order = tc.cache.borrow_mut().update_order(&canceled).unwrap();
+
+    assert_eq!(closed_order.client_order_id(), label);
+    assert_eq!(closed_order.venue_order_id(), Some(venue_id));
+    assert_eq!(closed_order.status(), OrderStatus::Canceled);
+    tc.client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::cache_only(false)]
+#[case::tracked(true)]
+#[tokio::test]
+async fn test_batch_cancel_duplicate_denial_uses_order_owner(#[case] tracked: bool) {
+    let ws = WsState::default();
+    let mut tc = build_client(RestState::default(), ws.clone()).await;
+    tc.client.connect().await.unwrap();
+
+    let client_id = Some(ClientId::from("DERIVE"));
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let client_order_id = ClientOrderId::from("CACHE-ONLY");
+    let venue_order_id = VenueOrderId::from("cache-only-order");
+    let order = accepted_order(
+        build_limit_order(
+            instrument_id,
+            client_order_id,
+            OrderSide::Buy,
+            Price::from("3500.00"),
+            Quantity::from("1.000"),
+        ),
+        venue_order_id,
+        AccountId::from("DERIVE-001"),
+    );
+    add_order_to_cache(&tc.cache, order.clone(), client_id);
+    if tracked {
+        tc.client.register_external_order(
+            client_order_id,
+            venue_order_id,
+            instrument_id,
+            order.strategy_id(),
+            UnixNanos::default(),
         );
     }
+
+    let cancel = |strategy_id| {
+        CancelOrder::new(
+            order.trader_id(),
+            client_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            Some(venue_order_id),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )
+    };
+
+    let caller = StrategyId::from("SUPERVISOR-2");
+    let reply = ws.cancel_reply.lock().await;
+    tc.client.cancel_order(cancel(caller)).unwrap();
+    wait_until(
+        || async { !ws.cancelled_orders.lock().await.is_empty() },
+        "individual cancel at venue",
+    )
+    .await;
+
+    let duplicate = cancel(caller);
+    let duplicate_id = duplicate.command_id;
+
+    let mut pending = OrderPendingCancel::new(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument_id,
+        client_order_id,
+        order.account_id(),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(venue_order_id),
+    );
+
+    pending.causation_id = Some(duplicate_id);
+    tc.cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::PendingCancel(pending))
+        .unwrap();
+    tc.client
+        .batch_cancel_orders(BatchCancelOrders::new(
+            order.trader_id(),
+            client_id,
+            caller,
+            instrument_id,
+            vec![duplicate],
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    let denial = drain_until(
+        &mut tc.rx,
+        |event| matches!(event, ExecutionEvent::Order(OrderEventAny::CancelDenied(_))),
+        "duplicate batch cancel denied while the individual reply is held",
+    )
+    .await;
+
+    let ExecutionEvent::Order(OrderEventAny::CancelDenied(denial)) = denial else {
+        unreachable!()
+    };
+
+    assert_eq!(denial.causation_id, Some(duplicate_id));
+    let cached = tc
+        .cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::CancelDenied(denial))
+        .unwrap();
+    assert_eq!(cached.status(), OrderStatus::Accepted);
+    assert!(!cached.has_pending_cancel_command());
+
+    drop(reply);
+    tc.client.disconnect().await.unwrap();
+    assert_eq!(
+        *ws.cancelled_orders.lock().await,
+        [json!({
+            "subaccount_id": TEST_SUBACCOUNT,
+            "instrument_name": "ETH-PERP",
+            "order_id": venue_order_id.as_str(),
+        })]
+    );
+    assert!(ws.cancelled_labels.lock().await.is_empty());
 }
 
 #[rstest]
@@ -19970,7 +20203,15 @@ async fn test_reports_defer_unproved_tracked_replacement_binding(#[case] operati
                         Some(ClientId::from("DERIVE")),
                         StrategyId::from("S-1"),
                         instrument_id,
-                        vec![cancel],
+                        vec![
+                            CancelOrder {
+                                client_order_id: ClientOrderId::from("BATCH-KNOWN"),
+                                venue_order_id: Some(VenueOrderId::from("batch-known")),
+                                command_id: UUID4::new(),
+                                ..cancel.clone()
+                            },
+                            cancel,
+                        ],
                         UUID4::new(),
                         UnixNanos::default(),
                         None,

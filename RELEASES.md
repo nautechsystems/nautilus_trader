@@ -258,6 +258,7 @@ Released on TBD (UTC).
 - Fixed Derive execution staying offline after transient WebSocket failures (#5759), thanks for reporting @Aviksaikat
 - Fixed Derive startup timing out on orders or positions in instruments not yet in the cache
 - Fixed Derive individual cancels racing a local submit or replacement
+- Fixed Derive batch cancels overtaking a pending local submit
 - Fixed Derive submit acknowledgments using the local receipt time as the venue acceptance timestamp
 - Fixed Derive data shutdown timing out while unsubscribing from channels one request at a time
 - Fixed FinFeed dropping `Retry-After` on failed reads and missing HTTP dates and retryable 5xx cooldowns

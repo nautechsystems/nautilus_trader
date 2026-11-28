@@ -433,7 +433,35 @@ impl DeriveExecutionClient {
         Some(write)
     }
 
-    fn spawn_deferred_cancel(&self, cmd: CancelOrder, fallback: Option<(VenueOrderId, bool)>) {
+    fn defer_cancel_during_write(&self, cmd: CancelOrder) -> Option<CancelOrder> {
+        let duplicate = {
+            let mut writes = self.local_order_writes.lock();
+
+            let Some(write) = writes.get_mut(&cmd.client_order_id) else {
+                return Some(cmd);
+            };
+
+            std::mem::replace(&mut write.cancel_pending, true)
+        };
+
+        if !duplicate {
+            self.spawn_deferred_cancel(cmd, None);
+        } else if !self
+            .dispatch_state
+            .is_cancel_terminal(&cmd.client_order_id, cmd.instrument_id)
+        {
+            self.deny_duplicate_cancel(&cmd);
+        }
+
+        None
+    }
+
+    fn spawn_deferred_cancel(&self, mut cmd: CancelOrder, fallback: Option<(VenueOrderId, bool)>) {
+        cmd.strategy_id = self
+            .cancel_order_owner(&cmd)
+            .filter(|strategy_id| !strategy_id.is_external())
+            .unwrap_or(cmd.strategy_id);
+
         let mut cancel = DeferredCancel {
             cmd,
             fallback,
@@ -722,7 +750,7 @@ impl DeriveExecutionClient {
     fn deny_duplicate_cancel(&self, cmd: &CancelOrder) {
         emit_cancel_failure(
             &self.emitter,
-            cmd.strategy_id,
+            self.cancel_order_owner(cmd).unwrap_or(cmd.strategy_id),
             cmd.instrument_id,
             cmd.client_order_id,
             cmd.venue_order_id,
@@ -730,6 +758,24 @@ impl DeriveExecutionClient {
             self.clock.get_time_ns(),
             Some(cmd.command_id),
         );
+    }
+
+    fn cancel_order_owner(&self, cmd: &CancelOrder) -> Option<StrategyId> {
+        self.dispatch_state
+            .identity(&cmd.client_order_id)
+            .filter(|identity| identity.instrument_id == cmd.instrument_id)
+            .map(|identity| identity.strategy_id)
+            .or_else(|| {
+                let cache = self.core.cache();
+                cache
+                    .order(&cmd.client_order_id)
+                    .filter(|order| {
+                        order.instrument_id() == cmd.instrument_id
+                            && order.account_id() == Some(self.core.account_id)
+                            && cache.client_id(&cmd.client_order_id) == Some(&self.core.client_id)
+                    })
+                    .map(|order| order.strategy_id())
+            })
     }
 
     fn abort_pending_tasks(&self) {
@@ -2151,28 +2197,11 @@ impl ExecutionClient for DeriveExecutionClient {
             return Ok(());
         }
 
-        let defer = {
-            let mut writes = self.local_order_writes.lock();
-            if let Some(write) = writes.get_mut(&cmd.client_order_id) {
-                if write.cancel_pending {
-                    drop(writes);
-                    self.deny_duplicate_cancel(&cmd);
-                    return Ok(());
-                }
-
-                write.cancel_pending = true;
-                true
-            } else {
-                false
-            }
-        };
-
-        if defer {
-            self.spawn_deferred_cancel(cmd, None);
-            Ok(())
-        } else {
-            self.cancel_individual_order_now(cmd)
+        if let Some(cmd) = self.defer_cancel_during_write(cmd) {
+            self.cancel_individual_order_now(cmd)?;
         }
+
+        Ok(())
     }
 
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
@@ -2266,7 +2295,11 @@ impl ExecutionClient for DeriveExecutionClient {
         }
 
         for inner in cmd.cancels {
-            self.cancel_order_now(inner)?;
+            let _delivery = self.dispatch_state.delivery_guard();
+
+            if let Some(inner) = self.defer_cancel_during_write(inner) {
+                self.cancel_order_now(inner)?;
+            }
         }
 
         Ok(())

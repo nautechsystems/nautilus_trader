@@ -868,7 +868,9 @@ binding is proved, normal rate limits and the full venue response timeout apply.
   `OrderCancelDenied`.
 - If an earlier submit ends ambiguously and its venue order ID remains unproved, the adapter denies
   an individual cancel immediately.
-- A second individual cancel for the same order receives `OrderCancelDenied` while the first is pending.
+- While the adapter tracks an individual or deferred batch cancel as pending, it denies another
+  individual or batch cancel for the same nonterminal order with `OrderCancelDenied`. Batch cancels
+  must first pass the [bulk cancellation checks](#bulk-cancellation).
 
 See [Order rejection semantics](#order-rejection-semantics) for responses after enqueue.
 
@@ -885,8 +887,11 @@ Derive supports both multi-order cancellation methods exposed by `Strategy`.
 
 The Derive execution client applies these methods as follows:
 
-- **Explicit orders**: `cancel_orders` cancels each requested regular or trigger order. It can cancel a
-  pending submit by label when a venue order ID is unavailable.
+- **Explicit orders**: `cancel_orders` cancels each requested regular or trigger order. A pending or
+  unresolved replacement for any listed order fails the whole batch before transmission. For an
+  in-flight local submit, it waits for the current venue order ID
+  as described in [Individual cancellation](#individual-cancellation). Without an active local write or a
+  venue order ID, it can cancel a regular order by label.
 - **Strategy-only**: `cancel_all_orders` with `strategy_only=True` expands cached matches into
   individual cancels.
 - **Side-filtered**: `cancel_all_orders` with `strategy_only=False` and a Buy or Sell filter selects
