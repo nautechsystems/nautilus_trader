@@ -264,6 +264,8 @@ Released on TBD (UTC).
 - Fixed Derive batch cancels overtaking a pending local submit
 - Fixed Derive submit acknowledgments using the local receipt time as the venue acceptance timestamp
 - Fixed Derive data shutdown timing out while unsubscribing from channels one request at a time
+- Fixed Derive subscriptions failing on redundant lookups for instruments loaded by a concurrent request
+- Fixed Derive instrument requests returning empty results for configured currencies with surrounding whitespace
 - Fixed FinFeed dropping `Retry-After` on failed reads and missing HTTP dates and retryable 5xx cooldowns
 - Fixed FinFeed resetting request spacing on reconnect
 - Fixed Hyperliquid venue timestamps losing nanosecond exactness through float conversion

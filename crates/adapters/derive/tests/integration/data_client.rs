@@ -988,6 +988,91 @@ async fn test_data_client_subscribes_dispatches_and_unsubscribes_exact_channels(
 }
 
 #[rstest]
+#[case::cached("ETH-PERP.DERIVE", "trades.perp.ETH", 3)]
+#[case::missing("ETH-20260627-3500-C.DERIVE", "trades.option.ETH", 6)]
+#[tokio::test]
+async fn test_queued_subscription_uses_lazy_loaded_instrument(
+    #[case] trade_instrument: &str,
+    #[case] trade_channel: &str,
+    #[case] expected_requests: usize,
+) {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    let rest_addr = start_rest_server(rest_state.clone()).await;
+    let ws_addr = start_ws_server(ws_state.clone()).await;
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_data_event_sender(tx);
+    let mut client = DeriveDataClient::new(*DERIVE_CLIENT_ID, config(rest_addr, ws_addr)).unwrap();
+    client.connect().await.unwrap();
+
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    *rest_state.instruments_gate.lock().await = Some(gate.clone());
+    *rest_state.instruments_response.lock().await =
+        Some(json!({"result": [load_json("perps/instrument_eth.json")]}));
+    let perp_id = InstrumentId::from("ETH-PERP.DERIVE");
+    client
+        .subscribe_quotes(subscribe_quotes(perp_id, None))
+        .unwrap();
+    wait_until_async(
+        || async { rest_state.requests().await.len() == 3 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let trade_id = InstrumentId::from(trade_instrument);
+    client.subscribe_trades(subscribe_trades(trade_id)).unwrap();
+    *rest_state.instruments_response.lock().await = (trade_id == perp_id)
+        .then(|| json!({"error": {"code": 13000, "message": "catalog unavailable"}}));
+    gate.add_permits(3);
+
+    wait_for_subscribe(&ws_state, "ticker_slim.ETH-PERP.1000").await;
+    wait_for_subscribe(&ws_state, trade_channel).await;
+    assert_eq!(rest_state.requests().await.len(), expected_requests);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_lazy_load_rechecks_cache_after_waiting_for_refresh() {
+    let rest_state = RestState::default();
+    let rest_addr = start_rest_server(rest_state.clone()).await;
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_data_event_sender(tx);
+
+    let config = DeriveDataClientConfig {
+        base_url_rest: Some(rest_url(rest_addr).into()),
+        ..Default::default()
+    };
+
+    let client = DeriveDataClient::new(*DERIVE_CLIENT_ID, config).unwrap();
+    let definition = serde_json::from_value(load_json("perps/instrument_eth.json")).unwrap();
+    let instrument = parse_derive_instrument_any(&definition, UnixNanos::default())
+        .unwrap()
+        .unwrap();
+    let id = instrument.id();
+
+    let guard = client.instrument_refresh_lock.lock().await;
+    let mut load = std::pin::pin!(DeriveDataClient::lazy_load_instrument(
+        client.http_client.clone(),
+        Arc::clone(&client.instruments),
+        id,
+        false,
+        &client.instrument_refresh_lock,
+        (
+            &client.data_sender,
+            &client.cancellation_token,
+            &client.subscription_lock
+        ),
+    ));
+    assert!(futures_util::poll!(&mut load).is_pending());
+    client.instruments.insert(id, instrument);
+    drop(guard);
+
+    load.await.unwrap();
+    assert!(rest_state.requests().await.is_empty());
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_subscribe_book_depth_emits_depth_snapshot() {
     let rest_state = RestState::default();
@@ -1701,6 +1786,25 @@ async fn test_quote_resubscribe_does_not_merge_pre_unsubscribe_cache() {
     );
 
     client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_connect_rejects_blank_only_currencies() {
+    let rest_addr = start_rest_server(RestState::default()).await;
+    let ws_addr = start_ws_server(WsState::default()).await;
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_data_event_sender(tx);
+    let mut cfg = config(rest_addr, ws_addr);
+    cfg.currencies = vec![" ".to_string()];
+    let mut client = DeriveDataClient::new(*DERIVE_CLIENT_ID, cfg).unwrap();
+
+    let error = client.connect().await.unwrap_err();
+
+    assert_eq!(
+        error.root_cause().to_string(),
+        "DeriveInstrumentProvider requires at least one currency",
+    );
 }
 
 #[rstest]
@@ -4987,7 +5091,7 @@ async fn test_request_instruments_refreshes_v3_metadata() {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     replace_data_event_sender(tx);
     let mut cfg = config(rest_addr, ws_addr);
-    cfg.currencies = vec!["ETH".to_string()];
+    cfg.currencies = vec![" ETH ".to_string(), " ".to_string()];
     let client = DeriveDataClient::new(*DERIVE_CLIENT_ID, cfg).unwrap();
     let mut row = load_json("perps/instrument_eth.json");
     row["perp_details"]
@@ -5027,7 +5131,13 @@ async fn test_request_instruments_refreshes_v3_metadata() {
         );
     }
 
-    assert_eq!(rest_state.requests().await.len(), 6);
+    let requests = rest_state.requests().await;
+    assert_eq!(requests.len(), 6);
+    assert!(
+        requests
+            .iter()
+            .all(|request| request.body["currency"] == "ETH")
+    );
 }
 
 #[rstest]

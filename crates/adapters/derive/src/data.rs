@@ -160,9 +160,14 @@ impl DeriveDataClient {
             proxy_url.clone(),
             None,
         )?;
+
         let provider = DeriveInstrumentProvider::with_expired(
             http_client.clone(),
-            config.currencies.clone(),
+            config
+                .currencies
+                .iter()
+                .filter_map(|currency| normalize_currency(currency).map(ToOwned::to_owned))
+                .collect(),
             config.include_expired,
         );
         let book_sync = BookSyncTracker::default();
@@ -407,17 +412,12 @@ impl DeriveDataClient {
 
     fn instrument_refresh(&self) -> Option<impl Future<Output = ()> + Send + 'static> {
         let minutes = self.config.update_instruments_interval_mins;
-        let currencies: Vec<_> = self
-            .config
-            .currencies
-            .iter()
-            .filter_map(|currency| normalize_currency(currency).map(ToOwned::to_owned))
-            .collect();
-
+        let currencies = self.provider.currencies();
         if minutes == 0 || currencies.is_empty() {
             return None;
         }
 
+        let currencies = currencies.to_vec();
         let interval = Duration::from_secs(minutes.saturating_mul(60));
         let cancellation = self.cancellation_token.clone();
         let http_client = self.http_client.clone();
@@ -829,8 +829,13 @@ impl DeriveDataClient {
         instrument_refresh_lock: &tokio::sync::Mutex<()>,
         publication: (&EventSender<DataEvent>, &CancellationToken, &Mutex<()>),
     ) -> anyhow::Result<()> {
-        let currency = currency_from_instrument_id(&instrument_id)?;
         let _refresh_guard = instrument_refresh_lock.lock().await;
+
+        if instruments.contains_key(&instrument_id) {
+            return Ok(());
+        }
+
+        let currency = currency_from_instrument_id(&instrument_id)?;
         let definitions = fetch_instrument_definitions(&http_client, currency, include_expired)
             .await
             .with_context(|| format!("failed to lazy-load Derive instruments for {currency}"))?;
@@ -1984,7 +1989,7 @@ impl DataClient for DeriveDataClient {
     }
 
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
-        let currencies = self.config.currencies.clone();
+        let currencies = self.provider.currencies().to_vec();
         if currencies.is_empty() {
             anyhow::bail!(
                 "Derive request_instruments requires at least one configured currency \
