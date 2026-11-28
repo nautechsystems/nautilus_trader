@@ -18,6 +18,7 @@
 use std::{fmt::Debug, iter::Peekable, mem};
 
 use ahash::AHashMap;
+use nautilus_common::logging::logger::InheritedLoggingThread;
 use nautilus_core::{Params, UnixNanos};
 use nautilus_data::replay::{DataIterator, ReplayBatch, ReplayPoll, ReplaySource};
 use nautilus_model::{
@@ -104,6 +105,7 @@ impl BacktestNode {
     ///
     /// Returns an error if:
     /// - This node has been disposed.
+    /// - The logging thread belongs to another process.
     /// - Building an engine from a config fails and
     ///   [`BacktestRunConfig::raise_exception`] is enabled for that config.
     pub fn build(&mut self) -> anyhow::Result<()> {
@@ -118,7 +120,9 @@ impl BacktestNode {
                 Ok(engine) => {
                     self.engines.insert(config.id().to_string(), engine);
                 }
-                Err(e) if config.raise_exception() => return Err(e),
+                Err(e) if e.is::<InheritedLoggingThread>() || config.raise_exception() => {
+                    return Err(e);
+                }
                 Err(e) => {
                     log::error!("Error building backtest '{}': {e:#}", config.id());
                 }
@@ -162,6 +166,7 @@ impl BacktestNode {
     ///
     /// Returns an error if:
     /// - This node has been disposed.
+    /// - The logging thread belongs to another process when building an engine.
     /// - Building, data loading, or engine execution fails and
     ///   [`BacktestRunConfig::raise_exception`] is enabled for the run config.
     pub fn run(&mut self) -> anyhow::Result<Vec<BacktestResult>> {

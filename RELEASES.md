@@ -158,6 +158,8 @@ Released on TBD (UTC).
 ### Fixes
 
 - Fixed simulated realtime clock carryover for runs started with `block_on_simulation`
+- Fixed a hang in forked backtest workers by raising an error that directs users to `spawn` (#5768), thanks for reporting @mi-netizen007
+- Fixed `BacktestEngineConfig.bypass_logging` being ignored and bypassed logging starting a thread or opening log files
 - Fixed option-chain subscribers replacing each other's managers and releasing shared feeds early
 - Fixed data client removal leaving option-chain managers, timers, and pending requests active
 - Fixed retired option contracts rejoining chains on later definitions or subscriptions

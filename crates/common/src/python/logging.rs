@@ -302,11 +302,12 @@ pub fn py_logger_flush() {
 
 /// Flushes and syncs file logs to disk.
 ///
-/// This is a no-op when logging is not initialized or file logging is disabled.
+/// This is a no-op before initialization, after shutdown, or when logging starts without a thread.
 ///
 /// # Errors
 ///
-/// Returns an error if the sync request cannot be delivered or acknowledged.
+/// Returns an error if the logging thread belongs to another process or the sync request cannot be
+/// delivered or acknowledged.
 #[pyfunction()]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "logging_sync_to_disk")]
@@ -581,19 +582,19 @@ mod tests {
 
     // Uses the process-global logger, so it relies on nextest running each test in its own process
     #[rstest]
-    fn test_init_logging_failure_leaves_no_bypass_for_retry() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let blocking_file = temp_dir.path().join("not_a_directory");
-        std::fs::write(&blocking_file, "").unwrap();
+    fn test_init_logging_guard_limit_leaves_no_bypass_for_retry() {
+        Python::initialize();
 
-        let init = |directory: &std::path::Path, is_bypassed: bool| {
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let init = |is_bypassed: bool| {
             py_init_logging(
                 TraderId::from("TRADER-001"),
                 UUID4::new(),
                 LogLevel::Off,
                 Some(LogLevel::Info),
                 None,
-                Some(directory.to_str().unwrap().to_string()),
+                Some(temp_dir.path().to_str().unwrap().to_string()),
                 None,
                 None,
                 None,
@@ -606,12 +607,19 @@ mod tests {
             )
         };
 
-        let failed = init(&blocking_file, true);
-        let guard = init(temp_dir.path(), false).unwrap();
+        let first_guard = init(false).unwrap();
+        let other_guards: Vec<_> = (1..u8::MAX).map(|_| LogGuard::new().unwrap()).collect();
+        let failed = init(true);
+        drop(other_guards);
+
+        let guard = init(false).unwrap();
         log::info!(component = "BypassTest"; "logged after retry");
         crate::logging::logging_sync_to_disk().unwrap();
 
-        assert!(failed.is_err());
+        assert_eq!(
+            failed.unwrap_err().to_string(),
+            "ValueError: Logging already initialized but new guard could not be created",
+        );
         let log_path = std::fs::read_dir(temp_dir.path())
             .unwrap()
             .map(|entry| entry.unwrap().path())
@@ -622,7 +630,7 @@ mod tests {
             contents.contains("logged after retry"),
             "log file: {contents:?}"
         );
-        drop(guard);
+        drop((first_guard, guard));
     }
 
     #[rstest]

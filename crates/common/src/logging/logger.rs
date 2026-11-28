@@ -21,7 +21,7 @@ use std::{
     io::{self, Write as _},
     sync::{
         OnceLock,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
         mpsc::SendError,
     },
 };
@@ -102,12 +102,19 @@ static LOGGER_TX: OnceLock<std::sync::mpsc::Sender<LogEvent>> = OnceLock::new();
 /// Global handle to the logging thread - only one thread exists per process.
 static LOGGER_HANDLE: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
 
+static LOGGER_WRITER_PID: AtomicU32 = AtomicU32::new(0);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LoggerLifecycle {
     Uninitialized,
     Running,
     Terminated,
 }
+
+/// The logging thread belongs to the process that initialized it.
+#[derive(Debug, thiserror::Error)]
+#[error("Logging was initialized in another process. Use the 'spawn' multiprocessing start method")]
+pub struct InheritedLoggingThread;
 
 /// Process-global logger lifecycle serialization.
 static LOGGER_LIFECYCLE: Mutex<LoggerLifecycle> = Mutex::new(LoggerLifecycle::Uninitialized);
@@ -920,7 +927,9 @@ impl Logger {
     ///
     /// # Errors
     ///
-    /// Returns an error if the logger fails to register or initialize the background thread.
+    /// Returns an error if the logger cannot open the log file, start its thread, or register.
+    /// Returns an error after shutdown, when the logging thread belongs to another process,
+    /// or when the guard limit is reached.
     #[cfg_attr(
         not(all(feature = "simulation", madsim)),
         expect(clippy::needless_pass_by_value)
@@ -931,6 +940,8 @@ impl Logger {
         config: LoggerConfig,
         file_config: FileWriterConfig,
     ) -> anyhow::Result<LogGuard> {
+        anyhow::ensure!(!writer_is_inherited(), InheritedLoggingThread);
+
         let mut lifecycle = LOGGER_LIFECYCLE.lock();
 
         match *lifecycle {
@@ -949,7 +960,7 @@ impl Logger {
 
         // Open the log file before spawning the thread so an unusable path fails init
         #[cfg(not(all(feature = "simulation", madsim)))]
-        let file_writer_opt = if config.fileout_level == LevelFilter::Off {
+        let file_writer_opt = if config.bypass_logging || config.fileout_level == LevelFilter::Off {
             None
         } else {
             Some(FileWriter::new(
@@ -966,14 +977,23 @@ impl Logger {
         let filter_policy = FilterPolicy::from_config(&config);
 
         #[cfg(not(all(feature = "simulation", madsim)))]
-        let handle = std::thread::Builder::new()
-            .name(LOGGING.to_string())
-            .spawn({
-                let config = config.clone();
-                move || {
-                    Self::handle_messages(trader_id.to_string(), config, file_writer_opt, rx);
-                }
-            })?;
+        let handle = if config.bypass_logging {
+            None
+        } else {
+            LOGGER_WRITER_PID.store(std::process::id(), Ordering::Release);
+
+            let handle = std::thread::Builder::new()
+                .name(LOGGING.to_string())
+                .spawn({
+                    let config = config.clone();
+                    move || {
+                        Self::handle_messages(trader_id.to_string(), config, file_writer_opt, rx);
+                    }
+                })
+                .inspect_err(|_| LOGGER_WRITER_PID.store(0, Ordering::Release))?;
+
+            Some(handle)
+        };
 
         let logger = Self {
             config: config.clone(),
@@ -983,13 +1003,7 @@ impl Logger {
 
         if let Err(e) = set_boxed_logger(Box::new(logger)) {
             #[cfg(not(all(feature = "simulation", madsim)))]
-            {
-                let _ = tx.send(LogEvent::Close);
-
-                if handle.thread().id() != std::thread::current().id() {
-                    let _ = handle.join();
-                }
-            }
+            close_writer(Some(&tx), handle);
             *lifecycle = LoggerLifecycle::Terminated;
             return Err(e.into());
         }
@@ -1003,13 +1017,7 @@ impl Logger {
         // Store the sender globally so additional guards can be created
         if let Err(tx) = LOGGER_TX.set(tx) {
             #[cfg(not(all(feature = "simulation", madsim)))]
-            {
-                let _ = tx.send(LogEvent::Close);
-
-                if handle.thread().id() != std::thread::current().id() {
-                    let _ = handle.join();
-                }
-            }
+            close_writer(Some(&tx), handle);
             drop(tx);
             *lifecycle = LoggerLifecycle::Terminated;
             anyhow::bail!("Global logging sender was already published");
@@ -1035,7 +1043,7 @@ impl Logger {
                 handle_guard.is_none(),
                 "LOGGER_HANDLE already set - re-initialization not supported"
             );
-            *handle_guard = Some(handle);
+            *handle_guard = handle;
         }
 
         #[cfg(all(feature = "simulation", madsim))]
@@ -1322,6 +1330,10 @@ fn should_filter_log_inner(
 ///
 /// Safe to call multiple times. Thread join is skipped if called from the logging thread.
 pub(crate) fn shutdown_graceful() {
+    if writer_is_inherited() {
+        return;
+    }
+
     let mut lifecycle = LOGGER_LIFECYCLE.lock();
 
     if *lifecycle == LoggerLifecycle::Terminated {
@@ -1332,17 +1344,8 @@ pub(crate) fn shutdown_graceful() {
     LOGGING_BYPASSED.store(true, Ordering::SeqCst);
     log::set_max_level(log::LevelFilter::Off);
 
-    // Signal Close if the sender exists
-    #[cfg(not(all(feature = "simulation", madsim)))]
-    if let Some(tx) = LOGGER_TX.get() {
-        let _ = tx.send(LogEvent::Close);
-    }
-
-    if let Some(handle) = LOGGER_HANDLE.lock().take()
-        && handle.thread().id() != std::thread::current().id()
-    {
-        let _ = handle.join();
-    }
+    let handle = LOGGER_HANDLE.lock().take();
+    close_writer(LOGGER_TX.get(), handle);
 
     LOGGING_INITIALIZED.store(false, Ordering::SeqCst);
     *lifecycle = LoggerLifecycle::Terminated;
@@ -1355,11 +1358,12 @@ pub(crate) fn is_running() -> bool {
 
 /// Flushes and syncs file logs to disk through the logging thread.
 ///
-/// This is a no-op when logging is not initialized or file logging is disabled.
+/// This is a no-op before initialization, after shutdown, or when logging starts without a thread.
 ///
 /// # Errors
 ///
-/// Returns an error if the sync request cannot be delivered or acknowledged.
+/// Returns an error if the logging thread belongs to another process or the sync request cannot be
+/// delivered or acknowledged.
 pub fn sync_to_disk() -> anyhow::Result<()> {
     #[cfg(all(feature = "simulation", madsim))]
     {
@@ -1368,9 +1372,11 @@ pub fn sync_to_disk() -> anyhow::Result<()> {
 
     #[cfg(not(all(feature = "simulation", madsim)))]
     {
-        let lifecycle = LOGGER_LIFECYCLE.lock();
+        anyhow::ensure!(!writer_is_inherited(), InheritedLoggingThread);
 
-        if *lifecycle != LoggerLifecycle::Running {
+        let lifecycle = LOGGER_LIFECYCLE.lock();
+        if *lifecycle != LoggerLifecycle::Running || LOGGER_WRITER_PID.load(Ordering::Relaxed) == 0
+        {
             return Ok(());
         }
 
@@ -1457,10 +1463,14 @@ pub struct LogGuard {
 impl LogGuard {
     /// Creates a new [`LogGuard`] instance from the global logger.
     ///
-    /// Returns `None` if logging has not been initialized or the active `LogGuard`
+    /// Returns `None` if the logger is unavailable in this process or the active `LogGuard`
     /// count would exceed 255.
     #[must_use]
     pub fn new() -> Option<Self> {
+        if writer_is_inherited() {
+            return None;
+        }
+
         let lifecycle = LOGGER_LIFECYCLE.lock();
 
         Self::new_from_lifecycle(&lifecycle)
@@ -1510,6 +1520,10 @@ impl Drop for LogGuard {
     /// Sends `Flush` if other guards remain active. The last guard synchronously flushes and syncs
     /// file output while leaving the process-global logging thread running.
     fn drop(&mut self) {
+        if writer_is_inherited() {
+            return;
+        }
+
         let lifecycle = LOGGER_LIFECYCLE.lock();
         let previous_count = LOGGING_GUARDS_ACTIVE
             .try_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
@@ -1518,7 +1532,8 @@ impl Drop for LogGuard {
             })
             .expect("Failed to decrement LogGuard count");
 
-        if *lifecycle != LoggerLifecycle::Running {
+        if *lifecycle != LoggerLifecycle::Running || LOGGER_WRITER_PID.load(Ordering::Relaxed) == 0
+        {
             return;
         }
 
@@ -1538,6 +1553,30 @@ impl Drop for LogGuard {
             let _ = self.tx.send(LogEvent::Flush);
         }
     }
+}
+
+pub(super) fn writer_is_inherited() -> bool {
+    let pid = LOGGER_WRITER_PID.load(Ordering::Acquire);
+    pid != 0 && pid != std::process::id()
+}
+
+fn close_writer(
+    tx: Option<&std::sync::mpsc::Sender<LogEvent>>,
+    handle: Option<std::thread::JoinHandle<()>>,
+) {
+    let Some(handle) = handle else {
+        return;
+    };
+
+    if let Some(tx) = tx {
+        let _ = tx.send(LogEvent::Close);
+    }
+
+    if handle.thread().id() != std::thread::current().id() {
+        let _ = handle.join();
+    }
+
+    LOGGER_WRITER_PID.store(0, Ordering::Release);
 }
 
 #[cfg(test)]
@@ -3032,6 +3071,8 @@ mod tests {
         };
 
         use super::*;
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
+        use crate::logging::ensure_logging_initialized;
         use crate::logging::{logging_is_initialized, logging_shutdown, logging_sync_to_disk};
 
         const LIFECYCLE_CHILD_ENV: &str = "NAUTILUS_LOGGER_LIFECYCLE_CHILD";
@@ -3227,6 +3268,122 @@ mod tests {
                 error.to_string(),
                 "Logging has been shut down and cannot be re-initialized"
             );
+        }
+
+        #[rstest]
+        fn test_bypassed_init_skips_writer() {
+            const MARKER: &str = "bypassed-init";
+
+            if !in_lifecycle_child(MARKER) {
+                run_lifecycle_child("test_bypassed_init_skips_writer", MARKER);
+                return;
+            }
+
+            let directory = tempdir().unwrap();
+
+            let config = LoggerConfig {
+                bypass_logging: true,
+                fileout_level: LevelFilter::Info,
+                ..Default::default()
+            };
+
+            let file_config = FileWriterConfig {
+                directory: Some(directory.path().to_str().unwrap().to_string()),
+                ..Default::default()
+            };
+
+            let guard = Logger::init_with_config(
+                TraderId::from("TRADER-BYPASS"),
+                UUID4::new(),
+                config,
+                file_config,
+            )
+            .unwrap();
+
+            assert!(LOGGER_HANDLE.lock().is_none());
+            assert!(
+                std::fs::read_dir(directory.path())
+                    .unwrap()
+                    .next()
+                    .is_none()
+            );
+            assert!(logging_is_initialized());
+            let second_guard = LogGuard::new().expect("bypassed logger must support guard reuse");
+            drop((guard, second_guard));
+            logging_sync_to_disk().unwrap();
+            logging_shutdown();
+            assert!(!logging_is_initialized());
+        }
+
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
+        #[allow(
+            unsafe_code,
+            reason = "exercise inherited logger state across a real fork"
+        )]
+        #[rstest]
+        fn test_inherited_writer_rejects_initialization_and_sync() {
+            const MARKER: &str = "inherited-writer";
+            const CHECKS_PASSED: i32 = 42;
+            const EXPECTED_ERROR: &str = "Logging was initialized in another process. Use the 'spawn' multiprocessing start method";
+
+            if !in_lifecycle_child(MARKER) {
+                run_lifecycle_child(
+                    "test_inherited_writer_rejects_initialization_and_sync",
+                    MARKER,
+                );
+                return;
+            }
+
+            let trader_id = TraderId::from("TRADER-FORK");
+            let instance_id = UUID4::new();
+
+            let init = || {
+                Logger::init_with_config(
+                    trader_id,
+                    instance_id,
+                    LoggerConfig::default(),
+                    FileWriterConfig::default(),
+                )
+            };
+
+            let guard = init().unwrap();
+            logging_sync_to_disk().unwrap();
+
+            // SAFETY: The isolated child checks logger lifecycle calls and exits without unwinding
+            let pid = unsafe { libc::fork() };
+            assert!(pid >= 0, "fork failed: {}", io::Error::last_os_error());
+
+            if pid == 0 {
+                // SAFETY: Caps the time the test child can wait on an inherited writer
+                unsafe { libc::alarm(5) };
+                drop(guard);
+                let error = init().expect_err("an inherited writer cannot accept a new guard");
+                assert!(error.is::<InheritedLoggingThread>());
+                assert_eq!(error.to_string(), EXPECTED_ERROR);
+                assert_eq!(
+                    logging_sync_to_disk().unwrap_err().to_string(),
+                    EXPECTED_ERROR,
+                );
+                assert!(LogGuard::new().is_none());
+                assert!(!ensure_logging_initialized());
+                logging_shutdown();
+                assert!(writer_is_inherited());
+                // SAFETY: End the child without running the inherited test harness or destructors
+                unsafe { libc::_exit(CHECKS_PASSED) };
+            }
+
+            let mut status = 0;
+            // SAFETY: The child PID is positive and status is valid writable storage
+            let waited = unsafe { libc::waitpid(pid, &raw mut status, 0) };
+            assert_eq!(waited, pid);
+            assert!(libc::WIFEXITED(status), "forked child wait status {status}");
+
+            // The inherited harness can exit with zero after a child panic
+            assert_eq!(libc::WEXITSTATUS(status), CHECKS_PASSED);
+
+            logging_sync_to_disk().unwrap();
+            drop(guard);
+            logging_shutdown();
         }
 
         #[cfg(unix)]

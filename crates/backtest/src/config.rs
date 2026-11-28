@@ -165,7 +165,9 @@ impl NautilusKernelConfig for BacktestEngineConfig {
     }
 
     fn logging(&self) -> LoggerConfig {
-        self.logging.clone()
+        let mut logging = self.logging.clone();
+        logging.bypass_logging |= self.bypass_logging;
+        logging
     }
 
     fn instance_id(&self) -> Option<UUID4> {
@@ -1341,6 +1343,29 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case(false, false, false)]
+    #[case(false, true, true)]
+    #[case(true, false, true)]
+    #[case(true, true, true)]
+    fn test_engine_logging_bypass(
+        #[case] engine_bypass: bool,
+        #[case] logger_bypass: bool,
+        #[case] expected_bypass: bool,
+    ) {
+        let logging = LoggerConfig {
+            bypass_logging: logger_bypass,
+            ..Default::default()
+        };
+
+        let config = BacktestEngineConfig::builder()
+            .bypass_logging(engine_bypass)
+            .logging(logging)
+            .build();
+
+        assert_eq!(config.logging().bypass_logging, expected_bypass);
+    }
 
     macro_rules! minimal_builder {
         () => {

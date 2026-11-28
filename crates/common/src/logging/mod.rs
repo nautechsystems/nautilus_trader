@@ -97,6 +97,10 @@ pub fn logging_is_initialized() -> bool {
 /// logging and the log file cannot be opened, the error is reported on stderr and
 /// logging continues to the console only.
 pub fn ensure_logging_initialized() -> bool {
+    if crate::logging::logger::writer_is_inherited() {
+        return false;
+    }
+
     if crate::logging::logger::is_running() {
         return true;
     }
@@ -182,11 +186,12 @@ where
 
 /// Flushes and syncs file logs to disk.
 ///
-/// This is a no-op when logging is not initialized or file logging is disabled.
+/// This is a no-op before initialization, after shutdown, or when logging starts without a thread.
 ///
 /// # Errors
 ///
-/// Returns an error if the sync request cannot be delivered or acknowledged.
+/// Returns an error if the logging thread belongs to another process or the sync request cannot be
+/// delivered or acknowledged.
 pub fn logging_sync_to_disk() -> anyhow::Result<()> {
     crate::logging::logger::sync_to_disk()
 }

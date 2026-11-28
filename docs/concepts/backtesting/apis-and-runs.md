@@ -332,3 +332,13 @@ engine.run()
 
 Call `clear_strategies()` before replacing a strategy instance. Use `clear_data()` only when the
 next run should load a different dataset.
+
+### Run backtests in worker processes
+
+For a Python process pool, select `multiprocessing.get_context("spawn")` and construct the engines
+inside the workers. If a forked child inherits an active logging thread from the parent,
+`BacktestEngine(...)` and `BacktestNode.run()` raise an error when they try to create an engine.
+
+The first logger configuration in a process applies to later engines. To run a worker without log
+output or log files, pass `BacktestEngineConfig(bypass_logging=True)` to its first engine, before
+any other code initializes logging.

@@ -74,6 +74,7 @@ impl BacktestNode {
     ///
     /// Returns an error if:
     /// - This node has been disposed.
+    /// - The logging thread belongs to another process.
     /// - Building an engine from a config fails and
     ///   `BacktestRunConfig.raise_exception` is enabled for that config.
     #[pyo3(name = "build")]
@@ -97,6 +98,7 @@ impl BacktestNode {
     ///
     /// Returns an error if:
     /// - This node has been disposed.
+    /// - The logging thread belongs to another process when building an engine.
     /// - Building, data loading, or engine execution fails and
     ///   `BacktestRunConfig.raise_exception` is enabled for the run config.
     #[pyo3(name = "run")]

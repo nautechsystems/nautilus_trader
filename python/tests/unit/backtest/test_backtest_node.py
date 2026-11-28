@@ -18,6 +18,9 @@ Test backtest node behavior.
 
 from __future__ import annotations
 
+import subprocess
+import sys
+import textwrap
 from decimal import Decimal
 from pathlib import Path
 
@@ -93,6 +96,65 @@ def test_node_construction() -> None:
     config = BacktestRunConfig(venues=[venue], data=[data])
     node = BacktestNode([config])
     assert node is not None
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Exercises forked workers on Linux")
+def test_node_reports_inherited_logging_thread() -> None:
+    """
+    Test that the default run config reports inherited logger errors.
+    """
+    script = textwrap.dedent(
+        """
+        import multiprocessing
+
+        from nautilus_trader.backtest import BacktestEngine
+        from nautilus_trader.backtest import BacktestEngineConfig
+        from nautilus_trader.backtest import BacktestNode
+        from nautilus_trader.backtest import BacktestRunConfig
+        from nautilus_trader.backtest import BacktestVenueConfig
+        from nautilus_trader.common import LogLevel
+        from nautilus_trader.common import LoggerConfig
+
+
+        def run_node():
+            venue = BacktestVenueConfig(
+                name="SIM",
+                oms_type="NETTING",
+                account_type="CASH",
+                starting_balances=["1_000 USD"],
+            )
+            node = BacktestNode([BacktestRunConfig(venues=[venue], data=[])])
+            try:
+                node.run()
+            except RuntimeError as e:
+                return str(e)
+            raise AssertionError("Expected an error for the inherited logging thread")
+
+
+        config = BacktestEngineConfig(logging=LoggerConfig(stdout_level=LogLevel.OFF))
+        engine = BacktestEngine(config)
+        engine.dispose()
+        del engine
+
+        with multiprocessing.get_context("fork").Pool(1) as pool:
+            error = pool.apply_async(run_node).get(timeout=5)
+            assert error == (
+                "Logging was initialized in another process. "
+                "Use the 'spawn' multiprocessing start method"
+            ), error
+        """,
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        check=False,
+        text=True,
+        encoding="utf-8",
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_node_installs_configured_margin_model() -> None:
