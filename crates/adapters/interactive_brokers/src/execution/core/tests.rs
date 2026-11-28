@@ -1236,6 +1236,64 @@ fn order_notice_sub_200_error_rejects_pre_acceptance_order() {
 }
 
 #[rstest]
+#[case(354)]
+#[case(366)]
+fn order_notice_request_error_rejects_pre_acceptance_order(#[case] code: i32) {
+    let state = SubmitTrackingState::new();
+    let order_id = 7106;
+    let client_order_id = ClientOrderId::from("O-REQ-ERR");
+    let instrument_id = InstrumentId::new(Symbol::from("AAPL"), Venue::from("SMART"));
+    let account_id = AccountId::from("IB-001");
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    state.cache(
+        order_id,
+        client_order_id,
+        instrument_id,
+        TraderId::from("TRADER-REQ-ERR"),
+        StrategyId::from("STRATEGY-REQ-ERR"),
+    );
+
+    // ibapi 5.0 classifies these codes as `RequestError`, not `OrderRejection`.
+    let notice = Notice {
+        request_id: Some(order_id),
+        code,
+        message: "Requested market data is not subscribed".to_string(),
+        error_time: None,
+        advanced_order_reject_json: String::new(),
+    };
+    assert_eq!(notice.category(), ibapi::NoticeCategory::RequestError);
+
+    InteractiveBrokersExecutionClient::handle_order_notice(
+        &notice,
+        &state.0,
+        &exec_sender.into(),
+        UnixNanos::new(45),
+        account_id,
+        None,
+    )
+    .unwrap();
+
+    match exec_receiver.try_recv().unwrap() {
+        ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert_eq!(event.account_id, account_id);
+        }
+        event => panic!("Expected rejected order event, was {event:?}"),
+    }
+
+    assert!(exec_receiver.try_recv().is_err());
+    assert!(
+        state
+            .0
+            .lock()
+            .unwrap()
+            .active_orders
+            .get(&order_id)
+            .is_none()
+    );
+}
+
+#[rstest]
 fn order_notice_for_accepted_order_with_pending_modify_emits_modify_rejected() {
     let state = SubmitTrackingState::new();
     let order_id = 7106;

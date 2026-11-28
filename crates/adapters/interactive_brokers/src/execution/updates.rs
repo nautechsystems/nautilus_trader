@@ -631,7 +631,12 @@ impl InteractiveBrokersExecutionClient {
                 tracing::warn!("Received IB order notice: {notice}");
                 return Ok(());
             }
-            NoticeCategory::OrderRejection | NoticeCategory::Error => {}
+            // ibapi 5.0 classifies some codes (354 and 366 among them) as `RequestError` rather
+            // than `OrderRejection`. For an order id this client tracks they are handled like any
+            // other error, so an order IB never accepted is not left waiting.
+            NoticeCategory::OrderRejection
+            | NoticeCategory::Error
+            | NoticeCategory::RequestError => {}
             _ => {
                 tracing::warn!("Received unclassified IB order notice: {notice}");
                 return Ok(());
@@ -692,8 +697,10 @@ impl InteractiveBrokersExecutionClient {
         // ibapi classifies every code outside its informational ranges as `Error`, including
         // notices for orders IB keeps working (10349 sets the TIF from an order preset), so
         // only an order IB lists nowhere is rejected
-        if notice.category() == NoticeCategory::Error
-            && let Some(venue_ctx) = venue_ctx
+        if matches!(
+            notice.category(),
+            NoticeCategory::Error | NoticeCategory::RequestError
+        ) && let Some(venue_ctx) = venue_ctx
         {
             tracing::warn!(
                 "IB notice for submitted order {client_order_id}; checking whether IB lists it: {notice}"
