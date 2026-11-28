@@ -1464,6 +1464,11 @@ impl DataClient for InteractiveBrokersDataClient {
                     if let Err(e) = data_sender.send(DataEvent::Response(response)) {
                         tracing::error!("Failed to send instrument response: {e}");
                     }
+                } else {
+                    tracing::error!(
+                        "Fetched contract details for {instrument_id} but the provider has no \
+                         instrument under that ID, so no response is sent"
+                    );
                 }
             });
 
