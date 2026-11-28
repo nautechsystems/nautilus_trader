@@ -23,6 +23,8 @@ use nautilus_model::{
     instruments::{CurrencyPair, InstrumentAny},
     types::{Currency, Price, Quantity},
 };
+use serde::Deserialize;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 /// Channel-backed stand-in for an ibapi subscription; items arrive as data.
 pub(crate) struct ChannelSubscription<T>(tokio::sync::mpsc::UnboundedReceiver<Result<T, Error>>);
@@ -74,4 +76,71 @@ pub(crate) fn currency_pair(
         .build()
         .unwrap();
     InstrumentAny::from(pair)
+}
+
+#[derive(Deserialize)]
+pub(crate) struct IbExchange {
+    pub(crate) request: i32,
+    pub(crate) responses: Vec<Vec<u8>>,
+}
+
+pub(crate) async fn with_ib_replay<R>(
+    exchanges: Vec<IbExchange>,
+    run: impl AsyncFnOnce(std::sync::Arc<ibapi::Client>) -> R,
+) -> R {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+    let server = serve_ib_exchanges(listener, exchanges, done_rx);
+    let request = async {
+        let client = std::sync::Arc::new(
+            ibapi::Client::connect(&address.to_string(), 7)
+                .await
+                .unwrap(),
+        );
+        let result = run(std::sync::Arc::clone(&client)).await;
+        client.disconnect().await;
+        done_tx.send(()).unwrap();
+        result
+    };
+
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        let (result, ()) = tokio::join!(request, server);
+        result
+    })
+    .await
+    .unwrap()
+}
+
+pub(crate) async fn serve_ib_exchanges(
+    listener: tokio::net::TcpListener,
+    exchanges: Vec<IbExchange>,
+    done: tokio::sync::oneshot::Receiver<()>,
+) {
+    let (mut socket, _) = listener.accept().await.unwrap();
+    let mut magic = [0_u8; 4];
+    socket.read_exact(&mut magic).await.unwrap();
+    assert_eq!(magic, *b"API\0");
+    let _version = read_ib_frame(&mut socket).await;
+    let handshake = b"213\x0020260924 12:03:00 UTC\0";
+    socket.write_u32(handshake.len() as u32).await.unwrap();
+    socket.write_all(handshake).await.unwrap();
+    for exchange in exchanges {
+        let request = read_ib_frame(&mut socket).await;
+        let message_id = i32::from_be_bytes(request[..4].try_into().unwrap());
+        assert_eq!(message_id, exchange.request);
+
+        for response in exchange.responses {
+            socket.write_all(&response).await.unwrap();
+        }
+    }
+
+    done.await.unwrap();
+}
+
+async fn read_ib_frame(socket: &mut tokio::net::TcpStream) -> Vec<u8> {
+    let length = socket.read_u32().await.unwrap();
+    let mut frame = vec![0; length as usize];
+    socket.read_exact(&mut frame).await.unwrap();
+    frame
 }

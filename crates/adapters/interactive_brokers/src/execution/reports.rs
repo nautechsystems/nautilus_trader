@@ -842,11 +842,12 @@ impl<'a> FillReportCollector<'a> {
 mod tests {
     use nautilus_model::{enums::ContingencyType, instruments::stubs::equity_aapl};
     use rstest::rstest;
-    use serde::Deserialize;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use super::*;
-    use crate::config::InteractiveBrokersInstrumentProviderConfig;
+    use crate::{
+        config::InteractiveBrokersInstrumentProviderConfig,
+        stubs::{IbExchange, serve_ib_exchanges},
+    };
 
     #[rstest]
     #[tokio::test]
@@ -929,7 +930,7 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let (done_tx, done_rx) = tokio::sync::oneshot::channel();
-        let server = tokio::spawn(serve_report_exchanges(listener, exchanges, done_rx));
+        let server = tokio::spawn(serve_ib_exchanges(listener, exchanges, done_rx));
 
         let config = InteractiveBrokersInstrumentProviderConfig::default();
         let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
@@ -1051,7 +1052,7 @@ mod tests {
             }
         }
 
-        exchanges.push(ReportExchange {
+        exchanges.push(IbExchange {
             request: exchanges[1].request,
             responses: exchanges[1].responses.clone(),
         });
@@ -1059,7 +1060,7 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let (done_tx, done_rx) = tokio::sync::oneshot::channel();
-        let server = tokio::spawn(serve_report_exchanges(listener, exchanges, done_rx));
+        let server = tokio::spawn(serve_ib_exchanges(listener, exchanges, done_rx));
         let config = InteractiveBrokersInstrumentProviderConfig::default();
         let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
         let instrument = equity_aapl();
@@ -1130,13 +1131,7 @@ mod tests {
         ZeroQuantity,
     }
 
-    #[derive(Deserialize)]
-    struct ReportExchange {
-        request: i32,
-        responses: Vec<Vec<u8>>,
-    }
-
-    fn report_exchanges() -> Vec<ReportExchange> {
+    fn report_exchanges() -> Vec<IbExchange> {
         serde_json::from_str(include_str!("../../test_data/order_report_responses.json")).unwrap()
     }
 
@@ -1147,38 +1142,5 @@ mod tests {
             .position(|bytes| bytes == original)
             .unwrap();
         frame[offset..offset + original.len()].copy_from_slice(replacement);
-    }
-
-    async fn serve_report_exchanges(
-        listener: tokio::net::TcpListener,
-        exchanges: Vec<ReportExchange>,
-        done: tokio::sync::oneshot::Receiver<()>,
-    ) {
-        let (mut socket, _) = listener.accept().await.unwrap();
-        let mut magic = [0_u8; 4];
-        socket.read_exact(&mut magic).await.unwrap();
-        assert_eq!(magic, *b"API\0");
-        let _version = read_ib_frame(&mut socket).await;
-        let handshake = b"213\x0020260924 12:03:00 UTC\0";
-        socket.write_u32(handshake.len() as u32).await.unwrap();
-        socket.write_all(handshake).await.unwrap();
-        for exchange in exchanges {
-            let request = read_ib_frame(&mut socket).await;
-            let message_id = i32::from_be_bytes(request[..4].try_into().unwrap());
-            assert_eq!(message_id, exchange.request);
-
-            for response in exchange.responses {
-                socket.write_all(&response).await.unwrap();
-            }
-        }
-
-        done.await.unwrap();
-    }
-
-    async fn read_ib_frame(socket: &mut tokio::net::TcpStream) -> Vec<u8> {
-        let length = socket.read_u32().await.unwrap();
-        let mut frame = vec![0; length as usize];
-        socket.read_exact(&mut frame).await.unwrap();
-        frame
     }
 }

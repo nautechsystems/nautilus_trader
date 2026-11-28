@@ -139,8 +139,14 @@ pub fn parse_trade_tick(
     .map_err(|e| anyhow::anyhow!("invalid trade tick: {e}"))
 }
 
+/// Returns whether a tick failed to parse only because its size is finer than the instrument's
+/// size precision, which the adapter drops by design.
+pub(super) fn is_expected_tick_drop(e: &anyhow::Error) -> bool {
+    e.is::<QuantityPrecisionError>()
+}
+
 pub(super) fn log_tick_parse_error(kind: &str, instrument_id: InstrumentId, e: &anyhow::Error) {
-    if e.is::<QuantityPrecisionError>() {
+    if is_expected_tick_drop(e) {
         tracing::debug!("Dropping IB {kind} tick for {instrument_id}: {e}");
     } else {
         tracing::warn!("Failed to parse IB {kind} tick for {instrument_id}: {e}");
@@ -438,6 +444,22 @@ mod tests {
     fn test_invalid_quantities_are_not_expected_precision_drops(#[case] size: f64) {
         let e = checked_quantity(size, 0).unwrap_err();
         assert!(!e.is::<QuantityPrecisionError>());
+    }
+
+    #[rstest]
+    fn test_precision_drop_is_an_expected_tick_drop() {
+        let e = checked_quantity(0.5, 0).unwrap_err();
+
+        assert!(is_expected_tick_drop(&e));
+    }
+
+    #[rstest]
+    #[case(-1.0)]
+    #[case(f64::NAN)]
+    fn test_invalid_quantity_is_not_an_expected_tick_drop(#[case] size: f64) {
+        let e = checked_quantity(size, 0).unwrap_err();
+
+        assert!(!is_expected_tick_drop(&e));
     }
 
     #[rstest]

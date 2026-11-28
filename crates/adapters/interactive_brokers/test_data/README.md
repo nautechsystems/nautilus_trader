@@ -24,3 +24,13 @@ is synthetic. The terminal-response negative case changes the first exit's statu
 This fixture proves collection, filtering, and linking against the pinned client. It does not
 establish conformance with real venue payloads. Captured venue responses are still required to
 meet the adapter guide's valid-fixture sourcing requirement and to validate the full wire format.
+
+`historical_bar_responses.json` contains synthetic `HistoricalData` and `HistoricalDataEnd` frames built
+from the same pinned protobuf definitions. The replay covers two one-second bar requests from 12:00 to 12:40 UTC.
+Both pages contain the bar opening at 12:15. IB can return earlier trading seconds to cover
+a duration across a gap. Each page ends with its own `HistoricalDataEnd`.
+
+`option_chain_responses.json` uses synthetic frames from the pinned protobuf definitions to load an AAPL put
+expiring on January 15, 2027. `futures_option_chain_responses.json` qualifies a continuous ES future, returns the
+dated ESH27 contract for the two futures queries, and returns its January futures option. The regression tests
+vary the response sequence to cover missing contracts and interrupted downloads.

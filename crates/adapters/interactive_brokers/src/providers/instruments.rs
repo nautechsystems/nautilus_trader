@@ -22,7 +22,7 @@ use dashmap::DashMap;
 use ibapi::{
     contracts::{ComboLegOpenClose, Contract, Exchange, LegAction, SecurityType, Symbol},
     prelude::StreamExt,
-    subscriptions::SubscriptionItem,
+    subscriptions::{Drained, SubscriptionItem},
 };
 use jiff::{Span, Timestamp, tz::Offset};
 use nautilus_common::{cache::Cache, config::ConfigResult};
@@ -150,6 +150,15 @@ impl StartupInstrumentLoader for IbStartupInstrumentLoader<'_> {
             .load_contract_spec(self.client, &configured.contract, spec.as_ref())
             .await
     }
+}
+
+/// The instruments loaded from an IB contract spec, and what failed while loading them.
+#[derive(Debug, Default)]
+pub(crate) struct ContractSpecLoad {
+    /// The instruments loaded.
+    pub(crate) instrument_ids: Vec<InstrumentId>,
+    /// What failed without failing the whole load.
+    pub(crate) failures: Vec<String>,
 }
 
 impl InteractiveBrokersInstrumentProvider {
@@ -838,7 +847,55 @@ impl InteractiveBrokersInstrumentProvider {
         contract: &Contract,
         spec: Option<&serde_json::Value>,
     ) -> anyhow::Result<Vec<InstrumentId>> {
-        let mut loaded_ids = Vec::new();
+        self.load_contract_spec_inner(client, contract, spec, false)
+            .await
+            .map(|load| load.instrument_ids)
+    }
+
+    /// Loads the instruments of `contract` as [`Self::load_contract_spec`] does, and also returns
+    /// what failed along the way without failing the whole load, such as an option expiry whose
+    /// contracts IB did not return.
+    pub(crate) async fn load_contract_spec_with_failures(
+        &self,
+        client: &ibapi::Client,
+        contract: &Contract,
+        spec: Option<&serde_json::Value>,
+    ) -> anyhow::Result<ContractSpecLoad> {
+        self.load_contract_spec_inner(client, contract, spec, true)
+            .await
+    }
+
+    async fn load_contract_spec_inner(
+        &self,
+        client: &ibapi::Client,
+        contract: &Contract,
+        spec: Option<&serde_json::Value>,
+        allow_partial: bool,
+    ) -> anyhow::Result<ContractSpecLoad> {
+        let mut load = ContractSpecLoad::default();
+        let result = self
+            .load_contract_spec_into(client, contract, spec, &mut load, allow_partial)
+            .await;
+
+        if let Err(e) = result {
+            if !allow_partial || load.instrument_ids.is_empty() {
+                return Err(e);
+            }
+            load.failures.push(format!("{e:#}"));
+        }
+        load.instrument_ids.sort_unstable();
+        load.instrument_ids.dedup();
+        Ok(load)
+    }
+
+    async fn load_contract_spec_into(
+        &self,
+        client: &ibapi::Client,
+        contract: &Contract,
+        spec: Option<&serde_json::Value>,
+        load: &mut ContractSpecLoad,
+        allow_partial: bool,
+    ) -> anyhow::Result<()> {
         let build_futures_chain = json_opt_bool(spec, KEY_BUILD_FUTURES_CHAIN)
             .or(self.config.build_futures_chain)
             .unwrap_or(false);
@@ -853,63 +910,34 @@ impl InteractiveBrokersInstrumentProvider {
         let chain_contract = if contract.security_type == SecurityType::ContinuousFuture
             && (build_futures_chain || build_options_chain)
         {
-            match request_contract_details(client, contract).await {
-                Ok(details_vec) => details_vec
-                    .into_iter()
-                    .next().map_or_else(|| contract.clone(), |details| {
-                        tracing::debug!(
-                            "Qualified continuous future contract {}.{} as local_symbol={} trading_class={} con_id={}",
-                            contract.symbol.as_str(),
-                            contract.exchange.as_str(),
-                            details.contract.local_symbol.as_str(),
-                            details.contract.trading_class.as_str(),
-                            details.contract.contract_id,
-                        );
-                        details.contract
-                    }),
-                Err(e) if e.is_connection_lost() => {
-                    return Err(e).context("Failed to qualify continuous future contract");
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to qualify continuous future contract {:?}: {}",
-                        contract,
-                        e
-                    );
-                    contract.clone()
-                }
-            }
+            qualify_continuous_future(
+                client,
+                contract,
+                allow_partial.then_some(&mut load.failures),
+            )
+            .await?
         } else {
             contract.clone()
         };
 
-        let chain_trading_class = (!chain_contract.trading_class.is_empty())
-            .then_some(chain_contract.trading_class.as_str());
+        let futures_contract = futures_chain_contract(
+            chain_contract.symbol.as_str(),
+            chain_contract.exchange.as_str(),
+            chain_contract.currency.as_str(),
+            chain_contract.trading_class.as_str(),
+            contract.security_type == SecurityType::ContinuousFuture,
+        );
 
         if build_futures_chain {
-            let loaded = self
-                .fetch_futures_chain(
-                    client,
-                    chain_contract.symbol.as_str(),
-                    chain_contract.exchange.as_str(),
-                    chain_contract.currency.as_str(),
-                    chain_trading_class,
-                    contract.security_type == SecurityType::ContinuousFuture,
-                    min_expiry_days,
-                    max_expiry_days,
-                )
-                .await?;
-            tracing::debug!(
-                "Loaded {} futures instruments for chain request {}.{}",
-                loaded,
-                chain_contract.symbol.as_str(),
-                chain_contract.exchange.as_str(),
-            );
-            loaded_ids.extend(self.cached_contract_ids_for(
-                chain_contract.symbol.as_str(),
-                chain_contract.exchange.as_str(),
-                &[SecurityType::Future],
-            ));
+            self.fetch_futures_chain_into(
+                client,
+                &futures_contract,
+                min_expiry_days,
+                max_expiry_days,
+                load,
+                allow_partial,
+            )
+            .await?;
         }
 
         if build_options_chain {
@@ -919,51 +947,73 @@ impl InteractiveBrokersInstrumentProvider {
             // underlying resolves to (SPY requested on SMART resolves to ARCA)
             let options_exchange = options_chain_exchange
                 .as_deref()
-                .unwrap_or_else(|| contract.exchange.as_str());
+                .or_else(|| (!contract.exchange.is_empty()).then_some(contract.exchange.as_str()));
             let mut underlyings = Vec::new();
 
             if contract.security_type == SecurityType::ContinuousFuture {
                 // The expiry window bounds the options, not their underlying futures: a weekly
                 // ES option expiring this week belongs to a future that expires months later
-                self.fetch_futures_chain(
+                let mut futures = ContractSpecLoad::default();
+                self.fetch_futures_chain_into(
                     client,
-                    chain_contract.symbol.as_str(),
-                    chain_contract.exchange.as_str(),
-                    chain_contract.currency.as_str(),
-                    chain_trading_class,
-                    true,
+                    &futures_contract,
                     Some(0),
                     Some(u32::MAX),
+                    &mut futures,
+                    allow_partial,
                 )
                 .await?;
-
+                load.failures.append(&mut futures.failures);
+                futures.instrument_ids.sort_unstable();
+                futures.instrument_ids.dedup();
                 underlyings.extend(
-                    self.cached_contracts_for(
-                        contract.symbol.as_str(),
-                        chain_contract.exchange.as_str(),
-                        &[SecurityType::Future],
-                    )
-                    .into_iter()
-                    .map(|(_, contract)| contract),
+                    futures
+                        .instrument_ids
+                        .iter()
+                        .filter_map(|id| self.instrument_id_to_ib_contract(id)),
                 );
             } else if let Some(instrument) = self.get_instrument(client, contract).await? {
                 let instrument_id = instrument.id();
-                loaded_ids.push(instrument_id);
+                load.instrument_ids.push(instrument_id);
                 if let Some(underlying) = self.instrument_id_to_ib_contract(&instrument_id) {
                     underlyings.push(underlying);
                 }
             }
 
+            if underlyings.is_empty() {
+                load.failures.push(format!(
+                    "No underlying contract to build the option chain of {}.{}",
+                    contract.symbol.as_str(),
+                    contract.exchange.as_str(),
+                ));
+            }
+
             for underlying in underlyings {
-                let loaded = self
-                    .fetch_option_chain_by_range(
+                let options_exchange =
+                    options_exchange.unwrap_or_else(|| underlying.exchange.as_str());
+                let loaded = match self
+                    .fetch_option_chain_into(
                         client,
                         &underlying,
                         expiry_min.as_deref(),
                         expiry_max.as_deref(),
                         Some(options_exchange),
+                        load,
                     )
-                    .await?;
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "Failed to build option chain for {}.{options_exchange}",
+                            underlying.symbol.as_str()
+                        )
+                    }) {
+                    Ok(count) => count,
+                    Err(e) if allow_partial => {
+                        load.failures.push(format!("{e:#}"));
+                        continue;
+                    }
+                    Err(e) => return Err(e),
+                };
                 tracing::debug!(
                     "Loaded {} option instruments for chain request {}.{}",
                     loaded,
@@ -971,61 +1021,16 @@ impl InteractiveBrokersInstrumentProvider {
                     underlying.exchange.as_str(),
                 );
             }
-
-            loaded_ids.extend(self.cached_contract_ids_for(
-                contract.symbol.as_str(),
-                options_exchange,
-                &[SecurityType::Option, SecurityType::FuturesOption],
-            ));
         }
 
         if !build_futures_chain
             && !build_options_chain
             && let Some(instrument) = self.get_instrument(client, contract).await?
         {
-            loaded_ids.push(instrument.id());
+            load.instrument_ids.push(instrument.id());
         }
 
-        loaded_ids.sort_unstable();
-        loaded_ids.dedup();
-        Ok(loaded_ids)
-    }
-
-    fn cached_contract_ids_for(
-        &self,
-        symbol: &str,
-        exchange: &str,
-        security_types: &[SecurityType],
-    ) -> Vec<InstrumentId> {
-        self.cached_contracts_for(symbol, exchange, security_types)
-            .into_iter()
-            .map(|(instrument_id, _)| instrument_id)
-            .collect()
-    }
-
-    fn cached_contracts_for(
-        &self,
-        symbol: &str,
-        exchange: &str,
-        security_types: &[SecurityType],
-    ) -> Vec<(InstrumentId, Contract)> {
-        self.contracts
-            .iter()
-            .filter_map(|entry| {
-                let instrument_id = *entry.key();
-                let contract = entry.value();
-                let exchange_matches =
-                    exchange.is_empty() || contract.exchange.as_str() == exchange;
-                if contract.symbol.as_str() == symbol
-                    && exchange_matches
-                    && security_types.contains(&contract.security_type)
-                {
-                    Some((instrument_id, contract.clone()))
-                } else {
-                    None
-                }
-            })
-            .collect()
+        Ok(())
     }
 
     /// Convert an instrument ID to IB contract details.
@@ -1241,6 +1246,31 @@ impl InteractiveBrokersInstrumentProvider {
         force_instrument_update: bool,
         filters: Option<HashMap<String, String>>,
     ) -> anyhow::Result<bool> {
+        self.fetch_spread_instrument_with_legs(
+            client,
+            spread_instrument_id,
+            force_instrument_update,
+            filters,
+            false,
+        )
+        .await
+    }
+
+    /// Fetches and caches a spread instrument as [`Self::fetch_spread_instrument`] does, and with
+    /// `require_fresh_legs` fails unless TWS supplies the definition of every leg, rather than
+    /// building the spread from a leg's cached definition.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if parsing or loading fails.
+    pub(crate) async fn fetch_spread_instrument_with_legs(
+        &self,
+        client: &ibapi::Client,
+        spread_instrument_id: InstrumentId,
+        force_instrument_update: bool,
+        filters: Option<HashMap<String, String>>,
+        require_fresh_legs: bool,
+    ) -> anyhow::Result<bool> {
         // Check if already cached (unless forcing update)
         if !force_instrument_update && self.instruments.contains_key(&spread_instrument_id) {
             tracing::debug!("Spread instrument {} already cached", spread_instrument_id);
@@ -1273,14 +1303,19 @@ impl InteractiveBrokersInstrumentProvider {
             );
 
             // Load the individual leg instrument
-            self.fetch_contract_details(
-                client,
-                *leg_instrument_id,
-                force_instrument_update,
-                filters.clone(),
-            )
-            .await
-            .with_context(|| format!("Failed to load leg instrument: {leg_instrument_id}"))?;
+            let loaded = self
+                .fetch_contract_details_loaded(
+                    client,
+                    *leg_instrument_id,
+                    force_instrument_update,
+                    filters.clone(),
+                )
+                .await
+                .with_context(|| format!("Failed to load leg instrument: {leg_instrument_id}"))?;
+
+            if require_fresh_legs && !loaded.contains(leg_instrument_id) {
+                anyhow::bail!("Forced refresh did not load leg {leg_instrument_id} from TWS");
+            }
 
             // Get the contract details for this leg
             let leg_details = self
@@ -1444,6 +1479,135 @@ async fn request_contract_details(
     Ok(details_vec)
 }
 
+// Both finite subscriptions can yield good rows before an error or channel closure. A lag
+// notice means rows were lost even when TWS subsequently sends its native end marker.
+async fn collect_chain_rows<T, S, F>(
+    mut stream: S,
+    finish: impl FnOnce(S) -> F,
+) -> (Vec<T>, Result<(), ibapi::Error>)
+where
+    S: futures_util::Stream<Item = Result<SubscriptionItem<T>, ibapi::Error>> + Unpin,
+    F: Future<Output = Result<Drained, ibapi::Error>>,
+{
+    let mut rows = Vec::new();
+    let mut lag = None;
+
+    while let Some(item) = stream.next().await {
+        match item {
+            Ok(SubscriptionItem::Data(row)) => rows.push(row),
+            Ok(SubscriptionItem::Notice(notice)) if notice.code == ibapi::SUBSCRIPTION_LAG_CODE => {
+                lag = Some(ibapi::Error::Notice(notice));
+            }
+            Ok(SubscriptionItem::Notice(notice)) => {
+                tracing::debug!("IB option chain notice: {notice}");
+            }
+            Err(e) => return (rows, Err(e)),
+        }
+    }
+
+    let completion = match finish(stream).await {
+        Ok(Drained::Ended) => lag.map_or(Ok(()), Err),
+        Ok(Drained::Unconfirmed) => Err(ibapi::Error::UnexpectedEndOfStream),
+        Ok(Drained::Rejected(notice)) => Err(ibapi::Error::Notice(notice)),
+        Err(e) => Err(e),
+    };
+    (rows, completion)
+}
+
+async fn collect_chain_contract_details(
+    client: &ibapi::Client,
+    contract: &Contract,
+) -> (
+    Vec<ibapi::contracts::ContractDetails>,
+    Result<(), ibapi::Error>,
+) {
+    let stream = match client.contract_details_stream(contract).subscribe().await {
+        Ok(stream) => stream,
+        Err(e) => return (Vec::new(), Err(e)),
+    };
+    let (mut rows, completion) = collect_chain_rows(stream, |stream| {
+        stream.cancel_and_drain(tokio::time::Instant::now())
+    })
+    .await;
+    rows.iter_mut().for_each(split_last_trade_date);
+    (rows, completion)
+}
+
+async fn qualify_continuous_future(
+    client: &ibapi::Client,
+    contract: &Contract,
+    request_failures: Option<&mut Vec<String>>,
+) -> anyhow::Result<Contract> {
+    let details = if let Some(failures) = request_failures {
+        let (rows, completion) = collect_chain_contract_details(client, contract).await;
+        let qualification = || {
+            format!(
+                "Failed to qualify continuous future conId={} symbol='{}' exchange='{}'",
+                contract.contract_id,
+                contract.symbol.as_str(),
+                contract.exchange.as_str(),
+            )
+        };
+        let Some(details) = rows.into_iter().find(|details| {
+            contract.contract_id == 0 || details.contract.contract_id == contract.contract_id
+        }) else {
+            completion.with_context(qualification)?;
+            anyhow::bail!("{}: no matching contract details", qualification());
+        };
+
+        if let Err(e) = completion {
+            failures.push(format!("{}: {e}", qualification()));
+        }
+        details
+    } else {
+        // Startup also accepts an unqualified continuous future as a chain query
+        match request_contract_details(client, contract).await {
+            Ok(rows) => {
+                let Some(details) = rows.into_iter().next() else {
+                    return Ok(contract.clone());
+                };
+                details
+            }
+            Err(e) if e.is_connection_lost() => {
+                return Err(e).context("Failed to qualify continuous future contract");
+            }
+            Err(e) => {
+                tracing::warn!("Failed to qualify continuous future contract {contract:?}: {e}");
+                return Ok(contract.clone());
+            }
+        }
+    };
+
+    tracing::debug!(
+        "Qualified continuous future contract {}.{} as local_symbol={} trading_class={} con_id={}",
+        contract.symbol.as_str(),
+        contract.exchange.as_str(),
+        details.contract.local_symbol.as_str(),
+        details.contract.trading_class.as_str(),
+        details.contract.contract_id,
+    );
+    Ok(details.contract)
+}
+
+fn futures_chain_contract(
+    symbol: &str,
+    exchange: &str,
+    currency: &str,
+    trading_class: &str,
+    include_expired: bool,
+) -> Contract {
+    Contract {
+        security_type: SecurityType::Future,
+        symbol: Symbol::from(symbol),
+        exchange: Exchange::from(exchange),
+        currency: ibapi::contracts::Currency::from(currency),
+        trading_class: trading_class.to_string(),
+        strike: f64::MAX,
+        include_expired,
+        ..Default::default()
+    }
+}
+
 fn json_opt_bool(spec: Option<&serde_json::Value>, key: &str) -> Option<bool> {
     spec.and_then(|value| value.get(key))
         .and_then(serde_json::Value::as_bool)
@@ -1537,6 +1701,25 @@ impl InteractiveBrokersInstrumentProvider {
         force_instrument_update: bool,
         filters: Option<HashMap<String, String>>,
     ) -> anyhow::Result<()> {
+        self.fetch_contract_details_loaded(client, instrument_id, force_instrument_update, filters)
+            .await
+            .map(|_| ())
+    }
+
+    /// Fetches and caches contract details for `instrument_id` as
+    /// [`Self::fetch_contract_details`] does, and returns the instruments TWS supplied a
+    /// definition for, or `instrument_id` alone when its cached definition is kept.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if fetching fails.
+    pub(crate) async fn fetch_contract_details_loaded(
+        &self,
+        client: &ibapi::Client,
+        instrument_id: InstrumentId,
+        force_instrument_update: bool,
+        filters: Option<HashMap<String, String>>,
+    ) -> anyhow::Result<Vec<InstrumentId>> {
         if !force_instrument_update
             && self.instruments.contains_key(&instrument_id)
             && (self.contract_details.contains_key(&instrument_id)
@@ -1546,7 +1729,7 @@ impl InteractiveBrokersInstrumentProvider {
                 "Instrument {} already cached, skipping fetch",
                 instrument_id
             );
-            return Ok(());
+            return Ok(vec![instrument_id]);
         }
 
         // Convert instrument ID to IB contract
@@ -1596,7 +1779,7 @@ impl InteractiveBrokersInstrumentProvider {
                 );
             }
 
-            return Ok(());
+            return Ok(Vec::new());
         }
 
         let loaded_ids = self.process_contract_details(
@@ -1615,7 +1798,7 @@ impl InteractiveBrokersInstrumentProvider {
             );
         }
 
-        Ok(())
+        Ok(loaded_ids)
     }
 
     fn process_contract_details(
@@ -1666,17 +1849,9 @@ impl InteractiveBrokersInstrumentProvider {
             .instrument_id_from_contract(&details.contract, resolved_venue)
             .context("Failed to convert IB contract to instrument ID")?;
 
-        let instrument = match self.parse_contract_detail(details, instrument_id) {
-            Ok(instrument) => instrument,
-            Err(e) => {
-                tracing::warn!(
-                    "Failed to parse IB contract details for {}: {}",
-                    instrument_id,
-                    e
-                );
-                return Ok(None);
-            }
-        };
+        let instrument = self
+            .parse_contract_detail(details, instrument_id)
+            .with_context(|| format!("Failed to parse IB contract details for {instrument_id}"))?;
 
         if !self.passes_filter_callable(&instrument)? {
             return Ok(None);
@@ -1904,6 +2079,26 @@ impl InteractiveBrokersInstrumentProvider {
         expiry_max: Option<&str>,
         option_chain_exchange: Option<&str>,
     ) -> anyhow::Result<usize> {
+        self.fetch_option_chain_into(
+            client,
+            underlying,
+            expiry_min,
+            expiry_max,
+            option_chain_exchange,
+            &mut ContractSpecLoad::default(),
+        )
+        .await
+    }
+
+    async fn fetch_option_chain_into(
+        &self,
+        client: &ibapi::Client,
+        underlying: &Contract,
+        expiry_min: Option<&str>,
+        expiry_max: Option<&str>,
+        option_chain_exchange: Option<&str>,
+        load: &mut ContractSpecLoad,
+    ) -> anyhow::Result<usize> {
         let exchange = option_chain_exchange.unwrap_or_else(|| underlying.exchange.as_str());
         tracing::debug!(
             "Building option chain for {}.{} (sec_type={:?}, contract_id={}, expiry_min={:?}, expiry_max={:?}, config_min_days={:?}, config_max_days={:?})",
@@ -1931,7 +2126,7 @@ impl InteractiveBrokersInstrumentProvider {
             option_chain_request = option_chain_request.exchange(exchange);
         }
 
-        let mut option_chain_stream = option_chain_request
+        let option_chain_stream = option_chain_request
             .subscribe()
             .await
             .context("Failed to request option chain from IB")?;
@@ -1944,66 +2139,63 @@ impl InteractiveBrokersInstrumentProvider {
         // Collect all expirations from the metadata
         let mut all_expirations = Vec::new();
 
-        while let Some(result) = option_chain_stream.next().await {
-            match result {
-                Ok(SubscriptionItem::Data(chain)) => {
-                    tracing::debug!(
-                        "Received option chain metadata exchange={} trading_class={} expirations={} strikes={}",
-                        chain.exchange,
-                        chain.trading_class,
-                        chain.expirations.len(),
-                        chain.strikes.len(),
-                    );
+        let (chains, completion) = collect_chain_rows(option_chain_stream, |stream| {
+            stream.cancel_and_drain(tokio::time::Instant::now())
+        })
+        .await;
 
-                    if chain.exchange != exchange {
-                        continue;
+        if let Err(e) = completion {
+            let failure =
+                format!("Failed to receive option chain expirations for {symbol}.{exchange}: {e}");
+            tracing::warn!("{failure}");
+            load.failures.push(failure);
+        }
+
+        for chain in chains {
+            tracing::debug!(
+                "Received option chain metadata exchange={} trading_class={} expirations={} strikes={}",
+                chain.exchange,
+                chain.trading_class,
+                chain.expirations.len(),
+                chain.strikes.len(),
+            );
+
+            if chain.exchange != exchange {
+                continue;
+            }
+
+            for expiration in &chain.expirations {
+                // Filter by expiry date string if specified
+                let date_filter_pass = match (expiry_min, expiry_max) {
+                    (Some(min), Some(max)) => {
+                        expiration.as_str() >= min && expiration.as_str() <= max
                     }
+                    (Some(min), None) => expiration.as_str() >= min,
+                    (None, Some(max)) => expiration.as_str() <= max,
+                    (None, None) => true,
+                };
 
-                    for expiration in &chain.expirations {
-                        // Filter by expiry date string if specified
-                        let date_filter_pass = match (expiry_min, expiry_max) {
-                            (Some(min), Some(max)) => {
-                                expiration.as_str() >= min && expiration.as_str() <= max
-                            }
-                            (Some(min), None) => expiration.as_str() >= min,
-                            (None, Some(max)) => expiration.as_str() <= max,
-                            (None, None) => true,
-                        };
+                // Filter by expiry days from config if specified
+                let days_filter_pass = {
+                    let expiry_ns =
+                        expiry_timestring_to_unix_nanos(expiration.as_str(), None).unwrap_or(now);
+                    let days_until_expiry = (expiry_ns.as_u64().saturating_sub(now.as_u64()))
+                        / (24 * 60 * 60 * 1_000_000_000);
 
-                        // Filter by expiry days from config if specified
-                        let days_filter_pass = {
-                            let expiry_ns =
-                                expiry_timestring_to_unix_nanos(expiration.as_str(), None)
-                                    .unwrap_or(now);
-                            let days_until_expiry =
-                                (expiry_ns.as_u64().saturating_sub(now.as_u64()))
-                                    / (24 * 60 * 60 * 1_000_000_000);
+                    let min_days_ok = self
+                        .config
+                        .min_expiry_days
+                        .is_none_or(|min| days_until_expiry >= min as u64);
+                    let max_days_ok = self
+                        .config
+                        .max_expiry_days
+                        .is_none_or(|max| days_until_expiry <= max as u64);
 
-                            let min_days_ok = self
-                                .config
-                                .min_expiry_days
-                                .is_none_or(|min| days_until_expiry >= min as u64);
-                            let max_days_ok = self
-                                .config
-                                .max_expiry_days
-                                .is_none_or(|max| days_until_expiry <= max as u64);
+                    min_days_ok && max_days_ok
+                };
 
-                            min_days_ok && max_days_ok
-                        };
-
-                        if date_filter_pass
-                            && days_filter_pass
-                            && !all_expirations.contains(expiration)
-                        {
-                            all_expirations.push(expiration.clone());
-                        }
-                    }
-                }
-                Ok(SubscriptionItem::Notice(notice)) => {
-                    tracing::debug!("Received option chain notice: {notice:?}");
-                }
-                Err(e) => {
-                    tracing::warn!("Error receiving option chain metadata: {e}");
+                if date_filter_pass && days_filter_pass && !all_expirations.contains(expiration) {
+                    all_expirations.push(expiration.clone());
                 }
             }
         }
@@ -2054,46 +2246,53 @@ impl InteractiveBrokersInstrumentProvider {
                 last_trade_date: None,
             };
 
-            match request_contract_details(client, &option_contract).await {
-                Ok(details_vec) => {
-                    tracing::debug!(
-                        "Received {} raw option contract details for {}.{} expiry {}",
-                        details_vec.len(),
-                        underlying.symbol.as_str(),
-                        exchange,
-                        expiration,
-                    );
+            let (rows, completion) = collect_chain_contract_details(client, &option_contract).await;
+            let mut matched_underlying = false;
 
-                    for details in details_vec {
-                        // Filter by underlying contract ID
-                        if details.under_contract_id != underlying.contract_id {
-                            continue;
-                        }
+            for details in rows {
+                if details.under_contract_id != underlying.contract_id {
+                    continue;
+                }
 
-                        let contract_id = details.contract.contract_id;
+                matched_underlying = true;
+                let contract_id = details.contract.contract_id;
+                if let Some(id) = self.get_instrument_id_by_contract_id(contract_id)
+                    && self.instruments.contains_key(&id)
+                {
+                    load.instrument_ids.push(id);
+                    continue;
+                }
 
-                        if self.contract_id_to_instrument_id.contains_key(&contract_id) {
-                            continue;
-                        }
-
-                        match self.process_contract_detail(&details, None, false) {
-                            Ok(Some(_instrument_id)) => {
-                                total_loaded += 1;
-                            }
-                            Ok(None) => {}
-                            Err(e) => {
-                                tracing::warn!("Failed to parse option instrument: {}", e);
-                            }
-                        }
+                match self.process_contract_detail(&details, None, false) {
+                    Ok(Some(id)) => {
+                        total_loaded += 1;
+                        load.instrument_ids.push(id);
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        let failure = format!(
+                            "Failed to load option {contract_id} of {symbol}.{exchange} expiry {expiration}: {e:#}"
+                        );
+                        tracing::warn!("{failure}");
+                        load.failures.push(failure);
                     }
                 }
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to fetch contract details for expiration {}: {}",
-                        expiration,
-                        e
-                    );
-                }
+            }
+
+            let failure = match completion {
+                Err(e) => Some(format!(
+                    "Failed to fetch option contract details for {symbol}.{exchange} expiry {expiration}: {e}"
+                )),
+                Ok(()) if !matched_underlying => Some(format!(
+                    "No option contract details for {symbol}.{exchange} expiry {expiration} matched underlying {}",
+                    underlying.contract_id
+                )),
+                Ok(()) => None,
+            };
+
+            if let Some(failure) = failure {
+                tracing::warn!("{failure}");
+                load.failures.push(failure);
             }
         }
 
@@ -2139,66 +2338,57 @@ impl InteractiveBrokersInstrumentProvider {
         min_expiry_days: Option<u32>,
         max_expiry_days: Option<u32>,
     ) -> anyhow::Result<usize> {
-        tracing::debug!(
-            "Building futures chain for {}.{} (currency={}, trading_class={:?}, include_expired={}, min_days={:?}, max_days={:?}, config_min_days={:?}, config_max_days={:?})",
+        let contract = futures_chain_contract(
             symbol,
             exchange,
             currency,
-            trading_class,
+            trading_class.unwrap_or_default(),
             include_expired,
+        );
+        self.fetch_futures_chain_into(
+            client,
+            &contract,
             min_expiry_days,
             max_expiry_days,
-            self.config.min_expiry_days,
-            self.config.max_expiry_days,
-        );
+            &mut ContractSpecLoad::default(),
+            false,
+        )
+        .await
+    }
 
-        // Build futures contract for lookup
-        let futures_contract = Contract {
-            contract_id: 0,
-            symbol: Symbol::from(symbol.to_string()),
-            security_type: SecurityType::Future,
-            last_trade_date_or_contract_month: String::new(),
-            strike: f64::MAX,
-            right: None,
-            multiplier: String::new(),
-            exchange: Exchange::from(exchange.to_string()),
-            currency: ibapi::contracts::Currency::from(currency.to_string()),
-            local_symbol: String::new(),
-            primary_exchange: Exchange::from(""),
-            trading_class: trading_class.unwrap_or_default().to_string(),
-            include_expired,
-            security_id_type: None,
-            security_id: String::new(),
-            combo_legs_description: String::new(),
-            combo_legs: Vec::new(),
-            delta_neutral_contract: None,
-            issuer_id: String::new(),
-            description: String::new(),
-            last_trade_date: None,
-        };
-
-        // Fetch contract details for all matching futures
-        let details_vec = request_contract_details(client, &futures_contract)
-            .await
-            .context("Failed to fetch futures chain from IB")?;
-
+    async fn fetch_futures_chain_into(
+        &self,
+        client: &ibapi::Client,
+        contract: &Contract,
+        min_expiry_days: Option<u32>,
+        max_expiry_days: Option<u32>,
+        load: &mut ContractSpecLoad,
+        allow_partial: bool,
+    ) -> anyhow::Result<usize> {
+        let symbol = contract.symbol.as_str();
+        let exchange = contract.exchange.as_str();
         tracing::debug!(
-            "Received {} raw futures contract details for {}.{}",
-            details_vec.len(),
-            symbol,
-            exchange,
+            "Building futures chain for {symbol}.{exchange} (currency={}, trading_class={}, include_expired={}, min_days={min_expiry_days:?}, max_days={max_expiry_days:?})",
+            contract.currency.as_str(),
+            contract.trading_class,
+            contract.include_expired,
         );
+        let (details_vec, completion) = collect_chain_contract_details(client, contract).await;
+        if let Err(e) = completion
+            .with_context(|| format!("Failed to fetch futures chain for {symbol}.{exchange}"))
+        {
+            if !allow_partial {
+                return Err(e);
+            }
+            tracing::warn!("{e:#}");
+            load.failures.push(format!("{e:#}"));
+        }
 
         let mut total_loaded = 0;
         let now = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
 
         for details in details_vec {
             let contract_id = details.contract.contract_id;
-
-            // Check if already cached
-            if self.contract_id_to_instrument_id.contains_key(&contract_id) {
-                continue;
-            }
 
             // Check if security type is filtered
             let sec_type_str = details.contract.security_type.to_string();
@@ -2231,13 +2421,25 @@ impl InteractiveBrokersInstrumentProvider {
                 }
             }
 
+            if let Some(id) = self.get_instrument_id_by_contract_id(contract_id)
+                && self.instruments.contains_key(&id)
+            {
+                load.instrument_ids.push(id);
+                continue;
+            }
+
             match self.process_contract_detail(&details, None, false) {
-                Ok(Some(_instrument_id)) => {
+                Ok(Some(id)) => {
                     total_loaded += 1;
+                    load.instrument_ids.push(id);
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    tracing::warn!("Failed to parse futures instrument: {}", e);
+                    let failure = format!(
+                        "Failed to load future {contract_id} of {symbol}.{exchange}: {e:#}"
+                    );
+                    tracing::warn!("{failure}");
+                    load.failures.push(failure);
                 }
             }
         }
@@ -2842,6 +3044,245 @@ mod tests {
 
     fn create_test_instrument(instrument_id: InstrumentId) -> InstrumentAny {
         create_test_instrument_with_info(instrument_id, None)
+    }
+
+    fn cached_option_underlying(provider: &InteractiveBrokersInstrumentProvider) -> Contract {
+        let instrument = nautilus_model::instruments::stubs::equity_aapl();
+        let mut underlying = Contract::stock("AAPL").build();
+        underlying.contract_id = 265_598;
+        provider.cache_instrument(
+            instrument.id,
+            instrument.into(),
+            None,
+            Some(underlying.clone()),
+            None,
+            false,
+        );
+        underlying
+    }
+
+    fn option_chain_exchanges() -> Vec<crate::stubs::IbExchange> {
+        serde_json::from_str(include_str!("../../test_data/option_chain_responses.json")).unwrap()
+    }
+
+    #[rstest]
+    #[case::clean_cached_expiry(true, false, true, true)]
+    #[case::contract_id_only(false, true, true, true)]
+    #[case::expiry_fails_after_valid_row(false, false, true, false)]
+    #[case::empty_advertised_expiry(false, false, false, true)]
+    #[tokio::test]
+    async fn test_option_chain_returns_only_rows_for_requested_expiries(
+        #[case] cached: bool,
+        #[case] con_id_only: bool,
+        #[case] has_row: bool,
+        #[case] clean_end: bool,
+    ) {
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap();
+        let mut underlying = cached_option_underlying(&provider);
+        let mut option = opra_option_contract_details(Contract::default());
+
+        if cached {
+            provider
+                .process_contract_detail(&option, None, false)
+                .unwrap();
+        }
+
+        // A second expiry for the same symbol and exchange is already in the cache
+        option.contract.contract_id = 54_321;
+        option.contract.local_symbol = "AAPL  270219P00155000".into();
+        option.contract.last_trade_date_or_contract_month = "20270219".into();
+        provider
+            .process_contract_detail(&option, None, false)
+            .unwrap();
+
+        if con_id_only {
+            underlying =
+                parse_contract_from_json(&serde_json::json!({ "conId": 265_598 })).unwrap();
+        }
+
+        let mut exchanges = option_chain_exchanges();
+        let responses = &mut exchanges[2].responses;
+
+        if !clean_end {
+            // ContractData with only the request ID is a malformed row
+            responses[1][4..8].copy_from_slice(&210_i32.to_be_bytes());
+        }
+
+        if !has_row {
+            responses.remove(0);
+        }
+
+        let load = crate::stubs::with_ib_replay(exchanges, async |client| {
+            let spec = serde_json::json!({ "build_options_chain": true });
+            provider
+                .load_contract_spec_with_failures(&client, &underlying, Some(&spec))
+                .await
+                .unwrap()
+        })
+        .await;
+
+        let current = InstrumentId::from("AAPL  270115P00155000.CBOE");
+        let stale = InstrumentId::from("AAPL  270219P00155000.CBOE");
+        assert!(
+            load.instrument_ids
+                .contains(&InstrumentId::from("AAPL.XNAS"))
+        );
+        assert_eq!(load.instrument_ids.contains(&current), has_row, "{load:?}");
+        assert!(!load.instrument_ids.contains(&stale), "{load:?}");
+        assert_eq!(load.failures.is_empty(), clean_end && has_row, "{load:?}");
+        if has_row {
+            let contract = provider.instrument_id_to_ib_contract(&current).unwrap();
+            assert_eq!(contract.last_trade_date_or_contract_month, "20270115");
+        }
+    }
+
+    #[rstest]
+    #[case::warning(2108, Drained::Ended, true)]
+    #[case::dropped_rows(ibapi::SUBSCRIPTION_LAG_CODE, Drained::Ended, false)]
+    #[case::channel_closed(2108, Drained::Unconfirmed, false)]
+    #[tokio::test]
+    async fn test_option_chain_snapshot_completion(
+        #[case] code: i32,
+        #[case] end: Drained,
+        #[case] complete: bool,
+    ) {
+        let notice = ibapi::Notice {
+            request_id: None,
+            code,
+            message: "snapshot notice".into(),
+            error_time: None,
+            advanced_order_reject_json: String::new(),
+        };
+        let stream = futures_util::stream::iter([
+            Ok(SubscriptionItem::Data("20270115")),
+            Ok(SubscriptionItem::Notice(notice)),
+            Ok(SubscriptionItem::Data("20270219")),
+        ]);
+
+        let (rows, completion) = collect_chain_rows(stream, |_| std::future::ready(Ok(end))).await;
+
+        assert_eq!(rows, ["20270115", "20270219"]);
+        assert_eq!(completion.is_ok(), complete, "{completion:?}");
+    }
+
+    #[rstest]
+    #[case::complete(None)]
+    #[case::partial_underlying_scan(Some(3))]
+    #[case::partial_qualification(Some(1))]
+    #[tokio::test]
+    async fn test_option_chain_uses_only_observed_futures(#[case] partial_request: Option<usize>) {
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap();
+        let stale = ibapi::contracts::ContractDetails {
+            contract: Contract {
+                contract_id: 503,
+                symbol: ibapi::contracts::Symbol::from("ES"),
+                security_type: SecurityType::Future,
+                exchange: Exchange::from("CME"),
+                local_symbol: "ESZ7".into(),
+                last_trade_date_or_contract_month: "20271217".into(),
+                ..Default::default()
+            },
+            min_tick: 0.25,
+            under_symbol: "ES".into(),
+            ..Default::default()
+        };
+        let stale_id = provider
+            .process_contract_detail(&stale, None, false)
+            .unwrap()
+            .unwrap();
+        let mut exchanges: Vec<crate::stubs::IbExchange> = serde_json::from_str(include_str!(
+            "../../test_data/futures_option_chain_responses.json"
+        ))
+        .unwrap();
+
+        if let Some(index) = partial_request {
+            // An undecodable ContractData follows the usable row on the selected request
+            exchanges[index].responses[1][4..8].copy_from_slice(&210_i32.to_be_bytes());
+        }
+        crate::stubs::with_ib_replay(exchanges, async |client| {
+            let spec = serde_json::json!({
+                "conId": 500, "secType": "CONTFUT", "build_futures_chain": true, "build_options_chain": true
+            });
+            let contract = parse_contract_from_json(&spec).unwrap();
+            let load = provider.load_contract_spec_with_failures(&client, &contract, Some(&spec)).await.unwrap();
+
+            let future = provider.get_instrument_id_by_contract_id(501).unwrap();
+            assert!(load.instrument_ids.contains(&future), "{load:?}");
+            assert!(!load.instrument_ids.contains(&stale_id), "{load:?}");
+            assert_eq!(load.failures.is_empty(), partial_request.is_none(), "{load:?}");
+            assert!(provider.get_instrument_id_by_contract_id(502).is_some_and(|id| load.instrument_ids.contains(&id)), "{load:?}");
+        }).await;
+    }
+
+    #[rstest]
+    #[case::empty_qualification(500, false)]
+    #[case::mismatched_contract_id(999, true)]
+    #[tokio::test]
+    async fn test_option_chain_requires_qualified_continuous_future(
+        #[case] requested_id: i32,
+        #[case] has_qualification_row: bool,
+    ) {
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap();
+        let mut exchanges: Vec<crate::stubs::IbExchange> = serde_json::from_str(include_str!(
+            "../../test_data/futures_option_chain_responses.json"
+        ))
+        .unwrap();
+        exchanges.truncate(2);
+        if !has_qualification_row {
+            exchanges[1].responses.remove(0);
+        }
+
+        crate::stubs::with_ib_replay(exchanges, async |client| {
+            let spec = serde_json::json!({
+                "conId": requested_id, "secType": "CONTFUT", "symbol": "ES", "exchange": "CME", "build_options_chain": true
+            });
+            let contract = parse_contract_from_json(&spec).unwrap();
+            let result = provider.load_contract_spec_with_failures(&client, &contract, Some(&spec)).await;
+            let error = result.unwrap_err();
+            assert!(error.to_string().contains(&requested_id.to_string()), "{error:#}");
+            assert_eq!(provider.count(), 0);
+        }).await;
+    }
+
+    #[tokio::test]
+    async fn test_option_chain_setup_failure_keeps_startup_retryable() {
+        let config = InteractiveBrokersInstrumentProviderConfig::builder()
+            .load_contracts(vec![ConfiguredContract::from(Contract {
+                contract_id: 265_598,
+                ..Contract::stock("AAPL").build()
+            })])
+            .build_options_chain(true)
+            .build();
+        let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
+        let underlying = cached_option_underlying(&provider);
+        let mut exchanges = option_chain_exchanges();
+        exchanges.truncate(1);
+        crate::stubs::with_ib_replay(exchanges, async |client| {
+            client.disconnect().await;
+            let result = provider.initialize_with_client(&client).await;
+            assert!(result.is_err(), "{result:?}");
+            assert!(!*provider.startup_initialized.lock().await);
+
+            let load = provider
+                .load_contract_spec_with_failures(&client, &underlying, None)
+                .await
+                .unwrap();
+            assert_eq!(load.instrument_ids, [InstrumentId::from("AAPL.XNAS")]);
+            assert!(!load.failures.is_empty());
+        })
+        .await;
+    }
+
+    #[rstest]
+    fn test_process_contract_detail_fails_a_contract_that_does_not_parse() {
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap();
+        let mut details = opra_option_contract_details(Contract::default());
+        details.contract.last_trade_date_or_contract_month = "not a date".to_string();
+
+        let result = provider.process_contract_detail(&details, Some(Venue::from("OPRA")), false);
+
+        assert!(result.is_err(), "{result:?}");
+        assert_eq!(provider.count(), 0);
     }
 
     #[rstest]
