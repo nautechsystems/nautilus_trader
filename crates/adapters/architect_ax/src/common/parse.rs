@@ -15,12 +15,8 @@
 
 //! Conversion functions that translate AX API schemas into Nautilus types.
 
-use std::{
-    io::{Cursor, Write},
-    sync::LazyLock,
-};
+use std::io::{Cursor, Write};
 
-use ahash::RandomState;
 use anyhow::Context;
 use nautilus_core::nanos::UnixNanos;
 pub use nautilus_core::serialization::{
@@ -162,11 +158,7 @@ pub fn create_architect_trade_id(
         offset = end;
     }
 
-    let hash = blake3::hash(&input);
-
-    let mut digest = [0_u8; 8];
-    digest.copy_from_slice(&hash.as_bytes()[..8]);
-    let suffix = u64::from_be_bytes(digest);
+    let suffix = blake3_prefix(&input);
 
     // Hold even a 20-digit timestamp so TradeId still rejects IDs beyond its capacity
     let mut buffer = [0_u8; 37];
@@ -176,16 +168,6 @@ pub fn create_architect_trade_id(
 
     TradeId::from_bytes(&buffer[..len]).context(FAILED)
 }
-
-/// Cached hasher state for deterministic client order ID to cid conversion
-static CID_HASHER: LazyLock<RandomState> = LazyLock::new(|| {
-    RandomState::with_seeds(
-        0x517c_c1b7_2722_0a95,
-        0x9b5c_18c9_0c3c_314d,
-        0x5851_f42d_4c95_7f2d,
-        0x1405_7b7e_f767_814f,
-    )
-});
 
 /// Maps a Nautilus [`BarSpecification`] to an [`AxCandleWidth`].
 ///
@@ -233,7 +215,14 @@ pub fn quantity_to_contracts(quantity: Quantity) -> anyhow::Result<u64> {
 /// Inbound WebSocket `cid` values remain `u64` because venue messages can exceed `int64`.
 #[must_use]
 pub fn client_order_id_to_cid(client_order_id: &ClientOrderId) -> u64 {
-    CID_HASHER.hash_one(client_order_id.inner()) & i64::MAX as u64
+    blake3_prefix(client_order_id.as_str().as_bytes()) & i64::MAX as u64
+}
+
+fn blake3_prefix(input: &[u8]) -> u64 {
+    let hash = blake3::hash(input);
+    let mut digest = [0_u8; 8];
+    digest.copy_from_slice(&hash.as_bytes()[..8]);
+    u64::from_be_bytes(digest)
 }
 
 /// Creates a [`ClientOrderId`] from a cid value.
@@ -397,16 +386,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_client_order_id_to_cid_deterministic() {
-        let coid = ClientOrderId::new("O-20240101-000001");
+    fn test_client_order_id_to_cid_stable_wire_value() {
+        let client_order_id = ClientOrderId::new("O-20240101-000001");
 
-        // Must produce same result across multiple calls
-        let cid1 = client_order_id_to_cid(&coid);
-        let cid2 = client_order_id_to_cid(&coid);
-        let cid3 = client_order_id_to_cid(&coid);
-
-        assert_eq!(cid1, cid2);
-        assert_eq!(cid2, cid3);
+        assert_eq!(
+            client_order_id_to_cid(&client_order_id),
+            8_319_973_616_005_520_571
+        );
     }
 
     #[rstest]
