@@ -16,6 +16,7 @@
 //! WebSocket message handler for the Polymarket CLOB API.
 
 use std::{
+    collections::VecDeque,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -106,7 +107,7 @@ pub(super) struct FeedHandler {
     // Assets awaiting first authoritative data, keyed by the connection that wrote the subscribe.
     market_subscription_epochs: AHashMap<String, u64>,
     // Overflow buffer for batched frames, drained before reading the next raw message
-    message_buffer: Vec<PolymarketWsMessage>,
+    message_buffer: VecDeque<PolymarketWsMessage>,
     // Whether to include `custom_feature_enabled: true` in the initial subscribe
     subscribe_new_markets: bool,
 }
@@ -143,7 +144,7 @@ impl FeedHandler {
             user_subscribed,
             market_heartbeat_next: None,
             market_subscription_epochs: AHashMap::new(),
-            message_buffer: Vec::new(),
+            message_buffer: VecDeque::new(),
             subscribe_new_markets,
         }
     }
@@ -494,7 +495,7 @@ impl FeedHandler {
 
     pub(super) async fn next(&mut self) -> Option<PolymarketWsMessage> {
         if !self.message_buffer.is_empty() {
-            return Some(self.message_buffer.remove(0));
+            return self.message_buffer.pop_front();
         }
 
         if let Some((asset_ids, connection_epoch)) = self.initial_market_replay.take() {
@@ -690,20 +691,61 @@ mod tests {
 
     #[fixture]
     fn market_handler() -> FeedHandler {
-        feed_handler(WsChannel::Market)
+        feed_handler(WsChannel::Market).0
     }
 
     #[fixture]
     fn user_handler() -> FeedHandler {
-        feed_handler(WsChannel::User)
+        feed_handler(WsChannel::User).0
     }
 
-    fn feed_handler(channel: WsChannel) -> FeedHandler {
+    #[rstest]
+    #[tokio::test]
+    async fn message_buffer_drains_in_arrival_order() {
+        let (mut handler, raw_tx) = feed_handler(WsChannel::Market);
+        let book = include_str!("../../test_data/ws_market_book_msg.json");
+        let trade = include_str!("../../test_data/ws_market_last_trade_msg.json");
+        let price_change = include_str!("../../test_data/ws_market_price_change_msg.json");
+        let best_bid_ask = include_str!("../../test_data/ws_market_best_bid_ask_msg.json");
+        let batch = format!("[{book},{trade},{price_change}]");
+
+        raw_tx
+            .send((0, Message::Text(batch.into())))
+            .expect("queue market batch");
+        raw_tx
+            .send((0, Message::Text(best_bid_ask.into())))
+            .expect("queue next market frame");
+        raw_tx
+            .send((0, Message::Close(None)))
+            .expect("queue close frame");
+
+        assert!(matches!(
+            handler.next().await,
+            Some(PolymarketWsMessage::Market(MarketWsMessage::Book(_)))
+        ));
+        assert!(matches!(
+            handler.next().await,
+            Some(PolymarketWsMessage::Market(
+                MarketWsMessage::LastTradePrice(_)
+            ))
+        ));
+        assert!(matches!(
+            handler.next().await,
+            Some(PolymarketWsMessage::Market(MarketWsMessage::PriceChange(_)))
+        ));
+        assert!(matches!(
+            handler.next().await,
+            Some(PolymarketWsMessage::Market(MarketWsMessage::BestBidAsk(_)))
+        ));
+        assert!(handler.next().await.is_none());
+    }
+
+    fn feed_handler(channel: WsChannel) -> (FeedHandler, UnboundedSender<(u64, Message)>) {
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
 
-        FeedHandler::new(
+        let handler = FeedHandler::new(
             Arc::new(AtomicBool::new(false)),
             channel,
             None,
@@ -717,7 +759,9 @@ mod tests {
             AuthTracker::new(),
             false,
             false,
-        )
+        );
+
+        (handler, raw_tx)
     }
 
     async fn recording_server() -> (String, Arc<Mutex<Vec<String>>>) {
@@ -896,7 +940,7 @@ mod tests {
     }
 
     #[rstest]
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn market_text_heartbeat_follows_initial_subscription() {
         let (url, messages) = recording_server().await;
         let client = recording_client(url).await;
@@ -924,6 +968,8 @@ mod tests {
             .send_subscribe_market(&[MARKET_ASSET_ID.to_string()], None)
             .await;
         wait_for_recorded_messages(&messages, 1).await;
+
+        tokio::time::pause();
 
         let task = tokio::spawn(async move {
             let message = handler.next().await;
@@ -977,13 +1023,14 @@ mod tests {
     }
 
     #[rstest]
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn incremental_market_subscription_preserves_heartbeat_deadline() {
         let (url, messages) = recording_server().await;
         let client = recording_client(url).await;
         let connection_epoch = client.connection_epoch();
         let (mut handler, _raw_tx, _) = market_handler_with(client);
 
+        tokio::time::pause();
         handler
             .try_send_subscribe_market(&[MARKET_ASSET_ID.to_string()], None)
             .await
