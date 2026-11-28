@@ -2352,6 +2352,7 @@ impl InteractiveBrokersExecutionClient {
         let OrderEvidence {
             reports: mut order_reports,
             open_order_ids,
+            unresolved_orders,
         } = order_evidence;
         let deferred_orders = fill_evidence.orders_missing_commission();
         if !deferred_orders.is_empty() {
@@ -2399,10 +2400,13 @@ impl InteractiveBrokersExecutionClient {
         );
         // IB `reqExecutions` and completed orders are session-scoped, so without a
         // configured lookback the actual venue bound is unknown and the report set
-        // cannot be claimed complete. Nor can it when an order was deferred.
+        // cannot be claimed complete. Nor can it when an order was deferred, or a completed
+        // order was left out because its contract did not resolve.
         mass_status.set_report_window(
             start,
-            start.is_some() && fill_evidence.missing_commissions.is_empty(),
+            start.is_some()
+                && fill_evidence.missing_commissions.is_empty()
+                && unresolved_orders == 0,
         );
 
         parse::fill_missing_avg_px(&mut order_reports, &fill_evidence.reports);

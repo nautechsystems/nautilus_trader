@@ -4032,6 +4032,87 @@ fn test_report_contract_resolution_uses_cached_bag_spread_id() {
     assert_eq!(resolved, instrument_id);
 }
 
+#[rstest]
+#[case::bounded(Some(UnixNanos::new(1)), 0, true)]
+#[case::bounded_with_skipped_order(Some(UnixNanos::new(1)), 1, false)]
+#[case::unbounded(None, 0, false)]
+fn test_mass_status_completeness_reflects_skipped_completed_orders(
+    #[case] start: Option<UnixNanos>,
+    #[case] unresolved_orders: usize,
+    #[case] complete: bool,
+) {
+    let (client, _, _) = create_test_execution_client();
+    let report = OrderStatusReport::new(
+        AccountId::from("IB-001"),
+        InstrumentId::from("AAPL.NASDAQ"),
+        Some(ClientOrderId::from("O-STOP")),
+        VenueOrderId::from("PERM-11"),
+        OrderSide::Sell.into(),
+        OrderType::StopMarket,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        Quantity::from(1),
+        Quantity::from(0),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let mass_status = client
+        .assemble_mass_status(
+            UnixNanos::new(2),
+            start,
+            OrderEvidence {
+                reports: vec![report],
+                open_order_ids: AHashSet::new(),
+                unresolved_orders,
+            },
+            FillEvidence::default(),
+            Vec::new(),
+        )
+        .unwrap();
+
+    assert_eq!(mass_status.reports_complete(), complete);
+    assert_eq!(mass_status.lookback_start(), start);
+    assert_eq!(
+        mass_status.order_reports().keys().collect::<Vec<_>>(),
+        vec![&VenueOrderId::from("PERM-11")]
+    );
+}
+
+#[rstest]
+#[case::spread_not_cached(false, None)]
+#[case::spread_cached(true, Some(create_test_spread_instrument()))]
+fn test_completed_order_instrument_resolution_skips_unresolved_bag(
+    #[case] spread_cached: bool,
+    #[case] expected: Option<InstrumentId>,
+) {
+    let (client, _, _) = create_test_execution_client();
+    client
+        .instrument_provider
+        .insert_test_contract_id_mapping(12345, create_test_leg_instrument());
+    client.instrument_provider.insert_test_contract_id_mapping(
+        67890,
+        InstrumentId::new(Symbol::from("SPY C410"), Venue::from("SMART")),
+    );
+
+    if spread_cached {
+        client.instrument_provider.insert_test_instrument(
+            InstrumentAny::from(create_test_option_spread()),
+            54321,
+            1,
+        );
+    }
+    let mut order = create_test_completed_order(7001, NATIVE_CLIENT_ID);
+    order.contract = create_test_bag_execution_data(7001, "exec-spread-001").contract;
+    order.contract.contract_id = 28_812_380;
+
+    let resolved = report_context(&client).resolve_completed_order_instrument_id(&order);
+
+    assert_eq!(resolved, expected);
+}
+
 #[tokio::test]
 async fn test_handle_spread_execution_emits_only_leg_fill_event() {
     let instrument_provider = create_test_instrument_provider();
@@ -7039,6 +7120,7 @@ fn test_startup_reconciles_order_with_missing_commission(
     let order_evidence = OrderEvidence {
         reports: order_reports,
         open_order_ids,
+        unresolved_orders: 0,
     };
 
     let mass_status = client.assemble_mass_status(
@@ -7150,6 +7232,7 @@ fn test_startup_proceeds_on_flat_account_with_execution_missing_commission() {
     let order_evidence = OrderEvidence {
         reports: order_reports,
         open_order_ids: AHashSet::new(),
+        unresolved_orders: 0,
     };
 
     let mass_status = client
@@ -7259,6 +7342,7 @@ fn test_startup_covers_each_leg_of_a_deferred_combo() {
     let order_evidence = OrderEvidence {
         reports: vec![order],
         open_order_ids: AHashSet::new(),
+        unresolved_orders: 0,
     };
 
     let mass_status = client
