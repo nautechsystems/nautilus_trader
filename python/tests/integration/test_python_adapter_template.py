@@ -33,6 +33,7 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveNodeConfig
 from nautilus_trader.live import LiveNode
 from nautilus_trader.live import QuotesResponse
+from nautilus_trader.live.clients import ClientRuntime
 from nautilus_trader.live.clients import ExecutionClientFactory
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import AccountType
@@ -160,6 +161,38 @@ def test_deterministic_template_runs_through_live_engines(launch) -> None:
     assert fill.liquidity_side == LiquiditySide.TAKER
     assert node.cache.order(strategy.order.client_order_id).status == OrderStatus.FILLED
     assert node.cache.quote(INSTRUMENT_ID).bid_price == Price.from_str("1.12345")
+
+
+def test_node_rejects_replacement_during_client_disposal(monkeypatch) -> None:
+    """
+    Keep process ownership while the wrapper drops its custom clients.
+    """
+    rejections = []
+    dispose = ClientRuntime.dispose
+
+    def dispose_and_try_replacement(runtime):
+        try:
+            LiveNode.build("REPLACEMENT")
+        except RuntimeError as e:
+            rejections.append(str(e))
+        finally:
+            dispose(runtime)
+
+    monkeypatch.setattr(ClientRuntime, "dispose", dispose_and_try_replacement)
+    node, _ = build_node()
+
+    del node
+
+    assert (
+        rejections
+        == [
+            "A LiveNode already exists or is being built in this process. "
+            "Drop it before building another LiveNode",
+        ]
+        * 2
+    )
+    replacement = LiveNode.build("REPLACEMENT")
+    replacement.dispose()
 
 
 @pytest.mark.parametrize(

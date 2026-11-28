@@ -1794,13 +1794,13 @@ mod tests {
 #[cfg(target_os = "linux")] // Run Redis tests on Linux platforms only
 #[cfg(test)]
 mod serial_tests {
-    use std::{sync::atomic::AtomicUsize, thread};
+    use std::{cell::RefCell, rc::Rc, sync::atomic::AtomicUsize, thread};
 
     #[cfg(feature = "python")]
     use nautilus_common::python::msgbus::get_global_msgbus_factory_registry;
     use nautilus_common::{
         enums::Environment,
-        msgbus::{self, TypedHandler},
+        msgbus::{self, MessageBus, TypedHandler, external_egress_from_backing},
         testing::wait_until_async,
     };
     use nautilus_live::{
@@ -2459,21 +2459,24 @@ mod serial_tests {
 
     #[rstest]
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn test_two_live_nodes_publish_and_ingest_external_redis_stream(
+    async fn test_live_node_ingests_external_redis_stream(
         #[future] redis_connection: ConnectionManager,
     ) {
-        let _con = redis_connection.await;
+        let mut con = redis_connection.await;
         let redis_config = RedisMessageBusConfig::default();
-        let trader_a = TraderId::from("NODEA-001");
-        let instance_a = UUID4::new();
-        let node_a_msgbus = MessageBusConfig {
+        let publisher_id = TraderId::from("PUBLISHER-001");
+        let publisher_instance = UUID4::new();
+
+        let publisher_config = MessageBusConfig {
             use_instance_id: true,
             stream_per_topic: false,
             ..Default::default()
         };
-        let stream_key = get_stream_key(trader_a, instance_a, &node_a_msgbus);
-        let node_b_msgbus = MessageBusConfig {
-            external_streams: Some(vec![stream_key]),
+
+        let stream_key = get_stream_key(publisher_id, publisher_instance, &publisher_config);
+
+        let node_msgbus = MessageBusConfig {
+            external_streams: Some(vec![stream_key.clone()]),
             stream_per_topic: false,
             ..Default::default()
         };
@@ -2486,30 +2489,26 @@ mod serial_tests {
         let (trade_tx, mut trade_rx) = tokio::sync::mpsc::unbounded_channel();
 
         // Finish Python and shared runtime initialization before waiting on node readiness
-        let node_b_factory = redis_msgbus_factory(redis_config.clone());
+        let node_factory = redis_msgbus_factory(redis_config.clone());
 
-        let publisher_config = LiveNodeConfig {
-            environment: Environment::Sandbox,
-            trader_id: trader_a,
-            instance_id: Some(instance_a),
-            msgbus: Some(node_a_msgbus),
-            exec_engine: LiveExecutionEngineConfig {
-                reconciliation: false,
-                ..Default::default()
-            },
-            delay_post_stop: Duration::ZERO,
-            timeout_connection: Duration::from_millis(500),
-            timeout_disconnection: Duration::from_millis(500),
-            ..Default::default()
-        };
-
-        let _node_a = LiveNodeBuilder::from_config(publisher_config)
-            .unwrap()
-            .with_external_msgbus_factory(Box::new(redis_config))
-            .build()
+        let backing = redis_config
+            .create(publisher_id, publisher_instance, publisher_config.clone())
             .unwrap();
 
-        let node_b = thread::spawn(move || -> anyhow::Result<()> {
+        let publisher = Rc::new(RefCell::new(MessageBus::new(
+            publisher_id,
+            publisher_instance,
+            None,
+            None,
+        )));
+
+        msgbus::set_message_bus(Rc::clone(&publisher));
+        publisher
+            .borrow_mut()
+            .set_external_egress_config(external_egress_from_backing(backing), &publisher_config)
+            .unwrap();
+
+        let node = thread::spawn(move || -> anyhow::Result<()> {
             let runtime = tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(2)
                 .enable_all()
@@ -2519,7 +2518,7 @@ mod serial_tests {
                 let config = LiveNodeConfig {
                     environment: Environment::Sandbox,
                     trader_id: TraderId::from("NODEB-001"),
-                    msgbus: Some(node_b_msgbus),
+                    msgbus: Some(node_msgbus),
                     exec_engine: LiveExecutionEngineConfig {
                         reconciliation: false,
                         ..Default::default()
@@ -2531,7 +2530,7 @@ mod serial_tests {
                 };
 
                 let mut node = LiveNodeBuilder::from_config(config)?
-                    .with_external_msgbus_factory(node_b_factory)
+                    .with_external_msgbus_factory(node_factory)
                     .build()?;
                 let handle = node.handle();
 
@@ -2556,22 +2555,22 @@ mod serial_tests {
                     .add_streaming_type(BusPayloadType::QuoteTick);
                 built_tx
                     .send(())
-                    .expect("node A should await subscriptions");
+                    .expect("publisher should await subscriptions");
                 let result = tokio::time::timeout(Duration::from_secs(10), node.run()).await;
                 msgbus::get_message_bus().borrow_mut().dispose();
 
                 match result {
                     Ok(Ok(())) => Ok(()),
                     Ok(Err(e)) => Err(e),
-                    Err(e) => anyhow::bail!("node B timed out: {e}"),
+                    Err(e) => anyhow::bail!("node timed out: {e}"),
                 }
             })
         });
 
         tokio::time::timeout(Duration::from_secs(5), built_rx)
             .await
-            .expect("node B should build and register subscriptions")
-            .expect("node B exited before registering subscriptions");
+            .expect("node should build and register subscriptions")
+            .expect("node exited before registering subscriptions");
 
         // A running node does not guarantee its Redis reader has set its initial cursor
         wait_until_async(
@@ -2589,16 +2588,16 @@ mod serial_tests {
 
         msgbus::publish_trade("data.trades.TEST".into(), &trade);
         msgbus::publish_quote("data.quotes.TEST".into(), &quote);
-        msgbus::get_message_bus().borrow_mut().dispose();
+        publisher.borrow_mut().dispose();
 
         let received_quote = tokio::time::timeout(Duration::from_secs(10), quote_rx.recv())
             .await
-            .expect("node B should republish the registered quote type")
-            .expect("node B exited before republishing the quote");
-        node_b
-            .join()
-            .expect("node B thread should not panic")
-            .expect("node B should ingest and stop cleanly");
+            .expect("node should republish the registered quote type")
+            .expect("node exited before republishing the quote");
+        node.join()
+            .expect("node thread should not panic")
+            .expect("node should ingest and stop cleanly");
+        let _: usize = con.del(&stream_key).await.unwrap();
 
         assert_eq!(received_quote, quote);
         assert!(

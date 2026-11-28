@@ -92,7 +92,7 @@ use crate::{
         LiveDataEngineConfig, LiveExecutionEngineConfig, LiveNodeConfig, LiveRiskEngineConfig,
         PluginConfig,
     },
-    node::{LiveNode, LiveNodeHandle, NodeRunMode, config::RoutingConfig},
+    node::{LiveNode, LiveNodeHandle, NodeRunMode, ProcessOwner, config::RoutingConfig},
     python::config::{coerce_json_config, json_value_to_py},
 };
 
@@ -106,9 +106,10 @@ use crate::{
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")]
 #[derive(Debug)]
 pub struct PyLiveNode {
+    // Drop Python clients while the Rust node still owns the process slot
+    clients: PythonClients,
     inner: Rc<RefCell<Option<LiveNode>>>,
     handle: LiveNodeHandle,
-    clients: PythonClients,
 }
 
 impl PyLiveNode {
@@ -118,9 +119,9 @@ impl PyLiveNode {
         let handle = node.handle();
 
         Self {
+            clients: PythonClients::default(),
             inner: Rc::new(RefCell::new(Some(node))),
             handle,
-            clients: PythonClients::default(),
         }
     }
 
@@ -833,7 +834,8 @@ impl PyLiveNode {
     ///
     /// # Errors
     ///
-    /// Returns an error if kernel construction fails.
+    /// Returns an error if kernel construction fails or another live node exists or is being
+    /// built in the process.
     #[staticmethod]
     #[pyo3(name = "build")]
     #[pyo3(signature = (name, config=None, *, data_factories=None, exec_factories=None))]
@@ -844,8 +846,11 @@ impl PyLiveNode {
         data_factories: Option<Bound<'_, PyDict>>,
         exec_factories: Option<Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
-        PyLiveNodeBuilder::py_from_config(py, name, config, data_factories, exec_factories)?
-            .py_build()
+        let process_owner = LiveNode::acquire_process().map_err(to_pyruntime_err)?;
+        let builder =
+            PyLiveNodeBuilder::py_from_config(py, name, config, data_factories, exec_factories)?;
+        let operation = builder.begin_operation()?;
+        builder.build_with_process_owner(operation, &process_owner)
     }
 
     /// Creates a new `LiveNodeBuilder` for fluent configuration.
@@ -1065,10 +1070,10 @@ impl PyLiveNode {
         driver.call1(py, (Py::new(py, run)?,))
     }
 
-    /// Run the live node with automatic shutdown handling.
+    /// Runs the live node on its owning thread until shutdown.
     ///
-    /// This method starts the node, runs indefinitely, and handles graceful shutdown
-    /// on interrupt signals.
+    /// The node handles interrupt signals on the Python main thread. On a worker thread,
+    /// the host owns process signals and can request graceful shutdown with `handle().stop()`.
     ///
     /// # Thread Safety
     ///
@@ -1107,10 +1112,7 @@ impl PyLiveNode {
             )?;
             let event_loop = asyncio.call_method0("new_event_loop")?;
             let signal = py.import("signal")?;
-            let threading = py.import("threading")?;
-            let is_main = threading
-                .call_method0("current_thread")?
-                .is(&threading.call_method0("main_thread")?);
+            let is_main = is_main_python_thread(py)?;
 
             let mut handlers = Vec::new();
 
@@ -1137,43 +1139,7 @@ impl PyLiveNode {
             return finish_owned_run(&event_loop, &signal, handlers, result);
         }
 
-        if this.node()?.is_running() {
-            return Err(to_pyruntime_err("LiveNode is already running"));
-        }
-
-        // Get a handle for coordinating with the signal checker
-        let handle = this.node()?.handle();
-
-        // Import signal module
-        let signal_module = py.import("signal")?;
-        let original_handler =
-            signal_module.call_method1("signal", (2, signal_module.getattr("SIG_DFL")?))?; // Save original SIGINT handler (signal 2)
-
-        // Set up a custom signal handler that uses our handle
-        let handle_for_signal = handle;
-
-        let signal_callback = new_sync_py_callback(
-            py,
-            move |_args: &pyo3::Bound<'_, PyTuple>,
-                  _kwargs: Option<&pyo3::Bound<'_, PyDict>>|
-                  -> PyResult<()> {
-                log::info!("Python signal handler called");
-                handle_for_signal.stop();
-                Ok(())
-            },
-        )?;
-
-        // Install our signal handler
-        signal_module.call_method1("signal", (2, signal_callback))?;
-
-        // Run the node and restore signal handler afterward
-        let mut node = this.node_mut()?;
-        let result = run_live_node_detached(py, &mut node);
-
-        // Restore original signal handler
-        signal_module.call_method1("signal", (2, original_handler))?;
-
-        result
+        run_native_node(py, &this)
     }
 
     /// Stop the live node.
@@ -1814,6 +1780,39 @@ fn finish_owned_run<'py>(
     }
 }
 
+fn run_native_node(py: Python<'_>, this: &PyLiveNode) -> PyResult<()> {
+    let mut node = this.node_mut()?;
+    if node.is_running() {
+        return Err(to_pyruntime_err("LiveNode is already running"));
+    }
+
+    if !is_main_python_thread(py)? {
+        return run_live_node_detached(py, &mut node, NodeRunMode::Hosted);
+    }
+
+    let signal = py.import("signal")?;
+    let signum = signal.getattr("SIGINT")?;
+    let handle = node.handle();
+
+    let callback = new_sync_py_callback(py, move |_args, _kwargs| {
+        log::info!("Python signal handler called");
+        handle.stop();
+        Ok(())
+    })?;
+
+    let original = signal.call_method1("signal", (&signum, callback))?;
+    let result = run_live_node_detached(py, &mut node, NodeRunMode::Owned);
+    signal.call_method1("signal", (signum, original))?;
+    result
+}
+
+fn is_main_python_thread(py: Python<'_>) -> PyResult<bool> {
+    let threading = py.import("threading")?;
+    let current = threading.call_method0("current_thread")?;
+    let main = threading.call_method0("main_thread")?;
+    Ok(current.is(&main))
+}
+
 fn new_sync_py_callback<F>(py: Python<'_>, closure: F) -> PyResult<Bound<'_, PyCFunction>>
 where
     F: Fn(&Bound<'_, PyTuple>, Option<&Bound<'_, PyDict>>) -> PyResult<()> + Send + Sync + 'static,
@@ -1822,16 +1821,15 @@ where
 }
 
 #[allow(unsafe_code)]
-fn run_live_node_detached(py: Python<'_>, node: &mut LiveNode) -> PyResult<()> {
+fn run_live_node_detached(py: Python<'_>, node: &mut LiveNode, mode: NodeRunMode) -> PyResult<()> {
     let node_ptr = SendPtr(std::ptr::from_mut::<LiveNode>(node));
 
-    // SAFETY: `py_run` holds the only mutable reference to `LiveNode` until
-    // `run()` returns, and the detached closure completes before `py_run` can
-    // access `node` again.
+    // SAFETY: the caller holds the only mutable reference to `LiveNode`, and the detached
+    // closure completes on the calling thread before the caller can access `node` again.
     unsafe {
         py.detach(move || {
             let ptr = node_ptr;
-            get_runtime().block_on(async { (*ptr.0).run().await })
+            get_runtime().block_on(async { (*ptr.0).run_with_mode(mode).await })
         })
     }
     .map_err(to_pyruntime_err)
@@ -2591,27 +2589,9 @@ impl PyLiveNodeBuilder {
 
     #[pyo3(name = "build")]
     fn py_build(&self) -> PyResult<PyLiveNode> {
-        let mut operation = self.begin_operation()?;
-        let mut builder = operation.take_builder()?;
-        let node = match builder.build_in_place() {
-            Ok(node) => node,
-            Err(e) => {
-                Python::attach(|py| {
-                    if let Err(cleanup_error) = self.clients.finish(py) {
-                        log::error!(
-                            "Failed to clean up Python clients after build failure: {cleanup_error}"
-                        );
-                    }
-                });
-
-                operation.complete(builder);
-                return Err(to_pyruntime_err(e));
-            }
-        };
-
-        let mut node = PyLiveNode::new(node);
-        node.clients = self.clients.take();
-        Ok(node)
+        let operation = self.begin_operation()?;
+        let process_owner = LiveNode::acquire_process().map_err(to_pyruntime_err)?;
+        self.build_with_process_owner(operation, &process_owner)
     }
 
     fn __repr__(&self) -> String {
@@ -2634,6 +2614,33 @@ struct PyLiveNodeBuilderOperation<'a> {
 }
 
 impl PyLiveNodeBuilder {
+    fn build_with_process_owner(
+        &self,
+        mut operation: PyLiveNodeBuilderOperation<'_>,
+        process_owner: &Rc<ProcessOwner>,
+    ) -> PyResult<PyLiveNode> {
+        let mut builder = operation.take_builder()?;
+        let node = match builder.build_in_place(process_owner) {
+            Ok(node) => node,
+            Err(e) => {
+                Python::attach(|py| {
+                    if let Err(cleanup_error) = self.clients.finish(py) {
+                        log::error!(
+                            "Failed to clean up Python clients after build failure: {cleanup_error}"
+                        );
+                    }
+                });
+
+                operation.complete(builder);
+                return Err(to_pyruntime_err(e));
+            }
+        };
+
+        let mut node = PyLiveNode::new(node);
+        node.clients = self.clients.take();
+        Ok(node)
+    }
+
     fn begin_operation(&self) -> PyResult<PyLiveNodeBuilderOperation<'_>> {
         match self.state.replace(PyLiveNodeBuilderState::InProgress) {
             PyLiveNodeBuilderState::Ready(builder) => Ok(PyLiveNodeBuilderOperation {
@@ -2798,7 +2805,7 @@ mod tests {
             msgbus::get_global_msgbus_factory_registry, wrappers::get_python_wrapper,
         },
         runner::{TradingCommandMessage, get_trading_cmd_sender},
-        testing::wait_until_async,
+        testing::{wait_until, wait_until_async},
     };
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_execution::engine::stubs::StubExecutionClient;
@@ -2832,7 +2839,41 @@ mod tests {
         PyLiveNodeBuilderState, extract_exec_algorithm_actor_id, finish_owned_run,
         get_global_pyo3_registry,
     };
-    use crate::node::{NodeState, config::RoutingConfig};
+    use crate::node::{NodeRunMode, NodeState, config::RoutingConfig};
+
+    #[rstest]
+    fn test_python_run_on_worker_thread() {
+        Python::initialize();
+        let (send_handle, receive_handle) = mpsc::sync_channel(1);
+        let (send_result, receive_result) = mpsc::sync_channel(1);
+
+        let worker = thread::spawn(move || {
+            Python::attach(|py| {
+                let node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+                    .unwrap()
+                    .with_reconciliation(false)
+                    .with_delay_post_stop_secs(0)
+                    .build()
+                    .unwrap();
+                send_handle.send(node.handle()).unwrap();
+                let node = Py::new(py, PyLiveNode::new(node)).unwrap();
+                let result = PyLiveNode::py_run(node.bind(py), py);
+                node.borrow(py).py_dispose(py).unwrap();
+                send_result.send(result).unwrap();
+            });
+        });
+
+        let deadline = Duration::from_secs(10);
+        let handle = receive_handle.recv_timeout(deadline).unwrap();
+        wait_until(|| handle.is_running() || worker.is_finished(), deadline);
+        let ran = handle.is_running();
+        handle.stop();
+        receive_result.recv_timeout(deadline).unwrap().unwrap();
+        worker.join().unwrap();
+
+        assert!(ran);
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
 
     #[rstest]
     fn test_owned_run_cleanup_preserves_all_errors(
@@ -4340,8 +4381,12 @@ class ClaimsStrategy(Strategy):
                 .block_on(node.node_mut().unwrap().run())
                 .expect("native LiveNode run should stop cleanly"),
             ShutdownRunPath::PyO3 => Python::attach(|py| {
-                super::run_live_node_detached(py, &mut node.node_mut().unwrap())
-                    .expect("Python LiveNode run should stop cleanly");
+                super::run_live_node_detached(
+                    py,
+                    &mut node.node_mut().unwrap(),
+                    NodeRunMode::Owned,
+                )
+                .expect("Python LiveNode run should stop cleanly");
             }),
         }
 
@@ -4385,7 +4430,7 @@ class ClaimsStrategy(Strategy):
         });
 
         Python::attach(|py| {
-            super::run_live_node_detached(py, &mut node.node_mut().unwrap())
+            super::run_live_node_detached(py, &mut node.node_mut().unwrap(), NodeRunMode::Owned)
                 .expect("node should run cleanly");
         });
 
@@ -4861,7 +4906,7 @@ class ClaimsStrategy(Strategy):
         });
 
         Python::attach(|py| {
-            super::run_live_node_detached(py, &mut node.node_mut().unwrap())
+            super::run_live_node_detached(py, &mut node.node_mut().unwrap(), NodeRunMode::Owned)
                 .expect("node should run cleanly");
         });
 

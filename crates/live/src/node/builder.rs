@@ -49,7 +49,7 @@ use nautilus_system::{
 use nautilus_trading::ImportableControllerConfig;
 
 use super::{
-    LiveNode, LiveNodeHandle,
+    LiveNode, LiveNodeHandle, ProcessOwner,
     config::{
         LiveDataEngineConfig, LiveExecutionEngineConfig, LiveNodeConfig, LiveRiskEngineConfig,
         RoutingConfig, SubmissionRecoveryPolicy, validate_live_environment,
@@ -563,14 +563,17 @@ impl LiveNodeBuilder {
     /// Returns an error if node construction fails, including conflicting execution routes
     /// or multiple execution clients for a venue without an explicit route or default client.
     /// The node's submission recovery policy must satisfy all execution client requirements.
-    /// Also returns an error if another live node exists or is being built on this thread.
-    pub fn build(mut self) -> anyhow::Result<LiveNode> {
-        self.build_in_place()
+    /// Also returns an error if another live node exists or is being built in the process.
+    pub fn build(self) -> anyhow::Result<LiveNode> {
+        let process_owner = LiveNode::acquire_process()?;
+        let mut builder = self;
+        builder.build_in_place(&process_owner)
     }
 
-    pub(crate) fn build_in_place(&mut self) -> anyhow::Result<LiveNode> {
-        let thread_owner = LiveNode::acquire_thread()?;
-
+    pub(crate) fn build_in_place(
+        &mut self,
+        process_owner: &Rc<ProcessOwner>,
+    ) -> anyhow::Result<LiveNode> {
         log::info!(
             "Building LiveNode with {} data clients and {} execution clients",
             self.data_client_factories.len(),
@@ -659,7 +662,7 @@ impl LiveNodeBuilder {
             socket_registry,
             None,
             external_ingress,
-            thread_owner,
+            Rc::clone(process_owner),
         );
         node.load_configured_plugins()?;
         node.cache_database_factory = self.cache_database_factory.take();

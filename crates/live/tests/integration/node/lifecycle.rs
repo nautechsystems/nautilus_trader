@@ -344,7 +344,7 @@ fn test_dispose_before_start_is_idempotent() {
 }
 
 #[rstest]
-fn test_node_build_rejects_reentry_and_releases_thread_after_factory_failure() {
+fn test_node_build_rejects_reentry_and_releases_process_after_factory_failure() {
     let result = LiveNodeBuilder::new(TraderId::default(), Environment::Live)
         .unwrap()
         .with_event_store(|_instance_id: UUID4, _clock: Rc<RefCell<dyn Clock>>| {
@@ -368,33 +368,50 @@ fn test_node_build_rejects_reentry_and_releases_thread_after_factory_failure() {
 }
 
 #[rstest]
-fn test_node_build_allows_separate_threads() {
+fn test_node_build_rejects_existing_node_on_another_thread(#[values(false, true)] builder: bool) {
     let node = LiveNode::build("First".to_string(), None).unwrap();
 
-    let other_state = std::thread::spawn(|| {
-        let other = LiveNode::build("OtherThread".to_string(), None).unwrap();
-        other.state()
+    let result = std::thread::spawn(move || {
+        let result = if builder {
+            LiveNodeBuilder::from_config(LiveNodeConfig::default())
+                .unwrap()
+                .build()
+        } else {
+            LiveNode::build("OtherThread".to_string(), None)
+        };
+
+        result.map(|other| other.state())
     })
     .join()
     .unwrap();
 
     assert_eq!(node.state(), NodeState::Idle);
-    assert_eq!(other_state, NodeState::Idle);
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "A LiveNode already exists or is being built in this process. Drop it before building another LiveNode"
+    );
 }
 
 #[rstest]
-fn test_node_build_releases_thread_after_drop() {
+fn test_node_build_releases_process_after_drop() {
     let mut node = LiveNode::build("First".to_string(), None).unwrap();
     node.dispose();
     assert!(LiveNode::build("WhileRetained".to_string(), None).is_err());
     drop(node);
 
-    let replacement = LiveNode::build("Replacement".to_string(), None).unwrap();
-    assert_eq!(replacement.state(), NodeState::Idle);
+    let replacement_state = std::thread::spawn(|| {
+        LiveNode::build("Replacement".to_string(), None)
+            .unwrap()
+            .state()
+    })
+    .join()
+    .unwrap();
+
+    assert_eq!(replacement_state, NodeState::Idle);
 }
 
 #[rstest]
-fn test_node_build_releases_thread_after_failure(#[values(false, true)] builder: bool) {
+fn test_node_build_releases_process_after_failure(#[values(false, true)] builder: bool) {
     let config = LiveNodeConfig {
         event_store: Some(EventStoreConfig::default()),
         ..Default::default()

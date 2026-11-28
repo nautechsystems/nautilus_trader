@@ -111,8 +111,8 @@ Rust ownership stays visible at node boundaries:
   then.
 - Concurrent `LiveNode` or `BacktestNode` instances in one process are not supported because their runtime
   state is not isolated. Dispose one node before starting the next, or use separate processes for parallel
-  execution. Before constructing a replacement `LiveNode` on the same thread, also release all references to
-  the previous node. With a single reference, use `del node` before the next build. Reassigning the variable
+  execution. Before constructing a replacement `LiveNode`, release all references to the previous node on
+  its owning thread. With a single reference, use `del node` before the next build. Reassigning the variable
   constructs the replacement before releasing the old node.
 
 These boundaries prevent Python references from exposing mutable engine internals or creating

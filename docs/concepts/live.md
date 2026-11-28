@@ -116,8 +116,14 @@ does not extend cleanup beyond `delay_post_stop` or implement recovery across re
 ## Hosted event loops
 
 Use `run_async()` from Python to run a node on an event loop you already own. For example, an ASGI server can
-serve a dashboard beside the node. Use `run()` when the node should own the calling thread and signal
-handling.
+serve a dashboard beside the node. Use `run()` when the node should own the calling thread. It installs
+Python signal handlers only on the main thread. Build, run, and dispose the node on the same thread.
+On a worker thread, `run()` leaves process signal handling to the host. Get the handle with
+`node.handle()` before `run()` and call `handle.stop()` from another thread to request shutdown.
+Dispose of the node and release its references on the owning thread, including after a failure.
+Catch worker errors on that thread and send only their text to the caller. A traceback can retain
+the node through internal frames even after `del node`. If references remain in a cycle, call
+`gc.collect()` on the owning thread before it exits.
 
 This lifecycle sketch leaves node configuration and request serving to the application:
 
@@ -206,11 +212,10 @@ host's own callbacks. Startup and shutdown drain their queues without yielding. 
 or a shutdown backlog can hold the loop for the length of that drain.
 
 :::warning[One LiveNode per process]
-Run one concurrent `LiveNode` per process. The runner binds its channel senders and message bus into
-thread-local storage, and other runtime state is process-wide. `run_async()` also rejects a second
-hosted node on the same event loop. Run additional nodes in separate processes.
+Only one `LiveNode` can exist in a process. Building another raises an error while the first node
+exists or is being built, including from a different thread. Nodes share the process logger and
+shutdown-on-error state. Run additional nodes in separate processes.
 
-Building another `LiveNode` on the same thread raises an error while the first node exists or is being built.
 In Python, `node.build(...)` is a static constructor and attempts to create another node.
 
 Calling `dispose()` alone does not release this construction guard. Before building a replacement, drop the
@@ -218,7 +223,7 @@ existing node or release all references to it in Python:
 
 - With a single Python reference, call `del node` first: `node = LiveNode.build(...)` attempts construction
   while the old node still exists.
-- Exceptions and unfinished coroutines can keep the node. Release those references too.
+- Exceptions and unfinished coroutines can keep the node. Release those references on the owning thread.
 - If an unreachable reference cycle keeps it, run `gc.collect()` before rebuilding.
 
 When an ASGI application lifespan constructs the node, run that application with one worker. Do not

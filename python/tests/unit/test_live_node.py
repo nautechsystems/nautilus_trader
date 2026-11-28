@@ -17,6 +17,11 @@ Test live node behavior.
 """
 
 import asyncio
+import os
+import signal
+import subprocess
+import sys
+from textwrap import dedent
 from typing import ClassVar
 
 import pytest
@@ -35,6 +40,7 @@ from nautilus_trader.live import LiveNode
 from nautilus_trader.live import LiveNodeConfig
 from nautilus_trader.live import LiveRiskEngineConfig
 from nautilus_trader.live import PortfolioConfig
+from nautilus_trader.live.config import ImportableConfig
 from nautilus_trader.model import ActorId
 from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.model import StrategyId
@@ -369,6 +375,105 @@ async def test_live_node_start_stop_dispose_local() -> None:
     assert LifecycleProbeStrategy.disposed == 1
 
 
+def test_live_node_run_restores_sigint_handler() -> None:
+    """
+    Test that the main-thread run handles SIGINT and restores the previous handler.
+    """
+    script = dedent("""
+        import signal
+
+        from nautilus_trader.common import DataActor, Environment
+        from nautilus_trader.live import LiveNode
+        from nautilus_trader.model import TraderId
+
+        node = (
+            LiveNode.builder("TEST", TraderId("TESTER-SIGINT"), Environment.SANDBOX)
+            .with_reconciliation(False)
+            .with_delay_post_stop_secs(0)
+            .build()
+        )
+        handle = node.handle()
+        previous = signal.getsignal(signal.SIGINT)
+        assert previous is not None
+
+        class StopWithSigint(DataActor):
+            def on_start(self):
+                handler = signal.getsignal(signal.SIGINT)
+                assert handler is not previous
+                assert callable(handler)
+                handler(signal.SIGINT, None)
+                assert handle.is_stopping
+
+        try:
+            node.add_actor(StopWithSigint())
+            node.run()
+            assert signal.getsignal(signal.SIGINT) is previous
+        finally:
+            node.dispose()
+        """)
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        encoding="utf-8",
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX process signals")
+def test_live_node_worker_preserves_sigterm_disposition() -> None:
+    """
+    Test that a worker run leaves SIGTERM available to the host after shutdown.
+    """
+    script = dedent("""
+        import os
+        import signal
+        from concurrent.futures import ThreadPoolExecutor
+
+        from nautilus_trader.common import DataActor, Environment
+        from nautilus_trader.live import LiveNode, NodeState
+        from nautilus_trader.model import TraderId
+
+        def run_node():
+            node = (
+                LiveNode.builder("TEST", TraderId("TESTER-TERM"), Environment.SANDBOX)
+                .with_reconciliation(False)
+                .with_delay_post_stop_secs(0)
+                .build()
+            )
+            handle = node.handle()
+
+            class StopOnStart(DataActor):
+                def on_start(self):
+                    handle.stop()
+
+            try:
+                node.add_actor(StopOnStart())
+                node.run()
+                assert handle.state == NodeState.STOPPED
+            finally:
+                node.dispose()
+
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            executor.submit(run_node).result()
+        print("worker stopped", flush=True)
+        os.kill(os.getpid(), signal.SIGTERM)
+        """)
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        encoding="utf-8",
+        timeout=30,
+        check=False,
+    )
+
+    assert "worker stopped" in result.stdout, result.stderr
+    assert result.returncode == -signal.SIGTERM, result.stderr
+
+
 def test_live_node_dispose_before_start_twice_does_not_raise() -> None:
     """
     Test live node dispose before start twice does not raise.
@@ -528,6 +633,21 @@ def test_builder_accepts_supported_runtime_configs() -> None:
 
     assert node.trader_id == trader_id
     assert node.environment == Environment.SANDBOX
+
+
+def test_live_node_build_rejects_before_resolving_client_configs(live_node: LiveNode) -> None:
+    """
+    Reject a second node before importing its client configuration.
+    """
+    config = LiveNodeConfig(
+        data_clients={"OTHER": ImportableConfig("missing_live_node_client:Config")},
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="A LiveNode already exists or is being built in this process",
+    ):
+        LiveNode.build("OTHER", config)
 
 
 def test_builder_rejects_unregistered_cache_database_factory() -> None:

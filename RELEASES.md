@@ -60,6 +60,7 @@ Released on TBD (UTC).
 - Changed `Position` layout. Use `PositionReplayEvents` for `replay_events` via `.into()` (#5551), thanks @Milchstrassse
 - Changed `Position` literals to require `allows_negative_price`. Use `None` if unknown (#5535)
 - Changed `PortfolioSnapshot` literals to require `is_registration`. Use `true` only for account registration
+- Changed `LiveNode` to allow only one instance per process. Run additional nodes in separate processes
 - Changed repeat option-chain subscribes from one actor to no-ops; unsubscribe before changing configuration
 - Changed `UnsubscribeOptionChain` literals; use `correlation_id: Some(owner_id)` (`None` requires a sole owner)
 - Changed option chains to require supported `greeks_convention` values when supplied
@@ -187,6 +188,7 @@ Released on TBD (UTC).
 - Fixed older instrument responses overwriting newer cached definitions
 - Fixed stale instrument definitions in order and fill reports (#5722), thanks for reporting @vitakot
 - Fixed live startup connecting execution clients after a stop request during data connection
+- Fixed Python `LiveNode.run()` failing on worker threads (#5786), thanks for reporting @nstkhv
 - Fixed `LiveNode::start` skipping reconciliation for instruments sent during execution connect
 - Fixed `LiveNode::start` timing out when execution clients wait for account registration
 - Fixed `LiveNode::run` handling SIGINT and SIGTERM only after startup

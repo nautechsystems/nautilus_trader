@@ -85,12 +85,12 @@
 
 use std::{
     any::Any,
-    cell::RefCell,
     collections::VecDeque,
     fmt::Debug,
     future::Future,
     pin::Pin,
-    rc::{Rc, Weak},
+    rc::Rc,
+    sync::atomic::{AtomicBool, Ordering},
     time::Duration,
 };
 
@@ -177,9 +177,7 @@ pub use state::{LiveNodeHandle, NodeRunMode, NodeState};
 /// which shows up as lapsed heartbeats and reconnects rather than as backpressure.
 const DISPATCHES_PER_YIELD: usize = 64;
 
-thread_local! {
-    static NODE_THREAD_OWNER: RefCell<Weak<()>> = const { RefCell::new(Weak::new()) };
-}
+static NODE_PROCESS_OWNED: AtomicBool = AtomicBool::new(false);
 
 type StreamProcessorCallback = dyn Fn(&dyn Any, &serde_json::Value) -> anyhow::Result<()> + 'static;
 
@@ -196,9 +194,8 @@ impl Debug for StreamProcessor {
 /// Provides a simplified interface for running live systems
 /// with automatic client management and lifecycle handling.
 ///
-/// Only one live node may exist on a thread at a time. Drop the node before building another,
-/// including after disposal, because retained nodes can still access thread-local messaging.
-/// Concurrent nodes in one process remain unsupported, even on separate threads.
+/// Only one live node may exist per process. Drop the node before building another, including
+/// after disposal, because retained nodes can still access thread-local messaging.
 #[derive(Debug)]
 pub struct LiveNode {
     kernel: NautilusKernel,
@@ -215,19 +212,18 @@ pub struct LiveNode {
     shutdown_deadline: Option<dst::time::Instant>,
     #[cfg(feature = "plugin")]
     plugins: plugin::NodePlugins,
-    _thread_owner: Rc<()>,
+
+    // Release process ownership after the other fields drop
+    _process_owner: Rc<ProcessOwner>,
 }
 
 impl LiveNode {
-    /// Creates a new `LiveNode` from builder components.
-    ///
-    /// This is an internal constructor used by `LiveNodeBuilder`.
     #[must_use]
     #[allow(
         clippy::too_many_arguments,
         reason = "builder components have distinct lifecycle roles"
     )]
-    pub(crate) fn new_from_builder(
+    fn new_from_builder(
         kernel: NautilusKernel,
         runner: AsyncRunner,
         config: LiveNodeConfig,
@@ -237,7 +233,7 @@ impl LiveNode {
         socket_registry: SocketReconnectRegistry,
         cache_database_factory: Option<Box<dyn CacheDatabaseFactory>>,
         external_msgbus: Option<ExternalMessageBusIngress>,
-        thread_owner: Rc<()>,
+        process_owner: Rc<ProcessOwner>,
     ) -> Self {
         for client in &exec_clients {
             exec_manager.register_submission_retention(client);
@@ -258,7 +254,7 @@ impl LiveNode {
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
             plugins: plugin::NodePlugins,
-            _thread_owner: thread_owner,
+            _process_owner: process_owner,
         }
     }
 
@@ -283,9 +279,9 @@ impl LiveNode {
     /// # Errors
     ///
     /// Returns an error if kernel construction fails or another live node exists or is being
-    /// built on this thread.
+    /// built in the process.
     pub fn build(name: String, config: Option<LiveNodeConfig>) -> anyhow::Result<Self> {
-        let thread_owner = Self::acquire_thread()?;
+        let process_owner = Self::acquire_process()?;
         let config = config.unwrap_or_default();
         validate_live_environment(config.environment())?;
 
@@ -339,7 +335,7 @@ impl LiveNode {
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
             plugins: plugin::NodePlugins,
-            _thread_owner: thread_owner,
+            _process_owner: process_owner,
         };
 
         node.load_configured_plugins()?;
@@ -349,17 +345,14 @@ impl LiveNode {
         Ok(node)
     }
 
-    fn acquire_thread() -> anyhow::Result<Rc<()>> {
-        NODE_THREAD_OWNER.with(|slot| {
-            let mut owner = slot.borrow_mut();
-            anyhow::ensure!(
-                owner.upgrade().is_none(),
-                "A LiveNode already exists or is being built on this thread; drop it before building another"
-            );
-            let token = Rc::new(());
-            *owner = Rc::downgrade(&token);
-            Ok(token)
-        })
+    pub(crate) fn acquire_process() -> anyhow::Result<Rc<ProcessOwner>> {
+        anyhow::ensure!(
+            NODE_PROCESS_OWNED
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok(),
+            "A LiveNode already exists or is being built in this process. Drop it before building another LiveNode"
+        );
+        Ok(Rc::new(ProcessOwner(())))
     }
 
     /// Loads and registers plug-ins declared on the node config.
@@ -3161,6 +3154,15 @@ enum SocketReconnectDispatchOutcome {
     UnknownClient,
     UnknownEndpoint,
     AmbiguousEndpoint,
+}
+
+#[derive(Debug)]
+pub(crate) struct ProcessOwner(());
+
+impl Drop for ProcessOwner {
+    fn drop(&mut self) {
+        NODE_PROCESS_OWNED.store(false, Ordering::Release);
+    }
 }
 
 fn record_runner_dispatch(
@@ -10016,7 +10018,7 @@ mod tests {
 
         assert_eq!(
             result.unwrap_err().to_string(),
-            "A LiveNode already exists or is being built on this thread; drop it before building another"
+            "A LiveNode already exists or is being built in this process. Drop it before building another LiveNode"
         );
 
         let ExecutionEvent::Account(after) = stub_account_event() else {

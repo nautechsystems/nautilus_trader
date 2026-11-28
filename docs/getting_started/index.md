@@ -54,9 +54,9 @@ in-memory data but has no live-trading path.
 :::warning[One node per process]
 Running multiple `BacktestNode` or `LiveNode` instances concurrently in the same
 process is not supported due to global singleton state. Sequential execution with
-proper disposal between runs is supported. A replacement `LiveNode` on the same
-thread also requires dropping the previous node, or releasing all references to
-it in Python, before construction.
+proper disposal between runs is supported. The `LiveNode` construction guard
+applies across all threads. Before building a replacement, drop the previous
+node or release all Python references to it on its owning thread.
 
 See [Processes and threads](../concepts/architecture.md#processes-and-threads) for
 details.
