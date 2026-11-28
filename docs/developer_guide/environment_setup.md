@@ -584,8 +584,9 @@ NEXTEST_TEST_THREADS=8 make cargo-test-extras
 ## Nautilus CLI developer guide
 
 The Nautilus CLI is a standalone Rust binary for PostgreSQL administration and other repository
-operations. It is independent from the Python package installed by `make build-debug` or
-`make build`.
+operations. It is independent from the Python package installed by `make build-debug` or `make build`.
+The `nautilus-blockchain` binary provides block sync, DEX pool discovery, and pool analysis. See the
+[blockchain command-line tool](../integrations/blockchain.md#command-line-tool).
 
 ### Build and select the CLI
 

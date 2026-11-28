@@ -17,36 +17,24 @@ workspace = true
 
 [features]
 default = []
-defi = [
-  "dep:nautilus-blockchain",
-  "nautilus-model/defi",
-  "nautilus-persistence/defi",
-]
+high-precision = ["nautilus-persistence/high-precision"]
 
 [package.metadata.docs.rs]
-all-features = true
+features = ["high-precision"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 nautilus-common = { workspace = true }
-nautilus-core = { workspace = true }
 nautilus-infrastructure = { workspace = true, features = ["postgres"] }
 nautilus-model = { workspace = true }
 nautilus-persistence = { workspace = true, features = ["cloud"] }
-
-nautilus-blockchain = { workspace = true, features = [
-  "hypersync",
-], optional = true }
 
 anyhow = { workspace = true }
 clap = { workspace = true }
 dotenvy = { workspace = true }
 log = { workspace = true }
 mimalloc = { workspace = true }
-serde_json = { workspace = true }
 tokio = { workspace = true }
-tokio-util = { workspace = true }
-ustr = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

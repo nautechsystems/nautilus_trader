@@ -53,18 +53,34 @@ Registered-only DEXes are omitted from command help and fail the relevant capabi
 
 ### Interface availability
 
-| Surface                               | Rust                                      | Python                     | CLI                                      |
-| ------------------------------------- | ----------------------------------------- | -------------------------- | ---------------------------------------- |
-| Data configuration and factory        | Public config and factory.                | Public config and factory. | -                                        |
-| Live data subscriptions               | Data-client subscription API.             | LiveNode data-client API.  | -                                        |
-| Block sync, discovery, and analysis   | Adapter services.                         | -                          | `sync-blocks`, `sync-dex`, and analysis. |
-| Stored snapshot loading               | Cache API.                                | `load_pool_snapshot`.      | -                                        |
-| Execution configuration               | Public config.                            | Configuration types only.  | -                                        |
-| Execution factory and order routing   | Public factory and client.                | -                          | -                                        |
-| Preflight, wrap, approve, and storage | Direct `BlockchainExecutionClient` calls. | -                          | -                                        |
+| Surface                               | Rust                                      | Python                     | CLI                                                             |
+| ------------------------------------- | ----------------------------------------- | -------------------------- | --------------------------------------------------------------- |
+| Data configuration and factory        | Public config and factory.                | Public config and factory. | -                                                               |
+| Live data subscriptions               | Data-client subscription API.             | LiveNode data-client API.  | -                                                               |
+| Block sync, discovery, and analysis   | Adapter services.                         | -                          | `sync-blocks`, `sync-dex`, `analyze-pool`, and `analyze-pools`. |
+| Stored snapshot loading               | Cache API.                                | `load_pool_snapshot`.      | -                                                               |
+| Execution configuration               | Public config.                            | Configuration types only.  | -                                                               |
+| Execution factory and order routing   | Public factory and client.                | -                          | -                                                               |
+| Preflight, wrap, approve, and storage | Direct `BlockchainExecutionClient` calls. | -                          | -                                                               |
 
 The Python module does not register or export `BlockchainExecutionClientFactory`, so Python
 LiveNode configuration cannot instantiate the execution client.
+
+#### Command-line tool
+
+The `nautilus-blockchain` binary provides block sync, pool discovery, and pool analysis. Build it
+with the `hypersync` feature:
+
+```bash
+cargo build -p nautilus-blockchain --features hypersync --bin nautilus-blockchain
+```
+
+Commands:
+
+- `sync-blocks`
+- `sync-dex`
+- `analyze-pool`
+- `analyze-pools`
 
 ### Examples
 
@@ -579,11 +595,12 @@ chain and DEX before analysis to populate the `pool` and `token` tables.
 
 Use [Chain and DEX command support](#chain-and-dex-command-support) or the command help before
 starting a sync. `sync-dex` and `analyze-pool(s)` reject unsupported chain and DEX combinations
-before querying events, rather than returning an empty result.
+before querying events, rather than returning an empty result. Build the binary as described in
+[Command-line tool](#command-line-tool).
 
 ```bash
-./target/debug/nautilus blockchain sync-dex --help
-./target/debug/nautilus blockchain analyze-pools --help
+./target/debug/nautilus-blockchain sync-dex --help
+./target/debug/nautilus-blockchain analyze-pools --help
 ```
 
 ### Use checksummed pool addresses
@@ -638,11 +655,11 @@ writes only to the configured Postgres cache.
 - `RPC_HTTP_URL` points to an Arbitrum RPC provider that can serve the target block.
 - `POOL_ADDRESS` contains an EIP-55 checksummed PancakeSwap V3 pool address.
 
-### Start the local services and build the CLI
+### Start the local services and build `nautilus-blockchain`
 
 ```bash
 make init-services
-cargo build -p nautilus-cli --features defi --bin nautilus
+cargo build -p nautilus-blockchain --features hypersync --bin nautilus-blockchain
 ```
 
 ### Discover pools
@@ -650,7 +667,7 @@ cargo build -p nautilus-cli --features defi --bin nautilus
 Run discovery immediately before analysis when the local database has been reset:
 
 ```bash
-./target/debug/nautilus blockchain sync-dex \
+./target/debug/nautilus-blockchain sync-dex \
     --chain arbitrum \
     --dex PancakeSwapV3 \
     --rpc-url "$RPC_HTTP_URL" \
@@ -666,7 +683,7 @@ Run discovery immediately before analysis when the local database has been reset
 Keep concurrency at one for this validation run:
 
 ```bash
-./target/debug/nautilus blockchain analyze-pools \
+./target/debug/nautilus-blockchain analyze-pools \
     --chain arbitrum \
     --dex PancakeSwapV3 \
     --address "$POOL_ADDRESS" \

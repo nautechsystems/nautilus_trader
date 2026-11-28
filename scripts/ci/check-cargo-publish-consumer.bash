@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Check the packaged HyperSync and DeFi dependency graph without workspace patches
+# Check the packaged CLI and HyperSync dependency graphs without workspace patches
 set -euo pipefail
 
 consumer_work_dir=""
@@ -62,6 +62,13 @@ main() {
     --format-version=1 \
     --manifest-path "${consumer_work_dir}/Cargo.toml" > "$metadata_file"
 
+  require_standalone_cli "$metadata_file"
+
+  CARGO_TARGET_DIR="$target_dir" cargo metadata \
+    --format-version=1 \
+    --manifest-path "${consumer_work_dir}/Cargo.toml" \
+    --features blockchain > "$metadata_file"
+
   require_single_registry_package "$metadata_file" arrow
   require_single_registry_package "$metadata_file" parquet
 
@@ -71,7 +78,7 @@ main() {
   fi
 
   CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}" CARGO_TARGET_DIR="$target_dir" \
-    cargo check --locked --manifest-path "${consumer_work_dir}/Cargo.toml"
+    cargo check --locked --manifest-path "${consumer_work_dir}/Cargo.toml" --features blockchain
 
   echo "Cargo published consumer graph is valid"
 }
@@ -136,10 +143,14 @@ edition = "2024"
 publish = false
 
 [workspace]
+exclude = ["${extracted_dir##*/}"]
+
+[features]
+blockchain = ["dep:nautilus-blockchain"]
 
 [dependencies]
-nautilus-blockchain = { path = ${blockchain_path}, features = ["hypersync", "turmoil"] }
-nautilus-cli = { path = ${cli_path}, features = ["defi"] }
+nautilus-blockchain = { path = ${blockchain_path}, features = ["hypersync", "turmoil"], optional = true }
+nautilus-cli = { path = ${cli_path}, features = ["high-precision"] }
 EOF
 
   printf '\n[patch.crates-io]\n' >> "${consumer_work_dir}/Cargo.toml"
@@ -150,8 +161,29 @@ EOF
       >> "${consumer_work_dir}/Cargo.toml"
   done < "$publish_plan_file"
 
-  printf 'use nautilus_blockchain as _;\nuse nautilus_cli as _;\n\nfn main() {}\n' \
-    > "${consumer_work_dir}/src/main.rs"
+  cat > "${consumer_work_dir}/src/main.rs" << 'EOF'
+#[cfg(feature = "blockchain")]
+use nautilus_blockchain as _;
+use nautilus_cli as _;
+
+fn main() {}
+EOF
+}
+
+require_standalone_cli() {
+  local metadata_file=$1
+
+  if ! jq -e '
+    . as $graph
+    | [.packages[] | select(.name == "nautilus-model") | .id as $id
+      | $graph.resolve.nodes[] | select(.id == $id) | .features] as $model_features
+    | ($model_features | length == 1
+        and (.[0] | index("high-precision") != null and index("defi") == null))
+      and (any(.packages[]; .name == "nautilus-blockchain") | not)
+  ' "$metadata_file" > /dev/null; then
+    echo "::error::Expected the standalone CLI to enable model high precision without DeFi or the blockchain adapter" >&2
+    exit 1
+  fi
 }
 
 require_single_registry_package() {

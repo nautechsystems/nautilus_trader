@@ -15,6 +15,3 @@
 
 mod catalog_migration;
 mod logging;
-
-#[cfg(feature = "defi")]
-mod exit_code;

@@ -1,0 +1,49 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
+#![warn(clippy::clone_on_ref_ptr)]
+
+use std::process::ExitCode;
+
+use mimalloc::MiMalloc;
+use nautilus_blockchain::cli;
+use nautilus_common::logging::{
+    ensure_logging_initialized, headers::register_allocator_mimalloc, logging_shutdown,
+};
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
+
+#[tokio::main]
+async fn main() -> ExitCode {
+    register_allocator_mimalloc();
+    dotenvy::dotenv().ok();
+    ensure_logging_initialized();
+
+    let command = cli::command();
+    let matches = command.get_matches();
+    let exit_code = match Box::pin(cli::run(&matches)).await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            log::error!("Error executing nautilus-blockchain: {e}");
+            ExitCode::FAILURE
+        }
+    };
+
+    // The lazy logging guard is a static that is never dropped, so flush logs before exit
+    logging_shutdown();
+
+    exit_code
+}

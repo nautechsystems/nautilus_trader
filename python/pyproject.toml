@@ -51,7 +51,7 @@ features = [
   "extension-module",
   "arrow",
   "high-precision",
-  "mimalloc",
+  "nautilus-pyo3/mimalloc",
   "redis",
   "postgres",
   "defi",

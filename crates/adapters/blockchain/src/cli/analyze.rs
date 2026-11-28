@@ -16,12 +16,6 @@
 use std::{fs, sync::Arc};
 
 use anyhow::Context;
-use nautilus_blockchain::{
-    config::BlockchainDataClientConfig,
-    data::core::{BlockchainDataClientCore, SnapshotValidation},
-    exchanges::{find_dex_type_case_insensitive, get_dex_extended, get_supported_dexes_for_chain},
-    rpc::providers::check_infura_rpc_provider,
-};
 use nautilus_infrastructure::sql::pg::get_postgres_connect_options;
 use nautilus_model::defi::{
     DexType, Pool, PoolIdentifier, PoolProfiler, chain::Chain, data::block::BlockPosition,
@@ -30,7 +24,13 @@ use nautilus_model::defi::{
 use serde_json::json;
 use ustr::Ustr;
 
-use crate::opt::DatabaseConfig;
+use super::opt::DatabaseConfig;
+use crate::{
+    config::BlockchainDataClientConfig,
+    data::core::{BlockchainDataClientCore, SnapshotValidation},
+    exchanges::{find_dex_type_case_insensitive, get_dex_extended, get_supported_dexes_for_chain},
+    rpc::providers::check_infura_rpc_provider,
+};
 
 /// Runs pool analysis for the specified chain, DEX, and pool address.
 ///
@@ -158,7 +158,6 @@ pub(crate) async fn run_analyze_pools(
         String,
         tokio::task::JoinHandle<anyhow::Result<Vec<PoolAnalysisOutcome>>>,
     )> = Vec::with_capacity(pool_addresses.len());
-
     for pool_address in pool_addresses {
         let permit = Arc::clone(&semaphore)
             .acquire_owned()
@@ -170,7 +169,8 @@ pub(crate) async fn run_analyze_pools(
         let checkpoint_blocks = checkpoint_blocks.clone();
         let task_address = pool_address.clone();
 
-        let handle = tokio::spawn(async move {
+        // The CLI binary owns this runtime. The shared runtime is for Python callers.
+        let task = async move {
             let _permit = permit;
             let mut data_client = create_data_client(
                 chain,
@@ -193,7 +193,10 @@ pub(crate) async fn run_analyze_pools(
                 snapshot_from_rpc,
             )
             .await
-        });
+        };
+
+        let handle = tokio::spawn(task); // tokio-import-ok
+
         tasks.push((task_address, handle));
     }
 
@@ -272,6 +275,7 @@ async fn analyze_pool_with_client(
     } else {
         normalize_checkpoints(checkpoint_blocks, to_block)
     };
+
     let Some(first_checkpoint) = checkpoints.first().copied() else {
         anyhow::bail!("All --checkpoint-blocks exceed --to-block {to_block}");
     };
@@ -452,6 +456,7 @@ async fn needs_bootstrap_before_target(
     let Some(snapshot) = snapshot else {
         return Ok(true);
     };
+
     let snapshot_needs_bootstrap = data_client
         .cache
         .get_pool(pool_identifier)
@@ -683,13 +688,12 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::opt::NautilusCli;
+    use crate::cli::opt::BlockchainCli;
 
     #[rstest]
     fn analyze_pool_cli_parses_require_existing_snapshot() {
-        let cli = NautilusCli::try_parse_from([
-            "nautilus",
-            "blockchain",
+        let cli = BlockchainCli::try_parse_from([
+            "nautilus-blockchain",
             "analyze-pool",
             "--chain",
             "ethereum",
@@ -716,24 +720,20 @@ mod tests {
         .unwrap();
 
         match cli.command {
-            crate::opt::Commands::Blockchain(crate::opt::BlockchainOpt {
-                command:
-                    crate::opt::BlockchainCommand::AnalyzePool {
-                        require_existing_snapshot,
-                        ..
-                    },
-            }) => {
+            crate::cli::opt::BlockchainCommand::AnalyzePool {
+                require_existing_snapshot,
+                ..
+            } => {
                 assert!(require_existing_snapshot);
             }
-            _ => panic!("Expected analyze-pool blockchain command"),
+            _ => panic!("Expected analyze-pool command"),
         }
     }
 
     #[rstest]
     fn analyze_pool_cli_parses_snapshot_from_rpc() {
-        let cli = NautilusCli::try_parse_from([
-            "nautilus",
-            "blockchain",
+        let cli = BlockchainCli::try_parse_from([
+            "nautilus-blockchain",
             "analyze-pool",
             "--chain",
             "ethereum",
@@ -760,23 +760,19 @@ mod tests {
         .unwrap();
 
         match cli.command {
-            crate::opt::Commands::Blockchain(crate::opt::BlockchainOpt {
-                command:
-                    crate::opt::BlockchainCommand::AnalyzePool {
-                        snapshot_from_rpc, ..
-                    },
-            }) => {
+            crate::cli::opt::BlockchainCommand::AnalyzePool {
+                snapshot_from_rpc, ..
+            } => {
                 assert!(snapshot_from_rpc);
             }
-            _ => panic!("Expected analyze-pool blockchain command"),
+            _ => panic!("Expected analyze-pool command"),
         }
     }
 
     #[rstest]
     fn analyze_pools_cli_parses_checkpoint_blocks_and_concurrency() {
-        let cli = NautilusCli::try_parse_from([
-            "nautilus",
-            "blockchain",
+        let cli = BlockchainCli::try_parse_from([
+            "nautilus-blockchain",
             "analyze-pools",
             "--chain",
             "ethereum",
@@ -807,22 +803,19 @@ mod tests {
         .unwrap();
 
         match cli.command {
-            crate::opt::Commands::Blockchain(crate::opt::BlockchainOpt {
-                command:
-                    crate::opt::BlockchainCommand::AnalyzePools {
-                        checkpoint_blocks,
-                        skip_validation,
-                        snapshot_from_rpc,
-                        concurrency,
-                        ..
-                    },
-            }) => {
+            crate::cli::opt::BlockchainCommand::AnalyzePools {
+                checkpoint_blocks,
+                skip_validation,
+                snapshot_from_rpc,
+                concurrency,
+                ..
+            } => {
                 assert_eq!(checkpoint_blocks, vec![100, 200, 300]);
                 assert!(skip_validation);
                 assert!(!snapshot_from_rpc);
                 assert_eq!(concurrency, Some(8));
             }
-            _ => panic!("Expected analyze-pools blockchain command"),
+            _ => panic!("Expected analyze-pools command"),
         }
     }
 

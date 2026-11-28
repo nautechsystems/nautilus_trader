@@ -36,6 +36,7 @@ edition = "2024"
 
 [features]
 defi = []
+high-precision = []
 hypersync = []
 turmoil = []
 
@@ -56,6 +57,28 @@ if [[ "${1:-}" == "metadata" && "$*" == "metadata --format-version=1 --manifest-
   if [[ -n "${CARGO_REGISTRY_TOKEN:-}" || -n "${CARGO_REGISTRIES_CRATES_IO_TOKEN:-}" ]]; then
     echo "consumer metadata inherited a crates.io token" >&2
     exit 2
+  fi
+
+  if [[ "$*" != *" --features blockchain" ]]; then
+    if ! grep -Fxq 'exclude = ["packages"]' "$4"; then
+      echo "consumer workspace must exclude the extracted packages" >&2
+      exit 2
+    fi
+
+    model_features='["high-precision"]'
+    adapter_package='[]'
+    case "${MOCK_CARGO_CONSUMER_GRAPH:-valid}" in
+      cli-standard-precision) model_features='[]' ;;
+      cli-defi) model_features='["high-precision", "defi"]' ;;
+      cli-blockchain) adapter_package='[{"name":"nautilus-blockchain","id":"blockchain"}]' ;;
+    esac
+    jq -n --argjson features "$model_features" --argjson adapter "$adapter_package" '
+      {
+        packages: ([{name: "nautilus-model", id: "model"}] + $adapter),
+        resolve: {nodes: [{id: "model", features: $features}]}
+      }
+    '
+    exit 0
   fi
 
   registry_source='"registry+https://github.com/rust-lang/crates.io-index"'
@@ -598,7 +621,8 @@ if [[ -s "$dry_run_curl_log" ]]; then
   fail "--dry-run mode should not query crates.io versions for a publishable graph."
 fi
 
-for graph in local-arrow duplicate-arrow duplicate-parquet missing-arrow missing-parquet thrift; do
+for graph in local-arrow duplicate-arrow duplicate-parquet missing-arrow missing-parquet thrift \
+  cli-standard-precision cli-defi cli-blockchain; do
   graph_output="${work_dir}/${graph}-output.txt"
   if MOCK_CARGO_CONSUMER_GRAPH="$graph" \
     run_publish_script "--dry-run" "$dev_build_metadata" "$dry_run_exists_file" \
@@ -609,6 +633,7 @@ for graph in local-arrow duplicate-arrow duplicate-parquet missing-arrow missing
 
   case "$graph" in
     thrift) expected_error="Published consumer graph resolved thrift" ;;
+    cli-*) expected_error="Expected the standalone CLI to enable model high precision" ;;
     *) expected_error="Expected exactly one crates.io release of ${graph#*-}" ;;
   esac
   assert_contains "$graph_output" "$expected_error" \

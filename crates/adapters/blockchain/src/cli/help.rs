@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Capability-aware help for the blockchain subcommands.
+//! Capability-aware help for the sync and analysis commands.
 //!
 //! The supported DEX listings are derived from the adapter's DEX registration maps and parser
 //! presence, so the CLI help cannot drift from the parsers that are actually wired.
@@ -21,25 +21,22 @@
 use std::fmt::Write as _;
 
 use clap::Command;
-use nautilus_blockchain::exchanges::{
-    DEX_SUPPORTED_CHAINS, DexCapability, dex_capabilities_for_chain,
-};
 
-/// Attaches capability-derived `after_long_help` sections to the blockchain subcommands.
+use crate::exchanges::{DEX_SUPPORTED_CHAINS, DexCapability, dex_capabilities_for_chain};
+
+/// Attaches capability-derived `after_long_help` sections to the sync and analysis commands.
 ///
 /// `sync-dex` lists the DEXes it can discover; `analyze-pool(s)` list the DEXes that produce
 /// snapshots, marking the replay-ready and analysis-only ones.
-pub(crate) fn augment_blockchain_help(command: Command) -> Command {
-    command.mut_subcommand("blockchain", |blockchain| {
-        blockchain
-            .mut_subcommand("sync-dex", |c| c.after_long_help(render_discovery_help()))
-            .mut_subcommand("analyze-pool", |c| {
-                c.after_long_help(render_snapshot_help())
-            })
-            .mut_subcommand("analyze-pools", |c| {
-                c.after_long_help(render_snapshot_help())
-            })
-    })
+pub(crate) fn augment_help(command: Command) -> Command {
+    command
+        .mut_subcommand("sync-dex", |c| c.after_long_help(render_discovery_help()))
+        .mut_subcommand("analyze-pool", |c| {
+            c.after_long_help(render_snapshot_help())
+        })
+        .mut_subcommand("analyze-pools", |c| {
+            c.after_long_help(render_snapshot_help())
+        })
 }
 
 fn render_discovery_help() -> String {
@@ -72,6 +69,7 @@ fn snapshot_marker(capability: DexCapability) -> String {
     if !capability.discovery {
         marker.push_str(" +");
     }
+
     marker
 }
 
@@ -80,6 +78,7 @@ fn capability_block(
     marker: impl Fn(DexCapability) -> String,
 ) -> String {
     let mut block = String::new();
+
     for blockchain in DEX_SUPPORTED_CHAINS {
         let names: Vec<String> = dex_capabilities_for_chain(blockchain)
             .into_iter()
@@ -90,9 +89,11 @@ fn capability_block(
         if names.is_empty() {
             continue;
         }
+
         let label = format!("{}:", blockchain.to_string().to_lowercase());
         let _ = writeln!(block, "  {label:<10}{}", names.join(", "));
     }
+
     block
 }
 

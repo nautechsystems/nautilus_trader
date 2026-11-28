@@ -24,6 +24,14 @@
 //! - Configuration validation and setup utilities.
 //! - System administration and operational tools.
 //!
+//! The `nautilus-blockchain` binary provides block sync, DEX pool discovery, and pool analysis.
+//! Build it from the `nautilus-blockchain` crate with the `hypersync` feature.
+//!
+//! # Feature Flags
+//!
+//! - `high-precision`: Builds catalog migration with 128-bit fixed-point values and up to 16 decimal
+//!   places. The published `nautilus` binary enables this feature.
+//!
 //! # NautilusTrader
 //!
 //! [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
@@ -31,14 +39,6 @@
 //!
 //! The system spans research, deterministic simulation, and live execution within a single
 //! event-driven architecture, providing research-to-live semantic parity.
-//!
-//! # Feature Flags
-//!
-//! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case:
-//!
-//! - `defi`: Enables blockchain/DeFi commands including block sync, DEX pool sync, and pool
-//!   analysis.
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]
@@ -68,30 +68,19 @@ pub mod opt;
 
 mod database;
 
-#[cfg(feature = "defi")]
-mod blockchain;
-
 use nautilus_persistence::backend::parquet::migration::{
     ParquetMigrationConfig, migrate_parquet_catalog,
 };
 
-#[cfg(feature = "defi")]
-use crate::blockchain::run_blockchain_command;
 use crate::{
     database::postgres::run_database_command,
     opt::{CatalogCommand, Commands, NautilusCli},
 };
 
-/// Builds the top-level CLI command, augmented with capability-aware blockchain help.
-///
-/// The blockchain subcommands gain `after_long_help` sections derived from the adapter's DEX
-/// registration maps when the `defi` feature is enabled.
+/// Builds the top-level CLI command.
 #[must_use]
 pub fn cli_command() -> clap::Command {
-    let command = <NautilusCli as clap::CommandFactory>::command();
-    #[cfg(feature = "defi")]
-    let command = crate::blockchain::augment_blockchain_help(command);
-    command
+    <NautilusCli as clap::CommandFactory>::command()
 }
 
 /// Runs the Nautilus CLI based on the provided options.
@@ -110,14 +99,12 @@ pub async fn run(opt: NautilusCli) -> anyhow::Result<()> {
                     target_options: args.target_options,
                     dry_run: args.dry_run,
                 })?;
+
                 println!("{report}");
             }
         },
         Commands::Database(database_opt) => run_database_command(database_opt).await?,
-        #[cfg(feature = "defi")]
-        Commands::Blockchain(blockchain_opt) => {
-            Box::pin(run_blockchain_command(blockchain_opt)).await?;
-        }
     }
+
     Ok(())
 }

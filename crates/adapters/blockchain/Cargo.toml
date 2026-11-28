@@ -30,7 +30,13 @@ extension-module = [
   "python",
   "pyo3/extension-module",
 ]
-hypersync = ["nautilus-live/node", "dep:async-stream", "dep:uuid"]
+hypersync = [
+  "nautilus-live/node",
+  "dep:async-stream",
+  "dep:clap",
+  "dep:mimalloc",
+  "dep:uuid",
+]
 python = [
   "dep:nautilus-system",
   "nautilus-infrastructure/python",
@@ -88,6 +94,8 @@ ustr = { workspace = true }
 zeroize = { workspace = true }
 
 async-stream = { workspace = true, optional = true }
+clap = { workspace = true, optional = true }
+mimalloc = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 turmoil = { workspace = true, optional = true }
@@ -99,6 +107,7 @@ nautilus-portfolio = { workspace = true }
 
 axum = { workspace = true }
 rstest = { workspace = true }
+tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 toml = { workspace = true }
 turmoil = { workspace = true }
@@ -106,6 +115,13 @@ turmoil = { workspace = true }
 [[bin]]
 name = "node-wallet"
 path = "bin/node_wallet.rs"
+required-features = ["hypersync"]
+doc = false
+test = false
+
+[[bin]]
+name = "nautilus-blockchain"
+path = "bin/nautilus_blockchain.rs"
 required-features = ["hypersync"]
 doc = false
 test = false

@@ -34,7 +34,7 @@
 //! Feature flags control code inclusion for Rust builds and Python bindings:
 //!
 //! - `extension-module`: Builds as a Python extension module.
-//! - `hypersync`: Enables the HyperSync JSON integration.
+//! - `hypersync`: Enables the HyperSync JSON integration and the `nautilus-blockchain` binary.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `turmoil`: Enables deterministic network simulation testing with
 //!   [turmoil](https://crates.io/crates/turmoil).
@@ -69,6 +69,10 @@ pub mod rpc;
 
 #[cfg(feature = "hypersync")]
 pub mod cache;
+
+#[cfg(feature = "hypersync")]
+#[doc(hidden)]
+pub mod cli;
 
 #[cfg(feature = "hypersync")]
 pub mod data;

@@ -41,9 +41,10 @@ jobs:
           python-version: "3.13"
           free-disk-space: "true"
 
-      - name: Build CLI (all features)
+      - name: Build CLI and test catalog migration precision
         run: |
-          cargo build --locked --release -p nautilus-cli --bin nautilus --all-features
+          cargo test --locked --release -p nautilus-cli --features high-precision \
+            --test integration parquet_migration_preserves_high_precision_quote -- --include-ignored
 
       - name: Strip binary
         run: |
@@ -90,9 +91,9 @@ jobs:
           python-version: "3.13"
           free-disk-space: "true"
 
-      - name: Build CLI (all features)
+      - name: Build CLI
         run: |
-          cargo build --locked --release -p nautilus-cli --bin nautilus --all-features
+          cargo build --locked --release -p nautilus-cli --bin nautilus --features high-precision
 
       - name: Strip binary
         run: |
@@ -138,9 +139,9 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Build CLI (all features)
+      - name: Build CLI
         run: |
-          cargo build --locked --release -p nautilus-cli --bin nautilus --all-features
+          cargo build --locked --release -p nautilus-cli --bin nautilus --features high-precision
 
       - name: Strip binary
         run: |
@@ -192,9 +193,9 @@ jobs:
           python-version: "3.13"
           free-disk-space: "true"
 
-      - name: Build CLI (all features)
+      - name: Build CLI
         run: |
-          cargo build --locked --release -p nautilus-cli --bin nautilus --all-features
+          cargo build --locked --release -p nautilus-cli --bin nautilus --features high-precision
 
       - name: Package artifact
         shell: pwsh

@@ -13,10 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Exit-code wiring for the `nautilus` binary.
+//! Exit-code wiring for the `nautilus-blockchain` binary.
 //!
-//! The `blockchain` subcommands only exist with the `defi` feature, so these tests compile only
-//! under `--features defi`.
+//! These tests compile only with the `hypersync` feature, which builds the real command binary.
 
 #![warn(clippy::clone_on_ref_ptr)]
 
@@ -37,7 +36,6 @@ fn analyze_pools_exits_non_zero_on_pool_failure() {
     let directory = TempDir::new().unwrap();
     let output = blockchain_command(&directory)
         .args([
-            "blockchain",
             "analyze-pools",
             "--chain",
             "ethereum",
@@ -49,13 +47,14 @@ fn analyze_pools_exits_non_zero_on_pool_failure() {
             "100",
         ])
         .output()
-        .expect("failed to spawn nautilus binary");
+        .expect("failed to spawn nautilus-blockchain binary");
 
-    assert!(
-        !output.status.success(),
-        "analyze-pools should exit non-zero on pool failure, was {}",
-        output.status
-    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert_eq!(output.status.code(), Some(1), "{stdout}{stderr}");
+    assert!(stdout.contains(r#""status":"failure""#), "{stdout}");
+    assert!(stdout.contains("No RPC URL provided"), "{stdout}");
 }
 
 // A missing RPC URL is an operational error, so sync-dex must exit through main instead of
@@ -64,16 +63,9 @@ fn analyze_pools_exits_non_zero_on_pool_failure() {
 fn sync_dex_exits_non_zero_without_panicking() {
     let directory = TempDir::new().unwrap();
     let output = blockchain_command(&directory)
-        .args([
-            "blockchain",
-            "sync-dex",
-            "--chain",
-            "ethereum",
-            "--dex",
-            "UniswapV3",
-        ])
+        .args(["sync-dex", "--chain", "ethereum", "--dex", "UniswapV3"])
         .output()
-        .expect("failed to spawn nautilus binary");
+        .expect("failed to spawn nautilus-blockchain binary");
     let output_text = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
@@ -88,7 +80,8 @@ fn sync_dex_exits_non_zero_without_panicking() {
 fn blockchain_command(directory: &TempDir) -> Command {
     // Stop dotenv from loading credentials or settings from a parent directory
     fs::write(directory.path().join(".env"), "").unwrap();
-    let mut command = Command::new(env!("CARGO_BIN_EXE_nautilus"));
+    // This Cargo version keeps the hyphen in the binary env var name.
+    let mut command = Command::new(env!("CARGO_BIN_EXE_nautilus-blockchain"));
     command
         .current_dir(directory.path())
         .env_remove("INFURA_API_KEY")

@@ -17,3 +17,6 @@
 
 mod python;
 mod rpc_reconnection;
+
+#[cfg(feature = "hypersync")]
+mod exit_code;

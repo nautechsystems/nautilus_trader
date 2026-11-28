@@ -48,6 +48,7 @@ Released on TBD (UTC).
 - Removed `with_delay_shutdown_secs` from `LiveNodeBuilder` (#5767), thanks for reporting @bayquant
 - Removed `LiveNodeConfig.timeout_shutdown`, `timeout_shutdown_secs`, and `NautilusKernelConfig::timeout_shutdown`
 - Removed blockchain cache `toggle_performance_settings` and `toggle_perf_sync_settings`; sync uses server settings
+- Removed the `nautilus blockchain` command and the `nautilus-cli` crate's `defi` feature. Build `nautilus-blockchain` with `--features hypersync`
 - Removed Bybit `api_key` Python getters; use `api_key_masked` to correlate credentials
 - Removed OKX spot margin position reports derived from `spotInUseAmt`, a Portfolio margin hedging amount
 - Removed `OKXHttpClient::request_spot_margin_position_reports` and `parse_spot_margin_position_from_balance`

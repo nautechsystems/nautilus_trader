@@ -32,7 +32,7 @@ credentials, and connection setup.
 Feature flags control code inclusion for Rust builds and Python bindings:
 
 - `extension-module`: Builds as a Python extension module.
-- `hypersync`: Enables the HyperSync JSON integration.
+- `hypersync`: Enables the HyperSync JSON integration and the `nautilus-blockchain` binary.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 - `turmoil`: Enables deterministic network simulation testing with [turmoil](https://crates.io/crates/turmoil).
 
@@ -69,14 +69,14 @@ cargo run -p nautilus-blockchain --example blockchain-data-tester --features hyp
 
 ### Discover Uniswap V3 pools and tokens on Ethereum
 
-The CLI reads pool-creation events from HyperSync, fetches ERC-20 metadata through HTTP RPC,
-and stores pools and tokens in Postgres. Set `ENVIO_API_TOKEN` and an Ethereum `RPC_HTTP_URL`,
+`nautilus-blockchain sync-dex` reads pool-creation events from HyperSync, fetches ERC-20 metadata
+through HTTP RPC, and stores pools and tokens in Postgres. Set `ENVIO_API_TOKEN` and an Ethereum `RPC_HTTP_URL`,
 and initialize the database as described in the
 [integration guide](../../../docs/integrations/blockchain.md#local-services).
 
 ```bash
-cargo run -p nautilus-cli --features defi --bin nautilus -- \
-    blockchain sync-dex --chain ethereum --dex UniswapV3
+cargo run -p nautilus-blockchain --features hypersync --bin nautilus-blockchain -- \
+    sync-dex --chain ethereum --dex UniswapV3
 ```
 
 ## Testing

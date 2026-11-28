@@ -20,10 +20,11 @@ row values or prove the destination is writable. Resolve reported schema errors 
 nautilus catalog migrate-parquet /data/catalog-old /data/catalog-new
 ```
 
-When running from a source checkout, use:
+From a source checkout, enable `high-precision` to use the same precision as the published binary.
 
 ```bash
-cargo run -p nautilus-cli -- catalog migrate-parquet /data/catalog-old /data/catalog-new
+cargo run -p nautilus-cli --features high-precision -- \
+  catalog migrate-parquet /data/catalog-old /data/catalog-new
 ```
 
 For remote storage, pass native object-store settings with repeated `--source-option key=value` and
@@ -76,7 +77,8 @@ Physical decimals always use scale 16, while each file's schema metadata carries
 `size_precision` used to interpret them. Standard-precision builds rescale their raw integers on encode, and readers
 reject values their numeric configuration cannot represent exactly rather than rounding them. Precision metadata above
 16 and `Money` currencies with precision above 16 are rejected, so DeFi precisions such as wei fall outside the
-catalog representation.
+catalog representation. The published `nautilus` binary accepts up to 16 decimal places in UTF-8
+price and quantity fields.
 
 ### Schema identification and compatibility
 

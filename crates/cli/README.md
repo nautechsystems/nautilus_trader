@@ -17,6 +17,14 @@ system configuration, and operational utilities:
 - Configuration validation and setup utilities.
 - System administration and operational tools.
 
+The `nautilus-blockchain` binary provides block sync, DEX pool discovery, and pool analysis.
+Build it from the `nautilus-blockchain` crate with the `hypersync` feature.
+
+## Feature flags
+
+- `high-precision`: Builds catalog migration with 128-bit fixed-point values and up to 16 decimal
+  places. The published `nautilus` binary enables this feature.
+
 ## NautilusTrader
 
 [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
@@ -25,13 +33,6 @@ engine for multi-asset, multi-venue trading systems.
 The system spans research, deterministic simulation, and live execution within a single
 event-driven architecture, providing research-to-live semantic parity.
 
-## Feature flags
-
-This crate provides feature flags to control source code inclusion during compilation,
-depending on the intended use case:
-
-- `defi`: Enables blockchain/DeFi commands including block sync, DEX pool sync, and pool analysis.
-
 ## Documentation
 
 See [the docs](https://docs.rs/nautilus-cli) for more detailed usage.
@@ -39,11 +40,6 @@ See [the docs](https://docs.rs/nautilus-cli) for more detailed usage.
 ## License
 
 The source code for NautilusTrader is available on GitHub under the [GNU Lesser General Public License v3.0](https://www.gnu.org/licenses/lgpl-3.0.en.html).
-
-CLI builds with the `defi` feature include code from Envio's HyperSync SDK under MPL-2.0.
-Use the [NautilusTrader source release](https://github.com/nautechsystems/nautilus_trader/releases)
-that matches your build to obtain the modified source in `crates/adapters/blockchain/src/hypersync/types.rs`
-and the license in `crates/adapters/blockchain/licenses/`.
 
 ---
 
