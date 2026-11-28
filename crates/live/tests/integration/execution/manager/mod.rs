@@ -58,7 +58,7 @@ use nautilus_execution::{
     reconciliation::{
         RECONCILIATION_ORDER_TAG, create_inferred_reconciliation_trade_id,
         create_position_reconciliation_venue_order_id, generate_external_order_status_events,
-        process_mass_status_for_reconciliation,
+        position_prices_match, process_mass_status_for_reconciliation,
         process_mass_status_for_reconciliation_without_synthetic_reports,
     },
 };

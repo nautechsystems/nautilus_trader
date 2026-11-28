@@ -47,7 +47,13 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-use super::{ids::*, orders::*, positions::*, tests::venue_position_snapshot, types::*};
+use super::{
+    ids::*,
+    orders::*,
+    positions::*,
+    tests::{detect_zero_crossings, venue_position_snapshot},
+    types::*,
+};
 
 fn instrument() -> InstrumentAny {
     InstrumentAny::CurrencyPair(audusd_sim())
@@ -124,6 +130,79 @@ fn fill_sequence_strategy(min: usize, max: usize) -> impl Strategy<Value = Vec<F
         }
         fills
     })
+}
+
+/// A missing opening at ts 0 and a window in replay order whose fills often share a timestamp.
+fn tied_history_strategy() -> impl Strategy<Value = (Option<FillSnapshot>, Vec<FillSnapshot>)> {
+    let fill = (
+        order_side_strategy(),
+        1_i64..=50_i64,
+        1_i64..=20_000_i64,
+        0_u64..=1_u64,
+        venue_order_id_strategy(),
+    );
+    (
+        order_side_strategy(),
+        1_i64..=50_i64,
+        1_i64..=20_000_i64,
+        proptest::collection::vec(fill, 1..=8),
+    )
+        .prop_map(|(side, qty, px_units, steps)| {
+            let opening = FillSnapshot::new(
+                VenueOrderId::new("V-0000"),
+                side,
+                Decimal::from(qty),
+                Decimal::new(px_units, 2),
+                0,
+            );
+            let mut ts = 1;
+            let window = steps
+                .into_iter()
+                .map(|(side, qty, px_units, step, voi)| {
+                    ts += step;
+                    FillSnapshot::new(voi, side, Decimal::from(qty), Decimal::new(px_units, 2), ts)
+                })
+                .collect();
+            (Some(opening), window)
+        })
+}
+
+/// Returns whether the window replayed from zero only crosses zero inside fills sharing a
+/// timestamp, so no crossing holds between timestamps.
+fn crosses_only_within_ties(fills: &[FillSnapshot]) -> bool {
+    let mut qty = Decimal::ZERO;
+    fills
+        .chunk_by(|a, b| a.ts_event == b.ts_event)
+        .all(|group| {
+            let start_qty = qty;
+            qty += group
+                .iter()
+                .map(|fill| Decimal::from(fill.direction()) * fill.qty)
+                .sum::<Decimal>();
+            start_qty.is_zero()
+                || (!qty.is_zero() && qty.is_sign_negative() == start_qty.is_sign_negative())
+        })
+}
+
+/// The venue position after the true history, with the average rounded as the venue reports it.
+fn true_venue_position(
+    opening: Option<&FillSnapshot>,
+    window: &[FillSnapshot],
+    precision: Option<u8>,
+) -> VenuePositionSnapshot {
+    let (signed_qty, value) = simulate_position(opening.into_iter().chain(window), false);
+    let avg_px = value / signed_qty.abs();
+    VenuePositionSnapshot {
+        side: if signed_qty.is_sign_negative() {
+            PositionSide::Short
+        } else {
+            PositionSide::Long
+        },
+        qty: signed_qty.abs(),
+        avg_px: precision.map_or(avg_px, |precision| avg_px.round_dp(u32::from(precision))),
+        avg_px_reconciliation: AvgPxReconciliation::Match,
+        avg_px_precision: precision,
+    }
 }
 
 fn apply_adjustment(
@@ -478,6 +557,156 @@ proptest! {
         prop_assert!(
             (eff_avg - target_avg).abs() / target_avg <= dec!(0.0001),
             "eff_avg={eff_avg}, target_avg={target_avg}",
+        );
+    }
+
+    #[rstest]
+    fn prop_adjust_fills_synthetic_opening_with_reductions_matches_venue(
+        pos_side in position_side_strategy(),
+        opening_qty in 10_i64..=200_i64,
+        opening_px_units in 100_i64..=10_000_i64,
+        first_qty in 20_i64..=200_i64,
+        first_px_units in 100_i64..=10_000_i64,
+        reduce_qty in 1_i64..=19_i64,
+        reduce_px_units in 100_i64..=10_000_i64,
+        extra in proptest::collection::vec(
+            (prop::bool::ANY, 1_i64..=100_i64, 100_i64..=10_000_i64, venue_order_id_strategy()),
+            0..=4,
+        ),
+    ) {
+        let (open_side, close_side) = match pos_side {
+            PositionSide::Long => (OrderSide::Buy, OrderSide::Sell),
+            PositionSide::Short => (OrderSide::Sell, OrderSide::Buy),
+            PositionSide::Flat => unreachable!(),
+        };
+        let voi0 = VenueOrderId::new("V-0001");
+        let true_opening = FillSnapshot::new(
+            voi0,
+            open_side,
+            Decimal::from(opening_qty),
+            Decimal::new(opening_px_units, 2),
+            1,
+        );
+
+        let mut window = vec![
+            FillSnapshot::new(
+                voi0,
+                open_side,
+                Decimal::from(first_qty),
+                Decimal::new(first_px_units, 2),
+                2,
+            ),
+            FillSnapshot::new(
+                voi0,
+                close_side,
+                Decimal::from(reduce_qty),
+                Decimal::new(reduce_px_units, 2),
+                3,
+            ),
+        ];
+        let mut window_abs = first_qty - reduce_qty;
+
+        for (i, (is_increase, q, px_units, voi)) in extra.into_iter().enumerate() {
+            let (side, step_qty) = if is_increase || window_abs <= 1 {
+                window_abs += q;
+                (open_side, q)
+            } else {
+                let capped = q.min(window_abs - 1);
+                window_abs -= capped;
+                (close_side, capped)
+            };
+            window.push(FillSnapshot::new(
+                voi,
+                side,
+                Decimal::from(step_qty),
+                Decimal::new(px_units, 2),
+                (i as u64) + 4,
+            ));
+        }
+
+        let full: Vec<&FillSnapshot> = std::iter::once(&true_opening).chain(&window).collect();
+        let (target_signed_qty, target_value) = simulate_position(full, false);
+        let target_abs_qty = target_signed_qty.abs();
+        let target_avg = target_value / target_abs_qty;
+
+        let venue = VenuePositionSnapshot {
+            side: pos_side,
+            qty: target_abs_qty,
+            avg_px: target_avg,
+            avg_px_reconciliation: AvgPxReconciliation::Match,
+            avg_px_precision: None,
+        };
+
+        let adjustment =
+            adjust_fills_for_partial_window(&window, &venue, dec!(0.0001), false, None);
+        prop_assert!(
+            matches!(adjustment, FillAdjustmentResult::AddSyntheticOpening { .. }),
+            "expected AddSyntheticOpening, was {adjustment:?}",
+        );
+
+        let effective = apply_adjustment(window, &adjustment);
+        let (eff_qty, eff_value) = simulate_position(&effective, false);
+        prop_assert!(
+            check_position_match(eff_qty, eff_value, &venue, dec!(0.0001)),
+            "eff_qty={eff_qty}, eff_value={eff_value}, venue={venue:?}",
+        );
+    }
+
+    // A window that only crosses zero inside tied fills keeps its fills when the opening bridges it
+    #[rstest]
+    fn prop_adjust_fills_tied_window_keeps_fills_when_opening_is_continuous(
+        history in tied_history_strategy(),
+        precision in prop_oneof![Just(None), Just(Some(2_u8)), Just(Some(4_u8))],
+    ) {
+        let (opening, window) = history;
+        let opening = opening.expect("continuous history has an opening");
+        let mut qty = Decimal::from(opening.direction()) * opening.qty;
+        let is_short = qty.is_sign_negative();
+        let continuous = window.iter().all(|fill| {
+            qty += Decimal::from(fill.direction()) * fill.qty;
+            !qty.is_zero() && qty.is_sign_negative() == is_short
+        });
+        prop_assume!(continuous);
+        prop_assume!(crosses_only_within_ties(&window));
+
+        let venue = true_venue_position(Some(&opening), &window, precision);
+        let adjustment = adjust_fills_for_partial_window(&window, &venue, dec!(0.0001), false, None);
+        prop_assert!(
+            matches!(
+                adjustment,
+                FillAdjustmentResult::NoAdjustment | FillAdjustmentResult::AddSyntheticOpening { .. }
+            ),
+            "expected the real fills to survive, was {adjustment:?}",
+        );
+
+        let effective = apply_adjustment(window, &adjustment);
+        let (eff_qty, eff_value) = simulate_position(&effective, false);
+        prop_assert!(
+            check_position_match(eff_qty, eff_value, &venue, dec!(0.0001)),
+            "eff_qty={eff_qty}, eff_value={eff_value}, venue={venue:?}, effective={effective:?}",
+        );
+    }
+
+    // Any true history with tied fills reconciles to the position the venue reports
+    #[rstest]
+    fn prop_adjust_fills_tied_history_matches_venue(
+        history in tied_history_strategy(),
+        has_opening in prop::bool::ANY,
+        precision in prop_oneof![Just(None), Just(Some(2_u8)), Just(Some(4_u8))],
+    ) {
+        let (opening, window) = history;
+        let opening = opening.filter(|_| has_opening);
+        let (true_qty, _) =
+            simulate_position(opening.iter().chain(&window), false);
+        prop_assume!(!true_qty.is_zero());
+
+        let venue = true_venue_position(opening.as_ref(), &window, precision);
+        let adjustment = adjust_fills_for_partial_window(&window, &venue, dec!(0.0001), false, None);
+        let effective = apply_adjustment(window, &adjustment);
+        let (eff_qty, eff_value) = simulate_position(&effective, false);
+        prop_assert!(
+            check_position_match(eff_qty, eff_value, &venue, dec!(0.0001)),
+            "adjustment={adjustment:?}, eff_qty={eff_qty}, eff_value={eff_value}, venue={venue:?}",
         );
     }
 

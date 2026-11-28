@@ -60,6 +60,14 @@ use uuid::Uuid;
 
 use super::{ids::*, orders::*, positions::*, types::*};
 
+/// Returns the timestamps where the fills replayed from flat cross zero, fill by fill.
+pub(super) fn detect_zero_crossings(fills: &[FillSnapshot]) -> Vec<u64> {
+    fill_zero_crossings(fills)
+        .into_iter()
+        .map(|crossing| crossing.ts_event)
+        .collect()
+}
+
 #[fixture]
 fn instrument() -> InstrumentAny {
     InstrumentAny::CurrencyPair(audusd_sim())
@@ -1131,6 +1139,198 @@ fn test_adjust_fills_partial_window_inverse_opening_before_reduction(
     } else {
         assert_eq!(result, FillAdjustmentResult::NoAdjustment);
     }
+}
+
+#[rstest]
+#[case::short_increase_then_reduction(
+    &[
+        (OrderSide::Sell, dec!(8000), dec!(0.05000), 2000),
+        (OrderSide::Buy, dec!(1500), dec!(0.05010), 3000),
+    ],
+    dec!(-7500),
+    dec!(0.05050),
+    Some((OrderSide::Sell, dec!(1000), dec!(0.05450))),
+)]
+#[case::long_reduction_then_increase(
+    &[
+        (OrderSide::Sell, dec!(50), dec!(110), 2000),
+        (OrderSide::Buy, dec!(20), dec!(125), 3000),
+    ],
+    dec!(50),
+    dec!(110),
+    Some((OrderSide::Buy, dec!(80), dec!(100))),
+)]
+#[case::unreachable_non_positive_opening_price(
+    &[
+        (OrderSide::Buy, dec!(10), dec!(100), 2000),
+        (OrderSide::Sell, dec!(5), dec!(110), 3000),
+    ],
+    dec!(10),
+    dec!(40),
+    None,
+)]
+fn test_adjust_fills_partial_window_linear_opening_with_reduction(
+    #[case] window: &[(OrderSide, Decimal, Decimal, u64)],
+    #[case] venue_signed_qty: Decimal,
+    #[case] venue_avg_px: Decimal,
+    #[case] expected_opening: Option<(OrderSide, Decimal, Decimal)>,
+) {
+    let venue_order_id = create_test_venue_order_id("ORDER1");
+    let fills: Vec<FillSnapshot> = window
+        .iter()
+        .map(|&(side, qty, px, ts)| FillSnapshot::new(venue_order_id, side, qty, px, ts))
+        .collect();
+    let venue_position = venue_position_snapshot(venue_signed_qty, venue_avg_px);
+
+    let result =
+        adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001), false, None);
+
+    if let Some((expected_side, expected_qty, expected_px)) = expected_opening {
+        let FillAdjustmentResult::AddSyntheticOpening {
+            synthetic_fill,
+            existing_fills,
+        } = result
+        else {
+            panic!("expected a synthetic opening, was {result:?}");
+        };
+
+        assert_eq!(
+            synthetic_fill,
+            FillSnapshot::new(
+                venue_order_id,
+                expected_side,
+                expected_qty,
+                expected_px,
+                1999,
+            )
+        );
+        assert_eq!(existing_fills, fills);
+        let replay = std::iter::once(&synthetic_fill).chain(&fills);
+        let (qty, value) = simulate_position(replay, false);
+        assert!(check_position_match(
+            qty,
+            value,
+            &venue_position,
+            dec!(0.0001)
+        ));
+    } else {
+        assert_eq!(result, FillAdjustmentResult::NoAdjustment);
+    }
+}
+
+#[rstest]
+fn test_adjust_linear_partial_window_reprices_when_window_average_misses() {
+    let venue_order_id = create_test_venue_order_id("ORDER1");
+    let fills = [
+        FillSnapshot::new(venue_order_id, OrderSide::Buy, dec!(100), dec!(50), 2000),
+        FillSnapshot::new(venue_order_id, OrderSide::Sell, dec!(50), dec!(55), 3000),
+        FillSnapshot::new(venue_order_id, OrderSide::Buy, dec!(50), dec!(60), 4000),
+    ];
+    let venue = VenuePositionSnapshot {
+        avg_px_precision: Some(2),
+        ..venue_position_snapshot(dec!(150), dec!(55))
+    };
+
+    let result = adjust_fills_for_partial_window(&fills, &venue, dec!(0.0001), false, None);
+
+    let FillAdjustmentResult::AddSyntheticOpening {
+        synthetic_fill,
+        existing_fills,
+    } = result
+    else {
+        panic!("expected a synthetic opening, was {result:?}");
+    };
+
+    assert_eq!(synthetic_fill.qty, dec!(50));
+    assert_eq!(synthetic_fill.px, dec!(57.5));
+    assert_eq!(existing_fills, fills);
+    let replay = std::iter::once(&synthetic_fill).chain(&fills);
+    let (qty, value) = simulate_position(replay, false);
+    assert!(check_position_match(qty, value, &venue, dec!(0.0001)));
+}
+
+#[rstest]
+#[case::matching_post_flip_average(dec!(62), true)]
+#[case::mismatched_post_flip_average(dec!(65), false)]
+fn test_adjust_fills_partial_window_linear_opening_erased_by_window_flip(
+    #[case] venue_avg_px: Decimal,
+    #[case] expect_opening: bool,
+) {
+    let venue_order_id = create_test_venue_order_id("ORDER1");
+    let fills = [
+        FillSnapshot::new(venue_order_id, OrderSide::Sell, dec!(150), dec!(60), 2000),
+        FillSnapshot::new(venue_order_id, OrderSide::Sell, dec!(50), dec!(64), 3000),
+    ];
+    let venue_position = venue_position_snapshot(dec!(-100), venue_avg_px);
+
+    let result =
+        adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001), false, None);
+
+    if expect_opening {
+        let FillAdjustmentResult::AddSyntheticOpening {
+            synthetic_fill,
+            existing_fills,
+        } = result
+        else {
+            panic!("expected a synthetic opening, was {result:?}");
+        };
+
+        assert_eq!(
+            synthetic_fill,
+            FillSnapshot::new(
+                venue_order_id,
+                OrderSide::Buy,
+                dec!(100),
+                venue_avg_px,
+                1999,
+            )
+        );
+        assert_eq!(existing_fills, fills);
+        let replay = std::iter::once(&synthetic_fill).chain(&fills);
+        let (qty, value) = simulate_position(replay, false);
+        assert!(check_position_match(
+            qty,
+            value,
+            &venue_position,
+            dec!(0.0001)
+        ));
+    } else {
+        assert_eq!(result, FillAdjustmentResult::NoAdjustment);
+    }
+}
+
+#[rstest]
+fn test_adjust_fills_partial_window_inverse_opening_erased_by_window_flip() {
+    let venue_order_id = create_test_venue_order_id("ORDER1");
+    let fills = [
+        FillSnapshot::new(venue_order_id, OrderSide::Sell, dec!(150), dec!(60), 2000),
+        FillSnapshot::new(venue_order_id, OrderSide::Sell, dec!(50), dec!(60), 3000),
+    ];
+    let venue_position = venue_position_snapshot(dec!(-100), dec!(60));
+
+    let result = adjust_fills_for_partial_window(&fills, &venue_position, dec!(0.0001), true, None);
+
+    let FillAdjustmentResult::AddSyntheticOpening {
+        synthetic_fill,
+        existing_fills,
+    } = result
+    else {
+        panic!("expected a synthetic opening, was {result:?}");
+    };
+
+    assert_eq!(
+        synthetic_fill,
+        FillSnapshot::new(venue_order_id, OrderSide::Buy, dec!(100), dec!(60), 1999)
+    );
+    assert_eq!(existing_fills, fills);
+    let replay = std::iter::once(&synthetic_fill).chain(&fills);
+    let (qty, value) = simulate_position(replay, true);
+    assert!(check_position_match(
+        qty,
+        value,
+        &venue_position,
+        dec!(0.0001)
+    ));
 }
 
 #[rstest]

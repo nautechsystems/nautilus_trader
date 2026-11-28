@@ -38,6 +38,15 @@ pub(super) struct FillSnapshot {
     pub ts_event: u64,
 }
 
+/// A point where a replayed position crosses through zero (FLAT).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct ZeroCrossing {
+    /// The event timestamp of the crossing (nanoseconds).
+    pub ts_event: u64,
+    /// Whether the position lands on FLAT during the crossing, rather than only flipping through it.
+    pub lands_flat: bool,
+}
+
 /// Represents a position snapshot from the venue.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct VenuePositionSnapshot {
