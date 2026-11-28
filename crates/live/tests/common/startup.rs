@@ -77,10 +77,12 @@ pub(crate) struct StartupMassStatusClientState {
     pub(crate) connected: Arc<AtomicBool>,
     pub(crate) bulk_position_coverage_unavailable: Arc<AtomicBool>,
     pub(crate) disconnect_attempted: Arc<AtomicBool>,
+    pub(crate) stops: Arc<AtomicUsize>,
     pub(crate) factory_trader_id: Arc<Mutex<Option<TraderId>>>,
     pub(crate) factory_clock_id: Arc<Mutex<Option<usize>>>,
     pub(crate) mass_status_requested: Arc<AtomicBool>,
     pub(crate) mass_status_delay: Duration,
+    pub(crate) mass_status_gate: Arc<Mutex<Option<tokio::sync::oneshot::Receiver<()>>>>,
     pub(crate) connect_account: Arc<Mutex<Option<AccountState>>>,
     pub(crate) connect_instrument: Arc<Mutex<Option<InstrumentAny>>>,
     pub(crate) recovered_instrument: Arc<Mutex<Option<InstrumentAny>>>,
@@ -95,7 +97,6 @@ pub(crate) struct StartupMassStatusClientState {
 pub(crate) enum StartupMassStatusBehavior {
     Available,
     Unavailable,
-    #[allow(dead_code, reason = "only the spec target constructs request errors")]
     Error,
     Pending,
 }
@@ -169,7 +170,6 @@ impl StartupMassStatusExecutionClientFactory {
         self
     }
 
-    #[allow(dead_code, reason = "only the spec target selects NETTING accounting")]
     pub(crate) fn with_oms_type(mut self, oms_type: OmsType) -> Self {
         self.oms_type = oms_type;
         self
@@ -272,6 +272,7 @@ impl ExecutionClient for StartupMassStatusExecutionClient {
 
     fn stop(&mut self) -> anyhow::Result<()> {
         self.instrument_subscription.take();
+        self.state.stops.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
 
@@ -322,6 +323,11 @@ impl ExecutionClient for StartupMassStatusExecutionClient {
         self.state
             .mass_status_requested
             .store(true, Ordering::Relaxed);
+
+        let gate = self.state.mass_status_gate.lock().take();
+        if let Some(gate) = gate {
+            gate.await?;
+        }
 
         if !self.state.mass_status_delay.is_zero() {
             time::sleep(self.state.mass_status_delay).await;

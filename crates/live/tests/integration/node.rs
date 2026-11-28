@@ -293,6 +293,7 @@ pub(crate) mod serial_tests {
     #[cfg(not(madsim))]
     mod reconciliation_bench;
 
+    mod lifecycle;
     mod report_acceptance;
     mod startup;
 
@@ -325,6 +326,8 @@ pub(crate) mod serial_tests {
         connected: Arc<AtomicBool>,
         connect_attempted: Arc<AtomicBool>,
         disconnect_attempted: Arc<AtomicBool>,
+        stops: Arc<AtomicUsize>,
+        disconnect_gate: Arc<Mutex<Option<tokio::sync::oneshot::Receiver<()>>>>,
     }
 
     #[derive(Clone, Copy, Debug)]
@@ -550,6 +553,7 @@ pub(crate) mod serial_tests {
         }
 
         fn stop(&mut self) -> anyhow::Result<()> {
+            self.state.stops.fetch_add(1, Ordering::Relaxed);
             Ok(())
         }
 
@@ -600,6 +604,11 @@ pub(crate) mod serial_tests {
             self.state
                 .disconnect_attempted
                 .store(true, Ordering::Relaxed);
+
+            let gate = self.state.disconnect_gate.lock().take();
+            if let Some(gate) = gate {
+                gate.await?;
+            }
 
             if matches!(self.behavior, LifecycleClientBehavior::DisconnectPending) {
                 return std::future::pending::<anyhow::Result<()>>().await;
@@ -704,6 +713,7 @@ pub(crate) mod serial_tests {
         }
 
         fn stop(&mut self) -> anyhow::Result<()> {
+            self.state.stops.fetch_add(1, Ordering::Relaxed);
             Ok(())
         }
 
