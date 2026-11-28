@@ -54,16 +54,22 @@ impl InteractiveBrokersExecutionClient {
             order.spread_fill_ids.insert(fill_id);
         }
 
-        // A leg execution carries the leg contract itself, so its instrument resolves as for a
-        // plain fill and must be one of the spread's legs
-        let leg_id = match instrument_provider
-            .get_instrument_id_by_contract_id(exec_data.contract.contract_id)
-        {
+        // A leg execution carries the leg contract itself, so it resolves against the spread's own
+        // legs before the contract-ID map, which can name another instrument for the same contract
+        // (one loaded later under another venue), and must be one of the spread's legs.
+        let spread_legs = parse_spread_instrument_id_to_legs(&fill.spread_instrument_id)?;
+        let tracked_leg = spread_legs.iter().map(|(leg, _)| *leg).find(|leg| {
+            instrument_provider
+                .instrument_id_to_ib_contract(leg)
+                .is_some_and(|contract| contract.contract_id == exec_data.contract.contract_id)
+        });
+        let leg_id = match tracked_leg.or_else(|| {
+            instrument_provider.get_instrument_id_by_contract_id(exec_data.contract.contract_id)
+        }) {
             Some(leg_id) => leg_id,
             None => Self::resolve_contract_instrument_id(instrument_provider, &exec_data.contract)?,
         };
 
-        let spread_legs = parse_spread_instrument_id_to_legs(&fill.spread_instrument_id)?;
         anyhow::ensure!(
             spread_legs.iter().any(|(id, _)| *id == leg_id),
             "Execution instrument {leg_id} is not a leg of spread {}",

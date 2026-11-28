@@ -4023,6 +4023,57 @@ fn test_report_contract_resolution_uses_cached_bag_spread_id() {
 }
 
 #[tokio::test]
+async fn test_handle_spread_execution_resolves_tracked_leg_after_alias_remap() {
+    let instrument_provider = create_test_instrument_provider();
+    let mut leg = equity_aapl();
+    leg.id = create_test_leg_instrument();
+    let leg_id = leg.id;
+    let spread = create_test_option_spread();
+    let spread_instrument_id = spread.id;
+    instrument_provider.insert_test_instrument(InstrumentAny::from(leg), 12345, 1);
+    instrument_provider.insert_test_instrument(InstrumentAny::from(spread), 54321, 1);
+    instrument_provider.insert_test_contract_id_mapping(
+        12345,
+        InstrumentId::new(leg_id.symbol, Venue::from("CBOE")),
+    );
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let orders = OrderTracker::new(NATIVE_CLIENT_ID);
+    let exec_data = create_test_execution_data(213, "exec-001", 3.0, 5.25, "BOT");
+    let client_order_id = ClientOrderId::from("O-001");
+    let context = create_tracked_order_context(client_order_id, spread_instrument_id);
+    insert_tracked_order(&orders, exec_data.execution.order_id, context.clone());
+    let fill = SpreadFillContext {
+        client_order_id,
+        spread_instrument_id,
+        commission: 1.0,
+        commission_currency: "USD",
+        ts_init: UnixNanos::new(0),
+        account_id: AccountId::from("IB-001"),
+    };
+
+    let resolved = InteractiveBrokersExecutionClient::handle_spread_execution(
+        &exec_data,
+        &fill,
+        &instrument_provider,
+        &exec_sender.clone().into(),
+        &orders,
+        &context,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(resolved, Some(leg_id));
+
+    match exec_receiver.try_recv().unwrap() {
+        ExecutionEvent::Order(OrderEventAny::Filled(fill)) => {
+            assert_eq!(fill.instrument_id, leg_id);
+        }
+        other => panic!("unexpected leg event: {other:?}"),
+    }
+    assert!(exec_receiver.try_recv().is_err());
+}
+
+#[tokio::test]
 async fn test_handle_spread_execution_emits_only_leg_fill_event() {
     let instrument_provider = create_test_instrument_provider();
     let mut leg = equity_aapl();
