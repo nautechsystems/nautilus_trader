@@ -446,7 +446,7 @@ pub static VENUE_MEMBERS: LazyLock<HashMap<&'static str, Vec<&'static str>>> =
         // ICE Futures US (formerly NYBOT)
         map.insert("IFUS", vec!["NYBOT"]);
         // GLBX, Name used by databento
-        map.insert("GLBX", vec!["CBOT", "CME", "NYBOT", "NYMEX"]);
+        map.insert("GLBX", vec!["CBOT", "CME", "COMEX", "NYBOT", "NYMEX"]);
         // US Major Exchanges & Index Venues
         map.insert("XNAS", vec!["NASDAQ"]);
         map.insert("XNYS", vec!["NYSE"]);
@@ -1625,11 +1625,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_possible_exchanges_for_opra_routes_to_smart() {
-        assert_eq!(
-            possible_exchanges_for_venue("OPRA"),
-            vec!["SMART".to_string()]
-        );
+    #[case("OPRA", &["SMART"])]
+    #[case("GLBX", &["CBOT", "CME", "COMEX", "NYBOT", "NYMEX"])]
+    fn test_possible_exchanges_for_venue(#[case] venue: &str, #[case] expected: &[&str]) {
+        assert_eq!(possible_exchanges_for_venue(venue), expected);
     }
 
     #[rstest]
@@ -1717,8 +1716,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_opra_route_does_not_create_reverse_smart_mapping() {
-        assert_eq!(exchange_to_mic_venue("SMART"), None);
+    #[case("SMART", None)]
+    #[case("COMEX", Some("GLBX"))]
+    fn test_exchange_to_mic_venue(#[case] exchange: &str, #[case] expected: Option<&str>) {
+        assert_eq!(exchange_to_mic_venue(exchange).as_deref(), expected);
     }
 
     #[rstest]
