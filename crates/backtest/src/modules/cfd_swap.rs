@@ -19,6 +19,7 @@ use std::cell::{Cell, RefCell};
 
 use ahash::{AHashMap, AHashSet};
 use jiff::{
+    Timestamp,
     civil::{Date, Time, Weekday},
     tz::TimeZone,
 };
@@ -67,7 +68,7 @@ impl CfdSwapRate {
     }
 }
 
-/// Simulates daily CFD swap adjustments at a configurable UTC rollover time.
+/// Simulates daily CFD swap adjustments at a configurable rollover time and time zone.
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
@@ -85,6 +86,7 @@ pub struct CfdSwapModule {
     rates: AHashMap<InstrumentId, CfdSwapRate>,
     rollover_time: Time,
     triple_roll_weekday: Weekday,
+    rollover_time_zone: TimeZone,
     rollover_completed: Cell<bool>,
     rollover_day: RefCell<Option<RolloverDayState>>,
     swap_totals: RefCell<AHashMap<Currency, Decimal>>,
@@ -113,12 +115,28 @@ struct SwapAdjustment {
 }
 
 impl CfdSwapModule {
-    /// Creates a new CFD swap module.
+    /// Creates a new CFD swap module that rolls over in UTC.
     ///
     /// Rates are signed daily fractions of settlement notional. Later entries replace earlier
     /// entries for the same instrument.
     #[must_use]
     pub fn new(rates: Vec<CfdSwapRate>, rollover_time: Time, triple_roll_weekday: Weekday) -> Self {
+        Self::new_with_time_zone(rates, rollover_time, triple_roll_weekday, TimeZone::UTC)
+    }
+
+    /// Creates a new CFD swap module that rolls over in `rollover_time_zone`.
+    ///
+    /// Booking dates are the weekdays of the rollover time zone, and each date books once. A
+    /// rollover time in a DST gap shifts forward by the gap, so a position closed after the clock
+    /// change but before the shifted time gets no swap for that day. A repeated rollover time uses
+    /// its first occurrence.
+    #[must_use]
+    pub fn new_with_time_zone(
+        rates: Vec<CfdSwapRate>,
+        rollover_time: Time,
+        triple_roll_weekday: Weekday,
+        rollover_time_zone: TimeZone,
+    ) -> Self {
         Self {
             rates: rates
                 .into_iter()
@@ -126,6 +144,7 @@ impl CfdSwapModule {
                 .collect(),
             rollover_time,
             triple_roll_weekday,
+            rollover_time_zone,
             rollover_completed: Cell::new(false),
             rollover_day: RefCell::new(None),
             swap_totals: RefCell::new(AHashMap::new()),
@@ -143,13 +162,11 @@ impl CfdSwapModule {
         self.rollover_completed.set(false);
     }
 
-    fn rollover_time_ns(&self, date: Date) -> anyhow::Result<u64> {
-        let timestamp = date
-            .to_datetime(self.rollover_time)
-            .to_zoned(TimeZone::UTC)?
-            .timestamp()
-            .as_nanosecond();
-        Ok(u64::try_from(timestamp)?)
+    fn rollover_timestamp(&self, date: Date) -> anyhow::Result<Timestamp> {
+        Ok(self
+            .rollover_time_zone
+            .to_ambiguous_timestamp(date.to_datetime(self.rollover_time))
+            .compatible()?)
     }
 
     fn weekday_on_or_before(mut date: Date) -> anyhow::Result<Date> {
@@ -363,7 +380,8 @@ impl SimulationModule for CfdSwapModule {
         ts_now: UnixNanos,
         ctx: &ExchangeContext,
     ) -> anyhow::Result<SimulationModuleResult> {
-        let observed_date = ts_now.to_datetime_utc().to_zoned(TimeZone::UTC).date();
+        let now = ts_now.to_datetime_utc();
+        let observed_date = now.to_zoned(self.rollover_time_zone.clone()).date();
         let initialize_date = {
             let day = self.rollover_day.borrow();
             match day.as_ref() {
@@ -405,7 +423,7 @@ impl SimulationModule for CfdSwapModule {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("CFD swap rollover day is not initialized"))?
             .date;
-        if ts_now.as_u64() < self.rollover_time_ns(date)? {
+        if now < self.rollover_timestamp(date)? {
             return Ok(SimulationModuleResult::NotReady);
         }
 
@@ -413,8 +431,7 @@ impl SimulationModule for CfdSwapModule {
         let mut batch = Vec::new();
         let batch_end_date = loop {
             if booking_date > observed_date
-                || (booking_date == observed_date
-                    && ts_now.as_u64() < self.rollover_time_ns(booking_date)?)
+                || (booking_date == observed_date && now < self.rollover_timestamp(booking_date)?)
             {
                 return Ok(SimulationModuleResult::NotReady);
             }
@@ -429,7 +446,7 @@ impl SimulationModule for CfdSwapModule {
 
             let next = Self::next_weekday(booking_date)?;
             if next > observed_date
-                || (next == observed_date && ts_now.as_u64() < self.rollover_time_ns(next)?)
+                || (next == observed_date && now < self.rollover_timestamp(next)?)
             {
                 break booking_date;
             }

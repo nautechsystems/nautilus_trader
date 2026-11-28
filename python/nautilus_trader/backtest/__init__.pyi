@@ -384,6 +384,7 @@ class CfdSwapModule(SimulationModule):
         rollover_hour: int = ...,
         rollover_minute: int = ...,
         triple_roll_weekday: int = ...,
+        rollover_time_zone: str = ...,
     ) -> typing.Self: ...
 
 @typing.final

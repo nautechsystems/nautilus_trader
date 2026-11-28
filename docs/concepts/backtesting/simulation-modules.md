@@ -69,7 +69,10 @@ registration does not create a runtime ABI for trait objects across a `cdylib` b
 The built-in FX rollover and CFD swap modules use the completed-batch acknowledgement flow.
 
 CFD swap rates are per-instrument signed daily `Decimal` fractions of settlement notional, with
-separate long and short values. The UTC rollover time and triple-roll weekday are configurable.
+separate long and short values. The rollover time, its time zone (UTC by default), and the
+triple-roll weekday are configurable, and each day books once. A rollover time in a DST gap shifts
+forward by the gap, so a position closed after the clock change but before the shifted time gets no
+swap for that day. A repeated rollover time uses its first occurrence.
 For a single-currency account, the module converts the adjustment to the account base currency at
 the cached mid exchange rate.
 
