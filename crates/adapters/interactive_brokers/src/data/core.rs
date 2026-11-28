@@ -33,6 +33,7 @@ use ibapi::{
     prelude::{StreamExt, SubscriptionItemStreamExt},
 };
 use nautilus_common::{
+    cache::CacheView,
     clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
     live::{runner::get_data_event_sender, sender::EventSender},
     messages::{
@@ -88,7 +89,9 @@ use crate::{
     },
     config::{InteractiveBrokersDataClientConfig, MarketDataType},
     data_types::register_ib_custom_data,
-    providers::instruments::InteractiveBrokersInstrumentProvider,
+    providers::instruments::{
+        InteractiveBrokersInstrumentProvider, SpreadLegContracts, spread_leg_contracts_from_cache,
+    },
 };
 
 /// Interactive Brokers data client.
@@ -98,12 +101,13 @@ use crate::{
 /// market data to NautilusTrader.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.adapters.interactive_brokers")
+    pyo3::pyclass(module = "nautilus_trader.adapters.interactive_brokers", unsendable)
 )]
 pub struct InteractiveBrokersDataClient {
     client_id: ClientId,
     config: InteractiveBrokersDataClientConfig,
     instrument_provider: Arc<InteractiveBrokersInstrumentProvider>,
+    pub(crate) cache: Option<CacheView>,
     is_connected: Arc<AtomicBool>,
     cancellation_token: CancellationToken,
     session_tasks: TaskGroup,
@@ -246,6 +250,7 @@ impl InteractiveBrokersDataClient {
             client_id,
             config,
             instrument_provider,
+            cache: None,
             is_connected: Arc::new(AtomicBool::new(false)),
             cancellation_token: session_tasks.cancellation_token(),
             session_tasks,
@@ -261,6 +266,16 @@ impl InteractiveBrokersDataClient {
             bar_timeout_tasks: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
             data_farm_state: Arc::new(DataFarmConnectionState::default()),
         })
+    }
+
+    // The provider is seeded when the client is created, before the cache restores a previous
+    // session's legs, so a requested spread's leg contracts are read from the cache.
+    fn spread_leg_contracts(&self, instrument_id: InstrumentId) -> SpreadLegContracts {
+        self.cache
+            .as_ref()
+            .map_or_else(SpreadLegContracts::new, |cache| {
+                spread_leg_contracts_from_cache(&cache.borrow(), [instrument_id])
+            })
     }
 
     fn cancel_active_subscriptions(&self) -> anyhow::Result<()> {
@@ -1418,6 +1433,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 .context("IB client not connected. Call connect() first")?;
             let bounded = cmd.start.is_some() || cmd.end.is_some();
             let instrument_provider = self.instrument_request_provider(bounded)?;
+            let leg_contracts = self.spread_leg_contracts(instrument_id);
             let data_sender = self.data_sender.clone();
             let clock = self.clock;
             let request_id = cmd.request_id;
@@ -1438,6 +1454,7 @@ impl DataClient for InteractiveBrokersDataClient {
                     force_update,
                     filters,
                     (!bounded).then_some(&data_sender),
+                    &leg_contracts,
                 )
                 .await
                 {
@@ -2461,6 +2478,7 @@ async fn load_requested_instrument(
     force_update: bool,
     filters: Option<HashMap<String, String>>,
     data_sender: Option<&EventSender<DataEvent>>,
+    leg_contracts: &SpreadLegContracts,
 ) -> anyhow::Result<()> {
     if !is_spread_instrument_id(&instrument_id) {
         return instrument_provider
@@ -2469,7 +2487,13 @@ async fn load_requested_instrument(
     }
 
     instrument_provider
-        .fetch_spread_instrument(client, instrument_id, force_update, filters)
+        .fetch_spread_instrument_with_leg_contracts(
+            client,
+            instrument_id,
+            force_update,
+            filters,
+            leg_contracts,
+        )
         .await?;
 
     let Some(data_sender) = data_sender else {
@@ -2681,6 +2705,81 @@ mod tests {
         let client = InteractiveBrokersDataClient::new(*IB_CLIENT_ID, config, provider).unwrap();
 
         assert_eq!(client.venue(), None);
+    }
+
+    #[rstest]
+    fn test_spread_leg_contracts_read_legs_restored_after_creation() {
+        use std::{cell::RefCell, rc::Rc};
+
+        use nautilus_common::cache::Cache;
+        use nautilus_model::{
+            identifiers::Symbol as NautilusSymbol,
+            instruments::CurrencyPair,
+            types::{Currency, Price, Quantity},
+        };
+
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        nautilus_common::live::runner::replace_data_event_sender(sender);
+
+        let config = InteractiveBrokersDataClientConfig::default();
+        let provider = Arc::new(
+            InteractiveBrokersInstrumentProvider::new(config.instrument_provider.clone()).unwrap(),
+        );
+        let mut client =
+            InteractiveBrokersDataClient::new(*IB_CLIENT_ID, config, provider).unwrap();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        client.cache = Some(cache.clone().into());
+        let legs = [
+            (InstrumentId::from("AAPL.NASDAQ"), 265_598),
+            (InstrumentId::from("MSFT.NASDAQ"), 272_093),
+        ];
+
+        for (leg_id, contract_id) in legs {
+            let contract = Contract {
+                contract_id,
+                symbol: Symbol::from(leg_id.symbol.as_str()),
+                security_type: SecurityType::Stock,
+                exchange: IBExchange::from("SMART"),
+                primary_exchange: IBExchange::from("NASDAQ"),
+                currency: IBCurrency::from("USD"),
+                ..Default::default()
+            };
+            let info = Params::new(
+                [(
+                    String::from("contract"),
+                    crate::common::contracts::contract_to_json_value(&contract),
+                )]
+                .into(),
+            );
+            let instrument: InstrumentAny = CurrencyPair::builder()
+                .instrument_id(leg_id)
+                .raw_symbol(NautilusSymbol::from(leg_id.symbol.as_str()))
+                .base_currency(Currency::from("EUR"))
+                .quote_currency(Currency::from("USD"))
+                .price_precision(2)
+                .size_precision(0)
+                .price_increment(Price::from("0.01"))
+                .size_increment(Quantity::from(1))
+                .maybe_info(Some(info))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap()
+                .into();
+            cache.borrow_mut().add_instrument(instrument).unwrap();
+        }
+        let spread_id =
+            crate::common::spreads::create_spread_instrument_id(&[(legs[0].0, 1), (legs[1].0, -1)])
+                .unwrap();
+
+        let leg_contracts = client.spread_leg_contracts(spread_id);
+
+        let mut contract_ids: Vec<_> = leg_contracts
+            .iter()
+            .map(|(leg_id, contract)| (*leg_id, contract.contract_id))
+            .collect();
+        contract_ids.sort_unstable();
+        assert_eq!(contract_ids, legs.to_vec());
     }
 
     #[rstest]

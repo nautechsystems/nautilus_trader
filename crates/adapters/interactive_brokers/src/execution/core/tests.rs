@@ -7312,3 +7312,79 @@ async fn test_run_order_update_stream_stops_when_bind_fails_with_shutdown() {
         "no retry after a bind failed with a shutdown"
     );
 }
+
+#[rstest]
+fn spread_leg_contracts_are_read_only_for_a_spread_without_a_price_magnifier(
+    #[values(false, true)] spread_built: bool,
+) {
+    let (client, _rx, cache) = create_test_execution_client();
+    let legs = [
+        (InstrumentId::from("AAPL.NASDAQ"), 265_598),
+        (InstrumentId::from("MSFT.NASDAQ"), 272_093),
+    ];
+    let instrument_with_contract = |instrument_id: InstrumentId, contract: Option<&Contract>| {
+        let info = contract.map(|contract| {
+            Params::new(
+                [(
+                    String::from("contract"),
+                    crate::common::contracts::contract_to_json_value(contract),
+                )]
+                .into(),
+            )
+        });
+        InstrumentAny::from(
+            CurrencyPair::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::from(instrument_id.symbol.as_str()))
+                .base_currency(Currency::from("EUR"))
+                .quote_currency(Currency::from("USD"))
+                .price_precision(2)
+                .size_precision(0)
+                .price_increment(Price::from("0.01"))
+                .size_increment(Quantity::from(1))
+                .maybe_info(info)
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
+    };
+
+    for (leg_id, contract_id) in legs {
+        let contract = Contract {
+            contract_id,
+            symbol: IBSymbol::from(leg_id.symbol.as_str()),
+            security_type: SecurityType::Stock,
+            exchange: Exchange::from("SMART"),
+            currency: IBCurrency::from("USD"),
+            ..Default::default()
+        };
+        cache
+            .borrow_mut()
+            .add_instrument(instrument_with_contract(leg_id, Some(&contract)))
+            .unwrap();
+    }
+    let spread_id =
+        crate::common::spreads::create_spread_instrument_id(&[(legs[0].0, 1), (legs[1].0, -1)])
+            .unwrap();
+
+    if spread_built {
+        client.instrument_provider.insert_test_instrument(
+            instrument_with_contract(spread_id, None),
+            0,
+            1,
+        );
+    }
+
+    let leg_contracts = client.unbuilt_spread_leg_contracts([spread_id]);
+
+    let mut contract_ids: Vec<_> = leg_contracts
+        .iter()
+        .map(|(leg_id, contract)| (*leg_id, contract.contract_id))
+        .collect();
+    contract_ids.sort_unstable();
+    assert_eq!(
+        contract_ids,
+        if spread_built { vec![] } else { legs.to_vec() }
+    );
+}

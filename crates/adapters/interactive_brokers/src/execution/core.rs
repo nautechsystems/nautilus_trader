@@ -115,7 +115,9 @@ use super::{incarnations::OrderIncarnationGroup, parse::parse_order_data_to_repo
 pub(super) use crate::{
     common::shared_client::{SharedClientHandle, get_or_connect},
     config::InteractiveBrokersExecutionClientConfig,
-    providers::instruments::InteractiveBrokersInstrumentProvider,
+    providers::instruments::{
+        InteractiveBrokersInstrumentProvider, SpreadLegContracts, spread_leg_contracts_from_cache,
+    },
 };
 
 pub(super) const MODIFY_TRAILING_OFFSET_PARAM: &str = "trailing_offset";
@@ -608,6 +610,8 @@ impl InteractiveBrokersExecutionClient {
         self.seed_instruments_from_cache(orders.iter().map(|order| order.instrument_id()));
         let client = self.ib_client.as_ref().context("IB client not connected")?;
         self.seed_price_magnifiers_from_cache(orders.iter().map(OrderAny::instrument_id));
+        let leg_contracts =
+            self.unbuilt_spread_leg_contracts(orders.iter().map(OrderAny::instrument_id));
 
         for order in &orders {
             Self::register_awaiting_submission(
@@ -650,6 +654,7 @@ impl InteractiveBrokersExecutionClient {
                 strategy_id,
                 &order_submit_lock,
                 request_timeout_secs,
+                &leg_contracts,
             )
             .await
             {
@@ -681,6 +686,20 @@ impl InteractiveBrokersExecutionClient {
             self.instrument_provider
                 .seed_price_magnifier_from_cache(&cache, &instrument_id);
         }
+    }
+
+    // A command on a spread without a price magnifier builds the spread, and a leg can load only
+    // from the contract the cache holds for it, which the command task cannot read.
+    pub(super) fn unbuilt_spread_leg_contracts(
+        &self,
+        instrument_ids: impl IntoIterator<Item = InstrumentId>,
+    ) -> SpreadLegContracts {
+        let unbuilt = instrument_ids.into_iter().filter(|instrument_id| {
+            self.instrument_provider
+                .price_magnifier(instrument_id)
+                .is_none()
+        });
+        spread_leg_contracts_from_cache(&self.core.cache(), unbuilt)
     }
 
     pub(super) fn reserve_next_local_order_id(
@@ -1081,6 +1100,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
 
         self.seed_instruments_from_cache([cmd.instrument_id]);
         self.seed_price_magnifiers_from_cache([cmd.instrument_id]);
+        let leg_contracts = self.unbuilt_spread_leg_contracts([cmd.instrument_id]);
 
         let client = self.ib_client.as_ref().context("IB client not connected")?;
         let client_order_id = cmd.order_init.client_order_id;
@@ -1121,6 +1141,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                 ib_account,
                 &order_submit_lock,
                 request_timeout_secs,
+                &leg_contracts,
             )
             .await
             {
@@ -1932,6 +1953,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
 
         self.seed_instruments_from_cache([cmd.instrument_id]);
         self.seed_price_magnifiers_from_cache([cmd.instrument_id]);
+        let leg_contracts = self.unbuilt_spread_leg_contracts([cmd.instrument_id]);
 
         let client = self.ib_client.as_ref().context("IB client not connected")?;
 
@@ -1952,6 +1974,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                 &instrument_provider,
                 ib_account,
                 request_timeout_secs,
+                &leg_contracts,
             )
             .await
             {

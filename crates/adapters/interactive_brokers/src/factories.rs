@@ -103,11 +103,12 @@ impl DataClientFactory for InteractiveBrokersDataClientFactory {
         )?);
         instrument_provider.seed_from_cache(&cache.borrow());
 
-        let client = InteractiveBrokersDataClient::new(
+        let mut client = InteractiveBrokersDataClient::new(
             ClientId::from(name),
             ib_config,
             instrument_provider,
         )?;
+        client.cache = Some(cache);
         Ok(Box::new(client))
     }
 

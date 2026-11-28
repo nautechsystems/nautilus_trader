@@ -679,6 +679,9 @@ impl InteractiveBrokersInstrumentProvider {
     /// Returns an instrument's price magnifier, requesting its contract details from IB when the
     /// provider holds none and waiting at most `timeout` for them.
     ///
+    /// A spread is built from its legs, and an option leg symbology does not load is requested by
+    /// its IB contract in `leg_contracts`, the contracts the Nautilus cache holds for the legs.
+    ///
     /// # Errors
     ///
     /// Returns an error if the request fails, does not complete within `timeout`, or IB returns
@@ -688,12 +691,19 @@ impl InteractiveBrokersInstrumentProvider {
         client: &ibapi::Client,
         instrument_id: InstrumentId,
         timeout: Duration,
+        leg_contracts: &SpreadLegContracts,
     ) -> anyhow::Result<i32> {
         self.ensure_price_magnifier_with(instrument_id, timeout, || async {
             if is_spread_instrument_id(&instrument_id) {
-                self.fetch_spread_instrument(client, instrument_id, true, None)
-                    .await
-                    .map(|_| ())
+                self.fetch_spread_instrument_with_leg_contracts(
+                    client,
+                    instrument_id,
+                    true,
+                    None,
+                    leg_contracts,
+                )
+                .await
+                .map(|_| ())
             } else {
                 self.fetch_contract_details(client, instrument_id, true, None)
                     .await
@@ -1241,6 +1251,69 @@ impl InteractiveBrokersInstrumentProvider {
         force_instrument_update: bool,
         filters: Option<HashMap<String, String>>,
     ) -> anyhow::Result<bool> {
+        self.fetch_spread_instrument_with_leg_contracts(
+            client,
+            spread_instrument_id,
+            force_instrument_update,
+            filters,
+            &SpreadLegContracts::new(),
+        )
+        .await
+    }
+
+    /// Fetches a spread instrument as [`Self::fetch_spread_instrument`] does, loading an option leg
+    /// that symbology does not load by the IB contract the Nautilus cache holds for it.
+    ///
+    /// Symbology cannot rebuild every listed option from its instrument ID (a Cboe option leg).
+    /// Such a leg's contract details are requested by its contract ID, and the leg is cached as any
+    /// loaded instrument is. A leg whose contract ID already resolves to another instrument is
+    /// refused rather than displacing that instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if parsing or loading fails, or a leg's contract ID resolves to another
+    /// instrument.
+    pub(crate) async fn fetch_spread_instrument_with_leg_contracts(
+        &self,
+        client: &ibapi::Client,
+        spread_instrument_id: InstrumentId,
+        force_instrument_update: bool,
+        filters: Option<HashMap<String, String>>,
+        leg_contracts: &SpreadLegContracts,
+    ) -> anyhow::Result<bool> {
+        self.fetch_spread_instrument_with(
+            spread_instrument_id,
+            force_instrument_update,
+            filters,
+            leg_contracts,
+            |leg_instrument_id, force_instrument_update, filters| {
+                self.fetch_contract_details(
+                    client,
+                    leg_instrument_id,
+                    force_instrument_update,
+                    filters,
+                )
+            },
+            |contract| async move { request_leg_details_by_contract_id(client, &contract).await },
+        )
+        .await
+    }
+
+    async fn fetch_spread_instrument_with<FetchLeg, FetchLegFut, RequestLeg, RequestLegFut>(
+        &self,
+        spread_instrument_id: InstrumentId,
+        force_instrument_update: bool,
+        filters: Option<HashMap<String, String>>,
+        leg_contracts: &SpreadLegContracts,
+        fetch_leg: FetchLeg,
+        request_leg: RequestLeg,
+    ) -> anyhow::Result<bool>
+    where
+        FetchLeg: Fn(InstrumentId, bool, Option<HashMap<String, String>>) -> FetchLegFut,
+        FetchLegFut: Future<Output = anyhow::Result<()>>,
+        RequestLeg: Fn(Contract) -> RequestLegFut,
+        RequestLegFut: Future<Output = anyhow::Result<Option<ibapi::contracts::ContractDetails>>>,
+    {
         // Check if already cached (unless forcing update)
         if !force_instrument_update && self.instruments.contains_key(&spread_instrument_id) {
             tracing::debug!("Spread instrument {} already cached", spread_instrument_id);
@@ -1272,15 +1345,55 @@ impl InteractiveBrokersInstrumentProvider {
                 ratio
             );
 
-            // Load the individual leg instrument
-            self.fetch_contract_details(
-                client,
+            // Load the individual leg instrument; a leg seeded from the cache has a contract
+            // but no contract details, so fetch it too.
+            let loaded = fetch_leg(
                 *leg_instrument_id,
-                force_instrument_update,
+                force_instrument_update
+                    || (self.contracts.contains_key(leg_instrument_id)
+                        && !self.contract_details.contains_key(leg_instrument_id)),
                 filters.clone(),
             )
             .await
-            .with_context(|| format!("Failed to load leg instrument: {leg_instrument_id}"))?;
+            .with_context(|| format!("Failed to load leg instrument: {leg_instrument_id}"));
+
+            // An option leg symbology does not load is loaded by the contract the cache holds for it
+            if (loaded.is_err() || !self.contract_details.contains_key(leg_instrument_id))
+                && let Some(contract) =
+                    self.cached_leg_contract(leg_instrument_id, leg_contracts, filters.as_ref())
+            {
+                let contract_id = contract.contract_id;
+                self.check_leg_contract_id_unclaimed(*leg_instrument_id, contract_id)?;
+
+                match request_leg(contract).await {
+                    Ok(Some(details))
+                        if self.cache_leg_loaded_by_contract_id(
+                            *leg_instrument_id,
+                            &details,
+                            force_instrument_update,
+                        )? =>
+                    {
+                        match &loaded {
+                            Ok(()) => tracing::debug!(
+                                "Loaded leg instrument {leg_instrument_id} by contract ID {contract_id}"
+                            ),
+                            Err(e) => tracing::warn!(
+                                "Loaded leg instrument {leg_instrument_id} by contract ID {contract_id} after: {e:#}"
+                            ),
+                        }
+                        leg_contract_details.push((details, *ratio));
+                        continue;
+                    }
+                    Ok(_) => tracing::debug!(
+                        "Leg instrument {leg_instrument_id} did not load by contract ID {contract_id}"
+                    ),
+                    Err(e) => tracing::warn!(
+                        "Failed to load leg instrument {leg_instrument_id} by contract ID {contract_id}: {e:#}"
+                    ),
+                }
+            }
+
+            loaded?;
 
             // Get the contract details for this leg
             let leg_details = self
@@ -1329,6 +1442,86 @@ impl InteractiveBrokersInstrumentProvider {
             spread_instrument_id
         );
         Ok(true)
+    }
+
+    // The contract the cache holds for an option leg, when it can be requested by its contract ID:
+    // not a filtered security type, a contract under another instrument ID, another contract than
+    // the one the provider holds details for, or under an explicit exchange filter, which is left to
+    // symbology. Other legs go by symbology alone.
+    fn cached_leg_contract(
+        &self,
+        leg_instrument_id: &InstrumentId,
+        leg_contracts: &SpreadLegContracts,
+        filters: Option<&HashMap<String, String>>,
+    ) -> Option<Contract> {
+        if filters.is_some_and(|filters| filters.contains_key("exchange")) {
+            return None;
+        }
+
+        let held_contract_id = self
+            .contract_details
+            .get(leg_instrument_id)
+            .map(|details| details.contract.contract_id);
+
+        leg_contracts
+            .get(leg_instrument_id)
+            .filter(|contract| {
+                contract.contract_id != 0
+                    && held_contract_id.is_none_or(|held| held == contract.contract_id)
+                    && matches!(
+                        contract.security_type,
+                        SecurityType::Option | SecurityType::FuturesOption
+                    )
+                    && !self.is_filtered_sec_type(&contract.security_type.to_string())
+                    && self
+                        .instrument_id_from_contract(contract, leg_instrument_id.venue)
+                        .is_ok_and(|instrument_id| instrument_id == *leg_instrument_id)
+            })
+            .cloned()
+    }
+
+    // A leg is not loaded by a contract ID that resolves to another instrument, since the
+    // contract-ID map resolves position and order reports for that contract.
+    fn check_leg_contract_id_unclaimed(
+        &self,
+        leg_instrument_id: InstrumentId,
+        contract_id: i32,
+    ) -> anyhow::Result<()> {
+        if let Some(instrument_id) = self
+            .get_instrument_id_by_contract_id(contract_id)
+            .filter(|instrument_id| *instrument_id != leg_instrument_id)
+        {
+            anyhow::bail!(
+                "Spread leg {leg_instrument_id} has IB contract ID {contract_id}, which resolves to {instrument_id}"
+            );
+        }
+
+        Ok(())
+    }
+
+    // Caches a leg loaded by its contract ID as any loaded instrument is and returns whether it was
+    // cached, which it is not when IB's answer is for another instrument or is filtered out.
+    fn cache_leg_loaded_by_contract_id(
+        &self,
+        leg_instrument_id: InstrumentId,
+        details: &ibapi::contracts::ContractDetails,
+        force_instrument_update: bool,
+    ) -> anyhow::Result<bool> {
+        if self
+            .instrument_id_from_contract(&details.contract, leg_instrument_id.venue)
+            .ok()
+            != Some(leg_instrument_id)
+        {
+            return Ok(false);
+        }
+
+        Ok(self
+            .process_contract_detail(
+                details,
+                Some(leg_instrument_id.venue),
+                force_instrument_update,
+            )?
+            .is_some())
     }
 
     /// Load all instruments from provided IDs and contracts.
@@ -1442,6 +1635,52 @@ async fn request_contract_details(
     let mut details_vec = client.contract_details(contract).await?;
     details_vec.iter_mut().for_each(split_last_trade_date);
     Ok(details_vec)
+}
+
+// Requests a spread leg's contract details by its contract ID and exchange alone, so a field the
+// cached contract holds in another form cannot fail the request.
+async fn request_leg_details_by_contract_id(
+    client: &ibapi::Client,
+    contract: &Contract,
+) -> anyhow::Result<Option<ibapi::contracts::ContractDetails>> {
+    let request = Contract {
+        contract_id: contract.contract_id,
+        exchange: contract.exchange.clone(),
+        ..Default::default()
+    };
+    let details_vec = request_contract_details(client, &request)
+        .await
+        .with_context(|| {
+            format!(
+                "Failed to fetch contract details for leg contract ID {}",
+                contract.contract_id
+            )
+        })?;
+
+    Ok(details_vec
+        .into_iter()
+        .find(|details| details.contract.contract_id == contract.contract_id))
+}
+
+/// The IB contracts the Nautilus cache holds for spread legs, by leg instrument ID.
+pub type SpreadLegContracts = HashMap<InstrumentId, Contract>;
+
+/// Collects from the Nautilus cache the IB contracts of the legs of the spreads among
+/// `instrument_ids`, for building a spread whose legs the provider cannot load.
+#[must_use]
+pub(crate) fn spread_leg_contracts_from_cache(
+    cache: &Cache,
+    instrument_ids: impl IntoIterator<Item = InstrumentId>,
+) -> SpreadLegContracts {
+    instrument_ids
+        .into_iter()
+        .filter_map(|instrument_id| parse_spread_instrument_id_to_legs(&instrument_id).ok())
+        .flatten()
+        .filter_map(|(leg_instrument_id, _)| {
+            let contract = contract_from_instrument_info(cache.instrument(&leg_instrument_id)?)?;
+            Some((leg_instrument_id, contract))
+        })
+        .collect()
 }
 
 fn json_opt_bool(spec: Option<&serde_json::Value>, key: &str) -> Option<bool> {
@@ -2961,6 +3200,424 @@ mod tests {
             cached_details.valid_exchanges,
             vec!["SMART".to_string(), "CBOE".to_string()]
         );
+    }
+
+    fn cboe_option_leg(
+        provider: &InteractiveBrokersInstrumentProvider,
+        contract_id: i32,
+        local_symbol: &str,
+        right: ibapi::contracts::OptionRight,
+    ) -> (InstrumentId, ibapi::contracts::ContractDetails) {
+        let mut details = opra_option_contract_details(Contract::default());
+        details.contract.contract_id = contract_id;
+        details.contract.local_symbol = local_symbol.to_string();
+        details.contract.right = Some(right);
+        details.contract.exchange = Exchange::from("CBOE");
+        let instrument_id = provider
+            .instrument_id_from_contract(&details.contract, Venue::from("CBOE"))
+            .unwrap();
+        (instrument_id, details)
+    }
+
+    #[rstest]
+    fn test_spread_leg_contracts_from_cache_reads_cached_leg_contracts() {
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap();
+        let (leg_id, details) = cboe_option_leg(
+            &provider,
+            12_345,
+            "AAPL  270115P00155000",
+            ibapi::contracts::OptionRight::Put,
+        );
+        let bare_leg_id = InstrumentId::new(Symbol::from("AAPL  270115C00160000"), leg_id.venue);
+        let mut cache = Cache::default();
+        cache
+            .add_instrument(create_test_instrument_with_info(
+                leg_id,
+                Some(create_contract_info(&details.contract, Some(1))),
+            ))
+            .unwrap();
+        cache
+            .add_instrument(create_test_instrument_with_info(bare_leg_id, None))
+            .unwrap();
+        let spread_id =
+            crate::common::spreads::create_spread_instrument_id(&[(leg_id, -1), (bare_leg_id, 1)])
+                .unwrap();
+
+        let leg_contracts = spread_leg_contracts_from_cache(&cache, [spread_id, leg_id]);
+
+        assert_eq!(leg_contracts.len(), 1);
+        assert_eq!(leg_contracts[&leg_id].contract_id, 12_345);
+    }
+
+    struct CboeSpread {
+        spread_id: InstrumentId,
+        put_id: InstrumentId,
+        call_id: InstrumentId,
+        put: ibapi::contracts::ContractDetails,
+        call: ibapi::contracts::ContractDetails,
+        leg_contracts: SpreadLegContracts,
+    }
+
+    fn cboe_spread(provider: &InteractiveBrokersInstrumentProvider) -> CboeSpread {
+        let (put_id, mut put) = cboe_option_leg(
+            provider,
+            12_345,
+            "AAPL  270115P00155000",
+            ibapi::contracts::OptionRight::Put,
+        );
+        put.price_magnifier = 1;
+        let (call_id, mut call) = cboe_option_leg(
+            provider,
+            12_346,
+            "AAPL  270115C00160000",
+            ibapi::contracts::OptionRight::Call,
+        );
+        call.contract.strike = 160.0;
+        call.price_magnifier = 1;
+        let spread_id =
+            crate::common::spreads::create_spread_instrument_id(&[(put_id, -1), (call_id, 1)])
+                .unwrap();
+        let leg_contracts = SpreadLegContracts::from([
+            (put_id, put.contract.clone()),
+            (call_id, call.contract.clone()),
+        ]);
+
+        CboeSpread {
+            spread_id,
+            put_id,
+            call_id,
+            put,
+            call,
+            leg_contracts,
+        }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum LegFetch {
+        Fails,
+        Succeeds,
+    }
+
+    #[derive(Debug, Default)]
+    struct SpreadBuild {
+        fetched: Vec<(InstrumentId, bool)>,
+        requested: Vec<i32>,
+    }
+
+    // Builds the spread with IB scripted: each leg fetch fails as IB does for a Cboe option leg, or
+    // succeeds, and a request by contract ID returns `answer`.
+    async fn build_cboe_spread(
+        provider: &InteractiveBrokersInstrumentProvider,
+        spread: &CboeSpread,
+        leg_contracts: &SpreadLegContracts,
+        filters: Option<HashMap<String, String>>,
+        force_instrument_update: bool,
+        leg_fetch: LegFetch,
+        answer: impl Fn(
+            &ibapi::contracts::ContractDetails,
+        ) -> anyhow::Result<Option<ibapi::contracts::ContractDetails>>,
+    ) -> (anyhow::Result<bool>, SpreadBuild) {
+        let build = std::cell::RefCell::new(SpreadBuild::default());
+        let result = provider
+            .fetch_spread_instrument_with(
+                spread.spread_id,
+                force_instrument_update,
+                filters,
+                leg_contracts,
+                |leg_id, force_instrument_update, _| {
+                    build
+                        .borrow_mut()
+                        .fetched
+                        .push((leg_id, force_instrument_update));
+                    async move {
+                        match leg_fetch {
+                            LegFetch::Fails => Err(anyhow::anyhow!("IB error 200")),
+                            LegFetch::Succeeds => Ok(()),
+                        }
+                    }
+                },
+                |contract| {
+                    build.borrow_mut().requested.push(contract.contract_id);
+                    let details = if contract.contract_id == spread.put.contract.contract_id {
+                        &spread.put
+                    } else {
+                        &spread.call
+                    };
+                    let answer = answer(details);
+                    async move { answer }
+                },
+            )
+            .await;
+
+        (result, build.into_inner())
+    }
+
+    #[tokio::test]
+    async fn test_spread_leg_loaded_by_cached_contract_is_cached_as_a_loaded_leg() {
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap();
+        let spread = cboe_spread(&provider);
+
+        let (result, build) = build_cboe_spread(
+            &provider,
+            &spread,
+            &spread.leg_contracts,
+            None,
+            true,
+            LegFetch::Fails,
+            |details| Ok(Some(details.clone())),
+        )
+        .await;
+
+        assert!(result.unwrap());
+        assert_eq!(build.requested, vec![12_346, 12_345]);
+        assert!(provider.find(&spread.spread_id).is_some());
+
+        for (leg_id, contract_id) in [(spread.put_id, 12_345), (spread.call_id, 12_346)] {
+            assert_eq!(
+                provider
+                    .instrument_id_to_ib_contract_details(&leg_id)
+                    .map(|details| details.contract.contract_id),
+                Some(contract_id)
+            );
+            assert_eq!(
+                provider.get_instrument_id_by_contract_id(contract_id),
+                Some(leg_id)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_spread_leg_loaded_by_cached_contract_is_refused_when_its_contract_id_is_held() {
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap();
+        let spread = cboe_spread(&provider);
+        let opra_id = InstrumentId::new(spread.put_id.symbol, Venue::from("OPRA"));
+        provider.insert_test_contract_id_mapping(12_345, opra_id);
+
+        let (result, build) = build_cboe_spread(
+            &provider,
+            &spread,
+            &spread.leg_contracts,
+            None,
+            true,
+            LegFetch::Fails,
+            |details| Ok(Some(details.clone())),
+        )
+        .await;
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!(
+                "Spread leg {} has IB contract ID 12345, which resolves to {opra_id}",
+                spread.put_id
+            )
+        );
+        assert_eq!(build.requested, vec![12_346]);
+        assert!(provider.find(&spread.spread_id).is_none());
+        assert!(provider.find(&spread.put_id).is_none());
+        assert_eq!(
+            provider
+                .resolve_instrument_id_for_contract(&spread.put.contract)
+                .unwrap(),
+            opra_id
+        );
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum UnloadedLeg {
+        NoCachedContract,
+        ExchangeFilter,
+        FilteredSecType,
+        NotAnOption,
+        NoContractId,
+        UnderAnotherInstrumentId,
+        RequestFails,
+        NotAnswered,
+        AnsweredForAnotherInstrument,
+    }
+
+    #[rstest]
+    #[case::no_cached_contract(UnloadedLeg::NoCachedContract, vec![])]
+    #[case::exchange_filter(UnloadedLeg::ExchangeFilter, vec![])]
+    #[case::filtered_sec_type(UnloadedLeg::FilteredSecType, vec![])]
+    #[case::not_an_option(UnloadedLeg::NotAnOption, vec![])]
+    #[case::no_contract_id(UnloadedLeg::NoContractId, vec![])]
+    #[case::under_another_instrument_id(UnloadedLeg::UnderAnotherInstrumentId, vec![])]
+    #[case::request_fails(UnloadedLeg::RequestFails, vec![12_346])]
+    #[case::not_answered(UnloadedLeg::NotAnswered, vec![12_346])]
+    #[case::answered_for_another_instrument(UnloadedLeg::AnsweredForAnotherInstrument, vec![12_346])]
+    #[tokio::test]
+    async fn test_spread_leg_not_loaded_by_cached_contract_returns_its_load_error(
+        #[case] unloaded: UnloadedLeg,
+        #[case] expected_requested: Vec<i32>,
+    ) {
+        let config = InteractiveBrokersInstrumentProviderConfig {
+            filter_sec_types: if matches!(unloaded, UnloadedLeg::FilteredSecType) {
+                [IbSecurityType::Option].into_iter().collect()
+            } else {
+                Default::default()
+            },
+            ..Default::default()
+        };
+        let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
+        let spread = cboe_spread(&provider);
+        let mut leg_contracts = spread.leg_contracts.clone();
+        let call_contract = leg_contracts.get_mut(&spread.call_id).unwrap();
+
+        match unloaded {
+            UnloadedLeg::NoCachedContract => leg_contracts.clear(),
+            UnloadedLeg::NotAnOption => call_contract.security_type = SecurityType::Stock,
+            UnloadedLeg::NoContractId => call_contract.contract_id = 0,
+            UnloadedLeg::UnderAnotherInstrumentId => {
+                call_contract.local_symbol = "AAPL  270115C00165000".to_string();
+            }
+            _ => {}
+        }
+        let filters = matches!(unloaded, UnloadedLeg::ExchangeFilter)
+            .then(|| HashMap::from([("exchange".to_string(), "CBOE".to_string())]));
+        let put = spread.put.clone();
+
+        let (result, build) = build_cboe_spread(
+            &provider,
+            &spread,
+            &leg_contracts,
+            filters,
+            true,
+            LegFetch::Fails,
+            |details| match unloaded {
+                UnloadedLeg::RequestFails => anyhow::bail!("IB error 162"),
+                UnloadedLeg::NotAnswered => Ok(None),
+                UnloadedLeg::AnsweredForAnotherInstrument => Ok(Some(put.clone())),
+                _ => Ok(Some(details.clone())),
+            },
+        )
+        .await;
+
+        assert_eq!(
+            format!("{:#}", result.unwrap_err()),
+            format!(
+                "Failed to load leg instrument: {}: IB error 200",
+                spread.call_id
+            )
+        );
+        assert_eq!(build.requested, expected_requested);
+        assert!(provider.find(&spread.spread_id).is_none());
+        assert_eq!(provider.get_instrument_id_by_contract_id(12_346), None);
+    }
+
+    #[rstest]
+    #[case::same_contract(12_345, vec![12_346, 12_345])]
+    #[case::other_contract(99_999, vec![12_346])]
+    #[tokio::test]
+    async fn test_spread_leg_refresh_failure_reloads_only_the_held_contract(
+        #[case] cached_put_contract_id: i32,
+        #[case] expected_requested: Vec<i32>,
+    ) {
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap();
+        let spread = cboe_spread(&provider);
+        let (result, _) = build_cboe_spread(
+            &provider,
+            &spread,
+            &spread.leg_contracts,
+            None,
+            true,
+            LegFetch::Fails,
+            |details| Ok(Some(details.clone())),
+        )
+        .await;
+        result.unwrap();
+        let mut leg_contracts = spread.leg_contracts.clone();
+        leg_contracts.get_mut(&spread.put_id).unwrap().contract_id = cached_put_contract_id;
+
+        let (result, build) = build_cboe_spread(
+            &provider,
+            &spread,
+            &leg_contracts,
+            None,
+            true,
+            LegFetch::Fails,
+            |details| Ok(Some(details.clone())),
+        )
+        .await;
+
+        if cached_put_contract_id == 12_345 {
+            assert!(result.unwrap());
+        } else {
+            assert_eq!(
+                format!("{:#}", result.unwrap_err()),
+                format!(
+                    "Failed to load leg instrument: {}: IB error 200",
+                    spread.put_id
+                )
+            );
+        }
+        assert_eq!(build.requested, expected_requested);
+        assert_eq!(
+            provider
+                .instrument_id_to_ib_contract_details(&spread.put_id)
+                .map(|details| details.contract.contract_id),
+            Some(12_345)
+        );
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum HeldLegs {
+        WithDetails,
+        WithoutDetails,
+        NotHeld,
+    }
+
+    #[rstest]
+    #[case::with_details_forced(HeldLegs::WithDetails, true, true, vec![])]
+    #[case::with_details(HeldLegs::WithDetails, false, false, vec![])]
+    #[case::without_details(HeldLegs::WithoutDetails, false, true, vec![12_346, 12_345])]
+    #[case::not_held(HeldLegs::NotHeld, false, false, vec![12_346, 12_345])]
+    #[tokio::test]
+    async fn test_spread_leg_is_fetched_by_symbology_before_its_cached_contract(
+        #[case] held: HeldLegs,
+        #[case] force_instrument_update: bool,
+        #[case] expected_forced: bool,
+        #[case] expected_requested: Vec<i32>,
+    ) {
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap();
+        let spread = cboe_spread(&provider);
+
+        for (leg_id, details) in [(spread.put_id, &spread.put), (spread.call_id, &spread.call)] {
+            match held {
+                HeldLegs::WithDetails => {
+                    provider
+                        .process_contract_detail(details, Some(leg_id.venue), false)
+                        .unwrap();
+                }
+                HeldLegs::WithoutDetails => {
+                    provider.add_cached_instruments([create_test_instrument_with_info(
+                        leg_id,
+                        Some(create_contract_info(&details.contract, Some(1))),
+                    )]);
+                }
+                HeldLegs::NotHeld => {}
+            }
+        }
+
+        let (result, build) = build_cboe_spread(
+            &provider,
+            &spread,
+            &spread.leg_contracts,
+            None,
+            force_instrument_update,
+            LegFetch::Succeeds,
+            |details| Ok(Some(details.clone())),
+        )
+        .await;
+
+        assert!(result.unwrap());
+        assert_eq!(
+            build.fetched,
+            vec![
+                (spread.call_id, expected_forced),
+                (spread.put_id, expected_forced)
+            ]
+        );
+        assert_eq!(build.requested, expected_requested);
     }
 
     fn create_test_instrument_with_info(

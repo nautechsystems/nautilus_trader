@@ -12,7 +12,7 @@
 use nautilus_common::live::sender::EventSender;
 
 use super::{core::*, incarnations::duplicate_client_order_id};
-use crate::common::spreads::parse_spread_instrument_id_to_legs;
+use crate::common::spreads::{is_spread_instrument_id, parse_spread_instrument_id_to_legs};
 
 impl TrackedOrder {
     pub(super) fn new(
@@ -245,23 +245,44 @@ impl InteractiveBrokersExecutionClient {
     }
 
     pub(super) async fn preload_cached_instruments(&self, client: &Client) {
-        let instrument_ids = {
+        let (instrument_ids, leg_contracts) = {
             let cache = self.core.cache();
             self.instrument_provider.seed_from_cache(&cache);
-            Self::cached_instrument_ids_for_preload(
+            let instrument_ids = Self::cached_instrument_ids_for_preload(
                 &cache,
                 &self.instrument_provider,
                 self.core.client_id,
                 self.core.account_id,
-            )
+            );
+            let leg_contracts =
+                spread_leg_contracts_from_cache(&cache, instrument_ids.iter().copied());
+            (instrument_ids, leg_contracts)
         };
 
         for instrument_id in instrument_ids {
-            match self
-                .instrument_provider
-                .load_with_return_async(client, instrument_id, None)
-                .await
-            {
+            // A cached spread order's legs can need the contracts the cache holds
+            let loaded = if is_spread_instrument_id(&instrument_id) {
+                self.instrument_provider
+                    .fetch_spread_instrument_with_leg_contracts(
+                        client,
+                        instrument_id,
+                        false,
+                        None,
+                        &leg_contracts,
+                    )
+                    .await
+                    .map(|_| {
+                        self.instrument_provider
+                            .find(&instrument_id)
+                            .map(|instrument| instrument.id())
+                    })
+            } else {
+                self.instrument_provider
+                    .load_with_return_async(client, instrument_id, None)
+                    .await
+            };
+
+            match loaded {
                 Ok(Some(loaded)) if loaded == instrument_id => {
                     tracing::debug!("Preloaded cached IB instrument {instrument_id}");
                 }
@@ -359,8 +380,15 @@ impl InteractiveBrokersExecutionClient {
         let spread_id = self
             .instrument_provider
             .spread_instrument_id_for_contract(contract)?;
+        let leg_contracts = spread_leg_contracts_from_cache(&self.core.cache(), [spread_id]);
         self.instrument_provider
-            .fetch_spread_instrument(client, spread_id, false, None)
+            .fetch_spread_instrument_with_leg_contracts(
+                client,
+                spread_id,
+                false,
+                None,
+                &leg_contracts,
+            )
             .await?;
         let spread = self
             .instrument_provider
