@@ -291,6 +291,10 @@ Released on TBD (UTC).
 - Fixed Lighter IOC recovery after a lost acknowledgement (#5701), thanks for reporting @AlphaTraderK
 - Fixed Lighter recovery of unfilled bracket child cancellations when trade history is unavailable (#5683), thanks for reporting @YTsnipers
 - Fixed Lighter order queries and fill recovery during unresolved modifies (#5725), thanks for reporting @Industrial
+- Fixed Lighter reissuing a transaction nonce after rollback and acknowledgement
+- Fixed Lighter assigning the reserved client order index zero during order submission
+- Fixed Lighter briefly losing order identity while retiring a terminal order
+- Fixed Lighter bounded reconciliation omitting orders updated in the same second as the lookback start
 - Fixed OKX balances not refreshing after a WebSocket reconnect
 - Fixed OKX denying `TRAILING_STOP_LIMIT` orders only after `OrderSubmitted`
 - Fixed OKX execution clients not subscribing to venue position updates

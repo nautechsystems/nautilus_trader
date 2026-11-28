@@ -27,19 +27,9 @@
 //! out-of-order transactions. With `skip_nonce=0`, the venue requires consecutive
 //! nonces per API key; callers must preserve submission order.
 //!
-//! The module is lock-free per key: a [`DashMap`] keys an [`Arc`] holding two
-//! [`AtomicI64`]s (`last_issued` and `baseline`). [`NonceManager::next_nonce`]
-//! is a CAS loop bounded by `skip_window`; [`NonceManager::ack_success`]
-//! monotonically advances the baseline when the venue confirms a tx;
-//! [`NonceManager::ack_failure_if_latest`] rolls back the most recent
-//! allocation when the failed nonce is still the latest issuance.
+//! Each operation holds the key's map entry guard while accessing its issued nonce and baseline.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicI64, Ordering},
-};
-
-use dashmap::DashMap;
+use dashmap::{DashMap, mapref::one::RefMut};
 use thiserror::Error;
 
 /// Default skip-window used when the caller does not specify one.
@@ -95,7 +85,7 @@ pub enum NonceError {
 #[derive(Debug)]
 pub struct NonceManager {
     skip_window: u32,
-    states: DashMap<(i64, u8), Arc<AccountNonce>>,
+    states: DashMap<(i64, u8), AccountNonce>,
 }
 
 impl NonceManager {
@@ -125,32 +115,16 @@ impl NonceManager {
     /// the local view is stale (mirrors `hard_refresh_nonce` in the Python
     /// reference).
     ///
-    /// Caller contract: `refresh` is a control-plane operation and is not
-    /// mutually exclusive with concurrent [`NonceManager::next_nonce`] calls
-    /// on the same key. A `next_nonce` that started before `refresh` may
-    /// still complete with a pre-refresh value. The Python reference makes
-    /// the same trade-off; callers that need exclusive semantics must
-    /// serialize `refresh` against in-flight allocations themselves
-    /// (typically by quiescing submission before issuing a hard refresh).
+    /// Quiesce submissions before a hard reset to avoid reissuing a nonce signed into an in-flight transaction.
     pub fn refresh(&self, account_index: i64, api_key_index: u8, venue_next_nonce: i64) {
-        let entry = self
-            .states
-            .entry((account_index, api_key_index))
-            .or_insert_with(|| Arc::new(AccountNonce::new(venue_next_nonce - 1)));
-
-        // Per the caller contract above, `refresh` is not mutually exclusive
-        // with concurrent `next_nonce` on the same key: a racing allocator
-        // may load a mixed pre/post-refresh pair. The CAS in `next_nonce`
-        // detects only the `last_issued` mutation, so the documented
-        // contract is what makes refresh-vs-allocate safe - not these
-        // stores. Release ordering carries `baseline` to subsequent Acquire
-        // loads after the caller serializes refresh quiescently.
-        entry
-            .baseline
-            .store(venue_next_nonce - 1, Ordering::Release);
-        entry
-            .last_issued
-            .store(venue_next_nonce - 1, Ordering::Release);
+        let applied = venue_next_nonce - 1;
+        self.states.insert(
+            (account_index, api_key_index),
+            AccountNonce {
+                last_issued: applied,
+                baseline: applied,
+            },
+        );
     }
 
     /// Monotonically advance the baseline toward the venue's reported
@@ -164,11 +138,6 @@ impl NonceManager {
     /// transactions whose acks never reached the manager (for example HTTP
     /// `sendTxBatch` submissions).
     ///
-    /// `last_issued` is lifted before `baseline` so a concurrent
-    /// [`NonceManager::next_nonce`] never observes a baseline ahead of
-    /// `last_issued`, which would make it hand out nonces the venue has
-    /// already consumed.
-    ///
     /// # Errors
     ///
     /// Returns an error if [`NonceManager::refresh`] has not run for this key.
@@ -178,11 +147,7 @@ impl NonceManager {
         api_key_index: u8,
         venue_next_nonce: i64,
     ) -> Result<(), NonceError> {
-        let state = self.state_for(account_index, api_key_index)?;
-        let applied = venue_next_nonce - 1;
-        state.last_issued.fetch_max(applied, Ordering::AcqRel);
-        state.baseline.fetch_max(applied, Ordering::AcqRel);
-        Ok(())
+        self.ack_success(account_index, api_key_index, venue_next_nonce - 1)
     }
 
     /// Allocate the next nonce for `(account_index, api_key_index)`.
@@ -191,46 +156,30 @@ impl NonceManager {
     /// [`NonceError::NotInitialized`] if [`NonceManager::refresh`] has not run
     /// for this key, and with [`NonceError::SkipWindowExhausted`] if the
     /// number of nonces already issued past the last baseline exceeds
-    /// [`NonceManager::skip_window`]. The CAS loop guarantees monotonic,
-    /// gap-free issuance under contention; concurrent callers serialize
-    /// through the atomic compare-exchange.
+    /// [`NonceManager::skip_window`].
     pub fn next_nonce(&self, account_index: i64, api_key_index: u8) -> Result<i64, NonceError> {
-        let state = self.state_for(account_index, api_key_index)?;
-
-        loop {
-            let last = state.last_issued.load(Ordering::Acquire);
-            let baseline = state.baseline.load(Ordering::Acquire);
-            let next = last.wrapping_add(1);
-            let outstanding = next.saturating_sub(baseline);
-
-            if outstanding > i64::from(self.skip_window) {
-                return Err(NonceError::SkipWindowExhausted {
-                    account_index,
-                    api_key_index,
-                    outstanding: u32::try_from(outstanding).unwrap_or(u32::MAX),
-                    skip_window: self.skip_window,
-                });
-            }
-
-            if state
-                .last_issued
-                .compare_exchange_weak(last, next, Ordering::AcqRel, Ordering::Acquire)
-                .is_ok()
-            {
-                return Ok(next);
-            }
+        let mut state = self.state_for(account_index, api_key_index)?;
+        let next = state.last_issued.wrapping_add(1);
+        let outstanding = next.saturating_sub(state.baseline);
+        if outstanding > i64::from(self.skip_window) {
+            return Err(NonceError::SkipWindowExhausted {
+                account_index,
+                api_key_index,
+                outstanding: u32::try_from(outstanding).unwrap_or(u32::MAX),
+                skip_window: self.skip_window,
+            });
         }
+
+        state.last_issued = next;
+        Ok(next)
     }
 
     /// Record a venue success ack for `nonce`, monotonically advancing the
     /// baseline to `max(baseline, nonce)`.
     ///
-    /// The venue has applied the acked transaction, so every nonce up to and
-    /// including `nonce` no longer counts against the skip window. The
-    /// advance is a monotonic max: a misattributed ack (one that pops the
-    /// wrong pending entry) can only open the window early, never shrink it
-    /// or cause a nonce to be reissued, because acked nonces are always ones
-    /// this manager issued.
+    /// Admission acknowledgements and applied transaction updates lift both the baseline and the
+    /// last issued nonce to at least `nonce`. This frees skip-window capacity and prevents reissuing
+    /// an acknowledged nonce after a rollback. Only [`refresh`](Self::refresh) can lower the baseline.
     ///
     /// # Errors
     ///
@@ -241,8 +190,9 @@ impl NonceManager {
         api_key_index: u8,
         nonce: i64,
     ) -> Result<(), NonceError> {
-        let state = self.state_for(account_index, api_key_index)?;
-        state.baseline.fetch_max(nonce, Ordering::AcqRel);
+        let mut state = self.state_for(account_index, api_key_index)?;
+        state.last_issued = state.last_issued.max(nonce);
+        state.baseline = state.baseline.max(nonce);
         Ok(())
     }
 
@@ -259,29 +209,17 @@ impl NonceManager {
     /// guarantee this (any path with multiple in-flight txs) must use
     /// [`NonceManager::ack_failure_if_latest`] instead.
     pub fn ack_failure(&self, account_index: i64, api_key_index: u8) -> Result<i64, NonceError> {
-        let state = self.state_for(account_index, api_key_index)?;
-
-        loop {
-            let last = state.last_issued.load(Ordering::Acquire);
-            let baseline = state.baseline.load(Ordering::Acquire);
-
-            if last == baseline {
-                return Err(NonceError::NothingToRollBack {
-                    account_index,
-                    api_key_index,
-                });
-            }
-
-            let prev = last - 1;
-
-            if state
-                .last_issued
-                .compare_exchange_weak(last, prev, Ordering::AcqRel, Ordering::Acquire)
-                .is_ok()
-            {
-                return Ok(last);
-            }
+        let mut state = self.state_for(account_index, api_key_index)?;
+        if state.last_issued == state.baseline {
+            return Err(NonceError::NothingToRollBack {
+                account_index,
+                api_key_index,
+            });
         }
+
+        let last = state.last_issued;
+        state.last_issued -= 1;
+        Ok(last)
     }
 
     /// Roll back `nonce` only when it is still the most recent issuance.
@@ -290,8 +228,7 @@ impl NonceManager {
     /// `nonce - 1`, and `Ok(false)` when the rollback was skipped: either a
     /// newer nonce has been issued (so decrementing would free an integer
     /// already signed into an in-flight tx, and the next allocation would
-    /// duplicate it on the wire), or the baseline has already advanced to
-    /// `nonce` (the venue applied it, so the failure signal is stale). A
+    /// duplicate it on the wire), or the baseline covers `nonce`. A
     /// skipped rollback leaves a gap that heals through
     /// [`NonceManager::ack_success`] or [`NonceManager::sync_from_venue`].
     ///
@@ -304,24 +241,13 @@ impl NonceManager {
         api_key_index: u8,
         nonce: i64,
     ) -> Result<bool, NonceError> {
-        let state = self.state_for(account_index, api_key_index)?;
-
-        loop {
-            let last = state.last_issued.load(Ordering::Acquire);
-            let baseline = state.baseline.load(Ordering::Acquire);
-
-            if last != nonce || last <= baseline {
-                return Ok(false);
-            }
-
-            if state
-                .last_issued
-                .compare_exchange_weak(last, last - 1, Ordering::AcqRel, Ordering::Acquire)
-                .is_ok()
-            {
-                return Ok(true);
-            }
+        let mut state = self.state_for(account_index, api_key_index)?;
+        if state.last_issued != nonce || nonce <= state.baseline {
+            return Ok(false);
         }
+
+        state.last_issued -= 1;
+        Ok(true)
     }
 
     /// Snapshot the last issued nonce for diagnostic and test purposes.
@@ -329,7 +255,7 @@ impl NonceManager {
     pub fn last_issued(&self, account_index: i64, api_key_index: u8) -> Option<i64> {
         self.states
             .get(&(account_index, api_key_index))
-            .map(|s| s.last_issued.load(Ordering::Acquire))
+            .map(|state| state.last_issued)
     }
 
     /// Snapshot the configured baseline for diagnostic and test purposes.
@@ -337,27 +263,20 @@ impl NonceManager {
     pub fn baseline(&self, account_index: i64, api_key_index: u8) -> Option<i64> {
         self.states
             .get(&(account_index, api_key_index))
-            .map(|s| s.baseline.load(Ordering::Acquire))
+            .map(|state| state.baseline)
     }
 
-    /// Look up the per-key state, dropping the [`DashMap`] guard before
-    /// returning so callers can spin in CAS loops without holding a shard
-    /// lock.
     fn state_for(
         &self,
         account_index: i64,
         api_key_index: u8,
-    ) -> Result<Arc<AccountNonce>, NonceError> {
-        let entry =
-            self.states
-                .get(&(account_index, api_key_index))
-                .ok_or(NonceError::NotInitialized {
-                    account_index,
-                    api_key_index,
-                })?;
-        let state = entry.value().clone();
-        drop(entry);
-        Ok(state)
+    ) -> Result<RefMut<'_, (i64, u8), AccountNonce>, NonceError> {
+        self.states
+            .get_mut(&(account_index, api_key_index))
+            .ok_or(NonceError::NotInitialized {
+                account_index,
+                api_key_index,
+            })
     }
 }
 
@@ -369,22 +288,13 @@ impl Default for NonceManager {
 
 #[derive(Debug)]
 struct AccountNonce {
-    last_issued: AtomicI64,
-    baseline: AtomicI64,
-}
-
-impl AccountNonce {
-    fn new(initial: i64) -> Self {
-        Self {
-            last_issued: AtomicI64::new(initial),
-            baseline: AtomicI64::new(initial),
-        }
-    }
+    last_issued: i64,
+    baseline: i64,
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc as StdArc, thread};
+    use std::{sync::Arc, thread};
 
     use proptest::prelude::*;
     use rstest::rstest;
@@ -586,11 +496,29 @@ mod tests {
 
         mgr.ack_success(ACCOUNT, API_KEY, 4).unwrap();
         assert_eq!(mgr.baseline(ACCOUNT, API_KEY), Some(4));
-        assert_eq!(
-            mgr.last_issued(ACCOUNT, API_KEY),
-            Some(4),
-            "ack must not touch last_issued",
-        );
+        assert_eq!(mgr.last_issued(ACCOUNT, API_KEY), Some(4));
+    }
+
+    #[rstest]
+    #[case::ack_then_rollback(true)]
+    #[case::rollback_then_ack(false)]
+    fn confirmed_nonce_cannot_be_reissued(#[case] ack_first: bool) {
+        let mgr = NonceManager::default();
+        mgr.refresh(ACCOUNT, API_KEY, 41);
+        let issued = mgr.next_nonce(ACCOUNT, API_KEY).unwrap();
+        if ack_first {
+            mgr.ack_success(ACCOUNT, API_KEY, issued).unwrap();
+        }
+
+        let rolled_back = mgr.ack_failure_if_latest(ACCOUNT, API_KEY, issued).unwrap();
+        if !ack_first {
+            mgr.ack_success(ACCOUNT, API_KEY, issued).unwrap();
+        }
+
+        assert_eq!(rolled_back, !ack_first);
+        assert_eq!(mgr.baseline(ACCOUNT, API_KEY), Some(41));
+        assert_eq!(mgr.last_issued(ACCOUNT, API_KEY), Some(41));
+        assert_eq!(mgr.next_nonce(ACCOUNT, API_KEY).unwrap(), 42);
     }
 
     #[rstest]
@@ -777,13 +705,14 @@ mod tests {
 
     #[rstest]
     fn concurrent_callers_see_no_duplicate_or_gap() {
-        let mgr = StdArc::new(NonceManager::new(10_000));
+        let mgr = Arc::new(NonceManager::new(10_000));
         mgr.refresh(ACCOUNT, API_KEY, 0);
         let threads = 8;
         let per_thread = 250;
+
         let handles: Vec<_> = (0..threads)
             .map(|_| {
-                let mgr = StdArc::clone(&mgr);
+                let mgr = Arc::clone(&mgr);
 
                 thread::spawn(move || -> Vec<i64> {
                     (0..per_thread)
@@ -809,11 +738,12 @@ mod tests {
         let threads = 4;
         let per_thread = 200;
         // Window must absorb at most `threads` unacked allocations at a time
-        let mgr = StdArc::new(NonceManager::new(64));
+        let mgr = Arc::new(NonceManager::new(64));
         mgr.refresh(ACCOUNT, API_KEY, 0);
+
         let handles: Vec<_> = (0..threads)
             .map(|_| {
-                let mgr = StdArc::clone(&mgr);
+                let mgr = Arc::clone(&mgr);
 
                 thread::spawn(move || -> Vec<i64> {
                     (0..per_thread)

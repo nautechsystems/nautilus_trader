@@ -752,15 +752,6 @@ impl RetiredOrderCache {
         }
     }
 
-    fn cloid_for_index(&self, index: i64) -> Option<ClientOrderId> {
-        let inner = self.inner.lock();
-        let bindings = inner.by_index.get(&index)?;
-        if bindings.len() != 1 {
-            return None;
-        }
-        bindings.values().next().map(|(retired, _)| retired.cloid)
-    }
-
     fn cloid_for_venue(&self, index: i64, venue_order_id: VenueOrderId) -> Option<ClientOrderId> {
         self.inner
             .lock()
@@ -2064,13 +2055,15 @@ impl WsDispatchState {
     /// Move a terminal order from active maps into the bounded replay cache.
     pub(crate) fn retire_order_identity(&self, cloid: &ClientOrderId) {
         self.clear_pending_order_action(cloid);
-        let Some((_, identity)) = self.order_identities.remove(cloid) else {
+
+        let Entry::Occupied(entry) = self.order_identities.entry(*cloid) else {
             return;
         };
 
+        self.retired_orders.insert(*cloid, entry.get().clone());
+        let identity = entry.remove();
         self.cloid_map
             .remove_if(&identity.client_order_index, |_, current| current == cloid);
-        self.retired_orders.insert(*cloid, identity);
         self.venue_id_map.remove(cloid);
         self.triggered_emitted.remove(cloid);
         self.order_snapshots.remove(cloid);
@@ -2269,10 +2262,12 @@ impl WsDispatchState {
     }
 
     /// Hash a Nautilus [`ClientOrderId`] into a stable positive `i64` for use
-    /// as the venue's `client_order_index`. The high bit is masked off so
-    /// every derived value passes Lighter's `client_order_index >= 0` check.
+    /// as the venue's `client_order_index`. Lighter reserves zero for orders without
+    /// a client index.
     pub(crate) fn derive_client_order_index(&self, cloid: &ClientOrderId) -> i64 {
-        derive_client_order_index_static(cloid)
+        let mut hasher = CLOID_HASHER.build_hasher();
+        hasher.write(cloid.as_str().as_bytes());
+        positive_client_order_index(hasher.finish() as u32)
     }
 
     /// Register a `(client_order_index, ClientOrderId)` mapping ahead of
@@ -2295,29 +2290,13 @@ impl WsDispatchState {
     /// Returns an error if every bounded probe candidate is occupied. No existing mapping is
     /// changed on failure.
     pub(crate) fn register_cloid(&self, index: i64, cloid: ClientOrderId) -> anyhow::Result<i64> {
-        let mut candidate = index;
+        let mut next = index;
         for attempt in 0..=CLOID_INDEX_PROBE_LIMIT {
-            if self.resolve_client_order_index(candidate).is_some() {
-                if self
-                    .cloid_map
-                    .get(&candidate)
-                    .is_some_and(|entry| *entry.value() == cloid)
-                {
-                    return Ok(candidate);
-                }
-                candidate = next_probe_index(candidate);
-                continue;
-            }
-
-            if self.retired_orders.contains_index(candidate) {
-                candidate = next_probe_index(candidate);
-                continue;
-            }
-
+            let candidate = next;
+            next = positive_client_order_index(candidate as u32 + 1);
             match self.cloid_map.entry(candidate) {
-                dashmap::mapref::entry::Entry::Vacant(entry) => {
+                Entry::Vacant(entry) => {
                     if self.retired_orders.contains_index(candidate) {
-                        candidate = next_probe_index(candidate);
                         continue;
                     }
                     entry.insert(cloid);
@@ -2330,11 +2309,10 @@ impl WsDispatchState {
                     }
                     return Ok(candidate);
                 }
-                dashmap::mapref::entry::Entry::Occupied(entry) => {
+                Entry::Occupied(entry) => {
                     if *entry.get() == cloid {
                         return Ok(candidate);
                     }
-                    candidate = next_probe_index(candidate);
                 }
             }
         }
@@ -2575,14 +2553,6 @@ impl WsDispatchState {
     /// the tx never reaches the wire).
     pub(crate) fn forget_cloid(&self, index: i64) {
         self.cloid_map.remove(&index);
-    }
-
-    /// Resolve a venue client-order index across active and replay caches.
-    pub(crate) fn resolve_client_order_index(&self, index: i64) -> Option<ClientOrderId> {
-        self.cloid_map
-            .get(&index)
-            .map(|entry| *entry.value())
-            .or_else(|| self.retired_orders.cloid_for_index(index))
     }
 
     /// Resolve and bind a live venue client id across active and replay caches.
@@ -2942,29 +2912,9 @@ pub(crate) fn tx_hash_matches(left: &str, right: &str) -> bool {
     left.eq_ignore_ascii_case(right)
 }
 
-/// Standalone derivation so the fixed-seed contract is testable without
-/// constructing a full dispatch state, and so the seed lives in one place.
-pub(crate) fn derive_client_order_index_static(cloid: &ClientOrderId) -> i64 {
-    let mut hasher = CLOID_HASHER.build_hasher();
-    hasher.write(cloid.as_str().as_bytes());
-    let h = hasher.finish();
-    // Mask to 31 positive bits (max ~2.1B). Lighter rejects larger values
-    // with `21727 invalid client order index`; the venue's accepted range
-    // is not documented but observed empirically. Using a smaller window
-    // also keeps collision risk negligible at session scale.
-    i64::from(h as u32 & CLOID_INDEX_MAX)
-}
-
-/// Linear probe: advance the candidate index by 1, wrapping inside the
-/// 31-bit venue-safe window. Used by [`WsDispatchState::register_cloid`]
-/// when the derived index collides with another in-flight cloid.
-fn next_probe_index(candidate: i64) -> i64 {
-    let next = candidate.wrapping_add(1);
-    if (0..=i64::from(CLOID_INDEX_MAX)).contains(&next) {
-        next
-    } else {
-        0
-    }
+// Indexes above 31 bits can receive venue error 21727, and zero means no client index
+fn positive_client_order_index(value: u32) -> i64 {
+    i64::from((value & CLOID_INDEX_MAX).max(1))
 }
 
 /// Drops the `ClientOrderId → VenueOrderId` mapping for an order that has
@@ -3702,8 +3652,9 @@ pub(crate) fn derive_market_order_price_ticks(
 
 #[cfg(test)]
 mod tests {
-    use std::{future::Future, str::FromStr};
+    use std::{future::Future, str::FromStr, thread};
 
+    use nautilus_common::testing::wait_until;
     use nautilus_core::UUID4;
     use nautilus_model::{
         enums::{AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide},
@@ -3716,6 +3667,18 @@ mod tests {
 
     use super::*;
 
+    impl RetiredOrderCache {
+        fn cloid_for_index(&self, index: i64) -> Option<ClientOrderId> {
+            let inner = self.inner.lock();
+            let bindings = inner.by_index.get(&index)?;
+            if bindings.len() != 1 {
+                return None;
+            }
+
+            bindings.values().next().map(|(retired, _)| retired.cloid)
+        }
+    }
+
     impl TradeDedupCache {
         pub(crate) fn contains(&self, trade_id: &TradeId) -> bool {
             self.inner.lock().entries.contains_key(trade_id)
@@ -3723,6 +3686,13 @@ mod tests {
     }
 
     impl WsDispatchState {
+        pub(crate) fn resolve_client_order_index(&self, index: i64) -> Option<ClientOrderId> {
+            self.cloid_map
+                .get(&index)
+                .map(|entry| *entry.value())
+                .or_else(|| self.retired_orders.cloid_for_index(index))
+        }
+
         pub(crate) fn pop_pending_sendtx_head(&self) -> Option<PendingSendTx> {
             self.pending_sendtx.lock().pop_front()
         }
@@ -4037,13 +4007,21 @@ mod tests {
     }
 
     #[rstest]
+    #[case::nil(0, 1)]
+    #[case::masked_nil(0x8000_0000, 1)]
+    #[case::maximum(0xffff_ffff, 0x7fff_ffff)]
+    fn client_order_index_excludes_nil(#[case] bits: u32, #[case] expected: i64) {
+        assert_eq!(positive_client_order_index(bits), expected);
+    }
+
+    #[rstest]
     fn derive_client_order_index_is_deterministic_within_state() {
         let state = WsDispatchState::new();
         let cid = cloid("MY-ORDER-001");
         let a = state.derive_client_order_index(&cid);
         let b = state.derive_client_order_index(&cid);
         assert_eq!(a, b);
-        assert!(a >= 0, "derived index must be non-negative");
+        assert!((1..=i64::from(CLOID_INDEX_MAX)).contains(&a));
     }
 
     #[rstest]
@@ -4095,7 +4073,12 @@ mod tests {
     }
 
     #[rstest]
-    fn register_cloid_probes_forward_on_collision() {
+    #[case::adjacent(42, 43)]
+    #[case::wraps_to_first(i64::from(CLOID_INDEX_MAX), 1)]
+    fn register_cloid_probes_forward_on_collision(
+        #[case] collision_index: i64,
+        #[case] expected: i64,
+    ) {
         // Two distinct cloids with the same derived index: the second must
         // probe to a different slot rather than overwrite the first.
         let state = WsDispatchState::new();
@@ -4103,15 +4086,11 @@ mod tests {
         let second_cid = cloid("ORDER-B");
         // Force a collision by inserting at the same index the second
         // registration will derive.
-        let collision_index = 42;
         state.cloid_map.insert(collision_index, first_cid);
 
         let chosen = state.register_cloid(collision_index, second_cid).unwrap();
 
-        assert_ne!(
-            chosen, collision_index,
-            "collided second cloid must land in a distinct slot",
-        );
+        assert_eq!(chosen, expected);
         assert_eq!(
             state.cloid_map.get(&collision_index).map(|e| *e.value()),
             Some(first_cid),
@@ -4282,6 +4261,38 @@ mod tests {
         state.publish_update(id, &replacement, UUID4::new());
         assert!(!has_publication());
         assert!(!state.any_order_publication(|_, _| true));
+    }
+
+    #[rstest]
+    fn retiring_order_remains_visible_while_index_is_in_use() {
+        let state = WsDispatchState::new();
+        let cloid = cloid("RETIRING");
+        let index = 42;
+
+        let identity = OrderIdentity::new(
+            InstrumentId::from("ETH-PERP.LIGHTER"),
+            StrategyId::new("S-T"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            index,
+        );
+
+        state.register_cloid(index, cloid).unwrap();
+        state.register_order_identity(cloid, identity.clone());
+
+        thread::scope(|scope| {
+            let index_guard = state.cloid_map.get(&index).unwrap();
+
+            scope.spawn(|| state.retire_order_identity(&cloid));
+            wait_until(
+                || !state.order_identities.contains_key(&cloid),
+                Duration::from_secs(5),
+            );
+
+            let visible = state.order_identity(&cloid);
+            drop(index_guard);
+            assert!(visible.is_some_and(|replay| Arc::ptr_eq(&replay.binding, &identity.binding)));
+        });
     }
 
     #[rstest]

@@ -7605,12 +7605,12 @@ impl ExecutionClient for LighterExecutionClient {
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         let ts_init = self.clock.get_time_ns();
 
-        // Scope inactive orders at the venue and stop descending trade
-        // pagination once it crosses this local lookback boundary.
+        // Inactive order updates use whole seconds. Start both sweeps at that
+        // precision so a boundary fill cannot lose its matching order.
         let lookback_start = lookback_mins
             .map(DurationNanos::try_from_mins)
             .transpose()?
-            .map(|lookback| ts_init.saturating_sub(lookback));
+            .map(|lookback| UnixNanos::from_seconds(ts_init.saturating_sub(lookback).as_seconds()));
 
         // open_only = false so the inactive-orders fan-out runs and surfaces
         // canceled / rejected / expired / filled orders that the engine
@@ -12770,6 +12770,87 @@ mod tests {
             .to_string(),
             "UNSUPPORTED_ORDER_TYPE: MARKET_TO_LIMIT; Lighter supports MARKET, LIMIT, STOP_MARKET, STOP_LIMIT, MARKET_IF_TOUCHED, and LIMIT_IF_TOUCHED",
         );
+    }
+
+    #[rstest]
+    #[case::before_exact_start(1_795_830_982_314, 0)]
+    #[case::after_exact_start(1_795_830_982_714, 1)]
+    #[tokio::test]
+    async fn bounded_mass_status_pairs_whole_second_order_with_subsecond_fill(
+        #[case] fill_millis: i64,
+        #[case] standalone_fills: usize,
+    ) {
+        static CLOCK: std::sync::LazyLock<AtomicTime> = std::sync::LazyLock::new(|| {
+            AtomicTime::new(false, UnixNanos::from_millis(1_795_831_162_625))
+        });
+        let (mut client, cache, _) = create_execution_client();
+        register_test_instrument(&client, &cache);
+        client.clock = &CLOCK;
+        client.dispatch.note_active_market(TEST_MARKET_INDEX);
+        client.dispatch.replace_position_snapshot(&[], &[], &[]);
+        let rig = dispatcher_rig("BOUNDED-ORDER");
+        let mut order = dispatcher_test_order(&rig, LighterOrderStatus::Filled);
+        let mut trade = dispatcher_test_trade(&rig, true);
+        order.created_at = 1_795_830_982;
+        order.updated_at = order.created_at;
+        order.remaining_base_amount = Decimal::ZERO;
+        order.filled_base_amount = order.initial_base_amount;
+        order.filled_quote_amount = order.filled_base_amount * order.price;
+        trade.bid_id = order.order_index;
+        trade.bid_id_str = Some(order.order_id.clone());
+        trade.timestamp = fill_millis;
+        trade.size = order.filled_base_amount;
+        trade.usd_amount = order.filled_quote_amount;
+        let venue_order_id = VenueOrderId::new(&order.order_id);
+        let server = serve_order_history(&mut client, order, vec![trade]).await;
+
+        let mass = client.generate_mass_status(Some(3)).await.unwrap().unwrap();
+        let precise_start = UnixNanos::from_millis(1_795_830_982_625);
+        let orders = client
+            .generate_order_status_reports(&GenerateOrderStatusReports::new(
+                UUID4::new(),
+                CLOCK.get_time_ns(),
+                false,
+                None,
+                Some(precise_start),
+                None,
+                None,
+                None,
+            ))
+            .await
+            .unwrap();
+        let fills = client
+            .generate_fill_reports(GenerateFillReports::new(
+                UUID4::new(),
+                CLOCK.get_time_ns(),
+                None,
+                Some(venue_order_id),
+                Some(precise_start),
+                None,
+                None,
+                None,
+            ))
+            .await
+            .unwrap();
+        server.abort();
+
+        assert_eq!(
+            mass.order_reports()
+                .get(&venue_order_id)
+                .map(|order| order.order_status),
+            Some(OrderStatus::Filled)
+        );
+        assert_eq!(mass.fill_reports()[&venue_order_id].len(), 1);
+        assert_eq!(
+            mass.fill_reports()[&venue_order_id][0].ts_event,
+            UnixNanos::from_millis(fill_millis as u64)
+        );
+        assert_eq!(
+            mass.lookback_start(),
+            Some(UnixNanos::from_seconds(1_795_830_982))
+        );
+        assert!(orders.is_empty());
+        assert_eq!(fills.len(), standalone_fills);
     }
 
     #[rstest]
@@ -30172,41 +30253,8 @@ mod tests {
         client
             .dispatch
             .replace_position_snapshot(&[position], &[], &[]);
-        let trades = vec![first, second.clone(), second];
-
-        let app = Router::new()
-            .route(
-                "/api/v1/accountActiveOrders",
-                get(|| async { axum::Json(serde_json::json!({"code":200,"orders":[]})) }),
-            )
-            .route(
-                "/api/v1/accountInactiveOrders",
-                get(move || {
-                    let frame = frame.clone();
-                    async move { axum::Json(serde_json::json!({"code":200,"orders":[frame]})) }
-                }),
-            )
-            .route(
-                "/api/v1/trades",
-                get(move || {
-                    let trades = trades.clone();
-                    async move { axum::Json(serde_json::json!({"code":200,"trades":trades})) }
-                }),
-            );
-
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let server = tokio::spawn(async move {
-            axum::serve(listener, app).await.unwrap();
-        });
-
-        client.http_client = LighterHttpClient::new(
-            LighterEnvironment::Testnet,
-            Some(format!("http://{addr}")),
-            1,
-            None,
-        )
-        .unwrap();
+        let server =
+            serve_order_history(&mut client, frame, vec![first, second.clone(), second]).await;
         let mass = client.generate_mass_status(None).await.unwrap().unwrap();
         assert_eq!(
             mass.order_reports().len(),
@@ -30294,6 +30342,34 @@ mod tests {
         );
         server.abort();
         let _ = server.await;
+    }
+
+    async fn serve_order_history(
+        client: &mut LighterExecutionClient,
+        order: LighterOrder,
+        trades: Vec<LighterTrade>,
+    ) -> tokio::task::JoinHandle<()> {
+        let app = Router::new()
+            .route(
+                "/api/v1/accountActiveOrders",
+                get(|| async { axum::Json(serde_json::json!({"code":200,"orders":[]})) }),
+            )
+            .route(
+                "/api/v1/accountInactiveOrders",
+                get(move || {
+                    let order = order.clone();
+                    async move { axum::Json(serde_json::json!({"code":200,"orders":[order]})) }
+                }),
+            )
+            .route(
+                "/api/v1/trades",
+                get(move || {
+                    let trades = trades.clone();
+                    async move { axum::Json(serde_json::json!({"code":200,"trades":trades})) }
+                }),
+            );
+
+        serve_child_reports(client, app).await
     }
 
     #[rstest]

@@ -82,7 +82,7 @@ use nautilus_common::{
     msgbus::{MessageBus, set_message_bus},
     testing::wait_until_async,
 };
-use nautilus_core::{DurationNanos, UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_execution::engine::ExecutionEngine;
 use nautilus_live::{
     ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome,
@@ -7457,9 +7457,7 @@ async fn test_generate_bounded_mass_status_reports_snapshot_contract(
         .await
         .expect("mass status")
         .expect("mass status available");
-    let expected_start = mass_status
-        .ts_init
-        .saturating_sub(DurationNanos::from_mins(60));
+    let expected_start = UnixNanos::from_seconds(mass_status.ts_init.as_seconds() - 3_600);
     let order_reports = mass_status.order_reports();
     let fill_reports = mass_status.fill_reports();
     let position_reports = mass_status.position_reports();

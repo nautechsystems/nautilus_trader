@@ -433,7 +433,8 @@ flags and output format.
 ### Order identification
 
 Lighter uses a numeric venue order index and caller-supplied `client_order_index`. The adapter derives a
-31-bit index from Nautilus `ClientOrderId`, probing forward on collision.
+positive 31-bit index from Nautilus `ClientOrderId` and probes forward on collision. Lighter reserves zero for
+orders without a client index.
 
 **Live queries**: use the venue order ID for active and terminal history. Before that ID is known,
 the derived client index can query only active orders. Assigning the caller's client order ID requires
@@ -1066,7 +1067,11 @@ indexes from merging unrelated lifecycles.
 
 #### Report completeness
 
-Bounded mass status uses one cutoff for inactive orders and fills. A complete result requires:
+Bounded mass status rounds the lookback start down to a whole second so that fills pair with Lighter's
+whole-second order updates. Orders, fills, and the reported `lookback_start` use this boundary, which
+can extend the window by less than one second. Separate order and fill queries keep their requested start.
+
+A complete result requires:
 
 - All required order, fill, and position sources to succeed.
 - Every historical fill to map to its order.
@@ -1468,8 +1473,9 @@ Batch commands wait for readiness, including those received during refresh.
 
 Within a session:
 
-- Venue confirmations advance the local nonce window.
-- Definitive rejections or pre-handoff failures may roll back its latest nonce.
+- Admission acknowledgements and applied transaction updates advance the local nonce window.
+- A definitive rejection or pre-handoff failure rolls back its nonce only while that nonce is the latest
+  issued and above the local baseline.
 - Stale state triggers a `GET /api/v1/nextNonce` resync.
 
 Outcomes that may have reached the venue retain their pending nonce and order identity for WebSocket
