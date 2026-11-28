@@ -76,6 +76,12 @@ criteria = "safe-to-deploy"
 delta = "0.2.37 -> 0.2.39"
 notes = "Registry metadata: Whitechain Sepolia, Arc mainnet, Hyperliquid testnet, Ronin and Hyperliquid blocktime fixes. Data-only generated tables."
 
+[[audits.alloy-chains]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.2.39 -> 0.2.40"
+notes = "Refreshes generated chain metadata and classifies Chiado as a testnet. The published delta contains no new unsafe code or I/O."
+
 [[audits.alloy-consensus]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -1878,6 +1884,12 @@ criteria = "safe-to-deploy"
 delta = "0.4.51 -> 0.4.52"
 notes = "Reviewed published source. Only Clippy allowances change in runtime source; compression behavior is unchanged."
 
+[[audits.async-compression]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.52 -> 0.4.54"
+notes = "Adds opt-in large-window Brotli decoding and HTTP-bounded Zstd decoder constructors. The experimental Zrip path requires a feature and a separate cfg. The default Brotli path uses the reviewed strict codec."
+
 [[audits.async-lock]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2290,6 +2302,12 @@ criteria = "safe-to-deploy"
 delta = "4.6.8 -> 4.6.9"
 notes = "Updates the documentation link and pins the matching reviewed clap_derive release. Published runtime code remains the same."
 
+[[audits.clap]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "4.6.9 -> 4.6.10"
+notes = "The facade updates the documentation link and pins the reviewed clap_builder release. The derive version and runtime facade code are unchanged."
+
 [[audits.clap_builder]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2301,6 +2319,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "4.6.5 -> 4.6.6"
 notes = "Renames the internal Arg::blacklist field to conflicts and promotes the crate-private get_override_usage to the public get_overridden_usage; parser, validator, and usage output follow the rename. No new unsafe, build script, filesystem, network, process, or credential behavior."
+
+[[audits.clap_builder]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "4.6.7 -> 4.6.10"
+notes = "The parser finds active overrides in one pass. Subcommand traversal avoids an intermediate collection. The published runtime delta uses existing argument IDs and collection bounds."
 
 [[audits.clap_derive]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2423,6 +2447,12 @@ delta = "0.4.47 -> 0.4.48"
 importable = false
 notes = "Adds a zrip backend behind the zstd-zrip feature and async_compression_unstable cfg. The NautilusTrader graph enables the existing libzstd backend only."
 
+[[audits.compression-codecs]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.48 -> 0.4.49"
+notes = "Default Brotli decoding now uses the standard window bound and retains it across reinitialization. Large windows require an explicit constructor. The Zstd parameter changes document the existing bound."
+
 [[audits.compression-core]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2458,6 +2488,18 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.10.2 -> 0.10.3"
 notes = "Reviewed published source. OID base-128 arc accumulation now checks multiplication/addition overflow; registry data also updates. No new unsafe or ambient access."
+
+[[audits.const-random]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.1.18 -> 0.1.20"
+notes = "The facade raises its MSRV and updates the procedural macro dependency. The macro remains the only implementation."
+
+[[audits.const-random-macro]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.1.16 -> 0.1.18"
+notes = "The macro parses typed literals and byte-array lengths before emitting literal tokens. It seeds SHAKE from getrandom 0.4 or the existing build-time seed override. No new filesystem, process, or network access."
 
 [[audits.const_format]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2509,6 +2551,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.5.3 -> 1.5.5"
 notes = "Reviewed published source. Reviewed short-input folding, polynomial tables, checked x86 partial loads, and AArch64 CRC/PMULL dispatch. Loads follow slice bounds and CPU feature checks; no new ambient access."
+
+[[audits.crc32fast]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.5.5 -> 1.5.6"
+notes = "Caches existing x86 feature checks and shares the CRC reduction across SIMD paths. Full-block callers check for at least 16 bytes before the final overlapping 16-byte load. ARM PMULL code is gated on NEON."
 
 [[audits.crossbeam-deque]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -4164,6 +4212,12 @@ criteria = "safe-to-deploy"
 delta = "0.4.19 -> 0.4.20"
 notes = "Reviewed checksum-verified published crates. Validates duplicate content lengths, response status, and GOAWAY stream IDs. Counts reserved pushes and refusals, tracks spent DATA budget across window changes, and defers send-buffer locks. Huffman fast decoding uses bounded safe slices and rejects invalid padding/EOS; all 256 encoding entries and the decode table match the prior release. No new unsafe or ambient capabilities."
 
+[[audits.h2]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.20 -> 0.4.21"
+notes = "Reviewed the published delta for stream teardown, flow-control credit, frame budgets, and HPACK. Sensitive exact matches use a never-indexed literal, reset tracking evicts the oldest entry at its configured bound, and header preallocation is capped."
+
 [[audits.hashbrown]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -4242,6 +4296,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.11.1 -> 1.12.0"
 notes = "Reviewed cargo-vet local diff and checksum-verified published crates. HTTP/1 body channel uses a mutex, atomic wakers, one data slot, and pending errors/trailers; wakes happen after unlocking. Adds optional header byte limits, preserves Connection close semantics, and removes Content-Length when chunking. HTTP/2 upgrade buffers one cursor before waiting on capacity. Unsafe runtime/FFI implementations retain their prior bounds and operations; no new ambient capabilities."
+
+[[audits.hyper]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.12.0 -> 1.13.0"
+notes = "Reviewed published HTTP/1 framing and HTTP/2 dispatch changes. Close drains queued callbacks, short fixed-length bodies error, trailers require CRLF, and connection-specific headers are stripped across all Connection fields. The chunk-framing byte reader checks the buffer before indexing."
 
 [[audits.hyper-rustls]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -4558,6 +4618,13 @@ delta = "0.2.46 -> 1.0.2"
 importable = false
 notes = "The major release enters Cargo.lock through serde_with's optional jiff_1 feature. Cargo tree with all workspace features and targets excludes this version; the compiled Jiff dependency stays on 0.2."
 
+[[audits.jiff]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.0.2 -> 1.0.3"
+importable = false
+notes = "Corrects the valid millisecond and microsecond timestamp bounds and tests both ends. This release is resolved only through the disabled serde_with jiff_1 feature in this workspace."
+
 [[audits.jiff-core]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -4596,6 +4663,13 @@ criteria = "safe-to-deploy"
 delta = "0.1.8 -> 1.0.1"
 importable = false
 notes = "Updates the calendar and TZif internals for Jiff 1. This version is reachable only through the disabled serde_with jiff_1 feature in the resolved workspace."
+
+[[audits.jiff-core]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.0.1 -> 1.0.2"
+importable = false
+notes = "Includes the fractional part of the last valid epoch second in millisecond and microsecond bounds and reports the actual timestamp range. Used only by the inactive Jiff 1 branch."
 
 [[audits.jiff-static]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -4640,6 +4714,13 @@ criteria = "safe-to-deploy"
 delta = "0.2.46 -> 1.0.2"
 importable = false
 notes = "Advances the companion dependencies for Jiff 1 and updates the proc-macro diagnostic text. The Jiff 1 feature stays disabled in the workspace."
+
+[[audits.jiff-static]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.0.2 -> 1.0.3"
+importable = false
+notes = "Updates the dependency on reviewed Jiff core. Published macro source is unchanged and this version is reachable only from the inactive Jiff 1 branch."
 
 [[audits.jiff-tzdb]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -5075,6 +5156,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.9.5 -> 2.9.6"
 notes = "Reviewed published source. Edition/lint modernization and equivalent let-chain/control-flow changes. Parser bounds and stack guards remain; no new ambient access."
+
+[[audits.pest]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.9.6 -> 2.9.7"
+notes = "Caches stack-space probes for a bounded number of parser checkpoints. It keeps the call budget check and invalidates the cached allowance on rejection."
 
 [[audits.pest_stack_guard]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -6923,6 +7010,12 @@ delta = "0.8.63 -> 0.8.64"
 importable = false
 notes = "Validates typed prefix and suffix extents and alignment before splitting the source. The byte projection computes the layout from validated pointer metadata. The workspace enables derive and simd; the allocator API is outside that feature set."
 
+[[audits.zerocopy]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.8.64 -> 0.8.65"
+notes = "Adjusts documentation and doctest configuration for code generation and pins the matching reviewed derive version. Runtime memory handling is unchanged."
+
 [[audits.zerocopy-derive]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -6958,6 +7051,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.8.63 -> 0.8.64"
 notes = "Updates test assertions and snapshots. The published proc-macro implementation is unchanged."
+
+[[audits.zerocopy-derive]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.8.64 -> 0.8.65"
+notes = "Generates fresh projection names and scopes each field marker in a separate const block. Existing projection bounds and pointer operations are preserved. The large expected-output diff is generated test data."
 
 [[audits.zerofrom-derive]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -7038,6 +7137,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.6.7 -> 0.6.8"
 notes = "Deflate/inflate and arch CRC/Adler tweaks. Existing unsafe SIMD/CRC paths keep documented bounds."
+
+[[audits.zlib-rs]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.6.8 -> 0.6.9"
+notes = "Reviewed the window allocation and z_stream ownership changes. Padded storage bounds the logical window, and raw owned state removes the long-lived mutable reference across deallocation. Each operation takes an exclusive borrow and uses the existing allocator and pointer contracts."
 
 [[audits.zstd]]
 who = "Nautech Systems <info@nautechsystems.io>"

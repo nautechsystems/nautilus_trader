@@ -300,6 +300,7 @@ Released on TBD (UTC).
 - Fixed Polymarket reconciliation rounding fractional fills on whole-share orders (#5758), thanks @SoYuCry
 - Fixed Polymarket maker fills applying when maker quantities do not sum to the trade size
 - Fixed Polymarket reconciliation of wallet orders and positions outside discovery filters (#5649), thanks @imbolc
+- Fixed Polymarket reconciliation by recovering protocol from matching cached Gamma data (#5773), thanks @SoYuCry
 - Fixed Polymarket stale metadata and resolution deadlines for tracked markets (#5671, #5655), thanks @imbolc
 - Fixed Polymarket book recovery stalling on older snapshots with matching book hashes (#5659), thanks @imbolc
 - Fixed Polymarket exhausting its fast recovery budget on books with no initial snapshot
@@ -351,7 +352,7 @@ Released on TBD (UTC).
 - Upgraded `OSV Scanner` tool to v2.7.1
 - Upgraded `prek` tool to v0.5.11
 - Upgraded `pypi-attestations` tool to v0.0.32
-- Upgraded `Socket CLI` tool to v1.16.0
+- Upgraded `Socket CLI` tool to v1.16.1
 - Upgraded `uv` tool to v0.13.9
 - Upgraded `markdownlint-cli2` pre-commit hook to v0.24.2
 - Upgraded `nbstripout` pre-commit hook to v0.9.2
@@ -364,10 +365,12 @@ Released on TBD (UTC).
 - Upgraded `arc-swap` crate to v1.9.5
 - Upgraded `arrow` and `parquet` crates to v60.2.0
 - Upgraded `bytes` crate to v1.12.2
-- Upgraded `clap` crate to v4.6.9
+- Upgraded `clap` crate to v4.6.10
 - Upgraded `databento` crate to v0.65.0
 - Upgraded `datafusion` crate to v56.0.0
 - Upgraded `flate2` crate to v1.1.11
+- Upgraded `h2` crate to v0.4.21
+- Upgraded `hyper` crate to v1.13.0
 - Upgraded `jiff` crate to v0.2.46
 - Upgraded `object_store` crate to v0.14.2
 - Upgraded `rand` crate to v0.10.4

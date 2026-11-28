@@ -145,7 +145,7 @@ blake3 = { version = "1.8.7", default-features = false, features = ["std"] }
 # Pinned: 3.10.1 pulls prettyplease 0.3 while prost-build still requires 0.2.
 bon = "=3.9.3"
 bytes = { version = "1.12.2", features = ["serde"] }
-clap = { version = "4.6.9", features = ["derive", "env"] }
+clap = { version = "4.6.10", features = ["derive", "env"] }
 dashmap = "6.2.1"
 datafusion = { version = "56.0.0", default-features = false, features = [
   "parquet",
@@ -169,11 +169,11 @@ futures-util = { version = "0.3.34", default-features = false, features = [
   "async-await",
   "sink",
 ] }
-h2 = "0.4.20"
+h2 = "0.4.21"
 http = "1.5.0"
 http-body = "1.1.0"
 http-body-util = "0.1.5"
-hyper = { version = "1.12.0", default-features = false, features = [
+hyper = { version = "1.13.0", default-features = false, features = [
   "client",
   "http1",
 ] }
@@ -409,40 +409,6 @@ store = { path = '.supply-chain' }
 [workspace.metadata.cooldown]
 days = 3
 trusted-base = "origin/develop"
-
-[workspace.metadata.cooldown.allow]
-brotli-decompressor = "6.4.0"
-datafusion = "56.0.0"
-datafusion-catalog = "56.0.0"
-datafusion-catalog-listing = "56.0.0"
-datafusion-common = "56.0.0"
-datafusion-common-runtime = "56.0.0"
-datafusion-datasource = "56.0.0"
-datafusion-datasource-arrow = "56.0.0"
-datafusion-datasource-csv = "56.0.0"
-datafusion-datasource-json = "56.0.0"
-datafusion-datasource-parquet = "56.0.0"
-datafusion-doc = "56.0.0"
-datafusion-execution = "56.0.0"
-datafusion-expr = "56.0.0"
-datafusion-expr-common = "56.0.0"
-datafusion-functions = "56.0.0"
-datafusion-functions-aggregate = "56.0.0"
-datafusion-functions-aggregate-common = "56.0.0"
-datafusion-functions-nested = "56.0.0"
-datafusion-functions-table = "56.0.0"
-datafusion-functions-window = "56.0.0"
-datafusion-functions-window-common = "56.0.0"
-datafusion-macros = "56.0.0"
-datafusion-optimizer = "56.0.0"
-datafusion-physical-expr = "56.0.0"
-datafusion-physical-expr-adapter = "56.0.0"
-datafusion-physical-expr-common = "56.0.0"
-datafusion-physical-optimizer = "56.0.0"
-datafusion-physical-plan = "56.0.0"
-datafusion-pruning = "56.0.0"
-datafusion-session = "56.0.0"
-datafusion-sql = "56.0.0"
 
 # -----------------------------------------------------------------------------
 # Profiles
