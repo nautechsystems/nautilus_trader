@@ -600,7 +600,7 @@ const VENUES_FUT: &[&str] = &[
     "NYBOTOPTIONS",
     "ECBOT",
 ];
-const VENUES_CFD: &[&str] = &["IBCFD", "SMART"];
+const VENUES_CFD: &[&str] = &["IBCFD"];
 const VENUES_CMDTY: &[&str] = &["IBCMDTY"];
 
 fn venue_matches(venue_str: &str, venues: &[&str]) -> bool {
@@ -1802,6 +1802,19 @@ mod tests {
         assert_eq!(contract.symbol.as_str(), "EUR");
         assert_eq!(contract.currency.as_str(), "USD");
         assert_eq!(contract.local_symbol.as_str(), "EUR.USD");
+    }
+
+    #[rstest]
+    fn test_plain_symbol_on_smart_builds_a_stock_not_a_cfd() {
+        let instrument_id = InstrumentId::from("SPY.SMART");
+
+        let contract = Symbology::new(SymbologyMethod::Simplified)
+            .contract(instrument_id, None)
+            .unwrap();
+
+        assert_eq!(contract.security_type, SecurityType::Stock);
+        assert_eq!(contract.symbol.as_str(), "SPY");
+        assert_eq!(contract.exchange.as_str(), "SMART");
     }
 
     #[rstest]
