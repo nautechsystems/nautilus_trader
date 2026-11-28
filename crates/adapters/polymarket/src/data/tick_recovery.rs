@@ -18,16 +18,23 @@ use std::{
     time::Duration,
 };
 
+use ahash::AHashMap;
+use futures_util::stream::{self, StreamExt};
 use nautilus_common::messages::DataEvent;
 use nautilus_core::{DurationNanos, UnixNanos};
 use nautilus_live::task::TaskSpawner;
-use nautilus_model::instruments::{Instrument, InstrumentAny};
+use nautilus_model::{
+    identifiers::InstrumentId,
+    instruments::{Instrument, InstrumentAny},
+};
 use parking_lot::Mutex;
 use rust_decimal::Decimal;
+use serde::{Deserialize, de::IgnoredAny};
+use ustr::Ustr;
 
 use super::{
     PolymarketDataClient,
-    instruments::{InstrumentUpdateState, cache_instrument_unchecked},
+    instruments::{InstrumentUpdateState, cache_instrument_unchecked, definition_superseded},
 };
 use crate::{
     filters::market_closed,
@@ -37,6 +44,7 @@ use crate::{
 };
 
 const TICK_RECOVERY_GRACE: DurationNanos = DurationNanos::from_mins(10);
+const TICK_RECOVERY_CONCURRENCY: usize = 8;
 
 #[derive(Debug)]
 pub(super) struct TickDisagreement {
@@ -47,6 +55,21 @@ pub(super) struct TickDisagreement {
     request: Weak<()>,
 }
 
+#[derive(Debug)]
+pub(super) struct TickCheck {
+    id: InstrumentId,
+    token: Ustr,
+    proposed: Decimal,
+    ticket: Arc<()>,
+}
+
+#[derive(Deserialize)]
+struct GammaTick {
+    #[serde(rename = "orderPriceMinTickSize")]
+    tick: Option<IgnoredAny>,
+}
+
+#[derive(Clone)]
 pub(super) struct TickRecovery {
     pub(super) clob: PolymarketClobPublicClient,
     pub(super) ctx: ResolveContext,
@@ -68,26 +91,105 @@ impl PolymarketDataClient {
 }
 
 impl TickRecovery {
-    fn begin_check(&self, gamma: &InstrumentAny) -> Option<Arc<()>> {
-        let token = gamma.raw_symbol().inner();
-        let id = gamma.id();
-        let proposed = gamma.price_increment().as_decimal();
-        let mut state = self.state.lock();
-        let cache = self.ctx.instruments.load();
-
-        if state.retired || self.ctx.cancellation_token.is_cancelled() {
-            return None;
+    pub(super) fn observe_batch<'a>(
+        &self,
+        snapshot: &AHashMap<InstrumentId, InstrumentAny>,
+        instruments: impl IntoIterator<Item = &'a InstrumentAny>,
+    ) -> Vec<TickCheck> {
+        let mut latest = AHashMap::<_, &InstrumentAny>::new();
+        for gamma in instruments {
+            let current = latest.entry(gamma.raw_symbol().inner()).or_insert(gamma);
+            if gamma.ts_init() >= current.ts_init() {
+                *current = gamma;
+            }
         }
 
-        if cache.get(&id).is_none_or(|cached| {
-            cached.price_increment() == gamma.price_increment()
-                || market_closed(cached) == Some(true)
-        }) || market_closed(gamma) == Some(true)
-        {
+        #[expect(
+            clippy::needless_collect,
+            reason = "Parse Gamma rows before taking shared locks"
+        )]
+        let observations: Vec<_> = latest
+            .into_values()
+            .map(|gamma| {
+                let reported = gamma
+                    .info()
+                    .and_then(|info| info.get_str("gamma_market"))
+                    .and_then(|raw| serde_json::from_str::<GammaTick>(raw).ok())
+                    .is_some_and(|raw| raw.tick.is_some());
+                (gamma, reported)
+            })
+            .collect();
+
+        let mut state = self.state.lock();
+        if state.retired || self.ctx.cancellation_token.is_cancelled() {
+            return Vec::new();
+        }
+
+        let cache = self.ctx.instruments.load();
+        let terminal = self.ctx.subscriptions.lock_closed_conditions();
+        observations
+            .into_iter()
+            .filter_map(|(gamma, reported)| {
+                let id = gamma.id();
+                if definition_superseded(snapshot, &cache, id)
+                    || extract_condition_id(&id).is_ok_and(|id| terminal.contains(&id))
+                {
+                    return None;
+                }
+
+                self.begin_check(gamma, cache.get(&id), reported, &mut state)
+            })
+            .collect()
+    }
+
+    pub(super) fn schedule(&self, checks: Vec<TickCheck>) {
+        if checks.is_empty() {
+            return;
+        }
+
+        let recovery = self.clone();
+
+        let result = self.tasks.spawn(async move {
+            stream::iter(checks)
+                .for_each_concurrent(TICK_RECOVERY_CONCURRENCY, |check| recovery.check(check))
+                .await;
+        });
+
+        if let Err(e) = result {
+            log::debug!("Skipping Polymarket tick checks after shutdown began: {e}");
+        }
+    }
+
+    fn begin_check(
+        &self,
+        gamma: &InstrumentAny,
+        cached: Option<&InstrumentAny>,
+        reported: bool,
+        state: &mut InstrumentUpdateState,
+    ) -> Option<TickCheck> {
+        let token = gamma.raw_symbol().inner();
+        let id = gamma.id();
+
+        let Some(cached) = cached else {
+            state.disagreements.remove(&token);
+            return None;
+        };
+
+        if market_closed(cached) == Some(true) || market_closed(gamma) == Some(true) {
             state.disagreements.remove(&token);
             return None;
         }
 
+        if !reported {
+            return None;
+        }
+
+        if cached.price_increment() == gamma.price_increment() {
+            state.disagreements.remove(&token);
+            return None;
+        }
+
+        let proposed = gamma.price_increment().as_decimal();
         let now = self.ctx.clock.get_time_ns();
         let next_check = now.saturating_add(TICK_RECOVERY_GRACE);
         let fresh = || TickDisagreement {
@@ -106,18 +208,44 @@ impl TickRecovery {
         }
 
         let ticket = Arc::new(());
-        pending.next_check = next_check;
         pending.request = Arc::downgrade(&ticket);
-        Some(ticket)
+        Some(TickCheck {
+            id,
+            token,
+            proposed,
+            ticket,
+        })
     }
 
-    pub(super) async fn observe(&self, gamma: &InstrumentAny) {
-        let token = gamma.raw_symbol().inner();
-        let id = gamma.id();
-        let proposed = gamma.price_increment().as_decimal();
-        let Some(ticket) = self.begin_check(gamma) else {
-            return;
-        };
+    pub(super) async fn check(&self, check: TickCheck) {
+        let TickCheck {
+            id,
+            token,
+            proposed,
+            ticket,
+        } = check;
+        let request = Arc::downgrade(&ticket);
+
+        {
+            let mut state = self.state.lock();
+            if state.retired || self.ctx.cancellation_token.is_cancelled() {
+                return;
+            }
+
+            let Some(pending) = state.disagreements.get_mut(&token) else {
+                return;
+            };
+
+            if !pending.request.ptr_eq(&request) {
+                return;
+            }
+
+            pending.next_check = self
+                .ctx
+                .clock
+                .get_time_ns()
+                .saturating_add(TICK_RECOVERY_GRACE);
+        }
 
         let result = self.clob.get_tick_size(token.as_str()).await;
         let mut state = self.state.lock();
@@ -129,7 +257,7 @@ impl TickRecovery {
             return;
         };
 
-        if !pending.request.ptr_eq(&Arc::downgrade(&ticket)) {
+        if !pending.request.ptr_eq(&request) {
             return;
         }
 
@@ -167,6 +295,8 @@ impl TickRecovery {
                     return;
                 }
             };
+
+        let integrity = self.ctx.subscriptions.book_integrity.lock();
         state.record_recovered_tick(token);
         cache_instrument_unchecked(
             &self.ctx.instruments,
@@ -177,8 +307,14 @@ impl TickRecovery {
         if let Err(e) = self.ctx.data_sender.send(DataEvent::Data(rebuilt.into())) {
             log::warn!("Failed to publish recovered instrument {id}: {e}");
         }
-        self.ctx
-            .subscriptions
-            .reset_tick_book(id, token.as_str(), self.book_timeout, &self.tasks);
+
+        self.ctx.subscriptions.reset_tick_book(
+            id,
+            token.as_str(),
+            proposed,
+            self.book_timeout,
+            &self.tasks,
+            integrity,
+        );
     }
 }

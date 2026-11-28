@@ -31,9 +31,10 @@ use nautilus_model::{
     orderbook::OrderBook,
 };
 use parking_lot::{Mutex, MutexGuard};
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
-use super::instruments::TokenMeta;
+use super::instruments::{InstrumentUpdateState, TokenMeta};
 use crate::{
     book::{integrity::BookIntegrity, recovery::spawn_recovery_monitor, sync::BookSyncTracker},
     common::{consts::MARKET_VERSION_KEY, parse::validate_data_market_version},
@@ -47,6 +48,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub(crate) struct DataSubscriptions {
     pub(super) instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    pub(super) instrument_update_state: Arc<Mutex<InstrumentUpdateState>>,
     pub(super) watchlist: Arc<ResolveWatchlist>,
     pub(super) deferred_resolutions: Arc<AtomicMap<InstrumentId, StrictResolvedMarket>>,
     pub(super) owner_lock: Arc<Mutex<()>>,
@@ -79,6 +81,7 @@ impl DataSubscriptions {
     ) -> Self {
         Self {
             instruments,
+            instrument_update_state: Arc::default(),
             watchlist,
             deferred_resolutions,
             owner_lock,
@@ -105,11 +108,18 @@ impl DataSubscriptions {
         &self,
         id: InstrumentId,
         token: &str,
+        tick: Decimal,
         timeout: Duration,
         tasks: &TaskSpawner,
+        mut integrity: MutexGuard<'_, AHashMap<InstrumentId, BookIntegrity>>,
     ) {
-        self.book_integrity.lock().remove(&id);
         self.order_books.remove(&id);
+        if self.active_delta_subs.contains(&id) {
+            integrity.insert(id, BookIntegrity::expect_tick(tick));
+        } else {
+            integrity.remove(&id);
+        }
+
         let outcome = self.book_sync.request_recovery_if_subscribed(
             &self.active_delta_subs,
             id,

@@ -234,11 +234,11 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
             }
         };
 
-        if publish {
-            for instrument in candidates.iter().chain(&explicit) {
-                recovery.observe(instrument).await;
-            }
-        }
+        let checks = if publish {
+            recovery.observe_batch(&snapshot, candidates.iter().chain(&explicit))
+        } else {
+            Vec::new()
+        };
 
         // Predicates are user code and can inspect the cache. Retry selection if
         // a definition, terminal condition or WebSocket tick changed meanwhile.
@@ -326,6 +326,8 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
         if let Err(e) = sender.send(DataEvent::Response(response)) {
             log::error!("Failed to send instruments response: {e}");
         }
+
+        recovery.schedule(checks);
     };
 
     if let Err(e) = client.tasks.spawn(future) {
@@ -377,18 +379,66 @@ pub(super) fn request_instrument(
         };
 
         if let Some(inst) = instrument {
-            if publish {
-                recovery.observe(&inst).await;
+            let check = if publish {
+                recovery.observe_batch(&snapshot, [&inst]).pop()
+            } else {
+                None
+            };
+
+            let inst = {
+                let update_state = instrument_update_state.lock();
+                let cached = instruments_cache.load();
+                let inst = instrument_response_definition(
+                    inst,
+                    &snapshot,
+                    &cached,
+                    &closed_condition_ids.lock(),
+                );
+
+                let inst = match update_state.compose_instrument(&inst, cached.get(&instrument_id))
+                {
+                    Ok(instrument) => instrument,
+                    Err(e) => {
+                        log::error!("Failed to apply live tick to instrument {instrument_id}: {e}");
+                        return;
+                    }
+                };
+
+                if publish
+                    && is_instrument_expired_and_not_reported_open(&inst, clock.get_time_ns())
+                {
+                    log::debug!(
+                        "Skipping expired instrument {instrument_id} during request_instrument cache update"
+                    );
+                } else if publish {
+                    apply_live_instrument_locked(
+                        &closed_condition_ids,
+                        &update_state,
+                        &instruments_cache,
+                        &token_meta,
+                        &inst,
+                        |instrument| {
+                            // Publish onto the data bus so other clients (e.g. the exec
+                            // client's token map) can update from the same fetch.
+                            if let Err(e) = sender.send(DataEvent::Data(instrument.clone().into()))
+                            {
+                                log::warn!("Failed to publish instrument {instrument_id}: {e}");
+                            }
+                        },
+                    );
+                }
+
+                inst
+            };
+
+            if let Some(check) = check {
+                recovery.check(check).await;
             }
+
             let update_state = instrument_update_state.lock();
             let cached = instruments_cache.load();
-            let inst = instrument_response_definition(
-                inst,
-                &snapshot,
-                &cached,
-                &closed_condition_ids.lock(),
-            );
-
+            let terminal = closed_condition_ids.lock();
+            let inst = instrument_response_definition(inst, &snapshot, &cached, &terminal);
             let inst = match update_state.compose_instrument(&inst, cached.get(&instrument_id)) {
                 Ok(instrument) => instrument,
                 Err(e) => {
@@ -397,34 +447,6 @@ pub(super) fn request_instrument(
                 }
             };
 
-            if publish && is_instrument_expired_and_not_reported_open(&inst, clock.get_time_ns()) {
-                log::debug!(
-                    "Skipping expired instrument {instrument_id} during request_instrument cache update"
-                );
-            } else if publish {
-                apply_live_instrument_locked(
-                    &closed_condition_ids,
-                    &update_state,
-                    &instruments_cache,
-                    &token_meta,
-                    &inst,
-                    |instrument| {
-                        // Publish onto the data bus so other clients (e.g. the exec
-                        // client's token map) can update from the same fetch.
-                        if let Err(e) = sender.send(DataEvent::Data(instrument.clone().into())) {
-                            log::warn!("Failed to publish instrument {instrument_id}: {e}");
-                        }
-                    },
-                );
-            }
-
-            let terminal = closed_condition_ids.lock();
-            let inst = instrument_response_definition(
-                inst,
-                &snapshot,
-                &instruments_cache.load(),
-                &terminal,
-            );
             let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
                 request_id,
                 client_id,

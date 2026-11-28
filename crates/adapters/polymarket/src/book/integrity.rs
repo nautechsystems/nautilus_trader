@@ -19,6 +19,7 @@
 //! Incremental messages omit mutable hash inputs, so their hashes cannot gate publication.
 
 use nautilus_core::UnixNanos;
+use rust_decimal::Decimal;
 
 #[derive(Debug, Default)]
 pub(crate) struct BookIntegrity {
@@ -26,6 +27,7 @@ pub(crate) struct BookIntegrity {
     published_timestamp: UnixNanos,
     withheld_hash: Option<String>,
     snapshot_verified: bool,
+    expected_tick: Option<Decimal>,
 }
 
 impl BookIntegrity {
@@ -58,7 +60,21 @@ impl BookIntegrity {
         self.latest_timestamp = self.latest_timestamp.max(timestamp);
     }
 
+    pub(crate) fn expect_tick(tick: Decimal) -> Self {
+        Self {
+            expected_tick: Some(tick),
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn snapshot_tick_mismatch(&self, tick: Option<&str>) -> bool {
+        self.expected_tick
+            .zip(tick)
+            .is_some_and(|(expected, reported)| reported.parse::<Decimal>() != Ok(expected))
+    }
+
     pub(crate) fn accept_snapshot(&mut self, verified: bool) {
+        self.expected_tick = None;
         self.snapshot_verified = verified;
     }
 

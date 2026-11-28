@@ -1400,8 +1400,9 @@ reporting the same different tick for 10 minutes, the next live refresh checks t
 the CLOB `GET /tick-size` endpoint. When the CLOB agrees with Gamma, the adapter publishes the
 recovered tick and requests a fresh snapshot for an active book. A different CLOB tick or a failed
 lookup keeps the cached tick and starts another 10-minute wait. A WebSocket tick update or a Gamma
-refresh that matches the cached tick clears the pending check. A data-client reset starts a new
-generation and allows Gamma to supply each token's initial tick again.
+refresh that reports the cached tick clears the pending check. Bulk requests can return the
+cached tick while a CLOB check is pending. A data-client reset starts a new generation and allows
+Gamma to supply each token's initial tick again.
 
 ## Trades
 
