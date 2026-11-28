@@ -42,7 +42,7 @@ use super::{
     settlement::SettlementRegistry,
     submitter::{
         OrderSubmitter, SubmitResponseOutcome, immediate_rejection_reason, submit_response_outcome,
-        submit_response_unknown_reason, submit_response_venue_order_id,
+        submit_response_venue_order_id,
     },
     types::{BatchLimitOrderContext, classify_http_command_failure},
 };
@@ -70,42 +70,20 @@ pub(super) fn handle_batch_order_responses(
     pending_cancels: &PendingCancelTracker,
     account_id: AccountId,
 ) -> impl Future<Output = ()> + Send + 'static {
-    let response_len = responses.len();
-    let order_len = batch_orders.len();
-
-    if response_len != order_len {
-        log::warn!(
-            "Batch submit response length ({response_len}) does not match order count ({order_len})"
-        );
-    }
-
+    let aligned = batch_responses_aligned(&responses, &batch_orders, pending_submits);
     let mut follow_ups = Vec::new();
-    let mut batch_orders = batch_orders.into_iter();
+    let mut responses = responses.into_iter();
 
-    for (response, (batch_order, expected_venue_order_id)) in
-        responses.into_iter().zip(batch_orders.by_ref())
-    {
+    for (batch_order, expected_venue_order_id) in batch_orders {
         let time_in_force = batch_order.order.time_in_force();
-        let (deferred_cancel, fok_order_id) = if submit_response_outcome(&response, time_in_force)
-            == SubmitResponseOutcome::Unknown
-        {
-            (
-                handle_unknown_submit_result(
-                    &batch_order.order,
-                    expected_venue_order_id,
-                    &submit_response_unknown_reason(&response, false, expected_venue_order_id),
-                    None,
-                    emitter,
-                    clock,
-                    fill_tracker,
-                    settlement,
-                    order_contexts,
-                    pending_submits,
-                    pending_cancels,
-                ),
-                None,
-            )
-        } else {
+
+        let response = responses.next().filter(|response| {
+            (aligned || submit_response_venue_order_id(response) == Some(expected_venue_order_id))
+                && submit_response_outcome(response, time_in_force)
+                    != SubmitResponseOutcome::Unknown
+        });
+
+        let (deferred_cancel, fok_order_id) = if let Some(response) = response {
             let fok_order_id = fok_check_order_id(&response, time_in_force);
             let deferred_cancel = handle_order_response(
                 response,
@@ -120,30 +98,26 @@ pub(super) fn handle_batch_order_responses(
             );
 
             (deferred_cancel, fok_order_id)
+        } else {
+            let deferred_cancel = handle_unknown_submit_result(
+                &batch_order.order,
+                expected_venue_order_id,
+                "batch response did not identify an outcome for this order",
+                None,
+                emitter,
+                clock,
+                fill_tracker,
+                settlement,
+                order_contexts,
+                pending_submits,
+                pending_cancels,
+            );
+
+            (deferred_cancel, None)
         };
 
         if deferred_cancel.is_some() || fok_order_id.is_some() {
             follow_ups.push((batch_order, deferred_cancel, fok_order_id));
-        }
-    }
-
-    for (batch_order, expected_venue_order_id) in batch_orders {
-        let deferred_cancel = handle_unknown_submit_result(
-            &batch_order.order,
-            expected_venue_order_id,
-            "batch response omitted order",
-            None,
-            emitter,
-            clock,
-            fill_tracker,
-            settlement,
-            order_contexts,
-            pending_submits,
-            pending_cancels,
-        );
-
-        if deferred_cancel.is_some() {
-            follow_ups.push((batch_order, deferred_cancel, None));
         }
     }
 
@@ -193,6 +167,38 @@ pub(super) fn handle_batch_order_responses(
     async move {
         follow_ups.await;
     }
+}
+
+fn batch_responses_aligned(
+    responses: &[OrderResponse],
+    batch_orders: &[(BatchLimitOrderContext, VenueOrderId)],
+    pending_submits: &PendingSubmitTracker,
+) -> bool {
+    let response_len = responses.len();
+    let order_len = batch_orders.len();
+    if response_len != order_len {
+        log::warn!(
+            "Batch submit response length ({response_len}) does not match order count ({order_len})"
+        );
+        return false;
+    }
+
+    responses
+        .iter()
+        .zip(batch_orders)
+        .enumerate()
+        .all(|(index, (response, (batch_order, _)))| {
+            let Some(id) = submit_response_venue_order_id(response) else {
+                return true;
+            };
+
+            pending_submits
+                .client_order_id(&id)
+                .is_none_or(|client_id| client_id == batch_order.order.client_order_id())
+                && !responses[..index]
+                    .iter()
+                    .any(|earlier| submit_response_venue_order_id(earlier) == Some(id))
+        })
 }
 
 pub(super) fn reject_submit_order(

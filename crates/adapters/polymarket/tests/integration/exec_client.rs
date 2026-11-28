@@ -18875,23 +18875,25 @@ async fn test_submit_order_list_rejects_failed_batch_response_entry() {
 }
 
 #[rstest]
-#[case::omitted(None)]
-#[case::empty_id(Some(""))]
-#[case::whitespace_id(Some(" \t"))]
+#[case::omitted(&["first"], true, false)]
+#[case::empty_id(&["first", ""], true, false)]
+#[case::whitespace_id(&["first", " \t"], true, false)]
+#[case::duplicate(&["first", "first"], true, false)]
+#[case::missing_first(&["second"], false, false)]
+#[case::swapped(&["second", "first"], false, false)]
+#[case::short_opaque(&["opaque"], false, false)]
+#[case::duplicate_opaque(&["opaque", "opaque"], false, false)]
+#[case::short_rejection(&["reject"], false, false)]
+#[case::misaligned_rejection(&["reject", "first"], false, false)]
+#[case::cancel_before_reply(&["second"], false, true)]
 #[tokio::test]
-async fn test_submit_order_list_leaves_missing_batch_responses_submitted(
-    #[case] unresolved_order_id: Option<&str>,
+async fn test_submit_order_list_leaves_ambiguous_batch_orders_submitted(
+    #[case] reply_ids: &[&str],
+    #[case] first_accepted: bool,
+    #[case] cancel_before_reply: bool,
 ) {
     let state = TestServerState::default();
-    let mut responses = vec![json!(
-        {"success": true, "orderID": "0xbatch-order-1", "errorMsg": ""}
-    )];
-
-    if let Some(order_id) = unresolved_order_id {
-        responses.push(json!({"success": true, "orderID": order_id, "errorMsg": ""}));
-    }
-
-    *state.batch_order_response.lock().await = Some(Value::Array(responses));
+    state.batch_order_request_gate.enable();
     let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
     client.start().unwrap();
@@ -18933,51 +18935,107 @@ async fn test_submit_order_list_leaves_missing_batch_responses_submitted(
     let submitted2 = assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
     cache.borrow_mut().update_order(&submitted1).unwrap();
     let submitted_order2 = cache.borrow_mut().update_order(&submitted2).unwrap();
-    let accepted = assert_order_event(recv_execution_event(&mut rx).await, "Accepted");
-    assert_eq!(accepted.client_order_id(), submitted1.client_order_id());
-    assert_eq!(
-        accepted.venue_order_id(),
-        Some(VenueOrderId::from("0xbatch-order-1"))
-    );
-    assert_no_execution_event(&mut rx).await;
-    assert_eq!(
-        client
-            .generate_mass_status(None)
-            .await
-            .unwrap_err()
-            .to_string(),
-        "cannot generate mass status: 1 Polymarket order(s) have an unknown submit outcome",
-    );
-
+    wait_until_async(
+        || async { state.batch_order_request_gate.started() == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
     let body = state.last_body.lock().await.clone().unwrap();
-    let signed_order: PolymarketOrder = serde_json::from_value(body[1]["order"].clone()).unwrap();
-    let expected_venue_order_id =
-        VenueOrderId::from(format!("{:#x}", order_hash(&signed_order, false).unwrap()).as_str());
+    let signed_id = |index: usize| {
+        let order: PolymarketOrder = serde_json::from_value(body[index]["order"].clone()).unwrap();
+        VenueOrderId::from(format!("{:#x}", order_hash(&order, false).unwrap()).as_str())
+    };
+
+    let first_id = signed_id(0);
+    let expected_venue_order_id = signed_id(1);
+
+    let responses = reply_ids
+        .iter()
+        .map(|id| match *id {
+            "reject" => json!({"success": false, "orderID": "", "errorMsg": "order rejected"}),
+            id => {
+                let order_id = match id {
+                    "first" => first_id.as_str(),
+                    "second" => expected_venue_order_id.as_str(),
+                    value => value,
+                };
+
+                json!({"success": true, "orderID": order_id, "errorMsg": ""})
+            }
+        })
+        .collect();
+
+    *state.batch_order_response.lock().await = Some(Value::Array(responses));
     *state.cancel_response.lock().await = Some(json!({
         "canceled": [expected_venue_order_id.to_string()],
         "not_canceled": {}
     }));
 
-    let pending_cancel = OrderPendingCancel::new(
-        submitted_order2.trader_id(),
-        submitted_order2.strategy_id(),
-        submitted_order2.instrument_id(),
-        submitted_order2.client_order_id(),
-        Some(AccountId::from("POLYMARKET-001")),
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
-        None,
-    );
-    cache
-        .borrow_mut()
-        .update_order(&OrderEventAny::PendingCancel(pending_cancel))
-        .unwrap();
+    let cancel_second_order = || {
+        let pending_cancel = OrderPendingCancel::new(
+            submitted_order2.trader_id(),
+            submitted_order2.strategy_id(),
+            submitted_order2.instrument_id(),
+            submitted_order2.client_order_id(),
+            Some(AccountId::from("POLYMARKET-001")),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            None,
+        );
 
-    client
-        .cancel_order(make_cancel_cmd("O-LIST-MISSING-2", instrument_id))
-        .unwrap();
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::PendingCancel(pending_cancel))
+            .unwrap();
+
+        client
+            .cancel_order(make_cancel_cmd("O-LIST-MISSING-2", instrument_id))
+            .unwrap();
+    };
+
+    if cancel_before_reply {
+        cancel_second_order();
+        assert_eq!(*state.cancel_delete_count.lock().await, 0);
+    }
+
+    state.batch_order_request_gate.release();
+
+    if first_accepted {
+        let accepted = assert_order_event(recv_execution_event(&mut rx).await, "Accepted");
+        assert_eq!(accepted.client_order_id(), submitted1.client_order_id());
+        assert_eq!(accepted.venue_order_id(), Some(first_id));
+    }
+
+    let unknown_count = if first_accepted { 1 } else { 2 };
+    let expected_error = format!(
+        "cannot generate mass status: {unknown_count} Polymarket order(s) have an unknown submit outcome"
+    );
+    wait_until_async(
+        || async {
+            client
+                .generate_mass_status(None)
+                .await
+                .is_err_and(|e| e.to_string() == expected_error)
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let pending_event = rx.try_recv();
+    assert!(
+        matches!(
+            pending_event,
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ),
+        "Expected no execution event, was {pending_event:?}"
+    );
+
+    if !cancel_before_reply {
+        cancel_second_order();
+    }
+
     wait_until_async(
         || {
             let state = state.clone();
@@ -18986,6 +19044,9 @@ async fn test_submit_order_list_leaves_missing_batch_responses_submitted(
         Duration::from_secs(1),
     )
     .await;
+
+    client.disconnect().await.unwrap();
+    assert_eq!(*state.cancel_delete_count.lock().await, 1);
 
     let cancel_body = state.last_body.lock().await.clone().unwrap();
     assert_eq!(
