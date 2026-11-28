@@ -167,8 +167,12 @@ impl DataSubscriptions {
         self.order_books.remove(&instrument_id);
         self.last_quotes.remove(&instrument_id);
 
+        let mut state = self.instrument_update_state.lock();
+
         if let Some(token_id) = token_id {
-            self.token_meta.remove(&Ustr::from(token_id.as_str()));
+            let token_id = Ustr::from(token_id.as_str());
+            state.disagreements.remove(&token_id);
+            self.token_meta.remove(&token_id);
         } else {
             // Without a cache entry the token id is unresolvable, so match on the routing value
             self.token_meta

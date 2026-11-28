@@ -24,12 +24,11 @@ use nautilus_common::{
 use nautilus_core::AtomicMap;
 use nautilus_live::task::TaskGroupGuard;
 use nautilus_model::events::PositionEvent;
-use parking_lot::Mutex;
 
 use super::{
     PolymarketDataClient,
     dispatch::{WsMessageContext, handle_ws_message},
-    instruments::{InstrumentUpdateState, refresh_expired_market_closure},
+    instruments::refresh_expired_market_closure,
 };
 use crate::{
     data_types::register_polymarket_custom_data,
@@ -95,6 +94,7 @@ impl PolymarketDataClient {
             instruments: self.instruments.clone(),
             instrument_update_state: self.instrument_update_state.clone(),
             gamma_client: self.provider.http_client().clone(),
+            clob_client: self.clob_public_client.clone(),
             filters: self.provider.filters(),
             resolve_poll_watchlist: self.resolve_poll_watchlist.clone(),
             resolve_watch_apply_mutex: self.resolve_watch_apply_mutex.clone(),
@@ -405,8 +405,6 @@ impl PolymarketDataClient {
         self.pending_resolutions.clear();
         self.deferred_resolutions.rcu(|entries| entries.clear());
         self.instruments = std::sync::Arc::new(AtomicMap::new());
-        self.instrument_update_state =
-            std::sync::Arc::new(Mutex::new(InstrumentUpdateState::default()));
 
         self.new_market_inflight_keys = std::sync::Arc::new(DashMap::new());
         self.pending_resolutions = std::sync::Arc::new(DashMap::new());
@@ -421,6 +419,7 @@ impl PolymarketDataClient {
             self.config.subscribe_new_markets,
         );
         subscriptions.ws_sub_mutex = self.subscriptions.ws_sub_mutex.clone();
+        self.instrument_update_state = subscriptions.instrument_update_state.clone();
         self.subscriptions = subscriptions;
         self.auto_load_scheduled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     }

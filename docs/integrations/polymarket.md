@@ -1391,10 +1391,18 @@ Trade ticks and the instrument update flow through unchanged. Quote handling fol
 sides use Polymarket boundary prices with zero size. The adapter can keep quotes flowing during the gap by
 reading `best_bid` and `best_ask` from each `price_change`.
 
-Gamma instrument data supplies the active tick until the first `tick_size_change` for that token.
-The WebSocket tick then remains authoritative across later Gamma refreshes and instrument requests.
-The adapter ignores older tick-size events by venue timestamp. A data-client reset starts a new
-generation and allows Gamma to supply each token's tick again.
+Gamma supplies the initial tick for a new instrument. Once the adapter caches the instrument,
+Gamma refreshes keep its current tick while other market metadata can change. A WebSocket
+`tick_size_change` updates the tick immediately. The adapter ignores older events by venue timestamp.
+
+A token can change grids before its first subscription or during a disconnect. If Gamma keeps
+reporting the same different tick for 10 minutes, the next live refresh checks the token against
+the CLOB `GET /tick-size` endpoint. When the CLOB agrees with Gamma, the adapter publishes the
+recovered tick and requests a fresh snapshot for an active book. A different CLOB tick or a failed
+lookup keeps the cached tick and starts another 10-minute wait. A WebSocket tick update or a Gamma
+refresh that reports the cached tick clears the pending check. Bulk requests can return the
+cached tick while a CLOB check is pending. A data-client reset starts a new generation and allows
+Gamma to supply each token's initial tick again.
 
 ## Trades
 

@@ -208,14 +208,15 @@ impl PolymarketDataClient {
         let scheduled_guard = AutoLoadScheduledGuard::new(scheduled);
         let snapshot_timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
 
-        let spawner = match self.tasks.spawner() {
-            Ok(spawner) => spawner,
+        let recovery = match self.tick_recovery() {
+            Ok(recovery) => recovery,
             Err(e) => {
                 log::debug!("Skipping Polymarket auto-load after shutdown began: {e}");
                 return;
             }
         };
 
+        let spawner = recovery.tasks.clone();
         let monitor_spawner = spawner.clone();
 
         let future = async move {
@@ -397,6 +398,21 @@ impl PolymarketDataClient {
                     attempt < max_retries && needs_resolution_hydration(condition_id, outcome)
                 };
 
+                let observed = outcomes
+                    .iter()
+                    .filter(|(id, outcome)| !should_retry_hydration(id, outcome))
+                    .filter_map(|(_, outcome)| match outcome {
+                        AutoLoadOutcome::Open(loaded) => Some(loaded),
+                        AutoLoadOutcome::Closed { instruments, .. } => Some(instruments),
+                        AutoLoadOutcome::Unsupported | AutoLoadOutcome::Unknown => None,
+                    })
+                    .flatten()
+                    .filter(|instrument| {
+                        should_apply_auto_load(&instruments, &batch, instrument.id())
+                    });
+
+                let checks = recovery.observe_batch(&snapshot, observed);
+
                 // Resolution admission can yield, so cache and publish each leg together
                 for (condition_id, outcome) in &outcomes {
                     if should_retry_hydration(condition_id, outcome) {
@@ -528,6 +544,8 @@ impl PolymarketDataClient {
                 if cancellation.is_cancelled() {
                     return;
                 }
+
+                recovery.schedule(checks);
 
                 // Snapshot loaded keys so the arc-swap Guard does not span
                 // the WS reconciliation awaits below.
